@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#"
+        xml:base="https://example.com/results/"
+        xmlns:its="http://www.w3.org/2005/11/its"
+        its:version="2.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.w3.org/2005/sparql-results# https://www.w3.org/2007/SPARQL/result.xsd">
+    <head>
+        <link href="../metadata.ttl"/>
+    </head>
+    <boolean>true</boolean>
+</sparql>

@@ -10,10 +10,11 @@ use crate::format::QueryResultsFormat;
 #[cfg(feature = "async-tokio")]
 use crate::json::{TokioAsyncWriterJsonSolutionsSerializer, tokio_async_write_boolean_json_result};
 use crate::json::{WriterJsonSolutionsSerializer, write_boolean_json_result};
+use crate::version::{ensure_term_version, results_version_label};
 #[cfg(feature = "async-tokio")]
 use crate::xml::{TokioAsyncWriterXmlSolutionsSerializer, tokio_async_write_boolean_xml_result};
 use crate::xml::{WriterXmlSolutionsSerializer, write_boolean_xml_result};
-use oxrdf::{Term, Variable};
+use oxrdf::{RdfVersion, Term, Variable};
 use std::io::{self, Write};
 #[cfg(feature = "async-tokio")]
 use tokio::io::AsyncWrite;
@@ -51,13 +52,66 @@ use tokio::io::AsyncWrite;
 #[derive(Clone)]
 pub struct QueryResultsSerializer {
     format: QueryResultsFormat,
+    rdf_version: Option<RdfVersion>,
+}
+
+/// An invalid SPARQL results serializer configuration.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum QueryResultsSerializerConfigError {
+    /// The selected format cannot announce a SPARQL results version.
+    #[error("SPARQL results version cannot be configured for {format}")]
+    UnsupportedFormat {
+        /// The selected serialization format.
+        format: QueryResultsFormat,
+    },
+    /// The selected version is not supported by SPARQL results formats.
+    #[error("unsupported SPARQL results version {version:?}")]
+    UnsupportedVersion {
+        /// The selected version.
+        version: RdfVersion,
+    },
 }
 
 impl QueryResultsSerializer {
     /// Builds a serializer for the given format.
     #[inline]
     pub fn from_format(format: QueryResultsFormat) -> Self {
-        Self { format }
+        Self {
+            format,
+            rdf_version: None,
+        }
+    }
+
+    /// Returns the configured SPARQL results version, if any.
+    pub const fn rdf_version(&self) -> Option<RdfVersion> {
+        self.rdf_version
+    }
+
+    /// Sets the SPARQL results version contract.
+    ///
+    /// JSON `SELECT` results emit the version in `head`, and XML results emit
+    /// it on the `sparql` document element. CSV and TSV do not support a
+    /// version announcement.
+    pub fn with_rdf_version(
+        mut self,
+        rdf_version: RdfVersion,
+    ) -> Result<Self, QueryResultsSerializerConfigError> {
+        if !matches!(
+            self.format,
+            QueryResultsFormat::Json | QueryResultsFormat::Xml
+        ) {
+            return Err(QueryResultsSerializerConfigError::UnsupportedFormat {
+                format: self.format,
+            });
+        }
+        if results_version_label(rdf_version).is_none() {
+            return Err(QueryResultsSerializerConfigError::UnsupportedVersion {
+                version: rdf_version,
+            });
+        }
+        self.rdf_version = Some(rdf_version);
+        Ok(self)
     }
 
     /// Write a boolean query result (from an `ASK` query)  into the given [`Write`] implementation.
@@ -74,8 +128,8 @@ impl QueryResultsSerializer {
     /// ```
     pub fn serialize_boolean_to_writer<W: Write>(self, writer: W, value: bool) -> io::Result<W> {
         match self.format {
-            QueryResultsFormat::Xml => write_boolean_xml_result(writer, value),
-            QueryResultsFormat::Json => write_boolean_json_result(writer, value),
+            QueryResultsFormat::Xml => write_boolean_xml_result(writer, value, self.rdf_version),
+            QueryResultsFormat::Json => write_boolean_json_result(writer, value, self.rdf_version),
             QueryResultsFormat::Csv | QueryResultsFormat::Tsv => {
                 write_boolean_csv_result(writer, value)
             }
@@ -106,8 +160,12 @@ impl QueryResultsSerializer {
         value: bool,
     ) -> io::Result<W> {
         match self.format {
-            QueryResultsFormat::Xml => tokio_async_write_boolean_xml_result(writer, value).await,
-            QueryResultsFormat::Json => tokio_async_write_boolean_json_result(writer, value).await,
+            QueryResultsFormat::Xml => {
+                tokio_async_write_boolean_xml_result(writer, value, self.rdf_version).await
+            }
+            QueryResultsFormat::Json => {
+                tokio_async_write_boolean_json_result(writer, value, self.rdf_version).await
+            }
             QueryResultsFormat::Csv | QueryResultsFormat::Tsv => {
                 tokio_async_write_boolean_csv_result(writer, value).await
             }
@@ -146,10 +204,10 @@ impl QueryResultsSerializer {
         Ok(WriterSolutionsSerializer {
             formatter: match self.format {
                 QueryResultsFormat::Xml => WriterSolutionsSerializerKind::Xml(
-                    WriterXmlSolutionsSerializer::start(writer, &variables)?,
+                    WriterXmlSolutionsSerializer::start(writer, &variables, self.rdf_version)?,
                 ),
                 QueryResultsFormat::Json => WriterSolutionsSerializerKind::Json(
-                    WriterJsonSolutionsSerializer::start(writer, &variables)?,
+                    WriterJsonSolutionsSerializer::start(writer, &variables, self.rdf_version)?,
                 ),
                 QueryResultsFormat::Csv => WriterSolutionsSerializerKind::Csv(
                     WriterCsvSolutionsSerializer::start(writer, variables)?,
@@ -158,6 +216,7 @@ impl QueryResultsSerializer {
                     WriterTsvSolutionsSerializer::start(writer, variables)?,
                 ),
             },
+            rdf_version: self.rdf_version,
         })
     }
 
@@ -197,10 +256,20 @@ impl QueryResultsSerializer {
         Ok(TokioAsyncWriterSolutionsSerializer {
             formatter: match self.format {
                 QueryResultsFormat::Xml => TokioAsyncWriterSolutionsSerializerKind::Xml(
-                    TokioAsyncWriterXmlSolutionsSerializer::start(writer, &variables).await?,
+                    TokioAsyncWriterXmlSolutionsSerializer::start(
+                        writer,
+                        &variables,
+                        self.rdf_version,
+                    )
+                    .await?,
                 ),
                 QueryResultsFormat::Json => TokioAsyncWriterSolutionsSerializerKind::Json(
-                    TokioAsyncWriterJsonSolutionsSerializer::start(writer, &variables).await?,
+                    TokioAsyncWriterJsonSolutionsSerializer::start(
+                        writer,
+                        &variables,
+                        self.rdf_version,
+                    )
+                    .await?,
                 ),
                 QueryResultsFormat::Csv => TokioAsyncWriterSolutionsSerializerKind::Csv(
                     TokioAsyncWriterCsvSolutionsSerializer::start(writer, variables).await?,
@@ -209,6 +278,7 @@ impl QueryResultsSerializer {
                     TokioAsyncWriterTsvSolutionsSerializer::start(writer, variables).await?,
                 ),
             },
+            rdf_version: self.rdf_version,
         })
     }
 }
@@ -254,6 +324,7 @@ impl From<QueryResultsFormat> for QueryResultsSerializer {
 #[must_use]
 pub struct WriterSolutionsSerializer<W: Write> {
     formatter: WriterSolutionsSerializerKind<W>,
+    rdf_version: Option<RdfVersion>,
 }
 
 enum WriterSolutionsSerializerKind<W: Write> {
@@ -285,6 +356,10 @@ impl<W: Write> WriterSolutionsSerializer<W> {
         &mut self,
         solution: impl IntoIterator<Item = (&'a Variable, &'a Term)>,
     ) -> io::Result<()> {
+        let solution = solution.into_iter().collect::<Vec<_>>();
+        for (_, term) in &solution {
+            ensure_term_version(term, self.rdf_version)?;
+        }
         match &mut self.formatter {
             WriterSolutionsSerializerKind::Xml(writer) => writer.serialize(solution),
             WriterSolutionsSerializerKind::Json(writer) => writer.serialize(solution),
@@ -347,6 +422,7 @@ impl<W: Write> WriterSolutionsSerializer<W> {
 #[must_use]
 pub struct TokioAsyncWriterSolutionsSerializer<W: AsyncWrite + Unpin> {
     formatter: TokioAsyncWriterSolutionsSerializerKind<W>,
+    rdf_version: Option<RdfVersion>,
 }
 
 #[cfg(feature = "async-tokio")]
@@ -383,6 +459,10 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterSolutionsSerializer<W> {
         &mut self,
         solution: impl IntoIterator<Item = (&'a Variable, &'a Term)>,
     ) -> io::Result<()> {
+        let solution = solution.into_iter().collect::<Vec<_>>();
+        for (_, term) in &solution {
+            ensure_term_version(term, self.rdf_version)?;
+        }
         match &mut self.formatter {
             TokioAsyncWriterSolutionsSerializerKind::Xml(writer) => {
                 writer.serialize(solution).await

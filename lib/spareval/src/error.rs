@@ -1,6 +1,6 @@
 use crate::expression::ExpressionEvaluationError;
 use oxrdf::{NamedNode, Term, Variable};
-use spargebra::SparqlSyntaxError;
+use spargebra::{SparqlSyntaxError, SparqlVersion};
 use std::convert::Infallible;
 use std::error::Error;
 use std::ops::RangeInclusive;
@@ -40,6 +40,12 @@ pub enum QueryEvaluationError {
     /// The given `SERVICE` is not supported
     #[error("The service {0} is not supported")]
     UnsupportedService(NamedNode),
+    /// The selected SPARQL version is not available in this build
+    #[error("SPARQL {0} is not supported by this build")]
+    UnsupportedSparqlVersion(SparqlVersion),
+    /// An RDF term is not available in the selected SPARQL version
+    #[error("The term {term} is not supported by SPARQL {version}")]
+    IncompatibleTerm { version: SparqlVersion, term: Term },
     #[cfg(feature = "sparql-12")]
     #[error("The SPARQL dataset returned a triple term that is not a valid RDF 1.2 term")]
     InvalidStorageTripleTerm,

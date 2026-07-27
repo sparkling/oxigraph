@@ -111,8 +111,16 @@ fuzz_target!(|data: &[u8]| {
         let mut dataset_with_split = quads.clone().into_iter().collect::<Dataset>();
         let mut dataset_without_split =
             quads_without_split.clone().into_iter().collect::<Dataset>();
-        dataset_with_split.canonicalize(CanonicalizationAlgorithm::Unstable);
-        dataset_without_split.canonicalize(CanonicalizationAlgorithm::Unstable);
+        if let Err(error) =
+            dataset_with_split.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+        {
+            unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+        }
+        if let Err(error) = dataset_without_split
+            .canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+        {
+            unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+        }
         assert_eq!(
             dataset_with_split,
             dataset_without_split,
@@ -122,7 +130,11 @@ fuzz_target!(|data: &[u8]| {
         );
         if errors.is_empty() {
             let mut dataset_unchecked = quads_unchecked.clone().into_iter().collect::<Dataset>();
-            dataset_unchecked.canonicalize(CanonicalizationAlgorithm::Unstable);
+            if let Err(error) = dataset_unchecked
+                .canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+            {
+                unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+            }
             assert_eq!(
                 dataset_with_split,
                 dataset_unchecked,

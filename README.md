@@ -27,6 +27,90 @@ Oxigraph implements the following specifications:
 
 Most implementations are nearly fully conformant with the latest recommendations (1.1 for RDF, SPARQL and JSON-LD) with preliminary support for 1.2 RDF and SPARQL drafts.
 
+## Semantic parity extensions
+
+Oxigraph also provides a version-pinned, bounded semantic-parity profile for
+selected RDF 1.2, SPARQL 1.2, SHACL 1.2, RDFS, and OWL 2 RL/RDF behavior. It
+extends the core database without silently broadening an RDF or SPARQL claim:
+unsupported profiles, unsafe rule programs, and unavailable execution modes
+fail closed. This is a defined implementation and evidence scope, not a claim
+of complete Apache Jena portfolio parity or complete W3C family conformance.
+
+The extension includes:
+
+- RDF 1.2 term/version handling and explicit empty named-graph topology across
+  model, I/O, stores, query/update, Graph Store, CLI, Python, and JavaScript
+  surfaces.
+- SPARQL 1.2 syntax/version handling, result-media negotiation, active-dataset
+  semantics, atomic update behavior, service-description disclosure, and
+  protocol/Graph Store validation.
+- `oxdatalog`, an RDF-native bounded Datalog engine with D0 positive recursion,
+  D1 stratified negation, D2 run-once generated terms, limits, cancellation,
+  deterministic provenance, and queryable inferred views.
+- `oxrdfs`, a finite active-vocabulary RDFS 1.2 profile, and `oxowl`, a bounded
+  OWL 2 RL/RDF profile with 78 named rules: 46 Datalog rules and 32 specialized
+  operators.
+- `oxshacl`, a fail-closed SHACL processor surface covering dated Core, Node
+  Expressions, SPARQL, Rules, Compact Syntax, and profile-negotiation roles.
+  Evaluation uses stable read-only snapshots and keeps inferred/report graphs
+  separate from the source store.
+- Source-bound qualification: official-suite lanes, a classified Apache Jena
+  6.1.0 differential, mutation testing, Agentic-QE command coordination, and
+  MetaHarness/Darwin policy-only verification.
+
+Rust consumers enable the corresponding bounded surfaces explicitly:
+
+```toml
+oxigraph = { version = "*", features = ["rdf-12", "datalog", "rdfs", "owl2-rl", "shacl"] }
+```
+
+The current reviewed executable evidence includes 575/575 pinned RDF 1.2
+official cases, 269/269 SPARQL 1.2 cases, 86/86 RDF Dataset Canonicalization
+cases, 519/519 eligible SHACL cases, 98/98 OWL 2 RL/RDF assertions, and a
+76-scenario/198-assertion Jena differential. These counts are evidence for the
+named pinned suites and profiles only. They are not a substitute for every
+normative clause in a W3C document family.
+
+### Documentation and evidence
+
+Use the following documentation as the authority for scope, implementation
+decisions, and verification. The current evidence summary is the quickest
+entry point; the machine-readable ledgers are the source of truth for claims.
+
+- [Current semantic-parity evidence summary](./docs/research/semantic-parity-current-summary.md)
+- [Visual semantic-parity programme report](./docs/research/semantic-parity-programme.html)
+- [Implementation and MetaHarness qualification plan](./docs/plans/semantic-parity-metaharness-plan.md)
+- [Machine-readable conformance ledger](./docs/research/conformance-ledger.json)
+- [Normative requirements inventory](./docs/research/normative-requirements.json)
+- [Standards registry and pinned source revisions](./docs/research/standards-registry.json)
+- [All semantic-parity architecture decision records](./docs/adr/README.md)
+
+The ADRs explain the principal boundaries:
+
+- [Outcome-oriented Apache Jena parity](./docs/adr/0001-outcome-oriented-jena-parity.md),
+  [W3C-first 1.2 parity](./docs/adr/0006-w3c-first-12-parity.md), and the
+  [immutable Jena differential harness](./docs/adr/0012-immutable-broad-jena-harness.md)
+  define compatibility as named observable outcomes rather than an API clone.
+- [RDF-native Datalog](./docs/adr/0002-rdf-native-datalog-engine.md),
+  [OWL 2 RL over Datalog](./docs/adr/0007-owl-profiles-over-datalog.md),
+  [SHACL processor profiles](./docs/adr/0008-shacl-processor-profiles.md), and
+  [snapshot reasoning](./docs/adr/0009-snapshot-reasoning-materialization.md)
+  define the bounded inference and validation architecture.
+- [MetaHarness/Darwin qualification](./docs/adr/0004-metaharness-darwin-qualification.md),
+  [Agentic-QE integration](./docs/adr/0005-agentic-qe-integration.md), and
+  [mutation competence and provenance](./docs/adr/0013-mutation-competence-and-provenance.md)
+  define how evidence is produced without letting orchestration rewrite the
+  semantic oracle.
+- [Dataset graph topology](./docs/adr/0014-rdf-dataset-graph-topology.md) and
+  [parallel bulk-load failure semantics](./docs/adr/0015-parallel-bulk-load-failure-semantics.md)
+  document the cross-interface storage and operational guarantees.
+
+The [normative requirements inventory](./docs/research/normative-requirements.json)
+keeps broad claims honest: it records open, blocked, and draft-unclear
+obligations separately from passing executable lanes. Consult it before
+describing the profile as complete RDF 1.2, SPARQL 1.2, SHACL 1.2, or Apache
+Jena parity.
+
 It is split into multiple parts:
 
 - [The database written as a Rust library](./lib/oxigraph). Its source code is in the `lib` directory.

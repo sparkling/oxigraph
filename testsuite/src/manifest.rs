@@ -19,6 +19,9 @@ pub struct Test {
     pub service_data: Vec<(OxString, OxString)>,
     pub result: Option<OxString>,
     pub result_graph_data: Vec<(NamedNode, OxString)>,
+    pub entailment_regime: Option<OxString>,
+    pub recognized_datatypes: Vec<NamedNode>,
+    pub unrecognized_datatypes: Vec<NamedNode>,
     pub option: HashMap<NamedNode, Term>,
 }
 
@@ -304,6 +307,18 @@ impl TestManifest {
             {
                 option.insert(rdfc::HASH_ALGORITHM, hash_algorithm);
             }
+            let entailment_regime = match self
+                .graph
+                .object_for_subject_predicate(&test_node, &mf::ENTAILMENT_REGIME)
+            {
+                Some(Term::Literal(regime)) => Some(regime.into_value()),
+                Some(term) => bail!("Invalid entailment regime for {test_node}: {term}"),
+                None => None,
+            };
+            let recognized_datatypes =
+                self.named_node_list_for(&test_node, &mf::RECOGNIZED_DATATYPES)?;
+            let unrecognized_datatypes =
+                self.named_node_list_for(&test_node, &mf::UNRECOGNIZED_DATATYPES)?;
             return Ok(Some(Test {
                 id: test_node,
                 kinds,
@@ -317,8 +332,29 @@ impl TestManifest {
                 service_data,
                 result,
                 result_graph_data,
+                entailment_regime,
+                recognized_datatypes,
+                unrecognized_datatypes,
                 option,
             }));
+        }
+    }
+
+    fn named_node_list_for(
+        &self,
+        subject: &NamedNode,
+        predicate: &NamedNode,
+    ) -> Result<Vec<NamedNode>> {
+        match self.graph.object_for_subject_predicate(subject, predicate) {
+            Some(Term::BlankNode(list)) => RdfListIterator::iter(&self.graph, list.into())
+                .map(|term| match term {
+                    Term::NamedNode(node) => Ok(node),
+                    _ => bail!("{predicate} entries must be named nodes"),
+                })
+                .collect(),
+            Some(Term::NamedNode(node)) if node == rdf::NIL => Ok(Vec::new()),
+            Some(term) => bail!("{predicate} must be an RDF list, found {term}"),
+            None => Ok(Vec::new()),
         }
     }
 

@@ -1,6 +1,6 @@
 #[cfg(feature = "http-client")]
 use crate::io::{RdfFormat, RdfParser};
-use crate::model::{GraphName as OxGraphName, OxString, Quad as OxQuad};
+use crate::model::{Dataset as OxDataset, GraphName as OxGraphName, OxString, Quad as OxQuad};
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
 #[cfg(feature = "http-client")]
@@ -12,6 +12,7 @@ use oxiri::Iri;
 use oxrdfio::LoadedDocument;
 use rustc_hash::FxHashMap;
 use spareval::{DeleteInsertQuad, QueryDatasetSpecification, QueryEvaluator};
+use spargebra::SparqlVersion;
 use spargebra::algebra::GraphTarget;
 use spargebra::term::{BlankNode, GraphName, GroundQuad, GroundTerm, NamedOrBlankNode, Quad, Term};
 #[cfg(feature = "rdf-12")]
@@ -51,6 +52,12 @@ pub struct PreparedSparqlUpdate {
 }
 
 impl PreparedSparqlUpdate {
+    /// The SPARQL semantic feature mode used during evaluation.
+    #[inline]
+    pub fn version(&self) -> SparqlVersion {
+        self.evaluator.version()
+    }
+
     pub(crate) fn new(
         evaluator: QueryEvaluator,
         update: Update,
@@ -250,6 +257,7 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
         updates: &[GraphUpdateOperation],
         using_datasets: &[Option<QueryDatasetSpecification>],
     ) -> Result<(), UpdateEvaluationError> {
+        validate_update_terms(&self.query_evaluator, updates)?;
         for (update, using_dataset) in updates.iter().zip(using_datasets) {
             self.eval(update, using_dataset)?;
         }
@@ -320,15 +328,28 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
     }
 
     fn eval_load(&mut self, operation: &LoadOperation) -> Result<(), UpdateEvaluationError> {
-        if let Err(error) = eval_load(
+        let loaded = eval_load(
             operation,
+            self.query_evaluator.version(),
             #[cfg(feature = "http-client")]
             &self.client,
-            |q| self.transaction.insert(q),
-        ) {
-            if operation.silent { Ok(()) } else { Err(error) }
-        } else {
-            Ok(())
+        )
+        .and_then(|loaded| validate_loaded_terms(&self.query_evaluator, loaded));
+        match loaded {
+            Ok(loaded) => {
+                if let Some(graph_name) = loaded.named_graph_to_create {
+                    self.transaction.insert_named_graph(graph_name.into());
+                }
+                for graph_name in loaded.dataset.named_graphs() {
+                    self.transaction.insert_named_graph(graph_name);
+                }
+                for quad in &loaded.dataset {
+                    self.transaction.insert(quad);
+                }
+                Ok(())
+            }
+            Err(_) if operation.silent => Ok(()),
+            Err(error) => Err(error),
         }
     }
 
@@ -438,6 +459,7 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
         updates: &[GraphUpdateOperation],
         using_datasets: &[Option<QueryDatasetSpecification>],
     ) -> Result<(), UpdateEvaluationError> {
+        validate_update_terms(&self.query_evaluator, updates)?;
         for (update, using_dataset) in updates.iter().zip(using_datasets) {
             self.eval(update, using_dataset)?;
             self.storage_for_initial_read.take(); // We unset the initial reader because we have likely mutated the store state.
@@ -514,15 +536,28 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
     }
 
     fn eval_load(&mut self, operation: &LoadOperation) -> Result<(), UpdateEvaluationError> {
-        if let Err(error) = eval_load(
+        let loaded = eval_load(
             operation,
+            self.query_evaluator.version(),
             #[cfg(feature = "http-client")]
             &self.client,
-            |q| self.transaction.insert(q),
-        ) {
-            if operation.silent { Ok(()) } else { Err(error) }
-        } else {
-            Ok(())
+        )
+        .and_then(|loaded| validate_loaded_terms(&self.query_evaluator, loaded));
+        match loaded {
+            Ok(loaded) => {
+                if let Some(graph_name) = loaded.named_graph_to_create {
+                    self.transaction.insert_named_graph(graph_name.into());
+                }
+                for graph_name in loaded.dataset.named_graphs() {
+                    self.transaction.insert_named_graph(graph_name);
+                }
+                for quad in &loaded.dataset {
+                    self.transaction.insert(quad);
+                }
+                Ok(())
+            }
+            Err(_) if operation.silent => Ok(()),
+            Err(error) => Err(error),
         }
     }
 
@@ -578,61 +613,106 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
     }
 }
 
+fn validate_update_terms(
+    evaluator: &QueryEvaluator,
+    updates: &[GraphUpdateOperation],
+) -> Result<(), UpdateEvaluationError> {
+    for update in updates {
+        match update {
+            GraphUpdateOperation::InsertData(operation) => {
+                for quad in &operation.data {
+                    evaluator.ensure_term_compatible(&quad.object)?;
+                }
+            }
+            GraphUpdateOperation::DeleteData(operation) => {
+                for quad in &operation.data {
+                    evaluator.ensure_term_compatible(&quad.object.clone().into())?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+struct LoadedUpdate {
+    dataset: OxDataset,
+    named_graph_to_create: Option<spargebra::term::NamedNode>,
+}
+
+fn validate_loaded_terms(
+    evaluator: &QueryEvaluator,
+    loaded: LoadedUpdate,
+) -> Result<LoadedUpdate, UpdateEvaluationError> {
+    for quad in &loaded.dataset {
+        evaluator.ensure_term_compatible(&quad.object)?;
+    }
+    Ok(loaded)
+}
+
 #[cfg(feature = "http-client")]
 fn eval_load(
     operation: &LoadOperation,
+    version: SparqlVersion,
     client: &Client,
-    mut insert: impl FnMut(OxQuad),
-) -> Result<(), UpdateEvaluationError> {
+) -> Result<LoadedUpdate, UpdateEvaluationError> {
     let (content_type, body) = client
         .get(
             operation.source.as_str(),
-            "application/n-triples, text/turtle, application/rdf+xml",
+            "application/n-triples, text/turtle, application/rdf+xml, application/n-quads, application/trig, application/ld+json",
         )
         .map_err(|e| UpdateEvaluationError::Service(Box::new(e)))?;
-    let format = RdfFormat::from_media_type(&content_type)
-        .ok_or_else(|| UpdateEvaluationError::UnsupportedContentType(content_type))?;
-    let to_graph_name = match &operation.destination {
-        GraphName::NamedNode(graph_name) => graph_name.clone().into(),
-        GraphName::DefaultGraph => OxGraphName::DefaultGraph,
-    };
-    let client = client.clone();
-    let parser = RdfParser::from_format(format)
+    let parser = RdfParser::from_media_type(&content_type)
+        .map_err(|_| UpdateEvaluationError::UnsupportedContentType(content_type.clone()))?;
+    let parser = parser
         .rename_blank_nodes()
-        .without_named_graphs()
-        .with_default_graph(to_graph_name)
         .with_base_iri(operation.source.as_str())
         .map_err(|e| {
             UpdateEvaluationError::Unexpected(
                 format!("Invalid URL: {}: {e}", operation.source).into(),
             )
-        })?
-        .for_reader(body)
-        .with_document_loader(move |url| {
-            let (content_type, mut body) = client.get(
-                url,
-                "application/n-triples, text/turtle, application/rdf+xml, application/ld+json",
-            )?;
-            let mut content = Vec::new();
-            body.read_to_end(&mut content)?;
-            Ok(LoadedDocument {
-                url: url.into(),
-                content,
-                format: RdfFormat::from_media_type(&content_type)
-                    .ok_or_else(|| UpdateEvaluationError::UnsupportedContentType(content_type))?,
-            })
-        });
-    for q in parser {
-        insert(q?);
-    }
-    Ok(())
+        })?;
+    let (parser, named_graph_to_create) = match &operation.destination {
+        GraphName::NamedNode(graph_name) => (
+            parser
+                .without_named_graphs()
+                .with_default_graph(graph_name.clone()),
+            Some(graph_name.clone()),
+        ),
+        GraphName::DefaultGraph if version == SparqlVersion::V1_1 => (
+            parser
+                .without_named_graphs()
+                .with_default_graph(OxGraphName::DefaultGraph),
+            None,
+        ),
+        GraphName::DefaultGraph => (parser, None),
+    };
+    let client = client.clone();
+    let parser = parser.for_reader(body).with_document_loader(move |url| {
+        let (content_type, mut body) = client.get(
+            url,
+            "application/n-triples, text/turtle, application/rdf+xml, application/ld+json",
+        )?;
+        let mut content = Vec::new();
+        body.read_to_end(&mut content)?;
+        Ok(LoadedDocument {
+            url: url.into(),
+            content,
+            format: RdfFormat::from_media_type(&content_type)
+                .ok_or_else(|| UpdateEvaluationError::UnsupportedContentType(content_type))?,
+        })
+    });
+    Ok(LoadedUpdate {
+        dataset: parser.collect_dataset()?,
+        named_graph_to_create,
+    })
 }
 
 #[cfg(not(feature = "http-client"))]
 fn eval_load(
     _operation: &LoadOperation,
-    _insert: impl FnMut(OxQuad),
-) -> Result<(), UpdateEvaluationError> {
+    _version: SparqlVersion,
+) -> Result<LoadedUpdate, UpdateEvaluationError> {
     Err(UpdateEvaluationError::Unexpected(
         "HTTP client is not available. Enable the feature 'http-client'".into(),
     ))

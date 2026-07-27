@@ -18,9 +18,11 @@ path = "src/main.rs"
 doc = false
 
 [features]
-default = ["native-tls", "geosparql", "rdf-12"]
+default = ["native-tls", "geosparql", "rdf-12", "rdfs", "owl2-rl"]
 native-tls = ["oxigraph/http-client-native-tls"]
 rdf-12 = ["oxigraph/rdf-12"]
+rdfs = ["rdf-12", "oxigraph/rdfs"]
+owl2-rl = ["oxigraph/owl2-rl"]
 rocksdb-pkg-config = ["oxigraph/rocksdb-pkg-config"]
 rustls-native = ["oxigraph/http-client-rustls-native"]
 rustls-webpki = ["oxigraph/http-client-rustls-webpki"]
@@ -30,11 +32,13 @@ geosparql = ["dep:spargeo", "oxigraph/geosparql"]
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
 flate2.workspace = true
+memchr.workspace = true
 oxhttp = { workspace = true, features = ["flate2"] }
 oxigraph = { workspace = true, default-features = true }
 oxiri.workspace = true
 rand.workspace = true
 rayon-core.workspace = true
+sha2.workspace = true
 spargeo = { workspace = true, optional = true }
 url.workspace = true
 

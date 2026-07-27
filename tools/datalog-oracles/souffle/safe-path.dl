@@ -1,0 +1,14 @@
+.decl edge(from:symbol, to:symbol)
+.input edge
+
+.decl banned(node:symbol)
+.input banned
+
+.decl safe_edge(from:symbol, to:symbol)
+safe_edge(from, to) :- edge(from, to), !banned(to).
+
+.decl path(from:symbol, to:symbol)
+path(from, to) :- safe_edge(from, to).
+path(from, to) :- path(from, middle), safe_edge(middle, to).
+
+.output path(filename="path.tsv", delimiter="\t")

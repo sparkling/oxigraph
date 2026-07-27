@@ -31,7 +31,6 @@ fuzz_target!(|data: sparql_smith::Update| {
             .execute();
         disk_store.validate().unwrap();
         let mut dataset_disk_with_opt = disk_store.iter().collect::<Result<Dataset, _>>().unwrap();
-        dataset_disk_with_opt.canonicalize(CanonicalizationAlgorithm::Unstable);
 
         let memory_store = Store::new().unwrap();
         let memory_without_opt = SparqlEvaluator::new()
@@ -42,13 +41,25 @@ fuzz_target!(|data: sparql_smith::Update| {
         memory_store.validate().unwrap();
         let mut dataset_memory_without_opt =
             memory_store.iter().collect::<Result<Dataset, _>>().unwrap();
-        dataset_memory_without_opt.canonicalize(CanonicalizationAlgorithm::Unstable);
 
         assert_eq!(
             disk_with_opt.is_ok(),
             memory_without_opt.is_ok(),
             "Worked and failed depending on using optimizations: {disk_with_opt:?} {memory_without_opt:?}"
         );
+        let disk_canonicalization = dataset_disk_with_opt
+            .canonicalize_with_n_degree_call_limit(CanonicalizationAlgorithm::Unstable, 10_000);
+        let memory_canonicalization = dataset_memory_without_opt
+            .canonicalize_with_n_degree_call_limit(CanonicalizationAlgorithm::Unstable, 10_000);
+        assert_eq!(
+            disk_canonicalization.is_ok(),
+            memory_canonicalization.is_ok(),
+            "Canonicalization exhausted its comparison budget for only one evaluator: \
+             {disk_canonicalization:?} {memory_canonicalization:?}"
+        );
+        if disk_canonicalization.is_err() {
+            return;
+        }
         assert_eq!(
             dataset_disk_with_opt, dataset_memory_without_opt,
             "With optimizations on disk:\n{dataset_disk_with_opt}\nWithout optimizations in memory:\n{dataset_memory_without_opt}"

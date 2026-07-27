@@ -9,6 +9,22 @@ pub struct Args {
     pub command: Command,
 }
 
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum)]
+pub enum EntailmentProfile {
+    /// Standard SPARQL simple entailment
+    #[default]
+    Simple,
+    /// Sound finite RDF 1.2 active-vocabulary materialization
+    #[value(name = "rdf-1.2-finite")]
+    Rdf12Finite,
+    /// Sound finite RDFS 1.2 active-vocabulary materialization
+    #[value(name = "rdfs-1.2-finite")]
+    Rdfs12Finite,
+    /// Sound bounded OWL 2 RL/RDF materialization
+    #[value(name = "owl2-rl-rdf-bounded")]
+    Owl2RlRdfBounded,
+}
+
 #[derive(Subcommand)]
 pub enum Command {
     /// Start Oxigraph HTTP server in read-write mode
@@ -29,6 +45,12 @@ pub enum Command {
         /// This is equivalent as setting the union-default-graph option in all SPARQL queries
         #[arg(long)]
         union_default_graph: bool,
+        /// Query-time entailment profile
+        ///
+        /// Non-simple choices are bounded materialization profiles, not claims
+        /// of complete W3C SPARQL entailment-regime conformance.
+        #[arg(long, value_enum, default_value = "simple")]
+        entailment: EntailmentProfile,
         /// Timeout for request processing in seconds
         ///
         /// Currently only used for SPARQL queries
@@ -56,6 +78,12 @@ pub enum Command {
         /// This is equivalent as setting the union-default-graph option in all SPARQL queries
         #[arg(long)]
         union_default_graph: bool,
+        /// Query-time entailment profile
+        ///
+        /// Non-simple choices are bounded materialization profiles, not claims
+        /// of complete W3C SPARQL entailment-regime conformance.
+        #[arg(long, value_enum, default_value = "simple")]
+        entailment: EntailmentProfile,
         /// Timeout for request processing in seconds
         ///
         /// Currently only used for SPARQL queries
@@ -87,7 +115,11 @@ pub enum Command {
     ///
     /// Feel free to enable the --lenient option if you know your input is valid to get better performances, or if you want to load slightly invalid files like Wikidata dumps.
     ///
-    /// Files are loaded atomically, either the file is fully loaded into the store or not at all.
+    /// Each file is loaded atomically by default, either the file is fully loaded into the store or not at all.
+    ///
+    /// Multiple files are independent: they are loaded in parallel, successful files remain committed if
+    /// another file fails, and the command reports all file failures before exiting unsuccessfully.
+    /// With `--non-atomic`, a failed file may also leave partially imported data.
     Load {
         /// Directory in which Oxigraph data are persisted
         #[arg(short, long, value_hint = ValueHint::DirPath)]
@@ -207,6 +239,12 @@ pub enum Command {
         /// If the SPARQL queries should look for triples in all the dataset graphs by default (ie. without `GRAPH` operations)
         #[arg(long)]
         union_default_graph: bool,
+        /// Query-time entailment profile
+        ///
+        /// Exact/full RDF, RDFS, and OWL regime names are intentionally not
+        /// accepted; select one of the explicitly bounded profiles.
+        #[arg(long, value_enum, default_value = "simple")]
+        entailment: EntailmentProfile,
     },
     /// Execute a SPARQL update against the store
     Update {

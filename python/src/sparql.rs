@@ -1,16 +1,15 @@
 use crate::io::*;
 use crate::model::*;
 use crate::store::map_storage_error;
-use oxigraph::io::RdfSerializer;
 use oxigraph::model::Term;
 use oxigraph::sparql::results::{
-    QueryResultsFormat, QueryResultsParseError, QueryResultsParser, QueryResultsSerializer,
-    ReaderQueryResultsParserOutput, ReaderSolutionsParser,
+    QueryResultsFormat, QueryResultsParseError, ReaderQueryResultsParserOutput,
+    ReaderSolutionsParser,
 };
 use oxigraph::sparql::{
-    AggregateFunctionAccumulator, PreparedSparqlQuery, QueryEvaluationError, QueryResults,
-    QuerySolution, QuerySolutionIter, QueryTripleIter, SparqlEvaluator, SparqlSyntaxError,
-    UpdateEvaluationError, Variable,
+    AggregateFunctionAccumulator, PreparedSparqlQuery, QueryEntailment, QueryEvaluationError,
+    QueryResults, QuerySolution, QuerySolutionIter, QueryTripleIter, SparqlEvaluator,
+    SparqlSyntaxError, SparqlVersion, UpdateEvaluationError, Variable,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyRuntimeError, PySyntaxError, PyValueError};
@@ -23,6 +22,219 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::vec::IntoIter;
 use std::{fmt, io};
+
+/// A SPARQL language version used when a query or update has no in-band
+/// ``VERSION`` declaration.
+///
+/// :param value: ``1.1``, ``1.2-basic``, or ``1.2``.
+/// :type value: str
+#[pyclass(
+    frozen,
+    name = "SparqlVersion",
+    module = "pyoxigraph",
+    eq,
+    hash,
+    str,
+    from_py_object
+)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PySparqlVersion {
+    inner: SparqlVersion,
+}
+
+impl From<&PySparqlVersion> for SparqlVersion {
+    fn from(version: &PySparqlVersion) -> Self {
+        version.inner
+    }
+}
+
+#[pymethods]
+impl PySparqlVersion {
+    /// SPARQL 1.1.
+    #[classattr]
+    const V1_1: Self = Self {
+        inner: SparqlVersion::V1_1,
+    };
+
+    /// SPARQL 1.2 Basic, excluding triple terms.
+    #[classattr]
+    const V1_2_BASIC: Self = Self {
+        inner: SparqlVersion::V1_2Basic,
+    };
+
+    /// Full SPARQL 1.2.
+    #[classattr]
+    const V1_2: Self = Self {
+        inner: SparqlVersion::V1_2,
+    };
+
+    #[new]
+    #[pyo3(signature = (value, *))]
+    fn new(value: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: match value {
+                "1.1" => SparqlVersion::V1_1,
+                "1.2-basic" => SparqlVersion::V1_2Basic,
+                "1.2" => SparqlVersion::V1_2,
+                _ => {
+                    return Err(PyValueError::new_err(format!(
+                        "Unsupported SPARQL version '{value}'; expected '1.1', '1.2-basic', or '1.2'"
+                    )));
+                }
+            },
+        })
+    }
+
+    /// :return: the standard SPARQL version label.
+    /// :rtype: str
+    #[getter]
+    fn value(&self) -> &'static str {
+        self.inner.as_str()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("<SparqlVersion {}>", self.value())
+    }
+
+    /// :rtype: typing.Any
+    fn __getnewargs__(&self) -> (&str,) {
+        (self.value(),)
+    }
+
+    /// :rtype: SparqlVersion
+    fn __copy__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// :type memo: typing.Any
+    /// :rtype: SparqlVersion
+    #[expect(unused_variables)]
+    fn __deepcopy__<'a>(slf: PyRef<'a, Self>, memo: &'_ Bound<'_, PyAny>) -> PyRef<'a, Self> {
+        slf
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("value",)
+    }
+}
+
+impl fmt::Display for PySparqlVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+/// A query-time entailment profile.
+///
+/// Non-simple profiles are explicitly bounded materialization profiles and
+/// do not claim complete W3C entailment-regime conformance.
+///
+/// :param value: a supported bounded profile label.
+/// :type value: str
+#[pyclass(
+    frozen,
+    name = "QueryEntailment",
+    module = "pyoxigraph",
+    eq,
+    hash,
+    str,
+    from_py_object
+)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PyQueryEntailment {
+    inner: QueryEntailment,
+}
+
+impl From<&PyQueryEntailment> for QueryEntailment {
+    fn from(entailment: &PyQueryEntailment) -> Self {
+        entailment.inner
+    }
+}
+
+#[pymethods]
+impl PyQueryEntailment {
+    /// Standard SPARQL simple entailment.
+    #[classattr]
+    const SIMPLE: Self = Self {
+        inner: QueryEntailment::Simple,
+    };
+
+    /// Sound finite RDF 1.2 active-vocabulary materialization.
+    #[classattr]
+    const RDF_1_2_FINITE: Self = Self {
+        inner: QueryEntailment::Rdf12Finite,
+    };
+
+    /// Sound finite RDFS 1.2 active-vocabulary materialization.
+    #[classattr]
+    const RDFS_1_2_FINITE: Self = Self {
+        inner: QueryEntailment::Rdfs12Finite,
+    };
+
+    /// Sound bounded OWL 2 RL/RDF materialization.
+    #[classattr]
+    const OWL2_RL_RDF_BOUNDED: Self = Self {
+        inner: QueryEntailment::Owl2RlRdfBounded,
+    };
+
+    #[new]
+    #[pyo3(signature = (value, *))]
+    fn new(value: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: match value {
+                "simple" => QueryEntailment::Simple,
+                "rdf-1.2-finite" => QueryEntailment::Rdf12Finite,
+                "rdfs-1.2-finite" => QueryEntailment::Rdfs12Finite,
+                "owl2-rl-rdf-bounded" => QueryEntailment::Owl2RlRdfBounded,
+                _ => {
+                    return Err(PyValueError::new_err(format!(
+                        "Unsupported query entailment profile '{value}'"
+                    )));
+                }
+            },
+        })
+    }
+
+    /// :return: the bounded profile label.
+    /// :rtype: str
+    #[getter]
+    fn value(&self) -> String {
+        self.inner.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("<QueryEntailment {}>", self.inner)
+    }
+
+    /// :rtype: typing.Any
+    fn __getnewargs__(&self) -> (String,) {
+        (self.value(),)
+    }
+
+    /// :rtype: QueryEntailment
+    fn __copy__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// :type memo: typing.Any
+    /// :rtype: QueryEntailment
+    #[expect(unused_variables)]
+    fn __deepcopy__<'a>(slf: PyRef<'a, Self>, memo: &'_ Bound<'_, PyAny>) -> PyRef<'a, Self> {
+        slf
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("value",)
+    }
+}
+
+impl fmt::Display for PyQueryEntailment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
 
 pub fn prepare_sparql_query(
     evaluator: SparqlEvaluator,
@@ -294,7 +506,6 @@ pub struct PyQuerySolutions {
     inner: PyQuerySolutionsVariant,
 }
 
-#[expect(clippy::large_enum_variant)]
 enum PyQuerySolutionsVariant {
     Query(UngilQuerySolutionIter),
     Reader {
@@ -345,6 +556,8 @@ impl PyQuerySolutions {
     /// :type output: typing.IO[bytes] or str or os.PathLike[str] or None, optional
     /// :param format: the format of the query results serialization. If :py:const:`None`, the format is guessed from the file name extension.
     /// :type format: QueryResultsFormat or None, optional
+    /// :param rdf_version: the RDF version used for the query results serialization.
+    /// :type rdf_version: RdfVersion or None, optional
     /// :rtype: bytes or None
     /// :raises ValueError: if the format is not supported.
     /// :raises OSError: if a system error happens while writing the file.
@@ -355,18 +568,19 @@ impl PyQuerySolutions {
     /// >>> results.serialize(format=QueryResultsFormat.JSON)
     /// b'{"head":{"vars":["s","p","o"]},"results":{"bindings":[{"s":{"type":"uri","value":"http://example.com"},"p":{"type":"uri","value":"http://example.com/p"},"o":{"type":"literal","value":"1"}}]}}'
     #[expect(clippy::doc_link_with_quotes)]
-    #[pyo3(signature = (output = None, format = None))]
+    #[pyo3(signature = (output = None, format = None, *, rdf_version = None))]
     fn serialize(
         &mut self,
         output: Option<PyWritableOutput>,
         format: Option<PyQueryResultsFormat>,
+        rdf_version: Option<PyRdfVersion>,
         py: Python<'_>,
     ) -> PyResult<Option<Vec<u8>>> {
         PyWritable::do_write(
             |output, file_path| {
                 let format = lookup_query_results_format(format, file_path.as_deref())?;
                 py.detach(|| {
-                    let mut serializer = QueryResultsSerializer::from_format(format)
+                    let mut serializer = query_results_serializer(format, rdf_version)?
                         .serialize_solutions_to_writer(
                             output,
                             match &self.inner {
@@ -449,6 +663,8 @@ impl PyQueryBoolean {
     /// :type output: typing.IO[bytes] or str or os.PathLike[str] or None, optional
     /// :param format: the format of the query results serialization. If :py:const:`None`, the format is guessed from the file name extension.
     /// :type format: QueryResultsFormat or None, optional
+    /// :param rdf_version: the RDF version used for the query results serialization.
+    /// :type rdf_version: RdfVersion or None, optional
     /// :rtype: bytes or None
     /// :raises ValueError: if the format is not supported.
     /// :raises OSError: if a system error happens while writing the file.
@@ -458,18 +674,19 @@ impl PyQueryBoolean {
     /// >>> results = store.query("ASK { ?s ?p ?o }")
     /// >>> results.serialize(format=QueryResultsFormat.JSON)
     /// b'{"head":{},"boolean":true}'
-    #[pyo3(signature = (output = None, format = None))]
+    #[pyo3(signature = (output = None, format = None, *, rdf_version = None))]
     fn serialize(
         &self,
         output: Option<PyWritableOutput>,
         format: Option<PyQueryResultsFormat>,
+        rdf_version: Option<PyRdfVersion>,
         py: Python<'_>,
     ) -> PyResult<Option<Vec<u8>>> {
         PyWritable::do_write(
             |output, file_path| {
                 let format = lookup_query_results_format(format, file_path.as_deref())?;
                 py.detach(|| {
-                    Ok(QueryResultsSerializer::from_format(format)
+                    Ok(query_results_serializer(format, rdf_version)?
                         .serialize_boolean_to_writer(output, self.inner)?)
                 })
             },
@@ -522,6 +739,8 @@ impl PyQueryTriples {
     /// :type output: typing.IO[bytes] or str or os.PathLike[str] or None, optional
     /// :param format: the format of the RDF serialization. If :py:const:`None`, the format is guessed from the file name extension.
     /// :type format: RdfFormat or None, optional
+    /// :param rdf_version: the RDF version used for the serialization.
+    /// :type rdf_version: RdfVersion or None, optional
     /// :rtype: bytes or None
     /// :raises ValueError: if the format is not supported.
     /// :raises OSError: if a system error happens while writing the file.
@@ -531,18 +750,19 @@ impl PyQueryTriples {
     /// >>> results = store.query("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
     /// >>> results.serialize(format=RdfFormat.N_TRIPLES)
     /// b'<http://example.com> <http://example.com/p> "1" .\n'
-    #[pyo3(signature = (output = None, format = None))]
+    #[pyo3(signature = (output = None, format = None, *, rdf_version = None))]
     fn serialize(
         &mut self,
         output: Option<PyWritableOutput>,
         format: Option<PyRdfFormat>,
+        rdf_version: Option<PyRdfVersion>,
         py: Python<'_>,
     ) -> PyResult<Option<Vec<u8>>> {
         PyWritable::do_write(
             |output, file_path| {
                 let format = lookup_rdf_format(format, file_path.as_deref())?;
                 py.detach(move || {
-                    let mut serializer = RdfSerializer::from_format(format).for_writer(output);
+                    let mut serializer = rdf_serializer(format, rdf_version)?.for_writer(output);
                     for triple in &mut self.inner.0 {
                         serializer.serialize_triple(&triple.map_err(map_evaluation_error)?)?;
                     }
@@ -581,6 +801,8 @@ impl PyQueryTriples {
 /// :type format: QueryResultsFormat or None, optional
 /// :param path: The file path to read from. Replaces the ``input`` parameter.
 /// :type path: str or os.PathLike[str] or None, optional
+/// :param rdf_version: the RDF version used to constrain query-results parsing.
+/// :type rdf_version: RdfVersion or None, optional
 /// :return: an iterator of :py:class:`QuerySolution` or a :py:class:`bool`.
 /// :rtype: QuerySolutions or QueryBoolean
 /// :raises ValueError: if the format is not supported.
@@ -593,16 +815,17 @@ impl PyQueryTriples {
 /// >>> parse_query_results('{"head":{},"boolean":true}', QueryResultsFormat.JSON)
 /// <QueryBoolean true>
 #[pyfunction]
-#[pyo3(signature = (input = None, format = None, *, path = None))]
+#[pyo3(signature = (input = None, format = None, *, path = None, rdf_version = None))]
 pub fn parse_query_results(
     input: Option<PyReadableInput>,
     format: Option<PyQueryResultsFormat>,
     path: Option<PathBuf>,
+    rdf_version: Option<PyRdfVersion>,
     py: Python<'_>,
 ) -> PyResult<Bound<'_, PyAny>> {
     let input = PyReadable::from_args(&path, input, py)?;
     let format = lookup_query_results_format(format, path.as_deref())?;
-    let results = QueryResultsParser::from_format(format)
+    let results = query_results_parser(format, rdf_version)?
         .for_reader(input)
         .map_err(|e| map_query_results_parse_error(e, path.clone()))?;
     match results {

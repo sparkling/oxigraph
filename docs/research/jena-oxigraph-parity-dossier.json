@@ -1,0 +1,252 @@
+{
+  "schema_version": "1.0",
+  "dossier_id": "jena-oxigraph-parity-2026-07-26",
+  "artifact_role": "Historical pre-programme capability baseline; absent/partial labels are not current implementation claims.",
+  "superseded_by": ["conformance-ledger.json", "../plans/semantic-parity-metaharness-plan.md"],
+  "generated_at": "2026-07-26T13:41:46+01:00",
+  "objective": "Extend Oxigraph toward evidence-based Apache Jena capability parity while preserving Oxigraph's safety, standards conformance, performance, embeddability, and cross-language strengths.",
+  "scope_rule": "Target observable outcomes and standards behavior, not Java package or heading parity.",
+  "ruflo": {
+    "plugin": "ruflo-goals v0.2.0",
+    "brain_guidance": "ruvnet/ruflo:v3/docs/adr/ADR-099-dossier-investigator-recursive-parallel-research.md",
+    "workflows": [
+      "goal-plan",
+      "deep-research",
+      "dossier-collect",
+      "research-synthesize",
+      "horizon-track"
+    ],
+    "goal_ids": {
+      "programme": "task-1785068929720-qya1gy",
+      "jena_research": "task-1785068939935-w063n4",
+      "oxigraph_research": "task-1785068940629-ub5ebj",
+      "synthesis": "task-1785068949717-iy54ld",
+      "implementation": "task-1785068961259-9plrvf",
+      "verification": "task-1785068969487-0kv6n8"
+    },
+    "namespaces": [
+      "goals-research",
+      "goals-research-sources",
+      "goals-horizons",
+      "goap-plans",
+      "research-synthesis",
+      "dossier"
+    ]
+  },
+  "subjects": {
+    "jena": {
+      "official_release": "6.1.0",
+      "runtime": "Java 21 or later",
+      "observed_source_commit": "c33c58490f063ef61146a9e460682ddcf57fc5ed",
+      "source_observed_at": "2026-07-26"
+    },
+    "oxigraph": {
+      "official_released_crate": "0.5.9",
+      "released_at": "2026-06-18",
+      "workspace_version": "0.6.0-dev",
+      "observed_source_commit": "79554fa05d5138de6559d67ced70c31b15b64b39",
+      "source_observed_at": "2026-07-26"
+    }
+  },
+  "sources": [
+    {
+      "id": "jena-release",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/download/",
+      "supports": ["Jena 6.1.0", "Java 21+", "distribution contents"]
+    },
+    {
+      "id": "jena-overview",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/documentation/index.html",
+      "supports": ["Jena subsystem inventory"]
+    },
+    {
+      "id": "jena-architecture",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/about_jena/architecture.html",
+      "supports": ["Model/Graph split", "inference", "ontology", "Fuseki"]
+    },
+    {
+      "id": "jena-shacl",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/documentation/shacl/",
+      "supports": ["SHACL Core", "SHACL SPARQL", "SHACL-C", "Fuseki operation"]
+    },
+    {
+      "id": "jena-shex",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/documentation/shex/",
+      "supports": ["ShExC parser and validator", "documented limitations"]
+    },
+    {
+      "id": "jena-inference",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/documentation/inference/index.html",
+      "supports": ["RDFS", "OWL subsets", "custom forward/backward/hybrid rules"]
+    },
+    {
+      "id": "jena-fuseki",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/documentation/fuseki2/",
+      "supports": ["SPARQL server", "Graph Store", "modules", "security", "metrics"]
+    },
+    {
+      "id": "jena-tdb2",
+      "kind": "official-documentation",
+      "url": "https://jena.apache.org/documentation/tdb2/",
+      "supports": ["transactional persistent store"]
+    },
+    {
+      "id": "jena-geosparql",
+      "kind": "official-documentation-and-source",
+      "url": "https://jena.apache.org/documentation/geosparql/",
+      "source_path": "jena-geosparql/src/main/java/org/apache/jena/geosparql/geof/nontopological/filter_functions/BoundaryFF.java",
+      "supports": ["GeoSPARQL", "reference boundary implementation"]
+    },
+    {
+      "id": "ogc-geosparql",
+      "kind": "normative-standard",
+      "url": "https://docs.ogc.org/is/22-047r1/22-047r1.html",
+      "supports": ["GeoSPARQL 1.1 requirement 40", "geof:boundary signature and semantics"]
+    },
+    {
+      "id": "oxigraph-repository",
+      "kind": "official-source-and-readme",
+      "url": "https://github.com/oxigraph/oxigraph",
+      "supports": ["architecture", "formats", "SPARQL", "bindings", "partial GeoSPARQL"]
+    },
+    {
+      "id": "oxigraph-release-docs",
+      "kind": "official-package-documentation",
+      "url": "https://docs.rs/oxigraph/latest/oxigraph/",
+      "supports": ["released crate 0.5.9", "release date", "public API"]
+    },
+    {
+      "id": "oxigraph-local",
+      "kind": "observed-source",
+      "path": "/Users/henrik/source/oxigraph",
+      "commit": "79554fa05d5138de6559d67ced70c31b15b64b39",
+      "supports": ["workspace 0.6.0-dev", "module inventory", "implemented boundary slice"]
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-reference-portfolio",
+      "statement": "Jena is a portfolio of interoperating RDF subsystems, not a single database API.",
+      "confidence": "high",
+      "evidence": ["jena-overview", "jena-architecture"]
+    },
+    {
+      "id": "claim-core-overlap",
+      "statement": "Oxigraph already overlaps strongly with Jena in RDF storage, standards I/O, SPARQL query/update/federation, transactions, and HTTP protocols.",
+      "confidence": "high",
+      "evidence": ["jena-overview", "jena-tdb2", "jena-fuseki", "oxigraph-repository"]
+    },
+    {
+      "id": "claim-largest-gaps",
+      "statement": "The largest outcome gaps are semantic validation, reasoning, ontology ergonomics, text indexing, and operational extension depth.",
+      "confidence": "high",
+      "evidence": ["jena-shacl", "jena-shex", "jena-inference", "jena-overview", "oxigraph-local"]
+    },
+    {
+      "id": "claim-no-single-percent",
+      "statement": "A single parity percentage would hide materially different conformance and risk levels; domain states and executable gates are the appropriate measure.",
+      "confidence": "high",
+      "evidence": ["jena-overview", "oxigraph-local"]
+    },
+    {
+      "id": "claim-boundary-gap",
+      "statement": "GeoSPARQL 1.1 requires geof:boundary, Jena implements it, and the observed Oxigraph spargeo inventory marked it missing before this change.",
+      "confidence": "high",
+      "evidence": ["ogc-geosparql", "jena-geosparql", "oxigraph-local"]
+    }
+  ],
+  "capability_matrix": [
+    {"domain": "RDF terms, graphs, datasets", "jena": "rich Model and Graph APIs", "oxigraph": "lean term, quad, dataset, and Store APIs", "state": "strong", "priority": "preserve"},
+    {"domain": "RDF parsing and serialization", "jena": "RIOT multi-format I/O", "oxigraph": "Turtle/TriG/N-Triples/N-Quads/RDF/XML/JSON-LD", "state": "strong", "priority": "preserve"},
+    {"domain": "SPARQL query/update/federation", "jena": "ARQ", "oxigraph": "spargebra/spareval/sparopt", "state": "strong", "priority": "preserve"},
+    {"domain": "Query optimizer and extension seams", "jena": "ARQ algebra, stages, functions, property functions", "oxigraph": "optimizer and custom functions; fewer extension families", "state": "partial", "priority": "P0"},
+    {"domain": "Persistent storage and transactions", "jena": "TDB2", "oxigraph": "RocksDB plus in-memory Store", "state": "strong", "priority": "preserve"},
+    {"domain": "SPARQL and Graph Store server", "jena": "Fuseki", "oxigraph": "CLI HTTP server", "state": "strong", "priority": "preserve"},
+    {"domain": "Server operations, security, modules", "jena": "Fuseki modules, access control, metrics, UI", "oxigraph": "smaller server and configuration surface", "state": "partial", "priority": "P1"},
+    {"domain": "Unified local/remote client API", "jena": "RDFConnection", "oxigraph": "separate Store and HTTP use", "state": "partial", "priority": "P2"},
+    {"domain": "RDFS/OWL/custom-rule inference", "jena": "pluggable reasoners and rules", "oxigraph": "not present", "state": "absent", "priority": "P0"},
+    {"domain": "Ontology convenience API", "jena": "OntAPI and ontology models", "oxigraph": "not present", "state": "absent", "priority": "P2"},
+    {"domain": "SHACL validation", "jena": "Core, SPARQL, SHACL-C, transaction/server hooks", "oxigraph": "not present", "state": "absent", "priority": "P0"},
+    {"domain": "ShEx validation", "jena": "ShExC parser and validator", "oxigraph": "not present", "state": "absent", "priority": "P2"},
+    {"domain": "Text indexing", "jena": "Lucene-backed text query", "oxigraph": "not present", "state": "absent", "priority": "P1"},
+    {"domain": "GeoSPARQL", "jena": "broad module with indexing and CRS handling", "oxigraph": "partial spargeo function layer", "state": "partial", "priority": "P1"},
+    {"domain": "RDF Patch/change stream", "jena": "RDF Patch", "oxigraph": "not present", "state": "absent", "priority": "P1"},
+    {"domain": "Programmatic query builder", "jena": "QueryBuilder", "oxigraph": "parser/algebra but no builder façade", "state": "absent", "priority": "P2"},
+    {"domain": "Declarative assembly/configuration", "jena": "Assembler RDF recipes", "oxigraph": "not present", "state": "absent", "priority": "P2"},
+    {"domain": "Command-line tool breadth", "jena": "broad RDF/SPARQL/validation/admin suite", "oxigraph": "focused load/dump/query/update/server tooling", "state": "partial", "priority": "P2"},
+    {"domain": "Cross-language and WASM surfaces", "jena": "Java-first", "oxigraph": "Rust, Python, JavaScript/WASM", "state": "oxigraph-advantage", "priority": "preserve"},
+    {"domain": "Canonicalization and RDF/SPARQL 1.2 trajectory", "jena": "standards tracking", "oxigraph": "RDF canonicalization plus preliminary 1.2 support", "state": "oxigraph-advantage", "priority": "preserve"}
+  ],
+  "baseline_counts": {
+    "strong": 5,
+    "partial": 5,
+    "absent": 8,
+    "oxigraph_advantage": 2
+  },
+  "roadmap": [
+    {
+      "tranche": "T0 — evidence and extension gates",
+      "outcomes": ["cross-engine golden corpus", "capability receipts", "extension contracts", "performance and safety budgets"],
+      "exit_gate": "Every parity claim maps to primary evidence and executable tests."
+    },
+    {
+      "tranche": "T1 — semantic minimum viable platform",
+      "outcomes": ["SHACL Core validator", "RDFS entailment MVP", "incremental GeoSPARQL slices"],
+      "exit_gate": "W3C/OGC-derived tests pass for explicitly claimed profiles; unsupported profiles fail closed."
+    },
+    {
+      "tranche": "T2 — search, change, and service depth",
+      "outcomes": ["text index extension", "RDF Patch/change feed", "server module and observability contracts", "SHACL SPARQL"],
+      "exit_gate": "Crash recovery, transaction isolation, authorization boundaries, and index consistency are tested."
+    },
+    {
+      "tranche": "T3 — ontology and developer ergonomics",
+      "outcomes": ["ontology façade", "local/remote connection façade", "query builder", "declarative configuration", "ShEx"],
+      "exit_gate": "Outcome-parity scenarios are ergonomic across Rust, Python, and JavaScript without cloning Java APIs."
+    },
+    {
+      "tranche": "T4 — advanced semantics",
+      "outcomes": ["custom rules", "carefully scoped OWL profiles", "fuller CRS/rewrite/aggregate GeoSPARQL"],
+      "exit_gate": "Profiles, incompleteness, complexity ceilings, and resource budgets are explicit."
+    }
+  ],
+  "implementation_receipt": {
+    "slice": "GeoSPARQL geof:boundary",
+    "why_first": "Normatively required, present in Jena, absent in the local inventory, compatible with the existing spargeo extension seam, and bounded enough for a fully tested first increment.",
+    "files": [
+      "lib/spargeo/src/boundary.rs",
+      "lib/spargeo/src/geosparql_functions.rs",
+      "lib/spargeo/src/serialization.rs",
+      "lib/spargeo/src/lib.rs",
+      "lib/spargeo/README.md"
+    ],
+    "observable_behavior": [
+      "Function IRI registered as the 44th GeoSPARQL extension function.",
+      "Polygon shells and holes return lineal boundaries.",
+      "Line and MultiLineString endpoints use the MOD-2 boundary node rule.",
+      "Point and MultiPoint return an empty GeometryCollection.",
+      "WKT and GeoJSON output datatypes follow the input datatype.",
+      "GeometryCollection returns an evaluation error, matching Jena's JTS behavior.",
+      "Scope remains CRS84 because that is the current spargeo parser contract."
+    ],
+    "verification": {
+      "cargo_test_spargeo": "pass — 33 tests",
+      "cargo_clippy_spargeo_all_targets_deny_warnings": "pass",
+      "cargo_check_spareval_geosparql": "pass",
+      "cargo_check_oxigraph_cli_geosparql": "not completed — pre-existing RocksDB submodule is not initialized"
+    }
+  },
+  "limitations": [
+    "This baseline compares public capability outcomes, not every Jena class, command, optional module, or undocumented behavior.",
+    "Jena source was observed at a development commit one day after the latest 6.1.0 release page; release claims use the release page, while module evidence uses current source and official docs.",
+    "No claim of full GeoSPARQL conformance is made; Oxigraph remains CRS84-only and partial.",
+    "The full CLI build requires initializing the existing oxrocksdb-sys/rocksdb submodule."
+  ]
+}

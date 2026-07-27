@@ -1,0 +1,39 @@
+[package]
+name = "oxdatalog"
+version = "0.1.0-dev"
+authors.workspace = true
+license.workspace = true
+keywords = ["RDF", "Datalog", "reasoning"]
+repository = "https://github.com/oxigraph/oxigraph/tree/main/lib/oxdatalog"
+description = "Bounded RDF-native Datalog evaluation for Oxigraph"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+js = ["dep:getrandom", "getrandom/wasm_js"]
+rdf-12 = ["oxrdf/rdf-12", "spareval?/sparql-12"]
+spareval = ["dep:spareval"]
+
+[dependencies]
+getrandom = { workspace = true, optional = true }
+hex.workspace = true
+oxrdf.workspace = true
+sha2.workspace = true
+spareval = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+web-time.workspace = true
+
+[dev-dependencies]
+datafrog.workspace = true
+spargebra.workspace = true
+spareval.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

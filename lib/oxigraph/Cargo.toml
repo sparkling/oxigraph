@@ -16,21 +16,47 @@ rust-version.workspace = true
 [features]
 default = ["rocksdb"]
 rocksdb = ["oxrocksdb-sys"]
-js = ["getrandom/wasm_js", "oxsdatatypes/js", "js-sys"]
+js = [
+  "getrandom/wasm_js",
+  "oxsdatatypes/js",
+  "js-sys",
+  "oxdatalog?/js",
+  "oxrdfs?/js",
+  "oxowl?/js",
+  "oxshacl?/js",
+]
 http-client = ["oxhttp"]
 http-client-native-tls = ["http-client", "oxhttp/native-tls"]
 http-client-rustls-webpki = ["http-client", "oxhttp/rustls-ring-webpki"]
 http-client-rustls-native = ["http-client", "oxhttp/rustls-ring-native"]
 rocksdb-pkg-config = ["oxrocksdb-sys/pkg-config"]
 rocksdb-debug = []
-rdf-12 = ["oxrdfio/rdf-12", "spareval/sparql-12"]
+rdf-12 = [
+  "oxrdfio/rdf-12",
+  "spareval/sparql-12",
+  "oxdatalog?/rdf-12",
+  "oxrdfs?/rdf-12",
+  "oxowl?/rdf-12",
+  "oxshacl?/rdf-12",
+]
 geosparql = ["spareval/geosparql"]
+datalog = ["dep:oxdatalog"]
+# The Oxigraph-facing RDFS API is explicitly the RDF 1.2 finite profile.
+# Consumers that need the RDF 1.2 Basic (14-pattern) build can depend on
+# `oxrdfs` directly without its `rdf-12` feature.
+rdfs = ["dep:oxrdfs", "rdf-12"]
+owl2-rl = ["dep:oxowl"]
+shacl = ["dep:oxshacl"]
 
 [dependencies]
 dashmap.workspace = true
 oxiri.workspace = true
+oxdatalog = { workspace = true, optional = true, features = ["spareval"] }
+oxowl = { workspace = true, optional = true }
 oxrdf = { workspace = true, features = ["oxsdatatypes", "rdfc-10"] }
 oxrdfio.workspace = true
+oxrdfs = { workspace = true, optional = true }
+oxshacl = { workspace = true, optional = true }
 oxsdatatypes.workspace = true
 rand.workspace = true
 rustc-hash.workspace = true

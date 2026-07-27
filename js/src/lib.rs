@@ -12,6 +12,14 @@ mod utils;
 const TYPESCRIPT_CUSTOM_SECTION: &str = r###"
 import { BaseQuad, BlankNode, DataFactory, Literal, NamedNode, DefaultGraph, Term } from "@rdfjs/types";
 
+export type RdfVersion = "1.1" | "1.2-basic" | "1.2";
+export type SparqlVersion = "1.1" | "1.2-basic" | "1.2";
+export type QueryEntailment =
+    | "simple"
+    | "rdf-1.2-finite"
+    | "rdfs-1.2-finite"
+    | "owl2-rl-rdf-bounded";
+
 interface Quad extends BaseQuad {
     subject: NamedNode | BlankNode;
     predicate: NamedNode;
@@ -32,24 +40,31 @@ export class Store {
         options: {
             format: string;
             from_graph_name?: BlankNode | DefaultGraph | NamedNode;
+            rdf_version?: RdfVersion;
         }
     ): string;
 
     has(quad: Quad): boolean;
 
     load(
-        input: string | UInt8Array | Iterable<string | UInt8Array>,
+        input: string | Uint8Array | Iterable<string | Uint8Array>,
         options: {
             base_iri?: NamedNode | string;
             format: string;
             no_transaction?: boolean;
+            rdf_version?: RdfVersion;
             to_graph_name?: BlankNode | DefaultGraph | NamedNode;
             unchecked?: boolean;
             lenient?: boolean;
         }
     ): void;
 
-    match(subject?: Term | null, predicate?: Term | null, object?: Term | null, graph?: Term | null): Quad[];
+    match(
+        subject?: BlankNode | NamedNode | null,
+        predicate?: NamedNode | null,
+        object?: Quad | Term | null,
+        graph?: BlankNode | DefaultGraph | NamedNode | null
+    ): Quad[];
 
     query(
         query: string,
@@ -57,24 +72,29 @@ export class Store {
             base_iri?: NamedNode | string;
             results_format?: string;
             default_graph?: BlankNode | DefaultGraph | NamedNode | Iterable<BlankNode | DefaultGraph | NamedNode>;
+            entailment?: QueryEntailment;
             named_graphs?: Iterable<BlankNode | NamedNode>;
             use_default_graph_as_union?: boolean;
+            results_version?: RdfVersion;
+            sparql_version?: SparqlVersion;
         }
-    ): boolean | Map<string, Term>[] | Quad[] | string;
+    ): boolean | Map<string, Quad | Term>[] | Quad[] | string;
 
     update(
         update: string,
         options?: {
             base_iri?: NamedNode | string;
+            sparql_version?: SparqlVersion;
         }
     ): void;
 }
 
 function parse(
-    input: string | UInt8Array,
+    input: string | Uint8Array,
     options: {
         base_iri?: NamedNode | string;
         format: string;
+        rdf_version?: RdfVersion;
         to_graph_name?: BlankNode | DefaultGraph | NamedNode;
         lenient?: boolean;
         data_factory?: DataFactory;
@@ -82,10 +102,11 @@ function parse(
 ): Quad[];
 
 function parse(
-    input: Iterable<string | UInt8Array>,
+    input: Iterable<string | Uint8Array>,
     options: {
         base_iri?: NamedNode | string;
         format: string;
+        rdf_version?: RdfVersion;
         to_graph_name?: BlankNode | DefaultGraph | NamedNode;
         lenient?: boolean;
         data_factory?: DataFactory;
@@ -93,10 +114,11 @@ function parse(
 ): IterableIterator<Quad>;
 
 function parse(
-    input: AsyncIterable<string | UInt8Array>,
+    input: AsyncIterable<string | Uint8Array>,
     options: {
         base_iri?: NamedNode | string;
         format: string;
+        rdf_version?: RdfVersion;
         to_graph_name?: BlankNode | DefaultGraph | NamedNode;
         lenient?: boolean;
         data_factory?: DataFactory;

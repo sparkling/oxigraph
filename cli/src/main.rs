@@ -1,6 +1,7 @@
 #![expect(clippy::print_stderr, clippy::cast_precision_loss, clippy::use_debug)]
 
-use crate::cli::{Args, Command};
+use crate::cli::{Args, Command, EntailmentProfile};
+use crate::rdf_response::RdfResponseFormat;
 use crate::service_description::{EndpointKind, generate_service_description};
 use anyhow::{Context, bail, ensure};
 use clap::Parser;
@@ -9,22 +10,27 @@ use oxhttp::Server;
 use oxhttp::model::header::{
     ACCEPT, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
     ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_REQUEST_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
-    CONTENT_TYPE, LOCATION, ORIGIN,
+    ALLOW, CONTENT_TYPE, ORIGIN,
 };
 use oxhttp::model::uri::{Authority, PathAndQuery, Scheme};
 use oxhttp::model::{Body, HeaderValue, Method, Request, Response, StatusCode, Uri};
-use oxigraph::io::{JsonLdProfileSet, LoadedDocument, RdfFormat, RdfParser, RdfSerializer};
-use oxigraph::model::{GraphName, IriParseError, NamedNode, NamedOrBlankNode, OxString};
+use oxigraph::io::{
+    JsonLdProfileSet, LoadedDocument, RdfFormat, RdfParseError, RdfParser, RdfSerializer,
+};
+use oxigraph::model::{
+    GraphName, IriParseError, NamedNode, NamedOrBlankNode, OxString, RdfVersion,
+};
 use oxigraph::sparql::results::{QueryResultsFormat, QueryResultsSerializer};
-use oxigraph::sparql::{CancellationToken, QueryResults, SparqlEvaluator};
+use oxigraph::sparql::{
+    CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, SparqlEvaluator,
+    SparqlVersion as LibrarySparqlVersion,
+};
 use oxigraph::store::{BulkLoader, LoaderError, Store};
 use oxiri::{Iri, IriRef};
-use rand::random;
 use rayon_core::ThreadPoolBuilder;
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::collections::HashSet;
 #[cfg(target_os = "linux")]
 use std::env;
 use std::ffi::OsStr;
@@ -33,24 +39,47 @@ use std::io::{self, BufWriter, Read, Write, stdin, stdout};
 use std::net::ToSocketAddrs;
 #[cfg(target_os = "linux")]
 use std::os::unix::net::UnixDatagram;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::str::FromStr;
+use std::sync::Mutex;
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 use std::{fmt, fs, str, thread};
 use url::{Url, form_urlencoded};
 
 mod cli;
+mod graph_store;
+#[cfg(test)]
+mod graph_store_http_tests;
+mod http_validators;
+mod multipart;
+#[cfg(test)]
+mod protocol_wire_tests;
+mod rdf_response;
 mod service_description;
+#[cfg(test)]
+mod wire_http_tests;
 
-const MAX_SPARQL_BODY_SIZE: u64 = 1024 * 1024 * 128; // 128MB
+const MAX_HTTP_BODY_SIZE: u64 = 1024 * 1024 * 128; // 128MB
 const HTTP_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(test)]
+static HTTP_TEST_BIND_LOCK: Mutex<()> = Mutex::new(());
 const HTML_ROOT_PAGE: &str = include_str!("../templates/query.html");
 #[expect(clippy::large_include_file)]
 const YASGUI_JS: &str = include_str!("../templates/yasgui/yasgui.min.js");
 const YASGUI_CSS: &str = include_str!("../templates/yasgui/yasgui.min.css");
 const LOGO: &str = include_str!("../logo.svg");
+
+impl From<EntailmentProfile> for QueryEntailment {
+    fn from(value: EntailmentProfile) -> Self {
+        match value {
+            EntailmentProfile::Simple => Self::Simple,
+            EntailmentProfile::Rdf12Finite => Self::Rdf12Finite,
+            EntailmentProfile::Rdfs12Finite => Self::Rdfs12Finite,
+            EntailmentProfile::Owl2RlRdfBounded => Self::Owl2RlRdfBounded,
+        }
+    }
+}
 
 pub fn main() -> anyhow::Result<()> {
     let matches = Args::parse();
@@ -60,6 +89,7 @@ pub fn main() -> anyhow::Result<()> {
             bind,
             cors,
             union_default_graph,
+            entailment,
             timeout_s,
         } => serve(
             if let Some(location) = location {
@@ -71,6 +101,7 @@ pub fn main() -> anyhow::Result<()> {
             false,
             cors,
             union_default_graph,
+            entailment.into(),
             timeout_s,
         ),
         Command::ServeReadOnly {
@@ -78,6 +109,7 @@ pub fn main() -> anyhow::Result<()> {
             bind,
             cors,
             union_default_graph,
+            entailment,
             timeout_s,
         } => serve(
             Store::open_read_only(location)?,
@@ -85,6 +117,7 @@ pub fn main() -> anyhow::Result<()> {
             true,
             cors,
             union_default_graph,
+            entailment.into(),
             timeout_s,
         ),
         Command::Backup {
@@ -154,84 +187,15 @@ pub fn main() -> anyhow::Result<()> {
                 )?;
                 loader.commit()?;
             } else {
-                ThreadPoolBuilder::new()
-                    .num_threads(max(1, available_parallelism()?.get() / 2))
-                    .thread_name(|i| format!("Oxigraph bulk loader thread {i}"))
-                    .build()?
-                    .scope(|s| {
-                        for file in file {
-                            let store = store.clone();
-                            let graph = graph.clone();
-                            let base = base.clone();
-                            s.spawn(move |_| {
-                                let f = file.clone();
-                                let start = Instant::now();
-                                let mut loader = store.bulk_loader().on_progress(move |size| {
-                                    let elapsed = start.elapsed();
-                                    eprintln!(
-                                        "{} triples loaded in {}s ({} t/s) from {}",
-                                        size,
-                                        elapsed.as_secs(),
-                                        ((size as f64) / elapsed.as_secs_f64()).round(),
-                                        f.display()
-                                    )
-                                });
-                                if lenient {
-                                    let f = file.clone();
-                                    loader = loader.on_parse_error(move |e| {
-                                        eprintln!("Parsing error on file {}: {}", f.display(), e);
-                                        Ok(())
-                                    })
-                                }
-                                if let Err(error) = {
-                                    if file.extension().is_some_and(|e| e == OsStr::new("gz")) {
-                                        let fp = match File::open(&file) {
-                                            Ok(fp) => fp,
-                                            Err(error) => {
-                                                eprintln!(
-                                                    "Error while opening file {}: {}",
-                                                    file.display(),
-                                                    error
-                                                );
-                                                return;
-                                            }
-                                        };
-                                        bulk_load_read(
-                                            &mut loader,
-                                            MultiGzDecoder::new(fp),
-                                            format.unwrap_or_else(|| {
-                                                rdf_format_from_path(&file.with_extension(""))
-                                                    .unwrap()
-                                            }),
-                                            base.as_deref(),
-                                            graph,
-                                            lenient,
-                                        )
-                                    } else {
-                                        bulk_load_file(
-                                            &mut loader,
-                                            &file,
-                                            format.unwrap_or_else(|| {
-                                                rdf_format_from_path(&file).unwrap()
-                                            }),
-                                            base.as_deref(),
-                                            graph,
-                                            lenient,
-                                        )
-                                    }
-                                } {
-                                    eprintln!(
-                                        "Error while loading file {}: {}",
-                                        file.display(),
-                                        error
-                                    )
-                                    // TODO: hard fail
-                                } else if let Err(e) = loader.commit() {
-                                    eprintln!("Failed to save triples: {e}")
-                                }
-                            })
-                        }
-                    });
+                parallel_bulk_load_files(
+                    &store,
+                    file,
+                    format,
+                    base.as_deref(),
+                    graph.as_ref(),
+                    non_atomic,
+                    lenient,
+                )?;
             }
             eprintln!(
                 "If you plan to run a read-heavy workload, consider running `oxigraph optimize -l {}` before",
@@ -287,6 +251,7 @@ pub fn main() -> anyhow::Result<()> {
             explain_file,
             stats,
             union_default_graph,
+            entailment,
         } => {
             let query = if let Some(query) = query {
                 query
@@ -306,7 +271,8 @@ pub fn main() -> anyhow::Result<()> {
             if union_default_graph {
                 prepared.dataset_mut().set_default_graph_as_union();
             }
-            let mut prepared = prepared.on_store(&store);
+            let options = QueryEntailmentOptions::new(entailment.into());
+            let mut prepared = prepared.on_store_with_entailment(&store, &options)?;
             if stats {
                 prepared = prepared.compute_statistics();
             }
@@ -568,6 +534,255 @@ pub fn main() -> anyhow::Result<()> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ParallelBulkLoadStage {
+    Open,
+    Load,
+    Commit,
+}
+
+impl fmt::Display for ParallelBulkLoadStage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Open => "open",
+            Self::Load => "load",
+            Self::Commit => "commit",
+        })
+    }
+}
+
+#[derive(Debug)]
+struct ParallelBulkLoadFailure {
+    input_index: usize,
+    file: PathBuf,
+    stage: ParallelBulkLoadStage,
+    error: anyhow::Error,
+}
+
+impl ParallelBulkLoadFailure {
+    fn new(
+        input_index: usize,
+        file: &Path,
+        stage: ParallelBulkLoadStage,
+        error: impl Into<anyhow::Error>,
+    ) -> Self {
+        Self {
+            input_index,
+            file: file.to_owned(),
+            stage,
+            error: error.into(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ParallelBulkLoadFailures {
+    total_files: usize,
+    non_atomic: bool,
+    failures: Vec<ParallelBulkLoadFailure>,
+}
+
+impl ParallelBulkLoadFailures {
+    fn new(
+        total_files: usize,
+        non_atomic: bool,
+        mut failures: Vec<ParallelBulkLoadFailure>,
+    ) -> Self {
+        failures.sort_by(|left, right| {
+            (left.input_index, left.stage, &left.file).cmp(&(
+                right.input_index,
+                right.stage,
+                &right.file,
+            ))
+        });
+        Self {
+            total_files,
+            non_atomic,
+            failures,
+        }
+    }
+}
+
+impl fmt::Display for ParallelBulkLoadFailures {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "parallel bulk load failed for {} of {} files; successful files remain committed",
+            self.failures.len(),
+            self.total_files
+        )?;
+        if self.non_atomic {
+            f.write_str(
+                "; --non-atomic was set, so failed files may also have committed partial data",
+            )?;
+        } else {
+            f.write_str("; each failed file remains uncommitted")?;
+        }
+        for failure in &self.failures {
+            write!(
+                f,
+                "\n  {}. [{}] {}: {:#}",
+                failure.input_index + 1,
+                failure.stage,
+                failure.file.display(),
+                failure.error
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ParallelBulkLoadFailures {}
+
+fn parallel_bulk_load_files(
+    store: &Store,
+    files: Vec<PathBuf>,
+    format: Option<RdfFormat>,
+    base: Option<&str>,
+    graph: Option<&NamedNode>,
+    non_atomic: bool,
+    lenient: bool,
+) -> anyhow::Result<()> {
+    let total_files = files.len();
+    let failures = Mutex::new(Vec::new());
+    ThreadPoolBuilder::new()
+        .num_threads(max(1, available_parallelism()?.get() / 2))
+        .thread_name(|i| format!("Oxigraph bulk loader thread {i}"))
+        .build()?
+        .scope(|scope| {
+            for (input_index, file) in files.into_iter().enumerate() {
+                let store = store.clone();
+                let failure_sink = &failures;
+                scope.spawn(move |_| {
+                    if let Err(failure) = parallel_bulk_load_file(
+                        &store,
+                        input_index,
+                        &file,
+                        format,
+                        base,
+                        graph.cloned(),
+                        non_atomic,
+                        lenient,
+                    ) {
+                        match failure_sink.lock() {
+                            Ok(mut failures) => failures.push(failure),
+                            Err(poisoned) => poisoned.into_inner().push(failure),
+                        }
+                    }
+                });
+            }
+        });
+    let failures = match failures.into_inner() {
+        Ok(failures) => failures,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(ParallelBulkLoadFailures::new(total_files, non_atomic, failures).into())
+    }
+}
+
+fn parallel_bulk_load_file(
+    store: &Store,
+    input_index: usize,
+    file: &Path,
+    format: Option<RdfFormat>,
+    base: Option<&str>,
+    graph: Option<NamedNode>,
+    non_atomic: bool,
+    lenient: bool,
+) -> Result<(), ParallelBulkLoadFailure> {
+    let progress_file = file.to_owned();
+    let start = Instant::now();
+    let mut loader = store.bulk_loader().on_progress(move |size| {
+        let elapsed = start.elapsed();
+        eprintln!(
+            "{} triples loaded in {}s ({} t/s) from {}",
+            size,
+            elapsed.as_secs(),
+            ((size as f64) / elapsed.as_secs_f64()).round(),
+            progress_file.display()
+        )
+    });
+    if non_atomic {
+        loader = loader.without_atomicity();
+    }
+    if lenient {
+        let error_file = file.to_owned();
+        loader = loader.on_parse_error(move |error| {
+            eprintln!("Parsing error on file {}: {}", error_file.display(), error);
+            Ok(())
+        })
+    }
+    let load_result = if file.extension().is_some_and(|e| e == OsStr::new("gz")) {
+        let file_reader = File::open(file).map_err(|error| {
+            ParallelBulkLoadFailure::new(input_index, file, ParallelBulkLoadStage::Open, error)
+        })?;
+        bulk_load_read(
+            &mut loader,
+            MultiGzDecoder::new(file_reader),
+            format
+                .map_or_else(|| rdf_format_from_path(&file.with_extension("")), Ok)
+                .map_err(|error| {
+                    ParallelBulkLoadFailure::new(
+                        input_index,
+                        file,
+                        ParallelBulkLoadStage::Load,
+                        error,
+                    )
+                })?,
+            base,
+            graph,
+            lenient,
+        )
+    } else {
+        bulk_load_file(
+            &mut loader,
+            file,
+            format
+                .map_or_else(|| rdf_format_from_path(file), Ok)
+                .map_err(|error| {
+                    ParallelBulkLoadFailure::new(
+                        input_index,
+                        file,
+                        ParallelBulkLoadStage::Load,
+                        error,
+                    )
+                })?,
+            base,
+            graph,
+            lenient,
+        )
+    };
+    load_result.map_err(|error| {
+        ParallelBulkLoadFailure::new(
+            input_index,
+            file,
+            parallel_bulk_load_error_stage(&error),
+            error,
+        )
+    })?;
+    loader.commit().map_err(|error| {
+        ParallelBulkLoadFailure::new(input_index, file, ParallelBulkLoadStage::Commit, error)
+    })
+}
+
+fn parallel_bulk_load_error_stage(error: &anyhow::Error) -> ParallelBulkLoadStage {
+    if matches!(
+        error.downcast_ref::<LoaderError>(),
+        Some(LoaderError::Parsing(RdfParseError::Io(error)))
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+            )
+    ) {
+        ParallelBulkLoadStage::Open
+    } else {
+        ParallelBulkLoadStage::Load
+    }
+}
+
 fn bulk_load_read(
     loader: &mut BulkLoader<'_>,
     reader: impl Read,
@@ -675,7 +890,8 @@ fn do_convert<R: Read, W: Write>(
             .with_context(|| format!("Invalid IRI for prefix {prefix_name}: {prefix_iri}"))?;
     }
     let mut serializer = serializer.for_writer(writer);
-    for quad_result in first.into_iter().chain(parser) {
+    let mut non_empty_output_graphs = HashSet::new();
+    for quad_result in first.into_iter().chain(parser.by_ref()) {
         match quad_result {
             Ok(mut quad) => {
                 if let Some(from_graph) = from_graph {
@@ -688,6 +904,17 @@ fn do_convert<R: Read, W: Write>(
                 if quad.graph_name.is_default_graph() {
                     quad.graph_name = default_graph.clone();
                 }
+                match &quad.graph_name {
+                    GraphName::NamedNode(graph_name) => {
+                        non_empty_output_graphs
+                            .insert(NamedOrBlankNode::NamedNode(graph_name.clone()));
+                    }
+                    GraphName::BlankNode(graph_name) => {
+                        non_empty_output_graphs
+                            .insert(NamedOrBlankNode::BlankNode(graph_name.clone()));
+                    }
+                    GraphName::DefaultGraph => {}
+                }
                 serializer.serialize_quad(&quad)?;
             }
             Err(e) => {
@@ -697,6 +924,25 @@ fn do_convert<R: Read, W: Write>(
                     return Err(e.into());
                 }
             }
+        }
+    }
+    for graph_name in parser.named_graphs()? {
+        let source_graph = GraphName::from(graph_name.clone());
+        let output_graph = if let Some(from_graph) = from_graph {
+            if source_graph != *from_graph {
+                continue;
+            }
+            default_graph.clone()
+        } else {
+            source_graph
+        };
+        let output_graph = match output_graph {
+            GraphName::NamedNode(graph_name) => NamedOrBlankNode::NamedNode(graph_name),
+            GraphName::BlankNode(graph_name) => NamedOrBlankNode::BlankNode(graph_name),
+            GraphName::DefaultGraph => continue,
+        };
+        if !non_empty_output_graphs.contains(&output_graph) {
+            serializer.serialize_empty_graph(&output_graph)?;
         }
     }
     Ok(serializer.finish()?)
@@ -743,33 +989,45 @@ fn serve(
     read_only: bool,
     cors: bool,
     union_default_graph: bool,
+    entailment: QueryEntailment,
     timeout_s: Option<u64>,
 ) -> anyhow::Result<()> {
+    entailment.ensure_supported()?;
     let sparql_evaluator = SparqlEvaluator::new();
     let timeout = timeout_s.map(Duration::from_secs);
     let mut server = if cors {
         Server::new(cors_middleware(move |request| {
-            handle_request(
-                request,
-                store.clone(),
-                sparql_evaluator.clone(),
-                read_only,
-                union_default_graph,
-                timeout,
+            let method = request.method().clone();
+            finalize_response(
+                &method,
+                handle_request(
+                    request,
+                    store.clone(),
+                    sparql_evaluator.clone(),
+                    read_only,
+                    union_default_graph,
+                    entailment,
+                    timeout,
+                )
+                .unwrap_or_else(|(status, message)| error(status, message)),
             )
-            .unwrap_or_else(|(status, message)| error(status, message))
         }))
     } else {
         Server::new(move |request| {
-            handle_request(
-                request,
-                store.clone(),
-                sparql_evaluator.clone(),
-                read_only,
-                union_default_graph,
-                timeout,
+            let method = request.method().clone();
+            finalize_response(
+                &method,
+                handle_request(
+                    request,
+                    store.clone(),
+                    sparql_evaluator.clone(),
+                    read_only,
+                    union_default_graph,
+                    entailment,
+                    timeout,
+                )
+                .unwrap_or_else(|(status, message)| error(status, message)),
             )
-            .unwrap_or_else(|(status, message)| error(status, message))
         })
     }
     .with_global_timeout(timeout.unwrap_or(HTTP_TIMEOUT))
@@ -820,12 +1078,17 @@ fn cors_middleware(
 
 type HttpError = (StatusCode, String);
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the request dispatcher owns a cheap Store handle used by response producers"
+)]
 fn handle_request(
     request: &mut Request<Body>,
     store: Store,
     sparql_evaluator: SparqlEvaluator,
     read_only: bool,
     union_default_graph: bool,
+    entailment: QueryEntailment,
     timeout: Option<Duration>,
 ) -> Result<Response<Body>, HttpError> {
     match (request.uri().path(), request.method().as_ref()) {
@@ -863,13 +1126,16 @@ fn handle_request(
             .map_err(internal_server_error),
         ("/query", "GET") => {
             if request.uri().query().is_some() {
+                reject_nonempty_sparql_get_body(request)?;
                 configure_and_evaluate_sparql_query(
                     &store,
                     sparql_evaluator,
                     url_query_parameters(request),
                     None,
+                    None,
                     request,
                     union_default_graph,
+                    entailment,
                     timeout,
                 )
             } else {
@@ -880,35 +1146,40 @@ fn handle_request(
                         update: false,
                     },
                     union_default_graph,
+                    entailment,
                 )
             }
         }
         ("/query", "POST" | "QUERY") => {
-            let content_type =
-                content_type(request).ok_or_else(|| bad_request("No Content-Type given"))?;
-            if content_type == "application/sparql-query" {
+            let content_type = sparql_request_content_type(request)?
+                .ok_or_else(|| bad_request("No Content-Type given"))?;
+            if content_type.media_type == "application/sparql-query" {
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_query(
                     &store,
                     sparql_evaluator,
                     url_query_parameters(request),
                     Some(body),
+                    content_type.version,
                     request,
                     union_default_graph,
+                    entailment,
                     timeout,
                 )
-            } else if content_type == "application/x-www-form-urlencoded" {
+            } else if content_type.media_type == "application/x-www-form-urlencoded" {
                 configure_and_evaluate_sparql_query(
                     &store,
                     sparql_evaluator,
-                    url_query_and_body_parameters(request)?,
+                    urlencoded_body_parameters(request)?,
+                    None,
                     None,
                     request,
                     union_default_graph,
+                    entailment,
                     timeout,
                 )
             } else {
-                Err(unsupported_media_type(&content_type))
+                Err(unsupported_media_type(&content_type.media_type))
             }
         }
         ("/update", "GET") => {
@@ -922,44 +1193,50 @@ fn handle_request(
                     update: true,
                 },
                 union_default_graph,
+                entailment,
             )
         }
         ("/update", "POST") => {
             if read_only {
                 return Err(the_server_is_read_only());
             }
-            let content_type =
-                content_type(request).ok_or_else(|| bad_request("No Content-Type given"))?;
-            if content_type == "application/sparql-update" {
+            let content_type = sparql_request_content_type(request)?
+                .ok_or_else(|| bad_request("No Content-Type given"))?;
+            if content_type.media_type == "application/sparql-update" {
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
                     &store,
                     url_query_parameters(request),
                     Some(body),
+                    content_type.version,
                     request,
                     union_default_graph,
                 )
-            } else if content_type == "application/x-www-form-urlencoded" {
+            } else if content_type.media_type == "application/x-www-form-urlencoded" {
                 configure_and_evaluate_sparql_update(
                     &store,
-                    url_query_and_body_parameters(request)?,
+                    urlencoded_body_parameters(request)?,
+                    None,
                     None,
                     request,
                     union_default_graph,
                 )
             } else {
-                Err(unsupported_media_type(&content_type))
+                Err(unsupported_media_type(&content_type.media_type))
             }
         }
         ("/sparql", "GET") => {
             if request.uri().query().is_some() {
+                reject_nonempty_sparql_get_body(request)?;
                 configure_and_evaluate_sparql_query(
                     &store,
                     sparql_evaluator,
                     url_query_parameters(request),
                     None,
+                    None,
                     request,
                     union_default_graph,
+                    entailment,
                     timeout,
                 )
             } else {
@@ -970,25 +1247,28 @@ fn handle_request(
                         update: !read_only,
                     },
                     union_default_graph,
+                    entailment,
                 )
             }
         }
         ("/sparql", method @ ("POST" | "QUERY")) => {
             let is_query = method == "QUERY";
-            let content_type =
-                content_type(request).ok_or_else(|| bad_request("No Content-Type given"))?;
-            if content_type == "application/sparql-query" {
+            let content_type = sparql_request_content_type(request)?
+                .ok_or_else(|| bad_request("No Content-Type given"))?;
+            if content_type.media_type == "application/sparql-query" {
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_query(
                     &store,
                     sparql_evaluator,
                     url_query_parameters(request),
                     Some(body),
+                    content_type.version,
                     request,
                     union_default_graph,
+                    entailment,
                     timeout,
                 )
-            } else if content_type == "application/sparql-update" && !is_query {
+            } else if content_type.media_type == "application/sparql-update" && !is_query {
                 if read_only {
                     return Err(the_server_is_read_only());
                 }
@@ -997,12 +1277,16 @@ fn handle_request(
                     &store,
                     url_query_parameters(request),
                     Some(body),
+                    content_type.version,
                     request,
                     union_default_graph,
                 )
-            } else if content_type == "application/x-www-form-urlencoded" {
-                let args = url_query_and_body_parameters(request)?;
-                match (args.contains_key("query"), args.contains_key("update")) {
+            } else if content_type.media_type == "application/x-www-form-urlencoded" {
+                let args = urlencoded_body_parameters(request)?;
+                match (
+                    args.iter().any(|(key, _)| key == "query"),
+                    args.iter().any(|(key, _)| key == "update"),
+                ) {
                     (true, true) => Err(bad_request(
                         "Both 'query' and 'update' cannot be set at the same time",
                     )),
@@ -1011,8 +1295,10 @@ fn handle_request(
                         sparql_evaluator,
                         args,
                         None,
+                        None,
                         request,
                         union_default_graph,
+                        entailment,
                         timeout,
                     ),
                     (false, true) => {
@@ -1028,6 +1314,7 @@ fn handle_request(
                             &store,
                             args,
                             None,
+                            None,
                             request,
                             union_default_graph,
                         )
@@ -1037,186 +1324,12 @@ fn handle_request(
                     )),
                 }
             } else {
-                Err(unsupported_media_type(&content_type))
+                Err(unsupported_media_type(&content_type.media_type))
             }
         }
-        (path, "GET") if path.starts_with("/store") => {
-            if let Some(target) = store_target(request)? {
-                assert_that_graph_exists(&store, &target)?;
-                let format = rdf_content_negotiation(request)?;
-
-                let quads = store.quads_for_pattern(None, None, None, Some(&target.into()));
-                ReadForWrite::build_response(
-                    move |w| Ok((RdfSerializer::from_format(format).for_writer(w), quads)),
-                    |(mut serializer, mut quads)| {
-                        Ok(if let Some(q) = quads.next() {
-                            serializer.serialize_triple(&q?.into())?;
-                            Some((serializer, quads))
-                        } else {
-                            serializer.finish()?;
-                            None
-                        })
-                    },
-                    format.media_type(),
-                )
-            } else {
-                let format = rdf_content_negotiation(request)?;
-                if !format.supports_datasets() {
-                    return Err(bad_request(format!(
-                        "It is not possible to serialize the full RDF dataset using {format} that does not support named graphs"
-                    )));
-                }
-                ReadForWrite::build_response(
-                    move |w| {
-                        Ok((
-                            RdfSerializer::from_format(format).for_writer(w),
-                            store.iter(),
-                        ))
-                    },
-                    |(mut serializer, mut quads)| {
-                        Ok(if let Some(q) = quads.next() {
-                            serializer.serialize_quad(&q?)?;
-                            Some((serializer, quads))
-                        } else {
-                            serializer.finish()?;
-                            None
-                        })
-                    },
-                    format.media_type(),
-                )
-            }
-        }
-        (path, "PUT") if path.starts_with("/store") => {
-            if read_only {
-                return Err(the_server_is_read_only());
-            }
-            let content_type =
-                content_type(request).ok_or_else(|| bad_request("No Content-Type given"))?;
-            if let Some(target) = store_target(request)? {
-                let format = RdfFormat::from_media_type(&content_type)
-                    .ok_or_else(|| unsupported_media_type(&content_type))?;
-                let new = !match &target {
-                    NamedGraphName::NamedNode(target) => {
-                        if store
-                            .contains_named_graph(&target.clone().into())
-                            .map_err(internal_server_error)?
-                        {
-                            store
-                                .clear_graph(&target.clone().into())
-                                .map_err(internal_server_error)?;
-                            true
-                        } else {
-                            store
-                                .insert_named_graph(target.clone())
-                                .map_err(internal_server_error)?;
-                            false
-                        }
-                    }
-                    NamedGraphName::DefaultGraph => {
-                        store
-                            .clear_graph(&GraphName::DefaultGraph)
-                            .map_err(internal_server_error)?;
-                        true
-                    }
-                };
-                web_load_graph(&store, request, format, &GraphName::from(target))?;
-                Response::builder()
-                    .status(if new {
-                        StatusCode::CREATED
-                    } else {
-                        StatusCode::NO_CONTENT
-                    })
-                    .body(Body::empty())
-                    .map_err(internal_server_error)
-            } else {
-                let format = RdfFormat::from_media_type(&content_type)
-                    .ok_or_else(|| unsupported_media_type(&content_type))?;
-                store.clear().map_err(internal_server_error)?;
-                web_load_dataset(&store, request, format)?;
-                Response::builder()
-                    .status(StatusCode::NO_CONTENT)
-                    .body(Body::empty())
-                    .map_err(internal_server_error)
-            }
-        }
-        (path, "DELETE") if path.starts_with("/store") => {
-            if read_only {
-                return Err(the_server_is_read_only());
-            }
-            if let Some(target) = store_target(request)? {
-                match target {
-                    NamedGraphName::DefaultGraph => store
-                        .clear_graph(&GraphName::DefaultGraph)
-                        .map_err(internal_server_error)?,
-                    NamedGraphName::NamedNode(target) => {
-                        if store
-                            .contains_named_graph(&target.clone().into())
-                            .map_err(internal_server_error)?
-                        {
-                            store
-                                .remove_named_graph(&target.clone().into())
-                                .map_err(internal_server_error)?;
-                        } else {
-                            return Err((
-                                StatusCode::NOT_FOUND,
-                                format!("The graph {target} does not exists"),
-                            ));
-                        }
-                    }
-                }
-            } else {
-                store.clear().map_err(internal_server_error)?;
-            }
-            Response::builder()
-                .status(StatusCode::NO_CONTENT)
-                .body(Body::empty())
-                .map_err(internal_server_error)
-        }
-        (path, "POST") if path.starts_with("/store") => {
-            if read_only {
-                return Err(the_server_is_read_only());
-            }
-            let content_type =
-                content_type(request).ok_or_else(|| bad_request("No Content-Type given"))?;
-            if let Some(target) = store_target(request)? {
-                let format = RdfFormat::from_media_type(&content_type)
-                    .ok_or_else(|| unsupported_media_type(&content_type))?;
-                let new = assert_that_graph_exists(&store, &target).is_ok();
-                web_load_graph(&store, request, format, &GraphName::from(target))?;
-                Response::builder()
-                    .status(if new {
-                        StatusCode::CREATED
-                    } else {
-                        StatusCode::NO_CONTENT
-                    })
-                    .body(Body::empty())
-                    .map_err(internal_server_error)
-            } else {
-                let format = RdfFormat::from_media_type(&content_type)
-                    .ok_or_else(|| unsupported_media_type(&content_type))?;
-                if format.supports_datasets() {
-                    web_load_dataset(&store, request, format)?;
-                    Response::builder().status(StatusCode::NO_CONTENT)
-                } else {
-                    let graph =
-                        resolve_with_base(request, &format!("/store/{:x}", random::<u128>()))?;
-                    web_load_graph(&store, request, format, &graph.clone().into())?;
-                    Response::builder()
-                        .status(StatusCode::CREATED)
-                        .header(LOCATION, graph.as_str())
-                }
-                .body(Body::empty())
-                .map_err(internal_server_error)
-            }
-        }
-        (path, "HEAD") if path.starts_with("/store") => {
-            if let Some(target) = store_target(request)? {
-                assert_that_graph_exists(&store, &target)?;
-            }
-            Response::builder()
-                .body(Body::empty())
-                .map_err(internal_server_error)
-        }
+        (path, _) if graph_store::is_route(path) => graph_store::handle(request, &store, read_only),
+        ("/query" | "/sparql", _) => method_not_allowed_response(request, "GET, POST, QUERY"),
+        ("/update", _) => method_not_allowed_response(request, "GET, POST"),
         _ => Err((
             StatusCode::NOT_FOUND,
             format!(
@@ -1226,6 +1339,24 @@ fn handle_request(
             ),
         )),
     }
+}
+
+fn method_not_allowed_response(
+    request: &Request<Body>,
+    allow: &'static str,
+) -> Result<Response<Body>, HttpError> {
+    Response::builder()
+        .status(StatusCode::METHOD_NOT_ALLOWED)
+        .header(ALLOW, allow)
+        .body(
+            format!(
+                "{} {} is not supported by this service",
+                request.method(),
+                request.uri().path()
+            )
+            .into(),
+        )
+        .map_err(internal_server_error)
 }
 
 fn base_url(request: &Request<Body>) -> String {
@@ -1264,30 +1395,34 @@ fn url_has_query_parameter(request: &Request<Body>, param: &str) -> bool {
         .any(|(k, _)| k == param)
 }
 
-fn url_query_parameters(request: &Request<Body>) -> HashMap<String, String> {
+type SparqlParameters = Vec<(String, String)>;
+
+fn url_query_parameters(request: &Request<Body>) -> SparqlParameters {
     form_urlencoded::parse(request.uri().query().unwrap_or_default().as_bytes())
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect()
 }
 
-fn url_query_and_body_parameters(
-    request: &mut Request<Body>,
-) -> Result<HashMap<String, String>, HttpError> {
-    let body = limited_body(request)?;
-    let mut args = url_query_parameters(request);
-    for (k, v) in form_urlencoded::parse(&body) {
-        match args.entry(k.to_string()) {
-            Entry::Occupied(_) => {
-                return Err(bad_request(format!(
-                    "'{k}' cannot be set both in the body and the URL query"
-                )));
-            }
-            Entry::Vacant(e) => {
-                e.insert(v.into_owned());
-            }
-        }
+fn urlencoded_body_parameters(request: &mut Request<Body>) -> Result<SparqlParameters, HttpError> {
+    if !url_query_parameters(request).is_empty() {
+        return Err(bad_request(
+            "URL query parameters are not allowed for an application/x-www-form-urlencoded SPARQL request",
+        ));
     }
-    Ok(args)
+    let body = limited_body(request)?;
+    Ok(form_urlencoded::parse(&body)
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect())
+}
+
+fn reject_nonempty_sparql_get_body(request: &mut Request<Body>) -> Result<(), HttpError> {
+    if limited_body(request)?.is_empty() {
+        Ok(())
+    } else {
+        Err(bad_request(
+            "A SPARQL query sent using HTTP GET must not include a message body",
+        ))
+    }
 }
 
 fn limited_string_body(request: &mut Request<Body>) -> Result<String, HttpError> {
@@ -1298,10 +1433,10 @@ fn limited_string_body(request: &mut Request<Body>) -> Result<String, HttpError>
 fn limited_body(request: &mut Request<Body>) -> Result<Vec<u8>, HttpError> {
     let body = request.body_mut();
     if let Some(body_len) = body.len() {
-        if body_len > MAX_SPARQL_BODY_SIZE {
+        if body_len > MAX_HTTP_BODY_SIZE {
             // it's too big
             return Err(bad_request(format!(
-                "SPARQL body payloads are limited to {MAX_SPARQL_BODY_SIZE} bytes, found {body_len} bytes"
+                "HTTP body payloads are limited to {MAX_HTTP_BODY_SIZE} bytes, found {body_len} bytes"
             )));
         }
         let mut payload = Vec::with_capacity(
@@ -1314,16 +1449,16 @@ fn limited_body(request: &mut Request<Body>) -> Result<Vec<u8>, HttpError> {
         Ok(payload)
     } else {
         let mut payload = Vec::new();
-        body.take(MAX_SPARQL_BODY_SIZE + 1)
+        body.take(MAX_HTTP_BODY_SIZE + 1)
             .read_to_end(&mut payload)
             .map_err(internal_server_error)?;
         if payload.len()
-            > MAX_SPARQL_BODY_SIZE
+            > MAX_HTTP_BODY_SIZE
                 .try_into()
                 .map_err(internal_server_error)?
         {
             return Err(bad_request(format!(
-                "SPARQL body payloads are limited to {MAX_SPARQL_BODY_SIZE} bytes"
+                "HTTP body payloads are limited to {MAX_HTTP_BODY_SIZE} bytes"
             )));
         }
         Ok(payload)
@@ -1333,15 +1468,19 @@ fn limited_body(request: &mut Request<Body>) -> Result<Vec<u8>, HttpError> {
 fn configure_and_evaluate_sparql_query(
     store: &Store,
     evaluator: SparqlEvaluator,
-    args: HashMap<String, String>,
+    args: SparqlParameters,
     mut query: Option<String>,
+    media_type_version: Option<SparqlVersion>,
     request: &Request<Body>,
     default_use_default_graph_as_union: bool,
+    entailment: QueryEntailment,
     timeout: Option<Duration>,
 ) -> Result<Response<Body>, HttpError> {
+    let is_direct_request = query.is_some();
     let mut default_graph_uris = Vec::new();
     let mut named_graph_uris = Vec::new();
     let mut use_default_graph_as_union = false;
+    let mut request_version = media_type_version;
     for (k, v) in args {
         match k.as_ref() {
             "query" => {
@@ -1350,24 +1489,40 @@ fn configure_and_evaluate_sparql_query(
                 }
                 query = Some(v)
             }
+            "version" => {
+                if is_direct_request {
+                    return Err(bad_request(
+                        "The version of a direct SPARQL query must be set as an application/sparql-query media type parameter",
+                    ));
+                }
+                if request_version.is_some() {
+                    return Err(bad_request("Multiple version parameters provided"));
+                }
+                request_version = Some(SparqlVersion::parse(&v)?);
+            }
             "default-graph-uri" => default_graph_uris.push(v),
             "union-default-graph" => use_default_graph_as_union = true,
             "named-graph-uri" => named_graph_uris.push(v),
-            _ => (),
+            _ => {
+                return Err(bad_request(format!("Unknown SPARQL query parameter '{k}'")));
+            }
         }
     }
     if default_graph_uris.is_empty() && named_graph_uris.is_empty() {
         use_default_graph_as_union |= default_use_default_graph_as_union;
     }
     let query = query.ok_or_else(|| bad_request("You should set the 'query' parameter"))?;
+    let effective_version = validate_sparql_version(&query, request_version)?;
     evaluate_sparql_query(
         store,
         evaluator,
         &query,
+        effective_version,
         use_default_graph_as_union,
         default_graph_uris,
         named_graph_uris,
         request,
+        entailment,
         timeout,
     )
 }
@@ -1376,15 +1531,20 @@ fn evaluate_sparql_query(
     store: &Store,
     evaluator: SparqlEvaluator,
     query: &str,
+    version: Option<SparqlVersion>,
     use_default_graph_as_union: bool,
     default_graph_uris: Vec<String>,
     named_graph_uris: Vec<String>,
     request: &Request<Body>,
+    entailment: QueryEntailment,
     timeout: Option<Duration>,
 ) -> Result<Response<Body>, HttpError> {
     let mut evaluator = evaluator
         .with_base_iri(&base_url(request))
         .map_err(bad_request)?;
+    if let Some(version) = version {
+        evaluator = evaluator.with_version(version.into());
+    }
 
     if let Some(timeout) = timeout {
         let cancellation_token = CancellationToken::new();
@@ -1424,17 +1584,37 @@ fn evaluate_sparql_query(
         );
     }
 
+    let entailment_options = QueryEntailmentOptions::new(entailment).with_timeout(timeout);
     let results = prepared
-        .on_store(store)
+        .on_store_with_entailment(store, &entailment_options)
+        .map_err(query_request_refused)?
         .execute()
         .map_err(internal_server_error)?;
     match results {
         QueryResults::Solutions(solutions) => {
-            let format = query_results_content_negotiation(request)?;
+            let selected = query_results_content_negotiation(request, true)?;
+            let serializer = selected.serializer()?;
+            if selected.requires_term_preflight() {
+                let mut body = Vec::new();
+                let mut serializer = serializer
+                    .serialize_solutions_to_writer(&mut body, solutions.variables().to_vec())
+                    .map_err(internal_server_error)?;
+                for solution in solutions {
+                    let solution = solution.map_err(internal_server_error)?;
+                    serializer
+                        .serialize(&solution)
+                        .map_err(query_results_not_acceptable)?;
+                }
+                serializer.finish().map_err(internal_server_error)?;
+                return Response::builder()
+                    .header(CONTENT_TYPE, selected.media_type())
+                    .body(body.into())
+                    .map_err(internal_server_error);
+            }
             ReadForWrite::build_response(
                 move |w| {
                     Ok((
-                        QueryResultsSerializer::from_format(format)
+                        serializer
                             .serialize_solutions_to_writer(w, solutions.variables().to_vec())?,
                         solutions,
                     ))
@@ -1448,34 +1628,57 @@ fn evaluate_sparql_query(
                         None
                     })
                 },
-                format.media_type(),
+                selected.media_type(),
             )
         }
         QueryResults::Boolean(result) => {
-            let format = query_results_content_negotiation(request)?;
+            let selected = query_results_content_negotiation(request, false)?;
             let mut body = Vec::new();
-            QueryResultsSerializer::from_format(format)
+            selected
+                .serializer()?
                 .serialize_boolean_to_writer(&mut body, result)
                 .map_err(internal_server_error)?;
             Response::builder()
-                .header(CONTENT_TYPE, format.media_type())
+                .header(CONTENT_TYPE, selected.media_type())
                 .body(body.into())
                 .map_err(internal_server_error)
         }
         QueryResults::Graph(triples) => {
-            let format = rdf_content_negotiation(request)?;
+            let selected = rdf_content_negotiation(request)?;
+            if selected.version() == RdfVersion::V1_1 {
+                let mut serializer = selected
+                    .serializer()
+                    .map_err(internal_server_error)?
+                    .for_writer(Vec::new());
+                for triple in triples {
+                    let triple = triple.map_err(internal_server_error)?;
+                    selected
+                        .ensure_triple(&triple)
+                        .map_err(rdf_response_not_acceptable)?;
+                    serializer
+                        .serialize_triple(&triple)
+                        .map_err(internal_server_error)?;
+                }
+                let body = serializer.finish().map_err(internal_server_error)?;
+                return Response::builder()
+                    .header(CONTENT_TYPE, selected.media_type())
+                    .body(body.into())
+                    .map_err(internal_server_error);
+            }
             ReadForWrite::build_response(
-                move |w| Ok((RdfSerializer::from_format(format).for_writer(w), triples)),
-                |(mut serializer, mut triples)| {
+                move |w| Ok((selected.serializer()?.for_writer(w), triples)),
+                move |(mut serializer, mut triples)| {
                     Ok(if let Some(t) = triples.next() {
-                        serializer.serialize_triple(&t.map_err(io::Error::other)?)?;
+                        let triple = t.map_err(io::Error::other)?;
+                        selected.ensure_triple(&triple)?;
+                        serializer.serialize_triple(&triple)?;
                         Some((serializer, triples))
                     } else {
                         serializer.finish()?;
                         None
                     })
                 },
-                format.media_type(),
+                selected.media_type(),
             )
         }
     }
@@ -1483,14 +1686,17 @@ fn evaluate_sparql_query(
 
 fn configure_and_evaluate_sparql_update(
     store: &Store,
-    args: HashMap<String, String>,
+    args: SparqlParameters,
     mut update: Option<String>,
+    media_type_version: Option<SparqlVersion>,
     request: &Request<Body>,
     default_use_default_graph_as_union: bool,
 ) -> Result<Response<Body>, HttpError> {
+    let is_direct_request = update.is_some();
     let mut use_default_graph_as_union = false;
     let mut default_graph_uris = Vec::new();
     let mut named_graph_uris = Vec::new();
+    let mut request_version = media_type_version;
     for (k, v) in args {
         match k.as_ref() {
             "update" => {
@@ -1499,19 +1705,36 @@ fn configure_and_evaluate_sparql_update(
                 }
                 update = Some(v)
             }
+            "version" => {
+                if is_direct_request {
+                    return Err(bad_request(
+                        "The version of a direct SPARQL update must be set as an application/sparql-update media type parameter",
+                    ));
+                }
+                if request_version.is_some() {
+                    return Err(bad_request("Multiple version parameters provided"));
+                }
+                request_version = Some(SparqlVersion::parse(&v)?);
+            }
             "using-graph-uri" => default_graph_uris.push(v),
             "using-union-graph" => use_default_graph_as_union = true,
             "using-named-graph-uri" => named_graph_uris.push(v),
-            _ => (),
+            _ => {
+                return Err(bad_request(format!(
+                    "Unknown SPARQL update parameter '{k}'"
+                )));
+            }
         }
     }
     if default_graph_uris.is_empty() && named_graph_uris.is_empty() {
         use_default_graph_as_union |= default_use_default_graph_as_union;
     }
     let update = update.ok_or_else(|| bad_request("You should set the 'update' parameter"))?;
+    let effective_version = validate_sparql_version(&update, request_version)?;
     evaluate_sparql_update(
         store,
         &update,
+        effective_version,
         use_default_graph_as_union,
         default_graph_uris,
         named_graph_uris,
@@ -1522,16 +1745,19 @@ fn configure_and_evaluate_sparql_update(
 fn evaluate_sparql_update(
     store: &Store,
     update: &str,
+    version: Option<SparqlVersion>,
     use_default_graph_as_union: bool,
     default_graph_uris: Vec<String>,
     named_graph_uris: Vec<String>,
     request: &Request<Body>,
 ) -> Result<Response<Body>, HttpError> {
-    let mut prepared = SparqlEvaluator::new()
+    let mut evaluator = SparqlEvaluator::new()
         .with_base_iri(base_url(request).as_str())
-        .map_err(bad_request)?
-        .parse_update(update)
         .map_err(bad_request)?;
+    if let Some(version) = version {
+        evaluator = evaluator.with_version(version.into());
+    }
+    let mut prepared = evaluator.parse_update(update).map_err(bad_request)?;
 
     if use_default_graph_as_union {
         if !default_graph_uris.is_empty() || !named_graph_uris.is_empty() {
@@ -1578,72 +1804,32 @@ fn evaluate_sparql_update(
         .map_err(internal_server_error)
 }
 
-fn store_target(request: &Request<Body>) -> Result<Option<NamedGraphName>, HttpError> {
-    if request.uri().path() == "/store" {
-        if let Some(graph) = url_query_parameters(request).remove("graph") {
-            if url_has_query_parameter(request, "default") {
-                Err(bad_request(
-                    "Both graph and default parameters should not be set at the same time",
-                ))
-            } else {
-                Ok(Some(NamedGraphName::NamedNode(resolve_with_base(
-                    request, &graph,
-                )?)))
-            }
-        } else if url_has_query_parameter(request, "default") {
-            Ok(Some(NamedGraphName::DefaultGraph))
-        } else {
-            Ok(None)
-        }
-    } else {
-        Ok(Some(NamedGraphName::NamedNode(resolve_with_base(
-            request, "",
-        )?)))
-    }
-}
-
-fn assert_that_graph_exists(store: &Store, target: &NamedGraphName) -> Result<(), HttpError> {
-    if match target {
-        NamedGraphName::DefaultGraph => true,
-        NamedGraphName::NamedNode(target) => store
-            .contains_named_graph(&target.clone().into())
-            .map_err(internal_server_error)?,
-    } {
-        Ok(())
-    } else {
-        Err((
-            StatusCode::NOT_FOUND,
-            format!(
-                "The graph {} does not exists",
-                GraphName::from(target.clone())
-            ),
-        ))
-    }
-}
-
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
-enum NamedGraphName {
-    NamedNode(NamedNode),
-    DefaultGraph,
-}
-
-impl From<NamedGraphName> for GraphName {
-    fn from(graph_name: NamedGraphName) -> Self {
-        match graph_name {
-            NamedGraphName::NamedNode(node) => node.into(),
-            NamedGraphName::DefaultGraph => Self::DefaultGraph,
-        }
-    }
-}
-
-fn rdf_content_negotiation(request: &Request<Body>) -> Result<RdfFormat, HttpError> {
+fn rdf_content_negotiation(request: &Request<Body>) -> Result<RdfResponseFormat, HttpError> {
     content_negotiation(
         request,
-        RdfFormat::from_media_type,
-        RdfFormat::NQuads,
+        |media_range| {
+            let format = RdfFormat::from_media_type(media_range)?;
+            let version = match media_type_parameter(media_range, "version").ok().flatten() {
+                Some("1.2-basic") => RdfVersion::V1_2Basic,
+                Some("1.2") => RdfVersion::V1_2,
+                _ => RdfVersion::V1_1,
+            };
+            Some(RdfResponseFormat::new(format, version))
+        },
+        |selected, media_range| match media_type_parameter(media_range, "version")? {
+            None | Some("1.1") => Ok(selected.version() == RdfVersion::V1_1),
+            Some("1.2-basic") => Ok(cfg!(feature = "rdf-12")
+                && RdfResponseFormat::supports_rdf12(selected.format())
+                && selected.version() == RdfVersion::V1_2Basic),
+            Some("1.2") => Ok(cfg!(feature = "rdf-12")
+                && RdfResponseFormat::supports_rdf12(selected.format())
+                && selected.version() == RdfVersion::V1_2),
+            Some(_) => Ok(false),
+        },
+        RdfResponseFormat::rdf11(RdfFormat::NQuads),
         &[
-            ("application", RdfFormat::NQuads),
-            ("text", RdfFormat::NQuads),
+            ("application", RdfResponseFormat::rdf11(RdfFormat::NQuads)),
+            ("text", RdfResponseFormat::rdf11(RdfFormat::NQuads)),
         ],
         "application/n-quads or text/turtle",
     )
@@ -1651,22 +1837,139 @@ fn rdf_content_negotiation(request: &Request<Body>) -> Result<RdfFormat, HttpErr
 
 fn query_results_content_negotiation(
     request: &Request<Body>,
-) -> Result<QueryResultsFormat, HttpError> {
+    tabular_results: bool,
+) -> Result<QueryResultsResponseFormat, HttpError> {
     content_negotiation(
         request,
-        QueryResultsFormat::from_media_type,
-        QueryResultsFormat::Json,
+        query_results_response_format,
+        |selected, media_range| {
+            accepts_query_results_parameters(selected, media_range, tabular_results)
+        },
+        QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
         &[
-            ("application", QueryResultsFormat::Json),
-            ("text", QueryResultsFormat::Json),
+            (
+                "application",
+                QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
+            ),
+            (
+                "text",
+                QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
+            ),
         ],
         "application/sparql-results+json or text/tsv",
     )
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct QueryResultsResponseFormat {
+    format: QueryResultsFormat,
+    version: Option<RdfVersion>,
+}
+
+impl QueryResultsResponseFormat {
+    const fn unversioned(format: QueryResultsFormat) -> Self {
+        Self {
+            format,
+            version: None,
+        }
+    }
+
+    fn serializer(self) -> Result<QueryResultsSerializer, HttpError> {
+        let serializer = QueryResultsSerializer::from_format(self.format);
+        match self.version {
+            Some(version) => serializer
+                .with_rdf_version(version)
+                .map_err(internal_server_error),
+            None => Ok(serializer),
+        }
+    }
+
+    const fn requires_term_preflight(self) -> bool {
+        matches!(self.version, Some(RdfVersion::V1_1 | RdfVersion::V1_2Basic))
+    }
+
+    fn media_type(self) -> &'static str {
+        match (self.format, self.version) {
+            (QueryResultsFormat::Json, Some(RdfVersion::V1_1)) => {
+                "application/sparql-results+json; version=1.1"
+            }
+            (QueryResultsFormat::Json, Some(RdfVersion::V1_2Basic)) => {
+                "application/sparql-results+json; version=1.2-basic"
+            }
+            (QueryResultsFormat::Json, Some(RdfVersion::V1_2)) => {
+                "application/sparql-results+json; version=1.2"
+            }
+            (QueryResultsFormat::Xml, Some(RdfVersion::V1_1)) => {
+                "application/sparql-results+xml; version=1.1"
+            }
+            (QueryResultsFormat::Xml, Some(RdfVersion::V1_2Basic)) => {
+                "application/sparql-results+xml; version=1.2-basic"
+            }
+            (QueryResultsFormat::Xml, Some(RdfVersion::V1_2)) => {
+                "application/sparql-results+xml; version=1.2"
+            }
+            (format, None) => format.media_type(),
+            (QueryResultsFormat::Csv | QueryResultsFormat::Tsv, Some(_)) => {
+                unreachable!("tabular result formats do not support version parameters")
+            }
+            _ => unreachable!("unknown query results format"),
+        }
+    }
+}
+
+fn query_results_response_format(media_range: &str) -> Option<QueryResultsResponseFormat> {
+    let format = QueryResultsFormat::from_media_type(media_range)?;
+    let version = match media_type_parameter(media_range, "version").ok().flatten() {
+        Some("1.1") => Some(RdfVersion::V1_1),
+        Some("1.2-basic") => Some(RdfVersion::V1_2Basic),
+        Some("1.2") => Some(RdfVersion::V1_2),
+        _ => None,
+    };
+    Some(QueryResultsResponseFormat { format, version })
+}
+
+fn accepts_query_results_parameters(
+    selected: QueryResultsResponseFormat,
+    media_range: &str,
+    tabular_results: bool,
+) -> Result<bool, HttpError> {
+    let format = selected.format;
+    if !tabular_results && matches!(format, QueryResultsFormat::Csv | QueryResultsFormat::Tsv) {
+        // The SPARQL CSV and TSV Results formats only encode SELECT result
+        // tables, not ASK boolean results.
+        return Ok(false);
+    }
+    let requested_version = match media_type_parameter(media_range, "version")? {
+        None => None,
+        Some("1.1") => Some(RdfVersion::V1_1),
+        Some("1.2-basic") if cfg!(feature = "rdf-12") => Some(RdfVersion::V1_2Basic),
+        Some("1.2") if cfg!(feature = "rdf-12") => Some(RdfVersion::V1_2),
+        Some(_) => return Ok(false),
+    };
+    if requested_version != selected.version
+        || (requested_version.is_some()
+            && !matches!(format, QueryResultsFormat::Json | QueryResultsFormat::Xml))
+    {
+        return Ok(false);
+    }
+    if media_type_parameter(media_range, "charset")?
+        .is_some_and(|charset| !charset.eq_ignore_ascii_case("utf-8"))
+    {
+        return Ok(false);
+    }
+    if format == QueryResultsFormat::Csv
+        && media_type_parameter(media_range, "header")?
+            .is_some_and(|header| !header.eq_ignore_ascii_case("present"))
+    {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 fn content_negotiation<F: Copy>(
     request: &Request<Body>,
     parse: impl Fn(&str) -> Option<F>,
+    accepts_parameters: impl Fn(F, &str) -> Result<bool, HttpError>,
     default: F,
     default_by_base: &[(&str, F)],
     example: &str,
@@ -1683,26 +1986,48 @@ fn content_negotiation<F: Copy>(
         return Ok(default);
     }
     let mut result = None;
-    let mut result_score = 0_f32;
-    for mut possible in header.split(',') {
-        let mut score = 1.;
-        if let Some((possible_type, last_parameter)) = possible.rsplit_once(';') {
-            if let Some((name, value)) = last_parameter.split_once('=') {
-                if name.trim().eq_ignore_ascii_case("q") {
-                    score = f32::from_str(value.trim()).map_err(|_| {
-                        bad_request(format!("Invalid Accept media type score: {value}"))
-                    })?;
-                    possible = possible_type;
-                }
-            }
-        }
-        if score <= result_score {
+    let mut result_quality = 0;
+    for possible in split_quoted_header_fields(header, ',')? {
+        let possible = possible.trim();
+        if possible.is_empty() {
             continue;
         }
-        let (possible_base, possible_sub) = possible
-            .split_once(';')
-            .unwrap_or((possible, ""))
-            .0
+        let fields = split_quoted_header_fields(possible, ';')?;
+        let Some(type_subtype) = fields.first().map(|field| field.trim()) else {
+            continue;
+        };
+        let mut media_range = type_subtype.to_owned();
+        let mut quality = 1000;
+        let mut found_quality = false;
+        for parameter in fields.iter().skip(1) {
+            let parameter = parameter.trim();
+            let Some((name, value)) = parameter.split_once('=') else {
+                return Err(bad_request(format!(
+                    "Invalid Accept media type parameter: '{parameter}'"
+                )));
+            };
+            if name.trim().eq_ignore_ascii_case("q") {
+                if found_quality {
+                    return Err(bad_request(
+                        "Multiple q parameters provided in an Accept media range",
+                    ));
+                }
+                quality = parse_http_quality(value.trim())?;
+                found_quality = true;
+            } else {
+                if found_quality {
+                    return Err(bad_request(
+                        "Accept media type parameters must precede the q parameter",
+                    ));
+                }
+                media_range.push(';');
+                media_range.push_str(parameter);
+            }
+        }
+        if quality == 0 || quality <= result_quality {
+            continue;
+        }
+        let (possible_base, possible_sub) = type_subtype
             .split_once('/')
             .ok_or_else(|| bad_request(format!("Invalid media type: '{possible}'")))?;
         let possible_base = possible_base.trim();
@@ -1713,16 +2038,18 @@ fn content_negotiation<F: Copy>(
             format = Some(default);
         } else if possible_sub == "*" {
             for (base, sub_format) in default_by_base {
-                if *base == possible_base {
+                if base.eq_ignore_ascii_case(possible_base) {
                     format = Some(*sub_format);
                 }
             }
         } else {
-            format = parse(possible);
+            format = parse(&media_range);
         }
-        if let Some(format) = format {
+        if let Some(format) = format
+            && accepts_parameters(format, &media_range)?
+        {
             result = Some(format);
-            result_score = score;
+            result_quality = quality;
         }
     }
 
@@ -1734,31 +2061,566 @@ fn content_negotiation<F: Copy>(
     })
 }
 
-fn content_type(request: &Request<Body>) -> Option<String> {
-    let value = request.headers().get(CONTENT_TYPE)?.to_str().ok()?;
-    Some(
+fn split_quoted_header_fields(value: &str, delimiter: char) -> Result<Vec<&str>, HttpError> {
+    let mut fields = Vec::new();
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, character) in value.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+        } else if character == '"' {
+            quoted = true;
+        } else if character == delimiter {
+            fields.push(&value[start..index]);
+            start = index + character.len_utf8();
+        }
+    }
+    if quoted || escaped {
+        return Err(bad_request(
+            "An HTTP header has an unterminated quoted value",
+        ));
+    }
+    fields.push(&value[start..]);
+    Ok(fields)
+}
+
+fn parse_http_quality(value: &str) -> Result<u16, HttpError> {
+    let value = unquote_media_type_parameter(value)?;
+    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
+    if fraction.len() > 3 || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(bad_request(format!(
+            "Invalid Accept media type score: {value}"
+        )));
+    }
+    let whole = match whole {
+        "0" => 0,
+        "1" if fraction.bytes().all(|byte| byte == b'0') => 1,
+        _ => {
+            return Err(bad_request(format!(
+                "Invalid Accept media type score: {value}"
+            )));
+        }
+    };
+    if whole == 1 {
+        Ok(1000)
+    } else {
+        let fraction = match fraction.len() {
+            0 => 0,
+            1 => fraction.parse::<u16>().unwrap_or_default() * 100,
+            2 => fraction.parse::<u16>().unwrap_or_default() * 10,
+            3 => fraction.parse::<u16>().unwrap_or_default(),
+            _ => unreachable!(),
+        };
+        Ok(fraction)
+    }
+}
+
+fn media_type_parameter<'a>(
+    value: &'a str,
+    parameter_name: &str,
+) -> Result<Option<&'a str>, HttpError> {
+    let mut result = None;
+    for parameter in split_quoted_header_fields(value, ';')?.into_iter().skip(1) {
+        let Some((name, value)) = parameter.split_once('=') else {
+            if parameter.trim().eq_ignore_ascii_case(parameter_name) {
+                return Err(bad_request(format!(
+                    "The {parameter_name} media type parameter must have a value"
+                )));
+            }
+            continue;
+        };
+        if !name.trim().eq_ignore_ascii_case(parameter_name) {
+            continue;
+        }
+        if result.is_some() {
+            return Err(bad_request(format!(
+                "Multiple {parameter_name} media type parameters provided"
+            )));
+        }
+        result = Some(unquote_media_type_parameter(value.trim())?);
+    }
+    Ok(result)
+}
+
+fn unquote_media_type_parameter(value: &str) -> Result<&str, HttpError> {
+    if let Some(value) = value.strip_prefix('"') {
         value
-            .split_once(';')
-            .map_or(value, |(b, _)| b)
-            .trim()
-            .to_ascii_lowercase(),
-    )
+            .strip_suffix('"')
+            .ok_or_else(|| bad_request("A media type parameter has an unterminated quoted value"))
+    } else {
+        Ok(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum SparqlVersion {
+    V11,
+    #[cfg(feature = "rdf-12")]
+    V12Basic,
+    #[cfg(feature = "rdf-12")]
+    V12,
+}
+
+impl SparqlVersion {
+    fn parse(value: &str) -> Result<Self, HttpError> {
+        match value {
+            "1.1" => Ok(Self::V11),
+            #[cfg(feature = "rdf-12")]
+            "1.2-basic" => Ok(Self::V12Basic),
+            #[cfg(feature = "rdf-12")]
+            "1.2" => Ok(Self::V12),
+            _ => Err(bad_request(format!(
+                "Unsupported SPARQL version announcement '{value}'"
+            ))),
+        }
+    }
+}
+
+impl From<SparqlVersion> for LibrarySparqlVersion {
+    fn from(value: SparqlVersion) -> Self {
+        match value {
+            SparqlVersion::V11 => Self::V1_1,
+            #[cfg(feature = "rdf-12")]
+            SparqlVersion::V12Basic => Self::V1_2Basic,
+            #[cfg(feature = "rdf-12")]
+            SparqlVersion::V12 => Self::V1_2,
+        }
+    }
+}
+
+fn validate_sparql_version(
+    source: &str,
+    request_version: Option<SparqlVersion>,
+) -> Result<Option<SparqlVersion>, HttpError> {
+    // SPARQL 1.2 Query §4.3 says the protocol version announcement is
+    // considered only when the operation has no VERSION directive.
+    let syntax_version = sparql_syntax_version(source)?;
+    let Some(effective_version) = syntax_version.or(request_version) else {
+        return Ok(None);
+    };
+    let code = mask_sparql_comments_strings_and_iris(source);
+    match effective_version {
+        SparqlVersion::V11 => {
+            const SPARQL_12_FUNCTIONS: &[&[u8]] = &[
+                b"LANGDIR",
+                b"STRLANGDIR",
+                b"hasLANG",
+                b"hasLANGDIR",
+                b"isTRIPLE",
+                b"TRIPLE",
+                b"SUBJECT",
+                b"PREDICATE",
+                b"OBJECT",
+            ];
+            if contains_bytes(&code, b"<<")
+                || contains_bytes(&code, b"{|")
+                || contains_unescaped_byte(&code, b'~')
+                || has_directional_language_tag(&code)
+                || SPARQL_12_FUNCTIONS
+                    .iter()
+                    .any(|name| has_sparql_function_call(&code, name))
+            {
+                return Err(bad_request(
+                    "The effective SPARQL 1.1 version does not allow SPARQL 1.2 syntax",
+                ));
+            }
+        }
+        #[cfg(feature = "rdf-12")]
+        SparqlVersion::V12Basic => {
+            const TRIPLE_TERM_FUNCTIONS: &[&[u8]] =
+                &[b"isTRIPLE", b"TRIPLE", b"SUBJECT", b"PREDICATE", b"OBJECT"];
+            if contains_bytes(&code, b"<<(")
+                || has_nested_reified_triple(&code)
+                || TRIPLE_TERM_FUNCTIONS
+                    .iter()
+                    .any(|name| has_sparql_function_call(&code, name))
+            {
+                return Err(bad_request(
+                    "The effective SPARQL 1.2-basic version does not allow triple terms or nested reified triple patterns",
+                ));
+            }
+        }
+        #[cfg(feature = "rdf-12")]
+        SparqlVersion::V12 => {}
+    }
+    Ok(Some(effective_version))
+}
+
+fn sparql_syntax_version(source: &str) -> Result<Option<SparqlVersion>, HttpError> {
+    let bytes = source.as_bytes();
+    let mut cursor = 0;
+    let mut version = None;
+    loop {
+        skip_sparql_space_and_comments(bytes, &mut cursor);
+        if consume_ascii_keyword(bytes, &mut cursor, b"BASE") {
+            skip_sparql_space_and_comments(bytes, &mut cursor);
+            if !consume_sparql_iriref(bytes, &mut cursor) {
+                break; // The full parser will report the malformed declaration.
+            }
+        } else if consume_ascii_keyword(bytes, &mut cursor, b"PREFIX") {
+            skip_sparql_space_and_comments(bytes, &mut cursor);
+            let Some(relative_colon) = bytes[cursor..].iter().position(|byte| *byte == b':') else {
+                break;
+            };
+            if bytes[cursor..cursor + relative_colon]
+                .iter()
+                .any(|byte| byte.is_ascii_whitespace() || *byte == b'<' || *byte == b'#')
+            {
+                break;
+            }
+            cursor += relative_colon + 1;
+            skip_sparql_space_and_comments(bytes, &mut cursor);
+            if !consume_sparql_iriref(bytes, &mut cursor) {
+                break;
+            }
+        } else if consume_ascii_keyword(bytes, &mut cursor, b"VERSION") {
+            skip_sparql_space_and_comments(bytes, &mut cursor);
+            let label = consume_sparql_short_string(source, &mut cursor)?;
+            let parsed = SparqlVersion::parse(label)?;
+            version = Some(version.map_or(parsed, |previous: SparqlVersion| previous.max(parsed)));
+        } else {
+            break;
+        }
+    }
+    Ok(version)
+}
+
+fn skip_sparql_space_and_comments(bytes: &[u8], cursor: &mut usize) {
+    loop {
+        while bytes.get(*cursor).is_some_and(u8::is_ascii_whitespace) {
+            *cursor += 1;
+        }
+        if bytes.get(*cursor) != Some(&b'#') {
+            return;
+        }
+        while bytes.get(*cursor).is_some_and(|byte| *byte != b'\n') {
+            *cursor += 1;
+        }
+    }
+}
+
+fn consume_ascii_keyword(bytes: &[u8], cursor: &mut usize, keyword: &[u8]) -> bool {
+    let Some(candidate) = bytes.get(*cursor..*cursor + keyword.len()) else {
+        return false;
+    };
+    if !candidate.eq_ignore_ascii_case(keyword)
+        || bytes
+            .get(*cursor + keyword.len())
+            .is_some_and(|byte| is_sparql_name_byte(*byte))
+    {
+        return false;
+    }
+    *cursor += keyword.len();
+    true
+}
+
+fn consume_sparql_iriref(bytes: &[u8], cursor: &mut usize) -> bool {
+    if bytes.get(*cursor) != Some(&b'<') {
+        return false;
+    }
+    if let Some(relative_end) = bytes[*cursor + 1..].iter().position(|byte| *byte == b'>') {
+        *cursor += relative_end + 2;
+        true
+    } else {
+        false
+    }
+}
+
+fn consume_sparql_short_string<'a>(
+    source: &'a str,
+    cursor: &mut usize,
+) -> Result<&'a str, HttpError> {
+    let bytes = source.as_bytes();
+    let Some(quote @ (b'\'' | b'"')) = bytes.get(*cursor).copied() else {
+        return Err(bad_request(
+            "A SPARQL VERSION directive must use a short quoted string",
+        ));
+    };
+    if bytes.get(*cursor + 1) == Some(&quote) && bytes.get(*cursor + 2) == Some(&quote) {
+        return Err(bad_request(
+            "A SPARQL VERSION directive must use a short quoted string",
+        ));
+    }
+    let start = *cursor + 1;
+    let mut current = start;
+    while let Some(byte) = bytes.get(current) {
+        if *byte == b'\\' {
+            current += 2;
+        } else if *byte == quote {
+            let label = source
+                .get(start..current)
+                .ok_or_else(|| bad_request("Invalid UTF-8 boundary in VERSION directive"))?;
+            *cursor = current + 1;
+            return Ok(label);
+        } else if matches!(*byte, b'\r' | b'\n') {
+            break;
+        } else {
+            current += 1;
+        }
+    }
+    Err(bad_request("Unterminated SPARQL VERSION directive"))
+}
+
+fn mask_sparql_comments_strings_and_iris(source: &str) -> Vec<u8> {
+    let bytes = source.as_bytes();
+    let mut code = bytes.to_vec();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'#' if !is_backslash_escaped(bytes, cursor) => {
+                let start = cursor;
+                while cursor < bytes.len() && bytes[cursor] != b'\n' {
+                    cursor += 1;
+                }
+                code[start..cursor].fill(b' ');
+            }
+            quote @ (b'\'' | b'"') if !is_backslash_escaped(bytes, cursor) => {
+                let start = cursor;
+                let long =
+                    bytes.get(cursor + 1) == Some(&quote) && bytes.get(cursor + 2) == Some(&quote);
+                cursor += if long { 3 } else { 1 };
+                while cursor < bytes.len() {
+                    if bytes[cursor] == b'\\' {
+                        cursor = (cursor + 2).min(bytes.len());
+                    } else if long
+                        && bytes.get(cursor) == Some(&quote)
+                        && bytes.get(cursor + 1) == Some(&quote)
+                        && bytes.get(cursor + 2) == Some(&quote)
+                    {
+                        cursor += 3;
+                        break;
+                    } else if !long && bytes[cursor] == quote {
+                        cursor += 1;
+                        break;
+                    } else {
+                        cursor += 1;
+                    }
+                }
+                code[start..cursor].fill(b' ');
+            }
+            b'<' if bytes.get(cursor + 1) != Some(&b'<')
+                && bytes.get(cursor + 1) != Some(&b'=') =>
+            {
+                if let Some(end) = sparql_iriref_end(bytes, cursor) {
+                    code[cursor..end].fill(b' ');
+                    cursor = end;
+                } else {
+                    cursor += 1;
+                }
+            }
+            _ => cursor += 1,
+        }
+    }
+    code
+}
+
+fn sparql_iriref_end(bytes: &[u8], start: usize) -> Option<usize> {
+    for (offset, byte) in bytes.get(start + 1..)?.iter().enumerate() {
+        if *byte == b'>' {
+            return Some(start + offset + 2);
+        }
+        if byte.is_ascii_whitespace()
+            || matches!(*byte, b'<' | b'"' | b'{' | b'}' | b'|' | b'^' | b'`')
+        {
+            return None;
+        }
+    }
+    None
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    memchr::memmem::find(haystack, needle).is_some()
+}
+
+fn contains_unescaped_byte(bytes: &[u8], target: u8) -> bool {
+    bytes
+        .iter()
+        .enumerate()
+        .any(|(position, byte)| *byte == target && !is_backslash_escaped(bytes, position))
+}
+
+fn is_backslash_escaped(bytes: &[u8], position: usize) -> bool {
+    let mut backslashes = 0;
+    let mut cursor = position;
+    while cursor > 0 && bytes.get(cursor - 1) == Some(&b'\\') {
+        backslashes += 1;
+        cursor -= 1;
+    }
+    backslashes % 2 == 1
+}
+
+fn has_sparql_function_call(code: &[u8], name: &[u8]) -> bool {
+    if name.len() > code.len() {
+        return false;
+    }
+    for start in 0..=code.len() - name.len() {
+        if !code[start..start + name.len()].eq_ignore_ascii_case(name)
+            || start
+                .checked_sub(1)
+                .and_then(|previous| code.get(previous))
+                .is_some_and(|byte| is_sparql_name_byte(*byte))
+            || code
+                .get(start + name.len())
+                .is_some_and(|byte| is_sparql_name_byte(*byte))
+        {
+            continue;
+        }
+        let mut after = start + name.len();
+        while code.get(after).is_some_and(u8::is_ascii_whitespace) {
+            after += 1;
+        }
+        if code.get(after) == Some(&b'(') {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_sparql_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'?' | b'$')
+}
+
+fn has_directional_language_tag(code: &[u8]) -> bool {
+    for marker in [b"--ltr".as_slice(), b"--rtl".as_slice()] {
+        if marker.len() > code.len() {
+            continue;
+        }
+        for position in 0..=code.len() - marker.len() {
+            if !code[position..position + marker.len()].eq_ignore_ascii_case(marker)
+                || code
+                    .get(position + marker.len())
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+            {
+                continue;
+            }
+            let mut tag_start = position;
+            while tag_start > 0
+                && code
+                    .get(tag_start - 1)
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+            {
+                tag_start -= 1;
+            }
+            if tag_start > 0 && code.get(tag_start - 1) == Some(&b'@') {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(feature = "rdf-12")]
+fn has_nested_reified_triple(code: &[u8]) -> bool {
+    let mut depth = 0_u32;
+    let mut cursor = 0;
+    while cursor + 1 < code.len() {
+        if code[cursor..].starts_with(b"<<(") {
+            return true;
+        }
+        if code[cursor..].starts_with(b"<<") {
+            depth += 1;
+            if depth > 1 {
+                return true;
+            }
+            cursor += 2;
+        } else if code[cursor..].starts_with(b">>") {
+            depth = depth.saturating_sub(1);
+            cursor += 2;
+        } else {
+            cursor += 1;
+        }
+    }
+    false
+}
+
+struct SparqlRequestContentType {
+    media_type: String,
+    version: Option<SparqlVersion>,
+}
+
+fn sparql_request_content_type(
+    request: &Request<Body>,
+) -> Result<Option<SparqlRequestContentType>, HttpError> {
+    let Some(value) = request.headers().get(CONTENT_TYPE) else {
+        return Ok(None);
+    };
+    let value = value
+        .to_str()
+        .map_err(|_| bad_request("The Content-Type header should be a valid ASCII string"))?;
+    let mut parts = value.split(';');
+    let media_type = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+    let is_direct_sparql = matches!(
+        media_type.as_str(),
+        "application/sparql-query" | "application/sparql-update"
+    );
+    let mut version = None;
+    if is_direct_sparql {
+        for parameter in parts {
+            let parameter = parameter.trim();
+            let (name, value) = parameter.split_once('=').ok_or_else(|| {
+                bad_request(format!(
+                    "Invalid {media_type} media type parameter '{parameter}'"
+                ))
+            })?;
+            if !name.trim().eq_ignore_ascii_case("version") {
+                return Err(bad_request(format!(
+                    "Unknown {media_type} media type parameter '{}'",
+                    name.trim()
+                )));
+            }
+            if version.is_some() {
+                return Err(bad_request(
+                    "Multiple version media type parameters provided",
+                ));
+            }
+            let value = unquote_media_type_parameter(value.trim())?;
+            version = Some(SparqlVersion::parse(value)?);
+        }
+    } else if media_type == "application/x-www-form-urlencoded" {
+        for parameter in parts {
+            if parameter
+                .split_once('=')
+                .is_some_and(|(name, _)| name.trim().eq_ignore_ascii_case("version"))
+            {
+                return Err(bad_request(
+                    "A SPARQL version announcement for application/x-www-form-urlencoded must be a form parameter, not a media type parameter",
+                ));
+            }
+        }
+    }
+    Ok(Some(SparqlRequestContentType {
+        media_type,
+        version,
+    }))
+}
+
+fn rdf_response_media_type(format: RdfResponseFormat) -> &'static str {
+    format.media_type()
 }
 
 fn service_description_response(
     request: &Request<Body>,
     kind: EndpointKind,
     union_default_graph: bool,
+    entailment: QueryEntailment,
 ) -> Result<Response<Body>, HttpError> {
-    let format = rdf_content_negotiation(request)?;
+    let selected = rdf_content_negotiation(request)?;
     let description = generate_service_description(
-        format,
+        selected,
         kind,
         union_default_graph,
+        entailment,
         request_original_target_url(request)?.to_string().into(),
     );
     Response::builder()
-        .header(CONTENT_TYPE, format.media_type())
+        .header(CONTENT_TYPE, rdf_response_media_type(selected))
         .body(description.into())
         .map_err(internal_server_error)
 }
@@ -1846,8 +2708,46 @@ fn error(status: StatusCode, message: impl fmt::Display) -> Response<Body> {
         .unwrap()
 }
 
+fn finalize_response(method: &Method, mut response: Response<Body>) -> Response<Body> {
+    if *method == Method::HEAD {
+        if response.body().len().is_some() {
+            if let Err(error) = io::copy(response.body_mut(), &mut io::sink()) {
+                response = crate::error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to suppress the HEAD response body: {error}"),
+                );
+                drop(io::copy(response.body_mut(), &mut io::sink()));
+            }
+        } else {
+            *response.body_mut() = Body::empty();
+        }
+    }
+    response
+}
+
 fn bad_request(message: impl fmt::Display) -> HttpError {
     (StatusCode::BAD_REQUEST, message.to_string())
+}
+
+fn query_request_refused(message: impl fmt::Display) -> HttpError {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Query request refused: {message}"),
+    )
+}
+
+fn rdf_response_not_acceptable(message: impl fmt::Display) -> HttpError {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        format!("The selected RDF representation cannot encode the result: {message}"),
+    )
+}
+
+fn query_results_not_acceptable(message: impl fmt::Display) -> HttpError {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        format!("The selected SPARQL Results representation cannot encode the result: {message}"),
+    )
 }
 
 fn the_server_is_read_only() -> HttpError {
@@ -2021,7 +2921,7 @@ mod tests {
     use assert_fs::{NamedTempFile, TempDir};
     use flate2::Compression;
     use flate2::write::GzEncoder;
-    use oxhttp::model::header::ACCEPT;
+    use oxhttp::model::header::{ACCEPT, LOCATION};
     use predicates::prelude::*;
     use std::fs::remove_dir_all;
     use std::io::read_to_string;
@@ -2039,6 +2939,10 @@ mod tests {
         command.arg("--features").arg("geosparql");
         #[cfg(feature = "rdf-12")]
         command.arg("--features").arg("rdf-12");
+        #[cfg(feature = "rdfs")]
+        command.arg("--features").arg("rdfs");
+        #[cfg(feature = "owl2-rl")]
+        command.arg("--features").arg("owl2-rl");
         command.arg("--");
         command
     }
@@ -2172,6 +3076,120 @@ mod tests {
             .assert()
             .success()
             .stdout("<http://example.com/s> <http://example.com/p> <http://example.com/o> .\n");
+        Ok(())
+    }
+
+    #[test]
+    fn parallel_load_reports_all_open_failures_and_keeps_successful_files() -> Result<()> {
+        let store_dir = TempDir::new()?;
+        let input_dir = TempDir::new()?;
+        let good_file = input_dir.child("good.nt");
+        good_file.write_str(
+            "<http://example.com/good> <http://example.com/p> <http://example.com/o> .\n",
+        )?;
+        let first_missing = input_dir.child("z-missing.nt.gz");
+        let second_missing = input_dir.child("a-missing.nt.gz");
+
+        let assert = cli_command()
+            .arg("load")
+            .arg("--location")
+            .arg(store_dir.path())
+            .arg("--format")
+            .arg("nt")
+            .arg("--file")
+            .arg(first_missing.path())
+            .arg(good_file.path())
+            .arg(second_missing.path())
+            .assert()
+            .failure();
+        let stderr = String::from_utf8(assert.get_output().stderr.clone())?;
+        assert!(stderr.contains(
+            "parallel bulk load failed for 2 of 3 files; successful files remain committed"
+        ));
+        let first_failure = format!("1. [open] {}", first_missing.path().display());
+        let second_failure = format!("3. [open] {}", second_missing.path().display());
+        assert!(stderr.contains(&first_failure));
+        assert!(stderr.contains(&second_failure));
+        assert!(stderr.find(&first_failure) < stderr.find(&second_failure));
+        assert!(stderr.contains("each failed file remains uncommitted"));
+
+        assert_cli_state(
+            &store_dir,
+            "<http://example.com/good> <http://example.com/p> <http://example.com/o> .\n",
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parallel_load_parse_failure_is_file_atomic() -> Result<()> {
+        let store_dir = TempDir::new()?;
+        let input_dir = TempDir::new()?;
+        let bad_file = input_dir.child("bad.nt");
+        bad_file.write_str(
+            "<http://example.com/leaked> <http://example.com/p> <http://example.com/o> .\nnot valid N-Triples\n",
+        )?;
+        let good_file = input_dir.child("good.nt");
+        good_file.write_str(
+            "<http://example.com/good> <http://example.com/p> <http://example.com/o> .\n",
+        )?;
+
+        let assert = cli_command()
+            .arg("load")
+            .arg("--location")
+            .arg(store_dir.path())
+            .arg("--format")
+            .arg("nt")
+            .arg("--file")
+            .arg(bad_file.path())
+            .arg(good_file.path())
+            .assert()
+            .failure();
+        let stderr = String::from_utf8(assert.get_output().stderr.clone())?;
+        assert!(stderr.contains(
+            "parallel bulk load failed for 1 of 2 files; successful files remain committed"
+        ));
+        assert!(stderr.contains(&format!("1. [load] {}", bad_file.path().display())));
+        assert!(stderr.contains("each failed file remains uncommitted"));
+
+        assert_cli_state(
+            &store_dir,
+            "<http://example.com/good> <http://example.com/p> <http://example.com/o> .\n",
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parallel_load_collects_commit_failures_in_input_order() -> Result<()> {
+        let store_dir = TempDir::new()?;
+        drop(Store::open(store_dir.path())?);
+        let store = Store::open_read_only(store_dir.path())?;
+        let input_dir = TempDir::new()?;
+        let first_file = input_dir.child("z-first.nt");
+        first_file.write_str(
+            "<http://example.com/first> <http://example.com/p> <http://example.com/o> .\n",
+        )?;
+        let second_file = input_dir.child("a-second.nt");
+        second_file.write_str(
+            "<http://example.com/second> <http://example.com/p> <http://example.com/o> .\n",
+        )?;
+
+        let error = parallel_bulk_load_files(
+            &store,
+            vec![first_file.path().to_owned(), second_file.path().to_owned()],
+            Some(RdfFormat::NTriples),
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("parallel bulk load failed for 2 of 2 files"));
+        let first_failure = format!("1. [commit] {}", first_file.path().display());
+        let second_failure = format!("2. [commit] {}", second_file.path().display());
+        assert!(message.contains(&first_failure));
+        assert!(message.contains(&second_failure));
+        assert!(message.find(&first_failure) < message.find(&second_failure));
         Ok(())
     }
 
@@ -2311,6 +3329,59 @@ mod tests {
             .assert()
             .stdout("true")
             .success();
+        Ok(())
+    }
+
+    #[cfg(all(feature = "rdf-12", feature = "rdfs"))]
+    #[test]
+    fn cli_query_entailment_is_explicit_and_bounded() -> Result<()> {
+        let store_dir = initialized_cli_store(concat!(
+            "<urn:Child> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:Parent> .",
+            "<urn:alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:Child> .",
+        ))?;
+        let query = || {
+            let mut command = cli_command();
+            command
+                .arg("query")
+                .arg("--location")
+                .arg(store_dir.path())
+                .arg("--query")
+                .arg("ASK { <urn:alice> a <urn:Parent> }")
+                .arg("--results-format")
+                .arg("csv");
+            command
+        };
+        query().assert().stdout("false").success();
+        query()
+            .arg("--entailment")
+            .arg("rdfs-1.2-finite")
+            .assert()
+            .stdout("true")
+            .success();
+        Ok(())
+    }
+
+    #[test]
+    fn cli_rejects_claims_of_exact_unimplemented_entailment() -> Result<()> {
+        let Err(error) = Args::try_parse_from([
+            "oxigraph",
+            "query",
+            "--location",
+            "unused",
+            "--query",
+            "ASK {}",
+            "--results-format",
+            "csv",
+            "--entailment",
+            "rdfs",
+        ]) else {
+            return Err(anyhow!("exact RDFS must not be selectable"));
+        };
+        ensure!(
+            error.kind() == clap::error::ErrorKind::InvalidValue,
+            "unexpected clap error kind: {:?}",
+            error.kind()
+        );
         Ok(())
     }
 
@@ -2490,6 +3561,48 @@ mod tests {
     }
 
     #[test]
+    fn convert_preserves_and_maps_empty_named_graph_topology() -> Result<()> {
+        let source_graph = NamedNode::new("http://example.com/source")?;
+        let target_graph = NamedNode::new("http://example.com/target")?;
+        let output = do_convert(
+            RdfParser::from_format(RdfFormat::TriG),
+            b"<http://example.com/source> {}".as_slice(),
+            RdfSerializer::from_format(RdfFormat::TriG),
+            Vec::new(),
+            false,
+            &Some(source_graph.clone().into()),
+            &target_graph.clone().into(),
+            None,
+        )?;
+        let dataset = RdfParser::from_format(RdfFormat::TriG)
+            .for_slice(&output)
+            .collect_dataset()?;
+        assert!(dataset.contains_named_graph(&target_graph));
+        assert!(!dataset.contains_named_graph(&source_graph));
+        Ok(())
+    }
+
+    #[test]
+    fn convert_fails_if_empty_graph_topology_is_not_representable() {
+        let error = do_convert(
+            RdfParser::from_format(RdfFormat::TriG),
+            b"<http://example.com/empty> {}".as_slice(),
+            RdfSerializer::from_format(RdfFormat::NQuads),
+            Vec::new(),
+            false,
+            &None,
+            &GraphName::DefaultGraph,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cannot represent an empty named graph")
+        );
+    }
+
+    #[test]
     fn cli_convert_to_base() {
         cli_command()
             .arg("convert")
@@ -2533,13 +3646,13 @@ mod tests {
     }
 
     #[test]
-    fn post_dataset_file() -> Result<()> {
+    fn post_dataset_file_to_graph_store_root_is_rejected() -> Result<()> {
         let request = Request::builder()
             .method(Method::POST)
             .uri("http://localhost/store")
             .header(CONTENT_TYPE, "application/trig")
             .body("<http://example.com> <http://example.com> <http://example.com> .")?;
-        ServerTest::new()?.test_status(request, StatusCode::NO_CONTENT)
+        ServerTest::new()?.test_status(request, StatusCode::BAD_REQUEST)
     }
 
     #[test]
@@ -2567,7 +3680,7 @@ mod tests {
         let server = ServerTest::new()?;
 
         let request = Request::builder()
-            .method(Method::POST)
+            .method(Method::PUT)
             .uri("http://localhost/store")
             .header(CONTENT_TYPE, "application/trig")
             .body("<http://example.com> <http://example.com> <http://example.com> .")?;
@@ -2653,6 +3766,52 @@ mod tests {
     }
 
     #[test]
+    fn get_query_accept_quality_and_quoted_fields_follow_http_grammar() -> Result<()> {
+        let server = ServerTest::new()?;
+        for accept in [
+            "application/sparql-results+json;q=1.1",
+            "application/sparql-results+json;q=0.0000",
+            "application/sparql-results+json;q=0.8;charset=utf-8",
+            "application/sparql-results+json;q=0.8;q=0.7",
+            "application/sparql-results+json;note=\"unterminated",
+        ] {
+            server.test_status(
+                Request::builder()
+                    .uri("http://localhost/query?query=SELECT%20*%20WHERE%20%7B%7D")
+                    .header(ACCEPT, accept)
+                    .body(())?,
+                StatusCode::BAD_REQUEST,
+            )?;
+        }
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=SELECT%20*%20WHERE%20%7B%7D")
+                .header(ACCEPT, "application/sparql-results+json;q=0")
+                .body(())?,
+            StatusCode::NOT_ACCEPTABLE,
+        )?;
+
+        let response = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=SELECT%20*%20WHERE%20%7B%7D")
+                .header(
+                    ACCEPT,
+                    "application/unsupported;note=\"a,b\";q=1, APPLICATION/SPARQL-RESULTS+JSON;q=0.8",
+                )
+                .body(())?,
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/sparql-results+json")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn get_query_accept_implicit_priority() -> Result<()> {
         let request = Request::builder()
             .uri(
@@ -2708,26 +3867,13 @@ mod tests {
     }
 
     #[test]
-    fn get_query_union_graph_in_url_and_urlencoded() -> Result<()> {
-        let server = ServerTest::new()?;
-
-        let request = Request::builder()
-            .method(Method::PUT)
-            .uri("http://localhost/store/1")
-            .header(CONTENT_TYPE, "text/turtle")
-            .body("<http://example.com> <http://example.com> <http://example.com> .")?;
-        server.test_status(request, StatusCode::CREATED)?;
-
+    fn post_form_query_rejects_uri_dataset_parameters() -> Result<()> {
         let request = Request::builder()
             .method(Method::POST)
             .uri("http://localhost/query?union-default-graph")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .header(ACCEPT, "text/csv")
             .body("query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}")?;
-        server.test_body(
-            request,
-            "s,p,o\r\nhttp://example.com,http://example.com,http://example.com\r\n",
-        )
+        ServerTest::new()?.test_status(request, StatusCode::BAD_REQUEST)
     }
 
     #[test]
@@ -2741,6 +3887,618 @@ mod tests {
     fn get_query_description() -> Result<()> {
         ServerTest::new()?.test_status(
             Request::builder().uri("http://localhost/query").body(())?,
+            StatusCode::OK,
+        )
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_12_get_query_accepts_one_version_parameter() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/query?query=ASK%20%7B%7D&version=1.2")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn sparql_get_query_rejects_duplicate_singleton_parameters() -> Result<()> {
+        let server = ServerTest::new()?;
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D&query=ASK%20%7B%7D")
+                .body(())?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D&version=1.1&version=1.1")
+                .body(())?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[test]
+    fn sparql_get_query_preserves_repeatable_dataset_parameters() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/query?query=ASK%20%7B%7D&default-graph-uri=http%3A%2F%2Fexample.com%2Fa&default-graph-uri=http%3A%2F%2Fexample.com%2Fb",
+            )
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn sparql_get_query_rejects_unknown_parameters_and_bodies() -> Result<()> {
+        let server = ServerTest::new()?;
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D&unknown=value")
+                .body(())?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D")
+                .body("not allowed")?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[test]
+    fn sparql_query_rejects_unsupported_version_labels() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/query?query=ASK%20%7B%7D&version=9.9")
+            .body(())?;
+        ServerTest::new()?.test_status(request, StatusCode::BAD_REQUEST)
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_12_direct_query_accepts_a_media_type_version() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query")
+            .header(CONTENT_TYPE, "application/sparql-query; version=\"1.2\"")
+            .body("ASK {}")?;
+        ServerTest::new()?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn sparql_direct_query_rejects_misplaced_or_invalid_media_parameters() -> Result<()> {
+        let server = ServerTest::new()?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query?version=1.1")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .body("ASK {}")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(
+                    CONTENT_TYPE,
+                    "application/sparql-query; version=1.1; version=1.1",
+                )
+                .body("ASK {}")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query; charset=utf-8")
+                .body("ASK {}")?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[test]
+    fn sparql_11_mode_ignores_feature_looking_comments_strings_and_iris() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query")
+            .header(CONTENT_TYPE, "application/sparql-query; version=1.1")
+            .body(concat!(
+                "PREFIX ex: <http://example.com/>\n",
+                "# <<( TRIPLE( \"text\"@en--ltr\n",
+                "ASK { BIND(\"<<( TRIPLE( @en--ltr\" AS ?value) ",
+                "BIND(ex:value\\~escaped AS ?tilde) ",
+                "BIND(<http://example.com/TRIPLE(foo)--ltr> AS ?iri) }",
+            ))?;
+        ServerTest::new()?.test_status(request, StatusCode::OK)
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_12_syntax_version_precedes_the_protocol_parameter() -> Result<()> {
+        let server = ServerTest::new()?;
+        let triple_term_query = concat!(
+            "VERSION \"1.1\"\n",
+            "ASK { BIND( <<( <http://example.com/s> <http://example.com/p> ",
+            "<http://example.com/o> )>> AS ?triple) }",
+        );
+
+        // The VERSION directive wins, so a protocol parameter cannot upgrade
+        // a query that declares SPARQL 1.1.
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query; version=1.2")
+                .body(triple_term_query)?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        for version in ["1.1", "1.2-basic"] {
+            server.test_status(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("http://localhost/query")
+                    .header(
+                        CONTENT_TYPE,
+                        format!("application/sparql-query; version={version}"),
+                    )
+                    .body(triple_term_query)?,
+                StatusCode::BAD_REQUEST,
+            )?;
+        }
+
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query; version=1.1")
+                .body(concat!(
+                    "VERSION \"1.2\"\n",
+                    "ASK { BIND( <<( <http://example.com/s> <http://example.com/p> ",
+                    "<http://example.com/o> )>> AS ?triple) }",
+                ))?,
+            StatusCode::OK,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query; version=1.2")
+                .body(concat!(
+                    "ASK { BIND( <<( <http://example.com/s> <http://example.com/p> ",
+                    "<http://example.com/o> )>> AS ?triple) }",
+                ))?,
+            StatusCode::OK,
+        )?;
+
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .body(concat!(
+                    "VERSION \"1.2-basic\"\n",
+                    "ASK { BIND( <<( <http://example.com/s> <http://example.com/p> ",
+                    "<http://example.com/o> )>> AS ?triple) }",
+                ))?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .body(concat!(
+                    "VERSION \"1.2-basic\"\n",
+                    "ASK { << << <http://example.com/s> <http://example.com/p> ",
+                    "<http://example.com/o> >> <http://example.com/p> ",
+                    "<http://example.com/o> >> <http://example.com/q> ",
+                    "<http://example.com/r> }",
+                ))?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .body("VERSION \"9.9\" ASK {}")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .body("VERSION \"1.1\" VERSION \"1.2\" ASK {}")?,
+            StatusCode::OK,
+        )
+    }
+
+    #[test]
+    fn sparql_version_directive_scanner_handles_interleaved_prologue() {
+        assert_eq!(
+            sparql_syntax_version(concat!(
+                "# leading comment\n",
+                "PREFIX ex: <http://example.com/>\n",
+                "VERSION '1.1'\n",
+                "BASE <http://example.com/base/>\n",
+                "ASK {}",
+            ))
+            .unwrap(),
+            Some(SparqlVersion::V11)
+        );
+        sparql_syntax_version("VERSION \"9.9\" ASK {}").unwrap_err();
+        assert_eq!(
+            sparql_syntax_version("VERSION \"1.1\" VERSION \"1.1\" ASK {}").unwrap(),
+            Some(SparqlVersion::V11)
+        );
+        #[cfg(feature = "rdf-12")]
+        assert_eq!(
+            sparql_syntax_version("VERSION \"1.1\" VERSION \"1.2\" ASK {}").unwrap(),
+            Some(SparqlVersion::V12)
+        );
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_12_form_query_accepts_a_version_parameter() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body("query=ASK%20%7B%7D&version=1.2-basic")?;
+        ServerTest::new()?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn sparql_form_query_rejects_duplicate_versions() -> Result<()> {
+        let server = ServerTest::new()?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body("query=ASK%20%7B%7D&version=1.1&version=1.1")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query?version=1.1")
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body("query=ASK%20%7B%7D")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(
+                    CONTENT_TYPE,
+                    "application/x-www-form-urlencoded; version=1.1",
+                )
+                .body("query=ASK%20%7B%7D")?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_results_versions_are_negotiated_and_emitted() -> Result<()> {
+        let server = ServerTest::new()?;
+
+        let mut json = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D&version=1.2")
+                .header(ACCEPT, "application/sparql-results+json; version=1.2")
+                .body(())?,
+        );
+        assert_eq!(
+            json.headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/sparql-results+json; version=1.2")
+        );
+        assert_eq!(
+            read_to_string(json.body_mut())?,
+            r#"{"head":{},"boolean":true}"#
+        );
+
+        let mut xml = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D&version=1.2")
+                .header(ACCEPT, "application/sparql-results+xml; version=1.2")
+                .body(())?,
+        );
+        assert_eq!(
+            xml.headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/sparql-results+xml; version=1.2")
+        );
+        assert!(read_to_string(xml.body_mut())?.contains(r#" version="1.2""#));
+
+        for (version, expected) in [
+            ("1.1", r#"{"head":{},"boolean":true}"#),
+            ("1.2-basic", r#"{"head":{},"boolean":true}"#),
+        ] {
+            let mut response = server.exec(
+                Request::builder()
+                    .uri("http://localhost/query?query=ASK%20%7B%7D")
+                    .header(
+                        ACCEPT,
+                        format!("application/sparql-results+json; version={version}"),
+                    )
+                    .body(())?,
+            );
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response
+                    .headers()
+                    .get(CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok()),
+                Some(format!("application/sparql-results+json; version={version}").as_str())
+            );
+            assert_eq!(read_to_string(response.body_mut())?, expected);
+        }
+
+        let csv = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=SELECT%20*%20WHERE%20%7B%7D&version=1.2")
+                .header(ACCEPT, "text/csv")
+                .body(())?,
+        );
+        assert_eq!(
+            csv.headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/csv; charset=utf-8")
+        );
+
+        let turtle = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=CONSTRUCT%20%7B%7D%20WHERE%20%7B%7D&version=1.2")
+                .header(ACCEPT, "text/turtle")
+                .body(())?,
+        );
+        assert_eq!(
+            turtle
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/turtle")
+        );
+        let rdf12_turtle = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=CONSTRUCT%20%7B%7D%20WHERE%20%7B%7D&version=1.2")
+                .header(ACCEPT, "text/turtle; version=1.2")
+                .body(())?,
+        );
+        assert_eq!(
+            rdf12_turtle
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/turtle; version=1.2")
+        );
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D")
+                .header(ACCEPT, "application/sparql-results+json; version=9.9")
+                .body(())?,
+            StatusCode::NOT_ACCEPTABLE,
+        )?;
+        let fallback = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D")
+                .header(
+                    ACCEPT,
+                    "application/sparql-results+json; version=1.1, application/sparql-results+xml",
+                )
+                .body(())?,
+        );
+        assert_eq!(
+            fallback
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/sparql-results+json; version=1.1")
+        );
+        Ok(())
+    }
+
+    #[cfg(not(feature = "rdf-12"))]
+    #[test]
+    fn rdf11_build_negotiates_only_legacy_sparql_results_versions() -> Result<()> {
+        let server = ServerTest::new()?;
+
+        let mut unversioned = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D")
+                .header(ACCEPT, "application/sparql-results+json")
+                .body(())?,
+        );
+        assert_eq!(unversioned.status(), StatusCode::OK);
+        assert_eq!(
+            unversioned
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/sparql-results+json")
+        );
+        assert_eq!(
+            read_to_string(unversioned.body_mut())?,
+            r#"{"head":{},"boolean":true}"#
+        );
+
+        let mut rdf11 = server.exec(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D")
+                .header(ACCEPT, "application/sparql-results+json; version=1.1")
+                .body(())?,
+        );
+        assert_eq!(rdf11.status(), StatusCode::OK);
+        assert_eq!(
+            read_to_string(rdf11.body_mut())?,
+            r#"{"head":{},"boolean":true}"#
+        );
+
+        for version in ["1.2-basic", "1.2"] {
+            server.test_status(
+                Request::builder()
+                    .uri("http://localhost/query?query=ASK%20%7B%7D")
+                    .header(
+                        ACCEPT,
+                        format!("application/sparql-results+json; version={version}"),
+                    )
+                    .body(())?,
+                StatusCode::NOT_ACCEPTABLE,
+            )?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn constrained_sparql_results_versions_fail_before_committing_a_response() -> Result<()> {
+        use oxigraph::model::{BaseDirection, Literal, Quad, Triple};
+
+        let server = ServerTest::new()?;
+        let triple = Triple::new(
+            NamedNode::new_unchecked("urn:results:embedded-s"),
+            NamedNode::new_unchecked("urn:results:embedded-p"),
+            NamedNode::new_unchecked("urn:results:embedded-o"),
+        );
+        server.store.insert(Quad::new(
+            NamedNode::new_unchecked("urn:results:triple"),
+            NamedNode::new_unchecked("urn:results:value"),
+            triple,
+            GraphName::DefaultGraph,
+        ))?;
+        server.store.insert(Quad::new(
+            NamedNode::new_unchecked("urn:results:directional"),
+            NamedNode::new_unchecked("urn:results:value"),
+            Literal::new_directional_language_tagged_literal("hello", "en", BaseDirection::Rtl)?,
+            GraphName::DefaultGraph,
+        ))?;
+
+        let request = |subject: &str, version: &str| {
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .header(
+                    ACCEPT,
+                    format!("application/sparql-results+json; version={version}"),
+                )
+                .body(format!(
+                    "SELECT ?value WHERE {{ <{subject}> <urn:results:value> ?value }}"
+                ))
+        };
+
+        for version in ["1.1", "1.2-basic"] {
+            server.test_status(
+                request("urn:results:triple", version)?,
+                StatusCode::NOT_ACCEPTABLE,
+            )?;
+        }
+        server.test_status(
+            request("urn:results:directional", "1.1")?,
+            StatusCode::NOT_ACCEPTABLE,
+        )?;
+
+        let mut basic = server.exec(request("urn:results:directional", "1.2-basic")?);
+        assert_eq!(basic.status(), StatusCode::OK);
+        let basic = read_to_string(basic.body_mut())?;
+        assert!(basic.contains(r#""version":"1.2-basic""#));
+        assert!(basic.contains(r#""its:dir":"rtl""#));
+
+        let mut full = server.exec(request("urn:results:triple", "1.2")?);
+        assert_eq!(full.status(), StatusCode::OK);
+        let full = read_to_string(full.body_mut())?;
+        assert!(full.contains(r#""version":"1.2""#));
+        assert!(full.contains(r#""type":"triple""#));
+        Ok(())
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_graph_results_fail_closed_without_rdf12_negotiation() -> Result<()> {
+        let server = ServerTest::new()?;
+        let embedded = oxigraph::model::Triple::new(
+            NamedNode::new_unchecked("urn:embedded:s"),
+            NamedNode::new_unchecked("urn:embedded:p"),
+            NamedNode::new_unchecked("urn:embedded:o"),
+        );
+        server.store.insert(oxigraph::model::Quad::new(
+            NamedNode::new_unchecked("urn:s"),
+            NamedNode::new_unchecked("urn:p"),
+            embedded,
+            GraphName::DefaultGraph,
+        ))?;
+        let request = |accept| {
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/query")
+                .header(CONTENT_TYPE, "application/sparql-query")
+                .header(ACCEPT, accept)
+                .body("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
+        };
+        server.test_status(
+            request("application/n-triples")?,
+            StatusCode::NOT_ACCEPTABLE,
+        )?;
+
+        let mut response = server.exec(request("application/n-triples; version=1.2")?);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/n-triples; version=1.2")
+        );
+        assert!(read_to_string(response.body_mut())?.contains("<<( <urn:embedded:s>"));
+        Ok(())
+    }
+
+    #[test]
+    fn sparql_ask_rejects_select_only_result_formats() -> Result<()> {
+        let server = ServerTest::new()?;
+        for media_type in ["text/csv", "text/tab-separated-values"] {
+            server.test_status(
+                Request::builder()
+                    .uri("http://localhost/query?query=ASK%20%7B%7D")
+                    .header(ACCEPT, media_type)
+                    .body(())?,
+                StatusCode::NOT_ACCEPTABLE,
+            )?;
+        }
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=ASK%20%7B%7D")
+                .header(ACCEPT, "text/csv, application/sparql-results+json")
+                .body(())?,
+            StatusCode::OK,
+        )
+    }
+
+    #[test]
+    fn sparql_csv_accept_parameters_match_the_emitted_representation() -> Result<()> {
+        let server = ServerTest::new()?;
+        for accept in ["text/csv; header=absent", "text/csv; charset=iso-8859-1"] {
+            server.test_status(
+                Request::builder()
+                    .uri("http://localhost/query?query=SELECT%20*%20WHERE%20%7B%7D")
+                    .header(ACCEPT, accept)
+                    .body(())?,
+                StatusCode::NOT_ACCEPTABLE,
+            )?;
+        }
+        server.test_status(
+            Request::builder()
+                .uri("http://localhost/query?query=SELECT%20*%20WHERE%20%7B%7D")
+                .header(ACCEPT, "text/csv; charset=utf-8; header=present")
+                .body(())?,
             StatusCode::OK,
         )
     }
@@ -2809,6 +4567,70 @@ mod tests {
                 "INSERT DATA { <http://example.com> <http://example.com> <http://example.com> }",
             )?;
         ServerTest::new()?.test_status(request, StatusCode::NO_CONTENT)
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn sparql_12_update_accepts_media_type_and_form_versions() -> Result<()> {
+        let server = ServerTest::new()?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/update")
+                .header(CONTENT_TYPE, "application/sparql-update; version=1.2")
+                .body("INSERT DATA {}")?,
+            StatusCode::NO_CONTENT,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/update")
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body("update=INSERT%20DATA%20%7B%7D&version=1.2-basic")?,
+            StatusCode::NO_CONTENT,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/update")
+                .header(CONTENT_TYPE, "application/sparql-update; version=1.1")
+                .body(concat!(
+                    "VERSION \"1.2\"\n",
+                    "INSERT DATA { <<( <http://example.com/s> <http://example.com/p> ",
+                    "<http://example.com/o> )>> <http://example.com/source> ",
+                    "<http://example.com/test> }",
+                ))?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[test]
+    fn sparql_update_rejects_duplicate_unknown_and_misplaced_parameters() -> Result<()> {
+        let server = ServerTest::new()?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/update")
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body("update=INSERT%20DATA%20%7B%7D&update=INSERT%20DATA%20%7B%7D")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/update")
+                .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body("update=INSERT%20DATA%20%7B%7D&unknown=value")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/update?version=1.1")
+                .header(CONTENT_TYPE, "application/sparql-update")
+                .body("INSERT DATA {}")?,
+            StatusCode::BAD_REQUEST,
+        )
     }
 
     #[test]
@@ -2956,6 +4778,16 @@ mod tests {
     fn graph_store_base_url() -> Result<()> {
         let server = ServerTest::new()?;
 
+        // PUT creates graph content; POST only merges into existing graph content.
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("http://localhost/store?graph=http://example.com")
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::CREATED,
+        )?;
+
         // POST
         let request = Request::builder()
             .method(Method::POST)
@@ -2994,6 +4826,403 @@ mod tests {
     }
 
     #[test]
+    fn graph_store_post_requires_existing_selected_graph() -> Result<()> {
+        let server = ServerTest::new()?;
+        let target = "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Fnew";
+        let body = "<http://example.com/s> <http://example.com/p> <http://example.com/o> .";
+
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(body)?,
+            StatusCode::NOT_FOUND,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(target)
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::CREATED,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(body)?,
+            StatusCode::NO_CONTENT,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store?default")
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(body)?,
+            StatusCode::NO_CONTENT,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store?graph=http%3A%2F%2Fexample.com%2Fempty")
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::NOT_FOUND,
+        )
+    }
+
+    #[test]
+    fn graph_store_without_content_type_falls_back_to_rdf_xml() -> Result<()> {
+        let server = ServerTest::new()?;
+        let rdf_xml = concat!(
+            "<?xml version=\"1.0\"?>",
+            "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" ",
+            "xmlns:ex=\"http://example.com/\">",
+            "<rdf:Description rdf:about=\"http://example.com/s\">",
+            "<ex:p rdf:resource=\"http://example.com/o\"/>",
+            "</rdf:Description></rdf:RDF>",
+        );
+
+        let put_target = "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Frdfxml-put";
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(put_target)
+                .body(rdf_xml)?,
+            StatusCode::CREATED,
+        )?;
+        server.test_body(
+            Request::builder()
+                .uri(put_target)
+                .header(ACCEPT, "application/n-triples")
+                .body(())?,
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> .\n",
+        )?;
+
+        let post_target = "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Frdfxml-post";
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(post_target)
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::CREATED,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(post_target)
+                .body(rdf_xml)?,
+            StatusCode::NO_CONTENT,
+        )?;
+        server.test_body(
+            Request::builder()
+                .uri(post_target)
+                .header(ACCEPT, "application/n-triples")
+                .body(())?,
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> .\n",
+        )?;
+
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store?default")
+                .body("<not-rdf-xml>")?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[test]
+    fn service_routes_return_method_specific_allow_headers() -> Result<()> {
+        let server = ServerTest::new()?;
+        for (path, allow) in [
+            ("/query", "GET, POST, QUERY"),
+            ("/update", "GET, POST"),
+            ("/sparql", "GET, POST, QUERY"),
+            ("/store", "GET, HEAD, PUT, POST, DELETE"),
+            ("/store/arbitrary", "GET, HEAD, PUT, POST, DELETE"),
+        ] {
+            let response = server.exec(
+                Request::builder()
+                    .method(Method::PATCH)
+                    .uri(format!("http://localhost{path}"))
+                    .body(())?,
+            );
+            assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+            assert_eq!(
+                response
+                    .headers()
+                    .get(ALLOW)
+                    .and_then(|value| value.to_str().ok()),
+                Some(allow)
+            );
+        }
+        server.test_status(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("http://localhost/not-a-service")
+                .body(())?,
+            StatusCode::NOT_FOUND,
+        )
+    }
+
+    #[test]
+    fn graph_store_head_matches_get_metadata_without_a_body() -> Result<()> {
+        let server = ServerTest::new()?;
+        let target = "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Fhead";
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(target)
+                .header(CONTENT_TYPE, "text/turtle")
+                .body("<http://example.com/s> <http://example.com/p> <http://example.com/o> .")?,
+            StatusCode::CREATED,
+        )?;
+
+        let mut get = server.exec(
+            Request::builder()
+                .uri(target)
+                .header(ACCEPT, "application/n-triples")
+                .body(())?,
+        );
+        let get_content_type = get.headers().get(CONTENT_TYPE).cloned();
+        assert_eq!(get.status(), StatusCode::OK);
+        assert!(!read_to_string(get.body_mut())?.is_empty());
+
+        let mut head = server.exec(
+            Request::builder()
+                .method(Method::HEAD)
+                .uri(target)
+                .header(ACCEPT, "application/n-triples")
+                .body(())?,
+        );
+        assert_eq!(head.status(), StatusCode::OK);
+        assert_eq!(head.headers().get(CONTENT_TYPE), get_content_type.as_ref());
+        assert!(read_to_string(head.body_mut())?.is_empty());
+
+        let mut not_acceptable = server.exec(
+            Request::builder()
+                .method(Method::HEAD)
+                .uri(target)
+                .header(ACCEPT, "application/not-rdf")
+                .body(())?,
+        );
+        assert_eq!(not_acceptable.status(), StatusCode::NOT_ACCEPTABLE);
+        assert!(read_to_string(not_acceptable.body_mut())?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn graph_store_rejects_ambiguous_selectors_and_invalid_multipart() -> Result<()> {
+        let server = ServerTest::new()?;
+        for uri in [
+            "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Fa&graph=http%3A%2F%2Fexample.com%2Fb",
+            "http://localhost/store?default&default",
+            "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Fa&default",
+            "http://localhost/store/direct?graph=http%3A%2F%2Fexample.com%2Fa",
+        ] {
+            server.test_status(
+                Request::builder().uri(uri).body(())?,
+                StatusCode::BAD_REQUEST,
+            )?;
+        }
+
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store?default")
+                .header(CONTENT_TYPE, "multipart/form-data; boundary=oxigraph")
+                .body("--oxigraph--\r\n")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store?default")
+                .header(CONTENT_TYPE, "multipart/form-data")
+                .body("--oxigraph--\r\n")?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store?default")
+                .header(
+                    CONTENT_TYPE,
+                    "multipart/form-data; boundary=one; boundary=two",
+                )
+                .body("--one--\r\n")?,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+
+    #[test]
+    fn graph_store_multipart_merges_parts_atomically() -> Result<()> {
+        use oxigraph::model::Quad;
+
+        let server = ServerTest::new()?;
+        let target = "http://localhost/store?graph=http%3A%2F%2Fexample.com%2Fmultipart-target";
+        let body = concat!(
+            "--oxigraph-boundary\r\n",
+            "Content-Disposition: form-data; name=\"first\"\r\n",
+            "Content-Type: text/turtle; charset=utf-8\r\n",
+            "\r\n",
+            "<http://example.com/first> <http://example.com/p> <http://example.com/o> .\n",
+            "_:same <http://example.com/blank-p> <http://example.com/blank-o1> .\r\n",
+            "--oxigraph-boundary\r\n",
+            "content-type: application/n-triples\r\n",
+            "\r\n",
+            "<http://example.com/second> <http://example.com/p> <http://example.com/o> .\n",
+            "_:same <http://example.com/blank-p> <http://example.com/blank-o2> .\r\n",
+            "--oxigraph-boundary--\r\n",
+        );
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(target)
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::CREATED,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(
+                    CONTENT_TYPE,
+                    "multipart/form-data; boundary=\"oxigraph-boundary\"",
+                )
+                .body(body)?,
+            StatusCode::NO_CONTENT,
+        )?;
+
+        let graph = NamedNode::new("http://example.com/multipart-target")?;
+        for subject in ["http://example.com/first", "http://example.com/second"] {
+            assert!(server.store.contains(&Quad::new(
+                NamedNode::new(subject)?,
+                NamedNode::new("http://example.com/p")?,
+                NamedNode::new("http://example.com/o")?,
+                graph.clone(),
+            ))?);
+        }
+        let blank_predicate = NamedNode::new("http://example.com/blank-p")?;
+        let blank_subjects = server
+            .store
+            .quads_for_pattern(
+                None,
+                Some(&blank_predicate),
+                None,
+                Some(&GraphName::from(graph.clone())),
+            )
+            .map(|quad| Ok(quad?.subject))
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(blank_subjects.len(), 2);
+        assert_ne!(blank_subjects[0], blank_subjects[1]);
+
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(
+                    CONTENT_TYPE,
+                    "multipart/form-data; boundary=oxigraph-boundary",
+                )
+                .body(body)?,
+            StatusCode::NO_CONTENT,
+        )?;
+
+        let invalid_body = concat!(
+            "--rollback\r\n",
+            "Content-Type: text/turtle\r\n",
+            "\r\n",
+            "<http://example.com/must-not-leak> <http://example.com/p> <http://example.com/o> .\r\n",
+            "--rollback\r\n",
+            "Content-Type: text/turtle\r\n",
+            "\r\n",
+            "@prefix broken\r\n",
+            "--rollback--\r\n",
+        );
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(CONTENT_TYPE, "multipart/form-data; boundary=rollback")
+                .body(invalid_body)?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        assert!(!server.store.contains(&Quad::new(
+            NamedNode::new("http://example.com/must-not-leak")?,
+            NamedNode::new("http://example.com/p")?,
+            NamedNode::new("http://example.com/o")?,
+            graph,
+        ))?);
+
+        let missing_part_content_type = concat!(
+            "--missing-type\r\n",
+            "Content-Disposition: form-data; name=\"rdf\"\r\n",
+            "\r\n",
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> .\r\n",
+            "--missing-type--\r\n",
+        );
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(CONTENT_TYPE, "multipart/form-data; boundary=missing-type")
+                .body(missing_part_content_type)?,
+            StatusCode::BAD_REQUEST,
+        )?;
+        server.test_status(
+            Request::builder()
+                .method(Method::POST)
+                .uri(target)
+                .header(CONTENT_TYPE, "multipart/form-data; boundary=unsupported")
+                .body(concat!(
+                    "--unsupported\r\n",
+                    "Content-Type: application/octet-stream\r\n",
+                    "\r\n",
+                    "not RDF\r\n",
+                    "--unsupported--\r\n",
+                ))?,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        )
+    }
+
+    #[test]
+    fn graph_store_multipart_without_selector_creates_a_graph() -> Result<()> {
+        let server = ServerTest::new()?;
+        let mut response = server.exec(
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://localhost/store")
+                .header(CONTENT_TYPE, "multipart/form-data; boundary=create")
+                .body(concat!(
+                    "--create\r\n",
+                    "Content-Type: text/turtle\r\n",
+                    "\r\n",
+                    "<http://example.com/s> <http://example.com/p> <http://example.com/o> .\r\n",
+                    "--create--\r\n",
+                ))?,
+        );
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "{}",
+            read_to_string(response.body_mut())?
+        );
+        let location = response.headers().get(LOCATION).unwrap().to_str()?;
+        server.test_status(
+            Request::builder()
+                .uri(location)
+                .header(ACCEPT, "application/n-triples")
+                .body(())?,
+            StatusCode::OK,
+        )
+    }
+
+    #[test]
     fn graph_store_protocol() -> Result<()> {
         // Tests from https://www.w3.org/2009/sparql/docs/tests/data-sparql11/http-rdf-update/
 
@@ -3020,7 +5249,7 @@ mod tests {
 
         // GET of PUT - Initial state
         let request = Request::builder()
-            .uri("http://localhost/store?graph=/store/person/1.ttl")
+            .uri("http://localhost/store?graph=http%3A%2F%2Flocalhost%2Fstore%2Fperson%2F1.ttl")
             .header(ACCEPT, "text/turtle")
             .body(())?;
         server.test_status(request, StatusCode::OK)?;
@@ -3178,9 +5407,6 @@ mod tests {
             .body(())?;
         server.test_status(request, StatusCode::NO_CONTENT)?;
 
-        // TODO: POST - multipart/form-data
-        // TODO: GET of POST - multipart/form-data
-
         // POST - create new graph
         let request = Request::builder()
             .method(Method::POST)
@@ -3234,6 +5460,15 @@ mod tests {
 
 <http://$HOST$/$GRAPHSTORE$/person/1> a foaf:Person . foo";
 
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("http://localhost/store/person/1.ttl")
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::CREATED,
+        )?;
+
         // POST
         let request = Request::builder()
             .method(Method::POST)
@@ -3244,7 +5479,7 @@ mod tests {
 
         // GET of POST
         let request = Request::builder()
-            .uri("http://localhost/store?graph=/store/person/1.ttl")
+            .uri("http://localhost/store?graph=http%3A%2F%2Flocalhost%2Fstore%2Fperson%2F1.ttl")
             .header(ACCEPT, "text/turtle")
             .body(())?;
         server.test_status(request, StatusCode::OK)?;
@@ -3255,7 +5490,7 @@ mod tests {
             .uri("http://localhost/store?lenient&no_transaction")
             .header(CONTENT_TYPE, "application/trig; charset=utf-8")
             .body(invalid_data)?;
-        server.test_status(request, StatusCode::NO_CONTENT)?;
+        server.test_status(request, StatusCode::BAD_REQUEST)?;
 
         // GET of POST dataset
         let request = Request::builder()
@@ -3274,7 +5509,7 @@ mod tests {
 
         // GET of PUT - Initial state
         let request = Request::builder()
-            .uri("http://localhost/store?graph=/store/person/1.ttl")
+            .uri("http://localhost/store?graph=http%3A%2F%2Flocalhost%2Fstore%2Fperson%2F1.ttl")
             .header(ACCEPT, "text/turtle")
             .body(())?;
         server.test_status(request, StatusCode::OK)?;
@@ -3296,7 +5531,7 @@ mod tests {
 
         // GET of PUT dataset - replacement
         let request = Request::builder()
-            .uri("http://localhost/store?graph=/store/person/1.ttl")
+            .uri("http://localhost/store?graph=http%3A%2F%2Flocalhost%2Fstore%2Fperson%2F1.ttl")
             .header(ACCEPT, "text/turtle")
             .body(())?;
         server.test_status(request, StatusCode::NOT_FOUND)
@@ -3305,6 +5540,15 @@ mod tests {
     #[test]
     fn lenient_load() -> Result<()> {
         let server = ServerTest::new()?;
+
+        server.test_status(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("http://localhost/store?graph=http://example.com")
+                .header(CONTENT_TYPE, "text/turtle")
+                .body(())?,
+            StatusCode::CREATED,
+        )?;
 
         // POST
         let request = Request::builder()
@@ -3319,10 +5563,7 @@ mod tests {
             .uri("http://localhost/store?graph=http://example.com")
             .header(ACCEPT, "application/n-triples")
             .body(())?;
-        server.test_body(
-            request,
-            "<http://example.com/ s> <http://example.com/ p> \"\u{1f468}\" .\n",
-        )?;
+        server.test_status(request, StatusCode::INTERNAL_SERVER_ERROR)?;
 
         // PUT
         let request = Request::builder().method(Method::PUT).uri(
@@ -3337,10 +5578,7 @@ mod tests {
             .uri("http://localhost/store?graph=http://example.com")
             .header(ACCEPT, "application/n-triples")
             .body(())?;
-        server.test_body(
-            request,
-            "<http://example.com/ s> <http://example.com/ p> \"\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}\u{200d}\u{1f467}\" .\n",
-        )?;
+        server.test_status(request, StatusCode::INTERNAL_SERVER_ERROR)?;
 
         // POST dataset
         let request = Request::builder()
@@ -3348,14 +5586,14 @@ mod tests {
             .uri("http://localhost/store?lenient")
             .header(CONTENT_TYPE, "application/trig")
             .body("<s> <p> \"\"@abcdefghijklmn .")?;
-        server.test_status(request, StatusCode::NO_CONTENT)?;
+        server.test_status(request, StatusCode::BAD_REQUEST)?;
 
         // GET
         let request = Request::builder()
             .uri("http://localhost/store")
             .header(ACCEPT, "application/n-quads")
             .body(())?;
-        server.test_body(request, "<s> <p> \"\"@abcdefghijklmn .\n<http://example.com/ s> <http://example.com/ p> \"\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}\u{200d}\u{1f467}\" <http://example.com> .\n")
+        server.test_status(request, StatusCode::INTERNAL_SERVER_ERROR)
     }
 
     struct ServerTest {
@@ -3370,27 +5608,39 @@ mod tests {
         }
 
         fn exec(&self, request: Request<impl Into<Body>>) -> Response<Body> {
-            handle_request(
-                &mut request.map(Into::into),
-                self.store.clone(),
-                SparqlEvaluator::new(),
-                false,
-                false,
-                None,
+            let mut request = request.map(Into::into);
+            let method = request.method().clone();
+            finalize_response(
+                &method,
+                handle_request(
+                    &mut request,
+                    self.store.clone(),
+                    SparqlEvaluator::new(),
+                    false,
+                    false,
+                    QueryEntailment::Simple,
+                    None,
+                )
+                .unwrap_or_else(|(status, message)| error(status, message)),
             )
-            .unwrap_or_else(|(status, message)| error(status, message))
         }
 
         fn exec_read_only(&self, request: Request<impl Into<Body>>) -> Response<Body> {
-            handle_request(
-                &mut request.map(Into::into),
-                self.store.clone(),
-                SparqlEvaluator::new(),
-                true,
-                false,
-                None,
+            let mut request = request.map(Into::into);
+            let method = request.method().clone();
+            finalize_response(
+                &method,
+                handle_request(
+                    &mut request,
+                    self.store.clone(),
+                    SparqlEvaluator::new(),
+                    true,
+                    false,
+                    QueryEntailment::Simple,
+                    None,
+                )
+                .unwrap_or_else(|(status, message)| error(status, message)),
             )
-            .unwrap_or_else(|(status, message)| error(status, message))
         }
 
         fn test_status(

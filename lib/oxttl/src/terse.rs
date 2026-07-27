@@ -10,8 +10,8 @@ use oxiri::Iri;
 use oxrdf::Triple;
 use oxrdf::vocab::{rdf, xsd};
 use oxrdf::{BlankNode, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad, Term};
-use std::collections::HashMap;
 use std::collections::hash_map::Iter;
+use std::collections::{HashMap, HashSet};
 
 pub struct TriGRecognizer {
     stack: Vec<TriGState>,
@@ -21,7 +21,6 @@ pub struct TriGRecognizer {
     cur_graph: GraphName,
     #[cfg(feature = "rdf-12")]
     cur_reifier: Vec<NamedOrBlankNode>,
-    lenient: bool,
 }
 
 #[expect(clippy::partial_pub_fields)]
@@ -29,11 +28,16 @@ pub struct TriGRecognizerContext {
     pub lexer_options: N3LexerOptions,
     pub with_graph_name: bool,
     prefixes: HashMap<OxString, Iri<OxString>>,
+    named_graphs: HashSet<NamedOrBlankNode>,
 }
 
 impl TriGRecognizerContext {
     pub fn prefixes(&self) -> Iter<'_, OxString, Iri<OxString>> {
         self.prefixes.iter()
+    }
+
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.named_graphs.iter()
     }
 }
 
@@ -313,6 +317,15 @@ impl RuleRecognizer for TriGRecognizer {
                 // [6]  triplesBlock  ::=  triples ('.' triplesBlock?)?
                 TriGState::WrappedGraph => {
                     if token == N3Token::Punctuation("{") {
+                        match &self.cur_graph {
+                            GraphName::NamedNode(graph_name) => {
+                                context.named_graphs.insert(graph_name.clone().into());
+                            }
+                            GraphName::BlankNode(graph_name) => {
+                                context.named_graphs.insert(graph_name.clone().into());
+                            }
+                            GraphName::DefaultGraph => {}
+                        }
                         self.stack.push(TriGState::WrappedGraphPossibleEnd);
                         self.stack.push(TriGState::Triples);
                     } else {
@@ -784,22 +797,13 @@ impl RuleRecognizer for TriGRecognizer {
                     }
                 },
                 TriGState::LiteralExpectDatatype { value, emit } => match token {
-                    N3Token::IriRef(datatype) => {
-                        if !self.lenient && datatype == rdf::LANG_STRING.as_str() {
-                            errors.push("The datatype of a literal without a language tag must not be rdf:langString".into());
-                        }
-                        #[cfg(feature = "rdf-12")]
-                        if !self.lenient && datatype == rdf::DIR_LANG_STRING.as_str() {
-                            errors.push("The datatype of a literal without a base direction must not be rdf:dirLangString".into());
-                        }
-                        self.cur_object.push(
-                            Literal::new_typed_literal(value, NamedNode::new_unchecked(datatype))
-                                .into(),
-                        );
-                        if emit {
-                            self.emit_quad(results);
-                        }
-                    }
+                    N3Token::IriRef(datatype) => self.accept_typed_literal(
+                        value,
+                        NamedNode::new_unchecked(datatype),
+                        emit,
+                        results,
+                        errors,
+                    ),
                     N3Token::PrefixedName {
                         prefix,
                         local,
@@ -810,19 +814,8 @@ impl RuleRecognizer for TriGRecognizer {
                         might_be_invalid_iri,
                         &context.prefixes,
                     ) {
-                        Ok(t) => {
-                            if !self.lenient && t == rdf::LANG_STRING {
-                                errors.push("The datatype of a literal without a language tag must not be rdf:langString".into());
-                            }
-                            #[cfg(feature = "rdf-12")]
-                            if !self.lenient && t == rdf::DIR_LANG_STRING {
-                                errors.push("The datatype of a literal without a base direction must not be rdf:dirLangString".into());
-                            }
-                            self.cur_object
-                                .push(Literal::new_typed_literal(value, t).into());
-                            if emit {
-                                self.emit_quad(results);
-                            }
+                        Ok(datatype) => {
+                            self.accept_typed_literal(value, datatype, emit, results, errors)
                         }
                         Err(e) => self.error(errors, e),
                     },
@@ -1159,11 +1152,11 @@ impl TriGRecognizer {
                 cur_graph: GraphName::DefaultGraph,
                 #[cfg(feature = "rdf-12")]
                 cur_reifier: Vec::new(),
-                lenient,
             },
             TriGRecognizerContext {
                 with_graph_name,
                 prefixes,
+                named_graphs: HashSet::new(),
                 lexer_options: N3LexerOptions { base_iri },
             },
         )
@@ -1180,6 +1173,25 @@ impl TriGRecognizer {
         self.cur_predicate.clear();
         self.cur_object.clear();
         self.cur_graph = GraphName::DefaultGraph;
+    }
+
+    fn accept_typed_literal(
+        &mut self,
+        value: OxString,
+        datatype: NamedNode,
+        emit: bool,
+        results: &mut Vec<Quad>,
+        errors: &mut Vec<RuleRecognizerError>,
+    ) {
+        match Literal::try_new_typed_literal(value, datatype) {
+            Ok(literal) => {
+                self.cur_object.push(literal.into());
+                if emit {
+                    self.emit_quad(results);
+                }
+            }
+            Err(error) => self.error(errors, error.to_string()),
+        }
     }
 
     fn emit_quad(&mut self, results: &mut Vec<Quad>) {

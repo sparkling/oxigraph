@@ -26,7 +26,9 @@
 //! See also [`Dataset`] if you want to get support of multiple RDF graphs at the same time.
 
 use crate::dataset::*;
-pub use crate::dataset::{CanonicalizationAlgorithm, CanonicalizationHashAlgorithm};
+pub use crate::dataset::{
+    CanonicalizationAlgorithm, CanonicalizationError, CanonicalizationHashAlgorithm,
+};
 use crate::*;
 use std::fmt;
 
@@ -204,8 +206,8 @@ impl Graph {
     /// graph2.insert(Triple::new(bnode2, iri.clone(), iri));
     ///
     /// assert_ne!(graph1, graph2);
-    /// graph1.canonicalize(CanonicalizationAlgorithm::Unstable);
-    /// graph2.canonicalize(CanonicalizationAlgorithm::Unstable);
+    /// graph1.canonicalize(CanonicalizationAlgorithm::Unstable)?;
+    /// graph2.canonicalize(CanonicalizationAlgorithm::Unstable)?;
     /// assert_eq!(graph1, graph2);
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
@@ -213,9 +215,34 @@ impl Graph {
     /// <div class="warning">Blank node ids depends on the current shape of the graph. Adding a new quad might change the ids of a lot of blank nodes.
     /// Hence, this canonization might not be suitable for diffs.</div>
     ///
-    /// <div class="warning">This implementation worst-case complexity is in *O(b!)* with *b* the number of blank nodes in the input dataset.</div>
-    pub fn canonicalize(&mut self, algorithm: CanonicalizationAlgorithm) {
+    /// Canonicalization work is protected by the same default linear call
+    /// budget as [`Dataset::canonicalize`].
+    pub fn canonicalize(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+    ) -> Result<(), CanonicalizationError> {
         self.dataset.canonicalize(algorithm)
+    }
+
+    /// Canonicalizes using a work-factor-derived call limit.
+    pub fn canonicalize_with_work_factor(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+        max_work_factor: u32,
+    ) -> Result<(), CanonicalizationError> {
+        self.dataset
+            .canonicalize_with_work_factor(algorithm, max_work_factor)
+    }
+
+    /// Canonicalizes with an explicit maximum number of Hash N-Degree Quads
+    /// calls.
+    pub fn canonicalize_with_n_degree_call_limit(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+        max_n_degree_calls: usize,
+    ) -> Result<(), CanonicalizationError> {
+        self.dataset
+            .canonicalize_with_n_degree_call_limit(algorithm, max_n_degree_calls)
     }
 }
 

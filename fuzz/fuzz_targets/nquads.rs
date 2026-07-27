@@ -63,7 +63,7 @@ fuzz_target!(|data: &[u8]| {
     for quad in &quads {
         serializer.serialize_quad(quad).unwrap();
     }
-    let new_serialization = serializer.finish();
+    let new_serialization = serializer.finish().unwrap();
 
     // We parse the serialization
     match NQuadsParser::new()

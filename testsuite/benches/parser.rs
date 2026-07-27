@@ -190,6 +190,10 @@ fn canonicalization_test_data_from_testsuite() -> Dataset {
     dataset
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark must fail instead of timing the bounded-work error path"
+)]
 fn canonicalization_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("canonicalization");
     let dataset = canonicalization_test_data_from_testsuite();
@@ -204,7 +208,10 @@ fn canonicalization_bench(c: &mut Criterion) {
     ] {
         group.bench_function(alg_name, |b| {
             b.iter(|| {
-                dataset.clone().canonicalize(alg);
+                dataset
+                    .clone()
+                    .canonicalize_with_work_factor(alg, 3)
+                    .expect("trusted pinned canonicalization benchmark must complete")
             });
         });
     }

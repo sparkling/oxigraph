@@ -29,9 +29,9 @@ use json_event_parser::{JsonEvent, WriterJsonSerializer};
 use oxiri::Iri;
 use oxrdf::{GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Term, Variable};
 use oxsdatatypes::{DateTime, DayTimeDuration, Float};
-use spargebra::Query;
 use spargebra::algebra::QueryDataset;
 use spargebra::update::DeleteInsertOperation;
+use spargebra::{ParsedQuery, Query, SparqlVersion};
 use sparopt::Optimizer;
 use sparopt::algebra::GraphPattern;
 use std::collections::HashMap;
@@ -73,6 +73,7 @@ pub struct QueryEvaluator {
     without_optimizations: bool,
     run_stats: bool,
     cancellation_token: Option<CancellationToken>,
+    version: SparqlVersion,
 }
 
 impl Default for QueryEvaluator {
@@ -84,6 +85,7 @@ impl Default for QueryEvaluator {
             without_optimizations: false,
             run_stats: false,
             cancellation_token: None,
+            version: SparqlVersion::current(),
         }
     }
 }
@@ -113,7 +115,44 @@ impl QueryEvaluator {
             query,
             dataset,
             substitutions: HashMap::new(),
+            version: self.version,
         }
+    }
+
+    /// Prepares a parsed query using its effective SPARQL version.
+    pub fn prepare_parsed<'a>(&'a self, query: &'a ParsedQuery) -> PreparedQuery<'a> {
+        let dataset = query
+            .query()
+            .dataset()
+            .cloned()
+            .map(Into::into)
+            .unwrap_or_default();
+        PreparedQuery {
+            evaluator: self,
+            query: query.query(),
+            dataset,
+            substitutions: HashMap::new(),
+            version: query.effective_version(),
+        }
+    }
+
+    /// Selects the SPARQL semantic feature mode used during evaluation.
+    #[inline]
+    #[must_use]
+    pub fn with_version(mut self, version: SparqlVersion) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// The SPARQL semantic feature mode used during evaluation.
+    #[inline]
+    pub const fn version(&self) -> SparqlVersion {
+        self.version
+    }
+
+    /// Checks whether an RDF term is available in the selected SPARQL mode.
+    pub fn ensure_term_compatible(&self, term: &Term) -> Result<(), QueryEvaluationError> {
+        eval::validate_term_for_version(term, self.version)
     }
 
     /// Use a given [`ServiceHandler`] to execute [SPARQL 1.1 Federated Query](https://www.w3.org/TR/sparql11-federated-query/) SERVICE calls.
@@ -496,6 +535,7 @@ impl QueryEvaluator {
         dataset: D,
         dataset_spec: QueryDatasetSpecification,
         base_iri: Option<&Iri<OxString>>,
+        version: SparqlVersion,
     ) -> Result<SimpleEvaluator<'a, D>, QueryEvaluationError> {
         SimpleEvaluator::new(
             dataset,
@@ -506,6 +546,7 @@ impl QueryEvaluator {
             self.cancellation_token.clone().unwrap_or_default(),
             dataset_spec,
             self.run_stats,
+            version,
         )
     }
 }
@@ -541,6 +582,7 @@ pub struct PreparedQuery<'a> {
     query: &'a Query,
     dataset: QueryDatasetSpecification,
     substitutions: HashMap<Variable, Term>,
+    version: SparqlVersion,
 }
 
 impl PreparedQuery<'_> {
@@ -614,6 +656,7 @@ impl PreparedQuery<'_> {
                     dataset,
                     self.dataset,
                     query.base_iri.as_ref(),
+                    self.version,
                 ) {
                     Ok(evaluator) => evaluator.evaluate_select(&pattern, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
@@ -634,6 +677,7 @@ impl PreparedQuery<'_> {
                     dataset,
                     self.dataset,
                     query.base_iri.as_ref(),
+                    self.version,
                 ) {
                     Ok(evaluator) => evaluator.evaluate_ask(&pattern, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
@@ -654,6 +698,7 @@ impl PreparedQuery<'_> {
                     dataset,
                     self.dataset,
                     query.base_iri.as_ref(),
+                    self.version,
                 ) {
                     Ok(evaluator) => {
                         evaluator.evaluate_construct(&pattern, &query.template, self.substitutions)
@@ -676,6 +721,7 @@ impl PreparedQuery<'_> {
                     dataset,
                     self.dataset,
                     query.base_iri.as_ref(),
+                    self.version,
                 ) {
                     Ok(evaluator) => evaluator.evaluate_describe(&pattern, self.substitutions),
                     Err(e) => (Err(e), Rc::new(EvalNodeWithStats::empty())),
@@ -775,7 +821,7 @@ impl<'a> PreparedDeleteInsertUpdate<'a> {
         }
         let (solutions, _) = self
             .evaluator
-            .simple_evaluator(dataset, self.dataset, self.base_iri)?
+            .simple_evaluator(dataset, self.dataset, self.base_iri, self.evaluator.version)?
             .evaluate_select(&pattern, []);
         Ok(DeleteInsertIter::new(
             solutions?,
@@ -995,7 +1041,7 @@ impl fmt::Debug for QueryExplanation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oxrdf::vocab::xsd;
+    use oxrdf::vocab::{rdf, xsd};
     use oxrdf::{Literal, Term};
     use spargebra::vocab::sparql;
     use sparopt::algebra::{Expression, GraphPattern};
@@ -1040,6 +1086,36 @@ mod tests {
         let expr = Expression::from(x);
         let result = evaluator.evaluate_expression(&expr, std::iter::empty());
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn strdt_rejects_datatypes_that_require_language_components() {
+        let evaluator = QueryEvaluator::new();
+        let expression = Expression::FunctionCall(
+            sparql::STRDT,
+            vec![
+                Literal::new_simple_literal("hello").into(),
+                rdf::LANG_STRING.into(),
+            ],
+        );
+        assert_eq!(
+            evaluator.evaluate_expression(&expression, std::iter::empty()),
+            None
+        );
+        #[cfg(feature = "sparql-12")]
+        {
+            let expression = Expression::FunctionCall(
+                sparql::STRDT,
+                vec![
+                    Literal::new_simple_literal("hello").into(),
+                    rdf::DIR_LANG_STRING.into(),
+                ],
+            );
+            assert_eq!(
+                evaluator.evaluate_expression(&expression, std::iter::empty()),
+                None
+            );
+        }
     }
 
     #[test]

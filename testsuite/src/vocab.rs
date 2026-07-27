@@ -30,6 +30,9 @@ pub mod rs {
 pub mod mf {
     use oxigraph::model::NamedNode;
 
+    pub const ENTAILMENT_REGIME: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#entailmentRegime",
+    );
     pub const INCLUDE: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include",
     );
@@ -50,6 +53,12 @@ pub mod mf {
     );
     pub const RESULT: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result",
+    );
+    pub const RECOGNIZED_DATATYPES: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#recognizedDatatypes",
+    );
+    pub const UNRECOGNIZED_DATATYPES: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#unrecognizedDatatypes",
     );
 }
 

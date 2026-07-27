@@ -1,10 +1,11 @@
 {
+  "custom": {
+    "foo": [true, false]
+  },
   "head": {
-    "vars": ["s"],
-    "custom": null
+    "vars": ["s"]
   },
   "results": {
-    "custom": {"foo": [true, false]},
     "bindings": [
       {
         "s": {

@@ -10,6 +10,9 @@ mod line_formats;
 pub mod n3;
 pub mod nquads;
 pub mod ntriples;
+mod serialization;
+#[cfg(test)]
+mod serialization_tests;
 mod terse;
 mod toolkit;
 pub mod trig;
@@ -18,6 +21,7 @@ pub mod turtle;
 pub use crate::n3::N3Parser;
 pub use crate::nquads::{NQuadsParser, NQuadsSerializer};
 pub use crate::ntriples::{NTriplesParser, NTriplesSerializer};
+pub use crate::serialization::NTriplesMediaType;
 pub use crate::toolkit::{TextPosition, TurtleParseError, TurtleSyntaxError};
 pub use crate::trig::{TriGParser, TriGSerializer};
 pub use crate::turtle::{TurtleParser, TurtleSerializer};

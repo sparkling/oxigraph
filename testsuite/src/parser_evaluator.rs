@@ -164,11 +164,11 @@ fn evaluate_eval_test(
     let action = test.action.as_deref().context("No action found")?;
     let mut actual_dataset = load_dataset(action, format, ignore_errors, lenient)
         .with_context(|| format!("Parse error on file {action}"))?;
-    actual_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+    actual_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
     let results = test.result.as_ref().context("No tests result found")?;
     let mut expected_dataset = load_dataset(results, guess_rdf_format(results)?, false, lenient)
         .with_context(|| format!("Parse error on file {results}"))?;
-    expected_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+    expected_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
     ensure!(
         expected_dataset == actual_dataset,
         "The two files are not isomorphic. Diff:\n{}",
@@ -207,11 +207,11 @@ fn evaluate_jsonld_to_rdf_test(test: &Test) -> Result<()> {
         let action = test.action.as_deref().context("No action found")?;
         let mut actual_dataset = parse_json_ld(action, profile, processing_mode, base_url)?
             .with_context(|| format!("Parse error on file {action}"))?;
-        actual_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+        actual_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
         let results = test.result.as_ref().context("No tests result found")?;
         let mut expected_dataset = load_dataset(results, guess_rdf_format(results)?, false, false)
             .with_context(|| format!("Parse error on file {results}"))?;
-        expected_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+        expected_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
         ensure!(
             expected_dataset == actual_dataset,
             "The two files are not isomorphic. Diff:\n{}",
@@ -282,12 +282,12 @@ fn evaluate_n3_eval_test(test: &Test, ignore_errors: bool) -> Result<()> {
     let mut actual_dataset = n3_to_dataset(
         load_n3(action, ignore_errors).with_context(|| format!("Parse error on file {action}"))?,
     );
-    actual_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+    actual_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
     let results = test.result.as_ref().context("No tests result found")?;
     let mut expected_dataset = n3_to_dataset(
         load_n3(results, false).with_context(|| format!("Parse error on file {results}"))?,
     );
-    expected_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+    expected_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
     ensure!(
         expected_dataset == actual_dataset,
         "The two files are not isomorphic. Diff:\n{}",

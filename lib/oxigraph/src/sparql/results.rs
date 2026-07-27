@@ -30,7 +30,7 @@
 //!
 //! // Let's test with a boolean
 //! assert_eq!(
-//!     convert_json_to_tsv(br#"{"boolean":true}"#.as_slice()).unwrap(),
+//!     convert_json_to_tsv(br#"{"head":{},"boolean":true}"#.as_slice()).unwrap(),
 //!     b"true"
 //! );
 //!

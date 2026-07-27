@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Historical: Jena → Oxigraph capability parity baseline</title>
+<style>
+:root{--ink:#17222e;--muted:#60707f;--paper:#f5f3ed;--card:#fffdf8;--line:#d9d5cb;--navy:#18324a;--teal:#167d7f;--mint:#cce8df;--amber:#d9922e;--rose:#ba5965;--blue:#4975a8;--shadow:0 12px 34px rgba(24,50,74,.09)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.58 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+a{color:#146b72;text-decoration-thickness:1px;text-underline-offset:3px}button,input{font:inherit}.wrap{width:min(1180px,calc(100% - 32px));margin:auto}
+.superseded-banner{background:#fff0c7;color:#3d2b00;border-bottom:4px solid #b15b00;padding:16px 0}.superseded-banner strong{display:block;font-size:18px;letter-spacing:.03em}.superseded-banner p{margin:4px 0 0;max-width:78ch}.superseded-banner a{color:#713700;font-weight:800}
+.mast{background:var(--navy);color:#f7faf9;padding:26px 0 24px;border-bottom:5px solid var(--teal)}
+.mast .eyebrow{color:#9ed8d3;text-transform:uppercase;letter-spacing:.14em;font-size:12px;font-weight:750}.mast h1{font-family:Georgia,serif;font-size:clamp(27px,4vw,46px);line-height:1.06;margin:7px 0 10px;max-width:850px}.mast p{max-width:830px;margin:0;color:#d6e0e7;font-size:16px}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.pill{border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 10px;color:#e9f2f3;font-size:12px}
+nav{position:sticky;top:0;z-index:8;background:rgba(245,243,237,.94);backdrop-filter:blur(9px);border-bottom:1px solid var(--line)}nav .wrap{display:flex;gap:19px;align-items:center;overflow:auto;padding:10px 0;white-space:nowrap}nav a{color:var(--navy);text-decoration:none;font-size:13px;font-weight:700}nav .spacer{flex:1}nav button{border:0;background:var(--teal);color:white;border-radius:7px;padding:7px 10px;cursor:pointer}
+main{padding:27px 0 70px}.lede{display:grid;grid-template-columns:1.55fr .95fr;gap:18px}.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--shadow)}
+h2{font:700 26px/1.15 Georgia,serif;color:var(--navy);margin:0 0 14px}h3{font-size:16px;color:var(--navy);margin:20px 0 8px}.decision{font:20px/1.45 Georgia,serif;margin:0;color:#243746}.decision strong{color:var(--teal)}
+.callout{border-left:4px solid var(--teal);background:#edf7f4;padding:13px 15px;margin-top:18px;border-radius:0 8px 8px 0}.callout b{color:var(--navy)}
+.versions{display:grid;gap:12px}.version{padding:14px;border:1px solid var(--line);border-radius:10px;background:#faf9f5}.version .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em}.version .value{font:700 23px Georgia,serif;color:var(--navy)}.version code{font-size:11px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.stat{border-radius:12px;padding:16px;color:white;min-height:106px}.stat strong{display:block;font:700 34px Georgia,serif}.stat span{font-size:13px}.strong{background:var(--teal)}.partial{background:var(--amber)}.absent{background:var(--rose)}.advantage{background:var(--blue)}
+.section{margin-top:22px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:12px}.section-head p{margin:0;color:var(--muted);max-width:690px}
+.diagram{overflow:auto}.diagram svg{width:100%;min-width:820px;height:auto;display:block}.diagram text{font-family:ui-sans-serif,system-ui,sans-serif}.diagram .box{fill:#fffdf8;stroke:#bfc9cb;stroke-width:1.5}.diagram .gate{fill:#dcefeb;stroke:#167d7f;stroke-width:2}.diagram .arrow{stroke:#6e858b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.filter{border:1px solid var(--line);background:#fffdf8;color:var(--navy);padding:7px 10px;border-radius:999px;cursor:pointer}.filter.active{background:var(--navy);color:white;border-color:var(--navy)}#search{border:1px solid var(--line);background:white;border-radius:8px;padding:8px 10px;min-width:220px}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}table{width:100%;border-collapse:collapse;min-width:940px}th,td{text-align:left;padding:11px 12px;border-bottom:1px solid #e5e1d8;vertical-align:top}th{background:#eceae3;color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.07em;position:sticky;top:0}tbody tr:hover{background:#f4f8f6}.tag{display:inline-block;border-radius:999px;color:white;padding:3px 8px;font-size:11px;font-weight:750}.tag.strong{background:var(--teal)}.tag.partial{background:var(--amber)}.tag.absent{background:var(--rose)}.tag.advantage{background:var(--blue)}.priority{font-weight:800;color:var(--navy)}
+.roadmap{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.stage{position:relative;background:var(--card);border:1px solid var(--line);border-top:5px solid var(--teal);border-radius:11px;padding:15px;min-height:240px}.stage:not(:last-child):after{content:"→";position:absolute;right:-14px;top:50%;z-index:2;color:var(--teal);font-size:22px;font-weight:800}.stage .num{font:700 23px Georgia,serif;color:var(--teal)}.stage h3{margin:4px 0 8px}.stage ul{padding-left:18px;margin:8px 0}.stage .gate-note{color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:9px;margin-top:10px}
+.receipt{display:grid;grid-template-columns:1fr 1fr;gap:16px}.checklist{list-style:none;padding:0;margin:0}.checklist li{position:relative;padding:7px 0 7px 27px;border-bottom:1px solid #e8e4db}.checklist li:before{content:"✓";position:absolute;left:0;top:7px;width:19px;height:19px;border-radius:50%;background:var(--mint);color:#116366;text-align:center;font-weight:900;line-height:19px}.test{display:grid;grid-template-columns:1fr auto;gap:10px;padding:9px 0;border-bottom:1px solid #e8e4db}.ok{color:#0d7565;font-weight:800}.limited{color:#a06412;font-weight:800}
+.evidence{display:grid;grid-template-columns:1fr 1fr;gap:16px}.evidence ol{padding-left:20px}.evidence li{margin:7px 0}.method{background:var(--navy);color:#eaf1f3}.method h2,.method h3{color:white}.method code{color:#aadfda}.method a{color:#aee4df}.method .small{color:#c8d6dd}
+.sources{columns:2;column-gap:34px}.sources li{break-inside:avoid;margin:7px 0}.small{font-size:12px;color:var(--muted)}footer{border-top:1px solid var(--line);padding:20px 0;color:var(--muted);font-size:12px}
+@media(max-width:900px){.lede,.receipt,.evidence{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.roadmap{grid-template-columns:1fr}.stage{min-height:0}.stage:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-21px}.sources{columns:1}}
+@media print{nav,.toolbar,#copy{display:none}.panel{box-shadow:none}.roadmap{grid-template-columns:1fr 1fr}.mast{background:white;color:var(--ink);border-bottom:2px solid var(--ink)}.mast p,.mast .eyebrow{color:var(--ink)}a{color:var(--ink)}}
+</style>
+</head>
+<body>
+<aside class="superseded-banner" role="status" aria-label="Historical report status">
+<div class="wrap">
+<strong>HISTORICAL / SUPERSEDED — not a current parity or verification receipt</strong>
+<p>This 26 July baseline predates the implemented semantic programme and current evidence. Use the <a href="semantic-parity-programme.html">current visual programme report</a> and <a href="semantic-parity-current-summary.md">current evidence summary</a> for present scope, counts, and claim boundaries.</p>
+</div>
+</aside>
+<header class="mast">
+<div class="wrap">
+<div class="eyebrow">Ruflo goals · evidence dossier · implementation receipt</div>
+<h1>Apache Jena → Oxigraph capability parity</h1>
+<p>An outcome-oriented baseline, sequenced roadmap, and first verified implementation slice for extending Oxigraph without sacrificing its native strengths.</p>
+<div class="meta">
+<span class="pill">Observed 26 July 2026</span>
+<span class="pill">Jena 6.1.0</span>
+<span class="pill">Oxigraph 0.5.9 released / 0.6.0-dev workspace</span>
+<span class="pill">Goal task-1785068929720-qya1gy</span>
+</div>
+</div>
+</header>
+<nav><div class="wrap">
+<a href="#decision">Decision</a><a href="#map">System map</a><a href="#matrix">Capability matrix</a><a href="#roadmap">Roadmap</a><a href="#receipt">Implemented slice</a><a href="#evidence">Evidence</a>
+<span class="spacer"></span><button id="copy" type="button">Copy executive summary</button>
+</div></nav>
+<main class="wrap">
+<section id="decision" class="lede">
+<article class="panel">
+<h2>Executive decision</h2>
+<p class="decision">Use Jena as a <strong>reference capability portfolio</strong>, not a Java API to clone. Oxigraph already has a credible database core; the programme should add missing outcomes through explicit, testable extension contracts.</p>
+<div class="callout"><b>No single parity percentage.</b> SHACL conformance, rule inference, operational security, and query-builder ergonomics carry different value and risk. Progress is measured per domain with supported profiles and executable gates.</div>
+<h3>Immediate portfolio move</h3>
+<p>Build the conformance/evidence harness and semantic extension seams first; then deliver SHACL Core and RDFS inference in constrained profiles. Continue GeoSPARQL as small, standards-backed increments.</p>
+</article>
+<aside class="panel versions">
+<h2>Observed baselines</h2>
+<div class="version"><div class="label">Apache Jena</div><div class="value">6.1.0</div><div>Official release; Java 21+</div><code>source observed c33c58490f06…</code></div>
+<div class="version"><div class="label">Oxigraph</div><div class="value">0.5.9</div><div>Latest released crate, 18 Jun 2026</div><code>workspace 0.6.0-dev @ 79554fa05d51…</code></div>
+<div class="small">Release claims use official release pages. Capability evidence combines official documentation and observed source.</div>
+</aside>
+</section>
+<section class="stats" aria-label="Baseline counts">
+<div class="stat strong"><strong>5</strong><span>strong-overlap domains</span></div>
+<div class="stat partial"><strong>5</strong><span>partial-overlap domains</span></div>
+<div class="stat absent"><strong>8</strong><span>capabilities currently absent</span></div>
+<div class="stat advantage"><strong>2</strong><span>Oxigraph differentiators</span></div>
+</section>
+<section id="map" class="section panel">
+<div class="section-head"><div><h2>Reference-to-target system map</h2><p>Parity claims pass through evidence and architecture gates before entering an Oxigraph extension plane.</p></div></div>
+<div class="diagram">
+<svg viewBox="0 0 1080 360" role="img" aria-label="Jena reference capabilities flow through evidence gates into Oxigraph extension planes">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#6e858b"/></marker></defs>
+<text x="30" y="30" fill="#18324a" font-weight="800" font-size="14">JENA REFERENCE PORTFOLIO</text>
+<rect class="box" x="30" y="50" rx="10" width="210" height="54"/><text x="48" y="82" fill="#18324a" font-weight="700">RDF · ARQ · TDB2 · Fuseki</text>
+<rect class="box" x="30" y="118" rx="10" width="210" height="54"/><text x="48" y="150" fill="#18324a" font-weight="700">SHACL · ShEx · OntAPI</text>
+<rect class="box" x="30" y="186" rx="10" width="210" height="54"/><text x="48" y="218" fill="#18324a" font-weight="700">Inference · Rules · Text</text>
+<rect class="box" x="30" y="254" rx="10" width="210" height="54"/><text x="48" y="286" fill="#18324a" font-weight="700">GeoSPARQL · Patch · Tools</text>
+<path class="arrow" d="M245 77H355"/><path class="arrow" d="M245 145H355"/><path class="arrow" d="M245 213H355"/><path class="arrow" d="M245 281H355"/>
+<text x="365" y="30" fill="#167d7f" font-weight="800" font-size="14">PROPORTIONAL GATES</text>
+<rect class="gate" x="355" y="50" rx="14" width="260" height="258"/>
+<text x="385" y="91" fill="#18324a" font-weight="800">1 · Primary-source evidence</text><text x="385" y="119" fill="#18324a">2 · Observable outcome contract</text>
+<text x="385" y="147" fill="#18324a">3 · Standards profile + fail-closed edge</text><text x="385" y="175" fill="#18324a">4 · Safety and complexity budget</text>
+<text x="385" y="203" fill="#18324a">5 · Cross-engine golden corpus</text><text x="385" y="231" fill="#18324a">6 · Performance regression ceiling</text>
+<text x="385" y="259" fill="#18324a">7 · Rust/Python/JS surface review</text><text x="385" y="287" fill="#18324a">8 · Machine-readable receipt</text>
+<path class="arrow" d="M620 179H710"/>
+<text x="720" y="30" fill="#18324a" font-weight="800" font-size="14">OXIGRAPH EXTENSION PLANES</text>
+<rect class="box" x="710" y="50" rx="10" width="330" height="54"/><text x="730" y="82" fill="#18324a" font-weight="700">Semantic: validation · entailment · ontology</text>
+<rect class="box" x="710" y="118" rx="10" width="330" height="54"/><text x="730" y="150" fill="#18324a" font-weight="700">Query: functions · indexes · rewrites</text>
+<rect class="box" x="710" y="186" rx="10" width="330" height="54"/><text x="730" y="218" fill="#18324a" font-weight="700">Service: modules · auth · observability</text>
+<rect class="box" x="710" y="254" rx="10" width="330" height="54"/><text x="730" y="286" fill="#18324a" font-weight="700">Ergonomics: connection · builder · config</text>
+<text x="710" y="330" fill="#60707f" font-size="11"><tspan x="710">Preserve: safety · conformance · embeddability</tspan><tspan x="710" dy="15">and cross-language reach</tspan></text>
+</svg>
+</div>
+</section>
+<section id="matrix" class="section">
+<div class="section-head"><div><h2>Capability matrix</h2><p>Twenty user-outcome domains. Filter by baseline state or search the evidence synthesis.</p></div>
+<div class="toolbar"><button class="filter active" data-filter="all">All 20</button><button class="filter" data-filter="strong">Strong</button><button class="filter" data-filter="partial">Partial</button><button class="filter" data-filter="absent">Absent</button><button class="filter" data-filter="advantage">Advantage</button><input id="search" aria-label="Search capability matrix" placeholder="Search capabilities…"></div></div>
+<div class="table-wrap"><table><thead><tr><th>Domain</th><th>Jena reference</th><th>Oxigraph baseline</th><th>State</th><th>Priority</th></tr></thead><tbody id="capabilities">
+<tr data-state="strong"><td>RDF terms, graphs, datasets</td><td>Rich Model and Graph APIs</td><td>Lean term, quad, dataset, Store APIs</td><td><span class="tag strong">Strong</span></td><td class="priority">Preserve</td></tr>
+<tr data-state="strong"><td>RDF parsing and serialization</td><td>RIOT multi-format I/O</td><td>Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD</td><td><span class="tag strong">Strong</span></td><td class="priority">Preserve</td></tr>
+<tr data-state="strong"><td>SPARQL query/update/federation</td><td>ARQ</td><td>spargebra, spareval, sparopt</td><td><span class="tag strong">Strong</span></td><td class="priority">Preserve</td></tr>
+<tr data-state="partial"><td>Optimizer and extension seams</td><td>Algebra, stages, functions, property functions</td><td>Optimizer and custom functions; fewer extension families</td><td><span class="tag partial">Partial</span></td><td class="priority">P0</td></tr>
+<tr data-state="strong"><td>Storage and transactions</td><td>TDB2</td><td>RocksDB plus in-memory Store</td><td><span class="tag strong">Strong</span></td><td class="priority">Preserve</td></tr>
+<tr data-state="strong"><td>SPARQL / Graph Store server</td><td>Fuseki</td><td>CLI HTTP server</td><td><span class="tag strong">Strong</span></td><td class="priority">Preserve</td></tr>
+<tr data-state="partial"><td>Server operations, security, modules</td><td>Modules, ACL, metrics, UI</td><td>Smaller server/configuration surface</td><td><span class="tag partial">Partial</span></td><td class="priority">P1</td></tr>
+<tr data-state="partial"><td>Unified local/remote client</td><td>RDFConnection</td><td>Separate Store and HTTP workflows</td><td><span class="tag partial">Partial</span></td><td class="priority">P2</td></tr>
+<tr data-state="absent"><td>RDFS, OWL, custom-rule inference</td><td>Pluggable reasoners and rule engines</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P0</td></tr>
+<tr data-state="absent"><td>Ontology convenience API</td><td>OntAPI and ontology models</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P2</td></tr>
+<tr data-state="absent"><td>SHACL validation</td><td>Core, SPARQL, SHACL-C, server hooks</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P0</td></tr>
+<tr data-state="absent"><td>ShEx validation</td><td>ShExC parser and validator</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P2</td></tr>
+<tr data-state="absent"><td>Text indexing</td><td>Lucene-backed text query</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P1</td></tr>
+<tr data-state="partial"><td>GeoSPARQL</td><td>Broad module, index, CRS handling</td><td>Partial spargeo function layer</td><td><span class="tag partial">Partial</span></td><td class="priority">P1</td></tr>
+<tr data-state="absent"><td>RDF Patch / change stream</td><td>RDF Patch</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P1</td></tr>
+<tr data-state="absent"><td>Programmatic query builder</td><td>QueryBuilder</td><td>Parser/algebra, no builder façade</td><td><span class="tag absent">Absent</span></td><td class="priority">P2</td></tr>
+<tr data-state="absent"><td>Declarative assembly/configuration</td><td>Assembler RDF recipes</td><td>Not present</td><td><span class="tag absent">Absent</span></td><td class="priority">P2</td></tr>
+<tr data-state="partial"><td>Command-line tool breadth</td><td>RDF, SPARQL, validation, admin suite</td><td>Focused load, dump, query, update, server</td><td><span class="tag partial">Partial</span></td><td class="priority">P2</td></tr>
+<tr data-state="advantage"><td>Cross-language and WASM</td><td>Java-first</td><td>Rust, Python, JavaScript/WASM</td><td><span class="tag advantage">Advantage</span></td><td class="priority">Preserve</td></tr>
+<tr data-state="advantage"><td>Canonicalization and 1.2 trajectory</td><td>Standards tracking</td><td>Canonicalization plus preliminary RDF/SPARQL 1.2</td><td><span class="tag advantage">Advantage</span></td><td class="priority">Preserve</td></tr>
+</tbody></table></div>
+</section>
+<section id="roadmap" class="section">
+<div class="section-head"><div><h2>Sequenced programme</h2><p>Each tranche has a proportional gate. Later semantic depth cannot borrow credibility from earlier core-database strength.</p></div></div>
+<div class="roadmap">
+<article class="stage"><div class="num">T0</div><h3>Evidence + seams</h3><ul><li>Golden corpus</li><li>Capability receipts</li><li>Extension contracts</li><li>Safety/perf budgets</li></ul><div class="gate-note">Gate: every claim has primary evidence and executable tests.</div></article>
+<article class="stage"><div class="num">T1</div><h3>Semantic MVP</h3><ul><li>SHACL Core</li><li>RDFS entailment</li><li>GeoSPARQL slices</li></ul><div class="gate-note">Gate: claimed profiles pass; unsupported profiles fail closed.</div></article>
+<article class="stage"><div class="num">T2</div><h3>Search + service</h3><ul><li>Text index</li><li>RDF Patch</li><li>SHACL SPARQL</li><li>Modules + metrics</li></ul><div class="gate-note">Gate: recovery, isolation, auth, and index consistency.</div></article>
+<article class="stage"><div class="num">T3</div><h3>Ergonomics</h3><ul><li>Ontology façade</li><li>Connection façade</li><li>Query builder</li><li>Config + ShEx</li></ul><div class="gate-note">Gate: native ergonomics across Rust, Python, and JS.</div></article>
+<article class="stage"><div class="num">T4</div><h3>Advanced semantics</h3><ul><li>Custom rules</li><li>Scoped OWL</li><li>CRS + rewrite</li><li>Spatial aggregates</li></ul><div class="gate-note">Gate: explicit profiles, limits, and resource ceilings.</div></article>
+</div>
+</section>
+<section id="receipt" class="section receipt">
+<article class="panel">
+<h2>Implemented now: <code>geof:boundary</code></h2>
+<p>Selected because GeoSPARQL 1.1 requires it, Jena implements it, the local Oxigraph inventory marked it missing, and it fits the existing <code>spargeo</code> seam.</p>
+<ul class="checklist">
+<li>Registered as GeoSPARQL extension function 44</li>
+<li>Polygon shells and holes return lineal boundaries</li>
+<li>Line collections use MOD-2 endpoint semantics</li>
+<li>Point boundaries are empty geometry collections</li>
+<li>WKT and GeoJSON output datatypes are preserved</li>
+<li>GeometryCollection error behavior follows Jena/JTS</li>
+<li>Scope remains honestly limited to current CRS84 parsing</li>
+</ul>
+</article>
+<article class="panel">
+<h2>Verification receipt</h2>
+<div class="test"><span><code>cargo test -p spargeo</code><br><span class="small">33 tests</span></span><span class="ok">PASS</span></div>
+<div class="test"><span><code>cargo clippy -p spargeo --all-targets -- -D warnings</code></span><span class="ok">PASS</span></div>
+<div class="test"><span><code>cargo check -p spareval --features geosparql</code></span><span class="ok">PASS</span></div>
+<div class="test"><span><code>cargo check -p oxigraph-cli --features geosparql</code><br><span class="small">Pre-existing RocksDB submodule absent</span></span><span class="limited">LIMITED</span></div>
+<h3>Code shape</h3><p class="small">Boundary semantics, function vocabulary, and serialization selection are separated into files below 500 lines; the former 610-line library module is now 464 lines.</p>
+</article>
+</section>
+<section id="evidence" class="section evidence">
+<article class="panel">
+<h2>Evidence rules</h2>
+<ol><li>Official releases establish current versions.</li><li>Official docs establish supported capability outcomes.</li><li>Observed source establishes concrete module and behavior evidence.</li><li>Normative standards establish conformance requirements.</li><li>Tests establish only the behavior they execute—never an entire standard.</li></ol>
+<div class="callout"><b>Important qualification:</b> Jena documents incomplete OWL/Lite reasoning and ShEx limitations. The target must reproduce documented scope, not inflate the reference into full OWL or full ShEx conformance.</div>
+</article>
+<article class="panel method">
+<h2>Ruflo research receipt</h2>
+<p>RuvNet Brain routed the work to the provenance-first dossier pattern in <code>ADR-099</code>. The local <code>ruflo-goals v0.2.0</code> workflows used were:</p>
+<p><code>goal-plan → deep-research → dossier-collect → research-synthesize → horizon-track</code></p>
+<p class="small">Persistent namespaces: <code>goals-research</code>, <code>goals-research-sources</code>, <code>goals-horizons</code>, <code>goap-plans</code>, <code>research-synthesis</code>, and <code>dossier</code>.</p>
+<p><a href="jena-oxigraph-parity-dossier.json">Open the machine-readable dossier graph</a> · <a href="jena-oxigraph-parity-summary.md">Open the concise Markdown summary</a></p>
+</article>
+</section>
+<section class="section panel">
+<h2>Primary sources</h2>
+<ul class="sources">
+<li><a href="https://jena.apache.org/download/">Apache Jena 6.1.0 release</a></li>
+<li><a href="https://jena.apache.org/documentation/index.html">Jena documentation inventory</a></li>
+<li><a href="https://jena.apache.org/about_jena/architecture.html">Jena architecture</a></li>
+<li><a href="https://jena.apache.org/documentation/inference/index.html">Jena inference and rule engines</a></li>
+<li><a href="https://jena.apache.org/documentation/shacl/">Jena SHACL</a></li>
+<li><a href="https://jena.apache.org/documentation/shex/">Jena ShEx</a></li>
+<li><a href="https://jena.apache.org/documentation/fuseki2/">Jena Fuseki</a></li>
+<li><a href="https://jena.apache.org/documentation/tdb2/">Jena TDB2</a></li>
+<li><a href="https://jena.apache.org/documentation/geosparql/">Jena GeoSPARQL</a></li>
+<li><a href="https://docs.ogc.org/is/22-047r1/22-047r1.html">OGC GeoSPARQL 1.1</a></li>
+<li><a href="https://github.com/oxigraph/oxigraph">Oxigraph repository and capability inventory</a></li>
+<li><a href="https://docs.rs/oxigraph/latest/oxigraph/">Released Oxigraph 0.5.9 docs</a></li>
+</ul>
+<p class="small">Limit: this is a public capability baseline, not an enumeration of every Jena class, optional artifact, command, or undocumented behavior.</p>
+</section>
+</main>
+<footer><div class="wrap">Generated from primary evidence on 26 July 2026 · Ruflo goal programme · machine-readable provenance adjacent to this report</div></footer>
+<script>
+const buttons=[...document.querySelectorAll(".filter")],rows=[...document.querySelectorAll("#capabilities tr")],search=document.querySelector("#search");let state="all";
+function apply(){const q=search.value.trim().toLowerCase();rows.forEach(row=>{const stateMatch=state==="all"||row.dataset.state===state;const textMatch=!q||row.textContent.toLowerCase().includes(q);row.hidden=!(stateMatch&&textMatch)})}
+buttons.forEach(button=>button.addEventListener("click",()=>{buttons.forEach(x=>x.classList.remove("active"));button.classList.add("active");state=button.dataset.filter;apply()}));search.addEventListener("input",apply);
+const executive=`Jena → Oxigraph parity baseline (26 July 2026)
+Decision: target observable Jena outcomes, not Java API cloning.
+Baseline: 5 strong, 5 partial, 8 absent, 2 Oxigraph advantages.
+P0: conformance/extension gates, SHACL Core, and RDFS inference.
+First slice delivered: GeoSPARQL geof:boundary; 33 tests, clippy, and evaluator integration pass.
+Full report: docs/research/jena-oxigraph-parity-report.html`;
+document.querySelector("#copy").addEventListener("click",async event=>{await navigator.clipboard.writeText(executive);event.currentTarget.textContent="Copied";setTimeout(()=>event.currentTarget.textContent="Copy executive summary",1500)});
+</script>
+</body>
+</html>

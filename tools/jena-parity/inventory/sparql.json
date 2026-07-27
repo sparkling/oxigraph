@@ -1,0 +1,446 @@
+{
+  "scenarios": [
+    {
+      "id": "sparql-aggregate-count",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p 1, 2, 3 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT (COUNT(?o) AS ?count) WHERE { ex:s ex:p ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-aggregate-group-sum",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:group \"x\"; ex:value 1 . ex:b ex:group \"x\"; ex:value 2 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?group (SUM(?value) AS ?sum) WHERE { ?s ex:group ?group; ex:value ?value } GROUP BY ?group",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-ask-false",
+      "domain": "sparql",
+      "operation": "sparql-ask",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:s ex:missing ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": false}
+      ]
+    },
+    {
+      "id": "sparql-ask-true",
+      "domain": "sparql",
+      "operation": "sparql-ask",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:s ex:p ex:o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "sparql-bind-expression",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "query": "SELECT ?value WHERE { BIND(2 + 3 AS ?value) }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-construct-basic",
+      "domain": "sparql",
+      "operation": "sparql-construct",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .",
+      "query": "PREFIX ex: <https://example.test/> CONSTRUCT { ?s ex:q ?o } WHERE { ?s ex:p ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-distinct",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:p \"same\" . ex:b ex:p \"same\" .",
+      "query": "PREFIX ex: <https://example.test/> SELECT DISTINCT ?o WHERE { ?s ex:p ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-filter-numeric",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:value 1 . ex:b ex:value 3 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?s WHERE { ?s ex:value ?v FILTER(?v > 1) }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-invalid-query",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "query": "SELECT WHERE {",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "error"},
+        {"target": "both", "pointer": "/error_code", "equals": "syntax-or-evaluation"}
+      ]
+    },
+    {
+      "id": "sparql-jena-afn-localname",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "jena-extension",
+      "normativeBasis": "https://jena.apache.org/documentation/query/library-function.html",
+      "reviewed": true,
+      "syntax": "arq",
+      "query": "PREFIX afn: <http://jena.apache.org/ARQ/function#> SELECT (afn:localname(<https://example.test/resource>) AS ?name) WHERE {}",
+      "assertions": [
+        {"target": "jena", "pointer": "/status", "equals": "success"},
+        {"target": "jena", "pointer": "/value/row_count", "equals": 1},
+        {"target": "oxigraph", "pointer": "/status", "equals": "error"}
+      ]
+    },
+    {
+      "id": "sparql-named-graph",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "syntax": "trig",
+      "data": "@prefix ex: <https://example.test/> . ex:g { ex:s ex:p ex:o }",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?g ?o WHERE { GRAPH ?g { ex:s ex:p ?o } }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-select-empty-named-graph",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "w3c-overrides-jena",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/#accessByIdentifier",
+      "reviewed": true,
+      "syntax": "trig",
+      "ordered": true,
+      "data": "<urn:g> {}",
+      "query": "SELECT ?g WHERE { GRAPH ?g {} }",
+      "assertions": [
+        {"target": "jena", "pointer": "/status", "equals": "success"},
+        {"target": "jena", "pointer": "/value/variables", "equals": ["g"]},
+        {"target": "jena", "pointer": "/value/row_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/rows", "equals": []},
+        {"target": "oxigraph", "pointer": "/status", "equals": "success"},
+        {"target": "oxigraph", "pointer": "/value/variables", "equals": ["g"]},
+        {"target": "oxigraph", "pointer": "/value/row_count", "equals": 1},
+        {
+          "target": "oxigraph",
+          "pointer": "/value/rows",
+          "equals": [{"g": {"type": "iri", "value": "urn:g"}}]
+        }
+      ]
+    },
+    {
+      "id": "sparql-optional",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:p 1; ex:q 2 . ex:b ex:p 3 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?s ?q WHERE { ?s ex:p ?p OPTIONAL { ?s ex:q ?q } }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "sparql-order-by",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "ordered": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p 3, 1, 2 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?value WHERE { ex:s ex:p ?value } ORDER BY ?value",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 3}
+      ]
+    },
+    {
+      "id": "sparql-path-alternative",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:a; ex:q ex:b .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?o WHERE { ex:s (ex:p|ex:q) ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "sparql-path-inverse",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?s WHERE { ex:o ^ex:p ?s }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-path-sequence",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:p ex:b . ex:b ex:q ex:c .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?o WHERE { ex:a ex:p/ex:q ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-path-zero-or-more",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:next ex:b . ex:b ex:next ex:c .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?o WHERE { ex:a ex:next* ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 3}
+      ]
+    },
+    {
+      "id": "sparql-rdf12-langdir",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "query": "VERSION \"1.2\" SELECT (LANGDIR(\"hello\"@en--rtl) AS ?direction) WHERE {}",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-rdf12-triple-term",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "query": "VERSION \"1.2\" PREFIX ex: <https://example.test/> SELECT ?term WHERE { BIND(<<( ex:s ex:p ex:o )>> AS ?term) }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-select-basic",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?s ?o WHERE { ?s ex:p ?o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-subquery",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:value 2 . ex:b ex:value 1 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?s WHERE { { SELECT ?s WHERE { ?s ex:value ?v } ORDER BY ?v LIMIT 1 } }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-union",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:a ex:p 1 . ex:b ex:q 2 .",
+      "query": "PREFIX ex: <https://example.test/> SELECT ?s WHERE { { ?s ex:p ?o } UNION { ?s ex:q ?o } }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "sparql-describe-basic",
+      "domain": "sparql",
+      "operation": "sparql-describe",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o . ex:o ex:q \"not described\" . ex:other ex:p ex:s .",
+      "query": "DESCRIBE <https://example.test/s>",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/kind", "equals": "dataset"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1},
+        {"target": "both", "pointer": "/value/quads/0/0/value", "equals": "https://example.test/s"}
+      ]
+    },
+    {
+      "id": "sparql-service-offline-handler",
+      "domain": "sparql",
+      "operation": "sparql-service",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-federated-query/",
+      "reviewed": true,
+      "query": "SELECT ?remote WHERE { SERVICE <urn:oxigraph:jena-parity:service> { BIND(\"remote graph pattern\" AS ?remote) } }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/kind", "equals": "solutions"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 1},
+        {"target": "both", "pointer": "/value/rows/0/remote/value", "equals": "offline-service"}
+      ]
+    },
+    {
+      "id": "sparql-update-clear-graph",
+      "domain": "sparql",
+      "operation": "sparql-update",
+      "classification": "w3c-permitted-divergence",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-update/#clear",
+      "reviewed": true,
+      "syntax": "trig",
+      "data": "@prefix ex: <https://example.test/> . ex:g { ex:s ex:p ex:o }",
+      "update": "PREFIX ex: <https://example.test/> CLEAR GRAPH ex:g",
+      "assertions": [
+        {"target": "jena", "pointer": "/status", "equals": "success"},
+        {"target": "jena", "pointer": "/value/quad_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/named_graph_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/named_graphs", "equals": []},
+        {"target": "oxigraph", "pointer": "/status", "equals": "success"},
+        {"target": "oxigraph", "pointer": "/value/quad_count", "equals": 0},
+        {"target": "oxigraph", "pointer": "/value/named_graph_count", "equals": 1},
+        {
+          "target": "oxigraph",
+          "pointer": "/value/named_graphs",
+          "equals": [{"type": "iri", "value": "https://example.test/g"}]
+        }
+      ]
+    },
+    {
+      "id": "sparql-update-delete-insert",
+      "domain": "sparql",
+      "operation": "sparql-update",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-update/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:old \"value\" .",
+      "update": "PREFIX ex: <https://example.test/> DELETE { ex:s ex:old ?v } INSERT { ex:s ex:new ?v } WHERE { ex:s ex:old ?v }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-update-insert-data",
+      "domain": "sparql",
+      "operation": "sparql-update",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-update/",
+      "reviewed": true,
+      "update": "PREFIX ex: <https://example.test/> INSERT DATA { ex:s ex:p ex:o }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "sparql-update-invalid",
+      "domain": "sparql",
+      "operation": "sparql-update",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-update/",
+      "reviewed": true,
+      "update": "INSERT DATA { <https://example.test/s> }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "error"},
+        {"target": "both", "pointer": "/error_code", "equals": "syntax-or-evaluation"}
+      ]
+    },
+    {
+      "id": "sparql-values",
+      "domain": "sparql",
+      "operation": "sparql-select",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/sparql12-query/",
+      "reviewed": true,
+      "query": "SELECT ?value WHERE { VALUES ?value { 1 2 UNDEF } FILTER(BOUND(?value)) }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/row_count", "equals": 2}
+      ]
+    }
+  ]
+}

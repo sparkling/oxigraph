@@ -13,6 +13,14 @@ pub enum RdfFormat {
     NQuads,
     /// [N-Triples](https://www.w3.org/TR/n-triples/)
     NTriples,
+    /// An ASCII-escaped `text/plain` representation using the
+    /// [N-Triples](https://www.w3.org/TR/n-triples/) grammar.
+    ///
+    /// This variant preserves the media type identity of legacy `text/plain`
+    /// transport instead of treating it as `application/n-triples`.
+    /// Serialization escapes non-ASCII characters and parsing rejects raw
+    /// non-ASCII bytes as required by that transport profile.
+    NTriplesTextPlain,
     /// [RDF/XML](https://www.w3.org/TR/rdf-syntax-grammar/)
     RdfXml,
     /// [TriG](https://www.w3.org/TR/trig/)
@@ -40,7 +48,7 @@ impl RdfFormat {
             Self::JsonLd { .. } => "https://www.w3.org/ns/formats/data/JSON-LD",
             Self::N3 => "http://www.w3.org/ns/formats/N3",
             Self::NQuads => "http://www.w3.org/ns/formats/N-Quads",
-            Self::NTriples => "http://www.w3.org/ns/formats/N-Triples",
+            Self::NTriples | Self::NTriplesTextPlain => "http://www.w3.org/ns/formats/N-Triples",
             Self::RdfXml => "http://www.w3.org/ns/formats/RDF_XML",
             Self::TriG => "http://www.w3.org/ns/formats/TriG",
             Self::Turtle => "http://www.w3.org/ns/formats/Turtle",
@@ -68,6 +76,7 @@ impl RdfFormat {
             Self::N3 => "text/n3",
             Self::NQuads => "application/n-quads",
             Self::NTriples => "application/n-triples",
+            Self::NTriplesTextPlain => "text/plain",
             Self::RdfXml => "application/rdf+xml",
             Self::TriG => "application/trig",
             Self::Turtle => "text/turtle",
@@ -88,6 +97,7 @@ impl RdfFormat {
             Self::N3 => "n3",
             Self::NQuads => "nq",
             Self::NTriples => "nt",
+            Self::NTriplesTextPlain => "txt",
             Self::RdfXml => "rdf",
             Self::TriG => "trig",
             Self::Turtle => "ttl",
@@ -115,6 +125,7 @@ impl RdfFormat {
             Self::N3 => "N3",
             Self::NQuads => "N-Quads",
             Self::NTriples => "N-Triples",
+            Self::NTriplesTextPlain => "N-Triples grammar (text/plain)",
             Self::RdfXml => "RDF/XML",
             Self::TriG => "TriG",
             Self::Turtle => "Turtle",
@@ -132,6 +143,15 @@ impl RdfFormat {
     #[inline]
     pub const fn supports_datasets(self) -> bool {
         matches!(self, Self::JsonLd { .. } | Self::NQuads | Self::TriG)
+    }
+
+    /// Checks whether the format can explicitly represent an empty named graph.
+    ///
+    /// Quad-only dataset syntaxes such as N-Quads cannot encode graph presence
+    /// without at least one quad.
+    #[inline]
+    pub const fn supports_empty_named_graphs(self) -> bool {
+        matches!(self, Self::JsonLd { .. } | Self::TriG)
     }
 
     /// Looks for a known format from a media type.
@@ -159,97 +179,9 @@ impl RdfFormat {
     /// ```
     #[inline]
     pub fn from_media_type(media_type: &str) -> Option<Self> {
-        const MEDIA_SUBTYPES: [(&str, RdfFormat); 14] = [
-            (
-                "activity+json",
-                RdfFormat::JsonLd {
-                    profile: JsonLdProfileSet::empty(),
-                },
-            ),
-            (
-                "json",
-                RdfFormat::JsonLd {
-                    profile: JsonLdProfileSet::empty(),
-                },
-            ),
-            (
-                "ld+json",
-                RdfFormat::JsonLd {
-                    profile: JsonLdProfileSet::empty(),
-                },
-            ),
-            (
-                "jsonld",
-                RdfFormat::JsonLd {
-                    profile: JsonLdProfileSet::empty(),
-                },
-            ),
-            ("n-quads", RdfFormat::NQuads),
-            ("n-triples", RdfFormat::NTriples),
-            ("n3", RdfFormat::N3),
-            ("nquads", RdfFormat::NQuads),
-            ("ntriples", RdfFormat::NTriples),
-            ("plain", RdfFormat::NTriples),
-            ("rdf+xml", RdfFormat::RdfXml),
-            ("trig", RdfFormat::TriG),
-            ("turtle", RdfFormat::Turtle),
-            ("xml", RdfFormat::RdfXml),
-        ];
-        const UTF8_CHARSETS: [&str; 3] = ["ascii", "utf8", "utf-8"];
-
-        let (type_subtype, parameters) = media_type.split_once(';').unwrap_or((media_type, ""));
-
-        let (r#type, subtype) = type_subtype.split_once('/')?;
-        let r#type = r#type.trim();
-        if !r#type.eq_ignore_ascii_case("application") && !r#type.eq_ignore_ascii_case("text") {
-            return None;
-        }
-        let subtype = subtype.trim();
-        let subtype = subtype.strip_prefix("x-").unwrap_or(subtype);
-
-        let parameters = parameters.trim();
-        let parameters = if parameters.is_empty() {
-            Vec::new()
-        } else {
-            parameters
-                .split(';')
-                .map(|p| {
-                    let (key, value) = p.split_once('=')?;
-                    Some((key.trim(), value.trim()))
-                })
-                .collect::<Option<Vec<_>>>()?
-        };
-
-        for (candidate_subtype, mut candidate_id) in MEDIA_SUBTYPES {
-            if candidate_subtype.eq_ignore_ascii_case(subtype) {
-                // We have a look at parameters
-                for (key, mut value) in parameters {
-                    match key {
-                        "charset"
-                            if !UTF8_CHARSETS.iter().any(|c| c.eq_ignore_ascii_case(value)) =>
-                        {
-                            return None; // No other charset than UTF-8 is supported
-                        }
-                        "profile" => {
-                            // We remove enclosing double quotes
-                            if value.starts_with('"') && value.ends_with('"') {
-                                value = &value[1..value.len() - 1];
-                            }
-                            if let RdfFormat::JsonLd { profile } = &mut candidate_id {
-                                for value in value.split(' ') {
-                                    if let Some(value) = JsonLdProfile::from_iri(value.trim()) {
-                                        *profile |= value;
-                                    }
-                                }
-                            }
-                        }
-                        _ => (), // We ignore
-                    }
-                }
-                return Some(candidate_id);
-            }
-        }
-        None
+        crate::media_type::RdfMediaType::parse(media_type)
+            .ok()
+            .map(|descriptor| descriptor.format())
     }
 
     /// Looks for a known format from an extension.
@@ -283,7 +215,7 @@ impl RdfFormat {
             ("rdf", RdfFormat::RdfXml),
             ("trig", RdfFormat::TriG),
             ("ttl", RdfFormat::Turtle),
-            ("txt", RdfFormat::NTriples),
+            ("txt", RdfFormat::NTriplesTextPlain),
             ("xml", RdfFormat::RdfXml),
         ];
         for (candidate_extension, candidate_id) in EXTENSIONS {

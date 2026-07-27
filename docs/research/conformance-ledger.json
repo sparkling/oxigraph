@@ -1,0 +1,550 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-07-27",
+  "scope": "Oxigraph semantic-parity programme",
+  "sourceRegistry": "standards-registry.json",
+  "normativeRequirements": "normative-requirements.json",
+  "claimPolicy": {
+    "testSuitePassMeaning": "Evidence for the exact tested behavior and revision only",
+    "normativeFamilyParityMeaning": "Set equality between applicable normative requirements and reviewed closed dispositions, plus interface and operational evidence",
+    "allowedRequirementStates": ["pass", "unsupported", "not-applicable", "blocked-upstream", "draft-unclear"],
+    "fullParityUnresolvedStates": ["unsupported", "blocked-upstream", "draft-unclear"],
+    "jenaAuthority": "Compatibility differential only",
+    "w3cAuthority": "Selected reviewed normative snapshot",
+    "currentUmbrellaClaim": "withheld"
+  },
+  "reviewedPins": {
+    "rdfAndSparqlTests": {
+      "repository": "https://github.com/w3c/rdf-tests",
+      "commit": "3d0b0613d0177d25aad7ec60e88df2338f461516",
+      "commitDate": "2026-07-23"
+    },
+    "shaclSpecificationsAndTests": {
+      "repository": "https://github.com/w3c/data-shapes",
+      "commit": "eedda09f93c39be1d2e978f3f942631494ae25a0",
+      "suiteContentSha256": "1d2c1c40769da1cf63fef62f3029447a66b5e81b5744b4cf2eaa5e128ba51a3a",
+      "specificationSha256": {
+        "core": "69497e1f3ef6993766f8a4f0812b61f4aa23b75e6a18e7425bc66dbf65d59b6e",
+        "nodeExpressions": "a1db16376a928ed90acd049537c645c4750f6fe2cb1ab99656ac689b40681f72",
+        "sparql": "c94be2019923aedacf01fe312404ef1e618bb06e3f9587eae35400633088db1c",
+        "rules": "45ef06db0d7df325171e877032774f989f96a22f96d2cc373755eda1dd514ad4",
+        "compact": "f6db1b05cd0201e7afb16dcc5b02c9306c7568cfbdf487b81c19ee14e34151cd"
+      }
+    },
+    "rdfCanonTests": {
+      "repository": "https://github.com/w3c/rdf-canon",
+      "commit": "15619df2fda7a4ca88308733789b6774517f9638"
+    },
+    "owl2RlApprovedExport": {
+      "url": "https://www.w3.org/2009/11/owl-test/approved/profile-RL.rdf",
+      "sha256": "af67cd7a007cbed8a54255d094a88f7304ec950457e13df58b51f507c6c29d00"
+    },
+    "owl2Support011Import": {
+      "url": "https://www.w3.org/2002/03owlt/imports/support011-A",
+      "sha256": "f92a919635e21ad412662c5544a1a9003652a3c8a09ae25620fc2e29a72a2572"
+    },
+    "jsonLdApi": "92f07705a0c0ac27aa9bc6fe1322dcc9fad0114d",
+    "jsonLdStreaming": "64e6fea9eee3cf5d80468810552f50f6c487925f",
+    "n3OptionalCommunityGroupProfile": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+    "jsonLdFraming": "unsupported-out-of-scope; no repository pin",
+    "jena": "6.1.0",
+    "souffle": "2.5",
+    "agenticQe": "3.13.2",
+    "darwin": "0.8.0"
+  },
+  "informationalEditorHeads": {
+    "rdfConcepts": "74f17a64cfd2c50d55f78750a3c26ea74837bc3b",
+    "rdfSemantics": "8aa3ebe2644be35cde964f949e754f5d7a075317",
+    "sparqlQuery": "178f1c4e3787e041f54242a698a3133a667b884b",
+    "shaclDataShapes": "eedda09f93c39be1d2e978f3f942631494ae25a0",
+    "claimRole": "Observed drift inputs only; not a complete immutable pin set for every family document"
+  },
+  "evidence": [
+    {
+      "id": "E-DATALOG-NATIVE",
+      "title": "OxDatalog D0, D1, D2, boundedness, RDF adapter, and mutation-competence tests",
+      "kind": "native-tests",
+      "command": "cargo test -p oxdatalog --all-targets --all-features --locked",
+      "result": {
+        "passed": 70,
+        "failed": 0
+      },
+      "authority": "Native implementation behavior"
+    },
+    {
+      "id": "E-STORE-NATIVE",
+      "title": "Oxigraph semantic profile integration over stable store snapshots",
+      "kind": "native-tests",
+      "command": "cargo test -p oxigraph --no-default-features --features datalog,rdfs,owl2-rl,shacl,rdf-12 --test semantic_reasoning --locked",
+      "result": {
+        "passed": 4,
+        "failed": 0
+      },
+      "authority": "Cross-profile store integration behavior"
+    },
+    {
+      "id": "E-RDFS-NATIVE",
+      "title": "RDFS compatibility and finite active-vocabulary profile tests",
+      "kind": "native-tests",
+      "command": "cargo test -p oxrdfs --all-targets --all-features --locked",
+      "result": {
+        "passed": 37,
+        "failed": 0
+      },
+      "authority": "Native profile behavior"
+    },
+    {
+      "id": "E-OWL-NATIVE",
+      "title": "OWL 2 RL positive seed, datatype value-space, and bounded RDF-rule profile tests",
+      "kind": "native-tests",
+      "command": "cargo test -p oxowl --all-targets --all-features --locked",
+      "result": {
+        "passed": 34,
+        "failed": 0
+      },
+      "authority": "Native bounded-profile behavior; not a complete XSD datatype or OWL conformance claim"
+    },
+    {
+      "id": "E-RDF12-OFFICIAL",
+      "title": "Pinned W3C RDF 1.2 official manifests",
+      "kind": "official-suite",
+      "sourcePin": "rdfAndSparqlTests",
+      "command": "cargo test -p oxigraph-testsuite --test parser --all-features --locked rdf12_ -- --nocapture",
+      "result": {
+        "wrapperTests": 10,
+        "cases": 575,
+        "passed": 575,
+        "failed": 0,
+        "unsupported": 0,
+        "categories": {
+          "nTriplesSyntax": 29,
+          "nTriplesCanonicalization": 41,
+          "nQuadsSyntax": 27,
+          "nQuadsCanonicalization": 41,
+          "turtleSyntax": 74,
+          "turtleEvaluation": 29,
+          "triGSyntax": 35,
+          "triGEvaluation": 25,
+          "rdfXml": 197,
+          "rdfSemanticsAggregate": {"cases":77,"simpleRegime":24,"rdfRegime":27,"rdfsRegime":26}
+        }
+      },
+      "authority": "Exact official-suite evidence; the 77-case RDF Semantics aggregate spans 24 Simple-, 27 RDF-, and 26 RDFS-regime cases and is not an RDFS-only receipt or complete RDF 1.2 normative coverage"
+    },
+    {
+      "id": "E-SPARQL12-OFFICIAL",
+      "title": "Pinned W3C SPARQL 1.2 official manifest",
+      "kind": "official-suite",
+      "sourcePin": "rdfAndSparqlTests",
+      "command": "cargo test -p oxigraph-testsuite --test sparql --all-features --locked sparql12_w3c_testsuite -- --nocapture",
+      "result": {
+        "wrapperTests": 1,
+        "cases": 269,
+        "passed": 269,
+        "failed": 0,
+        "unsupported": 0
+      },
+      "authority": "Exact official-suite evidence; not complete SPARQL 1.2 normative coverage"
+    },
+    {
+      "id": "E-CLI-HTTP-NATIVE", "title": "Oxigraph CLI native suite including HTTP protocol and feature boundaries", "kind": "native-tests",
+      "commands": ["cargo test -p oxigraph-cli --all-targets --locked","cargo test -p oxigraph-cli --all-targets --no-default-features --locked"],
+      "result": {"defaultFeatures":{"passed":133,"failed":0},"noDefaultFeatures":{"passed":116,"failed":0}},
+      "authority": "Native HTTP and wire behavior, including the bounded SPARQL Protocol and Graph Store Protocol surfaces; not an official W3C suite or SPARQL 1.2 family-conformance receipt"},
+    {
+      "id": "E-RDFC10-OFFICIAL",
+      "title": "Pinned W3C RDF Dataset Canonicalization 1.0 manifest",
+      "kind": "official-suite",
+      "sourcePin": "rdfCanonTests",
+      "command": "cargo test -p oxigraph-testsuite --test canonicalization --all-features --locked -- --nocapture",
+      "result": {"cases":86,"passed":86,"failed":0,"unsupported":0},
+      "authority": "Exact supporting-specification suite evidence; not RDF 1.2 family parity"
+    },
+    {
+      "id": "E-SUPPORTING-PARSER-SUITES",
+      "title": "Current optional and interchange parser-suite audit",
+      "kind": "supporting-suite",
+      "sourcePins": ["jsonLdApi", "jsonLdStreaming", "n3OptionalCommunityGroupProfile"],
+      "command": "cargo test --locked -p oxigraph-testsuite --test parser --all-features supporting_ -- --nocapture",
+      "result": {
+        "wrapperTests": {"passed":5,"failed":0},
+        "n3": {"parser":"208/208","extended":"871/871","turtle":"296/296","reasoner":"unsupported; two 87-entry manifests have no registered handler/wrapper"},
+        "jsonLdToRdf": {"entries":467,"passed":446,"declaredExclusions":21},
+        "jsonLdStreaming": {"physicalEntries":483,"uniqueEntries":481,"quarantinedPhysicalEntries":4,"stableEntries":479,"passed":452,"declaredFailures":27,"duplicateIds":["t0124","t0125"]},
+        "jsonLdFromRdf": {"automated":false,"manualGeneric":"9/54 pass; 45/54 fail","newOrChangedFailures":["t0027","t0028"]}
+      },
+      "authority": "Supporting parser/interchange and optional Community Group profile evidence only; not RDF 1.2 family parity"
+    },
+    {
+      "id": "E-OWL2RL-OFFICIAL",
+      "title": "Pinned W3C approved OWL 2 RL RDF-based assertions",
+      "kind": "official-suite",
+      "sourcePin": "owl2RlApprovedExport",
+      "command": "node tools/owl2-tests/execute-w3c-owl2-rl.mjs",
+      "inventory": {
+        "approvedRlCases": 70,
+        "rdfBasedCases": 68,
+        "ruleIdentifiers": 78,
+        "datalogRuleIdentifiers": 46,
+        "specializedRuleIdentifiers": 32
+      },
+      "result": {
+        "assertions": 98,
+        "passed": 98,
+        "failed": 0
+      },
+      "authority": "Exact applicable RDF-based export evidence; not OWL family or Direct Semantics conformance"
+    },
+    {
+      "id": "E-SHACL12-NATIVE",
+      "title": "OxSHACL all-feature and no-default native test matrices",
+      "kind": "native-tests",
+      "commands": [
+        "cargo test -p oxshacl --all-targets --all-features --locked",
+        "cargo test -p oxshacl --all-targets --no-default-features --locked"
+      ],
+      "result": {
+        "allFeatures": {"passed":167,"failed":0},
+        "noDefaultFeatures": {"passed":114,"failed":0}
+      },
+      "authority": "Exact native implementation behavior in the two supported feature configurations; not SHACL family conformance"
+    },
+    {
+      "id": "E-SHACL12-INVENTORY",
+      "title": "Pinned W3C SHACL 1.2 specification and test inventory",
+      "kind": "official-inventory",
+      "sourcePin": "shaclSpecificationsAndTests",
+      "command": "node tools/shacl-tests/inventory.mjs",
+      "inventory": {
+        "ttlFiles": 347,
+        "manifestFiles": 25,
+        "approvedEntries": 318,
+        "rootIncludes": ["core/manifest.ttl", "node-expr/manifest.ttl", "sparql/manifest.ttl"],
+        "rulesTtlFiles": 36,
+        "rulesSrlFixtureFiles": 166,
+        "rulesReachableFromRootManifest": false,
+        "rulesSeparateManifest": "manifest-rules.ttl",
+        "rulesSeparateManifestReportedCases": {"syntax":138,"wellFormedness":8,"stratification":9,"evaluation":16,"total":171},
+        "rulesSeparateManifestApproval": "mf:approval unspecified; executable supplemental lane",
+        "compactSyntaxPairs": 32,
+        "compactSyntaxStatus": "editor-only, unmanifested, positive informative translation lane; upstream supplies no normative negative corpus, while local negative and round-trip tests exist"
+      },
+      "authority": "Topology and inventory only; root, supplemental Rules, and informative SHACL-C lanes remain distinct"
+    },
+    {
+      "id": "E-SHACL12-RUN",
+      "title": "Pinned W3C SHACL feature-set execution",
+      "kind": "official-suite",
+      "sourcePin": "shaclSpecificationsAndTests",
+      "command": "node tools/shacl-tests/run.mjs",
+      "result": {
+        "rootValidation": {"discovered":169,"eligible":167,"passed":167,"unsupported":0,"failed":0,"excluded":2,"excludedInvalid":2},
+        "rootNodeExpressions": {"discovered":143,"eligible":143,"passed":143,"unsupported":0,"failed":0,"excluded":0},
+        "legacySparqlRulesInfer": {"discovered":6,"eligible":6,"passed":6,"unsupported":0,"failed":0,"excluded":0},
+        "supplementalRules": {"discovered":171,"eligible":171,"passed":171,"unsupported":0,"failed":0,"excluded":0,"rootReachable":false,"mfApproval":"unspecified"},
+        "informativeShaclCompact": {"discovered":32,"eligible":32,"passed":32,"unsupported":0,"failed":0,"excluded":0,"normative":false,"upstreamNegativeCorpus":false},
+        "aggregate": {"discovered":521,"eligible":519,"passed":519,"unsupported":0,"failed":0,"excluded":2,"invalidUpstreamExclusions":2}
+      },
+      "receiptState": "authoritative consolidated receipt whose five lanes retain their separate authority classifications",
+      "receipt": "target/w3c/shacl-1.2/run-receipt.json",
+      "caseArtifact": "target/w3c/shacl-1.2/run-cases.json",
+      "upstreamExclusions": [
+        {"path":"core/node/in-002.ttl","sha256":"9fbabda6e0d4eddbbf0cbb71b83ac1ba434368a5fca30869fc3e6f06d07e640d","reason":"No target or focus node and the expected source shape is absent"},
+        {"path":"core/node/in-003.ttl","sha256":"3b6f11aec2bdb76b042b4b788064036ef4e9d3ae736efed28b3644b4caad4db3","reason":"Undeclared shsh: prefix makes the pinned Turtle invalid"}
+      ],
+      "authority": "Exact lane evidence only: root-reachable validation/node-expression behavior, legacy inference compatibility, supplemental Rules behavior, and informative positive SHACL-C translation; family parity remains unproven"
+    },
+    {
+      "id": "E-SHACL12-JENA-COMPACT",
+      "title": "Apache Jena 6.1.0 SHACL-C positive-pair differential",
+      "kind": "reference-differential",
+      "sourcePin": "shaclSpecificationsAndTests",
+      "command": "node tools/shacl-tests/jena-compact.mjs",
+      "result": {"discovered":32,"eligible":32,"passed":32,"unsupported":0,"failed":0,"excluded":0},
+      "receipt": "target/datalog-oracles/jena-shaclc/receipt.json",
+      "authority": "Exact Jena/Oxigraph agreement for the same 32 pinned positive informative source/graph pairs; not a normative SHACL-C or SHACL-family conformance claim"
+    },
+    {
+      "id": "E-JENA-PARITY",
+      "title": "Apache Jena 6.1.0 reviewed outcome differential",
+      "kind": "reference-differential",
+      "command": "bash tools/jena-parity/scripts/run.sh",
+      "profile": "jena-6.1.0-outcome-intersection-2026-07-27-v1",
+      "result": {
+        "scenarios": 76,
+        "assertions": 198,
+        "domains": {"rdf":17,"sparql":30,"shacl":13,"rdfs":7,"owl2-rl":9},
+        "domainAssertions": {"rdf":46,"sparql":77,"shacl":43,"rdfs":14,"owl2-rl":18},
+        "classifications": {"agreement":70,"w3c-overrides-jena":4,"w3c-permitted-divergence":1,"jena-extension":1}
+      },
+      "reproducibility": {
+        "runs": 2,
+        "subjectSha256": "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d",
+        "profileLockSha256": "00b01191d9c15661f9d8743261d2e104980d6ea73d444794acd56a822749bf4e",
+        "receiptSha256": "48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76",
+        "resolvedInventorySha256": "be03e50517be71a7574d89982644fc3c1e54030c5d8375a792180ad37c476cb5",
+        "jenaObservationsSha256": "b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4"
+      },
+      "receipt": "target/jena-parity/parity-receipt.json",
+      "authority": "Exact reviewed outcome intersection only: agreement and W3C-overrides-Jena are distinct from one W3C-permitted implementation variant; not complete Apache Jena or W3C parity"
+    },
+    {
+      "id": "E-DATALOG-MUTATION",
+      "title": "OxDatalog complete configured mutation inventory",
+      "kind": "mutation-competence",
+      "command": "node tools/mutation/oxdatalog.mjs --jobs 2",
+      "result": {"gateClosed":true,"baselinePassed":true,"generated":358,"caught":278,"unviable":80,"missed":0,"timeout":0,"mutationScorePercent":100},
+      "receipt": "target/mutation/oxdatalog/runs/5c7397b1-881e-4548-a5f5-f978da254bde/receipt.json",
+      "latestReceipt": "target/mutation/oxdatalog/receipt.json",
+      "runId": "5c7397b1-881e-4548-a5f5-f978da254bde",
+      "receiptSha256": "ad3dba338080e1f748570aba6c6a8ecec495bd1b9086d160e7f09b7308023727",
+      "contentHash": "221f1875b906cf29e6cb918cfdcedc004671e8671a030e48d9f10f4dc4120f26",
+      "executionHash": "ca55eda189d02aa57d7b59d8607dc2421aae3a307b02a3aa300288b0f9edc4e1",
+      "inputContentHash": "36987e8b84e1d0e4703807659b616ecf561c1654d0b5f1f2348e7d6270df40e3",
+      "publicationContentHash": "aed0d98f523397961e68ff9d2759c28fb79e358a64b1906029dba31f61472d24",
+      "nativeOutcomesSha256": "a818f2cbf62e35730eef0cfb9f7db3d89c4bebb04fbd53a6e6a5cef7643c5b37",
+      "authority": "Complete configured cargo-mutants inventory for the protected OxDatalog source and policy snapshot"
+    },
+    {
+      "id": "E-SOUFFLE-DATALOG",
+      "title": "Souffle 2.5 stratified Datalog differential",
+      "kind": "reference-differential",
+      "command": "bash tools/datalog-oracles/run-souffle.sh --require",
+      "result": {"fixtures":1,"mismatches":0},
+      "authority": "One named D1 fixture only"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "datalog-d0-d2",
+      "title": "Bounded RDF-native Datalog D0, D1, and D2",
+      "implementationState": "implemented",
+      "normativeFamilyParity": null,
+      "normativeFamilyParityApplicability": false,
+      "interfaces": [
+        "Rust rule IR",
+        "RDF dataset adapter",
+        "base-plus-inference queryable view",
+        "optional Oxigraph store integration"
+      ],
+      "evidence": ["E-DATALOG-NATIVE", "E-STORE-NATIVE", "E-JENA-PARITY", "E-DATALOG-MUTATION", "E-SOUFFLE-DATALOG"],
+      "exclusions": [
+        "incremental deletion and truth maintenance",
+        "backward or hybrid query modes",
+        "unbounded function symbols",
+        "impure user built-ins",
+        "public RIF or Jena rule syntax"
+      ],
+      "openGaps": [
+        "D2 durable materialization requires an owned-graph replacement policy"
+      ],
+      "allowedClaim": "Bounded D0-D2 engine with exact native and differential evidence"
+    },
+    {
+      "id": "rdfs-1.2-finite-active-vocabulary",
+      "title": "Finite active-vocabulary RDFS 1.2 materialization",
+      "implementationState": "implemented",
+      "officialSuiteState": "26 of 26 RDFS-regime cases passed within the 77-case RDF Semantics aggregate (24 Simple, 27 RDF, 26 RDFS) in E-RDF12-OFFICIAL",
+      "normativeCoverage": {"inventory":"normative-requirements.json","inventoryState":"RDF-Semantics-grouped-not-clause-complete","applicableRequirements":4,"closedRequirements":3,"unresolvedRequirements":1,"setEquality":false},
+      "normativeFamilyParity": false,
+      "interfaces": [
+        "Rust oxrdfs closure and receipt",
+        "Oxigraph rdfs feature fixed to the 15-pattern RDF 1.2 finite active-vocabulary profile; direct oxrdfs without rdf-12 alone exposes the separate 14-pattern Basic profile"
+      ],
+      "evidence": ["E-RDFS-NATIVE", "E-RDF12-OFFICIAL", "E-JENA-PARITY"],
+      "exclusions": [
+        "unbounded axiomatic vocabulary",
+        "unrestricted generalized RDF materialization",
+        "service-description entailment advertisement",
+        "cross-language binding parity"
+      ],
+      "openGaps": [
+        "complete RDF 1.2 Semantics clause mapping",
+        "explicit cross-interface entailment contract"
+      ],
+      "allowedClaim": "Oxigraph 15-pattern RDF 1.2 finite active-vocabulary profile, direct-oxrdfs 14-pattern Basic feature boundary, 37 native tests, and the exact 26-case RDFS-regime subset of the 77-case RDF Semantics aggregate"
+    },
+    {
+      "id": "owl2-rl-rdf",
+      "title": "Bounded OWL 2 RL/RDF rule engine",
+      "implementationState": "implemented",
+      "officialSuiteState": "98 of 98 assertions passed across 68 RDF-based cases",
+      "normativeCoverage": {"inventoryState": "78-rdf-rule-identifiers-mapped-broader-clauses-incomplete", "applicableRequirements": null, "closedRequirements": null, "setEquality": false},
+      "normativeFamilyParity": false,
+      "interfaces": [
+        "Rust oxowl closure, consistency result, provenance, and receipt"
+      ],
+      "evidence": ["E-OWL-NATIVE", "E-OWL2RL-OFFICIAL"],
+      "exclusions": [
+        "OWL 2 RL Direct Semantics processor",
+        "general structural syntax parser and profile checker",
+        "general imports manager",
+        "OWL 2 EL",
+        "OWL 2 QL",
+        "OWL 2 DL",
+        "OWL 2 Full",
+        "Jena OWL compatibility modes"
+      ],
+      "openGaps": [
+        "map applicable OWL 2 conformance requirements outside the RDF-based export",
+        "publish an explicit library imports policy",
+        "complete the normative datatype map; xsd:date is excluded and canonical XML equality across distinct lexical forms remains unknown"
+      ],
+      "allowedClaim": "Bounded owl2-rl-rdf rule profile with exact 78-rule and 98-assertion evidence"
+    },
+    {
+      "id": "rdf12-w3c",
+      "title": "W3C RDF 1.2 family",
+      "implementationState": "official-suite-complete",
+      "officialSuiteState": "575 of 575 passed; zero unsupported",
+      "normativeCoverage": {"inventory":"normative-requirements.json","inventoryState":"31-of-31-documents-represented-grouped-clauses-open","applicableRequirements":26,"closedRequirements":18,"unresolvedRequirements":8,"setEquality":false},
+      "normativeFamilyParity": false,
+      "interfaces": [
+        "Rust workspace parser, serializer, model, and testsuite runner"
+      ],
+      "evidence": ["E-RDF12-OFFICIAL"],
+      "supportingEvidence": ["E-RDFC10-OFFICIAL", "E-SUPPORTING-PARSER-SUITES"],
+      "exclusions": [],
+      "openGaps": [
+        "replace grouped obligations with a complete sentence-level clause inventory for all 11 registered documents",
+        "supplementary tests for untested normative clauses",
+        "Python, JavaScript, CLI, and HTTP interface agreement",
+        "edge-draft drift and reviewed advancement receipt"
+      ],
+      "allowedClaim": "Pinned official RDF 1.2 suite passed 575/575",
+      "forbiddenClaim": "RDF 1.2 parity"
+    },
+    {
+      "id": "sparql12-w3c",
+      "title": "W3C SPARQL 1.2 family",
+      "implementationState": "official-suite-complete; 11 of 24 applicable grouped obligations closed",
+      "officialSuiteState": "269 of 269 passed; zero unsupported",
+      "normativeCoverage": {"inventory":"normative-requirements.json","inventoryState":"31-of-31-documents-represented-grouped-clauses-open","applicableRequirements":24,"closedRequirements":11,"unresolvedRequirements":13,"setEquality":false},
+      "normativeFamilyParity": false,
+      "interfaces": ["Rust parser, evaluator, update, result parsers, and testsuite runner","CLI HTTP query, update, service-description, and graph-store endpoints"],
+      "evidence": ["E-SPARQL12-OFFICIAL","E-CLI-HTTP-NATIVE"],
+      "exclusions": [],
+      "openGaps": [
+        "replace grouped requirements with complete Query, Update, Service Description, Federation, Entailment, Protocol, Graph Store Protocol, and result-format clause inventories",
+        "supplementary tests and cross-interface agreement",
+        "edge-draft drift and reviewed advancement receipt"
+      ],
+      "allowedClaim": "Pinned official SPARQL 1.2 suite passed 269/269",
+      "forbiddenClaim": "SPARQL 1.2 parity"
+    },
+    {
+      "id": "shacl12-w3c",
+      "title": "W3C SHACL 1.2 family",
+      "implementationState": "native all-feature and no-default matrices plus five dated evidence lanes are green; family closure remains open",
+      "officialSuiteState": "521 cases discovered, 519 eligible, and 519 passed across separately classified root, legacy, supplemental Rules, and informative SHACL-C lanes; two hash-pinned invalid upstream exclusions",
+      "normativeCoverage": {"inventory":"normative-requirements.json","inventoryState":"31-of-31-documents-represented-grouped-clauses-open","applicableRequirements":23,"closedRequirements":0,"unresolvedRequirements":23,"setEquality":false},
+      "normativeFamilyParity": false,
+      "implementedProfileIds": [
+        "shacl-1.2-core-2026-07-23-subset-v1",
+        "shacl-1.2-node-expressions-2026-01-08-subset-v1",
+        "shacl-1.2-sparql-extensions-2026-01-30-subset-v1",
+        "shacl-1.2-rules-2026-07-27-subset-v1",
+        "shacl-1.2-compact-syntax-2025-10-30-subset-v1"
+      ],
+      "interfaces": [
+        "Rust oxshacl snapshot validator, node expressions, SPARQL constraints, rules, reports, and receipts"
+      ],
+      "evidence": ["E-SHACL12-NATIVE", "E-SHACL12-INVENTORY", "E-SHACL12-RUN", "E-SHACL12-JENA-COMPACT"],
+      "exclusions": [
+        "complete Core conformance",
+        "complete Node Expressions conformance",
+        "complete SPARQL Extensions conformance",
+        "complete Rules conformance",
+        "SHACL UI",
+        "SHACL Profiling",
+        "complete SHACL Compact Syntax conformance beyond the 32 positive informative translation pairs and local negative/round-trip tests",
+        "RDF Rules Syntax mapping while the pinned draft section remains placeholder text",
+        "SRL concrete body-abbreviation RDF mapping while the pinned draft provides no stable mapping",
+        "FOR/IN shape integration pending data-shapes issue 1074",
+        "a normative repeated-firing interpretation while data-shapes issue 1069 remains open",
+        "automatic store transaction hooks",
+        "SPARQL-backed execution on synchronous WebAssembly, which fails closed until cooperative timeout and cancellation checks can be guaranteed",
+        "cross-language binding parity"
+      ],
+      "openGaps": [
+        "replace grouped requirements with a complete applicable clause inventory",
+        "resolve or rebase the two hash-pinned invalid upstream validation fixtures",
+        "resolve the RDF Rules, body-abbreviation, FOR/IN, and repeated-firing draft gaps without inventing semantics",
+        "implement the separately classified UI, Profiling, and remaining Compact Syntax surfaces if those product profiles are selected",
+        "prove cross-interface agreement"
+      ],
+      "allowedClaim": "Exact dated SHACL feature-set, 167/114 native-test, 519/519 eligible-suite, and 32/32 Jena Compact counts only",
+      "forbiddenClaim": "SHACL 1.2 parity"
+    },
+    {
+      "id": "jena-12-compat",
+      "title": "Apache Jena 6.1.0 compatibility",
+      "implementationState": "reviewed scoped outcome intersection closed",
+      "scenarioInventory": "76 reviewed scenarios and 198 assertions across RDF 17/46, SPARQL 30/77, SHACL 13/43, RDFS 7/14, and selected OWL 2 RL 9/18 (scenarios/assertions), classified as 70 agreement, 4 W3C-overrides-Jena, 1 W3C-permitted divergence, and 1 Jena extension",
+      "normativeFamilyParity": null,
+      "normativeFamilyParityApplicability": false,
+      "interfaces": [
+        "Immutable RDF, SPARQL, SHACL, RDFS, and selected OWL 2 RL outcome matrix"
+      ],
+      "evidence": ["E-JENA-PARITY"],
+      "exclusions": [
+        "unscoped Jena extensions",
+        "Java API structure"
+      ],
+      "openGaps": [
+        "any broader Jena claim requires a new reviewed set-equal inventory"
+      ],
+      "allowedClaim": "Exact 76-scenario/198-assertion reviewed outcome-intersection result and its four-way classification, including the non-failing W3C-permitted variant",
+      "forbiddenClaim": "Apache Jena parity"
+    },
+    {
+      "id": "w3c-12-full",
+      "title": "Aggregate RDF 1.2, SPARQL 1.2, and SHACL 1.2 parity",
+      "implementationState": "blocked",
+      "normativeFamilyParity": false,
+      "requires": [
+        "rdf12-w3c normativeFamilyParity=true",
+        "sparql12-w3c normativeFamilyParity=true",
+        "shacl12-w3c normativeFamilyParity=true",
+        "compatible RDF term model and reviewed snapshot",
+        "all exposed interfaces and operational gates"
+      ],
+      "openGaps": [
+        "all open gaps in the three required family profiles"
+      ],
+      "allowedClaim": "No aggregate conformance claim",
+      "forbiddenClaim": "W3C 1.2 parity"
+    }
+  ],
+  "qualification": [
+    {
+      "id": "agentic-qe",
+      "version": "3.13.2",
+      "role": "Pinned advisory generator and presence gate behind an Oxigraph-owned shell-free coordinator and evidence recorder",
+      "adapterAdversarialTests": {"passed": 16, "failed": 0},
+      "semanticGateCommandInventory": 41,
+      "parityCommandInventory": 47,
+      "receiptBindings": "Schema v4 immutable run UUID publication and exact-receipt oracle binding, content-addressed output archive, exact ordered profile inventory, crash-recoverable global profile lease, Cargo and Node test inventories/counts, repository tuple, implementation/artifact hashes, oracle roles, timeouts, and executable path/version/SHA-256",
+      "authority": "None beyond referenced native commands",
+      "receiptLocation": "target/agentic-qe"
+    },
+    {
+      "id": "metaharness-darwin",
+      "version": "0.8.0",
+      "role": "Policy-only harness qualification",
+      "currentEvidence": "Only a current full-mode qualification plus independent verification may establish the harness result; synthetic evidence is never sufficient",
+      "authority": "Harness mechanics and replay only",
+      "receiptLocation": "target/metaharness/qualification.json"
+    },
+    {
+      "id": "mutation",
+      "role": "Competence gate for OxDatalog",
+      "currentEvidence": "Gate closed: 358 generated, 278 caught, 80 unviable, zero missed, zero timed out; native outcomes and protected source/policy hashes reopened independently",
+      "requiredResult": {
+        "viableSurvivors": 0,
+        "timeouts": 0
+      },
+      "receiptLocation": "target/mutation/oxdatalog/receipt.json"
+    }
+  ]
+}

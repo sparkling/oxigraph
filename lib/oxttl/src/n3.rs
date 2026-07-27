@@ -1342,9 +1342,10 @@ impl RuleRecognizer for N3Recognizer {
                 },
                 N3State::LiteralExpectDatatype { value } => match token {
                     N3Token::IriRef(datatype) => {
-                        self.terms.push(
-                            Literal::new_typed_literal(value, NamedNode::new_unchecked(datatype))
-                                .into(),
+                        self.accept_typed_literal(
+                            value,
+                            NamedNode::new_unchecked(datatype),
+                            errors,
                         );
                         return;
                     }
@@ -1359,8 +1360,7 @@ impl RuleRecognizer for N3Recognizer {
                         &context.prefixes,
                     ) {
                         Ok(datatype) => {
-                            self.terms
-                                .push(Literal::new_typed_literal(value, datatype).into());
+                            self.accept_typed_literal(value, datatype, errors);
                             return;
                         }
                         Err(e) => {
@@ -1489,6 +1489,18 @@ impl N3Recognizer {
     ) {
         errors.push(msg.into());
         self.stack.clear();
+    }
+
+    fn accept_typed_literal(
+        &mut self,
+        value: OxString,
+        datatype: NamedNode,
+        errors: &mut Vec<RuleRecognizerError>,
+    ) {
+        match Literal::try_new_typed_literal(value, datatype) {
+            Ok(literal) => self.terms.push(literal.into()),
+            Err(error) => self.error(errors, error.to_string()),
+        }
     }
 
     fn quad(

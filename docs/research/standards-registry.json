@@ -1,0 +1,404 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-07-27",
+  "claimPolicy": {
+    "jenaAuthority": "compatibility differential only",
+    "w3cAuthority": "terminal semantic authority",
+    "testSuiteMeaning": "evidence for tested behavior, never a substitute for untested normative requirements",
+    "draftPolicy": "public receipts bind an exact reviewed snapshot; editor heads run in a separate edge lane",
+    "requirementsInventory": "normative-requirements.json",
+    "publicationStatusObservedAt": "2026-07-27",
+    "supportingSuitePolicy": "supporting interchange and optional-profile suites do not establish RDF 1.2 family parity"
+  },
+  "referenceImplementations": [
+    {
+      "id": "apache-jena",
+      "version": "6.1.0",
+      "role": "RDF/SPARQL/SHACL and rule-engine differential",
+      "url": "https://jena.apache.org/download/"
+    },
+    {
+      "id": "souffle",
+      "version": "2.5",
+      "role": "positive and stratified Datalog differential",
+      "url": "https://souffle-lang.github.io/release-2.5.0.html"
+    }
+  ],
+  "testSources": [
+    {
+      "id": "w3c-rdf-tests",
+      "commit": "3d0b0613d0177d25aad7ec60e88df2338f461516",
+      "observedCommitDate": "2026-07-23",
+      "url": "https://github.com/w3c/rdf-tests"
+    },
+    {
+      "id": "w3c-data-shapes",
+      "commit": "eedda09f93c39be1d2e978f3f942631494ae25a0",
+      "suiteContentSha256": "1d2c1c40769da1cf63fef62f3029447a66b5e81b5744b4cf2eaa5e128ba51a3a",
+      "specificationSha256": {
+        "core": "69497e1f3ef6993766f8a4f0812b61f4aa23b75e6a18e7425bc66dbf65d59b6e",
+        "nodeExpressions": "a1db16376a928ed90acd049537c645c4750f6fe2cb1ab99656ac689b40681f72",
+        "sparql": "c94be2019923aedacf01fe312404ef1e618bb06e3f9587eae35400633088db1c",
+        "rules": "45ef06db0d7df325171e877032774f989f96a22f96d2cc373755eda1dd514ad4",
+        "compact": "f6db1b05cd0201e7afb16dcc5b02c9306c7568cfbdf487b81c19ee14e34151cd"
+      },
+      "url": "https://github.com/w3c/data-shapes"
+    },
+    {
+      "id": "w3c-owl2-tests",
+      "selection": "approved OWL 2 RL RDF-based export, content hash pinned by tools/owl2-tests",
+      "url": "https://www.w3.org/2007/OWL/wiki/Test_Suite_Status"
+    },
+    {
+      "id": "w3c-rdf-canon-tests",
+      "commit": "15619df2fda7a4ca88308733789b6774517f9638",
+      "url": "https://github.com/w3c/rdf-canon"
+    },
+    {
+      "id": "w3c-json-ld-api",
+      "commit": "92f07705a0c0ac27aa9bc6fe1322dcc9fad0114d",
+      "url": "https://github.com/w3c/json-ld-api",
+      "role": "supporting JSON-LD 1.1 interchange evidence",
+      "claimScope": "does not establish RDF 1.2 triple-term or family parity",
+      "currentAudit": {
+        "toRdf": {"entries":467,"passed":446,"declaredExclusions":21},
+        "fromRdf": {"automated":false,"manualGenericTotal":54,"passed":9,"failed":45,"newOrChangedFailures":["t0027","t0028"]}
+      }
+    },
+    {
+      "id": "w3c-json-ld-streaming",
+      "commit": "64e6fea9eee3cf5d80468810552f50f6c487925f",
+      "url": "https://github.com/w3c/json-ld-streaming",
+      "role": "supporting JSON-LD streaming evidence",
+      "claimScope": "does not establish RDF 1.2 triple-term or family parity",
+      "currentAudit": {
+        "physicalEntries": 483,
+        "uniqueEntries": 481,
+        "quarantinedPhysicalEntries": 4,
+        "duplicateIds": {"t0124":2,"t0125":2},
+        "stableNonAnomalousEntries": 479,
+        "passed": 452,
+        "declaredFailures": 27,
+        "duplicatePreflight": "fail closed"
+      }
+    },
+    {
+      "id": "w3c-n3",
+      "commit": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+      "url": "https://github.com/w3c-cg/N3",
+      "role": "optional Notation3 Community Group draft profile",
+      "claimScope": "not a W3C Recommendation-track RDF 1.2 family surface",
+      "currentAudit": {
+        "parser": {"entries":208,"passed":208},
+        "extended": {"entries":871,"passed":871},
+        "turtle": {"entries":296,"passed":296},
+        "reasoner": {
+          "manifestEntriesEach": 87,
+          "manifests": ["manifest-reasoner.ttl", "manifest-reasoner-jen3.ttl"],
+          "execution": "unsupported; no registered reasoner handler or wrapper"
+        }
+      }
+    },
+    {
+      "id": "w3c-json-ld-framing",
+      "url": "https://github.com/w3c/json-ld-framing",
+      "availability": "not vendored or pinned",
+      "disposition": "unsupported-out-of-scope",
+      "role": "explicitly excluded JSON-LD Framing surface"
+    }
+  ],
+  "families": [
+    {
+      "id": "rdf-1.2",
+      "documentCount": 11,
+      "maturity": "mixed: 2 Candidate Recommendation Snapshots, 6 Working Drafts, and 3 Group Note Drafts",
+      "documents": [
+        {
+          "id": "rdf12-new",
+          "title": "What's New in RDF 1.2",
+          "url": "https://www.w3.org/TR/rdf12-new/",
+          "normativeRole": "informative change guide",
+          "publication": "W3C Group Note Draft",
+          "publishedAt": "2026-07-14"
+        },
+        {
+          "id": "rdf12-concepts",
+          "title": "RDF 1.2 Concepts and Abstract Data Model",
+          "url": "https://www.w3.org/TR/rdf12-concepts/",
+          "normativeRole": "abstract data model",
+          "publication": "W3C Candidate Recommendation Snapshot",
+          "publishedAt": "2026-04-07"
+        },
+        {
+          "id": "rdf12-n-quads",
+          "title": "RDF 1.2 N-Quads",
+          "url": "https://www.w3.org/TR/rdf12-n-quads/",
+          "normativeRole": "dataset concrete syntax",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "rdf12-n-triples",
+          "title": "RDF 1.2 N-Triples",
+          "url": "https://www.w3.org/TR/rdf12-n-triples/",
+          "normativeRole": "graph concrete syntax",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "rdf12-primer",
+          "title": "RDF 1.2 Primer",
+          "url": "https://www.w3.org/TR/rdf12-primer/",
+          "normativeRole": "informative introduction",
+          "publication": "W3C Group Note Draft",
+          "publishedAt": "2026-04-16"
+        },
+        {
+          "id": "rdf12-schema",
+          "title": "RDF 1.2 Schema",
+          "url": "https://www.w3.org/TR/rdf12-schema/",
+          "normativeRole": "RDF Schema vocabulary",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-03-28"
+        },
+        {
+          "id": "rdf12-semantics",
+          "title": "RDF 1.2 Semantics",
+          "url": "https://www.w3.org/TR/rdf12-semantics/",
+          "normativeRole": "simple, RDF, and RDFS entailment",
+          "publication": "W3C Candidate Recommendation Snapshot",
+          "publishedAt": "2026-04-07"
+        },
+        {
+          "id": "rdf12-trig",
+          "title": "RDF 1.2 TriG",
+          "url": "https://www.w3.org/TR/rdf12-trig/",
+          "normativeRole": "dataset concrete syntax",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-06-12"
+        },
+        {
+          "id": "rdf12-turtle",
+          "title": "RDF 1.2 Turtle",
+          "url": "https://www.w3.org/TR/rdf12-turtle/",
+          "normativeRole": "graph concrete syntax",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "rdf12-xml",
+          "title": "RDF 1.2 XML Syntax",
+          "url": "https://www.w3.org/TR/rdf12-xml/",
+          "normativeRole": "XML graph concrete syntax",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-06-18"
+        },
+        {
+          "id": "rdf12-interoperability",
+          "title": "RDF 1.2 Interoperability",
+          "url": "https://www.w3.org/TR/rdf12-interop/",
+          "normativeRole": "interoperability guidance",
+          "publication": "W3C Group Note Draft",
+          "publishedAt": "2026-07-23"
+        }
+      ]
+    },
+    {
+      "id": "sparql-1.2",
+      "documentCount": 12,
+      "maturity": "mixed: 10 Working Drafts, 1 Group Note Draft, and 1 editor-only draft",
+      "documents": [
+        {
+          "id": "sparql12-new",
+          "title": "What's New in SPARQL 1.2",
+          "url": "https://www.w3.org/TR/sparql12-new/",
+          "publication": "W3C Group Note Draft",
+          "publishedAt": "2026-07-14"
+        },
+        {
+          "id": "sparql12-concepts",
+          "title": "SPARQL 1.2 Concepts",
+          "url": "https://w3c.github.io/sparql-concepts/spec/",
+          "publication": "editor draft",
+          "publishedAt": null
+        },
+        {
+          "id": "sparql12-query",
+          "title": "SPARQL 1.2 Query Language",
+          "url": "https://www.w3.org/TR/sparql12-query/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-06-25",
+          "edgeLane": "editor head observed 2026-07-19, newer than the reviewed publication"
+        },
+        {
+          "id": "sparql12-update",
+          "title": "SPARQL 1.2 Update",
+          "url": "https://www.w3.org/TR/sparql12-update/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-06-12"
+        },
+        {
+          "id": "sparql12-service-description",
+          "title": "SPARQL 1.2 Service Description",
+          "url": "https://www.w3.org/TR/sparql12-service-description/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-04-23"
+        },
+        {
+          "id": "sparql12-federated-query",
+          "title": "SPARQL 1.2 Federated Query",
+          "url": "https://www.w3.org/TR/sparql12-federated-query/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-04-23"
+        },
+        {
+          "id": "sparql12-results-json",
+          "title": "SPARQL 1.2 Query Results JSON Format",
+          "url": "https://www.w3.org/TR/sparql12-results-json/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "sparql12-results-csv-tsv",
+          "title": "SPARQL 1.2 Query Results CSV and TSV Formats",
+          "url": "https://www.w3.org/TR/sparql12-results-csv-tsv/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "sparql12-results-xml",
+          "title": "SPARQL 1.2 Query Results XML Format",
+          "url": "https://www.w3.org/TR/sparql12-results-xml/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2024-12-27",
+          "edgeLane": "editor head newer than the reviewed publication"
+        },
+        {
+          "id": "sparql12-entailment",
+          "title": "SPARQL 1.2 Entailment Regimes",
+          "url": "https://www.w3.org/TR/sparql12-entailment/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-04-09"
+        },
+        {
+          "id": "sparql12-protocol",
+          "title": "SPARQL 1.2 Protocol",
+          "url": "https://www.w3.org/TR/sparql12-protocol/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "sparql12-graph-store-protocol",
+          "title": "SPARQL 1.2 Graph Store Protocol",
+          "url": "https://www.w3.org/TR/sparql12-graph-store-protocol/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2024-12-19",
+          "edgeLane": "editor head newer than the reviewed publication"
+        }
+      ]
+    },
+    {
+      "id": "shacl-1.2",
+      "documentCount": 8,
+      "maturity": "mixed: 4 Working Drafts, 2 First Public Working Drafts, and 2 editor-only drafts",
+      "documents": [
+        {
+          "id": "shacl12-overview",
+          "title": "SHACL 1.2 Overview",
+          "url": "https://w3c.github.io/data-shapes/shacl12-overview/",
+          "publication": "editor draft",
+          "publishedAt": null
+        },
+        {
+          "id": "shacl12-core",
+          "title": "SHACL 1.2 Core",
+          "url": "https://www.w3.org/TR/shacl12-core/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-23"
+        },
+        {
+          "id": "shacl12-sparql",
+          "title": "SHACL 1.2 SPARQL Extensions",
+          "url": "https://www.w3.org/TR/shacl12-sparql/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-24"
+        },
+        {
+          "id": "shacl12-node-expr",
+          "title": "SHACL 1.2 Node Expressions",
+          "url": "https://www.w3.org/TR/shacl12-node-expr/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-21"
+        },
+        {
+          "id": "shacl12-rules",
+          "title": "SHACL 1.2 Rules",
+          "url": "https://www.w3.org/TR/shacl12-rules/",
+          "publication": "W3C Working Draft",
+          "publishedAt": "2026-07-27"
+        },
+        {
+          "id": "shacl12-ui",
+          "title": "SHACL 1.2 UI",
+          "url": "https://www.w3.org/TR/shacl12-ui/",
+          "publication": "W3C First Public Working Draft",
+          "publishedAt": "2026-05-26"
+        },
+        {
+          "id": "shacl12-compact-syntax",
+          "title": "SHACL 1.2 Compact Syntax",
+          "url": "https://w3c.github.io/data-shapes/shacl12-cs/",
+          "publication": "editor draft",
+          "publishedAt": null
+        },
+        {
+          "id": "shacl12-profiling",
+          "title": "SHACL 1.2 Profiling",
+          "url": "https://www.w3.org/TR/shacl12-profiling/",
+          "publication": "W3C First Public Working Draft",
+          "publishedAt": "2026-07-02"
+        }
+      ]
+    },
+    {
+      "id": "owl-2-rl",
+      "documentCount": 2,
+      "maturity": "W3C Recommendation",
+      "documents": [
+        {
+          "id": "owl2-profiles",
+          "title": "OWL 2 Web Ontology Language Profiles (Second Edition)",
+          "url": "https://www.w3.org/TR/owl2-profiles/"
+        },
+        {
+          "id": "owl2-conformance",
+          "title": "OWL 2 Web Ontology Language Conformance (Second Edition)",
+          "url": "https://www.w3.org/TR/owl2-conformance/"
+        }
+      ]
+    }
+  ],
+  "supportingSpecifications": [
+    {
+      "id": "rdf-canon",
+      "title": "RDF Dataset Canonicalization 1.0",
+      "url": "https://www.w3.org/TR/rdf-canon/"
+    },
+    {
+      "id": "json-ld11",
+      "title": "JSON-LD 1.1",
+      "url": "https://www.w3.org/TR/json-ld11/"
+    },
+    {
+      "id": "xsd11-datatypes",
+      "title": "XML Schema Definition Language 1.1 Part 2: Datatypes",
+      "url": "https://www.w3.org/TR/xmlschema11-2/"
+    },
+    {
+      "id": "rif-core",
+      "title": "RIF Core Dialect",
+      "url": "https://www.w3.org/TR/rif-core/",
+      "role": "future rule interchange only; not a current public profile"
+    }
+  ]
+}

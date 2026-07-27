@@ -3,13 +3,17 @@
 
 use crate::DEFAULT_MAX_BUFFER_SIZE;
 use crate::lexer::N3Lexer;
+use crate::serialization::{ensure_terse_graph_name_compatible, ensure_terse_parts_compatible};
 use crate::terse::TriGRecognizer;
 #[cfg(feature = "async-tokio")]
 use crate::toolkit::TokioAsyncReaderIterator;
 use crate::toolkit::{Parser, ReaderIterator, SliceIterator, TurtleParseError, TurtleSyntaxError};
 use oxiri::{Iri, IriParseError};
 use oxrdf::vocab::{rdf, xsd};
-use oxrdf::{GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad, Term, Triple};
+use oxrdf::{
+    Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad, RdfVersion, Term,
+    Triple,
+};
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::hash_map::Iter;
@@ -45,6 +49,11 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 /// assert_eq!(2, count);
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
+///
+/// The streaming iterators emit quads only, so empty named graphs are not
+/// iterator items. Use [`ReaderTriGParser::collect_dataset`] or
+/// [`SliceTriGParser::collect_dataset`] when complete RDF dataset topology must
+/// be preserved.
 #[derive(Clone)]
 #[must_use]
 pub struct TriGParser {
@@ -370,6 +379,30 @@ impl<R: Read> ReaderTriGParser<R> {
             .as_ref()
             .map(Iri::as_str)
     }
+
+    /// Returns named graph declarations encountered so far.
+    ///
+    /// Unlike quad iteration, this includes named graphs whose TriG blocks are
+    /// empty.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.inner.parser.context.named_graphs()
+    }
+
+    /// Consumes the parser and returns the complete RDF dataset.
+    ///
+    /// This method preserves empty named graphs. Collecting the parser through
+    /// its [`Iterator`] implementation cannot preserve them because iterator
+    /// items are quads.
+    pub fn collect_dataset(mut self) -> Result<Dataset, TurtleParseError> {
+        let mut dataset = Dataset::new();
+        for quad in self.by_ref() {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs() {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok(dataset)
+    }
 }
 
 impl<R: Read> Iterator for ReaderTriGParser<R> {
@@ -489,6 +522,25 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderTriGParser<R> {
             .as_ref()
             .map(Iri::as_str)
     }
+
+    /// Returns named graph declarations encountered so far, including empty
+    /// named graph blocks.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.inner.parser.context.named_graphs()
+    }
+
+    /// Consumes the parser and returns the complete RDF dataset, preserving
+    /// empty named graphs.
+    pub async fn collect_dataset(mut self) -> Result<Dataset, TurtleParseError> {
+        let mut dataset = Dataset::new();
+        while let Some(quad) = self.next().await {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs() {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok(dataset)
+    }
 }
 
 /// Parses a TriG file from a byte slice.
@@ -581,6 +633,27 @@ impl SliceTriGParser<'_> {
             .base_iri
             .as_ref()
             .map(Iri::as_str)
+    }
+
+    /// Returns named graph declarations encountered so far, including empty
+    /// named graph blocks.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.inner.parser.context.named_graphs()
+    }
+
+    /// Consumes the parser and returns the complete RDF dataset.
+    ///
+    /// This method preserves empty named graphs, unlike collecting the
+    /// streaming quad iterator directly.
+    pub fn collect_dataset(mut self) -> Result<Dataset, TurtleSyntaxError> {
+        let mut dataset = Dataset::new();
+        for quad in self.by_ref() {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs() {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok(dataset)
     }
 }
 
@@ -721,6 +794,12 @@ impl LowLevelTriGParser {
             .as_ref()
             .map(Iri::as_str)
     }
+
+    /// Returns named graph declarations encountered so far, including empty
+    /// named graph blocks.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.parser.context.named_graphs()
+    }
 }
 
 /// Iterator on the file prefixes.
@@ -772,6 +851,7 @@ impl<'a> Iterator for TriGPrefixesIter<'a> {
 pub struct TriGSerializer {
     base_iri: Option<Iri<String>>,
     prefixes: BTreeMap<String, String>,
+    rdf_version: RdfVersion,
 }
 
 impl TriGSerializer {
@@ -781,7 +861,20 @@ impl TriGSerializer {
         Self {
             base_iri: None,
             prefixes: BTreeMap::new(),
+            rdf_version: RdfVersion::V1_1,
         }
+    }
+
+    /// Sets the RDF version announced by the serialized document.
+    ///
+    /// RDF 1.1 is used by default. RDF 1.2 and RDF 1.2 Basic modes write their
+    /// corresponding `VERSION` directive before any base or prefix directive.
+    /// RDF 1.2 Basic accepts directional language-tagged strings but rejects
+    /// triple terms.
+    #[inline]
+    pub fn with_rdf_version(mut self, rdf_version: RdfVersion) -> Self {
+        self.rdf_version = rdf_version;
+        self
     }
 
     #[inline]
@@ -928,6 +1021,7 @@ impl TriGSerializer {
         LowLevelTriGSerializer {
             prefixes,
             base_iri: self.base_iri,
+            rdf_version: self.rdf_version,
             prelude_written: false,
             current_graph_name: GraphName::DefaultGraph,
             current_subject_predicate: None,
@@ -969,6 +1063,21 @@ impl<W: Write> WriterTriGSerializer<W> {
     /// Writes an extra quad.
     pub fn serialize_quad(&mut self, quad: &Quad) -> io::Result<()> {
         self.low_level_writer.serialize_quad(quad, &mut self.writer)
+    }
+
+    /// Writes an empty named graph block.
+    pub fn serialize_empty_graph(&mut self, graph_name: &NamedOrBlankNode) -> io::Result<()> {
+        self.low_level_writer
+            .serialize_empty_graph(graph_name, &mut self.writer)
+    }
+
+    /// Writes a complete RDF dataset, including empty named graphs.
+    ///
+    /// Use this method instead of serializing only [`Dataset::iter`] when
+    /// dataset topology must round-trip.
+    pub fn serialize_dataset(&mut self, dataset: &Dataset) -> io::Result<()> {
+        self.low_level_writer
+            .serialize_dataset(dataset, &mut self.writer)
     }
 
     #[doc(hidden)]
@@ -1032,6 +1141,28 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterTriGSerializer<W> {
         Ok(())
     }
 
+    /// Writes an empty named graph block.
+    pub async fn serialize_empty_graph(&mut self, graph_name: &NamedOrBlankNode) -> io::Result<()> {
+        self.low_level_writer
+            .serialize_empty_graph(graph_name, &mut self.buffer)?;
+        self.writer.write_all(&self.buffer).await?;
+        self.buffer.clear();
+        Ok(())
+    }
+
+    /// Writes a complete RDF dataset, including empty named graphs.
+    pub async fn serialize_dataset(&mut self, dataset: &Dataset) -> io::Result<()> {
+        let empty_named_graphs =
+            ensure_terse_dataset_compatible(self.low_level_writer.rdf_version, dataset)?;
+        for quad in dataset {
+            self.serialize_quad(&quad).await?;
+        }
+        for graph_name in empty_named_graphs {
+            self.serialize_empty_graph(&graph_name).await?;
+        }
+        Ok(())
+    }
+
     #[doc(hidden)]
     pub async fn serialize_triple(&mut self, triple: &Triple) -> io::Result<()> {
         self.low_level_writer
@@ -1082,6 +1213,7 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterTriGSerializer<W> {
 pub struct LowLevelTriGSerializer {
     prefixes: Vec<(String, String)>,
     base_iri: Option<Iri<String>>,
+    rdf_version: RdfVersion,
     prelude_written: bool,
     current_graph_name: GraphName,
     current_subject_predicate: Option<(NamedOrBlankNode, NamedNode)>,
@@ -1097,6 +1229,45 @@ impl LowLevelTriGSerializer {
             &quad.graph_name,
             writer,
         )
+    }
+
+    /// Writes an empty named graph block.
+    pub fn serialize_empty_graph(
+        &mut self,
+        graph_name: &NamedOrBlankNode,
+        mut writer: impl Write,
+    ) -> io::Result<()> {
+        ensure_terse_graph_name_compatible(self.rdf_version, graph_name)?;
+        self.ensure_prelude(&mut writer)?;
+        self.finish_current_graph(&mut writer)?;
+        match graph_name {
+            NamedOrBlankNode::NamedNode(graph_name) => writeln!(
+                writer,
+                "{} {{}}",
+                TurtleNamedNode {
+                    node: graph_name,
+                    prefixes: &self.prefixes,
+                    base_iri: &self.base_iri,
+                }
+            ),
+            NamedOrBlankNode::BlankNode(graph_name) => writeln!(writer, "{graph_name} {{}}"),
+        }
+    }
+
+    /// Writes a complete RDF dataset, including empty named graphs.
+    pub fn serialize_dataset(
+        &mut self,
+        dataset: &Dataset,
+        mut writer: impl Write,
+    ) -> io::Result<()> {
+        let empty_named_graphs = ensure_terse_dataset_compatible(self.rdf_version, dataset)?;
+        for quad in dataset {
+            self.serialize_quad(&quad, &mut writer)?;
+        }
+        for graph_name in empty_named_graphs {
+            self.serialize_empty_graph(&graph_name, &mut writer)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn serialize_triple(
@@ -1121,19 +1292,8 @@ impl LowLevelTriGSerializer {
         graph_name: &GraphName,
         mut writer: impl Write,
     ) -> io::Result<()> {
-        if !self.prelude_written {
-            self.prelude_written = true;
-            if let Some(base_iri) = &self.base_iri {
-                writeln!(writer, "@base <{base_iri}> .")?;
-            }
-            for (prefix_name, prefix_iri) in &self.prefixes {
-                writeln!(
-                    writer,
-                    "@prefix {prefix_name}: <{}> .",
-                    relative_iri(prefix_iri, &self.base_iri)
-                )?;
-            }
-        }
+        ensure_terse_parts_compatible(self.rdf_version, subject, predicate, object, graph_name)?;
+        self.ensure_prelude(&mut writer)?;
         if *graph_name == self.current_graph_name {
             if let Some((current_subject, current_predicate)) =
                 self.current_subject_predicate.take()
@@ -1245,16 +1405,142 @@ impl LowLevelTriGSerializer {
         }
     }
 
-    /// Finishes to write the file.
-    pub fn finish(&mut self, mut writer: impl Write) -> io::Result<()> {
-        if self.current_subject_predicate.is_some() {
+    fn ensure_prelude(&mut self, mut writer: impl Write) -> io::Result<()> {
+        if self.prelude_written {
+            return Ok(());
+        }
+        for (prefix_name, _) in &self.prefixes {
+            if !is_valid_prefix_name(prefix_name) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("'{prefix_name}' is not a valid Turtle prefix name"),
+                ));
+            }
+        }
+        let mut prelude = Vec::new();
+        match self.rdf_version {
+            RdfVersion::V1_1 => {}
+            #[cfg(feature = "rdf-12")]
+            RdfVersion::V1_2Basic => writeln!(prelude, "VERSION \"1.2-basic\"")?,
+            #[cfg(feature = "rdf-12")]
+            RdfVersion::V1_2 => writeln!(prelude, "VERSION \"1.2\"")?,
+            #[cfg(not(feature = "rdf-12"))]
+            RdfVersion::V1_2Basic | RdfVersion::V1_2 => {
+                return Err(rdf_12_feature_required());
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "unsupported RDF version",
+                ));
+            }
+        }
+        if let Some(base_iri) = &self.base_iri {
+            writeln!(prelude, "@base <{base_iri}> .")?;
+        }
+        for (prefix_name, prefix_iri) in &self.prefixes {
+            writeln!(
+                prelude,
+                "@prefix {prefix_name}: <{}> .",
+                relative_iri(prefix_iri, &self.base_iri)
+            )?;
+        }
+        writer.write_all(&prelude)?;
+        self.prelude_written = true;
+        Ok(())
+    }
+
+    fn finish_current_graph(&mut self, mut writer: impl Write) -> io::Result<()> {
+        if self.current_subject_predicate.take().is_some() {
             writeln!(writer, " .")?;
         }
         if !self.current_graph_name.is_default_graph() {
             writeln!(writer, "}}")?;
         }
+        self.current_graph_name = GraphName::DefaultGraph;
         Ok(())
     }
+
+    /// Finishes to write the file.
+    pub fn finish(&mut self, mut writer: impl Write) -> io::Result<()> {
+        self.ensure_prelude(&mut writer)?;
+        self.finish_current_graph(writer)
+    }
+}
+
+fn ensure_terse_dataset_compatible(
+    rdf_version: RdfVersion,
+    dataset: &Dataset,
+) -> io::Result<Vec<NamedOrBlankNode>> {
+    for quad in dataset {
+        ensure_terse_parts_compatible(
+            rdf_version,
+            &quad.subject,
+            &quad.predicate,
+            &quad.object,
+            &quad.graph_name,
+        )?;
+    }
+    let empty_named_graphs = dataset
+        .named_graphs()
+        .filter(|graph_name| dataset.graph(graph_name).is_empty())
+        .collect::<Vec<_>>();
+    for graph_name in &empty_named_graphs {
+        ensure_terse_graph_name_compatible(rdf_version, graph_name)?;
+    }
+    Ok(empty_named_graphs)
+}
+
+#[cfg(not(feature = "rdf-12"))]
+fn rdf_12_feature_required() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "RDF 1.2 serialization requires the 'rdf-12' feature",
+    )
+}
+
+fn is_valid_prefix_name(value: &str) -> bool {
+    let mut characters = value.chars();
+    let Some(first) = characters.next() else {
+        return true;
+    };
+    if !is_pn_chars_base(first) {
+        return false;
+    }
+    let mut last = first;
+    for character in characters {
+        if character != '.' && !is_pn_chars(character) {
+            return false;
+        }
+        last = character;
+    }
+    is_pn_chars(last)
+}
+
+fn is_pn_chars(character: char) -> bool {
+    is_pn_chars_base(character)
+        || character == '_'
+        || character == '-'
+        || character.is_ascii_digit()
+        || character == '\u{B7}'
+        || ('\u{0300}'..='\u{036F}').contains(&character)
+        || ('\u{203F}'..='\u{2040}').contains(&character)
+}
+
+fn is_pn_chars_base(character: char) -> bool {
+    character.is_ascii_alphabetic()
+        || ('\u{00C0}'..='\u{00D6}').contains(&character)
+        || ('\u{00D8}'..='\u{00F6}').contains(&character)
+        || ('\u{00F8}'..='\u{02FF}').contains(&character)
+        || ('\u{0370}'..='\u{037D}').contains(&character)
+        || ('\u{037F}'..='\u{1FFF}').contains(&character)
+        || ('\u{200C}'..='\u{200D}').contains(&character)
+        || ('\u{2070}'..='\u{218F}').contains(&character)
+        || ('\u{2C00}'..='\u{2FEF}').contains(&character)
+        || ('\u{3001}'..='\u{D7FF}').contains(&character)
+        || ('\u{F900}'..='\u{FDCF}').contains(&character)
+        || ('\u{FDF0}'..='\u{FFFD}').contains(&character)
+        || ('\u{10000}'..='\u{EFFFF}').contains(&character)
 }
 
 struct TurtleNamedNode<'a> {
@@ -1556,7 +1842,7 @@ mod tests {
         serializer.serialize_quad(&Quad::new(
             NamedNode::new_unchecked("http://example.com/s"),
             NamedNode::new_unchecked("http://example.com/p"),
-            NamedNode::new_unchecked("http://example.com/o{o}"),
+            NamedNode::new_unchecked("https://example.com/o"),
             NamedNode::new_unchecked("http://example.com/g"),
         ))?;
         serializer.serialize_quad(&Quad::new(
@@ -1597,7 +1883,7 @@ mod tests {
         ))?;
         assert_eq!(
             String::from_utf8(serializer.finish()?).map_err(io::Error::other)?,
-            "@prefix exl: <http://example.com/p/> .\n@prefix ex: <http://example.com/> .\nex:g {\n\tex:s ex:p exl:o\\. , <http://example.com/o{o}> , ex: , \"foo\" ;\n\t\tex:p2 \"foo\"@en .\n\t_:b ex:p2 _:b2 .\n}\n_:b ex:p2 true .\nex:g2 {\n\t_:b <http://example.org/p2> false .\n}\n"
+            "@prefix exl: <http://example.com/p/> .\n@prefix ex: <http://example.com/> .\nex:g {\n\tex:s ex:p exl:o\\. , <https://example.com/o> , ex: , \"foo\" ;\n\t\tex:p2 \"foo\"@en .\n\t_:b ex:p2 _:b2 .\n}\n_:b ex:p2 true .\nex:g2 {\n\t_:b <http://example.org/p2> false .\n}\n"
         );
         Ok(())
     }

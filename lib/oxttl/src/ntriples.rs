@@ -2,12 +2,15 @@
 //! and a serializer implemented by [`NTriplesSerializer`].
 
 use crate::chunker::{get_ntriples_file_chunks, get_ntriples_slice_chunks};
-use crate::line_formats::NQuadsRecognizer;
+use crate::line_formats::{DocumentPosition, NQuadsRecognizer};
+use crate::serialization::{
+    LineFormatMode, NTriplesMediaType, ensure_terse_triple_compatible, write_ntriples,
+};
 #[cfg(feature = "async-tokio")]
 use crate::toolkit::TokioAsyncReaderIterator;
 use crate::toolkit::{Parser, ReaderIterator, SliceIterator, TurtleParseError, TurtleSyntaxError};
 use crate::{DEFAULT_MAX_BUFFER_SIZE, MIN_PARALLEL_CHUNK_SIZE};
-use oxrdf::Triple;
+use oxrdf::{RdfVersion, Triple};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Take, Write};
 use std::path::Path;
@@ -42,6 +45,8 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 pub struct NTriplesParser {
     lenient: bool,
     max_buffer_size: usize,
+    media_type: NTriplesMediaType,
+    document_position: DocumentPosition,
 }
 
 impl Default for NTriplesParser {
@@ -57,7 +62,27 @@ impl NTriplesParser {
         Self {
             lenient: false,
             max_buffer_size: DEFAULT_MAX_BUFFER_SIZE,
+            media_type: NTriplesMediaType::ApplicationNTriples,
+            document_position: DocumentPosition::Start,
         }
+    }
+
+    /// Selects the media type contract used while parsing.
+    ///
+    /// The default is [`NTriplesMediaType::ApplicationNTriples`], which accepts
+    /// UTF-8. [`NTriplesMediaType::TextPlain`] requires every non-ASCII
+    /// character in the representation, including comments, to use an
+    /// N-Triples Unicode escape.
+    #[inline]
+    pub fn with_media_type(mut self, media_type: NTriplesMediaType) -> Self {
+        self.media_type = media_type;
+        self
+    }
+
+    /// Returns the media type contract used by the parser.
+    #[inline]
+    pub fn media_type(&self) -> NTriplesMediaType {
+        self.media_type
     }
 
     /// Define an upper bound for the internal buffer of the parser in bytes
@@ -179,6 +204,8 @@ impl NTriplesParser {
                 false,
                 self.lenient,
                 self.max_buffer_size,
+                self.media_type,
+                self.document_position,
             )
             .into_iter(),
         }
@@ -227,7 +254,12 @@ impl NTriplesParser {
         let n_chunks = (slice.len() / MIN_PARALLEL_CHUNK_SIZE).clamp(1, target_parallelism);
         get_ntriples_slice_chunks(slice, n_chunks)
             .into_iter()
-            .map(|(start, end)| self.clone().for_slice(&slice[start..end]))
+            .enumerate()
+            .map(|(index, (start, end))| {
+                self.clone()
+                    .with_document_start(index == 0)
+                    .for_slice(&slice[start..end])
+            })
             .collect()
     }
 
@@ -280,10 +312,14 @@ impl NTriplesParser {
         .clamp(1, target_parallelism);
         get_ntriples_file_chunks(&mut file, file_size, n_chunks)?
             .into_iter()
-            .map(|(start, end)| {
+            .enumerate()
+            .map(|(index, (start, end))| {
                 let mut file = File::open(path)?;
                 file.seek(SeekFrom::Start(start))?;
-                Ok(self.clone().for_reader(file.take(end - start)))
+                Ok(self
+                    .clone()
+                    .with_document_start(index == 0)
+                    .for_reader(file.take(end - start)))
             })
             .collect()
     }
@@ -332,8 +368,19 @@ impl NTriplesParser {
                 false,
                 self.lenient,
                 self.max_buffer_size,
+                self.media_type,
+                self.document_position,
             ),
         }
+    }
+
+    fn with_document_start(mut self, is_document_start: bool) -> Self {
+        self.document_position = if is_document_start {
+            DocumentPosition::Start
+        } else {
+            DocumentPosition::Continuation
+        };
+        self
     }
 }
 
@@ -540,20 +587,67 @@ impl LowLevelNTriplesParser {
 /// ))?;
 /// assert_eq!(
 ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> .\n",
-///     serializer.finish().as_slice()
+///     serializer.finish()?.as_slice()
 /// );
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
 #[derive(Default, Clone)]
 #[must_use]
-#[expect(clippy::empty_structs_with_brackets)]
-pub struct NTriplesSerializer {}
+pub struct NTriplesSerializer {
+    media_type: NTriplesMediaType,
+    mode: LineFormatMode,
+}
 
 impl NTriplesSerializer {
     /// Builds a new [`NTriplesSerializer`].
     #[inline]
     pub fn new() -> Self {
-        Self {}
+        Self::default()
+    }
+
+    /// Selects the media type contract used by the serializer.
+    ///
+    /// The default is [`NTriplesMediaType::ApplicationNTriples`], which emits
+    /// UTF-8. [`NTriplesMediaType::TextPlain`] escapes every character outside
+    /// US-ASCII as required when this grammar is carried as `text/plain`.
+    #[inline]
+    pub fn with_media_type(mut self, media_type: NTriplesMediaType) -> Self {
+        self.media_type = media_type;
+        self
+    }
+
+    /// Returns the media type contract used by the serializer.
+    #[inline]
+    pub fn media_type(&self) -> NTriplesMediaType {
+        self.media_type
+    }
+
+    /// Sets the RDF version announced by the serialized document.
+    ///
+    /// RDF 1.1 is used by default and does not emit a `VERSION` directive.
+    /// RDF 1.2 and RDF 1.2 Basic emit `VERSION "1.2"` and
+    /// `VERSION "1.2-basic"` respectively before the first triple, or when an
+    /// empty document is finished. RDF 1.2 Basic rejects triple terms.
+    /// Selecting an RDF 1.2 version without the `rdf-12` crate feature returns
+    /// an error before writing any bytes.
+    #[inline]
+    pub fn with_rdf_version(mut self, rdf_version: RdfVersion) -> Self {
+        self.mode = LineFormatMode::Versioned(rdf_version);
+        self
+    }
+
+    /// Selects the RDF 1.2 Canonical N-Triples conformance class.
+    ///
+    /// Canonical mode supports RDF 1.2 terms but never emits a `VERSION`
+    /// directive, as required by Canonical N-Triples. It is incompatible with
+    /// [`NTriplesMediaType::TextPlain`] because that media type requires
+    /// non-ASCII characters to be escaped instead of emitted natively.
+    ///
+    /// Calling [`Self::with_rdf_version`] afterwards leaves canonical mode.
+    #[inline]
+    pub fn canonical(mut self) -> Self {
+        self.mode = LineFormatMode::Canonical;
+        self
     }
 
     /// Writes a N-Triples file to a [`Write`] implementation.
@@ -571,7 +665,7 @@ impl NTriplesSerializer {
     /// ))?;
     /// assert_eq!(
     ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> .\n",
-    ///     serializer.finish().as_slice()
+    ///     serializer.finish()?.as_slice()
     /// );
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
@@ -599,7 +693,7 @@ impl NTriplesSerializer {
     /// )).await?;
     /// assert_eq!(
     ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> .\n",
-    ///     serializer.finish().as_slice()
+    ///     serializer.finish().await?.as_slice()
     /// );
     /// # Ok(())
     /// # }
@@ -636,9 +730,12 @@ impl NTriplesSerializer {
     /// );
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
-    #[expect(clippy::unused_self)]
     pub fn low_level(self) -> LowLevelNTriplesSerializer {
-        LowLevelNTriplesSerializer {}
+        LowLevelNTriplesSerializer {
+            media_type: self.media_type,
+            mode: self.mode,
+            version_written: false,
+        }
     }
 }
 
@@ -659,7 +756,7 @@ impl NTriplesSerializer {
 /// ))?;
 /// assert_eq!(
 ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> .\n",
-///     serializer.finish().as_slice()
+///     serializer.finish()?.as_slice()
 /// );
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
@@ -677,8 +774,9 @@ impl<W: Write> WriterNTriplesSerializer<W> {
     }
 
     /// Ends the write process and returns the underlying [`Write`].
-    pub fn finish(self) -> W {
-        self.writer
+    pub fn finish(mut self) -> io::Result<W> {
+        self.low_level_writer.finish(&mut self.writer)?;
+        Ok(self.writer)
     }
 }
 
@@ -701,7 +799,7 @@ impl<W: Write> WriterNTriplesSerializer<W> {
 /// )).await?;
 /// assert_eq!(
 ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> .\n",
-///     serializer.finish().as_slice()
+///     serializer.finish().await?.as_slice()
 /// );
 /// # Ok(())
 /// # }
@@ -726,8 +824,11 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterNTriplesSerializer<W> {
     }
 
     /// Ends the write process and returns the underlying [`Write`].
-    pub fn finish(self) -> W {
-        self.writer
+    pub async fn finish(mut self) -> io::Result<W> {
+        self.low_level_writer.finish(&mut self.buffer)?;
+        self.writer.write_all(&self.buffer).await?;
+        self.buffer.clear();
+        Ok(self.writer)
     }
 }
 
@@ -753,14 +854,38 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterNTriplesSerializer<W> {
 /// );
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
-#[expect(clippy::empty_structs_with_brackets)]
-pub struct LowLevelNTriplesSerializer {}
+pub struct LowLevelNTriplesSerializer {
+    media_type: NTriplesMediaType,
+    mode: LineFormatMode,
+    version_written: bool,
+}
 
 impl LowLevelNTriplesSerializer {
     /// Writes an extra triple.
-    #[expect(clippy::unused_self)]
     pub fn serialize_triple(&mut self, triple: &Triple, mut writer: impl Write) -> io::Result<()> {
-        writeln!(writer, "{triple} .")
+        let directive = self.pending_version_directive()?;
+        ensure_terse_triple_compatible(self.mode.rdf_version(), triple)?;
+        let mut output = Vec::new();
+        output.extend_from_slice(directive);
+        write_ntriples(triple, self.media_type, &mut output)?;
+        writer.write_all(&output)?;
+        self.version_written = true;
+        Ok(())
+    }
+
+    /// Finishes writing the file.
+    pub fn finish(&mut self, mut writer: impl Write) -> io::Result<()> {
+        writer.write_all(self.pending_version_directive()?)?;
+        self.version_written = true;
+        Ok(())
+    }
+
+    fn pending_version_directive(&self) -> io::Result<&'static [u8]> {
+        if self.version_written {
+            Ok(b"")
+        } else {
+            self.mode.preamble(self.media_type)
+        }
     }
 }
 

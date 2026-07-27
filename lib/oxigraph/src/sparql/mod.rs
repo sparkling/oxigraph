@@ -3,6 +3,7 @@
 //! The entry point for SPARQL execution is the [`SparqlEvaluator`] type.
 
 mod dataset;
+mod entailment;
 mod error;
 #[cfg(feature = "http-client")]
 mod http;
@@ -12,6 +13,9 @@ mod update;
 use crate::model::{IriParseError, NamedNode, Term};
 pub use crate::model::{Variable, VariableNameParseError};
 use crate::sparql::dataset::DatasetView;
+pub use crate::sparql::entailment::{
+    QueryEntailment, QueryEntailmentDataset, QueryEntailmentError, QueryEntailmentOptions,
+};
 pub use crate::sparql::error::UpdateEvaluationError;
 #[cfg(feature = "http-client")]
 use crate::sparql::http::HttpServiceHandler;
@@ -24,13 +28,14 @@ pub use spareval::{
 };
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
-pub use spargebra::{Query, SparqlSyntaxError, Update};
+pub use spargebra::{ParsedQuery, ParsedUpdate, Query, SparqlSyntaxError, SparqlVersion, Update};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::take;
 #[cfg(feature = "http-client")]
 use std::time::Duration;
 
+/// Dataset specification applied while evaluating a prepared SPARQL query.
 pub type QueryDataset = QueryDatasetSpecification;
 
 /// SPARQL evaluator.
@@ -69,6 +74,7 @@ pub struct SparqlEvaluator {
 }
 
 impl SparqlEvaluator {
+    /// Creates an evaluator using the default parser and evaluation settings.
     pub fn new() -> Self {
         Self::default()
     }
@@ -127,6 +133,17 @@ impl SparqlEvaluator {
     ) -> Result<Self, IriParseError> {
         self.parser = self.parser.with_prefix(prefix_name, prefix_iri)?;
         Ok(self)
+    }
+
+    /// Selects the fallback SPARQL syntax and semantic feature mode.
+    ///
+    /// An in-band `VERSION` declaration is authoritative when present; this
+    /// setting is used when the operation does not declare a version.
+    #[inline]
+    pub fn with_version(mut self, version: SparqlVersion) -> Self {
+        self.parser = self.parser.with_version(version);
+        self.inner = self.inner.with_version(version);
+        self
     }
 
     /// Use a given [`ServiceHandler`] to execute [SPARQL 1.1 Federated Query](https://www.w3.org/TR/sparql11-federated-query/) SERVICE calls.
@@ -330,11 +347,13 @@ impl SparqlEvaluator {
     fn into_evaluator(mut self) -> QueryEvaluator {
         #[cfg(feature = "http-client")]
         if self.with_http_default_service_handler {
+            let version = self.inner.version();
             self.inner = self
                 .inner
                 .with_default_service_handler(HttpServiceHandler::new(
                     self.http_timeout,
                     self.http_redirection_limit,
+                    version,
                 ))
         }
         self.inner
@@ -371,8 +390,23 @@ impl SparqlEvaluator {
         mut self,
         query: &(impl AsRef<str> + ?Sized),
     ) -> Result<PreparedSparqlQuery, SparqlSyntaxError> {
-        let query = take(&mut self.parser).parse_query(query.as_ref())?;
-        Ok(self.for_query(query))
+        let query = take(&mut self.parser).parse_query_with_metadata(query.as_ref())?;
+        Ok(self.for_parsed_query(query))
+    }
+
+    /// Parses a query, retaining and enforcing its `VERSION` declaration.
+    pub fn parse_query_with_metadata(
+        mut self,
+        query: &(impl AsRef<str> + ?Sized),
+    ) -> Result<PreparedSparqlQuery, SparqlSyntaxError> {
+        let parsed = take(&mut self.parser).parse_query_with_metadata(query.as_ref())?;
+        Ok(self.for_parsed_query(parsed))
+    }
+
+    /// Returns a prepared query using the parsed query's effective version.
+    pub fn for_parsed_query(mut self, query: ParsedQuery) -> PreparedSparqlQuery {
+        self.inner = self.inner.with_version(query.effective_version());
+        self.for_query(query.into_query())
     }
 
     /// Returns a [`PreparedSparqlQuery`] for the current evaluator and SPARQL query.
@@ -434,8 +468,23 @@ impl SparqlEvaluator {
         mut self,
         query: &(impl AsRef<str> + ?Sized),
     ) -> Result<PreparedSparqlUpdate, SparqlSyntaxError> {
-        let update = take(&mut self.parser).parse_update(query.as_ref())?;
-        Ok(self.for_update(update))
+        let update = take(&mut self.parser).parse_update_with_metadata(query.as_ref())?;
+        Ok(self.for_parsed_update(update))
+    }
+
+    /// Parses an update, retaining and enforcing its `VERSION` declaration.
+    pub fn parse_update_with_metadata(
+        mut self,
+        update: &(impl AsRef<str> + ?Sized),
+    ) -> Result<PreparedSparqlUpdate, SparqlSyntaxError> {
+        let parsed = take(&mut self.parser).parse_update_with_metadata(update.as_ref())?;
+        Ok(self.for_parsed_update(parsed))
+    }
+
+    /// Returns a prepared update using the parsed update's effective version.
+    pub fn for_parsed_update(mut self, update: ParsedUpdate) -> PreparedSparqlUpdate {
+        self.inner = self.inner.with_version(update.effective_version());
+        self.for_update(update.into_update())
     }
 
     /// Returns a [`PreparedSparqlUpdate`] for the current evaluator and SPARQL update.
@@ -520,6 +569,12 @@ pub struct PreparedSparqlQuery {
 }
 
 impl PreparedSparqlQuery {
+    /// The SPARQL semantic feature mode used during evaluation.
+    #[inline]
+    pub fn version(&self) -> SparqlVersion {
+        self.evaluator.version()
+    }
+
     /// Substitute a variable with a given RDF term in the SPARQL query.
     ///
     /// Usage example:
@@ -569,6 +624,23 @@ impl PreparedSparqlQuery {
         let reader = store.storage().snapshot();
         let queryable_dataset = DatasetView::new(reader);
         self.on_queryable_dataset(queryable_dataset)
+    }
+
+    /// Binds this query to an owned store snapshot prepared with an explicit
+    /// query-time entailment profile.
+    pub fn on_store_with_entailment(
+        mut self,
+        store: &Store,
+        options: &QueryEntailmentOptions,
+    ) -> Result<BoundPreparedSparqlQuery<'static, QueryEntailmentDataset>, QueryEntailmentError>
+    {
+        let queryable_dataset =
+            QueryEntailmentDataset::from_store_with_query_dataset(store, options, &self.dataset)?;
+        // The query dataset has already been constructed and materialized. A
+        // second application of FROM/FROM NAMED here would address the source
+        // graph names rather than the effective graph topology.
+        self.dataset = QueryDatasetSpecification::default();
+        Ok(self.on_queryable_dataset(queryable_dataset))
     }
 
     /// Bind the prepared query to the [`Transaction`] it should be evaluated on.

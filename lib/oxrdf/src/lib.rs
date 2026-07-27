@@ -14,6 +14,7 @@ mod parser;
 mod string;
 mod triple;
 mod variable;
+mod version;
 pub mod vocab;
 
 pub use crate::blank_node::{BlankNode, BlankNodeIdParseError, BlankNodeRef};
@@ -21,7 +22,7 @@ pub use crate::dataset::Dataset;
 pub use crate::graph::Graph;
 #[cfg(feature = "rdf-12")]
 pub use crate::literal::BaseDirection;
-pub use crate::literal::{Literal, LiteralRef};
+pub use crate::literal::{InvalidLiteralDatatypeError, Literal, LiteralRef};
 pub use crate::named_node::{NamedNode, NamedNodeRef};
 pub use crate::parser::TermParseError;
 pub use crate::string::{OxStr, OxString};
@@ -30,5 +31,6 @@ pub use crate::triple::{
     Triple, TripleRef, TryFromTermError,
 };
 pub use crate::variable::{Variable, VariableNameParseError, VariableRef};
+pub use crate::version::RdfVersion;
 pub use oxilangtag::LanguageTagParseError;
 pub use oxiri::IriParseError;

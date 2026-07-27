@@ -64,6 +64,59 @@ describe("parse", () => {
         assert(result[0].equals(dataModel.quad(ex, ex, ex, ex)));
     });
 
+    it("preserves RDF 1.2 directional literals and triple terms", () => {
+        const result = parse(
+            `VERSION "1.2"
+             <http://example.com> <http://example.com> "hello"@en--ltr .
+             <http://example.com> <http://example.com>
+               <<( <http://example.com> <http://example.com> "nested" )>> .`,
+            { format: "text/turtle" },
+        );
+
+        assert.strictEqual(result.length, 2);
+        const directional = result[0].object;
+        assert.strictEqual(directional.termType, "Literal");
+        if (directional.termType !== "Literal") {
+            assert.fail("expected an RDF literal");
+        }
+        assert.strictEqual(directional.language, "en");
+        assert.strictEqual(directional.direction, "ltr");
+        assert.strictEqual(
+            directional.datatype.value,
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString",
+        );
+
+        const triple = result[1].object;
+        assert.strictEqual(triple.termType, "Quad");
+        if (triple.termType !== "Quad") {
+            assert.fail("expected an RDF triple term");
+        }
+        assert(triple.subject.equals(ex));
+        assert(triple.predicate.equals(ex));
+        assert(triple.object.equals(dataModel.literal("nested")));
+        assert(triple.graph.equals(dataModel.defaultGraph()));
+    });
+
+    it("enforces an explicit RDF version from media types and options", () => {
+        const data =
+            "<http://example.com> <http://example.com> " +
+            "<<( <http://example.com> <http://example.com> <http://example.com> )>> .";
+        assert.throws(
+            () =>
+                parse(data, {
+                    format: "application/n-triples; version=1.1",
+                }),
+            /triple terms/,
+        );
+        assert.strictEqual(
+            parse(data, {
+                format: "application/n-triples",
+                rdf_version: "1.2",
+            }).length,
+            1,
+        );
+    });
+
     it("parse Buffer", () => {
         const result = parse(
             Buffer.from("<http://example.com> <http://example.com> <http://example.com> ."),

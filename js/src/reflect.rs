@@ -28,6 +28,9 @@ extern "C" {
     pub static DATA_FACTORY: JsString = "data_factory";
 
     #[wasm_bindgen(thread_local_v2, static_string)]
+    pub static ENTAILMENT: JsString = "entailment";
+
+    #[wasm_bindgen(thread_local_v2, static_string)]
     pub static DATATYPE: JsString = "datatype";
 
     #[wasm_bindgen(thread_local_v2, static_string)]
@@ -48,6 +51,9 @@ extern "C" {
 
     #[wasm_bindgen(thread_local_v2, static_string)]
     pub static SUBJECT: JsString = "subject";
+
+    #[wasm_bindgen(thread_local_v2, static_string)]
+    pub static SPARQL_VERSION: JsString = "sparql_version";
 
     #[wasm_bindgen(thread_local_v2, static_string)]
     pub static LANGUAGE: JsString = "language";
@@ -72,6 +78,12 @@ extern "C" {
 
     #[wasm_bindgen(thread_local_v2, static_string)]
     pub static RESULTS_FORMAT: JsString = "results_format";
+
+    #[wasm_bindgen(thread_local_v2, static_string)]
+    pub static RESULTS_VERSION: JsString = "results_version";
+
+    #[wasm_bindgen(thread_local_v2, static_string)]
+    pub static RDF_VERSION: JsString = "rdf_version";
 
     #[wasm_bindgen(thread_local_v2, static_string)]
     pub static RTL: JsString = "rtl";

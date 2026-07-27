@@ -63,6 +63,8 @@ pub struct Lexer<B, R: TokenRecognizer> {
     min_buffer_size: usize,
     max_buffer_size: usize,
     line_comment_start: Option<&'static [u8]>,
+    ascii_only: bool,
+    ascii_checked_buffer_offset: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -101,7 +103,14 @@ impl<B, R: TokenRecognizer> Lexer<B, R> {
             min_buffer_size,
             max_buffer_size,
             line_comment_start,
+            ascii_only: false,
+            ascii_checked_buffer_offset: 0,
         }
+    }
+
+    pub fn with_ascii_only(mut self, ascii_only: bool) -> Self {
+        self.ascii_only = ascii_only;
+        self
     }
 }
 
@@ -226,6 +235,9 @@ impl<R: TokenRecognizer> Lexer<Vec<u8>, R> {
             .position
             .line_start_buffer_offset
             .saturating_sub(shift_amount);
+        self.ascii_checked_buffer_offset = self
+            .ascii_checked_buffer_offset
+            .saturating_sub(shift_amount);
         self.previous_position = self.position;
     }
 }
@@ -235,6 +247,9 @@ impl<B: Deref<Target = [u8]>, R: TokenRecognizer> Lexer<B, R> {
         &mut self,
         options: &R::Options,
     ) -> Option<Result<TokenOrLineJump<R::Token<'_>>, TurtleSyntaxError>> {
+        if let Some(error) = self.validate_ascii() {
+            return Some(Err(error));
+        }
         if self.skip_whitespaces_and_comments()? {
             self.previous_position = self.position;
             return Some(Ok(TokenOrLineJump::LineJump));
@@ -296,6 +311,43 @@ impl<B: Deref<Target = [u8]>, R: TokenRecognizer> Lexer<B, R> {
                 e.message,
             )
         }))
+    }
+
+    fn validate_ascii(&mut self) -> Option<TurtleSyntaxError> {
+        if !self.ascii_only {
+            return None;
+        }
+        let check_start = max(
+            self.ascii_checked_buffer_offset,
+            self.position.buffer_offset,
+        );
+        let Some(relative_invalid_offset) = self.data[check_start..]
+            .iter()
+            .position(|byte| !byte.is_ascii())
+        else {
+            self.ascii_checked_buffer_offset = self.data.len();
+            return None;
+        };
+        let invalid_offset = check_start + relative_invalid_offset;
+        self.ascii_checked_buffer_offset = invalid_offset + 1;
+        self.previous_position = self.position;
+        let relative_offset = invalid_offset - self.position.buffer_offset;
+        let location = self.location_from_buffer_offset_range(relative_offset..relative_offset + 1);
+        let consumed = relative_offset + 1;
+        let (new_line_jumps, new_line_start) =
+            Self::find_number_of_line_jumps_and_start_of_last_line(
+                &self.data[self.position.buffer_offset..self.position.buffer_offset + consumed],
+            );
+        if new_line_jumps > 0 {
+            self.position.line_start_buffer_offset = self.position.buffer_offset + new_line_start;
+        }
+        self.position.buffer_offset += consumed;
+        self.position.global_offset += u64::try_from(consumed).unwrap();
+        self.position.global_line += new_line_jumps;
+        Some(TurtleSyntaxError::new(
+            location,
+            "The text/plain N-Triples profile requires every non-ASCII character to use a Unicode escape",
+        ))
     }
 
     pub fn location_from_buffer_offset_range(

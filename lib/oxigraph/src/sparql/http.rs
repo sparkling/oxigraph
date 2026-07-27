@@ -2,8 +2,9 @@ use crate::model::{NamedNode, OxString};
 use oxhttp::model::header::{ACCEPT, CONTENT_TYPE};
 use oxhttp::model::{Body, Method, Request};
 use oxiri::Iri;
-use sparesults::{QueryResultsFormat, QueryResultsParser, ReaderQueryResultsParserOutput};
+use sparesults::{QueryResultsParser, ReaderQueryResultsParserOutput};
 use spareval::{DefaultServiceHandler, QueryEvaluationError, QuerySolutionIter};
+use spargebra::SparqlVersion;
 use spargebra::algebra::GraphPattern;
 use spargebra::query::SelectQuery;
 use std::io::{Error, ErrorKind, Read, Result};
@@ -92,12 +93,18 @@ impl Client {
 
 pub struct HttpServiceHandler {
     client: Client,
+    version: SparqlVersion,
 }
 
 impl HttpServiceHandler {
-    pub fn new(http_timeout: Option<Duration>, http_redirection_limit: usize) -> Self {
+    pub fn new(
+        http_timeout: Option<Duration>,
+        http_redirection_limit: usize,
+        version: SparqlVersion,
+    ) -> Self {
         Self {
             client: Client::new(http_timeout, http_redirection_limit),
+            version,
         }
     }
 }
@@ -111,6 +118,21 @@ impl DefaultServiceHandler for HttpServiceHandler {
         pattern: &GraphPattern,
         base_iri: Option<&Iri<OxString>>,
     ) -> std::result::Result<QuerySolutionIter<'static>, Self::Error> {
+        let (content_type, accept) = match self.version {
+            SparqlVersion::V1_1 => (
+                "application/sparql-query",
+                "application/sparql-results+json, application/sparql-results+xml",
+            ),
+            SparqlVersion::V1_2Basic => (
+                "application/sparql-query; version=1.2-basic",
+                "application/sparql-results+json; version=1.2-basic, application/sparql-results+xml; version=1.2-basic, application/sparql-results+json, application/sparql-results+xml",
+            ),
+            SparqlVersion::V1_2 => (
+                "application/sparql-query; version=1.2",
+                "application/sparql-results+json; version=1.2, application/sparql-results+xml; version=1.2, application/sparql-results+json, application/sparql-results+xml",
+            ),
+            _ => unreachable!("unsupported SPARQL version"),
+        };
         let (content_type, body) = self
             .client
             .post(
@@ -122,22 +144,22 @@ impl DefaultServiceHandler for HttpServiceHandler {
                 }
                 .to_string()
                 .into_bytes(),
-                "application/sparql-query",
-                "application/sparql-results+json, application/sparql-results+xml",
+                content_type,
+                accept,
             )
             .map_err(|e| QueryEvaluationError::Service(Box::new(e)))?;
-        let format = QueryResultsFormat::from_media_type(&content_type).ok_or_else(|| {
+        let parser = QueryResultsParser::from_media_type(&content_type).map_err(|error| {
             QueryEvaluationError::Service(
                 format!(
-                    "Unsupported Content-Type returned by service {service_name}: {content_type}"
+                    "Unsupported Content-Type returned by service {service_name}: \
+                     {content_type}: {error}"
                 )
                 .into(),
             )
         })?;
-        let ReaderQueryResultsParserOutput::Solutions(reader) =
-            QueryResultsParser::from_format(format)
-                .for_reader(body)
-                .map_err(|e| QueryEvaluationError::Service(Box::new(e)))?
+        let ReaderQueryResultsParserOutput::Solutions(reader) = parser
+            .for_reader(body)
+            .map_err(|e| QueryEvaluationError::Service(Box::new(e)))?
         else {
             return Err(QueryEvaluationError::Service(
                 "No valid SPARQL solutions returned by {service_name}".into(),

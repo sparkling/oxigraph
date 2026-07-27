@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use anyhow::Result;
-use oxigraph_testsuite::check_testsuite;
+use anyhow::{Result, ensure};
+use oxigraph_testsuite::{check_testsuite, check_testsuite_with_unsupported};
 
 #[test]
 fn sparql10_w3c_query_syntax_testsuite() -> Result<()> {
@@ -35,13 +35,19 @@ fn sparql11_query_w3c_evaluation_testsuite() -> Result<()> {
 
 #[test]
 fn sparql11_federation_w3c_evaluation_testsuite() -> Result<()> {
-    check_testsuite(
+    let summary = check_testsuite_with_unsupported(
         "https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-sparql11-fed.ttl",
         &[
-            // Problem during service evaluation order
-            "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/service/manifest#service5",
+            // The pinned expected result contains an empty <binding>, which is
+            // invalid under the SPARQL XML Results grammar.
+            "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/service/manifest#service7",
         ],
-    )
+    )?;
+    ensure!(
+        summary.total == 10 && summary.passed == 9 && summary.unsupported == 1,
+        "expected the pinned federation suite to pass 9/10 with one invalid-result exception, got {summary:?}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -61,23 +67,50 @@ fn sparql11_json_w3c_evaluation_testsuite() -> Result<()> {
 }
 
 #[test]
-fn sparql11_tsv_w3c_evaluation_testsuite() -> Result<()> {
-    check_testsuite(
+fn sparql11_csv_tsv_w3c_result_format_testsuite() -> Result<()> {
+    let summary = check_testsuite_with_unsupported(
         "https://w3c.github.io/rdf-tests/sparql/sparql11/csv-tsv-res/manifest.ttl",
-        &[
-            // We do not run CSVResultFormatTest tests yet
-            "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/csv-tsv-res/manifest#csv01",
-            "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/csv-tsv-res/manifest#csv02",
-            "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/csv-tsv-res/manifest#csv03",
-        ],
-    )
+        &[],
+    )?;
+    ensure!(
+        summary.total == 6,
+        "expected 6 tests, got {}",
+        summary.total
+    );
+    ensure!(
+        summary.passed == 6,
+        "expected 6 passes, got {}",
+        summary.passed
+    );
+    ensure!(
+        summary.unsupported == 0,
+        "expected no unsupported tests, got {}",
+        summary.unsupported
+    );
+    Ok(())
 }
 
 #[cfg(feature = "rdf-12")]
 #[test]
 fn sparql12_w3c_testsuite() -> Result<()> {
-    check_testsuite(
+    let summary = check_testsuite_with_unsupported(
         "https://w3c.github.io/rdf-tests/sparql/sparql12/manifest.ttl",
         &[],
-    )
+    )?;
+    ensure!(
+        summary.total == 269,
+        "expected 269 tests, got {}",
+        summary.total
+    );
+    ensure!(
+        summary.passed == 269,
+        "expected 269 passes, got {}",
+        summary.passed
+    );
+    ensure!(
+        summary.unsupported == 0,
+        "expected no unsupported tests, got {}",
+        summary.unsupported
+    );
+    Ok(())
 }

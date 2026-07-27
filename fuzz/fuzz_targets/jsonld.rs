@@ -86,8 +86,16 @@ fuzz_target!(|data: &[u8]| {
         .sum::<usize>();
 
     if errors_streaming.is_empty() && bnodes_count <= 4 {
-        quads.canonicalize(CanonicalizationAlgorithm::Unstable);
-        quads_streaming.canonicalize(CanonicalizationAlgorithm::Unstable);
+        if let Err(error) =
+            quads.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+        {
+            unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+        }
+        if let Err(error) =
+            quads_streaming.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+        {
+            unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+        }
         assert_eq!(
             quads,
             quads_streaming,
@@ -103,8 +111,16 @@ fuzz_target!(|data: &[u8]| {
         && !data_str.contains("\"@direction\"")
     {
         // @included and @direction are ignored when processing mode is json-ld-1.0, leading to silent different outputs...
-        quads_lenient_1_1.canonicalize(CanonicalizationAlgorithm::Unstable);
-        quads_lenient_1_0.canonicalize(CanonicalizationAlgorithm::Unstable);
+        if let Err(error) =
+            quads_lenient_1_1.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+        {
+            unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+        }
+        if let Err(error) =
+            quads_lenient_1_0.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+        {
+            unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+        }
         assert_eq!(
             quads_lenient_1_1,
             quads_lenient_1_0,

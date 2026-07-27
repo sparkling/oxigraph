@@ -13,7 +13,7 @@ use crate::term::{
 };
 use crate::update::{
     ClearOperation, CreateOperation, DeleteDataOperation, DeleteInsertOperation, DropOperation,
-    InsertDataOperation, LoadOperation, Update,
+    GraphUpdateOperation, InsertDataOperation, LoadOperation, Update,
 };
 use crate::vocab::sparql;
 use chumsky::span::{SimpleSpan, Span, Spanned, WrappingSpan};
@@ -222,7 +222,16 @@ impl<'a> AlgebraBuilder<'a> {
         &mut self,
         prologue: Vec<ast::PrologueDecl<'a>>,
     ) -> Result<(), AlgebraBuilderError> {
+        let mut declared_prefixes = HashSet::new();
         for decl in prologue {
+            if let ast::PrologueDecl::Prefix(prefix, iri) = decl {
+                if !declared_prefixes.insert(OxString::new_owned(prefix)) {
+                    return Err(AlgebraBuilderError::new(
+                        iri.span,
+                        format!("The prefix {prefix}: is declared more than once"),
+                    ));
+                }
+            }
             self.apply_prologue_decl(decl)?;
         }
         Ok(())
@@ -281,9 +290,14 @@ impl<'a> AlgebraBuilder<'a> {
     ) -> Result<GraphPattern, AlgebraBuilderError> {
         find_graph_pattern_blank_node_ids_and_validate_syntax_restrictions(&where_clause)?;
         let mut p = self.build_graph_pattern(where_clause)?;
+        let mut input_variables = HashSet::new();
+        p.on_in_scope_variable(|variable| {
+            input_variables.insert(variable.clone());
+        });
 
         // We build some elements to collect aggregates
         let mut aggregates = Vec::new();
+        let mut direct_aggregate_variables = HashSet::new();
 
         let select_expressions = match select_clause.bindings.inner {
             ast::SelectVariables::Star => None,
@@ -299,17 +313,19 @@ impl<'a> AlgebraBuilder<'a> {
                                 span,
                             }) = expression
                             {
+                                direct_aggregate_variables.insert(variable.clone());
                                 aggregates.push((
                                     variable.clone(),
                                     self.build_aggregate(span.make_wrapped(aggregate))?,
                                 ));
-                                (None, variable)
+                                (None, variable, true)
                             } else {
                                 (
                                     expression
                                         .map(|e| self.build_expression(e, &mut aggregates))
                                         .transpose()?,
                                     variable,
+                                    false,
                                 )
                             },
                         ))
@@ -332,6 +348,8 @@ impl<'a> AlgebraBuilder<'a> {
 
         // GROUP BY
         let with_aggregate = !solution_modifier.group_clause.is_empty() || !aggregates.is_empty();
+        let mut pending_aggregate_variables = direct_aggregate_variables;
+        let mut group_variables = HashSet::new();
         if with_aggregate {
             let mut variables = Vec::new();
             for (expression, variable) in solution_modifier.group_clause {
@@ -347,9 +365,11 @@ impl<'a> AlgebraBuilder<'a> {
                         variable: variable.clone(),
                         expression,
                     };
+                    group_variables.insert(variable.clone());
                     variables.push(variable);
                 } else if let Expression::Variable(variable) = expression {
                     // We can directly use it
+                    group_variables.insert(variable.clone());
                     variables.push(variable);
                 } else {
                     // We have to introduce an intermediate variable
@@ -359,6 +379,7 @@ impl<'a> AlgebraBuilder<'a> {
                         variable: variable.clone(),
                         expression,
                     };
+                    group_variables.insert(variable.clone());
                     variables.push(variable);
                 }
             }
@@ -390,7 +411,17 @@ impl<'a> AlgebraBuilder<'a> {
                 visible.insert(v.clone());
             });
             for binding in select_expressions {
-                let (expression, variable) = binding.inner;
+                let (expression, variable, is_aggregate) = binding.inner;
+                if is_aggregate
+                    && (input_variables.contains(&variable) || group_variables.contains(&variable))
+                {
+                    return Err(AlgebraBuilderError::new(
+                        binding.span,
+                        format!(
+                            "The aggregate SELECT expression reuses the in-scope variable {variable}"
+                        ),
+                    ));
+                }
                 if let Some(expression) = expression {
                     if visible.contains(&variable) {
                         // We disallow to override an existing variable with an expression
@@ -403,7 +434,11 @@ impl<'a> AlgebraBuilder<'a> {
                     }
                     if with_aggregate {
                         // We validate projection variables if there is an aggregate
-                        if let Some(v) = find_unbound_variable(&expression, &visible) {
+                        let mut expression_visible = visible.clone();
+                        for variable in &pending_aggregate_variables {
+                            expression_visible.remove(variable);
+                        }
+                        if let Some(v) = find_unbound_variable(&expression, &expression_visible) {
                             return Err(AlgebraBuilderError::new(
                                 binding.span,
                                 format!("The variable {v} is unbound in a SELECT expression"),
@@ -428,6 +463,8 @@ impl<'a> AlgebraBuilder<'a> {
                         format!("{variable} is declared twice in SELECT"),
                     ));
                 }
+                pending_aggregate_variables.remove(&variable);
+                visible.insert(variable.clone());
                 projection_variables.push(variable)
             }
         } else {
@@ -1631,7 +1668,12 @@ impl<'a> AlgebraBuilder<'a> {
                 )
             })?,
             ast::Literal::Typed(v, t) => {
-                Literal::new_typed_literal(Self::build_string(v)?, self.build_named_node(t)?)
+                let span = match t {
+                    ast::Iri::IriRef(value) => value.span,
+                    ast::Iri::PrefixedName(value) => value.span,
+                };
+                Literal::try_new_typed_literal(Self::build_string(v)?, self.build_named_node(t)?)
+                    .map_err(|error| AlgebraBuilderError::new(span, error.to_string()))?
             }
         })
     }
@@ -1749,44 +1791,51 @@ impl<'a> AlgebraBuilder<'a> {
                     .into(),
                 ),
                 ast::Update1::Add { from, to, .. } => {
-                    // Rewriting defined by https://www.w3.org/TR/sparql11-update/#add
-                    let from = self.build_graph_name(from)?;
-                    let to = self.build_graph_name(to)?;
-                    operations.push(copy_graph(from, to).into())
-                }
-                ast::Update1::Move { silent, from, to } => {
-                    // Rewriting defined by https://www.w3.org/TR/sparql11-update/#move
+                    // Rewriting defined by https://www.w3.org/TR/sparql12-update/#add
                     let from = self.build_graph_name(from)?;
                     let to = self.build_graph_name(to)?;
                     if from != to {
-                        operations.extend([
+                        create_graph_if_named(&mut operations, &to);
+                        operations.push(copy_graph(from, to).into());
+                    }
+                }
+                ast::Update1::Move { silent, from, to } => {
+                    // Rewriting defined by https://www.w3.org/TR/sparql12-update/#move
+                    let from = self.build_graph_name(from)?;
+                    let to = self.build_graph_name(to)?;
+                    if from != to {
+                        operations.push(
                             DropOperation {
                                 silent: true,
                                 graph: to.clone().into(),
                             }
                             .into(),
+                        );
+                        create_graph_if_named(&mut operations, &to);
+                        operations.extend([
                             copy_graph(from.clone(), to).into(),
                             DropOperation {
                                 silent,
                                 graph: from.into(),
                             }
                             .into(),
-                        ])
+                        ]);
                     }
                 }
                 ast::Update1::Copy { from, to, .. } => {
-                    // Rewriting defined by https://www.w3.org/TR/sparql11-update/#move
+                    // Rewriting defined by https://www.w3.org/TR/sparql12-update/#copy
                     let from = self.build_graph_name(from)?;
                     let to = self.build_graph_name(to)?;
                     if from != to {
-                        operations.extend([
+                        operations.push(
                             DropOperation {
                                 silent: true,
                                 graph: to.clone().into(),
                             }
                             .into(),
-                            copy_graph(from, to).into(),
-                        ])
+                        );
+                        create_graph_if_named(&mut operations, &to);
+                        operations.push(copy_graph(from, to).into());
                     }
                 }
                 ast::Update1::DeleteWhere { pattern } => {
@@ -1902,11 +1951,17 @@ impl<'a> AlgebraBuilder<'a> {
                 "Blank nodes are not allowed in the DELETE part of updates",
             ));
         }
-        Ok(self
-            .build_quad_patterns(quads)?
+        self.build_quad_patterns(quads)?
             .into_iter()
-            .map(|p| p.try_into().unwrap())
-            .collect())
+            .map(|pattern| {
+                pattern.try_into().map_err(|()| {
+                    AlgebraBuilderError::new(
+                        SimpleSpan::new((), 0..0),
+                        "The DELETE pattern contains a term in a position that is not allowed by the RDF 1.2 data model",
+                    )
+                })
+            })
+            .collect()
     }
 
     fn build_quads(
@@ -1921,11 +1976,17 @@ impl<'a> AlgebraBuilder<'a> {
                 "Variables are not allowed in INSERT DATA",
             ));
         }
-        Ok(self
-            .build_quad_patterns(quads)?
+        self.build_quad_patterns(quads)?
             .into_iter()
-            .map(|p| p.try_into().unwrap())
-            .collect())
+            .map(|pattern| {
+                pattern.try_into().map_err(|()| {
+                    AlgebraBuilderError::new(
+                        SimpleSpan::new((), 0..0),
+                        "INSERT DATA contains a term in a position that is not allowed by the RDF 1.2 data model",
+                    )
+                })
+            })
+            .collect()
     }
 
     fn build_ground_quads(
@@ -1946,11 +2007,17 @@ impl<'a> AlgebraBuilder<'a> {
                 "Blank nodes are not allowed in DELETE DATA",
             ));
         }
-        Ok(self
-            .build_quads(quads)?
+        self.build_quads(quads)?
             .into_iter()
-            .map(|p| p.try_into().unwrap())
-            .collect())
+            .map(|quad| {
+                quad.try_into().map_err(|()| {
+                    AlgebraBuilderError::new(
+                        SimpleSpan::new((), 0..0),
+                        "DELETE DATA contains a blank node or a term in a position that is not allowed by the RDF 1.2 data model",
+                    )
+                })
+            })
+            .collect()
     }
 
     fn build_quad_patterns(
@@ -2023,28 +2090,21 @@ fn find_unbound_variable<'a>(
     variables: &HashSet<Variable>,
 ) -> Option<&'a Variable> {
     match expression {
-        Expression::NamedNode(_)
-        | Expression::Literal(_)
-        | Expression::Bound(_)
-        | Expression::Coalesce(_)
-        | Expression::Exists(_) => None,
-        Expression::Variable(var) => (!variables.contains(var)).then_some(var),
+        Expression::NamedNode(_) | Expression::Literal(_) | Expression::Exists(_) => None,
+        Expression::Variable(var) | Expression::Bound(var) => {
+            (!variables.contains(var)).then_some(var)
+        }
         Expression::Or(a, b) | Expression::And(a, b) => {
-            find_unbound_variable(a, variables)?;
-            find_unbound_variable(b, variables)
+            find_unbound_variable(a, variables).or_else(|| find_unbound_variable(b, variables))
         }
-        Expression::In(a, b) => {
-            find_unbound_variable(a, variables)?;
-            b.iter().find_map(|b| find_unbound_variable(b, variables))
-        }
-        Expression::FunctionCall(_, parameters) => parameters
+        Expression::In(a, b) => find_unbound_variable(a, variables)
+            .or_else(|| b.iter().find_map(|b| find_unbound_variable(b, variables))),
+        Expression::Coalesce(parameters) | Expression::FunctionCall(_, parameters) => parameters
             .iter()
             .find_map(|p| find_unbound_variable(p, variables)),
-        Expression::If(a, b, c) => {
-            find_unbound_variable(a, variables)?;
-            find_unbound_variable(b, variables)?;
-            find_unbound_variable(c, variables)
-        }
+        Expression::If(a, b, c) => find_unbound_variable(a, variables)
+            .or_else(|| find_unbound_variable(b, variables))
+            .or_else(|| find_unbound_variable(c, variables)),
     }
 }
 
@@ -2834,5 +2894,17 @@ fn copy_graph(
             },
             GraphName::DefaultGraph => bgp,
         }),
+    }
+}
+
+fn create_graph_if_named(operations: &mut Vec<GraphUpdateOperation>, graph: &GraphName) {
+    if let GraphName::NamedNode(graph) = graph {
+        operations.push(
+            CreateOperation {
+                silent: true,
+                graph: graph.clone(),
+            }
+            .into(),
+        );
     }
 }

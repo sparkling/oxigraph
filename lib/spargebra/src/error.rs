@@ -11,6 +11,13 @@ pub struct SparqlSyntaxError {
 }
 
 impl SparqlSyntaxError {
+    pub(crate) fn new(message: impl Into<String>, text: &str) -> Self {
+        Self {
+            message: message.into(),
+            location: TextPosition::from_text_span(text, SimpleSpan::new((), 0..text.len())),
+        }
+    }
+
     pub(crate) fn from_chumsky<T: fmt::Display>(errors: Vec<Rich<'_, T>>, text: &str) -> Self {
         errors.into_iter().next().map_or_else(
             || SparqlSyntaxError {

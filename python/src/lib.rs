@@ -25,8 +25,9 @@ pub mod pyoxigraph {
     #[pymodule_export]
     use super::{
         PyBlankNode, PyCanonicalizationAlgorithm, PyDataset, PyDefaultGraph, PyLiteral,
-        PyNamedNode, PyQuad, PyQuadParser, PyQueryBoolean, PyQueryResultsFormat, PyQuerySolution,
-        PyQuerySolutions, PyQueryTriples, PyRdfFormat, PyStore, PyTriple, PyVariable, parse,
-        parse_query_results, serialize,
+        PyNamedNode, PyQuad, PyQuadParser, PyQueryBoolean, PyQueryEntailment, PyQueryResultsFormat,
+        PyQuerySolution, PyQuerySolutions, PyQueryTriples, PyRdfFormat, PyRdfVersion,
+        PySparqlVersion, PyStore, PyTriple, PyVariable, parse, parse_dataset, parse_query_results,
+        serialize,
     };
 }

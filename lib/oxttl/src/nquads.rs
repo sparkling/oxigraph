@@ -2,12 +2,15 @@
 //! and a serializer implemented by [`NQuadsSerializer`].
 
 use crate::chunker::{get_ntriples_file_chunks, get_ntriples_slice_chunks};
-use crate::line_formats::NQuadsRecognizer;
+use crate::line_formats::{DocumentPosition, NQuadsRecognizer};
+use crate::serialization::{
+    LineFormatMode, NTriplesMediaType, ensure_terse_quad_compatible, ensure_terse_triple_compatible,
+};
 #[cfg(feature = "async-tokio")]
 use crate::toolkit::TokioAsyncReaderIterator;
 use crate::toolkit::{Parser, ReaderIterator, SliceIterator, TurtleParseError, TurtleSyntaxError};
 use crate::{DEFAULT_MAX_BUFFER_SIZE, MIN_PARALLEL_CHUNK_SIZE};
-use oxrdf::{Quad, Triple};
+use oxrdf::{Quad, RdfVersion, Triple};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Take, Write};
 use std::path::Path;
@@ -42,6 +45,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 pub struct NQuadsParser {
     lenient: bool,
     max_buffer_size: usize,
+    document_position: DocumentPosition,
 }
 
 impl Default for NQuadsParser {
@@ -57,6 +61,7 @@ impl NQuadsParser {
         Self {
             max_buffer_size: DEFAULT_MAX_BUFFER_SIZE,
             lenient: false,
+            document_position: DocumentPosition::Start,
         }
     }
 
@@ -179,6 +184,8 @@ impl NQuadsParser {
                 true,
                 self.lenient,
                 self.max_buffer_size,
+                NTriplesMediaType::ApplicationNTriples,
+                self.document_position,
             )
             .into_iter(),
         }
@@ -227,7 +234,12 @@ impl NQuadsParser {
         let n_chunks = (slice.len() / MIN_PARALLEL_CHUNK_SIZE).clamp(1, target_parallelism);
         get_ntriples_slice_chunks(slice, n_chunks)
             .into_iter()
-            .map(|(start, end)| self.clone().for_slice(&slice[start..end]))
+            .enumerate()
+            .map(|(index, (start, end))| {
+                self.clone()
+                    .with_document_start(index == 0)
+                    .for_slice(&slice[start..end])
+            })
             .collect()
     }
 
@@ -280,10 +292,14 @@ impl NQuadsParser {
         .clamp(1, target_parallelism);
         get_ntriples_file_chunks(&mut file, file_size, n_chunks)?
             .into_iter()
-            .map(|(start, end)| {
+            .enumerate()
+            .map(|(index, (start, end))| {
                 let mut file = File::open(path)?;
                 file.seek(SeekFrom::Start(start))?;
-                Ok(self.clone().for_reader(file.take(end - start)))
+                Ok(self
+                    .clone()
+                    .with_document_start(index == 0)
+                    .for_reader(file.take(end - start)))
             })
             .collect()
     }
@@ -332,8 +348,19 @@ impl NQuadsParser {
                 true,
                 self.lenient,
                 self.max_buffer_size,
+                NTriplesMediaType::ApplicationNTriples,
+                self.document_position,
             ),
         }
+    }
+
+    fn with_document_start(mut self, is_document_start: bool) -> Self {
+        self.document_position = if is_document_start {
+            DocumentPosition::Start
+        } else {
+            DocumentPosition::Continuation
+        };
+        self
     }
 }
 
@@ -541,20 +568,47 @@ impl LowLevelNQuadsParser {
 /// ))?;
 /// assert_eq!(
 ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> <http://example.com> .\n",
-///     serializer.finish().as_slice()
+///     serializer.finish()?.as_slice()
 /// );
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
 #[derive(Default, Clone)]
 #[must_use]
-#[expect(clippy::empty_structs_with_brackets)]
-pub struct NQuadsSerializer {}
+pub struct NQuadsSerializer {
+    mode: LineFormatMode,
+}
 
 impl NQuadsSerializer {
     /// Builds a new [`NQuadsSerializer`].
     #[inline]
     pub fn new() -> Self {
-        Self {}
+        Self::default()
+    }
+
+    /// Sets the RDF version announced by the serialized document.
+    ///
+    /// RDF 1.1 is used by default and does not emit a `VERSION` directive.
+    /// RDF 1.2 and RDF 1.2 Basic emit `VERSION "1.2"` and
+    /// `VERSION "1.2-basic"` respectively before the first quad, or when an
+    /// empty document is finished. RDF 1.2 Basic rejects triple terms.
+    /// Selecting an RDF 1.2 version without the `rdf-12` crate feature returns
+    /// an error before writing any bytes.
+    #[inline]
+    pub fn with_rdf_version(mut self, rdf_version: RdfVersion) -> Self {
+        self.mode = LineFormatMode::Versioned(rdf_version);
+        self
+    }
+
+    /// Selects the RDF 1.2 Canonical N-Quads conformance class.
+    ///
+    /// Canonical mode supports RDF 1.2 terms but never emits a `VERSION`
+    /// directive, as required by Canonical N-Quads.
+    ///
+    /// Calling [`Self::with_rdf_version`] afterwards leaves canonical mode.
+    #[inline]
+    pub fn canonical(mut self) -> Self {
+        self.mode = LineFormatMode::Canonical;
+        self
     }
 
     /// Writes a N-Quads file to a [`Write`] implementation.
@@ -573,7 +627,7 @@ impl NQuadsSerializer {
     /// ))?;
     /// assert_eq!(
     ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> <http://example.com> .\n",
-    ///     serializer.finish().as_slice()
+    ///     serializer.finish()?.as_slice()
     /// );
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
@@ -602,7 +656,7 @@ impl NQuadsSerializer {
     /// )).await?;
     /// assert_eq!(
     ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> <http://example.com> .\n",
-    ///     serializer.finish().as_slice()
+    ///     serializer.finish().await?.as_slice()
     /// );
     /// # Ok(())
     /// # }
@@ -640,9 +694,11 @@ impl NQuadsSerializer {
     /// );
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
-    #[expect(clippy::unused_self)]
     pub fn low_level(self) -> LowLevelNQuadsSerializer {
-        LowLevelNQuadsSerializer {}
+        LowLevelNQuadsSerializer {
+            mode: self.mode,
+            version_written: false,
+        }
     }
 }
 
@@ -664,7 +720,7 @@ impl NQuadsSerializer {
 /// ))?;
 /// assert_eq!(
 ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> <http://example.com> .\n",
-///     serializer.finish().as_slice()
+///     serializer.finish()?.as_slice()
 /// );
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
@@ -687,8 +743,9 @@ impl<W: Write> WriterNQuadsSerializer<W> {
     }
 
     /// Ends the write process and returns the underlying [`Write`].
-    pub fn finish(self) -> W {
-        self.writer
+    pub fn finish(mut self) -> io::Result<W> {
+        self.low_level_writer.finish(&mut self.writer)?;
+        Ok(self.writer)
     }
 }
 
@@ -712,7 +769,7 @@ impl<W: Write> WriterNQuadsSerializer<W> {
 /// )).await?;
 /// assert_eq!(
 ///     b"<http://example.com#me> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org/Person> <http://example.com> .\n",
-///     serializer.finish().as_slice()
+///     serializer.finish().await?.as_slice()
 /// );
 /// # Ok(())
 /// # }
@@ -746,8 +803,11 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterNQuadsSerializer<W> {
     }
 
     /// Ends the write process and returns the underlying [`Write`].
-    pub fn finish(self) -> W {
-        self.writer
+    pub async fn finish(mut self) -> io::Result<W> {
+        self.low_level_writer.finish(&mut self.buffer)?;
+        self.writer.write_all(&self.buffer).await?;
+        self.buffer.clear();
+        Ok(self.writer)
     }
 }
 
@@ -774,20 +834,49 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterNQuadsSerializer<W> {
 /// );
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
-#[expect(clippy::empty_structs_with_brackets)]
-pub struct LowLevelNQuadsSerializer {}
+pub struct LowLevelNQuadsSerializer {
+    mode: LineFormatMode,
+    version_written: bool,
+}
 
 impl LowLevelNQuadsSerializer {
     /// Writes an extra quad.
-    #[expect(clippy::unused_self)]
     pub fn serialize_quad(&mut self, quad: &Quad, mut writer: impl Write) -> io::Result<()> {
-        writeln!(writer, "{quad} .")
+        let directive = self.pending_version_directive()?;
+        ensure_terse_quad_compatible(self.mode.rdf_version(), quad)?;
+        let mut output = Vec::new();
+        output.extend_from_slice(directive);
+        writeln!(output, "{quad} .")?;
+        writer.write_all(&output)?;
+        self.version_written = true;
+        Ok(())
     }
 
     #[doc(hidden)]
-    #[expect(clippy::unused_self)]
     pub fn serialize_triple(&mut self, triple: &Triple, mut writer: impl Write) -> io::Result<()> {
-        writeln!(writer, "{triple} .")
+        let directive = self.pending_version_directive()?;
+        ensure_terse_triple_compatible(self.mode.rdf_version(), triple)?;
+        let mut output = Vec::new();
+        output.extend_from_slice(directive);
+        writeln!(output, "{triple} .")?;
+        writer.write_all(&output)?;
+        self.version_written = true;
+        Ok(())
+    }
+
+    /// Finishes writing the file.
+    pub fn finish(&mut self, mut writer: impl Write) -> io::Result<()> {
+        writer.write_all(self.pending_version_directive()?)?;
+        self.version_written = true;
+        Ok(())
+    }
+
+    fn pending_version_directive(&self) -> io::Result<&'static [u8]> {
+        if self.version_written {
+            Ok(b"")
+        } else {
+            self.mode.preamble(NTriplesMediaType::ApplicationNTriples)
+        }
     }
 }
 

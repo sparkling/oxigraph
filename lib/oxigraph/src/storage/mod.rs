@@ -646,6 +646,27 @@ impl StorageBulkLoader<'_> {
 
     #[cfg_attr(
         any(target_family = "wasm", not(feature = "rocksdb")),
+        expect(clippy::unnecessary_wraps, unused_variables)
+    )]
+    pub fn load_named_graphs(
+        &mut self,
+        graph_names: Vec<NamedOrBlankNode>,
+        max_num_threads: usize,
+    ) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageBulkLoaderKind::RocksDb(loader) => {
+                loader.load_named_graphs(graph_names, max_num_threads)
+            }
+            StorageBulkLoaderKind::Memory(loader) => {
+                loader.load_named_graphs(graph_names);
+                Ok(())
+            }
+        }
+    }
+
+    #[cfg_attr(
+        any(target_family = "wasm", not(feature = "rocksdb")),
         expect(clippy::unnecessary_wraps)
     )]
     pub fn commit(self) -> Result<(), StorageError> {

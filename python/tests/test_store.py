@@ -14,11 +14,14 @@ from pyoxigraph import (
     NamedNode,
     Quad,
     QueryBoolean,
+    QueryEntailment,
     QueryResultsFormat,
     QuerySolution,
     QuerySolutions,
     QueryTriples,
     RdfFormat,
+    RdfVersion,
+    SparqlVersion,
     Store,
     Triple,
     Variable,
@@ -112,6 +115,58 @@ class TestStore(unittest.TestCase):
         store.add(Quad(foo, foo, foo))
         self.assertTrue(store.query("ASK { ?s ?s ?s }"))
         self.assertFalse(store.query("ASK { FILTER(false) }"))
+
+    def test_query_sparql_version_is_explicit(self) -> None:
+        query = "ASK { BIND( <<( <http://example.com/s> <http://example.com/p> <http://example.com/o> )>> AS ?triple) }"
+        with self.assertRaisesRegex(SyntaxError, "SPARQL 1.1"):
+            Store().query(query, sparql_version=SparqlVersion.V1_1)
+        self.assertTrue(Store().query(query, sparql_version=SparqlVersion.V1_2))
+
+    def test_query_entailment_is_explicit_and_bounded(self) -> None:
+        rdf_type = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        sub_class_of = NamedNode("http://www.w3.org/2000/01/rdf-schema#subClassOf")
+        child = NamedNode("http://example.com/Child")
+        parent = NamedNode("http://example.com/Parent")
+        alice = NamedNode("http://example.com/alice")
+        store = Store()
+        store.extend(
+            [
+                Quad(child, sub_class_of, parent),
+                Quad(alice, rdf_type, child),
+            ]
+        )
+        query = "ASK { <http://example.com/alice> a <http://example.com/Parent> }"
+        self.assertFalse(store.query(query))
+        self.assertTrue(
+            store.query(
+                query,
+                entailment=QueryEntailment.RDFS_1_2_FINITE,
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "Unsupported query entailment"):
+            QueryEntailment("rdfs")
+
+    def test_query_owl2_rl_rdf_bounded(self) -> None:
+        rdf_type = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        transitive_property = NamedNode("http://www.w3.org/2002/07/owl#TransitiveProperty")
+        ancestor = NamedNode("http://example.com/ancestor")
+        alice = NamedNode("http://example.com/alice")
+        bob = NamedNode("http://example.com/bob")
+        carol = NamedNode("http://example.com/carol")
+        store = Store()
+        store.extend(
+            [
+                Quad(ancestor, rdf_type, transitive_property),
+                Quad(alice, ancestor, bob),
+                Quad(bob, ancestor, carol),
+            ]
+        )
+        self.assertTrue(
+            store.query(
+                "ASK { <http://example.com/alice> <http://example.com/ancestor> <http://example.com/carol> }",
+                entailment=QueryEntailment.OWL2_RL_RDF_BOUNDED,
+            )
+        )
 
     def test_construct_query(self) -> None:
         store = Store()
@@ -301,6 +356,18 @@ class TestStore(unittest.TestCase):
         store.update("INSERT DATA { <http://foo> <http://foo> <http://foo> }")
         self.assertEqual(len(store), 1)
 
+    def test_update_sparql_version_is_explicit(self) -> None:
+        update = (
+            "INSERT DATA { <http://example.com/s> <http://example.com/p> "
+            "<<( <http://example.com/s> <http://example.com/p> "
+            "<http://example.com/o> )>> }"
+        )
+        with self.assertRaisesRegex(SyntaxError, "SPARQL 1.1"):
+            Store().update(update, sparql_version=SparqlVersion.V1_1)
+        store = Store()
+        store.update(update, sparql_version=SparqlVersion.V1_2)
+        self.assertEqual(len(store), 1)
+
     def test_update_delete_data(self) -> None:
         store = Store()
         store.add(Quad(foo, foo, foo))
@@ -334,6 +401,19 @@ class TestStore(unittest.TestCase):
                 RdfFormat.N_TRIPLES,
             )
             self.assertEqual(set(store), {Quad(foo, bar, baz, DefaultGraph())})
+
+    def test_load_and_dump_rdf_12_terms_with_explicit_version(self) -> None:
+        data = 'VERSION "1.2"\n<http://foo> <http://bar> <<( <http://foo> <http://bar> <http://baz> )>> .'
+        store = Store()
+        store.load(data, RdfFormat.N_TRIPLES, rdf_version=RdfVersion.V1_2)
+        output = store.dump(
+            format=RdfFormat.N_TRIPLES,
+            from_graph=DefaultGraph(),
+            rdf_version=RdfVersion.V1_2,
+        )
+        assert output is not None
+        self.assertTrue(output.startswith(b'VERSION "1.2"\n'))
+        self.assertIn(b"<<(", output)
 
     def test_load_ntriples_to_named_graph(self) -> None:
         for fn in ("load", "bulk_load"):

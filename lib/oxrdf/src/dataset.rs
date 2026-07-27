@@ -69,6 +69,7 @@ use std::mem::take;
 #[derive(Debug, Default, Clone)]
 pub struct Dataset {
     interner: Interner,
+    named_graphs: BTreeSet<InternedGraphName>,
     gspo: BTreeSet<(
         InternedGraphName,
         InternedNamedOrBlankNode,
@@ -165,6 +166,9 @@ impl Dataset {
     /// ```
     pub fn graph_mut(&mut self, graph_name: impl Into<GraphName>) -> GraphViewMut<'_> {
         let graph_name = InternedGraphName::encoded_into(graph_name.into(), &mut self.interner);
+        if !matches!(graph_name, InternedGraphName::DefaultGraph) {
+            self.named_graphs.insert(graph_name);
+        }
         GraphViewMut {
             dataset: self,
             graph_name,
@@ -172,12 +176,72 @@ impl Dataset {
     }
 
     /// Returns all the quads contained by the dataset.
+    ///
+    /// Empty named graphs have no quad representation and are therefore not
+    /// returned. Use [`named_graphs`](Self::named_graphs) to inspect complete
+    /// dataset topology.
     pub fn iter(&self) -> Iter<'_> {
         let iter = self.spog.iter();
         Iter {
             dataset: self,
             inner: iter,
         }
+    }
+
+    /// Returns the names of all named graphs in this dataset, including empty
+    /// named graphs.
+    ///
+    /// Quad iteration cannot expose empty named graphs. Use this iterator when
+    /// the complete RDF dataset topology matters.
+    pub fn named_graphs(&self) -> NamedGraphsIter<'_> {
+        NamedGraphsIter {
+            dataset: self,
+            inner: self.named_graphs.iter(),
+        }
+    }
+
+    /// Checks whether this dataset contains a named graph.
+    ///
+    /// This returns `true` for empty named graphs as well as graphs containing
+    /// quads.
+    pub fn contains_named_graph<'a>(&self, graph_name: impl Into<NamedOrBlankNodeRef<'a>>) -> bool {
+        self.encoded_named_graph_name(graph_name)
+            .is_some_and(|graph_name| self.named_graphs.contains(&graph_name))
+    }
+
+    /// Adds a named graph to this dataset.
+    ///
+    /// The graph is initially empty unless quads with the same graph name are
+    /// already present.
+    pub fn insert_named_graph(&mut self, graph_name: impl Into<NamedOrBlankNode>) -> bool {
+        let graph_name = self.encode_named_graph_name(graph_name.into());
+        self.named_graphs.insert(graph_name)
+    }
+
+    /// Clears all quads from a graph while retaining named-graph presence.
+    ///
+    /// The default graph always exists. For a named graph, this operation does
+    /// not remove the graph from [`named_graphs`](Self::named_graphs).
+    pub fn clear_graph<'a>(&mut self, graph_name: impl Into<GraphNameRef<'a>>) {
+        let Some(graph_name) = self.encoded_graph_name(graph_name) else {
+            return;
+        };
+        self.clear_encoded_graph(graph_name);
+    }
+
+    /// Removes a named graph and all of its quads from this dataset.
+    ///
+    /// Returns whether the named graph was present.
+    pub fn remove_named_graph<'a>(
+        &mut self,
+        graph_name: impl Into<NamedOrBlankNodeRef<'a>>,
+    ) -> bool {
+        let Some(graph_name) = self.encoded_named_graph_name(graph_name) else {
+            return false;
+        };
+        let was_present = self.named_graphs.remove(&graph_name);
+        self.clear_encoded_graph(graph_name);
+        was_present
     }
 
     pub fn quads_for_subject<'a, 'b>(
@@ -414,6 +478,9 @@ impl Dataset {
         ),
     ) -> bool {
         let (s, p, o, g) = quad;
+        if !matches!(g, InternedGraphName::DefaultGraph) {
+            self.named_graphs.insert(g);
+        }
         self.gspo.insert((g, s, p, o.clone()));
         self.gpos.insert((g, p, o.clone(), s));
         self.gosp.insert((g, o.clone(), s, p));
@@ -449,8 +516,19 @@ impl Dataset {
         self.ospg.remove(&(o, s, p, g))
     }
 
+    fn clear_encoded_graph(&mut self, graph_name: InternedGraphName) {
+        let quads = self
+            .interned_quads_for_graph_name(&graph_name)
+            .map(|(s, p, o, g)| (*s, *p, o.clone(), *g))
+            .collect::<Vec<_>>();
+        for quad in quads {
+            self.remove_encoded(quad);
+        }
+    }
+
     /// Clears the dataset.
     pub fn clear(&mut self) {
+        self.named_graphs.clear();
         self.gspo.clear();
         self.gpos.clear();
         self.gosp.clear();
@@ -518,6 +596,35 @@ impl Dataset {
         InternedGraphName::encoded_from(graph_name.into(), &self.interner)
     }
 
+    fn encode_named_graph_name(&mut self, graph_name: NamedOrBlankNode) -> InternedGraphName {
+        match InternedNamedOrBlankNode::encoded_into(graph_name, &mut self.interner) {
+            InternedNamedOrBlankNode::NamedNode(node) => InternedGraphName::NamedNode(node),
+            InternedNamedOrBlankNode::BlankNode(node) => InternedGraphName::BlankNode(node),
+        }
+    }
+
+    fn encoded_named_graph_name<'a>(
+        &self,
+        graph_name: impl Into<NamedOrBlankNodeRef<'a>>,
+    ) -> Option<InternedGraphName> {
+        Some(
+            match InternedNamedOrBlankNode::encoded_from(graph_name.into(), &self.interner)? {
+                InternedNamedOrBlankNode::NamedNode(node) => InternedGraphName::NamedNode(node),
+                InternedNamedOrBlankNode::BlankNode(node) => InternedGraphName::BlankNode(node),
+            },
+        )
+    }
+
+    fn decode_named_graph_name(&self, graph_name: &InternedGraphName) -> NamedOrBlankNode {
+        match graph_name {
+            InternedGraphName::NamedNode(node) => node.decode_from(&self.interner).into(),
+            InternedGraphName::BlankNode(node) => node.decode_from(&self.interner).into(),
+            InternedGraphName::DefaultGraph => {
+                unreachable!("the default graph is not a named graph")
+            }
+        }
+    }
+
     fn decode_spog(
         &self,
         quad: (
@@ -566,8 +673,8 @@ impl Dataset {
     /// graph2.insert(Triple::new(bnode2, iri.clone(), iri));
     ///
     /// assert_ne!(graph1, graph2);
-    /// graph1.canonicalize(CanonicalizationAlgorithm::Unstable);
-    /// graph2.canonicalize(CanonicalizationAlgorithm::Unstable);
+    /// graph1.canonicalize(CanonicalizationAlgorithm::Unstable)?;
+    /// graph2.canonicalize(CanonicalizationAlgorithm::Unstable)?;
     /// assert_eq!(graph1, graph2);
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
@@ -575,20 +682,89 @@ impl Dataset {
     /// It supports the [RDF Dataset Canonicalization](https://www.w3.org/TR/rdf-canon/) standard algorithm.
     /// Support requires the `rdfc-10` feature to be enabled.
     ///
+    /// Empty named graphs participate in blank-node canonicalization so that
+    /// RDF dataset isomorphism includes complete dataset topology. RDFC-1.0 has
+    /// no line-syntax representation for empty graph pairs; their inclusion is
+    /// therefore an OxRDF model extension to the RDFC algorithm.
+    ///
     /// <div class="warning">Blank node ids depend on the current shape of the graph. Adding a new quad might change the ids of a lot of blank nodes.
     /// Hence, this canonization might not be suitable for diffs.</div>
     ///
-    /// <div class="warning">
-    ///     This implementation's worst-case complexity is exponential with respect to the number of blank nodes in the input dataset.
-    ///     See [the RDFC specification section about it](https://www.w3.org/TR/rdf-canon/#dataset-poisoning).
-    /// </div>
-    pub fn canonicalize(&mut self, algorithm: CanonicalizationAlgorithm) {
-        let bnode_mapping = self.canonicalize_interned_blank_nodes(algorithm);
+    /// Work is limited by default to one Hash N-Degree Quads call per non-unique
+    /// blank node for every algorithm. For RDFC-1.0 this is the linear
+    /// work-factor defense recommended for untrusted input. Use
+    /// [`canonicalize_with_n_degree_call_limit`](Self::canonicalize_with_n_degree_call_limit)
+    /// when a different explicit budget is required.
+    pub fn canonicalize(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+    ) -> Result<(), CanonicalizationError> {
+        self.canonicalize_with_n_degree_limit(algorithm, NdegreeCallLimit::Default)
+    }
+
+    /// Canonicalizes the dataset using a work-factor-derived call limit.
+    ///
+    /// A factor of `0` disables Hash N-Degree Quads calls, `1` allows linear
+    /// work in the number of non-unique blank nodes, and `2` allows quadratic
+    /// work. High factors can permit expensive poison datasets and should only
+    /// be used with trusted input.
+    pub fn canonicalize_with_work_factor(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+        max_work_factor: u32,
+    ) -> Result<(), CanonicalizationError> {
+        self.canonicalize_with_n_degree_limit(
+            algorithm,
+            NdegreeCallLimit::WorkFactor(max_work_factor),
+        )
+    }
+
+    /// Canonicalizes the dataset with an explicit maximum number of calls to the
+    /// Hash N-Degree Quads algorithm.
+    ///
+    /// The dataset is only mutated after canonicalization succeeds.
+    pub fn canonicalize_with_n_degree_call_limit(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+        max_n_degree_calls: usize,
+    ) -> Result<(), CanonicalizationError> {
+        self.canonicalize_with_n_degree_limit(
+            algorithm,
+            NdegreeCallLimit::Exact(max_n_degree_calls),
+        )
+    }
+
+    fn canonicalize_with_n_degree_limit(
+        &mut self,
+        algorithm: CanonicalizationAlgorithm,
+        n_degree_call_limit: NdegreeCallLimit,
+    ) -> Result<(), CanonicalizationError> {
+        let bnode_mapping =
+            self.canonicalize_interned_blank_nodes(algorithm, n_degree_call_limit)?;
+        let new_named_graphs = self.map_named_graph_blank_nodes(&bnode_mapping);
         let new_quads = self.map_blank_nodes(&bnode_mapping);
         self.clear();
+        self.named_graphs.extend(new_named_graphs);
         for quad in new_quads {
             self.insert_encoded(quad);
         }
+        Ok(())
+    }
+
+    /// Checks whether this dataset is isomorphic to another RDF dataset.
+    ///
+    /// Dataset isomorphism includes empty named graphs. The default
+    /// canonicalization work-factor defense is used, and an error is returned
+    /// if that budget is exceeded.
+    pub fn is_isomorphic_to(&self, other: &Self) -> Result<bool, CanonicalizationError> {
+        if self.len() != other.len() || self.named_graphs.len() != other.named_graphs.len() {
+            return Ok(false);
+        }
+        let mut left = self.clone();
+        let mut right = other.clone();
+        left.canonicalize(CanonicalizationAlgorithm::Unstable)?;
+        right.canonicalize(CanonicalizationAlgorithm::Unstable)?;
+        Ok(left == right)
     }
 
     /// Returns a map between the current dataset blank node and the canonicalized blank node
@@ -598,17 +774,52 @@ impl Dataset {
     pub fn canonicalize_blank_nodes(
         &self,
         algorithm: CanonicalizationAlgorithm,
-    ) -> HashMap<BlankNode, BlankNode> {
-        self.canonicalize_interned_blank_nodes(algorithm)
+    ) -> Result<HashMap<BlankNode, BlankNode>, CanonicalizationError> {
+        self.canonicalize_blank_nodes_with_n_degree_limit(algorithm, NdegreeCallLimit::Default)
+    }
+
+    /// Returns the canonical blank-node map using a work-factor-derived limit.
+    pub fn canonicalize_blank_nodes_with_work_factor(
+        &self,
+        algorithm: CanonicalizationAlgorithm,
+        max_work_factor: u32,
+    ) -> Result<HashMap<BlankNode, BlankNode>, CanonicalizationError> {
+        self.canonicalize_blank_nodes_with_n_degree_limit(
+            algorithm,
+            NdegreeCallLimit::WorkFactor(max_work_factor),
+        )
+    }
+
+    /// Returns the canonical blank-node map with an explicit maximum number of
+    /// Hash N-Degree Quads calls.
+    pub fn canonicalize_blank_nodes_with_n_degree_call_limit(
+        &self,
+        algorithm: CanonicalizationAlgorithm,
+        max_n_degree_calls: usize,
+    ) -> Result<HashMap<BlankNode, BlankNode>, CanonicalizationError> {
+        self.canonicalize_blank_nodes_with_n_degree_limit(
+            algorithm,
+            NdegreeCallLimit::Exact(max_n_degree_calls),
+        )
+    }
+
+    fn canonicalize_blank_nodes_with_n_degree_limit(
+        &self,
+        algorithm: CanonicalizationAlgorithm,
+        n_degree_call_limit: NdegreeCallLimit,
+    ) -> Result<HashMap<BlankNode, BlankNode>, CanonicalizationError> {
+        Ok(self
+            .canonicalize_interned_blank_nodes(algorithm, n_degree_call_limit)?
             .into_iter()
             .map(|(from, to)| (from.decode_from(&self.interner), to))
-            .collect()
+            .collect())
     }
 
     fn canonicalize_interned_blank_nodes(
         &self,
         algorithm: CanonicalizationAlgorithm,
-    ) -> HashMap<InternedBlankNode, BlankNode> {
+        n_degree_call_limit: NdegreeCallLimit,
+    ) -> Result<HashMap<InternedBlankNode, BlankNode>, CanonicalizationError> {
         let hash_algorithm = match algorithm {
             CanonicalizationAlgorithm::Unstable | CanonicalizationAlgorithm::UnstableHashedIds => {
                 None
@@ -622,6 +833,7 @@ impl Dataset {
             blank_node_to_quads_map: QuadsPerBlankNode::new(),
             hash_to_blank_nodes_map: BTreeMap::new(),
             canonical_issuer: IdentifierIssuer::new("c14n"),
+            empty_named_graphs: HashSet::new(),
         };
         // 2)
         for quad in &self.spog {
@@ -653,6 +865,23 @@ impl Dataset {
                     quad,
                     &mut canonicalization_state.blank_node_to_quads_map,
                 );
+            }
+        }
+        for graph_name in &self.named_graphs {
+            if let InternedGraphName::BlankNode(blank_node) = graph_name {
+                if self
+                    .interned_quads_for_graph_name(graph_name)
+                    .next()
+                    .is_none()
+                {
+                    canonicalization_state
+                        .empty_named_graphs
+                        .insert(*blank_node);
+                    canonicalization_state
+                        .blank_node_to_quads_map
+                        .entry(*blank_node)
+                        .or_default();
+                }
             }
         }
         // 3)
@@ -689,6 +918,13 @@ impl Dataset {
                 }
             })
             .collect::<BTreeMap<_, _>>();
+        let default_n_degree_call_limit = canonicalization_state
+            .hash_to_blank_nodes_map
+            .values()
+            .map(Vec::len)
+            .sum();
+        let mut n_degree_call_budget =
+            NdegreeCallBudget::new(n_degree_call_limit.maximum(default_n_degree_call_limit));
         // 5)
         for (hash, identifier_list) in take(&mut canonicalization_state.hash_to_blank_nodes_map) {
             // 5.1)
@@ -714,7 +950,8 @@ impl Dataset {
                     &temporary_issuer,
                     algorithm,
                     hash_algorithm,
-                ))
+                    &mut n_degree_call_budget,
+                )?)
             }
             // 5.3)
             hash_path_list.sort_unstable_by(|(_, hl), (_, hr)| hl.cmp(hr));
@@ -731,9 +968,9 @@ impl Dataset {
             }
         }
         // 6)
-        canonicalization_state
+        Ok(canonicalization_state
             .canonical_issuer
-            .issued_identifier_map
+            .issued_identifier_map)
     }
 
     #[cfg(feature = "rdf-12")]
@@ -839,6 +1076,12 @@ impl Dataset {
         // 2)
         let quads =
             &canonicalization_state.blank_node_to_quads_map[&reference_blank_node_identifier];
+        if canonicalization_state
+            .empty_named_graphs
+            .contains(&reference_blank_node_identifier)
+        {
+            nquads.push("@empty-named-graph _:a\n".to_owned());
+        }
         // 3)
         for (subject, predicate, object, graph_name) in quads {
             // 3.1)
@@ -986,7 +1229,9 @@ impl Dataset {
         issuer: &IdentifierIssuer,
         algorithm: CanonicalizationAlgorithm,
         hash_algorithm: Option<CanonicalizationHashAlgorithm>,
-    ) -> (IdentifierIssuer, String) {
+        n_degree_call_budget: &mut NdegreeCallBudget,
+    ) -> Result<(IdentifierIssuer, String), CanonicalizationError> {
+        n_degree_call_budget.consume()?;
         let mut issuer = issuer.clone();
         // 1)
         let mut h_n = BTreeMap::<_, HashSet<_>>::new();
@@ -1055,7 +1300,9 @@ impl Dataset {
             // 5.3)
             let mut chosen_issuer = IdentifierIssuer::new("");
             // 5.4)
-            'perm: for p in generate_permutations(blank_node_list) {
+            let mut blank_node_list = blank_node_list.into_iter().collect::<Vec<_>>();
+            blank_node_list.sort_unstable();
+            'perm: for p in Permutations::new(blank_node_list) {
                 // 5.4.1)
                 let mut issuer_copy = issuer.clone();
                 // 5.4.2)
@@ -1105,7 +1352,8 @@ impl Dataset {
                         &issuer_copy,
                         algorithm,
                         hash_algorithm,
-                    );
+                        n_degree_call_budget,
+                    )?;
                     // 5.4.5.2)
                     let id =
                         Self::issue_identifier(&mut issuer_copy, related, algorithm, &result_hash);
@@ -1137,7 +1385,7 @@ impl Dataset {
             issuer = chosen_issuer;
         }
         // 6)
-        (issuer, Self::hash_function(&data_to_hash, hash_algorithm))
+        Ok((issuer, Self::hash_function(&data_to_hash, hash_algorithm)))
     }
 
     #[cfg(feature = "rdf-12")]
@@ -1232,6 +1480,29 @@ impl Dataset {
     }
 
     #[expect(clippy::needless_collect)]
+    fn map_named_graph_blank_nodes(
+        &mut self,
+        bnode_mapping: &HashMap<InternedBlankNode, BlankNode>,
+    ) -> Vec<InternedGraphName> {
+        let old_named_graphs = self.named_graphs.iter().copied().collect::<Vec<_>>();
+        old_named_graphs
+            .into_iter()
+            .map(|graph_name| match graph_name {
+                InternedGraphName::NamedNode(_) => graph_name,
+                InternedGraphName::BlankNode(blank_node) => {
+                    InternedGraphName::BlankNode(InternedBlankNode::encoded_into(
+                        bnode_mapping[&blank_node].clone(),
+                        &mut self.interner,
+                    ))
+                }
+                InternedGraphName::DefaultGraph => {
+                    unreachable!("the default graph is not a named graph")
+                }
+            })
+            .collect()
+    }
+
+    #[expect(clippy::needless_collect)]
     fn map_blank_nodes(
         &mut self,
         bnode_mapping: &HashMap<InternedBlankNode, BlankNode>,
@@ -1312,8 +1583,13 @@ impl Dataset {
 
 impl PartialEq for Dataset {
     fn eq(&self, other: &Self) -> bool {
-        if self.len() != other.len() {
+        if self.len() != other.len() || self.named_graphs.len() != other.named_graphs.len() {
             return false;
+        }
+        for graph_name in self.named_graphs() {
+            if !other.contains_named_graph(&graph_name) {
+                return false;
+            }
         }
         for q in self {
             if !other.contains(&q) {
@@ -1351,6 +1627,10 @@ impl<Q: Into<Quad>> Extend<Q> for Dataset {
     }
 }
 
+/// Formats dataset quads using N-Quads-style lines.
+///
+/// Empty named graphs have no line representation and are omitted. Use a TriG
+/// or JSON-LD dataset serializer when complete dataset topology must be preserved.
 impl fmt::Display for Dataset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for t in self {
@@ -1383,6 +1663,15 @@ pub struct GraphView<'a> {
 }
 
 impl<'a> GraphView<'a> {
+    /// Checks whether this graph is present in the dataset.
+    ///
+    /// The default graph is always present. Named graphs may be present even
+    /// when they contain no triples.
+    pub fn is_present(&self) -> bool {
+        matches!(self.graph_name, InternedGraphName::DefaultGraph)
+            || self.dataset.named_graphs.contains(&self.graph_name)
+    }
+
     /// Returns all the triples contained by the graph.
     pub fn iter(&self) -> GraphViewIter<'a> {
         let iter = self.dataset.gspo.range(
@@ -1791,6 +2080,13 @@ impl<'a> GraphViewMut<'a> {
         }
     }
 
+    /// Clears all triples from this graph.
+    ///
+    /// A named graph remains present in the dataset after it is cleared.
+    pub fn clear(&mut self) {
+        self.dataset.clear_encoded_graph(self.graph_name);
+    }
+
     fn encode_triple(&mut self, triple: Triple) -> InternedTriple {
         InternedTriple {
             subject: InternedNamedOrBlankNode::encoded_into(
@@ -1897,6 +2193,15 @@ impl<'a> GraphViewMut<'a> {
     pub fn is_empty(&self) -> bool {
         self.read().is_empty()
     }
+
+    /// Checks whether this graph is present in the dataset.
+    ///
+    /// A mutable view creates a named graph when the view is requested, so this
+    /// method always returns `true`.
+    pub fn is_present(&self) -> bool {
+        matches!(self.graph_name, InternedGraphName::DefaultGraph)
+            || self.dataset.named_graphs.contains(&self.graph_name)
+    }
 }
 
 impl<T: Into<Triple>> Extend<T> for GraphViewMut<'_> {
@@ -1949,6 +2254,28 @@ impl Iterator for Iter<'_> {
     }
 }
 
+/// Iterator returned by [`Dataset::named_graphs`].
+pub struct NamedGraphsIter<'a> {
+    dataset: &'a Dataset,
+    inner: std::collections::btree_set::Iter<'a, InternedGraphName>,
+}
+
+impl Iterator for NamedGraphsIter<'_> {
+    type Item = NamedOrBlankNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next()
+            .map(|graph_name| self.dataset.decode_named_graph_name(graph_name))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl ExactSizeIterator for NamedGraphsIter<'_> {}
+
 /// Iterator returned by [`GraphView::iter`].
 pub struct GraphViewIter<'a> {
     dataset: &'a Dataset,
@@ -1982,6 +2309,20 @@ type QuadsPerBlankNode<'a> = HashMap<
         InternedGraphName,
     )>,
 >;
+
+/// Error raised while canonicalizing an RDF dataset.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum CanonicalizationError {
+    /// The configured denial-of-service defense stopped canonicalization.
+    #[error(
+        "canonicalization exceeded the configured maximum of {maximum} Hash N-Degree Quads calls"
+    )]
+    TooManyNDegreeCalls {
+        /// Maximum number of calls allowed for this operation.
+        maximum: usize,
+    },
+}
 
 /// An algorithm used to canonicalize graph and datasets.
 ///
@@ -2026,6 +2367,51 @@ struct CanonicalizationState<'a> {
     blank_node_to_quads_map: QuadsPerBlankNode<'a>,
     hash_to_blank_nodes_map: BTreeMap<String, Vec<InternedBlankNode>>,
     canonical_issuer: IdentifierIssuer,
+    empty_named_graphs: HashSet<InternedBlankNode>,
+}
+
+#[derive(Clone, Copy)]
+enum NdegreeCallLimit {
+    Default,
+    Exact(usize),
+    WorkFactor(u32),
+}
+
+impl NdegreeCallLimit {
+    fn maximum(self, non_unique_blank_nodes: usize) -> usize {
+        match self {
+            Self::Default => non_unique_blank_nodes,
+            Self::Exact(maximum) => maximum,
+            Self::WorkFactor(0) => 0,
+            Self::WorkFactor(factor) => non_unique_blank_nodes
+                .checked_pow(factor)
+                .unwrap_or(usize::MAX),
+        }
+    }
+}
+
+struct NdegreeCallBudget {
+    maximum: usize,
+    remaining: usize,
+}
+
+impl NdegreeCallBudget {
+    fn new(maximum: usize) -> Self {
+        Self {
+            maximum,
+            remaining: maximum,
+        }
+    }
+
+    fn consume(&mut self) -> Result<(), CanonicalizationError> {
+        if self.remaining == 0 {
+            return Err(CanonicalizationError::TooManyNDegreeCalls {
+                maximum: self.maximum,
+            });
+        }
+        self.remaining -= 1;
+        Ok(())
+    }
 }
 
 /// A RDFC [identifier issuer](https://www.w3.org/TR/rdf-canon/#dfn-identifier-issuer)
@@ -2050,30 +2436,62 @@ impl IdentifierIssuer {
     }
 }
 
-fn generate_permutations<T: Copy>(items: impl IntoIterator<Item = T>) -> Vec<Vec<T>> {
-    let mut current_output = vec![Vec::new()];
-    for (i, next) in items.into_iter().enumerate() {
-        let mut new_output = Vec::with_capacity(current_output.len() * (i + 1));
-        for mut permutation in current_output {
-            permutation.push(next);
-            for j in 0..=i {
-                let mut new_permutation = permutation.clone();
-                new_permutation.swap(i, j);
-                new_output.push(new_permutation);
-            }
+struct Permutations<T> {
+    items: Vec<T>,
+    counters: Vec<usize>,
+    index: usize,
+    first: bool,
+}
+
+impl<T: Copy> Permutations<T> {
+    fn new(items: Vec<T>) -> Self {
+        Self {
+            counters: vec![0; items.len()],
+            items,
+            index: 0,
+            first: true,
         }
-        current_output = new_output;
     }
-    current_output
+}
+
+impl<T: Copy> Iterator for Permutations<T> {
+    type Item = Vec<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.first {
+            self.first = false;
+            return Some(self.items.clone());
+        }
+        while self.index < self.items.len() {
+            if self.counters[self.index] < self.index {
+                if self.index.is_multiple_of(2) {
+                    self.items.swap(0, self.index);
+                } else {
+                    self.items.swap(self.counters[self.index], self.index);
+                }
+                self.counters[self.index] += 1;
+                self.index = 0;
+                return Some(self.items.clone());
+            }
+            self.counters[self.index] = 0;
+            self.index += 1;
+        }
+        None
+    }
 }
 
 #[cfg(feature = "rdfc-10")]
 #[cfg(test)]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "assertions provide clearer canonicalization regression failures"
+)]
 mod tests {
     use super::*;
+    use std::error::Error;
 
     #[test]
-    fn test_canon() {
+    fn test_canon() -> Result<(), Box<dyn Error>> {
         let p = NamedNode::new_unchecked("http://example.com/#p");
         let q = NamedNode::new_unchecked("http://example.com/#q");
         let r = NamedNode::new_unchecked("http://example.com/#r");
@@ -2090,7 +2508,7 @@ mod tests {
         dataset.insert(QuadRef::new(&e2, &r, &e3, GraphNameRef::DefaultGraph));
         dataset.canonicalize(CanonicalizationAlgorithm::Rdfc10 {
             hash_algorithm: CanonicalizationHashAlgorithm::Sha256,
-        });
+        })?;
 
         let mut expected = Dataset::new();
         let c14n0 = BlankNode::new_unchecked("c14n0");
@@ -2103,5 +2521,54 @@ mod tests {
         expected.insert(QuadRef::new(&c14n2, &p, &c14n1, GraphNameRef::DefaultGraph));
         expected.insert(QuadRef::new(&c14n3, &p, &c14n0, GraphNameRef::DefaultGraph));
         assert_eq!(dataset, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn n_degree_call_limit_is_fallible_and_atomic() -> Result<(), Box<dyn Error>> {
+        let predicate = NamedNode::new_unchecked("http://example.com/p");
+        let first = BlankNode::new_unchecked("first");
+        let second = BlankNode::new_unchecked("second");
+        let mut dataset = Dataset::new();
+        dataset.insert(QuadRef::new(
+            &first,
+            &predicate,
+            &second,
+            GraphNameRef::DefaultGraph,
+        ));
+        dataset.insert(QuadRef::new(
+            &second,
+            &predicate,
+            &first,
+            GraphNameRef::DefaultGraph,
+        ));
+        let original = dataset.clone();
+
+        let algorithms = [
+            CanonicalizationAlgorithm::Unstable,
+            CanonicalizationAlgorithm::UnstableHashedIds,
+            CanonicalizationAlgorithm::Rdfc10 {
+                hash_algorithm: CanonicalizationHashAlgorithm::Sha256,
+            },
+        ];
+        for algorithm in algorithms {
+            let Err(error) = dataset.canonicalize_with_n_degree_call_limit(algorithm, 0) else {
+                return Err(std::io::Error::other("zero work budget was not enforced").into());
+            };
+            assert_eq!(
+                error,
+                CanonicalizationError::TooManyNDegreeCalls { maximum: 0 }
+            );
+            assert_eq!(dataset, original);
+        }
+
+        dataset.canonicalize_with_n_degree_call_limit(
+            CanonicalizationAlgorithm::Rdfc10 {
+                hash_algorithm: CanonicalizationHashAlgorithm::Sha256,
+            },
+            16,
+        )?;
+        assert_ne!(dataset, original);
+        Ok(())
     }
 }

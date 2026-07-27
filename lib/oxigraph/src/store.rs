@@ -273,6 +273,30 @@ impl Store {
         self.quads_for_pattern(None, None, None, None)
     }
 
+    /// Copies quads and named-graph topology from one storage snapshot.
+    ///
+    /// This internal helper is used when an owned dataset must preserve a
+    /// repeatable-read view, including empty named graphs, without opening a
+    /// write-capable transaction. It therefore also works for stores opened
+    /// with [`Store::open_read_only`].
+    pub(crate) fn snapshot_contents(
+        &self,
+    ) -> Result<(Dataset, Vec<NamedOrBlankNode>), StorageError> {
+        let reader = self.storage.snapshot();
+        let mut dataset = reader
+            .quads_for_pattern(None, None, None, None)
+            .map(|quad| reader.decode_quad(&quad?))
+            .collect::<Result<Dataset, _>>()?;
+        let named_graphs = reader
+            .named_graphs()
+            .map(|graph_name| reader.decode_named_or_blank_node(&graph_name?))
+            .collect::<Result<Vec<_>, _>>()?;
+        for graph_name in &named_graphs {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok((dataset, named_graphs))
+    }
+
     /// Checks if this store contains a given quad.
     ///
     /// Usage example:
@@ -418,9 +442,17 @@ impl Store {
         parser: impl Into<RdfParser>,
         reader: impl Read,
     ) -> Result<(), LoaderError> {
+        let dataset = parser
+            .into()
+            .rename_blank_nodes()
+            .for_reader(reader)
+            .collect_dataset()?;
         let mut transaction = self.storage.start_transaction()?;
-        for quad in parser.into().rename_blank_nodes().for_reader(reader) {
-            transaction.insert(quad?);
+        for graph_name in dataset.named_graphs() {
+            transaction.insert_named_graph(graph_name);
+        }
+        for quad in &dataset {
+            transaction.insert(quad);
         }
         transaction.commit()?;
         Ok(())
@@ -463,9 +495,18 @@ impl Store {
         parser: impl Into<RdfParser>,
         slice: &(impl AsRef<[u8]> + ?Sized),
     ) -> Result<(), LoaderError> {
+        let dataset = parser
+            .into()
+            .rename_blank_nodes()
+            .for_slice(slice.as_ref())
+            .collect_dataset()
+            .map_err(RdfParseError::Syntax)?;
         let mut transaction = self.storage.start_transaction()?;
-        for quad in parser.into().rename_blank_nodes().for_slice(slice.as_ref()) {
-            transaction.insert(quad.map_err(RdfParseError::Syntax)?);
+        for graph_name in dataset.named_graphs() {
+            transaction.insert_named_graph(graph_name);
+        }
+        for quad in &dataset {
+            transaction.insert(quad);
         }
         transaction.commit()?;
         Ok(())
@@ -557,9 +598,31 @@ impl Store {
         if !serializer.format().supports_datasets() {
             return Err(SerializerError::DatasetFormatExpected(serializer.format()));
         }
+        let reader = self.storage.snapshot();
+        let mut empty_graphs = Vec::new();
+        for graph_name in reader.named_graphs() {
+            let graph_name = graph_name?;
+            if reader
+                .quads_for_pattern(None, None, None, Some(&graph_name))
+                .next()
+                .transpose()?
+                .is_none()
+            {
+                empty_graphs.push(reader.decode_named_or_blank_node(&graph_name)?);
+            }
+        }
+        if !empty_graphs.is_empty() && !serializer.format().supports_empty_named_graphs() {
+            return Err(SerializerError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the selected RDF format cannot represent empty named graphs",
+            )));
+        }
         let mut serializer = serializer.for_writer(writer);
-        for quad in self {
-            serializer.serialize_quad(&quad?)?;
+        for quad in reader.quads_for_pattern(None, None, None, None) {
+            serializer.serialize_quad(&reader.decode_quad(&quad?)?)?;
+        }
+        for graph_name in empty_graphs {
+            serializer.serialize_empty_graph(&graph_name)?;
         }
         Ok(serializer.finish()?)
     }
@@ -978,8 +1041,16 @@ impl<'a> Transaction<'a> {
         parser: impl Into<RdfParser>,
         reader: impl Read,
     ) -> Result<(), LoaderError> {
-        for quad in parser.into().rename_blank_nodes().for_reader(reader) {
-            self.insert(quad?);
+        let dataset = parser
+            .into()
+            .rename_blank_nodes()
+            .for_reader(reader)
+            .collect_dataset()?;
+        for graph_name in dataset.named_graphs() {
+            self.insert_named_graph(graph_name);
+        }
+        for quad in &dataset {
+            self.insert(quad);
         }
         Ok(())
     }
@@ -1026,8 +1097,17 @@ impl<'a> Transaction<'a> {
         parser: impl Into<RdfParser>,
         slice: &(impl AsRef<[u8]> + ?Sized),
     ) -> Result<(), LoaderError> {
-        for quad in parser.into().rename_blank_nodes().for_slice(slice) {
-            self.insert(quad.map_err(RdfParseError::Syntax)?);
+        let dataset = parser
+            .into()
+            .rename_blank_nodes()
+            .for_slice(slice)
+            .collect_dataset()
+            .map_err(RdfParseError::Syntax)?;
+        for graph_name in dataset.named_graphs() {
+            self.insert_named_graph(graph_name);
+        }
+        for quad in &dataset {
+            self.insert(quad);
         }
         Ok(())
     }
@@ -1441,26 +1521,25 @@ impl BulkLoader<'_> {
         reader: impl Read,
     ) -> Result<(), LoaderError> {
         let on_parse_error = self.on_parse_error.as_ref().map(Arc::clone);
-        self.load_ok_quads(
-            parser
-                .into()
-                .rename_blank_nodes()
-                .for_reader(reader)
-                .filter_map(|r| match r {
-                    Ok(q) => Some(Ok(q)),
-                    Err(e) => {
-                        if let Some(callback) = &on_parse_error {
-                            if let Err(e) = callback(e) {
-                                Some(Err(e))
-                            } else {
-                                None
-                            }
-                        } else {
+        let mut parser = parser.into().rename_blank_nodes().for_reader(reader);
+        self.load_ok_quads::<RdfParseError, LoaderError>(parser.by_ref().filter_map(
+            |r| match r {
+                Ok(q) => Some(Ok(q)),
+                Err(e) => {
+                    if let Some(callback) = &on_parse_error {
+                        if let Err(e) = callback(e) {
                             Some(Err(e))
+                        } else {
+                            None
                         }
+                    } else {
+                        Some(Err(e))
                     }
-                }),
-        )
+                }
+            },
+        ))?;
+        self.load_named_graphs(parser.named_graphs()?)?;
+        Ok(())
     }
 
     /// Loads serialized RDF in a slice using the bulk loader.
@@ -1512,26 +1591,25 @@ impl BulkLoader<'_> {
         slice: &(impl AsRef<[u8]> + ?Sized),
     ) -> Result<(), LoaderError> {
         let on_parse_error = self.on_parse_error.as_ref().map(Arc::clone);
-        self.load_ok_quads(
-            parser
-                .into()
-                .rename_blank_nodes()
-                .for_slice(slice)
-                .filter_map(|r| match r {
-                    Ok(q) => Some(Ok(q)),
-                    Err(e) => {
-                        if let Some(callback) = &on_parse_error {
-                            if let Err(e) = callback(e.into()) {
-                                Some(Err(e))
-                            } else {
-                                None
-                            }
+        let mut parser = parser.into().rename_blank_nodes().for_slice(slice);
+        self.load_ok_quads::<RdfParseError, LoaderError>(parser.by_ref().filter_map(
+            |r| match r {
+                Ok(q) => Some(Ok(q)),
+                Err(e) => {
+                    if let Some(callback) = &on_parse_error {
+                        if let Err(e) = callback(e.into()) {
+                            Some(Err(e))
                         } else {
-                            Some(Err(e.into()))
+                            None
                         }
+                    } else {
+                        Some(Err(e.into()))
                     }
-                }),
-        )
+                }
+            },
+        ))?;
+        self.load_named_graphs(parser.named_graphs().map_err(RdfParseError::Syntax)?)?;
+        Ok(())
     }
 
     /// Loads RDF file using the bulk loader.
@@ -1585,6 +1663,10 @@ impl BulkLoader<'_> {
         parser: impl Into<RdfParser>,
         path: impl AsRef<Path>,
     ) -> Result<(), LoaderError> {
+        let parser = parser.into();
+        if parser.format().supports_empty_named_graphs() {
+            return self.load_from_reader(parser, File::open(path).map_err(RdfParseError::from)?);
+        }
         let target_num_threads = self.target_num_threads() / 2;
         if target_num_threads < 2 {
             return self.load_from_reader(parser, File::open(path).map_err(RdfParseError::from)?);
@@ -1592,7 +1674,6 @@ impl BulkLoader<'_> {
         let target_batch_size = self.target_batch_size();
         let on_parse_error = self.on_parse_error.as_ref().map(Arc::clone);
         let parsers = parser
-            .into()
             .rename_blank_nodes()
             .split_file_for_parallel_parsing(path, target_num_threads)
             .map_err(RdfParseError::Io)?;
@@ -1696,6 +1777,10 @@ impl BulkLoader<'_> {
         parser: impl Into<RdfParser>,
         slice: &(impl AsRef<[u8]> + ?Sized),
     ) -> Result<(), LoaderError> {
+        let parser = parser.into();
+        if parser.format().supports_empty_named_graphs() {
+            return self.load_from_slice(parser, slice);
+        }
         let target_num_threads = self.target_num_threads() / 2;
         if target_num_threads < 2 {
             return self.load_from_slice(parser, slice);
@@ -1703,7 +1788,6 @@ impl BulkLoader<'_> {
         let target_batch_size = self.target_batch_size();
         let on_parse_error = self.on_parse_error.as_ref().map(Arc::clone);
         let parsers = parser
-            .into()
             .rename_blank_nodes()
             .split_slice_for_parallel_parsing(slice, target_num_threads);
         thread::scope(|scope| {
@@ -1763,6 +1847,18 @@ impl BulkLoader<'_> {
         quads: impl IntoIterator<Item = Quad>,
     ) -> Result<(), StorageError> {
         self.load_ok_quads(quads.into_iter().map(Ok::<_, StorageError>))
+    }
+
+    fn load_named_graphs(
+        &mut self,
+        graph_names: Vec<NamedOrBlankNode>,
+    ) -> Result<(), StorageError> {
+        if !graph_names.is_empty() {
+            let target_num_threads = self.target_num_threads();
+            self.storage
+                .load_named_graphs(graph_names, target_num_threads)?;
+        }
+        Ok(())
     }
 
     /// Adds a set of quads using the bulk loader while breaking in the middle of the process in case of error.

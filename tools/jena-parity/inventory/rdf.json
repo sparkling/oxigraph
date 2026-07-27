@@ -1,0 +1,268 @@
+{
+  "scenarios": [
+    {
+      "id": "rdf-jsonld-basic",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/json-ld11/",
+      "reviewed": true,
+      "syntax": "jsonld",
+      "data": "{\"@id\":\"https://example.test/s\",\"https://example.test/p\":{\"@value\":\"value\"}}",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-nquads-dataset",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-n-quads/",
+      "reviewed": true,
+      "syntax": "nquads",
+      "data": "<https://example.test/s> <https://example.test/p> <https://example.test/o> <https://example.test/g> .\n<https://example.test/s> <https://example.test/q> \"default\" .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "rdf-nquads-invalid",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-n-quads/",
+      "reviewed": true,
+      "syntax": "nquads",
+      "data": "<https://example.test/s> <https://example.test/p> .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "error"},
+        {"target": "both", "pointer": "/error_code", "equals": "syntax-or-evaluation"}
+      ]
+    },
+    {
+      "id": "rdf-ntriples-escapes",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-n-triples/",
+      "reviewed": true,
+      "syntax": "ntriples",
+      "data": "<https://example.test/s> <https://example.test/p> \"line\\n\\u03BB\"@en .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-rdfxml-basic",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-xml/",
+      "reviewed": true,
+      "syntax": "rdfxml",
+      "data": "<?xml version=\"1.0\"?><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" xmlns:ex=\"https://example.test/\"><rdf:Description rdf:about=\"https://example.test/s\"><ex:p rdf:resource=\"https://example.test/o\"/></rdf:Description></rdf:RDF>",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-roundtrip-jsonld",
+      "domain": "rdf",
+      "operation": "rdf-roundtrip",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/json-ld11/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "outputSyntax": "jsonld",
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p \"value\" ; ex:q ex:o .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "rdf-roundtrip-jsonld-empty-named-graph",
+      "domain": "rdf",
+      "operation": "rdf-roundtrip",
+      "classification": "w3c-overrides-jena",
+      "normativeBasis": "https://www.w3.org/TR/json-ld11-api/#deserialize-json-ld-to-rdf-algorithm",
+      "reviewed": true,
+      "syntax": "jsonld",
+      "outputSyntax": "jsonld",
+      "data": "{\"@id\":\"http://example.com/empty\",\"@graph\":[]}",
+      "assertions": [
+        {"target": "jena", "pointer": "/status", "equals": "success"},
+        {"target": "jena", "pointer": "/value/quad_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/named_graph_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/named_graphs", "equals": []},
+        {"target": "oxigraph", "pointer": "/status", "equals": "success"},
+        {"target": "oxigraph", "pointer": "/value/quad_count", "equals": 0},
+        {"target": "oxigraph", "pointer": "/value/named_graph_count", "equals": 1},
+        {
+          "target": "oxigraph",
+          "pointer": "/value/named_graphs",
+          "equals": [{"type": "iri", "value": "http://example.com/empty"}]
+        }
+      ]
+    },
+    {
+      "id": "rdf-roundtrip-ntriples",
+      "domain": "rdf",
+      "operation": "rdf-roundtrip",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-n-triples/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "outputSyntax": "ntriples",
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p \"value\"@en .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-roundtrip-rdfxml",
+      "domain": "rdf",
+      "operation": "rdf-roundtrip",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-xml/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "outputSyntax": "rdfxml",
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-roundtrip-trig",
+      "domain": "rdf",
+      "operation": "rdf-roundtrip",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-trig/",
+      "reviewed": true,
+      "syntax": "trig",
+      "outputSyntax": "nquads",
+      "data": "@prefix ex: <https://example.test/> . ex:g { ex:s ex:p ex:o } ex:d ex:p \"default\" .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "rdf-roundtrip-trig-empty-named-graph",
+      "domain": "rdf",
+      "operation": "rdf-roundtrip",
+      "classification": "w3c-overrides-jena",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-concepts/#section-dataset",
+      "reviewed": true,
+      "syntax": "trig",
+      "outputSyntax": "trig",
+      "data": "<urn:g> {}",
+      "assertions": [
+        {"target": "jena", "pointer": "/status", "equals": "success"},
+        {"target": "jena", "pointer": "/value/quad_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/named_graph_count", "equals": 0},
+        {"target": "jena", "pointer": "/value/named_graphs", "equals": []},
+        {"target": "oxigraph", "pointer": "/status", "equals": "success"},
+        {"target": "oxigraph", "pointer": "/value/quad_count", "equals": 0},
+        {"target": "oxigraph", "pointer": "/value/named_graph_count", "equals": 1},
+        {
+          "target": "oxigraph",
+          "pointer": "/value/named_graphs",
+          "equals": [{"type": "iri", "value": "urn:g"}]
+        }
+      ]
+    },
+    {
+      "id": "rdf-trig-named-graph",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-trig/",
+      "reviewed": true,
+      "syntax": "trig",
+      "data": "@prefix ex: <https://example.test/> . ex:g { ex:s ex:p ex:o . } { ex:d ex:p \"default\" . }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "rdf-turtle-base",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-turtle/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "data": "@base <https://example.test/root/> . <item> <property> <object> .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-turtle-blank-isomorphism",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-turtle/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p [ ex:q \"value\" ] .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 2}
+      ]
+    },
+    {
+      "id": "rdf-turtle-directional-literal",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-turtle/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:label \"hello\"@en--ltr .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "rdf-turtle-invalid",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-turtle/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "data": "@prefix ex: <https://example.test/> . ex:s ex:p",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "error"},
+        {"target": "both", "pointer": "/error_code", "equals": "syntax-or-evaluation"}
+      ]
+    },
+    {
+      "id": "rdf-turtle-triple-term",
+      "domain": "rdf",
+      "operation": "rdf-parse",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-turtle/",
+      "reviewed": true,
+      "syntax": "turtle",
+      "data": "@prefix ex: <https://example.test/> . ex:r ex:reifies <<( ex:s ex:p ex:o )>> .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/quad_count", "equals": 1}
+      ]
+    }
+  ]
+}

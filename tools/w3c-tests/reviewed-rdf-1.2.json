@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "family": "rdf-1.2",
+  "reviewBoundary": "extraction-topology-only; no implementation or conformance disposition",
+  "candidateDisposition": "mapped-unassessed",
+  "documents": [
+    {
+      "documentId": "rdf12-new",
+      "family": "rdf-1.2",
+      "sourceSha256": "6cc8e6c06aac17628ba3fb59d4dc5465909fed4b8c0d612be668949d52139632",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    },
+    {
+      "documentId": "rdf12-concepts",
+      "family": "rdf-1.2",
+      "sourceSha256": "2e67fd5c732edf127f711c75c4a4ce35e9cbca936b3dfe25386383b92f683365",
+      "candidateCount": 23,
+      "candidateSetSha256": "0d53195bf8088689fe334960fbc0ec54f058ab805db3de38e6ea45a3e66af72b",
+      "sectionRefs": [
+        "conformance",
+        "datatype-iris",
+        "defined-version-labels",
+        "literal-value",
+        "rdf-strings",
+        "representation-of-literals",
+        "section-Datatypes",
+        "section-Graph-Literal",
+        "section-IRIs",
+        "section-additional-datatypes",
+        "section-dataset",
+        "section-json",
+        "section-skolemization",
+        "xsd-datatypes"
+      ]
+    },
+    {
+      "documentId": "rdf12-n-quads",
+      "family": "rdf-1.2",
+      "sourceSha256": "5fee5da7170e98f4f5e3019dc9c4fc6d866478f8dd22e8004448162f8f33b3d6",
+      "candidateCount": 39,
+      "candidateSetSha256": "0e4c2931383d710dcc8af68f1076371092f8c92fa662c1435ed8d1841a5dbe4f",
+      "sectionRefs": [
+        "canonical-nquads",
+        "conformance",
+        "sec-grammar-grammar",
+        "sec-parsing",
+        "security"
+      ]
+    },
+    {
+      "documentId": "rdf12-n-triples",
+      "family": "rdf-1.2",
+      "sourceSha256": "dbb3424b30712d570c041fd5802c8dbb6a2ac7a35e41617fe3b0f53d3529559b",
+      "candidateCount": 40,
+      "candidateSetSha256": "0a5b3e104265dd65320e9ad4011c5b4c381700b566704410aca6f7738483d34a",
+      "sectionRefs": [
+        "canonical-ntriples",
+        "conformance",
+        "sec-grammar-grammar",
+        "sec-other-media-types",
+        "sec-parsing",
+        "sec-parsing-state",
+        "security"
+      ]
+    },
+    {
+      "documentId": "rdf12-primer",
+      "family": "rdf-1.2",
+      "sourceSha256": "90f90959c1dc05649bc6e5270d1d39499cd3d0255a6d0d4134937c4b130e5e75",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    },
+    {
+      "documentId": "rdf12-schema",
+      "family": "rdf-1.2",
+      "sourceSha256": "74c02d34edddd24c466c3d0988fb57d2a999b5cf3d507e92f824810106dca399",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    },
+    {
+      "documentId": "rdf12-semantics",
+      "family": "rdf-1.2",
+      "sourceSha256": "4fadc242c1aca2c2b713ace0c45c8c8c27d517b346e02e436c3c2e62d349e52e",
+      "candidateCount": 12,
+      "candidateSetSha256": "5e3454364f451c363657486d7fc0f192e9e7ea25b56dd327225345961cb9f802",
+      "sectionRefs": [
+        "ChangeLog-12",
+        "D_entailment",
+        "conformance",
+        "datatypes",
+        "extensions",
+        "rdf_d_interpretations",
+        "rdf_datasets",
+        "simple"
+      ]
+    },
+    {
+      "documentId": "rdf12-trig",
+      "family": "rdf-1.2",
+      "sourceSha256": "cec6c25d605f2b4763f5ca0736565bfb70b7a1738dee5880d4f880943a50d320",
+      "candidateCount": 72,
+      "candidateSetSha256": "14ac0d15c39dd95daf0d63cfea37dd6e997c0848a99ea0fec83bd5d65265507c",
+      "sectionRefs": ["conformance", "grammar-ebnf", "sec-escapes", "security"]
+    },
+    {
+      "documentId": "rdf12-turtle",
+      "family": "rdf-1.2",
+      "sourceSha256": "fc274d6456f9bbc09242d95fe76949ce9a0d9e97bf09db0b889c11edaf161c27",
+      "candidateCount": 69,
+      "candidateSetSha256": "2145768ec1fdab73040527fb493516d5679d7afd1c44d034f877baec1174a2ed",
+      "sectionRefs": [
+        "collections",
+        "conformance",
+        "sec-escapes",
+        "sec-grammar-grammar",
+        "sec-parsing-state",
+        "security"
+      ]
+    },
+    {
+      "documentId": "rdf12-xml",
+      "family": "rdf-1.2",
+      "sourceSha256": "d309ed73d2d46adc576d929cbbd906b905ab8805968634b4e219ca771b108945",
+      "candidateCount": 61,
+      "candidateSetSha256": "20402c175a3ae22e990ddf98a9da42332b8496dfcdec0f681398c59c213904e5",
+      "sectionRefs": [
+        "RDF",
+        "URI-reference",
+        "aboutAttr",
+        "annotationAttr",
+        "annotationNodeIDAttr",
+        "conformance",
+        "coreSyntaxTerms",
+        "datatypeAttr",
+        "doc",
+        "emptyPropertyElt",
+        "idAttr",
+        "literal",
+        "literalPropertyElt",
+        "nodeElement",
+        "nodeElementList",
+        "nodeElementURIs",
+        "nodeIdAttr",
+        "oldTerms",
+        "parseCollection",
+        "parseLiteral",
+        "parseOther",
+        "parseResource",
+        "parseTriple",
+        "parseTypeCollectionPropertyElt",
+        "parseTypeLiteralPropertyElt",
+        "parseTypeOtherPropertyElt",
+        "parseTypeResourcePropertyElt",
+        "parseTypeTriplePropertyElt",
+        "propertyAttr",
+        "propertyAttributeURIs",
+        "propertyElementURIs",
+        "propertyElt",
+        "propertyEltList",
+        "rdf-id",
+        "resourceAttr",
+        "resourcePropertyElt",
+        "section-Data-Model",
+        "section-Identifiers",
+        "section-MIME-Type",
+        "section-Namespace",
+        "section-Serialising",
+        "section-Syntax-complete-document",
+        "section-Syntax-typed-nodes",
+        "section-attribute-node",
+        "section-constraints",
+        "section-element-node",
+        "start",
+        "syntaxTerms",
+        "ws"
+      ]
+    },
+    {
+      "documentId": "rdf12-interoperability",
+      "family": "rdf-1.2",
+      "sourceSha256": "6afe0ee6523a830de1cb9d1da6bde72b643edb89f31631b97f0e8bd9a2c01ee2",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    }
+  ]
+}

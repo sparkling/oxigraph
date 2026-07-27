@@ -1,8 +1,10 @@
+use crate::dataset::PyDataset;
 use crate::model::{PyQuad, PyTriple};
 use oxigraph::io::{
     JsonLdProfile, JsonLdProfileSet, RdfFormat, RdfParseError, RdfParser, RdfSerializer,
     ReaderQuadParser,
 };
+use oxigraph::model::RdfVersion;
 use pyo3::exceptions::{PySyntaxError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -37,6 +39,8 @@ use std::sync::OnceLock;
 /// :type path: str or os.PathLike[str] or None, optional
 /// :param base_iri: the base IRI used to resolve the relative IRIs in the file or :py:const:`None` if relative IRI resolution should not be done.
 /// :type base_iri: str or None, optional
+/// :param rdf_version: the RDF version used to constrain parsing.
+/// :type rdf_version: RdfVersion or None, optional
 /// :param without_named_graphs: Sets that the parser must fail when parsing a named graph.
 /// :type without_named_graphs: bool, optional
 /// :param rename_blank_nodes: Renames the blank nodes identifiers from the ones set in the serialization to random ids. This allows avoiding identifier conflicts when merging graphs together.
@@ -52,12 +56,13 @@ use std::sync::OnceLock;
 /// >>> list(parse(input=b'<foo> <p> "1" .', format=RdfFormat.TURTLE, base_iri="http://example.com/"))
 /// [<Quad subject=<NamedNode value=http://example.com/foo> predicate=<NamedNode value=http://example.com/p> object=<Literal value=1 datatype=<NamedNode value=http://www.w3.org/2001/XMLSchema#string>> graph_name=<DefaultGraph>>]
 #[pyfunction]
-#[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, without_named_graphs = false, rename_blank_nodes = false, lenient = false))]
+#[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, rdf_version = None, without_named_graphs = false, rename_blank_nodes = false, lenient = false))]
 pub fn parse(
     input: Option<PyReadableInput>,
     format: Option<PyRdfFormat>,
     path: Option<PathBuf>,
     base_iri: Option<&str>,
+    rdf_version: Option<PyRdfVersion>,
     without_named_graphs: bool,
     rename_blank_nodes: bool,
     lenient: bool,
@@ -65,7 +70,7 @@ pub fn parse(
 ) -> PyResult<PyQuadParser> {
     let input = PyReadable::from_args(&path, input, py)?;
     let format = lookup_rdf_format(format, path.as_deref())?;
-    let mut parser = RdfParser::from_format(format);
+    let mut parser = rdf_parser(format, rdf_version)?;
     if let Some(base_iri) = base_iri {
         parser = parser
             .with_base_iri(base_iri)
@@ -86,6 +91,70 @@ pub fn parse(
     })
 }
 
+/// Parses an RDF serialization into an in-memory :py:class:`Dataset`.
+///
+/// Unlike the streaming :py:func:`parse` iterator, this function preserves
+/// explicitly declared empty named graphs in TriG and JSON-LD.
+///
+/// :param input: The :py:class:`str`, :py:class:`bytes` or I/O object to read from.
+/// :type input: bytes or str or typing.IO[bytes] or typing.IO[str] or None, optional
+/// :param format: the RDF serialization format, or :py:const:`None` to infer it from ``path``.
+/// :type format: RdfFormat or None, optional
+/// :param path: a file path replacing ``input``.
+/// :type path: str or os.PathLike[str] or None, optional
+/// :param base_iri: the base IRI used to resolve relative IRIs.
+/// :type base_iri: str or None, optional
+/// :param rdf_version: the RDF version used to constrain parsing.
+/// :type rdf_version: RdfVersion or None, optional
+/// :param without_named_graphs: fail if a named graph, including an empty one, is parsed.
+/// :type without_named_graphs: bool, optional
+/// :param rename_blank_nodes: rename input blank node identifiers.
+/// :type rename_blank_nodes: bool, optional
+/// :param lenient: skip selected input validations.
+/// :type lenient: bool, optional
+/// :rtype: Dataset
+/// :raises ValueError: if the format or base IRI is invalid.
+/// :raises SyntaxError: if the RDF input is invalid.
+/// :raises OSError: if reading fails.
+#[pyfunction]
+#[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, rdf_version = None, without_named_graphs = false, rename_blank_nodes = false, lenient = false))]
+pub fn parse_dataset(
+    input: Option<PyReadableInput>,
+    format: Option<PyRdfFormat>,
+    path: Option<PathBuf>,
+    base_iri: Option<&str>,
+    rdf_version: Option<PyRdfVersion>,
+    without_named_graphs: bool,
+    rename_blank_nodes: bool,
+    lenient: bool,
+    py: Python<'_>,
+) -> PyResult<PyDataset> {
+    let input = PyReadable::from_args(&path, input, py)?;
+    let format = lookup_rdf_format(format, path.as_deref())?;
+    let mut parser = rdf_parser(format, rdf_version)?;
+    if let Some(base_iri) = base_iri {
+        parser = parser
+            .with_base_iri(base_iri)
+            .map_err(|e| PyValueError::new_err(format!("Invalid base IRI '{base_iri}', {e}")))?;
+    }
+    if without_named_graphs {
+        parser = parser.without_named_graphs();
+    }
+    if rename_blank_nodes {
+        parser = parser.rename_blank_nodes();
+    }
+    if lenient {
+        parser = parser.lenient();
+    }
+    py.detach(|| {
+        parser
+            .for_reader(input)
+            .collect_dataset()
+            .map(PyDataset::from_dataset)
+            .map_err(|error| map_parse_error(error, path))
+    })
+}
+
 /// Serializes an RDF graph or dataset.
 ///
 /// It currently supports the following formats:
@@ -99,7 +168,7 @@ pub fn parse(
 /// * `RDF/XML <https://www.w3.org/TR/rdf-syntax-grammar/>`_ (:py:attr:`RdfFormat.RDF_XML`)
 ///
 /// :param input: the RDF triples and quads to serialize.
-/// :type input: collections.abc.Iterable[Triple] or collections.abc.Iterable[Quad]
+/// :type input: Dataset or collections.abc.Iterable[Triple] or collections.abc.Iterable[Quad]
 /// :param output: The binary I/O object or file path to write to. For example, it could be a file path as a string or a file writer opened in binary mode with ``open('my_file.ttl', 'wb')``. If :py:const:`None`, a :py:class:`bytes` buffer is returned with the serialized content.
 /// :type output: typing.IO[bytes] or str or os.PathLike[str] or None, optional
 /// :param format: the format of the RDF serialization. If :py:const:`None`, the format is guessed from the file name extension.
@@ -108,6 +177,8 @@ pub fn parse(
 /// :type prefixes: dict[str, str] or None, optional
 /// :param base_iri: the base IRI used in the serialization if the format supports it.
 /// :type base_iri: str or None, optional
+/// :param rdf_version: the RDF version used for the serialization.
+/// :type rdf_version: RdfVersion or None, optional
 /// :return: :py:class:`bytes` with the serialization if the ``output`` parameter is :py:const:`None`, :py:const:`None` if ``output`` is set.
 /// :rtype: bytes or None
 /// :raises ValueError: if the format is not supported.
@@ -123,19 +194,20 @@ pub fn parse(
 /// >>> output.getvalue()
 /// b'@base <http://example.com> .\n@prefix ex: </> .\n<> ex:p "1" .\n'
 #[pyfunction]
-#[pyo3(signature = (input, output = None, format = None, *, prefixes = None, base_iri = None))]
+#[pyo3(signature = (input, output = None, format = None, *, prefixes = None, base_iri = None, rdf_version = None))]
 pub fn serialize<'py>(
     input: &Bound<'py, PyAny>,
     output: Option<PyWritableOutput>,
     format: Option<PyRdfFormat>,
     prefixes: Option<BTreeMap<String, String>>,
     base_iri: Option<&str>,
+    rdf_version: Option<PyRdfVersion>,
     py: Python<'py>,
 ) -> PyResult<Option<Vec<u8>>> {
     PyWritable::do_write(
         |output, file_path| {
             let format = lookup_rdf_format(format, file_path.as_deref())?;
-            let mut serializer = RdfSerializer::from_format(format);
+            let mut serializer = rdf_serializer(format, rdf_version)?;
             if let Some(prefixes) = prefixes {
                 for (prefix_name, prefix_iri) in &prefixes {
                     serializer = serializer
@@ -153,20 +225,24 @@ pub fn serialize<'py>(
                 })?;
             }
             let mut serializer = serializer.for_writer(output);
-            for i in input.try_iter()? {
-                let i = i?;
-                if let Ok(triple) = i.extract::<PyRef<'_, PyTriple>>() {
-                    serializer.serialize_triple(triple.deref().as_ref())
-                } else {
-                    let quad = i.extract::<PyRef<'_, PyQuad>>()?;
-                    let quad = quad.deref().as_ref();
-                    if !quad.graph_name.is_default_graph() && !format.supports_datasets() {
-                        return Err(PyValueError::new_err(format!(
-                            "The {format} format does not support named graphs"
-                        )));
-                    }
-                    serializer.serialize_quad(quad)
-                }?;
+            if let Ok(dataset) = input.extract::<PyRef<'_, PyDataset>>() {
+                serializer.serialize_dataset(dataset.as_dataset())?;
+            } else {
+                for i in input.try_iter()? {
+                    let i = i?;
+                    if let Ok(triple) = i.extract::<PyRef<'_, PyTriple>>() {
+                        serializer.serialize_triple(triple.deref().as_ref())
+                    } else {
+                        let quad = i.extract::<PyRef<'_, PyQuad>>()?;
+                        let quad = quad.deref().as_ref();
+                        if !quad.graph_name.is_default_graph() && !format.supports_datasets() {
+                            return Err(PyValueError::new_err(format!(
+                                "The {format} format does not support named graphs"
+                            )));
+                        }
+                        serializer.serialize_quad(quad)
+                    }?;
+                }
             }
             Ok(serializer.finish()?)
         },
@@ -430,6 +506,97 @@ impl fmt::Display for PyRdfFormat {
     }
 }
 
+/// An RDF language version used to constrain parsing and serialization.
+///
+/// :param value: ``1.1``, ``1.2-basic``, or ``1.2``.
+/// :type value: str
+///
+/// >>> str(RdfVersion.V1_2)
+/// '1.2'
+/// >>> RdfVersion("1.2-basic") == RdfVersion.V1_2_BASIC
+/// True
+#[pyclass(
+    frozen,
+    name = "RdfVersion",
+    module = "pyoxigraph",
+    eq,
+    hash,
+    str,
+    from_py_object
+)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PyRdfVersion {
+    inner: RdfVersion,
+}
+
+#[pymethods]
+impl PyRdfVersion {
+    /// RDF 1.1.
+    #[classattr]
+    const V1_1: Self = Self {
+        inner: RdfVersion::V1_1,
+    };
+
+    /// RDF 1.2 Basic, including directional literals but excluding triple terms.
+    #[classattr]
+    const V1_2_BASIC: Self = Self {
+        inner: RdfVersion::V1_2Basic,
+    };
+
+    /// Full RDF 1.2.
+    #[classattr]
+    const V1_2: Self = Self {
+        inner: RdfVersion::V1_2,
+    };
+
+    #[new]
+    #[pyo3(signature = (value, *))]
+    fn new(value: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: parse_rdf_version(value)?,
+        })
+    }
+
+    /// :return: the standard RDF version label.
+    /// :rtype: str
+    #[getter]
+    fn value(&self) -> &'static str {
+        rdf_version_label(self.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("<RdfVersion {}>", self.value())
+    }
+
+    /// :rtype: typing.Any
+    fn __getnewargs__(&self) -> (&str,) {
+        (self.value(),)
+    }
+
+    /// :rtype: RdfVersion
+    fn __copy__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// :type memo: typing.Any
+    /// :rtype: RdfVersion
+    #[expect(unused_variables)]
+    fn __deepcopy__<'a>(slf: PyRef<'a, Self>, memo: &'_ Bound<'_, PyAny>) -> PyRef<'a, Self> {
+        slf
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("value",)
+    }
+}
+
+impl fmt::Display for PyRdfVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.value())
+    }
+}
+
 pub enum PyReadable {
     String(Cursor<PyBackedStr>),
     Bytes(Cursor<PyBackedBytes>),
@@ -617,6 +784,87 @@ pub fn lookup_rdf_format(format: Option<PyRdfFormat>, path: Option<&Path>) -> Py
     };
     RdfFormat::from_extension(ext)
         .ok_or_else(|| PyValueError::new_err(format!("Not supported RDF format extension: {ext}")))
+}
+
+pub fn rdf_parser(format: RdfFormat, rdf_version: Option<PyRdfVersion>) -> PyResult<RdfParser> {
+    if let Some(rdf_version) = rdf_version {
+        RdfParser::from_media_type(&format!(
+            "{}; version={}",
+            format.media_type(),
+            rdf_version.value()
+        ))
+        .map_err(|error| PyValueError::new_err(error.to_string()))
+    } else {
+        Ok(RdfParser::from_format(format))
+    }
+}
+
+pub fn rdf_serializer(
+    format: RdfFormat,
+    rdf_version: Option<PyRdfVersion>,
+) -> PyResult<RdfSerializer> {
+    if let Some(rdf_version) = rdf_version {
+        RdfSerializer::from_media_type(&format!(
+            "{}; version={}",
+            format.media_type(),
+            rdf_version.value()
+        ))
+        .map_err(|error| PyValueError::new_err(error.to_string()))
+    } else {
+        Ok(RdfSerializer::from_format(format))
+    }
+}
+
+pub fn query_results_parser(
+    format: oxigraph::sparql::results::QueryResultsFormat,
+    rdf_version: Option<PyRdfVersion>,
+) -> PyResult<oxigraph::sparql::results::QueryResultsParser> {
+    if let Some(rdf_version) = rdf_version {
+        oxigraph::sparql::results::QueryResultsParser::from_media_type(&format!(
+            "{}; version={}",
+            format.media_type(),
+            rdf_version.value()
+        ))
+        .map_err(|error| PyValueError::new_err(error.to_string()))
+    } else {
+        Ok(oxigraph::sparql::results::QueryResultsParser::from_format(
+            format,
+        ))
+    }
+}
+
+pub fn query_results_serializer(
+    format: oxigraph::sparql::results::QueryResultsFormat,
+    rdf_version: Option<PyRdfVersion>,
+) -> PyResult<oxigraph::sparql::results::QueryResultsSerializer> {
+    let serializer = oxigraph::sparql::results::QueryResultsSerializer::from_format(format);
+    if let Some(rdf_version) = rdf_version {
+        serializer
+            .with_rdf_version(rdf_version.inner)
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    } else {
+        Ok(serializer)
+    }
+}
+
+fn parse_rdf_version(value: &str) -> PyResult<RdfVersion> {
+    match value {
+        "1.1" => Ok(RdfVersion::V1_1),
+        "1.2-basic" => Ok(RdfVersion::V1_2Basic),
+        "1.2" => Ok(RdfVersion::V1_2),
+        _ => Err(PyValueError::new_err(format!(
+            "Unsupported RDF version '{value}'; expected '1.1', '1.2-basic', or '1.2'"
+        ))),
+    }
+}
+
+const fn rdf_version_label(version: RdfVersion) -> &'static str {
+    match version {
+        RdfVersion::V1_1 => "1.1",
+        RdfVersion::V1_2Basic => "1.2-basic",
+        RdfVersion::V1_2 => "1.2",
+        _ => "unknown",
+    }
 }
 
 pub fn map_parse_error(error: RdfParseError, file_path: Option<PathBuf>) -> PyErr {

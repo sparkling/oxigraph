@@ -1,0 +1,15 @@
+{
+  "profileId": "jena-6.1.0-outcome-intersection-2026-07-27-v1",
+  "scopeStatement": "Reviewed, enumerated outcome differential for RDF parsing, dataset topology, and round-trips, SPARQL query and update, SHACL Core and selected SHACL 1.2 additions, finite RDFS, and selected OWL 2 RL rules. This is not a claim of complete Apache Jena, W3C, SHACL, RDFS, or OWL conformance.",
+  "oracle": {
+    "name": "Apache Jena",
+    "version": "6.1.0"
+  },
+  "files": [
+    "rdf.json",
+    "sparql.json",
+    "shacl.json",
+    "rdfs.json",
+    "owl2-rl.json"
+  ]
+}

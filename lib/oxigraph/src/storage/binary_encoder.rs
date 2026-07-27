@@ -975,4 +975,28 @@ mod tests {
             assert_eq!(encoded, buffer.as_slice().read_term().unwrap());
         }
     }
+
+    #[test]
+    fn corrupted_reserved_typed_literals_fail_closed() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::model::vocab::rdf;
+
+        let store = MemoryStrStore::default();
+        for datatype in [
+            rdf::LANG_STRING.as_str(),
+            #[cfg(feature = "rdf-12")]
+            rdf::DIR_LANG_STRING.as_str(),
+        ] {
+            let datatype_id = StrHash::new(datatype);
+            store.insert_str(&datatype_id, OxString::new_owned(datatype));
+            let encoded = EncodedTerm::SmallTypedLiteral {
+                value: SmallString::from_utf8(b"foo")?,
+                datatype_id,
+            };
+            assert!(matches!(
+                store.decode_term(&encoded),
+                Err(StorageError::Corruption(_))
+            ));
+        }
+        Ok(())
+    }
 }

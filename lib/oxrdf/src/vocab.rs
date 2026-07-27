@@ -10,6 +10,13 @@ pub mod rdf {
     /// The class of unordered containers.
     pub const BAG: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#Bag");
+    /// Legacy JSON-LD class used to encode directional strings as compound values.
+    pub const COMPOUND_LITERAL: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#CompoundLiteral",
+    );
+    /// Legacy JSON-LD property for the base-direction component of a compound literal.
+    pub const DIRECTION: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#direction");
     /// The class of language-tagged string literal values with a base direction.
     #[cfg(feature = "rdf-12")]
     pub const DIR_LANG_STRING: NamedNode =
@@ -24,6 +31,10 @@ pub mod rdf {
     #[cfg(feature = "rdf-12")]
     pub const JSON: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON");
+    /// Legacy JSON-LD property for the language component of a compound literal.
+    pub const LANGUAGE: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#language");
+    /// The class of language-tagged string literal values.
     pub const LANG_STRING: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#langString");
     /// The class of RDF lists.
@@ -38,11 +49,33 @@ pub mod rdf {
     /// The predicate of the subject RDF statement.
     pub const PREDICATE: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate");
+    /// Deprecated datatype retained for compatibility with RIF and OWL 2.
+    pub const PLAIN_LITERAL: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#PlainLiteral");
     /// The class of RDF properties.
     pub const PROPERTY: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property");
-    /// Associate a resource (reifier) with a triple (proposition).
+    /// The class used by RDF 1.2 Interoperability's basic proposition encoding.
     #[cfg(feature = "rdf-12")]
+    pub const PROPOSITION_FORM: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#PropositionForm",
+    );
+    /// Object component of an RDF 1.2 basic proposition encoding.
+    #[cfg(feature = "rdf-12")]
+    pub const PROPOSITION_FORM_OBJECT: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#propositionFormObject",
+    );
+    /// Predicate component of an RDF 1.2 basic proposition encoding.
+    #[cfg(feature = "rdf-12")]
+    pub const PROPOSITION_FORM_PREDICATE: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#propositionFormPredicate",
+    );
+    /// Subject component of an RDF 1.2 basic proposition encoding.
+    #[cfg(feature = "rdf-12")]
+    pub const PROPOSITION_FORM_SUBJECT: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#propositionFormSubject",
+    );
+    /// Associate a resource (reifier) with a triple (proposition).
     pub const REIFIES: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies");
     /// The rest of the subject RDF list after the first item.
@@ -63,6 +96,21 @@ pub mod rdf {
     /// Idiomatic property used for structured values.
     pub const VALUE: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
+    /// RDF 1.0 version vocabulary term.
+    pub const VERSION_1_0: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#version-1.0");
+    /// RDF 1.1 version vocabulary term.
+    pub const VERSION_1_1: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#version-1.1");
+    /// RDF 1.2 version vocabulary term.
+    #[cfg(feature = "rdf-12")]
+    pub const VERSION_1_2: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#version-1.2");
+    /// RDF 1.2 Basic version vocabulary term.
+    #[cfg(feature = "rdf-12")]
+    pub const VERSION_1_2_BASIC: NamedNode = NamedNode::new_const_unchecked(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#version-1.2-basic",
+    );
     /// The class of XML literal values.
     pub const XML_LITERAL: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral");
@@ -103,6 +151,9 @@ pub mod rdfs {
     /// A member of the subject resource.
     pub const MEMBER: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/2000/01/rdf-schema#member");
+    /// The class of propositions denoted by RDF triples and triple terms.
+    pub const PROPOSITION: NamedNode =
+        NamedNode::new_const_unchecked("http://www.w3.org/2000/01/rdf-schema#Proposition");
     /// A range of the subject property.
     pub const RANGE: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/2000/01/rdf-schema#range");
@@ -250,4 +301,51 @@ pub mod geosparql {
     /// Geospatial datatype like `"Point({longitude} {latitude})"^^geo:wktLiteral`
     pub const WKT_LITERAL: NamedNode =
         NamedNode::new_const_unchecked("http://www.opengis.net/ont/geosparql#wktLiteral");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{rdf, rdfs};
+
+    #[test]
+    fn current_rdf_schema_registry_terms_have_exact_iris() {
+        let rdf_terms = [
+            (&rdf::COMPOUND_LITERAL, "CompoundLiteral"),
+            (&rdf::DIRECTION, "direction"),
+            (&rdf::LANGUAGE, "language"),
+            (&rdf::PLAIN_LITERAL, "PlainLiteral"),
+            (&rdf::REIFIES, "reifies"),
+            (&rdf::VERSION_1_0, "version-1.0"),
+            (&rdf::VERSION_1_1, "version-1.1"),
+        ];
+        for (term, local_name) in rdf_terms {
+            assert_eq!(
+                term.as_str(),
+                format!("http://www.w3.org/1999/02/22-rdf-syntax-ns#{local_name}")
+            );
+        }
+        assert_eq!(
+            rdfs::PROPOSITION.as_str(),
+            "http://www.w3.org/2000/01/rdf-schema#Proposition"
+        );
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn current_rdf12_interoperability_registry_terms_have_exact_iris() {
+        let terms = [
+            (&rdf::PROPOSITION_FORM, "PropositionForm"),
+            (&rdf::PROPOSITION_FORM_OBJECT, "propositionFormObject"),
+            (&rdf::PROPOSITION_FORM_PREDICATE, "propositionFormPredicate"),
+            (&rdf::PROPOSITION_FORM_SUBJECT, "propositionFormSubject"),
+            (&rdf::VERSION_1_2, "version-1.2"),
+            (&rdf::VERSION_1_2_BASIC, "version-1.2-basic"),
+        ];
+        for (term, local_name) in terms {
+            assert_eq!(
+                term.as_str(),
+                format!("http://www.w3.org/1999/02/22-rdf-syntax-ns#{local_name}")
+            );
+        }
+    }
 }

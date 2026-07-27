@@ -15,6 +15,13 @@
     :results_xml_ignored_keys
     :results_json_typed_literal
     :late_head
+    :results_json_missing_head
+    :results_json_mixed_result_kinds
+    :results_json_duplicate_binding
+    :results_json_trailing_data
+    :results_xml_truncated
+    :results_xml_link_content
+    :results_xml_relative_link
     ) .
 
 :results_json_duplicated_variables rdf:type ox:NegativeJsonResultsSyntaxTest ;
@@ -30,11 +37,11 @@
     mf:action <duplicated_variables.tsv> .
 
 :results_json_ignored_keys rdf:type ox:PositiveJsonResultsSyntaxTest ;
-    mf:name "Ignore unknown keys in objects" ;
+    mf:name "Ignore extension keys at the top level" ;
     mf:action <ignored_keys.srj> .
 
-:results_xml_ignored_keys rdf:type ox:PositiveXmlResultsSyntaxTest ;
-    mf:name "Ignore unknown attributes on tags" ;
+:results_xml_ignored_keys rdf:type ox:NegativeXmlResultsSyntaxTest ;
+    mf:name "Reject unknown attributes on structural elements" ;
     mf:action <ignored_keys.srx> .
 
 :results_json_typed_literal rdf:type ox:PositiveJsonResultsSyntaxTest ;
@@ -46,3 +53,31 @@
     mf:name "head after the list of results" ;
     mf:action <late_head.srj> ;
     mf:result <late_head_expected.srj> .
+
+:results_json_missing_head rdf:type ox:NegativeJsonResultsSyntaxTest ;
+    mf:name "The JSON head member is required" ;
+    mf:action <missing_head.srj> .
+
+:results_json_mixed_result_kinds rdf:type ox:NegativeJsonResultsSyntaxTest ;
+    mf:name "JSON results contain exactly one of results and boolean" ;
+    mf:action <mixed_result_kinds.srj> .
+
+:results_json_duplicate_binding rdf:type ox:NegativeJsonResultsSyntaxTest ;
+    mf:name "Duplicate variable bindings in a JSON solution are rejected" ;
+    mf:action <duplicate_binding.srj> .
+
+:results_json_trailing_data rdf:type ox:NegativeJsonResultsSyntaxTest ;
+    mf:name "Trailing data after a JSON results document is rejected" ;
+    mf:action <trailing_data.srj> .
+
+:results_xml_truncated rdf:type ox:NegativeXmlResultsSyntaxTest ;
+    mf:name "Truncated XML results are rejected" ;
+    mf:action <truncated_results.srx> .
+
+:results_xml_link_content rdf:type ox:NegativeXmlResultsSyntaxTest ;
+    mf:name "XML link elements must be empty" ;
+    mf:action <link_content.srx> .
+
+:results_xml_relative_link rdf:type ox:PositiveXmlResultsSyntaxTest ;
+    mf:name "XML link href accepts an IRI reference" ;
+    mf:action <relative_link.srx> .

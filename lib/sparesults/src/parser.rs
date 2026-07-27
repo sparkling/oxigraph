@@ -1,3 +1,6 @@
+#[cfg(feature = "async-tokio")]
+use crate::charset::TokioAsyncCharsetReader;
+use crate::charset::{CharsetReader, validate_slice};
 use crate::csv::{
     ReaderTsvQueryResultsParserOutput, ReaderTsvSolutionsParser, SliceTsvQueryResultsParserOutput,
     SliceTsvSolutionsParser,
@@ -14,6 +17,9 @@ use crate::json::{
 use crate::json::{
     TokioAsyncReaderJsonQueryResultsParserOutput, TokioAsyncReaderJsonSolutionsParser,
 };
+use crate::media_type::{
+    QueryResultsCharset, QueryResultsMediaType, QueryResultsMediaTypeParseError,
+};
 use crate::solution::QuerySolution;
 use crate::xml::{
     ReaderXmlQueryResultsParserOutput, ReaderXmlSolutionsParser, SliceXmlQueryResultsParserOutput,
@@ -21,7 +27,10 @@ use crate::xml::{
 };
 #[cfg(feature = "async-tokio")]
 use crate::xml::{TokioAsyncReaderXmlQueryResultsParserOutput, TokioAsyncReaderXmlSolutionsParser};
-use oxrdf::Variable;
+#[cfg(feature = "sparql-12")]
+use oxrdf::NamedOrBlankNode;
+use oxrdf::{BlankNode, RdfVersion, Term, Variable};
+use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
 #[cfg(feature = "async-tokio")]
@@ -41,7 +50,7 @@ use tokio::io::AsyncRead;
 ///
 /// let json_parser = QueryResultsParser::from_format(QueryResultsFormat::Json);
 /// // boolean
-/// if let ReaderQueryResultsParserOutput::Boolean(v) = json_parser.clone().for_reader(br#"{"boolean":true}"#.as_slice())? {
+/// if let ReaderQueryResultsParserOutput::Boolean(v) = json_parser.clone().for_reader(br#"{"head":{},"boolean":true}"#.as_slice())? {
 ///     assert_eq!(v, true);
 /// }
 /// // solutions
@@ -57,13 +66,47 @@ use tokio::io::AsyncRead;
 #[derive(Clone)]
 pub struct QueryResultsParser {
     format: QueryResultsFormat,
+    rdf_version: Option<RdfVersion>,
+    charset: Option<QueryResultsCharset>,
 }
 
 impl QueryResultsParser {
+    /// Builds a parser configured from a SPARQL results media type.
+    ///
+    /// If a `version` parameter is present, it takes precedence over an inline
+    /// JSON or XML version declaration.
+    pub fn from_media_type(media_type: &str) -> Result<Self, QueryResultsMediaTypeParseError> {
+        let descriptor = QueryResultsMediaType::parse(media_type)?;
+        Ok(Self::from_media_type_descriptor(&descriptor))
+    }
+
+    /// Builds a parser from a parsed SPARQL results media type descriptor.
+    pub fn from_media_type_descriptor(descriptor: &QueryResultsMediaType) -> Self {
+        Self {
+            format: descriptor.format(),
+            rdf_version: descriptor.version(),
+            charset: descriptor.charset(),
+        }
+    }
+
     /// Builds a parser for the given format.
     #[inline]
     pub fn from_format(format: QueryResultsFormat) -> Self {
-        Self { format }
+        Self {
+            format,
+            rdf_version: None,
+            charset: None,
+        }
+    }
+
+    /// Returns the externally configured SPARQL results version, if any.
+    pub const fn rdf_version(&self) -> Option<RdfVersion> {
+        self.rdf_version
+    }
+
+    /// Returns the externally declared character encoding, if any.
+    pub const fn charset(&self) -> Option<QueryResultsCharset> {
+        self.charset
     }
 
     /// Reads a result file from a [`Read`] implementation.
@@ -96,28 +139,38 @@ impl QueryResultsParser {
         reader: R,
     ) -> Result<ReaderQueryResultsParserOutput<R>, QueryResultsParseError> {
         Ok(match self.format {
-            QueryResultsFormat::Xml => match ReaderXmlQueryResultsParserOutput::read(reader)? {
+            QueryResultsFormat::Xml => match ReaderXmlQueryResultsParserOutput::read(
+                CharsetReader::new(reader, self.charset),
+                self.rdf_version,
+            )? {
                 ReaderXmlQueryResultsParserOutput::Boolean(r) => ReaderQueryResultsParserOutput::Boolean(r),
                 ReaderXmlQueryResultsParserOutput::Solutions {
                     solutions,
                     variables,
                 } => ReaderQueryResultsParserOutput::Solutions(ReaderSolutionsParser {
                     variables: variables.into(),
-                    solutions: ReaderSolutionsParserKind::Xml(solutions),
+                    solutions: ReaderSolutionsParserKind::Xml(Box::new(solutions)),
+                    blank_nodes: BlankNodeScope::default(),
                 }),
             },
-            QueryResultsFormat::Json => match ReaderJsonQueryResultsParserOutput::read(reader)? {
+            QueryResultsFormat::Json => match ReaderJsonQueryResultsParserOutput::read(
+                CharsetReader::new(reader, self.charset),
+                self.rdf_version,
+            )? {
                 ReaderJsonQueryResultsParserOutput::Boolean(r) => ReaderQueryResultsParserOutput::Boolean(r),
                 ReaderJsonQueryResultsParserOutput::Solutions {
                     solutions,
                     variables,
                 } => ReaderQueryResultsParserOutput::Solutions(ReaderSolutionsParser {
                     variables: variables.into(),
-                    solutions: ReaderSolutionsParserKind::Json(solutions),
+                    solutions: ReaderSolutionsParserKind::Json(Box::new(solutions)),
+                    blank_nodes: BlankNodeScope::default(),
                 }),
             },
             QueryResultsFormat::Csv => return Err(QueryResultsSyntaxError::msg("CSV SPARQL results syntax is lossy and can't be parsed to a proper RDF representation").into()),
-            QueryResultsFormat::Tsv => match ReaderTsvQueryResultsParserOutput::read(reader)? {
+            QueryResultsFormat::Tsv => match ReaderTsvQueryResultsParserOutput::read(
+                CharsetReader::new(reader, self.charset),
+            )? {
                 ReaderTsvQueryResultsParserOutput::Boolean(r) => ReaderQueryResultsParserOutput::Boolean(r),
                 ReaderTsvQueryResultsParserOutput::Solutions {
                     solutions,
@@ -125,6 +178,7 @@ impl QueryResultsParser {
                 } => ReaderQueryResultsParserOutput::Solutions(ReaderSolutionsParser {
                     variables: variables.into(),
                     solutions: ReaderSolutionsParserKind::Tsv(solutions),
+                    blank_nodes: BlankNodeScope::default(),
                 }),
             },
         })
@@ -164,28 +218,30 @@ impl QueryResultsParser {
         reader: R,
     ) -> Result<TokioAsyncReaderQueryResultsParserOutput<R>, QueryResultsParseError> {
         Ok(match self.format {
-            QueryResultsFormat::Xml => match TokioAsyncReaderXmlQueryResultsParserOutput::read(reader).await? {
+            QueryResultsFormat::Xml => match TokioAsyncReaderXmlQueryResultsParserOutput::read(TokioAsyncCharsetReader::new(reader, self.charset), self.rdf_version).await? {
                 TokioAsyncReaderXmlQueryResultsParserOutput::Boolean(r) => TokioAsyncReaderQueryResultsParserOutput::Boolean(r),
                 TokioAsyncReaderXmlQueryResultsParserOutput::Solutions {
                     solutions,
                     variables,
                 } => TokioAsyncReaderQueryResultsParserOutput::Solutions(TokioAsyncReaderSolutionsParser {
                     variables: variables.into(),
-                    solutions: TokioAsyncReaderSolutionsParserKind::Xml(solutions),
+                    solutions: TokioAsyncReaderSolutionsParserKind::Xml(Box::new(solutions)),
+                    blank_nodes: BlankNodeScope::default(),
                 }),
             },
-            QueryResultsFormat::Json => match TokioAsyncReaderJsonQueryResultsParserOutput::read(reader).await? {
+            QueryResultsFormat::Json => match TokioAsyncReaderJsonQueryResultsParserOutput::read(TokioAsyncCharsetReader::new(reader, self.charset), self.rdf_version).await? {
                 TokioAsyncReaderJsonQueryResultsParserOutput::Boolean(r) => TokioAsyncReaderQueryResultsParserOutput::Boolean(r),
                 TokioAsyncReaderJsonQueryResultsParserOutput::Solutions {
                     solutions,
                     variables,
                 } => TokioAsyncReaderQueryResultsParserOutput::Solutions(TokioAsyncReaderSolutionsParser {
                     variables: variables.into(),
-                    solutions: TokioAsyncReaderSolutionsParserKind::Json(solutions),
+                    solutions: TokioAsyncReaderSolutionsParserKind::Json(Box::new(solutions)),
+                    blank_nodes: BlankNodeScope::default(),
                 }),
             },
             QueryResultsFormat::Csv => return Err(QueryResultsSyntaxError::msg("CSV SPARQL results syntax is lossy and can't be parsed to a proper RDF representation").into()),
-            QueryResultsFormat::Tsv => match TokioAsyncReaderTsvQueryResultsParserOutput::read(reader).await? {
+            QueryResultsFormat::Tsv => match TokioAsyncReaderTsvQueryResultsParserOutput::read(TokioAsyncCharsetReader::new(reader, self.charset)).await? {
                 TokioAsyncReaderTsvQueryResultsParserOutput::Boolean(r) => TokioAsyncReaderQueryResultsParserOutput::Boolean(r),
                 TokioAsyncReaderTsvQueryResultsParserOutput::Solutions {
                     solutions,
@@ -193,6 +249,7 @@ impl QueryResultsParser {
                 } => TokioAsyncReaderQueryResultsParserOutput::Solutions(TokioAsyncReaderSolutionsParser {
                     variables: variables.into(),
                     solutions: TokioAsyncReaderSolutionsParserKind::Tsv(solutions),
+                    blank_nodes: BlankNodeScope::default(),
                 }),
             },
         })
@@ -227,9 +284,11 @@ impl QueryResultsParser {
         self,
         slice: &(impl AsRef<[u8]> + ?Sized),
     ) -> Result<SliceQueryResultsParserOutput<'_>, QueryResultsSyntaxError> {
+        let slice = slice.as_ref();
+        validate_slice(slice, self.charset)?;
         Ok(match self.format {
             QueryResultsFormat::Xml => {
-                match SliceXmlQueryResultsParserOutput::read(slice.as_ref())? {
+                match SliceXmlQueryResultsParserOutput::read(slice, self.rdf_version)? {
                     SliceXmlQueryResultsParserOutput::Boolean(r) => {
                         SliceQueryResultsParserOutput::Boolean(r)
                     }
@@ -238,12 +297,13 @@ impl QueryResultsParser {
                         variables,
                     } => SliceQueryResultsParserOutput::Solutions(SliceSolutionsParser {
                         variables: variables.into(),
-                        solutions: SliceSolutionsParserKind::Xml(solutions),
+                        solutions: SliceSolutionsParserKind::Xml(Box::new(solutions)),
+                        blank_nodes: BlankNodeScope::default(),
                     }),
                 }
             }
             QueryResultsFormat::Json => {
-                match SliceJsonQueryResultsParserOutput::read(slice.as_ref())? {
+                match SliceJsonQueryResultsParserOutput::read(slice, self.rdf_version)? {
                     SliceJsonQueryResultsParserOutput::Boolean(r) => {
                         SliceQueryResultsParserOutput::Boolean(r)
                     }
@@ -252,7 +312,8 @@ impl QueryResultsParser {
                         variables,
                     } => SliceQueryResultsParserOutput::Solutions(SliceSolutionsParser {
                         variables: variables.into(),
-                        solutions: SliceSolutionsParserKind::Json(solutions),
+                        solutions: SliceSolutionsParserKind::Json(Box::new(solutions)),
+                        blank_nodes: BlankNodeScope::default(),
                     }),
                 }
             }
@@ -261,20 +322,19 @@ impl QueryResultsParser {
                     "CSV SPARQL results syntax is lossy and can't be parsed to a proper RDF representation",
                 ));
             }
-            QueryResultsFormat::Tsv => {
-                match SliceTsvQueryResultsParserOutput::read(slice.as_ref())? {
-                    SliceTsvQueryResultsParserOutput::Boolean(r) => {
-                        SliceQueryResultsParserOutput::Boolean(r)
-                    }
-                    SliceTsvQueryResultsParserOutput::Solutions {
-                        solutions,
-                        variables,
-                    } => SliceQueryResultsParserOutput::Solutions(SliceSolutionsParser {
-                        variables: variables.into(),
-                        solutions: SliceSolutionsParserKind::Tsv(solutions),
-                    }),
+            QueryResultsFormat::Tsv => match SliceTsvQueryResultsParserOutput::read(slice)? {
+                SliceTsvQueryResultsParserOutput::Boolean(r) => {
+                    SliceQueryResultsParserOutput::Boolean(r)
                 }
-            }
+                SliceTsvQueryResultsParserOutput::Solutions {
+                    solutions,
+                    variables,
+                } => SliceQueryResultsParserOutput::Solutions(SliceSolutionsParser {
+                    variables: variables.into(),
+                    solutions: SliceSolutionsParserKind::Tsv(solutions),
+                    blank_nodes: BlankNodeScope::default(),
+                }),
+            },
         })
     }
 }
@@ -320,7 +380,6 @@ impl From<QueryResultsFormat> for QueryResultsParser {
 /// }
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
-#[expect(clippy::large_enum_variant)]
 pub enum ReaderQueryResultsParserOutput<R: Read> {
     Solutions(ReaderSolutionsParser<R>),
     Boolean(bool),
@@ -347,12 +406,13 @@ pub enum ReaderQueryResultsParserOutput<R: Read> {
 pub struct ReaderSolutionsParser<R: Read> {
     variables: Arc<[Variable]>,
     solutions: ReaderSolutionsParserKind<R>,
+    blank_nodes: BlankNodeScope,
 }
 
 enum ReaderSolutionsParserKind<R: Read> {
-    Xml(ReaderXmlSolutionsParser<R>),
-    Json(ReaderJsonSolutionsParser<R>),
-    Tsv(ReaderTsvSolutionsParser<R>),
+    Xml(Box<ReaderXmlSolutionsParser<CharsetReader<R>>>),
+    Json(Box<ReaderJsonSolutionsParser<CharsetReader<R>>>),
+    Tsv(ReaderTsvSolutionsParser<CharsetReader<R>>),
 }
 
 impl<R: Read> ReaderSolutionsParser<R> {
@@ -391,7 +451,13 @@ impl<R: Read> Iterator for ReaderSolutionsParser<R> {
                 ReaderSolutionsParserKind::Tsv(reader) => reader.parse_next(),
             }
             .transpose()?
-            .map(|values| (Arc::clone(&self.variables), values).into()),
+            .map(|values| {
+                (
+                    Arc::clone(&self.variables),
+                    self.blank_nodes.scope_values(values),
+                )
+                    .into()
+            }),
         )
     }
 }
@@ -440,7 +506,6 @@ impl<R: Read> Iterator for ReaderSolutionsParser<R> {
 /// # }
 /// ```
 #[cfg(feature = "async-tokio")]
-#[expect(clippy::large_enum_variant)]
 pub enum TokioAsyncReaderQueryResultsParserOutput<R: AsyncRead + Unpin> {
     Solutions(TokioAsyncReaderSolutionsParser<R>),
     Boolean(bool),
@@ -471,13 +536,14 @@ pub enum TokioAsyncReaderQueryResultsParserOutput<R: AsyncRead + Unpin> {
 pub struct TokioAsyncReaderSolutionsParser<R: AsyncRead + Unpin> {
     variables: Arc<[Variable]>,
     solutions: TokioAsyncReaderSolutionsParserKind<R>,
+    blank_nodes: BlankNodeScope,
 }
 
 #[cfg(feature = "async-tokio")]
 enum TokioAsyncReaderSolutionsParserKind<R: AsyncRead + Unpin> {
-    Json(TokioAsyncReaderJsonSolutionsParser<R>),
-    Xml(TokioAsyncReaderXmlSolutionsParser<R>),
-    Tsv(TokioAsyncReaderTsvSolutionsParser<R>),
+    Json(Box<TokioAsyncReaderJsonSolutionsParser<TokioAsyncCharsetReader<R>>>),
+    Xml(Box<TokioAsyncReaderXmlSolutionsParser<TokioAsyncCharsetReader<R>>>),
+    Tsv(TokioAsyncReaderTsvSolutionsParser<TokioAsyncCharsetReader<R>>),
 }
 
 #[cfg(feature = "async-tokio")]
@@ -520,7 +586,13 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderSolutionsParser<R> {
                 TokioAsyncReaderSolutionsParserKind::Tsv(reader) => reader.parse_next().await,
             }
             .transpose()?
-            .map(|values| (Arc::clone(&self.variables), values).into()),
+            .map(|values| {
+                (
+                    Arc::clone(&self.variables),
+                    self.blank_nodes.scope_values(values),
+                )
+                    .into()
+            }),
         )
     }
 }
@@ -560,7 +632,6 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderSolutionsParser<R> {
 /// }
 /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
 /// ```
-#[expect(clippy::large_enum_variant)]
 pub enum SliceQueryResultsParserOutput<'a> {
     Solutions(SliceSolutionsParser<'a>),
     Boolean(bool),
@@ -587,11 +658,12 @@ pub enum SliceQueryResultsParserOutput<'a> {
 pub struct SliceSolutionsParser<'a> {
     variables: Arc<[Variable]>,
     solutions: SliceSolutionsParserKind<'a>,
+    blank_nodes: BlankNodeScope,
 }
 
 enum SliceSolutionsParserKind<'a> {
-    Xml(SliceXmlSolutionsParser<'a>),
-    Json(SliceJsonSolutionsParser<'a>),
+    Xml(Box<SliceXmlSolutionsParser<'a>>),
+    Json(Box<SliceJsonSolutionsParser<'a>>),
     Tsv(SliceTsvSolutionsParser<'a>),
 }
 
@@ -631,7 +703,61 @@ impl Iterator for SliceSolutionsParser<'_> {
                 SliceSolutionsParserKind::Tsv(reader) => reader.parse_next(),
             }
             .transpose()?
-            .map(|values| (Arc::clone(&self.variables), values).into()),
+            .map(|values| {
+                (
+                    Arc::clone(&self.variables),
+                    self.blank_nodes.scope_values(values),
+                )
+                    .into()
+            }),
         )
+    }
+}
+
+#[derive(Default)]
+struct BlankNodeScope {
+    mapping: HashMap<BlankNode, BlankNode>,
+}
+
+impl BlankNodeScope {
+    fn scope_values(&mut self, values: Vec<Option<Term>>) -> Vec<Option<Term>> {
+        values
+            .into_iter()
+            .map(|value| value.map(|value| self.scope_term(value)))
+            .collect()
+    }
+
+    fn scope_term(&mut self, term: Term) -> Term {
+        match term {
+            Term::NamedNode(node) => node.into(),
+            Term::BlankNode(node) => self.scope_blank_node(node).into(),
+            Term::Literal(literal) => literal.into(),
+            #[cfg(feature = "sparql-12")]
+            Term::Triple(triple) => {
+                let oxrdf::Triple {
+                    subject,
+                    predicate,
+                    object,
+                } = *triple;
+                oxrdf::Triple::new(
+                    self.scope_named_or_blank_node(subject),
+                    predicate,
+                    self.scope_term(object),
+                )
+                .into()
+            }
+        }
+    }
+
+    fn scope_blank_node(&mut self, node: BlankNode) -> BlankNode {
+        self.mapping.entry(node).or_default().clone()
+    }
+
+    #[cfg(feature = "sparql-12")]
+    fn scope_named_or_blank_node(&mut self, node: NamedOrBlankNode) -> NamedOrBlankNode {
+        match node {
+            NamedOrBlankNode::NamedNode(node) => node.into(),
+            NamedOrBlankNode::BlankNode(node) => self.scope_blank_node(node).into(),
+        }
     }
 }

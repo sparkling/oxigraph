@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "family": "sparql-1.2",
+  "reviewBoundary": "extraction-topology-only; no implementation or conformance disposition",
+  "candidateDisposition": "mapped-unassessed",
+  "documents": [
+    {
+      "documentId": "sparql12-new",
+      "family": "sparql-1.2",
+      "sourceSha256": "44f2c3052b8a2f360e44fbc684ae167ae010a3851b7137e57d78aabc46119dae",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    },
+    {
+      "documentId": "sparql12-concepts",
+      "family": "sparql-1.2",
+      "sourceSha256": "e18d0a02c0f3a995633da49c25d743668215a8ad22f5d0a43019693ea3c0dfde",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    },
+    {
+      "documentId": "sparql12-query",
+      "family": "sparql-1.2",
+      "sourceSha256": "85cf4270bdc0cc3191ed84803fa1a91fe258776448ea0c82fc91685c577fb4c1",
+      "candidateCount": 209,
+      "candidateSetSha256": "a9cf98a5aa9a729f71041fc93acbcfa7e1b919bb7fbfba28aed98f32e20fc6ac",
+      "sectionRefs": [
+        "OptionalMatching",
+        "aggregateRestrictions",
+        "conformance",
+        "expressions",
+        "func-bound",
+        "func-iri",
+        "func-md5",
+        "func-sha1",
+        "func-sha256",
+        "func-sha384",
+        "func-sha512",
+        "func-strlang",
+        "func-strlangdir",
+        "sec-escapes",
+        "sparqlGrammar",
+        "syntaxVersionAnnouncement"
+      ]
+    },
+    {
+      "documentId": "sparql12-update",
+      "family": "sparql-1.2",
+      "sourceSha256": "60c918dea9e3b9b2adca1ea4b486baf61c72e083a219ee45641052a1f6ebc207",
+      "candidateCount": 26,
+      "candidateSetSha256": "9a5314233f00addfe9a7962fc167a36a08c988d7aa495536de0ece45cac68a85",
+      "sectionRefs": [
+        "add",
+        "clear",
+        "conformance",
+        "copy",
+        "create",
+        "deleteInsert",
+        "drop",
+        "entailmentConsistency",
+        "graphStore",
+        "graphStoreQueryServices",
+        "graphUpdate",
+        "insertData",
+        "load",
+        "move",
+        "terminology",
+        "updateLanguage",
+        "updateServices"
+      ]
+    },
+    {
+      "documentId": "sparql12-service-description",
+      "family": "sparql-1.2",
+      "sourceSha256": "26dc033a0c005bc950ee1190dc0bdf0e79eec7e1ed750587fd1998cba90555e1",
+      "candidateCount": 13,
+      "candidateSetSha256": "a6ed6d4c071c34be89d18795e7923807d28b54c6f91f9f731030d6985e3929b5",
+      "sectionRefs": [
+        "accessing",
+        "conformance",
+        "conformance-0",
+        "sd-Dataset",
+        "sd-EntailmentProfile",
+        "sd-GraphCollection",
+        "sd-emptygraphs",
+        "sd-inputFormat",
+        "sd-namedGraph",
+        "sd-resultFormat",
+        "terminology"
+      ]
+    },
+    {
+      "documentId": "sparql12-federated-query",
+      "family": "sparql-1.2",
+      "sourceSha256": "4e61e7d2779f050136e9b5e09377f745c97a4b3e8ccc8e9449b0db230a473b8e",
+      "candidateCount": 4,
+      "candidateSetSha256": "f5b55911eaccf294eb9bbb15ae93d49d0015aa55b91b27cbebe709f1ceae4821",
+      "sectionRefs": ["conformance", "document", "optionalTwoServices"]
+    },
+    {
+      "documentId": "sparql12-results-json",
+      "family": "sparql-1.2",
+      "sourceSha256": "60c4bb4308353d87654b2b56807530ac79e53eeaeb346d7352480b8f561e568a",
+      "candidateCount": 2,
+      "candidateSetSha256": "413e9eab22ed75e9ed9586182d2edcdc4aa0bb681266e680bd919a7783aa6809",
+      "sectionRefs": ["select-version", "version-announcement"]
+    },
+    {
+      "documentId": "sparql12-results-csv-tsv",
+      "family": "sparql-1.2",
+      "sourceSha256": "805ef9f09baa96ad5c47ab5ffc6d209c550647363e82bc2f7bc523e96f23c5d4",
+      "candidateCount": 13,
+      "candidateSetSha256": "7a34a30449ae188753c1822d79e497a1332501c9b9ee08eab292914b71603693",
+      "sectionRefs": [
+        "conformance",
+        "csv-terms",
+        "general-comments",
+        "introduction",
+        "serializing-results",
+        "tsv",
+        "tsv-table",
+        "tsv-terms"
+      ]
+    },
+    {
+      "documentId": "sparql12-results-xml",
+      "family": "sparql-1.2",
+      "sourceSha256": "f1602d7e859761d5bb52c0661706eb546e3d250c296143c9310875f15a768f21",
+      "candidateCount": 0,
+      "candidateSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sectionRefs": []
+    },
+    {
+      "documentId": "sparql12-entailment",
+      "family": "sparql-1.2",
+      "sourceSha256": "bb193867598649caeb6a8b0cfa33a9c836ae5091af632f5fe7e55f21ceb83e1b",
+      "candidateCount": 9,
+      "candidateSetSha256": "d0eb5d9129afdb024174adac9965b9e01c47581ca30f434861ffce41ffcc66e1",
+      "sectionRefs": [
+        "AppendixMapping",
+        "AppendixProofs",
+        "DEntRegime",
+        "OWLDSEntRegime",
+        "OWLDSLiteralVars",
+        "OWLRDFBSEntRegime",
+        "bgpMatchingExtensions",
+        "conformance",
+        "uncheckedInconsistencies"
+      ]
+    },
+    {
+      "documentId": "sparql12-protocol",
+      "family": "sparql-1.2",
+      "sourceSha256": "2fda8f92ab264c389bf13122443affe1a0261cd4217be80c77f564f27ae76556",
+      "candidateCount": 3,
+      "candidateSetSha256": "a03823af52cff573e9bd0a252158c1c043d38f58e60df5cd3a21c2729359cb42",
+      "sectionRefs": ["conformance", "section-version-announcement"]
+    },
+    {
+      "documentId": "sparql12-graph-store-protocol",
+      "family": "sparql-1.2",
+      "sourceSha256": "4f99e2b7a064eade8d7acbdf31a073d15bf8261f8187c5087c767c6bd23d82e9",
+      "candidateCount": 23,
+      "candidateSetSha256": "38c32445940a24b0b9e0316c216f0f217229e10ae4768a20e0d23caf8385815c",
+      "sectionRefs": [
+        "conformance",
+        "graph-management",
+        "http-delete",
+        "http-get",
+        "http-head",
+        "http-post",
+        "http-put",
+        "indirect-graph-identification",
+        "introduction",
+        "protocol-model",
+        "security-original",
+        "status-codes",
+        "terminology"
+      ]
+    }
+  ]
+}

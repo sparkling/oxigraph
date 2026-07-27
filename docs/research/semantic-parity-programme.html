@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Oxigraph Semantic Parity Programme</title>
+  <style>
+    :root{
+      --ink:#171c28;--muted:#606b7b;--paper:#f4f1ea;--card:#fffdf8;
+      --line:#d8d2c6;--navy:#183153;--teal:#087f78;--lime:#b8d96b;
+      --amber:#e6a83b;--red:#b64242;--blue:#5577c8;--shadow:0 12px 36px #17203316;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{max-width:100%;margin:0;overflow-x:hidden;color:var(--ink);background:
+      radial-gradient(circle at 90% 5%,#b8d96b26,transparent 24rem),
+      radial-gradient(circle at 6% 34%,#5577c818,transparent 28rem),var(--paper);
+      font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    a{color:var(--teal);text-decoration-thickness:1px;text-underline-offset:3px}
+    .shell{width:100%;max-width:1240px;min-width:0;margin:auto;padding:0 28px 80px;overflow-x:hidden}
+    .top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;
+      border-bottom:1px solid var(--line);gap:20px}
+    .brand{font-weight:800;letter-spacing:.04em;text-transform:uppercase;font-size:12px}
+    .brand i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--teal);margin-right:8px}
+    nav{display:flex;gap:18px;flex-wrap:wrap}
+    nav a{color:var(--muted);text-decoration:none;font-size:13px}
+    .hero{padding:68px 0 46px;display:grid;grid-template-columns:1.25fr .75fr;gap:46px;align-items:end}
+    .hero>*,.section-head>*,.grid2>*,.receipt>*,.decision>*,.timeline>*{min-width:0}
+    .eyebrow{font:700 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--teal);
+      letter-spacing:.12em;text-transform:uppercase}
+    h1{font-size:clamp(42px,7vw,82px);line-height:.96;letter-spacing:-.055em;margin:16px 0 24px;max-width:870px}
+    .lede{font-size:20px;line-height:1.45;color:#394456;max-width:760px;margin:0}
+    .hero-note{border-left:3px solid var(--lime);padding:5px 0 5px 22px;color:var(--muted)}
+    .hero-note strong{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:12px 0 60px}
+    .metric{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+    .metric b{font-size:30px;display:block;line-height:1.1}
+    .metric span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+    section{margin:64px 0;scroll-margin-top:20px}
+    .section-head{display:grid;grid-template-columns:160px 1fr;gap:26px;margin-bottom:26px}
+    .section-head h2{font-size:34px;line-height:1.05;letter-spacing:-.035em;margin:0}
+    .section-head p{margin:0;color:var(--muted);max-width:760px}
+    .tag{font:700 11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--teal);
+      letter-spacing:.12em;text-transform:uppercase;padding-top:7px}
+    .decision{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:var(--shadow)}
+    .card h3{font-size:19px;margin:0 0 9px}
+    .card p{margin:0;color:var(--muted)}
+    .card .num{color:var(--teal);font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;margin-bottom:16px}
+    .architecture{max-width:100%;min-width:0;background:var(--navy);color:white;border-radius:24px;padding:28px;box-shadow:var(--shadow)}
+    .architecture-scroll{width:100%;max-width:100%;min-width:0;overflow-x:auto}
+    .architecture svg{width:100%;height:auto;display:block}
+    .architecture .caption{display:flex;justify-content:space-between;gap:20px;color:#c8d4e3;margin-top:18px;font-size:13px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .choice{border-top:4px solid var(--teal)}
+    .choice.alt{border-top-color:var(--line)}
+    .choice ul,.compact{padding-left:18px;margin:14px 0 0}
+    .choice li,.compact li{margin:6px 0}
+    table{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);
+      border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+    .table-wrap{max-width:100%;overflow:auto;border-radius:16px}
+    .table-wrap table{min-width:760px}
+    th,td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;background:#ece8df;color:#4d5868}
+    tr:last-child td{border-bottom:0}
+    .status{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+    .cr{background:#d8eee5;color:#176047}.wd{background:#fff0c9;color:#79520e}
+    .pass{background:#d8eee5;color:#176047}.defer{background:#e9e8ed;color:#5c5c6b}
+    .timeline{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+    .phase{min-height:185px;padding:18px;border:1px solid var(--line);background:var(--card);border-radius:15px}
+    .phase b{font-size:12px;color:var(--teal);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .phase h3{font-size:16px;line-height:1.2;margin:12px 0 8px}
+    .phase p{font-size:13px;color:var(--muted);margin:0}
+    .phase .gate{display:block;margin-top:14px;color:var(--navy);font-weight:700;font-size:12px}
+    .phase.active{border-color:var(--teal);box-shadow:inset 0 4px 0 var(--teal),var(--shadow)}
+    .phase.seed{border-color:var(--amber);box-shadow:inset 0 4px 0 var(--amber),var(--shadow)}
+    .callout{display:grid;grid-template-columns:auto 1fr;gap:18px;background:#e7efe8;border:1px solid #c5d7c8;
+      border-radius:16px;padding:22px}
+    .callout .mark{font-size:28px;line-height:1}
+    .callout h3{margin:0 0 6px}.callout p{margin:0;color:#415348}
+    .risk{border-left:4px solid var(--amber)}
+    .notdoing{border-left:4px solid var(--red)}
+    .receipt{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:#ece8df;padding:2px 5px;border-radius:5px}
+    footer{border-top:1px solid var(--line);padding-top:28px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr;gap:32px}
+    footer h3{color:var(--ink);margin-top:0}
+    footer ul{padding-left:18px}
+    @media(max-width:900px){
+      .hero,.section-head,.grid2,.receipt{grid-template-columns:1fr}
+      .metrics{grid-template-columns:1fr 1fr}.decision{grid-template-columns:1fr}
+      .timeline{grid-template-columns:1fr 1fr}.tag{padding:0}.hero{padding-top:46px}
+      .architecture-scroll svg{width:900px;max-width:none}
+    }
+    @media(max-width:560px){
+      .shell{max-width:100%;padding:0 16px 50px}
+      .top{align-items:flex-start;flex-direction:column}
+      nav{width:100%;gap:9px 14px}
+      h1{font-size:clamp(34px,11vw,46px);overflow-wrap:anywhere}
+      h2,.lede,.hero-note,.card,.phase{overflow-wrap:anywhere}
+      .metrics,.timeline{grid-template-columns:1fr}
+      .architecture{padding:14px}.architecture .caption,footer{grid-template-columns:1fr;display:grid}
+      th,td{padding:10px;font-size:12px}
+    }
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <div class="brand"><i></i>Oxigraph semantic parity</div>
+    <nav aria-label="Report sections">
+      <a href="#decision">Decision</a><a href="#architecture">Architecture</a>
+      <a href="#standards">Standards</a><a href="#plan">Plan</a>
+      <a href="#models">Models</a><a href="#evidence">Evidence</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Research synthesis · 27 July 2026</div>
+      <h1>Jena-compatible first. W3C-complete next.</h1>
+      <p class="lede">Use Apache Jena 6.1.0 as the first RDF/SPARQL/SHACL 1.2
+        compatibility tranche, then close every applicable requirement in
+        reviewed W3C 1.2 publications and pinned editor snapshots.</p>
+    </div>
+    <div class="hero-note"><strong>Recommended programme</strong>
+      Standards registry → Jena 1.2 intersection → W3C-only delta. Datalog D0,
+      D1, and D2, finite RDFS 1.2, and the exact 78-rule OWL 2 RL/RDF profile
+      now run through one evidence path. Native commands establish outcomes;
+      Agentic-QE records them, and Darwin cannot rewrite the semantic oracle.</div>
+  </div>
+
+  <div class="metrics" aria-label="Research metrics">
+    <div class="metric"><b>47</b><span>commands in parity inventory</span></div>
+    <div class="metric"><b>0/358</b><span>mutation survivors / generated</span></div>
+    <div class="metric"><b>519/519</b><span>eligible SHACL cases passed</span></div>
+    <div class="metric"><b>76 · 198</b><span>Jena scenarios · assertions</span></div>
+  </div>
+
+  <section id="decision">
+    <div class="section-head"><div class="tag">01 · Decision</div><div>
+      <h2>Two tranches, one standards authority.</h2>
+      <p>Jena supplies production-shaped differential cases. W3C supplies the
+        terminal semantic contract. Their results stay separate so matching
+        Jena can never hide a newer draft requirement.</p></div></div>
+    <div class="decision">
+      <article class="card"><div class="num">TRANCHE A</div><h3><code>jena-12-compat</code></h3>
+        <p>Match RDF, SPARQL, SHACL, entailment, and OWL 2 RL intersection
+          cases exposed by the pinned Jena release. Jena OWL modes stay
+          test-only.</p></article>
+      <article class="card"><div class="num">TRANCHE B</div><h3>W3C 1.2 family profiles</h3>
+        <p>Close Jena’s gaps against complete RDF, SPARQL, and SHACL document
+          families, requirement ledgers, and approved official tests.</p></article>
+      <article class="card"><div class="num">AUTHORITY</div><h3>W3C wins conflicts</h3>
+        <p>Reviewed W3C snapshots govern release claims; current editor drafts
+          run in a separate edge lane. Jena remains a differential oracle.</p></article>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="section-head"><div class="tag">02 · Architecture</div><div>
+      <h2>One evidence path from graph to receipt.</h2>
+      <p>The base dataset remains immutable during evaluation. Derived facts
+        and SHACL reports are distinct outputs, joined only by an explicit
+        query view or caller-selected materialization.</p></div></div>
+    <div class="architecture">
+      <div class="architecture-scroll" tabindex="0"
+        aria-label="Scrollable semantic parity architecture diagram">
+      <svg viewBox="0 0 1120 420" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">Oxigraph semantic parity architecture</title>
+        <desc id="arch-desc">RDF snapshots feed SHACL and rule compilers, then a
+          Datalog engine produces reports, inference graphs, and receipts.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3"
+            orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#b8d96b"/></marker>
+          <linearGradient id="box" x1="0" x2="1"><stop stop-color="#23456e"/>
+            <stop offset="1" stop-color="#1e3b60"/></linearGradient>
+        </defs>
+        <g fill="url(#box)" stroke="#52759f" stroke-width="2">
+          <rect x="30" y="155" width="190" height="108" rx="18"/>
+          <rect x="310" y="55" width="210" height="105" rx="18"/>
+          <rect x="310" y="258" width="210" height="105" rx="18"/>
+          <rect x="610" y="125" width="215" height="165" rx="18"/>
+          <rect x="910" y="45" width="180" height="92" rx="18"/>
+          <rect x="910" y="164" width="180" height="92" rx="18"/>
+          <rect x="910" y="283" width="180" height="92" rx="18"/>
+        </g>
+        <g stroke="#b8d96b" stroke-width="4" fill="none" marker-end="url(#arrow)">
+          <path d="M220 190 C255 190 265 108 310 108"/>
+          <path d="M220 228 C255 228 265 310 310 310"/>
+          <path d="M520 108 C565 108 565 167 610 167"/>
+          <path d="M520 310 C565 310 565 245 610 245"/>
+          <path d="M825 166 C865 166 870 91 910 91"/>
+          <path d="M825 208 L910 208"/>
+          <path d="M825 248 C865 248 870 329 910 329"/>
+        </g>
+        <g fill="#fff" font-family="system-ui,sans-serif">
+          <text x="125" y="193" text-anchor="middle" font-size="18" font-weight="700">RDF snapshot</text>
+          <text x="125" y="220" text-anchor="middle" font-size="13" fill="#c8d4e3">default + named graphs</text>
+          <text x="415" y="96" text-anchor="middle" font-size="18" font-weight="700">SHACL compiler</text>
+          <text x="415" y="123" text-anchor="middle" font-size="13" fill="#c8d4e3">targets · paths · constraints</text>
+          <text x="415" y="299" text-anchor="middle" font-size="18" font-weight="700">Rule adapters</text>
+          <text x="415" y="326" text-anchor="middle" font-size="13" fill="#c8d4e3">RDFS · OWL RL · SRL</text>
+          <text x="718" y="178" text-anchor="middle" font-size="19" font-weight="700">oxdatalog engine</text>
+          <text x="718" y="210" text-anchor="middle" font-size="13" fill="#c8d4e3">validate → strata → deltas → fixpoint</text>
+          <text x="718" y="235" text-anchor="middle" font-size="13" fill="#c8d4e3">limits · cancellation · provenance</text>
+          <text x="1000" y="82" text-anchor="middle" font-size="17" font-weight="700">SHACL report</text>
+          <text x="1000" y="107" text-anchor="middle" font-size="12" fill="#c8d4e3">canonical graph</text>
+          <text x="1000" y="200" text-anchor="middle" font-size="17" font-weight="700">Inference graph</text>
+          <text x="1000" y="225" text-anchor="middle" font-size="12" fill="#c8d4e3">separate from base</text>
+          <text x="1000" y="319" text-anchor="middle" font-size="17" font-weight="700">Receipt</text>
+          <text x="1000" y="344" text-anchor="middle" font-size="12" fill="#c8d4e3">pins · commands · hashes</text>
+        </g>
+      </svg>
+      </div>
+      <div class="caption"><span>Earliest corruptible phase: rule/shape
+        validation, before evaluation or allocation-heavy work.</span>
+        <span>Integration seam: <code>spareval::QueryableDataset</code>.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><div class="tag">03 · Engine choice</div><div>
+      <h2>Own the rule contract; benchmark the evaluator.</h2>
+      <p>No evaluated Rust crate supplies runtime user rules, RDF integration,
+        safety, provenance, and Oxigraph’s deployment envelope as one package.</p></div></div>
+    <div class="grid2">
+      <article class="card choice"><h3>Recommended</h3><p>Public Oxigraph IR,
+        internal evaluator trait.</p><ul>
+        <li>OxDatalog D0–D2 passes 70/70 native tests: positive recursion,
+          stratified negation, and bounded run-once generation.</li>
+        <li>The complete mutation inventory generated 358 mutants: 278 caught,
+          80 unviable, zero missed, and zero timed out.</li>
+        <li>Oxigraph's <code>rdfs</code> feature always selects the 15-pattern
+          RDF 1.2 finite profile; the separate 14-pattern Basic profile is
+          available only through direct <code>oxrdfs</code> use without
+          <code>rdf-12</code>.</li>
+        <li>Datafrog stays test-only; Jena 6.1.0 differentials pass for Datalog
+          and finite RDFS, while Soufflé 2.5 agrees on the safe D1 path fixture.</li>
+        <li>OWL 2 RL/RDF remains in <code>oxowl</code>: 78 rules
+          (46 Datalog rules, 32 specialized operators) pass 98/98 assertions over 68
+          approved RDF-based cases.</li>
+        <li>SHACL semantics stay in <code>oxshacl</code>; inferred and report
+          graphs remain separate from the immutable base snapshot.</li>
+      </ul></article>
+      <article class="card choice alt"><h3>Not selected directly</h3><p>Each is
+        useful, but incomplete for this boundary.</p><ul>
+        <li>Ascent/Crepe: primarily compile-time macro programs.</li>
+        <li>Soufflé: mature, but a C++ production dependency.</li>
+        <li>Cozo: overlaps Oxigraph storage and query responsibilities.</li>
+      </ul></article>
+    </div>
+  </section>
+
+  <section id="standards">
+    <div class="section-head"><div class="tag">04 · Standards</div><div>
+      <h2>Follow the edge; claim the pin.</h2>
+      <p>A daily lane detects current editor-draft drift. Each reviewed receipt
+        still binds exact specifications, source commits, manifests, approval
+        policy, feature flags, and commands.</p></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Surface</th><th>Observed status</th><th>Programme role</th><th>Gate</th></tr></thead>
+      <tbody>
+        <tr><td>RDF 1.2 · 11 documents</td><td><span class="status wd">2 CR · 6 WD · 3 Note drafts</span></td><td>575/575 pinned RDF 1.2 cases pass; RDFS / RDF 1.2 Semantics is 77/77</td><td><span class="status defer">family claim withheld</span></td></tr>
+        <tr><td>SPARQL 1.2 · 12 documents</td><td><span class="status wd">10 WD · 1 Note draft · 1 editor-only</span></td><td>269/269 pinned language cases pass; protocol, graph store, federation, entailment, service-description, and complete result-format obligations remain open</td><td><span class="status defer">family claim withheld</span></td></tr>
+        <tr><td>SHACL 1.2 · 8 documents</td><td><span class="status wd">6 WD · 2 editor-only</span></td><td>521 cases discovered and 519/519 eligible cases pass with two invalid upstream exclusions; Rules are supplemental and SHACL-C fixtures informative</td><td><span class="status defer">family claim withheld</span></td></tr>
+        <tr><td>OWL 2 RL/RDF</td><td><span class="status cr">W3C Recommendation profile</span></td><td>98/98 assertions over 68 RDF-based cases through exactly 78 rules</td><td>bounded <code>oxowl</code> profile</td></tr>
+        <tr><td>RDF Dataset Canonicalization 1.0</td><td><span class="status cr">W3C Recommendation</span></td><td>86/86 official cases pass with bounded work-factor protection</td><td><code>rdfc-10</code> receipt</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="plan">
+    <div class="section-head"><div class="tag">05 · Delivery</div><div>
+      <h2>Six gated increments.</h2>
+      <p>Every phase produces a primary artifact through the final runner. A
+        fixture or dashboard alone is not proof that implementation started.</p></div></div>
+    <div class="timeline">
+      <article class="phase active"><b>P0 · CLOSED</b><h3>Freeze evidence</h3><p>Current
+        specifications, source pins, requirement ledgers, and immutable runners
+        are bound to reviewed receipts.</p><span class="gate">G0 · reproducible</span></article>
+      <article class="phase active"><b>P1 · CLOSED</b><h3>Datalog D0–D2</h3><p>Positive
+        recursion, stratified negation, deterministic generation, limits,
+        provenance, Jena/Soufflé checks, and mutation competence pass.</p><span class="gate">G1 · 70/70 tests</span></article>
+      <article class="phase active"><b>P2 · BOUNDED CLOSED</b><h3>RDFS + OWL 2 RL</h3><p>Finite
+        RDFS 1.2 and the exact OWL 2 RL/RDF rule inventory compile through
+        Datalog with typed unsupported boundaries.</p><span class="gate">G2 · scoped profiles</span></article>
+      <article class="phase active"><b>P3 · BOUNDED CLOSED</b><h3>SHACL 1.2</h3><p>Core,
+        Node Expressions, SPARQL rules, supplemental SRL, and informative
+        SHACL-C lanes emit explicit case receipts.</p><span class="gate">G3 · 519/519 eligible</span></article>
+      <article class="phase active"><b>P4 · CLOSED</b><h3>Differential seams</h3><p>Apache
+        Jena 6.1.0 closes 76 scenarios and 198 assertions; semantic store
+        integration closes 4/4 tests.</p><span class="gate">G4 · bounded parity</span></article>
+      <article class="phase seed"><b>P5 · OPEN BY DESIGN</b><h3>Family completion</h3><p>Close
+        every applicable normative clause and the inherited 1.1 obligations
+        before any RDF, SPARQL, or SHACL 1.2 family claim.</p><span class="gate">G5 · umbrella withheld</span></article>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><div class="tag">06 · Tooling</div><div>
+      <h2>Useful agents, bounded authority.</h2>
+      <p>The toolchain shares one native receipt instead of creating competing
+        sources of truth.</p></div></div>
+    <div class="grid2">
+      <article class="card risk"><h3>Agentic-QE 3.13.2</h3>
+        <ul class="compact"><li>Pinned locally; the adapter’s 16/16 adversarial tests pass.</li>
+          <li>The Oxigraph-owned adapter coordinates the exact 47-command
+            aggregate Cargo/Jena/W3C profile with timeouts and inventory guards.</li>
+          <li>Profiles execute in reviewed order behind one repository lease;
+            partial, reordered, or competing runs fail before evidence can be
+            substituted.</li>
+          <li>Schema-v4 receipts archive declared outputs and publish immutable,
+            UUID-addressed receipt/oracle bytes; the final oracle binds both.</li>
+          <li>Agentic-QE itself is a presence/version gate and optional advisory
+            candidate generator—not the semantic oracle.</li>
+          <li>The receipt binds every declared output artifact and executable
+            provenance record with independently recomputed hashes.</li>
+          <li><strong>Do not use</strong> its JS-only Rust executor fallback or simulated MCP outcomes.</li>
+        </ul></article>
+      <article class="card"><h3>MetaHarness + Darwin</h3>
+        <ul class="compact"><li>Darwin 0.8.0 may evolve only policy surfaces;
+          implementation and oracle inputs are immutable during qualification.</li>
+          <li>The full gate reopens the UUID-addressed immutable mutation
+            receipt, outcomes, and policy copy, plus Agentic command results,
+            generated artifacts, runtime provenance, and source hashes.</li>
+          <li>The 41-command semantic inventory is checked exactly; Java-backed
+            lanes attest one pinned compiler/runtime toolchain inside Darwin's
+            scrubbed environment.</li>
+          <li>An independent verifier recomputes the qualification projection
+            and binds the exact qualification file.</li>
+          <li>Any input drift, missing artifact, survivor, timeout, synthetic
+            receipt, or altered oracle fails closed.</li>
+          <li>Harness work remains capped at 20% and two pre-slice hours.</li>
+        </ul></article>
+    </div>
+  </section>
+
+  <section id="models">
+    <div class="section-head"><div class="tag">07 · Current models</div><div>
+      <h2>One list: models offered today.</h2>
+      <p>Current OpenAI and Anthropic model inventory observed 2026-07-27.
+        Superseded and unavailable models are excluded.</p></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Provider</th><th>Current model ID</th><th>Accepted effort levels</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td>OpenAI</td><td><code>gpt-5.6-sol</code></td><td>none · low · medium · high · xhigh · max</td><td>medium</td></tr>
+        <tr><td>OpenAI</td><td><code>gpt-5.6-terra</code></td><td>none · low · medium · high · xhigh · max</td><td>medium</td></tr>
+        <tr><td>OpenAI</td><td><code>gpt-5.6-luna</code></td><td>none · low · medium · high · xhigh · max</td><td>medium</td></tr>
+        <tr><td>Anthropic</td><td><code>claude-fable-5</code></td><td>low · medium · high · xhigh · max</td><td>high</td></tr>
+        <tr><td>Anthropic</td><td><code>claude-opus-5</code></td><td>low · medium · high · xhigh · max</td><td>high</td></tr>
+        <tr><td>Anthropic</td><td><code>claude-sonnet-5</code></td><td>low · medium · high · xhigh · max</td><td>high</td></tr>
+        <tr><td>Anthropic</td><td><code>claude-haiku-4-5-20251001</code></td><td>effort parameter not supported</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="evidence">
+    <div class="section-head"><div class="tag">08 · Receipt</div><div>
+      <h2>The bounded baseline has a fail-closed acceptance contract.</h2>
+      <p>A parity result is accepted only when the current schema-v4,
+        run-addressed receipt is complete, set- and order-equal to the reviewed
+        inventory, and independently verified. Acceptance does not prove broad
+        Jena parity, RDF/SPARQL/SHACL 1.2 family parity, unrestricted RDFS
+        entailment, or any OWL profile beyond the declared OWL 2 RL/RDF
+        surface.</p></div></div>
+    <div class="receipt">
+      <div class="callout"><div class="mark">✓</div><div><h3>Parity receipt acceptance</h3>
+        <p>Agentic-QE 3.13.2 · schema v4 · 47 commands. A qualifying immutable
+          receipt records the exact content and execution hashes, passes
+          independent verification, and binds the current protected inputs.
+          The adapter’s 16/16 adversarial tests cover its mechanics; native
+          commands remain authoritative.</p></div></div>
+      <article class="card notdoing"><h3>Explicitly not claiming</h3><p>No
+        parity based only on Jena or suite passes; no OWL 2 EL, QL, DL, Full,
+        Jena-specific OWL mode, Java API clone, implicit base mutation, Darwin
+        source edits, synchronous WebAssembly SPARQL-backed SHACL execution,
+        simulated evidence, or floating release gate.</p></article>
+    </div>
+    <div class="table-wrap" style="margin-top:18px"><table>
+      <thead><tr><th>Evidence lane</th><th>Current bounded result</th><th>Claim boundary</th></tr></thead>
+      <tbody>
+        <tr><td>OxDatalog D0–D2</td><td>70/70 tests; 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts</td><td>runtime-safe declared D0–D2 feature surface</td></tr>
+        <tr><td>RDF 1.2 + RDFS</td><td>575/575 pinned RDF cases; 77/77 RDF 1.2 Semantics cases; 15-pattern Oxigraph profile</td><td>suite compatibility and bounded finite materialization, not document-family conformance</td></tr>
+        <tr><td>SPARQL 1.2</td><td>269/269 pinned language cases</td><td>non-language documents remain clause-ledger work</td></tr>
+        <tr><td>RDF Dataset Canonicalization 1.0</td><td>86/86 official cases</td><td>bounded work factor, deterministic error on exhaustion</td></tr>
+        <tr><td>OWL 2 RL/RDF</td><td>98/98 assertions over 68 cases using exactly 78 rules</td><td>OWL 2 RL only</td></tr>
+        <tr><td>SHACL 1.2</td><td>521 discovered; 519/519 eligible; two invalid upstream exclusions; native 167/167 all-feature and 114/114 no-default</td><td>Rules supplemental; SHACL-C informative; synchronous WebAssembly SPARQL-backed execution fails closed</td></tr>
+        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56, CLI 133/133 default and 116/116 no-default</td><td>empty named graphs preserved where representable; lossy formats fail closed</td></tr>
+        <tr><td>Apache Jena 6.1.0</td><td>76 scenarios · 198 assertions · gate closed; RDF 17/46 · SPARQL 30/77 · SHACL 13/43 · RDFS 7/14 · OWL 2 RL 9/18</td><td>70 agreement, 4 W3C overrides, 1 W3C-permitted divergence, 1 extension</td></tr>
+        <tr><td>Semantic store integration</td><td>4/4 tests</td><td>read-only snapshots and explicit materialization seams</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    <div><h3>Decision and evidence artifacts</h3><ul>
+      <li><a href="../adr/0001-outcome-oriented-jena-parity.md">Outcome-oriented parity</a></li>
+      <li><a href="../adr/0002-rdf-native-datalog-engine.md">RDF-native Datalog</a></li>
+      <li><a href="../adr/0003-w3c-12-conformance-baseline.md">W3C conformance baseline</a></li>
+      <li><a href="../adr/0004-metaharness-darwin-qualification.md">MetaHarness and Darwin</a></li>
+      <li><a href="../adr/0005-agentic-qe-integration.md">Agentic-QE integration</a></li>
+      <li><a href="../adr/0006-w3c-first-12-parity.md">W3C-first 1.2 parity</a></li>
+      <li><a href="../adr/0007-owl-profiles-over-datalog.md">OWL 2 RL over Datalog</a></li>
+      <li><a href="../adr/0008-shacl-processor-profiles.md">SHACL processor profiles</a></li>
+      <li><a href="../adr/0009-snapshot-reasoning-materialization.md">Snapshot reasoning</a></li>
+      <li><a href="../adr/0010-bounded-rdf-dataset-canonicalization.md">Bounded RDF canonicalization</a></li>
+      <li><a href="../adr/0011-sparql-version-and-protocol-semantics.md">SPARQL version semantics</a></li>
+      <li><a href="../adr/0012-immutable-broad-jena-harness.md">Immutable Jena harness</a></li>
+      <li><a href="../adr/0013-mutation-competence-and-provenance.md">Mutation competence</a></li>
+      <li><a href="../adr/0014-rdf-dataset-graph-topology.md">RDF dataset graph topology</a></li>
+      <li><a href="../adr/0015-parallel-bulk-load-failure-semantics.md">Parallel bulk-load failure semantics</a></li>
+      <li><a href="semantic-parity-current-summary.md">Current evidence summary</a></li>
+      <li><a href="conformance-ledger.json">Conformance ledger</a></li>
+      <li><a href="standards-registry.json">Standards registry</a></li>
+    </ul></div>
+    <div><h3>Primary sources</h3><ul>
+      <li><a href="https://www.w3.org/TR/rdf12-concepts/">RDF 1.2 Concepts</a></li>
+      <li><a href="https://www.w3.org/TR/json-ld11-api/">JSON-LD 1.1 Processing Algorithms</a></li>
+      <li><a href="https://www.w3.org/TR/sparql12-query/">SPARQL 1.2 Query</a></li>
+      <li><a href="https://www.w3.org/TR/sparql12-graph-store-protocol/">SPARQL 1.2 Graph Store Protocol</a></li>
+      <li><a href="https://www.w3.org/TR/shacl12-core/">SHACL 1.2 Core</a></li>
+      <li><a href="https://www.w3.org/TR/shacl12-rules/">SHACL 1.2 Rules</a></li>
+      <li><a href="https://www.w3.org/TR/owl2-profiles/">OWL 2 Profiles</a></li>
+      <li><a href="https://developers.openai.com/api/docs/guides/latest-model.md">OpenAI latest models</a></li>
+      <li><a href="https://platform.claude.com/docs/en/about-claude/models/overview">Claude models</a></li>
+    </ul></div>
+  </footer>
+</main>
+</body>
+</html>

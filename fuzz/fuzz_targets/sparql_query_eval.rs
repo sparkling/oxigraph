@@ -105,7 +105,11 @@ fn query_results_key(results: QueryResults, is_reduced: bool) -> String {
             {
                 return String::new(); // canonicalization might be too slow
             };
-            graph.canonicalize(CanonicalizationAlgorithm::Unstable);
+            if let Err(error) =
+                graph.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+            {
+                unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+            }
             let mut triples = graph.into_iter().map(|t| t.to_string()).collect::<Vec<_>>();
             triples.sort_unstable();
             triples.join("\n")

@@ -1,0 +1,73 @@
+[package]
+name = "oxshacl"
+version = "0.1.0-dev"
+authors.workspace = true
+license.workspace = true
+keywords = ["RDF", "SHACL", "validation", "rules"]
+repository = "https://github.com/oxigraph/oxigraph/tree/main/lib/oxshacl"
+description = "Bounded, fail-closed SHACL 1.2 validation and rules for Oxigraph"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["sparql"]
+js = ["dep:getrandom", "getrandom/wasm_js"]
+rdf-12 = [
+  "oxdatalog/rdf-12",
+  "oxrdf/rdf-12",
+  "oxttl?/rdf-12",
+  "spargebra?/sparql-12",
+  "spareval?/sparql-12",
+]
+sparql = ["dep:spargebra", "dep:spareval"]
+w3c-tests = ["sparql", "dep:oxttl"]
+
+[dependencies]
+getrandom = { workspace = true, optional = true }
+oxdatalog.workspace = true
+oxiri.workspace = true
+oxrdf.workspace = true
+oxsdatatypes.workspace = true
+oxttl = { workspace = true, optional = true }
+regex.workspace = true
+spargebra = { workspace = true, optional = true }
+spareval = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+web-time.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+
+[lints]
+workspace = true
+
+[[example]]
+name = "w3c_runner"
+path = "examples/w3c_runner.rs"
+required-features = ["w3c-tests"]
+
+[[example]]
+name = "w3c_node_expr_runner"
+path = "examples/w3c_node_expr_runner.rs"
+required-features = ["w3c-tests"]
+
+[[example]]
+name = "w3c_sparql_rules_runner"
+path = "examples/w3c_sparql_rules_runner.rs"
+required-features = ["w3c-tests"]
+
+[[example]]
+name = "w3c_srl_rules_runner"
+path = "examples/w3c_srl_rules_runner.rs"
+required-features = ["w3c-tests"]
+
+[[example]]
+name = "w3c_compact_runner"
+path = "examples/w3c_compact_runner.rs"
+required-features = ["w3c-tests"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

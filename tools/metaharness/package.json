@@ -1,0 +1,19 @@
+{
+  "name": "oxigraph-metaharness-qualification",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Policy-only Darwin qualification over Oxigraph's immutable semantic oracles",
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./evidence.test.mjs ./qualification-contract.test.mjs",
+    "qualify": "node ./qualify.mjs && node ./verify.mjs",
+    "verify": "node ./verify.mjs",
+    "qualify:synthetic": "node ./qualify.mjs --synthetic-only"
+  },
+  "dependencies": {
+    "@metaharness/darwin": "0.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

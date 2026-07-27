@@ -2,10 +2,10 @@
 
 use crate::MIN_BUFFER_SIZE;
 use crate::lexer::{N3Lexer, N3LexerMode, N3LexerOptions, N3Token, to_lowercase};
+use crate::serialization::NTriplesMediaType;
 use crate::toolkit::{Lexer, Parser, RuleRecognizer, RuleRecognizerError, TokenOrLineJump};
 #[cfg(feature = "rdf-12")]
 use oxrdf::Triple;
-use oxrdf::vocab::rdf;
 use oxrdf::{BlankNode, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad, Term};
 
 pub struct NQuadsRecognizer {
@@ -13,7 +13,8 @@ pub struct NQuadsRecognizer {
     subjects: Vec<NamedOrBlankNode>,
     predicates: Vec<NamedNode>,
     objects: Vec<Term>,
-    lenient: bool,
+    #[cfg(feature = "rdf-12")]
+    version_directive_state: VersionDirectiveState,
 }
 
 pub struct NQuadsRecognizerContext {
@@ -21,8 +22,26 @@ pub struct NQuadsRecognizerContext {
     lexer_options: N3LexerOptions,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum DocumentPosition {
+    Start,
+    Continuation,
+}
+
+#[cfg(feature = "rdf-12")]
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum VersionDirectiveState {
+    Allowed,
+    Seen,
+    Past,
+}
+
 enum NQuadsState {
     ExpectSubject,
+    #[cfg(feature = "rdf-12")]
+    ExpectVersionSpecifier,
+    #[cfg(feature = "rdf-12")]
+    ExpectVersionLineJump,
     ExpectPredicate,
     ExpectedObject,
     ExpectPossibleGraphOrEndOfQuotedTriple,
@@ -45,6 +64,10 @@ impl RuleRecognizer for NQuadsRecognizer {
     type Context = NQuadsRecognizerContext;
 
     fn set_error_recovery_state(&mut self) {
+        #[cfg(feature = "rdf-12")]
+        if self.version_directive_state == VersionDirectiveState::Allowed {
+            self.version_directive_state = VersionDirectiveState::Past;
+        }
         self.stack.clear();
         self.stack.push(NQuadsState::RecoverToLineJump);
         self.subjects.clear();
@@ -61,24 +84,58 @@ impl RuleRecognizer for NQuadsRecognizer {
     ) {
         match self.stack.pop().unwrap_or(NQuadsState::ExpectSubject) {
             NQuadsState::ExpectSubject => match token {
-                TokenOrLineJump::Token(token) => match token {
-                    N3Token::IriRef(s) => {
-                        self.subjects.push(NamedNode::new_unchecked(s).into());
-                        self.stack.push(NQuadsState::ExpectPredicate);
+                TokenOrLineJump::Token(token) => {
+                    #[cfg(feature = "rdf-12")]
+                    let is_document_root = self.stack.is_empty();
+                    #[cfg(feature = "rdf-12")]
+                    if is_document_root
+                        && !matches!(&token, N3Token::PlainKeyword("VERSION"))
+                        && self.version_directive_state == VersionDirectiveState::Allowed
+                    {
+                        self.version_directive_state = VersionDirectiveState::Past;
                     }
-                    N3Token::BlankNodeLabel(s) => {
-                        self.subjects
-                            .push(BlankNode::new_unchecked(OxString::new_owned(s)).into());
-                        self.stack.push(NQuadsState::ExpectPredicate);
+                    match token {
+                        #[cfg(feature = "rdf-12")]
+                        N3Token::PlainKeyword("VERSION") if is_document_root => {
+                            match self.version_directive_state {
+                                VersionDirectiveState::Allowed => {
+                                    self.version_directive_state = VersionDirectiveState::Seen;
+                                    self.stack.push(NQuadsState::ExpectVersionSpecifier);
+                                }
+                                VersionDirectiveState::Seen => self.error(
+                                    context,
+                                    results,
+                                    errors,
+                                    TokenOrLineJump::Token(token),
+                                    "Only one VERSION directive is allowed",
+                                ),
+                                VersionDirectiveState::Past => self.error(
+                                    context,
+                                    results,
+                                    errors,
+                                    TokenOrLineJump::Token(token),
+                                    "The VERSION directive must precede all triples and quads",
+                                ),
+                            }
+                        }
+                        N3Token::IriRef(s) => {
+                            self.subjects.push(NamedNode::new_unchecked(s).into());
+                            self.stack.push(NQuadsState::ExpectPredicate);
+                        }
+                        N3Token::BlankNodeLabel(s) => {
+                            self.subjects
+                                .push(BlankNode::new_unchecked(OxString::new_owned(s)).into());
+                            self.stack.push(NQuadsState::ExpectPredicate);
+                        }
+                        _ => self.error(
+                            context,
+                            results,
+                            errors,
+                            TokenOrLineJump::Token(token),
+                            "The subject of a triple must be an IRI or a blank node",
+                        ),
                     }
-                    _ => self.error(
-                        context,
-                        results,
-                        errors,
-                        TokenOrLineJump::Token(token),
-                        "The subject of a triple must be an IRI or a blank node",
-                    ),
-                },
+                }
                 TokenOrLineJump::LineJump => {
                     if !self.stack.is_empty() {
                         self.error(
@@ -90,6 +147,30 @@ impl RuleRecognizer for NQuadsRecognizer {
                         )
                     }
                 }
+            },
+            #[cfg(feature = "rdf-12")]
+            NQuadsState::ExpectVersionSpecifier => match token {
+                TokenOrLineJump::Token(N3Token::String(_)) => {
+                    self.stack.push(NQuadsState::ExpectVersionLineJump);
+                }
+                _ => self.error(
+                    context,
+                    results,
+                    errors,
+                    token,
+                    "The VERSION keyword must be followed by a double-quoted version string",
+                ),
+            },
+            #[cfg(feature = "rdf-12")]
+            NQuadsState::ExpectVersionLineJump => match token {
+                TokenOrLineJump::LineJump => {}
+                TokenOrLineJump::Token(_) => self.error(
+                    context,
+                    results,
+                    errors,
+                    token,
+                    "The VERSION directive must be the only statement on its line",
+                ),
             },
             NQuadsState::ExpectPredicate => match token {
                 TokenOrLineJump::Token(token) => match token {
@@ -201,18 +282,17 @@ impl RuleRecognizer for NQuadsRecognizer {
             NQuadsState::ExpectLiteralDatatype { value } => match token {
                 TokenOrLineJump::Token(token) => match token {
                     N3Token::IriRef(d) => {
-                        if !self.lenient && d == *rdf::LANG_STRING.as_str() {
-                            errors.push("The datatype of a literal without a language tag must not be rdf:langString".into());
+                        match Literal::try_new_typed_literal(value, NamedNode::new_unchecked(d)) {
+                            Ok(literal) => {
+                                self.objects.push(literal.into());
+                                self.stack
+                                    .push(NQuadsState::ExpectPossibleGraphOrEndOfQuotedTriple);
+                            }
+                            Err(error) => {
+                                errors.push(error.to_string().into());
+                                self.set_error_recovery_state();
+                            }
                         }
-                        #[cfg(feature = "rdf-12")]
-                        if !self.lenient && d == *rdf::DIR_LANG_STRING.as_str() {
-                            errors.push("The datatype of a literal without a base direction must not be rdf:dirLangString".into());
-                        }
-                        self.objects.push(
-                            Literal::new_typed_literal(value, NamedNode::new_unchecked(d)).into(),
-                        );
-                        self.stack
-                            .push(NQuadsState::ExpectPossibleGraphOrEndOfQuotedTriple);
                     }
                     _ => self.error(
                         context,
@@ -322,6 +402,8 @@ impl RuleRecognizer for NQuadsRecognizer {
     ) {
         match &*self.stack {
             [NQuadsState::ExpectSubject | NQuadsState::ExpectLineJump] | [] => {}
+            #[cfg(feature = "rdf-12")]
+            [NQuadsState::ExpectVersionLineJump] => {}
             [NQuadsState::ExpectDot] => errors.push("Triples must be followed by a dot".into()),
             [NQuadsState::ExpectPossibleGraphOrEndOfQuotedTriple] => {
                 self.emit_quad(results, GraphName::DefaultGraph);
@@ -349,7 +431,11 @@ impl NQuadsRecognizer {
         with_graph_name: bool,
         lenient: bool,
         max_buffer_size: usize,
+        media_type: NTriplesMediaType,
+        document_position: DocumentPosition,
     ) -> Parser<B, Self> {
+        #[cfg(not(feature = "rdf-12"))]
+        let _: DocumentPosition = document_position;
         Parser::new(
             Lexer::new(
                 N3Lexer::new(N3LexerMode::NTriples, lenient),
@@ -358,13 +444,18 @@ impl NQuadsRecognizer {
                 MIN_BUFFER_SIZE,
                 max_buffer_size,
                 Some(b"#"),
-            ),
+            )
+            .with_ascii_only(media_type == NTriplesMediaType::TextPlain),
             Self {
                 stack: vec![NQuadsState::ExpectSubject],
                 subjects: Vec::new(),
                 predicates: Vec::new(),
                 objects: Vec::new(),
-                lenient,
+                #[cfg(feature = "rdf-12")]
+                version_directive_state: match document_position {
+                    DocumentPosition::Start => VersionDirectiveState::Allowed,
+                    DocumentPosition::Continuation => VersionDirectiveState::Past,
+                },
             },
             NQuadsRecognizerContext {
                 with_graph_name,

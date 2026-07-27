@@ -6,9 +6,9 @@ use oxiri::{Iri, IriParseError};
 #[cfg(feature = "rdf-12")]
 use oxrdf::BaseDirection;
 use oxrdf::vocab::xsd;
-use oxrdf::{GraphName, NamedNode, NamedOrBlankNode, Quad, Term, Triple};
+use oxrdf::{Dataset, GraphName, NamedNode, NamedOrBlankNode, Quad, Term, Triple};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::io::Write;
 #[cfg(feature = "async-tokio")]
@@ -195,6 +195,8 @@ impl JsonLdSerializer {
             current_subject: None,
             current_predicate: None,
             emitted_predicates: BTreeSet::new(),
+            emitted_named_graphs: HashSet::new(),
+            explicitly_empty_graphs: HashSet::new(),
             prefixes: self.prefixes,
             base_iri: self.base_iri,
         }
@@ -247,6 +249,31 @@ impl<W: Write> WriterJsonLdSerializer<W> {
             &mut buffer,
         )?;
         self.flush_buffer(&mut buffer)
+    }
+
+    /// Serializes an explicitly present empty named graph.
+    ///
+    /// A graph may be emitted only once through this method, and no quad may
+    /// be appended to it afterwards.
+    pub fn serialize_empty_graph(&mut self, graph_name: &NamedOrBlankNode) -> io::Result<()> {
+        let mut buffer = Vec::new();
+        self.inner.serialize_empty_graph(graph_name, &mut buffer)?;
+        self.flush_buffer(&mut buffer)
+    }
+
+    /// Serializes a complete RDF dataset, including empty named graphs.
+    pub fn serialize_dataset(&mut self, dataset: &Dataset) -> io::Result<()> {
+        self.inner.validate_dataset(dataset)?;
+        for quad in dataset {
+            self.serialize_quad(&quad)?;
+        }
+        for graph_name in dataset
+            .named_graphs()
+            .filter(|graph_name| dataset.graph(graph_name).is_empty())
+        {
+            self.serialize_empty_graph(&graph_name)?;
+        }
+        Ok(())
     }
 
     #[doc(hidden)]
@@ -331,6 +358,31 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterJsonLdSerializer<W> {
         self.flush_buffer(&mut buffer).await
     }
 
+    /// Serializes an explicitly present empty named graph.
+    ///
+    /// A graph may be emitted only once through this method, and no quad may
+    /// be appended to it afterwards.
+    pub async fn serialize_empty_graph(&mut self, graph_name: &NamedOrBlankNode) -> io::Result<()> {
+        let mut buffer = Vec::new();
+        self.inner.serialize_empty_graph(graph_name, &mut buffer)?;
+        self.flush_buffer(&mut buffer).await
+    }
+
+    /// Serializes a complete RDF dataset, including empty named graphs.
+    pub async fn serialize_dataset(&mut self, dataset: &Dataset) -> io::Result<()> {
+        self.inner.validate_dataset(dataset)?;
+        for quad in dataset {
+            self.serialize_quad(&quad).await?;
+        }
+        for graph_name in dataset
+            .named_graphs()
+            .filter(|graph_name| dataset.graph(graph_name).is_empty())
+        {
+            self.serialize_empty_graph(&graph_name).await?;
+        }
+        Ok(())
+    }
+
     #[doc(hidden)]
     pub async fn serialize_triple(&mut self, triple: &Triple) -> io::Result<()> {
         let mut buffer = Vec::new();
@@ -366,6 +418,8 @@ pub struct InnerJsonLdWriter {
     current_subject: Option<NamedOrBlankNode>,
     current_predicate: Option<NamedNode>,
     emitted_predicates: BTreeSet<NamedNode>,
+    emitted_named_graphs: HashSet<NamedOrBlankNode>,
+    explicitly_empty_graphs: HashSet<NamedOrBlankNode>,
     prefixes: BTreeMap<String, String>,
     base_iri: Option<Iri<String>>,
 }
@@ -379,6 +433,17 @@ impl InnerJsonLdWriter {
         graph_name: &'a GraphName,
         output: &mut Vec<JsonEvent<'a>>,
     ) -> io::Result<()> {
+        Self::ensure_term_supported(object)?;
+        let named_graph_name = named_graph_name(graph_name);
+        if named_graph_name
+            .as_ref()
+            .is_some_and(|graph_name| self.explicitly_empty_graphs.contains(graph_name))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a quad cannot be serialized after its named graph was declared empty",
+            ));
+        }
         if !self.started {
             self.serialize_start(output);
             self.started = true;
@@ -466,7 +531,107 @@ impl InnerJsonLdWriter {
             self.current_predicate = Some(predicate.clone());
         }
 
-        self.serialize_term(object, output)
+        self.serialize_term(object, output)?;
+        if let Some(graph_name) = named_graph_name {
+            self.emitted_named_graphs.insert(graph_name);
+        }
+        Ok(())
+    }
+
+    fn serialize_empty_graph<'a>(
+        &mut self,
+        graph_name: &'a NamedOrBlankNode,
+        output: &mut Vec<JsonEvent<'a>>,
+    ) -> io::Result<()> {
+        if self.emitted_named_graphs.contains(graph_name) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the named graph has already been serialized",
+            ));
+        }
+        if !self.started {
+            self.serialize_start(output);
+            self.started = true;
+        }
+        self.finish_current_graph(output);
+        output.push(JsonEvent::StartObject);
+        output.push(JsonEvent::ObjectKey("@id".into()));
+        output.push(JsonEvent::String(match graph_name {
+            NamedOrBlankNode::NamedNode(graph_name) => self.named_node_id_value(graph_name),
+            NamedOrBlankNode::BlankNode(graph_name) => graph_name.to_string().into(),
+        }));
+        output.push(JsonEvent::ObjectKey("@graph".into()));
+        output.push(JsonEvent::StartArray);
+        output.push(JsonEvent::EndArray);
+        output.push(JsonEvent::EndObject);
+        self.emitted_named_graphs.insert(graph_name.clone());
+        self.explicitly_empty_graphs.insert(graph_name.clone());
+        Ok(())
+    }
+
+    fn validate_dataset(&self, dataset: &Dataset) -> io::Result<()> {
+        for quad in dataset {
+            Self::ensure_term_supported(&quad.object)?;
+            if named_graph_name(&quad.graph_name)
+                .as_ref()
+                .is_some_and(|graph_name| self.explicitly_empty_graphs.contains(graph_name))
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "a quad cannot be serialized after its named graph was declared empty",
+                ));
+            }
+        }
+        for graph_name in dataset
+            .named_graphs()
+            .filter(|graph_name| dataset.graph(graph_name).is_empty())
+        {
+            if self.emitted_named_graphs.contains(&graph_name) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "the named graph has already been serialized",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rdf-12")]
+    fn ensure_term_supported(term: &Term) -> io::Result<()> {
+        if matches!(term, Term::Triple(_)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "JSON-LD does not support RDF 1.2 yet",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(not(feature = "rdf-12"))]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "keeps serializer control flow independent of the rdf-12 feature"
+    )]
+    fn ensure_term_supported(_term: &Term) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn finish_current_graph(&mut self, output: &mut Vec<JsonEvent<'_>>) {
+        if self.current_predicate.take().is_some() {
+            output.push(JsonEvent::EndArray);
+        }
+        if self.current_subject.take().is_some() {
+            output.push(JsonEvent::EndObject);
+        }
+        if self
+            .current_graph_name
+            .take()
+            .is_some_and(|graph_name| !graph_name.is_default_graph())
+        {
+            output.push(JsonEvent::EndArray);
+            output.push(JsonEvent::EndObject);
+        }
+        self.emitted_predicates.clear();
     }
 
     fn serialize_start(&self, output: &mut Vec<JsonEvent<'_>>) {
@@ -569,23 +734,18 @@ impl InnerJsonLdWriter {
         if !self.started {
             self.serialize_start(output);
         }
-        if self.current_predicate.is_some() {
-            output.push(JsonEvent::EndArray)
-        }
-        if self.current_subject.is_some() {
-            output.push(JsonEvent::EndObject)
-        }
-        if self
-            .current_graph_name
-            .as_ref()
-            .is_some_and(|g| !g.is_default_graph())
-        {
-            output.push(JsonEvent::EndArray);
-            output.push(JsonEvent::EndObject)
-        }
+        self.finish_current_graph(output);
         output.push(JsonEvent::EndArray);
         if self.base_iri.is_some() || !self.prefixes.is_empty() {
             output.push(JsonEvent::EndObject);
         }
+    }
+}
+
+fn named_graph_name(graph_name: &GraphName) -> Option<NamedOrBlankNode> {
+    match graph_name {
+        GraphName::NamedNode(graph_name) => Some(graph_name.clone().into()),
+        GraphName::BlankNode(graph_name) => Some(graph_name.clone().into()),
+        GraphName::DefaultGraph => None,
     }
 }

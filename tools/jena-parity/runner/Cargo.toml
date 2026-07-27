@@ -1,0 +1,32 @@
+[package]
+name = "oxigraph-jena-parity"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+resolver = "3"
+
+[dependencies]
+hex = "=0.4.3"
+oxigraph = { path = "../../../lib/oxigraph", default-features = false, features = [
+  "rdf-12",
+  "owl2-rl",
+  "rdfs",
+  "shacl",
+] }
+oxiri = "=0.3.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+sha2 = "=0.10.9"
+spargebra = { path = "../../../lib/spargebra", features = ["sparql-12"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

@@ -13,6 +13,7 @@ mod parser;
 pub mod query;
 pub mod term;
 pub mod update;
+mod version;
 pub mod vocab;
 
 use crate::algebra_builder::AlgebraBuilder;
@@ -24,6 +25,8 @@ use oxrdf::{NamedNode, OxString};
 pub use query::Query;
 use std::collections::{HashMap, HashSet};
 pub use update::Update;
+pub use version::{ParsedQuery, ParsedUpdate, SparqlVersion};
+use version::{declared_version, validate_version_support, validate_version_syntax};
 
 /// A SPARQL parser
 ///
@@ -41,6 +44,7 @@ pub struct SparqlParser {
     base_iri: Option<Iri<OxString>>,
     prefixes: HashMap<OxString, Iri<OxString>>,
     custom_aggregate_functions: HashSet<NamedNode>,
+    version: Option<SparqlVersion>,
 }
 
 impl SparqlParser {
@@ -110,6 +114,17 @@ impl SparqlParser {
         self
     }
 
+    /// Selects the SPARQL version used to validate parsed operations.
+    ///
+    /// A `VERSION` declaration in the operation takes precedence, as required
+    /// by SPARQL 1.2 Query §4.3. The configured value is the out-of-band
+    /// fallback used when the operation has no declaration.
+    #[inline]
+    pub fn with_version(mut self, version: SparqlVersion) -> Self {
+        self.version = Some(version);
+        self
+    }
+
     /// Parse the given query string using the already set options.
     ///
     /// ```
@@ -121,16 +136,32 @@ impl SparqlParser {
     /// # Ok::<_, spargebra::SparqlSyntaxError>(())
     /// ```
     pub fn parse_query(&self, query: &str) -> Result<Query, SparqlSyntaxError> {
+        self.parse_query_with_metadata(query)
+            .map(ParsedQuery::into_query)
+    }
+
+    /// Parses a query and retains its declared and effective SPARQL versions.
+    ///
+    /// The returned metadata records both the in-band declaration and the
+    /// effective version selected according to SPARQL 1.2 Query §4.3.
+    pub fn parse_query_with_metadata(&self, query: &str) -> Result<ParsedQuery, SparqlSyntaxError> {
         let tokens = lex_sparql(query);
         let ast = parse_sparql_query(&tokens, query.len())
             .map_err(|e| SparqlSyntaxError::from_chumsky(e, query))?;
-        AlgebraBuilder::new(
+        let declared_version = declared_version(ast.prologue.iter(), query)?;
+        let effective_version = declared_version
+            .or(self.version)
+            .unwrap_or_else(SparqlVersion::current);
+        validate_version_support(effective_version, query)?;
+        validate_version_syntax(query, effective_version)?;
+        let query = AlgebraBuilder::new(
             self.base_iri.clone(),
             self.prefixes.clone(),
             &self.custom_aggregate_functions,
         )
         .build_query(ast)
-        .map_err(|e| SparqlSyntaxError::from_algebra_builder(e, query))
+        .map_err(|e| SparqlSyntaxError::from_algebra_builder(e, query))?;
+        Ok(ParsedQuery::new(query, declared_version, effective_version))
     }
 
     /// Parse the given update string using the already set options.
@@ -144,15 +175,44 @@ impl SparqlParser {
     /// # Ok::<_, spargebra::SparqlSyntaxError>(())
     /// ```
     pub fn parse_update(&self, update: &str) -> Result<Update, SparqlSyntaxError> {
+        self.parse_update_with_metadata(update)
+            .map(ParsedUpdate::into_update)
+    }
+
+    /// Parses an update and retains its declared and effective SPARQL versions.
+    ///
+    /// The returned metadata records both the in-band declaration and the
+    /// effective version selected according to SPARQL 1.2 Query §4.3.
+    pub fn parse_update_with_metadata(
+        &self,
+        update: &str,
+    ) -> Result<ParsedUpdate, SparqlSyntaxError> {
         let tokens = lex_sparql(update);
         let ast = parse_sparql_update(&tokens, update.len())
             .map_err(|e| SparqlSyntaxError::from_chumsky(e, update))?;
-        AlgebraBuilder::new(
+        let declared_version = declared_version(
+            ast.operations
+                .iter()
+                .flat_map(|(prologue, _)| prologue)
+                .chain(ast.trailing_prologue.iter()),
+            update,
+        )?;
+        let effective_version = declared_version
+            .or(self.version)
+            .unwrap_or_else(SparqlVersion::current);
+        validate_version_support(effective_version, update)?;
+        validate_version_syntax(update, effective_version)?;
+        let update_value = AlgebraBuilder::new(
             self.base_iri.clone(),
             self.prefixes.clone(),
             &self.custom_aggregate_functions,
         )
         .build_update(ast)
-        .map_err(|e| SparqlSyntaxError::from_algebra_builder(e, update))
+        .map_err(|e| SparqlSyntaxError::from_algebra_builder(e, update))?;
+        Ok(ParsedUpdate::new(
+            update_value,
+            declared_version,
+            effective_version,
+        ))
     }
 }

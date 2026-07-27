@@ -1,0 +1,7 @@
+<urn:test:rdfs:p> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <urn:test:rdfs:q> .
+<urn:test:rdfs:q> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <urn:test:rdfs:r> .
+<urn:test:rdfs:r> <http://www.w3.org/2000/01/rdf-schema#domain> <urn:test:rdfs:C> .
+<urn:test:rdfs:r> <http://www.w3.org/2000/01/rdf-schema#range> <urn:test:rdfs:D> .
+<urn:test:rdfs:C> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:test:rdfs:E> .
+<urn:test:rdfs:E> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:test:rdfs:F> .
+<urn:test:rdfs:a> <urn:test:rdfs:p> <urn:test:rdfs:b> .

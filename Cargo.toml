@@ -2,11 +2,15 @@
 members = [
   "cli",
   "js",
+  "lib/oxdatalog",
   "lib/oxigraph",
   "lib/oxjsonld",
+  "lib/oxowl",
   "lib/oxrdf",
+  "lib/oxrdfs",
   "lib/oxrdfio",
   "lib/oxrdfxml",
+  "lib/oxshacl",
   "lib/oxsdatatypes",
   "lib/oxttl",
   "lib/sparesults",
@@ -43,6 +47,7 @@ clap_mangen = ">=0.2.19,<0.4"
 codspeed-criterion-compat = ">=2.3.3,<6.0"
 console_error_panic_hook = "0.1.7"
 csv = "1.3"
+datafrog = "=2.0.1"
 dissimilar = "1"
 dashmap = ">=5.4, <7.0"
 flate2 = "1.0"
@@ -81,14 +86,19 @@ tokio = "1.29"
 url = "2.4"
 wasm-bindgen = "0.2.121"
 wasm-bindgen-futures = "0.4.71"
+web-time = "1.1.0"
 wkt = "0.14"
 
 # Internal dependencies
 oxigraph = { version = "=0.6.0-dev", path = "lib/oxigraph", default-features = false }
+oxdatalog = { version = "=0.1.0-dev", path = "lib/oxdatalog" }
 oxjsonld = { version = "=0.3.0-dev", path = "lib/oxjsonld" }
+oxowl = { version = "=0.1.0-dev", path = "lib/oxowl" }
 oxrdf = { version = "=0.4.0-dev", path = "lib/oxrdf" }
+oxrdfs = { version = "=0.1.0-dev", path = "lib/oxrdfs" }
 oxrdfio = { version = "=0.3.0-dev", path = "lib/oxrdfio" }
 oxrdfxml = { version = "=0.3.0-dev", path = "lib/oxrdfxml" }
+oxshacl = { version = "=0.1.0-dev", path = "lib/oxshacl" }
 oxrocksdb-sys = { version = "=0.6.0-dev", path = "./oxrocksdb-sys" }
 oxsdatatypes = { version = "=0.3.0-dev", path = "lib/oxsdatatypes" }
 oxttl = { version = "=0.3.0-dev", path = "lib/oxttl" }

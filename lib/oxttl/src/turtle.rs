@@ -11,7 +11,7 @@ use crate::trig::TokioAsyncWriterTriGSerializer;
 use crate::trig::{LowLevelTriGSerializer, TriGSerializer, WriterTriGSerializer};
 use crate::{DEFAULT_MAX_BUFFER_SIZE, MIN_PARALLEL_CHUNK_SIZE};
 use oxiri::{Iri, IriParseError};
-use oxrdf::{OxString, Triple};
+use oxrdf::{OxString, RdfVersion, Triple};
 use std::collections::HashMap;
 use std::collections::hash_map::Iter;
 use std::io::{self, Read, Write};
@@ -839,6 +839,18 @@ impl TurtleSerializer {
     #[inline]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the RDF version announced by the serialized document.
+    ///
+    /// RDF 1.1 is used by default. RDF 1.2 and RDF 1.2 Basic modes write their
+    /// corresponding `VERSION` directive before any base or prefix directive.
+    /// RDF 1.2 Basic accepts directional language-tagged strings but rejects
+    /// triple terms.
+    #[inline]
+    pub fn with_rdf_version(mut self, rdf_version: RdfVersion) -> Self {
+        self.inner = self.inner.with_rdf_version(rdf_version);
+        self
     }
 
     #[inline]

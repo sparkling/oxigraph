@@ -1,3 +1,6 @@
+use crate::diagnostic::{
+    RDF_NAMESPACE_IRI, RdfXmlWarning, RdfXmlWarningHandler, is_undefined_rdf_vocabulary_name,
+};
 use crate::error::{RdfXmlParseError, RdfXmlSyntaxError};
 use crate::utils::*;
 use oxilangtag::LanguageTag;
@@ -10,13 +13,14 @@ use quick_xml::escape::{EscapeError, resolve_xml_entity, unescape_with};
 use quick_xml::events::attributes::Attribute;
 use quick_xml::events::*;
 use quick_xml::name::{
-    LocalName, Namespace, NamespaceBindingsIter, PrefixDeclaration, ResolveResult,
+    LocalName, Namespace, NamespaceBindingsIter, PrefixDeclaration, QName, ResolveResult,
 };
 use quick_xml::{Decoder, Error, NsReader, Writer, XmlVersion};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Read};
 use std::str;
+use std::sync::Arc;
 #[cfg(feature = "async-tokio")]
 use tokio::io::{AsyncRead, BufReader as AsyncBufReader};
 
@@ -62,6 +66,7 @@ const MAX_ENTITY_NESTING: usize = 1024;
 pub struct RdfXmlParser {
     lenient: bool,
     base: Option<Iri<OxString>>,
+    warning_handler: Option<RdfXmlWarningHandler>,
 }
 
 impl RdfXmlParser {
@@ -86,6 +91,19 @@ impl RdfXmlParser {
     pub fn with_base_iri(mut self, base_iri: &str) -> Result<Self, IriParseError> {
         self.base = Some(Iri::parse(OxString::new_owned(base_iri))?);
         Ok(self)
+    }
+
+    /// Sets a callback for non-fatal RDF/XML diagnostics.
+    ///
+    /// The callback is invoked synchronously during parsing. In particular,
+    /// undefined names in the RDF namespace are reported while still being
+    /// processed as ordinary RDF names, as required by RDF/XML.
+    pub fn with_warning_handler(
+        mut self,
+        handler: impl Fn(RdfXmlWarning) + Send + Sync + 'static,
+    ) -> Self {
+        self.warning_handler = Some(Arc::new(handler));
+        self
     }
 
     /// Parses an RDF/XML file from a [`Read`] implementation.
@@ -216,6 +234,7 @@ impl RdfXmlParser {
             known_rdf_id: HashSet::new(),
             is_end: false,
             lenient: self.lenient,
+            warning_handler: self.warning_handler,
             xml_version: XmlVersion::Implicit1_0,
             text_buffer: String::new(),
         }
@@ -823,6 +842,7 @@ struct InternalRdfXmlParser<R> {
     known_rdf_id: HashSet<OxString>,
     is_end: bool,
     lenient: bool,
+    warning_handler: Option<RdfXmlWarningHandler>,
     xml_version: XmlVersion,
     text_buffer: String,
 }
@@ -843,7 +863,9 @@ impl<R> InternalRdfXmlParser<R> {
                     self.text_buffer.clear();
                     self.parse_text_event(text)
                 };
-                let start_error = self.parse_start_event(&event, results);
+                let start_error = self
+                    .validate_start_event_qnames(&event)
+                    .and_then(|()| self.parse_start_event(&event, results));
                 text_error.and(start_error)
             }
             Event::End(event) => {
@@ -855,7 +877,9 @@ impl<R> InternalRdfXmlParser<R> {
                     self.text_buffer.clear();
                     self.parse_text_event(text)
                 };
-                let end_error = self.parse_end_event(&event, results);
+                let end_error = self
+                    .validate_qname(event.name())
+                    .and_then(|()| self.parse_end_event(&event, results));
                 text_error.and(end_error)
             }
             Event::Empty(_) => unreachable!("The expand_empty_elements option must be enabled",),
@@ -932,6 +956,37 @@ impl<R> InternalRdfXmlParser<R> {
         Ok(())
     }
 
+    fn validate_start_event_qnames(&self, event: &BytesStart<'_>) -> Result<(), RdfXmlParseError> {
+        self.validate_qname(event.name())?;
+        if self.lenient {
+            return Ok(());
+        }
+        for attribute in event.attributes() {
+            self.validate_qname(attribute.map_err(Error::InvalidAttr)?.key)?;
+        }
+        Ok(())
+    }
+
+    fn validate_qname(&self, name: QName<'_>) -> Result<(), RdfXmlParseError> {
+        if self.lenient {
+            return Ok(());
+        }
+        let name = self.reader.decoder().decode(name.as_ref())?;
+        let valid = if let Some((prefix, local_name)) = name.split_once(':') {
+            is_nc_name(prefix) && is_nc_name(local_name)
+        } else {
+            is_nc_name(&name)
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(RdfXmlSyntaxError::msg(format!(
+                "'{name}' is not a namespace-well-formed XML QName"
+            ))
+            .into())
+        }
+    }
+
     fn parse_start_event(
         &mut self,
         event: &BytesStart<'_>,
@@ -974,6 +1029,7 @@ impl<R> InternalRdfXmlParser<R> {
 
         let (tag_namespace, tag_local_name) = self.reader.resolver().resolve_element(event.name());
         let tag_name = self.resolve_ns_name(tag_namespace, tag_local_name)?;
+        self.warn_if_undefined_rdf_vocabulary_name(&tag_name);
 
         // We read attributes
         let mut language = None;
@@ -1047,6 +1103,7 @@ impl<R> InternalRdfXmlParser<R> {
             } else {
                 let attribute_url =
                     self.resolve_ns_name(attribute_namespace.clone(), attribute_local_name)?;
+                self.warn_if_undefined_rdf_vocabulary_name(&attribute_url);
                 if *attribute_url == *RDF_ID {
                     let mut id = self.convert_attribute(&attribute)?.into_owned();
                     if !is_nc_name(&id) {
@@ -1520,6 +1577,15 @@ impl<R> InternalRdfXmlParser<R> {
     ) -> Result<OxString, RdfXmlParseError> {
         match namespace {
             ResolveResult::Bound(ns) => {
+                if !self.lenient
+                    && ns.as_ref().starts_with(RDF_NAMESPACE_IRI.as_bytes())
+                    && ns.as_ref() != RDF_NAMESPACE_IRI.as_bytes()
+                {
+                    return Err(RdfXmlSyntaxError::msg(
+                        "An XML namespace name must not extend the RDF namespace IRI",
+                    )
+                    .into());
+                }
                 let mut value = Vec::with_capacity(ns.as_ref().len() + local_name.as_ref().len());
                 value.extend_from_slice(ns.as_ref());
                 value.extend_from_slice(local_name.as_ref());
@@ -1538,6 +1604,16 @@ impl<R> InternalRdfXmlParser<R> {
                 self.reader.decoder().decode(&v)?
             ))
             .into()),
+        }
+    }
+
+    fn warn_if_undefined_rdf_vocabulary_name(&self, iri: &str) {
+        if is_undefined_rdf_vocabulary_name(iri) {
+            if let Some(handler) = &self.warning_handler {
+                handler(RdfXmlWarning::UndefinedRdfVocabularyName(
+                    NamedNode::new_unchecked(iri.to_owned()),
+                ));
+            }
         }
     }
 
@@ -1674,7 +1750,7 @@ impl<R> InternalRdfXmlParser<R> {
                             #[cfg(feature = "rdf-12")]
                             base_direction,
                             datatype_attr,
-                        )
+                        )?
                         .into(),
                     None => self
                         .new_literal(
@@ -1683,7 +1759,7 @@ impl<R> InternalRdfXmlParser<R> {
                             #[cfg(feature = "rdf-12")]
                             base_direction,
                             datatype_attr,
-                        )
+                        )?
                         .into(),
                 };
                 let triple = Triple::new(subject, iri, object);
@@ -1830,23 +1906,26 @@ impl<R> InternalRdfXmlParser<R> {
         language: Option<OxString>,
         #[cfg(feature = "rdf-12")] base_direction: Option<BaseDirection>,
         datatype: Option<NamedNode>,
-    ) -> Literal {
+    ) -> Result<Literal, RdfXmlSyntaxError> {
         if let Some(datatype) = datatype {
-            Literal::new_typed_literal(value, datatype)
+            Literal::try_new_typed_literal(value, datatype)
+                .map_err(|error| RdfXmlSyntaxError::msg(error.to_string()))
         } else if let Some(language) =
             language.or_else(|| self.current_language().map(ToOwned::to_owned))
         {
             #[cfg(feature = "rdf-12")]
             if let Some(base_direction) = base_direction {
-                return Literal::new_directional_language_tagged_literal_unchecked(
+                return Ok(Literal::new_directional_language_tagged_literal_unchecked(
                     value,
                     language,
                     base_direction,
-                );
+                ));
             }
-            Literal::new_language_tagged_literal_unchecked(value, language)
+            Ok(Literal::new_language_tagged_literal_unchecked(
+                value, language,
+            ))
         } else {
-            Literal::new_simple_literal(value)
+            Ok(Literal::new_simple_literal(value))
         }
     }
 
@@ -2201,5 +2280,130 @@ impl RdfVersion {
                 "The rdf:version value '{value}' is not supported, allowed values are '1.1' and '1.2'"
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn rejects_namespace_invalid_element_qnames() {
+        for input in [
+            r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://example.com/"><rdf:Description><ex: rdf:resource="http://example.com/o"/></rdf:Description></rdf:RDF>"#,
+            r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://example.com/"><rdf:Description><ex:p:q rdf:resource="http://example.com/o"/></rdf:Description></rdf:RDF>"#,
+        ] {
+            let result = RdfXmlParser::new()
+                .for_slice(input.as_bytes())
+                .collect::<Result<Vec<_>, _>>();
+            assert!(
+                result.is_err(),
+                "namespace-invalid QName was accepted: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_namespace_invalid_attribute_qnames() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://example.com/"><rdf:Description ex:p:q="value"/></rdf:RDF>"#;
+        let result = RdfXmlParser::new()
+            .for_slice(input.as_bytes())
+            .collect::<Result<Vec<_>, _>>();
+        let Err(_) = result else {
+            return Err(
+                std::io::Error::other("namespace-invalid attribute QName was accepted").into(),
+            );
+        };
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic)]
+    fn undefined_rdf_vocabulary_names_warn_but_behave_normally() {
+        let warnings = Arc::new(Mutex::new(Vec::new()));
+        let warning_sink = Arc::clone(&warnings);
+        let input = concat!(
+            r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">"#,
+            r#"<rdf:Description rdf:about="http://example.com/s">"#,
+            r#"<rdf:undefined rdf:resource="http://example.com/o"/>"#,
+            "</rdf:Description></rdf:RDF>"
+        );
+        let triples = RdfXmlParser::new()
+            .with_warning_handler(move |warning| {
+                let mut warnings = match warning_sink.lock() {
+                    Ok(warnings) => warnings,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                warnings.push(warning);
+            })
+            .for_slice(input)
+            .collect::<Result<Vec<_>, _>>();
+        let triples = match triples {
+            Ok(triples) => triples,
+            Err(error) => panic!("valid RDF/XML failed to parse: {error}"),
+        };
+
+        assert_eq!(triples.len(), 1);
+        assert_eq!(
+            triples[0].predicate.as_str(),
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#undefined"
+        );
+        let warnings = match warnings.lock() {
+            Ok(warnings) => warnings,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].iri(), &triples[0].predicate);
+    }
+
+    #[test]
+    fn rejects_namespace_names_extending_the_rdf_namespace()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let input = concat!(
+            r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">"#,
+            r#"<rdf:Description xmlns:bad="http://www.w3.org/1999/02/22-rdf-syntax-ns#extra">"#,
+            "<bad:property/></rdf:Description></rdf:RDF>"
+        );
+        let result = RdfXmlParser::new()
+            .for_slice(input)
+            .collect::<Result<Vec<_>, _>>();
+        match result {
+            Err(_) => Ok(()),
+            Ok(_) => Err(std::io::Error::other("an RDF namespace extension was accepted").into()),
+        }
+    }
+
+    #[test]
+    fn rejects_reserved_typed_literals_without_language_components()
+    -> Result<(), Box<dyn std::error::Error>> {
+        fn reject(datatype: &str) -> Result<(), Box<dyn std::error::Error>> {
+            let input = format!(
+                concat!(
+                    r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" "#,
+                    r#"xmlns:ex="http://example.com/">"#,
+                    r#"<rdf:Description rdf:about="http://example.com/s">"#,
+                    r#"<ex:p rdf:datatype="{datatype}">value</ex:p>"#,
+                    "</rdf:Description></rdf:RDF>"
+                ),
+                datatype = datatype,
+            );
+            if RdfXmlParser::new()
+                .for_slice(input.as_bytes())
+                .collect::<Result<Vec<_>, _>>()
+                .is_ok()
+            {
+                return Err(std::io::Error::other(format!(
+                    "reserved datatype {datatype} was accepted without required components"
+                ))
+                .into());
+            }
+            Ok(())
+        }
+
+        reject("http://www.w3.org/1999/02/22-rdf-syntax-ns#langString")?;
+        #[cfg(feature = "rdf-12")]
+        reject("http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString")?;
+        Ok(())
     }
 }

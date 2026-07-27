@@ -5,6 +5,7 @@ from tempfile import NamedTemporaryFile, TemporaryFile
 from typing import cast
 
 from pyoxigraph import (
+    BaseDirection,
     Literal,
     NamedNode,
     Quad,
@@ -12,6 +13,8 @@ from pyoxigraph import (
     QueryResultsFormat,
     QuerySolutions,
     RdfFormat,
+    RdfVersion,
+    Triple,
     parse,
     parse_query_results,
     serialize,
@@ -164,11 +167,28 @@ class TestParse(unittest.TestCase):
         )
 
     def test_parse_lenient(self) -> None:
+        triples = list(
+            parse(
+                '<foo> <p> "a"@abcdefghijklmnop .',
+                RdfFormat.TURTLE,
+                lenient=True,
+            )
+        )
+        self.assertEqual(str(triples[0].subject), "<foo>")
+        with self.assertRaisesRegex(OSError, "subject IRI .* is invalid"):
+            serialize(triples, format=RdfFormat.N_TRIPLES)
+
+    def test_parse_enforces_explicit_rdf_version(self) -> None:
+        data = (
+            "<http://example.com/s> <http://example.com/p> "
+            "<<( <http://example.com/s> <http://example.com/p> "
+            "<http://example.com/o> )>> ."
+        )
+        with self.assertRaisesRegex(SyntaxError, "triple terms"):
+            list(parse(data, RdfFormat.N_TRIPLES, rdf_version=RdfVersion.V1_1))
         self.assertEqual(
-            serialize(
-                parse('<foo> <p> "a"@abcdefghijklmnop .', RdfFormat.TURTLE, lenient=True), format=RdfFormat.N_TRIPLES
-            ),
-            b'<foo> <p> "a"@abcdefghijklmnop .\n',
+            len(list(parse(data, RdfFormat.N_TRIPLES, rdf_version=RdfVersion.V1_2))),
+            1,
         )
 
 
@@ -206,6 +226,36 @@ class TestSerialize(unittest.TestCase):
             output.getvalue(),
             b'<http://example.com/g> {\n\t<http://example.com/foo> <http://example.com/p> "1" .\n}\n',
         )
+
+    def test_serialize_rdf_12_terms_with_explicit_version(self) -> None:
+        triple_term = Triple(
+            NamedNode("http://example.com/s"),
+            NamedNode("http://example.com/p"),
+            NamedNode("http://example.com/o"),
+        )
+        values = [
+            Quad(
+                NamedNode("http://example.com/s"),
+                NamedNode("http://example.com/p"),
+                Literal("hello", language="en", direction=BaseDirection.LTR),
+            ),
+            Quad(
+                NamedNode("http://example.com/s"),
+                NamedNode("http://example.com/p"),
+                triple_term,
+            ),
+        ]
+        with self.assertRaisesRegex(OSError, "RDF 1.2"):
+            serialize(values, format=RdfFormat.N_TRIPLES, rdf_version=RdfVersion.V1_1)
+        output = serialize(
+            values,
+            format=RdfFormat.N_TRIPLES,
+            rdf_version=RdfVersion.V1_2,
+        )
+        assert output is not None
+        self.assertTrue(output.startswith(b'VERSION "1.2"\n'))
+        self.assertIn(b'"hello"@en--ltr', output)
+        self.assertIn(b"<<(", output)
 
 
 class TestParseQuerySolutions(unittest.TestCase):
@@ -273,3 +323,20 @@ class TestParseQuerySolutions(unittest.TestCase):
             if sys.version_info >= (3, 10):
                 self.assertEqual(ctx.exception.end_lineno, 2)
                 self.assertEqual(ctx.exception.end_offset, 9)
+
+    def test_query_results_version_round_trip(self) -> None:
+        result = cast(
+            QuerySolutions,
+            parse_query_results(
+                '{"head":{"version":"1.2","vars":[]},"results":{"bindings":[]}}',
+                QueryResultsFormat.JSON,
+                rdf_version=RdfVersion.V1_2,
+            ),
+        )
+        self.assertEqual(
+            result.serialize(
+                format=QueryResultsFormat.JSON,
+                rdf_version=RdfVersion.V1_2,
+            ),
+            b'{"head":{"version":"1.2","vars":[]},"results":{"bindings":[]}}',
+        )

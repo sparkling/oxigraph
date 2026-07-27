@@ -1,0 +1,12 @@
+[package]
+name = "oxowl-w3c-runner"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+oxowl = { path = "../../../lib/oxowl" }
+oxrdf = { path = "../../../lib/oxrdf" }
+oxrdfio = { path = "../../../lib/oxrdfio" }

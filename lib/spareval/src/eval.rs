@@ -18,6 +18,7 @@ use oxrdf::NamedOrBlankNode;
 use oxrdf::{BlankNode, GraphName, Literal, NamedNode, OxString, Term, Triple, Variable};
 use oxsdatatypes::{DateTime, DayTimeDuration, Decimal, Double, Float, Integer};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet, FxHasher};
+use spargebra::SparqlVersion;
 use spargebra::algebra::PropertyPathExpression;
 #[cfg(feature = "sparql-12")]
 use spargebra::term::GroundTriple;
@@ -29,7 +30,7 @@ use sparopt::algebra::{
     AggregateExpression, Expression, GraphPattern, JoinAlgorithm, LeftJoinAlgorithm,
     MinusAlgorithm, OrderExpression,
 };
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
@@ -49,8 +50,88 @@ type InternalTupleEvaluator<'a, T> =
 struct EvalDataset<'a, D: QueryableDataset<'a>> {
     dataset: Rc<D>,
     specification: EncodedDatasetSpec<D::InternalTerm>,
+    merged_blank_nodes: Rc<RefCell<FxHashMap<(Option<D::InternalTerm>, BlankNode), BlankNode>>>,
     cancellation_token: CancellationToken,
+    version: SparqlVersion,
     _lifetime: PhantomData<&'a ()>,
+}
+
+#[cfg(feature = "sparql-12")]
+pub(crate) fn validate_term_for_version(
+    term: &Term,
+    version: SparqlVersion,
+) -> Result<(), QueryEvaluationError> {
+    let incompatible = match term {
+        Term::Triple(_) => version != SparqlVersion::V1_2,
+        Term::Literal(literal) => version == SparqlVersion::V1_1 && literal.direction().is_some(),
+        _ => false,
+    };
+    if incompatible {
+        return Err(QueryEvaluationError::IncompatibleTerm {
+            version,
+            term: term.clone(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "sparql-12"))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps feature-independent evaluator call sites"
+)]
+pub(crate) fn validate_term_for_version(
+    _term: &Term,
+    _version: SparqlVersion,
+) -> Result<(), QueryEvaluationError> {
+    Ok(())
+}
+
+fn term_contains_blank_node(term: &Term) -> bool {
+    match term {
+        Term::BlankNode(_) => true,
+        #[cfg(feature = "sparql-12")]
+        Term::Triple(triple) => {
+            matches!(triple.subject, NamedOrBlankNode::BlankNode(_))
+                || term_contains_blank_node(&triple.object)
+        }
+        Term::NamedNode(_) | Term::Literal(_) => false,
+    }
+}
+
+fn deduplicate_terms<T: Clone + Eq + Hash>(mut terms: Vec<T>) -> Vec<T> {
+    let mut seen = FxHashSet::default();
+    terms.retain(|term| seen.insert(term.clone()));
+    terms
+}
+
+#[cfg(feature = "sparql-12")]
+fn validate_expression_term_for_version(
+    term: &ExpressionTerm,
+    version: SparqlVersion,
+) -> Result<(), QueryEvaluationError> {
+    if matches!(term, ExpressionTerm::Triple(_)) && version != SparqlVersion::V1_2
+        || matches!(term, ExpressionTerm::DirLangStringLiteral { .. })
+            && version == SparqlVersion::V1_1
+    {
+        return Err(QueryEvaluationError::IncompatibleTerm {
+            version,
+            term: term.clone().into(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "sparql-12"))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps feature-independent evaluator call sites"
+)]
+fn validate_expression_term_for_version(
+    _term: &ExpressionTerm,
+    _version: SparqlVersion,
+) -> Result<(), QueryEvaluationError> {
+    Ok(())
 }
 
 impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
@@ -58,7 +139,13 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
         dataset: D,
         specification: QueryDatasetSpecification,
         cancellation_token: CancellationToken,
+        version: SparqlVersion,
     ) -> Result<Self, QueryEvaluationError> {
+        if !version.is_supported() {
+            return Err(QueryEvaluationError::UnsupportedSparqlVersion(version));
+        }
+        let default_is_merge =
+            specification.default_graph_graphs().is_some() && !specification.is_default_dataset();
         let specification = EncodedDatasetSpec {
             default: specification
                 .default
@@ -79,7 +166,8 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
                         .collect()
                 })
                 .transpose()
-                .map_err(|e: D::Error| QueryEvaluationError::Dataset(Box::new(e)))?,
+                .map_err(|e: D::Error| QueryEvaluationError::Dataset(Box::new(e)))?
+                .map(deduplicate_terms),
             named: specification
                 .named
                 .map(|graph_names| {
@@ -89,12 +177,16 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
                         .collect()
                 })
                 .transpose()
-                .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?,
+                .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?
+                .map(deduplicate_terms),
+            default_is_merge,
         };
         Ok(Self {
             dataset: Rc::new(dataset),
             specification,
+            merged_blank_nodes: Rc::new(RefCell::new(FxHashMap::default())),
             cancellation_token,
+            version,
             _lifetime: PhantomData,
         })
     }
@@ -108,12 +200,159 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
     ) -> impl Iterator<Item = Result<InternalQuad<D::InternalTerm>, QueryEvaluationError>> + use<'a, D>
     {
         let cancellation_token = self.cancellation_token.clone();
+        let dataset = Rc::clone(&self.dataset);
+        let version = self.version;
         self.dataset
             .internal_quads_for_pattern(subject, predicate, object, graph_name)
             .map(move |r| {
                 cancellation_token.ensure_alive()?;
-                r.map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))
+                let quad = r.map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+                if version != SparqlVersion::V1_2 {
+                    for term in [&quad.subject, &quad.predicate, &quad.object] {
+                        let term = dataset
+                            .externalize_term(term.clone())
+                            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+                        validate_term_for_version(&term, version)?;
+                    }
+                    if let Some(graph_name) = &quad.graph_name {
+                        let term = dataset
+                            .externalize_term(graph_name.clone())
+                            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+                        validate_term_for_version(&term, version)?;
+                    }
+                }
+                Ok(quad)
             })
+    }
+
+    fn standardize_merged_term(
+        &self,
+        source_graph: &Option<D::InternalTerm>,
+        term: D::InternalTerm,
+    ) -> Result<D::InternalTerm, QueryEvaluationError> {
+        let external = self
+            .dataset
+            .externalize_term(term.clone())
+            .map_err(|error| QueryEvaluationError::Dataset(Box::new(error)))?;
+        if !term_contains_blank_node(&external) {
+            return Ok(term);
+        }
+        let rewritten = self.rewrite_merged_term(source_graph, external);
+        self.dataset
+            .internalize_term(rewritten)
+            .map_err(|error| QueryEvaluationError::Dataset(Box::new(error)))
+    }
+
+    fn merged_filter_can_use_index(&self, term: &D::InternalTerm) -> bool {
+        self.dataset
+            .externalize_term(term.clone())
+            .is_ok_and(|term| !term_contains_blank_node(&term))
+    }
+
+    fn rewrite_merged_term(&self, source_graph: &Option<D::InternalTerm>, term: Term) -> Term {
+        match term {
+            Term::NamedNode(node) => node.into(),
+            Term::BlankNode(node) => self.merged_blank_node(source_graph, node).into(),
+            Term::Literal(literal) => literal.into(),
+            #[cfg(feature = "sparql-12")]
+            Term::Triple(triple) => Triple::new(
+                self.rewrite_merged_subject(source_graph, triple.subject),
+                triple.predicate,
+                self.rewrite_merged_term(source_graph, triple.object),
+            )
+            .into(),
+        }
+    }
+
+    #[cfg(feature = "sparql-12")]
+    fn rewrite_merged_subject(
+        &self,
+        source_graph: &Option<D::InternalTerm>,
+        subject: NamedOrBlankNode,
+    ) -> NamedOrBlankNode {
+        match subject {
+            NamedOrBlankNode::NamedNode(node) => node.into(),
+            NamedOrBlankNode::BlankNode(node) => self.merged_blank_node(source_graph, node).into(),
+        }
+    }
+
+    fn merged_blank_node(
+        &self,
+        source_graph: &Option<D::InternalTerm>,
+        source: BlankNode,
+    ) -> BlankNode {
+        self.merged_blank_nodes
+            .borrow_mut()
+            .entry((source_graph.clone(), source))
+            .or_default()
+            .clone()
+    }
+
+    fn merged_default_quads_for_pattern(
+        &self,
+        source_graphs: &[Option<D::InternalTerm>],
+        subject: Option<&D::InternalTerm>,
+        predicate: Option<&D::InternalTerm>,
+        object: Option<&D::InternalTerm>,
+    ) -> Box<dyn Iterator<Item = Result<InternalQuad<D::InternalTerm>, QueryEvaluationError>> + 'a>
+    {
+        let subject = subject.cloned();
+        let predicate = predicate.cloned();
+        let object = object.cloned();
+        let iters = source_graphs
+            .iter()
+            .cloned()
+            .map(|source_graph| {
+                let dataset = self.clone();
+                let subject = subject.clone();
+                let object = object.clone();
+                let indexed_subject = subject
+                    .as_ref()
+                    .filter(|term| dataset.merged_filter_can_use_index(term));
+                let indexed_object = object
+                    .as_ref()
+                    .filter(|term| dataset.merged_filter_can_use_index(term));
+                let iter = self
+                    .underlying_internal_quads_for_pattern(
+                        indexed_subject,
+                        predicate.as_ref(),
+                        indexed_object,
+                        Some(source_graph.as_ref()),
+                    )
+                    .map(move |quad| {
+                        let mut quad = quad?;
+                        quad.subject =
+                            dataset.standardize_merged_term(&source_graph, quad.subject)?;
+                        quad.object =
+                            dataset.standardize_merged_term(&source_graph, quad.object)?;
+                        quad.graph_name = None;
+                        Ok(quad)
+                    })
+                    .filter(move |quad| {
+                        quad.is_err()
+                            || quad.as_ref().is_ok_and(|quad| {
+                                subject.as_ref().is_none_or(|term| *term == quad.subject)
+                                    && object.as_ref().is_none_or(|term| *term == quad.object)
+                            })
+                    });
+                let iter: Box<
+                    dyn Iterator<Item = Result<InternalQuad<D::InternalTerm>, QueryEvaluationError>>
+                        + 'a,
+                > = Box::new(iter);
+                iter
+            })
+            .collect::<Vec<_>>();
+        let mut seen = FxHashSet::default();
+        Box::new(iters.into_iter().flatten().filter(move |quad| {
+            quad.is_err()
+                || quad.as_ref().is_ok_and(|quad| {
+                    seen.insert((
+                        quad.subject.clone(),
+                        quad.predicate.clone(),
+                        quad.object.clone(),
+                    ))
+                })
+        }))
     }
 
     fn internal_quads_for_pattern(
@@ -146,7 +385,14 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
                 }
             } else if let Some(default_graph_graphs) = &self.specification.default {
                 // The default graph is queried, and it is set to something and not the union of all graphs
-                if default_graph_graphs.len() == 1 {
+                if self.specification.default_is_merge {
+                    self.merged_default_quads_for_pattern(
+                        default_graph_graphs,
+                        subject,
+                        predicate,
+                        object,
+                    )
+                } else if default_graph_graphs.len() == 1 {
                     // There is a single graph in the default graph, we return it directly
                     Box::new(
                         self.underlying_internal_quads_for_pattern(
@@ -180,13 +426,24 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
                     }))
                 }
             } else {
-                // The default graph has not been set, it is the union of all graphs, we query all graphs
+                // The union default graph contains all named-graph triples as a set.
+                let mut seen = FxHashSet::default();
                 Box::new(
                     self.underlying_internal_quads_for_pattern(subject, predicate, object, None)
                         .map(|quad| {
                             let mut quad = quad?;
                             quad.graph_name = None;
                             Ok(quad)
+                        })
+                        .filter(move |quad| {
+                            quad.is_err()
+                                || quad.as_ref().is_ok_and(|quad| {
+                                    seen.insert((
+                                        quad.subject.clone(),
+                                        quad.predicate.clone(),
+                                        quad.object.clone(),
+                                    ))
+                                })
                         }),
                 )
             }
@@ -249,30 +506,38 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
 
     fn internalize_term(&self, term: Term) -> Result<D::InternalTerm, QueryEvaluationError> {
         self.cancellation_token.ensure_alive()?;
+        validate_term_for_version(&term, self.version)?;
         self.dataset
             .internalize_term(term)
             .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))
     }
 
     fn externalize_term(&self, term: D::InternalTerm) -> Result<Term, QueryEvaluationError> {
-        self.dataset
+        let term = self
+            .dataset
             .externalize_term(term)
-            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))
+            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+        validate_term_for_version(&term, self.version)?;
+        Ok(term)
     }
 
     fn externalize_expression_term(
         &self,
         term: D::InternalTerm,
     ) -> Result<ExpressionTerm, QueryEvaluationError> {
-        self.dataset
+        let term = self
+            .dataset
             .externalize_expression_term(term)
-            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))
+            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+        validate_expression_term_for_version(&term, self.version)?;
+        Ok(term)
     }
 
     fn internalize_expression_term(
         &self,
         term: ExpressionTerm,
     ) -> Result<D::InternalTerm, QueryEvaluationError> {
+        validate_expression_term_for_version(&term, self.version)?;
         self.dataset
             .internalize_expression_term(term)
             .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))
@@ -294,7 +559,9 @@ impl<'a, D: QueryableDataset<'a>> Clone for EvalDataset<'a, D> {
         Self {
             dataset: Rc::clone(&self.dataset),
             specification: self.specification.clone(),
+            merged_blank_nodes: Rc::clone(&self.merged_blank_nodes),
             cancellation_token: self.cancellation_token.clone(),
+            version: self.version,
             _lifetime: self._lifetime,
         }
     }
@@ -304,6 +571,7 @@ impl<'a, D: QueryableDataset<'a>> Clone for EvalDataset<'a, D> {
 struct EncodedDatasetSpec<T> {
     default: Option<Vec<Option<T>>>,
     named: Option<Vec<T>>,
+    default_is_merge: bool,
 }
 
 #[derive(Clone)]
@@ -435,9 +703,10 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         cancellation_token: CancellationToken,
         dataset_spec: QueryDatasetSpecification,
         run_stats: bool,
+        version: SparqlVersion,
     ) -> Result<Self, QueryEvaluationError> {
         Ok(Self {
-            dataset: EvalDataset::new(dataset, dataset_spec, cancellation_token)?,
+            dataset: EvalDataset::new(dataset, dataset_spec, cancellation_token, version)?,
             base_iri,
             now: DateTime::now(),
             service_handler,
@@ -1030,12 +1299,48 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                 right,
                 algorithm,
             } => {
+                // A variable SERVICE endpoint is selected from the current
+                // solution mapping. It must therefore be evaluated after the
+                // other join side has had a chance to bind that variable.
+                let variable_service_on_left = matches!(
+                    left.as_ref(),
+                    GraphPattern::Service {
+                        name: NamedNodePattern::Variable(_),
+                        ..
+                    }
+                );
+                let variable_service_on_right = matches!(
+                    right.as_ref(),
+                    GraphPattern::Service {
+                        name: NamedNodePattern::Variable(_),
+                        ..
+                    }
+                );
                 let (left, left_stats) = self.graph_pattern_evaluator(left, encoded_variables);
                 stat_children.push(left_stats);
                 let (right, right_stats) = self.graph_pattern_evaluator(right, encoded_variables);
                 stat_children.push(right_stats);
                 let left = left?;
                 let right = right?;
+
+                if variable_service_on_right {
+                    return Ok(Rc::new(move |from| {
+                        let right = Rc::clone(&right);
+                        Box::new(left(from).flat_map(move |tuple| match tuple {
+                            Ok(tuple) => right(tuple),
+                            Err(error) => Box::new(once(Err(error))),
+                        }))
+                    }));
+                }
+                if variable_service_on_left {
+                    return Ok(Rc::new(move |from| {
+                        let left = Rc::clone(&left);
+                        Box::new(right(from).flat_map(move |tuple| match tuple {
+                            Ok(tuple) => left(tuple),
+                            Err(error) => Box::new(once(Err(error))),
+                        }))
+                    }));
+                }
 
                 match algorithm {
                     JoinAlgorithm::HashBuildLeftProbeRight { keys } => {
@@ -1600,6 +1905,19 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
                         Rc::clone(&variables),
                         &from,
                     ) {
+                        Ok(result) if silent => {
+                            let buffered = result
+                                .filter_map(|binding| {
+                                    binding
+                                        .map(|binding| binding.combine_with(&from))
+                                        .transpose()
+                                })
+                                .collect::<Result<Vec<_>, _>>();
+                            match buffered {
+                                Ok(bindings) => Box::new(bindings.into_iter().map(Ok)),
+                                Err(_) => Box::new(once(Ok(from))),
+                            }
+                        }
                         Ok(result) => Box::new(result.filter_map(move |binding| {
                             binding
                                 .map(|binding| binding.combine_with(&from))

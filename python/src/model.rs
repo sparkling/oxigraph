@@ -287,7 +287,8 @@ impl From<PyLiteral> for Term {
 impl PyLiteral {
     fn from_value(value: &Bound<'_, PyAny>, datatype: Option<PyNamedNode>) -> PyResult<Self> {
         Ok(if let Some(datatype) = datatype {
-            Literal::new_typed_literal(value.extract::<OxStringInput>()?, datatype)
+            Literal::try_new_typed_literal(value.extract::<OxStringInput>()?, datatype)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?
         } else if let Ok(value) = value.extract::<OxStringInput>() {
             Literal::new_simple_literal(value)
         } else if let Ok(value) = value.extract::<bool>() {

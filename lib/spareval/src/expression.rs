@@ -1557,9 +1557,9 @@ where
                     let ExpressionTerm::NamedNode(datatype) = try_or_ok!(datatype(tuple)?) else {
                         return Ok(None);
                     };
-                    Ok(Some(
-                        Term::from(Literal::new_typed_literal(value, datatype)).into(),
-                    ))
+                    Ok(Literal::try_new_typed_literal(value, datatype)
+                        .ok()
+                        .map(|literal| Term::from(literal).into()))
                 }));
             }
             if *function == sparql::IS_IRI || *function == sparql::IS_URI {
@@ -2463,7 +2463,32 @@ fn equals(a: &ExpressionTerm, b: &ExpressionTerm) -> Option<bool> {
 
 #[cfg(feature = "sparql-12")]
 fn triple_equals(a: &ExpressionTriple, b: &ExpressionTriple) -> Option<bool> {
-    Some(a.subject == b.subject && a.predicate == b.predicate && equals(&a.object, &b.object)?)
+    let object_equal = same_value(&a.object, &b.object)?;
+    Some(a.subject == b.subject && a.predicate == b.predicate && object_equal)
+}
+
+#[cfg(feature = "sparql-12")]
+fn same_value(a: &ExpressionTerm, b: &ExpressionTerm) -> Option<bool> {
+    match (a, b) {
+        (ExpressionTerm::FloatLiteral(a), ExpressionTerm::FloatLiteral(b))
+            if a.is_nan() && b.is_nan() =>
+        {
+            Some(true)
+        }
+        (ExpressionTerm::FloatLiteral(a), ExpressionTerm::DoubleLiteral(b))
+        | (ExpressionTerm::DoubleLiteral(b), ExpressionTerm::FloatLiteral(a))
+            if a.is_nan() && b.is_nan() =>
+        {
+            Some(true)
+        }
+        (ExpressionTerm::DoubleLiteral(a), ExpressionTerm::DoubleLiteral(b))
+            if a.is_nan() && b.is_nan() =>
+        {
+            Some(true)
+        }
+        (ExpressionTerm::Triple(a), ExpressionTerm::Triple(b)) => triple_equals(a, b),
+        _ => equals(a, b),
+    }
 }
 
 /// Comparison for <, >, <= and >= operators

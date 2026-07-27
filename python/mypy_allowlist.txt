@@ -10,6 +10,12 @@ pyoxigraph.NamedNode.__init__
 pyoxigraph.NamedNode.__new__
 pyoxigraph.Quad.__init__
 pyoxigraph.Quad.__new__
+pyoxigraph.QueryEntailment.__init__
+pyoxigraph.QueryEntailment.__new__
+pyoxigraph.RdfVersion.__init__
+pyoxigraph.RdfVersion.__new__
+pyoxigraph.SparqlVersion.__init__
+pyoxigraph.SparqlVersion.__new__
 pyoxigraph.Store.__init__
 pyoxigraph.Store.__new__
 pyoxigraph.Triple.__init__

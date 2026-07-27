@@ -1,12 +1,11 @@
 use crate::io::{
-    PyIo, PyRdfFormat, PyReadableInput, PyWritable, PyWritableOutput, lookup_rdf_format,
-    map_parse_error,
+    PyIo, PyRdfFormat, PyRdfVersion, PyReadableInput, PyWritable, PyWritableOutput,
+    lookup_rdf_format, map_parse_error, rdf_parser, rdf_serializer,
 };
 use crate::model::*;
 use crate::sparql::*;
-use oxigraph::io::{RdfParser, RdfSerializer};
 use oxigraph::model::GraphName;
-use oxigraph::sparql::QueryResults;
+use oxigraph::sparql::{QueryEntailment, QueryEntailmentOptions, QueryResults};
 use oxigraph::store::{self, LoaderError, SerializerError, StorageError, Store};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -229,6 +228,10 @@ impl PyStore {
     /// :type base_iri: str or None, optional
     /// :param prefixes: a set of default prefixes to use during the SPARQL query parsing as a prefix name -> prefix IRI dictionary.
     /// :type prefixes: dict[str, str] or None, optional
+    /// :param sparql_version: the SPARQL version used to parse the query.
+    /// :type sparql_version: SparqlVersion or None, optional
+    /// :param entailment: the explicit bounded entailment profile used for evaluation.
+    /// :type entailment: QueryEntailment or None, optional
     /// :param use_default_graph_as_union: if the SPARQL query should look for triples in all the dataset graphs by default (i.e. without `GRAPH` operations). Disabled by default.
     /// :type use_default_graph_as_union: bool, optional
     /// :param default_graph: list of the graphs that should be used as the query default graph. By default, the store default graph is used.
@@ -267,12 +270,14 @@ impl PyStore {
     /// >>> bool(store.query('ASK { ?s ?p ?o }'))
     /// True
     #[expect(clippy::too_many_arguments, clippy::doc_link_with_quotes)]
-    #[pyo3(signature = (query, *, base_iri = None, prefixes = None, use_default_graph_as_union = false, default_graph = None, named_graphs = None, substitutions = None, custom_functions = None, custom_aggregate_functions = None))]
+    #[pyo3(signature = (query, *, base_iri = None, prefixes = None, sparql_version = None, entailment = None, use_default_graph_as_union = false, default_graph = None, named_graphs = None, substitutions = None, custom_functions = None, custom_aggregate_functions = None))]
     fn query<'py>(
         &self,
         query: &str,
         base_iri: Option<&str>,
         prefixes: Option<HashMap<String, String>>,
+        sparql_version: Option<PySparqlVersion>,
+        entailment: Option<PyQueryEntailment>,
         use_default_graph_as_union: bool,
         default_graph: Option<&Bound<'_, PyAny>>,
         named_graphs: Option<&Bound<'_, PyAny>>,
@@ -287,19 +292,27 @@ impl PyStore {
         // SAFETY: To derive Ungil
         unsafe impl Send for UngilQueryResults {}
 
-        let mut evaluator = prepare_sparql_query(
-            sparql_evaluator_from_python(
-                base_iri,
-                prefixes,
-                custom_functions,
-                custom_aggregate_functions,
-            )?,
+        let mut sparql_evaluator = sparql_evaluator_from_python(
+            base_iri,
+            prefixes,
+            custom_functions,
+            custom_aggregate_functions,
+        )?;
+        if let Some(version) = sparql_version {
+            sparql_evaluator = sparql_evaluator.with_version((&version).into());
+        }
+        let prepared = prepare_sparql_query(
+            sparql_evaluator,
             query,
             use_default_graph_as_union,
             default_graph,
             named_graphs,
-        )?
-        .on_store(&self.inner);
+        )?;
+        let entailment = entailment.map_or(QueryEntailment::Simple, |value| (&value).into());
+        let options = QueryEntailmentOptions::new(entailment);
+        let mut evaluator = prepared
+            .on_store_with_entailment(&self.inner, &options)
+            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
         if let Some(substitutions) = substitutions {
             for (variable, term) in substitutions {
                 evaluator = evaluator.substitute_variable(variable, term);
@@ -322,6 +335,8 @@ impl PyStore {
     /// :type base_iri: str or None, optional
     /// :param prefixes: a set of default prefixes to use during the SPARQL query parsing as a prefix name -> prefix IRI dictionary.
     /// :type prefixes: dict[str, str] or None, optional
+    /// :param sparql_version: the SPARQL version used to parse the update.
+    /// :type sparql_version: SparqlVersion or None, optional
     /// :param custom_functions: dictionary of custom functions mapping function names to their definition. Custom functions take for input some RDF terms and returns a RDF term or :py:const:`None`.
     /// :type custom_functions: dict[NamedNode, typing.Callable[[NamedNode or BlankNode or Literal or Triple, ...], NamedNode or BlankNode or Literal or Triple or None]] or None, optional
     /// :param custom_aggregate_functions: dictionary of custom aggregate functions mapping function names to their definition. Custom aggregate functions take no input and return an object with two methods, `accumulate(self, term: Term)` to add a new term to the accumulator and `finish(self) -> Term` to return the accumulated result.
@@ -352,28 +367,33 @@ impl PyStore {
     /// >>> store.update('DELETE WHERE { <http://example.com> ?p ?o }')
     /// >>> list(store)
     /// []
-    #[pyo3(signature = (update, *, base_iri = None, prefixes = None, custom_functions = None, custom_aggregate_functions = None))]
+    #[pyo3(signature = (update, *, base_iri = None, prefixes = None, sparql_version = None, custom_functions = None, custom_aggregate_functions = None))]
     fn update(
         &self,
         update: &str,
         base_iri: Option<&str>,
         prefixes: Option<HashMap<String, String>>,
+        sparql_version: Option<PySparqlVersion>,
         custom_functions: Option<HashMap<PyNamedNode, Py<PyAny>>>,
         custom_aggregate_functions: Option<HashMap<PyNamedNode, Py<PyAny>>>,
         py: Python<'_>,
     ) -> PyResult<()> {
         py.detach(|| {
-            sparql_evaluator_from_python(
+            let mut evaluator = sparql_evaluator_from_python(
                 base_iri,
                 prefixes,
                 custom_functions,
                 custom_aggregate_functions,
-            )?
-            .parse_update(update)
-            .map_err(map_sparql_syntax_error)?
-            .on_store(&self.inner)
-            .execute()
-            .map_err(map_update_evaluation_error)
+            )?;
+            if let Some(version) = sparql_version {
+                evaluator = evaluator.with_version((&version).into());
+            }
+            evaluator
+                .parse_update(update)
+                .map_err(map_sparql_syntax_error)?
+                .on_store(&self.inner)
+                .execute()
+                .map_err(map_update_evaluation_error)
         })
     }
 
@@ -402,6 +422,8 @@ impl PyStore {
     /// :type path: str or os.PathLike[str] or None, optional
     /// :param base_iri: the base IRI used to resolve the relative IRIs in the file or :py:const:`None` if relative IRI resolution should not be done.
     /// :type base_iri: str or None, optional
+    /// :param rdf_version: the RDF version used to constrain parsing.
+    /// :type rdf_version: RdfVersion or None, optional
     /// :param to_graph: if it is a file composed of triples, the graph in which the triples should be stored. By default, the default graph is used.
     /// :type to_graph: NamedNode or BlankNode or DefaultGraph or None, optional
     /// :param lenient: Skip some data validation during loading, like validating IRIs. This makes parsing faster at the cost of maybe ingesting invalid data.
@@ -415,20 +437,21 @@ impl PyStore {
     /// >>> store.load(input='<foo> <p> "1" .', format=RdfFormat.TURTLE, base_iri="http://example.com/", to_graph=NamedNode("http://example.com/g"))
     /// >>> list(store)
     /// [<Quad subject=<NamedNode value=http://example.com/foo> predicate=<NamedNode value=http://example.com/p> object=<Literal value=1 datatype=<NamedNode value=http://www.w3.org/2001/XMLSchema#string>> graph_name=<NamedNode value=http://example.com/g>>]
-    #[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, to_graph = None, lenient=false))]
+    #[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, rdf_version = None, to_graph = None, lenient=false))]
     fn load(
         &self,
         input: Option<PyReadableInput>,
         format: Option<PyRdfFormat>,
         path: Option<PathBuf>,
         base_iri: Option<&str>,
+        rdf_version: Option<PyRdfVersion>,
         to_graph: Option<PyGraphName>,
         lenient: bool,
         py: Python<'_>,
     ) -> PyResult<()> {
         let format = lookup_rdf_format(format, path.as_deref())?;
         py.detach(|| {
-            let mut parser = RdfParser::from_format(format);
+            let mut parser = rdf_parser(format, rdf_version)?;
             if let Some(base_iri) = base_iri {
                 parser = parser
                     .with_base_iri(base_iri)
@@ -485,6 +508,8 @@ impl PyStore {
     /// :type path: str or os.PathLike[str] or None, optional
     /// :param base_iri: the base IRI used to resolve the relative IRIs in the file or :py:const:`None` if relative IRI resolution should not be done.
     /// :type base_iri: str or None, optional
+    /// :param rdf_version: the RDF version used to constrain parsing.
+    /// :type rdf_version: RdfVersion or None, optional
     /// :param to_graph: if it is a file composed of triples, the graph in which the triples should be stored. By default, the default graph is used.
     /// :type to_graph: NamedNode or BlankNode or DefaultGraph or None, optional
     /// :param lenient: Skip some data validation during loading, like validating IRIs. This makes parsing faster at the cost of maybe ingesting invalid data.
@@ -498,20 +523,21 @@ impl PyStore {
     /// >>> store.bulk_load(input=b'<foo> <p> "1" .', format=RdfFormat.TURTLE, base_iri="http://example.com/", to_graph=NamedNode("http://example.com/g"))
     /// >>> list(store)
     /// [<Quad subject=<NamedNode value=http://example.com/foo> predicate=<NamedNode value=http://example.com/p> object=<Literal value=1 datatype=<NamedNode value=http://www.w3.org/2001/XMLSchema#string>> graph_name=<NamedNode value=http://example.com/g>>]
-    #[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, to_graph = None, lenient = false))]
+    #[pyo3(signature = (input = None, format = None, *, path = None, base_iri = None, rdf_version = None, to_graph = None, lenient = false))]
     fn bulk_load(
         &self,
         input: Option<PyReadableInput>,
         format: Option<PyRdfFormat>,
         path: Option<PathBuf>,
         base_iri: Option<&str>,
+        rdf_version: Option<PyRdfVersion>,
         to_graph: Option<PyGraphName>,
         lenient: bool,
         py: Python<'_>,
     ) -> PyResult<()> {
         let format = lookup_rdf_format(format, path.as_deref())?;
         py.detach(|| {
-            let mut parser = RdfParser::from_format(format);
+            let mut parser = rdf_parser(format, rdf_version)?;
             if let Some(base_iri) = base_iri {
                 parser = parser.with_base_iri(base_iri).map_err(|e| {
                     PyValueError::new_err(format!("Invalid base IRI '{base_iri}', {e}"))
@@ -585,6 +611,8 @@ impl PyStore {
     /// :type prefixes: dict[str, str] or None, optional
     /// :param base_iri: the base IRI used in the serialization if the format supports it.
     /// :type base_iri: str or None, optional
+    /// :param rdf_version: the RDF version used for the serialization.
+    /// :type rdf_version: RdfVersion or None, optional
     /// :return: :py:class:`bytes` with the serialization if the ``output`` parameter is :py:const:`None`, :py:const:`None` if ``output`` is set.
     /// :rtype: bytes or None
     /// :raises ValueError: if the format is not supported or the `from_graph` parameter is not given with a syntax not supporting named graphs.
@@ -602,7 +630,7 @@ impl PyStore {
     /// >>> store.dump(output, RdfFormat.TURTLE, from_graph=NamedNode("http://example.com/g"), prefixes={"ex": "http://example.com/"}, base_iri="http://example.com")
     /// >>> output.getvalue()
     /// b'@base <http://example.com> .\n@prefix ex: </> .\n<> ex:p "1" .\n'
-    #[pyo3(signature = (output = None, format = None, *, from_graph = None, prefixes = None, base_iri = None))]
+    #[pyo3(signature = (output = None, format = None, *, from_graph = None, prefixes = None, base_iri = None, rdf_version = None))]
     fn dump(
         &self,
         output: Option<PyWritableOutput>,
@@ -610,13 +638,14 @@ impl PyStore {
         from_graph: Option<PyGraphName>,
         prefixes: Option<BTreeMap<String, String>>,
         base_iri: Option<&str>,
+        rdf_version: Option<PyRdfVersion>,
         py: Python<'_>,
     ) -> PyResult<Option<Vec<u8>>> {
         PyWritable::do_write(
             |output, file_path| {
                 py.detach(|| {
                     let format = lookup_rdf_format(format, file_path.as_deref())?;
-                    let mut serializer = RdfSerializer::from_format(format);
+                    let mut serializer = rdf_serializer(format, rdf_version)?;
                     if let Some(prefixes) = prefixes {
                         for (prefix_name, prefix_iri) in &prefixes {
                             serializer =

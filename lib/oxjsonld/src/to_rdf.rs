@@ -9,7 +9,8 @@ use oxiri::{Iri, IriParseError};
 #[cfg(feature = "rdf-12")]
 use oxrdf::BaseDirection;
 use oxrdf::vocab::{rdf, xsd};
-use oxrdf::{BlankNode, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad};
+use oxrdf::{BlankNode, Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::Write;
 use std::io::Read;
@@ -290,6 +291,8 @@ impl JsonLdParser {
             expended_events: Vec::new(),
             to_rdf: JsonLdToRdfConverter {
                 state: vec![JsonLdToRdfState::Graph(Some(GraphName::DefaultGraph))],
+                named_graphs: Vec::new(),
+                named_graphs_seen: HashSet::new(),
                 lenient: self.lenient,
             },
             json_error: false,
@@ -475,6 +478,29 @@ impl<R: Read> ReaderJsonLdParser<R> {
         self.inner.base_iri()
     }
 
+    /// Returns named graphs encountered so far, including empty named graphs.
+    ///
+    /// Drain the quad iterator before calling this method to obtain complete
+    /// JSON-LD dataset topology.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.inner.named_graphs()
+    }
+
+    /// Consumes the parser and returns the complete RDF dataset.
+    ///
+    /// This preserves named graphs represented by JSON-LD graph objects even
+    /// when their `@graph` arrays are empty.
+    pub fn collect_dataset(mut self) -> Result<Dataset, JsonLdParseError> {
+        let mut dataset = Dataset::new();
+        for quad in self.by_ref() {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs() {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok(dataset)
+    }
+
     fn parse_step(&mut self) -> Result<(), JsonLdParseError> {
         let event = self.json_parser.parse_next().inspect_err(|_| {
             self.inner.json_error = true;
@@ -613,6 +639,27 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderJsonLdParser<R> {
     /// ```
     pub fn base_iri(&self) -> Option<&str> {
         self.inner.base_iri()
+    }
+
+    /// Returns named graphs encountered so far, including empty named graphs.
+    ///
+    /// Drain the parser before calling this method to obtain complete JSON-LD
+    /// dataset topology.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.inner.named_graphs()
+    }
+
+    /// Consumes the parser and returns the complete RDF dataset, preserving
+    /// empty named graph objects.
+    pub async fn collect_dataset(mut self) -> Result<Dataset, JsonLdParseError> {
+        let mut dataset = Dataset::new();
+        while let Some(quad) = self.next().await {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs() {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok(dataset)
     }
 
     async fn parse_step(&mut self) -> Result<(), JsonLdParseError> {
@@ -803,6 +850,27 @@ impl SliceJsonLdParser<'_> {
         self.inner.base_iri()
     }
 
+    /// Returns named graphs encountered so far, including empty named graphs.
+    ///
+    /// Drain the quad iterator before calling this method to obtain complete
+    /// JSON-LD dataset topology.
+    pub fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.inner.named_graphs()
+    }
+
+    /// Consumes the parser and returns the complete RDF dataset, preserving
+    /// empty named graph objects.
+    pub fn collect_dataset(mut self) -> Result<Dataset, JsonLdSyntaxError> {
+        let mut dataset = Dataset::new();
+        for quad in self.by_ref() {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs() {
+            dataset.insert_named_graph(graph_name.clone());
+        }
+        Ok(dataset)
+    }
+
     fn parse_step(&mut self) -> Result<(), JsonLdSyntaxError> {
         let event = self.json_parser.parse_next().inspect_err(|_| {
             self.inner.json_error = true;
@@ -879,6 +947,10 @@ impl InternalJsonLdParser {
             lenient: self.to_rdf.lenient,
         }
     }
+
+    fn named_graphs(&self) -> impl Iterator<Item = &NamedOrBlankNode> {
+        self.to_rdf.named_graphs.iter()
+    }
 }
 
 enum JsonLdToRdfState {
@@ -900,6 +972,8 @@ enum JsonLdToRdfState {
 
 struct JsonLdToRdfConverter {
     state: Vec<JsonLdToRdfState>,
+    named_graphs: Vec<NamedOrBlankNode>,
+    named_graphs_seen: HashSet<NamedOrBlankNode>,
     lenient: bool,
 }
 
@@ -990,6 +1064,13 @@ impl JsonLdToRdfConverter {
                 }
                 JsonLdEvent::StartGraph => {
                     let graph_name = id.clone().map(Into::into);
+                    if let Some(named_graph_name) = graph_name
+                        .as_ref()
+                        .and_then(named_or_blank_node_from_graph_name)
+                        && self.named_graphs_seen.insert(named_graph_name.clone())
+                    {
+                        self.named_graphs.push(named_graph_name);
+                    }
                     self.state.push(JsonLdToRdfState::Object(id));
                     self.state.push(JsonLdToRdfState::Graph(graph_name));
                 }
@@ -1240,7 +1321,6 @@ impl JsonLdToRdfConverter {
         }
     }
 
-    #[cfg_attr(not(feature = "rdf-12"), expect(unused_variables))]
     fn convert_literal(
         &self,
         value: JsonLdValue,
@@ -1248,6 +1328,13 @@ impl JsonLdToRdfConverter {
         direction: Option<&'static str>,
         r#type: Option<OxString>,
     ) -> Option<Literal> {
+        #[cfg(not(feature = "rdf-12"))]
+        if direction.is_some() {
+            // JSON-LD 1.1 To RDF drops direction-valued items when no
+            // rdfDirection conversion mode is available. Never erase the
+            // direction and emit a different language-tagged literal.
+            return None;
+        }
         let r#type = if let Some(t) = r#type {
             Some(self.convert_named_node(t)?)
         } else {
@@ -1286,7 +1373,7 @@ impl JsonLdToRdfConverter {
                         Literal::new_language_tagged_literal(value, language).ok()?
                     }
                 } else if let Some(datatype) = r#type {
-                    Literal::new_typed_literal(value, datatype)
+                    Literal::try_new_typed_literal(value, datatype).ok()?
                 } else {
                     Literal::new_simple_literal(value)
                 }
@@ -1302,10 +1389,11 @@ impl JsonLdToRdfConverter {
                 .unwrap_or(RdfJsonNumber::Double(value));
                 match value {
                     RdfJsonNumber::Integer(value) => {
-                        Literal::new_typed_literal(value, r#type.unwrap_or(xsd::INTEGER))
+                        Literal::try_new_typed_literal(value, r#type.unwrap_or(xsd::INTEGER))
+                            .ok()?
                     }
                     RdfJsonNumber::Double(value) => {
-                        Literal::new_typed_literal(value, r#type.unwrap_or(xsd::DOUBLE))
+                        Literal::try_new_typed_literal(value, r#type.unwrap_or(xsd::DOUBLE)).ok()?
                     }
                 }
             }
@@ -1313,10 +1401,11 @@ impl JsonLdToRdfConverter {
                 if language.is_some() {
                     return None; // Expansion already returns an error
                 }
-                Literal::new_typed_literal(
+                Literal::try_new_typed_literal(
                     if value { "true" } else { "false" },
                     r#type.unwrap_or(xsd::BOOLEAN),
                 )
+                .ok()?
             }
         })
     }
@@ -1391,6 +1480,14 @@ impl JsonLdToRdfConverter {
             }
         }
         None
+    }
+}
+
+fn named_or_blank_node_from_graph_name(graph_name: &GraphName) -> Option<NamedOrBlankNode> {
+    match graph_name {
+        GraphName::NamedNode(graph_name) => Some(graph_name.clone().into()),
+        GraphName::BlankNode(graph_name) => Some(graph_name.clone().into()),
+        GraphName::DefaultGraph => None,
     }
 }
 

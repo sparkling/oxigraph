@@ -1,12 +1,19 @@
 use crate::format_err;
-use crate::io::{BytesInput, buffer_from_js_value, convert_base_iri, rdf_format};
+use crate::io::{
+    BytesInput, buffer_from_js_value, convert_base_iri, optional_rdf_version, parse_rdf_version,
+    rdf_parser, rdf_serializer,
+};
 use crate::model::*;
 use crate::reflect::*;
 use crate::utils::{to_option, to_option_ref};
 use js_sys::{Array, Map, try_iter};
-use oxigraph::io::{RdfParser, RdfSerializer};
-use oxigraph::sparql::results::{QueryResultsFormat, QueryResultsSerializer};
-use oxigraph::sparql::{QueryResults, SparqlEvaluator};
+use oxigraph::model::RdfVersion;
+use oxigraph::sparql::results::{
+    QueryResultsFormat, QueryResultsMediaType, QueryResultsSerializer,
+};
+use oxigraph::sparql::{
+    QueryEntailment, QueryEntailmentOptions, QueryResults, SparqlEvaluator, SparqlVersion,
+};
 use oxigraph::store::Store;
 use wasm_bindgen::prelude::*;
 
@@ -90,8 +97,11 @@ impl JsStore {
         let mut base_iri = None;
         let mut use_default_graph_as_union = false;
         let mut results_format = None;
+        let mut results_version = None;
         let mut default_graph = None;
         let mut named_graphs = None;
+        let mut sparql_version = None;
+        let mut entailment = QueryEntailment::Simple;
         if let Some(options) = to_option_ref(options) {
             base_iri = convert_base_iri(&reflect_get(options, &BASE_IRI)?)?;
 
@@ -129,11 +139,26 @@ impl JsStore {
                         .ok_or_else(|| format_err!("results_format option must be a string"))?,
                 );
             }
+            if let Some(js_results_version) = to_option(reflect_get(options, &RESULTS_VERSION)?) {
+                results_version = Some(parse_version_option(
+                    &js_results_version,
+                    "results_version",
+                )?);
+            }
+            if let Some(js_sparql_version) = to_option(reflect_get(options, &SPARQL_VERSION)?) {
+                sparql_version = Some(parse_sparql_version_option(&js_sparql_version)?);
+            }
+            if let Some(js_entailment) = to_option(reflect_get(options, &ENTAILMENT)?) {
+                entailment = parse_entailment_option(&js_entailment)?;
+            }
         }
 
         let mut evaluator = SparqlEvaluator::new();
         if let Some(base_iri) = base_iri {
             evaluator = evaluator.with_base_iri(&base_iri).map_err(JsError::from)?;
+        }
+        if let Some(version) = sparql_version {
+            evaluator = evaluator.with_version(version);
         }
 
         let mut prepared_query = evaluator.parse_query(&query).map_err(JsError::from)?;
@@ -151,15 +176,17 @@ impl JsStore {
                 .set_available_named_graphs(named_graphs);
         }
 
+        let entailment_options = QueryEntailmentOptions::new(entailment);
         let results = prepared_query
-            .on_store(&self.store)
+            .on_store_with_entailment(&self.store, &entailment_options)
+            .map_err(JsError::from)?
             .execute()
             .map_err(JsError::from)?;
         Ok(match results {
             QueryResults::Solutions(solutions) => {
                 if let Some(results_format) = results_format {
                     let mut serializer =
-                        QueryResultsSerializer::from_format(query_results_format(&results_format)?)
+                        query_results_serializer(&results_format, results_version)?
                             .serialize_solutions_to_writer(Vec::new(), solutions.variables().into())
                             .map_err(JsError::from)?;
                     for solution in solutions {
@@ -189,8 +216,8 @@ impl JsStore {
             }
             QueryResults::Graph(triples) => {
                 if let Some(results_format) = results_format {
-                    let mut serializer = RdfSerializer::from_format(rdf_format(&results_format)?)
-                        .for_writer(Vec::new());
+                    let mut serializer =
+                        rdf_serializer(&results_format, results_version)?.for_writer(Vec::new());
                     for triple in triples {
                         serializer
                             .serialize_triple(&triple.map_err(JsError::from)?)
@@ -215,11 +242,9 @@ impl JsStore {
                 if let Some(results_format) = results_format {
                     JsValue::from_str(
                         &String::from_utf8(
-                            QueryResultsSerializer::from_format(query_results_format(
-                                &results_format,
-                            )?)
-                            .serialize_boolean_to_writer(Vec::new(), b)
-                            .map_err(JsError::from)?,
+                            query_results_serializer(&results_format, results_version)?
+                                .serialize_boolean_to_writer(Vec::new(), b)
+                                .map_err(JsError::from)?,
                         )
                         .map_err(JsError::from)?,
                     )
@@ -233,13 +258,20 @@ impl JsStore {
     pub fn update(&self, update: &str, options: &JsValue) -> Result<(), JsValue> {
         // Parsing options
         let mut base_iri = None;
+        let mut sparql_version = None;
         if let Some(options) = to_option_ref(options) {
             base_iri = convert_base_iri(&reflect_get(options, &BASE_IRI)?)?;
+            if let Some(js_sparql_version) = to_option(reflect_get(options, &SPARQL_VERSION)?) {
+                sparql_version = Some(parse_sparql_version_option(&js_sparql_version)?);
+            }
         }
 
         let mut evaluator = SparqlEvaluator::new();
         if let Some(base_iri) = base_iri {
             evaluator = evaluator.with_base_iri(&base_iri).map_err(JsError::from)?;
+        }
+        if let Some(version) = sparql_version {
+            evaluator = evaluator.with_version(version);
         }
 
         Ok(evaluator
@@ -257,9 +289,10 @@ impl JsStore {
         let mut to_graph_name_rs = None;
         let mut lenient = false;
         let mut no_transaction = false;
+        let mut rdf_version = None;
         if let Some(options) = to_option_ref(options) {
             if let Some(format_str) = reflect_get(options, &FORMAT)?.as_string() {
-                format = Some(rdf_format(&format_str)?);
+                format = Some(format_str);
             }
             base_iri = convert_base_iri(&reflect_get(options, &BASE_IRI)?)?;
             to_graph_name_rs = to_option_ref(&reflect_get(options, &TO_GRAPH_NAME)?)
@@ -267,11 +300,12 @@ impl JsStore {
                 .transpose()?;
             lenient = reflect_get(options, &LENIENT)?.is_truthy();
             no_transaction = reflect_get(options, &NO_TRANSACTION)?.is_truthy();
+            rdf_version = optional_rdf_version(options)?;
         }
         let format = format
             .ok_or_else(|| format_err!("The format option should be provided as a second argument of Store.load like store.load(my_content, {{format: 'nt'}}"))?;
 
-        let mut parser = RdfParser::from_format(format);
+        let mut parser = rdf_parser(&format, rdf_version)?;
         if let Some(to_graph_name) = to_graph_name_rs {
             parser = parser.with_default_graph(to_graph_name);
         }
@@ -317,42 +351,106 @@ impl JsStore {
         // Serialization options
         let mut format = None;
         let mut from_graph_name_rs = None;
+        let mut rdf_version = None;
         if let Some(options) = to_option_ref(options) {
             if let Some(format_str) = reflect_get(options, &FORMAT)?.as_string() {
-                format = Some(rdf_format(&format_str)?);
+                format = Some(format_str);
             }
             from_graph_name_rs = to_option_ref(&reflect_get(options, &FROM_GRAPH_NAME)?)
                 .map(to_graph_name)
                 .transpose()?;
+            rdf_version = optional_rdf_version(options)?;
         }
         let format = format
             .ok_or_else(|| format_err!("The format option should be provided as a second argument of Store.load like store.dump({{format: 'nt'}}"))?;
 
+        let serializer = rdf_serializer(&format, rdf_version)?;
         let buffer = if let Some(from_graph_name) = from_graph_name_rs {
             self.store
-                .dump_graph_to_writer(&from_graph_name, format, Vec::new())
+                .dump_graph_to_writer(&from_graph_name, serializer, Vec::new())
         } else {
-            self.store.dump_to_writer(format, Vec::new())
+            self.store.dump_to_writer(serializer, Vec::new())
         }
         .map_err(JsError::from)?;
         Ok(String::from_utf8(buffer).map_err(JsError::from)?)
     }
 }
 
-fn query_results_format(format: &str) -> Result<QueryResultsFormat, JsValue> {
-    if format.contains('/') {
-        QueryResultsFormat::from_media_type(format).ok_or_else(|| {
-            format_err!(
-                "Not supported SPARQL query results format media type: {}",
-                format
-            )
-        })
+fn query_results_serializer(
+    format: &str,
+    results_version: Option<RdfVersion>,
+) -> Result<QueryResultsSerializer, JsValue> {
+    let (format, inline_version) = if format.contains('/') {
+        let media_type = if let Some(version) = results_version {
+            format!("{format}; version={}", rdf_version_label(version))
+        } else {
+            format.to_owned()
+        };
+        let descriptor =
+            QueryResultsMediaType::parse(&media_type).map_err(|error| format_err!("{error}"))?;
+        (descriptor.format(), descriptor.version())
     } else {
-        QueryResultsFormat::from_extension(format).ok_or_else(|| {
-            format_err!(
-                "Not supported SPARQL query results format extension: {}",
-                format
-            )
-        })
+        (
+            QueryResultsFormat::from_extension(format).ok_or_else(|| {
+                format_err!(
+                    "Not supported SPARQL query results format extension: {}",
+                    format
+                )
+            })?,
+            results_version,
+        )
+    };
+    let serializer = QueryResultsSerializer::from_format(format);
+    if let Some(version) = inline_version {
+        serializer
+            .with_rdf_version(version)
+            .map_err(|error| format_err!("{error}"))
+    } else {
+        Ok(serializer)
+    }
+}
+
+fn parse_version_option(value: &JsValue, option: &str) -> Result<RdfVersion, JsValue> {
+    let value = value
+        .as_string()
+        .ok_or_else(|| format_err!("{option} option must be a string"))?;
+    parse_rdf_version(&value)
+}
+
+fn parse_sparql_version_option(value: &JsValue) -> Result<SparqlVersion, JsValue> {
+    let value = value
+        .as_string()
+        .ok_or_else(|| format_err!("sparql_version option must be a string"))?;
+    match value.as_str() {
+        "1.1" => Ok(SparqlVersion::V1_1),
+        "1.2-basic" => Ok(SparqlVersion::V1_2Basic),
+        "1.2" => Ok(SparqlVersion::V1_2),
+        _ => Err(format_err!(
+            "Unsupported SPARQL version '{value}'; expected '1.1', '1.2-basic', or '1.2'"
+        )),
+    }
+}
+
+fn parse_entailment_option(value: &JsValue) -> Result<QueryEntailment, JsValue> {
+    let value = value
+        .as_string()
+        .ok_or_else(|| format_err!("entailment option must be a string"))?;
+    match value.as_str() {
+        "simple" => Ok(QueryEntailment::Simple),
+        "rdf-1.2-finite" => Ok(QueryEntailment::Rdf12Finite),
+        "rdfs-1.2-finite" => Ok(QueryEntailment::Rdfs12Finite),
+        "owl2-rl-rdf-bounded" => Ok(QueryEntailment::Owl2RlRdfBounded),
+        _ => Err(format_err!(
+            "Unsupported query entailment profile '{value}'"
+        )),
+    }
+}
+
+const fn rdf_version_label(version: RdfVersion) -> &'static str {
+    match version {
+        RdfVersion::V1_1 => "1.1",
+        RdfVersion::V1_2Basic => "1.2-basic",
+        RdfVersion::V1_2 => "1.2",
+        _ => "unknown",
     }
 }

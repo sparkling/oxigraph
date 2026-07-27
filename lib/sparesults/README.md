@@ -44,7 +44,7 @@ fn convert_json_to_tsv(json_file: &[u8]) -> Result<Vec<u8>> {
 
 // Let's test with a boolean
 assert_eq!(
-    convert_json_to_tsv(b"{\"boolean\":true}".as_slice()).unwrap(),
+    convert_json_to_tsv(b"{\"head\":{},\"boolean\":true}".as_slice()).unwrap(),
     b"true"
 );
 

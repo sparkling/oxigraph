@@ -1,0 +1,30 @@
+# Reviewed D0-D2 mutation scope. Keep the baseline enabled: a failing baseline
+# can otherwise make every mutant look caught.
+examine_globs = [
+  "lib/oxdatalog/src/ir.rs",
+  "lib/oxdatalog/src/provenance.rs",
+  "lib/oxdatalog/src/rdf.rs",
+  "lib/oxdatalog/src/engine.rs",
+  "lib/oxdatalog/src/engine/control.rs",
+  "lib/oxdatalog/src/engine/rules.rs",
+  "lib/oxdatalog/src/engine/storage.rs",
+  "lib/oxdatalog/src/engine/strata.rs",
+  "lib/oxdatalog/src/validate.rs",
+  "lib/oxdatalog/src/validate/strata.rs",
+]
+test_package = ["oxdatalog"]
+all_features = true
+additional_cargo_test_args = ["--all-targets"]
+
+# Each mutant is bounded relative to the measured baseline, with a floor for
+# slower CI workers. cargo-mutants treats a timeout as a failed gate outcome.
+timeout_multiplier = 4.0
+minimum_test_timeout = 30.0
+build_timeout_multiplier = 4.0
+
+# Mutation happens in a copied tree. Do not copy ignored build artifacts or VCS
+# metadata into the scratch directory.
+gitignore = true
+copy_target = false
+copy_vcs = false
+cap_lints = false

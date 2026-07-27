@@ -1,0 +1,139 @@
+{
+  "scenarios": [
+    {
+      "id": "owl2rl-equivalent-class",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:Human owl:equivalentClass ex:Person . ex:alice a ex:Human .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice a ex:Person }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-equivalent-property",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:knows owl:equivalentProperty ex:acquaintedWith . ex:alice ex:knows ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice ex:acquaintedWith ex:bob }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-inverse-functional-same-as",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:ssn a owl:InverseFunctionalProperty . ex:alice ex:ssn \"123\" . ex:alicia ex:ssn \"123\" .",
+      "query": "PREFIX ex: <https://example.test/> PREFIX owl: <http://www.w3.org/2002/07/owl#> ASK { ex:alice owl:sameAs ex:alicia }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-has-value",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:CatOwner owl:equivalentClass [ a owl:Restriction; owl:onProperty ex:owns; owl:hasValue ex:cat ] . ex:alice a ex:CatOwner .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice ex:owns ex:cat }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-inverse-property",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:parent owl:inverseOf ex:child . ex:alice ex:parent ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:bob ex:child ex:alice }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-negative-unrelated",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . ex:alice a ex:Person .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice a ex:Vehicle }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": false}
+      ]
+    },
+    {
+      "id": "owl2rl-same-as-propagation",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:alice owl:sameAs ex:alicia . ex:alice ex:knows ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alicia ex:knows ex:bob }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-symmetric-property",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:knows a owl:SymmetricProperty . ex:alice ex:knows ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:bob ex:knows ex:alice }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "owl2rl-transitive-property",
+      "domain": "owl2-rl",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/owl2-profiles/",
+      "reviewed": true,
+      "reasoner": "owl2-rl-selected",
+      "data": "@prefix ex: <https://example.test/> . @prefix owl: <http://www.w3.org/2002/07/owl#> . ex:ancestor a owl:TransitiveProperty . ex:alice ex:ancestor ex:bob . ex:bob ex:ancestor ex:carol .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice ex:ancestor ex:carol }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    }
+  ]
+}

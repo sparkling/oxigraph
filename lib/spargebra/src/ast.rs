@@ -14,7 +14,6 @@ pub enum PrologueDecl<'a> {
     Base(Spanned<IriRef<'a>>),
     Prefix(&'a str, Spanned<IriRef<'a>>),
     #[cfg(feature = "sparql-12")]
-    #[expect(dead_code)]
     Version(&'a str),
 }
 

@@ -1,0 +1,38 @@
+# Oxigraph architecture decision records
+
+These records define the semantic-parity programme. They distinguish a
+version-pinned compatibility result, a bounded implementation profile, and
+standards conformance. Test-suite results are evidence for the behavior they
+exercise; they are not a substitute for a complete normative-requirement
+mapping.
+
+| Decision | Status | Human-readable outcome |
+|---|---|---|
+| [ADR-0001 — Outcome-oriented Apache Jena parity](0001-outcome-oriented-jena-parity.md) | Accepted | Measure Jena compatibility as named observable outcomes, not Java API similarity |
+| [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md) | Accepted | Use a bounded D0–D2 rule engine as the shared inference substrate |
+| [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md) | Accepted | Pin specifications, manifests, approval policy, and evidence |
+| [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md) | Accepted | Let Darwin change policy only, behind immutable semantic oracles |
+| [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md) | Accepted | Use Agentic-QE as a hardened coordinator, never as the Rust oracle |
+| [ADR-0006 — W3C-first 1.2 parity](0006-w3c-first-12-parity.md) | Accepted | Treat Jena as a compatibility tranche and W3C as semantic authority |
+| [ADR-0007 — OWL 2 RL over Datalog](0007-owl-profiles-over-datalog.md) | Accepted | Implement only bounded OWL 2 RL/RDF, not general OWL |
+| [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md) | Accepted | Expose dated Core, Node Expressions, SPARQL, Rules, and Compact Syntax feature sets |
+| [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md) | Accepted | Keep inference read-only by default and fail closed for D2 replay |
+| [ADR-0010 — Bounded RDF Dataset Canonicalization 1.0](0010-bounded-rdf-dataset-canonicalization.md) | Accepted | Make canonicalization fallible, atomic, work-bounded, and exactly W3C-tested |
+| [ADR-0011 — SPARQL VERSION and protocol semantics](0011-sparql-version-and-protocol-semantics.md) | Accepted | Make in-band version declarations authoritative without overstating protocol support |
+| [ADR-0012 — Immutable broad Jena differential harness](0012-immutable-broad-jena-harness.md) | Accepted | Lock and receipt an exact classified Jena outcome inventory |
+| [ADR-0013 — Mutation competence and provenance policy](0013-mutation-competence-and-provenance.md) | Accepted | Require source-bound native outcomes with no viable survivors or equivalent-mutant waivers |
+| [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md) | Accepted | Preserve empty named-graph presence across models, I/O, stores, protocols, reasoning, and bindings |
+| [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md) | Accepted | Aggregate every worker failure, return nonzero, and make the per-file versus cross-file atomicity boundary explicit |
+
+The authoritative current claim state is
+[the machine-readable conformance ledger](../research/conformance-ledger.json).
+Its W3C document and grouped-obligation mapping is
+[the normative requirements inventory](../research/normative-requirements.json).
+Source authority and revision metadata live in
+[the standards registry](../research/standards-registry.json). The
+[implementation and qualification plan](../plans/semantic-parity-metaharness-plan.md)
+shows which closure gates remain open.
+
+All standards statuses and current evidence in this directory were reviewed on
+2026-07-27. Working Draft and editor-draft material is never described as a W3C
+Recommendation.

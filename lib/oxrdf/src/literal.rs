@@ -41,6 +41,26 @@ static RDF_DIR_LANG_STRING: NamedNode = rdf::DIR_LANG_STRING;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Literal(LiteralContent);
 
+/// Error returned when a datatype that requires additional literal components
+/// is passed to a typed-literal constructor.
+///
+/// [`rdf:langString`](crate::vocab::rdf::LANG_STRING) requires a language tag.
+/// With the `rdf-12` feature,
+/// [`rdf:dirLangString`](crate::vocab::rdf::DIR_LANG_STRING) requires both a
+/// language tag and a base direction. Use the corresponding language-tagged
+/// literal constructor instead.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum InvalidLiteralDatatypeError {
+    /// `rdf:langString` was supplied without a language tag.
+    #[error("rdf:langString requires a non-empty language tag")]
+    LangString,
+    /// `rdf:dirLangString` was supplied without a language tag and base direction.
+    #[cfg(feature = "rdf-12")]
+    #[error("rdf:dirLangString requires a non-empty language tag and a base direction")]
+    DirLangString,
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 enum LiteralContent {
     String(OxString),
@@ -68,10 +88,45 @@ impl Literal {
     }
 
     /// Builds an RDF [literal](https://www.w3.org/TR/rdf11-concepts/#dfn-literal) with a [datatype](https://www.w3.org/TR/rdf11-concepts/#dfn-datatype-iri).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `datatype` is `rdf:langString`, or `rdf:dirLangString` when
+    /// the `rdf-12` feature is enabled. These datatypes require components
+    /// that a typed-literal constructor cannot provide. Use
+    /// [`Self::try_new_typed_literal`] for data-dependent datatype IRIs.
     #[inline]
     pub fn new_typed_literal(value: impl Into<OxString>, datatype: impl Into<NamedNode>) -> Self {
         let value = value.into();
         let datatype = datatype.into();
+        assert!(
+            invalid_typed_literal_datatype(datatype.as_ref()).is_none(),
+            "rdf:langString and rdf:dirLangString require language components"
+        );
+        Self::new_typed_literal_validated(value, datatype)
+    }
+
+    /// Tries to build an RDF literal with a datatype.
+    ///
+    /// This constructor rejects the reserved language-string datatypes because
+    /// they require language and, for `rdf:dirLangString`, direction
+    /// components. Use [`Self::new_language_tagged_literal`] or
+    /// the directional language-tagged constructor instead.
+    #[inline]
+    pub fn try_new_typed_literal(
+        value: impl Into<OxString>,
+        datatype: impl Into<NamedNode>,
+    ) -> Result<Self, InvalidLiteralDatatypeError> {
+        let value = value.into();
+        let datatype = datatype.into();
+        if let Some(error) = invalid_typed_literal_datatype(datatype.as_ref()) {
+            return Err(error);
+        }
+        Ok(Self::new_typed_literal_validated(value, datatype))
+    }
+
+    #[inline]
+    fn new_typed_literal_validated(value: OxString, datatype: NamedNode) -> Self {
         Self(if datatype == xsd::STRING {
             LiteralContent::String(value)
         } else {
@@ -602,9 +657,42 @@ impl<'a> LiteralRef<'a> {
     }
 
     /// Builds an RDF [literal](https://www.w3.org/TR/rdf11-concepts/#dfn-literal) with a [datatype](https://www.w3.org/TR/rdf11-concepts/#dfn-datatype-iri).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `datatype` is `rdf:langString`, or `rdf:dirLangString` when
+    /// the `rdf-12` feature is enabled. These datatypes require components
+    /// that a typed-literal constructor cannot provide. Use
+    /// [`Self::try_new_typed_literal`] for data-dependent datatype IRIs.
     #[inline]
     pub fn new_typed_literal(value: &'a str, datatype: impl Into<NamedNodeRef<'a>>) -> Self {
         let datatype = datatype.into();
+        assert!(
+            invalid_typed_literal_datatype(datatype).is_none(),
+            "rdf:langString and rdf:dirLangString require language components"
+        );
+        Self::new_typed_literal_validated(value, datatype)
+    }
+
+    /// Tries to build an RDF literal reference with a datatype.
+    ///
+    /// This constructor rejects the reserved language-string datatypes because
+    /// they require language and, for `rdf:dirLangString`, direction
+    /// components.
+    #[inline]
+    pub fn try_new_typed_literal(
+        value: &'a str,
+        datatype: impl Into<NamedNodeRef<'a>>,
+    ) -> Result<Self, InvalidLiteralDatatypeError> {
+        let datatype = datatype.into();
+        if let Some(error) = invalid_typed_literal_datatype(datatype) {
+            return Err(error);
+        }
+        Ok(Self::new_typed_literal_validated(value, datatype))
+    }
+
+    #[inline]
+    fn new_typed_literal_validated(value: &'a str, datatype: NamedNodeRef<'a>) -> Self {
         LiteralRef(if datatype == xsd::STRING {
             LiteralRefContent::String(value)
         } else {
@@ -790,6 +878,20 @@ impl PartialEq<LiteralRef<'_>> for Literal {
 }
 
 #[inline]
+fn invalid_typed_literal_datatype(
+    datatype: NamedNodeRef<'_>,
+) -> Option<InvalidLiteralDatatypeError> {
+    if datatype == rdf::LANG_STRING {
+        return Some(InvalidLiteralDatatypeError::LangString);
+    }
+    #[cfg(feature = "rdf-12")]
+    if datatype == rdf::DIR_LANG_STRING {
+        return Some(InvalidLiteralDatatypeError::DirLangString);
+    }
+    None
+}
+
+#[inline]
 pub fn print_quoted_str(string: &str, f: &mut impl Write) -> fmt::Result {
     f.write_char('"')?;
     for c in string.chars() {
@@ -929,10 +1031,11 @@ impl<'de> Deserialize<'de> for Literal {
             }
             Literal::new_language_tagged_literal(value, language).map_err(de::Error::custom)
         } else if let Some(datatype) = datatype {
-            Ok(Literal::new_typed_literal(
+            Literal::try_new_typed_literal(
                 value,
                 NamedNode::new(datatype).map_err(de::Error::custom)?,
-            ))
+            )
+            .map_err(de::Error::custom)
         } else {
             Ok(Literal::new_simple_literal(value))
         }
@@ -961,6 +1064,41 @@ mod tests {
             LiteralRef::new_simple_literal("foo"),
             LiteralRef::new_typed_literal("foo", xsd::STRING.as_ref())
         );
+    }
+
+    #[test]
+    fn typed_literal_rejects_datatypes_that_require_language_components() {
+        assert_eq!(
+            Literal::try_new_typed_literal("foo", rdf::LANG_STRING),
+            Err(InvalidLiteralDatatypeError::LangString)
+        );
+        assert_eq!(
+            LiteralRef::try_new_typed_literal("foo", rdf::LANG_STRING.as_ref()),
+            Err(InvalidLiteralDatatypeError::LangString)
+        );
+        #[cfg(feature = "rdf-12")]
+        {
+            assert_eq!(
+                Literal::try_new_typed_literal("foo", rdf::DIR_LANG_STRING),
+                Err(InvalidLiteralDatatypeError::DirLangString)
+            );
+            assert_eq!(
+                LiteralRef::try_new_typed_literal("foo", rdf::DIR_LANG_STRING.as_ref()),
+                Err(InvalidLiteralDatatypeError::DirLangString)
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "require language components")]
+    fn typed_literal_compatibility_constructor_panics_for_reserved_datatype() {
+        drop(Literal::new_typed_literal("foo", rdf::LANG_STRING));
+    }
+
+    #[test]
+    #[should_panic(expected = "require language components")]
+    fn typed_literal_ref_compatibility_constructor_panics_for_reserved_datatype() {
+        let _literal = LiteralRef::new_typed_literal("foo", rdf::LANG_STRING.as_ref());
     }
 
     #[test]
@@ -999,5 +1137,17 @@ mod tests {
         assert_eq!("{\"value\":\"foo\",\"language\":\"en\"}", j);
         let lt2: Literal = serde_json::from_str(&j).unwrap();
         assert_eq!(lt, lt2);
+
+        let invalid: Result<Literal, _> = serde_json::from_str(
+            r#"{"value":"foo","datatype":"http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"}"#,
+        );
+        invalid.unwrap_err();
+        #[cfg(feature = "rdf-12")]
+        {
+            let invalid: Result<Literal, _> = serde_json::from_str(
+                r#"{"value":"foo","datatype":"http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"}"#,
+            );
+            invalid.unwrap_err();
+        }
     }
 }

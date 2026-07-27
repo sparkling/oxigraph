@@ -19,11 +19,13 @@ doctest = false
 doc = false
 
 [features]
-default = ["geosparql", "rdf-12"]
+default = ["geosparql", "rdf-12", "rdfs", "owl2-rl"]
 abi3 = ["pyo3/abi3-py38"]
 rocksdb-pkg-config = ["oxigraph/rocksdb-pkg-config"]
 geosparql = ["oxigraph/geosparql"]
 rdf-12 = ["oxigraph/rdf-12"]
+rdfs = ["rdf-12", "oxigraph/rdfs"]
+owl2-rl = ["oxigraph/owl2-rl"]
 
 [dependencies]
 pyo3 = { workspace = true, features = [

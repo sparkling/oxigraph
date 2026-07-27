@@ -1,0 +1,34 @@
+{
+  "name": "oxigraph-agentic-qe",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pinned Agentic-QE adapter for Oxigraph's native Cargo and W3C test oracles",
+  "type": "module",
+  "scripts": {
+    "aqe": "node ./oxigraph-aqe.mjs",
+    "test:adapter": "node --test ./execution-provenance.test.mjs ./path-policy.test.mjs ./process-runner.test.mjs ../owl2-tests/safe-output.test.mjs",
+    "test:existing": "node ./oxigraph-aqe.mjs run existing",
+    "test:supporting-suites": "node ./oxigraph-aqe.mjs run supporting-suites",
+    "test:w3c": "node ./oxigraph-aqe.mjs run w3c",
+    "test:rdfc-1.0": "node ./oxigraph-aqe.mjs run rdfc-10",
+    "test:datalog": "node ./oxigraph-aqe.mjs run datalog",
+    "test:datalog-jena": "node ./oxigraph-aqe.mjs run datalog-jena",
+    "test:datalog-souffle": "node ./oxigraph-aqe.mjs run datalog-souffle",
+    "test:store": "node ./oxigraph-aqe.mjs run store",
+    "test:rdfs": "node ./oxigraph-aqe.mjs run rdfs",
+    "test:rdfs-jena": "node ./oxigraph-aqe.mjs run rdfs-jena",
+    "test:owl2-rl": "node ./oxigraph-aqe.mjs run owl2-rl",
+    "test:owl2-rl-inventory": "node ./oxigraph-aqe.mjs run owl2-rl-inventory",
+    "test:owl2-rl-w3c": "node ./oxigraph-aqe.mjs run owl2-rl-w3c",
+    "test:shacl-1.2": "node ./oxigraph-aqe.mjs run shacl-1.2",
+    "test:jena-parity": "node ./oxigraph-aqe.mjs run jena-parity",
+    "test:metaharness-semantic-gate": "node ./oxigraph-aqe.mjs run metaharness-semantic-gate",
+    "test:parity": "node ./oxigraph-aqe.mjs run parity"
+  },
+  "dependencies": {
+    "agentic-qe": "3.13.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

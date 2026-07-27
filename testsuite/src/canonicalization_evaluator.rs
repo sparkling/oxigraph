@@ -6,7 +6,7 @@ use crate::vocab::rdfc;
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use json_event_parser::{JsonEvent, ReaderJsonParser};
 use oxigraph::io::RdfFormat;
-use oxrdf::dataset::CanonicalizationAlgorithm;
+use oxrdf::dataset::{CanonicalizationAlgorithm, CanonicalizationError};
 use oxrdf::graph::CanonicalizationHashAlgorithm;
 use oxrdf::{Dataset, Term};
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ pub fn register_canonicalization_tests(evaluator: &mut TestEvaluator) {
     );
     evaluator.register(
         "https://w3c.github.io/rdf-canon/tests/vocab#RDFC10NegativeEvalTest",
-        |_| Ok(()), // TODO: not a proper implementation
+        evaluate_canonicalization_negative_eval_test,
     );
     evaluator.register(
         "https://w3c.github.io/rdf-canon/tests/vocab#RDFC10MapTest",
@@ -30,9 +30,12 @@ fn evaluate_canonicalization_eval_test(test: &Test) -> Result<()> {
     let action = test.action.as_deref().context("No action found")?;
     let mut dataset =
         load_dataset(action, RdfFormat::NQuads, false, false).context("Parse error")?;
-    dataset.canonicalize(CanonicalizationAlgorithm::Rdfc10 {
-        hash_algorithm: hash_algorithm(test)?,
-    });
+    dataset.canonicalize_with_work_factor(
+        CanonicalizationAlgorithm::Rdfc10 {
+            hash_algorithm: hash_algorithm(test)?,
+        },
+        3,
+    )?;
     let actual = canonical_nquads(&dataset);
 
     let results = test.result.as_ref().context("No tests result found")?;
@@ -44,6 +47,22 @@ fn evaluate_canonicalization_eval_test(test: &Test) -> Result<()> {
         expected == actual,
         "The two files are not equal. Diff:\n{}",
         format_diff(&expected, &actual, "c14n")
+    );
+    Ok(())
+}
+
+fn evaluate_canonicalization_negative_eval_test(test: &Test) -> Result<()> {
+    let action = test.action.as_deref().context("No action found")?;
+    let mut dataset =
+        load_dataset(action, RdfFormat::NQuads, false, false).context("Parse error")?;
+    let Err(error) = dataset.canonicalize(CanonicalizationAlgorithm::Rdfc10 {
+        hash_algorithm: hash_algorithm(test)?,
+    }) else {
+        bail!("RDFC-1.0 poison dataset completed instead of raising a bounded-work error");
+    };
+    ensure!(
+        matches!(error, CanonicalizationError::TooManyNDegreeCalls { .. }),
+        "Unexpected RDFC-1.0 negative evaluation error: {error}"
     );
     Ok(())
 }
@@ -75,9 +94,12 @@ fn evaluate_canonicalization_map_test(test: &Test) -> Result<()> {
     let action = test.action.as_deref().context("No action found")?;
     let dataset = load_dataset(action, RdfFormat::NQuads, false, false).context("Parse error")?;
     let actual = dataset
-        .canonicalize_blank_nodes(CanonicalizationAlgorithm::Rdfc10 {
-            hash_algorithm: hash_algorithm(test)?,
-        })
+        .canonicalize_blank_nodes_with_work_factor(
+            CanonicalizationAlgorithm::Rdfc10 {
+                hash_algorithm: hash_algorithm(test)?,
+            },
+            3,
+        )?
         .into_iter()
         .map(|(k, v)| (k.as_str().to_owned(), v.as_str().to_owned()))
         .collect::<BTreeMap<_, _>>();

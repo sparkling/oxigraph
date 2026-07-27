@@ -154,9 +154,12 @@ pub fn to_literal(value: &JsValue) -> Result<Literal, JsValue> {
         "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString" => {
             Literal::new_language_tagged_literal(
                 literal_value,
-                reflect_get(value, &LANGUAGE)?.as_string().ok_or_else(|| {
-                    format_err!("Literal with rdf:langString datatype must have a language")
-                })?,
+                reflect_get(value, &LANGUAGE)?
+                    .as_string()
+                    .filter(|language| !language.is_empty())
+                    .ok_or_else(|| {
+                        format_err!("Literal with rdf:langString datatype must have a language")
+                    })?,
             )
             .map_err(JsError::from)?
         }
@@ -164,9 +167,12 @@ pub fn to_literal(value: &JsValue) -> Result<Literal, JsValue> {
         "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString" => {
             Literal::new_directional_language_tagged_literal(
                 literal_value,
-                reflect_get(value, &LANGUAGE)?.as_string().ok_or_else(|| {
-                    format_err!("Literal with rdf:dirLangString datatype must have a language")
-                })?,
+                reflect_get(value, &LANGUAGE)?
+                    .as_string()
+                    .filter(|language| !language.is_empty())
+                    .ok_or_else(|| {
+                        format_err!("Literal with rdf:dirLangString datatype must have a language")
+                    })?,
                 match reflect_get(value, &DIRECTION)?
                     .as_string()
                     .ok_or_else(|| {
@@ -181,7 +187,8 @@ pub fn to_literal(value: &JsValue) -> Result<Literal, JsValue> {
             )
             .map_err(JsError::from)?
         }
-        _ => Literal::new_typed_literal(literal_value, datatype),
+        _ => Literal::try_new_typed_literal(literal_value, datatype)
+            .map_err(|error| format_err!("{error}"))?,
     })
 }
 

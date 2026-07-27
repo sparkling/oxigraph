@@ -832,6 +832,12 @@ impl MemoryStorageBulkLoader<'_> {
         }
     }
 
+    pub fn load_named_graphs(&mut self, graph_names: Vec<NamedOrBlankNode>) {
+        for graph_name in graph_names {
+            self.transaction.insert_named_graph(graph_name);
+        }
+    }
+
     pub fn commit(self) {
         self.transaction.commit();
     }

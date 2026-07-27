@@ -2,6 +2,7 @@
 
 pub use crate::error::RdfParseError;
 use crate::format::RdfFormat;
+use crate::media_type::{RdfMediaType, RdfMediaTypeParseError};
 use crate::{LoadedDocument, RdfSyntaxError};
 #[cfg(feature = "async-tokio")]
 use oxjsonld::TokioAsyncReaderJsonLdParser;
@@ -9,10 +10,13 @@ use oxjsonld::{
     JsonLdParser, JsonLdPrefixesIter, JsonLdProfileSet, JsonLdRemoteDocument, ReaderJsonLdParser,
     SliceJsonLdParser,
 };
-use oxrdf::{BlankNode, GraphName, IriParseError, NamedOrBlankNode, Quad, Term, Triple};
+use oxrdf::{
+    BlankNode, Dataset, GraphName, IriParseError, NamedOrBlankNode, Quad, RdfVersion, Term, Triple,
+};
 #[cfg(feature = "async-tokio")]
 use oxrdfxml::TokioAsyncReaderRdfXmlParser;
 use oxrdfxml::{RdfXmlParser, RdfXmlPrefixesIter, ReaderRdfXmlParser, SliceRdfXmlParser};
+use oxttl::NTriplesMediaType;
 #[cfg(feature = "async-tokio")]
 use oxttl::n3::TokioAsyncReaderN3Parser;
 use oxttl::n3::{N3Parser, N3PrefixesIter, N3Quad, N3Term, ReaderN3Parser, SliceN3Parser};
@@ -72,9 +76,11 @@ use tokio::io::AsyncRead;
 #[derive(Clone)]
 pub struct RdfParser {
     inner: RdfParserKind,
+    format: RdfFormat,
     default_graph: GraphName,
     without_named_graphs: bool,
     rename_blank_nodes: bool,
+    rdf_version: Option<RdfVersion>,
 }
 
 #[derive(Clone)]
@@ -89,6 +95,21 @@ enum RdfParserKind {
 }
 
 impl RdfParser {
+    /// Builds a parser configured from an RDF media type.
+    ///
+    /// Its `version` parameter is retained and enforced on emitted RDF terms.
+    pub fn from_media_type(media_type: &str) -> Result<Self, RdfMediaTypeParseError> {
+        let descriptor = RdfMediaType::parse(media_type)?;
+        Ok(Self::from_media_type_descriptor(&descriptor))
+    }
+
+    /// Builds a parser configured from a parsed RDF media type descriptor.
+    pub fn from_media_type_descriptor(descriptor: &RdfMediaType) -> Self {
+        let mut parser = Self::from_format(descriptor.format());
+        parser.rdf_version = descriptor.version();
+        parser
+    }
+
     /// Builds a parser for the given format.
     #[inline]
     pub fn from_format(format: RdfFormat) -> Self {
@@ -100,13 +121,18 @@ impl RdfParser {
                 RdfFormat::N3 => RdfParserKind::N3(N3Parser::new()),
                 RdfFormat::NQuads => RdfParserKind::NQuads(NQuadsParser::new()),
                 RdfFormat::NTriples => RdfParserKind::NTriples(NTriplesParser::new()),
+                RdfFormat::NTriplesTextPlain => RdfParserKind::NTriples(
+                    NTriplesParser::new().with_media_type(NTriplesMediaType::TextPlain),
+                ),
                 RdfFormat::RdfXml => RdfParserKind::RdfXml(RdfXmlParser::new()),
                 RdfFormat::TriG => RdfParserKind::TriG(TriGParser::new()),
                 RdfFormat::Turtle => RdfParserKind::Turtle(TurtleParser::new()),
             },
+            format,
             default_graph: GraphName::DefaultGraph,
             without_named_graphs: false,
             rename_blank_nodes: false,
+            rdf_version: None,
         }
     }
 
@@ -121,15 +147,12 @@ impl RdfParser {
     /// );
     /// ```
     pub fn format(&self) -> RdfFormat {
-        match &self.inner {
-            RdfParserKind::JsonLd(_, profile) => RdfFormat::JsonLd { profile: *profile },
-            RdfParserKind::N3(_) => RdfFormat::N3,
-            RdfParserKind::NQuads(_) => RdfFormat::NQuads,
-            RdfParserKind::NTriples(_) => RdfFormat::NTriples,
-            RdfParserKind::RdfXml(_) => RdfFormat::RdfXml,
-            RdfParserKind::TriG(_) => RdfFormat::TriG,
-            RdfParserKind::Turtle(_) => RdfFormat::Turtle,
-        }
+        self.format
+    }
+
+    /// Returns the media-type RDF version constraint, if configured.
+    pub const fn rdf_version(&self) -> Option<RdfVersion> {
+        self.rdf_version
     }
 
     /// Provides an IRI that could be used to resolve the file relative IRIs.
@@ -280,6 +303,7 @@ impl RdfParser {
                 default_graph: self.default_graph,
                 without_named_graphs: self.without_named_graphs,
                 blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                rdf_version: self.rdf_version,
             },
         }
     }
@@ -336,6 +360,7 @@ impl RdfParser {
                 default_graph: self.default_graph,
                 without_named_graphs: self.without_named_graphs,
                 blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                rdf_version: self.rdf_version,
             },
         }
     }
@@ -370,6 +395,7 @@ impl RdfParser {
                 default_graph: self.default_graph,
                 without_named_graphs: self.without_named_graphs,
                 blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                rdf_version: self.rdf_version,
             },
         }
     }
@@ -410,6 +436,7 @@ impl RdfParser {
                         default_graph: self.default_graph.clone(),
                         without_named_graphs: self.without_named_graphs,
                         blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                        rdf_version: self.rdf_version,
                     },
                 })
                 .collect(),
@@ -422,6 +449,7 @@ impl RdfParser {
                         default_graph: self.default_graph.clone(),
                         without_named_graphs: self.without_named_graphs,
                         blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                        rdf_version: self.rdf_version,
                     },
                 })
                 .collect(),
@@ -464,6 +492,7 @@ impl RdfParser {
                         default_graph: self.default_graph.clone(),
                         without_named_graphs: self.without_named_graphs,
                         blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                        rdf_version: self.rdf_version,
                     },
                 })
                 .collect(),
@@ -476,6 +505,7 @@ impl RdfParser {
                         default_graph: self.default_graph.clone(),
                         without_named_graphs: self.without_named_graphs,
                         blank_node_map: self.rename_blank_nodes.then(HashMap::new),
+                        rdf_version: self.rdf_version,
                     },
                 })
                 .collect(),
@@ -543,11 +573,11 @@ impl<R: Read> Iterator for ReaderQuadParser<R> {
                 Err(e) => Err(e.into()),
             },
             ReaderQuadParserKind::NTriples(parser) => match parser.next()? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple).map_err(Into::into),
                 Err(e) => Err(e.into()),
             },
             ReaderQuadParserKind::RdfXml(parser) => match parser.next()? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple).map_err(Into::into),
                 Err(e) => Err(e.into()),
             },
             ReaderQuadParserKind::TriG(parser) => match parser.next()? {
@@ -555,7 +585,7 @@ impl<R: Read> Iterator for ReaderQuadParser<R> {
                 Err(e) => Err(e.into()),
             },
             ReaderQuadParserKind::Turtle(parser) => match parser.next()? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple).map_err(Into::into),
                 Err(e) => Err(e.into()),
             },
         })
@@ -633,6 +663,43 @@ impl<R: Read> ReaderQuadParser<R> {
             ReaderQuadParserKind::RdfXml(p) => p.base_iri(),
             ReaderQuadParserKind::NQuads(_) | ReaderQuadParserKind::NTriples(_) => None,
         }
+    }
+
+    /// Returns the named graphs declared so far, including empty named graphs.
+    ///
+    /// Drain the quad iterator before calling this method to obtain complete
+    /// TriG or JSON-LD topology. For formats without explicit graph
+    /// declarations, an empty vector is returned.
+    pub fn named_graphs(&mut self) -> Result<Vec<NamedOrBlankNode>, RdfParseError> {
+        let named_graphs = match &self.inner {
+            ReaderQuadParserKind::JsonLd(parser) => parser.named_graphs().cloned().collect(),
+            ReaderQuadParserKind::TriG(parser) => parser.named_graphs().cloned().collect(),
+            _ => Vec::new(),
+        };
+        named_graphs
+            .into_iter()
+            .map(|graph_name| {
+                self.mapper
+                    .map_named_graph_name(graph_name)
+                    .map_err(RdfParseError::from)
+            })
+            .collect()
+    }
+
+    /// Consumes the parser and returns an RDF dataset.
+    ///
+    /// For TriG and JSON-LD, this preserves explicitly declared empty named
+    /// graphs. The regular quad iterator cannot expose that topology. Other
+    /// formats retain the topology representable by their emitted quads.
+    pub fn collect_dataset(mut self) -> Result<Dataset, RdfParseError> {
+        let mut dataset = Dataset::new();
+        for quad in self.by_ref() {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs()? {
+            dataset.insert_named_graph(graph_name);
+        }
+        Ok(dataset)
     }
 
     /// A callback to load remote documents during parsing like JSON-LD contexts.
@@ -761,11 +828,11 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderQuadParser<R> {
                 Err(e) => Err(e.into()),
             },
             TokioAsyncReaderQuadParserKind::NTriples(parser) => match parser.next().await? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple).map_err(Into::into),
                 Err(e) => Err(e.into()),
             },
             TokioAsyncReaderQuadParserKind::RdfXml(parser) => match parser.next().await? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple).map_err(Into::into),
                 Err(e) => Err(e.into()),
             },
             TokioAsyncReaderQuadParserKind::TriG(parser) => match parser.next().await? {
@@ -773,7 +840,7 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderQuadParser<R> {
                 Err(e) => Err(e.into()),
             },
             TokioAsyncReaderQuadParserKind::Turtle(parser) => match parser.next().await? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple).map_err(Into::into),
                 Err(e) => Err(e.into()),
             },
         })
@@ -859,6 +926,45 @@ impl<R: AsyncRead + Unpin> TokioAsyncReaderQuadParser<R> {
             | TokioAsyncReaderQuadParserKind::NTriples(_) => None,
         }
     }
+
+    /// Returns the named graphs declared so far, including empty named graphs.
+    ///
+    /// Drain the parser before calling this method to obtain complete TriG or
+    /// JSON-LD topology.
+    pub fn named_graphs(&mut self) -> Result<Vec<NamedOrBlankNode>, RdfParseError> {
+        let named_graphs = match &self.inner {
+            TokioAsyncReaderQuadParserKind::JsonLd(parser) => {
+                parser.named_graphs().cloned().collect()
+            }
+            TokioAsyncReaderQuadParserKind::TriG(parser) => {
+                parser.named_graphs().cloned().collect()
+            }
+            _ => Vec::new(),
+        };
+        named_graphs
+            .into_iter()
+            .map(|graph_name| {
+                self.mapper
+                    .map_named_graph_name(graph_name)
+                    .map_err(RdfParseError::from)
+            })
+            .collect()
+    }
+
+    /// Consumes the parser and returns an RDF dataset.
+    ///
+    /// Explicitly declared empty named graphs are preserved for TriG and
+    /// JSON-LD.
+    pub async fn collect_dataset(mut self) -> Result<Dataset, RdfParseError> {
+        let mut dataset = Dataset::new();
+        while let Some(quad) = self.next().await {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs()? {
+            dataset.insert_named_graph(graph_name);
+        }
+        Ok(dataset)
+    }
 }
 
 /// Parses a RDF file from a byte slice.
@@ -912,11 +1018,11 @@ impl Iterator for SliceQuadParser<'_> {
                 Err(e) => Err(e.into()),
             },
             SliceQuadParserKind::NTriples(parser) => match parser.next()? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple),
                 Err(e) => Err(e.into()),
             },
             SliceQuadParserKind::RdfXml(parser) => match parser.next()? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple),
                 Err(e) => Err(e.into()),
             },
             SliceQuadParserKind::TriG(parser) => match parser.next()? {
@@ -924,7 +1030,7 @@ impl Iterator for SliceQuadParser<'_> {
                 Err(e) => Err(e.into()),
             },
             SliceQuadParserKind::Turtle(parser) => match parser.next()? {
-                Ok(triple) => Ok(self.mapper.map_triple_to_quad(triple)),
+                Ok(triple) => self.mapper.map_triple_to_quad(triple),
                 Err(e) => Err(e.into()),
             },
         })
@@ -1072,6 +1178,38 @@ impl SliceQuadParser<'_> {
             SliceQuadParserKind::NQuads(_) | SliceQuadParserKind::NTriples(_) => None,
         }
     }
+
+    /// Returns the named graphs declared so far, including empty named graphs.
+    ///
+    /// Drain the quad iterator before calling this method to obtain complete
+    /// TriG or JSON-LD topology.
+    pub fn named_graphs(&mut self) -> Result<Vec<NamedOrBlankNode>, RdfSyntaxError> {
+        let named_graphs = match &self.inner {
+            SliceQuadParserKind::JsonLd(parser) => parser.named_graphs().cloned().collect(),
+            SliceQuadParserKind::TriG(parser) => parser.named_graphs().cloned().collect(),
+            _ => Vec::new(),
+        };
+        named_graphs
+            .into_iter()
+            .map(|graph_name| self.mapper.map_named_graph_name(graph_name))
+            .collect()
+    }
+
+    /// Consumes the parser and returns an RDF dataset.
+    ///
+    /// For TriG and JSON-LD, explicitly declared empty named graphs are
+    /// preserved. Direct iterator collection only retains quads and therefore
+    /// cannot do so.
+    pub fn collect_dataset(mut self) -> Result<Dataset, RdfSyntaxError> {
+        let mut dataset = Dataset::new();
+        for quad in self.by_ref() {
+            dataset.insert(quad?);
+        }
+        for graph_name in self.named_graphs()? {
+            dataset.insert_named_graph(graph_name);
+        }
+        Ok(dataset)
+    }
 }
 
 /// Iterator on the file prefixes.
@@ -1122,6 +1260,7 @@ struct QuadMapper {
     default_graph: GraphName,
     without_named_graphs: bool,
     blank_node_map: Option<HashMap<BlankNode, BlankNode>>,
+    rdf_version: Option<RdfVersion>,
 }
 
 impl QuadMapper {
@@ -1181,21 +1320,38 @@ impl QuadMapper {
         }
     }
 
+    fn map_named_graph_name(
+        &mut self,
+        graph_name: NamedOrBlankNode,
+    ) -> Result<NamedOrBlankNode, RdfSyntaxError> {
+        match self.map_graph_name(graph_name.into())? {
+            GraphName::NamedNode(graph_name) => Ok(graph_name.into()),
+            GraphName::BlankNode(graph_name) => Ok(graph_name.into()),
+            GraphName::DefaultGraph => {
+                unreachable!("a named graph cannot be mapped to the default graph")
+            }
+        }
+    }
+
     fn map_quad(&mut self, quad: Quad) -> Result<Quad, RdfSyntaxError> {
-        Ok(Quad {
+        let quad = Quad {
             subject: self.map_subject(quad.subject),
             predicate: quad.predicate,
             object: self.map_term(quad.object),
             graph_name: self.map_graph_name(quad.graph_name)?,
-        })
+        };
+        self.ensure_version(&quad)?;
+        Ok(quad)
     }
 
-    fn map_triple_to_quad(&mut self, triple: Triple) -> Quad {
-        self.map_triple(triple).in_graph(self.default_graph.clone())
+    fn map_triple_to_quad(&mut self, triple: Triple) -> Result<Quad, RdfSyntaxError> {
+        let quad = self.map_triple(triple).in_graph(self.default_graph.clone());
+        self.ensure_version(&quad)?;
+        Ok(quad)
     }
 
     fn map_n3_quad(&mut self, quad: N3Quad) -> Result<Quad, RdfSyntaxError> {
-        Ok(Quad {
+        let quad = Quad {
             subject: match quad.subject {
                 N3Term::NamedNode(s) => Ok(s.into()),
                 N3Term::BlankNode(s) => Ok(self.map_blank_node(s).into()),
@@ -1237,6 +1393,47 @@ impl QuadMapper {
                 )),
             }?,
             graph_name: self.map_graph_name(quad.graph_name)?,
-        })
+        };
+        self.ensure_version(&quad)?;
+        Ok(quad)
     }
+
+    fn ensure_version(&self, quad: &Quad) -> Result<(), RdfSyntaxError> {
+        if let Some(version) = self.rdf_version {
+            ensure_term_version(version, &quad.object)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "rdf-12")]
+fn ensure_term_version(version: RdfVersion, term: &Term) -> Result<(), RdfSyntaxError> {
+    match term {
+        Term::Literal(literal) => {
+            if literal.direction().is_some() && !version.supports_directional_language_strings() {
+                return Err(RdfSyntaxError::msg(
+                    "directional language-tagged strings are not supported by the media type RDF version",
+                ));
+            }
+            Ok(())
+        }
+        Term::Triple(triple) => {
+            if !version.supports_triple_terms() {
+                return Err(RdfSyntaxError::msg(
+                    "triple terms are not supported by the media type RDF version",
+                ));
+            }
+            ensure_term_version(version, &triple.object)
+        }
+        Term::NamedNode(_) | Term::BlankNode(_) => Ok(()),
+    }
+}
+
+#[cfg(not(feature = "rdf-12"))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps feature-independent mapper control flow"
+)]
+fn ensure_term_version(_version: RdfVersion, _term: &Term) -> Result<(), RdfSyntaxError> {
+    Ok(())
 }

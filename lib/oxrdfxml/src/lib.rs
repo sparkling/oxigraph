@@ -4,11 +4,13 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 
+mod diagnostic;
 mod error;
 mod parser;
 mod serializer;
 mod utils;
 
+pub use diagnostic::RdfXmlWarning;
 pub use error::{RdfXmlParseError, RdfXmlSyntaxError};
 #[cfg(feature = "async-tokio")]
 pub use parser::TokioAsyncReaderRdfXmlParser;

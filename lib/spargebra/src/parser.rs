@@ -1351,7 +1351,6 @@ fn path_negated_property_set<'src>() -> impl CParser<'src, Path<'src>> {
         .map(|p| vec![p])
         .or(path_one_in_property_set()
             .separated_by(operator("|"))
-            .at_least(1)
             .collect::<Vec<_>>()
             .delimited_by(operator("("), operator(")")))
         .map(Path::NegatedPropertySet)

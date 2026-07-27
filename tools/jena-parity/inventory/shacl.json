@@ -1,0 +1,203 @@
+{
+  "scenarios": [
+    {
+      "id": "shacl-class-conforms",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice a ex:Person .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:class ex:Person .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": true},
+        {"target": "both", "pointer": "/value/result_count", "equals": 0}
+      ]
+    },
+    {
+      "id": "shacl-closed-violation",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:extra \"value\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:ClosedShape a sh:NodeShape; sh:targetNode ex:alice; sh:closed true .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-datatype-violation",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:age \"old\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:AgeShape . ex:AgeShape a sh:PropertyShape; sh:path ex:age; sh:datatype xsd:integer .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-min-count-conforms",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:name \"Alice\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:NameShape . ex:NameShape a sh:PropertyShape; sh:path ex:name; sh:minCount 1 .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": true},
+        {"target": "both", "pointer": "/value/result_count", "equals": 0}
+      ]
+    },
+    {
+      "id": "shacl-min-count-violation",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice a ex:Person .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:NameShape . ex:NameShape a sh:PropertyShape; sh:path ex:name; sh:minCount 1 .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-min-inclusive-violation",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:age 17 .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:AgeShape . ex:AgeShape a sh:PropertyShape; sh:path ex:age; sh:minInclusive 18 .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-node-kind-violation",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:homepage \"not-an-iri\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:HomepageShape . ex:HomepageShape a sh:PropertyShape; sh:path ex:homepage; sh:nodeKind sh:IRI .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-or-conforms",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:focus ex:value ex:resource .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:ChoiceShape a sh:NodeShape; sh:targetObjectsOf ex:value; sh:or (ex:IriShape ex:LiteralShape) . ex:IriShape sh:nodeKind sh:IRI . ex:LiteralShape sh:nodeKind sh:Literal .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": true},
+        {"target": "both", "pointer": "/value/result_count", "equals": 0}
+      ]
+    },
+    {
+      "id": "shacl-pattern-violation",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:code \"lower\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:CodeShape . ex:CodeShape a sh:PropertyShape; sh:path ex:code; sh:pattern \"^[A-Z]+$\" .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-unique-lang-conforms",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:name \"Alice\"@en, \"Alicia\"@es .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:NameShape . ex:NameShape a sh:PropertyShape; sh:path ex:name; sh:uniqueLang true .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": true},
+        {"target": "both", "pointer": "/value/result_count", "equals": 0}
+      ]
+    },
+    {
+      "id": "shacl-w3c-single-line",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "w3c-overrides-jena",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:label \"first\\nsecond\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:LabelShape . ex:LabelShape a sh:PropertyShape; sh:path ex:label; sh:singleLine true .",
+      "assertions": [
+        {"target": "jena", "pointer": "/status", "equals": "success"},
+        {"target": "jena", "pointer": "/value/conforms", "equals": true},
+        {"target": "oxigraph", "pointer": "/status", "equals": "success"},
+        {"target": "oxigraph", "pointer": "/value/conforms", "equals": false},
+        {"target": "oxigraph", "pointer": "/value/result_count", "equals": 1}
+      ]
+    },
+    {
+      "id": "shacl-w3c-triple-term-kind",
+      "domain": "shacl",
+      "operation": "shacl-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-core/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:focus ex:value <<( ex:s ex:p ex:o )>> .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:TermShape a sh:NodeShape; sh:targetObjectsOf ex:value; sh:nodeKind sh:TripleTerm .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value/conforms", "equals": true},
+        {"target": "both", "pointer": "/value/result_count", "equals": 0}
+      ]
+    },
+    {
+      "id": "shacl-sparql-constraint-violation",
+      "domain": "shacl",
+      "operation": "shacl-sparql-validate",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/shacl12-sparql/",
+      "reviewed": true,
+      "data": "@prefix ex: <https://example.test/> . ex:alice ex:name \"alice\" .",
+      "shapes": "@prefix ex: <https://example.test/> . @prefix sh: <http://www.w3.org/ns/shacl#> . ex:PersonShape a sh:NodeShape; sh:targetNode ex:alice; sh:property ex:NameShape . ex:NameShape a sh:PropertyShape; sh:path ex:name; sh:sparql ex:CapitalizedConstraint . ex:CapitalizedConstraint a sh:SPARQLConstraint; sh:message \"Name must start with A\"; sh:select \"\"\"PREFIX ex: <https://example.test/> SELECT $this ?value (ex:name AS ?path) WHERE { $this $PATH ?value . FILTER(!STRSTARTS(STR(?value), \\\"A\\\")) }\"\"\" .",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/kind", "equals": "shacl-report"},
+        {"target": "both", "pointer": "/value/conforms", "equals": false},
+        {"target": "both", "pointer": "/value/result_count", "equals": 1},
+        {"target": "both", "pointer": "/value/results/0/source_constraint_component/value", "equals": "http://www.w3.org/ns/shacl#SPARQLConstraintComponent"}
+      ]
+    }
+  ]
+}

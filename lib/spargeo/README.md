@@ -11,7 +11,7 @@ spargeo is a partial [GeoSPARQL 1.1](https://docs.ogc.org/is/22-047r1/22-047r1.h
 
 Its entry point is the [`GEOSPARQL_EXTENSION_FUNCTIONS`] constant that lists GeoSPARQL extension functions ready to be registered in spargebra or oxigraph query evaluators.
 
-Current scope covers the three OGC Simple Features, Egenhofer, and RCC8 topology families, the planar boolean set operations (intersection, union, difference, symmetric difference), the DE-9IM `relate` tester, the topological accessor functions (`dimension`, `coordinateDimension`, `spatialDimension`, `isEmpty`, `isSimple`), the `envelope`, `convexHull`, and `centroid` constructors, the `asGeoJSON` serialiser, and partial metric functions (`area`, `length`, `perimeter`, `distance`). WKT and GeoJSON inputs are honoured under the CRS84 reference system only. Geometry returning functions echo the input datatype so that WKT inputs yield `geo:wktLiteral` outputs and GeoJSON inputs yield `geo:geoJSONLiteral` outputs. No aggregate or transformation functions. No GML, KML, DGGS literals. No query rewrite extension.
+Current scope covers the three OGC Simple Features, Egenhofer, and RCC8 topology families, the planar boolean set operations (intersection, union, difference, symmetric difference), the DE-9IM `relate` tester, the topological accessor functions (`dimension`, `coordinateDimension`, `spatialDimension`, `isEmpty`, `isSimple`), the `boundary`, `envelope`, `convexHull`, and `centroid` constructors, the `asGeoJSON` serialiser, and partial metric functions (`area`, `length`, `perimeter`, `distance`). WKT and GeoJSON inputs are honoured under the CRS84 reference system only. Geometry returning functions echo the input datatype so that WKT inputs yield `geo:wktLiteral` outputs and GeoJSON inputs yield `geo:geoJSONLiteral` outputs. No aggregate or transformation functions. No GML, KML, DGGS literals. No query rewrite extension.
 
 Coverage vs OGC 22-047r1
 ------------------------
@@ -64,7 +64,7 @@ Function IRIs live under `http://www.opengis.net/def/function/geosparql/` and ar
 | `geof:distance` | partial | three arg form with units IRI. Haversine, CRS84, point to point only |
 | `geof:buffer` | missing | three arg form with radius and units |
 | `geof:convexHull` | partial | planar QuickHull over CRS84 input, not a true spherical hull |
-| `geof:boundary` | missing | |
+| `geof:boundary` | partial | Simple Features boundary with MOD-2 endpoints, CRS84 WKT and GeoJSON |
 | `geof:envelope` | partial | axis aligned bounding rectangle in CRS84 coordinates |
 | `geof:intersection` | partial | planar boolean intersection over CRS84 input |
 | `geof:union` | partial | planar boolean union over CRS84 input |
@@ -82,7 +82,6 @@ Function IRIs live under `http://www.opengis.net/def/function/geosparql/` and ar
 | `geof:spatialDimension` | implemented | matches `geof:dimension` because 3D inputs are not supported |
 | `geof:isEmpty` | implemented | |
 | `geof:isSimple` | partial | uses `geo::Validation` as a conservative approximation |
-| `geof:hasSerialization` | missing | |
 | `geof:asGML` | missing | |
 | `geof:asGeoJSON` | implemented | returns the GeoJSON rendering as `geo:geoJSONLiteral` |
 | `geof:asKML` | missing | |

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+    <head>
+        <link href="metadata.ttl">not empty</link>
+    </head>
+    <boolean>true</boolean>
+</sparql>

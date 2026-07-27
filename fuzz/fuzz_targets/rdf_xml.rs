@@ -55,8 +55,16 @@ fuzz_target!(|data: &[u8]| {
         } else if bnodes_count <= 4 {
             let mut graph_with_split = triples.clone().into_iter().collect::<Graph>();
             let mut graph_unchecked = triples_unchecked.into_iter().collect::<Graph>();
-            graph_with_split.canonicalize(CanonicalizationAlgorithm::Unstable);
-            graph_unchecked.canonicalize(CanonicalizationAlgorithm::Unstable);
+            if let Err(error) = graph_with_split
+                .canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+            {
+                unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+            }
+            if let Err(error) = graph_unchecked
+                .canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)
+            {
+                unreachable!("four-node comparison exceeded its trusted work budget: {error}");
+            }
             assert_eq!(graph_with_split, graph_unchecked);
         }
     }

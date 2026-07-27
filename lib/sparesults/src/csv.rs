@@ -4,6 +4,7 @@ use crate::error::{QueryResultsParseError, QueryResultsSyntaxError, TextPosition
 use memchr::memchr;
 use oxrdf::vocab::xsd;
 use oxrdf::*;
+use std::borrow::Cow;
 use std::io::{self, Read, Write};
 use std::str::{self, FromStr};
 #[cfg(feature = "async-tokio")]
@@ -143,22 +144,60 @@ impl InnerCsvSolutionsSerializer {
 }
 
 fn write_csv_term(output: &mut String, term: &Term) {
+    #[cfg(feature = "sparql-12")]
+    if let Term::Triple(_) = term {
+        let mut value = String::new();
+        write_csv_triple_term_value(&mut value, term);
+        write_escaped_csv_string(output, &value);
+        return;
+    }
     match term {
         Term::NamedNode(uri) => write_csv_named_node(output, uri),
         Term::BlankNode(bnode) => write_csv_blank_node(output, bnode),
         Term::Literal(literal) => write_escaped_csv_string(output, literal.value()),
         #[cfg(feature = "sparql-12")]
-        Term::Triple(triple) => {
-            match &triple.subject {
-                NamedOrBlankNode::NamedNode(uri) => write_csv_named_node(output, uri),
-                NamedOrBlankNode::BlankNode(bnode) => write_csv_blank_node(output, bnode),
-            }
-            output.push(' ');
-            write_csv_named_node(output, &triple.predicate);
-            output.push(' ');
-            write_csv_term(output, &triple.object)
-        }
+        Term::Triple(_) => unreachable!(),
     }
+}
+
+#[cfg(feature = "sparql-12")]
+fn write_csv_triple_term_value(output: &mut String, term: &Term) {
+    let Term::Triple(triple) = term else {
+        write_csv_nested_term_value(output, term);
+        return;
+    };
+    output.push_str("<<( ");
+    match &triple.subject {
+        NamedOrBlankNode::NamedNode(uri) => write_csv_named_node(output, uri),
+        NamedOrBlankNode::BlankNode(bnode) => write_csv_blank_node(output, bnode),
+    }
+    output.push(' ');
+    write_csv_named_node(output, &triple.predicate);
+    output.push(' ');
+    write_csv_nested_term_value(output, &triple.object);
+    output.push_str(" )>>");
+}
+
+#[cfg(feature = "sparql-12")]
+fn write_csv_nested_term_value(output: &mut String, term: &Term) {
+    match term {
+        Term::NamedNode(uri) => write_csv_named_node(output, uri),
+        Term::BlankNode(bnode) => write_csv_blank_node(output, bnode),
+        Term::Literal(literal) => write_always_quoted_csv_string(output, literal.value()),
+        Term::Triple(_) => write_csv_triple_term_value(output, term),
+    }
+}
+
+#[cfg(feature = "sparql-12")]
+fn write_always_quoted_csv_string(output: &mut String, value: &str) {
+    output.push('"');
+    for character in value.chars() {
+        if character == '"' {
+            output.push('"');
+        }
+        output.push(character);
+    }
+    output.push('"');
 }
 
 fn write_csv_named_node(output: &mut String, uri: &NamedNode) {
@@ -660,31 +699,31 @@ impl TsvInnerSolutionsParser {
                 if v.is_empty() {
                     Ok(None)
                 } else {
-                    Ok(Some(Term::from_str(v).map_err(|e| {
-                        let start_position_char = line
-                            .split('\t')
-                            .take(i)
-                            .map(|c| c.chars().count() + 1)
-                            .sum::<usize>();
-                        let start_position_bytes =
-                            line.split('\t').take(i).map(|c| c.len() + 1).sum::<usize>();
-                        QueryResultsSyntaxError::term(
-                            e,
-                            v.into(),
-                            TextPosition {
-                                line: self.line_reader.line_count - 1,
-                                column: start_position_char.try_into().unwrap(),
-                                offset: self.line_reader.last_line_start
-                                    + u64::try_from(start_position_bytes).unwrap(),
-                            }..TextPosition {
-                                line: self.line_reader.line_count - 1,
-                                column: (start_position_char + v.chars().count())
-                                    .try_into()
-                                    .unwrap(),
-                                offset: self.line_reader.last_line_start
-                                    + u64::try_from(start_position_bytes + v.len()).unwrap(),
-                            },
-                        )
+                    let start_position_char = line
+                        .split('\t')
+                        .take(i)
+                        .map(|c| c.chars().count() + 1)
+                        .sum::<usize>();
+                    let start_position_bytes =
+                        line.split('\t').take(i).map(|c| c.len() + 1).sum::<usize>();
+                    let location = TextPosition {
+                        line: self.line_reader.line_count - 1,
+                        column: start_position_char.try_into().unwrap(),
+                        offset: self.line_reader.last_line_start
+                            + u64::try_from(start_position_bytes).unwrap(),
+                    }..TextPosition {
+                        line: self.line_reader.line_count - 1,
+                        column: (start_position_char + v.chars().count())
+                            .try_into()
+                            .unwrap(),
+                        offset: self.line_reader.last_line_start
+                            + u64::try_from(start_position_bytes + v.len()).unwrap(),
+                    };
+                    let normalized = normalize_tsv_term(v).map_err(|message| {
+                        QueryResultsSyntaxError::located_message(message, location.clone())
+                    })?;
+                    Ok(Some(Term::from_str(&normalized).map_err(|e| {
+                        QueryResultsSyntaxError::term(e, v.into(), location)
                     })?))
                 }
             })
@@ -713,6 +752,93 @@ impl TsvInnerSolutionsParser {
                 },
             ))
         }
+    }
+}
+
+fn normalize_tsv_term(value: &str) -> Result<Cow<'_, str>, &'static str> {
+    let mut output = String::with_capacity(value.len());
+    let mut offset = 0;
+    let mut changed = false;
+    while offset < value.len() {
+        let remaining = &value[offset..];
+        if remaining.starts_with("<<(") {
+            output.push_str("<<(");
+            offset += 3;
+            continue;
+        }
+        let Some(character) = remaining.chars().next() else {
+            break;
+        };
+        if character == '<' {
+            loop {
+                let Some(character) = value[offset..].chars().next() else {
+                    return Err("An IRI in a SPARQL TSV term is not closed");
+                };
+                output.push(character);
+                offset += character.len_utf8();
+                if character == '>' || offset == value.len() {
+                    break;
+                }
+            }
+            continue;
+        }
+        if matches!(character, '"' | '\'') {
+            let quote = character;
+            if remaining.starts_with(if quote == '"' { "\"\"\"" } else { "'''" }) {
+                return Err("Long string literals are not allowed in SPARQL TSV results");
+            }
+            changed |= quote == '\'';
+            output.push('"');
+            offset += quote.len_utf8();
+            let mut closed = false;
+            while offset < value.len() {
+                let Some(character) = value[offset..].chars().next() else {
+                    break;
+                };
+                if character == quote {
+                    output.push('"');
+                    offset += character.len_utf8();
+                    closed = true;
+                    break;
+                }
+                if matches!(character, '\t' | '\n' | '\r') {
+                    return Err(
+                        "Tab, newline, and carriage return characters must be escaped in SPARQL TSV literals",
+                    );
+                }
+                if character == '\\' {
+                    output.push('\\');
+                    offset += character.len_utf8();
+                    let Some(escaped) = value[offset..].chars().next() else {
+                        return Err("A SPARQL TSV literal ends with an incomplete escape");
+                    };
+                    if quote == '\'' && escaped == '\'' {
+                        output.pop();
+                        output.push('\'');
+                    } else {
+                        output.push(escaped);
+                    }
+                    offset += escaped.len_utf8();
+                } else {
+                    if quote == '\'' && character == '"' {
+                        output.push('\\');
+                    }
+                    output.push(character);
+                    offset += character.len_utf8();
+                }
+            }
+            if !closed {
+                return Err("A SPARQL TSV literal is not closed");
+            }
+            continue;
+        }
+        output.push(character);
+        offset += character.len_utf8();
+    }
+    if changed {
+        Ok(Cow::Owned(output))
+    } else {
+        Ok(Cow::Borrowed(value))
     }
 }
 
@@ -923,6 +1049,23 @@ mod tests {
         assert_eq!(buffer, expected);
     }
 
+    #[cfg(feature = "sparql-12")]
+    #[test]
+    fn test_csv_triple_term_serialization() {
+        let term = Triple::new(
+            NamedNode::new_unchecked("http://example.com/alice"),
+            NamedNode::new_unchecked("http://example.com/says"),
+            Literal::new_simple_literal(r#"Hello "Bob"."#),
+        )
+        .into();
+        let mut output = String::new();
+        write_csv_term(&mut output, &term);
+        assert_eq!(
+            output,
+            r#""<<( http://example.com/alice http://example.com/says ""Hello """"Bob""""."" )>>""#
+        );
+    }
+
     #[test]
     fn test_tsv_roundtrip() -> Result<(), Box<dyn Error>> {
         let (variables, solutions) = build_example();
@@ -963,6 +1106,68 @@ mod tests {
             unreachable!()
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_tsv_single_quoted_literal_parsing() -> Result<(), Box<dyn Error>> {
+        let input = "?value\n'single \"double\" and \\' apostrophe'@en\n";
+        let SliceTsvQueryResultsParserOutput::Solutions {
+            mut solutions,
+            variables,
+        } = SliceTsvQueryResultsParserOutput::read(input.as_bytes())?
+        else {
+            unreachable!()
+        };
+        assert_eq!(variables, vec![Variable::new("value")?]);
+        assert_eq!(
+            solutions.parse_next()?,
+            Some(vec![Some(
+                Literal::new_language_tagged_literal("single \"double\" and ' apostrophe", "en")?
+                    .into()
+            )])
+        );
+        assert_eq!(solutions.parse_next()?, None);
+        Ok(())
+    }
+
+    #[cfg(feature = "sparql-12")]
+    #[test]
+    fn test_tsv_single_quoted_literal_in_triple_term() -> Result<(), Box<dyn Error>> {
+        let input = "?value\n<<( <urn:s> <urn:p> 'nested \"quote\"' )>>\n";
+        let SliceTsvQueryResultsParserOutput::Solutions { mut solutions, .. } =
+            SliceTsvQueryResultsParserOutput::read(input.as_bytes())?
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            solutions.parse_next()?,
+            Some(vec![Some(
+                Triple::new(
+                    NamedNode::new("urn:s")?,
+                    NamedNode::new("urn:p")?,
+                    Literal::from("nested \"quote\"")
+                )
+                .into()
+            )])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_tsv_rejects_long_or_raw_control_string_forms() -> Result<(), Box<dyn Error>> {
+        for input in [
+            "?value\n\"\"\"long\"\"\"\n",
+            "?value\n'''long'''\n",
+            "?value\n\"raw\rcarriage\"\n",
+        ] {
+            let SliceTsvQueryResultsParserOutput::Solutions { mut solutions, .. } =
+                SliceTsvQueryResultsParserOutput::read(input.as_bytes())?
+            else {
+                unreachable!()
+            };
+            assert!(solutions.parse_next().is_err(), "accepted {input:?}");
+        }
         Ok(())
     }
 

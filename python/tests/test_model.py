@@ -123,6 +123,11 @@ class TestLiteral(unittest.TestCase):
         self.assertEqual(Literal(-math.inf), Literal("-INF", datatype=XSD_DOUBLE))
         self.assertEqual(Literal(-math.nan), Literal("NaN", datatype=XSD_DOUBLE))
 
+        with self.assertRaisesRegex(ValueError, "requires a non-empty language tag"):
+            Literal("foo", datatype=RDF_LANG_STRING)
+        with self.assertRaisesRegex(ValueError, "requires a non-empty language tag and a base direction"):
+            Literal("foo", datatype=RDF_DIR_LANG_STRING)
+
     def test_string(self) -> None:
         self.assertEqual(str(Literal("foo")), '"foo"')
         self.assertEqual(str(Literal("foo", language="en")), '"foo"@en')

@@ -4,17 +4,23 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 
+mod charset;
 mod csv;
 mod error;
 mod format;
 mod json;
+mod media_type;
 mod parser;
 mod serializer;
 pub mod solution;
+mod version;
 mod xml;
 
 pub use crate::error::{QueryResultsParseError, QueryResultsSyntaxError, TextPosition};
 pub use crate::format::QueryResultsFormat;
+pub use crate::media_type::{
+    QueryResultsCharset, QueryResultsMediaType, QueryResultsMediaTypeParseError,
+};
 pub use crate::parser::{
     QueryResultsParser, ReaderQueryResultsParserOutput, ReaderSolutionsParser,
     SliceQueryResultsParserOutput, SliceSolutionsParser,
@@ -25,5 +31,7 @@ pub use crate::parser::{
 };
 #[cfg(feature = "async-tokio")]
 pub use crate::serializer::TokioAsyncWriterSolutionsSerializer;
-pub use crate::serializer::{QueryResultsSerializer, WriterSolutionsSerializer};
+pub use crate::serializer::{
+    QueryResultsSerializer, QueryResultsSerializerConfigError, WriterSolutionsSerializer,
+};
 pub use crate::solution::QuerySolution;

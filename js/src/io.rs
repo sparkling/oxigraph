@@ -3,7 +3,8 @@ use crate::model::*;
 use crate::reflect::*;
 use crate::utils::{IntoAsyncIter, to_option, to_option_ref, try_async_iter};
 use js_sys::{IntoIter, Uint8Array, try_iter};
-use oxigraph::io::{RdfFormat, RdfParseError, RdfParser, ReaderQuadParser};
+use oxigraph::io::{RdfFormat, RdfParseError, RdfParser, RdfSerializer, ReaderQuadParser};
+use oxigraph::model::RdfVersion;
 use oxrdfio::TokioAsyncReaderQuadParser;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};
@@ -22,9 +23,10 @@ pub fn parse(input: &JsValue, options: &JsValue) -> Result<JsValue, JsValue> {
     let mut to_graph_name_rs = None;
     let mut lenient = false;
     let mut data_factory = None;
+    let mut rdf_version = None;
     if let Some(options) = to_option_ref(options) {
         if let Some(format_str) = reflect_get(options, &FORMAT)?.as_string() {
-            format = Some(rdf_format(&format_str)?);
+            format = Some(format_str);
         }
         base_iri = convert_base_iri(&reflect_get(options, &BASE_IRI)?)?;
         to_graph_name_rs = to_option_ref(&reflect_get(options, &TO_GRAPH_NAME)?)
@@ -32,11 +34,12 @@ pub fn parse(input: &JsValue, options: &JsValue) -> Result<JsValue, JsValue> {
             .transpose()?;
         lenient = reflect_get(options, &LENIENT)?.is_truthy();
         data_factory = to_option(reflect_get(options, &DATA_FACTORY)?).map(Into::into);
+        rdf_version = optional_rdf_version(options)?;
     }
     let format = format
         .ok_or_else(|| format_err!("The format option should be provided as a second argument of Store.load like parse(my_content, {{format: 'nt'}}"))?;
 
-    let mut parser = RdfParser::from_format(format);
+    let mut parser = rdf_parser(&format, rdf_version)?;
     if let Some(to_graph_name) = to_graph_name_rs {
         parser = parser.with_default_graph(to_graph_name);
     }
@@ -80,6 +83,85 @@ pub fn rdf_format(format: &str) -> Result<RdfFormat, JsValue> {
     } else {
         RdfFormat::from_extension(format)
             .ok_or_else(|| format_err!("Not supported RDF format extension: {}", format))
+    }
+}
+
+pub fn rdf_parser(format: &str, rdf_version: Option<RdfVersion>) -> Result<RdfParser, JsValue> {
+    if format.contains('/') {
+        let media_type = append_rdf_version(format, rdf_version);
+        RdfParser::from_media_type(&media_type).map_err(|error| format_err!("{error}"))
+    } else {
+        let format = rdf_format(format)?;
+        if let Some(rdf_version) = rdf_version {
+            RdfParser::from_media_type(&format!(
+                "{}; version={}",
+                format.media_type(),
+                rdf_version_label(rdf_version)
+            ))
+            .map_err(|error| format_err!("{error}"))
+        } else {
+            Ok(RdfParser::from_format(format))
+        }
+    }
+}
+
+pub fn rdf_serializer(
+    format: &str,
+    rdf_version: Option<RdfVersion>,
+) -> Result<RdfSerializer, JsValue> {
+    if format.contains('/') {
+        let media_type = append_rdf_version(format, rdf_version);
+        RdfSerializer::from_media_type(&media_type).map_err(|error| format_err!("{error}"))
+    } else {
+        let format = rdf_format(format)?;
+        if let Some(rdf_version) = rdf_version {
+            RdfSerializer::from_media_type(&format!(
+                "{}; version={}",
+                format.media_type(),
+                rdf_version_label(rdf_version)
+            ))
+            .map_err(|error| format_err!("{error}"))
+        } else {
+            Ok(RdfSerializer::from_format(format))
+        }
+    }
+}
+
+pub fn optional_rdf_version(options: &JsValue) -> Result<Option<RdfVersion>, JsValue> {
+    let Some(value) = to_option(reflect_get(options, &RDF_VERSION)?) else {
+        return Ok(None);
+    };
+    let value = value
+        .as_string()
+        .ok_or_else(|| format_err!("rdf_version option must be a string"))?;
+    Ok(Some(parse_rdf_version(&value)?))
+}
+
+pub fn parse_rdf_version(value: &str) -> Result<RdfVersion, JsValue> {
+    match value {
+        "1.1" => Ok(RdfVersion::V1_1),
+        "1.2-basic" => Ok(RdfVersion::V1_2Basic),
+        "1.2" => Ok(RdfVersion::V1_2),
+        _ => Err(format_err!(
+            "Unsupported RDF version '{value}'; expected '1.1', '1.2-basic', or '1.2'"
+        )),
+    }
+}
+
+fn append_rdf_version(format: &str, rdf_version: Option<RdfVersion>) -> String {
+    if let Some(rdf_version) = rdf_version {
+        format!("{format}; version={}", rdf_version_label(rdf_version))
+    } else {
+        format.to_owned()
+    }
+}
+
+const fn rdf_version_label(version: RdfVersion) -> &'static str {
+    match version {
+        RdfVersion::V1_1 => "1.1",
+        RdfVersion::V1_2Basic => "1.2-basic",
+        RdfVersion::V1_2 => "1.2",
+        _ => "unknown",
     }
 }
 

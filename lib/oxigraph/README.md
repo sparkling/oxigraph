@@ -24,6 +24,25 @@ Oxigraph implements the following specifications:
 
 Support for [RDF 1.2](https://www.w3.org/TR/rdf12-concepts/) and [SPARQL 1.2](https://www.w3.org/TR/sparql12-query/) is also available behind the `rdf-12` feature.
 
+Optional, storage-neutral semantic layers are available behind explicit
+features:
+
+* `datalog` exposes bounded Datalog D0–D2 evaluation and explicit D0/D1
+  materialization into an application-selected named graph.
+* `rdfs` enables `rdf-12` and exposes the 15-pattern finite
+  active-vocabulary RDFS 1.2 materialization profile. Applications that need
+  the separate 14-pattern RDF 1.2 Basic build can use `oxrdfs` directly.
+* `owl2-rl` exposes the bounded OWL 2 RL/RDF rule profile; it does not enable
+  other OWL profiles.
+* `shacl` exposes dated SHACL 1.2 Core, Node Expressions, SPARQL, and Rules
+  feature sets with deterministic validation reports.
+
+These layers evaluate an owned `Store` snapshot without writing by default.
+Their profile identifiers and receipts are the conformance boundary: a
+successful bounded profile must not be interpreted as unrestricted RDFS, OWL,
+or complete evolving-draft SHACL conformance. See the
+[`reasoning`](crate::reasoning) module for Store adapters.
+
 A preliminary benchmark [is provided](../bench/README.md). Oxigraph internal design [is described on the wiki](https://github.com/oxigraph/oxigraph/wiki/Architecture).
 
 The main entry point of Oxigraph is the [`Store`](store::Store) struct:
@@ -70,6 +89,13 @@ It is based on these crates that can be used separately:
 * [`sparesults`](https://crates.io/crates/sparesults), parsers and serializers for SPARQL result formats (the [`oxigraph::sparql::results`](crate::sparql::results) module).
 * [`sparopt`](https://crates.io/crates/sparesults), a SPARQL optimizer.
 * [`oxsdatatypes`](https://crates.io/crates/oxsdatatypes), an implementation of some XML Schema datatypes.
+* [`oxdatalog`](https://crates.io/crates/oxdatalog), bounded storage-neutral
+  Datalog evaluation.
+* [`oxrdfs`](https://crates.io/crates/oxrdfs), finite active-vocabulary RDFS
+  materialization.
+* [`oxowl`](https://crates.io/crates/oxowl), bounded OWL 2 RL/RDF reasoning.
+* [`oxshacl`](https://crates.io/crates/oxshacl), dated bounded SHACL validation
+  and rules.
 
 To build the library locally, don't forget to clone the submodules using `git clone --recursive https://github.com/oxigraph/oxigraph.git` to clone the repository including submodules or `git submodule update --init` to add submodules to the already cloned repository.
 

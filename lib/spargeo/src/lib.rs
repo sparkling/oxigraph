@@ -4,12 +4,17 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oxigraph/oxigraph/main/logo.svg")]
 
+mod boundary;
+mod geosparql_functions;
 mod parse;
+mod serialization;
 mod units;
 
 pub mod vocab;
 
-use crate::parse::{CRS84_URI, extract_argument, result_to_geojson_literal, result_to_wkt_literal};
+use crate::boundary::geof_boundary;
+use crate::parse::{CRS84_URI, extract_argument, result_to_geojson_literal};
+use crate::serialization::geometry_to_literal;
 use crate::units::{
     area_iri_to_square_meter_factor, extract_units_iri, length_iri_to_meter_factor,
 };
@@ -24,9 +29,10 @@ use oxrdf::vocab::xsd;
 use oxrdf::{Literal, NamedNode, Term};
 
 /// GeoSPARQL functions in name and implementation pairs
-pub const GEOSPARQL_EXTENSION_FUNCTIONS: [(NamedNode, fn(&[Term]) -> Option<Term>); 43] = [
+pub const GEOSPARQL_EXTENSION_FUNCTIONS: [(NamedNode, fn(&[Term]) -> Option<Term>); 44] = [
     (geosparql_functions::AREA, geof_area),
     (geosparql_functions::AS_GEO_JSON, geof_as_geojson),
+    (geosparql_functions::BOUNDARY, geof_boundary),
     (geosparql_functions::CENTROID, geof_centroid),
     (geosparql_functions::CONVEX_HULL, geof_convex_hull),
     (
@@ -106,55 +112,6 @@ fn as_point(geom: &Geometry) -> Option<Point> {
     }
 }
 
-/// Geometry literal datatype observed on an input argument. Used by geometry
-/// returning functions to pick the matching output serialization so that WKT
-/// inputs produce WKT outputs and GeoJSON inputs produce GeoJSON outputs.
-#[derive(Copy, Clone)]
-enum GeometryLiteralKind {
-    Wkt,
-    GeoJson,
-}
-
-fn detect_literal_kind(term: &Term) -> Option<GeometryLiteralKind> {
-    let Term::Literal(literal) = term else {
-        return None;
-    };
-    if *literal.datatype() == geosparql::WKT_LITERAL {
-        Some(GeometryLiteralKind::Wkt)
-    } else if *literal.datatype() == geosparql::GEO_JSON_LITERAL {
-        Some(GeometryLiteralKind::GeoJson)
-    } else {
-        None
-    }
-}
-
-/// Pick the output serialization format for a geometry returning function.
-///
-/// WKT inputs produce WKT output, GeoJSON inputs produce GeoJSON output, and
-/// any mix (or any unrecognised datatype) falls back to WKT.
-fn pick_output_kind(args: &[Term]) -> GeometryLiteralKind {
-    let mut seen_geojson = false;
-    for term in args {
-        match detect_literal_kind(term) {
-            Some(GeometryLiteralKind::Wkt) => return GeometryLiteralKind::Wkt,
-            Some(GeometryLiteralKind::GeoJson) => seen_geojson = true,
-            None => {}
-        }
-    }
-    if seen_geojson {
-        GeometryLiteralKind::GeoJson
-    } else {
-        GeometryLiteralKind::Wkt
-    }
-}
-
-fn geometry_to_literal(geom: &Geometry, kind: GeometryLiteralKind) -> Literal {
-    match kind {
-        GeometryLiteralKind::Wkt => result_to_wkt_literal(geom),
-        GeometryLiteralKind::GeoJson => result_to_geojson_literal(geom),
-    }
-}
-
 /// <http://www.opengis.net/def/function/geosparql/length>.
 fn geof_length(args: &[Term]) -> Option<Term> {
     let args: &[Term; 2] = args.try_into().ok()?;
@@ -175,13 +132,7 @@ fn geof_envelope(args: &[Term]) -> Option<Term> {
     let args: &[Term; 1] = args.try_into().ok()?;
     let geom = extract_argument(&args[0])?;
     let rect = geom.bounding_rect()?;
-    Some(
-        geometry_to_literal(
-            &Geometry::Polygon(rect.to_polygon()),
-            pick_output_kind(args),
-        )
-        .into(),
-    )
+    Some(geometry_to_literal(&Geometry::Polygon(rect.to_polygon()), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/centroid>.
@@ -189,7 +140,7 @@ fn geof_centroid(args: &[Term]) -> Option<Term> {
     let args: &[Term; 1] = args.try_into().ok()?;
     let geom = extract_argument(&args[0])?;
     let point = geom.centroid()?;
-    Some(geometry_to_literal(&Geometry::Point(point), pick_output_kind(args)).into())
+    Some(geometry_to_literal(&Geometry::Point(point), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/convexHull>.
@@ -197,7 +148,7 @@ fn geof_convex_hull(args: &[Term]) -> Option<Term> {
     let args: &[Term; 1] = args.try_into().ok()?;
     let geom = extract_argument(&args[0])?;
     let hull = geom.convex_hull();
-    Some(geometry_to_literal(&Geometry::Polygon(hull), pick_output_kind(args)).into())
+    Some(geometry_to_literal(&Geometry::Polygon(hull), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/getSRID>.
@@ -277,7 +228,7 @@ fn geof_intersection(args: &[Term]) -> Option<Term> {
     let a = as_multi_polygon(extract_argument(&args[0])?)?;
     let b = as_multi_polygon(extract_argument(&args[1])?)?;
     let result = a.intersection(&b);
-    Some(geometry_to_literal(&Geometry::MultiPolygon(result), pick_output_kind(args)).into())
+    Some(geometry_to_literal(&Geometry::MultiPolygon(result), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/union>.
@@ -286,7 +237,7 @@ fn geof_union(args: &[Term]) -> Option<Term> {
     let a = as_multi_polygon(extract_argument(&args[0])?)?;
     let b = as_multi_polygon(extract_argument(&args[1])?)?;
     let result = a.union(&b);
-    Some(geometry_to_literal(&Geometry::MultiPolygon(result), pick_output_kind(args)).into())
+    Some(geometry_to_literal(&Geometry::MultiPolygon(result), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/difference>.
@@ -295,7 +246,7 @@ fn geof_difference(args: &[Term]) -> Option<Term> {
     let a = as_multi_polygon(extract_argument(&args[0])?)?;
     let b = as_multi_polygon(extract_argument(&args[1])?)?;
     let result = a.difference(&b);
-    Some(geometry_to_literal(&Geometry::MultiPolygon(result), pick_output_kind(args)).into())
+    Some(geometry_to_literal(&Geometry::MultiPolygon(result), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/symDifference>.
@@ -304,7 +255,7 @@ fn geof_sym_difference(args: &[Term]) -> Option<Term> {
     let a = as_multi_polygon(extract_argument(&args[0])?)?;
     let b = as_multi_polygon(extract_argument(&args[1])?)?;
     let result = a.xor(&b);
-    Some(geometry_to_literal(&Geometry::MultiPolygon(result), pick_output_kind(args)).into())
+    Some(geometry_to_literal(&Geometry::MultiPolygon(result), args).into())
 }
 
 /// <http://www.opengis.net/def/function/geosparql/relate>.
@@ -510,101 +461,4 @@ pub(crate) mod geosparql {
         NamedNode::new_const_unchecked("http://www.opengis.net/ont/geosparql#geoJSONLiteral");
     pub const WKT_LITERAL: NamedNode =
         NamedNode::new_const_unchecked("http://www.opengis.net/ont/geosparql#wktLiteral");
-}
-
-mod geosparql_functions {
-    //! [GeoSpatial](https://opengeospatial.github.io/ogc-geosparql/) functions vocabulary.
-    use oxrdf::NamedNode;
-
-    pub const AREA: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/area");
-    pub const AS_GEO_JSON: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/asGeoJSON");
-    pub const CENTROID: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/centroid");
-    pub const CONVEX_HULL: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/convexHull");
-    pub const COORDINATE_DIMENSION: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.opengis.net/def/function/geosparql/coordinateDimension",
-    );
-    pub const DIFFERENCE: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/difference");
-    pub const DIMENSION: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/dimension");
-    pub const DISTANCE: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/distance");
-    pub const EH_CONTAINS: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehContains");
-    pub const EH_COVERED_BY: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehCoveredBy");
-    pub const EH_COVERS: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehCovers");
-    pub const EH_DISJOINT: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehDisjoint");
-    pub const EH_EQUALS: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehEquals");
-    pub const EH_INSIDE: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehInside");
-    pub const EH_MEET: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehMeet");
-    pub const EH_OVERLAP: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/ehOverlap");
-    pub const ENVELOPE: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/envelope");
-    pub const GET_SRID: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/getSRID");
-    pub const INTERSECTION: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.opengis.net/def/function/geosparql/intersection",
-    );
-    pub const IS_EMPTY: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/isEmpty");
-    pub const IS_SIMPLE: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/isSimple");
-    pub const LENGTH: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/length");
-    pub const PERIMETER: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/perimeter");
-    pub const RCC8_DC: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8dc");
-    pub const RCC8_EC: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8ec");
-    pub const RCC8_EQ: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8eq");
-    pub const RCC8_NTPP: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8ntpp");
-    pub const RCC8_NTPPI: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8ntppi");
-    pub const RCC8_PO: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8po");
-    pub const RCC8_TPP: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8tpp");
-    pub const RCC8_TPPI: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/rcc8tppi");
-    pub const RELATE: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/relate");
-    pub const SF_CONTAINS: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfContains");
-    pub const SF_CROSSES: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfCrosses");
-    pub const SF_DISJOINT: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfDisjoint");
-    pub const SF_EQUALS: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfEquals");
-    pub const SF_INTERSECTS: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.opengis.net/def/function/geosparql/sfIntersects",
-    );
-    pub const SF_OVERLAPS: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfOverlaps");
-    pub const SF_TOUCHES: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfTouches");
-    pub const SF_WITHIN: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/sfWithin");
-    pub const SPATIAL_DIMENSION: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.opengis.net/def/function/geosparql/spatialDimension",
-    );
-    pub const SYM_DIFFERENCE: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.opengis.net/def/function/geosparql/symDifference",
-    );
-    pub const UNION: NamedNode =
-        NamedNode::new_const_unchecked("http://www.opengis.net/def/function/geosparql/union");
 }

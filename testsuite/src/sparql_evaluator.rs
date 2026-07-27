@@ -12,7 +12,7 @@ use oxigraph::model::{
     NamedNode, Term, TermRef, Triple, TripleRef, Variable,
 };
 use oxigraph::sparql::results::{
-    QueryResultsFormat, QueryResultsParser, ReaderQueryResultsParserOutput,
+    QueryResultsFormat, QueryResultsParser, QueryResultsSerializer, ReaderQueryResultsParserOutput,
 };
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use oxigraph::store::Store;
@@ -69,6 +69,10 @@ pub fn register_sparql_tests(evaluator: &mut TestEvaluator) {
     evaluator.register(
         "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#UpdateEvaluationTest",
         evaluate_update_evaluation_test,
+    );
+    evaluator.register(
+        "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#CSVResultFormatTest",
+        evaluate_csv_result_format_test,
     );
     evaluator.register(
         "https://github.com/oxigraph/oxigraph/tests#PositiveJsonResultsSyntaxTest",
@@ -216,6 +220,88 @@ fn evaluate_evaluation_test(test: &Test) -> Result<()> {
     Ok(())
 }
 
+fn evaluate_csv_result_format_test(test: &Test) -> Result<()> {
+    let mut dataset = Dataset::new();
+    if let Some(data) = &test.data {
+        load_to_dataset(data, &mut dataset, GraphName::DefaultGraph)?;
+    }
+    for (name, value) in &test.graph_data {
+        load_to_dataset(value, &mut dataset, name.clone())?;
+    }
+    let query_file = test.query.as_deref().context("No action found")?;
+    let query = SparqlParser::new()
+        .with_base_iri(query_file)?
+        .parse_query(&read_file_to_string(query_file)?)
+        .context("Failure to parse query")?;
+    let QueryResults::Solutions(solutions) =
+        QueryEvaluator::new().prepare(&query).execute(&dataset)?
+    else {
+        bail!("CSV result-format tests require SELECT query results")
+    };
+
+    let mut serializer = QueryResultsSerializer::from_format(QueryResultsFormat::Csv)
+        .serialize_solutions_to_writer(Vec::new(), solutions.variables().to_vec())?;
+    for solution in solutions {
+        let solution = solution?;
+        serializer.serialize(&solution)?;
+    }
+    let actual_csv = serializer.finish()?;
+    let result_file = test.result.as_deref().context("No result found")?;
+    let actual_records = canonicalize_csv_records(read_csv_records(actual_csv.as_slice())?);
+    let expected_records = canonicalize_csv_records(read_csv_records(read_file(result_file)?)?);
+    ensure!(
+        expected_records == actual_records,
+        "CSV result-format mismatch.\nExpected records:\n{expected_records:#?}\nActual records:\n{actual_records:#?}\nSerialized CSV:\n{}",
+        String::from_utf8_lossy(&actual_csv),
+    );
+    Ok(())
+}
+
+fn read_csv_records(reader: impl io::Read) -> Result<Vec<Vec<String>>> {
+    csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(false)
+        .from_reader(reader)
+        .records()
+        .map(|record| Ok(record?.iter().map(ToOwned::to_owned).collect()))
+        .collect()
+}
+
+fn canonicalize_csv_records(mut records: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    if let Some(header) = records.first() {
+        let mut columns = header.iter().enumerate().collect::<Vec<_>>();
+        columns.sort_unstable_by_key(|(_, value)| *value);
+        let order = columns
+            .into_iter()
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        for row in &mut records {
+            if row.len() == order.len() {
+                *row = order.iter().map(|index| row[*index].clone()).collect();
+            }
+        }
+    }
+    let mut blank_nodes = HashMap::<String, String>::new();
+    let mut next_blank_node = 0;
+    for row in &mut records {
+        for value in row {
+            let Some(label) = value.strip_prefix("_:") else {
+                continue;
+            };
+            if label.is_empty() {
+                continue;
+            }
+            let canonical = blank_nodes.entry(label.to_owned()).or_insert_with(|| {
+                let canonical = format!("_:b{next_blank_node}");
+                next_blank_node += 1;
+                canonical
+            });
+            value.clone_from(canonical);
+        }
+    }
+    records
+}
+
 fn evaluate_positive_update_syntax_test(test: &Test) -> Result<()> {
     let update_file = test.action.as_deref().context("No action found")?;
     SparqlParser::new()
@@ -266,9 +352,9 @@ fn evaluate_update_evaluation_test(test: &Test) -> Result<()> {
         .execute()
         .context("Failure to execute update")?;
     let mut store_dataset: Dataset = store.iter().collect::<Result<_, _>>()?;
-    store_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+    store_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
     let mut result_store_dataset: Dataset = result_store.iter().collect::<Result<_, _>>()?;
-    result_store_dataset.canonicalize(CanonicalizationAlgorithm::Unstable);
+    result_store_dataset.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
     ensure!(
         store_dataset == result_store_dataset,
         "Not isomorphic result dataset.\nDiff:\n{}\nParsed update:\n{}\n",
@@ -588,7 +674,7 @@ impl StaticQueryResults {
                 })
             }
         } else {
-            graph.canonicalize(CanonicalizationAlgorithm::Unstable);
+            graph.canonicalize_with_work_factor(CanonicalizationAlgorithm::Unstable, 3)?;
             Ok(Self::Graph(Box::new(graph)))
         }
     }

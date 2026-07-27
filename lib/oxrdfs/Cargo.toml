@@ -1,0 +1,41 @@
+[package]
+name = "oxrdfs"
+version = "0.1.0-dev"
+authors.workspace = true
+license.workspace = true
+keywords = ["RDF", "RDFS", "reasoning"]
+repository = "https://github.com/oxigraph/oxigraph/tree/main/lib/oxrdfs"
+description = "Bounded RDFS rule profiles for Oxigraph"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+js = ["oxdatalog/js"]
+rdf-12 = [
+  "oxdatalog/rdf-12",
+  "oxrdf/rdf-12",
+  "spareval/sparql-12",
+  "spargebra/sparql-12",
+]
+spareval = ["oxdatalog/spareval"]
+
+[dependencies]
+oxdatalog.workspace = true
+oxrdf.workspace = true
+oxsdatatypes.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+web-time.workspace = true
+
+[dev-dependencies]
+spareval.workspace = true
+spargebra.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

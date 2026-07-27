@@ -1,9 +1,10 @@
 use crate::model::{
-    PyBlankNode, PyGraphNameRef, PyNamedNodeRef, PyNamedOrBlankNodeRef, PyQuad, PyTermRef,
+    PyBlankNode, PyGraphNameRef, PyNamedNodeRef, PyNamedOrBlankNode, PyNamedOrBlankNodeRef, PyQuad,
+    PyTermRef,
 };
-use oxigraph::model::Quad;
 use oxigraph::model::dataset::{CanonicalizationAlgorithm, CanonicalizationHashAlgorithm, Dataset};
-use pyo3::exceptions::PyKeyError;
+use oxigraph::model::{GraphNameRef, Quad};
+use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::fmt;
@@ -19,6 +20,8 @@ use std::fmt;
 ///
 /// :param quads: some quads to initialize the dataset with.
 /// :type quads: collections.abc.Iterable[Quad] or None, optional
+/// :param named_graphs: named graphs to initialize, including empty graphs.
+/// :type named_graphs: collections.abc.Iterable[NamedNode or BlankNode] or None, optional
 ///
 /// The :py:class:`str` function provides an N-Quads serialization:
 ///
@@ -33,12 +36,20 @@ pub struct PyDataset {
 #[pymethods]
 impl PyDataset {
     #[new]
-    #[pyo3(signature = (quads = None))]
-    fn new(quads: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+    #[pyo3(signature = (quads = None, *, named_graphs = None))]
+    fn new(
+        quads: Option<&Bound<'_, PyAny>>,
+        named_graphs: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         let mut inner = Dataset::new();
         if let Some(quads) = quads {
             for quad in quads.try_iter()? {
                 inner.insert(quad?.extract::<PyQuad>()?);
+            }
+        }
+        if let Some(named_graphs) = named_graphs {
+            for graph_name in named_graphs.try_iter()? {
+                inner.insert_named_graph(graph_name?.extract::<PyNamedOrBlankNode>()?);
             }
         }
         Ok(Self { inner })
@@ -194,15 +205,91 @@ impl PyDataset {
         self.inner.clear()
     }
 
+    /// Returns all named graphs, including empty named graphs.
+    ///
+    /// :rtype: list[NamedNode or BlankNode]
+    fn named_graphs(&self) -> Vec<PyNamedOrBlankNode> {
+        self.inner.named_graphs().map(Into::into).collect()
+    }
+
+    /// Returns whether the dataset contains a named graph.
+    ///
+    /// Empty named graphs are considered present.
+    ///
+    /// :param graph_name: the named graph to look up.
+    /// :type graph_name: NamedNode or BlankNode
+    /// :rtype: bool
+    #[expect(clippy::needless_pass_by_value)]
+    fn contains_named_graph(&self, graph_name: PyNamedOrBlankNodeRef<'_>) -> bool {
+        self.inner.contains_named_graph(&graph_name)
+    }
+
+    /// Adds a named graph, even if it contains no quads.
+    ///
+    /// :param graph_name: the named graph to add.
+    /// :type graph_name: NamedNode or BlankNode
+    /// :rtype: None
+    fn add_graph(&mut self, graph_name: PyNamedOrBlankNode) {
+        self.inner.insert_named_graph(graph_name);
+    }
+
+    /// Clears a graph while retaining named-graph presence.
+    ///
+    /// :param graph_name: the graph to clear.
+    /// :type graph_name: NamedNode or BlankNode or DefaultGraph
+    /// :rtype: None
+    #[expect(clippy::needless_pass_by_value)]
+    fn clear_graph(&mut self, graph_name: PyGraphNameRef<'_>) {
+        self.inner.clear_graph(&graph_name);
+    }
+
+    /// Removes a named graph and all its quads.
+    ///
+    /// The default graph is cleared because it is always present.
+    ///
+    /// :param graph_name: the graph to remove.
+    /// :type graph_name: NamedNode or BlankNode or DefaultGraph
+    /// :rtype: None
+    #[expect(clippy::needless_pass_by_value)]
+    fn remove_graph(&mut self, graph_name: PyGraphNameRef<'_>) {
+        match GraphNameRef::from(&graph_name) {
+            GraphNameRef::NamedNode(graph_name) => {
+                self.inner.remove_named_graph(graph_name);
+            }
+            GraphNameRef::BlankNode(graph_name) => {
+                self.inner.remove_named_graph(graph_name);
+            }
+            GraphNameRef::DefaultGraph => self.inner.clear_graph(GraphNameRef::DefaultGraph),
+        }
+    }
+
+    /// Tests RDF dataset isomorphism, including empty named-graph topology.
+    ///
+    /// :param other: the other dataset.
+    /// :type other: Dataset
+    /// :rtype: bool
+    fn is_isomorphic_to(&self, other: &Self) -> PyResult<bool> {
+        self.inner
+            .is_isomorphic_to(&other.inner)
+            .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+    }
+
     /// Canonicalizes the dataset by renaming blank nodes.
     ///
     /// Warning: Blank node ids depend on the current shape of the graph. Adding a new quad might change the ids of a lot of blank nodes.
     /// Hence, this canonization might not be suitable for diffs.
     ///
-    /// Warning: This implementation's worst-case complexity is exponential with respect to the number of blank nodes in the input dataset.
+    /// Canonicalization uses a linear work budget by default and raises
+    /// :py:class:`RuntimeError` instead of performing unbounded work.
+    /// Trusted callers may select a larger work factor or an exact Hash
+    /// N-Degree Quads call limit. The two overrides are mutually exclusive.
     ///
     /// :param algorithm: the canonicalization algorithm to use.
     /// :type algorithm: CanonicalizationAlgorithm
+    /// :param max_work_factor: optional exponent for a work-factor-derived call budget.
+    /// :type max_work_factor: int or None, optional
+    /// :param max_n_degree_calls: optional exact Hash N-Degree Quads call budget.
+    /// :type max_n_degree_calls: int or None, optional
     /// :rtype: None
     ///
     /// >>> d1 = Dataset([Quad(BlankNode(), NamedNode('http://example.com/p'), BlankNode())])
@@ -213,8 +300,28 @@ impl PyDataset {
     /// >>> d2.canonicalize(CanonicalizationAlgorithm.UNSTABLE)
     /// >>> d1 == d2
     /// True
-    fn canonicalize(&mut self, algorithm: &PyCanonicalizationAlgorithm) {
-        self.inner.canonicalize(algorithm.inner)
+    #[pyo3(signature = (algorithm, *, max_work_factor = None, max_n_degree_calls = None))]
+    fn canonicalize(
+        &mut self,
+        algorithm: &PyCanonicalizationAlgorithm,
+        max_work_factor: Option<u32>,
+        max_n_degree_calls: Option<usize>,
+    ) -> PyResult<()> {
+        let result = match (max_work_factor, max_n_degree_calls) {
+            (None, None) => self.inner.canonicalize(algorithm.inner),
+            (Some(factor), None) => self
+                .inner
+                .canonicalize_with_work_factor(algorithm.inner, factor),
+            (None, Some(maximum)) => self
+                .inner
+                .canonicalize_with_n_degree_call_limit(algorithm.inner, maximum),
+            (Some(_), Some(_)) => {
+                return Err(PyValueError::new_err(
+                    "max_work_factor and max_n_degree_calls are mutually exclusive",
+                ));
+            }
+        };
+        result.map_err(|error| PyRuntimeError::new_err(error.to_string()))
     }
 
     /// Returns a map between the current dataset blank node and the canonicalized blank node
@@ -224,24 +331,45 @@ impl PyDataset {
     ///
     /// :param algorithm: the canonicalization algorithm to use.
     /// :type algorithm: CanonicalizationAlgorithm
+    /// :param max_work_factor: optional exponent for a work-factor-derived call budget.
+    /// :type max_work_factor: int or None, optional
+    /// :param max_n_degree_calls: optional exact Hash N-Degree Quads call budget.
+    /// :type max_n_degree_calls: int or None, optional
     /// :rtype: dict[BlankNode, BlankNode]
     ///
     /// >>> d1 = Dataset([Quad(BlankNode('a'), NamedNode('http://example.com/p'), Literal('b'))])
     /// >>> d1.canonicalize_blank_nodes(CanonicalizationAlgorithm.RDFC_1_0)
     /// {<BlankNode value=a>: <BlankNode value=c14n0>}
+    #[pyo3(signature = (algorithm, *, max_work_factor = None, max_n_degree_calls = None))]
     fn canonicalize_blank_nodes(
         &self,
         algorithm: &PyCanonicalizationAlgorithm,
-    ) -> HashMap<PyBlankNode, PyBlankNode> {
-        self.inner
-            .canonicalize_blank_nodes(algorithm.inner)
+        max_work_factor: Option<u32>,
+        max_n_degree_calls: Option<usize>,
+    ) -> PyResult<HashMap<PyBlankNode, PyBlankNode>> {
+        let result = match (max_work_factor, max_n_degree_calls) {
+            (None, None) => self.inner.canonicalize_blank_nodes(algorithm.inner),
+            (Some(factor), None) => self
+                .inner
+                .canonicalize_blank_nodes_with_work_factor(algorithm.inner, factor),
+            (None, Some(maximum)) => self
+                .inner
+                .canonicalize_blank_nodes_with_n_degree_call_limit(algorithm.inner, maximum),
+            (Some(_), Some(_)) => {
+                return Err(PyValueError::new_err(
+                    "max_work_factor and max_n_degree_calls are mutually exclusive",
+                ));
+            }
+        };
+        Ok(result
+            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?
             .into_iter()
             .map(|(k, v)| (k.into(), v.into()))
-            .collect()
+            .collect())
     }
 
     fn __bool__(&self) -> bool {
-        self.inner.is_empty()
+        !self.inner.is_empty()
     }
 
     fn __len__(&self) -> usize {
@@ -257,6 +385,16 @@ impl PyDataset {
         QuadIter {
             inner: self.inner.iter().collect::<Vec<_>>().into_iter(),
         }
+    }
+}
+
+impl PyDataset {
+    pub(crate) fn from_dataset(inner: Dataset) -> Self {
+        Self { inner }
+    }
+
+    pub(crate) fn as_dataset(&self) -> &Dataset {
+        &self.inner
     }
 }
 

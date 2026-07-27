@@ -385,7 +385,8 @@ fn read_literal(s: &str) -> Result<(Literal, &str), TermParseError> {
                     } else if let Some(remain) = remain.strip_prefix("^^") {
                         let (datatype, remain) = read_named_node(remain)?;
                         Ok((
-                            Literal::new_typed_literal(OxString::new_owned(&value), datatype),
+                            Literal::try_new_typed_literal(OxString::new_owned(&value), datatype)
+                                .map_err(|error| TermParseError::msg(error.to_string()))?,
                             remain,
                         ))
                     } else {
@@ -620,11 +621,11 @@ impl TermParseError {
 }
 
 #[cfg(test)]
-#[cfg(feature = "rdf-12")]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "rdf-12")]
     fn triple_term_parsing() {
         assert_eq!(
             Term::from_str("\"ex\\u00E9\\U000000E9\"").unwrap(),
@@ -642,5 +643,14 @@ mod tests {
                 Literal::new_simple_literal("o"),
             )
         );
+    }
+
+    #[test]
+    fn typed_literal_parser_rejects_datatypes_that_require_language_components() {
+        Literal::from_str("\"foo\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#langString>")
+            .unwrap_err();
+        #[cfg(feature = "rdf-12")]
+        Literal::from_str("\"foo\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString>")
+            .unwrap_err();
     }
 }

@@ -17,9 +17,11 @@ name = "oxigraph"
 doc = false
 
 [features]
-default = ["geosparql", "rdf-12"]
+default = ["geosparql", "rdf-12", "rdfs", "owl2-rl"]
 geosparql = ["oxigraph/geosparql"]
 rdf-12 = ["oxigraph/rdf-12"]
+rdfs = ["rdf-12", "oxigraph/rdfs"]
+owl2-rl = ["oxigraph/owl2-rl"]
 
 [dependencies]
 console_error_panic_hook.workspace = true

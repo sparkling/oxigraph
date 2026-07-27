@@ -1138,19 +1138,21 @@ impl<S: StrLookup> Decoder for S {
             )
             .into()),
             EncodedTerm::SmallTypedLiteral { value, datatype_id } => {
-                Ok(Literal::new_typed_literal(
+                Ok(Literal::try_new_typed_literal(
                     *value,
                     NamedNode::new_unchecked(get_required_str(self, datatype_id)?),
                 )
+                .map_err(|error| CorruptionError::msg(error.to_string()))?
                 .into())
             }
             EncodedTerm::BigTypedLiteral {
                 value_id,
                 datatype_id,
-            } => Ok(Literal::new_typed_literal(
+            } => Ok(Literal::try_new_typed_literal(
                 get_required_str(self, value_id)?,
                 NamedNode::new_unchecked(get_required_str(self, datatype_id)?),
             )
+            .map_err(|error| CorruptionError::msg(error.to_string()))?
             .into()),
             EncodedTerm::BooleanLiteral(value) => Ok(Literal::from(*value).into()),
             EncodedTerm::FloatLiteral(value) => Ok(Literal::from(*value).into()),

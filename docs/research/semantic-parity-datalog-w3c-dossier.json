@@ -1,0 +1,379 @@
+{
+  "schemaVersion": 1,
+  "seed": "Oxigraph semantic parity: Jena compatibility, current W3C 1.2, Datalog, SHACL, OWL 2 RL, Agentic-QE, MetaHarness",
+  "artifactRole": "Historical research capture; current implementation and claim state are authoritative only in the conformance ledger and normative requirements inventory.",
+  "supersededBy": ["conformance-ledger.json", "normative-requirements.json"],
+  "seedType": "concept",
+  "generatedAt": "2026-07-26T15:00:00+01:00",
+  "depth": 2,
+  "truncated": false,
+  "objective": "Reach Jena 1.2 compatibility first, then complete the current W3C RDF, SPARQL, and SHACL 1.2 requirements using bounded Datalog, SHACL, and OWL 2 RL layers.",
+  "method": {
+    "plugin": "ruflo-goals",
+    "skills": [
+      "goal-plan",
+      "deep-research",
+      "dossier-collect",
+      "research-synthesize",
+      "horizon-track"
+    ],
+    "sources": [
+      "RuvNet Brain source index",
+      "official W3C specifications and test repositories",
+      "Apache Jena documentation and source",
+      "Oxigraph local source and tests",
+      "npm and crates.io registries",
+      "installed Agentic-QE package source"
+    ]
+  },
+  "pins": {
+    "oxigraphSource": "79554fa05d5138de6559d67ced70c31b15b64b39",
+    "w3cRdfTests": "3d0b0613d0177d25aad7ec60e88df2338f461516",
+    "w3cDataShapesObserved": "e2259cda458411d9c03c1a82d7acf0d221ab4307",
+    "w3cRdfConceptsEditor": "74f17a64cfd2c50d55f78750a3c26ea74837bc3b",
+    "w3cRdfSemanticsEditor": "8aa3ebe2644be35cde964f949e754f5d7a075317",
+    "w3cSparqlQueryEditor": "178f1c4e3787e041f54242a698a3133a667b884b",
+    "jenaSourceObserved": "c33c58490f063ef61146a9e460682ddcf57fc5ed",
+    "agenticQe": "3.13.2"
+  },
+  "nodes": [
+    {
+      "id": "oxigraph",
+      "type": "repository",
+      "attrs": {
+        "version": "0.6.0-dev",
+        "state": "RDF/SPARQL store with partial 1.2 support"
+      },
+      "sources": ["local source", "Cargo metadata"]
+    },
+    {
+      "id": "jena",
+      "type": "reference-engine",
+      "attrs": {
+        "version": "6.1.0",
+        "reasoning": "forward/backward/hybrid rules, RDFS/OWL profiles"
+      },
+      "sources": ["Apache Jena docs", "GenericRuleReasoner.java"]
+    },
+    {
+      "id": "rdf12",
+      "type": "standard",
+      "attrs": {
+        "status": "Candidate Recommendation Snapshot",
+        "date": "2026-04-07",
+        "documentFamilySize": 11,
+        "role": "terminal W3C target"
+      },
+      "sources": ["https://www.w3.org/TR/rdf12-concepts/"]
+    },
+    {
+      "id": "sparql12",
+      "type": "standard",
+      "attrs": {
+        "status": "Working Draft",
+        "date": "2026-06-25",
+        "documentFamilySize": 12,
+        "role": "terminal W3C target"
+      },
+      "sources": ["https://www.w3.org/TR/sparql12-query/"]
+    },
+    {
+      "id": "shacl12-core",
+      "type": "standard",
+      "attrs": {
+        "status": "Working Draft",
+        "date": "2026-07-23",
+        "approvedTestsObserved": 318
+      },
+      "sources": ["https://www.w3.org/TR/shacl12-core/", "w3c/data-shapes"]
+    },
+    {
+      "id": "shacl12-rules",
+      "type": "standard",
+      "attrs": {
+        "status": "Working Draft",
+        "date": "2026-07-25",
+        "requires": "fixpoint, recursion, stratification, run-once rules"
+      },
+      "sources": ["https://www.w3.org/TR/shacl12-rules/"]
+    },
+    {
+      "id": "owl2-rl",
+      "type": "standard",
+      "attrs": {
+        "status": "W3C Recommendation",
+        "implementationStyle": "OWL 2 RL/RDF rule-based entailment",
+        "scope": "only supported OWL profile",
+        "excluded": "OWL 2 EL, QL, DL, Full, Jena-specific, and unqualified OWL modes"
+      },
+      "sources": [
+        "https://www.w3.org/TR/owl2-profiles/",
+        "https://www.w3.org/TR/owl2-conformance/"
+      ]
+    },
+    {
+      "id": "oxdatalog",
+      "type": "proposed-component",
+      "attrs": {
+        "profile": "safe positive RDF Datalog first",
+        "algorithm": "semi-naive bottom-up",
+        "output": "separate inference graph plus provenance"
+      },
+      "sources": ["ADR-0002"]
+    },
+    {
+      "id": "oxshacl",
+      "type": "proposed-component",
+      "attrs": {
+        "owns": "targets, paths, constraints, reports, SHACL profiles"
+      },
+      "sources": ["ADR-0002", "ADR-0003"]
+    },
+    {
+      "id": "oxowl",
+      "type": "proposed-component",
+      "attrs": {
+        "owns": "OWL 2 RL profile validation, rule compilation, equality, datatypes, keys, and inconsistency",
+        "firstW3cProfile": "owl2-rl-rdf"
+      },
+      "sources": ["ADR-0007"]
+    },
+    {
+      "id": "datafrog",
+      "type": "candidate-backend",
+      "attrs": {
+        "version": "2.0.1",
+        "decision": "bounded internal spike"
+      },
+      "sources": ["crates.io", "rust-lang/datafrog"]
+    },
+    {
+      "id": "ascent",
+      "type": "candidate-backend",
+      "attrs": {
+        "version": "0.8.0",
+        "decision": "not primary runtime; compile-time macro mismatch"
+      },
+      "sources": ["crates.io", "s-arash/ascent"]
+    },
+    {
+      "id": "souffle",
+      "type": "differential-oracle",
+      "attrs": {
+        "version": "2.5",
+        "decision": "test-only optional oracle"
+      },
+      "sources": ["souffle-lang.github.io"]
+    },
+    {
+      "id": "agentic-qe",
+      "type": "test-coordinator",
+      "attrs": {
+        "version": "3.13.2",
+        "role": "candidate generation and native receipt coordination",
+        "excluded": "Rust test execution and simulated MCP oracle"
+      },
+      "sources": ["installed npm source", "RuvNet Brain"]
+    },
+    {
+      "id": "metaharness",
+      "type": "harness",
+      "attrs": {
+        "role": "compose frozen parity workflow",
+        "budget": "maximum 20 percent effort and two hours before thin slice"
+      },
+      "sources": ["user-patterns memory", "RuvNet Brain"]
+    },
+    {
+      "id": "darwin",
+      "type": "optimizer",
+      "attrs": {
+        "mutationSurfaces": 7,
+        "gates": ["solve", "regression", "safety", "cost", "reproducibility"]
+      },
+      "sources": ["metaharness/packages/darwin-mode/src"]
+    }
+  ],
+  "edges": [
+    {
+      "from": "oxigraph",
+      "to": "jena",
+      "kind": "uses-as-first-compatibility-tranche",
+      "source": "ADR-0001 and ADR-0006",
+      "confidence": "high"
+    },
+    {
+      "from": "oxigraph",
+      "to": "rdf12",
+      "kind": "already-partially-implements",
+      "source": "local features and W3C tests",
+      "confidence": "high"
+    },
+    {
+      "from": "oxigraph",
+      "to": "sparql12",
+      "kind": "already-partially-implements",
+      "source": "local features and W3C tests",
+      "confidence": "high"
+    },
+    {
+      "from": "oxigraph",
+      "to": "oxdatalog",
+      "kind": "will-add",
+      "source": "ADR-0002",
+      "confidence": "medium"
+    },
+    {
+      "from": "oxigraph",
+      "to": "oxshacl",
+      "kind": "will-add",
+      "source": "implementation plan",
+      "confidence": "medium"
+    },
+    {
+      "from": "oxigraph",
+      "to": "oxowl",
+      "kind": "will-add",
+      "source": "ADR-0007",
+      "confidence": "medium"
+    },
+    {
+      "from": "oxshacl",
+      "to": "shacl12-core",
+      "kind": "implements-profile-of",
+      "source": "ADR-0003",
+      "confidence": "medium"
+    },
+    {
+      "from": "oxshacl",
+      "to": "oxdatalog",
+      "kind": "uses-for-entailment-and-rules",
+      "source": "ADR-0002",
+      "confidence": "high"
+    },
+    {
+      "from": "oxdatalog",
+      "to": "shacl12-rules",
+      "kind": "provides-inference-substrate",
+      "source": "SHACL Rules requirements",
+      "confidence": "high"
+    },
+    {
+      "from": "oxowl",
+      "to": "oxdatalog",
+      "kind": "compiles-rules-for",
+      "source": "ADR-0007",
+      "confidence": "high"
+    },
+    {
+      "from": "oxowl",
+      "to": "owl2-rl",
+      "kind": "implements-profile-of",
+      "source": "ADR-0007",
+      "confidence": "high"
+    },
+    {
+      "from": "oxdatalog",
+      "to": "owl2-rl",
+      "kind": "provides-rule-execution-substrate",
+      "source": "OWL 2 Profiles and ADR-0007",
+      "confidence": "high"
+    },
+    {
+      "from": "oxdatalog",
+      "to": "datafrog",
+      "kind": "will-benchmark-internal-backend",
+      "source": "ADR-0002",
+      "confidence": "medium"
+    },
+    {
+      "from": "oxdatalog",
+      "to": "souffle",
+      "kind": "differential-tests-against",
+      "source": "ADR-0002",
+      "confidence": "medium"
+    },
+    {
+      "from": "agentic-qe",
+      "to": "oxigraph",
+      "kind": "coordinates-native-tests-for",
+      "source": "ADR-0005",
+      "confidence": "high"
+    },
+    {
+      "from": "metaharness",
+      "to": "darwin",
+      "kind": "bounds-and-invokes",
+      "source": "ADR-0004",
+      "confidence": "high"
+    },
+    {
+      "from": "darwin",
+      "to": "agentic-qe",
+      "kind": "may-optimize-policy-around",
+      "source": "ADR-0004",
+      "confidence": "medium"
+    }
+  ],
+  "findings": [
+    {
+      "id": "f1",
+      "claim": "SHACL Core should be implemented separately from the Datalog engine.",
+      "evidence": "high"
+    },
+    {
+      "id": "f2",
+      "claim": "A safe runtime rule IR is needed; no evaluated Rust crate is a complete direct fit.",
+      "evidence": "high"
+    },
+    {
+      "id": "f3",
+      "claim": "Agentic-QE must not be the Rust or conformance authority in version 3.13.2.",
+      "evidence": "high"
+    },
+    {
+      "id": "f4",
+      "claim": "Darwin may optimize harness policy only after frozen native oracles exist.",
+      "evidence": "high"
+    },
+    {
+      "id": "f5",
+      "claim": "Jena 1.2 compatibility is the first tranche; current reviewed W3C 1.2 drafts are the terminal parity target.",
+      "evidence": "high"
+    },
+    {
+      "id": "f6",
+      "claim": "Datalog is the OWL 2 RL/RDF substrate; every non-RL OWL profile and unqualified OWL mode is outside scope.",
+      "evidence": "high"
+    }
+  ],
+  "stats": {
+    "nodesByType": {
+      "repository": 1,
+      "reference-engine": 1,
+      "standard": 5,
+      "proposed-component": 3,
+      "candidate-backend": 2,
+      "differential-oracle": 1,
+      "test-coordinator": 1,
+      "harness": 1,
+      "optimizer": 1
+    },
+    "sourcesUsed": [
+      "web",
+      "codebase",
+      "git",
+      "registry",
+      "RuvNet Brain",
+      "Ruflo memory"
+    ],
+    "tokensSpent": null
+  },
+  "limitations": [
+    "SHACL specifications are active Working Drafts.",
+    "At capture time the SHACL suite was inventory-only because oxshacl did not yet exist; that observation is superseded by the current conformance ledger.",
+    "At capture time candidate backend selection remained a measured implementation spike; subsequent implementation evidence is recorded in the conformance ledger.",
+    "The target is current W3C 1.2 parity, but no full Jena or W3C conformance claim is made before the requirement ledgers and gates pass.",
+    "OWL support is limited to OWL 2 RL; OWL 2 EL, QL, DL, Full, Jena-specific, and unqualified OWL modes are explicitly excluded."
+  ]
+}

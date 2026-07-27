@@ -1,13 +1,16 @@
 //! Utilities to write RDF graphs and datasets.
 
 use crate::format::RdfFormat;
+use crate::media_type::{RdfMediaType, RdfMediaTypeParseError};
+use crate::serializer_options::RdfSerializerConfigError;
 #[cfg(feature = "async-tokio")]
 use oxjsonld::TokioAsyncWriterJsonLdSerializer;
 use oxjsonld::{JsonLdProfile, JsonLdSerializer, WriterJsonLdSerializer};
-use oxrdf::{IriParseError, Quad, Triple};
+use oxrdf::{Dataset, IriParseError, NamedOrBlankNode, Quad, RdfVersion, Term, Triple};
 #[cfg(feature = "async-tokio")]
 use oxrdfxml::TokioAsyncWriterRdfXmlSerializer;
 use oxrdfxml::{RdfXmlSerializer, WriterRdfXmlSerializer};
+use oxttl::NTriplesMediaType;
 #[cfg(feature = "async-tokio")]
 use oxttl::nquads::TokioAsyncWriterNQuadsSerializer;
 use oxttl::nquads::{NQuadsSerializer, WriterNQuadsSerializer};
@@ -53,6 +56,8 @@ use tokio::io::AsyncWrite;
 #[derive(Clone)]
 pub struct RdfSerializer {
     inner: RdfSerializerKind,
+    format: RdfFormat,
+    rdf_version: Option<RdfVersion>,
 }
 
 #[derive(Clone)]
@@ -66,20 +71,52 @@ enum RdfSerializerKind {
 }
 
 impl RdfSerializer {
+    /// Builds a serializer configured from an RDF media type.
+    ///
+    /// A `version` parameter is emitted by concrete syntaxes that have a
+    /// `VERSION` directive. For other syntaxes it is retained as an external
+    /// media-type constraint and incompatible RDF terms are rejected.
+    pub fn from_media_type(media_type: &str) -> Result<Self, RdfMediaTypeParseError> {
+        let descriptor = RdfMediaType::parse(media_type)?;
+        Ok(Self::from_media_type_descriptor(&descriptor))
+    }
+
+    /// Builds a serializer from a parsed RDF media type descriptor.
+    pub fn from_media_type_descriptor(descriptor: &RdfMediaType) -> Self {
+        let serializer = Self::from_format(descriptor.format());
+        if let Some(rdf_version) = descriptor.version() {
+            serializer.with_version_constraint(rdf_version)
+        } else {
+            serializer
+        }
+    }
+
     /// Builds a serializer for the given format
     #[inline]
     pub fn from_format(format: RdfFormat) -> Self {
+        let reported_format = match format {
+            RdfFormat::JsonLd { .. } => RdfFormat::JsonLd {
+                profile: JsonLdProfile::Streaming.into(),
+            },
+            RdfFormat::N3 => RdfFormat::Turtle,
+            _ => format,
+        };
         Self {
             inner: match format {
                 RdfFormat::JsonLd { .. } => RdfSerializerKind::JsonLd(JsonLdSerializer::new()),
                 RdfFormat::NQuads => RdfSerializerKind::NQuads(NQuadsSerializer::new()),
                 RdfFormat::NTriples => RdfSerializerKind::NTriples(NTriplesSerializer::new()),
+                RdfFormat::NTriplesTextPlain => RdfSerializerKind::NTriples(
+                    NTriplesSerializer::new().with_media_type(NTriplesMediaType::TextPlain),
+                ),
                 RdfFormat::RdfXml => RdfSerializerKind::RdfXml(RdfXmlSerializer::new()),
                 RdfFormat::TriG => RdfSerializerKind::TriG(TriGSerializer::new()),
                 RdfFormat::Turtle | RdfFormat::N3 => {
                     RdfSerializerKind::Turtle(TurtleSerializer::new())
                 }
             },
+            format: reported_format,
+            rdf_version: None,
         }
     }
 
@@ -94,16 +131,57 @@ impl RdfSerializer {
     /// );
     /// ```
     pub fn format(&self) -> RdfFormat {
-        match &self.inner {
-            RdfSerializerKind::JsonLd(_) => RdfFormat::JsonLd {
-                profile: JsonLdProfile::Streaming.into(), // TODO: also expanded?
-            },
-            RdfSerializerKind::NQuads(_) => RdfFormat::NQuads,
-            RdfSerializerKind::NTriples(_) => RdfFormat::NTriples,
-            RdfSerializerKind::RdfXml(_) => RdfFormat::RdfXml,
-            RdfSerializerKind::TriG(_) => RdfFormat::TriG,
-            RdfSerializerKind::Turtle(_) => RdfFormat::Turtle,
+        self.format
+    }
+
+    /// Returns the externally configured RDF version constraint, if any.
+    pub const fn rdf_version(&self) -> Option<RdfVersion> {
+        self.rdf_version
+    }
+
+    /// Sets the RDF version for Turtle, TriG, N-Triples, or N-Quads
+    /// serialization.
+    ///
+    /// Other concrete syntaxes return an error instead of silently ignoring
+    /// the request to announce a version. Use [`Self::from_media_type`] when a
+    /// syntax carries the version only as a media-type parameter.
+    pub fn with_rdf_version(
+        self,
+        rdf_version: RdfVersion,
+    ) -> Result<Self, RdfSerializerConfigError> {
+        if matches!(
+            self.inner,
+            RdfSerializerKind::NQuads(_)
+                | RdfSerializerKind::NTriples(_)
+                | RdfSerializerKind::TriG(_)
+                | RdfSerializerKind::Turtle(_)
+        ) {
+            Ok(self.with_version_constraint(rdf_version))
+        } else {
+            Err(RdfSerializerConfigError::UnsupportedRdfVersion {
+                format: self.format,
+            })
         }
+    }
+
+    fn with_version_constraint(mut self, rdf_version: RdfVersion) -> Self {
+        self.inner = match self.inner {
+            RdfSerializerKind::NQuads(serializer) => {
+                RdfSerializerKind::NQuads(serializer.with_rdf_version(rdf_version))
+            }
+            RdfSerializerKind::NTriples(serializer) => {
+                RdfSerializerKind::NTriples(serializer.with_rdf_version(rdf_version))
+            }
+            RdfSerializerKind::TriG(serializer) => {
+                RdfSerializerKind::TriG(serializer.with_rdf_version(rdf_version))
+            }
+            RdfSerializerKind::Turtle(serializer) => {
+                RdfSerializerKind::Turtle(serializer.with_rdf_version(rdf_version))
+            }
+            other => other,
+        };
+        self.rdf_version = Some(rdf_version);
+        self
     }
 
     /// If the format supports it, sets a prefix.
@@ -211,6 +289,7 @@ impl RdfSerializer {
     /// ```
     pub fn for_writer<W: Write>(self, writer: W) -> WriterQuadSerializer<W> {
         WriterQuadSerializer {
+            rdf_version: self.rdf_version,
             inner: match self.inner {
                 RdfSerializerKind::JsonLd(s) => {
                     WriterQuadSerializerKind::JsonLd(s.for_writer(writer))
@@ -265,6 +344,7 @@ impl RdfSerializer {
         writer: W,
     ) -> TokioAsyncWriterQuadSerializer<W> {
         TokioAsyncWriterQuadSerializer {
+            rdf_version: self.rdf_version,
             inner: match self.inner {
                 RdfSerializerKind::JsonLd(s) => {
                     TokioAsyncWriterQuadSerializerKind::JsonLd(s.for_tokio_async_writer(writer))
@@ -324,6 +404,7 @@ impl From<RdfFormat> for RdfSerializer {
 #[must_use]
 pub struct WriterQuadSerializer<W: Write> {
     inner: WriterQuadSerializerKind<W>,
+    rdf_version: Option<RdfVersion>,
 }
 
 enum WriterQuadSerializerKind<W: Write> {
@@ -338,6 +419,7 @@ enum WriterQuadSerializerKind<W: Write> {
 impl<W: Write> WriterQuadSerializer<W> {
     /// Serializes a [`Quad`]
     pub fn serialize_quad(&mut self, quad: &Quad) -> io::Result<()> {
+        ensure_term_compatible(self.rdf_version, &quad.object)?;
         match &mut self.inner {
             WriterQuadSerializerKind::JsonLd(serializer) => serializer.serialize_quad(quad),
             WriterQuadSerializerKind::NQuads(serializer) => serializer.serialize_quad(quad),
@@ -354,8 +436,50 @@ impl<W: Write> WriterQuadSerializer<W> {
         }
     }
 
+    /// Serializes an explicitly present empty named graph.
+    ///
+    /// TriG and JSON-LD preserve this topology. Other formats fail instead of
+    /// silently losing the graph.
+    pub fn serialize_empty_graph(&mut self, graph_name: &NamedOrBlankNode) -> io::Result<()> {
+        match &mut self.inner {
+            WriterQuadSerializerKind::JsonLd(serializer) => {
+                serializer.serialize_empty_graph(graph_name)
+            }
+            WriterQuadSerializerKind::TriG(serializer) => {
+                serializer.serialize_empty_graph(graph_name)
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the selected RDF format cannot represent an empty named graph",
+            )),
+        }
+    }
+
+    /// Serializes a complete RDF dataset.
+    ///
+    /// TriG and JSON-LD preserve empty named graphs. Formats whose RDF mapping
+    /// cannot represent an empty named graph fail instead of silently dropping
+    /// that topology.
+    pub fn serialize_dataset(&mut self, dataset: &Dataset) -> io::Result<()> {
+        match &mut self.inner {
+            WriterQuadSerializerKind::JsonLd(serializer) => {
+                return serializer.serialize_dataset(dataset);
+            }
+            WriterQuadSerializerKind::TriG(serializer) => {
+                return serializer.serialize_dataset(dataset);
+            }
+            _ => {}
+        }
+        ensure_no_empty_named_graphs(dataset)?;
+        for quad in dataset {
+            self.serialize_quad(&quad)?;
+        }
+        Ok(())
+    }
+
     /// Serializes a [`Triple`]
     pub fn serialize_triple(&mut self, triple: &Triple) -> io::Result<()> {
+        ensure_term_compatible(self.rdf_version, &triple.object)?;
         match &mut self.inner {
             WriterQuadSerializerKind::JsonLd(serializer) => serializer.serialize_triple(triple),
             WriterQuadSerializerKind::NQuads(serializer) => serializer.serialize_triple(triple),
@@ -372,8 +496,8 @@ impl<W: Write> WriterQuadSerializer<W> {
     pub fn finish(self) -> io::Result<W> {
         Ok(match self.inner {
             WriterQuadSerializerKind::JsonLd(serializer) => serializer.finish()?,
-            WriterQuadSerializerKind::NQuads(serializer) => serializer.finish(),
-            WriterQuadSerializerKind::NTriples(serializer) => serializer.finish(),
+            WriterQuadSerializerKind::NQuads(serializer) => serializer.finish()?,
+            WriterQuadSerializerKind::NTriples(serializer) => serializer.finish()?,
             WriterQuadSerializerKind::RdfXml(serializer) => serializer.finish()?,
             WriterQuadSerializerKind::TriG(serializer) => serializer.finish()?,
             WriterQuadSerializerKind::Turtle(serializer) => serializer.finish()?,
@@ -414,6 +538,7 @@ impl<W: Write> WriterQuadSerializer<W> {
 #[cfg(feature = "async-tokio")]
 pub struct TokioAsyncWriterQuadSerializer<W: AsyncWrite + Unpin> {
     inner: TokioAsyncWriterQuadSerializerKind<W>,
+    rdf_version: Option<RdfVersion>,
 }
 
 #[cfg(feature = "async-tokio")]
@@ -430,6 +555,7 @@ enum TokioAsyncWriterQuadSerializerKind<W: AsyncWrite + Unpin> {
 impl<W: AsyncWrite + Unpin> TokioAsyncWriterQuadSerializer<W> {
     /// Serializes a [`Quad`]
     pub async fn serialize_quad(&mut self, quad: &Quad) -> io::Result<()> {
+        ensure_term_compatible(self.rdf_version, &quad.object)?;
         match &mut self.inner {
             TokioAsyncWriterQuadSerializerKind::JsonLd(serializer) => {
                 serializer.serialize_quad(quad).await
@@ -452,8 +578,48 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterQuadSerializer<W> {
         }
     }
 
+    /// Serializes an explicitly present empty named graph.
+    ///
+    /// TriG and JSON-LD preserve this topology.
+    pub async fn serialize_empty_graph(&mut self, graph_name: &NamedOrBlankNode) -> io::Result<()> {
+        match &mut self.inner {
+            TokioAsyncWriterQuadSerializerKind::JsonLd(serializer) => {
+                serializer.serialize_empty_graph(graph_name).await
+            }
+            TokioAsyncWriterQuadSerializerKind::TriG(serializer) => {
+                serializer.serialize_empty_graph(graph_name).await
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the selected RDF format cannot represent an empty named graph",
+            )),
+        }
+    }
+
+    /// Serializes a complete RDF dataset.
+    ///
+    /// TriG and JSON-LD preserve empty named graphs. Other formats fail if
+    /// doing so is not possible instead of silently dropping dataset topology.
+    pub async fn serialize_dataset(&mut self, dataset: &Dataset) -> io::Result<()> {
+        match &mut self.inner {
+            TokioAsyncWriterQuadSerializerKind::JsonLd(serializer) => {
+                return serializer.serialize_dataset(dataset).await;
+            }
+            TokioAsyncWriterQuadSerializerKind::TriG(serializer) => {
+                return serializer.serialize_dataset(dataset).await;
+            }
+            _ => {}
+        }
+        ensure_no_empty_named_graphs(dataset)?;
+        for quad in dataset {
+            self.serialize_quad(&quad).await?;
+        }
+        Ok(())
+    }
+
     /// Serializes a [`Triple`]
     pub async fn serialize_triple(&mut self, triple: &Triple) -> io::Result<()> {
+        ensure_term_compatible(self.rdf_version, &triple.object)?;
         match &mut self.inner {
             TokioAsyncWriterQuadSerializerKind::JsonLd(serializer) => {
                 serializer.serialize_triple(triple).await
@@ -482,13 +648,62 @@ impl<W: AsyncWrite + Unpin> TokioAsyncWriterQuadSerializer<W> {
     pub async fn finish(self) -> io::Result<W> {
         Ok(match self.inner {
             TokioAsyncWriterQuadSerializerKind::JsonLd(serializer) => serializer.finish().await?,
-            TokioAsyncWriterQuadSerializerKind::NQuads(serializer) => serializer.finish(),
-            TokioAsyncWriterQuadSerializerKind::NTriples(serializer) => serializer.finish(),
+            TokioAsyncWriterQuadSerializerKind::NQuads(serializer) => serializer.finish().await?,
+            TokioAsyncWriterQuadSerializerKind::NTriples(serializer) => serializer.finish().await?,
             TokioAsyncWriterQuadSerializerKind::RdfXml(serializer) => serializer.finish().await?,
             TokioAsyncWriterQuadSerializerKind::TriG(serializer) => serializer.finish().await?,
             TokioAsyncWriterQuadSerializerKind::Turtle(serializer) => serializer.finish().await?,
         })
     }
+}
+
+#[cfg(feature = "rdf-12")]
+fn ensure_term_compatible(rdf_version: Option<RdfVersion>, term: &Term) -> io::Result<()> {
+    let Some(rdf_version) = rdf_version else {
+        return Ok(());
+    };
+    match term {
+        Term::Literal(literal)
+            if literal.direction().is_some()
+                && !rdf_version.supports_directional_language_strings() =>
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "directional language-tagged strings require RDF 1.2",
+            ));
+        }
+        Term::Triple(triple) if !rdf_version.supports_triple_terms() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "triple terms require the full RDF 1.2 profile",
+            ));
+        }
+        Term::Triple(triple) => ensure_term_compatible(Some(rdf_version), &triple.object)?,
+        Term::NamedNode(_) | Term::BlankNode(_) | Term::Literal(_) => {}
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "rdf-12"))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps feature-independent serializer control flow"
+)]
+fn ensure_term_compatible(_rdf_version: Option<RdfVersion>, _term: &Term) -> io::Result<()> {
+    Ok(())
+}
+
+fn ensure_no_empty_named_graphs(dataset: &Dataset) -> io::Result<()> {
+    if dataset
+        .named_graphs()
+        .any(|graph_name| dataset.graph(&graph_name).is_empty())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "this RDF format cannot preserve empty named graphs; use TriG or JSON-LD for dataset-topology serialization",
+        ));
+    }
+    Ok(())
 }
 
 fn to_triple(quad: &Quad) -> io::Result<&Triple> {

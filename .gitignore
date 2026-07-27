@@ -4,6 +4,9 @@ Cargo.lock
 .idea
 *.iml
 js/node_modules
+tools/agentic-qe/node_modules
+tools/metaharness/node_modules
+.agentic-qe/
 lib/tests/rocksdb_bc_data
 venv
 .env

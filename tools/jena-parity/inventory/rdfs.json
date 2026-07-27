@@ -1,0 +1,109 @@
+{
+  "scenarios": [
+    {
+      "id": "rdfs-domain",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . ex:parent rdfs:domain ex:Person . ex:alice ex:parent ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice a ex:Person }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "rdfs-negative-unrelated",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . ex:alice a ex:Person .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice a ex:Vehicle }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": false}
+      ]
+    },
+    {
+      "id": "rdfs-range",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . ex:parent rdfs:range ex:Person . ex:alice ex:parent ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:bob a ex:Person }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "rdfs-subclass",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . ex:Dog rdfs:subClassOf ex:Animal . ex:fido a ex:Dog .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:fido a ex:Animal }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "rdfs-subclass-transitive",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . ex:Puppy rdfs:subClassOf ex:Dog . ex:Dog rdfs:subClassOf ex:Animal . ex:fido a ex:Puppy .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:fido a ex:Animal }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "rdfs-subproperty",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . ex:mother rdfs:subPropertyOf ex:parent . ex:alice ex:mother ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice ex:parent ex:bob }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    },
+    {
+      "id": "rdfs-subproperty-transitive",
+      "domain": "rdfs",
+      "operation": "entailment",
+      "classification": "agreement",
+      "normativeBasis": "https://www.w3.org/TR/rdf12-semantics/",
+      "reviewed": true,
+      "reasoner": "rdfs",
+      "data": "@prefix ex: <https://example.test/> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . ex:birthMother rdfs:subPropertyOf ex:mother . ex:mother rdfs:subPropertyOf ex:parent . ex:alice ex:birthMother ex:bob .",
+      "query": "PREFIX ex: <https://example.test/> ASK { ex:alice ex:parent ex:bob }",
+      "assertions": [
+        {"target": "both", "pointer": "/status", "equals": "success"},
+        {"target": "both", "pointer": "/value", "equals": true}
+      ]
+    }
+  ]
+}

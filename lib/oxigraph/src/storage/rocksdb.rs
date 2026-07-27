@@ -1445,6 +1445,42 @@ impl RocksDbStorageBulkLoader<'_> {
         Ok(())
     }
 
+    pub fn load_named_graphs(
+        &mut self,
+        graph_names: Vec<NamedOrBlankNode>,
+        max_num_threads: usize,
+    ) -> Result<(), StorageError> {
+        self.on_possible_progress()?;
+        while self.threads.len() >= max_num_threads {
+            if let Some(thread) = self.threads.pop_front() {
+                self.sst_files
+                    .extend(map_thread_result(thread.join()).map_err(StorageError::Io)??);
+                self.on_possible_progress()?;
+            }
+        }
+        if !self.atomic {
+            self.do_commit()?;
+        }
+        let storage = self.storage.clone();
+        let cancellation_token = self.cancellation_token.clone();
+        self.threads.push_back(thread::spawn(move || {
+            let mut sst_files = Vec::new();
+            match FileBulkLoader::new(&storage, graph_names.len(), cancellation_token)
+                .load_named_graphs(graph_names, &mut sst_files)
+            {
+                Ok(()) => Ok(sst_files),
+                Err(error) => {
+                    for (_, file) in sst_files {
+                        #[expect(unused_must_use)] // We already have an error to report...
+                        remove_file(file);
+                    }
+                    Err(error)
+                }
+            }
+        }));
+        Ok(())
+    }
+
     fn on_possible_progress(&mut self) -> Result<(), StorageError> {
         let new_counter = *self
             .done_counter
@@ -1526,6 +1562,15 @@ impl<'a> FileBulkLoader<'a> {
         Ok(())
     }
 
+    fn load_named_graphs(
+        &mut self,
+        graph_names: Vec<NamedOrBlankNode>,
+        sst_files: &mut Vec<(ColumnFamily, PathBuf)>,
+    ) -> Result<(), StorageError> {
+        self.encode_named_graphs(graph_names);
+        self.build_sst_files(sst_files)
+    }
+
     fn encode(&mut self, quads: Vec<Quad>) -> Result<(), StorageError> {
         for quad in quads {
             let encoded = EncodedQuad::from(&quad);
@@ -1558,6 +1603,15 @@ impl<'a> FileBulkLoader<'a> {
             }
         }
         Ok(())
+    }
+
+    fn encode_named_graphs(&mut self, graph_names: Vec<NamedOrBlankNode>) {
+        for graph_name in graph_names {
+            let encoded_graph_name = EncodedTerm::from(&graph_name);
+            if self.graphs.insert(encoded_graph_name.clone()) {
+                self.insert_term(graph_name.into(), &encoded_graph_name);
+            }
+        }
     }
 
     fn build_sst_files(
@@ -1608,14 +1662,16 @@ impl<'a> FileBulkLoader<'a> {
             self.triples.clear();
         }
 
-        if !self.quads.is_empty() {
+        if !self.graphs.is_empty() {
             self.fail_if_cancelled()?;
             sst_files.push((
                 self.storage.graphs_cf.clone(),
                 self.build_sst_for_keys(self.graphs.iter().map(encode_term))?,
             ));
             self.graphs.clear();
+        }
 
+        if !self.quads.is_empty() {
             sst_files.push((
                 self.storage.gspo_cf.clone(),
                 self.build_sst_for_keys(self.quads.iter().map(|quad| {
