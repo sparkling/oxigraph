@@ -10,6 +10,23 @@
 [![Gitter](https://badges.gitter.im/oxigraph/community.svg)](https://gitter.im/oxigraph/community)
 [![Twitter URL](https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Ftwitter.com%2Foxigraph)](https://twitter.com/oxigraph)
 
+## Fork and extension notice
+
+**Upstream Oxigraph** is the Rust RDF graph database and RDF/SPARQL toolkit
+maintained at [oxigraph/oxigraph](https://github.com/oxigraph/oxigraph). It is
+the foundation described in the next section.
+
+**This fork, `sparkling/oxigraph`,** retains that upstream foundation and adds
+a separately bounded semantic-parity extension: RDF 1.2 and SPARQL 1.2
+profiles, RDF-native Datalog, RDFS and OWL 2 RL/RDF reasoning, SHACL processor
+profiles, cross-interface dataset topology, and source-bound qualification.
+The extension is deliberately not presented as a replacement for every Apache
+Jena capability or as blanket W3C-family conformance.
+
+Published extension documentation: <https://sparkling.github.io/oxigraph/>.
+
+## Upstream Oxigraph
+
 Oxigraph is both a graph database and a [RDF](https://www.w3.org/TR/rdf11-primer/) and [SPARQL](https://www.w3.org/TR/sparql11-overview/) toolkit.
 
 Its goal is to provide a compliant, safe, and fast graph database based on the [RocksDB](https://rocksdb.org/) key-value store.
@@ -71,41 +88,42 @@ cases, 519/519 eligible SHACL cases, 98/98 OWL 2 RL/RDF assertions, and a
 named pinned suites and profiles only. They are not a substitute for every
 normative clause in a W3C document family.
 
-### Documentation and evidence
+### Published documentation and evidence
 
 Use the following documentation as the authority for scope, implementation
 decisions, and verification. The current evidence summary is the quickest
 entry point; the machine-readable ledgers are the source of truth for claims.
 
-- [Current semantic-parity evidence summary](./docs/research/semantic-parity-current-summary.md)
-- [Visual semantic-parity programme report](./docs/research/semantic-parity-programme.html)
-- [Implementation and MetaHarness qualification plan](./docs/plans/semantic-parity-metaharness-plan.md)
-- [Machine-readable conformance ledger](./docs/research/conformance-ledger.json)
-- [Normative requirements inventory](./docs/research/normative-requirements.json)
-- [Standards registry and pinned source revisions](./docs/research/standards-registry.json)
-- [All semantic-parity architecture decision records](./docs/adr/README.md)
+- [Documentation home](https://sparkling.github.io/oxigraph/)
+- [Current semantic-parity evidence summary](https://sparkling.github.io/oxigraph/research/semantic-parity-current-summary.html)
+- [Visual semantic-parity programme report](https://sparkling.github.io/oxigraph/research/semantic-parity-programme.html)
+- [Implementation and MetaHarness qualification plan](https://sparkling.github.io/oxigraph/plans/semantic-parity-metaharness-plan.html)
+- [Machine-readable conformance ledger](https://sparkling.github.io/oxigraph/research/conformance-ledger.json)
+- [Normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
+- [Standards registry and pinned source revisions](https://sparkling.github.io/oxigraph/research/standards-registry.json)
+- [All semantic-parity architecture decision records](https://sparkling.github.io/oxigraph/adr/README.html)
 
 The ADRs explain the principal boundaries:
 
-- [Outcome-oriented Apache Jena parity](./docs/adr/0001-outcome-oriented-jena-parity.md),
-  [W3C-first 1.2 parity](./docs/adr/0006-w3c-first-12-parity.md), and the
-  [immutable Jena differential harness](./docs/adr/0012-immutable-broad-jena-harness.md)
+- [Outcome-oriented Apache Jena parity](https://sparkling.github.io/oxigraph/adr/0001-outcome-oriented-jena-parity.html),
+  [W3C-first 1.2 parity](https://sparkling.github.io/oxigraph/adr/0006-w3c-first-12-parity.html), and the
+  [immutable Jena differential harness](https://sparkling.github.io/oxigraph/adr/0012-immutable-broad-jena-harness.html)
   define compatibility as named observable outcomes rather than an API clone.
-- [RDF-native Datalog](./docs/adr/0002-rdf-native-datalog-engine.md),
-  [OWL 2 RL over Datalog](./docs/adr/0007-owl-profiles-over-datalog.md),
-  [SHACL processor profiles](./docs/adr/0008-shacl-processor-profiles.md), and
-  [snapshot reasoning](./docs/adr/0009-snapshot-reasoning-materialization.md)
+- [RDF-native Datalog](https://sparkling.github.io/oxigraph/adr/0002-rdf-native-datalog-engine.html),
+  [OWL 2 RL over Datalog](https://sparkling.github.io/oxigraph/adr/0007-owl-profiles-over-datalog.html),
+  [SHACL processor profiles](https://sparkling.github.io/oxigraph/adr/0008-shacl-processor-profiles.html), and
+  [snapshot reasoning](https://sparkling.github.io/oxigraph/adr/0009-snapshot-reasoning-materialization.html)
   define the bounded inference and validation architecture.
-- [MetaHarness/Darwin qualification](./docs/adr/0004-metaharness-darwin-qualification.md),
-  [Agentic-QE integration](./docs/adr/0005-agentic-qe-integration.md), and
-  [mutation competence and provenance](./docs/adr/0013-mutation-competence-and-provenance.md)
+- [MetaHarness/Darwin qualification](https://sparkling.github.io/oxigraph/adr/0004-metaharness-darwin-qualification.html),
+  [Agentic-QE integration](https://sparkling.github.io/oxigraph/adr/0005-agentic-qe-integration.html), and
+  [mutation competence and provenance](https://sparkling.github.io/oxigraph/adr/0013-mutation-competence-and-provenance.html)
   define how evidence is produced without letting orchestration rewrite the
   semantic oracle.
-- [Dataset graph topology](./docs/adr/0014-rdf-dataset-graph-topology.md) and
-  [parallel bulk-load failure semantics](./docs/adr/0015-parallel-bulk-load-failure-semantics.md)
+- [Dataset graph topology](https://sparkling.github.io/oxigraph/adr/0014-rdf-dataset-graph-topology.html) and
+  [parallel bulk-load failure semantics](https://sparkling.github.io/oxigraph/adr/0015-parallel-bulk-load-failure-semantics.html)
   document the cross-interface storage and operational guarantees.
 
-The [normative requirements inventory](./docs/research/normative-requirements.json)
+The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear
 obligations separately from passing executable lanes. Consult it before
 describing the profile as complete RDF 1.2, SPARQL 1.2, SHACL 1.2, or Apache
