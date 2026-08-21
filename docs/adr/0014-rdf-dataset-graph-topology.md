@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-27
+- Updated: 2026-08-21
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
@@ -168,6 +169,13 @@ claims. Their
 empty named graphs when the negotiated dataset format can represent them and
 returns a representation error otherwise.
 
+For a disk-backed server opened with [`Store::open_read_only`](../../lib/oxigraph/src/store.rs),
+`GET` and `HEAD` acquire state from the store's fixed read-only view without
+starting a write-capable transaction. Writable servers retain transaction-backed
+state acquisition. The focused disk-backed regression covers populated, empty,
+and missing named graphs, selector-less dataset topology, stable conditional
+`GET`/`HEAD` ETags, read-only mutation rejection, and unchanged persisted state.
+
 ### Python and JavaScript bindings
 
 Bindings must not silently weaken the core store contract.
@@ -215,7 +223,7 @@ preservation is its chosen W3C-grounded contract.
 | Store and persistence | [Store implementation](../../lib/oxigraph/src/store.rs), [memory backend](../../lib/oxigraph/src/storage/memory.rs), [RocksDB backend](../../lib/oxigraph/src/storage/rocksdb.rs), and [store topology tests](../../lib/oxigraph/tests/dataset_topology.rs) |
 | Reasoning | [Reasoning adapter](../../lib/oxigraph/src/reasoning.rs) and [reasoning tests](../../lib/oxigraph/tests/reasoning.rs) |
 | SPARQL `LOAD` | [Update implementation](../../lib/oxigraph/src/sparql/update.rs) and [`LOAD` HTTP tests](../../lib/oxigraph/tests/sparql_update_load_http.rs) |
-| Graph Store | [HTTP handler](../../cli/src/graph_store.rs), [representation layer](../../cli/src/graph_store/representation.rs), and [HTTP tests](../../cli/src/graph_store_http_tests.rs) |
+| Graph Store | [HTTP handler](../../cli/src/graph_store.rs), [representation layer](../../cli/src/graph_store/representation.rs), [general HTTP tests](../../cli/src/graph_store_http_tests.rs), and [disk-backed read-only regression](../../cli/src/graph_store_read_only_tests.rs) |
 | Python | [Dataset and I/O topology tests](../../python/tests/test_dataset_topology.py) |
 | JavaScript | [Store topology tests](../../js/test/store.test.ts) |
 

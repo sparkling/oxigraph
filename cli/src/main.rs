@@ -51,6 +51,8 @@ mod cli;
 mod graph_store;
 #[cfg(test)]
 mod graph_store_http_tests;
+#[cfg(test)]
+mod graph_store_read_only_tests;
 mod http_validators;
 mod multipart;
 #[cfg(test)]

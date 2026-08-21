@@ -14,6 +14,7 @@ use rand::random;
 mod legacy;
 mod representation;
 mod selector;
+mod state;
 mod validators;
 use validators::{
     conditions, etag_opaque, quoted_etag, require_mutation_preconditions, state_digest,
@@ -49,7 +50,7 @@ pub fn handle(
     }
     let target = target(request)?;
     match *request.method() {
-        Method::GET | Method::HEAD => get(request, store, &target),
+        Method::GET | Method::HEAD => get(request, store, &target, read_only),
         Method::PUT => {
             if read_only {
                 Err(the_server_is_read_only())
@@ -134,9 +135,14 @@ fn get(
     request: &Request<Body>,
     store: &Store,
     target: &Target,
+    read_only: bool,
 ) -> Result<Response<Body>, HttpError> {
-    let transaction = store.start_transaction().map_err(internal_server_error)?;
-    let state = state(&transaction, target)?;
+    let state = if read_only {
+        state::from_read_only_store(store, target)?
+    } else {
+        let transaction = store.start_transaction().map_err(internal_server_error)?;
+        state::from_transaction(&transaction, target)?
+    };
     if !state.exists {
         return Err(not_found(target));
     }
@@ -167,7 +173,7 @@ fn put(
     let format = input_format(request)?;
     if url_has_query_parameter(request, "no_transaction") {
         let transaction = store.start_transaction().map_err(internal_server_error)?;
-        let current = state(&transaction, target)?;
+        let current = state::from_transaction(&transaction, target)?;
         require_mutation_preconditions(request, &current, target)?;
         let created = !current.exists;
         drop(transaction);
@@ -175,7 +181,7 @@ fn put(
     }
     let body = limited_body(request)?;
     let mut transaction = store.start_transaction().map_err(internal_server_error)?;
-    let current = state(&transaction, target)?;
+    let current = state::from_transaction(&transaction, target)?;
     require_mutation_preconditions(request, &current, target)?;
     let created = !current.exists;
     replace(&mut transaction, request, target, format, &body)?;
@@ -216,7 +222,7 @@ fn post(
     };
     if url_has_query_parameter(request, "no_transaction") && boundary.is_none() {
         let transaction = store.start_transaction().map_err(internal_server_error)?;
-        let current = state(&transaction, target)?;
+        let current = state::from_transaction(&transaction, target)?;
         require_mutation_preconditions(request, &current, target)?;
         if matches!(target, Target::NamedGraph(_)) && !current.exists {
             return Err(not_found(target));
@@ -231,7 +237,7 @@ fn post(
     }
     let body = limited_body(request)?;
     let mut transaction = store.start_transaction().map_err(internal_server_error)?;
-    let current = state(&transaction, target)?;
+    let current = state::from_transaction(&transaction, target)?;
     require_mutation_preconditions(request, &current, target)?;
     if matches!(target, Target::NamedGraph(_)) && !current.exists {
         return Err(not_found(target));
@@ -306,7 +312,7 @@ fn delete(
     target: &Target,
 ) -> Result<Response<Body>, HttpError> {
     let mut transaction = store.start_transaction().map_err(internal_server_error)?;
-    let current = state(&transaction, target)?;
+    let current = state::from_transaction(&transaction, target)?;
     if !current.exists {
         return Err(not_found(target));
     }
@@ -325,40 +331,6 @@ fn delete(
         .status(StatusCode::NO_CONTENT)
         .body(Body::empty())
         .map_err(internal_server_error)
-}
-
-fn state(transaction: &Transaction<'_>, target: &Target) -> Result<State, HttpError> {
-    let exists = match target {
-        Target::Dataset | Target::DefaultGraph => true,
-        Target::NamedGraph(graph) => transaction
-            .contains_named_graph(&graph.clone().into())
-            .map_err(internal_server_error)?,
-    };
-    let quads = match target {
-        Target::Dataset => transaction.iter(),
-        Target::DefaultGraph => {
-            transaction.quads_for_pattern(None, None, None, Some(&GraphName::DefaultGraph))
-        }
-        Target::NamedGraph(graph) => {
-            let graph_name = GraphName::from(graph.clone());
-            transaction.quads_for_pattern(None, None, None, Some(&graph_name))
-        }
-    }
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(internal_server_error)?;
-    let named_graphs = if matches!(target, Target::Dataset) {
-        transaction
-            .named_graphs()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(internal_server_error)?
-    } else {
-        Vec::new()
-    };
-    Ok(State {
-        exists,
-        quads,
-        named_graphs,
-    })
 }
 
 fn replace(
