@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-07-27
+- Updated: 2026-08-24
+- Evidence state: the policy remains Accepted. The named July receipt is
+  historical for its sealed source; library changes in `1da47285` invalidate
+  it as current-HEAD evidence. Its scope is OxDatalog and does not establish
+  mutation competence for the new persistence-write surface.
 - Deciders: Oxigraph parity programme
 - Related:
   [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md),

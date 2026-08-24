@@ -26,9 +26,15 @@ green finite suite never marks a broader phase complete by itself.
 
 ## Current evidence snapshot
 
+The counts below describe the last sealed reviewed receipts for their exact
+subjects. They are not current-HEAD qualification after `1da47285`: the Jena
+subject/runner lock, Agentic-QE CLI inventories, mutation source binding, and
+full MetaHarness receipts require the reviewed G0 refresh in the
+[evolution harness plan](linked-data-store-evolution-harness-plan.md).
+
 | Capability | Executable evidence | Current classification |
 |---|---|---|
-| Datalog D0–D2 | 70 native tests; 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts | Implemented bounded engine profile; full-source mutation gate closed |
+| Datalog D0–D2 | 70 native tests; 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts | Implemented bounded engine profile; historical sealed-subject mutation gate closed, current source binding open |
 | Semantic store integration | 4 tests | RDFS, OWL 2 RL, SHACL, and chained RDFS→SHACL stable-snapshot integration |
 | RDFS | 37 native tests; RDF 1.2 Semantics aggregate 77/77, including 26/26 RDFS-regime cases | Finite active-vocabulary profile; the aggregate also contains 24 Simple- and 27 RDF-regime cases and is not an RDFS-only receipt |
 | OWL 2 RL/RDF | 34 native tests; 98/98 assertions over 68 cases; 78-rule inventory | Bounded RDF-rule profile; broader OWL excluded |

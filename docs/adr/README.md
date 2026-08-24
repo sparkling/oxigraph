@@ -24,9 +24,12 @@ mapping.
 | [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md) | Accepted | Preserve empty named-graph presence across models, I/O, stores, protocols, reasoning, and bindings |
 | [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md) | Accepted | Aggregate every worker failure, return nonzero, and make the per-file versus cross-file atomicity boundary explicit |
 | [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md) | Implemented | Let replacement persistence planes execute request-atomic SPARQL Update without private storage types |
+| [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md) | Proposed | Coordinate Ruflo, MetaHarness, Darwin, Agentic-QE, and Dream Machine without weakening native evidence or human promotion |
 
-The authoritative current claim state is
-[the machine-readable conformance ledger](../research/conformance-ledger.json).
+The authoritative claim and freshness state is
+[the machine-readable conformance ledger](../research/conformance-ledger.json);
+its entries distinguish historical sealed-subject evidence from current-HEAD
+qualification.
 Its W3C document and grouped-obligation mapping is
 [the normative requirements inventory](../research/normative-requirements.json).
 Source authority and revision metadata live in
@@ -34,6 +37,10 @@ Source authority and revision metadata live in
 [implementation and qualification plan](../plans/semantic-parity-metaharness-plan.md)
 shows which closure gates remain open.
 
-All standards statuses and current evidence in this directory were reviewed on
-2026-07-27. Working Draft and editor-draft material is never described as a W3C
+ADR statuses and current-evidence qualifiers in this index were reviewed on
+2026-08-24. Individual sealed results retain their original evidence dates;
+ADR-0012 records that its July Jena receipt is stale against current HEAD, and
+the claim ledger also marks the Agentic inventory and OxDatalog mutation
+binding as open for current qualification.
+Working Draft and editor-draft material is never described as a W3C
 Recommendation.

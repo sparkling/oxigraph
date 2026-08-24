@@ -87,18 +87,23 @@ Rust consumers enable the corresponding bounded surfaces explicitly:
 oxigraph = { version = "*", features = ["rdf-12", "datalog", "rdfs", "owl2-rl", "shacl"] }
 ```
 
-The current reviewed executable evidence includes 575/575 pinned RDF 1.2
+The last sealed reviewed executable evidence includes 575/575 pinned RDF 1.2
 official cases, 269/269 SPARQL 1.2 cases, 86/86 RDF Dataset Canonicalization
 cases, 519/519 eligible SHACL cases, 98/98 OWL 2 RL/RDF assertions, and a
 76-scenario/198-assertion Jena differential. These counts are evidence for the
 named pinned suites and profiles only. They are not a substitute for every
-normative clause in a W3C document family.
+normative clause in a W3C document family. They are also historical for their
+sealed subject after the backend-neutral write changes: the Jena subject lock
+and Agentic-QE exact CLI inventories must be reviewed, and the source-bound
+OxDatalog mutation receipt must be regenerated for its exact scope, before full
+MetaHarness qualification can be described as current HEAD evidence.
 
 ### Published documentation and evidence
 
 Use the following documentation as the authority for scope, implementation
 decisions, and verification. The current evidence summary is the quickest
-entry point; the machine-readable ledgers are the source of truth for claims.
+entry point; the machine-readable ledgers and their explicit freshness fields
+are the source of truth for sealed-subject versus current-HEAD claims.
 
 - [Documentation home](https://sparkling.github.io/oxigraph/)
 - [Current semantic-parity evidence summary](https://sparkling.github.io/oxigraph/research/semantic-parity-current-summary.html)
@@ -110,6 +115,8 @@ entry point; the machine-readable ledgers are the source of truth for claims.
 - [All semantic-parity architecture decision records](https://sparkling.github.io/oxigraph/adr/README.html)
 - [Backend-neutral transactional write decision](./docs/adr/0016-backend-neutral-transactional-writes.md)
 - [Persistence and linked-data-store parity plan](./docs/plans/persistence-write-and-linked-data-parity-plan.md)
+- [Repository evolution and evidence promotion decision](./docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md)
+- [Linked-data-store evolution harness plan](./docs/plans/linked-data-store-evolution-harness-plan.md)
 
 The ADRs explain the principal boundaries:
 

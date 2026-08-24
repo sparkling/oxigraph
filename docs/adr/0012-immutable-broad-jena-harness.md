@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-07-27
+- Updated: 2026-08-24
+- Evidence state: the sealed July result remains historical evidence for its
+  exact subject. Current HEAD recomputes to subject hash `997e2579...` rather
+  than the reviewed lock's `1fe53cef...`, so a normal run fails closed until a
+  separately reviewed lock refresh and two reproducible executions complete.
 - Deciders: Oxigraph parity programme
 - Related:
   [ADR-0001 — Outcome-oriented Apache Jena parity](0001-outcome-oriented-jena-parity.md),
@@ -66,6 +71,11 @@ hash these target artifacts, but the native harness remains the differential
 authority.
 
 ## Current bounded result
+
+“Current” in the original result below means current for the sealed
+`2026-07-27-v1` subject. It is not current-HEAD evidence after the
+backend-neutral write-interface changes. The decision and inventory remain
+Accepted; the qualification receipt is stale by design.
 
 The reviewed inventory contains 76 scenarios and 198 assertions:
 

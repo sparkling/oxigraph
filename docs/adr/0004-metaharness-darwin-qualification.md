@@ -2,13 +2,22 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
 - Implementation status: policy-only adapter, synthetic mechanics, full
   semantic mode, and independent receipt verification implemented;
   qualification remains receipt-dependent
+- Update note: the local MetaHarness 13-test suite and a synthetic-only
+  qualification pass on current HEAD. Full qualification is intentionally not
+  claimable: the reviewed Jena subject lock and Agentic-QE CLI inventories are
+  stale after the persistence-write changes, and the source-bound OxDatalog
+  mutation receipt predates the changed protected source snapshot. All three
+  must be refreshed through their separate reviewed processes.
 - Related:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
-  [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md)
+  [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
+  [ADR-0017 — Repository evolution and evidence promotion
+  harness](0017-repository-evolution-and-evidence-promotion-harness.md)
 
 ## Context
 
@@ -133,3 +142,7 @@ Darwin is enabling infrastructure, not a conformance authority. A full
 qualification receipt can prove that the policy variant passed immutable
 oracles; it cannot upgrade the scope of those oracles or close a normative
 requirement gap.
+
+Dream Machine may orchestrate a future cycle only under ADR-0017. It does not
+expand Darwin's mutation surface, replace this receipt, or authorize provider
+execution, publication, or promotion.

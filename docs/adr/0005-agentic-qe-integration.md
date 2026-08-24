@@ -2,8 +2,13 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
 - Implementation status: hardened adapter implemented for Agentic-QE 3.13.2
+- Evidence state: the decision and adapter remain current, but the aggregate
+  profiles fail closed against current HEAD until the reviewed CLI inventories
+  are updated from 133/116 to the current exact 144/129 tests and a narrow
+  `persistence-write` profile binds the new write-interface tests.
 - Related:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md)
@@ -157,3 +162,7 @@ Native Cargo commands, immutable W3C runners, and Jena/Soufflé differentials
 are authoritative. Neither Agentic-QE nor its adapter can establish a semantic
 claim broader than the exact native profiles and artifacts referenced by a
 current receipt.
+
+The July profile counts are historical evidence after `1da47285`. Count or ID
+drift is a deliberate fail-closed condition, not permission to loosen the
+inventory automatically.

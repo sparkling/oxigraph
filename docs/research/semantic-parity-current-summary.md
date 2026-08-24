@@ -1,15 +1,22 @@
 # Semantic parity programme — current evidence summary
 
-Status: bounded implementation evidence is green; broad parity claims are
-withheld  
-Evidence cut: 2026-07-26; reconciled: 2026-07-27
+Status: last sealed bounded implementation evidence is green; current-HEAD
+qualification is stale and broad parity claims are withheld
+Evidence cut: 2026-07-26; reconciled: 2026-08-24
 
 ## Bottom line
 
-Oxigraph now has executable, bounded evidence for RDF/SPARQL 1.2 syntax and
+Oxigraph has sealed, executable, bounded evidence for RDF/SPARQL 1.2 syntax and
 query behavior, RDF Dataset Canonicalization, finite RDFS, OWL 2 RL/RDF,
 SHACL feature lanes, Datalog D0–D2, and a reviewed Apache Jena outcome
 intersection. These results establish only the named tested surfaces.
+
+They are not current-HEAD qualification after the backend-neutral write work.
+The Jena profile seals subject `1fe53cef...`, while the current subject is
+`997e2579...`; Agentic-QE also expects 133/116 CLI tests while current exact
+default/no-default inventories contain 144/129. The Jena, Agentic aggregate,
+mutation, and full MetaHarness receipts must therefore be regenerated through
+their reviewed fail-closed workflows before being called current.
 
 They do **not** establish Apache Jena parity, RDF 1.2 parity, SPARQL 1.2 parity,
 SHACL 1.2 parity, OWL family conformance, or aggregate W3C 1.2 parity. The
@@ -18,11 +25,11 @@ sentence-level enumeration: 29 pass, 41 unsupported, 6 not applicable,
 1 blocked upstream, and 2 draft-unclear. Clause enumeration and cross-interface
 closure remain incomplete.
 
-## Exact executable evidence
+## Last sealed exact executable evidence
 
-| Surface | Current bounded result | Claim boundary |
+| Surface | Last sealed bounded result | Claim boundary |
 |---|---:|---|
-| OxDatalog D0–D2 | 70 native tests pass; 358 mutants generated, 278 caught, 80 unviable, 0 missed, 0 timed out | Full-source mutation gate closed with 100% of viable mutants caught |
+| OxDatalog D0–D2 | 70 native tests pass; 358 mutants generated, 278 caught, 80 unviable, 0 missed, 0 timed out | Full-source mutation gate closed for its sealed source snapshot with 100% of viable mutants caught; current binding open |
 | Semantic store integration | 4 integration tests pass | Stable-snapshot public profile integration only |
 | RDF 1.2 official manifests | 575/575 pass | Exact pinned suite, not full family parity |
 | SPARQL 1.2 official manifest | 269/269 pass | Does not cover every protocol, service, federation, entailment, or result-format obligation |
@@ -51,8 +58,8 @@ byte-identical evidence with subject SHA-256
 and receipt SHA-256
 `48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76`.
 
-The final full-source mutation receipt is current for the frozen library and
-mutation-policy inputs. Immutable run
+The final full-source mutation receipt is valid for its frozen library and
+mutation-policy inputs, not current HEAD. Immutable run
 `5c7397b1-881e-4548-a5f5-f978da254bde` has receipt SHA-256
 `ad3dba338080e1f748570aba6c6a8ecec495bd1b9086d160e7f09b7308023727`
 and content hash

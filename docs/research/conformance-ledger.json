@@ -1,6 +1,18 @@
 {
   "schemaVersion": 1,
   "observedAt": "2026-07-27",
+  "reconciledAt": "2026-08-24",
+  "reconciledAgainstBaseCommit": "2b9c89175088cc2a0aa459d5d6289a350ff39d8d",
+  "currentHeadFreshness": {
+    "status": "not-qualified",
+    "policy": "An evidence entry remains authoritative for its sealed subject, but is current-HEAD evidence only when its freshness status is current and its protected source/inventory binding verifies.",
+    "blockers": [
+      "Jena profile subject lock predates the backend-neutral write changes",
+      "Agentic-QE exact CLI inventories expect 133 default and 116 no-default tests while the reconciled inventories contain 144 and 129",
+      "OxDatalog mutation receipt predates the changed protected source snapshot",
+      "Full MetaHarness qualification and independent full verification have not been regenerated after those repairs"
+    ]
+  },
   "scope": "Oxigraph semantic-parity programme",
   "sourceRegistry": "standards-registry.json",
   "normativeRequirements": "normative-requirements.json",
@@ -285,6 +297,14 @@
         "resolvedInventorySha256": "be03e50517be71a7574d89982644fc3c1e54030c5d8375a792180ad37c476cb5",
         "jenaObservationsSha256": "b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4"
       },
+      "freshness": {
+        "status": "historical-sealed-subject",
+        "reconciledAt": "2026-08-24",
+        "reconciledAgainstBaseCommit": "2b9c89175088cc2a0aa459d5d6289a350ff39d8d",
+        "sealedSubjectSha256": "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d",
+        "reconciledCurrentSubjectSha256": "997e257933399687d6b6c3ea2b0be7f4db46e717484029f426b763dec59ddb20",
+        "reason": "The reviewed lock remains evidence for its July subject but does not bind current protected inputs."
+      },
       "receipt": "target/jena-parity/parity-receipt.json",
       "authority": "Exact reviewed outcome intersection only: agreement and W3C-overrides-Jena are distinct from one W3C-permitted implementation variant; not complete Apache Jena or W3C parity"
     },
@@ -294,6 +314,12 @@
       "kind": "mutation-competence",
       "command": "node tools/mutation/oxdatalog.mjs --jobs 2",
       "result": {"gateClosed":true,"baselinePassed":true,"generated":358,"caught":278,"unviable":80,"missed":0,"timeout":0,"mutationScorePercent":100},
+      "freshness": {
+        "status": "historical-sealed-subject",
+        "reconciledAt": "2026-08-24",
+        "reconciledAgainstBaseCommit": "2b9c89175088cc2a0aa459d5d6289a350ff39d8d",
+        "reason": "The receipt remains valid for its exact OxDatalog source snapshot, but protected library inputs changed after publication and the receipt cannot satisfy a current full MetaHarness binding."
+      },
       "receipt": "target/mutation/oxdatalog/runs/5c7397b1-881e-4548-a5f5-f978da254bde/receipt.json",
       "latestReceipt": "target/mutation/oxdatalog/receipt.json",
       "runId": "5c7397b1-881e-4548-a5f5-f978da254bde",
@@ -524,6 +550,8 @@
       "adapterAdversarialTests": {"passed": 16, "failed": 0},
       "semanticGateCommandInventory": 41,
       "parityCommandInventory": 47,
+      "currentEvidence": "Adapter mechanics remain bounded evidence, but aggregate current-HEAD qualification is open: declared CLI inventories are 133 default and 116 no-default while the reconciled exact inventories are 144 and 129.",
+      "freshnessStatus": "open-inventory-drift",
       "receiptBindings": "Schema v4 immutable run UUID publication and exact-receipt oracle binding, content-addressed output archive, exact ordered profile inventory, crash-recoverable global profile lease, Cargo and Node test inventories/counts, repository tuple, implementation/artifact hashes, oracle roles, timeouts, and executable path/version/SHA-256",
       "authority": "None beyond referenced native commands",
       "receiptLocation": "target/agentic-qe"
@@ -539,7 +567,8 @@
     {
       "id": "mutation",
       "role": "Competence gate for OxDatalog",
-      "currentEvidence": "Gate closed: 358 generated, 278 caught, 80 unviable, zero missed, zero timed out; native outcomes and protected source/policy hashes reopened independently",
+      "currentEvidence": "Historical sealed-subject gate: 358 generated, 278 caught, 80 unviable, zero missed, zero timed out. It is not current-HEAD qualification evidence after protected source changes and must be regenerated for the same OxDatalog scope.",
+      "freshnessStatus": "historical-sealed-subject",
       "requiredResult": {
         "viableSurvivors": 0,
         "timeouts": 0
