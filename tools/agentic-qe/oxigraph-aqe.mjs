@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { CHILD_ENVIRONMENT_POLICY } from "../child-environment.mjs";
 import { atomicJson, createDurableDirectory } from "./atomic-json.mjs";
 import {
   agenticReceiptContentHash,
@@ -48,8 +49,8 @@ import {
   profileNames,
   profiles,
 } from "./profile-definitions.mjs";
+import { agenticQeDependencyResolution } from "./version-policy.mjs";
 
-const EXPECTED_AGENTIC_QE_VERSION = "3.13.2";
 const aqeBin = join(
   toolDir,
   "node_modules",
@@ -66,8 +67,9 @@ Usage:
   node tools/agentic-qe/oxigraph-aqe.mjs audit <candidate-result.json>
   node tools/agentic-qe/oxigraph-aqe.mjs probe
 
-The adapter records Agentic-QE's pinned version, but Cargo and the pinned W3C
-manifests remain the executable correctness oracle.`);
+The adapter records the exact lock-resolved Agentic-QE version selected by the
+latest dist-tag policy, but Cargo and the pinned W3C manifests remain the
+executable correctness oracle.`);
 }
 
 async function capture(program, args, cwd = repoRoot, timeoutMs = 30_000) {
@@ -88,19 +90,21 @@ async function gitValue(args, cwd = repoRoot) {
 }
 
 async function probeAqe() {
+  const dependency = agenticQeDependencyResolution();
   const result = await capture(aqeBin, ["--version"], toolDir);
   if (result.code !== 0 || result.timedOut || result.spawnError) {
     throw new Error(
-      "Agentic-QE is not installed. Run `npm ci` in tools/agentic-qe first.",
+      "Agentic-QE is not installed. Run `npm ci --ignore-scripts` " +
+        "in tools/agentic-qe first.",
     );
   }
   const version = result.stdoutTail.trim();
-  if (version !== EXPECTED_AGENTIC_QE_VERSION) {
+  if (version !== dependency.version) {
     throw new Error(
-      `Agentic-QE ${EXPECTED_AGENTIC_QE_VERSION} is required, found ${version}`,
+      `Agentic-QE lockfile resolution ${dependency.version} is required, found ${version}`,
     );
   }
-  return version;
+  return dependency;
 }
 
 function safeguardFailure(id, result) {
@@ -175,7 +179,8 @@ async function executeProfile(profile, selected) {
   }
   for (const path of selectedOutputs) prepareGeneratedOutput(path);
 
-  const aqeVersion = await probeAqe();
+  const agenticQeDependency = await probeAqe();
+  const aqeVersion = agenticQeDependency.version;
   const runtime = await runtimeProvenance(selected, commands);
   runtime.push(
     executablePathProvenance("agentic-qe", aqeBin, aqeVersion),
@@ -276,7 +281,10 @@ async function executeProfile(profile, selected) {
         role: commandAuthority(id, commands[id][0]),
       })),
       adapterRole: "native-command-coordination-and-receipt",
-      agenticQeRole: "version-pinned-presence-gate-and-optional-advisory-generator",
+      agenticQeRole:
+        "latest-resolved-presence-gate-and-optional-advisory-generator",
+      agenticQeDependency,
+      childEnvironmentPolicy: CHILD_ENVIRONMENT_POLICY,
     },
     runtime,
     commands: results,
@@ -288,7 +296,8 @@ async function executeProfile(profile, selected) {
   receipt.executionHash = agenticReceiptExecutionHash(receipt);
   validateAgenticReceipt(receipt, {
     expectedProfile: profile,
-    expectedAgenticQeVersion: EXPECTED_AGENTIC_QE_VERSION,
+    expectedAgenticQeVersion: agenticQeDependency.version,
+    expectedAgenticQeDependency: agenticQeDependency,
     expectedCommandIds: selected,
     expectedCommands: commands,
   });
@@ -421,7 +430,8 @@ async function main() {
   if (action === "help" || action === "--help" || action === "-h") {
     usage();
   } else if (action === "probe") {
-    console.log(await probeAqe());
+    const dependency = await probeAqe();
+    console.log(dependency.version);
   } else if (action === "run") {
     await runProfile(arg ?? "existing");
   } else if (action === "candidate") {

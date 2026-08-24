@@ -1,16 +1,20 @@
 # ADR-0017: Repository evolution and evidence promotion harness
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: Ruflo research orchestration, local MetaHarness read
-  checks, policy-only synthetic Darwin qualification, and a user-scoped Dream
-  Machine installation are verified; unattended Dream Machine execution is
+- Implementation status: the control-plane architecture and authority boundary
+  are accepted; Ruflo research orchestration, the existing semantic
+  qualification adapter, policy-only synthetic Darwin qualification, and a
+  user-scoped Dream Machine installation are verified. The separate engineering
+  runtime is not implemented, and unattended Dream Machine execution remains
   deferred behind the activation gates in this ADR
-- Update note: outstanding G1-G3 architecture is split into ADR-0018 through
-  ADR-0025, and all stable G0.1-G3.5 plan items are materialized in the local
-  Ruflo task ledger without treating that runtime state as semantic evidence
+- Update note: the accepted design now separates a future
+  `tools/engineering-harness` worker runtime from the receipt-sensitive
+  `tools/metaharness` semantic qualifier, fixes patched-candidate verification
+  order, and retains the G0.1-G3.5 task graph without treating task rows or
+  installed packages as product evidence
 - Related:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -73,6 +77,12 @@ Full semantic MetaHarness qualification is therefore unavailable until a
 reviewed evidence refresh closes all three inputs. A passing synthetic Darwin
 run proves only the policy mechanics.
 
+The repository does not yet contain an application-delivery control plane,
+quality-first model router, native Codex and Claude worker adapters, or a
+baseline/evaluator-separated G1 task corpus. The existing `tools/metaharness`
+package is deliberately a semantic qualification adapter and must not absorb
+those engineering responsibilities.
+
 ## Decision
 
 Adopt a thin, local-first evolution control plane. It coordinates existing
@@ -83,7 +93,9 @@ authorities and may not replace them.
 | Ruflo swarm, tasks, goals, and AgentDB | Parallel research, dependency state, transient project memory, and anti-drift coordination | RDF semantics, promotion, or release claims |
 | RuvNet Brain | Source-grounded guidance for the rUv stack | Oxigraph behavior not established by local source/tests |
 | MetaHarness genome, score, and OIA | Advisory readiness, risk, and infrastructure analysis | Product correctness or current semantic qualification |
-| Darwin | Bounded evolution of ADR-0004's seven harness-policy surfaces | Rust source, manifests, expected results, thresholds, or semantic answers |
+| Existing `tools/metaharness` qualifier | ADR-0004 policy evolution against protected semantic evidence | Engineering implementation, repair, or product promotion |
+| Future `tools/engineering-harness` runtime | Route, build, repair, review, and receipt isolated G1-G3 candidates | Semantic truth, publication, or promotion; it is not implemented yet |
+| Darwin | Bounded evolution of frozen harness-policy surfaces | Rust source, manifests, expected results, thresholds, or semantic answers |
 | Agentic-QE | Exact profile coordination and schema-v4 evidence publication | A simulated or JavaScript substitute for native Rust execution |
 | Dream Machine | Local version/config compilation, rotation vocabulary, three-verdict discipline, and a secondary ledger | Scheduling, provider routing, publication, promotion, or replacement receipts |
 | Native and differential runners | Pass/fail evidence for their exact named scopes | Claims broader than their reviewed inventories |
@@ -113,6 +125,115 @@ The execution rules are:
    in the active task.
 8. Model execution uses native provider clients and authentication only.
    OpenRouter is prohibited, including fallback or retry routing.
+9. Every candidate verifier restores the pinned baseline, overlays the frozen
+   evaluator commit, applies the admitted patch, and only then rebuilds every
+   declared crate, feature set, native helper, generated binding, and web
+   artifact. Focused public, independent, and impacted regression commands run
+   against those fresh outputs and bind their commands, exits, tool versions,
+   and relevant digests into the candidate receipt.
+10. Ordinary candidate cycles run only affected fast product gates. The full
+    sequential Agentic-QE, Jena, mutation, and semantic-qualification gates run
+    only for a promotion candidate.
+
+## Engineering runtime boundary
+
+When its prerequisites exist, implement the engineering control plane as a
+separate private package under `tools/engineering-harness`. Its manifests
+request current upstream packages through `latest` dist-tags, while its
+committed lockfile, installed-package checks, executable hashes, and receipts
+bind the exact integrity-verified bytes used by a run. Package presence,
+factory output, a synthetic Darwin pass, or a harness score is not an
+implementation claim.
+
+The initial required package set is `metaharness`, `@metaharness/harness`,
+`@metaharness/router`, `@metaharness/darwin`, and `@metaharness/avo`.
+`@ruvector/ruvllm` and `agenticow` remain optional until a tested local
+embedding or bounded copy-on-write path consumes them. All dependency installs
+disable lifecycle scripts.
+
+Before adapting factory output, run disposable factory diagnostics for both
+`claude-code` and `codex` targets and retain their generated manifests, CLI
+help, and test results as advisory inputs. A generated MCP declaration is not
+registered unless that exact command exists in the generated CLI, passes the
+engineering doctor, and is covered by a direct invocation test. Factory output
+may be copied only through a reviewed adaptation commit; it is not itself a
+trusted runtime.
+
+The engineering path is:
+
+```text
+latest MetaHarness factory
+  -> separate Oxigraph engineering harness
+  -> quality-first Router
+  -> native Codex / native Claude workers
+  -> isolated candidate
+  -> rebuild after evaluator overlay and candidate patch
+  -> focused native evaluators and cross-vendor review
+  -> candidate receipt
+
+promotion candidate
+  -> existing Agentic-QE semantic profiles
+  -> existing Darwin qualification and independent verifier
+  -> human ACCEPT / REJECT / INCONCLUSIVE
+```
+
+Every model-backed architecture, implementation, repair, review, and Darwin
+reflection role must expose native Codex and native Claude candidates. The
+real Router runs before each role, freezes a routing snapshot for the
+candidate, and records a quality outcome only after the direct application
+evaluator completes. Missing tools and preparation failures are not model
+quality observations. Provider keys and base-URL overrides are stripped;
+workers use literal argument arrays, path and worktree allowlists, bounded
+time/output, and recorded host/model/role/task provenance.
+
+Cold start uses paired calibration rather than an unearned provider ranking.
+For each role and task class, native Codex and native Claude independently run
+the same frozen contract, baseline, evaluator, and ceilings until five valid
+paired outcomes exist. The direct application evaluator chooses the result;
+ties break deterministically by fewer repair cycles, then lower measured cost,
+then a frozen provider order. Preparation failures, missing tools, and
+cancelled runs do not train the Router. After cold start, repeat a paired
+calibration at least every fifth admitted task and after any model, harness, or
+evaluator version change; drift reopens cold start for that role/task class.
+
+Engineering implementation starts only after a direct G1 evaluator has landed
+as a later evaluator-only commit over a genuinely red baseline. Each task also
+freezes mutable and blocked paths, Cargo features and targets, one public, one
+independent, and one impacted-regression command, resource ceilings, and
+application success criteria. Start with G1.1-G1.7 in dependency order. Do not
+create the engineering package in this decision-only slice.
+
+Darwin/GEPA may evolve engineering policy around frozen native models only
+after at least five discriminating training tasks and five sealed holdouts
+exist. AVO is reserved for a bounded hard-tail task with several plausible
+implementations and a discriminating oracle; it is not used for routine G0
+evidence repair or straightforward compiler failures. Neither mechanism may
+edit product truth, evaluator commits, standards inputs, thresholds, resource
+ceilings, ADR law, or promotion rules.
+
+### Engineering runtime definition of done
+
+`tools/engineering-harness` is operational only when all of the following are
+implemented and directly tested:
+
+- a real `HarnessKernel` and `AlgorithmRouter` execute frozen task contracts;
+- persistent native Codex and Claude worker pools obey path, tool, network,
+  authority, protected-input, cancellation, wall-time, and output limits;
+- bounded plan critique, independent cross-vendor review, and
+  verifier-directed repair execute as distinct receipted stages;
+- transient native-host retry is bounded by per-host circuit breakers and can
+  never cross providers or route through OpenRouter;
+- Router outcome memory is written only after the direct application verifier
+  and binds the role, task class, model, evaluator, and exact candidate;
+- candidate receipts bind the baseline, evaluator commit, admitted patch,
+  rebuilt outputs, literal commands, runtime identities, exits, and relevant
+  digests, with adversarial receipt and replay tests; and
+- one real G1 task completes end to end with both native vendors represented,
+  while the existing Agentic-QE, Jena, mutation, and MetaHarness semantic
+  receipts remain authoritative and unmodified.
+
+Package installation, factory scaffolding, mocked workers, a readiness score,
+or a synthetic Darwin run does not satisfy this definition.
 
 ## Programme decisions and task ownership
 
@@ -212,6 +333,9 @@ and approving actor. Prompt text and a bare checksum are not closure evidence.
 - A synthetic Darwin qualification may demonstrate deterministic policy
   mechanics, but only a fresh full qualification plus independent verification
   supports a semantic-qualification claim.
+- The accepted engineering architecture does not implement
+  `tools/engineering-harness`; that begins only after a direct red G1 evaluator
+  and its separate evaluator commit exist.
 - Volatile `.claude-flow`, `.claude`, `.swarm`, RVF, RuVector, and `var` state
   remains local runtime state and is not a committed harness definition.
 
@@ -233,6 +357,11 @@ and approving actor. Prompt text and a bare checksum are not closure evidence.
 - **Commit generic Ruflo runtime output as the harness.** Rejected because the
   current generated policies classify this Rust workspace generically and do
   not encode its immutable semantic authorities.
+- **Turn `tools/metaharness` into the engineering worker host.** Rejected
+  because it would mix mutable development behavior with receipt-sensitive
+  semantic qualification.
+- **Build before applying a candidate patch.** Rejected because the verifier
+  could run against stale binaries or generated artifacts.
 
 ## Evidence
 
@@ -267,10 +396,11 @@ Non-authoritative local verification on 2026-08-24 established:
 
 ## Decision boundary
 
-This ADR is **Proposed** for repository adoption. The active-task constraints
-that independently prohibit OpenRouter and unauthorized external publication
-remain in force while it is reviewed. It does not claim that Dream Machine is
-an approved unattended runner, that full MetaHarness qualification is current,
-or that a generated candidate is safe to promote. Those claims require a human
-decision on this ADR, continuously current prerequisites, per-run
-authorization, an activation status record, and exact current receipts above.
+This ADR accepts the architecture and authority boundary; it does not claim
+that the engineering runtime has been implemented, Dream Machine is an
+approved unattended runner, full MetaHarness qualification is current, or a
+generated candidate is safe to promote. ADR-0018 through ADR-0025 remain
+Proposed until their product behavior and evidence exist. Runtime adoption
+requires the red/evaluator-separated G1 corpus, direct control-plane tests,
+continuously current prerequisites, per-run authorization, activation status,
+and exact receipts above.

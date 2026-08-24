@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 import { repoRoot } from "./path-policy.mjs";
 
 const cargoTestSummary =
@@ -130,7 +131,7 @@ export async function execute(program, args, options = {}) {
     let forceKillHandle;
     const child = spawn(program, args, {
       cwd: options.cwd ?? repoRoot,
-      env: { ...process.env, ...options.env },
+      env: scrubbedChildEnvironment(options.env),
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],

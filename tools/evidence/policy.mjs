@@ -51,7 +51,7 @@ const EXPECTED = Object.freeze({
   jenaObservationsSha256:
     "b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4",
   datalog: 70,
-  agentic: 16,
+  agentic: 18,
   semanticIntegration: 4,
   supportingWrapper: 5,
 });
@@ -231,6 +231,10 @@ export function validateJsonDocuments(documents, errors) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       errors.push(`docs/research/${name}: root must be a JSON object`);
     }
+  }
+  const ledger = documents.get("conformance-ledger.json");
+  if (ledger && typeof ledger === "object" && !Array.isArray(ledger)) {
+    equal(errors, "conformance ledger schema", ledger.schemaVersion, 2);
   }
   const normative = documents.get("normative-requirements.json");
   if (normative && typeof normative === "object" && !Array.isArray(normative)) {
@@ -489,6 +493,51 @@ export function validateLedgerCounts(ledger, errors) {
   );
 }
 
+export function validateDependencyClaims(
+  ledger,
+  { agenticQe, darwin },
+  errors,
+) {
+  const qualification = idMap(
+    ledger?.qualification,
+    "conformance ledger qualification",
+    errors,
+  );
+  for (const [label, pinName, qualificationId, resolution] of [
+    ["Agentic-QE", "agenticQe", "agentic-qe", agenticQe],
+    ["Darwin", "darwin", "metaharness-darwin", darwin],
+  ]) {
+    const pin = ledger?.reviewedPins?.[pinName];
+    const row = qualification.get(qualificationId);
+    equal(errors, `${label} pin policy`, pin?.policy, resolution?.policy);
+    equal(errors, `${label} pin resolution`, pin?.resolved, resolution?.version);
+    equal(
+      errors,
+      `${label} pin integrity`,
+      pin?.integrity,
+      resolution?.integrity,
+    );
+    equal(
+      errors,
+      `${label} qualification policy`,
+      row?.versionPolicy,
+      resolution?.policy,
+    );
+    equal(
+      errors,
+      `${label} qualification resolution`,
+      row?.resolvedVersion,
+      resolution?.version,
+    );
+    equal(
+      errors,
+      `${label} qualification integrity`,
+      row?.lockIntegrity,
+      resolution?.integrity,
+    );
+  }
+}
+
 function requirementsClosed(normative) {
   const requirements = Array.isArray(normative?.requirements) ? normative.requirements : [];
   const documentsEqual = normative?.reviewState?.documentCoverage?.setEquality === true;
@@ -621,7 +670,7 @@ export const documentClaims = Object.freeze([
   { id: "OWL 2 RL", label: /\bOWL 2 RL(?:\/RDF)?\b/i, tokens: [pair(98), /\b68\b[^.]{0,80}\bcases?\b/i, /\b78\b[^.]{0,80}\brule/i], window: 720 },
   { id: "SHACL 1.2", label: /\bSHACL 1\.2\b/i, tokens: [pair(519), /(?:\b2\b|two)[^.]{0,100}\binvalid\b/i], window: 680 },
   { id: "Jena", label: /\b(?:Apache )?Jena 6\.1\.0\b/i, tokens: [/\b76\b[^.]{0,90}\bscenarios?\b/i, /\b198\b[^.]{0,90}\bassertions?\b/i], window: 680 },
-  { id: "Agentic-QE", label: /\bAgentic-QE\b/i, tokens: [pair(16)], window: 500 },
+  { id: "Agentic-QE", label: /\bAgentic-QE\b/i, tokens: [pair(18)], window: 500 },
   { id: "semantic integration", label: /\b(?:semantic store integration|semantic-integration|semantic profile integration|store integration)\b/i, tokens: [/(?:4\s*(?:\/|of)\s*4|\b4\b[^.]{0,80}\btests?\b)/i], window: 460 },
 ]);
 

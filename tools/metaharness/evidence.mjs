@@ -24,6 +24,11 @@ import {
   sep,
 } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  localNodeModulesRoot,
+  validateLifecycleScriptPolicy,
+  validateLatestDependencyLock,
+} from "../dependency-policy.mjs";
 import { validateMutationReceipt } from "../mutation/evidence.mjs";
 import {
   mutationProjectionValid,
@@ -47,7 +52,9 @@ export const protectedInputs = Object.freeze([
   "python",
   "testsuite",
   "tools/agentic-qe",
+  "tools/child-environment.mjs",
   "tools/datalog-oracles",
+  "tools/dependency-policy.mjs",
   "tools/evidence",
   "tools/jena-parity",
   "tools/metaharness",
@@ -255,13 +262,63 @@ export function validateMutationQualification(value, inputs) {
   return validateMutationReceipt(value, inputs);
 }
 
+export function validateDarwinLockPolicy(adapterManifest, lockfile) {
+  return validateLatestDependencyLock(
+    "@metaharness/darwin",
+    adapterManifest,
+    lockfile,
+  );
+}
+
+export function darwinLockResolution(repoRoot, toolDir) {
+  const canonicalRoot = realpathSync(repoRoot);
+  const canonicalToolDir = realpathSync(toolDir);
+  if (!isInside(canonicalRoot, canonicalToolDir)) {
+    throw new Error(`Darwin adapter escapes repository: ${canonicalToolDir}`);
+  }
+  const manifestPath = join(canonicalToolDir, "package.json");
+  const lockfilePath = join(canonicalToolDir, "package-lock.json");
+  const npmrcPath = join(canonicalToolDir, ".npmrc");
+  for (const [path, label] of [
+    [manifestPath, "Darwin adapter manifest"],
+    [lockfilePath, "Darwin adapter lockfile"],
+    [npmrcPath, "Darwin adapter .npmrc"],
+  ]) {
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      throw new Error(`${label} must be a regular non-symlink file`);
+    }
+  }
+  const manifestBytes = readFileSync(manifestPath);
+  const lockfileBytes = readFileSync(lockfilePath);
+  const npmrcBytes = readFileSync(npmrcPath);
+  validateLifecycleScriptPolicy(npmrcBytes, "Darwin adapter .npmrc");
+  const resolution = validateDarwinLockPolicy(
+    JSON.parse(manifestBytes),
+    JSON.parse(lockfileBytes),
+  );
+  return Object.freeze({
+    ...resolution,
+    manifest: portable(relative(canonicalRoot, manifestPath)),
+    manifestSha256: sha256(manifestBytes),
+    lockfile: portable(relative(canonicalRoot, lockfilePath)),
+    lockfileSha256: sha256(lockfileBytes),
+    npmrc: portable(relative(canonicalRoot, npmrcPath)),
+    npmrcSha256: sha256(npmrcBytes),
+  });
+}
+
 export function darwinInstallationSnapshot(repoRoot, toolDir) {
   const canonicalToolDir = realpathSync(toolDir);
+  const resolution = darwinLockResolution(repoRoot, canonicalToolDir);
   const entry = realpathSync(
     fileURLToPath(import.meta.resolve("@metaharness/darwin")),
   );
   const packageRoot = realpathSync(resolve(dirname(entry), ".."));
-  const nodeModulesRoot = realpathSync(join(canonicalToolDir, "node_modules"));
+  const nodeModulesRoot = localNodeModulesRoot(
+    canonicalToolDir,
+    "Darwin adapter",
+  );
   if (!isInside(nodeModulesRoot, packageRoot)) {
     throw new Error(`Darwin installation escapes local node_modules: ${packageRoot}`);
   }
@@ -274,21 +331,16 @@ export function darwinInstallationSnapshot(repoRoot, toolDir) {
   if (typeof manifest.version !== "string" || !manifest.version) {
     throw new Error("installed Darwin package has no version");
   }
-  const adapterManifest = JSON.parse(
-    readFileSync(join(canonicalToolDir, "package.json")),
-  );
-  const pinnedVersion = adapterManifest.dependencies?.["@metaharness/darwin"];
-  if (pinnedVersion !== manifest.version) {
+  if (resolution.version !== manifest.version) {
     throw new Error(
-      `installed Darwin ${manifest.version} does not match exact adapter pin ${pinnedVersion}`,
+      `installed Darwin ${manifest.version} does not match lockfile resolution ${resolution.version}`,
     );
   }
   const packageSnapshot = snapshotRoots(packageRoot, ["."], {
     skipDirectories: false,
   });
   return {
-    name: manifest.name,
-    version: manifest.version,
+    ...resolution,
     path: portable(relative(repoRoot, packageRoot)),
     entry: portable(relative(packageRoot, entry)),
     packageJsonSha256: sha256(packageJsonBytes),

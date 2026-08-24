@@ -302,8 +302,13 @@
       <p>The toolchain shares one native receipt instead of creating competing
         sources of truth.</p></div></div>
     <div class="grid2">
-      <article class="card risk"><h3>Agentic-QE 3.13.2</h3>
-        <ul class="compact"><li>Pinned locally; the adapter’s 16/16 adversarial tests pass.</li>
+      <article class="card risk"><h3>Agentic-QE 3.13.2 · historical snapshot</h3>
+        <ul class="compact"><li>This July snapshot used a 3.13.2 lock. The
+            current adapter requests <code>latest</code> and commits the exact
+            integrity-bound resolution, with 18/18 current adapter mechanics
+            tests; see the
+            <a href="semantic-parity-current-summary.md">current summary</a>.</li>
+          <li>The historical adapter suite passed 16/16 adversarial tests.</li>
           <li>The Oxigraph-owned adapter coordinates the exact 47-command
             aggregate Cargo/Jena/W3C profile with timeouts and inventory guards.</li>
           <li>Profiles execute in reviewed order behind one repository lease;
@@ -317,8 +322,11 @@
             provenance record with independently recomputed hashes.</li>
           <li><strong>Do not use</strong> its JS-only Rust executor fallback or simulated MCP outcomes.</li>
         </ul></article>
-      <article class="card"><h3>MetaHarness + Darwin</h3>
-        <ul class="compact"><li>Darwin 0.8.0 may evolve only policy surfaces;
+      <article class="card"><h3>MetaHarness + Darwin · historical snapshot</h3>
+        <ul class="compact"><li>This July snapshot used Darwin 0.8.0. The
+          current adapter requests <code>latest</code> and commits the exact
+          integrity-bound resolution.</li>
+          <li>Darwin may evolve only policy surfaces;
           implementation and oracle inputs are immutable during qualification.</li>
           <li>The full gate reopens the UUID-addressed immutable mutation
             receipt, outcomes, and policy copy, plus Agentic command results,
@@ -365,11 +373,12 @@
         surface.</p></div></div>
     <div class="receipt">
       <div class="callout"><div class="mark">✓</div><div><h3>Parity receipt acceptance</h3>
-        <p>Agentic-QE 3.13.2 · schema v4 · 47 commands. A qualifying immutable
-          receipt records the exact content and execution hashes, passes
-          independent verification, and binds the current protected inputs.
-          The adapter’s 16/16 adversarial tests cover its mechanics; native
-          commands remain authoritative.</p></div></div>
+        <p>Historical July receipt: Agentic-QE 3.13.2 · schema v4 · 47 commands.
+          That immutable receipt records exact content and execution hashes,
+          passed independent verification, and bound its sealed July subject.
+          It cannot qualify current HEAD. The adapter’s historical 16/16
+          adversarial tests cover its mechanics; native commands remain
+          authoritative.</p></div></div>
       <article class="card notdoing"><h3>Explicitly not claiming</h3><p>No
         parity based only on Jena or suite passes; no OWL 2 EL, QL, DL, Full,
         Jena-specific OWL mode, Java API clone, implicit base mutation, Darwin

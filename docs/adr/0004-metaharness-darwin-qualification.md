@@ -2,17 +2,20 @@
 
 - Status: Accepted
 - Date: 2026-07-26
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: policy-only adapter, synthetic mechanics, full
-  semantic mode, and independent receipt verification implemented;
-  qualification remains receipt-dependent
+  semantic mode, independent receipt verification, and latest-compatible
+  dependency policy implemented; the current integrity-bound lockfile resolves
+  `@metaharness/darwin` 0.9.3 and qualification remains receipt-dependent
 - Update note: the local MetaHarness 13-test suite and a synthetic-only
-  qualification pass on current HEAD. Full qualification is intentionally not
-  claimable: the reviewed Jena subject lock and Agentic-QE CLI inventories are
-  stale after the persistence-write changes, and the source-bound OxDatalog
-  mutation receipt predates the changed protected source snapshot. All three
-  must be refreshed through their separate reviewed processes.
+  qualification pass with Darwin 0.9.3 on current HEAD. Full qualification is
+  intentionally not claimable: the reviewed Jena subject lock and Agentic-QE
+  CLI inventories are stale after the persistence-write changes, and the
+  source-bound OxDatalog mutation receipt predates the changed protected source
+  snapshot. All three must be refreshed through their separate reviewed
+  processes. On 2026-08-25 the dependency refresh also made lifecycle-script
+  suppression and lock/ledger reconciliation explicit.
 - Related:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -27,15 +30,23 @@ RuvNet guidance distinguishes proposed design from shipped proof: Darwin
 ADR-070 is Proposed, while accepted ADR-102 qualifies only its synthetic Tier-1
 mock sandbox.
 
-The published Darwin package available to this programme is
-`@metaharness/darwin` 0.8.0. Its policy genome has seven surfaces:
+The adapter requests the published `@metaharness/darwin` `latest` dist-tag; the
+current committed lockfile resolves it to 0.9.3. Its policy genome has seven
+surfaces:
 `planner`, `contextBuilder`, `reviewer`, `retryPolicy`, `toolPolicy`,
 `memoryPolicy`, and `scorePolicy`.
 
 ## Decision
 
-Pin Darwin 0.8.0 under `tools/metaharness` and permit it to modify only the
-seven policy surfaces. The following are immutable protected inputs:
+Request Darwin's `latest` dist-tag under `tools/metaharness`, resolve it during
+a reviewed dependency refresh, and commit the exact npm lockfile resolution.
+Qualification requires the installed package version to match the exact
+version in the integrity-bearing lock resolution. Dependency installation
+disables lifecycle scripts through both the command line and package-local
+`.npmrc`; the adapter validates and hashes that policy file and the installed
+package tree before and after execution.
+Permit Darwin to modify only the seven policy surfaces. The following are
+immutable protected inputs:
 
 - Rust source and public semantic APIs;
 - specification and test-suite pins;
@@ -55,6 +66,12 @@ The final semantic gate runs a frozen Agentic-QE profile through Darwin's
 shell-free real sandbox. Native Cargo, W3C, Jena, and Soufflé commands remain
 the correctness oracles. GEPA or Darwin may tune harness policy; neither may
 rewrite semantic answers.
+
+Every semantic-gate child inherits only a reviewed safe-name allowlist. Model
+provider, API, proxy, credential, and runtime-injection variables are stripped,
+so the policy-only Darwin adapter has no ambient model-provider authority.
+The shared dependency and child-environment policy modules are protected
+inputs: changing either invalidates qualification identity.
 
 Protected snapshots include the JavaScript source tree but exclude exactly the
 repository-relative generated-output directory `js/pkg`. Other directories
@@ -118,6 +135,8 @@ or unverified receipt withholds that claim.
 - Qualification is replayable and cost-bounded.
 - Agentic-QE and Darwin consume the same native evidence.
 - Policy improvements with no held-out measured benefit are discarded.
+- A dependency refresh deliberately invalidates older qualification receipts;
+  the newer locked bytes must pass synthetic and full gates again.
 
 ## Alternatives rejected
 

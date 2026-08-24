@@ -259,7 +259,7 @@ test("receipt verification recomputes content and execution hashes", () => {
     schemaVersion: 4,
     runId,
     adapter: "oxigraph-agentic-qe",
-    agenticQeVersion: "3.13.2",
+    agenticQeVersion: "1.2.3",
     profile: "test-profile",
     generatedAt: new Date().toISOString(),
     repository: {
@@ -274,7 +274,10 @@ test("receipt verification recomputes content and execution hashes", () => {
       afterContentHash: implementationManifest.contentHash,
       changedPaths: [],
     },
-    authority: { commands: [{ id: "probe" }] },
+    authority: {
+      commands: [{ id: "probe" }],
+      childEnvironmentPolicy: "inherited-safe-name-allowlist-v1",
+    },
     runtime: [
       {
         program: "node",
@@ -330,7 +333,7 @@ test("receipt verification recomputes content and execution hashes", () => {
   receipt.executionHash = agenticReceiptExecutionHash(receipt);
   const options = {
     expectedProfile: "test-profile",
-    expectedAgenticQeVersion: "3.13.2",
+    expectedAgenticQeVersion: "1.2.3",
     expectedCommandIds: ["probe"],
     expectedCommands: {
       probe: ["node", ["--version"], { timeoutMs: 30_000 }],

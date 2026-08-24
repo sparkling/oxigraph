@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 import {
   closeSync,
   constants,
@@ -166,7 +167,7 @@ function unixProcessStartIdentity(pid) {
       ["-o", "lstart=", "-p", String(pid)],
       {
         encoding: "utf8",
-        env: { ...process.env, LC_ALL: "C" },
+        env: scrubbedChildEnvironment({ LC_ALL: "C" }),
         stdio: ["ignore", "pipe", "ignore"],
       },
     );

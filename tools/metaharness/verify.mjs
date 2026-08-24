@@ -17,6 +17,7 @@ import {
   commands as agenticCommands,
   profiles as agenticProfiles,
 } from "../agentic-qe/profile-definitions.mjs";
+import { agenticQeDependencyResolution } from "../agentic-qe/version-policy.mjs";
 import { verifyMutationQualification } from "./mutation-binding.mjs";
 import {
   darwinInstallationSnapshot,
@@ -36,6 +37,7 @@ const repoRoot = realpathSync(resolve(toolDir, "../.."));
 const semanticProfile = "metaharness-semantic-gate";
 
 function verifyAgentic(binding, minimumGeneratedAtMs, maximumGeneratedAtMs) {
+  const agenticQeDependency = agenticQeDependencyResolution();
   if (!agenticQualificationBindingValid(binding)) {
     throw new Error("Agentic-QE qualification binding is invalid");
   }
@@ -51,7 +53,8 @@ function verifyAgentic(binding, minimumGeneratedAtMs, maximumGeneratedAtMs) {
   const selected = agenticProfiles[semanticProfile];
   validateAgenticReceipt(receipt, {
     expectedProfile: semanticProfile,
-    expectedAgenticQeVersion: "3.13.2",
+    expectedAgenticQeVersion: agenticQeDependency.version,
+    expectedAgenticQeDependency: agenticQeDependency,
     expectedCommandIds: selected,
     expectedCommands: agenticCommands,
     minimumGeneratedAtMs,

@@ -2,7 +2,7 @@
 
 Status: last sealed bounded implementation evidence is green; current-HEAD
 qualification is stale and broad parity claims are withheld
-Evidence cut: 2026-07-26; reconciled: 2026-08-24
+Evidence cut: 2026-07-26; reconciled: 2026-08-25
 
 ## Bottom line
 
@@ -39,8 +39,8 @@ closure remain incomplete.
 | OWL 2 RL/RDF | 98/98 assertions across 68 RDF-based cases | Exact 78-rule inventory: 46 Datalog rules and 32 specialized operators |
 | SHACL 1.2 evidence lanes | 521 discovered; 519/519 eligible cases pass; 2 invalid upstream exclusions; Rust 167/167 all-feature and 114/114 no-default tests; Jena SHACL-C 32/32 | Five separately classified lanes; synchronous WebAssembly SPARQL-backed validation fails closed because cooperative timeout/cancellation cannot be guaranteed; no family-parity claim |
 | Apache Jena 6.1.0 differential | 76 scenarios and 198 assertions | Reviewed outcome intersection only; one distinct successful outcome is a W3C-permitted implementation variant |
-| Agentic-QE adapter | 16/16 adversarial tests; exact ordered 41-command Meta gate and 47-command parity profiles | Sequential, repository-leased coordinator and receipt recorder; never the semantic oracle |
-| MetaHarness/Darwin 0.8.0 | Full semantic-mode runner plus independent verification | No qualification result exists unless both current receipts verify against the same protected snapshot; never a semantic oracle |
+| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 18/18 adversarial tests; exact ordered 41-command Meta gate and 47-command parity profiles | Sequential, repository-leased coordinator and receipt recorder; never the semantic oracle |
+| MetaHarness/Darwin `latest` (lock-resolved 0.9.3) | Full semantic-mode runner plus independent verification | No qualification result exists unless both current receipts verify against the same protected snapshot; never a semantic oracle |
 
 The Jena matrix classifies 70 scenarios as agreement, 4 as
 W3C-overrides-Jena, 1 as a W3C-permitted divergence, 1 as a Jena extension,

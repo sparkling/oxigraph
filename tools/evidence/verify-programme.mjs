@@ -10,6 +10,7 @@ import {
   expectedPins,
   semanticCommandIds,
   validateAdrIndex,
+  validateDependencyClaims,
   validateDocumentClaims,
   validateFullReceipts,
   validateJsonDocuments,
@@ -28,6 +29,10 @@ import {
   commands as agenticCommands,
   profiles as agenticProfiles,
 } from "../agentic-qe/profile-definitions.mjs";
+import {
+  agenticQeDependencyResolution,
+  agenticQeLockResolution,
+} from "../agentic-qe/version-policy.mjs";
 import { loadBoundMutationQualification } from "../metaharness/mutation-binding.mjs";
 import { agenticQualificationBindingValid } from "../metaharness/agentic-binding.mjs";
 import { validateNormativeClauseInventoryBytes } from "./normative-clause-inventory.mjs";
@@ -37,6 +42,7 @@ import {
 } from "./normative-control.mjs";
 import {
   darwinInstallationSnapshot,
+  darwinLockResolution,
   protectedSnapshot,
   trustedRealGateValid,
   validateQualificationReceipt,
@@ -96,6 +102,9 @@ function collect(errors, label, operation) {
 }
 
 function gitHead(path) {
+  if (!existsSync(join(path, ".git"))) {
+    throw new Error(`registered checkout is uninitialized: ${path}`);
+  }
   return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -263,6 +272,7 @@ function readReceipts(root, errors) {
     }
     if (receipts.agentic && agenticBytes) {
       collect(errors, "Agentic-QE receipt contract", () => {
+        const agenticQeDependency = agenticQeDependencyResolution();
         const selected = agenticProfiles["metaharness-semantic-gate"];
         const publication = validateAgenticPublication(receipts.agentic, {
           repositoryRoot: root,
@@ -270,7 +280,8 @@ function readReceipts(root, errors) {
         receipts.agentic = publication.receipt;
         validateAgenticReceipt(receipts.agentic, {
           expectedProfile: "metaharness-semantic-gate",
-          expectedAgenticQeVersion: "3.13.2",
+          expectedAgenticQeVersion: agenticQeDependency.version,
+          expectedAgenticQeDependency: agenticQeDependency,
           expectedCommandIds: semanticCommandIds,
           expectedCommands: agenticCommands,
           minimumGeneratedAtMs: Date.parse(receipts.meta.startedAt),
@@ -448,6 +459,18 @@ export function verifyProgramme(
   const normative = documents.get("normative-requirements.json");
   const registry = documents.get("standards-registry.json");
   if (ledger) validateLedgerCounts(ledger, errors);
+  const dependencyResolutions = {
+    agenticQe: collect(errors, "Agentic-QE dependency policy", () =>
+      agenticQeLockResolution({
+        adapterDir: join(root, "tools/agentic-qe"),
+        repositoryRoot: root,
+      }),
+    ),
+    darwin: collect(errors, "Darwin dependency policy", () =>
+      darwinLockResolution(root, join(root, "tools/metaharness")),
+    ),
+  };
+  if (ledger) validateDependencyClaims(ledger, dependencyResolutions, errors);
   if (normative && ledger) validateNormativeClaims(normative, ledger, errors);
   collect(errors, "W3C normative control source", () => validateNormativeControlSource(root));
 

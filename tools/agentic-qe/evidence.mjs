@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { CHILD_ENVIRONMENT_POLICY } from "../child-environment.mjs";
 import {
   existsSync,
   lstatSync,
@@ -132,6 +133,8 @@ function selectedEvidence(selected, commands) {
   const paths = new Set([
     join(repoRoot, "Cargo.toml"),
     join(repoRoot, "Cargo.lock"),
+    join(repoRoot, "tools", "child-environment.mjs"),
+    join(repoRoot, "tools", "dependency-policy.mjs"),
     toolDir,
   ]);
   for (const relativePath of [".cargo", "rust-toolchain", "rust-toolchain.toml"]) {
@@ -415,6 +418,7 @@ export function validateAgenticReceipt(
   {
     expectedProfile,
     expectedAgenticQeVersion,
+    expectedAgenticQeDependency,
     expectedCommandIds,
     expectedCommands,
     minimumGeneratedAtMs = 0,
@@ -444,6 +448,10 @@ export function validateAgenticReceipt(
     ) ||
     receipt.profile !== expectedProfile ||
     receipt.agenticQeVersion !== expectedAgenticQeVersion ||
+    receipt.authority?.childEnvironmentPolicy !== CHILD_ENVIRONMENT_POLICY ||
+    (expectedAgenticQeDependency !== undefined &&
+      JSON.stringify(receipt.authority?.agenticQeDependency) !==
+        JSON.stringify(expectedAgenticQeDependency)) ||
     receipt.passed !== true ||
     !Number.isFinite(minimumGeneratedAtMs) ||
     !(

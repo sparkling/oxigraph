@@ -1,8 +1,10 @@
 # MetaHarness/Darwin qualification
 
-This adapter pins `@metaharness/darwin` 0.8.0 and constrains Darwin to its seven
-pure policy files. Rust source, standards manifests, expected results, semantic
-profiles, resource ceilings, and evidence definitions are hash-protected inputs.
+This adapter requests `@metaharness/darwin` from the `latest` dist-tag; the
+committed lockfile currently resolves 0.9.3 with exact registry integrity.
+Darwin is constrained to its seven pure policy files. Rust source, standards
+manifests, expected results, semantic profiles, resource ceilings, and evidence
+definitions are hash-protected inputs.
 
 The qualification has two independent parts:
 
@@ -25,12 +27,24 @@ oracles.
 
 ```bash
 cd tools/metaharness
-npm ci
+npm ci --ignore-scripts
 npm test
 npm run qualify:synthetic
 # first run: node ../mutation/oxdatalog.mjs --jobs 2
 npm run qualify
 ```
+
+`npm ci --ignore-scripts` reproduces the committed exact resolution without
+granting dependency lifecycle hooks host authority; the package-local `.npmrc`
+enforces the same rule. A reviewed dependency refresh uses
+`npm update @metaharness/darwin --package-lock-only --ignore-scripts` and must
+rerun the tests and qualification gates before the new lockfile is accepted.
+
+The adapter validates and hashes `.npmrc`. Its child processes inherit only a
+reviewed safe-name allowlist; provider, API, proxy, credential, and
+runtime-injection variables are removed. The shared dependency and
+child-environment policy modules are protected inputs, so changing either
+invalidates qualification identity.
 
 Receipts are written to `target/metaharness/qualification.json`; variant
 archives remain under `target/metaharness/`. `npm run qualify` also invokes an

@@ -11,7 +11,7 @@
     "qualify:synthetic": "node ./qualify.mjs --synthetic-only"
   },
   "dependencies": {
-    "@metaharness/darwin": "0.8.0"
+    "@metaharness/darwin": "latest"
   },
   "engines": {
     "node": ">=20"

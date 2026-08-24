@@ -265,7 +265,7 @@ The unfinished work is split by architectural ownership:
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Proposed |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Accepted control; product decisions Proposed |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |

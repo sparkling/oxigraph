@@ -1,6 +1,7 @@
 # Semantic parity implementation and qualification plan
 
 - Programme date: 2026-07-26
+- Updated: 2026-08-25
 - Target: version-pinned Apache Jena compatibility, then current reviewed W3C
   RDF 1.2, SPARQL 1.2, and SHACL 1.2 parity
 - Reasoning scope: RDFS, bounded Datalog D0–D2, and OWL 2 RL/RDF only
@@ -23,6 +24,9 @@ closed.
 
 This plan separates implementation completion from evidence completion. A
 green finite suite never marks a broader phase complete by itself.
+The `tools/metaharness` package described here remains the semantic qualifier;
+ADR-0017 assigns future application delivery to a separate
+`tools/engineering-harness`, which is not implemented by this plan.
 
 ## Current evidence snapshot
 
@@ -44,7 +48,7 @@ full MetaHarness receipts require the reviewed G0 refresh in the
 | SHACL 1.2 | 521 discovered and 519/519 eligible across five separately classified lanes; two hash-pinned invalid upstream exclusions; native Rust 167/167 all-feature and 114/114 no-default; Jena SHACL-C 32/32 | Root, legacy, supplemental Rules, and informative SHACL-C evidence; family claim open |
 | Jena 6.1.0 | 76 reviewed scenarios; 198 assertions | Closed scoped outcome intersection with one W3C-permitted implementation variant; full Apache Jena parity not claimed |
 | Soufflé 2.5 | 1 stratified Datalog fixture | Narrow D1 differential only |
-| Agentic-QE 3.13.2 | 16/16 adapter adversarial tests; 47-command parity inventory | Acceptance requires a complete, current, independently verified receipt; native commands remain authoritative |
+| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 18/18 adapter adversarial tests; 47-command parity inventory | Acceptance requires a complete, current, independently verified receipt; native commands remain authoritative |
 | MetaHarness/Darwin | Full semantic-mode runner plus independent receipt verifier | No qualification result exists unless both current receipts verify against the same protected snapshot |
 
 Exact SHACL lane counts, exclusions, and artifact locations are read from the
@@ -189,13 +193,16 @@ requires a new versioned, set-equal scenario inventory.
 
 ## Agentic-QE evidence procedure
 
-The Oxigraph-owned adapter coordinates explicit commands and records the exact
-Agentic-QE 3.13.2 presence/version. Agentic-QE is not a Rust oracle. The
-adapter adversarial suite currently passes 16/16.
+The Oxigraph-owned adapter requests Agentic-QE's `latest` dist-tag, verifies
+that the installed CLI version matches the exact version in the
+integrity-bearing lockfile resolution, and records the lock SRI, package
+metadata, version, and executable hash. The current lockfile resolves 3.13.12.
+Agentic-QE is not a Rust oracle. The adapter adversarial suite currently passes
+18/18.
 
 ```bash
 cd tools/agentic-qe
-npm ci
+npm ci --ignore-scripts
 npm run test:parity
 ```
 
@@ -215,16 +222,19 @@ suites, mutation competence, and adversarial review.
 
 ## MetaHarness and Darwin procedure
 
-MetaHarness pins `@metaharness/darwin` 0.8.0. Darwin may change only its seven
-policy surfaces; implementation, specifications, pins, manifests, expected
-results, profiles, exclusions, limits, and evidence definitions are protected.
+MetaHarness requests `@metaharness/darwin` from the `latest` dist-tag; the
+current integrity-bound lockfile resolves 0.9.3. Darwin may change only its
+seven policy surfaces; implementation, specifications, pins, manifests,
+expected results, profiles, exclusions, limits, and evidence definitions are
+protected. Every dependency refresh invalidates prior qualification receipts
+until the newly resolved bytes pass the same gates.
 The protected snapshot excludes only the repository-relative generated output
 `js/pkg`; JavaScript source and every other `pkg` directory remain protected,
 and a symlink at that path still fails closed.
 
 ```bash
 cd tools/metaharness
-npm ci
+npm ci --ignore-scripts
 npm run qualify:synthetic
 npm run qualify
 ```

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 import {
   applyCommandSafeguards,
   countCargoPassedTests,
@@ -7,6 +8,48 @@ import {
   parseNodeTestSummary,
   validateCommand,
 } from "./process-runner.mjs";
+
+test("child processes cannot inherit provider, proxy, or secret authority", () => {
+  const environment = scrubbedChildEnvironment(
+    { AQE_MEMORY_BACKEND: "memory" },
+    {
+      PATH: "/usr/bin",
+      LANG: "C.UTF-8",
+      ANTHROPIC_API_KEY: "secret",
+      OPENAI_BASE_URL: "https://attacker.invalid",
+      OPENROUTER_API_KEY: "secret",
+      GITHUB_TOKEN: "secret",
+      HTTPS_PROXY: "https://proxy.invalid",
+      AWS_ACCESS_KEY_ID: "secret",
+      AWS_PROFILE: "production",
+      DOCKER_CONFIG: "/secret/docker",
+      GIT_ASKPASS: "/secret/helper",
+      CC: "/secret/compiler",
+      DYLD_LIBRARY_PATH: "/secret/dylib",
+      LD_LIBRARY_PATH: "/secret/lib",
+      MAVEN_OPTS: "-javaagent:/secret/agent.jar",
+      NODE_OPTIONS: "--require=/secret/inject.js",
+      RUSTFLAGS: "-C linker=/secret/linker",
+      RUSTUP_TOOLCHAIN: "/secret/toolchain",
+      UNREVIEWED_VALUE: "hidden",
+    },
+  );
+  assert.deepEqual(environment, {
+    PATH: "/usr/bin",
+    LANG: "C.UTF-8",
+    AQE_MEMORY_BACKEND: "memory",
+  });
+  assert.throws(
+    () => scrubbedChildEnvironment({ OPENROUTER_API_KEY: "secret" }),
+    /override is prohibited/,
+  );
+  for (const name of ["CC", "LD_LIBRARY_PATH", "MAVEN_OPTS", "RUSTFLAGS"]) {
+    assert.throws(
+      () => scrubbedChildEnvironment({ [name]: "attacker" }),
+      /override is prohibited/,
+    );
+  }
+});
 
 test("counts only complete, line-anchored libtest summaries", () => {
   const output = [

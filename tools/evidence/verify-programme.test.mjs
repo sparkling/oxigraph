@@ -5,6 +5,7 @@ import {
   expectedPins,
   expectedShaclIntegrity,
   validateAdrIndex,
+  validateDependencyClaims,
   validateDocumentClaims,
   validateFullReceipts,
   validateJsonDocuments,
@@ -16,6 +17,10 @@ import {
 import { profiles as agenticProfiles } from "../agentic-qe/profile-definitions.mjs";
 
 const jenaProfile = "jena-6.1.0-outcome-intersection-2026-07-27-v1";
+const agenticIntegrity =
+  "sha512-1bfL3zJJiwZNvcQ2yV7/6Z98U3LIKGS0eemYAxdVxwQ1DHgE9tuTt6pnluivXs3OSiKbd/v2X1iPP7FU0gFtfw==";
+const darwinIntegrity =
+  "sha512-V+AhQvj9ijR8OK9TvogSngtz47q8pHPjMm1mWMoDUk1JaRKz88oJu/sPUQ5BApCIgeSWEKo/bzrFSV4Krb/3Fg==";
 const jenaSubjectSha256 =
   "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d";
 const jenaDomains = {
@@ -53,6 +58,7 @@ const jenaReproducibility = {
 
 function ledgerFixture() {
   return {
+    schemaVersion: 2,
     claimPolicy: { currentUmbrellaClaim: "withheld" },
     evidence: [
       { id: "E-DATALOG-NATIVE", result: { passed: 70, failed: 0 } },
@@ -197,9 +203,18 @@ function ledgerFixture() {
     qualification: [
       {
         id: "agentic-qe",
-        adapterAdversarialTests: { passed: 16, failed: 0 },
+        versionPolicy: "latest",
+        resolvedVersion: "3.13.12",
+        lockIntegrity: agenticIntegrity,
+        adapterAdversarialTests: { passed: 18, failed: 0 },
         semanticGateCommandInventory: 41,
         parityCommandInventory: 47,
+      },
+      {
+        id: "metaharness-darwin",
+        versionPolicy: "latest",
+        resolvedVersion: "0.9.3",
+        lockIntegrity: darwinIntegrity,
       },
     ],
     profiles: [{ id: "w3c-12-full", normativeFamilyParity: false }],
@@ -216,6 +231,16 @@ function ledgerFixture() {
       jsonLdApi: expectedPins["w3c-json-ld-api"],
       jsonLdStreaming: expectedPins["w3c-json-ld-streaming"],
       n3OptionalCommunityGroupProfile: expectedPins["w3c-n3"],
+      agenticQe: {
+        policy: "latest",
+        resolved: "3.13.12",
+        integrity: agenticIntegrity,
+      },
+      darwin: {
+        policy: "latest",
+        resolved: "0.9.3",
+        integrity: darwinIntegrity,
+      },
     },
   };
 }
@@ -252,6 +277,39 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
     ),
   );
   assert(errors.some((error) => error.startsWith("Agentic-QE adapter passed tests:")));
+});
+
+test("dependency claims are derived from exact integrity-bearing locks", () => {
+  const ledger = ledgerFixture();
+  const resolutions = {
+    agenticQe: {
+      policy: "latest",
+      version: "3.13.12",
+      integrity: agenticIntegrity,
+    },
+    darwin: {
+      policy: "latest",
+      version: "0.9.3",
+      integrity: darwinIntegrity,
+    },
+  };
+  const errors = [];
+  validateDependencyClaims(ledger, resolutions, errors);
+  assert.deepEqual(errors, []);
+
+  ledger.reviewedPins.agenticQe.resolved = "3.13.11";
+  ledger.qualification.find(
+    (item) => item.id === "metaharness-darwin",
+  ).lockIntegrity = "sha512-stale";
+  validateDependencyClaims(ledger, resolutions, errors);
+  assert(
+    errors.some((error) => error.startsWith("Agentic-QE pin resolution:")),
+  );
+  assert(
+    errors.some((error) =>
+      error.startsWith("Darwin qualification integrity:"),
+    ),
+  );
 });
 
 test("normative broad claims remain withheld until every obligation closes", () => {
@@ -397,7 +455,13 @@ test("normative SHACL document hashes are pinned to the generated inventory", ()
   const documents = new Map([
     [
       "conformance-ledger.json",
-      { claimPolicy: {}, evidence: [], profiles: [], qualification: [] },
+      {
+        schemaVersion: 2,
+        claimPolicy: {},
+        evidence: [],
+        profiles: [],
+        qualification: [],
+      },
     ],
     ["normative-requirements.json", normative],
     [
@@ -408,6 +472,14 @@ test("normative SHACL document hashes are pinned to the generated inventory", ()
   let errors = [];
   validateJsonDocuments(documents, errors);
   assert.deepEqual(errors, []);
+
+  documents.get("conformance-ledger.json").schemaVersion = 1;
+  errors = [];
+  validateJsonDocuments(documents, errors);
+  assert(
+    errors.some((error) => error.startsWith("conformance ledger schema:")),
+  );
+  documents.get("conformance-ledger.json").schemaVersion = 2;
 
   normative.documents.find((document) => document.id === "shacl12-core").sha256 =
     "0".repeat(64);
@@ -650,7 +722,7 @@ function fullReceiptsFixture() {
           timedOut: false,
           testSafeguard:
             id === "agenticAdapter"
-              ? { observedPassedTests: 16, passed: true }
+              ? { observedPassedTests: 18, passed: true }
               : id === "supportingParserSuites"
                 ? { observedPassedTests: 5, passed: true }
                 : null,

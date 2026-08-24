@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 
 const toolDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(toolDir, "../..");
@@ -13,7 +14,7 @@ const child = spawn(
   [adapter, "run", "metaharness-semantic-gate"],
   {
     cwd: repoRoot,
-    env: process.env,
+    env: scrubbedChildEnvironment(),
     shell: false,
     stdio: "inherit",
   },

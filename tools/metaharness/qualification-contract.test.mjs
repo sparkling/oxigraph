@@ -11,8 +11,9 @@ import {
 
 const mutationRunId = "00000000-0000-4000-8000-000000000000";
 const agenticRunId = "11111111-1111-4111-8111-111111111111";
+const fixtureDarwinVersion = "1.2.3";
 const options = {
-  expectedDarwinVersion: "0.8.0",
+  expectedDarwinVersion: fixtureDarwinVersion,
   requireFull: true,
 };
 
@@ -109,7 +110,7 @@ function qualificationReceipt() {
   const receipt = {
     schemaVersion: 2,
     qualification: "oxigraph-policy-only-darwin",
-    darwinVersion: "0.8.0",
+    darwinVersion: fixtureDarwinVersion,
     mode: "synthetic-and-semantic-gate",
     runtime: {
       node: {
@@ -263,7 +264,7 @@ test("synthetic qualification remains valid only at its explicit boundary", () =
   });
   assert.doesNotThrow(() =>
     validateQualificationReceipt(synthetic, {
-      expectedDarwinVersion: "0.8.0",
+      expectedDarwinVersion: fixtureDarwinVersion,
       requireFull: false,
     }),
   );
@@ -277,7 +278,7 @@ test("synthetic qualification remains valid only at its explicit boundary", () =
     { realGate: qualificationReceipt().realGate },
   ]) {
     expectInvalid(withHash({ ...synthetic, ...change }), {
-      expectedDarwinVersion: "0.8.0",
+      expectedDarwinVersion: fixtureDarwinVersion,
       requireFull: false,
     });
   }

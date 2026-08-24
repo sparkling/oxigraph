@@ -14,10 +14,12 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   changedInputs,
+  darwinLockResolution,
   darwinInstallationSnapshot,
   ensureDirectoryInside,
   protectedInputs,
   snapshotRoots,
+  validateDarwinLockPolicy,
   validateMutationQualification,
   writeJsonAtomic,
 } from "./evidence.mjs";
@@ -200,6 +202,8 @@ test("qualification protects every gate implementation and workflow surface", ()
     "js",
     "lib",
     "tools/agentic-qe",
+    "tools/child-environment.mjs",
+    "tools/dependency-policy.mjs",
     "tools/evidence",
     "tools/jena-parity",
     "tools/metaharness",
@@ -210,7 +214,78 @@ test("qualification protects every gate implementation and workflow surface", ()
   }
 });
 
-test("installed Darwin provenance is derived from the exact local package", () => {
+test("latest Darwin policy resolves to an exact integrity-bound local package", () => {
+  const fixtureManifest = {
+    dependencies: { "@metaharness/darwin": "latest" },
+  };
+  const fixtureLock = {
+    lockfileVersion: 3,
+    packages: {
+      "": { dependencies: { "@metaharness/darwin": "latest" } },
+      "node_modules/@metaharness/darwin": {
+        version: "1.2.3",
+        resolved:
+          "https://registry.npmjs.org/@metaharness/darwin/-/darwin-1.2.3.tgz",
+        integrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
+      },
+    },
+  };
+  assert.equal(
+    validateDarwinLockPolicy(fixtureManifest, fixtureLock).version,
+    "1.2.3",
+  );
+  assert.throws(() =>
+    validateDarwinLockPolicy(
+      fixtureManifest,
+      {
+        ...fixtureLock,
+        packages: {
+          ...fixtureLock.packages,
+          "node_modules/@metaharness/darwin": {
+            version: "1.2.3",
+            resolved:
+              "https://registry.npmjs.org/@metaharness/darwin/-/darwin-1.2.3.tgz",
+            integrity: "sha512-not-canonical",
+          },
+        },
+      },
+    ),
+  );
+
+  const policyRoot = temporaryDirectory();
+  try {
+    const adapter = join(policyRoot, "adapter");
+    mkdirSync(adapter);
+    writeFileSync(
+      join(adapter, "package.json"),
+      `${JSON.stringify(fixtureManifest)}\n`,
+    );
+    writeFileSync(
+      join(adapter, "package-lock.json"),
+      `${JSON.stringify(fixtureLock)}\n`,
+    );
+    writeFileSync(join(adapter, ".npmrc"), "ignore-scripts=true\n");
+    assert.match(
+      darwinLockResolution(policyRoot, adapter).npmrcSha256,
+      /^[0-9a-f]{64}$/,
+    );
+    writeFileSync(join(adapter, ".npmrc"), "ignore-scripts=false\n");
+    assert.throws(
+      () => darwinLockResolution(policyRoot, adapter),
+      /disable lifecycle scripts/,
+    );
+    writeFileSync(
+      join(adapter, ".npmrc"),
+      "ignore-scripts=true\nregistry=https://attacker.invalid\n",
+    );
+    assert.throws(
+      () => darwinLockResolution(policyRoot, adapter),
+      /disable lifecycle scripts/,
+    );
+  } finally {
+    rmSync(policyRoot, { recursive: true, force: true });
+  }
+
   const installation = darwinInstallationSnapshot(repoRoot, toolDir);
   const manifest = JSON.parse(
     readFileSync(
@@ -218,7 +293,11 @@ test("installed Darwin provenance is derived from the exact local package", () =
     ),
   );
   assert.equal(installation.name, "@metaharness/darwin");
+  assert.equal(installation.policy, "latest");
   assert.equal(installation.version, manifest.version);
+  assert.match(installation.integrity, /^sha512-/);
+  assert.match(installation.lockfileSha256, /^[0-9a-f]{64}$/);
+  assert.match(installation.npmrcSha256, /^[0-9a-f]{64}$/);
   assert.match(installation.contentHash, /^[0-9a-f]{64}$/);
   assert.match(installation.entrySha256, /^[0-9a-f]{64}$/);
   assert.ok(installation.fileCount > 0);

@@ -29,9 +29,14 @@ export const commands = {
     ],
     {
       timeoutMs: 60_000,
-      expectedNodeTests: 16,
+      expectedNodeTests: 18,
       expectedNodeSuites: 0,
-      evidencePaths: ["tools/agentic-qe", "tools/owl2-tests"],
+      evidencePaths: [
+        "tools/agentic-qe",
+        "tools/child-environment.mjs",
+        "tools/dependency-policy.mjs",
+        "tools/owl2-tests",
+      ],
     },
   ),
   oxrdf12: cargo(

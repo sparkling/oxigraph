@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "observedAt": "2026-07-27",
-  "reconciledAt": "2026-08-24",
-  "reconciledAgainstBaseCommit": "2b9c89175088cc2a0aa459d5d6289a350ff39d8d",
+  "reconciledAt": "2026-08-25",
+  "reconciledAgainstBaseCommit": "e1097e482476030f012da538151fd967614fb619",
   "currentHeadFreshness": {
     "status": "not-qualified",
     "policy": "An evidence entry remains authoritative for its sealed subject, but is current-HEAD evidence only when its freshness status is current and its protected source/inventory binding verifies.",
@@ -61,8 +61,16 @@
     "jsonLdFraming": "unsupported-out-of-scope; no repository pin",
     "jena": "6.1.0",
     "souffle": "2.5",
-    "agenticQe": "3.13.2",
-    "darwin": "0.8.0"
+    "agenticQe": {
+      "policy": "latest",
+      "resolved": "3.13.12",
+      "integrity": "sha512-1bfL3zJJiwZNvcQ2yV7/6Z98U3LIKGS0eemYAxdVxwQ1DHgE9tuTt6pnluivXs3OSiKbd/v2X1iPP7FU0gFtfw=="
+    },
+    "darwin": {
+      "policy": "latest",
+      "resolved": "0.9.3",
+      "integrity": "sha512-V+AhQvj9ijR8OK9TvogSngtz47q8pHPjMm1mWMoDUk1JaRKz88oJu/sPUQ5BApCIgeSWEKo/bzrFSV4Krb/3Fg=="
+    }
   },
   "informationalEditorHeads": {
     "rdfConcepts": "74f17a64cfd2c50d55f78750a3c26ea74837bc3b",
@@ -545,9 +553,11 @@
   "qualification": [
     {
       "id": "agentic-qe",
-      "version": "3.13.2",
-      "role": "Pinned advisory generator and presence gate behind an Oxigraph-owned shell-free coordinator and evidence recorder",
-      "adapterAdversarialTests": {"passed": 16, "failed": 0},
+      "versionPolicy": "latest",
+      "resolvedVersion": "3.13.12",
+      "lockIntegrity": "sha512-1bfL3zJJiwZNvcQ2yV7/6Z98U3LIKGS0eemYAxdVxwQ1DHgE9tuTt6pnluivXs3OSiKbd/v2X1iPP7FU0gFtfw==",
+      "role": "Latest-compatible advisory generator and integrity-bound presence gate behind an Oxigraph-owned shell-free coordinator and evidence recorder",
+      "adapterAdversarialTests": {"passed": 18, "failed": 0},
       "semanticGateCommandInventory": 41,
       "parityCommandInventory": 47,
       "currentEvidence": "Adapter mechanics remain bounded evidence, but aggregate current-HEAD qualification is open: declared CLI inventories are 133 default and 116 no-default while the reconciled exact inventories are 144 and 129.",
@@ -558,7 +568,9 @@
     },
     {
       "id": "metaharness-darwin",
-      "version": "0.8.0",
+      "versionPolicy": "latest",
+      "resolvedVersion": "0.9.3",
+      "lockIntegrity": "sha512-V+AhQvj9ijR8OK9TvogSngtz47q8pHPjMm1mWMoDUk1JaRKz88oJu/sPUQ5BApCIgeSWEKo/bzrFSV4Krb/3Fg==",
       "role": "Policy-only harness qualification",
       "currentEvidence": "Only a current full-mode qualification plus independent verification may establish the harness result; synthetic evidence is never sufficient",
       "authority": "Harness mechanics and replay only",

@@ -81,6 +81,17 @@ The extension includes:
   6.1.0 differential, mutation testing, Agentic-QE command coordination, and
   MetaHarness/Darwin policy-only verification.
 
+Agentic-QE and Darwin request their upstream `latest` dist-tags. Committed npm
+lockfiles carry exact versions and registry SRI; installs disable lifecycle
+scripts. Agentic-QE receipts bind installed package metadata and executable
+hashes, while Darwin qualification additionally hashes its installed package
+tree before and after each reviewed run.
+
+`tools/metaharness` remains the semantic qualification adapter. ADR-0017
+accepts a separate future `tools/engineering-harness` for G1-G3 implementation
+work, but that runtime is not yet implemented: the first prerequisite is a
+genuinely red G1.1 product evaluator landed separately from its implementation.
+
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
 ```toml

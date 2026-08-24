@@ -1,16 +1,18 @@
 # Agentic-QE support
 
-This directory pins Agentic-QE 3.13.2 and puts an Oxigraph-owned, fail-closed
-adapter in front of it. Cargo, immutable W3C inputs, and the Jena/Soufflé
-differentials remain the semantic authorities. The Oxigraph adapter coordinates
-and records those commands. Agentic-QE is version- and presence-gated and may
-propose advisory test candidates.
+This directory requests Agentic-QE's `latest` dist-tag and puts an
+Oxigraph-owned, fail-closed adapter in front of it. The committed lockfile
+currently resolves 3.13.12 with exact registry integrity. Cargo, immutable W3C
+inputs, and the Jena/Soufflé differentials remain the semantic authorities. The
+Oxigraph adapter coordinates and records those commands. Agentic-QE is
+lock-resolved, version- and presence-gated and may propose advisory test
+candidates.
 
 ## Install and run
 
 ```bash
 cd tools/agentic-qe
-npm ci
+npm ci --ignore-scripts
 npm run test:adapter
 npm run test:existing
 npm run test:supporting-suites
@@ -21,6 +23,18 @@ npm run test:owl2-rl
 npm run test:shacl-1.2
 npm run test:parity
 ```
+
+`npm ci --ignore-scripts` reproduces the committed exact resolution without
+granting dependency lifecycle hooks host authority. This is required because
+the current Agentic-QE package declares an install script; the package-local
+`.npmrc` enforces the same rule. A reviewed dependency refresh uses
+`npm update agentic-qe --package-lock-only --ignore-scripts` and must rerun the
+adapter and qualification gates before the new lockfile is accepted.
+
+Adapter child processes inherit only a reviewed safe-name allowlist. Provider,
+API, proxy, credential, and runtime-injection variables are removed; advisory
+candidate mode therefore has no ambient model-provider authority. Receipts
+also bind the shared dependency and child-environment policy modules.
 
 The focused `test:datalog-jena`, `test:rdfs-jena`, `test:datalog-souffle`,
 `test:owl2-rl-inventory`, and `test:owl2-rl-w3c` scripts are also available.
@@ -110,7 +124,7 @@ from the trusted profile definition. Extra spoof-like lines or a fabricated
 receipt policy fail. On POSIX, timeouts
 terminate the detached process group with TERM and then KILL.
 The adapter's own Node suite is forced through the TAP 13 reporter and must end
-with one exact, contiguous, conserved 16-test/16-pass terminal summary.
+with one exact, contiguous, conserved 18-test/18-pass terminal summary.
 
 ## Candidate test generation
 
@@ -126,8 +140,9 @@ files. Audit inputs must be regular candidate JSON files, and audit outputs
 cannot overwrite inputs. Generated code must compile and pass native,
 conformance, differential, and mutation gates before adoption.
 
-Agentic-QE 3.13.2 does not natively execute Cargo in its shipped framework
-selector, and its MCP `qe/tests/execute` implementation is simulated. This
-adapter therefore never uses either as a correctness oracle. Its JavaScript
-quality gate is also unsuitable for the Rust crate; real `cargo-mutants`
-evidence is produced by `tools/mutation/oxdatalog.mjs`.
+The original Agentic-QE 3.13.2 review found that its shipped framework selector
+did not natively execute Cargo and its MCP test-execution path was simulated.
+Newer releases do not automatically acquire semantic authority: this adapter
+never uses either path as a correctness oracle. Its JavaScript quality gate is
+also not the Rust crate's authority; real `cargo-mutants` evidence is produced
+by `tools/mutation/oxdatalog.mjs`.

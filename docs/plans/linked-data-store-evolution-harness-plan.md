@@ -2,12 +2,14 @@
 
 - Status: active execution plan; unattended Dream Machine activation blocked
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Observed fork source before this documentation slice:
   `8c8e984cc30573d3d6cbb40f86b08c8456a25f08`
+- Semantic Builder handover reviewed against:
+  `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
   [persistence writes and linked-data-store parity](persistence-write-and-linked-data-parity-plan.md)
 - Harness decision:
@@ -21,10 +23,14 @@
 
 Use a thin Ruflo control plane to execute the existing product plan. Reuse the
 repository's Agentic-QE, Jena, W3C, mutation, and MetaHarness runners as the
-only evidence authorities. Darwin may improve harness policy only. Dream
-Machine 0.1.1 is installed and locally exercised, but it is not configured,
-scheduled, or authorized to publish because its current config cannot enforce
-this repository's native-provider-only and local-only boundaries.
+only evidence authorities. Keep two MetaHarness paths distinct: the existing
+`tools/metaharness` package remains a receipt-sensitive semantic qualifier,
+while a future private `tools/engineering-harness` package may route, build,
+repair, and review application candidates after a direct red G1 evaluator
+lands. Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
+installed and locally exercised, but it is not configured, scheduled, or
+authorized to publish because its current config cannot enforce this
+repository's native-provider-only and local-only boundaries.
 
 The first implementation objective is not another feature. It is to establish
 the truth of concurrent-write semantics. The RocksDB readable transaction is a
@@ -55,6 +61,7 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Pinned source checkouts | RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 submodules are uninitialized in this clone | Initialize their exact registered revisions before source/full evidence verification; never substitute the parent checkout HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
 | MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by the evidence drift above |
+| Engineering MetaHarness | ADR-0017 architecture accepted; no package, native worker adapters, Router evidence, or G1 application corpus exists | Land a direct red G1 evaluator first, then implement separately under `tools/engineering-harness`; package presence is not adoption |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -86,7 +93,8 @@ harness must not turn comparison breadth into an implementation mandate.
 | Ruflo goals and memory | GOAP state, exact research findings, replayable decisions | Repository facts stay repository-local; active-WAL retrieval failures do not block delivery |
 | Brain | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims | Local source/tests remain authoritative for Oxigraph |
 | MetaHarness genome/score/OIA | Readiness and risk diagnostics | Generic identity and scores are advisory |
-| Repository MetaHarness adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof |
+| Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof; do not make it a worker host |
+| Future `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Not implemented; no semantic or promotion authority |
 | Darwin | Deterministic, bounded policy mutation after a product slice exists | `--confirm` requires operator review; never mutate product or oracle inputs |
 | Dream Machine | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled |
 
@@ -143,6 +151,9 @@ development. The product dependency spine is:
   path independent of that index.
 - **HFR-7:** Each candidate uses immutable evaluators, parent-first baseline,
   one frozen hypothesis, one conceptual change, and exactly one verdict.
+- **HFR-8:** Candidate verification restores the pinned baseline, overlays the
+  evaluator commit, applies the admitted patch, rebuilds every declared target,
+  and only then runs the focused evaluator set against the fresh artifacts.
 
 ### Non-functional requirements
 
@@ -200,14 +211,14 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 
 | Plan work | Owning decision | Decision status |
 |---|---|---|
-| G0.1 source registration | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Proposed programme control |
+| G0.1 source registration | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted programme control |
 | G0.2-G0.3 Jena evidence | [ADR-0012](../adr/0012-immutable-broad-jena-harness.md) | Accepted |
 | G0.4-G0.5 Agentic-QE evidence | [ADR-0005](../adr/0005-agentic-qe-integration.md) | Accepted |
 | G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
-| G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted policy plus Proposed programme control |
+| G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted policies |
 | G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | G1.5-G1.6 egress/cancellation/claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
-| G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Accepted control; product decisions Proposed |
 | G2.1-G2.3 metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | G2.4 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | G2.5-G2.7 readiness/recovery | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -247,6 +258,63 @@ automatically by Dream Machine or Darwin.
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
 production bottleneck.
+
+### G1 application-task corpus and implementation order
+
+The engineering corpus begins with callable product behavior, not G0 evidence
+repairs. These task-suite paths and commands are contracts for later
+evaluator-only commits; a path is not registered with the engineering harness
+until its genuinely red baseline and subsequent evaluator commit both exist.
+
+| Task | Evaluator path | Public command | Independent command | Impacted-regression command |
+|---|---|---|---|---|
+| G1.1 | `lib/oxigraph/tests/transaction_state_model.rs` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` | `cargo test --locked -p oxigraph --test update_atomicity` |
+| G1.2 | `lib/oxigraph/tests/transaction_concurrency.rs` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test update_atomicity` |
+| G1.3 | `lib/oxigraph/tests/transaction_capabilities.rs` | `cargo test --locked -p oxigraph --test transaction_capabilities` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` |
+| G1.4 | `lib/oxigraph/tests/rocksdb_writer_serialization.rs` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
+| G1.5 | `lib/oxigraph/tests/sparql_egress_policy.rs` | `cargo test --locked -p oxigraph --test sparql_egress_policy` | `cargo test --locked -p oxigraph --test sparql_update_load_http` | `cargo test --locked -p oxigraph --test sparql_service_http` |
+| G1.6 | `cli/src/service_description/tests.rs` | `cargo test --locked -p oxigraph-cli service_description::tests` | `cargo test --locked -p oxigraph --test sparql_version` | `cargo test --locked -p oxigraph-cli --no-default-features service_description::tests` |
+| G1.7 | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest | `cargo bench --locked -p oxigraph --bench transactional_write` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
+
+Future engineering task contracts live below
+`tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
+baseline commit, evaluator commit, mutable/blocked paths, features, targets,
+three command roles, time/output/resource ceilings, and success criteria.
+None of these contracts or proposed evaluator files is implemented by this
+plan update.
+
+Implementation order is fixed: accept the version/authority policy; land the
+G1.1 red baseline and evaluator-only commit; create the separate engineering
+package from the `latest` dist-tags for `metaharness`,
+`@metaharness/harness`, `@metaharness/router`, `@metaharness/darwin`, and
+`@metaharness/avo`, with an exact integrity-bound lock and lifecycle scripts
+disabled; add native Codex and Claude adapters plus doctor, sandbox,
+cancellation, and path tests; then add Router, persistent workers, critique,
+verifier-directed repair, cross-vendor review, receipts, and one end-to-end
+G1.1 run. Add `@ruvector/ruvllm` or `agenticow` only when a tested local
+embedding or bounded copy-on-write path actually consumes it. Add later G1
+tasks only as their direct evaluators land. GEPA waits for five discriminating
+training tasks plus five sealed holdouts; AVO is limited to an eligible
+hard-tail task.
+
+Factory intake first runs disposable `claude-code` and `codex` diagnostics and
+captures each generated manifest, CLI help, and test result. Do not register a
+generated MCP declaration whose command is absent from that generated CLI or
+lacks a direct doctor/invocation test. Router cold start uses five valid paired
+Codex/Claude outcomes per role and task class against identical frozen
+contracts; preparation failures do not train it. Thereafter, recalibrate at
+least every fifth admitted task and whenever model, harness, or evaluator
+versions change.
+
+The engineering runtime is complete only when a real `HarnessKernel` and
+`AlgorithmRouter`, persistent native worker pools, authority/path/tool/network
+gates, bounded critique, cross-vendor review, verifier-directed repair,
+per-host retry/circuit breakers, cancellation and wall-time enforcement,
+post-verifier Router memory, and exact digest-bound candidate receipts all have
+direct tests. Completion also requires one end-to-end G1 execution with both
+native vendors represented and no replacement or weakening of the existing
+semantic receipts. Installed packages, factory output, mocks, scores, and
+synthetic Darwin runs are prerequisites or diagnostics, not completion.
 
 ### G2 — govern durable commits
 
@@ -314,6 +382,27 @@ heuristic query fallback remain their differential oracles.
 
 The harness delegates rather than duplicates.
 
+### Patched-candidate verification transaction
+
+Every engineering candidate and repair uses this exact order:
+
+1. restore an isolated verifier worktree to the task's pinned red baseline;
+2. overlay the frozen evaluator-only commit;
+3. apply the admitted candidate patch;
+4. rebuild all declared crates, feature combinations, native helpers,
+   generated bindings, and web artifacts inside that patched workspace;
+5. classify build failure as an authoritative repair issue;
+6. run the task's public, independent, and impacted-regression commands against
+   those fresh artifacts; and
+7. bind commands, exits, tool versions, and relevant artifact digests into the
+   candidate receipt.
+
+The engineering harness must have a direct control-plane test that fails if a
+build occurs before patch application or an evaluator reads an artifact built
+from a different tree. Ordinary cycles stop after affected fast product gates;
+the complete Agentic-QE, Jena, mutation, and semantic-qualification sequence
+runs only for a promotion candidate.
+
 ### Fast structural and persistence gate
 
 ```bash
@@ -340,7 +429,7 @@ the working directories and warning policy in `.github/workflows/tests.yml`.
 
 1. Initialize the four registered-but-missing test-suite submodules at their
    exact recorded revisions before treating source verification as evidence.
-2. Run `(cd tools/agentic-qe && npm ci && npm run test:adapter)`, reconcile G0.4,
+2. Run `(cd tools/agentic-qe && npm ci --ignore-scripts && npm run test:adapter)`, reconcile G0.4,
    then add and run the exact future
    `(cd tools/agentic-qe && npm run test:persistence-write)` profile. The
    existing aggregate remains blocked until its exact inventory is reviewed.
@@ -356,7 +445,7 @@ the working directories and warning policy in `.github/workflows/tests.yml`.
    and research document. MetaHarness hashes these inputs, so editing claims
    after qualification invalidates the receipt.
 6. Only after every lower receipt is current, run
-   `(cd tools/metaharness && npm ci && npm test && npm run qualify)`; `qualify`
+   `(cd tools/metaharness && npm ci --ignore-scripts && npm test && npm run qualify)`; `qualify`
    includes the MetaHarness independent verifier.
 7. Then run `(cd tools/evidence && npm test && npm run verify:full)`.
 8. Dream Machine may inspect a secondary explicit ledger only after absence and

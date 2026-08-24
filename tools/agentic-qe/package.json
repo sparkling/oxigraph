@@ -2,7 +2,7 @@
   "name": "oxigraph-agentic-qe",
   "private": true,
   "version": "0.1.0",
-  "description": "Pinned Agentic-QE adapter for Oxigraph's native Cargo and W3C test oracles",
+  "description": "Latest-compatible Agentic-QE adapter for Oxigraph's native Cargo and W3C test oracles",
   "type": "module",
   "scripts": {
     "aqe": "node ./oxigraph-aqe.mjs",
@@ -26,7 +26,7 @@
     "test:parity": "node ./oxigraph-aqe.mjs run parity"
   },
   "dependencies": {
-    "agentic-qe": "3.13.2"
+    "agentic-qe": "latest"
   },
   "engines": {
     "node": ">=20"

@@ -24,7 +24,7 @@ mapping.
 | [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md) | Accepted | Preserve empty named-graph presence across models, I/O, stores, protocols, reasoning, and bindings |
 | [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md) | Accepted | Aggregate every worker failure, return nonzero, and make the per-file versus cross-file atomicity boundary explicit |
 | [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md) | Implemented | Let replacement persistence planes execute request-atomic SPARQL Update without private storage types |
-| [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md) | Proposed | Coordinate Ruflo, MetaHarness, Darwin, Agentic-QE, and Dream Machine without weakening native evidence or human promotion |
+| [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted | Keep engineering work separate from semantic qualification, rebuild patched candidates before focused evaluation, and retain human-only promotion |
 | [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md) | Proposed | Negotiate dimensioned guarantees and prove a serialized-writer RocksDB baseline before stronger isolation claims |
 | [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md) | Proposed | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from runtime receipts |
 | [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | Commit namespaces, semantic effects, durable outcome receipts, and an ordered outbox atomically |
@@ -51,7 +51,7 @@ Source authority and revision metadata live in
 shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
-2026-08-24. Individual sealed results retain their original evidence dates;
+2026-08-25. Individual sealed results retain their original evidence dates;
 ADR-0012 records that its July Jena receipt is stale against current HEAD, and
 the claim ledger also marks the Agentic inventory and OxDatalog mutation
 binding as open for current qualification.

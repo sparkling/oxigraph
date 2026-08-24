@@ -11,6 +11,7 @@ import {
   commands as agenticCommands,
   profiles as agenticProfiles,
 } from "../agentic-qe/profile-definitions.mjs";
+import { agenticQeDependencyResolution } from "../agentic-qe/version-policy.mjs";
 import { currentMutationQualification } from "./mutation-binding.mjs";
 import {
   existsSync,
@@ -167,6 +168,7 @@ async function runSynthetic(name) {
 }
 
 async function runRealGate() {
+  const agenticQeDependency = agenticQeDependencyResolution();
   const workRoot = cleanOutput("semantic-gate");
   const profile = {
     root: repoRoot,
@@ -202,7 +204,8 @@ async function runRealGate() {
     const selected = agenticProfiles[semanticProfile];
     validateAgenticReceipt(value, {
       expectedProfile: semanticProfile,
-      expectedAgenticQeVersion: "3.13.2",
+      expectedAgenticQeVersion: agenticQeDependency.version,
+      expectedAgenticQeDependency: agenticQeDependency,
       expectedCommandIds: selected,
       expectedCommands: agenticCommands,
       minimumGeneratedAtMs: gateStartedAtMs,
