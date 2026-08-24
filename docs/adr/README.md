@@ -23,6 +23,7 @@ mapping.
 | [ADR-0013 — Mutation competence and provenance policy](0013-mutation-competence-and-provenance.md) | Accepted | Require source-bound native outcomes with no viable survivors or equivalent-mutant waivers |
 | [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md) | Accepted | Preserve empty named-graph presence across models, I/O, stores, protocols, reasoning, and bindings |
 | [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md) | Accepted | Aggregate every worker failure, return nonzero, and make the per-file versus cross-file atomicity boundary explicit |
+| [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md) | Implemented | Let replacement persistence planes execute request-atomic SPARQL Update without private storage types |
 
 The authoritative current claim state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json).

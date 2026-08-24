@@ -2,15 +2,18 @@
 
 - Status: Accepted
 - Date: 2026-07-27
-- Updated: 2026-08-21
+- Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
+- Update note: the public transactional write seam now requires independent
+  persistence planes to preserve empty named-graph topology and graph lifecycle.
 - Related:
   [ADR-0006 — W3C-first RDF, SPARQL, and SHACL 1.2 parity](0006-w3c-first-12-parity.md),
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0011 — SPARQL VERSION and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
-  [ADR-0012 — Immutable broad Jena differential harness](0012-immutable-broad-jena-harness.md)
+  [ADR-0012 — Immutable broad Jena differential harness](0012-immutable-broad-jena-harness.md),
+  [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 
 ## Context
 
@@ -108,6 +111,9 @@ named-graph registry separately from encoded quads.
 - Bulk loads carry parsed graph names through their loader before commit.
 - Store and transaction snapshots copy named-graph membership as well as
   quads.
+- `TransactionalDataset` and `WritableDataset` expose graph membership and
+  lifecycle independently of quads, so a replacement backend cannot implement
+  generic SPARQL Update while silently collapsing empty graphs.
 - `clear_graph` retains graph existence; `remove_named_graph` removes it.
 - Persistent storage retains empty graph membership across reopen.
 - Store dumps emit empty graphs in representable dataset syntaxes and fail
@@ -220,7 +226,7 @@ preservation is its chosen W3C-grounded contract.
 |---|---|
 | Model | [Dataset implementation](../../lib/oxrdf/src/dataset.rs) and [topology tests](../../lib/oxrdf/tests/dataset_topology.rs) |
 | TriG and JSON-LD | [TriG implementation](../../lib/oxttl/src/trig.rs), [JSON-LD parser tests](../../lib/oxjsonld/tests), and [format-neutral topology tests](../../lib/oxrdfio/tests) |
-| Store and persistence | [Store implementation](../../lib/oxigraph/src/store.rs), [memory backend](../../lib/oxigraph/src/storage/memory.rs), [RocksDB backend](../../lib/oxigraph/src/storage/rocksdb.rs), and [store topology tests](../../lib/oxigraph/tests/dataset_topology.rs) |
+| Store and persistence | [Store implementation](../../lib/oxigraph/src/store.rs), [transactional write traits](../../lib/oxigraph/src/store/transactional.rs), [memory backend](../../lib/oxigraph/src/storage/memory.rs), [RocksDB backend](../../lib/oxigraph/src/storage/rocksdb.rs), [store topology tests](../../lib/oxigraph/tests/dataset_topology.rs), and [replacement-backend transaction tests](../../lib/oxigraph/tests/transactional_dataset.rs) |
 | Reasoning | [Reasoning adapter](../../lib/oxigraph/src/reasoning.rs) and [reasoning tests](../../lib/oxigraph/tests/reasoning.rs) |
 | SPARQL `LOAD` | [Update implementation](../../lib/oxigraph/src/sparql/update.rs) and [`LOAD` HTTP tests](../../lib/oxigraph/tests/sparql_update_load_http.rs) |
 | Graph Store | [HTTP handler](../../cli/src/graph_store.rs), [representation layer](../../cli/src/graph_store/representation.rs), [general HTTP tests](../../cli/src/graph_store_http_tests.rs), and [disk-backed read-only regression](../../cli/src/graph_store_read_only_tests.rs) |

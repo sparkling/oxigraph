@@ -19,9 +19,10 @@ the foundation described in the next section.
 **This fork, `sparkling/oxigraph`,** retains that upstream foundation and adds
 a separately bounded semantic-parity extension: RDF 1.2 and SPARQL 1.2
 profiles, RDF-native Datalog, RDFS and OWL 2 RL/RDF reasoning, SHACL processor
-profiles, cross-interface dataset topology, and source-bound qualification.
-The extension is deliberately not presented as a replacement for every Apache
-Jena capability or as blanket W3C-family conformance.
+profiles, cross-interface dataset topology, backend-neutral transactional RDF
+writes for replacement persistence planes, and source-bound qualification. The
+extension is deliberately not presented as a replacement for every Apache Jena
+capability or as blanket W3C-family conformance.
 
 Published extension documentation: <https://sparkling.github.io/oxigraph/>.
 
@@ -58,9 +59,14 @@ The extension includes:
 - RDF 1.2 term/version handling and explicit empty named-graph topology across
   model, I/O, stores, query/update, Graph Store, CLI, Python, and JavaScript
   surfaces.
+- Backend-neutral `TransactionalDataset` and `WritableDataset` traits with
+  read-your-writes, request-atomic generic SPARQL Update, explicit
+  `CREATE`/`CLEAR`/`DROP` topology, rollback, and custom backend errors. The
+  built-in `Store` implements the contract; production replacement adapters
+  remain gated by the shared conformance and isolation work in the linked plan.
 - SPARQL 1.2 syntax/version handling, result-media negotiation, active-dataset
-  semantics, atomic update behavior, service-description disclosure, and
-  protocol/Graph Store validation.
+  semantics, atomic update behavior, conservative service-description
+  disclosure, and protocol/Graph Store validation.
 - `oxdatalog`, an RDF-native bounded Datalog engine with D0 positive recursion,
   D1 stratified negation, D2 run-once generated terms, limits, cancellation,
   deterministic provenance, and queryable inferred views.
@@ -102,6 +108,8 @@ entry point; the machine-readable ledgers are the source of truth for claims.
 - [Normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 - [Standards registry and pinned source revisions](https://sparkling.github.io/oxigraph/research/standards-registry.json)
 - [All semantic-parity architecture decision records](https://sparkling.github.io/oxigraph/adr/README.html)
+- [Backend-neutral transactional write decision](./docs/adr/0016-backend-neutral-transactional-writes.md)
+- [Persistence and linked-data-store parity plan](./docs/plans/persistence-write-and-linked-data-parity-plan.md)
 
 The ADRs explain the principal boundaries:
 
@@ -122,6 +130,10 @@ The ADRs explain the principal boundaries:
 - [Dataset graph topology](https://sparkling.github.io/oxigraph/adr/0014-rdf-dataset-graph-topology.html) and
   [parallel bulk-load failure semantics](https://sparkling.github.io/oxigraph/adr/0015-parallel-bulk-load-failure-semantics.html)
   document the cross-interface storage and operational guarantees.
+- [Backend-neutral transactional writes](./docs/adr/0016-backend-neutral-transactional-writes.md)
+  define the public persistence-plane seam and the exact atomicity, rollback,
+  read-your-writes, and graph-topology guarantees required by generic SPARQL
+  Update.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

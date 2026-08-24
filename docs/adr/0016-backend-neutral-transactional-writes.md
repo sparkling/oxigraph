@@ -1,9 +1,12 @@
 # ADR-0016: Backend-neutral transactional RDF writes
 
-- Status: Proposed
+- Status: Implemented
 - Date: 2026-08-24
+- Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented and locally verified in `1da47285`
+- Update note: the public traits, built-in adapters, generic SPARQL Update
+  binding, rollback/error behavior, and topology regression tests are merged.
 - Related:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
@@ -138,11 +141,13 @@ The local verification boundary is:
 
 ## Acceptance boundary
 
-The implementation is usable now, but this ADR remains **Proposed** until a
-production replacement persistence adapter passes the shared conformance suite
-and the isolation/conflict contract in the accompanying plan is resolved. The
-review was single-host: no repository evidence was sent to an external review
-provider without explicit authorization.
+This ADR is **Implemented** for the public seam and the built-in/fake-backend
+evidence named above. Production adoption of a replacement persistence adapter
+remains gated by the shared conformance suite and the isolation/conflict
+contract in the accompanying plan; those are follow-on capability and release
+gates, not unimplemented parts of this interface decision. The review was
+single-host: no repository evidence was sent to an external review provider
+without explicit authorization.
 
 Acceptance does not require full-text search, GeoSPARQL indexing, RDF Patch,
 multi-repository administration, or RDF4J/Jena API compatibility. Those are

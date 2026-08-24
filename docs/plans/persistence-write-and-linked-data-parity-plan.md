@@ -7,6 +7,7 @@
 - Upstream merge: `a2415a4e`
 - Transactional write implementation: `1da47285`
 - Deterministic upstream test correction: `f9033c2b`
+- Conservative service-description reconciliation: `7dc190d3`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 
 ## Outcome
@@ -23,11 +24,13 @@ now implemented by `TransactionalDataset` and `WritableDataset`, with generic
 SPARQL Update binding through `PreparedSparqlUpdate::on_dataset`.
 
 The remaining work is hardening and linked-data-store breadth. The highest-risk
-gaps are transaction capability/error semantics, complete cancellation and
-outbound-request policy, and a service-description claim that currently
-contradicts ADR-0011. Namespace metadata, durable change delivery,
-transaction-time SHACL validation, operational observability, full-text and
-spatial indexes, and federation planning follow in dependency order.
+gaps are transaction capability/error semantics plus complete cancellation and
+outbound-request policy. The service-description drift found during this audit
+is closed in `7dc190d3`: even an RDF 1.2 build now advertises only receipted
+SPARQL 1.0/1.1 languages and version 1.1. Namespace metadata, durable change
+delivery, transaction-time SHACL validation, operational observability,
+full-text and spatial indexes, and federation planning follow in dependency
+order.
 
 ## Evidence policy
 
@@ -83,6 +86,8 @@ Evidence grade A applies to this section.
 - Backend-neutral transactional writes with `TransactionalDataset` and
   `WritableDataset`.
 - Generic SPARQL Update over a replacement persistence plane.
+- Conservative service descriptions whose SPARQL claims do not expand from an
+  RDF 1.2 compile feature alone.
 - RDF 1.1/1.2 modes, broad RDF I/O, JSON-LD, SPARQL result formats, and explicit
   version/media-type negotiation.
 - Basic federated `SERVICE`, cancellation for query evaluation, and HTTP
@@ -128,7 +133,7 @@ Evidence grade A applies to this section.
 | G08 | SHACL on write | Snapshot validation API; not a commit gate | SHACL Core/SPARQL and Fuseki validation endpoint | ShaclSail validates during commit | P1 pre-commit participant over staged view |
 | G09 | Outbound `SERVICE`/`LOAD` policy | Default HTTP SERVICE can be disabled programmatically; `LOAD` client is hard-wired; no shared allowlist/CIDR/size policy | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | P0 security boundary |
 | G10 | Update-wide cancellation | Query algebra observes cancellation; data mutation loops and document loading are not uniformly interruptible | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | P0 cancellation with rollback proof |
-| G11 | Truthful service description | Current RDF 1.2 feature build advertises 1.2 from compile capability, contradicting ADR-0011 | Broad Service Description/Fuseki feature disclosure | Repository metadata and protocols | P0 claim audit; runtime receipts are authority |
+| G11 | Truthful service description | Conservative SPARQL 1.0/1.1 claims restored in `7dc190d3`; richer claims are not runtime-derived yet | Broad Service Description/Fuseki feature disclosure | Repository metadata and protocols | P0 capability-derived claims before any expansion |
 | G12 | Operational metrics/admin | Logs and CLI operations; no stable stats/Prometheus/admin task surface | Ping, stats, Prometheus, backup, compaction, tasks | Server/Workbench/Console and slow-query/circuit-breaker work | P1 metrics and recovery; multi-repo admin is a product choice |
 | G13 | Backup/restore verification | Backup and optimize exist; recovery is not continuously proven | Live consistent backup and compaction administration | Store-specific recovery tooling | P1 restore drills and receipts |
 | G14 | Full-text indexing | No index or SPARQL extension | Lucene text dataset and SPARQL property function | Lucene/Elasticsearch SAIL | P2 optional derived-index capability |
@@ -248,6 +253,7 @@ independently releasable programme.
 | D0.3 Bind generic SPARQL Update | D0.2 | M | Whole request commits atomically or rolls back; custom errors survive |
 | D0.4 Preserve built-in performance path | D0.3 | S | Concrete `Store` write-only path remains; legacy update suite passes |
 | D0.5 Stabilize unordered upstream test | D0.1 | S | Query states `ORDER BY`; CLI is 144/144 |
+| D0.6 Reconcile service-description claims | D0.1 | S | Default and RDF 1.2 builds advertise only receipted SPARQL 1.0/1.1 capabilities |
 
 ### P0 — make the write contract trustworthy
 
@@ -324,11 +330,11 @@ Acceptance:
 
 Dependencies: P0.2.
 
-- Reconcile `cli/src/service_description.rs` with ADR-0011.
-- Generate claims from runtime-closed capability receipts rather than a Cargo
-  feature alone.
-- Until the required protocol receipts are closed, suppress SPARQL 1.2 family
-  claims while retaining accurate parser/evaluator APIs.
+- Build on the conservative ADR-0011 baseline restored in `7dc190d3`.
+- Generate any future expanded claims from runtime-closed capability receipts
+  rather than a Cargo feature alone.
+- Keep SPARQL 1.2 family claims suppressed until the required protocol
+  receipts close while retaining accurate parser/evaluator APIs.
 - Test query-only, update-only, read-only, federation-disabled, RDF 1.1, RDF
   1.2 Basic, and RDF 1.2 profiles.
 
