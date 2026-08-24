@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.2-rocksdb-serialized-writers",
+  "programme": "linked-data-store",
+  "decision": "ADR-0018",
+  "objective": "Serialize RocksDB-backed write transactions so overlapping writers cannot lose committed updates or commit write-skew histories, without changing public APIs or evaluator inputs.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "3edfb86a7f9d591f20ba14b2a2c9a7f2b41fade9",
+    "tree": "0d4d29166b8785a41c762625e5eb2cf79ce7e7f7"
+  },
+  "evaluator": {
+    "commit": "eaf7161c142fb8afecd37dd9dad02463c0efa107",
+    "parent": "3edfb86a7f9d591f20ba14b2a2c9a7f2b41fade9",
+    "tree": "1b61a2717657e001d81a61eb88f56b5b62e05d0e",
+    "path": "lib/oxigraph/tests/transaction_concurrency.rs",
+    "changeStatus": "A",
+    "blob": "be6de1f2fab2f5f779f297ed7b1de29c10a06c69",
+    "contentSha256": "29f21c6b2dcf7b6f143e0eee93dbd0e87eec15d7f85e49b2b757cca5c5caec3a",
+    "patchSha256": "d15a5e4e7dc4d60a620f046bf1f831014ad76e4a2037fed2e039a2a025bdf120"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    "mutableBaselineBlob": "ee9794ed73fb25b7bda0c41469557ab20d2af8df",
+    "mutableBaselineSha256": "116fdc9afa59c16d1c54e497b9110841b2346246d49f358f727b5f8cfde81e87",
+    "baselineManifest": {
+      "entries": 1303,
+      "fullSha256": "ab2f7e165ec9bba5b36d36e5b536ef8822cae7c8002ae2dd36a0ccf70c10ea47",
+      "protectedEntries": 1302,
+      "protectedSha256": "c5f7c32cf3a237b41ebb9499eeffbf4d0b87201b2e5dff3f468f85d1d81a566c"
+    },
+    "evaluatorManifest": {
+      "entries": 1304,
+      "fullSha256": "4b70b20014b630c0bbc5e09d8894fe72b47a25cbba0a57854cdfd763b9f5fd23",
+      "protectedEntries": 1303,
+      "protectedSha256": "cd2a60c9f87792191984185c969568be565f15a3b5e9425a3538f254de516405"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/sparql",
+      "lib/oxigraph/src/store",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "transaction_concurrency", "--test", "transaction_state_model", "--test", "update_atomicity"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_concurrency"],
+      "timeoutMs": 90000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_state_model"],
+      "timeoutMs": 420000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "update_atomicity"],
+      "timeoutMs": 120000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 65536,
+    "maxChangedFiles": 1,
+    "maxChangedLines": 512,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 4,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "commandRole": "public",
+    "exitCode": 101,
+    "passed": 0,
+    "failed": 2,
+    "requiredSubstrings": [
+      "lost-update history violated serial writer semantics; overlap_observed=true; expected counter=2",
+      "write-skew history removed every on-call doctor; overlap_observed=true"
+    ],
+    "forbiddenSubstrings": [
+      "did not emit",
+      "disconnected before staging",
+      "could not compile",
+      "no test target named",
+      "timed out"
+    ]
+  },
+  "success": {
+    "publicPassed": 2,
+    "independentPassed": 3,
+    "regressionPassed": 2
+  }
+}
