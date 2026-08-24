@@ -11,7 +11,9 @@
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0014 — RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
-  [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md)
+  [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md),
+  [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
+  [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
 
 ## Context
 
@@ -99,8 +101,8 @@ maintenance guarantees it does not provide.
   accidental post-commit mutation unrepresentable.
 - The first version does not negotiate isolation levels, expose conflict
   detection, classify an indeterminate commit result, provide savepoints, or
-  attach a durable commit identifier. These are hardening work, not implicit
-  guarantees of this interface.
+  attach a durable commit identifier. ADR-0018 and ADR-0020 now own that
+  hardening work; none is an implicit guarantee of this interface.
 - Bulk ingestion, backup, compaction, namespace metadata, change feeds, and
   secondary indexes remain separate capabilities.
 
@@ -144,7 +146,7 @@ The local verification boundary is:
 This ADR is **Implemented** for the public seam and the built-in/fake-backend
 evidence named above. Production adoption of a replacement persistence adapter
 remains gated by the shared conformance suite and the isolation/conflict
-contract in the accompanying plan; those are follow-on capability and release
+contract in ADR-0018; those are follow-on capability and release
 gates, not unimplemented parts of this interface decision. The review was
 single-host: no repository evidence was sent to an external review provider
 without explicit authorization.

@@ -8,12 +8,23 @@
   checks, policy-only synthetic Darwin qualification, and a user-scoped Dream
   Machine installation are verified; unattended Dream Machine execution is
   deferred behind the activation gates in this ADR
+- Update note: outstanding G1-G3 architecture is split into ADR-0018 through
+  ADR-0025, and all stable G0.1-G3.5 plan items are materialized in the local
+  Ruflo task ledger without treating that runtime state as semantic evidence
 - Related:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
   [ADR-0012 — Immutable broad Jena differential harness](0012-immutable-broad-jena-harness.md),
   [ADR-0013 — Mutation competence and provenance](0013-mutation-competence-and-provenance.md),
-  [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
+  [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
+  [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
+  [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
+  [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
+  [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md),
+  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
+  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
+  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
+  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)
 
 ## Context
 
@@ -102,6 +113,31 @@ The execution rules are:
    in the active task.
 8. Model execution uses native provider clients and authentication only.
    OpenRouter is prohibited, including fallback or retry routing.
+
+## Programme decisions and task ownership
+
+The programme keeps three different records deliberately separate:
+
+| Record | Authority | Lifecycle |
+|---|---|---|
+| ADR | Architectural intent and accepted constraints | Proposed, Accepted, Implemented, Superseded |
+| Committed GOAP plan ID | Stable work identity, dependency, and exit gate | Updated with the repository |
+| Ruflo task row | Local execution status, priority, assignment, and analytics | Transient project runtime state |
+
+G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
+ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
+ADR-0021, and ADR-0022; and G3 by ADR-0023, ADR-0024, and ADR-0025. Those
+eight new ADRs are Proposed living plans, not implementation claims.
+
+The stable task identifiers are G0.1-G3.5 in the linked execution plan. On
+2026-08-24 all 26 were created as pending Ruflo tasks. The current native
+`task_create` surface stores its rows in the local file-backed
+`.claude-flow/tasks/store.json` ledger and has no dependency argument, so
+creation is serialized and every row carries its
+dependencies in the description and `depends:<plan-id>` tags, while the exact
+adjacency map is also stored in repository-local AgentDB memory. The committed
+GOAP tables remain the portable source of truth; clone-local Ruflo task IDs are
+not committed and never prove product behavior.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an

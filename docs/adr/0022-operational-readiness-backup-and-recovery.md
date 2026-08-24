@@ -1,0 +1,92 @@
+# ADR-0022: Operational readiness, backup, and recovery
+
+- Status: Proposed
+- Date: 2026-08-24
+- Updated: 2026-08-24
+- Deciders: Oxigraph parity programme
+- Implementation status: not implemented; planned by G2.5-G2.7
+- Depends on:
+  [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
+- Related:
+  [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
+  [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
+  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+
+## Context
+
+The store can create a backup, optimize RocksDB, and validate storage, but a
+successful method return is not a recovery contract. There is no completed
+backup receipt tying primary state to commit/outbox/index positions, no
+fresh-directory restore drill, and no stable readiness or bounded-label
+metrics surface.
+
+Operations must distinguish liveness from readiness and must not promote a
+store that is open while its durable feed, required derived state, or recovery
+evidence is outside policy. Development-mode validation remains proportional;
+production attestation, publication, deployment, and recovery objectives are
+required only when that operational boundary is explicitly requested.
+
+## Decision
+
+Deliver three separately testable operational slices:
+
+1. G2.5 exposes bounded-cardinality metrics, liveness, readiness, cancellation
+   health, outbox/index lag, and circuit-breaker state. Default labels exclude
+   query text, RDF payloads, credentials, IRIs, commit IDs, and user IDs.
+2. G2.6 starts with checkpoint-plus-manifest backup creation. A completed
+   receipt binds store UUID, schema version, source commit ID, RocksDB
+   sequence, outbox/index cursors, file inventory and checksums, start/end
+   observations, and a completion marker. Interrupted backups cannot acquire
+   that marker.
+3. G2.7 restores into a fresh directory, opens and validates it, and compares
+   topology, namespaces, primary commit, outbox position, derived-index
+   cursors, inventory, and checksums with the receipt. Drills record numeric
+   RPO and RTO after a baseline is frozen.
+   Before open, path containment, regular-file policy, manifest completeness,
+   sizes, and hashes are verified; symlinks, traversal, missing files, and
+   unexpected files fail closed.
+
+Readiness fails closed on storage corruption, incompatible schema, required
+cursor loss, expired recovery evidence, or a lag policy violation. An optional
+derived index may degrade according to its declared strict/eventual contract;
+primary correctness may not be inferred from index health.
+
+## Acceptance boundary
+
+This ADR may move to Implemented only when:
+
+- metric names, units, label bounds, and privacy tests are stable;
+- liveness and readiness failure fixtures cover storage, feed, index, and
+  cancellation states;
+- incomplete, missing, modified, or checksum-invalid backups fail closed;
+- backup and compaction interaction has no unrecorded consistency gap;
+- automated fresh-directory restores pass the storage validator and compare
+  every receipt-bound cursor and topology field;
+- a completed backup remains independently usable after removal of its source
+  store; and
+- RPO/RTO thresholds are baselined and frozen before a production promotion,
+  rather than invented by this ADR.
+
+## Consequences
+
+- Operators gain evidence that a backup is restorable, not merely copyable.
+- Readiness becomes a typed policy decision rather than process-up status.
+- Receipts and drills add storage, time, and retention costs.
+- Optional indexes can be rebuilt without making primary state unrecoverable.
+
+## Alternatives rejected
+
+- **Treat `Store::backup` success as recovery proof.** It does not exercise
+  reopen, validation, or cursor correspondence.
+- **Expose raw RocksDB statistics as the public contract.** Backend-specific
+  and unbounded metrics would leak implementation and operational detail.
+- **Set production RPO/RTO without a baseline.** Unmeasured thresholds are
+  documentation, not an executable guarantee.
+
+## Evidence and task ownership
+
+Current backup, optimize, and validate entry points are in
+[`store.rs`](../../lib/oxigraph/src/store.rs) and
+[`storage/rocksdb.rs`](../../lib/oxigraph/src/storage/rocksdb.rs). G2.5-G2.7
+own delivery in the
+[linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

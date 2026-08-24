@@ -2,17 +2,20 @@
 
 - Status: active execution plan; unattended Dream Machine activation blocked
 - Date: 2026-08-24
+- Updated: 2026-08-24
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Observed fork source before this documentation slice:
-  `2b9c89175088cc2a0aa459d5d6289a350ff39d8d`
+  `8c8e984cc30573d3d6cbb40f86b08c8456a25f08`
 - Product plan:
   [persistence writes and linked-data-store parity](persistence-write-and-linked-data-parity-plan.md)
 - Harness decision:
   [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md)
 - Write-interface decision:
   [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
+- Outstanding capability decisions:
+  [ADR-0018 through ADR-0025](../adr/README.md)
 
 ## Outcome
 
@@ -189,6 +192,28 @@ Automatic replay is forbidden for `LOAD`, `SERVICE`, custom functions, or any
 operation that has not proven idempotency.
 
 ## GOAP delivery graph
+
+### ADR ownership map
+
+ADRs record architecture; the stable G-identifiers record executable work.
+Proposed ADRs do not become implemented merely because their task rows exist.
+
+| Plan work | Owning decision | Decision status |
+|---|---|---|
+| G0.1 source registration | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Proposed programme control |
+| G0.2-G0.3 Jena evidence | [ADR-0012](../adr/0012-immutable-broad-jena-harness.md) | Accepted |
+| G0.4-G0.5 Agentic-QE evidence | [ADR-0005](../adr/0005-agentic-qe-integration.md) | Accepted |
+| G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
+| G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted policy plus Proposed programme control |
+| G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
+| G1.5-G1.6 egress/cancellation/claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| G2.1-G2.3 metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
+| G2.4 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
+| G2.5-G2.7 readiness/recovery | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
+| G3.1-G3.2 statistics/planning | [ADR-0023](../adr/0023-statistics-and-bounded-join-planning.md) | Proposed |
+| G3.3-G3.4 derived indexes | [ADR-0024](../adr/0024-rebuildable-derived-indexes.md) | Proposed |
+| G3.5 explicit federation | [ADR-0025](../adr/0025-explicit-service-federation.md) | Proposed |
 
 ### G0 — repair and freeze evidence
 
@@ -443,6 +468,26 @@ execution graph at
 `sparc-phases/oxigraph-linked-data-evolution-harness-2026-08-24`. No plan gate
 depends on a lossy memory fallback.
 
+The ADR breakout used Ruflo swarm `swarm-1787603675053-t6b9y7` with three
+read-only architecture lanes and one root integration writer. All 26 stable
+G0.1-G3.5 items were materialized as pending Ruflo task rows on 2026-08-24;
+seven separate governance rows track drafting, integration, ledger proof, QA,
+and commit without changing programme status. The exact task/ADR/dependency
+map is stored and read back at
+`task-plans/linked-data-store-g0-g3-2026-08-24` in the explicit repository
+database.
+
+The Brain-grounded implementation source
+`ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts` shows that the current
+native `task_create` schema persists descriptions, priority, assignment, and
+tags to `.claude-flow/tasks/store.json` through a whole-file read/write, but
+exposes no dependency argument. Rows were therefore created sequentially and
+dependencies are encoded as `depends:<plan-id>` tags and in each description,
+with this committed GOAP
+graph and the exact AgentDB map remaining authoritative. Ruflo's separate
+domain task entity models dependencies, but this plan does not claim that the
+current MCP task surface enforces them.
+
 ## QA score
 
 This plan scores **98/100** against the programme rubric:
@@ -450,7 +495,7 @@ This plan scores **98/100** against the programme rubric:
 | Dimension | Score | Evidence |
 |---|---:|---|
 | Source and implementation grounding | 20/20 | Local transaction/optimizer/harness source, live Dream source/npm, Brain implementation sources, official comparison docs |
-| Scope and architecture | 20/20 | P0-P2 accepted work, P3 ADR boundary, ten DDD contexts |
+| Scope and architecture | 20/20 | P0-P2 planned work, P3 ADR boundary, ten DDD contexts |
 | Dependency and parallelization clarity | 15/15 | G0-G3 graph, three lanes, sequential publication gates |
 | Verifiable acceptance | 19/20 | Exact inventories, model/concurrency/crash/security/performance gates; thresholds await baseline freeze |
 | Security and promotion control | 15/15 | Native providers, local-only, protected oracles, isolated worktrees, human promotion |

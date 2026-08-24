@@ -25,6 +25,19 @@ mapping.
 | [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md) | Accepted | Aggregate every worker failure, return nonzero, and make the per-file versus cross-file atomicity boundary explicit |
 | [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md) | Implemented | Let replacement persistence planes execute request-atomic SPARQL Update without private storage types |
 | [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md) | Proposed | Coordinate Ruflo, MetaHarness, Darwin, Agentic-QE, and Dream Machine without weakening native evidence or human promotion |
+| [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md) | Proposed | Negotiate dimensioned guarantees and prove a serialized-writer RocksDB baseline before stronger isolation claims |
+| [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md) | Proposed | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from runtime receipts |
+| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | Commit namespaces, semantic effects, durable outcome receipts, and an ordered outbox atomically |
+| [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md) | Proposed | Validate the complete resulting staged view under the same isolation gate as commit |
+| [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md) | Proposed | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore |
+| [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md) | Proposed | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback |
+| [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md) | Proposed | Keep text and spatial indexes rebuildable with explicit strict/eventual freshness contracts |
+| [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md) | Proposed | Optimize only explicit SERVICE clauses within endpoint, egress, resource, and SILENT-semantics bounds |
+
+ADR-0018 through ADR-0025 are living implementation decisions for outstanding
+work. Their Proposed status is deliberate: the corresponding G1-G3 tasks and
+promotion evidence are not implemented merely because the architecture is
+recorded.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

@@ -2,13 +2,16 @@
 
 - Status: active plan; implementation slice 0 complete
 - Date: 2026-08-24
-- Repository: `/home/claude/src/hm/oxigraph`
+- Updated: 2026-08-24
+- Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Upstream merge: `a2415a4e`
 - Transactional write implementation: `1da47285`
 - Deterministic upstream test correction: `f9033c2b`
 - Conservative service-description reconciliation: `7dc190d3`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
+- Outstanding capability decisions:
+  [ADR-0018 through ADR-0025](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
@@ -255,6 +258,23 @@ hardened linked-data service.
 Sizes are relative engineering effort, not calendar promises: S is a focused
 slice, M crosses a few modules, L is a new public subsystem, and XL is an
 independently releasable programme.
+
+The unfinished work is split by architectural ownership:
+
+| Delivery work | Owning ADR | Status |
+|---|---|---|
+| P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
+| P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Proposed |
+| P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
+| P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
+| P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
+| P2.1 statistics and bounded planning | [ADR-0023](../adr/0023-statistics-and-bounded-join-planning.md) | Proposed |
+| P2.2-P2.3 text and spatial indexes | [ADR-0024](../adr/0024-rebuildable-derived-indexes.md) | Proposed |
+| P2.4 explicit federation | [ADR-0025](../adr/0025-explicit-service-federation.md) | Proposed |
+
+P3 remains a product-decision queue. It receives separate ADRs only after a
+named user outcome exists; it is not silently absorbed into ADR-0018-0025.
 
 ### Slice 0 — upstream and write seam (complete)
 
@@ -675,8 +695,9 @@ The plan scores **98/100** against the programme rubric:
 | Source authority and currency | 20/20 | Exact local commits plus current official Jena/RDF4J pages |
 | Implementation traceability | 20/20 | Public API, tests, commits, and Ruflo memory keys named |
 | Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit |
-| Verifiable acceptance criteria | 19/20 | Negative, crash, concurrency, security, and performance gates; production adapter still pending |
-| Risk and security coverage | 15/15 | Commit ambiguity, replay, egress, index drift, and leakage covered |
+| Architectural decision coverage | 10/10 | ADR-0018 through ADR-0025 own every P0-P2 public or operational seam without claiming implementation |
+| Verifiable acceptance criteria | 14/15 | Negative, crash, concurrency, security, and performance gates; production adapter still pending |
+| Risk and security coverage | 10/10 | Commit ambiguity, replay, egress, index drift, and leakage covered |
 | Scope discipline | 9/10 | Core versus product choices separated; P3 users/priorities intentionally unresolved |
 
 The two withheld points are real open state, not formatting debt: a production

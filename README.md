@@ -117,6 +117,7 @@ are the source of truth for sealed-subject versus current-HEAD claims.
 - [Persistence and linked-data-store parity plan](./docs/plans/persistence-write-and-linked-data-parity-plan.md)
 - [Repository evolution and evidence promotion decision](./docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md)
 - [Linked-data-store evolution harness plan](./docs/plans/linked-data-store-evolution-harness-plan.md)
+- [Outstanding linked-data-store decisions and statuses](./docs/adr/README.md)
 
 The ADRs explain the principal boundaries:
 
@@ -141,6 +142,11 @@ The ADRs explain the principal boundaries:
   define the public persistence-plane seam and the exact atomicity, rollback,
   read-your-writes, and graph-topology guarantees required by generic SPARQL
   Update.
+- [The outstanding linked-data-store ADR programme](./docs/adr/README.md)
+  splits transaction guarantees, egress/cancellation, durable commits,
+  transaction-time SHACL, operations/recovery, statistics/planning, derived
+  indexes, and explicit federation into ADR-0018 through ADR-0025. All eight
+  are Proposed living plans, not claims of implemented behavior.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear
