@@ -1,0 +1,25 @@
+{
+  "name": "@oxigraph/engineering-harness",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Local-only native-provider engineering harness for the Oxigraph linked-data programme",
+  "type": "module",
+  "bin": {
+    "oxigraph-engineering-harness": "bin/oxigraph-engineering-harness.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "doctor": "node bin/oxigraph-engineering-harness.mjs doctor",
+    "factory:diagnose": "node bin/oxigraph-engineering-harness.mjs factory diagnose"
+  },
+  "dependencies": {
+    "@metaharness/avo": "latest",
+    "@metaharness/darwin": "latest",
+    "@metaharness/harness": "latest",
+    "@metaharness/router": "latest",
+    "metaharness": "latest"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
