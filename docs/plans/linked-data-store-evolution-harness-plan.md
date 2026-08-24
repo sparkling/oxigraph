@@ -26,8 +26,9 @@ repository's Agentic-QE, Jena, W3C, mutation, and MetaHarness runners as the
 only evidence authorities. Keep two MetaHarness paths distinct: the existing
 `tools/metaharness` package remains a receipt-sensitive semantic qualifier,
 while a future private `tools/engineering-harness` package may route, build,
-repair, and review application candidates after a direct red G1 evaluator
-lands. Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
+repair, and review application candidates. The green G1.1 reference oracle and
+separate red G1.2 evaluator have now landed in `3edfb86a` and `eaf7161c`.
+Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
 repository's native-provider-only and local-only boundaries.
@@ -54,14 +55,14 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 |---|---|---|
 | Backend-neutral write seam | Implemented and verified in `1da47285` | Preserve the minimal GAT traits; add optional capabilities through extension traits |
 | Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
-| RocksDB writers | Snapshot + indexed batch; no observed conflict validation | Add lost-update/write-skew truth tests before advertising isolation; serialize first unless benchmarks justify OCC/TransactionDB |
+| RocksDB writers | Snapshot + indexed batch; G1.2 now reproduces lost update and write skew with both commits returning success | Serialize first unless benchmarks justify OCC/TransactionDB; do not advertise isolation while the evaluator is red |
 | Jena differential | July profile seals subject `1fe53cef...`; current subject is `997e2579...` | Historical evidence only; separately review and refresh the lock, then run twice |
 | Jena runner lock | The profile expects `runner/Cargo.lock`, but a clean checkout does not contain it and `--locked` fails | Restore a reviewed, reproducible lock strategy before the profile refresh |
 | Agentic-QE CLI inventory | Expects 133 default and 116 no-default tests; current exact inventories are 144 and 129 | Review counts/IDs and add an exact `persistence-write` profile |
 | Pinned source checkouts | RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 submodules are uninitialized in this clone | Initialize their exact registered revisions before source/full evidence verification; never substitute the parent checkout HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
 | MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by the evidence drift above |
-| Engineering MetaHarness | ADR-0017 architecture accepted; no package, native worker adapters, Router evidence, or G1 application corpus exists | Land a direct red G1 evaluator first, then implement separately under `tools/engineering-harness`; package presence is not adoption |
+| Engineering MetaHarness | ADR-0017 architecture accepted; G1.1 and red G1.2 evaluators exist, but no package, native worker adapters, Router evidence, or application receipt exists | Implement separately under `tools/engineering-harness`; package presence is not adoption |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -255,6 +256,18 @@ automatically by Dream Machine or Darwin.
 | G1.6 Runtime-derived service claims | G1.3-G1.5 | M | Every advertised capability has a closed endpoint receipt |
 | G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6 | M | Existing semantics and current evidence green; approved write/read budgets met |
 
+Execution record on 2026-08-25:
+
+- G1.1 is complete in `3edfb86a`: 10,000 deterministic shrinking traces each
+  passed for memory, RocksDB, and the independent rewritten adapter. The full
+  public run took 169.73 seconds and supports one-seed replay through
+  `OXIGRAPH_TX_TRACE_SEED`.
+- G1.2 oracle construction is complete in evaluator-only commit `eaf7161c`.
+  Its current product baseline is intentionally red: both frozen histories
+  observe overlapping writers and reproduce lost update and write skew.
+- G1.3 and G1.4 remain product implementation work. The red G1.2 result is an
+  activation input, not evidence that transaction isolation is implemented.
+
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
 production bottleneck.
@@ -262,9 +275,10 @@ production bottleneck.
 ### G1 application-task corpus and implementation order
 
 The engineering corpus begins with callable product behavior, not G0 evidence
-repairs. These task-suite paths and commands are contracts for later
-evaluator-only commits; a path is not registered with the engineering harness
-until its genuinely red baseline and subsequent evaluator commit both exist.
+repairs. G1.1 is the green reusable reference oracle. A product-repair task is
+not registered with the engineering harness until its product baseline is
+genuinely red under a separate evaluator-only commit; G1.2 is the first such
+task.
 
 | Task | Evaluator path | Public command | Independent command | Impacted-regression command |
 |---|---|---|---|---|
@@ -280,18 +294,18 @@ Future engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
 baseline commit, evaluator commit, mutable/blocked paths, features, targets,
 three command roles, time/output/resource ceilings, and success criteria.
-None of these contracts or proposed evaluator files is implemented by this
-plan update.
+The G1.1 and G1.2 evaluator files are implemented; task contracts and the
+remaining evaluator files are not.
 
 Implementation order is fixed: accept the version/authority policy; land the
-G1.1 red baseline and evaluator-only commit; create the separate engineering
-package from the `latest` dist-tags for `metaharness`,
+green G1.1 reference oracle and the separate red G1.2 evaluator-only commit;
+create the separate engineering package from the `latest` dist-tags for `metaharness`,
 `@metaharness/harness`, `@metaharness/router`, `@metaharness/darwin`, and
 `@metaharness/avo`, with an exact integrity-bound lock and lifecycle scripts
 disabled; add native Codex and Claude adapters plus doctor, sandbox,
 cancellation, and path tests; then add Router, persistent workers, critique,
 verifier-directed repair, cross-vendor review, receipts, and one end-to-end
-G1.1 run. Add `@ruvector/ruvllm` or `agenticow` only when a tested local
+G1.2 run. Add `@ruvector/ruvllm` or `agenticow` only when a tested local
 embedding or bounded copy-on-write path actually consumes it. Add later G1
 tasks only as their direct evaluators land. GEPA waits for five discriminating
 training tasks plus five sealed holdouts; AVO is limited to an eligible

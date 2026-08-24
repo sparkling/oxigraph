@@ -8,8 +8,10 @@
   are accepted; Ruflo research orchestration, the existing semantic
   qualification adapter, policy-only synthetic Darwin qualification, and a
   user-scoped Dream Machine installation are verified. The separate engineering
-  runtime is not implemented, and unattended Dream Machine execution remains
-  deferred behind the activation gates in this ADR
+  runtime is not implemented. The G1.1 reference oracle and separate red G1.2
+  concurrency evaluator now satisfy its application-evaluator prerequisite;
+  unattended Dream Machine execution remains deferred behind the activation
+  gates in this ADR
 - Update note: the accepted design now separates a future
   `tools/engineering-harness` worker runtime from the receipt-sensitive
   `tools/metaharness` semantic qualifier, fixes patched-candidate verification
@@ -200,8 +202,11 @@ Engineering implementation starts only after a direct G1 evaluator has landed
 as a later evaluator-only commit over a genuinely red baseline. Each task also
 freezes mutable and blocked paths, Cargo features and targets, one public, one
 independent, and one impacted-regression command, resource ceilings, and
-application success criteria. Start with G1.1-G1.7 in dependency order. Do not
-create the engineering package in this decision-only slice.
+application success criteria. G1.1 is green oracle infrastructure rather than
+a product repair task. The first discriminating candidate is G1.2: baseline
+`3edfb86a` plus evaluator-only commit `eaf7161c`. Continue through G1.3-G1.7 in
+dependency order. Do not infer engineering-runtime readiness merely from those
+evaluator commits.
 
 Darwin/GEPA may evolve engineering policy around frozen native models only
 after at least five discriminating training tasks and five sealed holdouts

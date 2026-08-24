@@ -89,8 +89,11 @@ tree before and after each reviewed run.
 
 `tools/metaharness` remains the semantic qualification adapter. ADR-0017
 accepts a separate future `tools/engineering-harness` for G1-G3 implementation
-work, but that runtime is not yet implemented: the first prerequisite is a
-genuinely red G1.1 product evaluator landed separately from its implementation.
+work, but that runtime is not yet implemented. Its activation evidence now
+exists as a green 10,000-trace-per-backend G1.1 reference oracle in `3edfb86a`
+and a separate genuinely red G1.2 lost-update/write-skew evaluator in
+`eaf7161c`; the engineering package must consume those frozen commits without
+editing either evaluator.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

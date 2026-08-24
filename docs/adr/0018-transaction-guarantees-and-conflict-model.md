@@ -2,9 +2,11 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G1.1-G1.4
+- Implementation status: G1.1 reference-oracle and G1.2 anomaly-oracle
+  infrastructure implemented; typed guarantees and RocksDB writer
+  serialization remain unimplemented under G1.3-G1.4
 - Depends on:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - Related:
@@ -103,5 +105,13 @@ Current implementation evidence is in
 [`rocksdb_wrapper.rs`](../../lib/oxigraph/src/storage/rocksdb_wrapper.rs),
 [`memory.rs`](../../lib/oxigraph/src/storage/memory.rs), and the
 [transactional write contract](../../lib/oxigraph/src/store/transactional.rs).
+The G1.1 evaluator in
+[`transaction_state_model.rs`](../../lib/oxigraph/tests/transaction_state_model.rs)
+runs 10,000 replayable shrinking traces against memory, RocksDB, and an
+independent rewritten adapter. The evaluator-only G1.2 history oracle in
+[`transaction_concurrency.rs`](../../lib/oxigraph/tests/transaction_concurrency.rs)
+is intentionally red on the current baseline: overlapping RocksDB writers
+reproduce both lost update and write skew. These evaluator results do not claim
+that the missing product guarantees are implemented.
 The executable plan identifiers are G1.1-G1.4 in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
