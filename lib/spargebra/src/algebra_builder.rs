@@ -1,6 +1,6 @@
 use crate::algebra::{
-    AggregateExpression, Expression, GraphPattern, GraphTarget, OrderExpression,
-    PropertyPathExpression, QueryDataset,
+    AggregateExpression, Expression, GraphTarget, OrderExpression, PropertyPathExpression,
+    QueryDatasetSpecification, QueryExpression,
 };
 use crate::ast;
 use crate::error::AlgebraBuilderError;
@@ -73,7 +73,7 @@ impl<'a> AlgebraBuilder<'a> {
     ) -> Result<SelectQuery, AlgebraBuilderError> {
         Ok(SelectQuery {
             dataset: self.build_dataset(query.dataset_clause)?,
-            pattern: self.build_select(
+            expression: self.build_select(
                 query.select_clause,
                 query.where_clause,
                 query.solution_modifier,
@@ -118,7 +118,7 @@ impl<'a> AlgebraBuilder<'a> {
         Ok(ConstructQuery {
             template: template.clone(),
             dataset: self.build_dataset(query.dataset_clause)?,
-            pattern: self.build_select(
+            expression: self.build_select(
                 ast::SelectClause {
                     option: ast::SelectionOption::Default,
                     bindings: SimpleSpan::new((), 0..0).make_wrapped(ast::SelectVariables::Star),
@@ -182,7 +182,7 @@ impl<'a> AlgebraBuilder<'a> {
                     }
                 };
                 if let ast::VarOrIri::Iri(target) = target.inner {
-                    pattern = GraphPattern::Extend {
+                    pattern = QueryExpression::Extend {
                         inner: Box::new(pattern),
                         variable,
                         expression: self.build_named_node(target)?.into(),
@@ -204,7 +204,7 @@ impl<'a> AlgebraBuilder<'a> {
     ) -> Result<AskQuery, AlgebraBuilderError> {
         Ok(AskQuery {
             dataset: self.build_dataset(query.dataset_clause)?,
-            pattern: self.build_select(
+            expression: self.build_select(
                 ast::SelectClause {
                     option: ast::SelectionOption::Default,
                     bindings: SimpleSpan::new((), 0..0).make_wrapped(ast::SelectVariables::Star),
@@ -258,7 +258,7 @@ impl<'a> AlgebraBuilder<'a> {
     fn build_dataset(
         &mut self,
         clauses: Vec<ast::GraphClause<'a>>,
-    ) -> Result<Option<QueryDataset>, AlgebraBuilderError> {
+    ) -> Result<Option<QueryDatasetSpecification>, AlgebraBuilderError> {
         if clauses.is_empty() {
             return Ok(None);
         }
@@ -274,7 +274,7 @@ impl<'a> AlgebraBuilder<'a> {
                 }
             }
         }
-        Ok(Some(QueryDataset {
+        Ok(Some(QueryDatasetSpecification {
             default,
             named: Some(named),
         }))
@@ -287,7 +287,7 @@ impl<'a> AlgebraBuilder<'a> {
         solution_modifier: ast::SolutionModifier<'a>,
         values_clause: Option<ast::ValuesClause<'a>>,
         is_select_explicit: bool,
-    ) -> Result<GraphPattern, AlgebraBuilderError> {
+    ) -> Result<QueryExpression, AlgebraBuilderError> {
         find_graph_pattern_blank_node_ids_and_validate_syntax_restrictions(&where_clause)?;
         let mut p = self.build_graph_pattern(where_clause)?;
         let mut input_variables = HashSet::new();
@@ -360,7 +360,7 @@ impl<'a> AlgebraBuilder<'a> {
                 let variable = variable.map(Self::build_variable);
                 if let Some(variable) = variable {
                     // Explicit renaming
-                    p = GraphPattern::Extend {
+                    p = QueryExpression::Extend {
                         inner: Box::new(p),
                         variable: variable.clone(),
                         expression,
@@ -374,7 +374,7 @@ impl<'a> AlgebraBuilder<'a> {
                 } else {
                     // We have to introduce an intermediate variable
                     let variable = random_variable();
-                    p = GraphPattern::Extend {
+                    p = QueryExpression::Extend {
                         inner: Box::new(p),
                         variable: variable.clone(),
                         expression,
@@ -383,7 +383,7 @@ impl<'a> AlgebraBuilder<'a> {
                     variables.push(variable);
                 }
             }
-            p = GraphPattern::Group {
+            p = QueryExpression::Group {
                 inner: Box::new(p),
                 variables,
                 aggregates,
@@ -392,7 +392,7 @@ impl<'a> AlgebraBuilder<'a> {
 
         // HAVING
         if let Some(expr) = having_expression {
-            p = GraphPattern::Filter {
+            p = QueryExpression::Filter {
                 expr: expr?,
                 inner: Box::new(p),
             };
@@ -445,7 +445,7 @@ impl<'a> AlgebraBuilder<'a> {
                             ));
                         }
                     }
-                    p = GraphPattern::Extend {
+                    p = QueryExpression::Extend {
                         inner: Box::new(p),
                         variable: variable.clone(),
                         expression,
@@ -487,20 +487,20 @@ impl<'a> AlgebraBuilder<'a> {
 
         // ORDER BY
         if !order_expressions.is_empty() {
-            m = GraphPattern::OrderBy {
+            m = QueryExpression::OrderBy {
                 inner: Box::new(m),
                 expression: order_expressions,
             };
         }
 
         // PROJECT
-        m = GraphPattern::Project {
+        m = QueryExpression::Project {
             inner: Box::new(m),
             variables: projection_variables,
         };
         match select_clause.option {
-            ast::SelectionOption::Distinct => m = GraphPattern::Distinct { inner: Box::new(m) },
-            ast::SelectionOption::Reduced => m = GraphPattern::Reduced { inner: Box::new(m) },
+            ast::SelectionOption::Distinct => m = QueryExpression::Distinct { inner: Box::new(m) },
+            ast::SelectionOption::Reduced => m = QueryExpression::Reduced { inner: Box::new(m) },
             ast::SelectionOption::Default => (),
         }
 
@@ -508,10 +508,28 @@ impl<'a> AlgebraBuilder<'a> {
         if let Some(ast::LimitOffsetClauses { limit, offset }) =
             solution_modifier.limit_offset_clauses
         {
-            m = GraphPattern::Slice {
+            m = QueryExpression::Slice {
                 inner: Box::new(m),
-                start: offset,
-                length: limit,
+                offset: if let Some(offset) = offset {
+                    offset.inner.parse().map_err(|_| {
+                        AlgebraBuilderError::new(
+                            offset.span,
+                            format!("OFFSET must be an integer, found '{}'", offset.inner),
+                        )
+                    })?
+                } else {
+                    0
+                },
+                limit: if let Some(limit) = limit {
+                    Some(limit.inner.parse().map_err(|_| {
+                        AlgebraBuilderError::new(
+                            limit.span,
+                            format!("LIMIT must be an integer, found '{}'", limit.inner),
+                        )
+                    })?)
+                } else {
+                    None
+                },
             }
         }
         Ok(m)
@@ -532,7 +550,7 @@ impl<'a> AlgebraBuilder<'a> {
     fn build_values_clause(
         &mut self,
         values_clause: ast::ValuesClause<'a>,
-    ) -> Result<GraphPattern, AlgebraBuilderError> {
+    ) -> Result<QueryExpression, AlgebraBuilderError> {
         if let Some((vl, vr)) = values_clause
             .variables
             .iter()
@@ -571,7 +589,7 @@ impl<'a> AlgebraBuilder<'a> {
                 "The VALUES clause rows should have exactly the same number of values as there are variables. To set a value to undefined use UNDEF",
             ));
         }
-        Ok(GraphPattern::Values {
+        Ok(QueryExpression::Values {
             variables,
             bindings,
         })
@@ -612,7 +630,7 @@ impl<'a> AlgebraBuilder<'a> {
     fn build_graph_pattern(
         &mut self,
         graph_pattern: ast::GraphPattern<'a>,
-    ) -> Result<GraphPattern, AlgebraBuilderError> {
+    ) -> Result<QueryExpression, AlgebraBuilderError> {
         Ok(match graph_pattern {
             ast::GraphPattern::SubSelect(sub_select) => self.build_select(
                 sub_select.select_clause,
@@ -622,7 +640,7 @@ impl<'a> AlgebraBuilder<'a> {
                 true,
             )?,
             ast::GraphPattern::Group(elements) => {
-                let mut g = GraphPattern::default();
+                let mut g = QueryExpression::default();
                 let mut filter: Option<Expression> = None;
                 for element in elements {
                     match element.inner {
@@ -648,7 +666,7 @@ impl<'a> AlgebraBuilder<'a> {
                                         .collect(),
                                 );
                             }
-                            g = GraphPattern::LeftJoin {
+                            g = QueryExpression::LeftJoin {
                                 left: Box::new(g),
                                 right: Box::new(self.build_graph_pattern(p)?),
                                 expression: filters
@@ -664,7 +682,7 @@ impl<'a> AlgebraBuilder<'a> {
                             }
                         }
                         ast::GraphPatternElement::Minus(p) => {
-                            g = GraphPattern::Minus {
+                            g = QueryExpression::Minus {
                                 left: Box::new(g),
                                 right: Box::new(self.build_graph_pattern(*p)?),
                             }
@@ -685,7 +703,7 @@ impl<'a> AlgebraBuilder<'a> {
                                     ),
                                 ));
                             }
-                            g = GraphPattern::Extend {
+                            g = QueryExpression::Extend {
                                 inner: Box::new(g),
                                 variable,
                                 expression: self.build_expression_without_aggregates(
@@ -729,14 +747,14 @@ impl<'a> AlgebraBuilder<'a> {
                                         if !bgp.is_empty() {
                                             g = new_join(
                                                 g,
-                                                GraphPattern::Bgp {
+                                                QueryExpression::Bgp {
                                                     patterns: take(&mut bgp),
                                                 },
                                             );
                                         }
                                         g = new_join(
                                             g,
-                                            GraphPattern::Path {
+                                            QueryExpression::Path {
                                                 subject,
                                                 path,
                                                 object,
@@ -748,7 +766,7 @@ impl<'a> AlgebraBuilder<'a> {
                             if !bgp.is_empty() {
                                 g = new_join(
                                     g,
-                                    GraphPattern::Bgp {
+                                    QueryExpression::Bgp {
                                         patterns: take(&mut bgp),
                                     },
                                 );
@@ -761,12 +779,12 @@ impl<'a> AlgebraBuilder<'a> {
                                     .into_iter()
                                     .map(|e| self.build_graph_pattern(e))
                                     .reduce(|l, r| {
-                                        Ok(GraphPattern::Union {
+                                        Ok(QueryExpression::Union {
                                             left: Box::new(l?),
                                             right: Box::new(r?),
                                         })
                                     })
-                                    .unwrap_or_else(|| Ok(GraphPattern::default()))?,
+                                    .unwrap_or_else(|| Ok(QueryExpression::default()))?,
                             );
                         }
                         ast::GraphPatternElement::Values(values) => {
@@ -779,7 +797,7 @@ impl<'a> AlgebraBuilder<'a> {
                         } => {
                             g = new_join(
                                 g,
-                                GraphPattern::Service {
+                                QueryExpression::Service {
                                     name: self.build_named_node_pattern(name)?,
                                     inner: Box::new(self.build_graph_pattern(*pattern)?),
                                     silent,
@@ -789,7 +807,7 @@ impl<'a> AlgebraBuilder<'a> {
                         ast::GraphPatternElement::Graph { name, pattern } => {
                             g = new_join(
                                 g,
-                                GraphPattern::Graph {
+                                QueryExpression::Graph {
                                     name: self.build_named_node_pattern(name)?,
                                     inner: Box::new(self.build_graph_pattern(*pattern)?),
                                 },
@@ -814,7 +832,7 @@ impl<'a> AlgebraBuilder<'a> {
                                     ),
                                 ));
                             }
-                            g = GraphPattern::Lateral {
+                            g = QueryExpression::Lateral {
                                 left: Box::new(g),
                                 right: Box::new(p),
                             }
@@ -823,7 +841,7 @@ impl<'a> AlgebraBuilder<'a> {
                 }
 
                 if let Some(expr) = filter {
-                    GraphPattern::Filter {
+                    QueryExpression::Filter {
                         expr,
                         inner: Box::new(g),
                     }
@@ -1352,7 +1370,7 @@ impl<'a> AlgebraBuilder<'a> {
                 if let Some(reifier) = reifier_to_emit {
                     let predicate = match predicate {
                         VarOrPath::Var(predicate) => NamedNodePattern::from(predicate.clone()),
-                        VarOrPath::Path(PropertyPathExpression::NamedNode(predicate)) => {
+                        VarOrPath::Path(PropertyPathExpression::Link(predicate)) => {
                             predicate.clone().into()
                         }
                         VarOrPath::Path(_) => {
@@ -1477,28 +1495,26 @@ impl<'a> AlgebraBuilder<'a> {
         path: ast::Path<'a>,
     ) -> Result<PropertyPathExpression, AlgebraBuilderError> {
         Ok(match path {
-            ast::Path::Alternative(l, r) => PropertyPathExpression::Alternative(
+            ast::Path::Alternative(l, r) => PropertyPathExpression::Alt(
                 Box::new(self.build_path(*l)?),
                 Box::new(self.build_path(*r)?),
             ),
-            ast::Path::Sequence(l, r) => PropertyPathExpression::Sequence(
+            ast::Path::Sequence(l, r) => PropertyPathExpression::Seq(
                 Box::new(self.build_path(*l)?),
                 Box::new(self.build_path(*r)?),
             ),
-            ast::Path::Inverse(p) => {
-                PropertyPathExpression::Reverse(Box::new(self.build_path(*p)?))
-            }
+            ast::Path::Inverse(p) => PropertyPathExpression::Inv(Box::new(self.build_path(*p)?)),
             ast::Path::ZeroOrOne(p) => {
-                PropertyPathExpression::ZeroOrOne(Box::new(self.build_path(*p)?))
+                PropertyPathExpression::ZeroOrOnePath(Box::new(self.build_path(*p)?))
             }
             ast::Path::ZeroOrMore(p) => {
-                PropertyPathExpression::ZeroOrMore(Box::new(self.build_path(*p)?))
+                PropertyPathExpression::ZeroOrMorePath(Box::new(self.build_path(*p)?))
             }
             ast::Path::OneOrMore(p) => {
-                PropertyPathExpression::OneOrMore(Box::new(self.build_path(*p)?))
+                PropertyPathExpression::OneOrMorePath(Box::new(self.build_path(*p)?))
             }
-            ast::Path::Iri(p) => PropertyPathExpression::NamedNode(self.build_named_node(p)?),
-            ast::Path::A => PropertyPathExpression::NamedNode(rdf::TYPE),
+            ast::Path::Iri(p) => PropertyPathExpression::Link(self.build_named_node(p)?),
+            ast::Path::A => PropertyPathExpression::Link(rdf::TYPE),
             ast::Path::NegatedPropertySet(nps) => {
                 let mut direct = Vec::new();
                 let mut inverse = Vec::new();
@@ -1513,16 +1529,14 @@ impl<'a> AlgebraBuilder<'a> {
                     }
                 }
                 if inverse.is_empty() {
-                    PropertyPathExpression::NegatedPropertySet(direct)
+                    PropertyPathExpression::Nps(direct)
                 } else if direct.is_empty() {
-                    PropertyPathExpression::Reverse(Box::new(
-                        PropertyPathExpression::NegatedPropertySet(inverse),
-                    ))
+                    PropertyPathExpression::Inv(Box::new(PropertyPathExpression::Nps(inverse)))
                 } else {
-                    PropertyPathExpression::Alternative(
-                        Box::new(PropertyPathExpression::NegatedPropertySet(direct)),
-                        Box::new(PropertyPathExpression::Reverse(Box::new(
-                            PropertyPathExpression::NegatedPropertySet(inverse),
+                    PropertyPathExpression::Alt(
+                        Box::new(PropertyPathExpression::Nps(direct)),
+                        Box::new(PropertyPathExpression::Inv(Box::new(
+                            PropertyPathExpression::Nps(inverse),
                         ))),
                     )
                 }
@@ -1841,7 +1855,7 @@ impl<'a> AlgebraBuilder<'a> {
                 ast::Update1::DeleteWhere { pattern } => {
                     let delete = self.build_ground_quad_patterns(pattern)?;
 
-                    let mut graph_pattern = GraphPattern::default();
+                    let mut graph_pattern = QueryExpression::default();
                     let mut current_graph_name = &GraphNamePattern::DefaultGraph;
                     let mut current_bgp = Vec::new();
                     for pattern in &delete {
@@ -1901,7 +1915,7 @@ impl<'a> AlgebraBuilder<'a> {
                             }
                         }
                         if using.is_none() {
-                            using = Some(QueryDataset {
+                            using = Some(QueryDatasetSpecification {
                                 default: vec![with],
                                 named: None,
                             });
@@ -2108,48 +2122,48 @@ fn find_unbound_variable<'a>(
     }
 }
 
-fn new_join(l: GraphPattern, r: GraphPattern) -> GraphPattern {
+fn new_join(l: QueryExpression, r: QueryExpression) -> QueryExpression {
     // Avoid to output empty BGPs
-    if let GraphPattern::Bgp { patterns: pl } = &l {
+    if let QueryExpression::Bgp { patterns: pl } = &l {
         if pl.is_empty() {
             return r;
         }
     }
-    if let GraphPattern::Bgp { patterns: pr } = &r {
+    if let QueryExpression::Bgp { patterns: pr } = &r {
         if pr.is_empty() {
             return l;
         }
     }
 
     match (l, r) {
-        (GraphPattern::Bgp { patterns: mut pl }, GraphPattern::Bgp { patterns: pr }) => {
+        (QueryExpression::Bgp { patterns: mut pl }, QueryExpression::Bgp { patterns: pr }) => {
             pl.extend(pr);
-            GraphPattern::Bgp { patterns: pl }
+            QueryExpression::Bgp { patterns: pl }
         }
-        (GraphPattern::Bgp { patterns }, other) | (other, GraphPattern::Bgp { patterns })
+        (QueryExpression::Bgp { patterns }, other) | (other, QueryExpression::Bgp { patterns })
             if patterns.is_empty() =>
         {
             other
         }
-        (l, r) => GraphPattern::Join {
+        (l, r) => QueryExpression::Join {
             left: Box::new(l),
             right: Box::new(r),
         },
     }
 }
 
-fn wrap_bpg_in_graph(bgp: Vec<TriplePattern>, graph_name: GraphNamePattern) -> GraphPattern {
+fn wrap_bpg_in_graph(bgp: Vec<TriplePattern>, graph_name: GraphNamePattern) -> QueryExpression {
     if bgp.is_empty() {
-        return GraphPattern::default();
+        return QueryExpression::default();
     }
-    let bgp = GraphPattern::Bgp { patterns: bgp };
+    let bgp = QueryExpression::Bgp { patterns: bgp };
     match graph_name {
-        GraphNamePattern::NamedNode(g) => GraphPattern::Graph {
+        GraphNamePattern::NamedNode(g) => QueryExpression::Graph {
             name: g.into(),
             inner: Box::new(bgp),
         },
         GraphNamePattern::DefaultGraph => bgp,
-        GraphNamePattern::Variable(g) => GraphPattern::Graph {
+        GraphNamePattern::Variable(g) => QueryExpression::Graph {
             name: g.into(),
             inner: Box::new(bgp),
         },
@@ -2238,13 +2252,11 @@ fn add_path_to_patterns(
     patterns: &mut Vec<TripleOrPathPattern>,
 ) {
     match path {
-        PropertyPathExpression::NamedNode(predicate) => patterns.push(TripleOrPathPattern::Triple(
+        PropertyPathExpression::Link(predicate) => patterns.push(TripleOrPathPattern::Triple(
             TriplePattern::new(subject, predicate, object),
         )),
-        PropertyPathExpression::Reverse(path) => {
-            add_path_to_patterns(object, *path, subject, patterns)
-        }
-        PropertyPathExpression::Sequence(path1, path2) => {
+        PropertyPathExpression::Inv(path) => add_path_to_patterns(object, *path, subject, patterns),
+        PropertyPathExpression::Seq(path1, path2) => {
             let middle = BlankNode::default();
             add_path_to_patterns(subject, *path1, middle.clone().into(), patterns);
             add_path_to_patterns(middle.into(), *path2, object, patterns)
@@ -2259,27 +2271,27 @@ fn add_path_to_patterns(
 
 /// Called on every variable defined using "AS" or "VALUES"
 #[cfg(feature = "sep-0006")]
-fn add_defined_variables<'a>(pattern: &'a GraphPattern, set: &mut HashSet<&'a Variable>) {
+fn add_defined_variables<'a>(pattern: &'a QueryExpression, set: &mut HashSet<&'a Variable>) {
     match pattern {
-        GraphPattern::Bgp { .. } | GraphPattern::Path { .. } => {}
-        GraphPattern::Join { left, right }
-        | GraphPattern::LeftJoin { left, right, .. }
-        | GraphPattern::Lateral { left, right }
-        | GraphPattern::Union { left, right }
-        | GraphPattern::Minus { left, right } => {
+        QueryExpression::Bgp { .. } | QueryExpression::Path { .. } => {}
+        QueryExpression::Join { left, right }
+        | QueryExpression::LeftJoin { left, right, .. }
+        | QueryExpression::Lateral { left, right }
+        | QueryExpression::Union { left, right }
+        | QueryExpression::Minus { left, right } => {
             add_defined_variables(left, set);
             add_defined_variables(right, set);
         }
-        GraphPattern::Graph { inner, .. } => {
+        QueryExpression::Graph { inner, .. } => {
             add_defined_variables(inner, set);
         }
-        GraphPattern::Extend {
+        QueryExpression::Extend {
             inner, variable, ..
         } => {
             set.insert(variable);
             add_defined_variables(inner, set);
         }
-        GraphPattern::Group {
+        QueryExpression::Group {
             variables,
             aggregates,
             inner,
@@ -2295,12 +2307,12 @@ fn add_defined_variables<'a>(pattern: &'a GraphPattern, set: &mut HashSet<&'a Va
                 }
             }
         }
-        GraphPattern::Values { variables, .. } => {
+        QueryExpression::Values { variables, .. } => {
             for v in variables {
                 set.insert(v);
             }
         }
-        GraphPattern::Project { variables, inner } => {
+        QueryExpression::Project { variables, inner } => {
             let mut inner_variables = HashSet::new();
             add_defined_variables(inner, &mut inner_variables);
             for v in inner_variables {
@@ -2309,12 +2321,12 @@ fn add_defined_variables<'a>(pattern: &'a GraphPattern, set: &mut HashSet<&'a Va
                 }
             }
         }
-        GraphPattern::Service { inner, .. }
-        | GraphPattern::Filter { inner, .. }
-        | GraphPattern::OrderBy { inner, .. }
-        | GraphPattern::Distinct { inner }
-        | GraphPattern::Reduced { inner }
-        | GraphPattern::Slice { inner, .. } => add_defined_variables(inner, set),
+        QueryExpression::Service { inner, .. }
+        | QueryExpression::Filter { inner, .. }
+        | QueryExpression::OrderBy { inner, .. }
+        | QueryExpression::Distinct { inner }
+        | QueryExpression::Reduced { inner }
+        | QueryExpression::Slice { inner, .. } => add_defined_variables(inner, set),
     }
 }
 
@@ -2871,7 +2883,7 @@ fn copy_graph(
     from: impl Into<GraphName>,
     to: impl Into<GraphNamePattern>,
 ) -> DeleteInsertOperation {
-    let bgp = GraphPattern::Bgp {
+    let bgp = QueryExpression::Bgp {
         patterns: vec![TriplePattern::new(
             Variable::new_unchecked("s"),
             Variable::new_unchecked("p"),
@@ -2888,7 +2900,7 @@ fn copy_graph(
         )],
         using: None,
         pattern: Box::new(match from.into() {
-            GraphName::NamedNode(from) => GraphPattern::Graph {
+            GraphName::NamedNode(from) => QueryExpression::Graph {
                 name: from.into(),
                 inner: Box::new(bgp),
             },

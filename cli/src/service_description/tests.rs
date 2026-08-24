@@ -10,12 +10,14 @@ use std::error::Error;
 use std::io;
 
 fn graph(kind: EndpointKind, entailment: QueryEntailment) -> Vec<Triple> {
+    let evaluator = SparqlEvaluator::new();
     generate_service_description_graph(
         RdfFormat::Turtle,
         kind,
         false,
         entailment,
         "http://example.test/sparql".into(),
+        &evaluator,
     )
 }
 
@@ -223,6 +225,7 @@ fn advertised_features_are_an_exact_capability_set() {
     expected.insert(sd::BASIC_FEDERATED_QUERY.as_str().to_owned());
     assert_eq!(object_iris(&query, &sd::FEATURE), expected);
 
+    let evaluator = SparqlEvaluator::new();
     let union = generate_service_description_graph(
         RdfFormat::Turtle,
         EndpointKind {
@@ -232,6 +235,7 @@ fn advertised_features_are_an_exact_capability_set() {
         true,
         QueryEntailment::Simple,
         "http://example.test/sparql".into(),
+        &evaluator,
     );
     expected.insert(sd::UNION_DEFAULT_GRAPH.as_str().to_owned());
     assert_eq!(object_iris(&union, &sd::FEATURE), expected);
@@ -240,6 +244,7 @@ fn advertised_features_are_an_exact_capability_set() {
 #[test]
 fn emitted_service_vocabulary_and_endpoint_shape_are_exact() -> Result<(), Box<dyn Error>> {
     let endpoint = "http://example.test/query";
+    let evaluator = SparqlEvaluator::new();
     let graph = generate_service_description_graph(
         RdfFormat::NTriples,
         EndpointKind {
@@ -249,6 +254,7 @@ fn emitted_service_vocabulary_and_endpoint_shape_are_exact() -> Result<(), Box<d
         false,
         QueryEntailment::Simple,
         endpoint.into(),
+        &evaluator,
     );
     let root = root(&graph)?;
     assert!(graph.iter().all(|triple| triple.subject == root));
@@ -306,12 +312,14 @@ fn serialized_description_uses_only_the_negotiated_rdf_version() {
         query: true,
         update: false,
     };
+    let evaluator = SparqlEvaluator::new();
     let rdf11 = generate_service_description(
         RdfResponseFormat::rdf11(RdfFormat::Turtle),
         kind,
         false,
         QueryEntailment::Simple,
         "http://example.test/query".into(),
+        &evaluator,
     );
     assert!(!rdf11.starts_with(b"VERSION"));
 
@@ -321,6 +329,7 @@ fn serialized_description_uses_only_the_negotiated_rdf_version() {
         false,
         QueryEntailment::Simple,
         "http://example.test/query".into(),
+        &evaluator,
     );
     assert!(rdf12.starts_with(b"VERSION \"1.2\"\n"));
 }

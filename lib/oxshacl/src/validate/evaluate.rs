@@ -400,6 +400,10 @@ pub(super) fn evaluate_constraint(
                     context.max_depth,
                 )?;
                 for shape in shapes {
+                    #[allow(
+                        unreachable_patterns,
+                        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+                    )]
                     let shape_id = match &shape {
                         Term::NamedNode(node) => node.clone().into(),
                         Term::BlankNode(node) => node.clone().into(),
@@ -409,8 +413,7 @@ pub(super) fn evaluate_constraint(
                                     .to_owned(),
                             ));
                         }
-                        #[cfg(feature = "rdf-12")]
-                        Term::Triple(_) => {
+                        _ => {
                             return Err(ValidationError::IllFormed(
                                 "sh:nodeByExpression output must be a shape IRI or blank node"
                                     .to_owned(),

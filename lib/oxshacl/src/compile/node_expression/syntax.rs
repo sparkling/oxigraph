@@ -124,7 +124,7 @@ pub(super) fn validate_select_query(query: &str) -> Result<(), ValidationError> 
     };
     let mut projected = BTreeSet::new();
     select
-        .pattern
+        .expression
         .on_in_scope_variable(|variable| _ = projected.insert(variable.as_str().to_owned()));
     if projected.len() != 1 {
         return Err(ValidationError::IllFormed(

@@ -1,5 +1,5 @@
 use crate::control::ValidationError;
-use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression};
+use spargebra::algebra::{AggregateExpression, Expression, OrderExpression, QueryExpression};
 use spargebra::term::NamedNodePattern;
 use spargebra::{Query, SparqlParser};
 use std::collections::BTreeSet;
@@ -22,16 +22,16 @@ pub(super) fn validate_query_policy(
         (Query::Select(select), ExpectedQuery::Select) => {
             let mut projects_this = false;
             select
-                .pattern
+                .expression
                 .on_in_scope_variable(|variable| projects_this |= variable.as_str() == "this");
             if !projects_this {
                 return Err(ValidationError::IllFormed(
                     "SHACL-SPARQL SELECT must project ?this".to_owned(),
                 ));
             }
-            &select.pattern
+            &select.expression
         }
-        (Query::Ask(ask), ExpectedQuery::Ask) => &ask.pattern,
+        (Query::Ask(ask), ExpectedQuery::Ask) => &ask.expression,
         (_, ExpectedQuery::Select) => {
             return Err(ValidationError::IllFormed(
                 "SHACL-SPARQL constraint must be a SELECT query".to_owned(),
@@ -52,7 +52,7 @@ pub(super) fn validate_query_policy(
     // spargebra represents every top-level query with a Project node. It is
     // not a subquery and must not be subjected to the nested SELECT rule.
     let inner = match pattern {
-        GraphPattern::Project { inner, .. } => inner.as_ref(),
+        QueryExpression::Project { inner, .. } => inner.as_ref(),
         _ => pattern,
     };
     check_pattern(inner, &prebound)
@@ -67,14 +67,17 @@ pub(super) fn validate_query_policy(
     unreachable_patterns,
     reason = "dependency feature unification can add SPARQL 1.2 graph-pattern variants"
 )]
-fn check_pattern(pattern: &GraphPattern, prebound: &BTreeSet<&str>) -> Result<(), ValidationError> {
+fn check_pattern(
+    pattern: &QueryExpression,
+    prebound: &BTreeSet<&str>,
+) -> Result<(), ValidationError> {
     match pattern {
-        GraphPattern::Bgp { .. } | GraphPattern::Path { .. } => Ok(()),
-        GraphPattern::Join { left, right } | GraphPattern::Union { left, right } => {
+        QueryExpression::Bgp { .. } | QueryExpression::Path { .. } => Ok(()),
+        QueryExpression::Join { left, right } | QueryExpression::Union { left, right } => {
             check_pattern(left, prebound)?;
             check_pattern(right, prebound)
         }
-        GraphPattern::LeftJoin {
+        QueryExpression::LeftJoin {
             left,
             right,
             expression,
@@ -86,15 +89,15 @@ fn check_pattern(pattern: &GraphPattern, prebound: &BTreeSet<&str>) -> Result<()
             }
             Ok(())
         }
-        GraphPattern::Graph { inner, .. }
-        | GraphPattern::Distinct { inner }
-        | GraphPattern::Reduced { inner }
-        | GraphPattern::Slice { inner, .. } => check_pattern(inner, prebound),
-        GraphPattern::Filter { expr, inner } => {
+        QueryExpression::Graph { inner, .. }
+        | QueryExpression::Distinct { inner }
+        | QueryExpression::Reduced { inner }
+        | QueryExpression::Slice { inner, .. } => check_pattern(inner, prebound),
+        QueryExpression::Filter { expr, inner } => {
             check_pattern(inner, prebound)?;
             check_expression(expr, prebound)
         }
-        GraphPattern::OrderBy { inner, expression } => {
+        QueryExpression::OrderBy { inner, expression } => {
             check_pattern(inner, prebound)?;
             for expression in expression {
                 let (OrderExpression::Asc(expression) | OrderExpression::Desc(expression)) =
@@ -103,7 +106,7 @@ fn check_pattern(pattern: &GraphPattern, prebound: &BTreeSet<&str>) -> Result<()
             }
             Ok(())
         }
-        GraphPattern::Project { inner, variables } => {
+        QueryExpression::Project { inner, variables } => {
             if !variables.iter().any(|variable| variable.as_str() == "this") {
                 return Err(ValidationError::UnsupportedFeature(
                     "SHACL-SPARQL subqueries must project ?this".to_owned(),
@@ -111,7 +114,7 @@ fn check_pattern(pattern: &GraphPattern, prebound: &BTreeSet<&str>) -> Result<()
             }
             check_pattern(inner, prebound)
         }
-        GraphPattern::Extend {
+        QueryExpression::Extend {
             inner,
             variable,
             expression,
@@ -120,7 +123,7 @@ fn check_pattern(pattern: &GraphPattern, prebound: &BTreeSet<&str>) -> Result<()
             check_pattern(inner, prebound)?;
             check_expression(expression, prebound)
         }
-        GraphPattern::Group {
+        QueryExpression::Group {
             inner, aggregates, ..
         } => {
             check_pattern(inner, prebound)?;
@@ -132,13 +135,13 @@ fn check_pattern(pattern: &GraphPattern, prebound: &BTreeSet<&str>) -> Result<()
             }
             Ok(())
         }
-        GraphPattern::Values { .. } => Err(ValidationError::UnsupportedFeature(
+        QueryExpression::Values { .. } => Err(ValidationError::UnsupportedFeature(
             "VALUES is forbidden in SHACL-SPARQL queries".to_owned(),
         )),
-        GraphPattern::Minus { .. } => Err(ValidationError::UnsupportedFeature(
+        QueryExpression::Minus { .. } => Err(ValidationError::UnsupportedFeature(
             "MINUS is forbidden in SHACL-SPARQL queries".to_owned(),
         )),
-        GraphPattern::Service { .. } => Err(ValidationError::UnsupportedFeature(
+        QueryExpression::Service { .. } => Err(ValidationError::UnsupportedFeature(
             "SERVICE is disabled in the isolated SHACL-SPARQL profile".to_owned(),
         )),
         _ => Err(ValidationError::UnsupportedFeature(
@@ -204,9 +207,9 @@ pub(crate) fn substitute_path(query: &str, surface: &str) -> Result<String, Vali
         return Ok(rewritten);
     }
     let pattern = match &parsed {
-        Query::Select(query) => &query.pattern,
-        Query::Ask(query) => &query.pattern,
-        Query::Construct(query) => &query.pattern,
+        Query::Select(query) => &query.expression,
+        Query::Ask(query) => &query.expression,
+        Query::Construct(query) => &query.expression,
         Query::Describe(query) => &query.pattern,
     };
     if legal_path_predicates(pattern) != occurrences {
@@ -228,9 +231,9 @@ pub(crate) fn substitute_path(query: &str, surface: &str) -> Result<String, Vali
     unreachable_patterns,
     reason = "dependency feature unification can add SPARQL 1.2 graph-pattern variants"
 )]
-fn legal_path_predicates(pattern: &GraphPattern) -> usize {
+fn legal_path_predicates(pattern: &QueryExpression) -> usize {
     match pattern {
-        GraphPattern::Bgp { patterns } => patterns
+        QueryExpression::Bgp { patterns } => patterns
             .iter()
             .filter(|pattern| {
                 matches!(
@@ -239,12 +242,12 @@ fn legal_path_predicates(pattern: &GraphPattern) -> usize {
                 )
             })
             .count(),
-        GraphPattern::Join { left, right }
-        | GraphPattern::Union { left, right }
-        | GraphPattern::Minus { left, right } => {
+        QueryExpression::Join { left, right }
+        | QueryExpression::Union { left, right }
+        | QueryExpression::Minus { left, right } => {
             legal_path_predicates(left) + legal_path_predicates(right)
         }
-        GraphPattern::LeftJoin {
+        QueryExpression::LeftJoin {
             left,
             right,
             expression,
@@ -255,19 +258,19 @@ fn legal_path_predicates(pattern: &GraphPattern) -> usize {
                     .as_ref()
                     .map_or(0, legal_path_predicates_expression)
         }
-        GraphPattern::Graph { inner, .. }
-        | GraphPattern::Project { inner, .. }
-        | GraphPattern::Distinct { inner }
-        | GraphPattern::Reduced { inner }
-        | GraphPattern::Slice { inner, .. }
-        | GraphPattern::Service { inner, .. } => legal_path_predicates(inner),
-        GraphPattern::Filter { expr, inner } => {
+        QueryExpression::Graph { inner, .. }
+        | QueryExpression::Project { inner, .. }
+        | QueryExpression::Distinct { inner }
+        | QueryExpression::Reduced { inner }
+        | QueryExpression::Slice { inner, .. }
+        | QueryExpression::Service { inner, .. } => legal_path_predicates(inner),
+        QueryExpression::Filter { expr, inner } => {
             legal_path_predicates(inner) + legal_path_predicates_expression(expr)
         }
-        GraphPattern::Extend {
+        QueryExpression::Extend {
             inner, expression, ..
         } => legal_path_predicates(inner) + legal_path_predicates_expression(expression),
-        GraphPattern::OrderBy { inner, expression } => {
+        QueryExpression::OrderBy { inner, expression } => {
             legal_path_predicates(inner)
                 + expression
                     .iter()
@@ -278,7 +281,7 @@ fn legal_path_predicates(pattern: &GraphPattern) -> usize {
                     })
                     .sum::<usize>()
         }
-        GraphPattern::Group {
+        QueryExpression::Group {
             inner, aggregates, ..
         } => {
             legal_path_predicates(inner)

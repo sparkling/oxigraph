@@ -175,11 +175,14 @@ fn check_inner(
 }
 
 fn as_node(term: &Term) -> Option<ShapeId> {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::NamedNode(node) => Some(node.clone().into()),
         Term::BlankNode(node) => Some(node.clone().into()),
         Term::Literal(_) => None,
-        #[cfg(feature = "rdf-12")]
-        Term::Triple(_) => None,
+        _ => None,
     }
 }

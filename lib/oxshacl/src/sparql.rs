@@ -409,12 +409,15 @@ fn interpolate_message(message: &Literal, bindings: &[(String, Option<Term>)]) -
 }
 
 fn parameter_text(term: &Term) -> String {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::Literal(literal) => literal.value().to_owned(),
         Term::NamedNode(node) => node.as_str().to_owned(),
         Term::BlankNode(node) => node.as_str().to_owned(),
-        #[cfg(feature = "rdf-12")]
-        Term::Triple(_) => term.to_string(),
+        _ => term.to_string(),
     }
 }
 

@@ -14,7 +14,7 @@ mod profile_tests;
 mod serializer;
 mod serializer_options;
 
-pub use document::LoadedDocument;
+pub use document::{DocumentLoader, LoadedDocument};
 pub use error::{RdfParseError, RdfSyntaxError, TextPosition};
 pub use format::RdfFormat;
 pub use media_type::{RdfCharset, RdfMediaType, RdfMediaTypeParseError};

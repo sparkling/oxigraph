@@ -326,11 +326,14 @@ pub(crate) fn deduplicate(terms: impl IntoIterator<Item = Term>) -> Vec<Term> {
 }
 
 pub(crate) fn as_subject(term: &Term) -> Option<NamedOrBlankNode> {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::NamedNode(node) => Some(node.clone().into()),
         Term::BlankNode(node) => Some(node.clone().into()),
         Term::Literal(_) => None,
-        #[cfg(feature = "rdf-12")]
-        Term::Triple(_) => None,
+        _ => None,
     }
 }

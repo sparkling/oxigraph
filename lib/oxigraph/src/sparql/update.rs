@@ -1,15 +1,15 @@
 #[cfg(feature = "http-client")]
-use crate::io::{RdfFormat, RdfParser};
+use crate::http::HttpClient;
+#[cfg(feature = "http-client")]
+use crate::io::DocumentLoader;
+#[cfg(feature = "http-client")]
+use crate::io::RdfParser;
 use crate::model::{Dataset as OxDataset, GraphName as OxGraphName, OxString, Quad as OxQuad};
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
-#[cfg(feature = "http-client")]
-use crate::sparql::http::Client;
 use crate::storage::{Storage, StorageError, StorageReadableTransaction, StorageTransaction};
 use crate::store::{Store, Transaction};
 use oxiri::Iri;
-#[cfg(feature = "http-client")]
-use oxrdfio::LoadedDocument;
 use rustc_hash::FxHashMap;
 use spareval::{DeleteInsertQuad, QueryDatasetSpecification, QueryEvaluator};
 use spargebra::SparqlVersion;
@@ -21,8 +21,6 @@ use spargebra::update::{
     ClearOperation, CreateOperation, DeleteDataOperation, DeleteInsertOperation, DropOperation,
     GraphUpdateOperation, InsertDataOperation, LoadOperation, Update,
 };
-#[cfg(feature = "http-client")]
-use std::io::Read;
 #[cfg(feature = "http-client")]
 use std::time::Duration;
 
@@ -206,7 +204,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                     base_iri: self.update.base_iri.clone(),
                     query_evaluator: self.evaluator,
                     #[cfg(feature = "http-client")]
-                    client: Client::new(self.http_timeout, self.http_redirection_limit),
+                    client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 transaction.commit()?;
@@ -217,7 +215,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 base_iri: self.update.base_iri.clone(),
                 query_evaluator: self.evaluator,
                 #[cfg(feature = "http-client")]
-                client: Client::new(self.http_timeout, self.http_redirection_limit),
+                client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
             }
             .eval_all(&self.update.operations, &self.using_datasets),
             UpdateTransaction::Owned(mut transaction, storage) => {
@@ -227,7 +225,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                     base_iri: self.update.base_iri.clone(),
                     query_evaluator: self.evaluator,
                     #[cfg(feature = "http-client")]
-                    client: Client::new(self.http_timeout, self.http_redirection_limit),
+                    client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 transaction.commit()?;
@@ -248,7 +246,7 @@ struct ReadableUpdateEvaluator<'a, 'b> {
     base_iri: Option<Iri<OxString>>,
     query_evaluator: QueryEvaluator,
     #[cfg(feature = "http-client")]
-    client: Client,
+    client: HttpClient,
 }
 
 impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
@@ -450,7 +448,7 @@ struct WriteOnlyUpdateEvaluator<'a, 'b> {
     base_iri: Option<Iri<OxString>>,
     query_evaluator: QueryEvaluator,
     #[cfg(feature = "http-client")]
-    client: Client,
+    client: HttpClient,
 }
 
 impl WriteOnlyUpdateEvaluator<'_, '_> {
@@ -654,7 +652,7 @@ fn validate_loaded_terms(
 fn eval_load(
     operation: &LoadOperation,
     version: SparqlVersion,
-    client: &Client,
+    client: &HttpClient,
 ) -> Result<LoadedUpdate, UpdateEvaluationError> {
     let (content_type, body) = client
         .get(
@@ -688,20 +686,9 @@ fn eval_load(
         GraphName::DefaultGraph => (parser, None),
     };
     let client = client.clone();
-    let parser = parser.for_reader(body).with_document_loader(move |url| {
-        let (content_type, mut body) = client.get(
-            url,
-            "application/n-triples, text/turtle, application/rdf+xml, application/ld+json",
-        )?;
-        let mut content = Vec::new();
-        body.read_to_end(&mut content)?;
-        Ok(LoadedDocument {
-            url: url.into(),
-            content,
-            format: RdfFormat::from_media_type(&content_type)
-                .ok_or_else(|| UpdateEvaluationError::UnsupportedContentType(content_type))?,
-        })
-    });
+    let parser = parser
+        .for_reader(body)
+        .with_document_loader(DocumentLoader::new().with_http_client(client));
     Ok(LoadedUpdate {
         dataset: parser.collect_dataset()?,
         named_graph_to_create,

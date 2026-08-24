@@ -370,12 +370,15 @@ fn parse_order(source: &GraphSnapshot, subject: &ShapeId) -> Result<Decimal, Rul
 }
 
 fn as_node(term: Term) -> Option<ShapeId> {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::NamedNode(node) => Some(node.into()),
         Term::BlankNode(node) => Some(node.into()),
         Term::Literal(_) => None,
-        #[cfg(feature = "rdf-12")]
-        Term::Triple(_) => None,
+        _ => None,
     }
 }
 

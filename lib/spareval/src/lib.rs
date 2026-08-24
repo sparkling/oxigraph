@@ -29,11 +29,13 @@ use json_event_parser::{JsonEvent, WriterJsonSerializer};
 use oxiri::Iri;
 use oxrdf::{GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Term, Variable};
 use oxsdatatypes::{DateTime, DayTimeDuration, Float};
-use spargebra::algebra::QueryDataset;
+use spargebra::algebra::QueryDatasetSpecification as AlQueryDatasetSpecification;
 use spargebra::update::DeleteInsertOperation;
 use spargebra::{ParsedQuery, Query, SparqlVersion};
+#[cfg(feature = "geosparql")]
+use spargeo::GEOSPARQL_EXTENSION_FUNCTIONS;
 use sparopt::Optimizer;
-use sparopt::algebra::GraphPattern;
+use sparopt::algebra::QueryExpression;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -78,33 +80,28 @@ pub struct QueryEvaluator {
 
 impl Default for QueryEvaluator {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl QueryEvaluator {
+    #[must_use]
+    pub fn new() -> Self {
+        #[cfg_attr(not(feature = "geosparql"), expect(unused_mut))]
+        let mut custom_functions = CustomFunctionRegistry::default();
+        #[cfg(feature = "geosparql")]
+        for (name, implementation) in GEOSPARQL_EXTENSION_FUNCTIONS {
+            custom_functions.insert(name, Arc::new(implementation));
+        }
         Self {
             service_handler: ServiceHandlerRegistry::default(),
-            custom_functions: default_custom_functions(),
+            custom_functions,
             custom_aggregate_functions: CustomAggregateFunctionRegistry::default(),
             without_optimizations: false,
             run_stats: false,
             cancellation_token: None,
             version: SparqlVersion::current(),
         }
-    }
-}
-
-fn default_custom_functions() -> CustomFunctionRegistry {
-    #[cfg_attr(not(feature = "geosparql"), expect(unused_mut))]
-    let mut registry = CustomFunctionRegistry::default();
-    #[cfg(feature = "geosparql")]
-    for (name, implementation) in spargeo::GEOSPARQL_EXTENSION_FUNCTIONS {
-        registry.insert(name, Arc::new(implementation));
-    }
-    registry
-}
-
-impl QueryEvaluator {
-    #[must_use]
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
     }
 
     /// Prepare the SPARQL query to be executed.
@@ -225,6 +222,28 @@ impl QueryEvaluator {
         self
     }
 
+    /// Returns the list of custom functions currently registered in the evaluator.
+    ///
+    /// ```
+    /// use oxrdf::{Literal, NamedNode};
+    /// use spareval::QueryEvaluator;
+    ///
+    /// let evaluator = QueryEvaluator::new().with_custom_function(
+    ///     NamedNode::new("http://www.w3.org/ns/formats/N-Triples")?,
+    ///     |args| args.get(0).map(|t| Literal::from(t.to_string()).into()),
+    /// );
+    /// assert!(
+    ///     evaluator
+    ///         .custom_functions()
+    ///         .collect::<Vec<_>>()
+    ///         .contains(&&NamedNode::new("http://www.w3.org/ns/formats/N-Triples")?)
+    /// );
+    /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
+    /// ```
+    pub fn custom_functions(&self) -> impl Iterator<Item = &NamedNode> {
+        self.custom_functions.keys()
+    }
+
     /// Adds a custom SPARQL evaluation aggregate function.
     ///
     /// Note that it must also be given to the SPARQL parser using [`SparqlParser::with_custom_aggregate_function`](spargebra::SparqlParser::with_custom_aggregate_function).
@@ -291,6 +310,11 @@ impl QueryEvaluator {
         self.custom_aggregate_functions
             .insert(name, Arc::new(evaluator));
         self
+    }
+
+    /// Returns the list of custom aggregate functions currently registered in the evaluator.
+    pub fn custom_aggregate_functions(&self) -> impl Iterator<Item = &NamedNode> {
+        self.custom_aggregate_functions.keys()
     }
 
     /// Disables query optimizations and runs the query as it is.
@@ -378,7 +402,7 @@ impl QueryEvaluator {
 
             fn build_exists(
                 &mut self,
-                _: &GraphPattern,
+                _: &QueryExpression,
             ) -> Result<impl Fn(&HashMap<&'a Variable, Term>) -> bool + 'a, QueryEvaluationError>
             {
                 Err::<fn(&HashMap<&'a Variable, Term>) -> bool, _>(
@@ -588,13 +612,15 @@ pub struct PreparedQuery<'a> {
 impl PreparedQuery<'_> {
     /// Substitute a variable with a given RDF term in the SPARQL query.
     ///
+    /// The variable must be part of the `SELECT` clause to be substituted.
+    ///
     /// Usage example:
     /// ```
     /// use oxrdf::{Dataset, Literal, Variable};
     /// use spareval::{QueryEvaluator, QueryResults};
     /// use spargebra::SparqlParser;
     ///
-    /// let query = SparqlParser::new().parse_query("SELECT ?v WHERE {}")?;
+    /// let query = SparqlParser::new().parse_query("SELECT ?x ?v WHERE { BIND(?v+1 AS ?x) }")?;
     /// let evaluator = QueryEvaluator::new();
     /// let prepared_query = evaluator
     ///     .prepare(&query)
@@ -602,8 +628,8 @@ impl PreparedQuery<'_> {
     ///
     /// if let QueryResults::Solutions(mut solutions) = prepared_query.execute(&Dataset::new())? {
     ///     assert_eq!(
-    ///         solutions.next().unwrap()?.get("v"),
-    ///         Some(&Literal::from(1).into())
+    ///         solutions.next().unwrap()?.get("x"),
+    ///         Some(&Literal::from(2).into())
     ///     );
     /// }
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
@@ -647,9 +673,9 @@ impl PreparedQuery<'_> {
         let start_planning = Timer::now();
         let (results, plan_node_with_stats, planning_duration) = match self.query {
             Query::Select(query) => {
-                let mut pattern = GraphPattern::from(&query.pattern);
+                let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_graph_pattern(pattern);
+                    pattern = Optimizer::optimize_query_expression(pattern);
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -668,9 +694,9 @@ impl PreparedQuery<'_> {
                 )
             }
             Query::Ask(query) => {
-                let mut pattern = GraphPattern::from(&query.pattern);
+                let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_graph_pattern(pattern);
+                    pattern = Optimizer::optimize_query_expression(pattern);
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -689,9 +715,9 @@ impl PreparedQuery<'_> {
                 )
             }
             Query::Construct(query) => {
-                let mut pattern = GraphPattern::from(&query.pattern);
+                let mut pattern = QueryExpression::from(&query.expression);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_graph_pattern(pattern);
+                    pattern = Optimizer::optimize_query_expression(pattern);
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -712,9 +738,9 @@ impl PreparedQuery<'_> {
                 )
             }
             Query::Describe(query) => {
-                let mut pattern = GraphPattern::from(&query.pattern);
+                let mut pattern = QueryExpression::from(&query.pattern);
                 if !self.evaluator.without_optimizations {
-                    pattern = Optimizer::optimize_graph_pattern(pattern);
+                    pattern = Optimizer::optimize_query_expression(pattern);
                 }
                 let planning_duration = start_planning.elapsed();
                 let (results, explanation) = match self.evaluator.simple_evaluator(
@@ -815,9 +841,9 @@ impl<'a> PreparedDeleteInsertUpdate<'a> {
         self,
         dataset: impl QueryableDataset<'b>,
     ) -> Result<DeleteInsertIter<'b, 'a>, QueryEvaluationError> {
-        let mut pattern = GraphPattern::from(&*self.operation.pattern);
+        let mut pattern = QueryExpression::from(&*self.operation.pattern);
         if !self.evaluator.without_optimizations {
-            pattern = Optimizer::optimize_graph_pattern(pattern);
+            pattern = Optimizer::optimize_query_expression(pattern);
         }
         let (solutions, _) = self
             .evaluator
@@ -987,8 +1013,8 @@ impl Default for QueryDatasetSpecification {
     }
 }
 
-impl From<QueryDataset> for QueryDatasetSpecification {
-    fn from(dataset: QueryDataset) -> Self {
+impl From<AlQueryDatasetSpecification> for QueryDatasetSpecification {
+    fn from(dataset: AlQueryDatasetSpecification) -> Self {
         Self {
             default: Some(dataset.default.into_iter().map(Into::into).collect()),
             named: dataset
@@ -1043,8 +1069,91 @@ mod tests {
     use super::*;
     use oxrdf::vocab::{rdf, xsd};
     use oxrdf::{Literal, Term};
+    use spargebra::SparqlParser;
     use spargebra::vocab::sparql;
-    use sparopt::algebra::{Expression, GraphPattern};
+    use sparopt::algebra::{Expression, QueryExpression};
+
+    struct FailingDataset {
+        fail_reads: bool,
+    }
+
+    impl<'a> QueryableDataset<'a> for FailingDataset {
+        type InternalTerm = u8;
+        type Error = io::Error;
+
+        fn internal_quads_for_pattern(
+            &self,
+            _subject: Option<&u8>,
+            predicate: Option<&u8>,
+            _object: Option<&u8>,
+            _graph_name: Option<Option<&u8>>,
+        ) -> impl Iterator<Item = Result<InternalQuad<u8>, io::Error>> + use<'a> {
+            std::iter::once(if self.fail_reads && predicate == Some(&5) {
+                Err(io::Error::other("dataset read failed"))
+            } else {
+                Ok(InternalQuad {
+                    subject: 1,
+                    predicate: 2,
+                    object: 3,
+                    graph_name: None,
+                })
+            })
+        }
+
+        fn internalize_term(&self, term: Term) -> Result<u8, io::Error> {
+            Ok(match term {
+                Term::NamedNode(node) if node.as_str().ends_with("/right") => 5,
+                _ => 2,
+            })
+        }
+
+        fn externalize_term(&self, term: u8) -> Result<Term, io::Error> {
+            match term {
+                1 => Ok(NamedNode::new_unchecked("http://example.com/s").into()),
+                2 => Ok(NamedNode::new_unchecked("http://example.com/p").into()),
+                _ => Err(io::Error::other("dictionary read failed")),
+            }
+        }
+    }
+
+    #[test]
+    fn construct_propagates_externalization_errors() {
+        let query = SparqlParser::new()
+            .parse_query("CONSTRUCT { ?s <http://example.com/p> ?o } WHERE { ?s ?p ?o }")
+            .unwrap();
+        let results = QueryEvaluator::new()
+            .prepare(&query)
+            .execute(FailingDataset { fail_reads: false })
+            .unwrap();
+        assert!(matches!(&results, QueryResults::Graph(_)));
+        if let QueryResults::Graph(results) = results {
+            let error = results.collect::<Result<Vec<_>, _>>().unwrap_err();
+            assert!(matches!(error, QueryEvaluationError::Dataset(_)));
+            assert_eq!(error.to_string(), "dictionary read failed");
+        }
+    }
+
+    #[test]
+    fn minus_propagates_right_side_read_errors() {
+        let query = SparqlParser::new()
+            .parse_query(
+                "SELECT ?s WHERE {
+                    ?s <http://example.com/left> ?o
+                    MINUS { ?x <http://example.com/right> ?y }
+                }",
+            )
+            .unwrap();
+        let results = QueryEvaluator::new()
+            .prepare(&query)
+            .execute(FailingDataset { fail_reads: true })
+            .unwrap();
+        assert!(matches!(&results, QueryResults::Solutions(_)));
+        if let QueryResults::Solutions(results) = results {
+            let error = results.collect::<Result<Vec<_>, _>>().unwrap_err();
+            assert!(matches!(error, QueryEvaluationError::Dataset(_)));
+            assert_eq!(error.to_string(), "dataset read failed");
+        }
+    }
 
     #[test]
     fn evaluate_expression_literal_and_arithmetic() {
@@ -1153,7 +1262,7 @@ mod tests {
         let evaluator = QueryEvaluator::new();
 
         // EXISTS {} (empty) -> false
-        let exists_empty = Expression::exists(GraphPattern::empty());
+        let exists_empty = Expression::exists(QueryExpression::empty());
         assert_eq!(
             evaluator
                 .evaluate_effective_boolean_value_expression(&exists_empty, std::iter::empty()),
@@ -1161,7 +1270,7 @@ mod tests {
         );
 
         // EXISTS { VALUES () {} } (empty singleton) -> true
-        let exists_unit = Expression::exists(GraphPattern::empty_singleton());
+        let exists_unit = Expression::exists(QueryExpression::empty_singleton());
         assert_eq!(
             evaluator.evaluate_effective_boolean_value_expression(&exists_unit, std::iter::empty()),
             Some(true)

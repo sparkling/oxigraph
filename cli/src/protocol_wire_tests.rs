@@ -15,14 +15,28 @@ const UPDATE_CONTENT_TYPE: &str = "application/sparql-update";
 const JSON_RESULTS: &str = "application/sparql-results+json";
 
 #[test]
-fn form_post_rejects_standard_uri_parameters() -> Result<()> {
+fn form_post_combines_disjoint_url_and_body_parameters() -> Result<()> {
     let _serial = protocol_wire_lock();
     let store = Store::new()?;
     let (address, _server) =
         spawn_server(&store, &SparqlEvaluator::new(), QueryEntailment::Simple)?;
     let query_body = form(&[("query", "ASK {}")]);
+    let duplicate_query = ("query", "ASK {}");
+    let response = send(
+        address,
+        "POST",
+        &target("/query", &[duplicate_query]),
+        Some(FORM_CONTENT_TYPE),
+        Some(JSON_RESULTS),
+        &query_body,
+    )?;
+    ensure!(
+        response.status == 400,
+        "a query set in both URL and body returned {}: {}",
+        response.status,
+        response.body_text()
+    );
     for parameter in [
-        ("query", "ASK {}"),
         ("default-graph-uri", "urn:default"),
         ("named-graph-uri", "urn:named"),
         ("version", "1.2"),
@@ -36,7 +50,7 @@ fn form_post_rejects_standard_uri_parameters() -> Result<()> {
             &query_body,
         )?;
         ensure!(
-            response.status == 400,
+            response.status == 200,
             "query form URI parameter {} returned {}: {}",
             parameter.0,
             response.status,
@@ -45,8 +59,22 @@ fn form_post_rejects_standard_uri_parameters() -> Result<()> {
     }
 
     let update_body = form(&[("update", "INSERT DATA {}")]);
+    let duplicate_update = ("update", "INSERT DATA {}");
+    let response = send(
+        address,
+        "POST",
+        &target("/update", &[duplicate_update]),
+        Some(FORM_CONTENT_TYPE),
+        None,
+        &update_body,
+    )?;
+    ensure!(
+        response.status == 400,
+        "an update set in both URL and body returned {}: {}",
+        response.status,
+        response.body_text()
+    );
     for parameter in [
-        ("update", "INSERT DATA {}"),
         ("using-graph-uri", "urn:default"),
         ("using-named-graph-uri", "urn:named"),
         ("version", "1.2"),
@@ -60,7 +88,7 @@ fn form_post_rejects_standard_uri_parameters() -> Result<()> {
             &update_body,
         )?;
         ensure!(
-            response.status == 400,
+            response.status == 204,
             "update form URI parameter {} returned {}: {}",
             parameter.0,
             response.status,
@@ -364,8 +392,8 @@ fn spawn_server(
                 &method,
                 handle_request(
                     request,
-                    server_store.clone(),
-                    server_evaluator.clone(),
+                    &server_store,
+                    &server_evaluator,
                     false,
                     false,
                     entailment,

@@ -12,7 +12,7 @@ use spareval::{
     ServiceHandler,
 };
 use spargebra::SparqlParser;
-use spargebra::algebra::GraphPattern;
+use spargebra::algebra::QueryExpression;
 use std::convert::Infallible;
 use std::io;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ impl ServiceHandler for LazyErrorService {
 
     fn handle(
         &self,
-        _pattern: &GraphPattern,
+        _expression: &QueryExpression,
         _base_iri: Option<&Iri<OxString>>,
     ) -> Result<QuerySolutionIter<'static>, Self::Error> {
         let variables: Arc<[Variable]> = [Variable::new_unchecked("remote")].into();

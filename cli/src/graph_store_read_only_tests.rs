@@ -29,12 +29,13 @@ impl ReadOnlyTestServer {
     fn exec(&self, request: Request<impl Into<Body>>) -> Response<Body> {
         let mut request = request.map(Into::into);
         let method = request.method().clone();
+        let evaluator = SparqlEvaluator::new();
         finalize_response(
             &method,
             handle_request(
                 &mut request,
-                self.store.clone(),
-                SparqlEvaluator::new(),
+                &self.store,
+                &evaluator,
                 true,
                 false,
                 QueryEntailment::Simple,

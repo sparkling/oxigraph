@@ -1,6 +1,6 @@
 use oxrdf::Variable;
 use spargebra::Query;
-use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression};
+use spargebra::algebra::{AggregateExpression, Expression, OrderExpression, QueryExpression};
 
 pub(crate) fn expose_prebound_variables(query: &mut Query, variables: &[Variable]) {
     // spareval can substitute RDF terms (including blank nodes) only for variables
@@ -8,9 +8,9 @@ pub(crate) fn expose_prebound_variables(query: &mut Query, variables: &[Variable
     // exposes the variables at each leaf without serializing terms into SPARQL.
     // Extending projections keeps those bindings visible through subqueries.
     let pattern = match query {
-        Query::Select(query) => &mut query.pattern,
-        Query::Ask(query) => &mut query.pattern,
-        Query::Construct(query) => &mut query.pattern,
+        Query::Select(query) => &mut query.expression,
+        Query::Ask(query) => &mut query.expression,
+        Query::Construct(query) => &mut query.expression,
         Query::Describe(_) => return,
     };
     *pattern = expose_in_pattern(std::mem::take(pattern), variables);
@@ -25,56 +25,56 @@ pub(crate) fn expose_prebound_variables(query: &mut Query, variables: &[Variable
     unreachable_patterns,
     reason = "dependency-unified LATERAL is rejected by policy before pre-binding"
 )]
-fn expose_in_pattern(pattern: GraphPattern, variables: &[Variable]) -> GraphPattern {
+fn expose_in_pattern(pattern: QueryExpression, variables: &[Variable]) -> QueryExpression {
     match pattern {
-        leaf @ (GraphPattern::Bgp { .. }
-        | GraphPattern::Path { .. }
-        | GraphPattern::Values { .. }) => GraphPattern::Join {
+        leaf @ (QueryExpression::Bgp { .. }
+        | QueryExpression::Path { .. }
+        | QueryExpression::Values { .. }) => QueryExpression::Join {
             left: Box::new(leaf),
             right: Box::new(unbound_registration(variables)),
         },
-        GraphPattern::Join { left, right } => GraphPattern::Join {
+        QueryExpression::Join { left, right } => QueryExpression::Join {
             left: Box::new(expose_in_pattern(*left, variables)),
             right: Box::new(expose_in_pattern(*right, variables)),
         },
-        GraphPattern::LeftJoin {
+        QueryExpression::LeftJoin {
             left,
             right,
             expression,
-        } => GraphPattern::LeftJoin {
+        } => QueryExpression::LeftJoin {
             left: Box::new(expose_in_pattern(*left, variables)),
             right: Box::new(expose_in_pattern(*right, variables)),
             expression: expression.map(|expression| expose_in_expression(expression, variables)),
         },
-        GraphPattern::Union { left, right } => GraphPattern::Union {
+        QueryExpression::Union { left, right } => QueryExpression::Union {
             left: Box::new(expose_in_pattern(*left, variables)),
             right: Box::new(expose_in_pattern(*right, variables)),
         },
-        GraphPattern::Minus { left, right } => GraphPattern::Minus {
+        QueryExpression::Minus { left, right } => QueryExpression::Minus {
             left: Box::new(expose_in_pattern(*left, variables)),
             right: Box::new(expose_in_pattern(*right, variables)),
         },
-        GraphPattern::Graph { name, inner } => GraphPattern::Join {
-            left: Box::new(GraphPattern::Graph {
+        QueryExpression::Graph { name, inner } => QueryExpression::Join {
+            left: Box::new(QueryExpression::Graph {
                 name,
                 inner: Box::new(expose_in_pattern(*inner, variables)),
             }),
             right: Box::new(unbound_registration(variables)),
         },
-        GraphPattern::Filter { expr, inner } => GraphPattern::Filter {
+        QueryExpression::Filter { expr, inner } => QueryExpression::Filter {
             expr: expose_in_expression(expr, variables),
             inner: Box::new(expose_in_pattern(*inner, variables)),
         },
-        GraphPattern::Extend {
+        QueryExpression::Extend {
             inner,
             variable,
             expression,
-        } => GraphPattern::Extend {
+        } => QueryExpression::Extend {
             inner: Box::new(expose_in_pattern(*inner, variables)),
             variable,
             expression: expose_in_expression(expression, variables),
         },
-        GraphPattern::OrderBy { inner, expression } => GraphPattern::OrderBy {
+        QueryExpression::OrderBy { inner, expression } => QueryExpression::OrderBy {
             inner: Box::new(expose_in_pattern(*inner, variables)),
             expression: expression
                 .into_iter()
@@ -88,7 +88,7 @@ fn expose_in_pattern(pattern: GraphPattern, variables: &[Variable]) -> GraphPatt
                 })
                 .collect(),
         },
-        GraphPattern::Project {
+        QueryExpression::Project {
             inner,
             variables: mut projected,
         } => {
@@ -97,27 +97,27 @@ fn expose_in_pattern(pattern: GraphPattern, variables: &[Variable]) -> GraphPatt
                     projected.push(variable.clone());
                 }
             }
-            GraphPattern::Project {
+            QueryExpression::Project {
                 inner: Box::new(expose_in_pattern(*inner, variables)),
                 variables: projected,
             }
         }
-        GraphPattern::Distinct { inner } => GraphPattern::Distinct {
+        QueryExpression::Distinct { inner } => QueryExpression::Distinct {
             inner: Box::new(expose_in_pattern(*inner, variables)),
         },
-        GraphPattern::Reduced { inner } => GraphPattern::Reduced {
+        QueryExpression::Reduced { inner } => QueryExpression::Reduced {
             inner: Box::new(expose_in_pattern(*inner, variables)),
         },
-        GraphPattern::Slice {
+        QueryExpression::Slice {
             inner,
-            start,
-            length,
-        } => GraphPattern::Slice {
+            offset,
+            limit,
+        } => QueryExpression::Slice {
             inner: Box::new(expose_in_pattern(*inner, variables)),
-            start,
-            length,
+            offset,
+            limit,
         },
-        GraphPattern::Group {
+        QueryExpression::Group {
             inner,
             variables: mut grouped,
             aggregates,
@@ -127,7 +127,7 @@ fn expose_in_pattern(pattern: GraphPattern, variables: &[Variable]) -> GraphPatt
                     grouped.push(variable.clone());
                 }
             }
-            GraphPattern::Group {
+            QueryExpression::Group {
                 inner: Box::new(expose_in_pattern(*inner, variables)),
                 variables: grouped,
                 aggregates: aggregates
@@ -156,11 +156,11 @@ fn expose_in_pattern(pattern: GraphPattern, variables: &[Variable]) -> GraphPatt
                     .collect(),
             }
         }
-        GraphPattern::Service {
+        QueryExpression::Service {
             name,
             inner,
             silent,
-        } => GraphPattern::Service {
+        } => QueryExpression::Service {
             name,
             inner: Box::new(expose_in_pattern(*inner, variables)),
             silent,
@@ -214,8 +214,8 @@ fn expose_in_expression(expression: Expression, variables: &[Variable]) -> Expre
     }
 }
 
-fn unbound_registration(variables: &[Variable]) -> GraphPattern {
-    GraphPattern::Values {
+fn unbound_registration(variables: &[Variable]) -> QueryExpression {
+    QueryExpression::Values {
         variables: variables.to_vec(),
         bindings: vec![vec![None; variables.len()]],
     }

@@ -15,7 +15,7 @@ use oxhttp::model::header::{
 use oxhttp::model::uri::{Authority, PathAndQuery, Scheme};
 use oxhttp::model::{Body, HeaderValue, Method, Request, Response, StatusCode, Uri};
 use oxigraph::io::{
-    JsonLdProfileSet, LoadedDocument, RdfFormat, RdfParseError, RdfParser, RdfSerializer,
+    DocumentLoader, JsonLdProfileSet, RdfFormat, RdfParseError, RdfParser, RdfSerializer,
 };
 use oxigraph::model::{
     GraphName, IriParseError, NamedNode, NamedOrBlankNode, OxString, RdfVersion,
@@ -30,7 +30,7 @@ use oxiri::{Iri, IriRef};
 use rayon_core::ThreadPoolBuilder;
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 #[cfg(target_os = "linux")]
 use std::env;
 use std::ffi::OsStr;
@@ -45,7 +45,7 @@ use std::sync::Mutex;
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 use std::{fmt, fs, str, thread};
-use url::{Url, form_urlencoded};
+use url::form_urlencoded;
 
 mod cli;
 mod graph_store;
@@ -138,6 +138,7 @@ pub fn main() -> anyhow::Result<()> {
             format,
             base,
             graph,
+            fail_on_named_graphs,
         } => {
             let store = Store::open(&location)?;
             let format = if let Some(format) = format {
@@ -186,6 +187,7 @@ pub fn main() -> anyhow::Result<()> {
                     base.as_deref(),
                     graph,
                     lenient,
+                    fail_on_named_graphs,
                 )?;
                 loader.commit()?;
             } else {
@@ -197,6 +199,7 @@ pub fn main() -> anyhow::Result<()> {
                     graph.as_ref(),
                     non_atomic,
                     lenient,
+                    fail_on_named_graphs,
                 )?;
             }
             eprintln!(
@@ -265,7 +268,7 @@ pub fn main() -> anyhow::Result<()> {
                 io::read_to_string(stdin().lock())?
             };
             let store = Store::open_read_only(location)?;
-            let mut evaluator = SparqlEvaluator::new();
+            let mut evaluator = sparql_evaluator();
             if let Some(base) = query_base {
                 evaluator = evaluator.with_base_iri(&base)?;
             }
@@ -418,7 +421,7 @@ pub fn main() -> anyhow::Result<()> {
                 io::read_to_string(stdin().lock())?
             };
             let store = Store::open(location)?;
-            let mut evaluator = SparqlEvaluator::new();
+            let mut evaluator = sparql_evaluator();
             if let Some(base) = update_base {
                 evaluator = evaluator.with_base_iri(&base)?;
             }
@@ -644,6 +647,7 @@ fn parallel_bulk_load_files(
     graph: Option<&NamedNode>,
     non_atomic: bool,
     lenient: bool,
+    fail_on_named_graphs: bool,
 ) -> anyhow::Result<()> {
     let total_files = files.len();
     let failures = Mutex::new(Vec::new());
@@ -665,6 +669,7 @@ fn parallel_bulk_load_files(
                         graph.cloned(),
                         non_atomic,
                         lenient,
+                        fail_on_named_graphs,
                     ) {
                         match failure_sink.lock() {
                             Ok(mut failures) => failures.push(failure),
@@ -694,6 +699,7 @@ fn parallel_bulk_load_file(
     graph: Option<NamedNode>,
     non_atomic: bool,
     lenient: bool,
+    fail_on_named_graphs: bool,
 ) -> Result<(), ParallelBulkLoadFailure> {
     let progress_file = file.to_owned();
     let start = Instant::now();
@@ -737,6 +743,7 @@ fn parallel_bulk_load_file(
             base,
             graph,
             lenient,
+            fail_on_named_graphs,
         )
     } else {
         bulk_load_file(
@@ -755,6 +762,7 @@ fn parallel_bulk_load_file(
             base,
             graph,
             lenient,
+            fail_on_named_graphs,
         )
     };
     load_result.map_err(|error| {
@@ -792,8 +800,12 @@ fn bulk_load_read(
     base_iri: Option<&str>,
     to_graph_name: Option<NamedNode>,
     lenient: bool,
+    fail_on_named_graphs: bool,
 ) -> anyhow::Result<()> {
     let mut parser = RdfParser::from_format(format);
+    if fail_on_named_graphs {
+        parser = parser.without_named_graphs();
+    }
     if let Some(to_graph_name) = to_graph_name {
         parser = parser.with_default_graph(to_graph_name);
     }
@@ -816,8 +828,12 @@ fn bulk_load_file(
     base_iri: Option<&str>,
     to_graph_name: Option<NamedNode>,
     lenient: bool,
+    fail_on_named_graphs: bool,
 ) -> anyhow::Result<()> {
     let mut parser = RdfParser::from_format(format);
+    if fail_on_named_graphs {
+        parser = parser.without_named_graphs();
+    }
     if let Some(to_graph_name) = to_graph_name {
         parser = parser.with_default_graph(to_graph_name);
     }
@@ -863,23 +879,9 @@ fn do_convert<R: Read, W: Write>(
     if lenient {
         parser = parser.lenient();
     }
-    let mut parser = parser.for_reader(reader).with_document_loader(|url| {
-        let url = Url::parse(url)?;
-        let Ok(path) = url.to_file_path() else {
-            return Err(Box::new(io::Error::other("The URL is not a file path")));
-        };
-        Ok(LoadedDocument {
-            url: url.to_string(),
-            content: fs::read(&path)?,
-            format: path
-                .extension()
-                .and_then(OsStr::to_str)
-                .and_then(RdfFormat::from_extension)
-                .unwrap_or(RdfFormat::JsonLd {
-                    profile: JsonLdProfileSet::empty(),
-                }), // TODO: is it a good fallback?
-        })
-    });
+    let mut parser = parser
+        .for_reader(reader)
+        .with_document_loader(DocumentLoader::new().with_file_support());
     let first = parser.next(); // We read the first element to get prefixes and the base IRI
     if let Some(base_iri) = to_base.or_else(|| parser.base_iri()) {
         serializer = serializer
@@ -995,7 +997,7 @@ fn serve(
     timeout_s: Option<u64>,
 ) -> anyhow::Result<()> {
     entailment.ensure_supported()?;
-    let sparql_evaluator = SparqlEvaluator::new();
+    let sparql_evaluator = sparql_evaluator();
     let timeout = timeout_s.map(Duration::from_secs);
     let mut server = if cors {
         Server::new(cors_middleware(move |request| {
@@ -1004,8 +1006,8 @@ fn serve(
                 &method,
                 handle_request(
                     request,
-                    store.clone(),
-                    sparql_evaluator.clone(),
+                    &store,
+                    &sparql_evaluator,
                     read_only,
                     union_default_graph,
                     entailment,
@@ -1021,8 +1023,8 @@ fn serve(
                 &method,
                 handle_request(
                     request,
-                    store.clone(),
-                    sparql_evaluator.clone(),
+                    &store,
+                    &sparql_evaluator,
                     read_only,
                     union_default_graph,
                     entailment,
@@ -1080,14 +1082,10 @@ fn cors_middleware(
 
 type HttpError = (StatusCode, String);
 
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "the request dispatcher owns a cheap Store handle used by response producers"
-)]
 fn handle_request(
     request: &mut Request<Body>,
-    store: Store,
-    sparql_evaluator: SparqlEvaluator,
+    store: &Store,
+    sparql_evaluator: &SparqlEvaluator,
     read_only: bool,
     union_default_graph: bool,
     entailment: QueryEntailment,
@@ -1130,9 +1128,9 @@ fn handle_request(
             if request.uri().query().is_some() {
                 reject_nonempty_sparql_get_body(request)?;
                 configure_and_evaluate_sparql_query(
-                    &store,
+                    store,
                     sparql_evaluator,
-                    url_query_parameters(request),
+                    RequestParams::from_request_url(request),
                     None,
                     None,
                     request,
@@ -1149,6 +1147,7 @@ fn handle_request(
                     },
                     union_default_graph,
                     entailment,
+                    sparql_evaluator,
                 )
             }
         }
@@ -1158,9 +1157,9 @@ fn handle_request(
             if content_type.media_type == "application/sparql-query" {
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_query(
-                    &store,
+                    store,
                     sparql_evaluator,
-                    url_query_parameters(request),
+                    RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
                     request,
@@ -1170,9 +1169,9 @@ fn handle_request(
                 )
             } else if content_type.media_type == "application/x-www-form-urlencoded" {
                 configure_and_evaluate_sparql_query(
-                    &store,
+                    store,
                     sparql_evaluator,
-                    urlencoded_body_parameters(request)?,
+                    RequestParams::from_request_url_and_body(request)?,
                     None,
                     None,
                     request,
@@ -1196,6 +1195,7 @@ fn handle_request(
                 },
                 union_default_graph,
                 entailment,
+                sparql_evaluator,
             )
         }
         ("/update", "POST") => {
@@ -1207,8 +1207,8 @@ fn handle_request(
             if content_type.media_type == "application/sparql-update" {
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
-                    &store,
-                    url_query_parameters(request),
+                    store,
+                    RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
                     request,
@@ -1216,8 +1216,8 @@ fn handle_request(
                 )
             } else if content_type.media_type == "application/x-www-form-urlencoded" {
                 configure_and_evaluate_sparql_update(
-                    &store,
-                    urlencoded_body_parameters(request)?,
+                    store,
+                    RequestParams::from_request_url_and_body(request)?,
                     None,
                     None,
                     request,
@@ -1231,9 +1231,9 @@ fn handle_request(
             if request.uri().query().is_some() {
                 reject_nonempty_sparql_get_body(request)?;
                 configure_and_evaluate_sparql_query(
-                    &store,
+                    store,
                     sparql_evaluator,
-                    url_query_parameters(request),
+                    RequestParams::from_request_url(request),
                     None,
                     None,
                     request,
@@ -1250,6 +1250,7 @@ fn handle_request(
                     },
                     union_default_graph,
                     entailment,
+                    sparql_evaluator,
                 )
             }
         }
@@ -1260,9 +1261,9 @@ fn handle_request(
             if content_type.media_type == "application/sparql-query" {
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_query(
-                    &store,
+                    store,
                     sparql_evaluator,
-                    url_query_parameters(request),
+                    RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
                     request,
@@ -1276,24 +1277,21 @@ fn handle_request(
                 }
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
-                    &store,
-                    url_query_parameters(request),
+                    store,
+                    RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
                     request,
                     union_default_graph,
                 )
             } else if content_type.media_type == "application/x-www-form-urlencoded" {
-                let args = urlencoded_body_parameters(request)?;
-                match (
-                    args.iter().any(|(key, _)| key == "query"),
-                    args.iter().any(|(key, _)| key == "update"),
-                ) {
+                let args = RequestParams::from_request_url_and_body(request)?;
+                match (args.contains("query"), args.contains("update")) {
                     (true, true) => Err(bad_request(
                         "Both 'query' and 'update' cannot be set at the same time",
                     )),
                     (true, false) => configure_and_evaluate_sparql_query(
-                        &store,
+                        store,
                         sparql_evaluator,
                         args,
                         None,
@@ -1313,7 +1311,7 @@ fn handle_request(
                             return Err(the_server_is_read_only());
                         }
                         configure_and_evaluate_sparql_update(
-                            &store,
+                            store,
                             args,
                             None,
                             None,
@@ -1392,29 +1390,86 @@ fn resolve_with_base(request: &Request<Body>, url: &str) -> Result<NamedNode, Ht
     })
 }
 
-fn url_has_query_parameter(request: &Request<Body>, param: &str) -> bool {
-    form_urlencoded::parse(request.uri().query().unwrap_or_default().as_bytes())
-        .any(|(k, _)| k == param)
+struct RequestParams {
+    params: HashMap<String, Vec<String>>,
 }
 
-type SparqlParameters = Vec<(String, String)>;
-
-fn url_query_parameters(request: &Request<Body>) -> SparqlParameters {
-    form_urlencoded::parse(request.uri().query().unwrap_or_default().as_bytes())
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect()
-}
-
-fn urlencoded_body_parameters(request: &mut Request<Body>) -> Result<SparqlParameters, HttpError> {
-    if !url_query_parameters(request).is_empty() {
-        return Err(bad_request(
-            "URL query parameters are not allowed for an application/x-www-form-urlencoded SPARQL request",
-        ));
+impl RequestParams {
+    fn from_request_url(request: &Request<Body>) -> Self {
+        Self::parse(request.uri().query().unwrap_or_default().as_bytes())
     }
-    let body = limited_body(request)?;
-    Ok(form_urlencoded::parse(&body)
-        .map(|(key, value)| (key.into_owned(), value.into_owned()))
-        .collect())
+
+    fn from_request_url_and_body(request: &mut Request<Body>) -> Result<Self, HttpError> {
+        let mut params = Self::from_request_url(request).params;
+        let url_keys = params.keys().cloned().collect::<HashSet<_>>();
+        let body = limited_body(request)?;
+        for (key, value) in form_urlencoded::parse(&body) {
+            if url_keys.contains(key.as_ref()) {
+                return Err(bad_request(format!(
+                    "'{key}' cannot be set both in the body and the URL query"
+                )));
+            }
+            params
+                .entry(key.into_owned())
+                .or_default()
+                .push(value.into_owned());
+        }
+        Ok(Self { params })
+    }
+
+    fn parse(data: &[u8]) -> Self {
+        let mut params: HashMap<String, Vec<String>> = HashMap::new();
+        for (key, value) in form_urlencoded::parse(data) {
+            params
+                .entry(key.into_owned())
+                .or_default()
+                .push(value.into_owned());
+        }
+        Self { params }
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        self.params.contains_key(key)
+    }
+
+    fn remove_required_exactly_once(&mut self, key: &str) -> Result<String, HttpError> {
+        self.remove_single(key)?
+            .ok_or_else(|| bad_request(format!("The URL query parameter {key} must be set")))
+    }
+
+    fn remove_single(&mut self, key: &str) -> Result<Option<String>, HttpError> {
+        let values = self.remove_all(key);
+        if values.len() > 1 {
+            return Err(bad_request(format!(
+                "The URL query parameter {key} must be set at most once"
+            )));
+        }
+        Ok(values.into_iter().next())
+    }
+
+    fn remove_all(&mut self, key: &str) -> Vec<String> {
+        self.params.remove(key).unwrap_or_default()
+    }
+
+    fn remove_flag(&mut self, key: &str) -> Result<bool, HttpError> {
+        Ok(self.remove_single(key)?.is_some())
+    }
+
+    fn reject_unknown(&self, operation: &str) -> Result<(), HttpError> {
+        if self.params.is_empty() {
+            return Ok(());
+        }
+        let mut keys = self.params.keys().map(String::as_str).collect::<Vec<_>>();
+        keys.sort_unstable();
+        Err(bad_request(format!(
+            "Unknown SPARQL {operation} parameter(s): {}",
+            keys.join(", ")
+        )))
+    }
+}
+
+fn url_has_query_parameter(request: &Request<Body>, parameter: &str) -> bool {
+    RequestParams::from_request_url(request).contains(parameter)
 }
 
 fn reject_nonempty_sparql_get_body(request: &mut Request<Body>) -> Result<(), HttpError> {
@@ -1469,9 +1524,9 @@ fn limited_body(request: &mut Request<Body>) -> Result<Vec<u8>, HttpError> {
 
 fn configure_and_evaluate_sparql_query(
     store: &Store,
-    evaluator: SparqlEvaluator,
-    args: SparqlParameters,
-    mut query: Option<String>,
+    evaluator: &SparqlEvaluator,
+    mut args: RequestParams,
+    query: Option<String>,
     media_type_version: Option<SparqlVersion>,
     request: &Request<Body>,
     default_use_default_graph_as_union: bool,
@@ -1479,41 +1534,37 @@ fn configure_and_evaluate_sparql_query(
     timeout: Option<Duration>,
 ) -> Result<Response<Body>, HttpError> {
     let is_direct_request = query.is_some();
-    let mut default_graph_uris = Vec::new();
-    let mut named_graph_uris = Vec::new();
-    let mut use_default_graph_as_union = false;
-    let mut request_version = media_type_version;
-    for (k, v) in args {
-        match k.as_ref() {
-            "query" => {
-                if query.is_some() {
-                    return Err(bad_request("Multiple query parameters provided"));
-                }
-                query = Some(v)
-            }
-            "version" => {
-                if is_direct_request {
-                    return Err(bad_request(
-                        "The version of a direct SPARQL query must be set as an application/sparql-query media type parameter",
-                    ));
-                }
-                if request_version.is_some() {
-                    return Err(bad_request("Multiple version parameters provided"));
-                }
-                request_version = Some(SparqlVersion::parse(&v)?);
-            }
-            "default-graph-uri" => default_graph_uris.push(v),
-            "union-default-graph" => use_default_graph_as_union = true,
-            "named-graph-uri" => named_graph_uris.push(v),
-            _ => {
-                return Err(bad_request(format!("Unknown SPARQL query parameter '{k}'")));
-            }
-        }
-    }
+    let default_graph_uris = args.remove_all("default-graph-uri");
+    let named_graph_uris = args.remove_all("named-graph-uri");
+    let mut use_default_graph_as_union = args.remove_flag("union-default-graph")?;
     if default_graph_uris.is_empty() && named_graph_uris.is_empty() {
         use_default_graph_as_union |= default_use_default_graph_as_union;
     }
-    let query = query.ok_or_else(|| bad_request("You should set the 'query' parameter"))?;
+    let query = if let Some(query) = query {
+        if args.contains("query") {
+            return Err(bad_request(
+                "The query cannot be set both in the URL query parameters and the request body",
+            ));
+        }
+        query
+    } else {
+        args.remove_required_exactly_once("query")?
+    };
+    let parameter_version = args.remove_single("version")?;
+    if is_direct_request && parameter_version.is_some() {
+        return Err(bad_request(
+            "The version of a direct SPARQL query must be set as an application/sparql-query media type parameter",
+        ));
+    }
+    let request_version = if let Some(version) = parameter_version {
+        if media_type_version.is_some() {
+            return Err(bad_request("Multiple version parameters provided"));
+        }
+        Some(SparqlVersion::parse(&version)?)
+    } else {
+        media_type_version
+    };
+    args.reject_unknown("query")?;
     let effective_version = validate_sparql_version(&query, request_version)?;
     evaluate_sparql_query(
         store,
@@ -1531,7 +1582,7 @@ fn configure_and_evaluate_sparql_query(
 
 fn evaluate_sparql_query(
     store: &Store,
-    evaluator: SparqlEvaluator,
+    evaluator: &SparqlEvaluator,
     query: &str,
     version: Option<SparqlVersion>,
     use_default_graph_as_union: bool,
@@ -1542,6 +1593,7 @@ fn evaluate_sparql_query(
     timeout: Option<Duration>,
 ) -> Result<Response<Body>, HttpError> {
     let mut evaluator = evaluator
+        .clone()
         .with_base_iri(&base_url(request))
         .map_err(bad_request)?;
     if let Some(version) = version {
@@ -1688,50 +1740,44 @@ fn evaluate_sparql_query(
 
 fn configure_and_evaluate_sparql_update(
     store: &Store,
-    args: SparqlParameters,
-    mut update: Option<String>,
+    mut args: RequestParams,
+    update: Option<String>,
     media_type_version: Option<SparqlVersion>,
     request: &Request<Body>,
     default_use_default_graph_as_union: bool,
 ) -> Result<Response<Body>, HttpError> {
     let is_direct_request = update.is_some();
-    let mut use_default_graph_as_union = false;
-    let mut default_graph_uris = Vec::new();
-    let mut named_graph_uris = Vec::new();
-    let mut request_version = media_type_version;
-    for (k, v) in args {
-        match k.as_ref() {
-            "update" => {
-                if update.is_some() {
-                    return Err(bad_request("Multiple update parameters provided"));
-                }
-                update = Some(v)
-            }
-            "version" => {
-                if is_direct_request {
-                    return Err(bad_request(
-                        "The version of a direct SPARQL update must be set as an application/sparql-update media type parameter",
-                    ));
-                }
-                if request_version.is_some() {
-                    return Err(bad_request("Multiple version parameters provided"));
-                }
-                request_version = Some(SparqlVersion::parse(&v)?);
-            }
-            "using-graph-uri" => default_graph_uris.push(v),
-            "using-union-graph" => use_default_graph_as_union = true,
-            "using-named-graph-uri" => named_graph_uris.push(v),
-            _ => {
-                return Err(bad_request(format!(
-                    "Unknown SPARQL update parameter '{k}'"
-                )));
-            }
-        }
-    }
+    let default_graph_uris = args.remove_all("using-graph-uri");
+    let named_graph_uris = args.remove_all("using-named-graph-uri");
+    let mut use_default_graph_as_union = args.remove_flag("using-union-graph")?;
     if default_graph_uris.is_empty() && named_graph_uris.is_empty() {
         use_default_graph_as_union |= default_use_default_graph_as_union;
     }
-    let update = update.ok_or_else(|| bad_request("You should set the 'update' parameter"))?;
+    let update = if let Some(update) = update {
+        if args.contains("update") {
+            return Err(bad_request(
+                "The update cannot be set both in the URL query parameters and the request body",
+            ));
+        }
+        update
+    } else {
+        args.remove_required_exactly_once("update")?
+    };
+    let parameter_version = args.remove_single("version")?;
+    if is_direct_request && parameter_version.is_some() {
+        return Err(bad_request(
+            "The version of a direct SPARQL update must be set as an application/sparql-update media type parameter",
+        ));
+    }
+    let request_version = if let Some(version) = parameter_version {
+        if media_type_version.is_some() {
+            return Err(bad_request("Multiple version parameters provided"));
+        }
+        Some(SparqlVersion::parse(&version)?)
+    } else {
+        media_type_version
+    };
+    args.reject_unknown("update")?;
     let effective_version = validate_sparql_version(&update, request_version)?;
     evaluate_sparql_update(
         store,
@@ -1830,9 +1876,33 @@ fn rdf_content_negotiation(request: &Request<Body>) -> Result<RdfResponseFormat,
         },
         RdfResponseFormat::rdf11(RdfFormat::NQuads),
         &[
-            ("application", RdfResponseFormat::rdf11(RdfFormat::NQuads)),
-            ("text", RdfResponseFormat::rdf11(RdfFormat::NQuads)),
+            RdfResponseFormat::rdf11(RdfFormat::NQuads),
+            RdfResponseFormat::rdf11(RdfFormat::TriG),
+            RdfResponseFormat::rdf11(RdfFormat::JsonLd {
+                profile: JsonLdProfileSet::empty(),
+            }),
+            RdfResponseFormat::rdf11(RdfFormat::Turtle),
+            RdfResponseFormat::rdf11(RdfFormat::NTriples),
+            RdfResponseFormat::rdf11(RdfFormat::RdfXml),
+            RdfResponseFormat::rdf11(RdfFormat::N3),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::NQuads, RdfVersion::V1_2Basic),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::TriG, RdfVersion::V1_2Basic),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::Turtle, RdfVersion::V1_2Basic),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::NTriples, RdfVersion::V1_2Basic),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::NQuads, RdfVersion::V1_2),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::TriG, RdfVersion::V1_2),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::Turtle, RdfVersion::V1_2),
+            #[cfg(feature = "rdf-12")]
+            RdfResponseFormat::new(RdfFormat::NTriples, RdfVersion::V1_2),
         ],
+        RdfResponseFormat::media_type,
         "application/n-quads or text/turtle",
     )
 }
@@ -1849,15 +1919,42 @@ fn query_results_content_negotiation(
         },
         QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
         &[
-            (
-                "application",
-                QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
-            ),
-            (
-                "text",
-                QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
-            ),
+            QueryResultsResponseFormat::unversioned(QueryResultsFormat::Json),
+            #[cfg(feature = "rdf-12")]
+            QueryResultsResponseFormat {
+                format: QueryResultsFormat::Json,
+                version: Some(RdfVersion::V1_1),
+            },
+            #[cfg(feature = "rdf-12")]
+            QueryResultsResponseFormat {
+                format: QueryResultsFormat::Json,
+                version: Some(RdfVersion::V1_2Basic),
+            },
+            #[cfg(feature = "rdf-12")]
+            QueryResultsResponseFormat {
+                format: QueryResultsFormat::Json,
+                version: Some(RdfVersion::V1_2),
+            },
+            QueryResultsResponseFormat::unversioned(QueryResultsFormat::Xml),
+            #[cfg(feature = "rdf-12")]
+            QueryResultsResponseFormat {
+                format: QueryResultsFormat::Xml,
+                version: Some(RdfVersion::V1_1),
+            },
+            #[cfg(feature = "rdf-12")]
+            QueryResultsResponseFormat {
+                format: QueryResultsFormat::Xml,
+                version: Some(RdfVersion::V1_2Basic),
+            },
+            #[cfg(feature = "rdf-12")]
+            QueryResultsResponseFormat {
+                format: QueryResultsFormat::Xml,
+                version: Some(RdfVersion::V1_2),
+            },
+            QueryResultsResponseFormat::unversioned(QueryResultsFormat::Csv),
+            QueryResultsResponseFormat::unversioned(QueryResultsFormat::Tsv),
         ],
+        QueryResultsResponseFormat::media_type,
         "application/sparql-results+json or text/tsv",
     )
 }
@@ -1968,12 +2065,13 @@ fn accepts_query_results_parameters(
     Ok(true)
 }
 
-fn content_negotiation<F: Copy>(
+fn content_negotiation<F: Copy + Eq>(
     request: &Request<Body>,
     parse: impl Fn(&str) -> Option<F>,
     accepts_parameters: impl Fn(F, &str) -> Result<bool, HttpError>,
     default: F,
-    default_by_base: &[(&str, F)],
+    supported: &[F],
+    media_type: impl Fn(F) -> &'static str,
     example: &str,
 ) -> Result<F, HttpError> {
     let header = request
@@ -1987,8 +2085,10 @@ fn content_negotiation<F: Copy>(
     if header.is_empty() {
         return Ok(default);
     }
-    let mut result = None;
-    let mut result_quality = 0;
+    let mut candidates = supported
+        .iter()
+        .map(|format| (*format, ((0_u8, 0_usize), 0_u16)))
+        .collect::<Vec<_>>();
     for possible in split_quoted_header_fields(header, ',')? {
         let possible = possible.trim();
         if possible.is_empty() {
@@ -2026,30 +2126,45 @@ fn content_negotiation<F: Copy>(
                 media_range.push_str(parameter);
             }
         }
-        if quality == 0 || quality <= result_quality {
-            continue;
-        }
         let (possible_base, possible_sub) = type_subtype
             .split_once('/')
             .ok_or_else(|| bad_request(format!("Invalid media type: '{possible}'")))?;
         let possible_base = possible_base.trim();
         let possible_sub = possible_sub.trim();
 
-        let mut format = None;
-        if possible_base == "*" && possible_sub == "*" {
-            format = Some(default);
+        let (format, specificity) = if possible_base == "*" && possible_sub == "*" {
+            (None, 0)
         } else if possible_sub == "*" {
-            for (base, sub_format) in default_by_base {
-                if base.eq_ignore_ascii_case(possible_base) {
-                    format = Some(*sub_format);
+            (None, 1)
+        } else {
+            (parse(&media_range), 2)
+        };
+        if let Some(format) = format
+            && !candidates.iter().any(|(candidate, _)| *candidate == format)
+        {
+            candidates.push((format, ((0, 0), 0)));
+        }
+        for (candidate, candidate_score) in &mut candidates {
+            let candidate_media_type = media_type(*candidate);
+            let candidate_base = candidate_media_type.split_once('/').unwrap().0;
+            if (format == Some(*candidate)
+                || (possible_sub == "*"
+                    && (possible_base == "*" || possible_base == candidate_base)))
+                && accepts_parameters(*candidate, &media_range)?
+                && let Some(parameter_count) = media_type_parameter_count(&media_range)
+            {
+                let score = ((specificity, parameter_count), quality);
+                if score > *candidate_score {
+                    *candidate_score = score;
                 }
             }
-        } else {
-            format = parse(&media_range);
         }
-        if let Some(format) = format
-            && accepts_parameters(format, &media_range)?
-        {
+    }
+
+    let mut result = None;
+    let mut result_quality = 0;
+    for (format, (_, quality)) in candidates {
+        if quality > result_quality {
             result = Some(format);
             result_quality = quality;
         }
@@ -2061,6 +2176,19 @@ fn content_negotiation<F: Copy>(
             format!("The accept header does not provide any accepted format like {example}"),
         )
     })
+}
+
+fn media_type_parameter_count(media_range: &str) -> Option<usize> {
+    let mut count = 0;
+    for parameter in split_quoted_header_fields(media_range, ';')
+        .ok()?
+        .into_iter()
+        .skip(1)
+    {
+        parameter.split_once('=')?;
+        count += 1;
+    }
+    Some(count)
 }
 
 fn split_quoted_header_fields(value: &str, delimiter: char) -> Result<Vec<&str>, HttpError> {
@@ -2607,11 +2735,16 @@ fn rdf_response_media_type(format: RdfResponseFormat) -> &'static str {
     format.media_type()
 }
 
+fn sparql_evaluator() -> SparqlEvaluator {
+    SparqlEvaluator::new()
+}
+
 fn service_description_response(
     request: &Request<Body>,
     kind: EndpointKind,
     union_default_graph: bool,
     entailment: QueryEntailment,
+    sparql_evaluator: &SparqlEvaluator,
 ) -> Result<Response<Body>, HttpError> {
     let selected = rdf_content_negotiation(request)?;
     let description = generate_service_description(
@@ -2620,6 +2753,7 @@ fn service_description_response(
         union_default_graph,
         entailment,
         request_original_target_url(request)?.to_string().into(),
+        sparql_evaluator,
     );
     Response::builder()
         .header(CONTENT_TYPE, rdf_response_media_type(selected))
@@ -2633,6 +2767,7 @@ fn web_load_graph(
     format: RdfFormat,
     to_graph_name: &GraphName,
 ) -> Result<(), HttpError> {
+    let args = RequestParams::from_request_url(request);
     let base_iri = if let GraphName::NamedNode(graph_name) = to_graph_name {
         Some(graph_name.as_str())
     } else {
@@ -2641,13 +2776,13 @@ fn web_load_graph(
     let mut parser = RdfParser::from_format(format)
         .without_named_graphs()
         .with_default_graph(to_graph_name.clone());
-    if url_has_query_parameter(request, "lenient") {
+    if args.contains("lenient") {
         parser = parser.lenient();
     }
     if let Some(base_iri) = base_iri {
         parser = parser.with_base_iri(base_iri).map_err(bad_request)?;
     }
-    if url_has_query_parameter(request, "no_transaction") {
+    if args.contains("no_transaction") {
         let mut loader = web_bulk_loader(store, request);
         loader
             .load_from_reader(parser, request.body_mut())
@@ -2665,11 +2800,12 @@ fn web_load_dataset(
     request: &mut Request<Body>,
     format: RdfFormat,
 ) -> Result<(), HttpError> {
+    let args = RequestParams::from_request_url(request);
     let mut parser = RdfParser::from_format(format);
-    if url_has_query_parameter(request, "lenient") {
+    if args.contains("lenient") {
         parser = parser.lenient();
     }
-    if url_has_query_parameter(request, "no_transaction") {
+    if args.contains("no_transaction") {
         let mut loader = web_bulk_loader(store, request);
         loader
             .load_from_reader(parser, request.body_mut())
@@ -2693,7 +2829,8 @@ fn web_bulk_loader<'a>(store: &'a Store, request: &Request<Body>) -> BulkLoader<
             ((size as f64) / elapsed.as_secs_f64()).round()
         )
     });
-    if url_has_query_parameter(request, "lenient") {
+    let args = RequestParams::from_request_url(request);
+    if args.contains("lenient") {
         loader = loader.on_parse_error(move |e| {
             eprintln!("Parsing error: {e}");
             Ok(())
@@ -2927,6 +3064,7 @@ mod tests {
     use predicates::prelude::*;
     use std::fs::remove_dir_all;
     use std::io::read_to_string;
+    use url::Url;
 
     fn cli_command() -> Command {
         let mut command = Command::new(env!("CARGO"));
@@ -3020,6 +3158,83 @@ mod tests {
             .success();
         output_file
             .assert("<http://example.com/s> <http://example.com/p> <http://example.com/o> .\n");
+        Ok(())
+    }
+
+    #[test]
+    fn cli_load_file_errors_fail_the_command() -> Result<()> {
+        let store_dir = TempDir::new()?;
+        let input_file = NamedTempFile::new("invalid.nt")?;
+        input_file.write_str("invalid")?;
+        let missing_file = store_dir.child("missing.nt.gz");
+        cli_command()
+            .arg("load")
+            .arg("--location")
+            .arg(store_dir.path())
+            .arg("--file")
+            .arg(input_file.path())
+            .arg(missing_file.path())
+            .assert()
+            .failure()
+            .stderr(
+                predicate::str::contains("parallel bulk load failed for 2 of 2 files")
+                    .and(predicate::str::contains("1. [load]"))
+                    .and(predicate::str::contains("2. [open]")),
+            );
+        Ok(())
+    }
+
+    #[test]
+    fn cli_load_can_fail_on_named_graphs() -> Result<()> {
+        let store_dir = TempDir::new()?;
+        let input_file = NamedTempFile::new("input.nq")?;
+        input_file.write_str(
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> <http://example.com/original> .",
+        )?;
+        cli_command()
+            .arg("load")
+            .arg("--location")
+            .arg(store_dir.path())
+            .arg("--file")
+            .arg(input_file.path())
+            .arg("--fail-on-named-graphs")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Named graphs are not allowed"));
+        assert_cli_state(&store_dir, "");
+
+        cli_command()
+            .arg("load")
+            .arg("--location")
+            .arg(store_dir.path())
+            .args(["--format", "nq", "--fail-on-named-graphs"])
+            .write_stdin(
+                "<http://example.com/s> <http://example.com/p> <http://example.com/o> <http://example.com/original> .",
+            )
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Named graphs are not allowed"));
+        assert_cli_state(&store_dir, "");
+
+        let json_ld_file = NamedTempFile::new("input.jsonld")?;
+        json_ld_file.write_str(
+            r#"{"@id":"http://example.com/s","http://example.com/p":{"@id":"http://example.com/o"}}"#,
+        )?;
+        cli_command()
+            .arg("load")
+            .arg("--location")
+            .arg(store_dir.path())
+            .arg("--file")
+            .arg(json_ld_file.path())
+            .arg("--graph")
+            .arg("http://example.com/target")
+            .arg("--fail-on-named-graphs")
+            .assert()
+            .success();
+        assert_cli_state(
+            &store_dir,
+            "<http://example.com/s> <http://example.com/p> <http://example.com/o> <http://example.com/target> .\n",
+        );
         Ok(())
     }
 
@@ -3181,6 +3396,7 @@ mod tests {
             Some(RdfFormat::NTriples),
             None,
             None,
+            false,
             false,
             false,
         )
@@ -3722,10 +3938,108 @@ mod tests {
             )
             .header(ACCEPT, "text/*")
             .body(())?;
-        ServerTest::new()?.test_body(
-            request,
-            r#"{"head":{"vars":["s","p","o"]},"results":{"bindings":[]}}"#,
-        )
+        ServerTest::new()?.test_body(request, "s,p,o\r\n")
+    }
+
+    #[test]
+    fn get_query_accept_specific_exclusion() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/query?query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}",
+            )
+            .header(
+                ACCEPT,
+                "*/*;q=1, application/sparql-results+json;q=0, text/csv;q=0.5",
+            )
+            .body(())?;
+        assert_eq!(
+            ServerTest::new()?.exec(request).headers().get(CONTENT_TYPE),
+            Some(&HeaderValue::from_static("application/sparql-results+xml"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn get_query_accept_wildcard_exclusion() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/query?query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}",
+            )
+            .header(ACCEPT, "text/*, text/csv;q=0")
+            .body(())?;
+        ServerTest::new()?.test_body(request, "?s\t?p\t?o\n")
+    }
+
+    #[test]
+    fn get_query_accept_parameter_specificity() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/query?query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}",
+            )
+            .header(
+                ACCEPT,
+                "text/csv;charset=utf-8;q=0, text/csv;q=1, text/tab-separated-values;q=0.5",
+            )
+            .body(())?;
+        ServerTest::new()?.test_body(request, "?s\t?p\t?o\n")
+    }
+
+    #[test]
+    fn get_query_accept_non_matching_parameter() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/query?query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}",
+            )
+            .header(ACCEPT, "text/csv;header=absent;q=0, text/csv;q=1")
+            .body(())?;
+        ServerTest::new()?.test_body(request, "s,p,o\r\n")
+    }
+
+    #[test]
+    fn get_query_accept_incompatible_charset() -> Result<()> {
+        let request = Request::builder()
+            .uri(
+                "http://localhost/query?query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}",
+            )
+            .header(
+                ACCEPT,
+                "text/csv;charset=iso-8859-1;q=0, text/csv;q=1, application/sparql-results+json;q=0.5",
+            )
+            .body(())?;
+        ServerTest::new()?.test_body(request, "s,p,o\r\n")
+    }
+
+    #[test]
+    fn get_query_description_accept_json_ld_profile() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/query")
+            .header(
+                ACCEPT,
+                "application/ld+json;profile=http://www.w3.org/ns/json-ld#streaming",
+            )
+            .body(())?;
+        assert_eq!(
+            ServerTest::new()?.exec(request).headers().get(CONTENT_TYPE),
+            Some(&HeaderValue::from_static(
+                "application/ld+json;profile=http://www.w3.org/ns/json-ld#streaming"
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn get_store_accept_substar() -> Result<()> {
+        let request = Request::builder()
+            .uri("http://localhost/store?default")
+            .header(ACCEPT, "text/*")
+            .body(())?;
+        let mut response = ServerTest::new()?.exec(request);
+        read_to_string(response.body_mut())?;
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE),
+            Some(&HeaderValue::from_static("text/turtle"))
+        );
+        Ok(())
     }
 
     #[test]
@@ -3869,13 +4183,78 @@ mod tests {
     }
 
     #[test]
-    fn post_form_query_rejects_uri_dataset_parameters() -> Result<()> {
+    fn post_form_query_accepts_disjoint_uri_dataset_parameters() -> Result<()> {
         let request = Request::builder()
             .method(Method::POST)
             .uri("http://localhost/query?union-default-graph")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body("query=SELECT%20?s%20?p%20?o%20WHERE%20{%20?s%20?p%20?o%20}")?;
-        ServerTest::new()?.test_status(request, StatusCode::BAD_REQUEST)
+        ServerTest::new()?.test_status(request, StatusCode::OK)
+    }
+
+    #[test]
+    fn get_query_explicit_default_graphs_and_named_graphs() -> Result<()> {
+        let server = ServerTest::new()?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store/1")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/1> <http://example.com/1> <http://example.com/1> .")?;
+        server.test_status(request, StatusCode::CREATED)?;
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store/2")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/2> <http://example.com/2> <http://example.com/2> .")?;
+        server.test_status(request, StatusCode::CREATED)?;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query?default-graph-uri=http://localhost/store/1")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(ACCEPT, "text/csv")
+            .body("query=SELECT%20?s%20WHERE%20{%20?s%20?p%20?o%20}%20ORDER%20BY%20?s")?;
+        server.test_body(request, "s\r\nhttp://example.com/1\r\n")?;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query?default-graph-uri=http://localhost/store/1&default-graph-uri=http://localhost/store/2")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(ACCEPT, "text/csv")
+            .body("query=SELECT%20?s%20WHERE%20{%20?s%20?p%20?o%20}%20ORDER%20BY%20?s")?;
+        server.test_body(
+            request,
+            "s\r\nhttp://example.com/1\r\nhttp://example.com/2\r\n",
+        )?;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query?default-graph-uri=http://localhost/store/1")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(ACCEPT, "text/csv")
+            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}")?;
+        server.test_body(request, "s\r\n")?;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query?named-graph-uri=http://localhost/store/1")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(ACCEPT, "text/csv")
+            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}")?;
+        server.test_body(request, "s\r\nhttp://example.com/1\r\n")?;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query?named-graph-uri=http://localhost/store/1&named-graph-uri=http://localhost/store/2")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(ACCEPT, "text/csv")
+            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}")?;
+        server.test_body(
+            request,
+            "s\r\nhttp://example.com/1\r\nhttp://example.com/2\r\n",
+        )
     }
 
     #[test]
@@ -4152,7 +4531,7 @@ mod tests {
     }
 
     #[test]
-    fn sparql_form_query_rejects_duplicate_versions() -> Result<()> {
+    fn sparql_form_query_validates_version_locations() -> Result<()> {
         let server = ServerTest::new()?;
         server.test_status(
             Request::builder()
@@ -4168,7 +4547,7 @@ mod tests {
                 .uri("http://localhost/query?version=1.1")
                 .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body("query=ASK%20%7B%7D")?,
-            StatusCode::BAD_REQUEST,
+            StatusCode::OK,
         )?;
         server.test_status(
             Request::builder()
@@ -5612,12 +5991,13 @@ mod tests {
         fn exec(&self, request: Request<impl Into<Body>>) -> Response<Body> {
             let mut request = request.map(Into::into);
             let method = request.method().clone();
+            let evaluator = sparql_evaluator();
             finalize_response(
                 &method,
                 handle_request(
                     &mut request,
-                    self.store.clone(),
-                    SparqlEvaluator::new(),
+                    &self.store,
+                    &evaluator,
                     false,
                     false,
                     QueryEntailment::Simple,
@@ -5630,12 +6010,13 @@ mod tests {
         fn exec_read_only(&self, request: Request<impl Into<Body>>) -> Response<Body> {
             let mut request = request.map(Into::into);
             let method = request.method().clone();
+            let evaluator = sparql_evaluator();
             finalize_response(
                 &method,
                 handle_request(
                     &mut request,
-                    self.store.clone(),
-                    SparqlEvaluator::new(),
+                    &self.store,
+                    &evaluator,
                     true,
                     false,
                     QueryEntailment::Simple,

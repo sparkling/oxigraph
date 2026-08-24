@@ -393,6 +393,10 @@ fn rename_subject(
 }
 
 fn rename_term(term: Term, mapping: &BTreeMap<String, BlankNode>) -> Term {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::NamedNode(node) => node.into(),
         Term::BlankNode(node) => mapping[node.as_str()].clone().into(),
@@ -403,5 +407,6 @@ fn rename_term(term: Term, mapping: &BTreeMap<String, BlankNode>) -> Term {
             triple.predicate,
             rename_term(triple.object, mapping),
         ))),
+        other => other,
     }
 }

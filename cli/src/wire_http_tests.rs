@@ -291,8 +291,8 @@ fn start_server(store: &Store) -> Result<(SocketAddr, oxhttp::ListeningServer)> 
                 &method,
                 handle_request(
                     request,
-                    server_store.clone(),
-                    evaluator.clone(),
+                    &server_store,
+                    &evaluator,
                     false,
                     false,
                     QueryEntailment::Simple,

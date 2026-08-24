@@ -59,14 +59,17 @@ fn ground_term(
 }
 
 fn as_subject(term: Term) -> Result<NamedOrBlankNode, SrlError> {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::NamedNode(node) => Ok(node.into()),
         Term::BlankNode(node) => Ok(node.into()),
         Term::Literal(_) => Err(SrlError::Unsupported(
             "generalized RDF subjects in SRL DATA evaluation".to_owned(),
         )),
-        #[cfg(feature = "rdf-12")]
-        Term::Triple(_) => Err(SrlError::Unsupported(
+        _ => Err(SrlError::Unsupported(
             "RDF triple-term subjects in SRL DATA evaluation".to_owned(),
         )),
     }
@@ -115,6 +118,10 @@ impl BlankAllocator {
 }
 
 fn collect_term_blanks(term: &Term, output: &mut BTreeSet<String>) {
+    #[allow(
+        unreachable_patterns,
+        reason = "dependency feature unification may expose RDF 1.2 triple terms"
+    )]
     match term {
         Term::BlankNode(node) => {
             output.insert(node.as_str().to_owned());
@@ -127,5 +134,6 @@ fn collect_term_blanks(term: &Term, output: &mut BTreeSet<String>) {
             collect_term_blanks(&triple.object, output);
         }
         Term::NamedNode(_) | Term::Literal(_) => {}
+        _ => {}
     }
 }

@@ -1,5 +1,5 @@
 use crate::control::ValidationError;
-use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression};
+use spargebra::algebra::{AggregateExpression, Expression, OrderExpression, QueryExpression};
 use spargebra::{Query, SparqlParser};
 
 pub(crate) fn parse(query: &str) -> Result<Query, ValidationError> {
@@ -16,7 +16,7 @@ pub(crate) fn parse(query: &str) -> Result<Query, ValidationError> {
             "FROM is forbidden in the isolated SHACL-SPARQL profile".to_owned(),
         ));
     }
-    check_pattern(&construct.pattern)?;
+    check_pattern(&construct.expression)?;
     Ok(parsed)
 }
 
@@ -29,18 +29,18 @@ pub(crate) fn parse(query: &str) -> Result<Query, ValidationError> {
     unreachable_patterns,
     reason = "dependency feature unification can add SPARQL 1.2 graph-pattern variants"
 )]
-fn check_pattern(pattern: &GraphPattern) -> Result<(), ValidationError> {
+fn check_pattern(pattern: &QueryExpression) -> Result<(), ValidationError> {
     match pattern {
-        GraphPattern::Bgp { .. } | GraphPattern::Path { .. } | GraphPattern::Values { .. } => {
-            Ok(())
-        }
-        GraphPattern::Join { left, right }
-        | GraphPattern::Union { left, right }
-        | GraphPattern::Minus { left, right } => {
+        QueryExpression::Bgp { .. }
+        | QueryExpression::Path { .. }
+        | QueryExpression::Values { .. } => Ok(()),
+        QueryExpression::Join { left, right }
+        | QueryExpression::Union { left, right }
+        | QueryExpression::Minus { left, right } => {
             check_pattern(left)?;
             check_pattern(right)
         }
-        GraphPattern::LeftJoin {
+        QueryExpression::LeftJoin {
             left,
             right,
             expression,
@@ -52,22 +52,22 @@ fn check_pattern(pattern: &GraphPattern) -> Result<(), ValidationError> {
             }
             Ok(())
         }
-        GraphPattern::Graph { inner, .. }
-        | GraphPattern::Project { inner, .. }
-        | GraphPattern::Distinct { inner }
-        | GraphPattern::Reduced { inner }
-        | GraphPattern::Slice { inner, .. } => check_pattern(inner),
-        GraphPattern::Filter { expr, inner } => {
+        QueryExpression::Graph { inner, .. }
+        | QueryExpression::Project { inner, .. }
+        | QueryExpression::Distinct { inner }
+        | QueryExpression::Reduced { inner }
+        | QueryExpression::Slice { inner, .. } => check_pattern(inner),
+        QueryExpression::Filter { expr, inner } => {
             check_pattern(inner)?;
             check_expression(expr)
         }
-        GraphPattern::Extend {
+        QueryExpression::Extend {
             inner, expression, ..
         } => {
             check_pattern(inner)?;
             check_expression(expression)
         }
-        GraphPattern::OrderBy { inner, expression } => {
+        QueryExpression::OrderBy { inner, expression } => {
             check_pattern(inner)?;
             for expression in expression {
                 let (OrderExpression::Asc(expression) | OrderExpression::Desc(expression)) =
@@ -76,7 +76,7 @@ fn check_pattern(pattern: &GraphPattern) -> Result<(), ValidationError> {
             }
             Ok(())
         }
-        GraphPattern::Group {
+        QueryExpression::Group {
             inner, aggregates, ..
         } => {
             check_pattern(inner)?;
@@ -87,7 +87,7 @@ fn check_pattern(pattern: &GraphPattern) -> Result<(), ValidationError> {
             }
             Ok(())
         }
-        GraphPattern::Service { .. } => Err(ValidationError::UnsupportedFeature(
+        QueryExpression::Service { .. } => Err(ValidationError::UnsupportedFeature(
             "SERVICE is disabled in the isolated SHACL-SPARQL profile".to_owned(),
         )),
         _ => Err(ValidationError::UnsupportedFeature(

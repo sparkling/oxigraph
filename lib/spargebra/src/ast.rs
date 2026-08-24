@@ -94,7 +94,7 @@ pub struct SolutionModifier<'a> {
     pub group_clause: Vec<(Spanned<Expression<'a>>, Option<Spanned<Var<'a>>>)>,
     pub having_clause: Vec<Spanned<Expression<'a>>>,
     pub order_clause: Vec<OrderCondition<'a>>,
-    pub limit_offset_clauses: Option<LimitOffsetClauses>,
+    pub limit_offset_clauses: Option<LimitOffsetClauses<'a>>,
 }
 
 #[derive(Clone)]
@@ -104,9 +104,9 @@ pub enum OrderCondition<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub struct LimitOffsetClauses {
-    pub offset: u64,
-    pub limit: Option<u64>,
+pub struct LimitOffsetClauses<'a> {
+    pub offset: Option<Spanned<&'a str>>,
+    pub limit: Option<Spanned<&'a str>>,
 }
 
 #[derive(Clone)]

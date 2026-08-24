@@ -56,6 +56,29 @@ pub enum QueryEvaluationError {
     Unexpected(Box<dyn Error + Send + Sync>),
 }
 
+impl QueryEvaluationError {
+    /// Checks if the error is ignored or not by SILENT
+    pub(crate) fn can_be_silent(&self) -> bool {
+        match self {
+            QueryEvaluationError::Dataset(_)
+            | QueryEvaluationError::Service(_)
+            | QueryEvaluationError::NotExistingSubstitutedVariable(_)
+            | QueryEvaluationError::UnexpectedDefaultGraph
+            | QueryEvaluationError::UnsupportedFunction(_)
+            | QueryEvaluationError::UnsupportedFunctionArity { .. }
+            | QueryEvaluationError::UnboundService
+            | QueryEvaluationError::InvalidServiceName(_)
+            | QueryEvaluationError::UnsupportedService(_)
+            | QueryEvaluationError::Unexpected(_) => true,
+            #[cfg(feature = "sparql-12")]
+            QueryEvaluationError::InvalidStorageTripleTerm => true,
+            QueryEvaluationError::UnsupportedSparqlVersion(_)
+            | QueryEvaluationError::IncompatibleTerm { .. }
+            | QueryEvaluationError::Cancelled => false,
+        }
+    }
+}
+
 impl From<Infallible> for QueryEvaluationError {
     #[inline]
     fn from(error: Infallible) -> Self {

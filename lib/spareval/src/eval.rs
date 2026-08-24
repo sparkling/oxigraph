@@ -27,8 +27,8 @@ use spargebra::term::{
 };
 use spargebra::vocab::sparql;
 use sparopt::algebra::{
-    AggregateExpression, Expression, GraphPattern, JoinAlgorithm, LeftJoinAlgorithm,
-    MinusAlgorithm, OrderExpression,
+    AggregateExpression, Expression, JoinAlgorithm, LeftJoinAlgorithm, MinusAlgorithm,
+    OrderExpression, QueryExpression,
 };
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
@@ -718,14 +718,14 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
 
     pub fn evaluate_select(
         &self,
-        pattern: &GraphPattern,
+        expression: &QueryExpression,
         substitutions: impl IntoIterator<Item = (Variable, Term)>,
     ) -> (
         Result<QuerySolutionIter<'a>, QueryEvaluationError>,
         Rc<EvalNodeWithStats>,
     ) {
         let mut variables = Vec::new();
-        let (eval, stats) = self.graph_pattern_evaluator(pattern, &mut variables);
+        let (eval, stats) = self.query_expression_evaluator(expression, &mut variables);
         let eval = match eval {
             Ok(e) => e,
             Err(e) => return (Err(e), stats),
@@ -746,11 +746,11 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
 
     pub fn evaluate_ask(
         &self,
-        pattern: &GraphPattern,
+        expression: &QueryExpression,
         substitutions: impl IntoIterator<Item = (Variable, Term)>,
     ) -> (Result<bool, QueryEvaluationError>, Rc<EvalNodeWithStats>) {
         let mut variables = Vec::new();
-        let (eval, stats) = self.graph_pattern_evaluator(pattern, &mut variables);
+        let (eval, stats) = self.query_expression_evaluator(expression, &mut variables);
         let eval = match eval {
             Ok(e) => e,
             Err(e) => return (Err(e), stats),
@@ -783,7 +783,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
 
     pub fn evaluate_construct(
         &self,
-        pattern: &GraphPattern,
+        expression: &QueryExpression,
         template: &[TriplePattern],
         substitutions: impl IntoIterator<Item = (Variable, Term)>,
     ) -> (
@@ -791,7 +791,7 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         Rc<EvalNodeWithStats>,
     ) {
         let mut variables = Vec::new();
-        let (eval, stats) = self.graph_pattern_evaluator(pattern, &mut variables);
+        let (eval, stats) = self.query_expression_evaluator(expression, &mut variables);
         let eval = match eval {
             Ok(e) => e,
             Err(e) => return (Err(e), stats),
@@ -837,14 +837,14 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
 
     pub fn evaluate_describe(
         &self,
-        pattern: &GraphPattern,
+        expression: &QueryExpression,
         substitutions: impl IntoIterator<Item = (Variable, Term)>,
     ) -> (
         Result<QueryTripleIter<'a>, QueryEvaluationError>,
         Rc<EvalNodeWithStats>,
     ) {
         let mut variables = Vec::new();
-        let (eval, stats) = self.graph_pattern_evaluator(pattern, &mut variables);
+        let (eval, stats) = self.query_expression_evaluator(expression, &mut variables);
         let eval = match eval {
             Ok(e) => e,
             Err(e) => return (Err(e), stats),
@@ -865,19 +865,138 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         )
     }
 
-    pub fn graph_pattern_evaluator(
+    pub fn query_expression_evaluator(
         &self,
-        pattern: &GraphPattern,
+        query_expression: &QueryExpression,
         encoded_variables: &mut Vec<Variable>,
     ) -> (
         Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError>,
         Rc<EvalNodeWithStats>,
     ) {
         let mut stat_children = Vec::new();
-        let evaluator =
-            self.build_graph_pattern_evaluator(pattern, encoded_variables, &mut stat_children);
+        let evaluator = match query_expression {
+            QueryExpression::Values {
+                variables,
+                bindings,
+            } => self.values_evaluator(variables, bindings, encoded_variables),
+            QueryExpression::QuadPattern {
+                subject,
+                predicate,
+                object,
+                graph_name,
+            } => self.quad_pattern_evaluator(
+                subject,
+                predicate,
+                object,
+                graph_name.as_ref(),
+                encoded_variables,
+            ),
+            QueryExpression::Path {
+                subject,
+                path,
+                object,
+            } => self.path_evaluator(subject, path, object, encoded_variables),
+            QueryExpression::Graph { graph_name, inner } => {
+                self.graph_evaluator(graph_name, inner, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Join {
+                left,
+                right,
+                algorithm,
+            } => self.join_evaluator(
+                left,
+                right,
+                algorithm,
+                encoded_variables,
+                &mut stat_children,
+            ),
+            #[cfg(feature = "sep-0006")]
+            QueryExpression::Lateral { left, right } => {
+                self.lateral_evaluator(left, right, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Minus {
+                left,
+                right,
+                algorithm,
+            } => self.minus_evaluator(
+                left,
+                right,
+                algorithm,
+                encoded_variables,
+                &mut stat_children,
+            ),
+            QueryExpression::LeftJoin {
+                left,
+                right,
+                expression,
+                algorithm,
+            } => self.left_join_evaluator(
+                left,
+                right,
+                expression,
+                algorithm,
+                encoded_variables,
+                &mut stat_children,
+            ),
+            QueryExpression::Filter { inner, expression } => {
+                self.filter_evaluator(inner, expression, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Union { inner } => {
+                self.union_evaluator(inner, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Extend {
+                inner,
+                variable,
+                expression,
+            } => self.extend_evaluator(
+                inner,
+                variable,
+                expression,
+                encoded_variables,
+                &mut stat_children,
+            ),
+            QueryExpression::OrderBy { inner, expression } => {
+                self.order_by_evaluator(inner, expression, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Distinct { inner } => {
+                self.distinct_evaluator(inner, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Reduced { inner } => {
+                self.reduced_evaluator(inner, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Slice {
+                inner,
+                offset,
+                limit,
+            } => self.slice_evaluator(
+                inner,
+                *offset,
+                *limit,
+                encoded_variables,
+                &mut stat_children,
+            ),
+            QueryExpression::Project { inner, variables } => {
+                self.project_evaluator(inner, variables, encoded_variables, &mut stat_children)
+            }
+            QueryExpression::Group {
+                inner,
+                aggregates,
+                variables,
+            } => self.group_evaluator(
+                inner,
+                aggregates,
+                variables,
+                encoded_variables,
+                &mut stat_children,
+            ),
+            QueryExpression::Service {
+                name,
+                inner,
+                silent,
+            } => self.service_evaluator(name, inner, *silent, encoded_variables),
+        };
         let stats = Rc::new(EvalNodeWithStats {
-            label: eval_node_label(pattern),
+            label: eval_node_label(query_expression),
             children: stat_children,
             exec_count: Cell::new(0),
             exec_duration: Cell::new(self.run_stats.then(DayTimeDuration::default)),
@@ -907,1039 +1026,1068 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         (Ok(evaluator), stats)
     }
 
-    fn build_graph_pattern_evaluator(
+    fn values_evaluator(
         &self,
-        pattern: &GraphPattern,
+        variables: &[Variable],
+        bindings: &[Vec<Option<GroundTerm>>],
         encoded_variables: &mut Vec<Variable>,
-        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
     ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
-        Ok(match pattern {
-            GraphPattern::Values {
-                variables,
-                bindings,
-            } => {
-                let encoding = variables
+        let encoding = variables
+            .iter()
+            .map(|v| encode_variable(encoded_variables, v))
+            .collect::<Vec<_>>();
+        let encoded_tuples = bindings
+            .iter()
+            .map(|row| {
+                let mut result = InternalTuple::with_capacity(variables.len());
+                for (key, value) in row.iter().enumerate() {
+                    if let Some(term) = value {
+                        result.set(
+                            encoding[key],
+                            match term {
+                                GroundTerm::NamedNode(node) => self.encode_term(node.clone()),
+                                GroundTerm::Literal(literal) => self.encode_term(literal.clone()),
+                                #[cfg(feature = "sparql-12")]
+                                GroundTerm::Triple(triple) => self.encode_triple(triple),
+                            }?,
+                        );
+                    }
+                }
+                Ok(result)
+            })
+            .collect::<Result<Vec<_>, QueryEvaluationError>>()?;
+        Ok(Rc::new(move |from| {
+            Box::new(
+                encoded_tuples
                     .iter()
-                    .map(|v| encode_variable(encoded_variables, v))
-                    .collect::<Vec<_>>();
-                let encoded_tuples = bindings
-                    .iter()
-                    .map(|row| {
-                        let mut result = InternalTuple::with_capacity(variables.len());
-                        for (key, value) in row.iter().enumerate() {
-                            if let Some(term) = value {
-                                result.set(
-                                    encoding[key],
-                                    match term {
-                                        GroundTerm::NamedNode(node) => {
-                                            self.encode_term(node.clone())
-                                        }
-                                        GroundTerm::Literal(literal) => {
-                                            self.encode_term(literal.clone())
-                                        }
-                                        #[cfg(feature = "sparql-12")]
-                                        GroundTerm::Triple(triple) => self.encode_triple(triple),
-                                    }?,
-                                );
-                            }
-                        }
-                        Ok(result)
-                    })
-                    .collect::<Result<Vec<_>, QueryEvaluationError>>()?;
-                Rc::new(move |from| {
-                    Box::new(
-                        encoded_tuples
-                            .iter()
-                            .filter_map(move |t| from.combine_with(t))
-                            .map(Ok)
-                            .collect::<Vec<_>>()
-                            .into_iter(),
-                    )
-                })
-            }
-            GraphPattern::QuadPattern {
-                subject,
-                predicate,
-                object,
+                    .filter_map(move |t| from.combine_with(t))
+                    .map(Ok)
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            )
+        }))
+    }
+
+    fn quad_pattern_evaluator(
+        &self,
+        subject: &GroundTermPattern,
+        predicate: &NamedNodePattern,
+        object: &GroundTermPattern,
+        graph_name: Option<&NamedNodePattern>,
+        encoded_variables: &mut Vec<Variable>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let subject_selector =
+            TupleSelector::from_ground_term_pattern(subject, encoded_variables, &self.dataset)?;
+        let predicate_selector =
+            TupleSelector::from_named_node_pattern(predicate, encoded_variables, &self.dataset)?;
+        let object_selector =
+            TupleSelector::from_ground_term_pattern(object, encoded_variables, &self.dataset)?;
+        let graph_name_selector = if let Some(graph_name) = graph_name {
+            Some(TupleSelector::from_named_node_pattern(
                 graph_name,
-            } => {
-                let subject_selector = TupleSelector::from_ground_term_pattern(
-                    subject,
-                    encoded_variables,
-                    &self.dataset,
-                )?;
-                let predicate_selector = TupleSelector::from_named_node_pattern(
-                    predicate,
-                    encoded_variables,
-                    &self.dataset,
-                )?;
-                let object_selector = TupleSelector::from_ground_term_pattern(
-                    object,
-                    encoded_variables,
-                    &self.dataset,
-                )?;
-                let graph_name_selector = if let Some(graph_name) = graph_name.as_ref() {
-                    Some(TupleSelector::from_named_node_pattern(
-                        graph_name,
-                        encoded_variables,
-                        &self.dataset,
-                    )?)
-                } else {
-                    None
-                };
-                let dataset = self.dataset.clone();
-                Rc::new(move |from| {
-                    let input_subject = match subject_selector.get_pattern_value(
-                        &from,
+                encoded_variables,
+                &self.dataset,
+            )?)
+        } else {
+            None
+        };
+        let dataset = self.dataset.clone();
+        Ok(Rc::new(move |from| {
+            let input_subject = match subject_selector.get_pattern_value(
+                &from,
+                #[cfg(feature = "sparql-12")]
+                &dataset,
+            ) {
+                Ok(value) => value,
+                Err(e) => return Box::new(once(Err(e))),
+            };
+            let input_predicate = match predicate_selector.get_pattern_value(
+                &from,
+                #[cfg(feature = "sparql-12")]
+                &dataset,
+            ) {
+                Ok(value) => value,
+                Err(e) => return Box::new(once(Err(e))),
+            };
+            let input_object = match object_selector.get_pattern_value(
+                &from,
+                #[cfg(feature = "sparql-12")]
+                &dataset,
+            ) {
+                Ok(value) => value,
+                Err(e) => return Box::new(once(Err(e))),
+            };
+            let input_graph_name = if let Some(graph_name_selector) = &graph_name_selector {
+                match graph_name_selector.get_pattern_value(
+                    &from,
+                    #[cfg(feature = "sparql-12")]
+                    &dataset,
+                ) {
+                    Ok(value) => value,
+                    Err(e) => return Box::new(once(Err(e))),
+                }
+                .map(Some)
+            } else {
+                Some(from.graph_name.clone()) // default graph
+            };
+            let iter = dataset.internal_quads_for_pattern(
+                input_subject.as_ref(),
+                input_predicate.as_ref(),
+                input_object.as_ref(),
+                input_graph_name.as_ref().map(|g| g.as_ref()),
+            );
+            let subject_selector = subject_selector.clone();
+            let predicate_selector = predicate_selector.clone();
+            let object_selector = object_selector.clone();
+            let graph_name_selector = graph_name_selector.clone();
+            #[cfg(feature = "sparql-12")]
+            let dataset = dataset.clone();
+            Box::new(
+                iter.map(move |quad| {
+                    let quad = quad?;
+                    let mut new_tuple = from.clone();
+                    if !put_pattern_value::<D>(
+                        &subject_selector,
+                        quad.subject,
+                        &mut new_tuple,
                         #[cfg(feature = "sparql-12")]
                         &dataset,
-                    ) {
-                        Ok(value) => value,
-                        Err(e) => return Box::new(once(Err(e))),
-                    };
-                    let input_predicate = match predicate_selector.get_pattern_value(
-                        &from,
+                    )? {
+                        return Ok(None);
+                    }
+                    if !put_pattern_value::<D>(
+                        &predicate_selector,
+                        quad.predicate,
+                        &mut new_tuple,
                         #[cfg(feature = "sparql-12")]
                         &dataset,
-                    ) {
-                        Ok(value) => value,
-                        Err(e) => return Box::new(once(Err(e))),
-                    };
-                    let input_object = match object_selector.get_pattern_value(
-                        &from,
+                    )? {
+                        return Ok(None);
+                    }
+                    if !put_pattern_value::<D>(
+                        &object_selector,
+                        quad.object,
+                        &mut new_tuple,
                         #[cfg(feature = "sparql-12")]
                         &dataset,
-                    ) {
-                        Ok(value) => value,
-                        Err(e) => return Box::new(once(Err(e))),
-                    };
-                    let input_graph_name = if let Some(graph_name_selector) = &graph_name_selector {
-                        match graph_name_selector.get_pattern_value(
-                            &from,
+                    )? {
+                        return Ok(None);
+                    }
+                    if let Some(graph_name_selector) = &graph_name_selector {
+                        let Some(quad_graph_name) = quad.graph_name else {
+                            return Err(QueryEvaluationError::UnexpectedDefaultGraph);
+                        };
+                        if !put_pattern_value::<D>(
+                            graph_name_selector,
+                            quad_graph_name,
+                            &mut new_tuple,
                             #[cfg(feature = "sparql-12")]
                             &dataset,
-                        ) {
-                            Ok(value) => value,
-                            Err(e) => return Box::new(once(Err(e))),
+                        )? {
+                            return Ok(None);
                         }
-                        .map(Some)
-                    } else {
-                        Some(from.graph_name.clone()) // default graph
-                    };
-                    let iter = dataset.internal_quads_for_pattern(
-                        input_subject.as_ref(),
-                        input_predicate.as_ref(),
-                        input_object.as_ref(),
-                        input_graph_name.as_ref().map(|g| g.as_ref()),
-                    );
-                    let subject_selector = subject_selector.clone();
-                    let predicate_selector = predicate_selector.clone();
+                    }
+                    Ok(Some(new_tuple))
+                })
+                .filter_map(Result::transpose),
+            )
+        }))
+    }
+
+    fn path_evaluator(
+        &self,
+        subject: &GroundTermPattern,
+        path: &PropertyPathExpression,
+        object: &GroundTermPattern,
+        encoded_variables: &mut Vec<Variable>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let subject_selector =
+            TupleSelector::from_ground_term_pattern(subject, encoded_variables, &self.dataset)?;
+        let path = self.encode_property_path(path)?;
+        let object_selector =
+            TupleSelector::from_ground_term_pattern(object, encoded_variables, &self.dataset)?;
+        let dataset = self.dataset.clone();
+        Ok(Rc::new(move |from| {
+            let input_subject = match subject_selector.get_pattern_value(
+                &from,
+                #[cfg(feature = "sparql-12")]
+                &dataset,
+            ) {
+                Ok(value) => value,
+                Err(e) => return Box::new(once(Err(e))),
+            };
+            let path_eval = PathEvaluator {
+                dataset: dataset.clone(),
+            };
+            let input_object = match object_selector.get_pattern_value(
+                &from,
+                #[cfg(feature = "sparql-12")]
+                &dataset,
+            ) {
+                Ok(value) => value,
+                Err(e) => return Box::new(once(Err(e))),
+            };
+            match (input_subject, input_object) {
+                (Some(input_subject), Some(input_object)) => {
+                    match path_eval.eval_closed(
+                        &path,
+                        &input_subject,
+                        &input_object,
+                        from.graph_name.as_ref(),
+                    ) {
+                        Ok(true) => Box::new(once(Ok(from))),
+                        Ok(false) => Box::new(empty()),
+                        Err(e) => Box::new(once(Err(e))),
+                    }
+                }
+                (Some(input_subject), None) => {
                     let object_selector = object_selector.clone();
-                    let graph_name_selector = graph_name_selector.clone();
                     #[cfg(feature = "sparql-12")]
                     let dataset = dataset.clone();
                     Box::new(
-                        iter.map(move |quad| {
-                            let quad = quad?;
-                            let mut new_tuple = from.clone();
-                            if !put_pattern_value::<D>(
-                                &subject_selector,
-                                quad.subject,
-                                &mut new_tuple,
-                                #[cfg(feature = "sparql-12")]
-                                &dataset,
-                            )? {
-                                return Ok(None);
-                            }
-                            if !put_pattern_value::<D>(
-                                &predicate_selector,
-                                quad.predicate,
-                                &mut new_tuple,
-                                #[cfg(feature = "sparql-12")]
-                                &dataset,
-                            )? {
-                                return Ok(None);
-                            }
-                            if !put_pattern_value::<D>(
-                                &object_selector,
-                                quad.object,
-                                &mut new_tuple,
-                                #[cfg(feature = "sparql-12")]
-                                &dataset,
-                            )? {
-                                return Ok(None);
-                            }
-                            if let Some(graph_name_selector) = &graph_name_selector {
-                                let Some(quad_graph_name) = quad.graph_name else {
-                                    return Err(QueryEvaluationError::UnexpectedDefaultGraph);
-                                };
+                        path_eval
+                            .eval_from(&path, &input_subject, from.graph_name.as_ref())
+                            .map(move |o| {
+                                let o = o?;
+                                let mut new_tuple = from.clone();
                                 if !put_pattern_value::<D>(
-                                    graph_name_selector,
-                                    quad_graph_name,
+                                    &object_selector,
+                                    o,
                                     &mut new_tuple,
                                     #[cfg(feature = "sparql-12")]
                                     &dataset,
                                 )? {
                                     return Ok(None);
                                 }
-                            }
-                            Ok(Some(new_tuple))
-                        })
-                        .filter_map(Result::transpose),
+                                Ok(Some(new_tuple))
+                            })
+                            .filter_map(Result::transpose),
                     )
-                })
-            }
-            GraphPattern::Path {
-                subject,
-                path,
-                object,
-            } => {
-                let subject_selector = TupleSelector::from_ground_term_pattern(
-                    subject,
-                    encoded_variables,
-                    &self.dataset,
-                )?;
-                let path = self.encode_property_path(path)?;
-                let object_selector = TupleSelector::from_ground_term_pattern(
-                    object,
-                    encoded_variables,
-                    &self.dataset,
-                )?;
-                let dataset = self.dataset.clone();
-                Rc::new(move |from| {
-                    let input_subject = match subject_selector.get_pattern_value(
-                        &from,
-                        #[cfg(feature = "sparql-12")]
-                        &dataset,
-                    ) {
-                        Ok(value) => value,
-                        Err(e) => return Box::new(once(Err(e))),
-                    };
-                    let path_eval = PathEvaluator {
-                        dataset: dataset.clone(),
-                    };
-                    let input_object = match object_selector.get_pattern_value(
-                        &from,
-                        #[cfg(feature = "sparql-12")]
-                        &dataset,
-                    ) {
-                        Ok(value) => value,
-                        Err(e) => return Box::new(once(Err(e))),
-                    };
-                    match (input_subject, input_object) {
-                        (Some(input_subject), Some(input_object)) => {
-                            match path_eval.eval_closed(
-                                &path,
-                                &input_subject,
-                                &input_object,
-                                from.graph_name.as_ref(),
-                            ) {
-                                Ok(true) => Box::new(once(Ok(from))),
-                                Ok(false) => Box::new(empty()),
-                                Err(e) => Box::new(once(Err(e))),
-                            }
-                        }
-                        (Some(input_subject), None) => {
-                            let object_selector = object_selector.clone();
-                            #[cfg(feature = "sparql-12")]
-                            let dataset = dataset.clone();
-                            Box::new(
-                                path_eval
-                                    .eval_from(&path, &input_subject, from.graph_name.as_ref())
-                                    .map(move |o| {
-                                        let o = o?;
-                                        let mut new_tuple = from.clone();
-                                        if !put_pattern_value::<D>(
-                                            &object_selector,
-                                            o,
-                                            &mut new_tuple,
-                                            #[cfg(feature = "sparql-12")]
-                                            &dataset,
-                                        )? {
-                                            return Ok(None);
-                                        }
-                                        Ok(Some(new_tuple))
-                                    })
-                                    .filter_map(Result::transpose),
-                            )
-                        }
-                        (None, Some(input_object)) => {
-                            let subject_selector = subject_selector.clone();
-                            #[cfg(feature = "sparql-12")]
-                            let dataset = dataset.clone();
-                            Box::new(
-                                path_eval
-                                    .eval_to(&path, &input_object, from.graph_name.as_ref())
-                                    .map(move |s| {
-                                        let s = s?;
-                                        let mut new_tuple = from.clone();
-                                        if !put_pattern_value::<D>(
-                                            &subject_selector,
-                                            s,
-                                            &mut new_tuple,
-                                            #[cfg(feature = "sparql-12")]
-                                            &dataset,
-                                        )? {
-                                            return Ok(None);
-                                        }
-                                        Ok(Some(new_tuple))
-                                    })
-                                    .filter_map(Result::transpose),
-                            )
-                        }
-                        (None, None) => {
-                            let subject_selector = subject_selector.clone();
-                            let object_selector = object_selector.clone();
-                            #[cfg(feature = "sparql-12")]
-                            let dataset = dataset.clone();
-                            Box::new(
-                                path_eval
-                                    .eval_open(&path, from.graph_name.as_ref())
-                                    .map(move |t| {
-                                        let (s, o) = t?;
-                                        let mut new_tuple = from.clone();
-                                        if !put_pattern_value::<D>(
-                                            &subject_selector,
-                                            s,
-                                            &mut new_tuple,
-                                            #[cfg(feature = "sparql-12")]
-                                            &dataset,
-                                        )? {
-                                            return Ok(None);
-                                        }
-                                        if !put_pattern_value::<D>(
-                                            &object_selector,
-                                            o,
-                                            &mut new_tuple,
-                                            #[cfg(feature = "sparql-12")]
-                                            &dataset,
-                                        )? {
-                                            return Ok(None);
-                                        }
-                                        Ok(Some(new_tuple))
-                                    })
-                                    .filter_map(Result::transpose),
-                            )
-                        }
-                    }
-                })
-            }
-            GraphPattern::Graph { graph_name, inner } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                let graph_name_selector = TupleSelector::from_named_node_pattern(
-                    graph_name,
-                    encoded_variables,
-                    &self.dataset,
-                )?;
-                let dataset = self.dataset.clone();
-                Rc::new(move |mut from| {
-                    let input_graph_name = match graph_name_selector.get_pattern_value(
-                        &from,
-                        #[cfg(feature = "sparql-12")]
-                        &dataset,
-                    ) {
-                        Ok(value) => value,
-                        Err(e) => return Box::new(once(Err(e))),
-                    };
-                    if let Some(input_graph_name) = input_graph_name {
-                        match dataset.contains_internal_graph_name(&input_graph_name) {
-                            Ok(true) => {
-                                let previous_graph_name = take(&mut from.graph_name);
-                                from.graph_name = Some(input_graph_name);
-                                Box::new(child(from).map(move |tuple| {
-                                    let mut tuple = tuple?;
-                                    tuple.graph_name.clone_from(&previous_graph_name);
-                                    Ok(tuple)
-                                }))
-                            }
-                            Ok(false) => Box::new(empty()),
-                            Err(e) => Box::new(once(Err(e))),
-                        }
-                    } else {
-                        let graph_name_selector = graph_name_selector.clone();
-                        let child = Rc::clone(&child);
-                        #[cfg(feature = "sparql-12")]
-                        let dataset = dataset.clone();
-                        let previous_graph_name = take(&mut from.graph_name);
-                        Box::new(
-                            dataset
-                                .internal_named_graphs()
-                                .flat_map_ok(move |graph_name| {
-                                    let graph_name_selector = graph_name_selector.clone();
-                                    #[cfg(feature = "sparql-12")]
-                                    let dataset = dataset.clone();
-                                    let previous_graph_name = previous_graph_name.clone();
-                                    let mut from = from.clone();
-                                    from.graph_name = Some(graph_name.clone());
-                                    child(from)
-                                        .map(move |tuple| {
-                                            let mut tuple = tuple?;
-                                            if !put_pattern_value::<D>(
-                                                &graph_name_selector,
-                                                graph_name.clone(),
-                                                &mut tuple,
-                                                #[cfg(feature = "sparql-12")]
-                                                &dataset,
-                                            )? {
-                                                return Ok(None);
-                                            }
-                                            tuple.graph_name.clone_from(&previous_graph_name);
-                                            Ok(Some(tuple))
-                                        })
-                                        .filter_map(Result::transpose)
-                                }),
-                        )
-                    }
-                })
-            }
-            GraphPattern::Join {
-                left,
-                right,
-                algorithm,
-            } => {
-                // A variable SERVICE endpoint is selected from the current
-                // solution mapping. It must therefore be evaluated after the
-                // other join side has had a chance to bind that variable.
-                let variable_service_on_left = matches!(
-                    left.as_ref(),
-                    GraphPattern::Service {
-                        name: NamedNodePattern::Variable(_),
-                        ..
-                    }
-                );
-                let variable_service_on_right = matches!(
-                    right.as_ref(),
-                    GraphPattern::Service {
-                        name: NamedNodePattern::Variable(_),
-                        ..
-                    }
-                );
-                let (left, left_stats) = self.graph_pattern_evaluator(left, encoded_variables);
-                stat_children.push(left_stats);
-                let (right, right_stats) = self.graph_pattern_evaluator(right, encoded_variables);
-                stat_children.push(right_stats);
-                let left = left?;
-                let right = right?;
-
-                if variable_service_on_right {
-                    return Ok(Rc::new(move |from| {
-                        let right = Rc::clone(&right);
-                        Box::new(left(from).flat_map(move |tuple| match tuple {
-                            Ok(tuple) => right(tuple),
-                            Err(error) => Box::new(once(Err(error))),
-                        }))
-                    }));
                 }
-                if variable_service_on_left {
-                    return Ok(Rc::new(move |from| {
-                        let left = Rc::clone(&left);
-                        Box::new(right(from).flat_map(move |tuple| match tuple {
-                            Ok(tuple) => left(tuple),
-                            Err(error) => Box::new(once(Err(error))),
-                        }))
-                    }));
-                }
-
-                match algorithm {
-                    JoinAlgorithm::HashBuildLeftProbeRight { keys } => {
-                        let build = left;
-                        let probe = right;
-                        if keys.is_empty() {
-                            // Cartesian product
-                            Rc::new(move |from| {
-                                let mut errors = Vec::default();
-                                let built_values = build(from.clone())
-                                    .filter_map(|result| match result {
-                                        Ok(result) => Some(result),
-                                        Err(error) => {
-                                            errors.push(Err(error));
-                                            None
-                                        }
-                                    })
-                                    .collect::<Vec<_>>();
-                                if built_values.is_empty() && errors.is_empty() {
-                                    // We don't bother to execute the other side
-                                    return Box::new(empty());
-                                }
-                                let mut probe_iter = probe(from).peekable();
-                                if probe_iter.peek().is_none() {
-                                    // We know it's empty and can discard errors
-                                    return Box::new(empty());
-                                }
-                                Box::new(CartesianProductJoinIterator {
-                                    probe_iter,
-                                    built: built_values,
-                                    buffered_results: errors,
-                                })
-                            })
-                        } else {
-                            // Real hash join
-                            let keys = keys
-                                .iter()
-                                .map(|v| encode_variable(encoded_variables, v))
-                                .collect::<Vec<_>>();
-                            Rc::new(move |from| {
-                                let mut errors = Vec::default();
-                                let mut built_values = InternalTupleSet::new(keys.clone());
-                                built_values.extend(build(from.clone()).filter_map(|result| {
-                                    match result {
-                                        Ok(result) => Some(result),
-                                        Err(error) => {
-                                            errors.push(Err(error));
-                                            None
-                                        }
-                                    }
-                                }));
-                                if built_values.is_empty() && errors.is_empty() {
-                                    // We don't bother to execute the other side
-                                    return Box::new(empty());
-                                }
-                                let mut probe_iter = probe(from).peekable();
-                                if probe_iter.peek().is_none() {
-                                    // We know it's empty and can discard errors
-                                    return Box::new(empty());
-                                }
-                                Box::new(HashJoinIterator {
-                                    probe_iter,
-                                    built: built_values,
-                                    buffered_results: errors,
-                                })
-                            })
-                        }
-                    }
-                }
-            }
-            #[cfg(feature = "sep-0006")]
-            GraphPattern::Lateral { left, right } => {
-                let (left, left_stats) = self.graph_pattern_evaluator(left, encoded_variables);
-                stat_children.push(left_stats);
-                let left = left?;
-
-                if let GraphPattern::LeftJoin {
-                    left: nested_left,
-                    right: nested_right,
-                    expression,
-                    ..
-                } = right.as_ref()
-                {
-                    if nested_left.is_empty_singleton() {
-                        // We are in a ForLoopLeftJoin
-                        let right =
-                            GraphPattern::filter(nested_right.as_ref().clone(), expression.clone());
-                        let (right, right_stats) =
-                            self.graph_pattern_evaluator(&right, encoded_variables);
-                        stat_children.push(right_stats);
-                        let right = right?;
-                        return Ok(Rc::new(move |from| {
-                            Box::new(ForLoopLeftJoinIterator {
-                                right_evaluator: Rc::clone(&right),
-                                left_iter: left(from.clone()),
-                                current_right: Box::new(empty()),
-                                left_tuple_to_yield: None,
-                            })
-                        }));
-                    }
-                }
-                let (right, right_stats) = self.graph_pattern_evaluator(right, encoded_variables);
-                stat_children.push(right_stats);
-                let right = right?;
-                Rc::new(move |from| {
-                    let right = Rc::clone(&right);
-                    Box::new(left(from.clone()).flat_map(move |t| match t {
-                        Ok(t) => right(t),
-                        Err(e) => Box::new(once(Err(e))),
-                    }))
-                })
-            }
-            GraphPattern::Minus {
-                left,
-                right,
-                algorithm,
-            } => {
-                let (left, left_stats) = self.graph_pattern_evaluator(left, encoded_variables);
-                stat_children.push(left_stats);
-                let (right, right_stats) = self.graph_pattern_evaluator(right, encoded_variables);
-                stat_children.push(right_stats);
-                let left = left?;
-                let right = right?;
-
-                match algorithm {
-                    MinusAlgorithm::HashBuildRightProbeLeft { keys } => {
-                        if keys.is_empty() {
-                            Rc::new(move |from| {
-                                let right: Vec<_> =
-                                    right(from.clone()).filter_map(Result::ok).collect();
-                                if right.is_empty() {
-                                    return left(from);
-                                }
-                                Box::new(left(from).filter(move |left_tuple| {
-                                    if let Ok(left_tuple) = left_tuple {
-                                        !right.iter().any(|right_tuple| {
-                                            are_compatible_and_not_disjointed(
-                                                left_tuple,
-                                                right_tuple,
-                                            )
-                                        })
-                                    } else {
-                                        true
-                                    }
-                                }))
-                            })
-                        } else {
-                            let keys = keys
-                                .iter()
-                                .map(|v| encode_variable(encoded_variables, v))
-                                .collect::<Vec<_>>();
-                            Rc::new(move |from| {
-                                let mut right_values = InternalTupleSet::new(keys.clone());
-                                right_values.extend(right(from.clone()).filter_map(Result::ok));
-                                if right_values.is_empty() {
-                                    return left(from);
-                                }
-                                Box::new(left(from).filter(move |left_tuple| {
-                                    if let Ok(left_tuple) = left_tuple {
-                                        !right_values.get(left_tuple).iter().any(|right_tuple| {
-                                            are_compatible_and_not_disjointed(
-                                                left_tuple,
-                                                right_tuple,
-                                            )
-                                        })
-                                    } else {
-                                        true
-                                    }
-                                }))
-                            })
-                        }
-                    }
-                }
-            }
-            GraphPattern::LeftJoin {
-                left,
-                right,
-                expression,
-                algorithm,
-            } => {
-                let (left, left_stats) = self.graph_pattern_evaluator(left, encoded_variables);
-                stat_children.push(left_stats);
-                let (right, right_stats) = self.graph_pattern_evaluator(right, encoded_variables);
-                stat_children.push(right_stats);
-                let left = left?;
-                let right = right?;
-                let expression = self.effective_boolean_value_expression_evaluator(
-                    expression,
-                    encoded_variables,
-                    stat_children,
-                )?;
-
-                match algorithm {
-                    LeftJoinAlgorithm::HashBuildRightProbeLeft { keys } => {
-                        // Real hash join
-                        let keys = keys
-                            .iter()
-                            .map(|v| encode_variable(encoded_variables, v))
-                            .collect::<Vec<_>>();
-                        Rc::new(move |from| {
-                            let mut errors = Vec::default();
-                            let mut right_values = InternalTupleSet::new(keys.clone());
-                            right_values.extend(right(from.clone()).filter_map(
-                                |result| match result {
-                                    Ok(result) => Some(result),
-                                    Err(error) => {
-                                        errors.push(Err(error));
-                                        None
-                                    }
-                                },
-                            ));
-                            if right_values.is_empty() && errors.is_empty() {
-                                return left(from);
-                            }
-                            Box::new(HashLeftJoinIterator {
-                                left_iter: left(from),
-                                right: right_values,
-                                buffered_results: errors,
-                                expression: Rc::clone(&expression),
-                            })
-                        })
-                    }
-                }
-            }
-            GraphPattern::Filter { inner, expression } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                let expression = self.effective_boolean_value_expression_evaluator(
-                    expression,
-                    encoded_variables,
-                    stat_children,
-                )?;
-                Rc::new(move |from| {
-                    let expression = Rc::clone(&expression);
-                    Box::new(child(from).filter_map(move |tuple| match tuple {
-                        Ok(tuple) => match expression(&tuple) {
-                            Ok(Some(true)) => Some(Ok(tuple)),
-                            Ok(Some(false) | None) => None,
-                            Err(error) => Some(Err(error)),
-                        },
-                        Err(error) => Some(Err(error)),
-                    }))
-                })
-            }
-            GraphPattern::Union { inner } => {
-                let children = inner
-                    .iter()
-                    .map(|child| {
-                        let (child, child_stats) =
-                            self.graph_pattern_evaluator(child, encoded_variables);
-                        stat_children.push(child_stats);
-                        child
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                Rc::new(move |from| {
-                    Box::new(UnionIterator {
-                        plans: children.clone(),
-                        input: from,
-                        current_iterator: Box::new(empty()),
-                        current_plan: 0,
-                    })
-                })
-            }
-            GraphPattern::Extend {
-                inner,
-                variable,
-                expression,
-            } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-
-                let position = encode_variable(encoded_variables, variable);
-                if let Some(expression) = self.internal_expression_evaluator(
-                    expression,
-                    encoded_variables,
-                    stat_children,
-                )? {
-                    return Ok(Rc::new(move |from| {
-                        let expression = Rc::clone(&expression);
-                        Box::new(child(from).map(move |tuple| {
-                            let mut tuple = tuple?;
-                            if let Some(value) = expression(&tuple)? {
-                                tuple.set(position, value);
-                            }
-                            Ok(tuple)
-                        }))
-                    }));
-                }
-
-                let expression =
-                    self.expression_evaluator(expression, encoded_variables, stat_children)?;
-                let dataset = self.dataset.clone();
-                Rc::new(move |from| {
-                    let expression = Rc::clone(&expression);
-                    let dataset = dataset.clone();
-                    Box::new(child(from).map(move |tuple| {
-                        let mut tuple = tuple?;
-                        if let Some(value) = expression(&tuple)? {
-                            tuple.set(position, dataset.internalize_expression_term(value)?);
-                        }
-                        Ok(tuple)
-                    }))
-                })
-            }
-            GraphPattern::OrderBy { inner, expression } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                let by = expression
-                    .iter()
-                    .filter_map(|comp| {
-                        Some(match comp {
-                            OrderExpression::Asc(variable) => {
-                                (true, slice_key(encoded_variables, variable)?)
-                            }
-                            OrderExpression::Desc(variable) => {
-                                (false, slice_key(encoded_variables, variable)?)
-                            }
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let dataset = self.dataset.clone();
-                Rc::new(move |from| {
-                    let mut errors = Vec::default();
-                    let mut values = child(from)
-                        .filter_map(|result| match result {
-                            Ok(result) => Some(result),
-                            Err(error) => {
-                                errors.push(Err(error));
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    values.sort_unstable_by(|a, b| {
-                        for (is_asc, variable_key) in &by {
-                            match cmp_terms(
-                                a.get(*variable_key)
-                                    .and_then(|term| {
-                                        dataset.externalize_expression_term(term.clone()).ok()
-                                    })
-                                    .as_ref(),
-                                b.get(*variable_key)
-                                    .and_then(|term| {
-                                        dataset.externalize_expression_term(term.clone()).ok()
-                                    })
-                                    .as_ref(),
-                            ) {
-                                Ordering::Greater => {
-                                    return if *is_asc {
-                                        Ordering::Greater
-                                    } else {
-                                        Ordering::Less
-                                    };
-                                }
-                                Ordering::Less => {
-                                    return if *is_asc {
-                                        Ordering::Less
-                                    } else {
-                                        Ordering::Greater
-                                    };
-                                }
-                                Ordering::Equal => (),
-                            }
-                        }
-                        Ordering::Equal
-                    });
-                    Box::new(errors.into_iter().chain(values.into_iter().map(Ok)))
-                })
-            }
-            GraphPattern::Distinct { inner } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                Rc::new(move |from| Box::new(hash_deduplicate(child(from))))
-            }
-            GraphPattern::Reduced { inner } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                Rc::new(move |from| {
-                    Box::new(ConsecutiveDeduplication {
-                        inner: child(from),
-                        current: None,
-                    })
-                })
-            }
-            GraphPattern::Slice {
-                inner,
-                start,
-                length,
-            } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let mut child = child?;
-                #[expect(clippy::unwrap_in_result)]
-                let start = (*start).try_into().unwrap();
-                if start > 0 {
-                    child = Rc::new(move |from| Box::new(child(from).skip(start)));
-                }
-                if let Some(length) = (*length).map(|l| l.try_into().unwrap()) {
-                    child = Rc::new(move |from| Box::new(child(from).take(length)));
-                }
-                child
-            }
-            GraphPattern::Project { inner, variables } => {
-                let mut inner_encoded_variables = variables.clone();
-                let (child, child_stats) =
-                    self.graph_pattern_evaluator(inner, &mut inner_encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                let mapping = variables
-                    .iter()
-                    .enumerate()
-                    .map(|(new_variable, variable)| {
-                        (new_variable, encode_variable(encoded_variables, variable))
-                    })
-                    .collect::<Rc<[(usize, usize)]>>();
-                Rc::new(move |from| {
-                    let mapping = Rc::clone(&mapping);
-                    let mut input_tuple = InternalTuple::with_capacity(mapping.len());
-                    for (input_key, output_key) in &*mapping {
-                        if let Some(value) = from.get(*output_key) {
-                            input_tuple.set(*input_key, value.clone());
-                        }
-                    }
-                    input_tuple.graph_name.clone_from(&from.graph_name);
-                    Box::new(child(input_tuple).filter_map(move |tuple| {
-                        match tuple {
-                            Ok(tuple) => {
-                                let mut output_tuple = from.clone();
-                                for (input_key, output_key) in &*mapping {
-                                    if let Some(value) = tuple.get(*input_key) {
-                                        if let Some(existing_value) = output_tuple.get(*output_key)
-                                        {
-                                            if existing_value != value {
-                                                return None; // Conflict
-                                            }
-                                        } else {
-                                            output_tuple.set(*output_key, value.clone());
-                                        }
-                                    }
-                                }
-                                Some(Ok(output_tuple))
-                            }
-                            Err(e) => Some(Err(e)),
-                        }
-                    }))
-                })
-            }
-            GraphPattern::Group {
-                inner,
-                aggregates,
-                variables,
-            } => {
-                let (child, child_stats) = self.graph_pattern_evaluator(inner, encoded_variables);
-                stat_children.push(child_stats);
-                let child = child?;
-                let key_variables = variables
-                    .iter()
-                    .map(|k| encode_variable(encoded_variables, k))
-                    .collect::<Rc<[_]>>();
-                let accumulator_builders = aggregates
-                    .iter()
-                    .map(|(_, aggregate)| {
-                        self.accumulator_builder(aggregate, encoded_variables, stat_children)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let accumulator_variables = aggregates
-                    .iter()
-                    .map(|(variable, _)| encode_variable(encoded_variables, variable))
-                    .collect::<Vec<_>>();
-                let dataset = self.dataset.clone();
-                Rc::new(move |from| {
-                    let tuple_size = from.capacity();
-                    let key_variables = Rc::clone(&key_variables);
-                    let mut errors = Vec::default();
-                    let mut accumulators_for_group = FxHashMap::<
-                        Vec<Option<D::InternalTerm>>,
-                        Vec<AccumulatorWrapper<'_, D::InternalTerm>>,
-                    >::default();
-                    if key_variables.is_empty() {
-                        // There is always a single group if there is no GROUP BY
-                        accumulators_for_group.insert(
-                            Vec::new(),
-                            accumulator_builders.iter().map(|c| c()).collect::<Vec<_>>(),
-                        );
-                    }
-                    for result in child(from) {
-                        match result {
-                            Ok(tuple) => {
-                                // TODO avoid copy for key?
-                                let key = key_variables
-                                    .iter()
-                                    .map(|v| tuple.get(*v).cloned())
-                                    .collect();
-
-                                let key_accumulators =
-                                    accumulators_for_group.entry(key).or_insert_with(|| {
-                                        accumulator_builders.iter().map(|c| c()).collect::<Vec<_>>()
-                                    });
-                                for accumulator in key_accumulators {
-                                    if let Err(error) = accumulator.accumulate(&tuple) {
-                                        errors.push(error);
-                                    }
-                                }
-                            }
-                            Err(error) => errors.push(error),
-                        }
-                    }
-                    let accumulator_variables = accumulator_variables.clone();
+                (None, Some(input_object)) => {
+                    let subject_selector = subject_selector.clone();
+                    #[cfg(feature = "sparql-12")]
                     let dataset = dataset.clone();
                     Box::new(
-                        errors
-                            .into_iter()
-                            .map(Err)
-                            .chain(accumulators_for_group.into_iter().map(
-                                move |(key, accumulators)| {
-                                    let mut result = InternalTuple::with_capacity(tuple_size);
-                                    for (variable, value) in key_variables.iter().zip(key) {
-                                        if let Some(value) = value {
-                                            result.set(*variable, value);
-                                        }
-                                    }
-                                    for (accumulator, variable) in
-                                        accumulators.into_iter().zip(&accumulator_variables)
-                                    {
-                                        if let Some(value) = accumulator.finish() {
-                                            result.set(
-                                                *variable,
-                                                dataset.internalize_expression_term(value)?,
-                                            );
-                                        }
-                                    }
-                                    Ok(result)
-                                },
-                            )),
+                        path_eval
+                            .eval_to(&path, &input_object, from.graph_name.as_ref())
+                            .map(move |s| {
+                                let s = s?;
+                                let mut new_tuple = from.clone();
+                                if !put_pattern_value::<D>(
+                                    &subject_selector,
+                                    s,
+                                    &mut new_tuple,
+                                    #[cfg(feature = "sparql-12")]
+                                    &dataset,
+                                )? {
+                                    return Ok(None);
+                                }
+                                Ok(Some(new_tuple))
+                            })
+                            .filter_map(Result::transpose),
                     )
-                })
+                }
+                (None, None) => {
+                    let subject_selector = subject_selector.clone();
+                    let object_selector = object_selector.clone();
+                    #[cfg(feature = "sparql-12")]
+                    let dataset = dataset.clone();
+                    Box::new(
+                        path_eval
+                            .eval_open(&path, from.graph_name.as_ref())
+                            .map(move |t| {
+                                let (s, o) = t?;
+                                let mut new_tuple = from.clone();
+                                if !put_pattern_value::<D>(
+                                    &subject_selector,
+                                    s,
+                                    &mut new_tuple,
+                                    #[cfg(feature = "sparql-12")]
+                                    &dataset,
+                                )? {
+                                    return Ok(None);
+                                }
+                                if !put_pattern_value::<D>(
+                                    &object_selector,
+                                    o,
+                                    &mut new_tuple,
+                                    #[cfg(feature = "sparql-12")]
+                                    &dataset,
+                                )? {
+                                    return Ok(None);
+                                }
+                                Ok(Some(new_tuple))
+                            })
+                            .filter_map(Result::transpose),
+                    )
+                }
             }
-            GraphPattern::Service {
-                name,
-                inner,
-                silent,
-            } => {
-                #[expect(clippy::shadow_same)]
-                let silent = *silent;
-                let service_name =
-                    TupleSelector::from_named_node_pattern(name, encoded_variables, &self.dataset)?;
-                inner.lookup_used_variables(&mut |v| {
-                    encode_variable(encoded_variables, v);
-                }); // We fill "encoded_variables"
-                let graph_pattern = spargebra::algebra::GraphPattern::from(inner.as_ref());
-                let variables = Rc::from(encoded_variables.as_slice());
-                let eval = self.clone();
-                Rc::new(move |from| {
-                    match eval.evaluate_service(
-                        &service_name,
-                        &graph_pattern,
-                        Rc::clone(&variables),
-                        &from,
-                    ) {
-                        Ok(result) if silent => {
-                            let buffered = result
-                                .filter_map(|binding| {
-                                    binding
-                                        .map(|binding| binding.combine_with(&from))
-                                        .transpose()
+        }))
+    }
+
+    fn graph_evaluator(
+        &self,
+        graph_name: &NamedNodePattern,
+        inner: &QueryExpression,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        let graph_name_selector =
+            TupleSelector::from_named_node_pattern(graph_name, encoded_variables, &self.dataset)?;
+        let dataset = self.dataset.clone();
+        Ok(Rc::new(move |mut from| {
+            let input_graph_name = match graph_name_selector.get_pattern_value(
+                &from,
+                #[cfg(feature = "sparql-12")]
+                &dataset,
+            ) {
+                Ok(value) => value,
+                Err(e) => return Box::new(once(Err(e))),
+            };
+            if let Some(input_graph_name) = input_graph_name {
+                match dataset.contains_internal_graph_name(&input_graph_name) {
+                    Ok(true) => {
+                        let previous_graph_name = take(&mut from.graph_name);
+                        from.graph_name = Some(input_graph_name);
+                        Box::new(child(from).map(move |tuple| {
+                            let mut tuple = tuple?;
+                            tuple.graph_name.clone_from(&previous_graph_name);
+                            Ok(tuple)
+                        }))
+                    }
+                    Ok(false) => Box::new(empty()),
+                    Err(e) => Box::new(once(Err(e))),
+                }
+            } else {
+                let graph_name_selector = graph_name_selector.clone();
+                let child = Rc::clone(&child);
+                #[cfg(feature = "sparql-12")]
+                let dataset = dataset.clone();
+                let previous_graph_name = take(&mut from.graph_name);
+                Box::new(
+                    dataset
+                        .internal_named_graphs()
+                        .flat_map_ok(move |graph_name| {
+                            let graph_name_selector = graph_name_selector.clone();
+                            #[cfg(feature = "sparql-12")]
+                            let dataset = dataset.clone();
+                            let previous_graph_name = previous_graph_name.clone();
+                            let mut from = from.clone();
+                            from.graph_name = Some(graph_name.clone());
+                            child(from)
+                                .map(move |tuple| {
+                                    let mut tuple = tuple?;
+                                    if !put_pattern_value::<D>(
+                                        &graph_name_selector,
+                                        graph_name.clone(),
+                                        &mut tuple,
+                                        #[cfg(feature = "sparql-12")]
+                                        &dataset,
+                                    )? {
+                                        return Ok(None);
+                                    }
+                                    tuple.graph_name.clone_from(&previous_graph_name);
+                                    Ok(Some(tuple))
                                 })
-                                .collect::<Result<Vec<_>, _>>();
-                            match buffered {
-                                Ok(bindings) => Box::new(bindings.into_iter().map(Ok)),
-                                Err(_) => Box::new(once(Ok(from))),
+                                .filter_map(Result::transpose)
+                        }),
+                )
+            }
+        }))
+    }
+
+    fn join_evaluator(
+        &self,
+        left: &QueryExpression,
+        right: &QueryExpression,
+        algorithm: &JoinAlgorithm,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        // A variable SERVICE endpoint is selected from the current solution
+        // mapping. Evaluate the other join side first so it may bind that
+        // endpoint before SERVICE dispatch.
+        let variable_service_on_left = matches!(
+            left,
+            QueryExpression::Service {
+                name: NamedNodePattern::Variable(_),
+                ..
+            }
+        );
+        let variable_service_on_right = matches!(
+            right,
+            QueryExpression::Service {
+                name: NamedNodePattern::Variable(_),
+                ..
+            }
+        );
+        let (left, left_stats) = self.query_expression_evaluator(left, encoded_variables);
+        stat_children.push(left_stats);
+        let (right, right_stats) = self.query_expression_evaluator(right, encoded_variables);
+        stat_children.push(right_stats);
+        let left = left?;
+        let right = right?;
+
+        if variable_service_on_right {
+            return Ok(Rc::new(move |from| {
+                let right = Rc::clone(&right);
+                Box::new(left(from).flat_map(move |tuple| match tuple {
+                    Ok(tuple) => right(tuple),
+                    Err(error) => Box::new(once(Err(error))),
+                }))
+            }));
+        }
+        if variable_service_on_left {
+            return Ok(Rc::new(move |from| {
+                let left = Rc::clone(&left);
+                Box::new(right(from).flat_map(move |tuple| match tuple {
+                    Ok(tuple) => left(tuple),
+                    Err(error) => Box::new(once(Err(error))),
+                }))
+            }));
+        }
+
+        match algorithm {
+            JoinAlgorithm::HashBuildLeftProbeRight { keys } => {
+                let build = left;
+                let probe = right;
+                if keys.is_empty() {
+                    // Cartesian product
+                    Ok(Rc::new(move |from| {
+                        let built_values = build(from.clone()).collect::<Result<Vec<_>, _>>();
+                        if built_values.as_ref().is_err_and(|e| !e.can_be_silent()) {
+                            // We return non-silent errors proactively to abort execution
+                            return Box::new(built_values.err().into_iter().map(Err));
+                        }
+                        if built_values.as_ref().is_ok_and(Vec::is_empty) {
+                            // We don't bother to execute the other side
+                            return Box::new(empty());
+                        }
+                        let mut probe_iter = probe(from).peekable();
+                        if probe_iter.peek().is_none() {
+                            // We know it's empty and can discard errors
+                            return Box::new(empty());
+                        }
+                        match built_values {
+                            Ok(built_values) => Box::new(CartesianProductJoinIterator {
+                                probe_iter,
+                                probe_tuple: None,
+                                built: built_values,
+                                built_offset: 0,
+                            }),
+                            Err(error) => Box::new(once(Err(error))),
+                        }
+                    }))
+                } else {
+                    // Real hash join
+                    let keys = keys
+                        .iter()
+                        .map(|v| encode_variable(encoded_variables, v))
+                        .collect::<Vec<_>>();
+                    Ok(Rc::new(move |from| {
+                        let mut built_values = InternalTupleSet::new(keys.clone());
+                        let error = built_values.extend(build(from.clone())).err();
+                        if error.as_ref().is_some_and(|e| !e.can_be_silent()) {
+                            // We return non-silent errors proactively to abort execution
+                            return Box::new(error.into_iter().map(Err));
+                        }
+                        if built_values.is_empty() && error.is_none() {
+                            // We don't bother to execute the other side
+                            return Box::new(empty());
+                        }
+                        let mut probe_iter = probe(from).peekable();
+                        if probe_iter.peek().is_none() {
+                            // We know it's empty and can discard errors
+                            return Box::new(empty());
+                        }
+                        if let Some(error) = error {
+                            return Box::new(once(Err(error)));
+                        }
+                        Box::new(HashJoinIterator {
+                            probe_iter,
+                            built: built_values,
+                            buffered_results: Vec::new(),
+                        })
+                    }))
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "sep-0006")]
+    fn lateral_evaluator(
+        &self,
+        left: &QueryExpression,
+        right: &QueryExpression,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (left, left_stats) = self.query_expression_evaluator(left, encoded_variables);
+        stat_children.push(left_stats);
+        let left = left?;
+
+        if let QueryExpression::LeftJoin {
+            left: nested_left,
+            right: nested_right,
+            expression,
+            ..
+        } = right
+        {
+            if nested_left.is_empty_singleton() {
+                // We are in a ForLoopLeftJoin
+                let right =
+                    QueryExpression::filter(nested_right.as_ref().clone(), expression.clone());
+                let (right, right_stats) =
+                    self.query_expression_evaluator(&right, encoded_variables);
+                stat_children.push(right_stats);
+                let right = right?;
+                return Ok(Rc::new(move |from| {
+                    Box::new(ForLoopLeftJoinIterator {
+                        right_evaluator: Rc::clone(&right),
+                        left_iter: left(from.clone()),
+                        current_right: Box::new(empty()),
+                        left_tuple_to_yield: None,
+                    })
+                }));
+            }
+        }
+        let (right, right_stats) = self.query_expression_evaluator(right, encoded_variables);
+        stat_children.push(right_stats);
+        let right = right?;
+        Ok(Rc::new(move |from| {
+            let right = Rc::clone(&right);
+            Box::new(left(from.clone()).flat_map(move |t| match t {
+                Ok(t) => right(t),
+                Err(e) => Box::new(once(Err(e))),
+            }))
+        }))
+    }
+
+    fn minus_evaluator(
+        &self,
+        left: &QueryExpression,
+        right: &QueryExpression,
+        algorithm: &MinusAlgorithm,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (left, left_stats) = self.query_expression_evaluator(left, encoded_variables);
+        stat_children.push(left_stats);
+        let (right, right_stats) = self.query_expression_evaluator(right, encoded_variables);
+        stat_children.push(right_stats);
+        let left = left?;
+        let right = right?;
+
+        match algorithm {
+            MinusAlgorithm::HashBuildRightProbeLeft { keys } => {
+                if keys.is_empty() {
+                    Ok(Rc::new(move |from| {
+                        let right = match right(from.clone()).collect::<Result<Vec<_>, _>>() {
+                            Ok(right) => right,
+                            Err(error) => return Box::new(once(Err(error))),
+                        };
+                        if right.is_empty() {
+                            return left(from);
+                        }
+                        Box::new(left(from).filter(move |left_tuple| {
+                            if let Ok(left_tuple) = left_tuple {
+                                !right.iter().any(|right_tuple| {
+                                    are_compatible_and_not_disjointed(left_tuple, right_tuple)
+                                })
+                            } else {
+                                true
+                            }
+                        }))
+                    }))
+                } else {
+                    let keys = keys
+                        .iter()
+                        .map(|v| encode_variable(encoded_variables, v))
+                        .collect::<Vec<_>>();
+                    Ok(Rc::new(move |from| {
+                        let mut right_values = InternalTupleSet::new(keys.clone());
+                        if let Err(error) = right_values.extend(right(from.clone())) {
+                            return Box::new(once(Err(error)));
+                        }
+                        if right_values.is_empty() {
+                            return left(from);
+                        }
+                        Box::new(left(from).filter(move |left_tuple| {
+                            if let Ok(left_tuple) = left_tuple {
+                                !right_values.get(left_tuple).iter().any(|right_tuple| {
+                                    are_compatible_and_not_disjointed(left_tuple, right_tuple)
+                                })
+                            } else {
+                                true
+                            }
+                        }))
+                    }))
+                }
+            }
+        }
+    }
+
+    fn left_join_evaluator(
+        &self,
+        left: &QueryExpression,
+        right: &QueryExpression,
+        expression: &Expression,
+        algorithm: &LeftJoinAlgorithm,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (left, left_stats) = self.query_expression_evaluator(left, encoded_variables);
+        stat_children.push(left_stats);
+        let (right, right_stats) = self.query_expression_evaluator(right, encoded_variables);
+        stat_children.push(right_stats);
+        let left = left?;
+        let right = right?;
+        let expression = self.effective_boolean_value_expression_evaluator(
+            expression,
+            encoded_variables,
+            stat_children,
+        )?;
+
+        match algorithm {
+            LeftJoinAlgorithm::HashBuildRightProbeLeft { keys } => {
+                // Real hash join
+                let keys = keys
+                    .iter()
+                    .map(|v| encode_variable(encoded_variables, v))
+                    .collect::<Vec<_>>();
+                Ok(Rc::new(move |from| {
+                    let mut right_values = InternalTupleSet::new(keys.clone());
+                    if let Err(error) = right_values.extend(right(from.clone())) {
+                        return Box::new(once(Err(error)));
+                    }
+                    if right_values.is_empty() {
+                        return left(from);
+                    }
+                    Box::new(HashLeftJoinIterator {
+                        left_iter: left(from),
+                        right: right_values,
+                        buffered_results: Vec::new(),
+                        expression: Rc::clone(&expression),
+                    })
+                }))
+            }
+        }
+    }
+
+    fn filter_evaluator(
+        &self,
+        inner: &QueryExpression,
+        expression: &Expression,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        let expression = self.effective_boolean_value_expression_evaluator(
+            expression,
+            encoded_variables,
+            stat_children,
+        )?;
+        Ok(Rc::new(move |from| {
+            let expression = Rc::clone(&expression);
+            Box::new(child(from).filter_map(move |tuple| match tuple {
+                Ok(tuple) => match expression(&tuple) {
+                    Ok(Some(true)) => Some(Ok(tuple)),
+                    Ok(Some(false) | None) => None,
+                    Err(error) => Some(Err(error)),
+                },
+                Err(error) => Some(Err(error)),
+            }))
+        }))
+    }
+
+    fn union_evaluator(
+        &self,
+        inner: &[QueryExpression],
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let children = inner
+            .iter()
+            .map(|child| {
+                let (child, child_stats) =
+                    self.query_expression_evaluator(child, encoded_variables);
+                stat_children.push(child_stats);
+                child
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Rc::new(move |from| {
+            Box::new(UnionIterator {
+                plans: children.clone(),
+                input: from,
+                current_iterator: Box::new(empty()),
+                current_plan: 0,
+            })
+        }))
+    }
+
+    fn extend_evaluator(
+        &self,
+        inner: &QueryExpression,
+        variable: &Variable,
+        expression: &Expression,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+
+        let position = encode_variable(encoded_variables, variable);
+        if let Some(expression) =
+            self.internal_expression_evaluator(expression, encoded_variables, stat_children)?
+        {
+            return Ok(Rc::new(move |from| {
+                let expression = Rc::clone(&expression);
+                Box::new(child(from).map(move |tuple| {
+                    let mut tuple = tuple?;
+                    if let Some(value) = expression(&tuple)? {
+                        tuple.set(position, value);
+                    }
+                    Ok(tuple)
+                }))
+            }));
+        }
+
+        let expression = self.expression_evaluator(expression, encoded_variables, stat_children)?;
+        let dataset = self.dataset.clone();
+        Ok(Rc::new(move |from| {
+            let expression = Rc::clone(&expression);
+            let dataset = dataset.clone();
+            Box::new(child(from).map(move |tuple| {
+                let mut tuple = tuple?;
+                if let Some(value) = expression(&tuple)? {
+                    tuple.set(position, dataset.internalize_expression_term(value)?);
+                }
+                Ok(tuple)
+            }))
+        }))
+    }
+
+    fn order_by_evaluator(
+        &self,
+        inner: &QueryExpression,
+        expression: &[OrderExpression],
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        let by = expression
+            .iter()
+            .filter_map(|comp| {
+                Some(match comp {
+                    OrderExpression::Asc(variable) => {
+                        (true, slice_key(encoded_variables, variable)?)
+                    }
+                    OrderExpression::Desc(variable) => {
+                        (false, slice_key(encoded_variables, variable)?)
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let dataset = self.dataset.clone();
+        Ok(Rc::new(move |from| {
+            let mut tuples_and_sort_keys = match child(from)
+                .map(|tuple| {
+                    let tuple = tuple?;
+                    let sort_terms = by
+                        .iter()
+                        .map(|(_, variable_key)| {
+                            tuple
+                                .get(*variable_key)
+                                .map(|term| dataset.externalize_expression_term(term.clone()))
+                                .transpose()
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok((tuple, sort_terms))
+                })
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(values) => values,
+                Err(error) => return Box::new(once(Err(error))),
+            };
+            tuples_and_sort_keys.sort_unstable_by(|(_, a), (_, b)| {
+                for ((is_asc, _), (a, b)) in by.iter().zip(a.iter().zip(b)) {
+                    match cmp_terms(a.as_ref(), b.as_ref()) {
+                        Ordering::Greater => {
+                            return if *is_asc {
+                                Ordering::Greater
+                            } else {
+                                Ordering::Less
+                            };
+                        }
+                        Ordering::Less => {
+                            return if *is_asc {
+                                Ordering::Less
+                            } else {
+                                Ordering::Greater
+                            };
+                        }
+                        Ordering::Equal => (),
+                    }
+                }
+                Ordering::Equal
+            });
+            Box::new(tuples_and_sort_keys.into_iter().map(|(tuple, _)| Ok(tuple)))
+        }))
+    }
+
+    fn distinct_evaluator(
+        &self,
+        inner: &QueryExpression,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        Ok(Rc::new(move |from| Box::new(hash_deduplicate(child(from)))))
+    }
+
+    fn reduced_evaluator(
+        &self,
+        inner: &QueryExpression,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        Ok(Rc::new(move |from| {
+            Box::new(ConsecutiveDeduplication {
+                inner: child(from),
+                current: None,
+            })
+        }))
+    }
+
+    fn slice_evaluator(
+        &self,
+        inner: &QueryExpression,
+        offset: u64,
+        limit: Option<u64>,
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let mut child = child?;
+        #[expect(clippy::unwrap_in_result)]
+        let offset = offset.try_into().unwrap();
+        if offset > 0 {
+            child = Rc::new(move |from| Box::new(child(from).skip(offset)));
+        }
+        if let Some(limit) = limit.map(|l| l.try_into().unwrap()) {
+            child = Rc::new(move |from| Box::new(child(from).take(limit)));
+        }
+        Ok(child)
+    }
+
+    fn project_evaluator(
+        &self,
+        inner: &QueryExpression,
+        variables: &[Variable],
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let mut inner_encoded_variables = variables.to_vec();
+        let (child, child_stats) =
+            self.query_expression_evaluator(inner, &mut inner_encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        let mapping = variables
+            .iter()
+            .enumerate()
+            .map(|(new_variable, variable)| {
+                (new_variable, encode_variable(encoded_variables, variable))
+            })
+            .collect::<Rc<[(usize, usize)]>>();
+        Ok(Rc::new(move |from| {
+            let mapping = Rc::clone(&mapping);
+            let mut input_tuple = InternalTuple::with_capacity(mapping.len());
+            for (input_key, output_key) in &*mapping {
+                if let Some(value) = from.get(*output_key) {
+                    input_tuple.set(*input_key, value.clone());
+                }
+            }
+            input_tuple.graph_name.clone_from(&from.graph_name);
+            Box::new(child(input_tuple).filter_map(move |tuple| {
+                match tuple {
+                    Ok(tuple) => {
+                        let mut output_tuple = from.clone();
+                        for (input_key, output_key) in &*mapping {
+                            if let Some(value) = tuple.get(*input_key) {
+                                if let Some(existing_value) = output_tuple.get(*output_key) {
+                                    if existing_value != value {
+                                        return None; // Conflict
+                                    }
+                                } else {
+                                    output_tuple.set(*output_key, value.clone());
+                                }
                             }
                         }
-                        Ok(result) => Box::new(result.filter_map(move |binding| {
+                        Some(Ok(output_tuple))
+                    }
+                    Err(e) => Some(Err(e)),
+                }
+            }))
+        }))
+    }
+
+    fn group_evaluator(
+        &self,
+        inner: &QueryExpression,
+        aggregates: &[(Variable, AggregateExpression)],
+        variables: &[Variable],
+        encoded_variables: &mut Vec<Variable>,
+        stat_children: &mut Vec<Rc<EvalNodeWithStats>>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let (child, child_stats) = self.query_expression_evaluator(inner, encoded_variables);
+        stat_children.push(child_stats);
+        let child = child?;
+        let key_variables = variables
+            .iter()
+            .map(|k| encode_variable(encoded_variables, k))
+            .collect::<Rc<[_]>>();
+        let accumulator_builders = aggregates
+            .iter()
+            .map(|(_, aggregate)| {
+                self.accumulator_builder(aggregate, encoded_variables, stat_children)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let accumulator_variables = aggregates
+            .iter()
+            .map(|(variable, _)| encode_variable(encoded_variables, variable))
+            .collect::<Vec<_>>();
+        let dataset = self.dataset.clone();
+        Ok(Rc::new(move |from| {
+            let tuple_size = from.capacity();
+            let key_variables = Rc::clone(&key_variables);
+            let mut accumulators_for_group = FxHashMap::<
+                Vec<Option<D::InternalTerm>>,
+                Vec<AccumulatorWrapper<'_, D::InternalTerm>>,
+            >::default();
+            if key_variables.is_empty() {
+                // There is always a single group if there is no GROUP BY
+                accumulators_for_group.insert(
+                    Vec::new(),
+                    accumulator_builders.iter().map(|c| c()).collect::<Vec<_>>(),
+                );
+            }
+            for result in child(from) {
+                let tuple = match result {
+                    Ok(tuple) => tuple,
+                    Err(error) => return Box::new(once(Err(error))),
+                };
+                // TODO avoid copy for key?
+                let key = key_variables
+                    .iter()
+                    .map(|v| tuple.get(*v).cloned())
+                    .collect();
+
+                let key_accumulators = accumulators_for_group.entry(key).or_insert_with(|| {
+                    accumulator_builders.iter().map(|c| c()).collect::<Vec<_>>()
+                });
+                for accumulator in key_accumulators {
+                    if let Err(error) = accumulator.accumulate(&tuple) {
+                        return Box::new(once(Err(error)));
+                    }
+                }
+            }
+            let accumulator_variables = accumulator_variables.clone();
+            let dataset = dataset.clone();
+            Box::new(
+                accumulators_for_group
+                    .into_iter()
+                    .map(move |(key, accumulators)| {
+                        let mut result = InternalTuple::with_capacity(tuple_size);
+                        for (variable, value) in key_variables.iter().zip(key) {
+                            if let Some(value) = value {
+                                result.set(*variable, value);
+                            }
+                        }
+                        for (accumulator, variable) in
+                            accumulators.into_iter().zip(&accumulator_variables)
+                        {
+                            if let Some(value) = accumulator.finish() {
+                                result.set(*variable, dataset.internalize_expression_term(value)?);
+                            }
+                        }
+                        Ok(result)
+                    }),
+            )
+        }))
+    }
+
+    fn service_evaluator(
+        &self,
+        name: &NamedNodePattern,
+        inner: &QueryExpression,
+        silent: bool,
+        encoded_variables: &mut Vec<Variable>,
+    ) -> Result<InternalTupleEvaluator<'a, D::InternalTerm>, QueryEvaluationError> {
+        let service_name =
+            TupleSelector::from_named_node_pattern(name, encoded_variables, &self.dataset)?;
+        inner.lookup_used_variables(&mut |v| {
+            encode_variable(encoded_variables, v);
+        }); // We fill "encoded_variables"
+        let query_expression = spargebra::algebra::QueryExpression::from(inner);
+        let variables = Rc::from(encoded_variables.as_slice());
+        let eval = self.clone();
+        Ok(Rc::new(move |from| {
+            match eval.evaluate_service(
+                &service_name,
+                &query_expression,
+                Rc::clone(&variables),
+                &from,
+            ) {
+                Ok(result) if silent => {
+                    let buffered = result
+                        .filter_map(|binding| {
                             binding
                                 .map(|binding| binding.combine_with(&from))
                                 .transpose()
-                        })),
-                        Err(e) => {
-                            if silent {
-                                Box::new(once(Ok(from)))
-                            } else {
-                                Box::new(once(Err(e)))
-                            }
-                        }
+                        })
+                        .collect::<Result<Vec<_>, _>>();
+                    match buffered {
+                        Ok(bindings) => Box::new(bindings.into_iter().map(Ok)),
+                        Err(error) if error.can_be_silent() => Box::new(once(Ok(from))),
+                        Err(error) => Box::new(once(Err(error))),
                     }
-                })
+                }
+                Ok(result) => Box::new(result.filter_map(move |binding| {
+                    binding
+                        .map(|binding| binding.combine_with(&from))
+                        .transpose()
+                })),
+                Err(e) => {
+                    if silent && e.can_be_silent() {
+                        Box::new(once(Ok(from)))
+                    } else {
+                        Box::new(once(Err(e)))
+                    }
+                }
             }
-        })
+        }))
     }
 
     fn evaluate_service(
         &self,
         service_name: &TupleSelector<D::InternalTerm>,
-        graph_pattern: &spargebra::algebra::GraphPattern,
+        query_expression: &spargebra::algebra::QueryExpression,
         variables: Rc<[Variable]>,
         from: &InternalTuple<D::InternalTerm>,
     ) -> Result<InternalTuplesIterator<'a, D::InternalTerm>, QueryEvaluationError> {
@@ -1956,8 +2104,8 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         };
         let iter =
             self.service_handler
-                .handle(&service_name, graph_pattern, self.base_iri.as_ref())?;
-        Ok(encode_bindings(self.dataset.clone(), variables, iter))
+                .handle(&service_name, query_expression, self.base_iri.as_ref())?;
+        Ok(self.encode_bindings(variables, iter))
     }
 
     fn accumulator_builder(
@@ -2227,33 +2375,53 @@ impl<'a, D: QueryableDataset<'a>> SimpleEvaluator<'a, D> {
         path: &PropertyPathExpression,
     ) -> Result<Rc<PropertyPath<D::InternalTerm>>, QueryEvaluationError> {
         Ok(Rc::new(match path {
-            PropertyPathExpression::NamedNode(node) => {
+            PropertyPathExpression::Link(node) => {
                 PropertyPath::Path(self.encode_term(node.clone())?)
             }
-            PropertyPathExpression::Reverse(p) => {
-                PropertyPath::Reverse(self.encode_property_path(p)?)
-            }
-            PropertyPathExpression::Sequence(a, b) => {
+            PropertyPathExpression::Inv(p) => PropertyPath::Reverse(self.encode_property_path(p)?),
+            PropertyPathExpression::Seq(a, b) => {
                 PropertyPath::Sequence(self.encode_property_path(a)?, self.encode_property_path(b)?)
             }
-            PropertyPathExpression::Alternative(a, b) => PropertyPath::Alternative(
+            PropertyPathExpression::Alt(a, b) => PropertyPath::Alternative(
                 self.encode_property_path(a)?,
                 self.encode_property_path(b)?,
             ),
-            PropertyPathExpression::ZeroOrMore(p) => {
+            PropertyPathExpression::ZeroOrMorePath(p) => {
                 PropertyPath::ZeroOrMore(self.encode_property_path(p)?)
             }
-            PropertyPathExpression::OneOrMore(p) => {
+            PropertyPathExpression::OneOrMorePath(p) => {
                 PropertyPath::OneOrMore(self.encode_property_path(p)?)
             }
-            PropertyPathExpression::ZeroOrOne(p) => {
+            PropertyPathExpression::ZeroOrOnePath(p) => {
                 PropertyPath::ZeroOrOne(self.encode_property_path(p)?)
             }
-            PropertyPathExpression::NegatedPropertySet(ps) => PropertyPath::NegatedPropertySet(
+            PropertyPathExpression::Nps(ps) => PropertyPath::NegatedPropertySet(
                 ps.iter()
                     .map(|p| self.encode_term(p.clone()))
                     .collect::<Result<Rc<[_]>, _>>()?,
             ),
+        }))
+    }
+
+    /// Used to encode results from a BindingIterator into an InternalTuplesIterator. This happens when SERVICE clauses are evaluated
+    fn encode_bindings(
+        &self,
+        variables: Rc<[Variable]>,
+        iter: QuerySolutionIter<'a>,
+    ) -> InternalTuplesIterator<'a, D::InternalTerm> {
+        let dataset = self.dataset.clone();
+        Box::new(iter.map(move |solution| {
+            dataset.cancellation_token.ensure_alive()?;
+            let mut encoded_terms = InternalTuple::with_capacity(variables.len());
+            for (variable, term) in &solution? {
+                put_variable_value(
+                    variable,
+                    &variables,
+                    dataset.internalize_term(term.clone())?,
+                    &mut encoded_terms,
+                );
+            }
+            Ok(encoded_terms)
         }))
     }
 }
@@ -2303,11 +2471,11 @@ impl<'a, D: QueryableDataset<'a>> ExpressionEvaluatorContext<'a>
 
     fn build_exists(
         &mut self,
-        plan: &GraphPattern,
+        plan: &QueryExpression,
     ) -> Result<impl Fn(&InternalTuple<D::InternalTerm>) -> bool + 'a, QueryEvaluationError> {
         let (eval, stats) = self
             .evaluator
-            .graph_pattern_evaluator(plan, self.encoded_variables);
+            .query_expression_evaluator(plan, self.encoded_variables);
         self.stat_children.push(stats);
         let eval = eval?;
         Ok(move |tuple: &InternalTuple<D::InternalTerm>| eval(tuple.clone()).next().is_some())
@@ -2374,26 +2542,6 @@ fn decode_bindings<'a, D: QueryableDataset<'a>>(
             Ok(result)
         })),
     )
-}
-
-// this is used to encode results from a BindingIterator into an InternalTuplesIterator. This happens when SERVICE clauses are evaluated
-fn encode_bindings<'a, D: QueryableDataset<'a>>(
-    dataset: EvalDataset<'a, D>,
-    variables: Rc<[Variable]>,
-    iter: QuerySolutionIter<'a>,
-) -> InternalTuplesIterator<'a, D::InternalTerm> {
-    Box::new(iter.map(move |solution| {
-        let mut encoded_terms = InternalTuple::with_capacity(variables.len());
-        for (variable, term) in &solution? {
-            put_variable_value(
-                variable,
-                &variables,
-                dataset.internalize_term(term.clone())?,
-                &mut encoded_terms,
-            );
-        }
-        Ok(encoded_terms)
-    }))
 }
 
 fn encode_initial_bindings<'a, D: QueryableDataset<'a>>(
@@ -3168,18 +3316,17 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                Box::new(transitive_closure(Some(Ok(start.clone())), move |e| {
+                transitive_closure(Some(Ok(start.clone())), move |e| {
                     eval.eval_from(&p, &e, graph_name2.as_ref())
-                }))
+                })
             }
             PropertyPath::OneOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                Box::new(transitive_closure(
-                    self.eval_from(&p, start, graph_name),
-                    move |e| eval.eval_from(&p, &e, graph_name2.as_ref()),
-                ))
+                transitive_closure(self.eval_from(&p, start, graph_name), move |e| {
+                    eval.eval_from(&p, &e, graph_name2.as_ref())
+                })
             }
             PropertyPath::ZeroOrOne(p) => Box::new(hash_deduplicate(
                 once(Ok(start.clone())).chain(self.eval_from(p, start, graph_name)),
@@ -3234,18 +3381,17 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                Box::new(transitive_closure(Some(Ok(end.clone())), move |e| {
+                transitive_closure(Some(Ok(end.clone())), move |e| {
                     eval.eval_to(&p, &e, graph_name2.as_ref())
-                }))
+                })
             }
             PropertyPath::OneOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                Box::new(transitive_closure(
-                    self.eval_to(&p, end, graph_name),
-                    move |e| eval.eval_to(&p, &e, graph_name2.as_ref()),
-                ))
+                transitive_closure(self.eval_to(&p, end, graph_name), move |e| {
+                    eval.eval_to(&p, &e, graph_name2.as_ref())
+                })
             }
             PropertyPath::ZeroOrOne(p) => Box::new(hash_deduplicate(
                 once(Ok(end.clone())).chain(self.eval_to(p, end, graph_name)),
@@ -3310,25 +3456,22 @@ impl<'a, D: QueryableDataset<'a>> PathEvaluator<'a, D> {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                Box::new(transitive_closure(
+                transitive_closure(
                     self.get_subject_or_object_identity_pairs(graph_name),
                     move |(start, middle)| {
                         eval.eval_from(&p, &middle, graph_name2.as_ref())
                             .map(move |end| Ok((start.clone(), end?)))
                     },
-                ))
+                )
             }
             PropertyPath::OneOrMore(p) => {
                 let eval = self.clone();
                 let p = Rc::clone(p);
                 let graph_name2 = graph_name.cloned();
-                Box::new(transitive_closure(
-                    self.eval_open(&p, graph_name),
-                    move |(start, middle)| {
-                        eval.eval_from(&p, &middle, graph_name2.as_ref())
-                            .map(move |end| Ok((start.clone(), end?)))
-                    },
-                ))
+                transitive_closure(self.eval_open(&p, graph_name), move |(start, middle)| {
+                    eval.eval_from(&p, &middle, graph_name2.as_ref())
+                        .map(move |end| Ok((start.clone(), end?)))
+                })
             }
             PropertyPath::ZeroOrOne(p) => Box::new(hash_deduplicate(
                 self.get_subject_or_object_identity_pairs(graph_name)
@@ -3380,8 +3523,9 @@ impl<'a, D: QueryableDataset<'a>> Clone for PathEvaluator<'a, D> {
 
 struct CartesianProductJoinIterator<'a, T> {
     probe_iter: Peekable<InternalTuplesIterator<'a, T>>,
+    probe_tuple: Option<InternalTuple<T>>,
     built: Vec<InternalTuple<T>>,
-    buffered_results: Vec<Result<InternalTuple<T>, QueryEvaluationError>>,
+    built_offset: usize,
 }
 
 impl<T: Clone + Eq> Iterator for CartesianProductJoinIterator<'_, T> {
@@ -3389,18 +3533,19 @@ impl<T: Clone + Eq> Iterator for CartesianProductJoinIterator<'_, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(result) = self.buffered_results.pop() {
-                return Some(result);
-            }
-            let probe_tuple = match self.probe_iter.next()? {
-                Ok(probe_tuple) => probe_tuple,
-                Err(error) => return Some(Err(error)),
-            };
-            for built_tuple in &self.built {
+            while let (Some(probe_tuple), Some(built_tuple)) =
+                (&self.probe_tuple, self.built.get(self.built_offset))
+            {
+                self.built_offset += 1;
                 if let Some(result_tuple) = probe_tuple.combine_with(built_tuple) {
-                    self.buffered_results.push(Ok(result_tuple))
+                    return Some(Ok(result_tuple));
                 }
             }
+            self.probe_tuple = match self.probe_iter.next()? {
+                Ok(probe_tuple) => Some(probe_tuple),
+                Err(error) => return Some(Err(error)),
+            };
+            self.built_offset = 0;
         }
     }
 
@@ -3619,21 +3764,19 @@ impl<'a, D: QueryableDataset<'a>> Iterator for ConstructIterator<'a, D> {
                     Err(error) => return Some(Err(error)),
                 };
                 for template in &self.template {
-                    if let (Some(subject), Some(predicate), Some(object)) = (
+                    let (subject, predicate, object) = match (
                         get_triple_template_value(
                             &template.subject,
                             &tuple,
                             &mut self.bnodes,
                             &self.eval.dataset,
-                        )
-                        .and_then(|t| t.try_into().ok()),
+                        ),
                         get_triple_template_value(
                             &template.predicate,
                             &tuple,
                             &mut self.bnodes,
                             &self.eval.dataset,
-                        )
-                        .and_then(|t| t.try_into().ok()),
+                        ),
                         get_triple_template_value(
                             &template.object,
                             &tuple,
@@ -3641,6 +3784,17 @@ impl<'a, D: QueryableDataset<'a>> Iterator for ConstructIterator<'a, D> {
                             &self.eval.dataset,
                         ),
                     ) {
+                        (Ok(Some(subject)), Ok(Some(predicate)), Ok(Some(object))) => {
+                            (subject, predicate, object)
+                        }
+                        (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
+                            self.bnodes.clear();
+                            return Some(Err(error));
+                        }
+                        _ => continue,
+                    };
+                    if let (Ok(subject), Ok(predicate)) = (subject.try_into(), predicate.try_into())
+                    {
                         let triple = Triple {
                             subject,
                             predicate,
@@ -3755,32 +3909,40 @@ fn get_triple_template_value<'a, D: QueryableDataset<'a>>(
     tuple: &InternalTuple<D::InternalTerm>,
     bnodes: &mut Vec<BlankNode>,
     dataset: &EvalDataset<'a, D>,
-) -> Option<Term> {
+) -> Result<Option<Term>, QueryEvaluationError> {
     match selector {
-        TripleTemplateValue::Constant(term) => Some(term.clone()),
-        TripleTemplateValue::Variable(v) => {
-            let t = tuple.get(*v)?;
-            dataset.externalize_term(t.clone()).ok() // TODO: raise error
-        }
+        TripleTemplateValue::Constant(term) => Ok(Some(term.clone())),
+        TripleTemplateValue::Variable(v) => tuple
+            .get(*v)
+            .map(|t| dataset.externalize_term(t.clone()))
+            .transpose(),
         TripleTemplateValue::BlankNode(bnode) => {
             if *bnode >= bnodes.len() {
                 bnodes.resize_with(*bnode + 1, BlankNode::default)
             }
-            Some(bnodes[*bnode].clone().into())
+            Ok(Some(bnodes[*bnode].clone().into()))
         }
         #[cfg(feature = "sparql-12")]
-        TripleTemplateValue::Triple(triple) => Some(
-            Triple {
-                subject: get_triple_template_value(&triple.subject, tuple, bnodes, dataset)?
-                    .try_into()
-                    .ok()?,
-                predicate: get_triple_template_value(&triple.predicate, tuple, bnodes, dataset)?
-                    .try_into()
-                    .ok()?,
-                object: get_triple_template_value(&triple.object, tuple, bnodes, dataset)?,
-            }
-            .into(),
-        ),
+        TripleTemplateValue::Triple(triple) => {
+            let (Some(subject), Some(predicate), Some(object)) = (
+                get_triple_template_value(&triple.subject, tuple, bnodes, dataset)?,
+                get_triple_template_value(&triple.predicate, tuple, bnodes, dataset)?,
+                get_triple_template_value(&triple.object, tuple, bnodes, dataset)?,
+            ) else {
+                return Ok(None);
+            };
+            let (Ok(subject), Ok(predicate)) = (subject.try_into(), predicate.try_into()) else {
+                return Ok(None);
+            };
+            Ok(Some(
+                Triple {
+                    subject,
+                    predicate,
+                    object,
+                }
+                .into(),
+            ))
+        }
     }
 }
 
@@ -3849,21 +4011,14 @@ impl<'a, D: QueryableDataset<'a>> Iterator for DescribeIterator<'a, D> {
     }
 }
 
-fn transitive_closure<T: Clone + Eq + Hash, E, NI: Iterator<Item = Result<T, E>>>(
+fn transitive_closure<'a, T: Clone + Eq + Hash + 'a, E: 'a, NI: Iterator<Item = Result<T, E>>>(
     start: impl IntoIterator<Item = Result<T, E>>,
     mut next: impl FnMut(T) -> NI,
-) -> impl Iterator<Item = Result<T, E>> {
-    let mut errors = Vec::new();
-    let mut todo = start
-        .into_iter()
-        .filter_map(|e| match e {
-            Ok(e) => Some(e),
-            Err(e) => {
-                errors.push(e);
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+) -> Box<dyn Iterator<Item = Result<T, E>> + 'a> {
+    let mut todo = match start.into_iter().collect::<Result<Vec<_>, _>>() {
+        Ok(values) => values,
+        Err(error) => return Box::new(once(Err(error))),
+    };
     let mut all = todo.iter().cloned().collect::<FxHashSet<_>>();
     while let Some(e) = todo.pop() {
         for e in next(e) {
@@ -3873,11 +4028,11 @@ fn transitive_closure<T: Clone + Eq + Hash, E, NI: Iterator<Item = Result<T, E>>
                         todo.push(e)
                     }
                 }
-                Err(e) => errors.push(e),
+                Err(error) => return Box::new(once(Err(error))),
             }
         }
     }
-    errors.into_iter().map(Err).chain(all.into_iter().map(Ok))
+    Box::new(all.into_iter().map(Ok))
 }
 
 fn look_in_transitive_closure<T: Clone + Eq + Hash, E, NI: Iterator<Item = Result<T, E>>>(
@@ -4027,15 +4182,17 @@ impl<T: Hash> InternalTupleSet<T> {
         }
         hasher.finish()
     }
-}
 
-impl<T: Hash> Extend<InternalTuple<T>> for InternalTupleSet<T> {
-    fn extend<I: IntoIterator<Item = InternalTuple<T>>>(&mut self, iter: I) {
+    fn extend<I: IntoIterator<Item = Result<InternalTuple<T>, QueryEvaluationError>>>(
+        &mut self,
+        iter: I,
+    ) -> Result<(), QueryEvaluationError> {
         let iter = iter.into_iter();
         self.map.reserve(iter.size_hint().0);
         for tuple in iter {
-            self.insert(tuple);
+            self.insert(tuple?);
         }
+        Ok(())
     }
 }
 
@@ -4127,10 +4284,10 @@ impl fmt::Debug for EvalNodeWithStats {
     }
 }
 
-fn eval_node_label(node: &GraphPattern) -> String {
+fn eval_node_label(node: &QueryExpression) -> String {
     match node {
-        GraphPattern::Distinct { .. } => "Distinct(Hash)".to_owned(),
-        GraphPattern::Extend {
+        QueryExpression::Distinct { .. } => "Distinct(Hash)".to_owned(),
+        QueryExpression::Extend {
             expression,
             variable,
             ..
@@ -4138,11 +4295,11 @@ fn eval_node_label(node: &GraphPattern) -> String {
             "Extend({} -> {variable})",
             FormattableExpression(expression)
         ),
-        GraphPattern::Filter { expression, .. } => {
+        QueryExpression::Filter { expression, .. } => {
             format!("Filter({})", FormattableExpression(expression))
         }
-        GraphPattern::Graph { graph_name, .. } => format!("Graph({graph_name})"),
-        GraphPattern::Group {
+        QueryExpression::Graph { graph_name, .. } => format!("Graph({graph_name})"),
+        QueryExpression::Group {
             variables,
             aggregates,
             ..
@@ -4157,15 +4314,15 @@ fn eval_node_label(node: &GraphPattern) -> String {
                 ))
             )
         }
-        GraphPattern::Join { algorithm, .. } => match algorithm {
+        QueryExpression::Join { algorithm, .. } => match algorithm {
             JoinAlgorithm::HashBuildLeftProbeRight { keys } => format!(
-                "LeftJoin(HashBuildLeftProbeRight, keys = {})",
+                "Join(HashBuildLeftProbeRight, keys = {})",
                 format_list(keys)
             ),
         },
         #[cfg(feature = "sep-0006")]
-        GraphPattern::Lateral { right, .. } => {
-            if let GraphPattern::LeftJoin {
+        QueryExpression::Lateral { right, .. } => {
+            if let QueryExpression::LeftJoin {
                 left: nested_left,
                 expression,
                 ..
@@ -4181,7 +4338,7 @@ fn eval_node_label(node: &GraphPattern) -> String {
             }
             "Lateral".to_owned()
         }
-        GraphPattern::LeftJoin {
+        QueryExpression::LeftJoin {
             algorithm,
             expression,
             ..
@@ -4192,13 +4349,13 @@ fn eval_node_label(node: &GraphPattern) -> String {
                 FormattableExpression(expression)
             ),
         },
-        GraphPattern::Minus { algorithm, .. } => match algorithm {
+        QueryExpression::Minus { algorithm, .. } => match algorithm {
             MinusAlgorithm::HashBuildRightProbeLeft { keys } => format!(
                 "AntiJoin(HashBuildRightProbeLeft, keys = {})",
                 format_list(keys)
             ),
         },
-        GraphPattern::OrderBy { expression, .. } => {
+        QueryExpression::OrderBy { expression, .. } => {
             format!(
                 "Sort({})",
                 format_list(
@@ -4208,13 +4365,15 @@ fn eval_node_label(node: &GraphPattern) -> String {
                 )
             )
         }
-        GraphPattern::Path {
+        QueryExpression::Path {
             subject,
             path,
             object,
         } => format!("Path({subject} {path} {object})"),
-        GraphPattern::Project { variables, .. } => format!("Project({})", format_list(variables)),
-        GraphPattern::QuadPattern {
+        QueryExpression::Project { variables, .. } => {
+            format!("Project({})", format_list(variables))
+        }
+        QueryExpression::QuadPattern {
             subject,
             predicate,
             object,
@@ -4226,23 +4385,23 @@ fn eval_node_label(node: &GraphPattern) -> String {
                 format!("QuadPattern({subject} {predicate} {object})")
             }
         }
-        GraphPattern::Reduced { .. } => "Reduced".to_owned(),
-        GraphPattern::Service { name, silent, .. } => {
+        QueryExpression::Reduced { .. } => "Reduced".to_owned(),
+        QueryExpression::Service { name, silent, .. } => {
             if *silent {
                 format!("Service({name}, Silent)")
             } else {
                 format!("Service({name})")
             }
         }
-        GraphPattern::Slice { start, length, .. } => {
-            if let Some(length) = length {
-                format!("Slice(start = {start}, length = {length})")
+        QueryExpression::Slice { offset, limit, .. } => {
+            if let Some(limit) = limit {
+                format!("Slice(offset = {offset}, limit = {limit})")
             } else {
-                format!("Slice(start = {start})")
+                format!("Slice(offset = {offset})")
             }
         }
-        GraphPattern::Union { .. } => "Union".to_owned(),
-        GraphPattern::Values {
+        QueryExpression::Union { .. } => "Union".to_owned(),
+        QueryExpression::Values {
             variables,
             bindings,
         } => {
