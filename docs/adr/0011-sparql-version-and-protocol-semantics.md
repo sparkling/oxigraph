@@ -2,7 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-07-27
+- Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
+- Implementation status: implemented for version selection and conservative
+  endpoint advertisement
+- Update note: restored exact SPARQL 1.0/1.1 service-description claims after
+  an RDF 1.2 feature build was found advertising unreceipted draft families.
 - Related:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0006 — W3C-first 1.2 parity](0006-w3c-first-12-parity.md)

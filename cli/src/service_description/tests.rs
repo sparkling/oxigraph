@@ -55,10 +55,8 @@ fn object_iris(graph: &[Triple], predicate: &NamedNode) -> BTreeSet<String> {
         .collect()
 }
 
-#[cfg(feature = "rdf-12")]
 #[test]
-fn rdf12_query_description_advertises_supported_languages_and_versions()
--> Result<(), Box<dyn Error>> {
+fn query_description_advertises_only_established_language_and_version() {
     let graph = graph(
         EndpointKind {
             query: true,
@@ -66,36 +64,21 @@ fn rdf12_query_description_advertises_supported_languages_and_versions()
         },
         QueryEntailment::Simple,
     );
-    let root = root(&graph)?;
-
-    assert!(has_object(
-        &graph,
-        &root,
-        &sd::SUPPORTED_LANGUAGE,
-        &sd::SPARQL_11_QUERY
-    ));
-    assert!(has_object(
-        &graph,
-        &root,
-        &sd::SUPPORTED_LANGUAGE,
-        &sd::SPARQL_QUERY
-    ));
-    for version in [sd::VERSION_11, sd::VERSION_12_BASIC, sd::VERSION_12] {
-        assert!(has_object(&graph, &root, &sd::SUPPORTED_VERSION, &version));
-    }
-    assert!(!has_object(
-        &graph,
-        &root,
-        &sd::SUPPORTED_LANGUAGE,
-        &sd::SPARQL_UPDATE
-    ));
-    Ok(())
+    assert_eq!(
+        object_iris(&graph, &sd::SUPPORTED_LANGUAGE),
+        BTreeSet::from([
+            sd::SPARQL_10_QUERY.as_str().to_owned(),
+            sd::SPARQL_11_QUERY.as_str().to_owned(),
+        ])
+    );
+    assert_eq!(
+        object_iris(&graph, &sd::SUPPORTED_VERSION),
+        BTreeSet::from([sd::VERSION_11.as_str().to_owned()])
+    );
 }
 
-#[cfg(feature = "rdf-12")]
 #[test]
-fn rdf12_update_description_advertises_supported_languages_and_versions()
--> Result<(), Box<dyn Error>> {
+fn update_description_advertises_only_established_language_and_version() {
     let graph = graph(
         EndpointKind {
             query: false,
@@ -103,30 +86,14 @@ fn rdf12_update_description_advertises_supported_languages_and_versions()
         },
         QueryEntailment::Simple,
     );
-    let root = root(&graph)?;
-
-    assert!(has_object(
-        &graph,
-        &root,
-        &sd::SUPPORTED_LANGUAGE,
-        &sd::SPARQL_11_UPDATE
-    ));
-    assert!(has_object(
-        &graph,
-        &root,
-        &sd::SUPPORTED_LANGUAGE,
-        &sd::SPARQL_UPDATE
-    ));
-    for version in [sd::VERSION_11, sd::VERSION_12_BASIC, sd::VERSION_12] {
-        assert!(has_object(&graph, &root, &sd::SUPPORTED_VERSION, &version));
-    }
-    assert!(!has_object(
-        &graph,
-        &root,
-        &sd::SUPPORTED_LANGUAGE,
-        &sd::SPARQL_QUERY
-    ));
-    Ok(())
+    assert_eq!(
+        object_iris(&graph, &sd::SUPPORTED_LANGUAGE),
+        BTreeSet::from([sd::SPARQL_11_UPDATE.as_str().to_owned()])
+    );
+    assert_eq!(
+        object_iris(&graph, &sd::SUPPORTED_VERSION),
+        BTreeSet::from([sd::VERSION_11.as_str().to_owned()])
+    );
 }
 
 #[test]
@@ -424,25 +391,4 @@ fn bounded_entailment_is_disclosed_only_on_query_endpoints() -> Result<(), Box<d
         assert!(object_iris(&update, predicate).is_empty());
     }
     Ok(())
-}
-
-#[cfg(not(feature = "rdf-12"))]
-#[test]
-fn rdf11_build_does_not_advertise_rdf12_versions() {
-    for triple in graph(
-        EndpointKind {
-            query: true,
-            update: true,
-        },
-        QueryEntailment::Simple,
-    ) {
-        let Term::NamedNode(object) = triple.object else {
-            continue;
-        };
-        assert!(!matches!(
-            object.as_str(),
-            "http://www.w3.org/ns/sparql#version-1.2-basic"
-                | "http://www.w3.org/ns/sparql#version-1.2"
-        ));
-    }
 }

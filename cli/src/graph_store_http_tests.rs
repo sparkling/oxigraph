@@ -602,7 +602,6 @@ fn graph_store_selectors_media_types_and_route_boundaries_are_strict() -> Result
     Ok(())
 }
 
-#[cfg(feature = "rdf-12")]
 #[test]
 fn service_description_discovers_only_the_endpoint_capabilities() -> Result<()> {
     let server = TestServer::new()?;
@@ -615,10 +614,14 @@ fn service_description_discovers_only_the_endpoint_capabilities() -> Result<()> 
     )?;
     let query = read_to_string(query.body_mut())?;
     assert!(query.contains("<http://localhost/query>"));
-    assert!(query.contains("SPARQLQuery"));
-    assert!(query.contains("version-1.2-basic"));
-    assert!(query.contains("version-1.2"));
+    assert!(query.contains("SPARQL10Query"));
+    assert!(query.contains("SPARQL11Query"));
+    assert!(query.contains("version-1.1"));
+    assert!(!query.contains("SPARQL11Update"));
+    assert!(!query.contains("SPARQLQuery"));
     assert!(!query.contains("SPARQLUpdate"));
+    assert!(!query.contains("version-1.2-basic"));
+    assert!(!query.contains("version-1.2"));
 
     let mut combined = server.status(
         Request::builder()
@@ -628,8 +631,13 @@ fn service_description_discovers_only_the_endpoint_capabilities() -> Result<()> 
         StatusCode::OK,
     )?;
     let combined = read_to_string(combined.body_mut())?;
-    assert!(combined.contains("SPARQLQuery"));
-    assert!(combined.contains("SPARQLUpdate"));
+    assert!(combined.contains("SPARQL10Query"));
+    assert!(combined.contains("SPARQL11Query"));
+    assert!(combined.contains("SPARQL11Update"));
+    assert!(!combined.contains("SPARQLQuery"));
+    assert!(!combined.contains("SPARQLUpdate"));
+    assert!(!combined.contains("version-1.2-basic"));
+    assert!(!combined.contains("version-1.2"));
     Ok(())
 }
 

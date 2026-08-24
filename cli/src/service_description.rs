@@ -64,20 +64,8 @@ mod sd {
     pub const SPARQL_11_UPDATE: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/ns/sparql-service-description#SPARQL11Update",
     );
-    pub const SPARQL_QUERY: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.w3.org/ns/sparql-service-description#SPARQLQuery",
-    );
-    pub const SPARQL_UPDATE: NamedNode = NamedNode::new_const_unchecked(
-        "http://www.w3.org/ns/sparql-service-description#SPARQLUpdate",
-    );
     pub const VERSION_11: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/ns/sparql#version-1.1");
-    #[cfg(feature = "rdf-12")]
-    pub const VERSION_12_BASIC: NamedNode =
-        NamedNode::new_const_unchecked("http://www.w3.org/ns/sparql#version-1.2-basic");
-    #[cfg(feature = "rdf-12")]
-    pub const VERSION_12: NamedNode =
-        NamedNode::new_const_unchecked("http://www.w3.org/ns/sparql#version-1.2");
     pub const UNION_DEFAULT_GRAPH: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/ns/sparql-service-description#UnionDefaultGraph",
     );
@@ -158,22 +146,12 @@ fn generate_service_description_graph(
             sd::SUPPORTED_LANGUAGE,
             sd::SPARQL_11_QUERY,
         ));
-        graph.push(Triple::new(
-            root.clone(),
-            sd::SUPPORTED_LANGUAGE,
-            sd::SPARQL_QUERY,
-        ));
     }
     if kind.update {
         graph.push(Triple::new(
             root.clone(),
             sd::SUPPORTED_LANGUAGE,
             sd::SPARQL_11_UPDATE,
-        ));
-        graph.push(Triple::new(
-            root.clone(),
-            sd::SUPPORTED_LANGUAGE,
-            sd::SPARQL_UPDATE,
         ));
     }
     if kind.query || kind.update {
@@ -182,19 +160,6 @@ fn generate_service_description_graph(
             sd::SUPPORTED_VERSION,
             sd::VERSION_11,
         ));
-        #[cfg(feature = "rdf-12")]
-        {
-            graph.push(Triple::new(
-                root.clone(),
-                sd::SUPPORTED_VERSION,
-                sd::VERSION_12_BASIC,
-            ));
-            graph.push(Triple::new(
-                root.clone(),
-                sd::SUPPORTED_VERSION,
-                sd::VERSION_12,
-            ));
-        }
     }
     if kind.query {
         for format in [
