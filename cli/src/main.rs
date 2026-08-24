@@ -4234,7 +4234,7 @@ mod tests {
             .uri("http://localhost/query?default-graph-uri=http://localhost/store/1")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .header(ACCEPT, "text/csv")
-            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}")?;
+            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}%20ORDER%20BY%20?s")?;
         server.test_body(request, "s\r\n")?;
 
         let request = Request::builder()
@@ -4242,7 +4242,7 @@ mod tests {
             .uri("http://localhost/query?named-graph-uri=http://localhost/store/1")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .header(ACCEPT, "text/csv")
-            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}")?;
+            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}%20ORDER%20BY%20?s")?;
         server.test_body(request, "s\r\nhttp://example.com/1\r\n")?;
 
         let request = Request::builder()
@@ -4250,7 +4250,7 @@ mod tests {
             .uri("http://localhost/query?named-graph-uri=http://localhost/store/1&named-graph-uri=http://localhost/store/2")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .header(ACCEPT, "text/csv")
-            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}")?;
+            .body("query=SELECT%20?s%20WHERE%20{%20GRAPH%20?g%20{%20?s%20?p%20?o%20}}%20ORDER%20BY%20?s")?;
         server.test_body(
             request,
             "s\r\nhttp://example.com/1\r\nhttp://example.com/2\r\n",
