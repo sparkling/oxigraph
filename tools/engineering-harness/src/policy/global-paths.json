@@ -1,0 +1,30 @@
+{
+  "blockedPrefixes": [
+    ".git",
+    ".github",
+    ".claude-flow",
+    ".claude",
+    ".swarm",
+    "docs/adr",
+    "docs/plans",
+    "docs/research",
+    "tools/agentic-qe",
+    "tools/engineering-harness",
+    "tools/evidence",
+    "tools/jena-differential",
+    "tools/metaharness",
+    "tools/mutation",
+    "tools/w3c-tests"
+  ],
+  "blockedBasenames": [
+    ".npmrc",
+    "Cargo.lock",
+    "Cargo.toml",
+    "package-lock.json",
+    "package.json"
+  ],
+  "blockedExact": [
+    ".gitmodules",
+    "README.md"
+  ]
+}

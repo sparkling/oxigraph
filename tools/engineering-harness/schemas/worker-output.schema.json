@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "patch", "findings", "verdict"],
+  "properties": {
+    "summary": { "type": "string", "maxLength": 4096 },
+    "patch": { "type": ["string", "null"], "maxLength": 262144 },
+    "findings": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "type": "string", "maxLength": 2048 }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["ACCEPT", "REJECT", "INCONCLUSIVE"]
+    }
+  }
+}

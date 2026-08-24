@@ -30,7 +30,7 @@ async function main(args) {
     return;
   }
   if (args[0] === "doctor" && args.length === 1) {
-    process.stdout.write(`${JSON.stringify(doctorReport(), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(await doctorReport(), null, 2)}\n`);
     return;
   }
   if (args[0] === "factory" && args[1] === "diagnose") {
