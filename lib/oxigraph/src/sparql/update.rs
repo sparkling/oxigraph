@@ -4,14 +4,19 @@ use crate::http::HttpClient;
 use crate::io::DocumentLoader;
 #[cfg(feature = "http-client")]
 use crate::io::RdfParser;
-use crate::model::{Dataset as OxDataset, GraphName as OxGraphName, OxString, Quad as OxQuad};
+use crate::model::{
+    Dataset as OxDataset, GraphName as OxGraphName, NamedOrBlankNode as OxNamedOrBlankNode,
+    OxString, Quad as OxQuad, Term as OxTerm,
+};
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
-use crate::storage::{Storage, StorageError, StorageReadableTransaction, StorageTransaction};
-use crate::store::{Store, Transaction};
+use crate::storage::{Storage, StorageError, StorageTransaction};
+use crate::store::{Store, Transaction, TransactionalDataset, WritableDataset};
 use oxiri::Iri;
 use rustc_hash::FxHashMap;
-use spareval::{DeleteInsertQuad, QueryDatasetSpecification, QueryEvaluator};
+use spareval::{
+    DeleteInsertQuad, InternalQuad, QueryDatasetSpecification, QueryEvaluator, QueryableDataset,
+};
 use spargebra::SparqlVersion;
 use spargebra::algebra::GraphTarget;
 use spargebra::term::{BlankNode, GraphName, GroundQuad, GroundTerm, NamedOrBlankNode, Quad, Term};
@@ -112,8 +117,7 @@ impl PreparedSparqlUpdate {
     pub fn on_store(self, store: &Store) -> BoundPreparedSparqlUpdate<'_, '_> {
         let transaction = if update_requires_read(&self.update) {
             store
-                .storage()
-                .start_readable_transaction()
+                .start_transaction()
                 .map(UpdateTransaction::OwnedReadable)
         } else {
             let storage = store.storage();
@@ -130,6 +134,41 @@ impl PreparedSparqlUpdate {
             #[cfg(feature = "http-client")]
             http_redirection_limit: self.http_redirection_limit,
             transaction,
+        }
+    }
+
+    /// Binds this update to a backend-neutral [`TransactionalDataset`].
+    ///
+    /// The complete update request is evaluated in one transaction. A
+    /// successful evaluation is committed atomically; any evaluation failure
+    /// is rolled back before it is returned.
+    ///
+    /// ```
+    /// use oxigraph::sparql::SparqlEvaluator;
+    /// use oxigraph::store::Store;
+    ///
+    /// let store = Store::new()?;
+    /// SparqlEvaluator::new()
+    ///     .parse_update(
+    ///         "INSERT DATA { <http://example.com> <http://example.com> <http://example.com> }",
+    ///     )?
+    ///     .on_dataset(&store)
+    ///     .execute()?;
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn on_dataset<D: TransactionalDataset>(
+        self,
+        dataset: &D,
+    ) -> BoundTransactionalSparqlUpdate<'_, D> {
+        BoundTransactionalSparqlUpdate {
+            evaluator: self.evaluator,
+            update: self.update,
+            using_datasets: self.using_datasets,
+            #[cfg(feature = "http-client")]
+            http_timeout: self.http_timeout,
+            #[cfg(feature = "http-client")]
+            http_redirection_limit: self.http_redirection_limit,
+            dataset,
         }
     }
 
@@ -160,9 +199,60 @@ impl PreparedSparqlUpdate {
             http_timeout: self.http_timeout,
             #[cfg(feature = "http-client")]
             http_redirection_limit: self.http_redirection_limit,
-            transaction: Ok(UpdateTransaction::BorrowedReadable(transaction.inner_mut())),
+            transaction: Ok(UpdateTransaction::BorrowedReadable(transaction)),
         }
     }
+}
+
+/// A prepared SPARQL update bound to a backend-neutral transactional dataset.
+#[must_use]
+pub struct BoundTransactionalSparqlUpdate<'a, D: TransactionalDataset> {
+    evaluator: QueryEvaluator,
+    update: Update,
+    using_datasets: Vec<Option<QueryDatasetSpecification>>,
+    #[cfg(feature = "http-client")]
+    http_timeout: Option<Duration>,
+    #[cfg(feature = "http-client")]
+    http_redirection_limit: usize,
+    dataset: &'a D,
+}
+
+impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
+    /// Evaluates and atomically commits the update.
+    pub fn execute(self) -> Result<(), UpdateEvaluationError> {
+        let mut transaction = self
+            .dataset
+            .start_transaction()
+            .map_err(UpdateEvaluationError::dataset)?;
+        let result = ReadableUpdateEvaluator {
+            transaction: &mut transaction,
+            base_iri: self.update.base_iri.clone(),
+            query_evaluator: self.evaluator,
+            #[cfg(feature = "http-client")]
+            client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
+        }
+        .eval_all(&self.update.operations, &self.using_datasets);
+        match result {
+            Ok(()) => transaction.commit().map_err(UpdateEvaluationError::dataset),
+            Err(error) => match transaction.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(UpdateEvaluationError::Unexpected(Box::new(
+                    UpdateRollbackError {
+                        update: error,
+                        rollback: Box::new(rollback),
+                    },
+                ))),
+            },
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("SPARQL update failed ({update}) and transaction rollback also failed ({rollback})")]
+struct UpdateRollbackError {
+    #[source]
+    update: UpdateEvaluationError,
+    rollback: Box<dyn std::error::Error + Send + Sync + 'static>,
 }
 
 /// A prepared SPARQL query bound to a storage, ready to be executed.
@@ -236,20 +326,20 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
 }
 
 enum UpdateTransaction<'a, 'b> {
-    OwnedReadable(StorageReadableTransaction<'b>),
-    BorrowedReadable(&'a mut StorageReadableTransaction<'b>),
+    OwnedReadable(Transaction<'b>),
+    BorrowedReadable(&'a mut Transaction<'b>),
     Owned(StorageTransaction<'b>, &'b Storage),
 }
 
-struct ReadableUpdateEvaluator<'a, 'b> {
-    transaction: &'a mut StorageReadableTransaction<'b>,
+struct ReadableUpdateEvaluator<'a, D: WritableDataset> {
+    transaction: &'a mut D,
     base_iri: Option<Iri<OxString>>,
     query_evaluator: QueryEvaluator,
     #[cfg(feature = "http-client")]
     client: HttpClient,
 }
 
-impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
+impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
     fn eval_all(
         &mut self,
         updates: &[GraphUpdateOperation],
@@ -268,14 +358,8 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
         using_dataset: &Option<QueryDatasetSpecification>,
     ) -> Result<(), UpdateEvaluationError> {
         match update {
-            GraphUpdateOperation::InsertData(op) => {
-                self.eval_insert_data(op);
-                Ok(())
-            }
-            GraphUpdateOperation::DeleteData(op) => {
-                self.eval_delete_data(op);
-                Ok(())
-            }
+            GraphUpdateOperation::InsertData(op) => self.eval_insert_data(op),
+            GraphUpdateOperation::DeleteData(op) => self.eval_delete_data(op),
             GraphUpdateOperation::DeleteInsert(op) => self.eval_delete_insert(
                 op,
                 using_dataset
@@ -289,19 +373,31 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
         }
     }
 
-    fn eval_insert_data(&mut self, operation: &InsertDataOperation) {
+    fn eval_insert_data(
+        &mut self,
+        operation: &InsertDataOperation,
+    ) -> Result<(), UpdateEvaluationError> {
         let mut bnodes = FxHashMap::default();
         for quad in &operation.data {
             let quad = convert_quad(quad, &mut bnodes);
-            self.transaction.insert(quad);
+            self.transaction
+                .insert(quad)
+                .map_err(UpdateEvaluationError::dataset)?;
         }
+        Ok(())
     }
 
-    fn eval_delete_data(&mut self, operation: &DeleteDataOperation) {
+    fn eval_delete_data(
+        &mut self,
+        operation: &DeleteDataOperation,
+    ) -> Result<(), UpdateEvaluationError> {
         for quad in &operation.data {
             let quad = convert_ground_quad(quad);
-            self.transaction.remove(&quad);
+            self.transaction
+                .remove(&quad)
+                .map_err(UpdateEvaluationError::dataset)?;
         }
+        Ok(())
     }
 
     fn eval_delete_insert(
@@ -314,12 +410,18 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
             .prepare_delete_insert(operation, self.base_iri.as_ref());
         *prepared.dataset_mut() = using.clone();
         let mutations = prepared
-            .execute(DatasetView::new(self.transaction.reader()))?
+            .execute(WritableDatasetView::new(&*self.transaction))?
             .collect::<Result<Vec<_>, _>>()?;
         for mutation in mutations {
             match mutation {
-                DeleteInsertQuad::Delete(quad) => self.transaction.remove(&quad),
-                DeleteInsertQuad::Insert(quad) => self.transaction.insert(quad),
+                DeleteInsertQuad::Delete(quad) => self
+                    .transaction
+                    .remove(&quad)
+                    .map_err(UpdateEvaluationError::dataset)?,
+                DeleteInsertQuad::Insert(quad) => self
+                    .transaction
+                    .insert(quad)
+                    .map_err(UpdateEvaluationError::dataset)?,
             }
         }
         Ok(())
@@ -336,13 +438,19 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
         match loaded {
             Ok(loaded) => {
                 if let Some(graph_name) = loaded.named_graph_to_create {
-                    self.transaction.insert_named_graph(graph_name.into());
+                    self.transaction
+                        .insert_named_graph(graph_name.into())
+                        .map_err(UpdateEvaluationError::dataset)?;
                 }
                 for graph_name in loaded.dataset.named_graphs() {
-                    self.transaction.insert_named_graph(graph_name);
+                    self.transaction
+                        .insert_named_graph(graph_name)
+                        .map_err(UpdateEvaluationError::dataset)?;
                 }
                 for quad in &loaded.dataset {
-                    self.transaction.insert(quad);
+                    self.transaction
+                        .insert(quad)
+                        .map_err(UpdateEvaluationError::dataset)?;
                 }
                 Ok(())
             }
@@ -352,10 +460,11 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
     }
 
     fn eval_create(&mut self, operation: &CreateOperation) -> Result<(), UpdateEvaluationError> {
+        let graph_name = OxNamedOrBlankNode::from(operation.graph.clone());
         if self
             .transaction
-            .reader()
-            .contains_named_graph(&(&operation.graph).into())?
+            .contains_named_graph(&graph_name)
+            .map_err(UpdateEvaluationError::dataset)?
         {
             if operation.silent {
                 Ok(())
@@ -366,7 +475,8 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
             }
         } else {
             self.transaction
-                .insert_named_graph(operation.graph.clone().into());
+                .insert_named_graph(graph_name)
+                .map_err(UpdateEvaluationError::dataset)?;
             Ok(())
         }
     }
@@ -374,37 +484,48 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
     fn eval_clear(&mut self, operation: &ClearOperation) -> Result<(), UpdateEvaluationError> {
         match &operation.graph {
             GraphTarget::NamedNode(graph_name) => {
+                let dataset_graph_name = OxNamedOrBlankNode::from(graph_name.clone());
                 if self
                     .transaction
-                    .reader()
-                    .contains_named_graph(&graph_name.into())?
+                    .contains_named_graph(&dataset_graph_name)
+                    .map_err(UpdateEvaluationError::dataset)?
                 {
-                    Ok(self.transaction.clear_graph(&graph_name.clone().into())?)
+                    self.transaction
+                        .clear_graph(Some(&dataset_graph_name))
+                        .map_err(UpdateEvaluationError::dataset)
                 } else if operation.silent {
                     Ok(())
                 } else {
                     Err(UpdateEvaluationError::GraphDoesNotExist(graph_name.clone()))
                 }
             }
-            GraphTarget::DefaultGraph => {
-                self.transaction.clear_graph(&OxGraphName::DefaultGraph)?;
-                Ok(())
-            }
-            GraphTarget::NamedGraphs => Ok(self.transaction.clear_all_named_graphs()?),
-            GraphTarget::AllGraphs => Ok(self.transaction.clear_all_graphs()?),
+            GraphTarget::DefaultGraph => self
+                .transaction
+                .clear_graph(None)
+                .map_err(UpdateEvaluationError::dataset),
+            GraphTarget::NamedGraphs => self
+                .transaction
+                .clear_all_named_graphs()
+                .map_err(UpdateEvaluationError::dataset),
+            GraphTarget::AllGraphs => self
+                .transaction
+                .clear_all_graphs()
+                .map_err(UpdateEvaluationError::dataset),
         }
     }
 
     fn eval_drop(&mut self, operation: &DropOperation) -> Result<(), UpdateEvaluationError> {
         match &operation.graph {
             GraphTarget::NamedNode(graph_name) => {
+                let dataset_graph_name = OxNamedOrBlankNode::from(graph_name.clone());
                 if self
                     .transaction
-                    .reader()
-                    .contains_named_graph(&graph_name.into())?
+                    .contains_named_graph(&dataset_graph_name)
+                    .map_err(UpdateEvaluationError::dataset)?
                 {
                     self.transaction
-                        .remove_named_graph(&graph_name.clone().into())?;
+                        .remove_named_graph(&dataset_graph_name)
+                        .map_err(UpdateEvaluationError::dataset)?;
                     Ok(())
                 } else if operation.silent {
                     Ok(())
@@ -412,13 +533,129 @@ impl<'a, 'b: 'a> ReadableUpdateEvaluator<'a, 'b> {
                     Err(UpdateEvaluationError::GraphDoesNotExist(graph_name.clone()))
                 }
             }
-            GraphTarget::DefaultGraph => {
-                Ok(self.transaction.clear_graph(&OxGraphName::DefaultGraph)?)
-            }
-            GraphTarget::NamedGraphs => Ok(self.transaction.remove_all_named_graphs()?),
-            GraphTarget::AllGraphs => Ok(self.transaction.clear()?),
+            GraphTarget::DefaultGraph => self
+                .transaction
+                .clear_graph(None)
+                .map_err(UpdateEvaluationError::dataset),
+            GraphTarget::NamedGraphs => self
+                .transaction
+                .remove_all_named_graphs()
+                .map_err(UpdateEvaluationError::dataset),
+            GraphTarget::AllGraphs => self
+                .transaction
+                .clear()
+                .map_err(UpdateEvaluationError::dataset),
         }
     }
+}
+
+struct WritableDatasetView<'a, D: WritableDataset> {
+    dataset: &'a D,
+}
+
+impl<'a, D: WritableDataset> WritableDatasetView<'a, D> {
+    fn new(dataset: &'a D) -> Self {
+        Self { dataset }
+    }
+}
+
+impl<'a, D: WritableDataset + 'a> QueryableDataset<'a> for WritableDatasetView<'a, D> {
+    type InternalTerm = OxTerm;
+    type Error = D::Error;
+
+    fn internal_quads_for_pattern(
+        &self,
+        subject: Option<&OxTerm>,
+        predicate: Option<&OxTerm>,
+        object: Option<&OxTerm>,
+        graph_name: Option<Option<&OxTerm>>,
+    ) -> impl Iterator<Item = Result<InternalQuad<OxTerm>, Self::Error>> + use<'a, D> {
+        let subject = match subject {
+            Some(OxTerm::NamedNode(subject)) => {
+                Some(OxNamedOrBlankNode::NamedNode(subject.clone()))
+            }
+            Some(OxTerm::BlankNode(subject)) => {
+                Some(OxNamedOrBlankNode::BlankNode(subject.clone()))
+            }
+            Some(OxTerm::Literal(_)) => return empty_writable_dataset_quads(),
+            #[cfg(feature = "rdf-12")]
+            Some(OxTerm::Triple(_)) => return empty_writable_dataset_quads(),
+            None => None,
+        };
+        let predicate = match predicate {
+            Some(OxTerm::NamedNode(predicate)) => Some(predicate.clone()),
+            Some(_) => return empty_writable_dataset_quads(),
+            None => None,
+        };
+        let graph_name = match graph_name {
+            Some(Some(OxTerm::NamedNode(graph_name))) => {
+                Some(Some(OxNamedOrBlankNode::NamedNode(graph_name.clone())))
+            }
+            Some(Some(OxTerm::BlankNode(graph_name))) => {
+                Some(Some(OxNamedOrBlankNode::BlankNode(graph_name.clone())))
+            }
+            Some(Some(_)) => return empty_writable_dataset_quads(),
+            Some(None) => Some(None),
+            None => None,
+        };
+        let graph_name = graph_name.as_ref().map(|graph_name| graph_name.as_ref());
+        let quads: Box<dyn Iterator<Item = Result<InternalQuad<OxTerm>, Self::Error>> + 'a> =
+            Box::new(
+                self.dataset
+                    .quads_for_pattern(subject.as_ref(), predicate.as_ref(), object, graph_name)
+                    .map(|quad| {
+                        let quad = quad?;
+                        Ok(InternalQuad {
+                            subject: quad.subject.into(),
+                            predicate: quad.predicate.into(),
+                            object: quad.object,
+                            graph_name: match quad.graph_name {
+                                OxGraphName::NamedNode(graph_name) => Some(graph_name.into()),
+                                OxGraphName::BlankNode(graph_name) => Some(graph_name.into()),
+                                OxGraphName::DefaultGraph => None,
+                            },
+                        })
+                    }),
+            );
+        quads
+    }
+
+    fn internal_named_graphs(
+        &self,
+    ) -> impl Iterator<Item = Result<OxTerm, Self::Error>> + use<'a, D> {
+        Box::new(
+            self.dataset
+                .named_graphs()
+                .map(|graph_name| graph_name.map(Into::into)),
+        )
+    }
+
+    fn contains_internal_graph_name(&self, graph_name: &OxTerm) -> Result<bool, Self::Error> {
+        match graph_name {
+            OxTerm::NamedNode(graph_name) => self
+                .dataset
+                .contains_named_graph(&OxNamedOrBlankNode::NamedNode(graph_name.clone())),
+            OxTerm::BlankNode(graph_name) => self
+                .dataset
+                .contains_named_graph(&OxNamedOrBlankNode::BlankNode(graph_name.clone())),
+            OxTerm::Literal(_) => Ok(false),
+            #[cfg(feature = "rdf-12")]
+            OxTerm::Triple(_) => Ok(false),
+        }
+    }
+
+    fn internalize_term(&self, term: OxTerm) -> Result<OxTerm, Self::Error> {
+        Ok(term)
+    }
+
+    fn externalize_term(&self, term: OxTerm) -> Result<OxTerm, Self::Error> {
+        Ok(term)
+    }
+}
+
+fn empty_writable_dataset_quads<'a, E: 'a>()
+-> Box<dyn Iterator<Item = Result<InternalQuad<OxTerm>, E>> + 'a> {
+    Box::new(std::iter::empty())
 }
 
 fn update_requires_read(update: &Update) -> bool {

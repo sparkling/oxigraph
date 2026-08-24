@@ -19,7 +19,9 @@ pub use crate::sparql::entailment::{
 pub use crate::sparql::error::UpdateEvaluationError;
 #[cfg(feature = "http-client")]
 use crate::sparql::http::HttpServiceHandler;
-pub use crate::sparql::update::{BoundPreparedSparqlUpdate, PreparedSparqlUpdate};
+pub use crate::sparql::update::{
+    BoundPreparedSparqlUpdate, BoundTransactionalSparqlUpdate, PreparedSparqlUpdate,
+};
 use crate::store::{Store, Transaction};
 pub use spareval::{
     AggregateFunctionAccumulator, CancellationToken, DefaultServiceHandler,

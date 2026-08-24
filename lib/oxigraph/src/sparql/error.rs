@@ -14,6 +14,9 @@ pub enum UpdateEvaluationError {
     /// An error from the storage.
     #[error(transparent)]
     Storage(#[from] StorageError),
+    /// An error from a custom transactional dataset implementation.
+    #[error(transparent)]
+    Dataset(Box<dyn Error + Send + Sync + 'static>),
     /// An error while parsing an external RDF file.
     #[error(transparent)]
     GraphParsing(#[from] RdfParseError),
@@ -56,10 +59,7 @@ impl From<Infallible> for UpdateEvaluationError {
 impl From<QueryEvaluationError> for UpdateEvaluationError {
     fn from(error: QueryEvaluationError) -> Self {
         match error {
-            QueryEvaluationError::Dataset(error) => match error.downcast() {
-                Ok(error) => Self::Storage(*error),
-                Err(error) => Self::Unexpected(error),
-            },
+            QueryEvaluationError::Dataset(error) => Self::from_boxed_dataset_error(error),
             QueryEvaluationError::Service(error) => Self::Service(error),
             QueryEvaluationError::UnexpectedDefaultGraph => Self::Storage(
                 CorruptionError::new("Unexpected default graph returned from the storage").into(),
@@ -82,18 +82,31 @@ impl From<QueryEvaluationError> for UpdateEvaluationError {
     }
 }
 
+impl UpdateEvaluationError {
+    pub(crate) fn dataset(error: impl Error + Send + Sync + 'static) -> Self {
+        Self::from_boxed_dataset_error(Box::new(error))
+    }
+
+    fn from_boxed_dataset_error(error: Box<dyn Error + Send + Sync + 'static>) -> Self {
+        match error.downcast() {
+            Ok(error) => Self::Storage(*error),
+            Err(error) => Self::Dataset(error),
+        }
+    }
+}
+
 impl From<UpdateEvaluationError> for io::Error {
     #[inline]
     fn from(error: UpdateEvaluationError) -> Self {
         match error {
             UpdateEvaluationError::Storage(error) => error.into(),
             UpdateEvaluationError::GraphParsing(error) => error.into(),
-            UpdateEvaluationError::Service(error) | UpdateEvaluationError::Unexpected(error) => {
-                match error.downcast() {
-                    Ok(error) => *error,
-                    Err(error) => Self::other(error),
-                }
-            }
+            UpdateEvaluationError::Dataset(error)
+            | UpdateEvaluationError::Service(error)
+            | UpdateEvaluationError::Unexpected(error) => match error.downcast() {
+                Ok(error) => *error,
+                Err(error) => Self::other(error),
+            },
             UpdateEvaluationError::GraphAlreadyExists(_)
             | UpdateEvaluationError::GraphDoesNotExist(_)
             | UpdateEvaluationError::UnboundService

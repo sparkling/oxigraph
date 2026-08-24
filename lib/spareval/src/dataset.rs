@@ -220,6 +220,20 @@ impl<'a> QueryableDataset<'a> for &'a Dataset {
         }
     }
 
+    fn internal_named_graphs(&self) -> impl Iterator<Item = Result<Term, Infallible>> + use<'a> {
+        self.named_graphs().map(|graph_name| Ok(graph_name.into()))
+    }
+
+    fn contains_internal_graph_name(&self, graph_name: &Term) -> Result<bool, Infallible> {
+        Ok(match graph_name {
+            Term::NamedNode(graph_name) => self.contains_named_graph(graph_name.as_ref()),
+            Term::BlankNode(graph_name) => self.contains_named_graph(graph_name.as_ref()),
+            Term::Literal(_) => false,
+            #[cfg(feature = "sparql-12")]
+            Term::Triple(_) => false,
+        })
+    }
+
     fn internalize_term(&self, term: Term) -> Result<Term, Infallible> {
         Ok(term)
     }

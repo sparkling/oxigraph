@@ -32,6 +32,10 @@
 //! };
 //! # Result::<_, Box<dyn std::error::Error>>::Ok(())
 //! ```
+mod transactional;
+
+pub use transactional::{TransactionalDataset, WritableDataset};
+
 use crate::io::{RdfParseError, RdfParser, RdfSerializer};
 use crate::model::*;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -162,6 +166,10 @@ impl From<StoreOptions> for StorageOptions {
     }
 }
 
+#[expect(
+    clippy::same_name_method,
+    reason = "the transactional persistence trait deliberately mirrors the established Store API"
+)]
 impl Store {
     /// New in-memory [`Store`] without RocksDB.
     pub fn new() -> Result<Self, StorageError> {
@@ -929,6 +937,10 @@ pub struct Transaction<'a> {
     inner: StorageReadableTransaction<'a>,
 }
 
+#[expect(
+    clippy::same_name_method,
+    reason = "the transactional persistence trait deliberately mirrors the established Transaction API"
+)]
 impl<'a> Transaction<'a> {
     /// Retrieves quads with a filter on each quad component.
     ///
@@ -1307,9 +1319,121 @@ impl<'a> Transaction<'a> {
     pub(super) fn inner(&self) -> &StorageReadableTransaction<'a> {
         &self.inner
     }
+}
 
-    pub(super) fn inner_mut(&mut self) -> &mut StorageReadableTransaction<'a> {
-        &mut self.inner
+impl TransactionalDataset for Store {
+    type Error = StorageError;
+    type Transaction<'a> = Transaction<'a>;
+
+    fn start_transaction(&self) -> Result<Self::Transaction<'_>, Self::Error> {
+        Store::start_transaction(self)
+    }
+}
+
+impl WritableDataset for Transaction<'_> {
+    type Error = StorageError;
+    type Quads<'a>
+        = Box<dyn Iterator<Item = Result<Quad, StorageError>> + 'a>
+    where
+        Self: 'a;
+    type NamedGraphs<'a>
+        = GraphNameIter<'a>
+    where
+        Self: 'a;
+
+    fn quads_for_pattern<'a>(
+        &'a self,
+        subject: Option<&NamedOrBlankNode>,
+        predicate: Option<&NamedNode>,
+        object: Option<&Term>,
+        graph_name: Option<Option<&NamedOrBlankNode>>,
+    ) -> Self::Quads<'a> {
+        match graph_name {
+            Some(None) => Box::new(Transaction::quads_for_pattern(
+                self,
+                subject,
+                predicate,
+                object,
+                Some(&GraphName::DefaultGraph),
+            )),
+            Some(Some(graph_name)) => {
+                let graph_name = GraphName::from(graph_name.clone());
+                Box::new(Transaction::quads_for_pattern(
+                    self,
+                    subject,
+                    predicate,
+                    object,
+                    Some(&graph_name),
+                ))
+            }
+            None => Box::new(
+                Transaction::quads_for_pattern(self, subject, predicate, object, None).filter(
+                    |quad| match quad {
+                        Ok(quad) => !quad.graph_name.is_default_graph(),
+                        Err(_) => true,
+                    },
+                ),
+            ),
+        }
+    }
+
+    fn named_graphs(&self) -> Self::NamedGraphs<'_> {
+        Transaction::named_graphs(self)
+    }
+
+    fn contains_named_graph(&self, graph_name: &NamedOrBlankNode) -> Result<bool, Self::Error> {
+        Transaction::contains_named_graph(self, graph_name)
+    }
+
+    fn insert(&mut self, quad: Quad) -> Result<(), Self::Error> {
+        Transaction::insert(self, quad);
+        Ok(())
+    }
+
+    fn remove(&mut self, quad: &Quad) -> Result<(), Self::Error> {
+        Transaction::remove(self, quad);
+        Ok(())
+    }
+
+    fn insert_named_graph(&mut self, graph_name: NamedOrBlankNode) -> Result<(), Self::Error> {
+        Transaction::insert_named_graph(self, graph_name);
+        Ok(())
+    }
+
+    fn clear_graph(&mut self, graph_name: Option<&NamedOrBlankNode>) -> Result<(), Self::Error> {
+        let graph_name = graph_name.map_or(GraphName::DefaultGraph, |graph_name| {
+            GraphName::from(graph_name.clone())
+        });
+        Transaction::clear_graph(self, &graph_name)
+    }
+
+    fn clear_all_named_graphs(&mut self) -> Result<(), Self::Error> {
+        self.inner.clear_all_named_graphs()
+    }
+
+    fn clear_all_graphs(&mut self) -> Result<(), Self::Error> {
+        self.inner.clear_all_graphs()
+    }
+
+    fn remove_named_graph(&mut self, graph_name: &NamedOrBlankNode) -> Result<(), Self::Error> {
+        Transaction::remove_named_graph(self, graph_name)
+    }
+
+    fn remove_all_named_graphs(&mut self) -> Result<(), Self::Error> {
+        self.inner.remove_all_named_graphs()
+    }
+
+    fn clear(&mut self) -> Result<(), Self::Error> {
+        Transaction::clear(self)
+    }
+
+    fn commit(self) -> Result<(), Self::Error> {
+        Transaction::commit(self)
+    }
+
+    fn rollback(self) -> Result<(), Self::Error> {
+        drop(self);
+        Ok(())
     }
 }
 
