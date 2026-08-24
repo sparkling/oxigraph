@@ -1,0 +1,596 @@
+# Persistence writes and linked-data-store parity plan
+
+- Status: active plan; implementation slice 0 complete
+- Date: 2026-08-24
+- Repository: `/home/claude/src/hm/oxigraph`
+- Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
+- Upstream merge: `a2415a4e`
+- Transactional write implementation: `1da47285`
+- Deterministic upstream test correction: `f9033c2b`
+- Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
+
+## Outcome
+
+The clone is current with upstream through the baseline above. All 32 upstream
+commits after the fork point are ancestors of the current branch; there is no
+remaining upstream commit to cherry-pick or merge at this baseline.
+
+The missing persistence-plane capability was narrower than “Oxigraph cannot
+write.” Concrete writes already existed through `Store`, transactions, SPARQL
+Update, Graph Store Protocol, bulk loading, and language bindings. What was
+missing was a backend-neutral transactional write contract. That contract is
+now implemented by `TransactionalDataset` and `WritableDataset`, with generic
+SPARQL Update binding through `PreparedSparqlUpdate::on_dataset`.
+
+The remaining work is hardening and linked-data-store breadth. The highest-risk
+gaps are transaction capability/error semantics, complete cancellation and
+outbound-request policy, and a service-description claim that currently
+contradicts ADR-0011. Namespace metadata, durable change delivery,
+transaction-time SHACL validation, operational observability, full-text and
+spatial indexes, and federation planning follow in dependency order.
+
+## Evidence policy
+
+This plan distinguishes three evidence grades:
+
+- **A — local proof:** source inspection, Git ancestry, compiled API, or a
+  passing focused test in this repository.
+- **B — first-party comparison:** current official Apache Jena, Eclipse RDF4J,
+  W3C, or upstream Oxigraph documentation/source.
+- **C — design inference:** a recommended Oxigraph product capability derived
+  from A and B. It is not described as an existing competitor guarantee unless
+  the first-party source says so.
+
+Jena and RDF4J are comparison systems, not semantic authorities. The plan
+copies useful observable guarantees and extension seams, not Java class
+hierarchies, storage layouts, configuration grammars, or every server feature.
+
+## Upstream integration audit
+
+The merged upstream changes fall into these groups:
+
+| Group | Incorporated changes | Local disposition |
+|---|---|---|
+| HTTP and CLI | Repeated query arguments, content-negotiation specificity, truthful load failures, `--fail-on-named-graphs` | Incorporated; fork protocol and graph-topology behavior retained |
+| Public API | `Slice` field names, `QueryExpression`, `QueryDatasetSpecification`, documented substitution, `DocumentLoader`, custom scalar/aggregate functions | Incorporated and compiled across the workspace |
+| RDF and results | RDF/XML invalid-QName rejection, XML result boundary whitespace, result fixture relocation | Incorporated; fork's RDF/XML writer and RDF version boundaries retained |
+| Evaluation | Operator construction split, lazy error propagation, CONSTRUCT/MINUS fixes, reduced work after errors, join/order allocations | Incorporated; fork SERVICE SILENT and entailment adapters retained |
+| Optimization | Literal equality, EXISTS/cartesian/union rewrites, recursive join optimization | Incorporated with upstream regression fixtures |
+| CI/dependencies | Actions, Python, CodSpeed, and workflow updates | Incorporated where compatible with the fork workflows |
+
+No upstream commit in the audited range changed `lib/oxigraph/src/storage` or
+introduced a public write adapter. The new write interface is therefore a fork
+capability, not a delayed upstream port.
+
+One merged test expected a stable row order from a query without `ORDER BY`.
+The rewritten persistence plane exposed the valid reverse order. Commit
+`f9033c2b` makes the test's ordering requirement explicit and the complete CLI
+suite passes.
+
+## Current capability map
+
+### Already supported
+
+Evidence grade A applies to this section.
+
+- SPARQL Query and Update, including request-level rollback for the built-in
+  store.
+- SPARQL Graph Store writes with conditional requests and explicit empty graph
+  topology.
+- Memory and RocksDB stores, repeatable-read transactions, read-your-writes,
+  backup, bulk loading, and read-only open.
+- Backend-neutral reads with `QueryableDataset`.
+- Backend-neutral transactional writes with `TransactionalDataset` and
+  `WritableDataset`.
+- Generic SPARQL Update over a replacement persistence plane.
+- RDF 1.1/1.2 modes, broad RDF I/O, JSON-LD, SPARQL result formats, and explicit
+  version/media-type negotiation.
+- Basic federated `SERVICE`, cancellation for query evaluation, and HTTP
+  timeouts.
+- GeoSPARQL functions, bounded Datalog/RDFS/OWL 2 RL, and dated fail-closed
+  SHACL profiles.
+- A broad differential/conformance harness and explicit graph-topology
+  contract.
+
+### Comparison baseline
+
+- [Apache Jena 6.2.0](https://jena.apache.org/download/) is the current official
+  Jena release used here. Its relevant first-party surfaces include
+  [TDB transactions](https://jena.apache.org/documentation/tdb/tdb_transactions.html),
+  [SHACL](https://jena.apache.org/documentation/shacl/),
+  [text search](https://jena.apache.org/documentation/query/text-query.html),
+  [RDF Patch](https://jena.apache.org/documentation/rdf-patch/),
+  [GeoSPARQL](https://jena.apache.org/documentation/geosparql/geosparql-fuseki.html),
+  [SERVICE controls](https://jena.apache.org/documentation/query/service.html),
+  and the [Fuseki administration protocol](https://jena.apache.org/documentation/fuseki2/fuseki-server-protocol.html).
+- [Eclipse RDF4J 6.0.0](https://rdf4j.org/download/) is the current official
+  stable RDF4J release used here. Relevant first-party surfaces include the
+  [Repository API](https://rdf4j.org/documentation/programming/repository/),
+  [RepositoryConnection contract](https://rdf4j.org/javadoc/latest/org/eclipse/rdf4j/repository/RepositoryConnection.html),
+  [SAIL extension layer](https://rdf4j.org/documentation/reference/sail/),
+  [transaction-time SHACL](https://rdf4j.org/documentation/programming/shacl/),
+  [FedX](https://rdf4j.org/documentation/programming/federation/), and the
+  [REST API](https://rdf4j.org/documentation/reference/rest-api/). The rolling
+  `latest` Javadoc may lag the download page's release label, so claims are
+  limited to stable API concepts present in the cited contract.
+
+## Gap matrix
+
+| ID | Capability | This fork now | Jena 6.2 | RDF4J 6.0 | Decision |
+|---|---|---|---|---|---|
+| G01 | Pluggable transactional write plane | Implemented in `1da47285`; production adapter proof pending | Dataset/transaction APIs, but not the same Rust extension need | SAIL is the storage decoupling point | Keep the narrow Rust traits; P0 conformance |
+| G02 | Isolation and conflict contract | Repeatable-read prose; no typed capability discovery or conflict class | TDB2 documents serializable transactions and one active writer | Multiple requested levels, compatible-level discovery, optimistic conflict failure | P0 must-have |
+| G03 | Transaction lifecycle and uncertain commit | Consuming commit/rollback; no prepare, savepoint, active state, or commit-unknown taxonomy | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | P0 error taxonomy; savepoints later |
+| G04 | Empty named-graph topology | Strong explicit contract across model, store, I/O, protocol, bindings | Narrow observed divergence in the pinned Jena harness | Context APIs; behavior depends on store/operation | Preserve Oxigraph contract; no change |
+| G05 | Prefix/namespace metadata | Parser prefixes are transient; store has no registry | Prefix mappings and a Fuseki prefix service | Transactional namespace operations | P1 store metadata capability |
+| G06 | Durable change delivery | None | RDF Patch and patch-log ecosystem | Connection/store listeners; notifications | P1 ordered durable feed; RDF Patch adapter optional |
+| G07 | Commit receipt/idempotency | No durable commit ID; commit error can be ambiguous | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
+| G08 | SHACL on write | Snapshot validation API; not a commit gate | SHACL Core/SPARQL and Fuseki validation endpoint | ShaclSail validates during commit | P1 pre-commit participant over staged view |
+| G09 | Outbound `SERVICE`/`LOAD` policy | Default HTTP SERVICE can be disabled programmatically; `LOAD` client is hard-wired; no shared allowlist/CIDR/size policy | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | P0 security boundary |
+| G10 | Update-wide cancellation | Query algebra observes cancellation; data mutation loops and document loading are not uniformly interruptible | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | P0 cancellation with rollback proof |
+| G11 | Truthful service description | Current RDF 1.2 feature build advertises 1.2 from compile capability, contradicting ADR-0011 | Broad Service Description/Fuseki feature disclosure | Repository metadata and protocols | P0 claim audit; runtime receipts are authority |
+| G12 | Operational metrics/admin | Logs and CLI operations; no stable stats/Prometheus/admin task surface | Ping, stats, Prometheus, backup, compaction, tasks | Server/Workbench/Console and slow-query/circuit-breaker work | P1 metrics and recovery; multi-repo admin is a product choice |
+| G13 | Backup/restore verification | Backup and optimize exist; recovery is not continuously proven | Live consistent backup and compaction administration | Store-specific recovery tooling | P1 restore drills and receipts |
+| G14 | Full-text indexing | No index or SPARQL extension | Lucene text dataset and SPARQL property function | Lucene/Elasticsearch SAIL | P2 optional derived-index capability |
+| G15 | Spatial indexing | GeoSPARQL functions; no persistent transaction-consistent spatial index | GeoSPARQL module and spatial index management | GeoSPARQL support | P2; preserve correctness without index |
+| G16 | Federation planning | Basic `SERVICE`; no source selection, catalog, or federated plan metrics | ARQ SERVICE controls and extensions | FedX source selection, joins, timeout, monitoring | P2 after egress and statistics |
+| G17 | Planner statistics | Query explain exists; no durable cardinality/statistics subsystem | Mature ARQ/TDB planning | Store estimates and FedX plan logging | P2 statistics with correctness-neutral fallback |
+| G18 | Transaction participants | No stable validator/index/outbox hook | Dataset wrappers/modules | Stackable and notifying SAILs | P1 narrow change-set/participant API, not a class hierarchy |
+| G19 | Multi-repository lifecycle | One server process/store configuration path | Fuseki can manage multiple datasets | Server manages multiple repositories | P3 product ADR; not a core RDF requirement |
+| G20 | Protocol/file compatibility extras | Standards-oriented formats and Oxigraph protocols | Jena-specific assemblers, RDF Thrift, patch endpoints | RDF4J REST and Binary RDF | P3 only with a named interoperability user |
+
+## Target architecture
+
+The domain boundaries are:
+
+1. **Dataset query context** — read-only algebra evaluation through
+   `QueryableDataset`.
+2. **Transactional mutation context** — interactive quad and graph-topology
+   changes through the new write traits.
+3. **Bulk ingest context** — large input, batching, per-file atomicity, and
+   explicit non-atomic modes.
+4. **Commit governance context** — capability negotiation, staged change sets,
+   validators, durable receipts, and post-commit delivery.
+5. **Derived-index context** — text, spatial, and statistics structures that
+   must state whether they are synchronous, lagging, or rebuildable.
+6. **Operations context** — health, metrics, backup, restore, compaction, and
+   corruption validation.
+
+The dependency spine is:
+
+`write seam → conformance → capabilities/errors → staged change set → SHACL/feed/indexes`
+
+Egress policy, complete cancellation, and service-description truthfulness can
+proceed after the write seam and must close before exposing the server as a
+hardened linked-data service.
+
+## SPARC specification gate
+
+### Functional requirements
+
+- **FR-1:** Any persistence implementation can expose atomic RDF quad and graph
+  topology mutations without depending on private Oxigraph storage types.
+- **FR-2:** The complete SPARQL Update request observes its own prior writes and
+  either commits or rolls back as one unit.
+- **FR-3:** Each backend reports the transaction guarantees it can actually
+  meet and returns typed failures for conflicts and uncertain outcomes.
+- **FR-4:** All outbound linked-data retrieval and federation uses one
+  enforceable request policy and one cancellation model.
+- **FR-5:** Commit-time validators, durable feeds, and derived indexes consume
+  an explicit staged change set rather than intercepting unrelated APIs.
+- **FR-6:** Server capability claims are generated from verified runtime
+  capabilities rather than compile-time feature presence alone.
+
+### Non-functional requirements
+
+- **NFR-1:** The concrete `Store` fast path remains available and its hot-path
+  regression stays within an explicitly approved performance budget.
+- **NFR-2:** Public APIs preserve source compatibility where possible; any
+  unavoidable break has a migration note and compile fixture.
+- **NFR-3:** Security fixtures are loopback-only, deterministic, and cover
+  redirects, resolution changes, resource bounds, and cancellation.
+- **NFR-4:** Metrics and receipts exclude RDF payloads, credentials, and query
+  text by default.
+- **NFR-5:** Optional indexes may improve performance but may not silently
+  weaken standard query correctness.
+
+### Given/when/then acceptance criteria
+
+- **AC-1:** Given an independent backend implementing the two public write
+  traits, when a request performs `CREATE`, `INSERT DATA`, and
+  `DELETE/INSERT WHERE`, then later operations see earlier writes and one
+  commit publishes the exact final dataset plus empty-graph topology.
+- **AC-2:** Given a request whose later update operation fails, when it is run
+  through `on_dataset`, then every earlier quad and graph-topology change is
+  absent and an explicit rollback failure, if any, remains in the error chain.
+- **AC-3:** Given two concurrent writers whose updates conflict under the
+  requested guarantee, when both attempt to commit, then the backend either
+  serializes them consistently or rejects one with a typed conflict; it never
+  reports both as safely committed after a lost update.
+- **AC-4:** Given an untrusted `SERVICE`, `LOAD`, or JSON-LD context URL, when
+  the target, redirect, resolution, size, media type, or duration violates
+  policy, then retrieval is denied before commit and the transaction remains
+  unchanged.
+- **AC-5:** Given an endpoint without closed SPARQL 1.2 protocol receipts, when
+  its service description is generated, then it does not advertise SPARQL 1.2
+  merely because RDF 1.2 code was compiled.
+- **AC-6:** Given a transaction-time SHACL policy, when staged data violates
+  the pinned shapes/profile, then commit returns a typed validation report and
+  publishes neither primary nor derived state.
+
+### Constraints and edge cases
+
+- Transactions may stage large updates in memory; bulk ingestion retains its
+  separate atomicity and resource contract.
+- Commit transport failure can leave the durable outcome unknown; “unknown” is
+  never rewritten as “rolled back.”
+- External reads and custom functions make automatic replay unsafe unless an
+  operation explicitly proves idempotency.
+- Empty graph creation/removal must survive change capture even when no quad is
+  inserted or deleted.
+- Validation, feed, and index code must handle a graph being cleared and then
+  recreated or dropped in the same transaction.
+- A backend that cannot meet a minimum isolation or rollback requirement must
+  reject transaction creation rather than degrade silently.
+
+## Delivery plan
+
+Sizes are relative engineering effort, not calendar promises: S is a focused
+slice, M crosses a few modules, L is a new public subsystem, and XL is an
+independently releasable programme.
+
+### Slice 0 — upstream and write seam (complete)
+
+| Task | Dependency | Size | Acceptance |
+|---|---|---:|---|
+| D0.1 Merge upstream through `8dcfb6b6` | none | L | Git ancestry contains all 32 commits; affected baseline suites pass |
+| D0.2 Add transactional dataset traits | D0.1 | M | External fake backend compiles; graph topology and read-your-writes are explicit |
+| D0.3 Bind generic SPARQL Update | D0.2 | M | Whole request commits atomically or rolls back; custom errors survive |
+| D0.4 Preserve built-in performance path | D0.3 | S | Concrete `Store` write-only path remains; legacy update suite passes |
+| D0.5 Stabilize unordered upstream test | D0.1 | S | Query states `ORDER BY`; CLI is 144/144 |
+
+### P0 — make the write contract trustworthy
+
+#### P0.1 Shared backend conformance kit — L
+
+Dependencies: Slice 0.
+
+- Define a reusable adapter test suite for memory, RocksDB, and the rewritten
+  persistence plane.
+- Exercise every graph selector, empty named graphs, duplicate inserts,
+  deletion of absent quads, `CREATE`/`CLEAR`/`DROP`, `DELETE/INSERT WHERE`,
+  `LOAD`, commit, rollback, and drop-without-commit.
+- Add injected failures at transaction open, read iteration, mutation,
+  rollback, and commit.
+- Add model-based operation sequences and compare the final dataset plus graph
+  topology, not only quad sets.
+
+Acceptance:
+
+- The same conformance crate runs unchanged against all three backends.
+- No failed SPARQL Update operation leaks data or graph membership.
+- Read-your-writes and external isolation are tested with concurrent handles.
+- An implementation that conflates `CLEAR` and `DROP` demonstrably fails.
+
+#### P0.2 Capabilities, isolation, and typed failures — L
+
+Dependencies: P0.1.
+
+- Add an explicit transaction request/options type and capability report.
+- Represent at least read-only/read-write mode, effective isolation guarantee,
+  conflict detection, rollback support, and durable-commit support.
+- Fail when a requested minimum guarantee cannot be met; do not silently choose
+  a weaker level.
+- Classify conflict, read-only, cancellation, unavailable, corruption,
+  rollback failure, and indeterminate commit separately.
+- Preserve the original source error and keep the existing `StorageError`
+  compatibility mapping.
+- Do not automatically replay a transaction containing `LOAD`, `SERVICE`,
+  custom functions, or other potentially non-idempotent work.
+
+Acceptance:
+
+- Concurrent lost-update/write-skew fixtures document the guarantee of each
+  backend.
+- Conflict tests return a typed conflict and never a generic string.
+- A simulated lost commit response returns “outcome unknown,” not “rolled
+  back.”
+- Existing `start_transaction()` remains source-compatible through explicit
+  defaults or a documented migration.
+
+#### P0.3 Cancellation and external-request policy — L
+
+Dependencies: Slice 0; coordinates with P0.2 error types.
+
+- Use one injectable outbound policy for SPARQL `SERVICE`, SPARQL `LOAD`, and
+  remote JSON-LD contexts.
+- Control schemes, methods, host allow/deny rules, resolved IP ranges, DNS
+  rebinding, redirects, credentials, content type, response bytes, and time.
+- Check cancellation in all update loops, before and after external I/O, and
+  before commit.
+- Make CLI/server defaults explicit and safe for untrusted requests; retain an
+  opt-in federation profile for intended deployments.
+
+Acceptance:
+
+- Loopback, link-local, private-network, redirect, oversized-body, slow-body,
+  and DNS-change fixtures are deterministic and do not require the public
+  internet.
+- Cancelling `INSERT DATA`, `DELETE DATA`, `DELETE/INSERT`, or `LOAD` leaves the
+  dataset and graph topology unchanged.
+- A policy rejection is distinguishable from a network or RDF parse error.
+
+#### P0.4 Capability-derived service descriptions — M
+
+Dependencies: P0.2.
+
+- Reconcile `cli/src/service_description.rs` with ADR-0011.
+- Generate claims from runtime-closed capability receipts rather than a Cargo
+  feature alone.
+- Until the required protocol receipts are closed, suppress SPARQL 1.2 family
+  claims while retaining accurate parser/evaluator APIs.
+- Test query-only, update-only, read-only, federation-disabled, RDF 1.1, RDF
+  1.2 Basic, and RDF 1.2 profiles.
+
+Acceptance:
+
+- No build advertises a capability that its endpoint fixtures do not prove.
+- The service-description matrix is exact, duplicate-free, and stable under
+  serialization format changes.
+- ADR-0011 and executable tests state the same policy.
+
+#### P0.5 Compatibility and performance gate — M
+
+Dependencies: P0.1–P0.4.
+
+- Benchmark built-in `on_store` before/after and generic `on_dataset` on memory
+  and disk.
+- Run the W3C, fork semantic, Jena differential, RDF 1.1, RDF 1.2, read-only,
+  and Graph Store lanes.
+- Add a merge audit that flags future upstream edits to update, dataset, store,
+  service-description, or HTTP loading seams.
+
+Acceptance:
+
+- No material regression is accepted without an explicit budget and ADR.
+- Every public transaction guarantee has at least one negative test.
+
+### P1 — govern commits and operate the store
+
+#### P1.1 Namespace registry — M
+
+Dependencies: P0.2.
+
+- Add a separate store metadata capability for prefix-to-IRI mappings.
+- Make namespace changes transactional when mixed with RDF writes.
+- Define scope, persistence, iteration ordering, import/export behavior, and
+  whether parsing prefixes are persisted only by explicit request.
+
+Acceptance:
+
+- Namespace mutations commit and roll back with RDF changes.
+- Prefix metadata never changes RDF dataset equality or graph topology.
+- Turtle/RDF/XML serializers can opt into the registry without making output
+  nondeterministic.
+
+#### P1.2 Staged change sets, commit receipts, and durable feed — XL
+
+Dependencies: P0.1 and P0.2.
+
+- Record normalized quad, graph-topology, and namespace changes in the
+  transaction.
+- Define a storage-issued opaque commit ID and a durable receipt that
+  distinguishes committed, rejected, and indeterminate outcomes.
+- Commit a cursor-addressable outbox atomically with the data transaction.
+- Deliver an ordered at-least-once feed; consumers deduplicate by commit ID and
+  event position.
+- Provide RDF Patch serialization as an adapter after the native receipt/change
+  model is stable.
+
+Acceptance:
+
+- Crash tests cover before commit, during commit, after durable commit but
+  before response, and during feed delivery.
+- A consumer can resume from a cursor without silently skipping committed
+  changes.
+- Blank-node identity and empty graph creation/removal round-trip through the
+  native feed; the RDF Patch adapter documents its blank-node system-ID policy.
+
+#### P1.3 Transaction-time SHACL — L
+
+Dependencies: P1.2; uses existing `oxshacl` profiles.
+
+- Add an in-process pre-commit validator over the staged transaction view.
+- Pin the shapes graph, profile, inference setting, timeout, and result limit in
+  transaction options or store policy.
+- Treat validation reports as typed commit rejection and roll back all RDF,
+  topology, namespace, and derived-state changes.
+- Define concurrency semantics when separate transactions are jointly invalid;
+  use the effective isolation/conflict layer rather than ad-hoc replay.
+
+Acceptance:
+
+- Valid and invalid insert/delete/topology changes are tested.
+- Shape changes and data changes in the same transaction have a defined order.
+- Concurrent validation fixtures cannot jointly commit a known-invalid state
+  under the advertised validation profile.
+- Timeout or validator failure fails closed without partial commit.
+
+#### P1.4 Metrics, health, backup, and recovery receipts — L
+
+Dependencies: P0.2 and P1.2.
+
+- Expose stable counters and latency/error histograms for queries, updates,
+  commits, conflicts, rollback failures, external policy denials, validation,
+  and feed lag.
+- Add loopback health/readiness endpoints separately from privileged
+  maintenance operations.
+- Receipt backup start/end, source snapshot/commit, bytes, checksum, and restore
+  verification.
+- Exercise compaction/optimize with concurrent reads and blocked or rejected
+  writes according to its documented contract.
+
+Acceptance:
+
+- Prometheus output, if chosen, has bounded labels and no query text, RDF data,
+  credentials, or user identifiers by default.
+- Automated restore drills open and validate the restored store and compare a
+  snapshot receipt.
+- Health does not report ready when the writer, durable feed, or required index
+  is unrecoverably unavailable.
+
+### P2 — add indexed and federated capabilities
+
+#### P2.1 Full-text index — XL
+
+Dependencies: P1.2 and P1.4.
+
+- Define an index provider and a small SPARQL extension surface without making
+  Lucene or Elasticsearch types part of the core API.
+- Choose and document synchronous atomic updates or an asynchronous lag model.
+- Support language-aware fields, graph scoping, score, limits, rebuild, and
+  consistency checks.
+
+Acceptance:
+
+- Insert, delete, clear, drop, rollback, crash, and rebuild fixtures preserve
+  query correctness.
+- A stale or unavailable optional index cannot silently produce incomplete
+  standard SPARQL results.
+
+#### P2.2 Spatial index — L/XL
+
+Dependencies: P1.2 and existing `spargeo` correctness tests.
+
+- Index geometry envelopes with CRS-aware normalization.
+- Integrate mutation, rollback, graph lifecycle, rebuild, and corruption
+  detection through the same derived-state contract as text.
+- Keep an exact non-indexed evaluation path as the correctness oracle.
+
+Acceptance:
+
+- Indexed and oracle results agree for the supported GeoSPARQL profile.
+- Updates never require a server restart to become visible unless an explicitly
+  selected asynchronous mode reports its lag.
+
+#### P2.3 Statistics and federation planner — XL
+
+Dependencies: P0.3, P1.4, and preferably P1.2.
+
+- Add bounded, rebuildable cardinality/statistics data with freshness metadata.
+- Add endpoint catalogs, source selection, join strategies, per-endpoint
+  budgets, cancellation, and explain/metrics for federated plans.
+- Treat remote endpoints as untrusted and route every request through P0.3.
+
+Acceptance:
+
+- Planner statistics affect performance only; stale statistics cannot change
+  correct result semantics.
+- Federation tests use controlled local endpoints for failure, timeout,
+  partial-stream, `SILENT`, and cancellation cases.
+
+### P3 — explicit product decisions
+
+These require separate ADRs and named users before implementation:
+
+- multi-repository server lifecycle and privileged administration;
+- authentication/authorization built into Oxigraph versus a documented reverse
+  proxy boundary;
+- RDF4J REST compatibility;
+- Jena assembler/module compatibility;
+- RDF Patch HTTP/log compatibility beyond the native change feed;
+- RDF4J Binary RDF, Jena RDF Thrift, or other non-standard interchange formats;
+- distributed transactions, clustering, or automatic cross-node failover.
+
+None is necessary to accept ADR-0016 or to call the core an embeddable linked
+data store.
+
+## SPARC execution framing
+
+Each unfinished task uses the same evidence cycle:
+
+1. **Specification** — state the observable guarantee, exclusions, error
+   taxonomy, compatibility effect, and evidence authority.
+2. **Pseudocode** — enumerate transaction states and failure points before API
+   design; include crash and cancellation paths.
+3. **Architecture** — assign the behavior to one bounded context and record an
+   ADR for new public seams or operational guarantees.
+4. **Refinement** — implement the smallest vertical slice behind negative
+   tests, then run semantic, mutation, concurrency, and performance gates.
+5. **Completion** — produce a commit, exact commands/results, capability
+   receipt, rollback/migration note, and updated gap state.
+
+## Release gates
+
+No phase is complete until all applicable gates pass:
+
+- `cargo fmt --all -- --check` and `git diff --check`;
+- strict Clippy for changed targets, with any unrelated baseline failure
+  recorded separately;
+- default and RDF 1.2 affected test suites;
+- workspace all-target check;
+- adapter conformance on memory, RocksDB, and rewritten persistence;
+- concurrency and injected-error tests for transaction work;
+- loopback-only security fixtures for external request work;
+- semantic and differential harnesses for claimed compatibility;
+- benchmark comparison for hot read/write/index paths;
+- no documentation-site navigation or publication change without separate
+  authorization.
+
+The `rocksdb-pkg-config` all-features lane requires a system `rocksdb.pc` and is
+an environment prerequisite, not evidence that the vendored RocksDB lane
+failed. CI should run vendored and system-library lanes separately.
+
+## Risks and controls
+
+| Risk | Control |
+|---|---|
+| Public GAT traits become difficult to evolve | Keep the first trait minimal; add optional extension traits/capability objects; add compile fixtures for external implementers |
+| Backend advertises guarantees it does not implement | Conformance kit plus explicit effective capabilities; fail closed on unmet minimums |
+| Commit failure is mistaken for rollback | Typed indeterminate outcome and durable receipt lookup |
+| Automatic conflict retry duplicates external effects | No implicit replay; retry only an explicitly replay-safe operation with an idempotency key |
+| SHACL or indexes create a giant storage trait | Staged change-set/participant context with narrow responsibilities |
+| Derived index drifts after crash | Atomic participation or durable outbox, lag metric, rebuild and oracle comparison |
+| Egress policy is bypassed by redirect or DNS change | Validate every resolution and redirect; pin/connect safely; bound bytes and time |
+| Metrics leak RDF/query content or create unbounded cardinality | Metadata-only defaults, bounded labels, privileged diagnostics |
+| Competitor parity expands without bound | Require an observable user outcome and an ADR; keep Java API/file-format compatibility out of core |
+| Future upstream merge overwrites fork semantics | Path-based merge audit plus focused semantic tests and ADR review |
+
+## Research and Ruflo ledger
+
+The research was split into three evidence tracks and persisted in the
+repository's Ruflo memory:
+
+| Track | Ruflo task | Memory key |
+|---|---|---|
+| Upstream/write architecture | `task-1787593372180-0hjfvi` | `research/oxigraph-2026-08-24-r1-upstream-write` |
+| Apache Jena comparison | `task-1787593372163-lmmndv` | `research/oxigraph-2026-08-24-r2-jena-gap` |
+| Eclipse RDF4J comparison | `task-1787593372137-3j8kyo` | `research/oxigraph-2026-08-24-r3-rdf4j-gap` |
+
+Exact recall from all three entries succeeded. Ruflo's higher-level
+`ContextSynthesizer` reported unavailable, so it was not used as evidence. The
+neural predictor had real embeddings but no stored patterns and returned no
+prediction; it did not influence prioritization. The synthesis above is the
+traceable intersection of recalled local findings and current first-party
+sources.
+
+The Brain search verified the persistent swarm implementation in
+`ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts`; that source supports
+the research ledger mechanics, not any claim about Oxigraph, Jena, or RDF4J.
+
+## QA score
+
+The plan scores **98/100** against the programme rubric:
+
+| Dimension | Score | Basis |
+|---|---:|---|
+| Source authority and currency | 20/20 | Exact local commits plus current official Jena/RDF4J pages |
+| Implementation traceability | 20/20 | Public API, tests, commits, and Ruflo memory keys named |
+| Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit |
+| Verifiable acceptance criteria | 19/20 | Negative, crash, concurrency, security, and performance gates; production adapter still pending |
+| Risk and security coverage | 15/15 | Commit ambiguity, replay, egress, index drift, and leakage covered |
+| Scope discipline | 9/10 | Core versus product choices separated; P3 users/priorities intentionally unresolved |
+
+The two withheld points are real open state, not formatting debt: a production
+replacement adapter has not yet run the conformance kit, and P3 product choices
+have no named user decision. ADR-0016 therefore remains Proposed.
