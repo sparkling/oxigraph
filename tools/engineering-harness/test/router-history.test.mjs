@@ -289,6 +289,7 @@ test("the fifth admitted task reopens pairing and drift reopens cold start", asy
   assert.equal(periodic.admittedSincePair, 4);
 
   for (const changed of [
+    { contractSha256: digest("contract-v2") },
     { evaluatorSha256: digest("evaluator-v2") },
     { harnessSha256: digest("harness-v2") },
     { models: { ...models, codex: "gpt-5.6-sol-new" } },

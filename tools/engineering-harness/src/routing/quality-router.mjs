@@ -60,6 +60,7 @@ function normalizeContext(value) {
 
 function fingerprint(context) {
   return canonicalSha256({
+    contractSha256: context.contractSha256,
     evaluatorSha256: context.evaluatorSha256,
     harnessSha256: context.harnessSha256,
     models: context.models,
@@ -76,6 +77,7 @@ function classOutcomes(entries, context) {
 function currentFingerprint(entry, context) {
   const { outcome } = entry;
   return (
+    outcome.contractSha256 === context.contractSha256 &&
     outcome.evaluatorSha256 === context.evaluatorSha256 &&
     outcome.harnessSha256 === context.harnessSha256 &&
     QUALITY_FIRST_PROVIDER_ORDER.every(
