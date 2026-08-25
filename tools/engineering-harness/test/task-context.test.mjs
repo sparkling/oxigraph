@@ -247,6 +247,20 @@ function verifierReceipt(
   };
 }
 
+function formatRejectReceipt(contract, candidate, sandboxArgc) {
+  const receipt = verifierReceipt(contract, "REJECT", candidate);
+  const command = receipt.commands[0];
+  command.exitCode = 1;
+  command.sandboxArgv = Array.from(
+    { length: sandboxArgc },
+    (_, index) => (index === 0 ? "/usr/bin/systemd-run" : `sandbox-argument-${index}`),
+  );
+  command.stdoutTail = "Diff in /workspace/lib/oxigraph/src/storage/rocksdb_wrapper.rs";
+  receipt.stage = "format";
+  receipt.commands = [command];
+  return receipt;
+}
+
 test("architecture task includes only tree-verified allowlisted UTF-8 sources and bounded authority", async (t) => {
   const state = await fixture(t);
   const sourceSnapshot = await createG12SourceSnapshot({
@@ -634,5 +648,45 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
       verifierReceipt: { ...receipt, injected: "untrusted" },
     }),
     /keys must be exactly/u,
+  );
+});
+
+test("repair accepts production-sized sandbox evidence and rejects receipts above the shared limit", async (t) => {
+  const state = await fixture(t);
+  const sourceSnapshot = await createG12SourceSnapshot({
+    evaluator: state.evaluator,
+    contract: state.contract,
+    contractSha256: state.contractSha256,
+  });
+  const currentCandidate = candidateDescriptor(state.contract);
+  const input = {
+    role: "repair",
+    sourceSnapshot,
+    contract: state.contract,
+    contractSha256: state.contractSha256,
+    priorOutputs: prior("architecture", "critique", "implementation"),
+    currentCandidate,
+  };
+
+  const repair = await createG12TaskContext({
+    ...input,
+    verifierReceipt: formatRejectReceipt(state.contract, currentCandidate, 140),
+  });
+  assert.equal(repair.verifier.receipt.stage, "format");
+  assert.equal(repair.verifier.receipt.commands.length, 1);
+  assert.equal(repair.verifier.receipt.commands[0].sandboxArgv.length, 140);
+
+  const boundaryRepair = await createG12TaskContext({
+    ...input,
+    verifierReceipt: formatRejectReceipt(state.contract, currentCandidate, 1024),
+  });
+  assert.equal(boundaryRepair.verifier.receipt.commands[0].sandboxArgv.length, 1024);
+
+  await assert.rejects(
+    createG12TaskContext({
+      ...input,
+      verifierReceipt: formatRejectReceipt(state.contract, currentCandidate, 1025),
+    }),
+    /sandboxArgv must be a non-empty bounded argv array/u,
   );
 });

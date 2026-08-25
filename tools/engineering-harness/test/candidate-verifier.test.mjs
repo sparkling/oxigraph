@@ -107,6 +107,7 @@ function fakeSessionRunner({
   buildFails = false,
   formatFails = false,
   failureDisposition = "completed",
+  sandboxArgv = null,
 }) {
   return async (options) => {
     calls.push(options);
@@ -152,17 +153,19 @@ function fakeSessionRunner({
     });
     return Object.freeze({
       invocation: Object.freeze({
-        argv: Object.freeze([
-          "/usr/bin/systemd-run",
-          "--user",
-          "--scope",
-          "--",
-          "/usr/bin/bwrap",
-          "--size",
-          String(options.maxDiskBytes),
-          "--tmpfs",
-          "/state",
-        ]),
+        argv: Object.freeze(
+          sandboxArgv ?? [
+            "/usr/bin/systemd-run",
+            "--user",
+            "--scope",
+            "--",
+            "/usr/bin/bwrap",
+            "--size",
+            String(options.maxDiskBytes),
+            "--tmpfs",
+            "/state",
+          ],
+        ),
         logicalCommands: Object.freeze([]),
         network: "isolated",
         workspace: "read-only",
@@ -272,6 +275,36 @@ test("candidate verifier binds exact identity on product and infrastructure fail
       fixtureCase.name,
     );
     assert.equal(calls.length, 1, fixtureCase.name);
+  }
+});
+
+test("candidate verifier admits production-sized sandbox evidence and rejects invalid producer output", async (t) => {
+  const { candidate } = await fixture(t);
+  const productionArgv = Array.from(
+    { length: 140 },
+    (_, index) => (index === 0 ? "/usr/bin/systemd-run" : `sandbox-argument-${index}`),
+  );
+  const verifier = createVerifierForTesting(
+    fakeSessionRunner({ calls: [], sandboxArgv: productionArgv }),
+  );
+  const result = await verifier.verifyCandidate({ candidate, contract });
+  assert.equal(result.verdict, "ACCEPT");
+  assert.equal(result.commands[0].sandboxArgv.length, 140);
+
+  const invalidArgv = [
+    Array.from({ length: 1025 }, (_, index) => `sandbox-argument-${index}`),
+    ["/usr/bin/bwrap", ""],
+    ["/usr/bin/bwrap", "line\nbreak"],
+    ["/usr/bin/bwrap", "x".repeat(4097)],
+  ];
+  for (const sandboxArgv of invalidArgv) {
+    const invalidVerifier = createVerifierForTesting(
+      fakeSessionRunner({ calls: [], sandboxArgv }),
+    );
+    await assert.rejects(
+      invalidVerifier.verifyCandidate({ candidate, contract }),
+      /single-session verifier returned invalid infrastructure evidence/u,
+    );
   }
 });
 

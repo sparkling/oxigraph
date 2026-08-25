@@ -1,5 +1,9 @@
 import { runGit } from "./git.mjs";
 import { runSandboxVerificationSession } from "./sandbox-session.mjs";
+import {
+  MAX_SANDBOX_ARGV_ITEMS,
+  MAX_TASK_ARG_BYTES,
+} from "../policy/evidence-limits.mjs";
 
 const commandOrder = Object.freeze([
   "format",
@@ -52,6 +56,15 @@ function commandEvidence(record, sandboxArgv) {
   });
 }
 
+function validSandboxArgument(argument) {
+  return (
+    typeof argument === "string" &&
+    argument.length > 0 &&
+    Buffer.byteLength(argument) <= MAX_TASK_ARG_BYTES &&
+    !/[\0\r\n]/u.test(argument)
+  );
+}
+
 function sessionResultArtifact(report) {
   return Object.freeze({ name: sessionArtifactName, sha256: report.resultSha256, bytes: report.resultBytes });
 }
@@ -76,7 +89,8 @@ function validateSessionReport(report, contract) {
     report.invocation.state !== "single-quota-tmpfs" ||
     !Array.isArray(report.invocation.argv) ||
     report.invocation.argv.length < 2 ||
-    report.invocation.argv.some((argument) => typeof argument !== "string" || argument.includes("\0")) ||
+    report.invocation.argv.length > MAX_SANDBOX_ARGV_ITEMS ||
+    report.invocation.argv.some((argument) => !validSandboxArgument(argument)) ||
     !/^[a-f0-9]{64}$/.test(report.resultSha256) ||
     !Number.isSafeInteger(report.resultBytes) ||
     report.resultBytes < 1 ||

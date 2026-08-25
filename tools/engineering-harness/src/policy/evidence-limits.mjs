@@ -1,0 +1,3 @@
+export const MAX_LOGICAL_ARGV_ITEMS = 256;
+export const MAX_SANDBOX_ARGV_ITEMS = 1024;
+export const MAX_TASK_ARG_BYTES = 4096;

@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { runGit } from "../candidate/git.mjs";
 import { isContained } from "../paths.mjs";
 import { validateWorkerOutput, validateWorkerRole } from "../policy/authority.mjs";
+import {
+  MAX_LOGICAL_ARGV_ITEMS,
+  MAX_SANDBOX_ARGV_ITEMS,
+  MAX_TASK_ARG_BYTES,
+} from "../policy/evidence-limits.mjs";
 import { validateCandidatePatch } from "../policy/paths.mjs";
 
 export const G12_SOURCE_ALLOWLIST = Object.freeze([
@@ -236,12 +241,12 @@ function deepFreeze(value, seen = new Set()) {
   return Object.freeze(value);
 }
 
-function assertLiteralArgv(value, label) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 128) {
+function assertLiteralArgv(value, label, maximum) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > maximum) {
     fail(`${label} must be a non-empty bounded argv array`);
   }
   for (const [index, part] of value.entries()) {
-    requireString(part, `${label}[${index}]`, 4096);
+    requireString(part, `${label}[${index}]`, MAX_TASK_ARG_BYTES);
     if (part.length === 0 || /[\r\n]/u.test(part)) {
       fail(`${label}[${index}] must be a literal non-empty argument`);
     }
@@ -387,7 +392,11 @@ function validateContract(contract, contractSha256) {
   exactKeys(contract.commands, sequence, "contract.commands");
   for (const name of sequence) {
     exactKeys(contract.commands[name], ["argv", "timeoutMs"], `contract.commands.${name}`);
-    assertLiteralArgv(contract.commands[name].argv, `contract.commands.${name}.argv`);
+    assertLiteralArgv(
+      contract.commands[name].argv,
+      `contract.commands.${name}.argv`,
+      MAX_LOGICAL_ARGV_ITEMS,
+    );
     requireSafeInteger(contract.commands[name].timeoutMs, `contract.commands.${name}.timeoutMs`, 1);
   }
   exactKeys(contract.ceilings, CEILING_KEYS, "contract.ceilings");
@@ -643,11 +652,19 @@ function normalizeCommandEvidence(value, index, contract) {
   exactKeys(value, COMMAND_EVIDENCE_KEYS, `verifierReceipt.commands[${index}]`);
   const expectedName = contract.verificationSequence[index];
   if (value.name !== expectedName) fail("verifier receipt command order is not frozen");
-  assertLiteralArgv(value.logicalArgv, `verifierReceipt.commands[${index}].logicalArgv`);
+  assertLiteralArgv(
+    value.logicalArgv,
+    `verifierReceipt.commands[${index}].logicalArgv`,
+    MAX_LOGICAL_ARGV_ITEMS,
+  );
   if (canonicalJson(value.logicalArgv) !== canonicalJson(contract.commands[expectedName].argv)) {
     fail(`verifier receipt ${expectedName} argv differs from the contract`);
   }
-  assertLiteralArgv(value.sandboxArgv, `verifierReceipt.commands[${index}].sandboxArgv`);
+  assertLiteralArgv(
+    value.sandboxArgv,
+    `verifierReceipt.commands[${index}].sandboxArgv`,
+    MAX_SANDBOX_ARGV_ITEMS,
+  );
   if (value.network !== "isolated" || value.workspace !== "read-only") {
     fail("verifier receipt must prove isolated network and read-only workspace");
   }

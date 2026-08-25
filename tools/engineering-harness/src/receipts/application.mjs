@@ -11,6 +11,10 @@ import {
   directApplicationBinding,
   normalizeQualityOutcome,
 } from "../routing/history.mjs";
+import {
+  MAX_LOGICAL_ARGV_ITEMS,
+  MAX_SANDBOX_ARGV_ITEMS,
+} from "../policy/evidence-limits.mjs";
 import { validateNativeFailureCode } from "../policy/native-failures.mjs";
 
 export const APPLICATION_RECEIPT_SCHEMA =
@@ -1150,12 +1154,12 @@ function normalizeCommand(value, index, label) {
   const logicalArgv = stringArray(
     value.logicalArgv,
     `${commandLabel}.logicalArgv`,
-    { min: 2, max: 256 },
+    { min: 2, max: MAX_LOGICAL_ARGV_ITEMS },
   );
   const sandboxArgv = stringArray(
     value.sandboxArgv,
     `${commandLabel}.sandboxArgv`,
-    { min: 2, max: 1024 },
+    { min: 2, max: MAX_SANDBOX_ARGV_ITEMS },
   );
   if (logicalArgv[0] !== "cargo" || sandboxArgv.some((item) => /openrouter/i.test(item))) {
     throw new Error(`${commandLabel} is not a literal native Cargo invocation`);
