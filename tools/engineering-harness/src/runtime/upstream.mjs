@@ -20,7 +20,7 @@ export const UPSTREAM_STRATEGIES = deepFreeze({
     steps: [
       { kind: "architecture" },
       { kind: "critique", deps: ["architecture"] },
-      { kind: "implementation", deps: ["critique"] },
+      { kind: "implementation", deps: ["architecture", "critique"] },
     ],
   },
   "oxigraph-review": {

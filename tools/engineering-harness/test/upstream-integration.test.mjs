@@ -72,6 +72,7 @@ test("real AlgorithmRouter and HarnessKernel execute the frozen candidate DAG", 
     "oxigraph-candidate:architecture",
   ]);
   assert.deepEqual(Object.keys(calls[2].upstream), [
+    "oxigraph-candidate:architecture",
     "oxigraph-candidate:critique",
   ]);
   assert.equal(run.success, true);
