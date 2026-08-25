@@ -72,11 +72,12 @@ impl fmt::Display for EgressPurpose {
 }
 
 /// A typed, destination-redacted outbound-request error.
+#[derive(Clone)]
 pub struct EgressError {
     kind: EgressErrorKind,
     purpose: EgressPurpose,
     detail: Option<String>,
-    source: Option<Box<dyn StdError + Send + Sync + 'static>>,
+    source: Option<Arc<dyn StdError + Send + Sync + 'static>>,
 }
 
 impl EgressError {
@@ -90,15 +91,6 @@ impl EgressError {
     #[inline]
     pub const fn purpose(&self) -> EgressPurpose {
         self.purpose
-    }
-
-    fn from_failure(failure: EgressFailure) -> Self {
-        Self {
-            kind: failure.kind,
-            purpose: failure.purpose,
-            detail: None,
-            source: None,
-        }
     }
 }
 
@@ -384,18 +376,12 @@ pub(crate) fn find_egress_error<'a>(
     None
 }
 
-#[derive(Clone, Copy)]
-struct EgressFailure {
-    kind: EgressErrorKind,
-    purpose: EgressPurpose,
-}
-
 #[derive(Clone)]
 struct RequestContext {
     policy: Option<EgressPolicy>,
     purpose: EgressPurpose,
     cancellation: Option<CancellationToken>,
-    last_error: Arc<Mutex<Option<EgressFailure>>>,
+    last_error: Arc<Mutex<Option<EgressError>>>,
     timeout: Option<Duration>,
     deadline: Option<Instant>,
 }
@@ -414,25 +400,33 @@ impl RequestContext {
         kind: EgressErrorKind,
         source: Option<Box<dyn StdError + Send + Sync + 'static>>,
     ) -> EgressError {
-        let failure = EgressFailure {
-            kind,
-            purpose: self.purpose,
-        };
-        if let Ok(mut slot) = self.last_error.lock() {
-            *slot = Some(failure);
-        }
-        EgressError {
+        let error = EgressError {
             kind,
             purpose: self.purpose,
             detail: None,
-            source,
-        }
+            source: source.map(Arc::from),
+        };
+        self.record_error(&error);
+        error
     }
 
     fn error_with_detail(&self, kind: EgressErrorKind, detail: String) -> EgressError {
-        let mut error = self.error(kind, None);
-        error.detail = Some(detail);
+        let error = EgressError {
+            kind,
+            purpose: self.purpose,
+            detail: Some(detail),
+            source: None,
+        };
+        self.record_error(&error);
         error
+    }
+
+    fn record_error(&self, error: &EgressError) {
+        let mut slot = self
+            .last_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = Some(error.clone());
     }
 
     fn ensure_alive(&self) -> Result<(), EgressError> {
@@ -453,6 +447,9 @@ impl RequestContext {
     }
 
     fn map_transport_error(&self, error: io::Error) -> EgressError {
+        if let Err(error) = self.ensure_alive() {
+            return error;
+        }
         let kind = if matches!(
             error.kind(),
             io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
@@ -547,18 +544,20 @@ impl HttpClient {
     }
 
     pub(crate) fn clear_recorded_error(&self) {
-        if let Ok(mut slot) = self.context.last_error.lock() {
-            *slot = None;
-        }
+        let mut slot = self
+            .context
+            .last_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = None;
     }
 
     pub(crate) fn take_recorded_error(&self) -> Option<EgressError> {
         self.context
             .last_error
             .lock()
-            .ok()
-            .and_then(|mut slot| slot.take())
-            .map(EgressError::from_failure)
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
     }
 
     pub fn get(&self, url: &str, accept: &str) -> Result<(String, EgressBody), EgressError> {
@@ -715,13 +714,20 @@ pub struct EgressBody {
     permit: Option<RequestPermit>,
 }
 
+impl EgressBody {
+    fn finish(&mut self) {
+        self.body = Body::empty();
+        self.permit.take();
+    }
+}
+
 impl Read for EgressBody {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
         if let Err(error) = self.context.ensure_alive() {
-            self.permit.take();
+            self.finish();
             return Err(error.into());
         }
         let allowed = if let Some(policy) = &self.context.policy {
@@ -733,26 +739,27 @@ impl Read for EgressBody {
         let read = match self.body.read(&mut buf[..allowed]) {
             Ok(read) => read,
             Err(error) => {
-                self.permit.take();
-                return Err(self.context.map_transport_error(error).into());
+                let error = self.context.map_transport_error(error);
+                self.finish();
+                return Err(error.into());
             }
         };
         if let Err(error) = self.context.ensure_alive() {
-            self.permit.take();
+            self.finish();
             return Err(error.into());
         }
         if let Some(policy) = &self.context.policy {
             if read > policy.decoded_response_limit.saturating_sub(self.decoded) {
-                self.permit.take();
-                return Err(self
+                let error = self
                     .context
-                    .error(EgressErrorKind::DecodedResponseTooLarge, None)
-                    .into());
+                    .error(EgressErrorKind::DecodedResponseTooLarge, None);
+                self.finish();
+                return Err(error.into());
             }
         }
         self.decoded = self.decoded.saturating_add(read);
         if read == 0 {
-            self.permit.take();
+            self.finish();
         }
         Ok(read)
     }
