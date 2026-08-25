@@ -153,8 +153,19 @@ two independent concurrent-history tests, and two atomic-update regressions in
 liveness, rollback/drop release, queued cancellation, and zero-timeout
 admission without partial publication.
 
+G1.5b composes that admission control with SPARQL Update. Product commits
+`280872dc` and `9b84bed6` carry the evaluator's exact cancellation token from
+validation through built-in Store admission, mutation, and the final
+pre-commit checkpoint. Frozen contract
+`ab01ef3e29fbded8c8c042359851bd0c02c9fa1fd97afbc00eadc0b3a48e1525`
+accepted its 6/6/12 profile as candidate tree
+`d5413be86dae88f4b353ef4979ca8307f408357d`. This proves rollback for
+transactions owned by the update binding, not update-scoped rollback inside a
+caller-owned transaction. G1.5c separately owns the additive negotiated
+backend binding so the minimal `TransactionalDataset` trait remains compatible.
+
 ADR-0018 remains Proposed until G1.7 closes the compatibility, performance,
-and current-evidence promotion boundary; G1.4 completion alone does not grant
+and current-evidence promotion boundary; G1.5b completion alone does not grant
 promotion authority.
-The executable plan identifiers are G1.1-G1.4 in the
+The executable plan identifiers are G1.1-G1.5c in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

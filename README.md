@@ -104,10 +104,16 @@ implemented in `e452bad1` plus lifecycle hardening `3f4cdfd7` and accepted by
 its frozen 12/8/13 evaluator split. Built-in `SERVICE`, `LOAD`, and nested
 document retrieval now share a deny-by-default policy with typed failures,
 separate encoded/decoded byte bounds, time and connection budgets, and remote
-read cancellation. Complete cancellation through every local mutation phase
-and G1.6 runtime-derived service claims remain outstanding, so ADR-0019 stays
-Proposed. ADR-0018 likewise remains Proposed until the G1.7 compatibility,
-performance, and current-evidence promotion gate.
+read cancellation. G1.5b is implemented in `280872dc` plus review hardening
+`9b84bed6` and accepted by its frozen 6/6/12 evaluator split. One cancellation
+token now covers validation, built-in RocksDB writer admission, local mutation,
+and the final pre-commit checkpoint; owned transactions roll back before a
+typed cancellation is returned. The legacy generic transaction opener cannot
+observe cancellation while an arbitrary backend blocks, and a caller-owned
+transaction remains the caller's rollback responsibility. G1.5c owns the
+additive negotiated-backend binding, and G1.6 still owns runtime-derived
+service claims, so ADR-0019 stays Proposed. ADR-0018 likewise remains Proposed
+until the G1.7 compatibility, performance, and current-evidence promotion gate.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

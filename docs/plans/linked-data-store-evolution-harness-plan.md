@@ -28,9 +28,9 @@ only evidence authorities. Keep two MetaHarness paths distinct: the existing
 while the private `tools/engineering-harness` package routes, builds, repairs,
 and reviews application candidates without promotion authority. The green
 G1.1 reference oracle, separate red G1.2 evaluator, and source-bound G1.2-G1.4
-product slices have landed. G1.5's unified-egress profile is also source-bound;
-complete mutation cancellation and G1.6 runtime-derived service claims remain
-open.
+product slices have landed. G1.5's unified-egress profile and G1.5b's
+owned-update cancellation profile are also source-bound. G1.5c negotiated
+backend admission and G1.6 runtime-derived service claims remain open.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
@@ -59,14 +59,14 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Backend-neutral write seam | Implemented and verified in `1da47285` | Preserve the minimal GAT traits; add optional capabilities through extension traits |
 | Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
 | RocksDB writers | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis |
-| Built-in remote egress | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval, with bounded responses, connection admission, typed failures, and remote-read cancellation | Advertise only the governed egress profile; complete cancellation through local mutation phases and writer-gate acquisition before accepting ADR-0019 |
+| Built-in remote egress and owned updates | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary | Advertise only those proven profiles; complete negotiated generic admission and runtime-derived claims before accepting ADR-0019 |
 | Jena differential | July profile seals subject `1fe53cef...`; current subject is `997e2579...` | Historical evidence only; separately review and refresh the lock, then run twice |
 | Jena runner lock | The profile expects `runner/Cargo.lock`, but a clean checkout does not contain it and `--locked` fails | Restore a reviewed, reproducible lock strategy before the profile refresh |
 | Agentic-QE CLI inventory | Expects 133 default and 116 no-default tests; current exact inventories are 144 and 129 | Review counts/IDs and add an exact `persistence-write` profile |
 | Pinned source checkouts | RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 submodules are uninitialized in this clone | Initialize their exact registered revisions before source/full evidence verification; never substitute the parent checkout HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
 | MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by the evidence drift above |
-| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest receipts are implemented; G1.2-G1.5 have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact receipt |
+| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest receipts are implemented; G1.2-G1.5b have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact receipt |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -99,7 +99,7 @@ harness must not turn comparison breadth into an implementation mandate.
 | Brain | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims | Local source/tests remain authoritative for Oxigraph |
 | MetaHarness genome/score/OIA | Readiness and risk diagnostics | Generic identity and scores are advisory |
 | Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof; do not make it a worker host |
-| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Implemented for G1.2-G1.5; still no semantic or promotion authority |
+| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Implemented for G1.2-G1.5b; still no semantic or promotion authority |
 | Darwin | Deterministic, bounded policy mutation after a product slice exists | `--confirm` requires operator review; never mutate product or oracle inputs |
 | Dream Machine | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled |
 
@@ -222,7 +222,7 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
 | G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted qualification policy; implemented engineering control |
 | G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
-| G1.5-G1.6 egress/cancellation/claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
 | G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control; product decisions Proposed |
 | G2.1-G2.3 metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | G2.4 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
@@ -256,8 +256,10 @@ automatically by Dream Machine or Darwin.
 | G1.2 Concurrent history oracle | G1.1 | M | Lost-update/write-skew schedules expose current behavior; zero silent anomalies across the frozen stress budget |
 | G1.3 Typed request/capability/error extensions | G1.1-G1.2 | L | Effective guarantee returned; unmet minimum rejected; conflict and indeterminate outcomes typed |
 | G1.4 RocksDB writer serialization | G1.2-G1.3 | M | Bounded/cancellable gate acquired before snapshot and held through commit/rollback/drop; advertised guarantee passes the 1/4/16-writer oracle while readers remain concurrent |
-| G1.5 Unified egress and cancellation | G1.3 | L | Loopback SSRF/redirect/size/timeout fixtures and update rollback pass |
-| G1.6 Runtime-derived service claims | G1.3-G1.5 | M | Every advertised capability has a closed endpoint receipt |
+| G1.5 Unified remote egress | G1.3 | L | Loopback SSRF/redirect/size/timeout fixtures and remote update rollback pass |
+| G1.5b Owned-update cancellation | G1.5 | M | Built-in admission, validation, mutation loops, and the final pre-commit checkpoint return typed cancellation and roll back owned state |
+| G1.5c Negotiated backend admission | G1.5b | M | An additive negotiated binding carries the exact token and request through custom and Store admission without breaking the minimal write trait |
+| G1.6 Runtime-derived service claims | G1.3-G1.5c | M | Every advertised capability has a closed endpoint receipt |
 | G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6 | M | Existing semantics and current evidence green; approved write/read budgets met |
 
 Execution record on 2026-08-25:
@@ -298,9 +300,24 @@ Execution record on 2026-08-25:
   `5f7c03cef435fd8ed8750b6ce13f8807481413e75dc1b943dbc118fdd9ccda30`,
   and the verifier artifact is
   `4d1f9df209046b439db07346a22f2b4c9063f80b913d2a752abcc7a1123234eb`.
-  This receipt closes the frozen remote-egress profile, not cancellation
-  through every local mutation phase or writer-gate wait; those paths and G1.6
-  keep ADR-0019 Proposed.
+  This receipt closes the frozen remote-egress profile.
+- G1.5b's owned-update cancellation profile is implemented in product commits
+  `280872dc` and `9b84bed6`. Frozen contract
+  `ab01ef3e29fbded8c8c042359851bd0c02c9fa1fd97afbc00eadc0b3a48e1525`
+  reconstructed exact four-path patch
+  `ccf256b17f4ea01be82025485bc9bd20d4d9868c0307be922009f87792a9743f`
+  as candidate commit `33a0eefb5ee6a84e3a12a5585eec1ebf3a35a86a`, tree
+  `d5413be86dae88f4b353ef4979ca8307f408357d`, and returned `ACCEPT` for
+  format/build/public-6/independent-6/regression-12 in 431.682 seconds. The
+  frozen evaluator is `776b212dda26a4967f82098a90ade4c2d83aade1`; its
+  1,386-entry protected manifest is
+  `65cedf8d5a2cb289b3cd60d929fbc04fbbd1332e508a2bfd697f738b51c2c0f3`,
+  and the verifier artifact is
+  `4f6107ca9357ccc15b353a858729e8110495ec5079a40785f2edb9a83ca18f48`.
+  The receipt covers transactions owned by the update binding. G1.5c still
+  owns cancellable negotiated admission for a generic backend, while
+  caller-owned transactions require caller rollback and are outside this
+  receipt. G1.5c and G1.6 therefore keep ADR-0019 Proposed.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -321,6 +338,8 @@ task.
 | G1.3 | `lib/oxigraph/tests/transaction_capabilities.rs` | `cargo test --locked -p oxigraph --test transaction_capabilities` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` |
 | G1.4 | `lib/oxigraph/tests/rocksdb_writer_serialization.rs` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
 | G1.5 | `lib/oxigraph/tests/sparql_egress_policy.rs` | `cargo test --locked -p oxigraph --test sparql_egress_policy` | `cargo test --locked -p oxigraph --test sparql_update_load_http` | `cargo test --locked -p oxigraph --test sparql_service_http` |
+| G1.5b | `lib/oxigraph/tests/sparql_update_cancellation.rs` | `cargo test --locked -p oxigraph --test sparql_update_cancellation` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` |
+| G1.5c | `lib/oxigraph/tests/sparql_negotiated_update.rs` | `cargo test --locked -p oxigraph --test sparql_negotiated_update` | `cargo test --locked -p oxigraph --test transaction_capabilities --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_update_cancellation --test sparql_egress_policy --test transactional_dataset` |
 | G1.6 | `cli/src/service_description/tests.rs` | `cargo test --locked -p oxigraph-cli service_description::tests` | `cargo test --locked -p oxigraph --test sparql_version` | `cargo test --locked -p oxigraph-cli --no-default-features service_description::tests` |
 | G1.7 | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest | `cargo bench --locked -p oxigraph --bench transactional_write` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
 
@@ -328,10 +347,11 @@ Engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
 baseline commit, evaluator commit, mutable/blocked paths, features, targets,
 three command roles, time/output/resource ceilings, and success criteria.
-The G1.1-G1.5 evaluator files and the G1.2-G1.5 task contracts are implemented.
-G1.6 and later task contracts remain gated on their direct evaluator-only
-commits. G1.5's accepted contract is limited to remote egress and does not
-erase the separately outstanding end-to-end mutation-cancellation boundary.
+The G1.1-G1.5b evaluator files and the G1.2-G1.5b task contracts are
+implemented. G1.5c and later task contracts remain gated on their direct
+evaluator-only commits. G1.5 covers remote egress; G1.5b covers cancellation
+for update-owned transactions. Neither erases the separately outstanding
+negotiated generic-admission boundary.
 
 Implementation order is fixed: accept the version/authority policy; land the
 green G1.1 reference oracle and the separate red G1.2 evaluator-only commit;

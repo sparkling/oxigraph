@@ -29,10 +29,11 @@ now implemented by `TransactionalDataset` and `WritableDataset`, with generic
 SPARQL Update binding through `PreparedSparqlUpdate::on_dataset`.
 
 The remaining work is hardening and linked-data-store breadth. Transaction
-capability negotiation, bounded writer admission, and G1.5's unified remote
-egress profile are now source-bound. The highest-risk open P0 gap is complete
-cancellation through every mutation phase and writer-gate wait; G1.6 must then
-derive service claims from closed runtime receipts. The service-description
+capability negotiation, bounded writer admission, G1.5's unified remote egress,
+and G1.5b's update-owned cancellation profiles are now source-bound. G1.5c
+must add cancellable negotiated admission without breaking the minimal
+transaction trait; G1.6 must then derive service claims from closed runtime
+receipts. The service-description
 drift found during this audit is closed in `7dc190d3`: even an RDF 1.2 build
 now advertises only receipted SPARQL 1.0/1.1 languages and version 1.1.
 Namespace metadata, durable change delivery, transaction-time SHACL
@@ -143,7 +144,7 @@ Evidence grade A applies to this section.
 | G07 | Commit receipt/idempotency | No durable commit ID; commit error can be ambiguous | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
 | G08 | SHACL on write | Snapshot validation API; not a commit gate | SHACL Core/SPARQL and Fuseki validation endpoint | ShaclSail validates during commit | P1 pre-commit participant over staged view |
 | G09 | Outbound `SERVICE`/`LOAD` policy | Default HTTP SERVICE can be disabled programmatically; `LOAD` client is hard-wired; no shared allowlist/CIDR/size policy | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | P0 security boundary |
-| G10 | Update-wide cancellation | Query algebra observes cancellation; data mutation loops and document loading are not uniformly interruptible | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | P0 cancellation with rollback proof |
+| G10 | Update-wide cancellation | G1.5b proves one token across validation, built-in writer admission, owned mutation, and the final pre-commit rollback boundary; generic blocking admission and caller-owned rollback remain explicitly separate | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | Add the G1.5c negotiated binding; do not claim update-scoped rollback for a borrowed transaction without savepoints |
 | G11 | Truthful service description | Conservative SPARQL 1.0/1.1 claims restored in `7dc190d3`; richer claims are not runtime-derived yet | Broad Service Description/Fuseki feature disclosure | Repository metadata and protocols | P0 capability-derived claims before any expansion |
 | G12 | Operational metrics/admin | Logs and CLI operations; no stable stats/Prometheus/admin task surface | Ping, stats, Prometheus, backup, compaction, tasks | Server/Workbench/Console and slow-query/circuit-breaker work | P1 metrics and recovery; multi-repo admin is a product choice |
 | G13 | Backup/restore verification | Backup and optimize exist; recovery is not continuously proven | Live consistent backup and compaction administration | Store-specific recovery tooling | P1 restore drills and receipts |

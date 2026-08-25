@@ -400,7 +400,7 @@ Non-authoritative local verification on 2026-08-24 established:
 
 Source-bound engineering evidence on 2026-08-25 established:
 
-- 110/110 engineering-harness tests and a passing dependency/provider doctor;
+- 111/111 engineering-harness tests and a passing dependency/provider doctor;
 - accepted dual-provider G1.2 application receipt
   `d303b85b766bd0c6d459044da4ca891e2d6b1feb728124cbeb2668c1372c8e2c`,
   with native Claude and Codex represented and every required cross-vendor
@@ -408,8 +408,10 @@ Source-bound engineering evidence on 2026-08-25 established:
 - direct frozen candidate acceptance for G1.3's 9/3/3 evaluator split; and
 - direct frozen candidate acceptance for G1.4's 6/2/2 evaluator split; and
 - direct frozen candidate acceptance for G1.5's unified-egress 12/8/13
-  evaluator split in a read-only, network-isolated verifier session. This
-  application receipt does not close end-to-end mutation cancellation or G1.6.
+  evaluator split in a read-only, network-isolated verifier session; and
+- direct frozen candidate acceptance for G1.5b's update-owned cancellation
+  6/6/12 evaluator split. G1.5c negotiated generic admission and G1.6 runtime
+  claims remain separate evaluator-first tasks.
 
 ## Decision boundary
 
