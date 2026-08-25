@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,10 @@ import { validateCandidatePatch } from "../policy/paths.mjs";
 const MAX_TASK_BYTES = 2_097_152;
 const MAX_TIMEOUT_MS = 600_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 function promptFor({ role, encodedTask }) {
   return [
@@ -89,6 +94,13 @@ export async function runNativeWorker({
       provider === "codex"
         ? codexInvocation({ executionRoot: outputRoot, model, prompt })
         : claudeInvocation({ executionRoot: outputRoot, model, prompt });
+    const invocationEvidence = Object.freeze({
+      executable: invocation.executable,
+      args: invocation.args,
+      attestation: invocation.attestation,
+      taskSha256: sha256(Buffer.from(encodedTask, "utf8")),
+      promptSha256: sha256(Buffer.from(invocation.stdin, "utf8")),
+    });
     const outcome = await processRunner({
       ...invocation,
       timeoutMs,
@@ -102,14 +114,27 @@ export async function runNativeWorker({
         role,
         status: "INCONCLUSIVE",
         outcome,
+        invocation: invocationEvidence,
       });
     }
-    const raw =
-      provider === "codex"
-        ? await readFile(outputPath, "utf8")
-        : JSON.stringify(decodeClaude(outcome.stdout));
-    const output = validateWorkerOutput(JSON.parse(raw), role);
-    if (output.patch !== null) validateCandidatePatch(output.patch, contract);
+    let output;
+    try {
+      const raw =
+        provider === "codex"
+          ? await readFile(outputPath, "utf8")
+          : JSON.stringify(decodeClaude(outcome.stdout));
+      output = validateWorkerOutput(JSON.parse(raw), role);
+      if (output.patch !== null) validateCandidatePatch(output.patch, contract);
+    } catch {
+      return Object.freeze({
+        provider,
+        model,
+        role,
+        status: "INCONCLUSIVE",
+        outcome,
+        invocation: invocationEvidence,
+      });
+    }
     return Object.freeze({
       provider,
       model,
@@ -117,11 +142,7 @@ export async function runNativeWorker({
       status: output.verdict,
       output,
       outcome,
-      invocation: Object.freeze({
-        executable: invocation.executable,
-        args: invocation.args,
-        attestation: invocation.attestation,
-      }),
+      invocation: invocationEvidence,
     });
   } finally {
     await rm(outputRoot, { recursive: true, force: true });

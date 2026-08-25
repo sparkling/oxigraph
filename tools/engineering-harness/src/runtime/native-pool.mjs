@@ -48,18 +48,27 @@ function boundedOutcome(outcome) {
 function invocationEvidence(sequence, result) {
   const invocation = result.invocation ?? null;
   const output = result.output ?? null;
+  if (
+    invocation === null ||
+    typeof invocation.executable !== "string" ||
+    !Array.isArray(invocation.args) ||
+    invocation.attestation === undefined ||
+    !/^[a-f0-9]{64}$/.test(invocation.taskSha256) ||
+    !/^[a-f0-9]{64}$/.test(invocation.promptSha256)
+  ) {
+    throw new Error("spawned native worker omitted invocation provenance");
+  }
   return Object.freeze({
     sequence,
     provider: result.provider,
     model: result.model,
     role: result.role,
     status: result.status,
-    executable: invocation?.executable ?? null,
-    args: Object.freeze(invocation === null ? [] : [...invocation.args]),
-    executableAttestation:
-      invocation?.attestation === undefined
-        ? null
-        : Object.freeze(structuredClone(invocation.attestation)),
+    executable: invocation.executable,
+    args: Object.freeze([...invocation.args]),
+    executableAttestation: Object.freeze(structuredClone(invocation.attestation)),
+    taskSha256: invocation.taskSha256,
+    promptSha256: invocation.promptSha256,
     process: boundedOutcome(result.outcome),
     outputSha256: output === null ? null : sha256(JSON.stringify(output)),
     patchSha256: output?.patch === null || output?.patch === undefined
@@ -79,6 +88,8 @@ function failedInvocationEvidence(sequence, { provider, model, role, error }) {
     executable: null,
     args: Object.freeze([]),
     executableAttestation: null,
+    taskSha256: null,
+    promptSha256: null,
     process: null,
     outputSha256: null,
     patchSha256: null,
@@ -145,9 +156,10 @@ export class NativeWorkerPool {
           model,
           handles: Object.freeze([role]),
           run: async (input) => {
-            const task = await taskFactory({ role, provider, input });
             let result;
+            let evidence;
             try {
+              const task = await taskFactory({ role, provider, input });
               result = await this.#workerRunner({
                 provider,
                 role,
@@ -168,6 +180,7 @@ export class NativeWorkerPool {
               ) {
                 throw new Error("native worker result changed its frozen identity");
               }
+              evidence = invocationEvidence(this.#evidence.length + 1, result);
             } catch (error) {
               this.#evidence.push(
                 failedInvocationEvidence(this.#evidence.length + 1, {
@@ -179,7 +192,7 @@ export class NativeWorkerPool {
               );
               throw error;
             }
-            this.#evidence.push(invocationEvidence(this.#evidence.length + 1, result));
+            this.#evidence.push(evidence);
             if (result.status === "INCONCLUSIVE" || result.output === undefined) {
               throw new Error(`${provider} ${role} worker was inconclusive`);
             }
