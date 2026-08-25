@@ -137,7 +137,7 @@
     "maxTotalVerifierWallMs": 2700000,
     "maxResidentBytes": 8589934592,
     "maxVerifierDiskBytes": 17179869184,
-    "cargoBuildJobs": 2,
+    "cargoBuildJobs": 1,
     "maxRepairCycles": 2,
     "maxCritiqueRounds": 1,
     "networkDuringVerification": false

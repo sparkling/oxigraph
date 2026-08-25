@@ -34,7 +34,7 @@ Current activation boundary:
   its regression command runs cancellation, egress, and transactional-dataset
   targets. Command exit status proves every target in each set; the scalar
   receipt counts bind the final Cargo result lines (9 independent, 3 regression).
-  Clean RocksDB builds use two Cargo jobs within the fixed 8 GiB verifier scope;
+  Clean RocksDB builds use one Cargo job within the fixed 8 GiB verifier scope;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without
