@@ -1,5 +1,5 @@
 #[cfg(feature = "http-client")]
-use crate::http::HttpClient;
+use crate::http::{EgressError, EgressErrorKind, HttpClient, find_egress_error};
 #[cfg(feature = "http-client")]
 use crate::io::DocumentLoader;
 #[cfg(feature = "http-client")]
@@ -26,8 +26,6 @@ use spargebra::update::{
     ClearOperation, CreateOperation, DeleteDataOperation, DeleteInsertOperation, DropOperation,
     GraphUpdateOperation, InsertDataOperation, LoadOperation, Update,
 };
-#[cfg(feature = "http-client")]
-use std::time::Duration;
 
 /// A prepared SPARQL update.
 ///
@@ -49,9 +47,7 @@ pub struct PreparedSparqlUpdate {
     update: Update,
     using_datasets: Vec<Option<QueryDatasetSpecification>>,
     #[cfg(feature = "http-client")]
-    http_timeout: Option<Duration>,
-    #[cfg(feature = "http-client")]
-    http_redirection_limit: usize,
+    client: HttpClient,
 }
 
 impl PreparedSparqlUpdate {
@@ -64,8 +60,7 @@ impl PreparedSparqlUpdate {
     pub(crate) fn new(
         evaluator: QueryEvaluator,
         update: Update,
-        #[cfg(feature = "http-client")] http_timeout: Option<Duration>,
-        #[cfg(feature = "http-client")] http_redirection_limit: usize,
+        #[cfg(feature = "http-client")] client: HttpClient,
     ) -> Self {
         let using_datasets = update
             .operations
@@ -83,9 +78,7 @@ impl PreparedSparqlUpdate {
             update,
             using_datasets,
             #[cfg(feature = "http-client")]
-            http_timeout,
-            #[cfg(feature = "http-client")]
-            http_redirection_limit,
+            client,
         }
     }
 
@@ -130,9 +123,7 @@ impl PreparedSparqlUpdate {
             update: self.update,
             using_datasets: self.using_datasets,
             #[cfg(feature = "http-client")]
-            http_timeout: self.http_timeout,
-            #[cfg(feature = "http-client")]
-            http_redirection_limit: self.http_redirection_limit,
+            client: self.client,
             transaction,
         }
     }
@@ -165,9 +156,7 @@ impl PreparedSparqlUpdate {
             update: self.update,
             using_datasets: self.using_datasets,
             #[cfg(feature = "http-client")]
-            http_timeout: self.http_timeout,
-            #[cfg(feature = "http-client")]
-            http_redirection_limit: self.http_redirection_limit,
+            client: self.client,
             dataset,
         }
     }
@@ -196,9 +185,7 @@ impl PreparedSparqlUpdate {
             update: self.update,
             using_datasets: self.using_datasets,
             #[cfg(feature = "http-client")]
-            http_timeout: self.http_timeout,
-            #[cfg(feature = "http-client")]
-            http_redirection_limit: self.http_redirection_limit,
+            client: self.client,
             transaction: Ok(UpdateTransaction::BorrowedReadable(transaction)),
         }
     }
@@ -211,9 +198,7 @@ pub struct BoundTransactionalSparqlUpdate<'a, D: TransactionalDataset> {
     update: Update,
     using_datasets: Vec<Option<QueryDatasetSpecification>>,
     #[cfg(feature = "http-client")]
-    http_timeout: Option<Duration>,
-    #[cfg(feature = "http-client")]
-    http_redirection_limit: usize,
+    client: HttpClient,
     dataset: &'a D,
 }
 
@@ -229,7 +214,7 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
             base_iri: self.update.base_iri.clone(),
             query_evaluator: self.evaluator,
             #[cfg(feature = "http-client")]
-            client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
+            client: self.client,
         }
         .eval_all(&self.update.operations, &self.using_datasets);
         match result {
@@ -278,9 +263,7 @@ pub struct BoundPreparedSparqlUpdate<'a, 'b> {
     update: Update,
     using_datasets: Vec<Option<QueryDatasetSpecification>>,
     #[cfg(feature = "http-client")]
-    http_timeout: Option<Duration>,
-    #[cfg(feature = "http-client")]
-    http_redirection_limit: usize,
+    client: HttpClient,
     transaction: Result<UpdateTransaction<'a, 'b>, StorageError>,
 }
 
@@ -294,7 +277,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                     base_iri: self.update.base_iri.clone(),
                     query_evaluator: self.evaluator,
                     #[cfg(feature = "http-client")]
-                    client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
+                    client: self.client,
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 transaction.commit()?;
@@ -305,7 +288,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 base_iri: self.update.base_iri.clone(),
                 query_evaluator: self.evaluator,
                 #[cfg(feature = "http-client")]
-                client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
+                client: self.client,
             }
             .eval_all(&self.update.operations, &self.using_datasets),
             UpdateTransaction::Owned(mut transaction, storage) => {
@@ -315,7 +298,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                     base_iri: self.update.base_iri.clone(),
                     query_evaluator: self.evaluator,
                     #[cfg(feature = "http-client")]
-                    client: HttpClient::new(self.http_timeout, self.http_redirection_limit),
+                    client: self.client,
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
                 transaction.commit()?;
@@ -347,8 +330,12 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
     ) -> Result<(), UpdateEvaluationError> {
         validate_update_terms(&self.query_evaluator, updates)?;
         for (update, using_dataset) in updates.iter().zip(using_datasets) {
+            #[cfg(feature = "http-client")]
+            self.client.ensure_alive().map_err(egress_update_error)?;
             self.eval(update, using_dataset)?;
         }
+        #[cfg(feature = "http-client")]
+        self.client.ensure_alive().map_err(egress_update_error)?;
         Ok(())
     }
 
@@ -434,27 +421,40 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
             #[cfg(feature = "http-client")]
             &self.client,
         )
-        .and_then(|loaded| validate_loaded_terms(&self.query_evaluator, loaded));
+        .and_then(|loaded| {
+            validate_loaded_terms(
+                &self.query_evaluator,
+                loaded,
+                #[cfg(feature = "http-client")]
+                &self.client,
+            )
+        });
         match loaded {
             Ok(loaded) => {
+                #[cfg(feature = "http-client")]
+                self.client.ensure_alive().map_err(egress_update_error)?;
                 if let Some(graph_name) = loaded.named_graph_to_create {
                     self.transaction
                         .insert_named_graph(graph_name.into())
                         .map_err(UpdateEvaluationError::dataset)?;
                 }
                 for graph_name in loaded.dataset.named_graphs() {
+                    #[cfg(feature = "http-client")]
+                    self.client.ensure_alive().map_err(egress_update_error)?;
                     self.transaction
                         .insert_named_graph(graph_name)
                         .map_err(UpdateEvaluationError::dataset)?;
                 }
                 for quad in &loaded.dataset {
+                    #[cfg(feature = "http-client")]
+                    self.client.ensure_alive().map_err(egress_update_error)?;
                     self.transaction
                         .insert(quad)
                         .map_err(UpdateEvaluationError::dataset)?;
                 }
                 Ok(())
             }
-            Err(_) if operation.silent => Ok(()),
+            Err(error) if operation.silent && can_silence_load_error(&error) => Ok(()),
             Err(error) => Err(error),
         }
     }
@@ -696,9 +696,13 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
     ) -> Result<(), UpdateEvaluationError> {
         validate_update_terms(&self.query_evaluator, updates)?;
         for (update, using_dataset) in updates.iter().zip(using_datasets) {
+            #[cfg(feature = "http-client")]
+            self.client.ensure_alive().map_err(egress_update_error)?;
             self.eval(update, using_dataset)?;
             self.storage_for_initial_read.take(); // We unset the initial reader because we have likely mutated the store state.
         }
+        #[cfg(feature = "http-client")]
+        self.client.ensure_alive().map_err(egress_update_error)?;
         Ok(())
     }
 
@@ -777,21 +781,34 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
             #[cfg(feature = "http-client")]
             &self.client,
         )
-        .and_then(|loaded| validate_loaded_terms(&self.query_evaluator, loaded));
+        .and_then(|loaded| {
+            validate_loaded_terms(
+                &self.query_evaluator,
+                loaded,
+                #[cfg(feature = "http-client")]
+                &self.client,
+            )
+        });
         match loaded {
             Ok(loaded) => {
+                #[cfg(feature = "http-client")]
+                self.client.ensure_alive().map_err(egress_update_error)?;
                 if let Some(graph_name) = loaded.named_graph_to_create {
                     self.transaction.insert_named_graph(graph_name.into());
                 }
                 for graph_name in loaded.dataset.named_graphs() {
+                    #[cfg(feature = "http-client")]
+                    self.client.ensure_alive().map_err(egress_update_error)?;
                     self.transaction.insert_named_graph(graph_name);
                 }
                 for quad in &loaded.dataset {
+                    #[cfg(feature = "http-client")]
+                    self.client.ensure_alive().map_err(egress_update_error)?;
                     self.transaction.insert(quad);
                 }
                 Ok(())
             }
-            Err(_) if operation.silent => Ok(()),
+            Err(error) if operation.silent && can_silence_load_error(&error) => Ok(()),
             Err(error) => Err(error),
         }
     }
@@ -878,11 +895,30 @@ struct LoadedUpdate {
 fn validate_loaded_terms(
     evaluator: &QueryEvaluator,
     loaded: LoadedUpdate,
+    #[cfg(feature = "http-client")] client: &HttpClient,
 ) -> Result<LoadedUpdate, UpdateEvaluationError> {
     for quad in &loaded.dataset {
+        #[cfg(feature = "http-client")]
+        client.ensure_alive().map_err(egress_update_error)?;
         evaluator.ensure_term_compatible(&quad.object)?;
     }
     Ok(loaded)
+}
+
+#[cfg(feature = "http-client")]
+fn egress_update_error(error: EgressError) -> UpdateEvaluationError {
+    UpdateEvaluationError::Service(Box::new(error))
+}
+
+fn can_silence_load_error(
+    #[cfg_attr(not(feature = "http-client"), allow(unused_variables))]
+    error: &UpdateEvaluationError,
+) -> bool {
+    #[cfg(feature = "http-client")]
+    if find_egress_error(error).is_some_and(|error| error.kind() == EgressErrorKind::Cancelled) {
+        return false;
+    }
+    true
 }
 
 #[cfg(feature = "http-client")]
@@ -891,12 +927,16 @@ fn eval_load(
     version: SparqlVersion,
     client: &HttpClient,
 ) -> Result<LoadedUpdate, UpdateEvaluationError> {
+    let client = client.for_operation();
+    client.clear_recorded_error();
+    client.ensure_alive().map_err(egress_update_error)?;
     let (content_type, body) = client
         .get(
             operation.source.as_str(),
             "application/n-triples, text/turtle, application/rdf+xml, application/n-quads, application/trig, application/ld+json",
         )
-        .map_err(|e| UpdateEvaluationError::Service(Box::new(e)))?;
+        .map_err(egress_update_error)?;
+    client.ensure_alive().map_err(egress_update_error)?;
     let parser = RdfParser::from_media_type(&content_type)
         .map_err(|_| UpdateEvaluationError::UnsupportedContentType(content_type.clone()))?;
     let parser = parser
@@ -922,12 +962,20 @@ fn eval_load(
         ),
         GraphName::DefaultGraph => (parser, None),
     };
-    let client = client.clone();
-    let parser = parser
-        .for_reader(body)
-        .with_document_loader(DocumentLoader::new().with_http_client(client));
+    let loader = DocumentLoader::new().with_http_client(client.clone());
+    let parser = parser.for_reader(body).with_document_loader(loader);
+    let dataset = match parser.collect_dataset() {
+        Ok(dataset) => dataset,
+        Err(error) => {
+            if let Some(error) = client.take_recorded_error() {
+                return Err(egress_update_error(error));
+            }
+            return Err(error.into());
+        }
+    };
+    client.ensure_alive().map_err(egress_update_error)?;
     Ok(LoadedUpdate {
-        dataset: parser.collect_dataset()?,
+        dataset,
         named_graph_to_create,
     })
 }

@@ -1,5 +1,5 @@
 #[cfg(feature = "http-client")]
-use crate::http::HttpClient;
+use crate::http::{EgressPurpose, HttpClient};
 use oxrdfio::{LoadedDocument, RdfFormat};
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use std::fs;
@@ -55,7 +55,7 @@ impl DocumentLoader {
     #[must_use]
     #[inline]
     pub(crate) fn with_http_client(mut self, client: HttpClient) -> Self {
-        self.http = Some(client);
+        self.http = Some(client.for_purpose(EgressPurpose::Document));
         self
     }
 }
@@ -65,6 +65,10 @@ impl oxrdfio::DocumentLoader for DocumentLoader {
 
     #[cfg_attr(not(feature = "http-client"), expect(unused))]
     fn load(&self, url: &str, accepted_formats: &[RdfFormat]) -> Result<LoadedDocument> {
+        #[cfg(feature = "http-client")]
+        if let Some(client) = &self.http {
+            client.validate_document_target(url)?;
+        }
         let parsed_url = Url::parse(url).map_err(invalid_input_error)?;
         match parsed_url.scheme() {
             #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]

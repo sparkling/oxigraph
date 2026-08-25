@@ -1,4 +1,4 @@
-use crate::http::HttpClient;
+use crate::http::{EgressErrorKind, HttpClient, find_egress_error};
 use crate::model::{NamedNode, OxString};
 use oxiri::Iri;
 use sparesults::{QueryResultsParser, ReaderQueryResultsParserOutput};
@@ -6,7 +6,7 @@ use spareval::{DefaultServiceHandler, QueryEvaluationError, QuerySolutionIter};
 use spargebra::SparqlVersion;
 use spargebra::algebra::QueryExpression;
 use spargebra::query::SelectQuery;
-use std::time::Duration;
+use std::error::Error;
 
 pub struct HttpServiceHandler {
     client: HttpClient,
@@ -14,15 +14,8 @@ pub struct HttpServiceHandler {
 }
 
 impl HttpServiceHandler {
-    pub fn new(
-        http_timeout: Option<Duration>,
-        http_redirection_limit: usize,
-        version: SparqlVersion,
-    ) -> Self {
-        Self {
-            client: HttpClient::new(http_timeout, http_redirection_limit),
-            version,
-        }
+    pub fn new(client: HttpClient, version: SparqlVersion) -> Self {
+        Self { client, version }
     }
 }
 
@@ -50,8 +43,8 @@ impl DefaultServiceHandler for HttpServiceHandler {
             ),
             _ => unreachable!("unsupported SPARQL version"),
         };
-        let (content_type, body) = self
-            .client
+        let client = self.client.for_operation();
+        let (content_type, body) = client
             .post(
                 service_name.as_str(),
                 SelectQuery {
@@ -64,7 +57,7 @@ impl DefaultServiceHandler for HttpServiceHandler {
                 content_type,
                 accept,
             )
-            .map_err(|e| QueryEvaluationError::Service(Box::new(e)))?;
+            .map_err(|error| service_error(error, &client))?;
         let parser = QueryResultsParser::from_media_type(&content_type).map_err(|error| {
             QueryEvaluationError::Service(
                 format!(
@@ -76,7 +69,7 @@ impl DefaultServiceHandler for HttpServiceHandler {
         })?;
         let ReaderQueryResultsParserOutput::Solutions(reader) = parser
             .for_reader(body)
-            .map_err(|e| QueryEvaluationError::Service(Box::new(e)))?
+            .map_err(|error| service_error(error, &client))?
         else {
             return Err(QueryEvaluationError::Service(
                 "No valid SPARQL solutions returned by {service_name}".into(),
@@ -84,7 +77,29 @@ impl DefaultServiceHandler for HttpServiceHandler {
         };
         Ok(QuerySolutionIter::new(
             reader.variables().into(),
-            Box::new(reader.map(|t| t.map_err(|e| QueryEvaluationError::Service(Box::new(e))))),
+            Box::new(
+                reader.map(move |result| result.map_err(|error| service_error(error, &client))),
+            ),
         ))
     }
+}
+
+fn service_error(
+    error: impl Error + Send + Sync + 'static,
+    client: &HttpClient,
+) -> QueryEvaluationError {
+    if find_egress_error(&error).is_some_and(|error| error.kind() == EgressErrorKind::Cancelled) {
+        return QueryEvaluationError::Cancelled;
+    }
+    if find_egress_error(&error).is_some() {
+        return QueryEvaluationError::Service(Box::new(error));
+    }
+    if let Some(error) = client.take_recorded_error() {
+        return if error.kind() == EgressErrorKind::Cancelled {
+            QueryEvaluationError::Cancelled
+        } else {
+            QueryEvaluationError::Service(Box::new(error))
+        };
+    }
+    QueryEvaluationError::Service(Box::new(error))
 }

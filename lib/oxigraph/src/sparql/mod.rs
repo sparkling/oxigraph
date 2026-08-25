@@ -10,6 +10,12 @@ mod http;
 pub mod results;
 mod update;
 
+#[cfg(feature = "http-client")]
+use crate::http::HttpClient;
+#[cfg(feature = "http-client")]
+pub use crate::http::{
+    EgressError, EgressErrorKind, EgressPolicy, EgressPolicyConfigurationError, EgressPurpose,
+};
 use crate::model::{IriParseError, NamedNode, Term};
 pub use crate::model::{Variable, VariableNameParseError};
 use crate::sparql::dataset::DatasetView;
@@ -71,6 +77,10 @@ pub struct SparqlEvaluator {
     http_redirection_limit: usize,
     #[cfg(feature = "http-client")]
     with_http_default_service_handler: bool,
+    #[cfg(feature = "http-client")]
+    egress_policy: Option<EgressPolicy>,
+    #[cfg(feature = "http-client")]
+    cancellation_token: Option<CancellationToken>,
     parser: SparqlParser,
     inner: QueryEvaluator,
 }
@@ -202,6 +212,15 @@ impl SparqlEvaluator {
     #[inline]
     pub fn with_http_redirection_limit(mut self, redirection_limit: usize) -> Self {
         self.http_redirection_limit = redirection_limit;
+        self
+    }
+
+    /// Applies one deny-by-default policy to built-in `SERVICE`, `LOAD`, and
+    /// nested document retrieval.
+    #[cfg(feature = "http-client")]
+    #[inline]
+    pub fn with_egress_policy(mut self, policy: EgressPolicy) -> Self {
+        self.egress_policy = Some(policy);
         self
     }
 
@@ -368,8 +387,21 @@ impl SparqlEvaluator {
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
     pub fn with_cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
+        #[cfg(feature = "http-client")]
+        {
+            self.cancellation_token = Some(cancellation_token.clone());
+        }
         self.inner = self.inner.with_cancellation_token(cancellation_token);
         self
+    }
+
+    #[cfg(feature = "http-client")]
+    fn http_client(&self, purpose: EgressPurpose) -> HttpClient {
+        HttpClient::new(self.http_timeout, self.http_redirection_limit).with_egress(
+            self.egress_policy.clone(),
+            purpose,
+            self.cancellation_token.clone(),
+        )
     }
 
     #[cfg_attr(not(feature = "http-client"), expect(unused_mut))]
@@ -377,13 +409,10 @@ impl SparqlEvaluator {
         #[cfg(feature = "http-client")]
         if self.with_http_default_service_handler {
             let version = self.inner.version();
+            let client = self.http_client(EgressPurpose::Service);
             self.inner = self
                 .inner
-                .with_default_service_handler(HttpServiceHandler::new(
-                    self.http_timeout,
-                    self.http_redirection_limit,
-                    version,
-                ))
+                .with_default_service_handler(HttpServiceHandler::new(client, version))
         }
         self.inner
     }
@@ -535,16 +564,12 @@ impl SparqlEvaluator {
     /// ```
     pub fn for_update(self, update: Update) -> PreparedSparqlUpdate {
         #[cfg(feature = "http-client")]
-        let http_timeout = self.http_timeout;
-        #[cfg(feature = "http-client")]
-        let http_redirection_limit = self.http_redirection_limit;
+        let client = self.http_client(EgressPurpose::Load);
         PreparedSparqlUpdate::new(
             self.into_evaluator(),
             update,
             #[cfg(feature = "http-client")]
-            http_timeout,
-            #[cfg(feature = "http-client")]
-            http_redirection_limit,
+            client,
         )
     }
 }
@@ -558,6 +583,10 @@ impl Default for SparqlEvaluator {
             http_redirection_limit: 0,
             #[cfg(feature = "http-client")]
             with_http_default_service_handler: true,
+            #[cfg(feature = "http-client")]
+            egress_policy: None,
+            #[cfg(feature = "http-client")]
+            cancellation_token: None,
             parser: SparqlParser::new(),
             inner: QueryEvaluator::new(),
         }
