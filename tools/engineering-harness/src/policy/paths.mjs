@@ -97,6 +97,121 @@ function assertFinished(section) {
   }
 }
 
+function canonicalHunkRange(start, count) {
+  return count === 1 ? start : `${start},${count}`;
+}
+
+function canonicalHunkNumber(value, label) {
+  if (value === undefined) return undefined;
+  if (value.length > 10) {
+    throw new Error(`candidate hunk ${label} exceeds its numeric bound`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 2_147_483_647) {
+    throw new Error(`candidate hunk ${label} is invalid`);
+  }
+  return String(parsed);
+}
+
+export function canonicalizeCandidatePatch(patch) {
+  if (typeof patch !== "string" || patch.length === 0) {
+    throw new Error("candidate patch must be a non-empty unified diff");
+  }
+  if (patch.includes("\0")) {
+    throw new Error("candidate patch may not contain NUL bytes");
+  }
+  const normalized = patch.replaceAll("\r\n", "\n");
+  if (normalized.includes("\r")) {
+    throw new Error("candidate patch may not contain bare carriage returns");
+  }
+
+  const lines = normalized.split("\n");
+  const hasTerminalNewline = lines.at(-1) === "";
+  const limit = hasTerminalNewline ? lines.length - 1 : lines.length;
+  const canonical = [];
+  let index = 0;
+  while (index < limit) {
+    const line = lines[index];
+    const hunk =
+      /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(line);
+    if (hunk === null) {
+      if (line === "") {
+        throw new Error("candidate patch contains an unbound blank line");
+      }
+      canonical.push(line);
+      index += 1;
+      continue;
+    }
+
+    const oldStart = canonicalHunkNumber(hunk[1], "old start");
+    canonicalHunkNumber(hunk[2], "old count");
+    const newStart = canonicalHunkNumber(hunk[3], "new start");
+    canonicalHunkNumber(hunk[4], "new count");
+
+    const headerIndex = canonical.length;
+    canonical.push("");
+    index += 1;
+    let bodyLines = 0;
+    let oldCount = 0;
+    let newCount = 0;
+    let lastBodyWasMarked = false;
+    while (index < limit) {
+      const body = lines[index];
+      if (/^@@ -\d/.test(body) || body.startsWith("diff --git ")) break;
+      if (body === "\\ No newline at end of file") {
+        if (!lastBodyWasMarked) {
+          throw new Error("candidate no-newline marker is misplaced");
+        }
+        canonical.push(body);
+        lastBodyWasMarked = false;
+        index += 1;
+        continue;
+      }
+      if (body === "") {
+        let runEnd = index;
+        while (runEnd < limit && lines[runEnd] === "") runEnd += 1;
+        const nextMarker = lines[runEnd]?.[0];
+        if (
+          !lastBodyWasMarked ||
+          (nextMarker !== " " && nextMarker !== "-" && nextMarker !== "+")
+        ) {
+          throw new Error("candidate hunk contains a leading or trailing blank line");
+        }
+        while (index < runEnd) {
+          canonical.push(" ");
+          oldCount += 1;
+          newCount += 1;
+          bodyLines += 1;
+          index += 1;
+        }
+        continue;
+      }
+      const marker = body[0];
+      if (marker === " ") {
+        oldCount += 1;
+        newCount += 1;
+      } else if (marker === "-") {
+        oldCount += 1;
+      } else if (marker === "+") {
+        newCount += 1;
+      } else {
+        throw new Error("candidate hunk contains a non-empty unmarked line");
+      }
+      canonical.push(body);
+      bodyLines += 1;
+      lastBodyWasMarked = true;
+      index += 1;
+    }
+    if (bodyLines === 0 || (oldCount === 0 && newCount === 0)) {
+      throw new Error("candidate hunk is empty");
+    }
+    canonical[headerIndex] =
+      `@@ -${canonicalHunkRange(oldStart, oldCount)} ` +
+      `+${canonicalHunkRange(newStart, newCount)} @@${hunk[5]}`;
+  }
+  return `${canonical.join("\n")}\n`;
+}
+
 export function patchPaths(patch, contract = {}) {
   if (typeof patch !== "string" || patch.length === 0) {
     throw new Error("candidate patch must be a non-empty unified diff");
@@ -251,13 +366,24 @@ export function patchPaths(patch, contract = {}) {
   return Object.freeze([...new Set(paths)]);
 }
 
-export function validateCandidatePatch(patch, contract) {
+export function validateCandidatePatchSize(patch, contract) {
+  if (typeof patch !== "string" || patch.length === 0) {
+    throw new Error("candidate patch must be a non-empty unified diff");
+  }
   const maxPatchBytes = contract.ceilings?.maxPatchBytes ?? 262_144;
   if (!Number.isInteger(maxPatchBytes) || maxPatchBytes < 1 || maxPatchBytes > 262_144) {
     throw new Error("candidate patch ceiling is invalid");
   }
   if (Buffer.byteLength(patch) > maxPatchBytes) {
     throw new Error(`candidate patch exceeds ${maxPatchBytes} bytes`);
+  }
+  return patch;
+}
+
+export function validateCandidatePatch(patch, contract) {
+  validateCandidatePatchSize(patch, contract);
+  if (canonicalizeCandidatePatch(patch) !== patch) {
+    throw new Error("candidate patch is not in canonical form");
   }
   const paths = patchPaths(patch, contract);
   for (const path of paths) validateCandidatePath(path, contract);

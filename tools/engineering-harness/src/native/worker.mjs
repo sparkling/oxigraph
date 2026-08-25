@@ -10,7 +10,11 @@ import {
   validateWorkerRole,
 } from "../policy/authority.mjs";
 import { NATIVE_FAILURE_CODES } from "../policy/native-failures.mjs";
-import { validateCandidatePatch } from "../policy/paths.mjs";
+import {
+  canonicalizeCandidatePatch,
+  validateCandidatePatch,
+  validateCandidatePatchSize,
+} from "../policy/paths.mjs";
 
 const MAX_TASK_BYTES = 2_097_152;
 const MAX_TIMEOUT_MS = 600_000;
@@ -245,7 +249,10 @@ export async function runNativeWorker({
     }
     if (output.patch !== null) {
       try {
-        validateCandidatePatch(output.patch, contract);
+        validateCandidatePatchSize(output.patch, contract);
+        const canonicalPatch = canonicalizeCandidatePatch(output.patch);
+        validateCandidatePatch(canonicalPatch, contract);
+        output = Object.freeze({ ...output, patch: canonicalPatch });
       } catch (error) {
         return inconclusiveResult({
           provider,

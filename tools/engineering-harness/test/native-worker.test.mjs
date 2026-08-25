@@ -67,6 +67,74 @@ test("native Codex worker consumes structured output and removes its private out
   await assert.rejects(access(outputRoot));
 });
 
+test("native implementation admission canonicalizes mechanical diff defects", async () => {
+  const mechanical = {
+    ...accepted,
+    patch:
+      "diff --git a/lib/oxigraph/src/store.rs b/lib/oxigraph/src/store.rs\r\n" +
+      "--- a/lib/oxigraph/src/store.rs\r\n" +
+      "+++ b/lib/oxigraph/src/store.rs\r\n" +
+      "@@ -1,9 +1,2 @@\r\n" +
+      " context\r\n" +
+      "\r\n" +
+      "-old\r\n" +
+      "+new\r\n",
+  };
+  const result = await runNativeWorker({
+    provider: "codex",
+    role: "implementation",
+    model: "gpt-test",
+    task: { id: "mechanical-diff-repair" },
+    contract,
+    processRunner: async ({ args }) => {
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(outputPath, JSON.stringify(mechanical), "utf8");
+      return completed();
+    },
+  });
+  assert.equal(result.status, "ACCEPT");
+  assert.equal(
+    result.output.patch,
+    "diff --git a/lib/oxigraph/src/store.rs b/lib/oxigraph/src/store.rs\n" +
+      "--- a/lib/oxigraph/src/store.rs\n" +
+      "+++ b/lib/oxigraph/src/store.rs\n" +
+      "@@ -1,3 +1,3 @@\n" +
+      " context\n" +
+      " \n" +
+      "-old\n" +
+      "+new\n",
+  );
+});
+
+test("native implementation admission applies the contract ceiling to raw bytes", async () => {
+  const rawPatch = accepted.patch.replaceAll("\n", "\r\n");
+  const tightContract = {
+    ...contract,
+    ceilings: {
+      ...contract.ceilings,
+      maxPatchBytes: Buffer.byteLength(accepted.patch),
+    },
+  };
+  const result = await runNativeWorker({
+    provider: "codex",
+    role: "implementation",
+    model: "gpt-test",
+    task: { id: "raw-byte-ceiling" },
+    contract: tightContract,
+    processRunner: async ({ args }) => {
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(
+        outputPath,
+        JSON.stringify({ ...accepted, patch: rawPatch }),
+        "utf8",
+      );
+      return completed();
+    },
+  });
+  assert.equal(result.status, "INCONCLUSIVE");
+  assert.equal(result.failure.code, "patch-policy-invalid");
+});
+
 test("inconclusive native invocation retains executable, args, attestation, and exact byte digests", async () => {
   let finalPrompt;
   const task = Object.freeze({ id: "inconclusive", sourceSnapshot: "exact bytes: ä" });

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createGitHome, runGit } from "../src/candidate/git.mjs";
 import { sha256, treeManifest } from "../src/candidate/manifest.mjs";
+import { canonicalizeCandidatePatch } from "../src/policy/paths.mjs";
 import {
   candidateSource,
   disposeCandidate,
@@ -101,18 +102,60 @@ test("candidate reconstruction seals baseline, evaluator, patch, and protected t
     );
     await disposeCandidate(evaluatorWorkspace);
 
+    for (const noncanonical of [
+      patch.slice(0, -1),
+      patch.replace("@@ -1 +1 @@", "@@ -1,1 +1,1 @@"),
+      patch.replaceAll("\n", "\r\n"),
+    ]) {
+      await assert.rejects(
+        reconstructCandidate({ repositoryRoot: repo, contract, patch: noncanonical }),
+        /canonical form/,
+      );
+    }
+
     candidate = await reconstructCandidate({ repositoryRoot: repo, contract, patch });
     assert.deepEqual(candidate.changedPaths, ["src/value.txt"]);
+    assert.equal(candidate.candidatePatchSha256, sha256(patch));
     assert.equal(candidate.protectedManifest.sha256, protectedEvaluator.sha256);
     assert.equal(await readFile(join(candidate.workspace, "src/value.txt"), "utf8"), "new\n");
     assert.equal(
       await readFile(join(candidate.workspace, "tests/evaluator.txt"), "utf8"),
       "evaluator\n",
     );
+    const referenceIdentity = {
+      patchSha256: candidate.candidatePatchSha256,
+      commit: candidate.candidateCommit,
+      tree: candidate.candidateTree,
+      protectedManifest: candidate.protectedManifest,
+    };
     const candidateRoot = candidate.temporaryRoot;
     await disposeCandidate(candidate);
     candidate = undefined;
     await assert.rejects(access(candidateRoot));
+
+    for (const raw of [
+      patch.replace("@@ -1 +1 @@", "@@ -1,9 +1,7 @@"),
+      patch.replaceAll("\n", "\r\n"),
+      patch.slice(0, -1),
+    ]) {
+      const canonical = canonicalizeCandidatePatch(raw);
+      assert.equal(canonical, patch);
+      const replayed = await reconstructCandidate({
+        repositoryRoot: repo,
+        contract,
+        patch: canonical,
+      });
+      assert.deepEqual(
+        {
+          patchSha256: replayed.candidatePatchSha256,
+          commit: replayed.candidateCommit,
+          tree: replayed.candidateTree,
+          protectedManifest: replayed.protectedManifest,
+        },
+        referenceIdentity,
+      );
+      await disposeCandidate(replayed);
+    }
   } finally {
     if (candidate !== undefined) await disposeCandidate(candidate);
     await rm(fixtureRoot, { recursive: true, force: true });
