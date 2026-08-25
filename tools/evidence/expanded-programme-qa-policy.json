@@ -1,0 +1,229 @@
+{
+  "schema": "oxigraph.expanded-programme-qa-policy/v1",
+  "programme": "linked-data-store",
+  "indexedAdrCount": 33,
+  "sourceDocuments": [
+    "README.md",
+    "docs/adr/README.md",
+    "docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md",
+    "docs/adr/0018-transaction-guarantees-and-conflict-model.md",
+    "docs/adr/0019-unified-egress-cancellation-and-service-claims.md",
+    "docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md",
+    "docs/adr/0021-transaction-time-shacl-validation.md",
+    "docs/adr/0022-operational-readiness-backup-and-recovery.md",
+    "docs/adr/0023-statistics-and-bounded-join-planning.md",
+    "docs/adr/0024-rebuildable-derived-indexes.md",
+    "docs/adr/0025-explicit-service-federation.md",
+    "docs/adr/0026-service-identity-and-authorization.md",
+    "docs/adr/0027-workload-admission-and-operator-resources.md",
+    "docs/adr/0028-safe-storage-schema-upgrades.md",
+    "docs/adr/0029-rdf4j-rest-interoperability.md",
+    "docs/adr/0030-leased-remote-http-transactions.md",
+    "docs/adr/0031-multi-repository-lifecycle.md",
+    "docs/adr/0032-incremental-entailment-projections.md",
+    "docs/adr/0033-analytical-wcoj-execution.md",
+    "docs/plans/linked-data-store-evolution-harness-plan.md",
+    "docs/plans/persistence-write-and-linked-data-parity-plan.md"
+  ],
+  "headingProfiles": {
+    "acceptance": [
+      "Context",
+      "Decision",
+      "Acceptance boundary",
+      "Consequences",
+      "Alternatives rejected",
+      "Evidence and task ownership"
+    ],
+    "staged": [
+      "Context",
+      "Decision",
+      "Staged implementation and evaluator gates",
+      "Consequences",
+      "Alternatives rejected",
+      "Evidence and task ownership"
+    ],
+    "security": [
+      "Context",
+      "Decision",
+      "Security and operational behavior",
+      "Explicit non-goals",
+      "Staged evidence gates",
+      "Consequences",
+      "Alternatives rejected",
+      "Evidence and task ownership"
+    ],
+    "benchmark": [
+      "Context",
+      "Decision",
+      "Security and operational behavior",
+      "Explicit non-goals",
+      "Staged evaluator and benchmark gates",
+      "Consequences",
+      "Alternatives rejected",
+      "Evidence and task ownership"
+    ]
+  },
+  "adrs": [
+    { "id": "ADR-0018", "file": "docs/adr/0018-transaction-guarantees-and-conflict-model.md", "title": "Transaction guarantees and conflict model", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0019", "file": "docs/adr/0019-unified-egress-cancellation-and-service-claims.md", "title": "Unified egress, cancellation, and service claims", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0020", "file": "docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md", "title": "Transactional metadata, receipts, and change delivery", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0021", "file": "docs/adr/0021-transaction-time-shacl-validation.md", "title": "Transaction-time SHACL validation", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0022", "file": "docs/adr/0022-operational-readiness-backup-and-recovery.md", "title": "Operational readiness, backup, and recovery", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0023", "file": "docs/adr/0023-statistics-and-bounded-join-planning.md", "title": "Statistics and bounded join planning", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0024", "file": "docs/adr/0024-rebuildable-derived-indexes.md", "title": "Rebuildable derived indexes", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0025", "file": "docs/adr/0025-explicit-service-federation.md", "title": "Explicit SERVICE federation", "status": "Proposed", "headingProfile": "acceptance" },
+    { "id": "ADR-0026", "file": "docs/adr/0026-service-identity-and-authorization.md", "title": "Service identity and authorization boundary", "status": "Proposed", "headingProfile": "staged" },
+    { "id": "ADR-0027", "file": "docs/adr/0027-workload-admission-and-operator-resources.md", "title": "Workload admission and operator resources", "status": "Proposed", "headingProfile": "staged" },
+    { "id": "ADR-0028", "file": "docs/adr/0028-safe-storage-schema-upgrades.md", "title": "Safe storage schema upgrades", "status": "Proposed", "headingProfile": "staged" },
+    { "id": "ADR-0029", "file": "docs/adr/0029-rdf4j-rest-interoperability.md", "title": "RDF4J REST interoperability", "status": "Proposed", "headingProfile": "staged" },
+    { "id": "ADR-0030", "file": "docs/adr/0030-leased-remote-http-transactions.md", "title": "Leased remote HTTP transactions", "status": "Proposed", "headingProfile": "security" },
+    { "id": "ADR-0031", "file": "docs/adr/0031-multi-repository-lifecycle.md", "title": "Multi-repository lifecycle", "status": "Proposed", "headingProfile": "security" },
+    { "id": "ADR-0032", "file": "docs/adr/0032-incremental-entailment-projections.md", "title": "Incremental entailment projections", "status": "Proposed", "headingProfile": "security" },
+    { "id": "ADR-0033", "file": "docs/adr/0033-analytical-wcoj-execution.md", "title": "Analytical/WCOJ execution", "status": "Proposed", "headingProfile": "benchmark" }
+  ],
+  "phaseCounts": { "G0": 7, "G1": 9, "G2": 10, "G3": 5, "G4": 8 },
+  "tasks": {
+    "G0.1": { "sourceDependencies": "none", "dependencies": [] },
+    "G0.2": { "sourceDependencies": "none", "dependencies": [] },
+    "G0.3": { "sourceDependencies": "G0.2", "dependencies": ["G0.2"] },
+    "G0.4": { "sourceDependencies": "none", "dependencies": [] },
+    "G0.5": { "sourceDependencies": "none", "dependencies": [] },
+    "G0.6": { "sourceDependencies": "none", "dependencies": [] },
+    "G0.7": { "sourceDependencies": "G0.1-G0.6", "dependencies": ["G0.1", "G0.2", "G0.3", "G0.4", "G0.5", "G0.6"] },
+    "G1.1": { "sourceDependencies": "none; run beside G0", "dependencies": [] },
+    "G1.2": { "sourceDependencies": "G1.1", "dependencies": ["G1.1"] },
+    "G1.3": { "sourceDependencies": "G1.1-G1.2", "dependencies": ["G1.1", "G1.2"] },
+    "G1.4": { "sourceDependencies": "G1.2-G1.3", "dependencies": ["G1.2", "G1.3"] },
+    "G1.5": { "sourceDependencies": "G1.3", "dependencies": ["G1.3"] },
+    "G1.5b": { "sourceDependencies": "G1.5", "dependencies": ["G1.5"] },
+    "G1.5c": { "sourceDependencies": "G1.5b", "dependencies": ["G1.5b"] },
+    "G1.6": { "sourceDependencies": "G1.3, G1.5, G1.5b, G1.5c", "dependencies": ["G1.3", "G1.5", "G1.5b", "G1.5c"] },
+    "G1.7": { "sourceDependencies": "G0.1-G0.7, G1.1-G1.6", "dependencies": ["G0.1", "G0.2", "G0.3", "G0.4", "G0.5", "G0.6", "G0.7", "G1.1", "G1.2", "G1.3", "G1.4", "G1.5", "G1.5b", "G1.5c", "G1.6"] },
+    "G2.1": { "sourceDependencies": "G1.3-G1.4; evaluator freeze after HARNESS-REGISTRY", "dependencies": ["G1.3", "G1.4", "HARNESS-REGISTRY"] },
+    "G2.2": { "sourceDependencies": "G1.1, G2.1", "dependencies": ["G1.1", "G2.1"] },
+    "G2.3a": { "sourceDependencies": "G1.3-G1.4, G2.2", "dependencies": ["G1.3", "G1.4", "G2.2"] },
+    "G2.3b": { "sourceDependencies": "G2.3a", "dependencies": ["G2.3a"] },
+    "G2.3c": { "sourceDependencies": "G2.3b", "dependencies": ["G2.3b"] },
+    "G2.4a": { "sourceDependencies": "G1.4, G2.3c", "dependencies": ["G1.4", "G2.3c"] },
+    "G2.4b": { "sourceDependencies": "G2.4a", "dependencies": ["G2.4a"] },
+    "G2.5": { "sourceDependencies": "G2.3c", "dependencies": ["G2.3c"] },
+    "G2.6": { "sourceDependencies": "G2.3c, G2.5", "dependencies": ["G2.3c", "G2.5"] },
+    "G2.7": { "sourceDependencies": "G2.6", "dependencies": ["G2.6"] },
+    "G3.1": { "sourceDependencies": "G2.3c, G2.5-G2.7", "dependencies": ["G2.3c", "G2.5", "G2.6", "G2.7"] },
+    "G3.2": { "sourceDependencies": "G3.1", "dependencies": ["G3.1"] },
+    "G3.3": { "sourceDependencies": "G2.3c, G2.5-G2.7", "dependencies": ["G2.3c", "G2.5", "G2.6", "G2.7"] },
+    "G3.4": { "sourceDependencies": "G2.3c, G2.5-G2.7", "dependencies": ["G2.3c", "G2.5", "G2.6", "G2.7"] },
+    "G3.5": { "sourceDependencies": "G1.5, G3.1-G3.2; G1.6 for promotion/advertisement", "dependencies": ["G1.5", "G3.1", "G3.2"] },
+    "G4.1": { "sourceDependencies": "G1.5-G1.6", "dependencies": ["G1.5", "G1.6"] },
+    "G4.2": { "sourceDependencies": "G1.4-G1.5; G4.1 for principal quotas", "dependencies": ["G1.4", "G1.5", "G4.1"] },
+    "G4.3": { "sourceDependencies": "G2.7", "dependencies": ["G2.7"] },
+    "G4.4": { "sourceDependencies": "G2.3c, G4.1-G4.2, G4.5", "dependencies": ["G2.3c", "G4.1", "G4.2", "G4.5"] },
+    "G4.5": { "sourceDependencies": "G2.3a, G4.1-G4.2", "dependencies": ["G2.3a", "G4.1", "G4.2"] },
+    "G4.6": { "sourceDependencies": "G2.7, G4.1-G4.3", "dependencies": ["G2.7", "G4.1", "G4.2", "G4.3"] },
+    "G4.7": { "sourceDependencies": "G2.3c, G2.7", "dependencies": ["G2.3c", "G2.7"] },
+    "G4.8": { "sourceDependencies": "G3.2; G4.2 for server/Auto promotion", "dependencies": ["G3.2"] }
+  },
+  "rollups": {
+    "G2.3": ["G2.3a", "G2.3b", "G2.3c"],
+    "G2.4": ["G2.4a", "G2.4b"]
+  },
+  "controls": {
+    "HARNESS-REGISTRY": { "dependencies": ["G1.6"], "blocks": ["G2.1"] }
+  },
+  "ownershipRows": [
+    { "label": "G0.1 source registration", "tasks": ["G0.1"], "owners": ["ADR-0017"] },
+    { "label": "G0.2-G0.3 Jena evidence", "tasks": ["G0.2", "G0.3"], "owners": ["ADR-0012"] },
+    { "label": "G0.4-G0.5 Agentic-QE evidence", "tasks": ["G0.4", "G0.5"], "owners": ["ADR-0005"] },
+    { "label": "G0.6 mutation evidence", "tasks": ["G0.6"], "owners": ["ADR-0013"] },
+    { "label": "G0.7 evidence freeze/promotion", "tasks": ["G0.7"], "owners": ["ADR-0004", "ADR-0017"] },
+    { "label": "G1.1-G1.4 transaction truth", "tasks": ["G1.1", "G1.2", "G1.3", "G1.4"], "owners": ["ADR-0018"] },
+    { "label": "G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c", "tasks": ["G1.5", "G1.5b", "G1.5c", "G1.6"], "owners": ["ADR-0019"] },
+    { "label": "G1.7 promotion", "tasks": ["G1.7"], "owners": ["ADR-0017", "ADR-0018", "ADR-0019"] },
+    { "label": "G2.1-G2.3c metadata/receipts/outbox", "tasks": ["G2.1", "G2.2", "G2.3a", "G2.3b", "G2.3c"], "owners": ["ADR-0020"] },
+    { "label": "G2.4a-G2.4b transaction-time SHACL", "tasks": ["G2.4a", "G2.4b"], "owners": ["ADR-0021"] },
+    { "label": "G2.5-G2.7 readiness/recovery", "tasks": ["G2.5", "G2.6", "G2.7"], "owners": ["ADR-0022"] },
+    { "label": "G3.1-G3.2 statistics/planning", "tasks": ["G3.1", "G3.2"], "owners": ["ADR-0023"] },
+    { "label": "G3.3-G3.4 derived indexes", "tasks": ["G3.3", "G3.4"], "owners": ["ADR-0024"] },
+    { "label": "G3.5 explicit federation", "tasks": ["G3.5"], "owners": ["ADR-0025"] },
+    { "label": "G4.1 service identity/authorization", "tasks": ["G4.1"], "owners": ["ADR-0026"] },
+    { "label": "G4.2 workload/resource governance", "tasks": ["G4.2"], "owners": ["ADR-0027"] },
+    { "label": "G4.3 storage schema upgrades", "tasks": ["G4.3"], "owners": ["ADR-0028"] },
+    { "label": "G4.4 RDF4J REST interoperability", "tasks": ["G4.4"], "owners": ["ADR-0029"] },
+    { "label": "G4.5 leased remote HTTP transactions", "tasks": ["G4.5"], "owners": ["ADR-0030"] },
+    { "label": "G4.6 multi-repository lifecycle", "tasks": ["G4.6"], "owners": ["ADR-0031"] },
+    { "label": "G4.7 incremental entailment", "tasks": ["G4.7"], "owners": ["ADR-0032"] },
+    { "label": "G4.8 analytical/WCOJ research", "tasks": ["G4.8"], "owners": ["ADR-0033"] }
+  ],
+  "claims": [
+    { "path": "README.md", "text": "ADR-0018 through ADR-0033. All sixteen are Proposed living" },
+    { "path": "docs/adr/README.md", "text": "ADR-0018 through ADR-0033 are living implementation decisions" },
+    { "path": "docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md", "text": "contains 39 stable executable G-identifiers" },
+    { "path": "docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md", "text": "Those sixteen decisions are Proposed living plans" },
+    { "path": "docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md", "text": "HARNESS-REGISTRY` is a named harness" },
+    { "path": "docs/plans/linked-data-store-evolution-harness-plan.md", "text": "expanded to 39 stable executable identifiers" },
+    { "path": "docs/plans/linked-data-store-evolution-harness-plan.md", "text": "original G2.3 and G2.4 rows remain pending roll-ups" },
+    { "path": "docs/plans/linked-data-store-evolution-harness-plan.md", "text": "G1.6 → `HARNESS-REGISTRY` → G2.1 evaluator freeze" },
+    { "path": "docs/plans/persistence-write-and-linked-data-parity-plan.md", "text": "ADR-0018 through ADR-0033 own every admitted P0-P3 public or operational seam" }
+  ],
+  "assertionWeights": {
+    "control.exact-subject-and-inputs": 8,
+    "adr.corpus": 10,
+    "adr.structure-status": 12,
+    "adr.index-title-status-parity": 8,
+    "goap.stable-id-set": 12,
+    "goap.dependencies-dag": 12,
+    "goap.ownership-rollups-controls": 10,
+    "documents.local-links-and-anchors": 10,
+    "documents.format-and-strict-json": 6,
+    "tooling.bounded-contracts": 10
+  },
+  "quickCommands": [
+    {
+      "id": "evidence-tests",
+      "program": "node",
+      "args": ["--test", "--test-reporter=tap", "tools/evidence/normative-clause-inventory.test.mjs", "tools/evidence/normative-control.test.mjs", "tools/evidence/verify-programme.test.mjs", "tools/evidence/expanded-programme-qa.test.mjs", "tools/evidence/verify-expanded-programme-qa.test.mjs"],
+      "expectedNodeTests": 42,
+      "timeoutMs": 120000
+    },
+    {
+      "id": "metaharness-tests",
+      "program": "node",
+      "args": ["--test", "--test-reporter=tap", "tools/metaharness/evidence.test.mjs", "tools/metaharness/qualification-contract.test.mjs"],
+      "expectedNodeTests": 13,
+      "timeoutMs": 120000
+    },
+    {
+      "id": "agentic-adapter-tests",
+      "program": "node",
+      "args": ["--test", "--test-reporter=tap", "tools/agentic-qe/execution-provenance.test.mjs", "tools/agentic-qe/path-policy.test.mjs", "tools/agentic-qe/process-runner.test.mjs", "tools/owl2-tests/safe-output.test.mjs"],
+      "expectedNodeTests": 18,
+      "timeoutMs": 120000
+    },
+    {
+      "id": "cargo-format",
+      "program": "cargo",
+      "args": ["fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    }
+  ],
+  "ruflo": {
+    "taskStorePath": ".claude-flow/tasks/store.json",
+    "memoryPath": ".swarm/memory.db",
+    "memoryKeys": [
+      "linked-data-store-g0-g3-2026-08-24",
+      "linked-data-store-g0-g4-2026-08-25-v2"
+    ],
+    "namespace": "task-plans",
+    "stableRows": 39,
+    "rollupRows": 2,
+    "controlRows": 1
+  },
+  "authority": {
+    "claim": "programme document, graph, and local task-map consistency at one exact Git subject",
+    "semanticQualification": false,
+    "productImplementation": false,
+    "promotion": false,
+    "release": false,
+    "taskStatusAuthority": false
+  }
+}
