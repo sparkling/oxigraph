@@ -11,8 +11,11 @@ import {
   directApplicationBinding,
   normalizeQualityOutcome,
 } from "../routing/history.mjs";
+import { validateNativeFailureCode } from "../policy/native-failures.mjs";
 
 export const APPLICATION_RECEIPT_SCHEMA =
+  "oxigraph.engineering-application-receipt/v2";
+const LEGACY_APPLICATION_RECEIPT_SCHEMA =
   "oxigraph.engineering-application-receipt/v1";
 
 const CHAIN_ALGORITHM = "sha256-canonical-json-chain/v1";
@@ -765,7 +768,11 @@ function successfulProcess(outcome) {
   );
 }
 
-function normalizeNativeInvocations(value, control) {
+function normalizeNativeInvocations(
+  value,
+  control,
+  { requireDiagnostics = false } = {},
+) {
   if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
     throw new Error("nativeInvocations must be a non-empty bounded array");
   }
@@ -775,45 +782,70 @@ function normalizeNativeInvocations(value, control) {
       const label = `nativeInvocations[${index}]`;
       plainObject(item, label);
       const failed = item.status === "ERROR";
+      const hasExecutionId = Object.hasOwn(item, "executionId");
+      const hasFailureCode = Object.hasOwn(item, "failureCode");
+      const hasFailureDetail = Object.hasOwn(item, "failureDetailSha256");
+      if (hasFailureCode !== hasFailureDetail) {
+        throw new Error(`${label} must bind both native failure fields together`);
+      }
+      if (hasFailureCode && (!hasExecutionId || failed)) {
+        throw new Error(`${label} native failure classification has an invalid shape`);
+      }
+      if (requireDiagnostics && !hasExecutionId) {
+        throw new Error(`${label} must bind its native execution id`);
+      }
+      if (
+        requireDiagnostics &&
+        item.status === "INCONCLUSIVE" &&
+        !hasFailureCode
+      ) {
+        throw new Error(`${label} must classify its inconclusive native failure`);
+      }
+      const keys = failed
+        ? new Set([
+            "id",
+            "routingId",
+            "sequence",
+            "provider",
+            "model",
+            "role",
+            "status",
+            "executable",
+            "args",
+            "executableAttestation",
+            "taskSha256",
+            "promptSha256",
+            "process",
+            "outputSha256",
+            "patchSha256",
+            "error",
+            "errorSha256",
+          ])
+        : new Set([
+            "id",
+            "routingId",
+            "sequence",
+            "provider",
+            "model",
+            "role",
+            "status",
+            "executable",
+            "args",
+            "executableAttestation",
+            "taskSha256",
+            "promptSha256",
+            "process",
+            "outputSha256",
+            "patchSha256",
+          ]);
+      if (hasExecutionId) keys.add("executionId");
+      if (hasFailureCode) {
+        keys.add("failureCode");
+        keys.add("failureDetailSha256");
+      }
       exactKeys(
         item,
-        failed
-          ? new Set([
-              "id",
-              "routingId",
-              "sequence",
-              "provider",
-              "model",
-              "role",
-              "status",
-              "executable",
-              "args",
-              "executableAttestation",
-              "taskSha256",
-              "promptSha256",
-              "process",
-              "outputSha256",
-              "patchSha256",
-              "error",
-              "errorSha256",
-            ])
-          : new Set([
-              "id",
-              "routingId",
-              "sequence",
-              "provider",
-              "model",
-              "role",
-              "status",
-              "executable",
-              "args",
-              "executableAttestation",
-              "taskSha256",
-              "promptSha256",
-              "process",
-              "outputSha256",
-              "patchSha256",
-            ]),
+        keys,
         label,
       );
       const id = string(item.id, `${label}.id`);
@@ -835,6 +867,9 @@ function normalizeNativeInvocations(value, control) {
         provider,
         role: role(item.role, `${label}.role`),
         model: selectedModel,
+        ...(hasExecutionId
+          ? { executionId: string(item.executionId, `${label}.executionId`, 512) }
+          : {}),
       };
       if (failed) {
         if (
@@ -866,6 +901,9 @@ function normalizeNativeInvocations(value, control) {
         });
       }
       const status = verdict(item.status, `${label}.status`);
+      if (status !== "INCONCLUSIVE" && hasFailureCode) {
+        throw new Error(`${label} classifies a native failure without INCONCLUSIVE status`);
+      }
       const executable = string(item.executable, `${label}.executable`, 4096);
       if (!isAbsolute(executable) || /openrouter/i.test(executable)) {
         throw new Error(`${label}.executable must be an absolute native path`);
@@ -917,6 +955,18 @@ function normalizeNativeInvocations(value, control) {
         process,
         outputSha256,
         patchSha256,
+        ...(hasFailureCode
+          ? {
+              failureCode: validateNativeFailureCode(
+                item.failureCode,
+                `${label}.failureCode`,
+              ),
+              failureDetailSha256: digest(
+                item.failureDetailSha256,
+                `${label}.failureDetailSha256`,
+              ),
+            }
+          : {}),
       });
     }),
   );
@@ -1723,6 +1773,9 @@ function assertSemanticInvariants(state) {
   const attemptsById = new Map(attempts.map((item) => [item.id, item]));
   const referencedInvocations = new Set();
   const repairOutcomeIdentities = new Set();
+  const executionBound = nativeInvocations.every((item) =>
+    Object.hasOwn(item, "executionId"),
+  );
 
   for (const invocation of nativeInvocations) {
     const routeRecord = routes.get(invocation.routingId);
@@ -1769,6 +1822,7 @@ function assertSemanticInvariants(state) {
       throw new Error(`${attempt.id} must bind one native invocation per role`);
     }
     const observedRoles = [];
+    const observedExecutions = new Set();
     for (const invocationId of attempt.invocationIds) {
       const invocation = invocations.get(invocationId);
       if (
@@ -1784,6 +1838,7 @@ function assertSemanticInvariants(state) {
       }
       referencedInvocations.add(invocationId);
       observedRoles.push(invocation.role);
+      if (executionBound) observedExecutions.add(invocation.executionId);
       const routeRecord = routes.get(invocation.routingId);
       const expectedTaskId =
         invocation.role === "repair"
@@ -1810,6 +1865,9 @@ function assertSemanticInvariants(state) {
       canonicalJson([...observedRoles].sort()) !== canonicalJson([...attempt.roles].sort())
     ) {
       throw new Error(`${attempt.id} invocation roles do not match its declared roles`);
+    }
+    if (executionBound && observedExecutions.size !== 1) {
+      throw new Error(`${attempt.id} combines native evidence from different executions`);
     }
     assertUpstreamBinding(
       attempt.upstreamReceipts,
@@ -1957,9 +2015,9 @@ function normalizeChain(value, bindingSha256, events) {
   return expected;
 }
 
-function receiptBody(state) {
+function receiptBody(state, schema = APPLICATION_RECEIPT_SCHEMA) {
   return {
-    schema: APPLICATION_RECEIPT_SCHEMA,
+    schema,
     run: state.run,
     control: state.control,
     contract: state.contract,
@@ -1980,9 +2038,13 @@ function receiptControlBinding(run, control, contract) {
 
 function normalizeReceipt(value) {
   exactKeys(value, RECEIPT_KEYS, "application receipt");
-  if (value.schema !== APPLICATION_RECEIPT_SCHEMA) {
+  if (
+    value.schema !== APPLICATION_RECEIPT_SCHEMA &&
+    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA
+  ) {
     throw new Error(`unsupported application receipt schema: ${value.schema}`);
   }
+  const schema = value.schema;
   const run = normalizeRun(value.run);
   const control = normalizeControl(value.control);
   const contract = normalizeContract(value.contract);
@@ -1992,6 +2054,7 @@ function normalizeReceipt(value) {
   const nativeInvocations = normalizeNativeInvocations(
     value.nativeInvocations,
     control,
+    { requireDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA },
   );
   const attempts = normalizeAttempts(value.attempts, control, contract, {
     sealed: true,
@@ -2017,7 +2080,7 @@ function normalizeReceipt(value) {
   const state = { ...partial, events };
   assertSemanticInvariants(state);
   const chain = normalizeChain(value.chain, bindingSha256, events);
-  const body = receiptBody({ ...state, chain });
+  const body = receiptBody({ ...state, chain }, schema);
   const receiptSha256 = canonicalSha256(body);
   if (value.receiptSha256 !== receiptSha256) {
     throw new Error("receiptSha256 does not bind the complete application receipt");
@@ -2057,6 +2120,7 @@ export function createApplicationReceipt(draft) {
   const nativeInvocations = normalizeNativeInvocations(
     draft.nativeInvocations,
     control,
+    { requireDiagnostics: true },
   );
   const attempts = normalizeAttempts(draft.attempts, control, contract);
   const reviews = normalizeReviews(draft.reviews);

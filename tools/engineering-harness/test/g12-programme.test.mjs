@@ -100,9 +100,48 @@ function workerRunner({
   calls,
   reviewVerdict = "ACCEPT",
   claudeArchitectureReject = false,
+  implementationOutputRejected = false,
 }) {
   return async ({ provider, role, model, task }) => {
     calls.push({ provider, role, task: structuredClone(task) });
+    if (implementationOutputRejected && role === "implementation") {
+      return Object.freeze({
+        provider,
+        role,
+        model,
+        status: "INCONCLUSIVE",
+        failure: Object.freeze({
+          code: "patch-policy-invalid",
+          detailSha256: sha256(`${provider}:invalid-patch`),
+          retryable: false,
+        }),
+        invocation: Object.freeze({
+          executable: `/usr/bin/${provider}`,
+          args: Object.freeze(["--model", model]),
+          attestation: Object.freeze({
+            provider,
+            discoveredPath: `/usr/bin/${provider}`,
+            path: `/usr/bin/${provider}`,
+            sha256: sha256(`${provider}:bin`),
+            size: 1024,
+            mode: 0o755,
+            uid: 1000,
+            gid: 1000,
+          }),
+          taskSha256: sha256(JSON.stringify(task)),
+          promptSha256: sha256(`${provider}:${role}:prompt`),
+        }),
+        outcome: Object.freeze({
+          disposition: "completed",
+          exitCode: 0,
+          signal: null,
+          durationMs: 1,
+          stdout: `${provider}:${role}:rejected-output`,
+          stderr: "",
+          terminationErrors: Object.freeze([]),
+        }),
+      });
+    }
     const patch = ["implementation", "repair"].includes(role)
       ? `patch:${role}:${provider}`
       : null;
@@ -210,6 +249,7 @@ function fixture({
   routedProvider = null,
   verification = "mixed",
   claudeArchitectureReject = false,
+  implementationOutputRejected = false,
 } = {}) {
   const preflight = frozenPreflight();
   const calls = [];
@@ -217,7 +257,11 @@ function fixture({
   const finalized = [];
   const pool = new NativeWorkerPool({
     contract: preflight.contract,
-    workerRunner: workerRunner({ calls, claudeArchitectureReject }),
+    workerRunner: workerRunner({
+      calls,
+      claudeArchitectureReject,
+      implementationOutputRejected,
+    }),
   });
   const run = createG12ProgrammeForTesting({
     preflight: async () => preflight,
@@ -365,4 +409,27 @@ test("a declined paired lane retains failures without suppressing the valid lane
         provider === "claude" && role === "critique" && status === "ERROR",
     ),
   );
+});
+
+test("exit-zero output rejection is classified once per lane without host retry", async () => {
+  const { run, calls, finalized } = fixture({
+    implementationOutputRejected: true,
+  });
+  const result = await run({ runId: "output-rejected", clock: clock() });
+  assert.equal(result.final.verdict, "INCONCLUSIVE");
+  assert.equal(result.selectedCandidate, null);
+  assert.equal(result.admittedOutcomes, 0);
+  assert.equal(calls.filter(({ role }) => role === "implementation").length, 2);
+  assert.ok(
+    result.issues.every((issue) =>
+      issue.includes("implementation:worker-output-rejected"),
+    ),
+  );
+  const receipt = finalized[0].receipt;
+  const rejected = receipt.nativeInvocations.filter(
+    ({ role }) => role === "implementation",
+  );
+  assert.equal(rejected.length, 2);
+  assert.ok(rejected.every(({ failureCode }) => failureCode === "patch-policy-invalid"));
+  assert.ok(rejected.every(({ executionId }) => /candidate:/u.test(executionId)));
 });

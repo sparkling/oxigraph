@@ -1,4 +1,5 @@
 import {
+  APPLICATION_RECEIPT_SCHEMA,
   applicationReceiptQualityOutcomes,
   verifyApplicationReceipt,
   verifyApplicationReceiptOutcome,
@@ -71,6 +72,9 @@ export function verifyPinnedApplicationReceipt(receiptOrBytes, preflight) {
     throw new Error(`invalid application receipt: ${verification.reason}`);
   }
   const { receipt } = verification;
+  if (receipt.schema !== APPLICATION_RECEIPT_SCHEMA) {
+    throw new Error("legacy application receipts are replay-only and cannot mint quality");
+  }
   const models = providerModels(preflight.contract);
   const contract = expectedContract(preflight.contract, preflight.contractSha256);
   if (

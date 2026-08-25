@@ -7,6 +7,7 @@ import { ReceiptLog } from "@metaharness/harness";
 import {
   createApplicationReceipt,
   serializeApplicationReceipt,
+  verifyApplicationReceipt,
 } from "../src/receipts/application.mjs";
 import { canonicalSha256, routingEmbedding } from "../src/routing/features.mjs";
 import { RouterHistory } from "../src/routing/history.mjs";
@@ -107,6 +108,7 @@ function invocation({ id, route, sequence, provider, role, model, host, patch })
     id,
     routingId: route.id,
     sequence,
+    executionId: "admission-candidate-execution",
     provider,
     model,
     role,
@@ -273,6 +275,45 @@ function rejectedReceipt(frozen) {
   });
 }
 
+function legacyReceipt(current) {
+  const receipt = structuredClone(current);
+  receipt.schema = "oxigraph.engineering-application-receipt/v1";
+  for (const invocation of receipt.nativeInvocations) {
+    delete invocation.executionId;
+  }
+  const collections = {
+    routing: receipt.routing,
+    "native-invocation": receipt.nativeInvocations,
+    attempt: receipt.attempts,
+    review: receipt.reviews,
+  };
+  let previousSha256 = "0".repeat(64);
+  for (let index = 0; index < receipt.events.length; index += 1) {
+    const event = receipt.events[index];
+    const record = collections[event.kind]?.find(({ id }) => id === event.id) ??
+      (event.kind === "selected-candidate" ? receipt.selectedCandidate : receipt.final);
+    const body = {
+      sequence: index + 1,
+      previousSha256,
+      bindingSha256: event.bindingSha256,
+      kind: event.kind,
+      id: event.id,
+      recordSha256: canonicalSha256(record),
+    };
+    receipt.events[index] = {
+      ...body,
+      entrySha256: canonicalSha256(body),
+    };
+    previousSha256 = receipt.events[index].entrySha256;
+  }
+  receipt.chain.entryCount = receipt.events.length;
+  receipt.chain.tailSha256 = previousSha256;
+  receipt.chain.eventsSha256 = canonicalSha256(receipt.events);
+  const { receiptSha256: _discarded, ...body } = receipt;
+  receipt.receiptSha256 = canonicalSha256(body);
+  return receipt;
+}
+
 test("pinned application admission is atomic and exact replay is idempotent", async (t) => {
   const frozen = preflight();
   const bytes = serializeApplicationReceipt(rejectedReceipt(frozen));
@@ -309,5 +350,15 @@ test("pinned verification rejects stale controls and executable swaps", () => {
   assert.throws(
     () => verifyPinnedApplicationReceipt(bytes, swapped),
     /changes the current codex executable identity/,
+  );
+});
+
+test("valid legacy receipts are replay-only and cannot mint current Router quality", () => {
+  const frozen = preflight();
+  const legacy = legacyReceipt(rejectedReceipt(frozen));
+  assert.equal(verifyApplicationReceipt(legacy).ok, true);
+  assert.throws(
+    () => verifyPinnedApplicationReceipt(legacy, frozen),
+    /replay-only/,
   );
 });

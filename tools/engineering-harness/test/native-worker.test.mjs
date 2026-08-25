@@ -87,6 +87,9 @@ test("inconclusive native invocation retains executable, args, attestation, and 
     },
   });
   assert.equal(result.status, "INCONCLUSIVE");
+  assert.equal(result.failure.code, "process-nonzero");
+  assert.equal(result.failure.retryable, true);
+  assert.match(result.failure.detailSha256, /^[a-f0-9]{64}$/);
   assert.equal(result.outcome, outcome);
   assert.equal(result.invocation.taskSha256, sha256(Buffer.from(JSON.stringify(task), "utf8")));
   assert.equal(result.invocation.promptSha256, sha256(Buffer.from(finalPrompt, "utf8")));
@@ -174,6 +177,8 @@ test("native Claude worker admits only the unique terminal result from array env
     });
     assert.equal(rejected.status, "INCONCLUSIVE");
     assert.equal(rejected.output, undefined);
+    assert.equal(rejected.failure.code, "provider-envelope-invalid");
+    assert.equal(rejected.failure.retryable, false);
   }
 });
 
@@ -212,7 +217,73 @@ test("native worker validates role and candidate paths before admitting output",
   });
   assert.equal(inconclusive.status, "INCONCLUSIVE");
   assert.equal(inconclusive.output, undefined);
+  assert.equal(inconclusive.failure.code, "patch-policy-invalid");
+  assert.equal(inconclusive.failure.retryable, false);
   assert.ok(inconclusive.invocation.executable.startsWith("/"));
   assert.ok(/^[a-f0-9]{64}$/.test(inconclusive.invocation.taskSha256));
   assert.ok(/^[a-f0-9]{64}$/.test(inconclusive.invocation.promptSha256));
+});
+
+test("native worker exposes only bounded output-admission failure classes", async () => {
+  const cases = [
+    {
+      code: "output-missing",
+      write: async () => {},
+    },
+    {
+      code: "worker-json-invalid",
+      write: async (path) => writeFile(path, "{", "utf8"),
+    },
+    {
+      code: "role-contract-invalid",
+      write: async (path) =>
+        writeFile(
+          path,
+          JSON.stringify({ ...accepted, patch: null, unexpected: true }),
+          "utf8",
+        ),
+    },
+  ];
+  for (const fixture of cases) {
+    const result = await runNativeWorker({
+      provider: "codex",
+      role: "review",
+      model: "gpt-test",
+      task: { id: fixture.code },
+      processRunner: async ({ args }) => {
+        await fixture.write(args[args.indexOf("--output-last-message") + 1]);
+        return completed();
+      },
+    });
+    assert.equal(result.status, "INCONCLUSIVE");
+    assert.deepEqual(Object.keys(result.failure).sort(), [
+      "code",
+      "detailSha256",
+      "retryable",
+    ]);
+    assert.equal(result.failure.code, fixture.code);
+    assert.equal(result.failure.retryable, false);
+    assert.match(result.failure.detailSha256, /^[a-f0-9]{64}$/);
+  }
+
+  const declined = await runNativeWorker({
+    provider: "claude",
+    role: "architecture",
+    model: "claude-test",
+    task: { id: "semantic-decline" },
+    processRunner: async () =>
+      completed(
+        JSON.stringify({
+          structured_output: {
+            summary: "insufficient evidence",
+            patch: null,
+            findings: [],
+            verdict: "INCONCLUSIVE",
+          },
+        }),
+      ),
+  });
+  assert.equal(declined.status, "INCONCLUSIVE");
+  assert.equal(declined.failure.code, "worker-declined");
+  assert.equal(declined.failure.retryable, false);
 });

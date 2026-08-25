@@ -133,6 +133,11 @@ test("native pool preserves inconclusive spawned provenance", async () => {
       ...result(request),
       status: "INCONCLUSIVE",
       output: undefined,
+      failure: {
+        code: "process-incomplete",
+        detailSha256: sha256("timeout"),
+        retryable: true,
+      },
       outcome: {
         ...result(request).outcome,
         disposition: "timeout",
@@ -146,7 +151,12 @@ test("native pool preserves inconclusive spawned provenance", async () => {
     providersByRole: { review: "claude" },
     taskFactory: () => ({ review: "exact task" }),
   });
-  await assert.rejects(selected.selectedAgents[0].run({}), /inconclusive/);
+  await assert.rejects(
+    selected.selectedAgents[0].run({}),
+    (error) =>
+      error.code === "OXIGRAPH_NATIVE_TRANSIENT" &&
+      error.nativeFailureCode === "process-incomplete",
+  );
   const [evidence] = pool.evidence();
   assert.equal(evidence.status, "INCONCLUSIVE");
   assert.equal(evidence.executable, "/native/claude");
@@ -156,6 +166,8 @@ test("native pool preserves inconclusive spawned provenance", async () => {
   assert.equal(evidence.promptSha256, sha256(`prompt:${JSON.stringify({ review: "exact task" })}`));
   assert.equal(evidence.process.disposition, "timeout");
   assert.equal(evidence.outputSha256, null);
+  assert.equal(evidence.failureCode, "process-incomplete");
+  assert.equal(evidence.failureDetailSha256, sha256("timeout"));
 });
 
 test("native pool records task preparation ERROR with an explicit null provenance shape", async () => {

@@ -9,6 +9,7 @@ import {
   validateWorkerOutput,
   validateWorkerRole,
 } from "../policy/authority.mjs";
+import { NATIVE_FAILURE_CODES } from "../policy/native-failures.mjs";
 import { validateCandidatePatch } from "../policy/paths.mjs";
 
 const MAX_TASK_BYTES = 2_097_152;
@@ -17,6 +18,34 @@ const MAX_OUTPUT_BYTES = 1_048_576;
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function nativeFailure(code, detail, retryable) {
+  if (!NATIVE_FAILURE_CODES.includes(code)) {
+    throw new Error(`unknown native failure code: ${code}`);
+  }
+  return Object.freeze({
+    code,
+    detailSha256: sha256(
+      JSON.stringify({
+        code,
+        detail: detail instanceof Error ? detail.message : detail,
+      }),
+    ),
+    retryable,
+  });
+}
+
+function inconclusiveResult({ provider, model, role, outcome, invocation, failure }) {
+  return Object.freeze({
+    provider,
+    model,
+    role,
+    status: "INCONCLUSIVE",
+    outcome,
+    invocation,
+    failure,
+  });
 }
 
 function cancellationError() {
@@ -134,32 +163,92 @@ export async function runNativeWorker({
       signal,
     });
     if (outcome.disposition !== "completed" || outcome.exitCode !== 0) {
-      return Object.freeze({
+      return inconclusiveResult({
         provider,
         model,
         role,
-        status: "INCONCLUSIVE",
         outcome,
         invocation: invocationEvidence,
+        failure: nativeFailure(
+          outcome.disposition === "completed"
+            ? "process-nonzero"
+            : "process-incomplete",
+          {
+            disposition: outcome.disposition,
+            exitCode: outcome.exitCode,
+            signal: outcome.signal,
+          },
+          true,
+        ),
       });
+    }
+    let untrustedOutput;
+    if (provider === "codex") {
+      let raw;
+      try {
+        raw = await readFile(outputPath, "utf8");
+      } catch (error) {
+        return inconclusiveResult({
+          provider,
+          model,
+          role,
+          outcome,
+          invocation: invocationEvidence,
+          failure: nativeFailure("output-missing", error, false),
+        });
+      }
+      try {
+        untrustedOutput = JSON.parse(raw);
+      } catch (error) {
+        return inconclusiveResult({
+          provider,
+          model,
+          role,
+          outcome,
+          invocation: invocationEvidence,
+          failure: nativeFailure("worker-json-invalid", error, false),
+        });
+      }
+    } else {
+      try {
+        untrustedOutput = decodeClaude(outcome.stdout);
+      } catch (error) {
+        return inconclusiveResult({
+          provider,
+          model,
+          role,
+          outcome,
+          invocation: invocationEvidence,
+          failure: nativeFailure("provider-envelope-invalid", error, false),
+        });
+      }
     }
     let output;
     try {
-      const raw =
-        provider === "codex"
-          ? await readFile(outputPath, "utf8")
-          : JSON.stringify(decodeClaude(outcome.stdout));
-      output = validateWorkerOutput(JSON.parse(raw), role);
-      if (output.patch !== null) validateCandidatePatch(output.patch, contract);
-    } catch {
-      return Object.freeze({
+      output = validateWorkerOutput(untrustedOutput, role);
+    } catch (error) {
+      return inconclusiveResult({
         provider,
         model,
         role,
-        status: "INCONCLUSIVE",
         outcome,
         invocation: invocationEvidence,
+        failure: nativeFailure("role-contract-invalid", error, false),
       });
+    }
+    if (output.patch !== null) {
+      try {
+        validateCandidatePatch(output.patch, contract);
+      } catch (error) {
+        return inconclusiveResult({
+          provider,
+          model,
+          role,
+          outcome,
+          invocation: invocationEvidence,
+          failure: nativeFailure("patch-policy-invalid", error, false),
+        });
+      }
     }
     return Object.freeze({
       provider,
@@ -169,6 +258,9 @@ export async function runNativeWorker({
       output,
       outcome,
       invocation: invocationEvidence,
+      ...(output.verdict === "INCONCLUSIVE"
+        ? { failure: nativeFailure("worker-declined", output.summary, false) }
+        : {}),
     });
   } finally {
     await rm(outputRoot, { recursive: true, force: true });

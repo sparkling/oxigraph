@@ -131,6 +131,20 @@ function isFailureOutput(output) {
   return output?.schema === FAILURE_SCHEMA;
 }
 
+export function upstreamFailureSummary(run) {
+  if (run?.success === true) return null;
+  if (!Array.isArray(run?.steps)) return "run-failed";
+  for (const entry of run.steps) {
+    if (entry?.verdict?.pass === true) continue;
+    const role =
+      typeof entry?.step?.kind === "string" ? entry.step.kind : "unknown-role";
+    const output = entry?.output?.output;
+    const code = isFailureOutput(output) ? output.code : "structural-rejection";
+    return `${role}:${code}`.slice(0, 512);
+  }
+  return "run-failed";
+}
+
 function normalizeWorkerOutput(raw, agentId) {
   plainObject(raw, `${agentId} worker output`);
   const output = jsonClone(raw.output, `${agentId}.output`);
@@ -370,6 +384,15 @@ function wrapAgent(agent, recoveries) {
           }
           if (error?.code === "OXIGRAPH_PREPARATION_FAILED") {
             return failureOutput("preparation-failed", [boundedMessage(error)]);
+          }
+          if (error?.code === "OXIGRAPH_WORKER_OUTPUT_REJECTED") {
+            // The native process completed; only its application output was
+            // rejected. Release any half-open host probe without charging the
+            // provider breaker or spending a retry on identical bytes.
+            recovery?.recordSuccess();
+            return failureOutput("worker-output-rejected", [
+              error.nativeFailureCode ?? "unclassified",
+            ]);
           }
           recovery?.recordFailure();
           if (recovery?.tryRetry(0)) continue;

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { validateWorkerOutput, validateWorkerRole } from "../policy/authority.mjs";
+import { NATIVE_FAILURE_CODES } from "../policy/native-failures.mjs";
 import { runNativeWorker } from "../native/worker.mjs";
 import { createHostRecovery, UPSTREAM_STRATEGIES } from "./upstream.mjs";
 
@@ -58,6 +59,19 @@ function invocationEvidence(sequence, executionId, result) {
   ) {
     throw new Error("spawned native worker omitted invocation provenance");
   }
+  const failure = result.failure ?? null;
+  if (
+    result.status === "INCONCLUSIVE" &&
+    (failure === null ||
+      !NATIVE_FAILURE_CODES.includes(failure.code) ||
+      !/^[a-f0-9]{64}$/.test(failure.detailSha256) ||
+      typeof failure.retryable !== "boolean")
+  ) {
+    throw new Error("inconclusive native worker omitted its bounded failure classification");
+  }
+  if (result.status !== "INCONCLUSIVE" && failure !== null) {
+    throw new Error("completed native worker attached an invalid failure classification");
+  }
   return Object.freeze({
     sequence,
     executionId,
@@ -75,6 +89,12 @@ function invocationEvidence(sequence, executionId, result) {
     patchSha256: output?.patch === null || output?.patch === undefined
       ? null
       : sha256(output.patch),
+    ...(failure === null
+      ? {}
+      : {
+          failureCode: failure.code,
+          failureDetailSha256: failure.detailSha256,
+        }),
   });
 }
 
@@ -255,7 +275,15 @@ export class NativeWorkerPool {
                   `${provider} ${role} worker was cancelled`,
                 );
               }
-              throw new Error(`${provider} ${role} worker was inconclusive`);
+              const error = classifiedError(
+                result.failure.retryable
+                  ? "OXIGRAPH_NATIVE_TRANSIENT"
+                  : "OXIGRAPH_WORKER_OUTPUT_REJECTED",
+                `${provider} ${role} worker failed at ${result.failure.code}`,
+              );
+              error.nativeFailureCode = result.failure.code;
+              error.nativeFailureDetailSha256 = result.failure.detailSha256;
+              throw error;
             }
             const output = validateWorkerOutput(result.output, role);
             return Object.freeze({

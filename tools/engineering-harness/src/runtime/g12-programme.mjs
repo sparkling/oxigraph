@@ -33,7 +33,10 @@ import {
   writePrivateRuntimeArtifact,
 } from "./storage.mjs";
 import { createG12TaskContext } from "./task-context.mjs";
-import { runUpstreamAttempt } from "./upstream.mjs";
+import {
+  runUpstreamAttempt,
+  upstreamFailureSummary,
+} from "./upstream.mjs";
 
 const TASK_CLASS = "transaction-concurrency";
 const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
@@ -248,16 +251,15 @@ async function executeProgramme(
       if (route === undefined) {
         throw new Error("native pool evidence has no prior exact routing decision");
       }
-      const { executionId, ...bounded } = evidence;
       const record = Object.freeze({
         id: `${runId}:invocation:${evidence.sequence}`,
         routingId: route.id,
-        ...bounded,
+        ...evidence,
       });
       nativeInvocations.push(record);
-      const ids = invocationIdsByExecution.get(executionId) ?? [];
+      const ids = invocationIdsByExecution.get(evidence.executionId) ?? [];
       ids.push(record.id);
-      invocationIdsByExecution.set(executionId, ids);
+      invocationIdsByExecution.set(evidence.executionId, ids);
       events.push(Object.freeze({ kind: "native-invocation", id: record.id }));
       capturedEvidence = evidence.sequence;
     }
@@ -307,6 +309,8 @@ async function executeProgramme(
         structuralCheck: testStructuralOutput,
         runId: executionId,
       });
+      const failure = upstreamFailureSummary(run);
+      if (failure !== null) issues.push(`${executionId}: ${failure}`);
       return Object.freeze({ executionId, providersByRole, run });
     } catch (error) {
       issues.push(`${executionId}: ${boundedIssue(error)}`);

@@ -134,6 +134,12 @@ function invocation(
     id,
     routingId,
     sequence,
+    executionId:
+      workerRole === "review"
+        ? "review-execution"
+        : workerRole === "repair"
+          ? `${id}-execution`
+          : "candidate-execution",
     provider,
     role: workerRole,
     model: selectedModel,
@@ -585,6 +591,27 @@ test("application receipt has an exact deterministic round trip and quality bind
   assert.equal(reviewBinding.reviewId, "review-1");
 });
 
+test("legacy v1 receipts remain replayable but preserve their reduced evidence shape", () => {
+  const legacy = JSON.parse(
+    serializeApplicationReceipt(createApplicationReceipt(draft())),
+  );
+  legacy.schema = "oxigraph.engineering-application-receipt/v1";
+  for (const invocation of legacy.nativeInvocations) {
+    delete invocation.executionId;
+    delete invocation.failureCode;
+    delete invocation.failureDetailSha256;
+  }
+  resealTamperedReceipt(legacy);
+  const verified = verifyApplicationReceipt(legacy);
+  assert.equal(verified.ok, true);
+  assert.equal(verified.receipt.schema, legacy.schema);
+  assert.ok(
+    verified.receipt.nativeInvocations.every(
+      (invocation) => !Object.hasOwn(invocation, "executionId"),
+    ),
+  );
+});
+
 test("single-field tampering and unknown fields fail closed", () => {
   const tampered = JSON.parse(serializeApplicationReceipt(createApplicationReceipt(draft())));
   tampered.attempts[0].verifier.commands[2].exitCode = 1;
@@ -608,6 +635,20 @@ test("single-field tampering and unknown fields fail closed", () => {
   const unknown = draft();
   unknown.control.transport = "native";
   assert.throws(() => createApplicationReceipt(unknown), /unknown field: transport/);
+
+  const missingExecution = draft();
+  delete missingExecution.nativeInvocations[0].executionId;
+  assert.throws(
+    () => createApplicationReceipt(missingExecution),
+    /bind its native execution id/,
+  );
+
+  const mixedExecutions = draft();
+  mixedExecutions.nativeInvocations[1].executionId = "different-candidate-lane";
+  assert.throws(
+    () => createApplicationReceipt(mixedExecutions),
+    /different executions/,
+  );
 });
 
 test("outer receipt rejects a valid-prefix upstream ReceiptLog attack even after resealing", () => {
@@ -861,11 +902,14 @@ test("partial DAG failure retains unused routes and every unreferenced evidence 
       evidence.process.exitCode = null;
       evidence.process.signal = "SIGKILL";
       evidence.outputSha256 = null;
+      evidence.failureCode = "process-incomplete";
+      evidence.failureDetailSha256 = sha("incomplete architecture process");
     } else if (status === "ERROR") {
       value.nativeInvocations[0] = {
         id: evidence.id,
         routingId: evidence.routingId,
         sequence: evidence.sequence,
+        executionId: evidence.executionId,
         provider: evidence.provider,
         model: evidence.model,
         role: evidence.role,
@@ -904,5 +948,10 @@ test("partial DAG failure retains unused routes and every unreferenced evidence 
     const receipt = createApplicationReceipt(value);
     assert.equal(verifyApplicationReceipt(receipt).ok, true, status);
     assert.deepEqual(applicationReceiptQualityOutcomes(receipt), [], status);
+    if (status === "INCONCLUSIVE") {
+      const tampered = JSON.parse(serializeApplicationReceipt(receipt));
+      tampered.nativeInvocations[0].failureCode = "worker-json-invalid";
+      assert.equal(verifyApplicationReceipt(tampered).ok, false);
+    }
   }
 });

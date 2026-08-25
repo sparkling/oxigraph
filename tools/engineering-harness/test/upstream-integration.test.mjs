@@ -278,3 +278,43 @@ test("cancellation and preparation failures do not spend retry budget or open ho
     });
   }
 });
+
+test("application output rejection closes a half-open host probe without retry", async () => {
+  let now = 0;
+  let attempts = 0;
+  const recovery = createHostRecovery({
+    threshold: 1,
+    cooldownMs: 100,
+    maxRetries: 1,
+    now: () => now,
+  });
+  assert.equal(recovery.acquire(), true);
+  recovery.recordFailure();
+  assert.equal(recovery.snapshot().state, "open");
+  now = 100;
+
+  const selected = agent("review", [], { id: "codex:review" });
+  selected.run = async () => {
+    attempts += 1;
+    const error = new Error("bounded output rejection");
+    error.code = "OXIGRAPH_WORKER_OUTPUT_REJECTED";
+    error.nativeFailureCode = "worker-json-invalid";
+    throw error;
+  };
+  const run = await runUpstreamAttempt({
+    intent: "oxigraph-review",
+    goal: { text: "review invalid output" },
+    selectedAgents: [selected],
+    recoveries: new Map([[selected.id, recovery]]),
+    structuralCheck: passesMatchingRole,
+    runId: "output-rejection-half-open",
+  });
+  assert.equal(run.success, false);
+  assert.equal(attempts, 1);
+  assert.match(run.steps[0].verdict.reasons.join(" "), /worker-json-invalid/);
+  assert.deepEqual(recovery.snapshot(), {
+    state: "closed",
+    retriesRemaining: 1,
+    retrySpendUsd: 0,
+  });
+});
