@@ -19,7 +19,7 @@ use std::ffi::CString;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::available_parallelism;
 use std::{fmt, io, ptr, slice};
 
@@ -69,6 +69,7 @@ struct RwDbHandler {
     ingest_external_file_options: *mut rocksdb_ingestexternalfileoptions_t,
     compaction_options: *mut rocksdb_compactoptions_t,
     block_based_table_options: *mut rocksdb_block_based_table_options_t,
+    writer_gate: Arc<WriterGate>,
     column_family_names: Vec<&'static str>,
     cf_handles: Vec<*mut rocksdb_column_family_handle_t>,
     cf_options: Vec<*mut rocksdb_options_t>,
@@ -78,6 +79,46 @@ struct RwDbHandler {
 unsafe impl Send for RwDbHandler {}
 
 unsafe impl Sync for RwDbHandler {}
+
+struct WriterGate {
+    occupied: Mutex<bool>,
+    available: Condvar,
+}
+
+impl WriterGate {
+    fn acquire(self: &Arc<Self>) -> WriterPermit {
+        let mut occupied = self
+            .occupied
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        while *occupied {
+            occupied = self
+                .available
+                .wait(occupied)
+                .unwrap_or_else(|error| error.into_inner());
+        }
+        *occupied = true;
+        WriterPermit {
+            gate: Arc::clone(self),
+        }
+    }
+}
+
+struct WriterPermit {
+    gate: Arc<WriterGate>,
+}
+
+impl Drop for WriterPermit {
+    fn drop(&mut self) {
+        let mut occupied = self
+            .gate
+            .occupied
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        *occupied = false;
+        self.gate.available.notify_one();
+    }
+}
 
 impl Drop for RwDbHandler {
     fn drop(&mut self) {
@@ -245,6 +286,10 @@ impl Db {
                     ingest_external_file_options,
                     compaction_options,
                     block_based_table_options,
+                    writer_gate: Arc::new(WriterGate {
+                        occupied: Mutex::new(false),
+                        available: Condvar::new(),
+                    }),
                     column_family_names,
                     cf_handles,
                     cf_options,
@@ -463,11 +508,13 @@ impl Db {
                 "Transaction are only possible on read-write instances".into(),
             ));
         };
+        let writer_permit = db.writer_gate.acquire();
         let batch = unsafe { rocksdb_writebatch_create() };
         assert!(!batch.is_null(), "rocksdb_writebatch_create returned null");
         Ok(Transaction {
             db: Arc::clone(db),
             batch,
+            _writer_permit: writer_permit,
         })
     }
 
@@ -477,6 +524,7 @@ impl Db {
                 "Transaction are only possible on read-write instances".into(),
             ));
         };
+        let writer_permit = db.writer_gate.acquire();
         let (batch, read_options, snapshot) = unsafe {
             let snapshot = rocksdb_create_snapshot(db.db);
             let options = oxrocksdb_readoptions_create_copy(db.read_options);
@@ -490,6 +538,7 @@ impl Db {
             batch,
             snapshot,
             read_options,
+            _writer_permit: writer_permit,
         })
     }
 
@@ -925,6 +974,7 @@ impl<'a> Reader<'a> {
 pub struct Transaction {
     db: Arc<RwDbHandler>,
     batch: *mut rocksdb_writebatch_t,
+    _writer_permit: WriterPermit,
 }
 
 impl Drop for Transaction {
@@ -990,6 +1040,7 @@ pub struct ReadableTransaction<'a> {
     batch: *mut rocksdb_writebatch_wi_t,
     snapshot: *const rocksdb_snapshot_t,
     read_options: *mut rocksdb_readoptions_t,
+    _writer_permit: WriterPermit,
 }
 
 unsafe impl Send for ReadableTransaction<'_> {}
