@@ -15,6 +15,43 @@ import { taskProfile } from "../task-profile.mjs";
 import { currentControlIdentity } from "./control-identity.mjs";
 import { createTaskSourceSnapshot } from "./task-context.mjs";
 
+const redVerdicts = new Set(["CONFIRMED_RED", "INCONCLUSIVE", "INVALID_BASELINE"]);
+const commandNames = new Set(["format", "build", "public", "independent", "regression"]);
+const commandDispositions = new Set(["completed", "timed-out", "output-limit"]);
+const sha256Pattern = /^[0-9a-f]{64}$/u;
+
+function boundedRedDiagnostic(receipt) {
+  const commands = Array.isArray(receipt?.commands)
+    ? receipt.commands.slice(0, commandNames.size).map((command) => ({
+        name: commandNames.has(command?.name) ? command.name : "unknown",
+        disposition: commandDispositions.has(command?.disposition)
+          ? command.disposition
+          : "unknown",
+        exitCode: Number.isInteger(command?.exitCode) ? command.exitCode : null,
+        signal:
+          typeof command?.signal === "string" && /^[A-Z0-9]{1,16}$/u.test(command.signal)
+            ? command.signal
+            : null,
+        durationMs:
+          Number.isSafeInteger(command?.durationMs) && command.durationMs >= 0
+            ? command.durationMs
+            : null,
+        stdoutSha256: sha256Pattern.test(command?.stdoutSha256)
+          ? command.stdoutSha256
+          : null,
+        stderrSha256: sha256Pattern.test(command?.stderrSha256)
+          ? command.stderrSha256
+          : null,
+      }))
+    : [];
+  return {
+    verdict: redVerdicts.has(receipt?.verdict) ? receipt.verdict : "missing",
+    initialRedMatched: receipt?.initialRedMatched === true,
+    referencesGreen: receipt?.referencesGreen === true,
+    commands,
+  };
+}
+
 function requireConfirmedRed(receipt, label) {
   if (
     receipt?.verdict !== "CONFIRMED_RED" ||
@@ -22,7 +59,7 @@ function requireConfirmedRed(receipt, label) {
     receipt.referencesGreen !== true
   ) {
     throw new Error(
-      `${label} evaluator prerequisite is not confirmed red: ${receipt?.verdict ?? "missing"}`,
+      `${label} evaluator prerequisite is not confirmed red: ${JSON.stringify(boundedRedDiagnostic(receipt))}`,
     );
   }
   return receipt;

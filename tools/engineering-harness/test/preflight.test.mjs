@@ -78,13 +78,34 @@ test("preflight fails closed on a non-discriminating baseline and still disposes
         verdict: "INVALID_BASELINE",
         initialRedMatched: false,
         referencesGreen: true,
+        commands: [
+          {
+            name: "public",
+            disposition: "completed",
+            exitCode: 101,
+            signal: null,
+            durationMs: 17,
+            stdoutSha256: "b".repeat(64),
+            stderrSha256: "c".repeat(64),
+            stdoutTail: "sensitive evaluator output",
+            stderrTail: "sensitive compiler output",
+          },
+        ],
       };
     },
   });
-  await assert.rejects(
-    runG12Preflight(state.options),
-    /evaluator prerequisite is not confirmed red: INVALID_BASELINE/,
-  );
+  await assert.rejects(runG12Preflight(state.options), (error) => {
+    assert.match(
+      error.message,
+      /evaluator prerequisite is not confirmed red: .*"initialRedMatched":false.*"referencesGreen":true/u,
+    );
+    assert.match(
+      error.message,
+      /"commands":\[\{"name":"public","disposition":"completed","exitCode":101,"signal":null,"durationMs":17,"stdoutSha256":"b{64}","stderrSha256":"c{64}"\}\]/u,
+    );
+    assert.doesNotMatch(error.message, /sensitive/u);
+    return true;
+  });
   assert.equal(state.calls.at(-1)[0], "dispose");
 });
 
