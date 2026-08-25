@@ -17,7 +17,7 @@
 - Write-interface decision:
   [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
-  [ADR-0018 through ADR-0025](../adr/README.md)
+  [ADR-0018 through ADR-0033](../adr/README.md)
 
 ## Outcome
 
@@ -85,10 +85,14 @@ This plan executes every planned P0-P2 capability in the product plan:
 - P2: statistics and join planning, text, spatial, and federation, in that
   order after correctness and operations are stable.
 
-P3 remains a set of explicit product decisions. Multi-repository lifecycle,
-built-in authorization, Jena/RDF4J proprietary APIs and formats, clustering,
-and distributed transactions require a named user and a separate ADR. The
-harness must not turn comparison breadth into an implementation mandate.
+The explicit product decisions now recorded by ADR-0026 through ADR-0033 form
+G4. They do not inherit implementation authority from comparison breadth:
+identity, workload governance, safe upgrades, RDF4J REST interoperability,
+leased remote transactions, multi-repository lifecycle, incremental
+entailment, and analytical execution each retain a separate evaluator and
+promotion gate. Jena assemblers/proprietary formats, binary RDF formats,
+clustering, distributed transactions, and automatic cross-node failover remain
+outside the programme until a further named decision admits them.
 
 ## Repository fit
 
@@ -224,12 +228,20 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
 | G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control; product decisions Proposed |
-| G2.1-G2.3 metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
-| G2.4 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
+| G2.1-G2.3c metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
+| G2.4a-G2.4b transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | G2.5-G2.7 readiness/recovery | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
 | G3.1-G3.2 statistics/planning | [ADR-0023](../adr/0023-statistics-and-bounded-join-planning.md) | Proposed |
 | G3.3-G3.4 derived indexes | [ADR-0024](../adr/0024-rebuildable-derived-indexes.md) | Proposed |
 | G3.5 explicit federation | [ADR-0025](../adr/0025-explicit-service-federation.md) | Proposed |
+| G4.1 service identity/authorization | [ADR-0026](../adr/0026-service-identity-and-authorization.md) | Proposed |
+| G4.2 workload/resource governance | [ADR-0027](../adr/0027-workload-admission-and-operator-resources.md) | Proposed |
+| G4.3 storage schema upgrades | [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md) | Proposed |
+| G4.4 RDF4J REST interoperability | [ADR-0029](../adr/0029-rdf4j-rest-interoperability.md) | Proposed |
+| G4.5 leased remote HTTP transactions | [ADR-0030](../adr/0030-leased-remote-http-transactions.md) | Proposed |
+| G4.6 multi-repository lifecycle | [ADR-0031](../adr/0031-multi-repository-lifecycle.md) | Proposed |
+| G4.7 incremental entailment | [ADR-0032](../adr/0032-incremental-entailment-projections.md) | Proposed |
+| G4.8 analytical/WCOJ research | [ADR-0033](../adr/0033-analytical-wcoj-execution.md) | Proposed |
 
 ### G0 — repair and freeze evidence
 
@@ -392,10 +404,13 @@ synthetic Darwin runs are prerequisites or diagnostics, not completion.
 |---|---|---:|---|
 | G2.1 Transactional namespace registry | G1.3-G1.4 | M | Namespace changes commit/rollback with data without affecting dataset equality |
 | G2.2 Normalized semantic change set | G1.1, G2.1 | L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously |
-| G2.3 Commit receipt and atomic outbox | G1.3-G1.4, G2.2 | XL | Transaction key, commit ID, primary state, receipt, and cursor commit atomically; lost-response/reopen lookup proves committed or absent without replay; crash/retention matrix has no feed gaps |
-| G2.4 Full staged-view SHACL gate | G1.4, G2.3 | L | Concurrent-invalid outcomes cannot both commit; timeout/failure rejects atomically |
-| G2.5 Metrics, readiness, circuit breakers | G2.3 | M | Bounded-label metrics, lag/readiness, cancellation, and failure-mode fixtures pass without payload leakage |
-| G2.6 Backup receipt and creation | G2.3, G2.5 | M | Completed receipt binds store/schema/commit/sequence/cursors plus file inventory and checksums |
+| G2.3a Durable outcomes and atomic receipts | G1.3-G1.4, G2.2 | L | Durable key reservation, commit ID, primary state, and receipt commit atomically; lost-response/reopen lookup proves committed, durably absent, or indeterminate without replay |
+| G2.3b Authoritative transaction outbox | G2.3a | L | Receipt and ordered semantic events share the primary commit; at-least-once replay and deduplication have no crash gaps |
+| G2.3c Outbox retention, leases, and governance health | G2.3b | L | Expiry, slow consumers, backpressure, compaction, backup interaction, and minimal governance-health fixtures fail closed without unbounded work |
+| G2.4a Full staged-view SHACL commit gate | G1.4, G2.3c | L | Concurrent-invalid outcomes cannot both commit over the complete selected graph contents/topology |
+| G2.4b SHACL failure and receipt closure | G2.4a | M | Cancellation, timeout, limit, processor failure, mutable shapes, and bounded receipt evidence reject atomically |
+| G2.5 Metrics, readiness, circuit breakers | G2.3c | M | Bounded-label metrics, lag/readiness, cancellation, and failure-mode fixtures pass without payload leakage |
+| G2.6 Backup receipt and creation | G2.3c, G2.5 | M | Completed receipt binds store/schema/commit/sequence/cursors plus file inventory and checksums |
 | G2.7 Restore verification and drills | G2.6 | M | Fresh-directory restore opens, passes storage validation, verifies topology/namespaces/outbox/index cursors, and records baselined RPO/RTO |
 
 The native feed is authoritative and at-least-once. Consumers deduplicate by
@@ -403,6 +418,10 @@ The native feed is authoritative and at-least-once. Consumers deduplicate by
 contract defines retention, cursor leases/expiry, slow-consumer backpressure,
 and compaction/backup interaction. Restart, lag, cursor expiration, retention
 advance, and clear/drop without synchronous expansion must not create gaps.
+In-process listeners consume the same feed, and `ProvenAbsent` requires a
+durable transaction-key reservation or tombstone. G2.3c exposes only the
+minimal governance-health input consumed by G2.5; it does not pre-claim
+operational readiness.
 [Jena RDF Patch](https://jena.apache.org/documentation/rdf-patch/) is an optional
 export adapter, not the storage format. A checkpoint-plus-manifest recovery
 workflow precedes RocksDB BackupEngine complexity. The backup receipt binds the
@@ -418,10 +437,10 @@ incremental validation is only a later differential optimization.
 
 | Task | Depends on | Size | Exit gate |
 |---|---|---:|---|
-| G3.1 Statistics provider and feedback | G2.3, G2.5-G2.7 | XL | Exact graph/predicate counts, bounded sketches/top-K, freshness commit, estimated/actual rows and q-error |
+| G3.1 Statistics provider and feedback | G2.3c, G2.5-G2.7 | XL | Exact graph/predicate counts, bounded sketches/top-K, freshness commit, estimated/actual rows and q-error |
 | G3.2 Bounded join planning | G3.1 | L | Dynamic programming for small BGPs and greedy fallback improve the frozen corpus without semantic change |
-| G3.3 Async text index | G2.3, G2.5-G2.7 | XL | Tantivy candidate verification, lag cursor, rebuild, and strict/eventual consistency contracts |
-| G3.4 Async spatial index | G2.3, G2.5-G2.7 | L/XL | Per-CRS envelope candidates refine through exact `spargeo`; generation swap and delta overlay are recoverable |
+| G3.3 Async text index | G2.3c, G2.5-G2.7 | XL | Tantivy candidate verification, lag cursor, rebuild, and strict/eventual consistency contracts |
+| G3.4 Async spatial index | G2.3c, G2.5-G2.7 | L/XL | Per-CRS envelope candidates refine through exact `spargeo`; generation swap and delta overlay are recoverable |
 | G3.5 Federation planner | G1.5, G3.1-G3.2 | XL | Catalog/source selection/bound joins obey per-endpoint budgets and `SERVICE SILENT` semantics |
 
 The current optimizer's fixed large cardinalities and constant join-key
@@ -447,6 +466,23 @@ custom persistent spatial trees, transparent implicit federation, and
 cross-endpoint transactional federation are later hypotheses. Explicit
 `SERVICE`-aware source planning remains G3.5. Full staged-view validation and
 heuristic query fallback remain their differential oracles.
+
+### G4 — explicit linked-data platform decisions
+
+These tasks are independently promotable only after their stated dependencies
+and frozen evaluators close. A protocol or comparison implementation never
+widens core RDF semantics implicitly.
+
+| Task | Depends on | Size | Exit gate |
+|---|---|---:|---|
+| G4.1 Service identity and authorization | G1.5-G1.6 | XL | Principal propagation plus coarse endpoint/whole-operation and direct Graph Store authorization fail closed without leaking protected data |
+| G4.2 Workload admission and operator resources | G1.4-G1.5; G4.1 for principal quotas | XL | Queue, deadline, memory/row/byte/concurrency budgets, cancellation, fairness, and bounded telemetry survive overload without weakening transaction or egress guarantees |
+| G4.3 Safe storage schema upgrades | G2.7 | L | Version discovery, preflight, backup receipt, resumable shadow copy, source-preserving cutover, crash matrix, and old/new binary compatibility fail closed |
+| G4.4 RDF4J REST interoperability | G2.3c, G4.1-G4.2, G4.5 | XL | A versioned endpoint profile passes an exact RDF4J client/HTTP corpus for statements, namespaces, query/update, contexts, transactions, errors, and content negotiation |
+| G4.5 Leased remote HTTP transactions | G2.3a, G4.1-G4.2 | XL | Opaque leases, expiry, idempotent terminal operations, disconnect/crash cleanup, and bounded ownership prevent orphaned writers and ambiguous replay |
+| G4.6 Multi-repository lifecycle | G2.7, G4.1-G4.2 | XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration |
+| G4.7 Incremental entailment projections | G2.3c, G2.7 | XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed |
+| G4.8 Analytical and WCOJ research path | G3.2 | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback |
 
 ## Evaluator DAG
 
@@ -627,14 +663,30 @@ execution graph at
 `sparc-phases/oxigraph-linked-data-evolution-harness-2026-08-24`. No plan gate
 depends on a lossy memory fallback.
 
-The ADR breakout used Ruflo swarm `swarm-1787603675053-t6b9y7` with three
-read-only architecture lanes and one root integration writer. All 26 stable
-G0.1-G3.5 items were materialized as pending Ruflo task rows on 2026-08-24;
+The initial ADR breakout used Ruflo swarm `swarm-1787603675053-t6b9y7` with
+three read-only architecture lanes and one root integration writer. Its 26
+original G0.1-G3.5 items were materialized as Ruflo task rows on 2026-08-24;
 seven separate governance rows track drafting, integration, ledger proof, QA,
-and commit without changing programme status. The exact task/ADR/dependency
-map is stored and read back at
-`task-plans/linked-data-store-g0-g3-2026-08-24` in the explicit repository
-database.
+and commit without changing programme status.
+
+On 2026-08-25 the programme was expanded to 39 stable executable identifiers:
+G1.5b-G1.5c, explicit G2.3a-G2.3c and G2.4a-G2.4b leaves, and G4.1-G4.8. The
+original G2.3 and G2.4 rows remain pending roll-ups; they complete only after
+their child rows and are not independent implementation leaves. The new Ruflo
+rows are:
+
+| Plan IDs | Ruflo task rows |
+|---|---|
+| G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
+| G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
+| G4.1 / G4.2 / G4.3 | `task-1787670631989-m5vxqk` / `task-1787670632138-mq9112` / `task-1787670632284-k0cti5` |
+| G4.4 / G4.5 | `task-1787670632568-gk92vo` / `task-1787670632421-dkucm8` |
+| G4.6 / G4.7 / G4.8 | `task-1787670632716-513bjt` / `task-1787670632864-10hfsk` / `task-1787670633003-hoxn3e` |
+
+The original exact map remains at
+`task-plans/linked-data-store-g0-g3-2026-08-24`. The expanded map was stored
+and read back through the native hierarchical controller at
+`task-plans:linked-data-store-g0-g4-2026-08-25` in the repository database.
 
 The Brain-grounded implementation source
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts` shows that the current
@@ -654,8 +706,8 @@ This plan scores **98/100** against the programme rubric:
 | Dimension | Score | Evidence |
 |---|---:|---|
 | Source and implementation grounding | 20/20 | Local transaction/optimizer/harness source, live Dream source/npm, Brain implementation sources, official comparison docs |
-| Scope and architecture | 20/20 | P0-P2 planned work, P3 ADR boundary, ten DDD contexts |
-| Dependency and parallelization clarity | 15/15 | G0-G3 graph, three lanes, sequential publication gates |
+| Scope and architecture | 20/20 | P0-P3 planned work, explicit G4 decisions, ten DDD contexts |
+| Dependency and parallelization clarity | 15/15 | G0-G4 graph, three lanes, sequential publication gates |
 | Verifiable acceptance | 19/20 | Exact inventories, model/concurrency/crash/security/performance gates; thresholds await baseline freeze |
 | Security and promotion control | 15/15 | Native providers, local-only, protected oracles, isolated worktrees, human promotion |
 | Operational realism | 9/10 | Current drift and degraded modes explicit; production replacement adapter and recovery baseline remain open |

@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G3.5
 - Depends on:
@@ -10,7 +10,9 @@
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
 - Related:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
-  [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
+  [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
+  [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
+  [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md)
 
 ## Context
 
@@ -26,12 +28,16 @@ copy Java APIs or silently turn local triple patterns into remote queries.
 ## Decision
 
 Add planning only for explicit `SERVICE` clauses. The planner consumes a
-versioned endpoint catalog and ADR-0023 statistics to select endpoints, order
-eligible work, and choose bounded joins. Every request passes through
+versioned endpoint catalog containing declared capabilities and cost evidence
+to order eligible work and choose bounded joins. Catalog membership is neither
+source authority nor authorization, and the planner performs no implicit
+network probing. Every request passes through
 ADR-0019's egress, deadline, byte, concurrency, and cancellation policy.
 A fixed `SERVICE <iri>` targets only that IRI; a variable `SERVICE ?service`
 uses endpoints supplied by query bindings. The planner never invents an
-endpoint or treats catalog membership as network authorization.
+endpoint or treats catalog membership as network authorization. ADR-0026
+supplies principal/authorization context, while ADR-0027 supplies resource
+admission; neither is inferred from catalog metadata.
 
 Plans expose endpoint choices, estimated and actual rows, request counts,
 bytes, timeouts, and fallback reasons with bounded, payload-free telemetry.
@@ -44,7 +50,8 @@ When a bounded buffer cannot prove that equivalence, batching is disabled.
 
 Transparent implicit federation, endpoint discovery from arbitrary data,
 cross-endpoint updates, distributed transactions, and cross-node failover are
-separate product decisions and are not introduced by this ADR.
+separate product decisions and are not introduced by this ADR. Future
+capability probing also requires its own egress- and identity-aware decision.
 
 ## Acceptance boundary
 

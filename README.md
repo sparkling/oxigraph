@@ -179,8 +179,11 @@ The ADRs explain the principal boundaries:
 - [The outstanding linked-data-store ADR programme](./docs/adr/README.md)
   splits transaction guarantees, egress/cancellation, durable commits,
   transaction-time SHACL, operations/recovery, statistics/planning, derived
-  indexes, and explicit federation into ADR-0018 through ADR-0025. All eight
-  are Proposed living plans, not claims of implemented behavior.
+  indexes, explicit federation, service identity, workload governance, safe
+  upgrades, RDF4J REST interoperability, remote transactions,
+  multi-repository lifecycle, incremental entailment, and analytical/WCOJ
+  research into ADR-0018 through ADR-0033. All sixteen are Proposed living
+  plans, not claims of implemented behavior.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

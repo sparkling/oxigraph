@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G2.5-G2.7
 - Depends on:
@@ -10,7 +10,9 @@
 - Related:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
-  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
+  [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),
+  [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md)
 
 ## Context
 
@@ -31,8 +33,10 @@ required only when that operational boundary is explicitly requested.
 Deliver three separately testable operational slices:
 
 1. G2.5 exposes bounded-cardinality metrics, liveness, readiness, cancellation
-   health, outbox/index lag, and circuit-breaker state. Default labels exclude
-   query text, RDF payloads, credentials, IRIs, commit IDs, and user IDs.
+   health, outbox/index lag, commit-governance health, and circuit-breaker
+   state. It observes the workload budgets defined by ADR-0027 rather than
+   creating a second admission system. Default labels exclude query text, RDF
+   payloads, credentials, IRIs, commit IDs, and user IDs.
 2. G2.6 starts with checkpoint-plus-manifest backup creation. A completed
    receipt binds store UUID, schema version, source commit ID, RocksDB
    sequence, outbox/index cursors, file inventory and checksums, start/end
@@ -45,6 +49,10 @@ Deliver three separately testable operational slices:
    Before open, path containment, regular-file policy, manifest completeness,
    sizes, and hashes are verified; symlinks, traversal, missing files, and
    unexpected files fail closed.
+
+ADR-0028 consumes these backup and restore receipts before a destructive or
+irreversible schema migration is admitted. A backup receipt alone does not
+authorize an upgrade, and an upgrade cannot mint recovery evidence for itself.
 
 Readiness fails closed on storage corruption, incompatible schema, required
 cursor loss, expired recovery evidence, or a lag policy violation. An optional

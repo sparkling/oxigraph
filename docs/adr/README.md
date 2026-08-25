@@ -33,9 +33,17 @@ mapping.
 | [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md) | Proposed | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback |
 | [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md) | Proposed | Keep text and spatial indexes rebuildable with explicit strict/eventual freshness contracts |
 | [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md) | Proposed | Optimize only explicit SERVICE clauses within endpoint, egress, resource, and SILENT-semantics bounds |
+| [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md) | Proposed | Authenticate and authorize server operations before parsing, storage, or egress without coupling identity to the embedded store |
+| [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md) | Proposed | Carry one bounded admission, deadline, cancellation, and resource contract through each server request |
+| [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md) | Proposed | Replace mutation-on-open with inspected, source-preserving, receipted shadow upgrades and explicit cutover |
+| [ADR-0029 — RDF4J REST interoperability](0029-rdf4j-rest-interoperability.md) | Proposed | Offer an optional versioned single-repository RDF4J wire facade backed by native capabilities |
+| [ADR-0030 — Leased remote HTTP transactions](0030-leased-remote-http-transactions.md) | Proposed | Bound server-owned transactions with opaque leases, explicit renewal, cleanup, and durable outcome lookup |
+| [ADR-0031 — Multi-repository lifecycle](0031-multi-repository-lifecycle.md) | Proposed | Manage repositories through an authorized, journaled, resource-isolated, recoverable lifecycle |
+| [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md) | Proposed | Maintain optional rebuildable inferred views while keeping primary RDF authoritative and differential proof continuous |
+| [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md) | Proposed | Research a bounded opt-in analytical join operator without replacing ordinary SPARQL planning or semantics |
 
-ADR-0018 through ADR-0025 are living implementation decisions for outstanding
-work. Their Proposed status is deliberate: the corresponding G1-G3 tasks and
+ADR-0018 through ADR-0033 are living implementation decisions for outstanding
+work. Their Proposed status is deliberate: the corresponding G1-G4 tasks and
 promotion evidence are not implemented merely because the architecture is
 recorded.
 

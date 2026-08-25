@@ -1,0 +1,152 @@
+# ADR-0027: Workload admission and operator resources
+
+- Status: Proposed
+- Date: 2026-08-25
+- Updated: 2026-08-25
+- Deciders: Oxigraph parity programme
+- Implementation status: not implemented; planned by G4.2
+- Programme task: `task-1787670632138-mq9112`
+- Depends on:
+  [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
+  [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
+  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
+- Related:
+  [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
+  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
+  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
+  [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
+  [ADR-0029 — RDF4J REST interoperability](0029-rdf4j-rest-interoperability.md)
+
+## Context
+
+The CLI server currently caps a buffered HTTP body at 128 MiB, gives the HTTP
+server a process-wide timeout, sets maximum concurrent connections from
+available parallelism, and applies the configured evaluation timeout only to
+SPARQL queries. These are useful safeguards, but they are not admission
+control, fair scheduling, per-workload limits, update-wide deadlines, or
+operator-visible resource accounting. A small number of expensive requests
+can therefore occupy connections, memory, evaluator work, or the serialized
+writer gate without a declared service policy.
+
+Resource control must not change successful SPARQL or RDF semantics. It may
+reject or cancel work at a documented boundary, and an owned write must still
+publish all or nothing.
+
+## Decision
+
+Introduce a server orchestration contract consisting of `WorkloadPolicy`, a
+bounded `AdmissionController`, an acquired `WorkloadLease`, and a shared
+`ResourceBudget`. An authorized request is assigned an operator-defined class:
+query, update, graph read, graph write, bulk/compatibility transaction, or
+privileged operation. Anonymous deployments use a configured default class;
+ADR-0026 principals may add global and per-principal fairness but cannot supply
+their own priority or limits.
+
+Admission occurs before body buffering and parsing. Queues have explicit
+global and class capacities, maximum queue time, bounded priority levels,
+deterministic FIFO order within a level, and reserved capacity for liveness and
+authorized recovery operations. Queue cancellation releases its slot within a
+bounded interval. Overload does not open a dataset transaction, allocate an
+outbound connection, or enter the RocksDB writer queue.
+
+The lease carries one cancellation token and absolute deadline through parse,
+planning, local evaluation, ADR-0019 egress, transaction admission, mutation,
+the final pre-commit checkpoint, result serialization, and connection loss.
+It accounts for declared limits where the implementation can observe them:
+
+- encoded request bytes, decoded RDF bytes, multipart parts, and parser terms;
+- queued and active requests, transaction wait, outbound requests/bytes, and
+  result bytes/rows;
+- evaluator solutions, intermediate rows, operator buffers, and spill bytes
+  for operators that opt into the budget contract; and
+- elapsed queue, evaluation, external-I/O, and total request time.
+
+Every supported operator must either charge its potentially unbounded
+allocation/work counter or be rejected from a profile that promises that
+bound. `ResourceLimitExceeded { resource, phase }`, `AdmissionTimedOut`, and
+`Overloaded` remain typed internally. Owned updates roll back before returning
+a limit or deadline failure. A streamed query that exhausts a budget after
+headers were sent terminates as a failed stream and is never closed as a
+well-formed truncated success.
+
+HTTP mappings are stable: 413 for request representation limits, 429 with a
+bounded `Retry-After` for class/principal admission, and 503 for global
+unavailability or exhausted reserved capacity. Authentication and
+authorization still run before admission so an attacker cannot use the queue
+as a resource-existence oracle.
+
+### Hard-limit boundary and operator controls
+
+Cooperative counters cannot prove a hard process RSS, CPU, file-descriptor, or
+disk ceiling in safe Rust across RocksDB and all allocators. Such limits remain
+container/process/cgroup responsibilities and must be documented as external
+deployment requirements. The server reports observed high-water values and
+which limits are cooperative; it does not label them hard isolation.
+
+Operator configuration is immutable per admitted request, versioned, size
+bounded, and reloads atomically. Metrics expose class, resource, phase, and
+disposition from fixed vocabularies, not query text, RDF terms, principal IDs,
+transaction IDs, or endpoint IRIs. Runtime policy cannot weaken the semantic
+rollback guarantees negotiated under ADR-0018.
+
+### Compatibility and non-goals
+
+The embedded library remains usable without a scheduler. Existing public
+evaluation APIs keep their defaults; additive options attach a budget and
+cancellation token. The CLI receives an explicit local profile whose limits
+are documented rather than inferred from CPU count. This ADR does not provide
+distributed quotas, billing, cross-process fairness, workload prediction,
+automatic query rewriting, or a claim of hard memory isolation.
+
+## Staged implementation and evaluator gates
+
+1. **Admission:** deterministic-clock tests prove FIFO/fairness, queue bounds,
+   cancellation, timeout, slot release on panic/drop, global versus class
+   rejection, and reserved health/recovery capacity under saturation.
+2. **Request and transaction budgets:** wire fixtures cover fixed/chunked
+   bodies, decompression expansion, multipart limits, parser failure, writer
+   queue cancellation, and disconnect. Denied work has zero transaction opens
+   and updates remain atomic.
+3. **Evaluator resources:** adversarial joins, paths, sort/group/distinct,
+   aggregates, construct, update, `SERVICE`, and `LOAD` prove charged counters,
+   bounded cancellation latency, no successful truncation, and an explicit
+   unsupported result for any uninstrumented promised bound.
+4. **Operational qualification:** 1/4/16 and saturation/slow-client workloads
+   freeze throughput, p95 queue/cancellation latency, peak observed memory,
+   fairness, writer progress, and readiness behavior. Default, RDF-1.2,
+   read-only, egress, transaction, and compatibility suites remain green.
+
+Promotion requires a frozen public evaluator plus an independent resource
+probe that cannot inspect implementation counters directly. Numeric defaults
+and regression ceilings are frozen only after parent-first baselining; this
+ADR does not invent production capacity values.
+
+## Consequences
+
+- Overload becomes a bounded, typed, observable state instead of accidental
+  thread, connection, or writer starvation.
+- One token and deadline connect HTTP admission to the transaction and egress
+  guarantees already being built.
+- Instrumented operators acquire accounting overhead and configuration
+  complexity.
+- Hard host isolation still requires deployment controls outside Oxigraph.
+
+## Alternatives rejected
+
+- **Rely only on connection count and a global timeout.** Admitted requests can
+  differ by orders of magnitude in body, evaluator, writer, and result cost.
+- **Estimate cost from query text and reject heuristically.** Estimates can
+  guide a class later but cannot replace runtime bounds or correctness.
+- **Claim allocator or CPU hard limits from cooperative cancellation.** Work
+  may allocate or block between checkpoints.
+- **Use an unbounded priority queue.** It moves overload into memory and allows
+  starvation.
+
+## Evidence and task ownership
+
+Current body, timeout, and connection constants are in
+[`main.rs`](../../cli/src/main.rs). Transaction admission is implemented in
+[`store.rs`](../../lib/oxigraph/src/store.rs), and evaluator operators live in
+[`spareval`](../../lib/spareval). ADR-0022 owns metrics/readiness and ADR-0026
+owns principal-derived class selection. This ADR remains Proposed until G4.2's
+staged evaluators and numeric baseline exist.

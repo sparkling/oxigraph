@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G3.3-G3.4
 - Depends on:
@@ -10,7 +10,8 @@
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
 - Related:
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
-  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
+  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
+  [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md)
 
 ## Context
 
@@ -49,6 +50,9 @@ profiles and indexes. Every candidate is refined through the existing exact
 `spargeo` predicates. Coordinate transformation or normalization is admitted
 only for a profile with proven semantics and error bounds.
 Standard SPARQL evaluation remains independent of both optional indexes.
+Entailment projections are not text or spatial indexes and do not inherit this
+ADR's eventual-result policy. They require the separate truth-maintenance and
+deletion semantics in ADR-0032.
 
 ## Acceptance boundary
 

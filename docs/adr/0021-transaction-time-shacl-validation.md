@@ -2,15 +2,17 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G2.4
+- Implementation status: not implemented; planned by G2.4a-G2.4b
 - Depends on:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
 - Related:
   [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md),
-  [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
+  [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
+  [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),
+  [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md)
 
 ## Context
 
@@ -27,10 +29,12 @@ ADR-0008's dated, fail-closed SHACL profiles.
 
 Add a full staged-view SHACL participant before primary commit. Validation runs
 under the same writer-isolation gate as the commit and evaluates the complete
-resulting RDF dataset and graph topology. It is network-free, work-bounded,
-cancellable before `CommitAttempted`, and fail-closed. A validation violation,
-timeout, resource-limit failure, or processor error rejects the whole
-transaction while non-commit is still provable.
+resulting contents and topology of every graph in the transaction's explicitly
+selected data/shapes scope. It does not silently substitute a union graph or
+omit empty-graph topology. It is network-free, work-bounded, cancellable before
+`CommitAttempted`, and fail-closed. A validation violation, timeout,
+resource-limit failure, or processor error rejects the whole transaction while
+non-commit is still provable.
 
 Transaction begin pins the data/shapes graph scope, dated SHACL profile,
 severity policy, inference policy, limits, deadline, and shapes identity.
@@ -52,10 +56,10 @@ separate transaction explicitly materializes them.
 
 ## Acceptance boundary
 
-G2.4 must demonstrate:
+G2.4a-G2.4b must demonstrate:
 
 - insert, delete, clear, drop, empty-graph, namespace-adjacent, and rollback
-  cases over the complete staged view;
+  cases over the complete staged selected-graph contents and topology;
 - concurrent transactions that would jointly violate a constraint cannot both
   commit under the advertised isolation contract;
 - mutable-shapes transactions validate against resulting staged shapes;
@@ -84,6 +88,6 @@ G2.4 must demonstrate:
 
 The existing snapshot adapter is
 [`reasoning.rs`](../../lib/oxigraph/src/reasoning.rs), and the bounded
-processor lives in [`lib/oxshacl`](../../lib/oxshacl). G2.4 owns delivery in
+processor lives in [`lib/oxshacl`](../../lib/oxshacl). G2.4a-G2.4b own delivery in
 the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

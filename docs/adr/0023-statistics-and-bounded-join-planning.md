@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G3.1-G3.2
 - Depends on:
@@ -10,7 +10,8 @@
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
 - Related:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
-  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)
+  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
+  [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)
 
 ## Context
 
@@ -23,7 +24,9 @@ introduced a separate estimator.
 Correctness is already protected by an optimization-disabled path. The first
 performance step should improve estimates and bounded join search while
 retaining a deterministic heuristic fallback, not introduce a full Cascades
-framework or mid-query adaptive executor.
+framework or mid-query adaptive executor. RDF4J's sketch experiments and
+research systems for worst-case graph-pattern planning and Sparqloscope-style
+cardinality analysis are useful comparison inputs, not production authority.
 
 ## Decision
 
@@ -48,6 +51,11 @@ evidence.
 Statistics consume the durable commit stream from ADR-0020 and follow the
 rebuild/readiness contract in ADR-0022. G3.1 delivers statistics and feedback;
 G3.2 delivers bounded join enumeration.
+
+A full Cascades memo, learned optimizer, worst-case-optimal join executor, or
+mid-query re-planning loop remains research scope. ADR-0033 may promote a
+separate analytical path only after G3.2 supplies a stable ordinary-SPARQL
+baseline and a differential oracle.
 
 ## Acceptance boundary
 

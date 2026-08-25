@@ -11,7 +11,7 @@
 - Conservative service-description reconciliation: `7dc190d3`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
-  [ADR-0018 through ADR-0025](../adr/README.md)
+  [ADR-0018 through ADR-0033](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
@@ -120,24 +120,26 @@ Evidence grade A applies to this section.
   [GeoSPARQL](https://jena.apache.org/documentation/geosparql/geosparql-fuseki.html),
   [SERVICE controls](https://jena.apache.org/documentation/query/service.html),
   and the [Fuseki administration protocol](https://jena.apache.org/documentation/fuseki2/fuseki-server-protocol.html).
-- [Eclipse RDF4J 6.0.0](https://rdf4j.org/download/) is the current official
+- [Eclipse RDF4J 6.0.1](https://rdf4j.org/news/2026/08/20/rdf4j-6.0.1-released/) is the current official
   stable RDF4J release used here. Relevant first-party surfaces include the
   [Repository API](https://rdf4j.org/documentation/programming/repository/),
   [RepositoryConnection contract](https://rdf4j.org/javadoc/latest/org/eclipse/rdf4j/repository/RepositoryConnection.html),
   [SAIL extension layer](https://rdf4j.org/documentation/reference/sail/),
   [transaction-time SHACL](https://rdf4j.org/documentation/programming/shacl/),
   [FedX](https://rdf4j.org/documentation/programming/federation/), and the
-  [REST API](https://rdf4j.org/documentation/reference/rest-api/). The rolling
+  [REST API](https://rdf4j.org/documentation/reference/rest-api/). The 6.0.1
+  patch release follows the capability baseline documented in the
+  [6.0.0 release notes](https://rdf4j.org/release-notes/6.0.0/). The rolling
   `latest` Javadoc may lag the download page's release label, so claims are
   limited to stable API concepts present in the cited contract.
 
 ## Gap matrix
 
-| ID | Capability | This fork now | Jena 6.2 | RDF4J 6.0 | Decision |
+| ID | Capability | This fork now | Jena 6.2 | RDF4J 6.0.1 | Decision |
 |---|---|---|---|---|---|
 | G01 | Pluggable transactional write plane | Implemented in `1da47285`; production adapter proof pending | Dataset/transaction APIs, but not the same Rust extension need | SAIL is the storage decoupling point | Keep the narrow Rust traits; P0 conformance |
 | G02 | Isolation and conflict contract | Dimensioned requirements/capabilities are implemented; memory and RocksDB advertise a serialized-writer baseline proven by lost-update, write-skew, and 1/4/16-writer tests | TDB2 documents serializable transactions and one active writer | Multiple requested levels and compatible-level discovery; documented MemoryStore/NativeStore SAILs use optimistic conflict failure, without implying every third-party store does | Retain serialization until G1.7 measurement justifies a separate OCC/TransactionDB hypothesis |
-| G03 | Transaction lifecycle and uncertain commit | Typed rejected/conflicted/cancelled/indeterminate outcomes exist in the extension contract; built-in `Store` does not claim durable outcome lookup, prepare, savepoints, or active-state inspection | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Implement durable lookup with G2.3; savepoints remain later scope |
+| G03 | Transaction lifecycle and uncertain commit | Typed rejected/conflicted/cancelled/indeterminate outcomes exist in the extension contract; built-in `Store` does not claim durable outcome lookup, prepare, savepoints, or active-state inspection | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Implement durable lookup with G2.3a; savepoints remain later scope |
 | G04 | Empty named-graph topology | Strong explicit contract across model, store, I/O, protocol, bindings | Narrow observed divergence in the pinned Jena harness | Context APIs; behavior depends on store/operation | Preserve Oxigraph contract; no change |
 | G05 | Prefix/namespace metadata | Parser prefixes are transient; store has no registry | Prefix mappings and a Fuseki prefix service | Transactional namespace operations | P1 store metadata capability |
 | G06 | Durable change delivery | None | RDF Patch and patch-log ecosystem | Connection/store listeners; notifications | P1 ordered durable feed; RDF Patch adapter optional |
@@ -155,6 +157,12 @@ Evidence grade A applies to this section.
 | G18 | Transaction participants | No stable validator/index/outbox hook | Dataset wrappers/modules | Stackable and notifying SAILs | P1 narrow change-set/participant API, not a class hierarchy |
 | G19 | Multi-repository lifecycle | One server process/store configuration path | Fuseki can manage multiple datasets | Server manages multiple repositories | P3 product ADR; not a core RDF requirement |
 | G20 | Protocol/file compatibility extras | Standards-oriented formats and Oxigraph protocols | Jena-specific assemblers, RDF Thrift, patch endpoints | RDF4J REST and Binary RDF | P3 only with a named interoperability user |
+| G21 | Service identity and authorization | No built-in principal or coarse server-operation authorization model; egress policy is not inbound authorization | Fuseki authentication/authorization hooks and dataset access controls | Server security plus repository/application authorization integration | ADR-0026; fail closed, keep reverse-proxy versus embedded authority explicit, and do not claim SPARQL row/graph filtering |
+| G22 | Workload admission and operator resources | Writer admission and egress budgets are narrow; no unified query/update queue, principal quota, or operator resource contract | Fuseki metrics/tasks and server controls | Query circuit breakers, timeouts, slow-query logging, and resource-aware operators | ADR-0027; one composable budget context, bounded telemetry, no payload leakage |
+| G23 | Storage schema upgrades | RocksDB format versions fail closed, but there is no receipt-bound, crash-tested multi-step migration framework | TDB release/upgrade guidance and reload boundaries | Repository/configuration and native-store upgrade paths | ADR-0028 after verified backup/restore; simple additive migrations must still state old/new binary behavior |
+| G24 | RDF4J REST interoperability | SPARQL and Graph Store protocols exist; RDF4J repository REST paths, transactions, namespace endpoints, and error shapes are absent | No RDF4J compatibility target | Native Server/Workbench REST contract and client APIs | ADR-0029 defines an explicit versioned compatibility profile, not wholesale Java API emulation |
+| G25 | Remote HTTP transactions | No server-side transaction lease protocol | Fuseki/Jena transaction APIs are local/internal rather than this target contract | RDF4J REST exposes remote transaction lifecycle | ADR-0030 defines the native lease state machine; ADR-0029 translates RDF4J requests onto it |
+| G26 | Multi-repository lifecycle | One configured store per server process | Fuseki hosts and administers multiple datasets | RepositoryManager/Server manage multiple repositories | ADR-0031; privileged, resource-isolated lifecycle with receipt-bound delete/restore |
 
 ## Target architecture
 
@@ -277,9 +285,18 @@ The unfinished work is split by architectural ownership:
 | P2.1 statistics and bounded planning | [ADR-0023](../adr/0023-statistics-and-bounded-join-planning.md) | Proposed |
 | P2.2-P2.3 text and spatial indexes | [ADR-0024](../adr/0024-rebuildable-derived-indexes.md) | Proposed |
 | P2.4 explicit federation | [ADR-0025](../adr/0025-explicit-service-federation.md) | Proposed |
+| P3.1 identity and authorization | [ADR-0026](../adr/0026-service-identity-and-authorization.md) | Proposed |
+| P3.2 workload/resource governance | [ADR-0027](../adr/0027-workload-admission-and-operator-resources.md) | Proposed |
+| P3.3 safe schema upgrades | [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md) | Proposed |
+| P3.4 RDF4J REST interoperability | [ADR-0029](../adr/0029-rdf4j-rest-interoperability.md) | Proposed |
+| P3.5 leased remote transactions | [ADR-0030](../adr/0030-leased-remote-http-transactions.md) | Proposed |
+| P3.6 multi-repository lifecycle | [ADR-0031](../adr/0031-multi-repository-lifecycle.md) | Proposed |
+| P3.7 incremental entailment projections | [ADR-0032](../adr/0032-incremental-entailment-projections.md) | Proposed |
+| P3.8 analytical/WCOJ research | [ADR-0033](../adr/0033-analytical-wcoj-execution.md) | Proposed |
 
-P3 remains a product-decision queue. It receives separate ADRs only after a
-named user outcome exists; it is not silently absorbed into ADR-0018-0025.
+P3 now has named user outcomes and separate decisions. It remains outside the
+core write-interface acceptance boundary and is not silently absorbed into
+ADR-0018-0025.
 
 ### Slice 0 — upstream and write seam (complete)
 
@@ -598,19 +615,24 @@ Acceptance:
 - Transparent implicit federation and cross-endpoint transactional federation
   remain later, separately approved product hypotheses.
 
-### P3 — explicit product decisions
+### P3 — explicit linked-data platform decisions
 
-These require separate ADRs and named users before implementation:
+The programme now records the named decisions admitted by this user:
 
-- multi-repository server lifecycle and privileged administration;
-- authentication/authorization built into Oxigraph versus a documented reverse
-  proxy boundary;
-- RDF4J REST compatibility;
-- Jena assembler/module compatibility;
-- RDF Patch HTTP/log compatibility beyond the native change feed;
-- RDF4J Binary RDF, Jena RDF Thrift, or other non-standard interchange formats;
-- distributed transactions, clustering, or automatic cross-node failover.
+- ADR-0026: service identity and authorization;
+- ADR-0027: workload admission and operator resource governance;
+- ADR-0028: safe storage schema upgrades;
+- ADR-0029: a versioned RDF4J REST interoperability profile;
+- ADR-0030: leased remote HTTP transactions;
+- ADR-0031: multi-repository lifecycle;
+- ADR-0032: incremental entailment projections; and
+- ADR-0033: an optional analytical/worst-case-optimal research path.
 
+Their executable order and exit gates are G4.1-G4.8 in the
+[linked-data-store evolution harness plan](linked-data-store-evolution-harness-plan.md).
+They do not authorize Jena assembler/module compatibility, RDF Patch HTTP
+compatibility beyond the native feed adapters, Binary RDF, RDF Thrift,
+distributed transactions, clustering, or automatic cross-node failover.
 None is necessary to accept ADR-0016 or to call the core an embeddable linked
 data store.
 
@@ -700,12 +722,13 @@ The plan scores **98/100** against the programme rubric:
 | Source authority and currency | 20/20 | Exact local commits plus current official Jena/RDF4J pages |
 | Implementation traceability | 20/20 | Public API, tests, commits, and Ruflo memory keys named |
 | Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit |
-| Architectural decision coverage | 10/10 | ADR-0018 through ADR-0025 own every P0-P2 public or operational seam without claiming implementation |
+| Architectural decision coverage | 10/10 | ADR-0018 through ADR-0033 own every admitted P0-P3 public or operational seam without claiming implementation |
 | Verifiable acceptance criteria | 14/15 | Negative, crash, concurrency, security, and performance gates; production adapter still pending |
 | Risk and security coverage | 10/10 | Commit ambiguity, replay, egress, index drift, and leakage covered |
-| Scope discipline | 9/10 | Core versus product choices separated; P3 users/priorities intentionally unresolved |
+| Scope discipline | 9/10 | Core versus product choices separated; P3 decisions remain independently gated and unimplemented |
 
 The two withheld points are real open state, not formatting debt: a production
-replacement adapter has not yet run the conformance kit, and P3 product choices
-have no named user decision. ADR-0016 is Implemented for the public write seam;
-the remaining P0-P3 capabilities are follow-on work under this plan.
+replacement adapter has not yet run the conformance kit, and the newly admitted
+P3 decisions do not yet have product receipts. ADR-0016 is Implemented for the
+public write seam; the remaining P0-P3 capabilities are follow-on work under
+this plan.

@@ -2,9 +2,9 @@
 
 - Status: Proposed
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G2.1-G2.3
+- Implementation status: not implemented; planned by G2.1-G2.3c
 - Depends on:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - Related:
@@ -13,7 +13,8 @@
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
   [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
-  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)
+  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
+  [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md)
 
 ## Context
 
@@ -44,30 +45,40 @@ Introduce a separate commit-governance capability with three staged slices:
 
 `lookup_outcome(transaction_key)` must work after crash and reopen and return
 a committed receipt, proven absence, or indeterminate; it never replays the
-transaction to infer the answer. After the declared transaction-key retention
-window, lookup returns a typed expired/unknown result rather than claiming
-absence. Receipts bind schema and store identity,
-commit ordering, normalized-effect checksum, and relevant cursors without
-embedding RDF payloads or credentials.
+transaction to infer the answer. `ProvenAbsent` requires a durable key
+reservation or tombstone written before an outcome can become ambiguous; an
+unseen key is not proof of non-commit. After the declared transaction-key
+retention window, lookup returns a typed expired/unknown result rather than
+claiming absence. Receipts bind schema and store identity, commit ordering,
+normalized-effect checksum, and relevant cursors without embedding RDF
+payloads or credentials.
 Commit IDs are opaque identity, not an implied clock or ordering API; the
 outbox cursor supplies durable order.
 
 The native outbox is authoritative and at-least-once. Consumers deduplicate by
-`(commit_id, event_index)`. Records are versioned and checksummed, and the
-contract defines retention, cursor leases and expiry, slow-consumer
-backpressure, compaction, and backup interaction. RDF Patch may be an export
-adapter; it is not the primary storage format.
+`(commit_id, event_index)`. In-process listeners and RDF Patch are adapters
+over that outbox, not independent commit-time notification paths. Records are
+versioned and checksummed, and the contract defines retention, cursor leases
+and expiry, slow-consumer backpressure, compaction, and backup interaction.
+RDF Patch is not the primary storage format.
 Bulk loaders retain ADR-0015's atomicity scope and emit governed commits only
 when their selected mode explicitly implements this capability.
 
+G2.3c exposes a minimal `GovernanceHealth` observation for receipt/outbox
+integrity, cursor retention, and schema compatibility. That observation is an
+input to ADR-0022 readiness; it is not itself a complete operational-readiness
+or service-health claim.
+
 ## Acceptance boundary
 
-This ADR may move to Implemented only when G2.1-G2.3 prove:
+This ADR may move to Implemented only when G2.1-G2.3c prove:
 
 - namespace and RDF mutations commit and roll back together while dataset
   equality ignores namespace metadata;
 - graph lifecycle and namespace effects survive normalization distinctly;
 - injected lost responses resolve after reopen without replay;
+- proven absence is backed by a durable key reservation or tombstone within
+  its declared retention window;
 - primary state, receipt, and outbox are never observably split;
 - restart, lag, cursor expiry, retention advance, clear/drop, and compaction
   produce neither feed gaps nor unbounded synchronous work;
@@ -94,5 +105,5 @@ This ADR may move to Implemented only when G2.1-G2.3 prove:
 
 The current write and topology boundaries are in
 [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs) and
-[`store.rs`](../../lib/oxigraph/src/store.rs). G2.1-G2.3 own delivery in the
+[`store.rs`](../../lib/oxigraph/src/store.rs). G2.1-G2.3c own delivery in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
