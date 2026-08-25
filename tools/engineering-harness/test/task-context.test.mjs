@@ -462,6 +462,8 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
       initialCandidate,
     ),
   });
+  assert.match(repair.directive, /replacement unified diff from the frozen evaluator/u);
+  assert.match(repair.directive, /not return an incremental diff/u);
   assert.equal(repair.verifier.receipt.verdict, "REJECT");
   assert.equal(repair.response.patch, "required-unified-diff-within-mutable-exact");
 

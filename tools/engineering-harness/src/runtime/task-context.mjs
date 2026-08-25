@@ -126,11 +126,11 @@ const ROLE_DIRECTIVES = Object.freeze({
   critique:
     "Critique the supplied architecture against the frozen source, anomalies, scope, and verification contract. Do not return a patch.",
   implementation:
-    "Produce one minimal unified diff for the sole mutable file that implements the accepted architecture and satisfies every frozen verifier command.",
+    "Produce one minimal unified diff for the sole mutable file that implements the accepted architecture and satisfies every frozen verifier command, including stable cargo fmt output.",
   review:
     "Independently review the candidate patch and verifier evidence for correctness, safety, scope compliance, and hidden regressions. Do not return a patch.",
   repair:
-    "Produce one minimal replacement unified diff for the sole mutable file that addresses the rejecting verifier evidence without changing protected inputs.",
+    "Produce one complete replacement unified diff from the frozen evaluator source to the repaired final file. Preserve every accepted candidate change, address the rejecting verifier evidence, and satisfy stable cargo fmt. Do not return an incremental diff against currentCandidate: reconstruction applies your patch directly to the evaluator tree.",
 });
 
 function fail(message) {
