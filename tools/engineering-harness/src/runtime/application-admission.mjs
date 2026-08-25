@@ -104,7 +104,10 @@ export function verifyPinnedApplicationReceipt(receiptOrBytes, preflight) {
  * receipt. Exact replay is idempotent; a conflicting history remains rejected.
  */
 export async function admitApplicationReceipt({ receiptBytes, preflight, history }) {
-  if (typeof history?.appendBatch !== "function") {
+  if (
+    typeof history?.appendBatch !== "function" ||
+    typeof history?.reload !== "function"
+  ) {
     throw new Error("application admission requires an atomic RouterHistory");
   }
   const verification = verifyPinnedApplicationReceipt(receiptBytes, preflight);
@@ -140,6 +143,13 @@ export async function admitApplicationReceipt({ receiptBytes, preflight, history
     entries.some((entry, index) => !same(entry.outcome, outcomes[index]))
   ) {
     throw new Error("RouterHistory did not return the exact admitted outcome batch");
+  }
+  const reloaded = await history.reload();
+  for (const outcome of outcomes) {
+    const matches = reloaded.filter((entry) => same(entry.outcome, outcome));
+    if (matches.length !== 1) {
+      throw new Error("RouterHistory reload did not retain one exact admitted outcome");
+    }
   }
   return Object.freeze({
     receiptSha256: verification.receiptSha256,
