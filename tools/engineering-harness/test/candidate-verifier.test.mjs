@@ -101,14 +101,23 @@ async function fixture(t) {
   };
 }
 
-function fakeSessionRunner({ calls, publicRed = false, buildFails = false }) {
+function fakeSessionRunner({
+  calls,
+  publicRed = false,
+  buildFails = false,
+  formatFails = false,
+  failureDisposition = "completed",
+}) {
   return async (options) => {
     calls.push(options);
-    const names = buildFails
-      ? ["format", "build"]
-      : ["format", "build", "public", "independent", "regression"];
+    const names = formatFails
+      ? ["format"]
+      : buildFails
+        ? ["format", "build"]
+        : ["format", "build", "public", "independent", "regression"];
     const records = names.map((name) => {
-      let exitCode = name === "build" && buildFails ? 101 : 0;
+      const failed = (name === "format" && formatFails) || (name === "build" && buildFails);
+      let exitCode = failed ? (failureDisposition === "completed" ? 101 : null) : 0;
       let stdout = "";
       if (name === "public") {
         if (publicRed) {
@@ -132,8 +141,8 @@ function fakeSessionRunner({ calls, publicRed = false, buildFails = false }) {
         name,
         logicalArgv: Object.freeze([...commands[name].argv]),
         exitCode,
-        signal: null,
-        disposition: "completed",
+        signal: failed && failureDisposition !== "completed" ? "SIGKILL" : null,
+        disposition: failed ? failureDisposition : "completed",
         durationMs: 1,
         stdout,
         stderr: "",
@@ -167,14 +176,14 @@ function fakeSessionRunner({ calls, publicRed = false, buildFails = false }) {
         stdout: "",
         stderr: "",
       }),
-      resultSha256: sha256(`session:${publicRed}:${buildFails}`),
+      resultSha256: sha256(`session:${publicRed}:${buildFails}:${formatFails}:${failureDisposition}`),
       resultBytes: 1024,
       session: Object.freeze({
         schemaVersion: 1,
         status: "completed",
-        stage: buildFails ? "build" : "complete",
+        stage: formatFails ? "format" : buildFails ? "build" : "complete",
         commands: Object.freeze(records),
-        artifacts: buildFails
+        artifacts: formatFails || buildFails
           ? Object.freeze([])
           : Object.freeze(
               ["public_fixture", "independent_fixture", "regression_fixture"].map(
@@ -212,7 +221,7 @@ test("candidate verifier runs one persistent session and binds invocation and re
   assert.ok(result.commands.every(({ sandboxArgv }) => sandboxArgv === result.commands[0].sandboxArgv));
   assert.deepEqual(result.artifacts.at(-1), {
     name: "verifier-session-result.json",
-    sha256: sha256("session:false:false"),
+    sha256: sha256("session:false:false:false:completed"),
     bytes: 1024,
   });
 });
@@ -230,6 +239,40 @@ test("candidate verifier stops at a failed build", async (t) => {
   assert.equal(calls.length, 1);
   assert.deepEqual(result.commands.map(({ name }) => name), ["format", "build"]);
   assert.deepEqual(result.artifacts.map(({ name }) => name), ["verifier-session-result.json"]);
+  assert.equal(result.candidateTree, candidate.candidateTree);
+  assert.strictEqual(result.protectedManifest, candidate.protectedManifest);
+});
+
+test("candidate verifier binds exact identity on product and infrastructure fail-fast outcomes", async (t) => {
+  const { candidate } = await fixture(t);
+  const cases = [
+    {
+      name: "format product rejection",
+      options: { formatFails: true },
+      stage: "format",
+    },
+    {
+      name: "build infrastructure timeout",
+      options: { buildFails: true, failureDisposition: "timeout" },
+      stage: "build",
+    },
+  ];
+  for (const fixtureCase of cases) {
+    const calls = [];
+    const verifier = createVerifierForTesting(
+      fakeSessionRunner({ calls, ...fixtureCase.options }),
+    );
+    const result = await verifier.verifyCandidate({ candidate, contract });
+    assert.equal(result.verdict, "REJECT", fixtureCase.name);
+    assert.equal(result.stage, fixtureCase.stage, fixtureCase.name);
+    assert.equal(result.candidateTree, candidate.candidateTree, fixtureCase.name);
+    assert.strictEqual(
+      result.protectedManifest,
+      candidate.protectedManifest,
+      fixtureCase.name,
+    );
+    assert.equal(calls.length, 1, fixtureCase.name);
+  }
 });
 
 test("red baseline requires the exact anomaly and green independent references", async (t) => {

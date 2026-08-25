@@ -146,8 +146,22 @@ async function createVerificationSession({ candidate, contract, signal, sessionR
   });
 }
 
-function earlyVerdict(session, verdict, stage) {
-  return Object.freeze({ verdict, stage, commands: session.commands, artifacts: session.artifacts, durationMs: session.durationMs });
+function candidateIdentity(candidate) {
+  return Object.freeze({
+    candidateTree: candidate.candidateTree,
+    protectedManifest: candidate.protectedManifest,
+  });
+}
+
+function earlyVerdict(session, candidate, verdict, stage) {
+  return Object.freeze({
+    verdict,
+    stage,
+    commands: session.commands,
+    artifacts: session.artifacts,
+    durationMs: session.durationMs,
+    ...candidateIdentity(candidate),
+  });
 }
 
 function commandPassed(command, expectedPassed) {
@@ -159,8 +173,8 @@ async function verifyCandidateWithRunner({ candidate, contract, signal }, sessio
     throw new Error("candidate verification requires a sealed product patch");
   }
   const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
-  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, "REJECT", "format");
-  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, "REJECT", "build");
+  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, candidate, "REJECT", "format");
+  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, candidate, "REJECT", "build");
   const evaluatorCommands = session.commands.filter(({ name }) => evaluatorNames.includes(name));
   const green = evaluatorCommands.length === evaluatorNames.length && evaluatorCommands.every((command) => commandPassed(command, contract.success[`${command.name}Passed`]));
   return Object.freeze({
@@ -169,8 +183,7 @@ async function verifyCandidateWithRunner({ candidate, contract, signal }, sessio
     commands: session.commands,
     artifacts: session.artifacts,
     durationMs: session.durationMs,
-    candidateTree: candidate.candidateTree,
-    protectedManifest: candidate.protectedManifest,
+    ...candidateIdentity(candidate),
   });
 }
 
@@ -179,8 +192,8 @@ async function verifyRedBaselineWithRunner({ candidate, contract, signal }, sess
     throw new Error("red-baseline verification requires the sealed evaluator tree");
   }
   const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
-  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, "INCONCLUSIVE", "format");
-  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, "INCONCLUSIVE", "build");
+  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, candidate, "INCONCLUSIVE", "format");
+  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, candidate, "INCONCLUSIVE", "build");
   const publicEvidence = session.commands.find(({ name }) => name === "public");
   const publicOutcome = session.rawOutcomes.get("public");
   const publicText = `${publicOutcome.stdout}\n${publicOutcome.stderr}`;
@@ -195,8 +208,7 @@ async function verifyRedBaselineWithRunner({ candidate, contract, signal }, sess
     commands: session.commands,
     artifacts: session.artifacts,
     durationMs: session.durationMs,
-    candidateTree: candidate.candidateTree,
-    protectedManifest: candidate.protectedManifest,
+    ...candidateIdentity(candidate),
     initialRedMatched: red,
     referencesGreen,
   });
