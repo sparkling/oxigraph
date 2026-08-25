@@ -36,6 +36,250 @@ mod transactional;
 
 pub use transactional::{TransactionalDataset, WritableDataset};
 
+/// Isolation provided between concurrent writers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WriterIsolation {
+    Unsupported,
+    Serialized,
+}
+
+/// Behavior when concurrent transactions conflict.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConflictBehavior {
+    Unsupported,
+    PreventedByWriterSerialization,
+    DetectedAndRejected,
+}
+
+/// Cancellation guarantees provided by a transaction implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CancellationGuarantee {
+    Unsupported,
+    BeforeCommitAttempt,
+}
+
+/// Rollback guarantees provided by a transaction implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RollbackGuarantee {
+    Unsupported,
+    ExplicitOrDropBeforeCommit,
+}
+
+/// Support for looking up an indeterminate transaction outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OutcomeLookup {
+    Unsupported,
+    DurableByTransactionKey,
+}
+
+/// Effective guarantees provided by a transactional dataset.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionCapabilities {
+    atomic_publication: bool,
+    read_your_writes: bool,
+    writer_isolation: WriterIsolation,
+    conflict_behavior: ConflictBehavior,
+    cancellation: CancellationGuarantee,
+    rollback: RollbackGuarantee,
+    outcome_lookup: OutcomeLookup,
+}
+
+impl TransactionCapabilities {
+    pub const fn none() -> Self {
+        Self {
+            atomic_publication: false,
+            read_your_writes: false,
+            writer_isolation: WriterIsolation::Unsupported,
+            conflict_behavior: ConflictBehavior::Unsupported,
+            cancellation: CancellationGuarantee::Unsupported,
+            rollback: RollbackGuarantee::Unsupported,
+            outcome_lookup: OutcomeLookup::Unsupported,
+        }
+    }
+
+    pub const fn atomic_publication(&self) -> bool {
+        self.atomic_publication
+    }
+
+    pub const fn read_your_writes(&self) -> bool {
+        self.read_your_writes
+    }
+
+    pub const fn writer_isolation(&self) -> WriterIsolation {
+        self.writer_isolation
+    }
+
+    pub const fn conflict_behavior(&self) -> ConflictBehavior {
+        self.conflict_behavior
+    }
+
+    pub const fn cancellation(&self) -> CancellationGuarantee {
+        self.cancellation
+    }
+
+    pub const fn rollback(&self) -> RollbackGuarantee {
+        self.rollback
+    }
+
+    pub const fn outcome_lookup(&self) -> OutcomeLookup {
+        self.outcome_lookup
+    }
+
+    pub const fn with_atomic_publication(mut self) -> Self {
+        self.atomic_publication = true;
+        self
+    }
+
+    pub const fn with_read_your_writes(mut self) -> Self {
+        self.read_your_writes = true;
+        self
+    }
+
+    pub const fn with_writer_isolation(mut self, value: WriterIsolation) -> Self {
+        self.writer_isolation = value;
+        self
+    }
+
+    pub const fn with_conflict_behavior(mut self, value: ConflictBehavior) -> Self {
+        self.conflict_behavior = value;
+        self
+    }
+
+    pub const fn with_cancellation(mut self, value: CancellationGuarantee) -> Self {
+        self.cancellation = value;
+        self
+    }
+
+    pub const fn with_rollback(mut self, value: RollbackGuarantee) -> Self {
+        self.rollback = value;
+        self
+    }
+
+    pub const fn with_outcome_lookup(mut self, value: OutcomeLookup) -> Self {
+        self.outcome_lookup = value;
+        self
+    }
+
+    pub fn unmet_requirements(
+        &self,
+        requirements: &TransactionRequirements,
+    ) -> Vec<UnmetTransactionRequirement> {
+        let mut unmet = Vec::new();
+        if requirements.atomic_publication && !self.atomic_publication {
+            unmet.push(UnmetTransactionRequirement::AtomicPublication);
+        }
+        if requirements.read_your_writes && !self.read_your_writes {
+            unmet.push(UnmetTransactionRequirement::ReadYourWrites);
+        }
+        if requirements.writer_isolation != WriterIsolation::Unsupported
+            && requirements.writer_isolation != self.writer_isolation
+        {
+            unmet.push(UnmetTransactionRequirement::WriterIsolation);
+        }
+        if requirements.conflict_behavior != ConflictBehavior::Unsupported
+            && requirements.conflict_behavior != self.conflict_behavior
+        {
+            unmet.push(UnmetTransactionRequirement::ConflictBehavior);
+        }
+        if requirements.cancellation != CancellationGuarantee::Unsupported
+            && requirements.cancellation != self.cancellation
+        {
+            unmet.push(UnmetTransactionRequirement::Cancellation);
+        }
+        if requirements.rollback != RollbackGuarantee::Unsupported
+            && requirements.rollback != self.rollback
+        {
+            unmet.push(UnmetTransactionRequirement::Rollback);
+        }
+        if requirements.outcome_lookup != OutcomeLookup::Unsupported
+            && requirements.outcome_lookup != self.outcome_lookup
+        {
+            unmet.push(UnmetTransactionRequirement::OutcomeLookup);
+        }
+        unmet
+    }
+}
+
+/// Minimum guarantees required when starting a transaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionRequirements {
+    atomic_publication: bool,
+    read_your_writes: bool,
+    writer_isolation: WriterIsolation,
+    conflict_behavior: ConflictBehavior,
+    cancellation: CancellationGuarantee,
+    rollback: RollbackGuarantee,
+    outcome_lookup: OutcomeLookup,
+}
+
+impl TransactionRequirements {
+    pub const fn legacy() -> Self {
+        Self {
+            atomic_publication: true,
+            read_your_writes: true,
+            writer_isolation: WriterIsolation::Unsupported,
+            conflict_behavior: ConflictBehavior::Unsupported,
+            cancellation: CancellationGuarantee::Unsupported,
+            rollback: RollbackGuarantee::ExplicitOrDropBeforeCommit,
+            outcome_lookup: OutcomeLookup::Unsupported,
+        }
+    }
+
+    pub const fn requiring_writer_isolation(mut self, value: WriterIsolation) -> Self {
+        self.writer_isolation = value;
+        self
+    }
+
+    pub const fn requiring_conflict_behavior(mut self, value: ConflictBehavior) -> Self {
+        self.conflict_behavior = value;
+        self
+    }
+
+    pub const fn requiring_cancellation(mut self, value: CancellationGuarantee) -> Self {
+        self.cancellation = value;
+        self
+    }
+
+    pub const fn requiring_outcome_lookup(mut self, value: OutcomeLookup) -> Self {
+        self.outcome_lookup = value;
+        self
+    }
+}
+
+/// Request used to negotiate a transaction before opening it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionRequest {
+    requirements: TransactionRequirements,
+}
+
+impl TransactionRequest {
+    pub const fn new(requirements: TransactionRequirements) -> Self {
+        Self { requirements }
+    }
+
+    pub const fn requirements(&self) -> &TransactionRequirements {
+        &self.requirements
+    }
+}
+
+impl Default for TransactionRequest {
+    fn default() -> Self {
+        Self::new(TransactionRequirements::legacy())
+    }
+}
+
+/// A capability dimension that was not satisfied.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnmetTransactionRequirement {
+    AtomicPublication,
+    ReadYourWrites,
+    WriterIsolation,
+    ConflictBehavior,
+    Cancellation,
+    Rollback,
+    OutcomeLookup,
+}
+
 use crate::io::{RdfParseError, RdfParser, RdfSerializer};
 use crate::model::*;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -66,6 +310,148 @@ use std::sync::mpsc;
 use std::thread;
 #[cfg(not(target_family = "wasm"))]
 use std::thread::available_parallelism;
+
+/// Stable identifier used to resolve an indeterminate commit outcome.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TransactionKey([u8; 16]);
+
+impl TransactionKey {
+    pub const fn new(value: [u8; 16]) -> Self {
+        Self(value)
+    }
+}
+
+/// Failure while negotiating or opening a transaction.
+#[derive(Debug)]
+pub enum TransactionStartError<E> {
+    RequirementsNotMet {
+        unmet: Vec<UnmetTransactionRequirement>,
+        effective: TransactionCapabilities,
+    },
+    Backend(E),
+}
+
+impl<E: fmt::Display> fmt::Display for TransactionStartError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RequirementsNotMet { .. } => {
+                formatter.write_str("transaction requirements are not met")
+            }
+            Self::Backend(error) => write!(formatter, "failed to open transaction: {error}"),
+        }
+    }
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for TransactionStartError<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Backend(error) => Some(error),
+            Self::RequirementsNotMet { .. } => None,
+        }
+    }
+}
+
+/// Typed result of a failed commit attempt.
+#[derive(Debug)]
+pub enum TransactionCommitError<E> {
+    Rejected(E),
+    Conflicted,
+    Cancelled,
+    Indeterminate {
+        transaction_key: TransactionKey,
+        source: E,
+    },
+}
+
+impl<E: fmt::Display> fmt::Display for TransactionCommitError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected(error) => write!(formatter, "transaction was rejected: {error}"),
+            Self::Conflicted => formatter.write_str("transaction conflicted"),
+            Self::Cancelled => formatter.write_str("transaction was cancelled"),
+            Self::Indeterminate { source, .. } => {
+                write!(formatter, "transaction outcome is indeterminate: {source}")
+            }
+        }
+    }
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for TransactionCommitError<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Rejected(error) | Self::Indeterminate { source: error, .. } => Some(error),
+            Self::Conflicted | Self::Cancelled => None,
+        }
+    }
+}
+
+/// Typed result of a failed rollback attempt.
+#[derive(Debug)]
+pub enum TransactionRollbackError<E> {
+    Failed(E),
+}
+
+impl<E: fmt::Display> fmt::Display for TransactionRollbackError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Failed(error) => write!(formatter, "transaction rollback failed: {error}"),
+        }
+    }
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for TransactionRollbackError<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Failed(error) => Some(error),
+        }
+    }
+}
+
+/// Extension for backends that can prove terminal transaction outcomes.
+pub trait OutcomeAwareWritableDataset: WritableDataset {
+    fn commit_with_outcome(self) -> Result<(), TransactionCommitError<Self::Error>>;
+
+    fn rollback_with_outcome(self) -> Result<(), TransactionRollbackError<Self::Error>>;
+}
+
+/// A transaction paired with the exact profile negotiated before it was opened.
+pub struct NegotiatedTransaction<T> {
+    transaction: T,
+    effective: TransactionCapabilities,
+}
+
+impl<T> NegotiatedTransaction<T> {
+    pub const fn effective_capabilities(&self) -> &TransactionCapabilities {
+        &self.effective
+    }
+
+    pub fn into_transaction(self) -> T {
+        self.transaction
+    }
+}
+
+/// A transactional dataset supporting explicit capability negotiation.
+pub trait NegotiatedTransactionalDataset: TransactionalDataset {
+    fn transaction_capabilities(&self) -> TransactionCapabilities;
+
+    fn start_transaction_with(
+        &self,
+        request: TransactionRequest,
+    ) -> Result<NegotiatedTransaction<Self::Transaction<'_>>, TransactionStartError<Self::Error>>
+    {
+        let effective = self.transaction_capabilities();
+        let unmet = effective.unmet_requirements(request.requirements());
+        if !unmet.is_empty() {
+            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
+        }
+        let transaction = TransactionalDataset::start_transaction(self)
+            .map_err(TransactionStartError::Backend)?;
+        Ok(NegotiatedTransaction {
+            transaction,
+            effective,
+        })
+    }
+}
 
 /// An on-disk [RDF dataset](https://www.w3.org/TR/rdf11-concepts/#dfn-rdf-dataset).
 /// Allows querying and updating it using SPARQL.
@@ -105,6 +491,7 @@ use std::thread::available_parallelism;
 #[derive(Clone)]
 pub struct Store {
     storage: Storage,
+    transaction_capabilities: TransactionCapabilities,
 }
 
 /// Options used when opening an on-disk [`Store`].
@@ -175,6 +562,7 @@ impl Store {
     pub fn new() -> Result<Self, StorageError> {
         Ok(Self {
             storage: Storage::new()?,
+            transaction_capabilities: read_write_transaction_capabilities(),
         })
     }
 
@@ -187,6 +575,7 @@ impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Ok(Self {
             storage: Storage::open(path.as_ref())?,
+            transaction_capabilities: read_write_transaction_capabilities(),
         })
     }
 
@@ -204,6 +593,7 @@ impl Store {
     ) -> Result<Self, StorageError> {
         Ok(Self {
             storage: Storage::open_with_options(path.as_ref(), options.into())?,
+            transaction_capabilities: read_write_transaction_capabilities(),
         })
     }
 
@@ -214,7 +604,13 @@ impl Store {
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Ok(Self {
             storage: Storage::open_read_only(path.as_ref())?,
+            transaction_capabilities: TransactionCapabilities::none(),
         })
+    }
+
+    /// Returns the effective transaction guarantees of this store instance.
+    pub fn transaction_capabilities(&self) -> TransactionCapabilities {
+        self.transaction_capabilities.clone()
     }
 
     /// Retrieves quads with a filter on each quad component
@@ -910,6 +1306,15 @@ impl Store {
     }
 }
 
+fn read_write_transaction_capabilities() -> TransactionCapabilities {
+    TransactionCapabilities::none()
+        .with_atomic_publication()
+        .with_read_your_writes()
+        .with_writer_isolation(WriterIsolation::Serialized)
+        .with_conflict_behavior(ConflictBehavior::PreventedByWriterSerialization)
+        .with_rollback(RollbackGuarantee::ExplicitOrDropBeforeCommit)
+}
+
 impl fmt::Display for Store {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for t in self {
@@ -1327,6 +1732,12 @@ impl TransactionalDataset for Store {
 
     fn start_transaction(&self) -> Result<Self::Transaction<'_>, Self::Error> {
         Store::start_transaction(self)
+    }
+}
+
+impl NegotiatedTransactionalDataset for Store {
+    fn transaction_capabilities(&self) -> TransactionCapabilities {
+        Store::transaction_capabilities(self)
     }
 }
 
