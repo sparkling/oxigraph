@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the existing `sparopt` and
   `spareval` paths remain the only production SPARQL planner and executor
@@ -170,6 +170,11 @@ rules.
    contract. Research and explicit local evaluation may start after G3.2;
    server exposure or `Auto` promotion may not. Even then, ordinary planning
    stays the default outside that admitted cohort.
+
+The research task always closes with an explicit `ACCEPT`, `REJECT`, or
+`INCONCLUSIVE` receipt. `REJECT` or `INCONCLUSIVE` completes G4.8 without
+implementing or promoting the executor; only `ACCEPT` makes it eligible for
+the promotion gate above.
 
 Darwin may tune bounded policy or selection thresholds only against these
 frozen evaluators. It may not mutate semantic oracles, product code, query

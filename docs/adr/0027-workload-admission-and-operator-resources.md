@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G4.2
 - Programme task: `task-1787670632138-mq9112`
@@ -151,5 +151,9 @@ Current body, timeout, and connection constants are in
 owns principal-derived class selection. ADR-0022 is a related operational and
 promotion consumer, not a G4.2 implementation prerequisite: G4.2 consumes its
 bounded observations and must close before a readiness profile advertises
-these workload guarantees. This ADR remains Proposed until G4.2's staged
-evaluators and numeric baseline exist.
+these workload guarantees. G1.5b is a hard G4.2 prerequisite because an
+admitted update budget must reach the owned pre-commit cancellation boundary.
+G1.5c is required only for replacement-backend admission, and G4.1 only for
+principal quotas; neither conditional edge blocks the anonymous built-in
+profile. This ADR remains Proposed until G4.2's staged evaluators and numeric
+baseline exist.

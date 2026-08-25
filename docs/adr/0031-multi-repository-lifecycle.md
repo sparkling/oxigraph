@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; each current server process owns one
   `Store` and has no durable repository catalog or administrative lifecycle
@@ -155,8 +155,10 @@ global limits fail the manager closed.
    paths, orphan readiness, or accidental deletion.
 3. **Isolation and protocol evaluator.** Controlled repositories with
    identical RDF prove route isolation, authorization, per-repository service
-   descriptions, independent writer gates, lease cleanup, and absence of
-   cross-repository graph or namespace leakage.
+   descriptions, independent writer gates, and absence of cross-repository
+   graph or namespace leakage. When ADR-0030 leases are enabled, a separate
+   composition fixture proves drain or expiry before quiesce, tombstone,
+   restore, or purge.
 4. **Upgrade/recovery evaluator.** Mixed schema versions, incompatible stores,
    incomplete backups, restore under a new UUID, catalog recovery, and
    tombstone retention compose with ADR-0022 and ADR-0028.
@@ -204,4 +206,6 @@ one `Store`, and the request router forwards every data route to it. Current
 store backup, validation, and open boundaries are in
 [`store.rs`](../../lib/oxigraph/src/store.rs). No repository manager,
 catalog, lifecycle evaluator, or acceptance receipt exists yet; G4.6 owns the
-staged product work.
+staged product work. G4.5 is a conditional promotion dependency only for a
+profile exposing both leased remote transactions and multi-repository
+lifecycle; it is not a hard prerequisite for the base manager.
