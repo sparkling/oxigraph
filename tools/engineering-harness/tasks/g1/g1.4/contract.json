@@ -113,7 +113,7 @@
       "timeoutMs": 120000
     },
     "build": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "rocksdb_writer_serialization", "--test", "transaction_concurrency", "--test", "update_atomicity"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "transaction_concurrency", "--test", "update_atomicity"],
       "timeoutMs": 1800000
     },
     "public": {

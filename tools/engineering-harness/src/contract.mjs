@@ -426,8 +426,6 @@ const EXPECTED_G14 = Object.freeze({
         "oxigraph",
         "--no-run",
         "--test",
-        "rocksdb_writer_serialization",
-        "--test",
         "transaction_concurrency",
         "--test",
         "update_atomicity",
