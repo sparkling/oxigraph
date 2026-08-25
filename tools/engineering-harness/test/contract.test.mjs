@@ -248,10 +248,10 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     ],
     "http-client,rdf-12",
   );
-  assert.equal(resolution.contract.commands.independent.timeoutMs, 600_000);
-  assert.equal(resolution.contract.commands.regression.timeoutMs, 600_000);
+  assert.equal(resolution.contract.commands.independent.timeoutMs, 2_700_000);
+  assert.equal(resolution.contract.commands.regression.timeoutMs, 2_700_000);
   assert.equal(resolution.contract.commands.build.timeoutMs, 2_700_000);
-  assert.equal(resolution.contract.ceilings.maxTotalVerifierWallMs, 4_500_000);
+  assert.equal(resolution.contract.ceilings.maxTotalVerifierWallMs, 9_000_000);
   assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });

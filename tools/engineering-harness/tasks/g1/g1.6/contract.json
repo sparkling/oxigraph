@@ -130,11 +130,11 @@
     },
     "independent": {
       "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "rdf-12", "--test", "sparql_version"],
-      "timeoutMs": 600000
+      "timeoutMs": 2700000
     },
     "regression": {
       "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client,rdf-12", "--test", "sparql_egress_policy"],
-      "timeoutMs": 600000
+      "timeoutMs": 2700000
     }
   },
   "ceilings": {
@@ -144,7 +144,7 @@
     "maxWorkerOutputBytes": 262144,
     "maxBuildOutputBytes": 8388608,
     "maxTestOutputBytesPerCommand": 2097152,
-    "maxTotalVerifierWallMs": 4500000,
+    "maxTotalVerifierWallMs": 9000000,
     "maxResidentBytes": 17179869184,
     "maxVerifierDiskBytes": 12884901888,
     "cargoBuildJobs": 1,

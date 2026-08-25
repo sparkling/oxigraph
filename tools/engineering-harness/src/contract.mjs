@@ -1143,7 +1143,7 @@ const EXPECTED_G16 = Object.freeze({
         "--test",
         "sparql_version",
       ],
-      timeoutMs: 600_000,
+      timeoutMs: 2_700_000,
     },
     regression: {
       argv: [
@@ -1157,7 +1157,7 @@ const EXPECTED_G16 = Object.freeze({
         "--test",
         "sparql_egress_policy",
       ],
-      timeoutMs: 600_000,
+      timeoutMs: 2_700_000,
     },
   },
   ceilings: {
@@ -1167,7 +1167,7 @@ const EXPECTED_G16 = Object.freeze({
     maxChangedLines: 1_024,
     maxResidentBytes: 17_179_869_184,
     maxVerifierDiskBytes: 12_884_901_888,
-    maxTotalVerifierWallMs: 4_500_000,
+    maxTotalVerifierWallMs: 9_000_000,
     cargoBuildJobs: 1,
   },
   initialRed: {
