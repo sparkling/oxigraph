@@ -1,4 +1,3 @@
-import { canonicalSha256 } from "../routing/features.mjs";
 import { NATIVE_PROVIDERS } from "../routing/history.mjs";
 
 export const CANDIDATE_ROLES = Object.freeze([
@@ -97,11 +96,10 @@ export function candidateSha256(candidate) {
   ) {
     throw new Error("candidate identity is not sealed");
   }
-  return canonicalSha256({
-    tree: candidate.candidateTree,
-    patchSha256: candidate.candidatePatchSha256,
-    protectedManifest: candidate.protectedManifest,
-  });
+  // Router history uses the admitted patch digest as its candidate identity.
+  // The application receipt independently binds that patch to the candidate
+  // commit, tree, protected manifest, verifier evidence, and native output.
+  return candidate.candidatePatchSha256;
 }
 
 export function chooseVerifiedCandidate(attempts) {

@@ -74,7 +74,7 @@ test("upstream outputs and sealed candidate identity fail closed", () => {
     candidatePatchSha256: "b".repeat(64),
     protectedManifest: { entries: 1, sha256: "c".repeat(64) },
   });
-  assert.match(digest, /^[0-9a-f]{64}$/);
+  assert.equal(digest, "b".repeat(64));
   assert.throws(() => candidateSha256({ candidateTree: "bad" }), /not sealed/);
 });
 
