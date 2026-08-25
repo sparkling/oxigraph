@@ -99,6 +99,48 @@ export async function writePrivateRuntimeArtifact(name, bytes) {
   }
 }
 
+export async function readPrivateRuntimeArtifact(
+  name,
+  { maxBytes = 64 * 1024 * 1024 } = {},
+) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new Error("runtime artifact read ceiling must be a positive safe integer");
+  }
+  const path = await runtimePath(name);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const metadata = await handle.stat();
+    const uid = typeof process.getuid === "function" ? process.getuid() : metadata.uid;
+    if (
+      !metadata.isFile() ||
+      metadata.uid !== uid ||
+      (metadata.mode & 0o077) !== 0 ||
+      metadata.nlink !== 1 ||
+      metadata.size < 1 ||
+      metadata.size > maxBytes
+    ) {
+      throw new Error("runtime artifact is not a bounded private regular file");
+    }
+    const bytes = await handle.readFile();
+    if (bytes.length !== metadata.size || bytes.length > maxBytes) {
+      throw new Error("runtime artifact changed during its bounded read");
+    }
+    const after = await handle.stat();
+    if (
+      after.dev !== metadata.dev ||
+      after.ino !== metadata.ino ||
+      after.size !== metadata.size ||
+      after.mtimeMs !== metadata.mtimeMs ||
+      after.ctimeMs !== metadata.ctimeMs
+    ) {
+      throw new Error("runtime artifact changed during its bounded read");
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function isIgnoredRuntimePath(path) {
   const root = await ensureRuntimeRoot();
   let parent;
