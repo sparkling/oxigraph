@@ -263,10 +263,17 @@ Execution record on 2026-08-25:
   public run took 169.73 seconds and supports one-seed replay through
   `OXIGRAPH_TX_TRACE_SEED`.
 - G1.2 oracle construction is complete in evaluator-only commit `eaf7161c`.
-  Its current product baseline is intentionally red: both frozen histories
-  observe overlapping writers and reproduce lost update and write skew.
-- G1.3 and G1.4 remain product implementation work. The red G1.2 result is an
-  activation input, not evidence that transaction isolation is implemented.
+  Its frozen product baseline is intentionally red: both histories observe
+  overlapping writers and reproduce lost update and write skew. Product commit
+  `7eec1f07` adds a per-instance RocksDB writer gate and closes both anomalies.
+- G1.3 is complete in product commit `3bf9468c`. Frozen contract
+  `fd30c797263e3f0b001c816c56cdacbeee095fa4da1ad948a6211734b982a461`
+  reconstructed exact patch `2d5412df6210246266426e3b7ee8be599744fc1093c9ac272b8d8d64a34fef04`
+  and accepted format, build, 9 public capability tests, 3 independent
+  state-model tests, and 3 transactional regressions in the isolated harness.
+- G1.4 remains product qualification work: the writer gate must pass its
+  1/4/16-writer, concurrent-reader, drop, rollback, and cancellation oracle
+  before ADR-0018 can move beyond Proposed.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -294,8 +301,9 @@ Future engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
 baseline commit, evaluator commit, mutable/blocked paths, features, targets,
 three command roles, time/output/resource ceilings, and success criteria.
-The G1.1 and G1.2 evaluator files are implemented; task contracts and the
-remaining evaluator files are not.
+The G1.1-G1.3 evaluator files and the G1.2-G1.3 task contracts are implemented.
+G1.4 and later task contracts remain gated on their direct evaluator-only
+commits.
 
 Implementation order is fixed: accept the version/authority policy; land the
 green G1.1 reference oracle and the separate red G1.2 evaluator-only commit;

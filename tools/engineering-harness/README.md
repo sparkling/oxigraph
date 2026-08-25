@@ -25,6 +25,14 @@ Current activation boundary:
 - no MCP server is registered until one canonical command registry is exercised
   through both the CLI and real JSON-RPC tests.
 
+G1.3 product commit `3bf9468c` has also passed the harness's direct candidate
+reconstruction and frozen verifier: exact patch `2d5412df6210246266426e3b7ee8be599744fc1093c9ac272b8d8d64a34fef04`,
+candidate tree `b369e766a3f8c02f6d580924dd943e08ebafcdf0`, unchanged protected
+manifest, and green format/build/public-9/independent-3/regression-3 stages.
+The earlier application runs remain useful routing and failure evidence; they
+do not replace this source-bound product verification or grant promotion
+authority.
+
 Install and verify from this directory:
 
 ```bash

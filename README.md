@@ -87,13 +87,15 @@ scripts. Agentic-QE receipts bind installed package metadata and executable
 hashes, while Darwin qualification additionally hashes its installed package
 tree before and after each reviewed run.
 
-`tools/metaharness` remains the semantic qualification adapter. ADR-0017
-accepts a separate future `tools/engineering-harness` for G1-G3 implementation
-work, but that runtime is not yet implemented. Its activation evidence now
-exists as a green 10,000-trace-per-backend G1.1 reference oracle in `3edfb86a`
-and a separate genuinely red G1.2 lost-update/write-skew evaluator in
-`eaf7161c`; the engineering package must consume those frozen commits without
-editing either evaluator.
+`tools/metaharness` remains the semantic qualification adapter.
+`tools/engineering-harness` is now the separate local-only G1-G3 application
+control plane accepted by ADR-0017. It consumes frozen evaluator commits,
+reconstructs candidates in disposable Git workspaces, runs one
+network-isolated verifier session, and keeps product promotion human-owned.
+G1.2 per-instance RocksDB writer serialization is implemented in `7eec1f07`;
+G1.3 typed capability negotiation is implemented in `3bf9468c` and accepted by
+its frozen 9/3/3 evaluator split. G1.4 stress and cancellation qualification is
+the next open transaction gate, so ADR-0018 remains Proposed.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

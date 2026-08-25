@@ -4,9 +4,9 @@
 - Date: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: G1.1 reference-oracle and G1.2 anomaly-oracle
-  infrastructure implemented; typed guarantees and RocksDB writer
-  serialization remain unimplemented under G1.3-G1.4
+- Implementation status: G1.1-G1.3 implemented and source-bound; G1.4's
+  1/4/16-writer, reader-liveness, and bounded-cancellation qualification
+  remains outstanding
 - Depends on:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - Related:
@@ -110,8 +110,28 @@ The G1.1 evaluator in
 runs 10,000 replayable shrinking traces against memory, RocksDB, and an
 independent rewritten adapter. The evaluator-only G1.2 history oracle in
 [`transaction_concurrency.rs`](../../lib/oxigraph/tests/transaction_concurrency.rs)
-is intentionally red on the current baseline: overlapping RocksDB writers
-reproduce both lost update and write skew. These evaluator results do not claim
-that the missing product guarantees are implemented.
+is intentionally red on its frozen baseline: overlapping RocksDB writers
+reproduce both lost update and write skew. Per-instance RocksDB writer
+serialization in `7eec1f07` then closes both histories without a process-wide
+gate.
+
+G1.3 is implemented by product commit `3bf9468c`. The additive API negotiates
+atomic publication, read-your-writes, writer isolation, conflict behavior,
+cancellation, rollback, and outcome lookup; rejects unmet requirements before
+opening a backend transaction; and distinguishes rejected, conflicted,
+cancelled, and indeterminate commit outcomes. It deliberately does not claim
+durable outcome lookup or cancellation for `Store`, and it does not implement
+`OutcomeAwareWritableDataset` over the legacy `StorageError` surface.
+
+The frozen G1.3 contract digest is
+`fd30c797263e3f0b001c816c56cdacbeee095fa4da1ad948a6211734b982a461`.
+The engineering harness reconstructed the exact product patch
+`2d5412df6210246266426e3b7ee8be599744fc1093c9ac272b8d8d64a34fef04`
+as candidate tree `b369e766a3f8c02f6d580924dd943e08ebafcdf0`, retained the
+protected-tree manifest `679e1ce34462d761090534c186e6bbbde5ba9297b7d00dda60d3748f8b16e189`,
+and returned `ACCEPT` after format, build, 9 public capability tests, 3
+independent state-model tests, and 3 transactional regressions in a
+network-isolated read-only workspace. ADR-0018 remains Proposed until G1.4 and
+the remaining acceptance boundary are complete.
 The executable plan identifiers are G1.1-G1.4 in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
