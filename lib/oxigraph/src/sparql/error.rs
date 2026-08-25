@@ -11,6 +11,9 @@ use std::io;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum UpdateEvaluationError {
+    /// The update was cancelled before its commit attempt began.
+    #[error("SPARQL update evaluation was cancelled")]
+    Cancelled,
     /// An error from the storage.
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -59,6 +62,7 @@ impl From<Infallible> for UpdateEvaluationError {
 impl From<QueryEvaluationError> for UpdateEvaluationError {
     fn from(error: QueryEvaluationError) -> Self {
         match error {
+            QueryEvaluationError::Cancelled => Self::Cancelled,
             QueryEvaluationError::Dataset(error) => Self::from_boxed_dataset_error(error),
             QueryEvaluationError::Service(error) => Self::Service(error),
             QueryEvaluationError::UnexpectedDefaultGraph => Self::Storage(
@@ -99,6 +103,7 @@ impl From<UpdateEvaluationError> for io::Error {
     #[inline]
     fn from(error: UpdateEvaluationError) -> Self {
         match error {
+            UpdateEvaluationError::Cancelled => Self::new(io::ErrorKind::Interrupted, error),
             UpdateEvaluationError::Storage(error) => error.into(),
             UpdateEvaluationError::GraphParsing(error) => error.into(),
             UpdateEvaluationError::Dataset(error)

@@ -79,7 +79,6 @@ pub struct SparqlEvaluator {
     with_http_default_service_handler: bool,
     #[cfg(feature = "http-client")]
     egress_policy: Option<EgressPolicy>,
-    #[cfg(feature = "http-client")]
     cancellation_token: Option<CancellationToken>,
     parser: SparqlParser,
     inner: QueryEvaluator,
@@ -387,10 +386,7 @@ impl SparqlEvaluator {
     /// # Result::<_, Box<dyn std::error::Error>>::Ok(())
     /// ```
     pub fn with_cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
-        #[cfg(feature = "http-client")]
-        {
-            self.cancellation_token = Some(cancellation_token.clone());
-        }
+        self.cancellation_token = Some(cancellation_token.clone());
         self.inner = self.inner.with_cancellation_token(cancellation_token);
         self
     }
@@ -563,11 +559,13 @@ impl SparqlEvaluator {
     /// # Ok::<_, Box<dyn std::error::Error>>(())
     /// ```
     pub fn for_update(self, update: Update) -> PreparedSparqlUpdate {
+        let cancellation_token = self.cancellation_token.clone();
         #[cfg(feature = "http-client")]
         let client = self.http_client(EgressPurpose::Load);
         PreparedSparqlUpdate::new(
             self.into_evaluator(),
             update,
+            cancellation_token,
             #[cfg(feature = "http-client")]
             client,
         )
@@ -585,7 +583,6 @@ impl Default for SparqlEvaluator {
             with_http_default_service_handler: true,
             #[cfg(feature = "http-client")]
             egress_policy: None,
-            #[cfg(feature = "http-client")]
             cancellation_token: None,
             parser: SparqlParser::new(),
             inner: QueryEvaluator::new(),

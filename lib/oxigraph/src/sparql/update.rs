@@ -11,11 +11,15 @@ use crate::model::{
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
 use crate::storage::{Storage, StorageError, StorageTransaction};
-use crate::store::{Store, Transaction, TransactionalDataset, WritableDataset};
+use crate::store::{
+    NegotiatedTransactionalDataset, Store, Transaction, TransactionRequest,
+    TransactionStartControl, TransactionStartError, TransactionalDataset, WritableDataset,
+};
 use oxiri::Iri;
 use rustc_hash::FxHashMap;
 use spareval::{
-    DeleteInsertQuad, InternalQuad, QueryDatasetSpecification, QueryEvaluator, QueryableDataset,
+    CancellationToken, DeleteInsertQuad, InternalQuad, QueryDatasetSpecification, QueryEvaluator,
+    QueryableDataset,
 };
 use spargebra::SparqlVersion;
 use spargebra::algebra::GraphTarget;
@@ -46,6 +50,7 @@ pub struct PreparedSparqlUpdate {
     evaluator: QueryEvaluator,
     update: Update,
     using_datasets: Vec<Option<QueryDatasetSpecification>>,
+    cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     client: HttpClient,
 }
@@ -60,6 +65,7 @@ impl PreparedSparqlUpdate {
     pub(crate) fn new(
         evaluator: QueryEvaluator,
         update: Update,
+        cancellation_token: Option<CancellationToken>,
         #[cfg(feature = "http-client")] client: HttpClient,
     ) -> Self {
         let using_datasets = update
@@ -77,6 +83,7 @@ impl PreparedSparqlUpdate {
             evaluator,
             update,
             using_datasets,
+            cancellation_token,
             #[cfg(feature = "http-client")]
             client,
         }
@@ -108,20 +115,42 @@ impl PreparedSparqlUpdate {
     /// # Ok::<_, Box<dyn std::error::Error>>(())
     /// ```
     pub fn on_store(self, store: &Store) -> BoundPreparedSparqlUpdate<'_, '_> {
-        let transaction = if update_requires_read(&self.update) {
-            store
-                .start_transaction()
-                .map(UpdateTransaction::OwnedReadable)
-        } else {
-            let storage = store.storage();
-            storage
-                .start_transaction()
-                .map(|transaction| UpdateTransaction::Owned(transaction, storage))
-        };
+        let transaction = (|| {
+            ensure_update_start_alive(
+                &self.update,
+                self.cancellation_token.as_ref(),
+                #[cfg(feature = "http-client")]
+                &self.client,
+            )?;
+            if let Some(cancellation_token) = &self.cancellation_token {
+                store
+                    .start_transaction_with_control(
+                        TransactionRequest::default(),
+                        TransactionStartControl::new()
+                            .with_cancellation_token(cancellation_token.clone()),
+                    )
+                    .map(|transaction| {
+                        UpdateTransaction::OwnedReadable(transaction.into_transaction())
+                    })
+                    .map_err(update_transaction_start_error)
+            } else if update_requires_read(&self.update) {
+                store
+                    .start_transaction()
+                    .map(UpdateTransaction::OwnedReadable)
+                    .map_err(UpdateEvaluationError::from)
+            } else {
+                let storage = store.storage();
+                storage
+                    .start_transaction()
+                    .map(|transaction| UpdateTransaction::Owned(transaction, storage))
+                    .map_err(UpdateEvaluationError::from)
+            }
+        })();
         BoundPreparedSparqlUpdate {
             evaluator: self.evaluator,
             update: self.update,
             using_datasets: self.using_datasets,
+            cancellation_token: self.cancellation_token,
             #[cfg(feature = "http-client")]
             client: self.client,
             transaction,
@@ -155,6 +184,7 @@ impl PreparedSparqlUpdate {
             evaluator: self.evaluator,
             update: self.update,
             using_datasets: self.using_datasets,
+            cancellation_token: self.cancellation_token,
             #[cfg(feature = "http-client")]
             client: self.client,
             dataset,
@@ -180,13 +210,21 @@ impl PreparedSparqlUpdate {
         self,
         transaction: &'a mut Transaction<'b>,
     ) -> BoundPreparedSparqlUpdate<'a, 'b> {
+        let transaction = ensure_update_start_alive(
+            &self.update,
+            self.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.client,
+        )
+        .map(|()| UpdateTransaction::BorrowedReadable(transaction));
         BoundPreparedSparqlUpdate {
             evaluator: self.evaluator,
             update: self.update,
             using_datasets: self.using_datasets,
+            cancellation_token: self.cancellation_token,
             #[cfg(feature = "http-client")]
             client: self.client,
-            transaction: Ok(UpdateTransaction::BorrowedReadable(transaction)),
+            transaction,
         }
     }
 }
@@ -197,6 +235,7 @@ pub struct BoundTransactionalSparqlUpdate<'a, D: TransactionalDataset> {
     evaluator: QueryEvaluator,
     update: Update,
     using_datasets: Vec<Option<QueryDatasetSpecification>>,
+    cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     client: HttpClient,
     dataset: &'a D,
@@ -205,18 +244,29 @@ pub struct BoundTransactionalSparqlUpdate<'a, D: TransactionalDataset> {
 impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
     /// Evaluates and atomically commits the update.
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
+        ensure_update_start_alive(
+            &self.update,
+            self.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.client,
+        )?;
         let mut transaction = self
             .dataset
             .start_transaction()
             .map_err(UpdateEvaluationError::dataset)?;
-        let result = ReadableUpdateEvaluator {
-            transaction: &mut transaction,
-            base_iri: self.update.base_iri.clone(),
-            query_evaluator: self.evaluator,
-            #[cfg(feature = "http-client")]
-            client: self.client,
-        }
-        .eval_all(&self.update.operations, &self.using_datasets);
+        let result = (|| {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
+            ReadableUpdateEvaluator {
+                transaction: &mut transaction,
+                base_iri: self.update.base_iri.clone(),
+                query_evaluator: self.evaluator,
+                cancellation_token: self.cancellation_token.clone(),
+                #[cfg(feature = "http-client")]
+                client: self.client,
+            }
+            .eval_all(&self.update.operations, &self.using_datasets)?;
+            ensure_update_alive(self.cancellation_token.as_ref())
+        })();
         match result {
             Ok(()) => transaction.commit().map_err(UpdateEvaluationError::dataset),
             Err(error) => match transaction.rollback() {
@@ -262,9 +312,10 @@ pub struct BoundPreparedSparqlUpdate<'a, 'b> {
     evaluator: QueryEvaluator,
     update: Update,
     using_datasets: Vec<Option<QueryDatasetSpecification>>,
+    cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     client: HttpClient,
-    transaction: Result<UpdateTransaction<'a, 'b>, StorageError>,
+    transaction: Result<UpdateTransaction<'a, 'b>, UpdateEvaluationError>,
 }
 
 impl BoundPreparedSparqlUpdate<'_, '_> {
@@ -276,10 +327,12 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                     transaction: &mut transaction,
                     base_iri: self.update.base_iri.clone(),
                     query_evaluator: self.evaluator,
+                    cancellation_token: self.cancellation_token.clone(),
                     #[cfg(feature = "http-client")]
                     client: self.client,
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
+                ensure_update_alive(self.cancellation_token.as_ref())?;
                 transaction.commit()?;
                 Ok(())
             }
@@ -287,6 +340,7 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                 transaction,
                 base_iri: self.update.base_iri.clone(),
                 query_evaluator: self.evaluator,
+                cancellation_token: self.cancellation_token,
                 #[cfg(feature = "http-client")]
                 client: self.client,
             }
@@ -297,10 +351,12 @@ impl BoundPreparedSparqlUpdate<'_, '_> {
                     storage_for_initial_read: Some(storage),
                     base_iri: self.update.base_iri.clone(),
                     query_evaluator: self.evaluator,
+                    cancellation_token: self.cancellation_token.clone(),
                     #[cfg(feature = "http-client")]
                     client: self.client,
                 }
                 .eval_all(&self.update.operations, &self.using_datasets)?;
+                ensure_update_alive(self.cancellation_token.as_ref())?;
                 transaction.commit()?;
                 Ok(())
             }
@@ -318,6 +374,7 @@ struct ReadableUpdateEvaluator<'a, D: WritableDataset> {
     transaction: &'a mut D,
     base_iri: Option<Iri<OxString>>,
     query_evaluator: QueryEvaluator,
+    cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     client: HttpClient,
 }
@@ -328,14 +385,27 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
         updates: &[GraphUpdateOperation],
         using_datasets: &[Option<QueryDatasetSpecification>],
     ) -> Result<(), UpdateEvaluationError> {
-        validate_update_terms(&self.query_evaluator, updates)?;
+        validate_update_terms(
+            &self.query_evaluator,
+            updates,
+            self.cancellation_token.as_ref(),
+        )?;
         for (update, using_dataset) in updates.iter().zip(using_datasets) {
             #[cfg(feature = "http-client")]
-            self.client.ensure_alive().map_err(egress_update_error)?;
+            if matches!(update, GraphUpdateOperation::Load(_)) {
+                self.client.ensure_alive().map_err(egress_update_error)?;
+            }
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             self.eval(update, using_dataset)?;
         }
         #[cfg(feature = "http-client")]
-        self.client.ensure_alive().map_err(egress_update_error)?;
+        if updates
+            .iter()
+            .any(|update| matches!(update, GraphUpdateOperation::Load(_)))
+        {
+            self.client.ensure_alive().map_err(egress_update_error)?;
+        }
+        ensure_update_alive(self.cancellation_token.as_ref())?;
         Ok(())
     }
 
@@ -366,6 +436,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
     ) -> Result<(), UpdateEvaluationError> {
         let mut bnodes = FxHashMap::default();
         for quad in &operation.data {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             let quad = convert_quad(quad, &mut bnodes);
             self.transaction
                 .insert(quad)
@@ -379,6 +450,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
         operation: &DeleteDataOperation,
     ) -> Result<(), UpdateEvaluationError> {
         for quad in &operation.data {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             let quad = convert_ground_quad(quad);
             self.transaction
                 .remove(&quad)
@@ -400,6 +472,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
             .execute(WritableDatasetView::new(&*self.transaction))?
             .collect::<Result<Vec<_>, _>>()?;
         for mutation in mutations {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             match mutation {
                 DeleteInsertQuad::Delete(quad) => self
                     .transaction
@@ -425,6 +498,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
             validate_loaded_terms(
                 &self.query_evaluator,
                 loaded,
+                self.cancellation_token.as_ref(),
                 #[cfg(feature = "http-client")]
                 &self.client,
             )
@@ -434,6 +508,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                 #[cfg(feature = "http-client")]
                 self.client.ensure_alive().map_err(egress_update_error)?;
                 if let Some(graph_name) = loaded.named_graph_to_create {
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction
                         .insert_named_graph(graph_name.into())
                         .map_err(UpdateEvaluationError::dataset)?;
@@ -441,6 +516,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                 for graph_name in loaded.dataset.named_graphs() {
                     #[cfg(feature = "http-client")]
                     self.client.ensure_alive().map_err(egress_update_error)?;
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction
                         .insert_named_graph(graph_name)
                         .map_err(UpdateEvaluationError::dataset)?;
@@ -448,6 +524,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                 for quad in &loaded.dataset {
                     #[cfg(feature = "http-client")]
                     self.client.ensure_alive().map_err(egress_update_error)?;
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction
                         .insert(quad)
                         .map_err(UpdateEvaluationError::dataset)?;
@@ -684,6 +761,7 @@ struct WriteOnlyUpdateEvaluator<'a, 'b> {
     storage_for_initial_read: Option<&'b Storage>,
     base_iri: Option<Iri<OxString>>,
     query_evaluator: QueryEvaluator,
+    cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     client: HttpClient,
 }
@@ -694,15 +772,28 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
         updates: &[GraphUpdateOperation],
         using_datasets: &[Option<QueryDatasetSpecification>],
     ) -> Result<(), UpdateEvaluationError> {
-        validate_update_terms(&self.query_evaluator, updates)?;
+        validate_update_terms(
+            &self.query_evaluator,
+            updates,
+            self.cancellation_token.as_ref(),
+        )?;
         for (update, using_dataset) in updates.iter().zip(using_datasets) {
             #[cfg(feature = "http-client")]
-            self.client.ensure_alive().map_err(egress_update_error)?;
+            if matches!(update, GraphUpdateOperation::Load(_)) {
+                self.client.ensure_alive().map_err(egress_update_error)?;
+            }
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             self.eval(update, using_dataset)?;
             self.storage_for_initial_read.take(); // We unset the initial reader because we have likely mutated the store state.
         }
         #[cfg(feature = "http-client")]
-        self.client.ensure_alive().map_err(egress_update_error)?;
+        if updates
+            .iter()
+            .any(|update| matches!(update, GraphUpdateOperation::Load(_)))
+        {
+            self.client.ensure_alive().map_err(egress_update_error)?;
+        }
+        ensure_update_alive(self.cancellation_token.as_ref())?;
         Ok(())
     }
 
@@ -712,14 +803,8 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
         using_dataset: &Option<QueryDatasetSpecification>,
     ) -> Result<(), UpdateEvaluationError> {
         match update {
-            GraphUpdateOperation::InsertData(op) => {
-                self.eval_insert_data(op);
-                Ok(())
-            }
-            GraphUpdateOperation::DeleteData(op) => {
-                self.eval_delete_data(op);
-                Ok(())
-            }
+            GraphUpdateOperation::InsertData(op) => self.eval_insert_data(op),
+            GraphUpdateOperation::DeleteData(op) => self.eval_delete_data(op),
             GraphUpdateOperation::DeleteInsert(op) => self.eval_delete_insert(
                 op,
                 using_dataset
@@ -733,19 +818,29 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
         }
     }
 
-    fn eval_insert_data(&mut self, operation: &InsertDataOperation) {
+    fn eval_insert_data(
+        &mut self,
+        operation: &InsertDataOperation,
+    ) -> Result<(), UpdateEvaluationError> {
         let mut bnodes = FxHashMap::default();
         for quad in &operation.data {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             let quad = convert_quad(quad, &mut bnodes);
             self.transaction.insert(quad);
         }
+        Ok(())
     }
 
-    fn eval_delete_data(&mut self, operation: &DeleteDataOperation) {
+    fn eval_delete_data(
+        &mut self,
+        operation: &DeleteDataOperation,
+    ) -> Result<(), UpdateEvaluationError> {
         for quad in &operation.data {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             let quad = convert_ground_quad(quad);
             self.transaction.remove(&quad);
         }
+        Ok(())
     }
 
     fn eval_delete_insert(
@@ -766,6 +861,7 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
             .execute(DatasetView::new(storage.snapshot()))?
             .collect::<Result<Vec<_>, _>>()?;
         for mutation in mutations {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             match mutation {
                 DeleteInsertQuad::Delete(quad) => self.transaction.remove(&quad),
                 DeleteInsertQuad::Insert(quad) => self.transaction.insert(quad),
@@ -785,6 +881,7 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
             validate_loaded_terms(
                 &self.query_evaluator,
                 loaded,
+                self.cancellation_token.as_ref(),
                 #[cfg(feature = "http-client")]
                 &self.client,
             )
@@ -794,16 +891,19 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
                 #[cfg(feature = "http-client")]
                 self.client.ensure_alive().map_err(egress_update_error)?;
                 if let Some(graph_name) = loaded.named_graph_to_create {
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction.insert_named_graph(graph_name.into());
                 }
                 for graph_name in loaded.dataset.named_graphs() {
                     #[cfg(feature = "http-client")]
                     self.client.ensure_alive().map_err(egress_update_error)?;
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction.insert_named_graph(graph_name);
                 }
                 for quad in &loaded.dataset {
                     #[cfg(feature = "http-client")]
                     self.client.ensure_alive().map_err(egress_update_error)?;
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction.insert(quad);
                 }
                 Ok(())
@@ -868,16 +968,20 @@ impl WriteOnlyUpdateEvaluator<'_, '_> {
 fn validate_update_terms(
     evaluator: &QueryEvaluator,
     updates: &[GraphUpdateOperation],
+    cancellation_token: Option<&CancellationToken>,
 ) -> Result<(), UpdateEvaluationError> {
     for update in updates {
+        ensure_update_alive(cancellation_token)?;
         match update {
             GraphUpdateOperation::InsertData(operation) => {
                 for quad in &operation.data {
+                    ensure_update_alive(cancellation_token)?;
                     evaluator.ensure_term_compatible(&quad.object)?;
                 }
             }
             GraphUpdateOperation::DeleteData(operation) => {
                 for quad in &operation.data {
+                    ensure_update_alive(cancellation_token)?;
                     evaluator.ensure_term_compatible(&quad.object.clone().into())?;
                 }
             }
@@ -895,14 +999,53 @@ struct LoadedUpdate {
 fn validate_loaded_terms(
     evaluator: &QueryEvaluator,
     loaded: LoadedUpdate,
+    cancellation_token: Option<&CancellationToken>,
     #[cfg(feature = "http-client")] client: &HttpClient,
 ) -> Result<LoadedUpdate, UpdateEvaluationError> {
     for quad in &loaded.dataset {
         #[cfg(feature = "http-client")]
         client.ensure_alive().map_err(egress_update_error)?;
+        ensure_update_alive(cancellation_token)?;
         evaluator.ensure_term_compatible(&quad.object)?;
     }
     Ok(loaded)
+}
+
+fn ensure_update_start_alive(
+    _update: &Update,
+    cancellation_token: Option<&CancellationToken>,
+    #[cfg(feature = "http-client")] client: &HttpClient,
+) -> Result<(), UpdateEvaluationError> {
+    #[cfg(feature = "http-client")]
+    if _update
+        .operations
+        .iter()
+        .any(|operation| matches!(operation, GraphUpdateOperation::Load(_)))
+    {
+        client.ensure_alive().map_err(egress_update_error)?;
+    }
+    ensure_update_alive(cancellation_token)
+}
+
+fn ensure_update_alive(
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<(), UpdateEvaluationError> {
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        Err(UpdateEvaluationError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+fn update_transaction_start_error(
+    start_error: TransactionStartError<StorageError>,
+) -> UpdateEvaluationError {
+    match start_error {
+        TransactionStartError::Cancelled => UpdateEvaluationError::Cancelled,
+        TransactionStartError::Backend(error) => UpdateEvaluationError::Storage(error),
+        error @ (TransactionStartError::RequirementsNotMet { .. }
+        | TransactionStartError::TimedOut) => UpdateEvaluationError::Unexpected(Box::new(error)),
+    }
 }
 
 #[cfg(feature = "http-client")]
@@ -911,7 +1054,13 @@ fn egress_update_error(error: EgressError) -> UpdateEvaluationError {
 }
 
 fn can_silence_load_error(
-    #[cfg_attr(not(feature = "http-client"), allow(unused_variables))]
+    #[cfg_attr(
+        not(feature = "http-client"),
+        expect(
+            unused_variables,
+            reason = "egress errors only exist with the HTTP client"
+        )
+    )]
     error: &UpdateEvaluationError,
 ) -> bool {
     #[cfg(feature = "http-client")]

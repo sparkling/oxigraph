@@ -13,8 +13,6 @@ use crate::storage::rocksdb::{
 };
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 #[cfg(not(target_family = "wasm"))]
 use std::{io, thread};
@@ -40,7 +38,7 @@ const TRANSACTION_START_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_mi
 /// each transaction attempt that receives this control.
 #[derive(Clone, Default)]
 pub struct TransactionStartControl {
-    cancellation: Arc<AtomicBool>,
+    cancellation: spareval::CancellationToken,
     timeout: Option<Duration>,
 }
 
@@ -57,14 +55,28 @@ impl TransactionStartControl {
         self
     }
 
+    /// Uses an existing SPARQL cancellation token for transaction admission.
+    ///
+    /// This lets one token govern both queued writer admission and the work performed after the
+    /// transaction starts. Calling [`Self::cancel`] or cancelling the supplied token is observed
+    /// by every clone of this control.
+    #[must_use]
+    pub fn with_cancellation_token(
+        mut self,
+        cancellation_token: spareval::CancellationToken,
+    ) -> Self {
+        self.cancellation = cancellation_token;
+        self
+    }
+
     /// Cancels transaction admission for this control and all of its clones.
     pub fn cancel(&self) {
-        self.cancellation.store(true, Ordering::Release);
+        self.cancellation.cancel();
     }
 
     /// Returns whether transaction admission has been cancelled.
     pub fn is_cancelled(&self) -> bool {
-        self.cancellation.load(Ordering::Acquire)
+        self.cancellation.is_cancelled()
     }
 
     /// Returns the configured transaction-admission timeout, if any.
