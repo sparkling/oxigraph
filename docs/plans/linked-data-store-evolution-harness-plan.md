@@ -25,23 +25,24 @@ Use a thin Ruflo control plane to execute the existing product plan. Reuse the
 repository's Agentic-QE, Jena, W3C, mutation, and MetaHarness runners as the
 only evidence authorities. Keep two MetaHarness paths distinct: the existing
 `tools/metaharness` package remains a receipt-sensitive semantic qualifier,
-while a future private `tools/engineering-harness` package may route, build,
-repair, and review application candidates. The green G1.1 reference oracle and
-separate red G1.2 evaluator have now landed in `3edfb86a` and `eaf7161c`.
+while the private `tools/engineering-harness` package routes, builds, repairs,
+and reviews application candidates without promotion authority. The green
+G1.1 reference oracle, separate red G1.2 evaluator, and source-bound G1.2-G1.4
+product slices have landed.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
 repository's native-provider-only and local-only boundaries.
 
-The first implementation objective is not another feature. It is to establish
-the truth of concurrent-write semantics. The RocksDB readable transaction is a
+The first implementation objective was to establish the truth of
+concurrent-write semantics. The RocksDB readable transaction is a
 snapshot plus `WriteBatchWithIndex`, committed by
 `rocksdb_write_writebatch_wi`; it does not use RocksDB `TransactionDB`,
 optimistic transactions, `GetForUpdate`, or conflict validation. The honest
 current claim is stable reads, read-your-writes, and atomic batch application,
 not snapshot isolation or serializability under concurrent RocksDB writers.
 
-The lowest-risk first implementation is one-writer serialization for RocksDB,
+The implemented baseline is one-writer serialization for RocksDB,
 matching the observable one-writer/many-reader model documented by
 [Jena TDB](https://jena.apache.org/documentation/tdb/tdb_transactions.html).
 Only adopt RocksDB pessimistic/optimistic transactions if a reproducible
@@ -55,14 +56,14 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 |---|---|---|
 | Backend-neutral write seam | Implemented and verified in `1da47285` | Preserve the minimal GAT traits; add optional capabilities through extension traits |
 | Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
-| RocksDB writers | Snapshot + indexed batch; G1.2 now reproduces lost update and write skew with both commits returning success | Serialize first unless benchmarks justify OCC/TransactionDB; do not advertise isolation while the evaluator is red |
+| RocksDB writers | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis |
 | Jena differential | July profile seals subject `1fe53cef...`; current subject is `997e2579...` | Historical evidence only; separately review and refresh the lock, then run twice |
 | Jena runner lock | The profile expects `runner/Cargo.lock`, but a clean checkout does not contain it and `--locked` fails | Restore a reviewed, reproducible lock strategy before the profile refresh |
 | Agentic-QE CLI inventory | Expects 133 default and 116 no-default tests; current exact inventories are 144 and 129 | Review counts/IDs and add an exact `persistence-write` profile |
 | Pinned source checkouts | RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 submodules are uninitialized in this clone | Initialize their exact registered revisions before source/full evidence verification; never substitute the parent checkout HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
 | MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by the evidence drift above |
-| Engineering MetaHarness | ADR-0017 architecture accepted; G1.1 and red G1.2 evaluators exist, but no package, native worker adapters, Router evidence, or application receipt exists | Implement separately under `tools/engineering-harness`; package presence is not adoption |
+| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest receipts are implemented; G1.2-G1.4 have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact receipt |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -95,7 +96,7 @@ harness must not turn comparison breadth into an implementation mandate.
 | Brain | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims | Local source/tests remain authoritative for Oxigraph |
 | MetaHarness genome/score/OIA | Readiness and risk diagnostics | Generic identity and scores are advisory |
 | Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof; do not make it a worker host |
-| Future `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Not implemented; no semantic or promotion authority |
+| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Implemented for G1.2-G1.4; still no semantic or promotion authority |
 | Darwin | Deterministic, bounded policy mutation after a product slice exists | `--confirm` requires operator review; never mutate product or oracle inputs |
 | Dream Machine | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled |
 
@@ -212,14 +213,14 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 
 | Plan work | Owning decision | Decision status |
 |---|---|---|
-| G0.1 source registration | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted programme control |
+| G0.1 source registration | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Implemented programme control |
 | G0.2-G0.3 Jena evidence | [ADR-0012](../adr/0012-immutable-broad-jena-harness.md) | Accepted |
 | G0.4-G0.5 Agentic-QE evidence | [ADR-0005](../adr/0005-agentic-qe-integration.md) | Accepted |
 | G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
-| G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted policies |
+| G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted qualification policy; implemented engineering control |
 | G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | G1.5-G1.6 egress/cancellation/claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
-| G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Accepted control; product decisions Proposed |
+| G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control; product decisions Proposed |
 | G2.1-G2.3 metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | G2.4 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | G2.5-G2.7 readiness/recovery | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -271,9 +272,16 @@ Execution record on 2026-08-25:
   reconstructed exact patch `2d5412df6210246266426e3b7ee8be599744fc1093c9ac272b8d8d64a34fef04`
   and accepted format, build, 9 public capability tests, 3 independent
   state-model tests, and 3 transactional regressions in the isolated harness.
-- G1.4 remains product qualification work: the writer gate must pass its
-  1/4/16-writer, concurrent-reader, drop, rollback, and cancellation oracle
-  before ADR-0018 can move beyond Proposed.
+- G1.4 is complete in product commits `b2ed9119` and `5a704914`. Frozen
+  contract
+  `cc20ae29420ff2a3b328b35bdc8f26dcd6cd39e978ec6fcfc0de93290334df39`
+  reconstructed exact patch
+  `47bfdb31333a13ba5d90bca3f06767fe889f05c0e9aebf5b3628d3942eafa7db`
+  as candidate tree `7d47e7352d64171563da8dd8d00fcb9b4c1f790d` and accepted
+  format/build/public-6/independent-2/regression-2 in 313.959 seconds. The
+  writer gate passed its 1/4/16-writer, concurrent-reader, drop, rollback,
+  timeout, and queued-cancellation oracle. ADR-0018 remains Proposed until
+  G1.7, not because G1.4 evidence is missing.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -297,12 +305,12 @@ task.
 | G1.6 | `cli/src/service_description/tests.rs` | `cargo test --locked -p oxigraph-cli service_description::tests` | `cargo test --locked -p oxigraph --test sparql_version` | `cargo test --locked -p oxigraph-cli --no-default-features service_description::tests` |
 | G1.7 | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest | `cargo bench --locked -p oxigraph --bench transactional_write` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
 
-Future engineering task contracts live below
+Engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
 baseline commit, evaluator commit, mutable/blocked paths, features, targets,
 three command roles, time/output/resource ceilings, and success criteria.
-The G1.1-G1.3 evaluator files and the G1.2-G1.3 task contracts are implemented.
-G1.4 and later task contracts remain gated on their direct evaluator-only
+The G1.1-G1.4 evaluator files and the G1.2-G1.4 task contracts are implemented.
+G1.5 and later task contracts remain gated on their direct evaluator-only
 commits.
 
 Implementation order is fixed: accept the version/authority policy; land the

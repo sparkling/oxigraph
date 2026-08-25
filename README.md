@@ -94,8 +94,13 @@ reconstructs candidates in disposable Git workspaces, runs one
 network-isolated verifier session, and keeps product promotion human-owned.
 G1.2 per-instance RocksDB writer serialization is implemented in `7eec1f07`;
 G1.3 typed capability negotiation is implemented in `3bf9468c` and accepted by
-its frozen 9/3/3 evaluator split. G1.4 stress and cancellation qualification is
-the next open transaction gate, so ADR-0018 remains Proposed.
+its frozen 9/3/3 evaluator split. G1.4 bounded writer admission is implemented
+in `b2ed9119` plus formatting follow-up `5a704914` and accepted by its frozen
+6/2/2 evaluator split: 1/4/16 writers serialize without lost commits, readers
+remain live, rollback/drop release the permit, and queued cancellation or
+timeout occurs before snapshot creation without publication. This does not
+claim cancellation after transaction start. ADR-0018 remains Proposed until
+the G1.7 compatibility, performance, and current-evidence promotion gate.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

@@ -28,9 +28,10 @@ missing was a backend-neutral transactional write contract. That contract is
 now implemented by `TransactionalDataset` and `WritableDataset`, with generic
 SPARQL Update binding through `PreparedSparqlUpdate::on_dataset`.
 
-The remaining work is hardening and linked-data-store breadth. The highest-risk
-gaps are transaction capability/error semantics plus complete cancellation and
-outbound-request policy. The service-description drift found during this audit
+The remaining work is hardening and linked-data-store breadth. Transaction
+capability negotiation and bounded writer admission are now source-bound; the
+highest-risk open P0 gaps are complete cancellation and outbound-request
+policy. The service-description drift found during this audit
 is closed in `7dc190d3`: even an RDF 1.2 build now advertises only receipted
 SPARQL 1.0/1.1 languages and version 1.1. Namespace metadata, durable change
 delivery, transaction-time SHACL validation, operational observability,
@@ -86,9 +87,10 @@ Evidence grade A applies to this section.
 - SPARQL Graph Store writes with conditional requests and explicit empty graph
   topology.
 - Memory and RocksDB stores, stable transaction snapshots, read-your-writes,
-  atomic batch application, backup, bulk loading, and read-only open. Memory
-  serializes writers; concurrent RocksDB isolation/conflict behavior is not
-  yet an advertised guarantee.
+  atomic batch application, backup, bulk loading, and read-only open. Both
+  built-in stores serialize writers. Their typed capability profiles remain
+  conservative, and bounded cancellation/timeout currently covers transaction
+  admission before snapshot creation rather than an already-started commit.
 - Backend-neutral reads with `QueryableDataset`.
 - Backend-neutral transactional writes with `TransactionalDataset` and
   `WritableDataset`.
@@ -131,8 +133,8 @@ Evidence grade A applies to this section.
 | ID | Capability | This fork now | Jena 6.2 | RDF4J 6.0 | Decision |
 |---|---|---|---|---|---|
 | G01 | Pluggable transactional write plane | Implemented in `1da47285`; production adapter proof pending | Dataset/transaction APIs, but not the same Rust extension need | SAIL is the storage decoupling point | Keep the narrow Rust traits; P0 conformance |
-| G02 | Isolation and conflict contract | Memory serializes writers; RocksDB uses a snapshot plus `WriteBatchWithIndex` with no conflict validation; no typed capability discovery | TDB2 documents serializable transactions and one active writer | Multiple requested levels and compatible-level discovery; documented MemoryStore/NativeStore SAILs use optimistic conflict failure, without implying every third-party store does | P0 truth test, then serialized-writer baseline unless measured concurrency justifies conflict machinery |
-| G03 | Transaction lifecycle and uncertain commit | Consuming commit/rollback; no prepare, savepoint, active state, or commit-unknown taxonomy | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | P0 error taxonomy; savepoints later |
+| G02 | Isolation and conflict contract | Dimensioned requirements/capabilities are implemented; memory and RocksDB advertise a serialized-writer baseline proven by lost-update, write-skew, and 1/4/16-writer tests | TDB2 documents serializable transactions and one active writer | Multiple requested levels and compatible-level discovery; documented MemoryStore/NativeStore SAILs use optimistic conflict failure, without implying every third-party store does | Retain serialization until G1.7 measurement justifies a separate OCC/TransactionDB hypothesis |
+| G03 | Transaction lifecycle and uncertain commit | Typed rejected/conflicted/cancelled/indeterminate outcomes exist in the extension contract; built-in `Store` does not claim durable outcome lookup, prepare, savepoints, or active-state inspection | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Implement durable lookup with G2.3; savepoints remain later scope |
 | G04 | Empty named-graph topology | Strong explicit contract across model, store, I/O, protocol, bindings | Narrow observed divergence in the pinned Jena harness | Context APIs; behavior depends on store/operation | Preserve Oxigraph contract; no change |
 | G05 | Prefix/namespace metadata | Parser prefixes are transient; store has no registry | Prefix mappings and a Fuseki prefix service | Transactional namespace operations | P1 store metadata capability |
 | G06 | Durable change delivery | None | RDF Patch and patch-log ecosystem | Connection/store listeners; notifications | P1 ordered durable feed; RDF Patch adapter optional |

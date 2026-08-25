@@ -36,6 +36,17 @@ The earlier application runs remain useful routing and failure evidence; they
 do not replace this source-bound product verification or grant promotion
 authority.
 
+G1.4 product commits `b2ed9119` and `5a704914` also passed direct candidate
+reconstruction and the frozen verifier. Contract
+`cc20ae29420ff2a3b328b35bdc8f26dcd6cd39e978ec6fcfc0de93290334df39`
+admitted exact patch
+`47bfdb31333a13ba5d90bca3f06767fe889f05c0e9aebf5b3628d3942eafa7db`
+as candidate tree `7d47e7352d64171563da8dd8d00fcb9b4c1f790d`, retained protected
+manifest `537184400702bd927208c3f314c014386a65390061f263d7924855d38777bb3b`,
+and returned `ACCEPT` for format/build/public-6/independent-2/regression-2 in
+313.959 seconds. The verifier session receipt has SHA-256
+`1a6061c95e1cf960aeb8d7f0145b032c60a0423e0f69afbc5a92731a3594729a`.
+
 Install and verify from this directory:
 
 ```bash

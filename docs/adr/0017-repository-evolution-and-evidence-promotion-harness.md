@@ -1,22 +1,20 @@
 # ADR-0017: Repository evolution and evidence promotion harness
 
-- Status: Accepted
+- Status: Implemented
 - Date: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: the control-plane architecture and authority boundary
-  are accepted; Ruflo research orchestration, the existing semantic
-  qualification adapter, policy-only synthetic Darwin qualification, and a
-  user-scoped Dream Machine installation are verified. The separate engineering
-  runtime is not implemented. The G1.1 reference oracle and separate red G1.2
-  concurrency evaluator now satisfy its application-evaluator prerequisite;
-  unattended Dream Machine execution remains deferred behind the activation
-  gates in this ADR
-- Update note: the accepted design now separates a future
-  `tools/engineering-harness` worker runtime from the receipt-sensitive
-  `tools/metaharness` semantic qualifier, fixes patched-candidate verification
-  order, and retains the G0.1-G3.5 task graph without treating task rows or
-  installed packages as product evidence
+- Implementation status: the separate `tools/engineering-harness` runtime,
+  native Codex/Claude workers, quality-first Router, sealed reconstruction,
+  one-session sandbox, repair/review lifecycle, and application receipts are
+  implemented and directly tested. A dual-provider G1.2 application run is
+  accepted, and G1.3-G1.4 have direct source-bound candidate acceptances. The
+  existing `tools/metaharness` semantic qualifier remains separate; unattended
+  Dream Machine execution remains deferred behind the activation gates in this
+  ADR
+- Update note: implementation preserves human-only promotion and the
+  G0.1-G3.5 task graph without treating Ruflo rows, installed packages, generic
+  scores, or application receipts as semantic qualification
 - Related:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -79,11 +77,11 @@ Full semantic MetaHarness qualification is therefore unavailable until a
 reviewed evidence refresh closes all three inputs. A passing synthetic Darwin
 run proves only the policy mechanics.
 
-The repository does not yet contain an application-delivery control plane,
-quality-first model router, native Codex and Claude worker adapters, or a
+The repository now contains a separate application-delivery control plane,
+quality-first model router, native Codex and Claude worker adapters, and a
 baseline/evaluator-separated G1 task corpus. The existing `tools/metaharness`
-package is deliberately a semantic qualification adapter and must not absorb
-those engineering responsibilities.
+package remains deliberately limited to semantic qualification and has not
+absorbed those engineering responsibilities.
 
 ## Decision
 
@@ -96,7 +94,7 @@ authorities and may not replace them.
 | RuvNet Brain | Source-grounded guidance for the rUv stack | Oxigraph behavior not established by local source/tests |
 | MetaHarness genome, score, and OIA | Advisory readiness, risk, and infrastructure analysis | Product correctness or current semantic qualification |
 | Existing `tools/metaharness` qualifier | ADR-0004 policy evolution against protected semantic evidence | Engineering implementation, repair, or product promotion |
-| Future `tools/engineering-harness` runtime | Route, build, repair, review, and receipt isolated G1-G3 candidates | Semantic truth, publication, or promotion; it is not implemented yet |
+| `tools/engineering-harness` runtime | Route, build, repair, review, and receipt isolated G1-G3 candidates | Semantic truth, publication, or promotion |
 | Darwin | Bounded evolution of frozen harness-policy surfaces | Rust source, manifests, expected results, thresholds, or semantic answers |
 | Agentic-QE | Exact profile coordination and schema-v4 evidence publication | A simulated or JavaScript substitute for native Rust execution |
 | Dream Machine | Local version/config compilation, rotation vocabulary, three-verdict discipline, and a secondary ledger | Scheduling, provider routing, publication, promotion, or replacement receipts |
@@ -139,8 +137,8 @@ The execution rules are:
 
 ## Engineering runtime boundary
 
-When its prerequisites exist, implement the engineering control plane as a
-separate private package under `tools/engineering-harness`. Its manifests
+The engineering control plane is implemented as a separate private package
+under `tools/engineering-harness`. Its manifests
 request current upstream packages through `latest` dist-tags, while its
 committed lockfile, installed-package checks, executable hashes, and receipts
 bind the exact integrity-verified bytes used by a run. Package presence,
@@ -338,9 +336,9 @@ and approving actor. Prompt text and a bare checksum are not closure evidence.
 - A synthetic Darwin qualification may demonstrate deterministic policy
   mechanics, but only a fresh full qualification plus independent verification
   supports a semantic-qualification claim.
-- The accepted engineering architecture does not implement
-  `tools/engineering-harness`; that begins only after a direct red G1 evaluator
-  and its separate evaluator commit exist.
+- The engineering runtime is operational for evaluator-separated G1 tasks, but
+  every new task still requires its own frozen red baseline, evaluator commit,
+  exact candidate verification, and human promotion decision.
 - Volatile `.claude-flow`, `.claude`, `.swarm`, RVF, RuVector, and `var` state
   remains local runtime state and is not a committed harness definition.
 
@@ -373,6 +371,7 @@ and approving actor. Prompt text and a bare checksum are not closure evidence.
 - [Execution plan](../plans/linked-data-store-evolution-harness-plan.md)
 - [Existing policy-only qualification adapter](../../tools/metaharness/qualify.mjs)
 - [Existing independent verifier](../../tools/metaharness/verify.mjs)
+- [Engineering application harness](../../tools/engineering-harness/README.md)
 - [Agentic-QE profile registry](../../tools/agentic-qe/profile-definitions.mjs)
 - [Reviewed Jena profile lock](../../tools/jena-parity/profile.lock.json)
 - [Dream Machine audited source](https://github.com/ruvnet/dream-machine/tree/8ce385786faa5e63cc0e7105cc6e96f663a51f07)
@@ -399,13 +398,23 @@ Non-authoritative local verification on 2026-08-24 established:
 - a deterministic two-generation/two-child Darwin dry-run plan with no write
   execution.
 
+Source-bound engineering evidence on 2026-08-25 established:
+
+- 108/108 engineering-harness tests and a passing dependency/provider doctor;
+- accepted dual-provider G1.2 application receipt
+  `d303b85b766bd0c6d459044da4ca891e2d6b1feb728124cbeb2668c1372c8e2c`,
+  with native Claude and Codex represented and every required cross-vendor
+  review accepting the selected candidate;
+- direct frozen candidate acceptance for G1.3's 9/3/3 evaluator split; and
+- direct frozen candidate acceptance for G1.4's 6/2/2 evaluator split in a
+  read-only, network-isolated verifier session.
+
 ## Decision boundary
 
-This ADR accepts the architecture and authority boundary; it does not claim
-that the engineering runtime has been implemented, Dream Machine is an
-approved unattended runner, full MetaHarness qualification is current, or a
-generated candidate is safe to promote. ADR-0018 through ADR-0025 remain
-Proposed until their product behavior and evidence exist. Runtime adoption
-requires the red/evaluator-separated G1 corpus, direct control-plane tests,
-continuously current prerequisites, per-run authorization, activation status,
-and exact receipts above.
+This ADR implements the engineering architecture and authority boundary; it
+does not claim that Dream Machine is an approved unattended runner, full
+MetaHarness qualification is current, or an application-harness acceptance is
+safe to promote. ADR-0018 through ADR-0025 remain Proposed until their product
+behavior and evidence exist. Each task still requires a red/evaluator-separated
+corpus, direct control-plane tests, continuously current prerequisites,
+per-run authorization, activation status, and exact receipts above.

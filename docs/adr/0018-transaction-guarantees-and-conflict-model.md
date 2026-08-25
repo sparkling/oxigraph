@@ -4,9 +4,9 @@
 - Date: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: G1.1-G1.3 implemented and source-bound; G1.4's
-  1/4/16-writer, reader-liveness, and bounded-cancellation qualification
-  remains outstanding
+- Implementation status: G1.1-G1.4 implemented and source-bound; G1.7's
+  compatibility, performance, and current-evidence promotion gate remains
+  outstanding
 - Depends on:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - Related:
@@ -131,7 +131,30 @@ as candidate tree `b369e766a3f8c02f6d580924dd943e08ebafcdf0`, retained the
 protected-tree manifest `679e1ce34462d761090534c186e6bbbde5ba9297b7d00dda60d3748f8b16e189`,
 and returned `ACCEPT` after format, build, 9 public capability tests, 3
 independent state-model tests, and 3 transactional regressions in a
-network-isolated read-only workspace. ADR-0018 remains Proposed until G1.4 and
-the remaining acceptance boundary are complete.
+network-isolated read-only workspace.
+
+G1.4 is implemented by product commits `b2ed9119` and `5a704914`. The public
+`TransactionStartControl` supplies clone-shared cancellation and an optional
+admission timeout. Both built-in backends observe those controls while queued,
+acquire their per-instance writer permit before creating a transaction
+snapshot, and hold it through commit, rollback, or drop. This is deliberately
+an admission guarantee only: `Store` continues to advertise
+`CancellationGuarantee::Unsupported` for cancellation after transaction start.
+
+The frozen G1.4 contract digest is
+`cc20ae29420ff2a3b328b35bdc8f26dcd6cd39e978ec6fcfc0de93290334df39`.
+The engineering harness reconstructed exact product patch
+`47bfdb31333a13ba5d90bca3f06767fe889f05c0e9aebf5b3628d3942eafa7db`
+as candidate tree `7d47e7352d64171563da8dd8d00fcb9b4c1f790d`, retained protected
+manifest `537184400702bd927208c3f314c014386a65390061f263d7924855d38777bb3b`,
+and returned `ACCEPT` after format, build, six public writer-admission tests,
+two independent concurrent-history tests, and two atomic-update regressions in
+313.959 seconds. The public matrix covers 1/4/16 writers, concurrent-reader
+liveness, rollback/drop release, queued cancellation, and zero-timeout
+admission without partial publication.
+
+ADR-0018 remains Proposed until G1.7 closes the compatibility, performance,
+and current-evidence promotion boundary; G1.4 completion alone does not grant
+promotion authority.
 The executable plan identifiers are G1.1-G1.4 in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
