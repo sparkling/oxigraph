@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.3-transaction-capabilities",
+  "programme": "linked-data-store",
+  "decision": "ADR-0018",
+  "kind": "compiler-red-control",
+  "runnableByCurrentHarness": false,
+  "observedBaseline": {
+    "commit": "253a2b34079c1cae6eb9cfd196380a14a7ca092f",
+    "tree": "ec104c6ab9f3fa4246181166c0b91eb39e5715ed"
+  },
+  "evaluator": {
+    "path": "lib/oxigraph/tests/transaction_capabilities.rs",
+    "contentSha256": "154acc7d10fcf110f2b798752518ea67ef74c8199b706032246a97d37efa8821",
+    "gitBlob": "5ada1355510926e386cd3f3f6d432a7cd6a0b6ff"
+  },
+  "protectedLegacySurface": {
+    "path": "lib/oxigraph/src/store/transactional.rs",
+    "algorithm": "sha256-of-inclusive-line-range-bytes-v1",
+    "lines": {
+      "first": 1,
+      "last": 108
+    },
+    "sha256": "ae84a63b060400845cd965828cb314a2ac9fc7da3d30655a1a7603af6c924e55",
+    "constraint": "The existing WritableDataset and TransactionalDataset source remains byte-identical; the G1.3 API is additive after this surface."
+  },
+  "publicCommand": {
+    "argv": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "oxigraph",
+      "--test",
+      "transaction_capabilities"
+    ],
+    "compilerRed": {
+      "exitCode": 101,
+      "rustcCode": "E0432",
+      "rustcErrorCount": 1,
+      "primaryPath": "lib/oxigraph/tests/transaction_capabilities.rs",
+      "requiredExports": [
+        "CancellationGuarantee",
+        "ConflictBehavior",
+        "NegotiatedTransactionalDataset",
+        "OutcomeAwareWritableDataset",
+        "OutcomeLookup",
+        "RollbackGuarantee",
+        "TransactionCapabilities",
+        "TransactionCommitError",
+        "TransactionKey",
+        "TransactionRequest",
+        "TransactionRequirements",
+        "TransactionRollbackError",
+        "TransactionStartError",
+        "UnmetTransactionRequirement",
+        "WriterIsolation"
+      ],
+      "requiredSubstrings": [
+        "error[E0432]: unresolved imports",
+        "could not compile `oxigraph` (test \"transaction_capabilities\") due to 1 previous error"
+      ],
+      "forbiddenSubstrings": [
+        "no test target named",
+        "linking with",
+        "timed out"
+      ]
+    }
+  },
+  "greenControls": [
+    {
+      "role": "independent",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_state_model"
+      ],
+      "expectedPassed": 3
+    },
+    {
+      "role": "regression",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transactional_dataset"
+      ],
+      "expectedPassed": 3
+    }
+  ],
+  "futureGreen": {
+    "publicPassed": 7,
+    "requirements": [
+      "default requests retain the legacy minimum and return the advertised effective profile",
+      "unmet dimensions are typed and rejected before opening a backend transaction",
+      "writer serialization is not reported as detected-and-rejected conflicts",
+      "memory and RocksDB read-write instances expose only oracle-backed guarantees",
+      "read-only RocksDB instances expose no write capabilities",
+      "rejected, conflicted, cancelled, and indeterminate commit outcomes remain distinguishable",
+      "backend sources and indeterminate transaction keys are preserved"
+    ]
+  },
+  "registration": {
+    "status": "awaiting-evaluator-only-commit",
+    "futureContractPath": "tools/engineering-harness/tasks/g1/g1.3/contract.json",
+    "blockers": [
+      "The current G1.2-specific harness contract admits runtime test failures and deliberately rejects compiler failures.",
+      "A runnable contract requires immutable evaluator commit, parent, tree, blob, and patch identities that do not exist before the evaluator-only commit."
+    ]
+  }
+}
