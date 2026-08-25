@@ -16,7 +16,7 @@ use oxigraph::sparql::{
 use oxigraph::store::Store;
 use oxiri::Iri;
 use serde_json::{Map, Value, json};
-use spargebra::algebra::GraphPattern;
+use spargebra::algebra::QueryExpression;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -343,7 +343,7 @@ impl ServiceHandler for OfflineServiceHandler {
 
     fn handle(
         &self,
-        _pattern: &GraphPattern,
+        _expression: &QueryExpression,
         _base_iri: Option<&Iri<OxString>>,
     ) -> Result<QuerySolutionIter<'static>, Self::Error> {
         let variables: Arc<[Variable]> = [Variable::new_unchecked("remote")].into();

@@ -1,3 +1,4 @@
 /oracle/target/
 /runner/target/
+!/runner/Cargo.lock
 /target/
