@@ -20,6 +20,10 @@ fn form_post_combines_disjoint_url_and_body_parameters() -> Result<()> {
     let store = Store::new()?;
     let (address, _server) =
         spawn_server(&store, &SparqlEvaluator::new(), QueryEntailment::Simple)?;
+    #[cfg(feature = "rdf-12")]
+    let supported_version = "1.2";
+    #[cfg(not(feature = "rdf-12"))]
+    let supported_version = "1.1";
     let query_body = form(&[("query", "ASK {}")]);
     let duplicate_query = ("query", "ASK {}");
     let response = send(
@@ -39,7 +43,7 @@ fn form_post_combines_disjoint_url_and_body_parameters() -> Result<()> {
     for parameter in [
         ("default-graph-uri", "urn:default"),
         ("named-graph-uri", "urn:named"),
-        ("version", "1.2"),
+        ("version", supported_version),
     ] {
         let response = send(
             address,
@@ -77,7 +81,7 @@ fn form_post_combines_disjoint_url_and_body_parameters() -> Result<()> {
     for parameter in [
         ("using-graph-uri", "urn:default"),
         ("using-named-graph-uri", "urn:named"),
-        ("version", "1.2"),
+        ("version", supported_version),
     ] {
         let response = send(
             address,
