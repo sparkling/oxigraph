@@ -352,9 +352,14 @@ impl SparqlEvaluator {
         self
     }
 
-    /// Inject a cancellation token to the SPARQL evaluation.
+    /// Injects a cancellation token into SPARQL evaluation.
     ///
-    /// Might be used to abort a query cleanly.
+    /// It may be used to abort a query or an update cleanly. Updates that own
+    /// their transaction roll back staged changes when cancellation is observed.
+    /// Updates bound to a caller-owned transaction return
+    /// [`UpdateEvaluationError::Cancelled`] but leave rollback to the caller.
+    /// A custom [`TransactionalDataset`] whose `start_transaction` call blocks
+    /// cannot observe cancellation until that call returns.
     ///
     /// ```
     /// use oxigraph::model::*;

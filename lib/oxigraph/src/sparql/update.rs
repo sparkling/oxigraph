@@ -551,6 +551,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                 ))
             }
         } else {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
             self.transaction
                 .insert_named_graph(graph_name)
                 .map_err(UpdateEvaluationError::dataset)?;
@@ -567,6 +568,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                     .contains_named_graph(&dataset_graph_name)
                     .map_err(UpdateEvaluationError::dataset)?
                 {
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction
                         .clear_graph(Some(&dataset_graph_name))
                         .map_err(UpdateEvaluationError::dataset)
@@ -600,6 +602,7 @@ impl<D: WritableDataset> ReadableUpdateEvaluator<'_, D> {
                     .contains_named_graph(&dataset_graph_name)
                     .map_err(UpdateEvaluationError::dataset)?
                 {
+                    ensure_update_alive(self.cancellation_token.as_ref())?;
                     self.transaction
                         .remove_named_graph(&dataset_graph_name)
                         .map_err(UpdateEvaluationError::dataset)?;
