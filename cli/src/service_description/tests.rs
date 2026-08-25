@@ -1,23 +1,84 @@
 #![expect(clippy::panic_in_result_fn)]
 
 use super::*;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxhttp::model::header::CONTENT_TYPE;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxhttp::model::{Body, Method, Request};
 #[cfg(feature = "rdf-12")]
 use oxigraph::model::RdfVersion;
 use oxigraph::model::{GraphName, NamedOrBlankNode, Quad, Term};
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxigraph::sparql::EgressPolicy;
 use oxigraph::store::Store;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::io;
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use std::io::{Read, Write};
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use std::net::{IpAddr, Ipv4Addr, Shutdown, TcpListener, TcpStream};
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use std::thread::{self, JoinHandle};
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use std::time::Duration;
+
+const BASIC_FEDERATED_QUERY_IRI: &str =
+    "http://www.w3.org/ns/sparql-service-description#BasicFederatedQuery";
+const INPUT_FORMAT_IRI: &str = "http://www.w3.org/ns/sparql-service-description#inputFormat";
 
 fn graph(kind: EndpointKind, entailment: QueryEntailment) -> Vec<Triple> {
     let evaluator = SparqlEvaluator::new();
+    graph_with_evaluator(&evaluator, kind, false, entailment)
+}
+
+fn graph_with_evaluator(
+    evaluator: &SparqlEvaluator,
+    kind: EndpointKind,
+    union_default_graph: bool,
+    entailment: QueryEntailment,
+) -> Vec<Triple> {
     generate_service_description_graph(
         RdfFormat::Turtle,
         kind,
-        false,
+        union_default_graph,
         entailment,
         "http://example.test/sparql".into(),
-        &evaluator,
+        evaluator,
     )
 }
 
@@ -53,6 +114,184 @@ fn object_iris(graph: &[Triple], predicate: &NamedNode) -> BTreeSet<String> {
             _ => None,
         })
         .collect()
+}
+
+fn input_formats(graph: &[Triple]) -> BTreeSet<String> {
+    object_iris(graph, &NamedNode::new_unchecked(INPUT_FORMAT_IRI))
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn supported_input_formats() -> BTreeSet<String> {
+    supported_rdf_formats()
+        .into_iter()
+        .map(|format| format.iri().to_owned())
+        .collect()
+}
+
+fn remote_claims(evaluator: &SparqlEvaluator) -> (bool, BTreeSet<String>) {
+    let query = graph_with_evaluator(
+        evaluator,
+        EndpointKind {
+            query: true,
+            update: false,
+        },
+        false,
+        QueryEntailment::Simple,
+    );
+    let update = graph_with_evaluator(
+        evaluator,
+        EndpointKind {
+            query: false,
+            update: true,
+        },
+        false,
+        QueryEntailment::Simple,
+    );
+    (
+        object_iris(&query, &sd::FEATURE).contains(BASIC_FEDERATED_QUERY_IRI),
+        input_formats(&update),
+    )
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn policy_with(origin_ip: Ipv4Addr, allowed_ip: Ipv4Addr) -> EgressPolicy {
+    EgressPolicy::deny_all()
+        .allow_origin(&format!("http://{origin_ip}:8080"))
+        .expect("the literal-IP test origin is valid")
+        .allow_ip(IpAddr::V4(allowed_ip))
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+struct LoopbackLoadProbe {
+    iri: String,
+    stop: Sender<()>,
+    handle: Option<JoinHandle<io::Result<usize>>>,
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+impl LoopbackLoadProbe {
+    fn spawn() -> io::Result<Self> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let iri = format!("http://{}/blocked.nt", listener.local_addr()?);
+        let (stop, stop_receiver) = mpsc::channel();
+        let handle = thread::spawn(move || serve_load_or_stop(listener, &stop_receiver));
+        Ok(Self {
+            iri,
+            stop,
+            handle: Some(handle),
+        })
+    }
+
+    fn iri(&self) -> &str {
+        &self.iri
+    }
+
+    fn finish(mut self) -> io::Result<usize> {
+        if self.stop.send(()).is_err() {
+            // The responder has already completed after observing a connection.
+        }
+        self.join()
+    }
+
+    fn join(&mut self) -> io::Result<usize> {
+        self.handle
+            .take()
+            .ok_or_else(|| io::Error::other("loopback probe was already joined"))?
+            .join()
+            .map_err(|_| io::Error::other("loopback probe thread panicked"))?
+    }
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+impl Drop for LoopbackLoadProbe {
+    fn drop(&mut self) {
+        if self.stop.send(()).is_err() {
+            // The responder has already completed after observing a connection.
+        }
+        if self.handle.is_some() {
+            drop(self.join());
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn serve_load_or_stop(listener: TcpListener, stop: &Receiver<()>) -> io::Result<usize> {
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                serve_load_response(&mut stream)?;
+                return Ok(1);
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+            Err(error) => return Err(error),
+        }
+        match stop.try_recv() {
+            Ok(()) | Err(TryRecvError::Disconnected) => return Ok(0),
+            Err(TryRecvError::Empty) => thread::yield_now(),
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn serve_load_response(stream: &mut TcpStream) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+    let mut request = Vec::new();
+    while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+        let mut buffer = [0; 1024];
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "loopback request ended before its headers",
+            ));
+        }
+        request.extend_from_slice(&buffer[..read]);
+        if request.len() > 64 * 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "loopback request headers are too large",
+            ));
+        }
+    }
+    const BODY: &[u8] = b"<urn:remote:s> <urn:remote:p> <urn:remote:o> .\n";
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/n-triples\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        BODY.len()
+    )?;
+    stream.write_all(BODY)?;
+    stream.flush()?;
+    stream.shutdown(Shutdown::Write)
 }
 
 #[test]
@@ -138,17 +377,12 @@ fn result_format_iris_are_exact_for_each_endpoint_kind() {
 
 #[test]
 fn input_format_iris_match_the_rdf_load_surface() {
-    let input_format =
-        NamedNode::new_unchecked("http://www.w3.org/ns/sparql-service-description#inputFormat");
     #[cfg(any(
         feature = "native-tls",
         feature = "rustls-native",
         feature = "rustls-webpki"
     ))]
-    let expected = supported_rdf_formats()
-        .into_iter()
-        .map(|format| format.iri().to_owned())
-        .collect();
+    let expected = supported_input_formats();
     #[cfg(not(any(
         feature = "native-tls",
         feature = "rustls-native",
@@ -162,7 +396,7 @@ fn input_format_iris_match_the_rdf_load_surface() {
         },
         QueryEntailment::Simple,
     );
-    assert!(object_iris(&query, &input_format).is_empty());
+    assert!(input_formats(&query).is_empty());
 
     let update = graph(
         EndpointKind {
@@ -171,7 +405,7 @@ fn input_format_iris_match_the_rdf_load_surface() {
         },
         QueryEntailment::Simple,
     );
-    assert_eq!(object_iris(&update, &input_format), expected);
+    assert_eq!(input_formats(&update), expected);
 }
 
 #[test]
@@ -189,7 +423,7 @@ fn advertised_features_are_an_exact_capability_set() {
         feature = "rustls-native",
         feature = "rustls-webpki"
     ))]
-    expected.insert(sd::BASIC_FEDERATED_QUERY.as_str().to_owned());
+    expected.insert(BASIC_FEDERATED_QUERY_IRI.to_owned());
     assert_eq!(object_iris(&query, &sd::FEATURE), expected);
 
     let evaluator = SparqlEvaluator::new();
@@ -206,6 +440,202 @@ fn advertised_features_are_an_exact_capability_set() {
     );
     expected.insert(sd::UNION_DEFAULT_GRAPH.as_str().to_owned());
     assert_eq!(object_iris(&union, &sd::FEATURE), expected);
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn deny_all_policy_suppresses_remote_service_and_load_claims() {
+    let evaluator = SparqlEvaluator::new().with_egress_policy(EgressPolicy::deny_all());
+    assert_eq!(remote_claims(&evaluator), (false, BTreeSet::new()));
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn mismatched_origin_and_ip_suppress_remote_service_and_load_claims() {
+    let evaluator = SparqlEvaluator::new().with_egress_policy(policy_with(
+        Ipv4Addr::new(127, 0, 0, 1),
+        Ipv4Addr::new(127, 0, 0, 2),
+    ));
+    assert_eq!(remote_claims(&evaluator), (false, BTreeSet::new()));
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn matching_origin_and_ip_enable_remote_service_and_load_claims() {
+    let evaluator = SparqlEvaluator::new().with_egress_policy(policy_with(
+        Ipv4Addr::new(127, 0, 0, 1),
+        Ipv4Addr::new(127, 0, 0, 1),
+    ));
+    assert_eq!(remote_claims(&evaluator), (true, supported_input_formats()));
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn disabled_default_http_service_handler_only_suppresses_federation_claim() {
+    let evaluator = SparqlEvaluator::new()
+        .with_egress_policy(policy_with(
+            Ipv4Addr::new(127, 0, 0, 1),
+            Ipv4Addr::new(127, 0, 0, 1),
+        ))
+        .without_default_http_service_handler();
+    assert_eq!(
+        remote_claims(&evaluator),
+        (false, supported_input_formats())
+    );
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn server_profile_denies_remote_egress_by_default() {
+    assert_eq!(
+        remote_claims(&crate::sparql_evaluator()),
+        (false, BTreeSet::new())
+    );
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+#[test]
+fn server_update_uses_the_shared_deny_all_evaluator() -> Result<(), Box<dyn Error>> {
+    let probe = LoopbackLoadProbe::spawn()?;
+    let loaded_graph = NamedNode::new_unchecked("urn:test:blocked-load");
+    let update = format!(
+        concat!(
+            "INSERT DATA {{ <urn:local:s> <urn:local:p> <urn:local:o> }}; ",
+            "LOAD <{}> INTO GRAPH {}"
+        ),
+        probe.iri(),
+        loaded_graph
+    );
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost/update")
+        .header(CONTENT_TYPE, "application/sparql-update")
+        .body(Body::from(update))?;
+    let store = Store::new()?;
+    let evaluator = SparqlEvaluator::new().with_egress_policy(EgressPolicy::deny_all());
+
+    let result = crate::handle_request(
+        &mut request,
+        &store,
+        &evaluator,
+        false,
+        false,
+        QueryEntailment::Simple,
+        None,
+    );
+    let accepted_connections = probe.finish()?;
+    let policy_denied = result
+        .as_ref()
+        .is_err_and(|(_, message)| message.contains("policy denied"));
+    let outcome = match &result {
+        Ok(response) => format!("HTTP {}", response.status()),
+        Err((status, message)) => format!("HTTP {status}: {message}"),
+    };
+    let published_quads = store.len()?;
+    let published_graph = store.contains_named_graph(&loaded_graph.into())?;
+
+    assert_eq!(
+        (
+            accepted_connections,
+            policy_denied,
+            published_quads,
+            published_graph,
+        ),
+        (0, true, 0, false),
+        "the update endpoint must use the advertised deny-all evaluator, reject before connecting, and roll back the complete update; observed {outcome}"
+    );
+    Ok(())
+}
+
+#[cfg(not(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+)))]
+#[test]
+fn build_without_http_support_has_no_remote_service_or_load_claims() {
+    assert_eq!(
+        remote_claims(&SparqlEvaluator::new()),
+        (false, BTreeSet::new())
+    );
+}
+
+#[test]
+fn union_default_graph_is_disclosed_only_by_query_capable_endpoints() {
+    let evaluator = SparqlEvaluator::new();
+    for (kind, expected) in [
+        (
+            EndpointKind {
+                query: true,
+                update: false,
+            },
+            true,
+        ),
+        (
+            EndpointKind {
+                query: false,
+                update: true,
+            },
+            false,
+        ),
+        (
+            EndpointKind {
+                query: true,
+                update: true,
+            },
+            true,
+        ),
+    ] {
+        let description = graph_with_evaluator(&evaluator, kind, true, QueryEntailment::Simple);
+        assert_eq!(
+            object_iris(&description, &sd::FEATURE).contains(sd::UNION_DEFAULT_GRAPH.as_str()),
+            expected,
+            "UnionDefaultGraph must describe query dataset behavior only"
+        );
+    }
+}
+
+#[test]
+fn query_only_endpoint_does_not_disclose_update_or_load_support() {
+    let evaluator = SparqlEvaluator::new();
+    let description = graph_with_evaluator(
+        &evaluator,
+        EndpointKind {
+            query: true,
+            update: false,
+        },
+        true,
+        QueryEntailment::Simple,
+    );
+    assert!(
+        !object_iris(&description, &sd::SUPPORTED_LANGUAGE).contains(sd::SPARQL_11_UPDATE.as_str())
+    );
+    assert!(input_formats(&description).is_empty());
+    assert!(object_iris(&description, &sd::FEATURE).contains(sd::UNION_DEFAULT_GRAPH.as_str()));
 }
 
 #[test]
