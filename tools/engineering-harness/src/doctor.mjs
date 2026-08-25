@@ -11,8 +11,8 @@ export async function doctorReport() {
   const nativeHosts = await nativeHostDiagnostics();
   return Object.freeze({
     schema: 1,
-    status: nativeHosts.every(({ available }) => available)
-      ? "native-hosts-attested"
+    status: nativeHosts.every(({ available, interfaceValid }) => available && interfaceValid)
+      ? "runner-implemented"
       : "inconclusive",
     node: process.versions.node,
     commands: commandIds(),
@@ -23,8 +23,11 @@ export async function doctorReport() {
     nativeHosts,
     mcpRegistered: false,
     nativeWorkerBoundaryImplemented: true,
-    nativeWorkersImplemented: false,
-    programmeRunnerImplemented: false,
+    nativeWorkersImplemented: true,
+    programmeRunnerImplemented: true,
+    applicationReceiptReplayImplemented: true,
+    atomicRouterHistoryAdmissionImplemented: true,
+    realDualProviderProofRecorded: false,
     localOnly: true,
     promotionAuthority: false,
   });
