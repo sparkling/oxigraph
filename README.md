@@ -126,11 +126,15 @@ official cases, 269/269 SPARQL 1.2 cases, 86/86 RDF Dataset Canonicalization
 cases, 519/519 eligible SHACL cases, 98/98 OWL 2 RL/RDF assertions, and a
 76-scenario/198-assertion Jena differential. These counts are evidence for the
 named pinned suites and profiles only. They are not a substitute for every
-normative clause in a W3C document family. They are also historical for their
-sealed subject after the backend-neutral write changes: the Jena subject lock
-and Agentic-QE exact CLI inventories must be reviewed, and the source-bound
-OxDatalog mutation receipt must be regenerated for its exact scope, before full
-MetaHarness qualification can be described as current HEAD evidence.
+normative clause in a W3C document family. G0.1-G0.5 have since closed their
+scoped source-registration, Jena runner/profile, and Agentic-QE refresh work:
+`46ef17fc` restores the locked Jena runner, `22a8033e` binds two byte-identical
+76-scenario/198-assertion runs to that reviewed subject, and `253a2b34` binds
+the exact 144/144 default, 129/129 no-default, and 34/34
+`persistence-write` inventories. Those source-bound results do not make a
+later HEAD or the aggregate semantic qualification current by themselves.
+G0.6 mutation evidence, G0.7 protected-evidence reconciliation and freeze,
+and the separate G1.7 compatibility/performance promotion gate remain open.
 
 ### Published documentation and evidence
 

@@ -160,5 +160,7 @@ G1.5c owns an additive `NegotiatedTransactionalDataset` binding for that case.
 `on_transaction` borrows caller-owned state and cannot roll back only the
 current update without savepoints, so it is explicitly outside this receipt.
 G1.6 service-description claims also remain open. ADR-0019 therefore remains
-Proposed; G1.5c and G1.6 own completion in the
+Proposed; G1.5c and G1.6 own completion in that order—G1.6 depends on the
+negotiated backend-admission contract from G1.5c. The executable dependency is
+recorded in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

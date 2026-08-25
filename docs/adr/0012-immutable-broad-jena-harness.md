@@ -2,11 +2,13 @@
 
 - Status: Accepted
 - Date: 2026-07-27
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Evidence state: the sealed July result remains historical evidence for its
-  exact subject. Current HEAD recomputes to subject hash `997e2579...` rather
-  than the reviewed lock's `1fe53cef...`, so a normal run fails closed until a
-  separately reviewed lock refresh and two reproducible executions complete.
+  exact subject. G0.2 restored the reproducible runner lock in `46ef17fc`, and
+  G0.3 refreshed the reviewed subject lock in `22a8033e` and completed two
+  byte-identical 76-scenario/198-assertion executions. That closes the scoped
+  G0.2-G0.3 work for its exact source; it does not make later protected-source
+  changes or full MetaHarness qualification current.
 - Deciders: Oxigraph parity programme
 - Related:
   [ADR-0001 — Outcome-oriented Apache Jena parity](0001-outcome-oriented-jena-parity.md),
@@ -70,12 +72,16 @@ observations, and aggregate counts. Agentic-QE may coordinate this command and
 hash these target artifacts, but the native harness remains the differential
 authority.
 
-## Current bounded result
+## Bounded results
 
-“Current” in the original result below means current for the sealed
-`2026-07-27-v1` subject. It is not current-HEAD evidence after the
-backend-neutral write-interface changes. The decision and inventory remain
-Accepted; the qualification receipt is stale by design.
+“Current” in the original result below meant current for the sealed
+`2026-07-27-v1` subject. G0.3 subsequently refreshed the same reviewed profile
+to source-bound subject SHA-256
+`182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63`
+in `22a8033e` and completed two byte-identical executions. Both results remain
+bounded to their exact protected subjects. Later source changes are reconciled
+at G0.7 and promoted only through G1.7; neither receipt is a timeless
+current-HEAD claim.
 
 The reviewed inventory contains 76 scenarios and 198 assertions:
 
@@ -102,8 +108,8 @@ against Jena 6.1.0.
 - [Native immutable harness](../../tools/jena-parity/runner/src/harness.rs)
 - [Pinned execution entrypoint](../../tools/jena-parity/scripts/run.sh)
 
-Two consecutive complete runs produced byte-identical artifacts. The sealed
-subject hash is
+For the original July subject, two consecutive complete runs produced
+byte-identical artifacts. Its sealed subject hash is
 `1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d`;
 the profile lock, receipt, resolved inventory, and Jena observations hashes are
 respectively
@@ -112,6 +118,10 @@ respectively
 `be03e50517be71a7574d89982644fc3c1e54030c5d8375a792180ad37c476cb5`,
 and
 `b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4`.
+
+The G0.3 refresh in `22a8033e` also produced two complete byte-identical runs
+for its reviewed subject. This ADR records that source-bound closure without
+copying mutable target receipt identities into architectural law.
 
 ## Consequences
 

@@ -13,8 +13,8 @@
   Dream Machine execution remains deferred behind the activation gates in this
   ADR
 - Update note: implementation preserves human-only promotion and the
-  G0.1-G3.5 task graph without treating Ruflo rows, installed packages, generic
-  scores, or application receipts as semantic qualification
+  committed G0-G4 task graph without treating Ruflo rows, installed packages,
+  generic scores, or application receipts as semantic qualification
 - Related:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -28,7 +28,15 @@
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
-  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)
+  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
+  [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
+  [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),
+  [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md),
+  [ADR-0029 — RDF4J REST interoperability](0029-rdf4j-rest-interoperability.md),
+  [ADR-0030 — Leased remote HTTP transactions](0030-leased-remote-http-transactions.md),
+  [ADR-0031 — Multi-repository lifecycle](0031-multi-repository-lifecycle.md),
+  [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md),
+  [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)
 
 ## Context
 
@@ -62,20 +70,20 @@ prompt. The npm 0.1.1 artifact also differs from current source carrying the
 same version. These are activation blockers, not reasons to duplicate the
 engine locally.
 
-The current evidence plane has three independent fail-closed drifts after the
-write-interface work:
+The evidence repair programme has closed G0.1-G0.5 for their exact scopes:
+registered source revisions were initialized and checked, `46ef17fc` restored
+the locked Jena runner, `22a8033e` refreshed the protected Jena profile and
+produced two byte-identical 76-scenario/198-assertion runs, and `253a2b34`
+accepted the exact 144/129 Agentic-QE CLI inventories plus a 34-test
+`persistence-write` profile. These are source-bound task closures, not an
+umbrella current-HEAD qualification.
 
-- the reviewed Jena profile lock seals subject hash `1fe53cef...`, while the
-  current subject recomputes to `997e2579...`; and
-- Agentic-QE expects 133 default and 116 no-default CLI tests, while the current
-  exact inventories contain 144 and 129 tests; and
-- the OxDatalog mutation receipt remains valid for its sealed source snapshot,
-  but that snapshot predates the protected `lib` changes and cannot satisfy a
-  current full MetaHarness binding.
-
-Full semantic MetaHarness qualification is therefore unavailable until a
-reviewed evidence refresh closes all three inputs. A passing synthetic Darwin
-run proves only the policy mechanics.
+The OxDatalog mutation receipt remains valid only for its sealed source
+snapshot, so G0.6 remains open. G0.7 must then reconcile and freeze the
+receipt-sensitive ledger, README, ADR, plan, and research claims against the
+complete protected subject. Full semantic MetaHarness qualification and the
+separate G1.7 promotion gate remain unavailable until those open gates close.
+A passing synthetic Darwin run proves only the policy mechanics.
 
 The repository now contains a separate application-delivery control plane,
 quality-first model router, native Codex and Claude worker adapters, and a
@@ -250,18 +258,25 @@ The programme keeps three different records deliberately separate:
 
 G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
-ADR-0021, and ADR-0022; and G3 by ADR-0023, ADR-0024, and ADR-0025. Those
-eight new ADRs are Proposed living plans, not implementation claims.
+ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
+ADR-0026 through ADR-0033. Those sixteen decisions are Proposed living plans,
+not implementation claims.
 
-The stable task identifiers are G0.1-G3.5 in the linked execution plan. On
-2026-08-24 all 26 were created as pending Ruflo tasks. The current native
-`task_create` surface stores its rows in the local file-backed
+The linked execution plan contains 39 stable executable G-identifiers. The
+initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
+2026-08-24; the 2026-08-25 expansion added G1.5b-G1.5c, explicit G2.3a-G2.3c
+and G2.4a-G2.4b leaves, and G4.1-G4.8. `HARNESS-REGISTRY` is a named harness
+control between G1.6 and the G2.1 evaluator freeze, not a product G-identifier.
+
+The current native `task_create` surface stores rows in the local file-backed
 `.claude-flow/tasks/store.json` ledger and has no dependency argument, so
-creation is serialized and every row carries its
-dependencies in the description and `depends:<plan-id>` tags, while the exact
-adjacency map is also stored in repository-local AgentDB memory. The committed
-GOAP tables remain the portable source of truth; clone-local Ruflo task IDs are
-not committed and never prove product behavior.
+creation is serialized and rows carry dependencies in their descriptions and
+`depends:<plan-id>` tags. Historical task descriptions may be stale. The
+committed G-identifiers and GOAP tables remain the portable authority; any
+committed Ruflo task IDs are repository-local audit pointers only and never
+prove product behavior. The corrected repository-local adjacency map was read
+back through the managed bridge at
+`task-plans/linked-data-store-g0-g4-2026-08-25-v2`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
@@ -307,13 +322,14 @@ reopens them. Gate 8 is per-run authority and never closes permanently:
    over subsequently modified bytes is invalid.
 6. **Isolation:** run only from a clean, disposable worktree with bounded
    resources and no ambient GitHub publication authority.
-7. **Evidence repair:** refresh the Jena subject lock through its separate
-   reviewed operation, update exact Agentic-QE test inventories, run the Jena
-   profile, verify the mutation harness and regenerate the exact OxDatalog
-   receipt with the latest registry `cargo-mutants` release resolved without a
-   top-level version pin and sealed by observed-version and executable
-   provenance, freeze all protected ADR, plan, and research documents, then
-   close full MetaHarness qualification and independent evidence verification.
+7. **Evidence repair:** revalidate the completed G0.1-G0.5 source, Jena, and
+   Agentic-QE inputs against their exact bindings; verify the mutation harness
+   and regenerate the exact G0.6 OxDatalog receipt with the latest registry
+   `cargo-mutants` release resolved without a top-level version pin and sealed
+   by observed-version and executable provenance; then complete G0.7 by
+   reconciling and freezing all protected ADR, plan, ledger, and research
+   documents before full MetaHarness qualification and independent evidence
+   verification.
 8. **Operator decision:** obtain explicit authorization for any schedule or
    external publication after reviewing the generated routine byte-for-byte.
    Re-obtain it for every active task and exact generated artifact.
@@ -334,6 +350,8 @@ and approving actor. Prompt text and a bare checksum are not closure evidence.
   locally while its high-authority autonomous path remains disabled.
 - Existing fail-closed drift is visible. Historical Jena and mutation receipts
   remain valid for their sealed July subjects but are not current-HEAD proof.
+- G0.1-G0.5 have source-bound completion evidence; this does not close G0.6,
+  G0.7, full semantic qualification, or G1.7 promotion.
 - A synthetic Darwin qualification may demonstrate deterministic policy
   mechanics, but only a fresh full qualification plus independent verification
   supports a semantic-qualification claim.
@@ -419,7 +437,8 @@ Source-bound engineering evidence on 2026-08-25 established:
 This ADR implements the engineering architecture and authority boundary; it
 does not claim that Dream Machine is an approved unattended runner, full
 MetaHarness qualification is current, or an application-harness acceptance is
-safe to promote. ADR-0018 through ADR-0025 remain Proposed until their product
-behavior and evidence exist. Each task still requires a red/evaluator-separated
-corpus, direct control-plane tests, continuously current prerequisites,
+safe to promote. ADR-0018 through ADR-0033 remain Proposed until their product
+behavior and evidence exist. Each task still requires a
+red/evaluator-separated corpus, direct control-plane tests, continuously
+current prerequisites,
 per-run authorization, activation status, and exact receipts above.
