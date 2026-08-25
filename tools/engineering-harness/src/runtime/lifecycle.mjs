@@ -117,8 +117,12 @@ export function chooseVerifiedCandidate(attempts) {
     const cost = (left.measuredCostUsd ?? 0) - (right.measuredCostUsd ?? 0);
     if (cost !== 0) return cost;
     return (
-      NATIVE_PROVIDERS.indexOf(left.providersByRole.implementation) -
-      NATIVE_PROVIDERS.indexOf(right.providersByRole.implementation)
+      NATIVE_PROVIDERS.indexOf(
+        left.candidateProvider ?? left.providersByRole.implementation,
+      ) -
+      NATIVE_PROVIDERS.indexOf(
+        right.candidateProvider ?? right.providersByRole.implementation,
+      )
     );
   });
   return accepted[0];

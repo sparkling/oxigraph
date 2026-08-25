@@ -94,6 +94,14 @@ test("candidate choice and review retain deterministic native and cross-vendor r
       measuredCostUsd: 0,
       providersByRole: { implementation: "codex" },
     },
+    {
+      verifier: { verdict: "ACCEPT" },
+      candidateSha256: "c".repeat(64),
+      repairCycles: 1,
+      measuredCostUsd: 0,
+      candidateProvider: "codex",
+      providersByRole: { implementation: "claude", repair: "codex" },
+    },
   ];
   assert.equal(chooseVerifiedCandidate(attempts).candidateSha256, "b".repeat(64));
   assert.deepEqual(reviewProviderPlan(routed("codex"), "codex"), {
