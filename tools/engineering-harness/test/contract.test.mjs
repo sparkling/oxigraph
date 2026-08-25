@@ -146,6 +146,12 @@ test("loads the compiler-red G1.5c negotiated-update contract and binds it to Gi
   assert.equal(resolution.contract.success.independentPassed, 9);
   assert.equal(resolution.contract.success.regressionPassed, 3);
   assert.equal(resolution.contract.ceilings.cargoBuildJobs, 1);
+  assert.equal(resolution.contract.ceilings.maxResidentBytes, 17_179_869_184);
+  assert.equal(resolution.contract.ceilings.maxVerifierDiskBytes, 8_589_934_592);
+  assert.ok(
+    resolution.contract.ceilings.maxResidentBytes >
+      resolution.contract.ceilings.maxVerifierDiskBytes,
+  );
   assert.deepEqual(resolution.contract.scope.mutableExact, g15cProfile.mutablePaths);
   assert.deepEqual(
     resolution.contract.commands.independent.argv.slice(-4),
