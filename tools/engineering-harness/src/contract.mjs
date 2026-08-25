@@ -550,12 +550,12 @@ const EXPECTED_G15 = Object.freeze({
     "lib/oxigraph/src/sparql/mod.rs",
     "lib/oxigraph/src/sparql/http.rs",
     "lib/oxigraph/src/sparql/update.rs",
+    "lib/oxigraph/Cargo.toml",
   ],
   mutablePrefixes: [],
   blockedExact: [
     "Cargo.toml",
     "Cargo.lock",
-    "lib/oxigraph/Cargo.toml",
     "lib/oxigraph/src/lib.rs",
     "README.md",
     ".gitmodules",
@@ -636,7 +636,7 @@ const EXPECTED_G15 = Object.freeze({
   ceilings: {
     ...EXPECTED.ceilings,
     maxPatchBytes: 262_144,
-    maxChangedFiles: 5,
+    maxChangedFiles: 6,
     maxChangedLines: 1_536,
   },
   initialRed: {
@@ -676,17 +676,17 @@ const EXPECTED_G15 = Object.freeze({
       entries: 1387,
       fullSha256:
         "68adad8178869439c67a3ee46eb13d9a7ed6b9fae76b657fcc7f21f3f2b5490e",
-      protectedEntries: 1382,
+      protectedEntries: 1381,
       protectedSha256:
-        "6e48b0a27d9251951c1027e416f6742dd3e9f734583265578dbe3872ac0a3bca",
+        "d06baeaa20287712b2ed8fbda43acedf118ec1c49fe197d8c560c9a6c41dd178",
     },
     evaluatorManifest: {
       entries: 1388,
       fullSha256:
         "e872004eeae99ae183d399a5686517bc2ceb552802b892e7e1f589e0ae9f5c6c",
-      protectedEntries: 1383,
+      protectedEntries: 1382,
       protectedSha256:
-        "17e2ed092edfa44250f0af80216babfe3b99a2f8f6ca6a9659e9451807fddb48",
+        "5f7c03cef435fd8ed8750b6ce13f8807481413e75dc1b943dbc118fdd9ccda30",
     },
     submodules: EXPECTED.protectedInputs.submodules,
   },

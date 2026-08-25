@@ -80,6 +80,7 @@ const profiles = Object.freeze({
       "lib/oxigraph/src/sparql/mod.rs",
       "lib/oxigraph/src/sparql/http.rs",
       "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/Cargo.toml",
     ]),
     guidance:
       "Implement one shared, deny-by-default policy for SERVICE, LOAD, and nested document retrieval. The first qualified profile accepts literal-IP HTTP origins only, requires a separately allowed IP, rejects credentials and redirects before secondary connections, bounds encoded and decoded bodies plus concurrent requests, preserves typed causes, and observes cancellation before connection and throughout LOAD staging without weakening update atomicity.",
@@ -89,6 +90,7 @@ const profiles = Object.freeze({
       "lib/oxigraph/src/sparql/mod.rs",
       "lib/oxigraph/src/sparql/http.rs",
       "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/Cargo.toml",
       "lib/oxigraph/tests/sparql_egress_policy.rs",
       "lib/oxigraph/tests/sparql_service_http.rs",
       "lib/oxigraph/tests/sparql_update_load_http.rs",

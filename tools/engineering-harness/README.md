@@ -20,7 +20,7 @@ Current activation boundary:
   frozen 1/4/16-writer, reader-liveness, rollback/drop, timeout, and
   cancellation evaluator while protecting every other repository path;
 - `g1.5 preflight|run|replay` activates `http-client,rdf-12` explicitly and
-  binds the five-file unified egress slice to deny-by-default SERVICE, LOAD,
+  binds the six-file unified egress slice to deny-by-default SERVICE, LOAD,
   nested-document, response-limit, connection-budget, cancellation, and
   rollback evidence;
 - `receipt verify` independently verifies stored application receipts without
