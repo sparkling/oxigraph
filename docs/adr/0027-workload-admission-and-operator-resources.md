@@ -8,10 +8,10 @@
 - Programme task: `task-1787670632138-mq9112`
 - Depends on:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
-  [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
-  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
+  [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)
 - Related:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
+  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
   [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
   [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
@@ -148,5 +148,8 @@ Current body, timeout, and connection constants are in
 [`main.rs`](../../cli/src/main.rs). Transaction admission is implemented in
 [`store.rs`](../../lib/oxigraph/src/store.rs), and evaluator operators live in
 [`spareval`](../../lib/spareval). ADR-0022 owns metrics/readiness and ADR-0026
-owns principal-derived class selection. This ADR remains Proposed until G4.2's
-staged evaluators and numeric baseline exist.
+owns principal-derived class selection. ADR-0022 is a related operational and
+promotion consumer, not a G4.2 implementation prerequisite: G4.2 consumes its
+bounded observations and must close before a readiness profile advertises
+these workload guarantees. This ADR remains Proposed until G4.2's staged
+evaluators and numeric baseline exist.

@@ -8,13 +8,13 @@
   `spareval` paths remain the only production SPARQL planner and executor
 - Programme task: `task-1787670633003-hoxn3e` (G4.8)
 - Depends on:
-  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
-  [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md)
+  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
 - Related:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
+  [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),
   [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md),
   [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md)
 
@@ -110,9 +110,11 @@ rules.
 
 ## Security and operational behavior
 
-- ADR-0027 enforces per-query, principal, repository, and global limits before
-  analytical planning and throughout execution. Budget exhaustion is typed
-  and cannot trigger an unbounded fallback.
+- The isolated research profile uses frozen local ceilings. For server
+  exposure or `Auto` promotion, ADR-0027 additionally enforces per-query,
+  principal, repository, and global limits before analytical planning and
+  throughout execution. Budget exhaustion is typed and cannot trigger an
+  unbounded fallback.
 - The path performs no new network or file access. Remote `SERVICE`, `LOAD`,
   and document access retain their existing policies and are not analytical
   cursor sources.
@@ -163,8 +165,11 @@ rules.
 6. **Promotion gate.** `Auto` remains unavailable unless a predeclared target
    cohort shows a reproducible benefit across repeated clean runs, semantic
    differentials are exact, memory and tail regressions stay within thresholds
-   frozen after parent-first baselining, and the selection rule is deterministic.
-   Even then, ordinary planning stays the default outside that admitted cohort.
+   frozen after parent-first baselining, the selection rule is deterministic,
+   and G4.2 has closed the server workload-admission and resource-budget
+   contract. Research and explicit local evaluation may start after G3.2;
+   server exposure or `Auto` promotion may not. Even then, ordinary planning
+   stays the default outside that admitted cohort.
 
 Darwin may tune bounded policy or selection thresholds only against these
 frozen evaluators. It may not mutate semantic oracles, product code, query

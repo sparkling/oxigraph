@@ -7,7 +7,7 @@
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Observed fork source before this documentation slice:
-  `8c8e984cc30573d3d6cbb40f86b08c8456a25f08`
+  `38ad365d46890d62b1b2db9c2eff493c464c4542`
 - Semantic Builder handover reviewed against:
   `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
@@ -31,6 +31,8 @@ G1.1 reference oracle, separate red G1.2 evaluator, and source-bound G1.2-G1.4
 product slices have landed. G1.5's unified-egress profile and G1.5b's
 owned-update cancellation profile are also source-bound. G1.5c negotiated
 backend admission and G1.6 runtime-derived service claims remain open.
+G0.1-G0.5 are complete for their exact source-bound scopes; G0.6 mutation,
+G0.7 protected-evidence freeze, and G1.7 promotion remain open.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
@@ -52,7 +54,7 @@ write-concurrency baseline justifies the extra conflict machinery; RocksDB
 documents ordinary batches and transaction conflict handling as distinct
 mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/Transactions).
 
-## Current truth and blockers
+## Current truth, completed prerequisites, and blockers
 
 | Surface | Current evidence | Disposition |
 |---|---|---|
@@ -60,12 +62,12 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
 | RocksDB writers | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis |
 | Built-in remote egress and owned updates | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary | Advertise only those proven profiles; complete negotiated generic admission and runtime-derived claims before accepting ADR-0019 |
-| Jena differential | July profile seals subject `1fe53cef...`; current subject is `997e2579...` | Historical evidence only; separately review and refresh the lock, then run twice |
-| Jena runner lock | The profile expects `runner/Cargo.lock`, but a clean checkout does not contain it and `--locked` fails | Restore a reviewed, reproducible lock strategy before the profile refresh |
-| Agentic-QE CLI inventory | Expects 133 default and 116 no-default tests; current exact inventories are 144 and 129 | Review counts/IDs and add an exact `persistence-write` profile |
-| Pinned source checkouts | RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 submodules are uninitialized in this clone | Initialize their exact registered revisions before source/full evidence verification; never substitute the parent checkout HEAD |
+| Jena differential | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for that exact subject | Scoped task complete; later protected-source drift is reconciled by G0.7 and promoted only through G1.7 |
+| Jena runner lock | G0.2 restored the reviewed `runner/Cargo.lock` strategy in `46ef17fc`, so the pinned runner executes with `--locked` from a clean checkout | Scoped task complete; retain the lock as protected evidence |
+| Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` bind 144/144 default, 129/129 no-default, and 34/34 `persistence-write` tests | Scoped tasks complete; later count or ID drift still fails closed |
+| Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
-| MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by the evidence drift above |
+| MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by G0.6 mutation evidence and G0.7 protected-evidence reconciliation/freeze; G1.7 promotion is separate |
 | Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest receipts are implemented; G1.2-G1.5b have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact receipt |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
@@ -247,15 +249,15 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 
 Run three independent lanes, then integrate sequentially:
 
-| Task | Owner lane | Depends on | Exit gate |
-|---|---|---|---|
-| G0.1 Initialize registered source submodules | Evidence | none | Source verifier sees exact registered checkout heads rather than the parent repository |
-| G0.2 Restore Jena runner lock reproducibility | Evidence | none | Clean checkout can execute the pinned `--locked` runner |
-| G0.3 Review current Jena subject and refresh profile lock | Evidence | G0.2 | Lock diff reviewed; two complete byte-identical runs |
-| G0.4 Reconcile Agentic-QE exact CLI counts/IDs | Evidence | none | 144 default and 129 no-default inventories deliberately accepted or corrected |
-| G0.5 Add `persistence-write` evidence profile | Conformance | none | Exact IDs cover transactional dataset, update atomicity, topology, service claims, and failure injection |
-| G0.6 Verify and regenerate OxDatalog mutation receipt | Evidence | none | `node --test tools/mutation/*.test.mjs` passes; the latest registry `cargo-mutants` release is acquired without a top-level version constraint; the run has zero survivors/timeouts and reopens its exact source- and runtime-bound receipt |
-| G0.7 Reconcile and freeze protected evidence documents | ADR/claims | G0.1-G0.6 | Ledger, README, ADRs, plans, and research mark historical versus current receipts accurately and are frozen before qualification |
+| Task | State | Owner lane | Depends on | Exit gate |
+|---|---|---|---|---|
+| G0.1 Initialize registered source submodules | Complete | Evidence | none | Source verifier saw exact registered checkout heads rather than the parent repository |
+| G0.2 Restore Jena runner lock reproducibility | Complete (`46ef17fc`) | Evidence | none | Clean checkout executes the pinned `--locked` runner |
+| G0.3 Review current Jena subject and refresh profile lock | Complete (`22a8033e`) | Evidence | G0.2 | Lock diff reviewed; two complete byte-identical 76/198 runs |
+| G0.4 Reconcile Agentic-QE exact CLI counts/IDs | Complete (`253a2b34`) | Evidence | none | 144 default and 129 no-default inventories deliberately accepted |
+| G0.5 Add `persistence-write` evidence profile | Complete (`253a2b34`) | Conformance | none | 34 exact IDs cover transactional dataset, update atomicity, topology, service claims, and failure injection |
+| G0.6 Verify and regenerate OxDatalog mutation receipt | Open | Evidence | none | `node --test tools/mutation/*.test.mjs` passes; the latest registry `cargo-mutants` release is acquired without a top-level version constraint; the run has zero survivors/timeouts and reopens its exact source- and runtime-bound receipt |
+| G0.7 Reconcile and freeze protected evidence documents | Open | ADR/claims | G0.1-G0.6 | Ledger, README, ADRs, plans, and research mark historical versus current receipts accurately and are frozen before qualification |
 
 No lock, expected count, manifest, threshold, or receipt is refreshed
 automatically by Dream Machine or Darwin.
@@ -271,8 +273,14 @@ automatically by Dream Machine or Darwin.
 | G1.5 Unified remote egress | G1.3 | L | Loopback SSRF/redirect/size/timeout fixtures and remote update rollback pass |
 | G1.5b Owned-update cancellation | G1.5 | M | Built-in admission, validation, mutation loops, and the final pre-commit checkpoint return typed cancellation and roll back owned state |
 | G1.5c Negotiated backend admission | G1.5b | M | An additive negotiated binding carries the exact token and request through custom and Store admission without breaking the minimal write trait |
-| G1.6 Runtime-derived service claims | G1.3-G1.5c | M | Every advertised capability has a closed endpoint receipt |
+| G1.6 Runtime-derived service claims | G1.3, G1.5, G1.5b, G1.5c | M | Every advertised capability has a closed endpoint receipt |
 | G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6 | M | Existing semantics and current evidence green; approved write/read budgets met |
+
+`HARNESS-REGISTRY` is a harness-maintenance control, not a new product G task.
+It follows G1.6 and replaces duplicated per-task dispatch registration with a
+fail-closed static registry. G2.1's evaluator may be designed earlier, but its
+contract is not frozen until that control closes. The sequencing edge is
+therefore G1.6 → `HARNESS-REGISTRY` → G2.1 evaluator freeze.
 
 Execution record on 2026-08-25:
 
@@ -402,7 +410,7 @@ synthetic Darwin runs are prerequisites or diagnostics, not completion.
 
 | Task | Depends on | Size | Exit gate |
 |---|---|---:|---|
-| G2.1 Transactional namespace registry | G1.3-G1.4 | M | Namespace changes commit/rollback with data without affecting dataset equality |
+| G2.1 Transactional namespace registry | G1.3-G1.4; evaluator freeze after `HARNESS-REGISTRY` | M | Namespace changes commit/rollback with data without affecting dataset equality |
 | G2.2 Normalized semantic change set | G1.1, G2.1 | L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously |
 | G2.3a Durable outcomes and atomic receipts | G1.3-G1.4, G2.2 | L | Durable key reservation, commit ID, primary state, and receipt commit atomically; lost-response/reopen lookup proves committed, durably absent, or indeterminate without replay |
 | G2.3b Authoritative transaction outbox | G2.3a | L | Receipt and ordered semantic events share the primary commit; at-least-once replay and deduplication have no crash gaps |
@@ -441,7 +449,7 @@ incremental validation is only a later differential optimization.
 | G3.2 Bounded join planning | G3.1 | L | Dynamic programming for small BGPs and greedy fallback improve the frozen corpus without semantic change |
 | G3.3 Async text index | G2.3c, G2.5-G2.7 | XL | Tantivy candidate verification, lag cursor, rebuild, and strict/eventual consistency contracts |
 | G3.4 Async spatial index | G2.3c, G2.5-G2.7 | L/XL | Per-CRS envelope candidates refine through exact `spargeo`; generation swap and delta overlay are recoverable |
-| G3.5 Federation planner | G1.5, G3.1-G3.2 | XL | Catalog/source selection/bound joins obey per-endpoint budgets and `SERVICE SILENT` semantics |
+| G3.5 Federation planner | G1.5, G3.1-G3.2; G1.6 for promotion/advertisement | XL | Catalog/source selection/bound joins obey per-endpoint budgets and `SERVICE SILENT` semantics |
 
 The current optimizer's fixed large cardinalities and constant join-key
 selectivity make statistics the highest-leverage performance seam after P0.
@@ -480,9 +488,9 @@ widens core RDF semantics implicitly.
 | G4.3 Safe storage schema upgrades | G2.7 | L | Version discovery, preflight, backup receipt, resumable shadow copy, source-preserving cutover, crash matrix, and old/new binary compatibility fail closed |
 | G4.4 RDF4J REST interoperability | G2.3c, G4.1-G4.2, G4.5 | XL | A versioned endpoint profile passes an exact RDF4J client/HTTP corpus for statements, namespaces, query/update, contexts, transactions, errors, and content negotiation |
 | G4.5 Leased remote HTTP transactions | G2.3a, G4.1-G4.2 | XL | Opaque leases, expiry, idempotent terminal operations, disconnect/crash cleanup, and bounded ownership prevent orphaned writers and ambiguous replay |
-| G4.6 Multi-repository lifecycle | G2.7, G4.1-G4.2 | XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration |
+| G4.6 Multi-repository lifecycle | G2.7, G4.1-G4.3 | XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration |
 | G4.7 Incremental entailment projections | G2.3c, G2.7 | XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed |
-| G4.8 Analytical and WCOJ research path | G3.2 | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback |
+| G4.8 Analytical and WCOJ research path | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback |
 
 ## Evaluator DAG
 
@@ -533,15 +541,18 @@ the working directories and warning policy in `.github/workflows/tests.yml`.
 
 ### Profile and evidence gate
 
-1. Initialize the four registered-but-missing test-suite submodules at their
-   exact recorded revisions before treating source verification as evidence.
-2. Run `(cd tools/agentic-qe && npm ci --ignore-scripts && npm run test:adapter)`, reconcile G0.4,
-   then add and run the exact future
-   `(cd tools/agentic-qe && npm run test:persistence-write)` profile. The
-   existing aggregate remains blocked until its exact inventory is reviewed.
-3. After G0.2, refresh the Jena lock only through its reviewed lock operation,
-   inspect the diff, then run `bash tools/jena-parity/scripts/run.sh` twice and
-   require byte-identical receipts.
+1. Revalidate G0.1 by initializing the four registered test-suite submodules at
+   their exact recorded revisions in every fresh verifier before treating
+   source verification as evidence.
+2. Reuse the G0.4-G0.5 definitions from `253a2b34`: run
+   `(cd tools/agentic-qe && npm ci --ignore-scripts && npm run test:adapter)`
+   and `(cd tools/agentic-qe && npm run test:persistence-write)`. Any drift from
+   the reviewed 144/129/34 inventories fails closed.
+3. Reuse G0.2's locked runner from `46ef17fc` and G0.3's reviewed profile from
+   `22a8033e`. Before promotion, run
+   `bash tools/jena-parity/scripts/run.sh` twice and require byte-identical
+   receipts for the same protected subject; drift requires another separately
+   reviewed lock operation, never an automatic refresh.
 4. Run `node --test tools/mutation/*.test.mjs`, acquire the current registry
    release with `cargo install --locked cargo-mutants`, require
    `cargo mutants --version` to agree exactly with the version frozen in the
@@ -674,11 +685,12 @@ and commit without changing programme status.
 On 2026-08-25 the programme was expanded to 39 stable executable identifiers:
 G1.5b-G1.5c, explicit G2.3a-G2.3c and G2.4a-G2.4b leaves, and G4.1-G4.8. The
 original G2.3 and G2.4 rows remain pending roll-ups; they complete only after
-their child rows and are not independent implementation leaves. The new Ruflo
-rows are:
+their child rows and are not independent implementation leaves. The current
+audit pointers needed for the expanded and corrected control edges are:
 
 | Plan IDs | Ruflo task rows |
 |---|---|
+| G1.5c / G1.6 / `HARNESS-REGISTRY` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787603736400-274ola` |
 | G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
 | G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
 | G4.1 / G4.2 / G4.3 | `task-1787670631989-m5vxqk` / `task-1787670632138-mq9112` / `task-1787670632284-k0cti5` |
@@ -686,18 +698,21 @@ rows are:
 | G4.6 / G4.7 / G4.8 | `task-1787670632716-513bjt` / `task-1787670632864-10hfsk` / `task-1787670633003-hoxn3e` |
 
 The original exact map remains at
-`task-plans/linked-data-store-g0-g3-2026-08-24`. The expanded map was stored
-and read back through the native hierarchical controller at
-`task-plans:linked-data-store-g0-g4-2026-08-25` in the repository database.
+`task-plans/linked-data-store-g0-g3-2026-08-24`. The corrected v2 map was
+stored and read back through the managed Ruflo bridge in the explicit
+repository database at
+`task-plans/linked-data-store-g0-g4-2026-08-25-v2`. It records the dependency
+corrections in this plan, including the non-product `HARNESS-REGISTRY` control.
 
 The Brain-grounded implementation source
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts` shows that the current
 native `task_create` schema persists descriptions, priority, assignment, and
 tags to `.claude-flow/tasks/store.json` through a whole-file read/write, but
 exposes no dependency argument. Rows were therefore created sequentially and
-dependencies are encoded as `depends:<plan-id>` tags and in each description,
-with this committed GOAP
-graph and the exact AgentDB map remaining authoritative. Ruflo's separate
+dependencies are encoded as `depends:<plan-id>` tags and in each description.
+Those task IDs and descriptions are audit pointers; historical rows can be
+stale. Stable G-identifiers, this committed GOAP graph, and the exact v2
+AgentDB map remain authoritative. Ruflo's separate
 domain task entity models dependencies, but this plan does not claim that the
 current MCP task surface enforces them.
 

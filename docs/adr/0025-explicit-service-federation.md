@@ -55,7 +55,10 @@ capability probing also requires its own egress- and identity-aware decision.
 
 ## Acceptance boundary
 
-G3.5 must use controlled loopback endpoints to prove:
+G3.5 research may begin after G1.5 and G3.1-G3.2. Promotion or advertisement
+of the federated profile additionally waits for G1.6 to close runtime-derived
+service claims; a planner cannot advertise a capability that the running
+endpoint has not proved. G3.5 must use controlled loopback endpoints to prove:
 
 - source selection and bound joins return the same results as the unplanned
   explicit-`SERVICE` oracle;

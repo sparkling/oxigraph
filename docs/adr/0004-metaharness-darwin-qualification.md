@@ -9,12 +9,13 @@
   dependency policy implemented; the current integrity-bound lockfile resolves
   `@metaharness/darwin` 0.9.3 and qualification remains receipt-dependent
 - Update note: the local MetaHarness 13-test suite and a synthetic-only
-  qualification pass with Darwin 0.9.3 on current HEAD. Full qualification is
-  intentionally not claimable: the reviewed Jena subject lock and Agentic-QE
-  CLI inventories are stale after the persistence-write changes, and the
-  source-bound OxDatalog mutation receipt predates the changed protected source
-  snapshot. All three must be refreshed through their separate reviewed
-  processes. On 2026-08-25 the dependency refresh also made lifecycle-script
+  qualification passed with Darwin 0.9.3 on their recorded 2026-08-25 source.
+  G0.1-G0.5 have closed
+  their scoped source-registration, Jena runner/profile, and Agentic-QE refresh
+  work with source-bound evidence. Full qualification is intentionally not
+  claimable while the OxDatalog mutation receipt remains historical under
+  G0.6 and the protected evidence has not been reconciled and frozen under
+  G0.7. On 2026-08-25 the dependency refresh also made lifecycle-script
   suppression and lock/ledger reconciliation explicit.
 - Related:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
@@ -89,10 +90,14 @@ drift can create false harness failures.
 
 ## Proportional phase gates
 
-Apply the cross-project
-`metaharness-phase-gating-proportionality` rule:
+Apply the active cross-project
+`metaharness-full-operational-harness-v1` rule. It supersedes the earlier
+`metaharness-phase-gating-proportionality` record while preserving its
+product-first proportionality boundary:
 
-- produce a primary implementation artifact before harness expansion;
+- treat direct application behavior and deterministic tests as progress
+  authority, and produce a primary implementation artifact before harness
+  expansion;
 - cap harness work at 20% of programme effort and two hours before review;
 - zero primary artifacts is red;
 - do not add release gates solely to repair a harness defect; and

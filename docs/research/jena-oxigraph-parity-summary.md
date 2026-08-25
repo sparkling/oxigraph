@@ -2,7 +2,8 @@
 
 Status: historical pre-programme capability baseline  
 Observed: 2026-07-26  
-Ruflo programme goal: `task-1785068929720-qya1gy`
+Historical Ruflo goal reference (not present in the current task database):
+`task-1785068929720-qya1gy`
 
 This document preserves the capability inventory captured before the semantic
 implementation tranche. Its “absent,” “gap,” and roadmap labels describe that
