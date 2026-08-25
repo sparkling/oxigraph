@@ -69,6 +69,7 @@ test("persistent native pool freezes providers and records non-secret invocation
   });
   const selected = pool.agentsFor({
     intent: "oxigraph-candidate",
+    executionId: "candidate-pipeline-a",
     providersByRole: {
       architecture: "codex",
       critique: "claude",
@@ -87,6 +88,11 @@ test("persistent native pool freezes providers and records non-secret invocation
   );
   const evidence = pool.evidence();
   assert.equal(evidence.length, 3);
+  assert.equal(pool.evidenceFor("candidate-pipeline-a").length, 3);
+  assert.ok(
+    evidence.every(({ executionId }) => executionId === "candidate-pipeline-a"),
+  );
+  assert.equal(pool.evidenceFor("other-pipeline").length, 0);
   assert.ok(evidence.every(({ process }) => /^[0-9a-f]{64}$/.test(process.stdoutSha256)));
   assert.deepEqual(
     evidence.map(({ taskSha256 }) => taskSha256),
@@ -172,6 +178,7 @@ test("native pool records task preparation ERROR with an explicit null provenanc
   assert.equal(workerCalls, 0);
   assert.deepEqual(pool.evidence()[0], {
     sequence: 1,
+    executionId: null,
     provider: "codex",
     model: "codex-model",
     role: "review",

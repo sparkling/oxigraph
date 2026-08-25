@@ -45,7 +45,7 @@ function boundedOutcome(outcome) {
   });
 }
 
-function invocationEvidence(sequence, result) {
+function invocationEvidence(sequence, executionId, result) {
   const invocation = result.invocation ?? null;
   const output = result.output ?? null;
   if (
@@ -60,6 +60,7 @@ function invocationEvidence(sequence, result) {
   }
   return Object.freeze({
     sequence,
+    executionId,
     provider: result.provider,
     model: result.model,
     role: result.role,
@@ -77,10 +78,15 @@ function invocationEvidence(sequence, result) {
   });
 }
 
-function failedInvocationEvidence(sequence, { provider, model, role, error }) {
+function failedInvocationEvidence(
+  sequence,
+  executionId,
+  { provider, model, role, error },
+) {
   const message = error instanceof Error ? error.message : String(error);
   return Object.freeze({
     sequence,
+    executionId,
     provider,
     model,
     role,
@@ -149,9 +155,15 @@ export class NativeWorkerPool {
     return this.#models;
   }
 
-  agentsFor({ intent, providersByRole, taskFactory, signal }) {
+  agentsFor({ intent, providersByRole, taskFactory, signal, executionId = null }) {
     if (typeof taskFactory !== "function") {
       throw new Error("native worker pool requires a role task factory");
+    }
+    if (
+      executionId !== null &&
+      (typeof executionId !== "string" || executionId.length === 0 || executionId.length > 512)
+    ) {
+      throw new Error("native worker pool executionId must be a bounded string or null");
     }
     const roles = strategyRoles(intent);
     const selectedAgents = [];
@@ -191,12 +203,11 @@ export class NativeWorkerPool {
                       error,
                     );
               this.#evidence.push(
-                failedInvocationEvidence(this.#evidence.length + 1, {
-                  provider,
-                  model,
-                  role,
-                  error: classified,
-                }),
+                failedInvocationEvidence(
+                  this.#evidence.length + 1,
+                  executionId,
+                  { provider, model, role, error: classified },
+                ),
               );
               throw classified;
             }
@@ -221,15 +232,18 @@ export class NativeWorkerPool {
               ) {
                 throw new Error("native worker result changed its frozen identity");
               }
-              evidence = invocationEvidence(this.#evidence.length + 1, result);
+              evidence = invocationEvidence(
+                this.#evidence.length + 1,
+                executionId,
+                result,
+              );
             } catch (error) {
               this.#evidence.push(
-                failedInvocationEvidence(this.#evidence.length + 1, {
-                  provider,
-                  model,
-                  role,
-                  error,
-                }),
+                failedInvocationEvidence(
+                  this.#evidence.length + 1,
+                  executionId,
+                  { provider, model, role, error },
+                ),
               );
               throw error;
             }
@@ -265,6 +279,17 @@ export class NativeWorkerPool {
 
   evidence() {
     return Object.freeze(structuredClone(this.#evidence));
+  }
+
+  evidenceFor(executionId) {
+    if (typeof executionId !== "string" || executionId.length === 0) {
+      throw new Error("native evidence lookup requires an executionId");
+    }
+    return Object.freeze(
+      structuredClone(
+        this.#evidence.filter((entry) => entry.executionId === executionId),
+      ),
+    );
   }
 
   recoverySnapshot() {
