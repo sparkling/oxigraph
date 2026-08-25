@@ -3,6 +3,7 @@ export const COMMANDS = Object.freeze([
   Object.freeze({ id: "g1.2.preflight", usage: "g1.2 preflight" }),
   Object.freeze({ id: "g1.3.preflight", usage: "g1.3 preflight" }),
   Object.freeze({ id: "g1.4.preflight", usage: "g1.4 preflight" }),
+  Object.freeze({ id: "g1.5.preflight", usage: "g1.5 preflight" }),
   Object.freeze({
     id: "g1.2.run",
     usage: "g1.2 run [--run-id <safe-id>]",
@@ -26,6 +27,14 @@ export const COMMANDS = Object.freeze([
   Object.freeze({
     id: "g1.4.replay",
     usage: "g1.4 replay --receipt <runtime-name>",
+  }),
+  Object.freeze({
+    id: "g1.5.run",
+    usage: "g1.5 run [--run-id <safe-id>]",
+  }),
+  Object.freeze({
+    id: "g1.5.replay",
+    usage: "g1.5 replay --receipt <runtime-name>",
   }),
   Object.freeze({
     id: "receipt.verify",

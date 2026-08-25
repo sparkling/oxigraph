@@ -5,11 +5,18 @@ import { isDeepStrictEqual } from "node:util";
 import { join, relative, resolve } from "node:path";
 
 import { harnessRoot, isContained, repositoryRoot } from "./paths.mjs";
-import { g12Profile, g13Profile, g14Profile, taskProfile } from "./task-profile.mjs";
+import {
+  g12Profile,
+  g13Profile,
+  g14Profile,
+  g15Profile,
+  taskProfile,
+} from "./task-profile.mjs";
 
 export const g12ContractPath = g12Profile.contractPath;
 export const g13ContractPath = g13Profile.contractPath;
 export const g14ContractPath = g14Profile.contractPath;
+export const g15ContractPath = g15Profile.contractPath;
 
 const HEX40 = /^[0-9a-f]{40}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -44,6 +51,7 @@ const EXPECTED = Object.freeze({
       { provider: "claude", transport: "native", model: "opus" },
     ],
   },
+  decision: "ADR-0018",
   baseline: {
     commit: "3edfb86a7f9d591f20ba14b2a2c9a7f2b41fade9",
     tree: "0d4d29166b8785a41c762625e5eb2cf79ce7e7f7",
@@ -222,6 +230,7 @@ const EXPECTED = Object.freeze({
 const EXPECTED_G13 = Object.freeze({
   topKeys: EXPECTED.topKeys,
   routing: EXPECTED.routing,
+  decision: "ADR-0018",
   baseline: {
     commit: "7eec1f0715e4f28434b2f505e289c9b599991aae",
     tree: "5d1034cac3a37c8cecc9f26b3f5844c4ed248f53",
@@ -372,6 +381,7 @@ const EXPECTED_G13 = Object.freeze({
 const EXPECTED_G14 = Object.freeze({
   topKeys: EXPECTED.topKeys,
   routing: EXPECTED.routing,
+  decision: "ADR-0018",
   baseline: {
     commit: "1f187690ac574fc87433065fc0a6cc85c5b74106",
     tree: "a1168bdc7d25e09507dfd4818dff4caed817f876",
@@ -514,10 +524,179 @@ const EXPECTED_G14 = Object.freeze({
   },
 });
 
+const EXPECTED_G15 = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  decision: "ADR-0019",
+  baseline: {
+    commit: "0ead1df969fd6de5b42ee2bcae8360ffaa55b281",
+    tree: "a150843c9c705cd6beb6dc49632746d08b411a04",
+  },
+  evaluator: {
+    commit: "f1fa7900191a4eaffd2d9c92694851152a5e4fb1",
+    parent: "0ead1df969fd6de5b42ee2bcae8360ffaa55b281",
+    tree: "829b42c96c6bf72839f7858c6da932c8709d2d60",
+    path: "lib/oxigraph/tests/sparql_egress_policy.rs",
+    changeStatus: "A",
+    blob: "fea9d5a25e680ff30d27592139152b85e0852581",
+    contentSha256:
+      "96a414d1ccf78e323e310a853ca6f1c060567c44b02b688b8de523a0ebf61e87",
+    patchSha256:
+      "aacc284628b9bb64073a97eee29c555fef327c23cd169cf15ea2e1d1e1d9ee91",
+  },
+  mutableExact: [
+    "lib/oxigraph/src/http.rs",
+    "lib/oxigraph/src/io/loader.rs",
+    "lib/oxigraph/src/sparql/mod.rs",
+    "lib/oxigraph/src/sparql/http.rs",
+    "lib/oxigraph/src/sparql/update.rs",
+  ],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/store",
+    "lib/oxigraph/src/storage",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--no-run",
+        "--test",
+        "sparql_update_load_http",
+        "--test",
+        "sparql_service_http",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_egress_policy",
+      ],
+      timeoutMs: 180_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_update_load_http",
+      ],
+      timeoutMs: 120_000,
+    },
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_service_http",
+      ],
+      timeoutMs: 120_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 262_144,
+    maxChangedFiles: 5,
+    maxChangedLines: 1_536,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0432",
+    rustcErrorCount: 21,
+    primaryPath: "lib/oxigraph/tests/sparql_egress_policy.rs",
+    requiredExports: [
+      "EgressError",
+      "EgressErrorKind",
+      "EgressPolicy",
+      "EgressPolicyConfigurationError",
+      "EgressPurpose",
+      "with_egress_policy",
+    ],
+    requiredSubstrings: [
+      "error[E0432]: unresolved imports",
+      "could not compile `oxigraph` (test \"sparql_egress_policy\") due to 21 previous errors",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 12, independentPassed: 8, regressionPassed: 13 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/http.rs",
+    mutableBaselineBlob: "f248e3e558cf1720119b2d3489d913c091c0e199",
+    mutableBaselineSha256:
+      "b08c852f66347b1db1a234fc27f9ef1fceed2ee091e92a5ee18af3911d14d8c7",
+    baselineManifest: {
+      entries: 1387,
+      fullSha256:
+        "68adad8178869439c67a3ee46eb13d9a7ed6b9fae76b657fcc7f21f3f2b5490e",
+      protectedEntries: 1382,
+      protectedSha256:
+        "6e48b0a27d9251951c1027e416f6742dd3e9f734583265578dbe3872ac0a3bca",
+    },
+    evaluatorManifest: {
+      entries: 1388,
+      fullSha256:
+        "e872004eeae99ae183d399a5686517bc2ceb552802b892e7e1f589e0ae9f5c6c",
+      protectedEntries: 1383,
+      protectedSha256:
+        "17e2ed092edfa44250f0af80216babfe3b99a2f8f6ca6a9659e9451807fddb48",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
 const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
   "g1.4-bounded-writer-admission": EXPECTED_G14,
+  "g1.5-unified-egress-policy": EXPECTED_G15,
 });
 
 function fail(message) {
@@ -739,7 +918,7 @@ export function validateTaskContract(contract) {
   if (contract.programme !== "linked-data-store") {
     fail("programme must be linked-data-store");
   }
-  if (contract.decision !== "ADR-0018") fail("decision must be ADR-0018");
+  exactValue(contract.decision, expected.decision, "decision");
   if (typeof contract.objective !== "string" || contract.objective.length < 40) {
     fail("objective must be a substantive string");
   }

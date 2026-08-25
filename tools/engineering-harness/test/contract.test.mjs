@@ -5,12 +5,13 @@ import {
   g12ContractPath,
   g13ContractPath,
   g14ContractPath,
+  g15ContractPath,
   loadTaskContract,
   resolveTaskContract,
   validateTaskContract,
   verifyTaskContractRepository,
 } from "../src/contract.mjs";
-import { g13Profile, g14Profile } from "../src/task-profile.mjs";
+import { g13Profile, g14Profile, g15Profile } from "../src/task-profile.mjs";
 
 function changed(contract, mutate) {
   const clone = structuredClone(contract);
@@ -75,6 +76,26 @@ test("loads the five-path compiler-red G1.4 contract and binds it to Git", () =>
   assert.equal(resolution.contract.initialRed.rustcErrorCount, 5);
   assert.equal(resolution.contract.success.publicPassed, 6);
   assert.deepEqual(resolution.contract.scope.mutableExact, g14Profile.mutablePaths);
+  assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
+  assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
+});
+
+test("loads the feature-active compiler-red G1.5 contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ contractPath: g15ContractPath });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.5/contract.json",
+  );
+  assert.equal(resolution.contract.decision, "ADR-0019");
+  assert.equal(resolution.contract.initialRed.kind, "compiler");
+  assert.equal(resolution.contract.initialRed.rustcErrorCount, 21);
+  assert.equal(resolution.contract.success.publicPassed, 12);
+  assert.deepEqual(resolution.contract.scope.mutableExact, g15Profile.mutablePaths);
+  assert.deepEqual(
+    resolution.contract.commands.public.argv.slice(5, 7),
+    ["--features", "http-client,rdf-12"],
+  );
   assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
@@ -179,4 +200,5 @@ test("rejects contract paths outside the harness", () => {
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g12ContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g13ContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g14ContractPath }));
+  assert.doesNotThrow(() => loadTaskContract({ contractPath: g15ContractPath }));
 });

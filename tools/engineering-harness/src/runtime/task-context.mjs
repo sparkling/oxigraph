@@ -257,7 +257,7 @@ function validateContract(contract, contractSha256) {
   if (contract.schemaVersion !== 1) fail("contract must use task schema v1");
   for (const [name, expected] of [
     ["programme", "linked-data-store"],
-    ["decision", "ADR-0018"],
+    ["decision", profile.decision],
   ]) {
     if (contract[name] !== expected) fail(`contract.${name} is not the frozen value`);
   }

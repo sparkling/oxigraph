@@ -3,7 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { disposeCandidate, reconstructCandidate } from "../candidate/reconstruct.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
 import { verifyCandidate } from "../candidate/verifier.mjs";
-import { g12ContractPath, g13ContractPath, g14ContractPath } from "../contract.mjs";
+import {
+  g12ContractPath,
+  g13ContractPath,
+  g14ContractPath,
+  g15ContractPath,
+} from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
 import { validateWorkerOutput } from "../policy/authority.mjs";
 import {
@@ -754,6 +759,10 @@ export function runG14Programme(options = {}) {
   return runTaskProgramme({ ...options, contractPath: g14ContractPath });
 }
 
+export function runG15Programme(options = {}) {
+  return runTaskProgramme({ ...options, contractPath: g15ContractPath });
+}
+
 /**
  * Test-only construction seam. It cannot use production persistence or
  * admission; callers must supply isolated history and finalize operations.
@@ -816,4 +825,8 @@ export function replayG13ProgrammeReceipt(options) {
 
 export function replayG14ProgrammeReceipt(options) {
   return replayTaskProgrammeReceipt({ ...options, contractPath: g14ContractPath });
+}
+
+export function replayG15ProgrammeReceipt(options) {
+  return replayTaskProgrammeReceipt({ ...options, contractPath: g15ContractPath });
 }

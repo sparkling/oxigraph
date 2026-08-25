@@ -13,6 +13,7 @@ const profiles = Object.freeze({
   "g1.2-rocksdb-serialized-writers": profile({
     slug: "g1.2",
     label: "G1.2",
+    decision: "ADR-0018",
     taskClass: "transaction-concurrency",
     evaluatorChangeStatus: "A",
     mutablePath: "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
@@ -27,6 +28,7 @@ const profiles = Object.freeze({
   "g1.3-transaction-capabilities": profile({
     slug: "g1.3",
     label: "G1.3",
+    decision: "ADR-0018",
     taskClass: "transaction-capabilities",
     evaluatorChangeStatus: "M",
     mutablePath: "lib/oxigraph/src/store.rs",
@@ -42,6 +44,7 @@ const profiles = Object.freeze({
   "g1.4-bounded-writer-admission": profile({
     slug: "g1.4",
     label: "G1.4",
+    decision: "ADR-0018",
     taskClass: "writer-admission",
     evaluatorChangeStatus: "A",
     mutablePath: "lib/oxigraph/src/store.rs",
@@ -64,6 +67,33 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/transaction_concurrency.rs",
     ]),
   }),
+  "g1.5-unified-egress-policy": profile({
+    slug: "g1.5",
+    label: "G1.5",
+    decision: "ADR-0019",
+    taskClass: "egress-policy",
+    evaluatorChangeStatus: "A",
+    mutablePath: "lib/oxigraph/src/http.rs",
+    mutablePaths: Object.freeze([
+      "lib/oxigraph/src/http.rs",
+      "lib/oxigraph/src/io/loader.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/sparql/http.rs",
+      "lib/oxigraph/src/sparql/update.rs",
+    ]),
+    guidance:
+      "Implement one shared, deny-by-default policy for SERVICE, LOAD, and nested document retrieval. The first qualified profile accepts literal-IP HTTP origins only, requires a separately allowed IP, rejects credentials and redirects before secondary connections, bounds encoded and decoded bodies plus concurrent requests, preserves typed causes, and observes cancellation before connection and throughout LOAD staging without weakening update atomicity.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/http.rs",
+      "lib/oxigraph/src/io/loader.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/sparql/http.rs",
+      "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/tests/sparql_egress_policy.rs",
+      "lib/oxigraph/tests/sparql_service_http.rs",
+      "lib/oxigraph/tests/sparql_update_load_http.rs",
+    ]),
+  }),
 });
 
 export function taskProfile(value) {
@@ -78,4 +108,5 @@ export function taskProfile(value) {
 export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];
 export const g13Profile = profiles["g1.3-transaction-capabilities"];
 export const g14Profile = profiles["g1.4-bounded-writer-admission"];
+export const g15Profile = profiles["g1.5-unified-egress-policy"];
 export const engineeringTaskProfiles = profiles;
