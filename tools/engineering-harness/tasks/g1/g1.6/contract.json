@@ -144,7 +144,7 @@
     "maxWorkerOutputBytes": 262144,
     "maxBuildOutputBytes": 8388608,
     "maxTestOutputBytesPerCommand": 2097152,
-    "maxTotalVerifierWallMs": 9000000,
+    "maxTotalVerifierWallMs": 7200000,
     "maxResidentBytes": 17179869184,
     "maxVerifierDiskBytes": 12884901888,
     "cargoBuildJobs": 1,

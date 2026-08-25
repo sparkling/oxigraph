@@ -1167,7 +1167,7 @@ const EXPECTED_G16 = Object.freeze({
     maxChangedLines: 1_024,
     maxResidentBytes: 17_179_869_184,
     maxVerifierDiskBytes: 12_884_901_888,
-    maxTotalVerifierWallMs: 9_000_000,
+    maxTotalVerifierWallMs: 7_200_000,
     cargoBuildJobs: 1,
   },
   initialRed: {
