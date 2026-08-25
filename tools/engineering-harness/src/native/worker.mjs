@@ -55,14 +55,21 @@ function cancellationError() {
 }
 
 function promptFor({ role, encodedTask }) {
-  return [
+  const lines = [
     "You are a bounded Oxigraph engineering worker.",
     `Role: ${role}.`,
     "You have no local tools. Inspect only the allowlisted source snapshot embedded in this task. Do not publish, push, deploy, request external access, or alter evaluators and governance inputs.",
     "Return only the requested structured object. Implementation and repair roles return a unified diff in patch; all other roles return patch=null.",
-    "Task contract:",
-    encodedTask,
-  ].join("\n");
+  ];
+  if (["implementation", "repair"].includes(role)) {
+    lines.push(
+      "The patch string must be an exact git unified diff: begin each file with `diff --git a/<path> b/<path>`, then exact `--- a/<path>` and `+++ b/<path>` headers, followed by one or more standard `@@ -oldStart,oldCount +newStart,newCount @@` hunks.",
+      "Every line inside a hunk must begin with exactly one context (` `), deletion (`-`), or addition (`+`) marker. A blank context line is one space, never an empty line. Hunk old/new counts must mechanically equal the marked lines that follow.",
+      "Do not wrap the patch in Markdown fences, add prose or `*** Begin Patch` markers, use timestamps, elide unchanged hunk lines, or include a trailing unmarked blank line before another hunk/file.",
+    );
+  }
+  lines.push("Task contract:", encodedTask);
+  return lines.join("\n");
 }
 
 function decodeClaude(stdout) {

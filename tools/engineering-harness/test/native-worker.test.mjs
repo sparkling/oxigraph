@@ -59,6 +59,9 @@ test("native Codex worker consumes structured output and removes its private out
   assert.equal(result.output.patch, accepted.patch);
   assert.equal(result.invocation.taskSha256, sha256(Buffer.from(JSON.stringify(task), "utf8")));
   assert.equal(result.invocation.promptSha256, sha256(Buffer.from(finalPrompt, "utf8")));
+  assert.match(finalPrompt, /Hunk old\/new counts must mechanically equal/);
+  assert.match(finalPrompt, /blank context line is one space/);
+  assert.match(finalPrompt, /Do not wrap the patch in Markdown fences/);
   assert.ok(result.invocation.args.includes("gpt-test"));
   assert.ok(/^[a-f0-9]{64}$/.test(result.invocation.attestation.sha256));
   await assert.rejects(access(outputRoot));
