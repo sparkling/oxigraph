@@ -35,7 +35,7 @@ function fixture(overrides = {}) {
       },
       async createSourceSnapshot(input) {
         calls.push(["snapshot", input]);
-        return { sha256: digest };
+        return { sha256: digest, contractSha256: input.contractSha256 };
       },
       async verifyBaseline(input) {
         calls.push(["verify", input]);
@@ -58,11 +58,16 @@ test("preflight freezes control before reconstructing and disposes the evaluator
   const result = await runG12Preflight(state.options);
   assert.equal(result.schema, "oxigraph.g1.2-preflight/v1");
   assert.equal(result.contractSha256, digest);
+  assert.equal(result.sourceSnapshot.contractSha256, digest);
   assert.equal(result.redBaseline.verdict, "CONFIRMED_RED");
   assert.deepEqual(
     state.calls.map(([name]) => name),
     ["contract", "control", "reconstruct", "submodules", "snapshot", "verify", "dispose"],
   );
+  const snapshotInput = state.calls[4][1];
+  assert.equal(snapshotInput.evaluator.kind, "evaluator");
+  assert.equal(snapshotInput.contract, result.contract);
+  assert.equal(snapshotInput.contractSha256, digest);
 });
 
 test("preflight fails closed on a non-discriminating baseline and still disposes", async () => {

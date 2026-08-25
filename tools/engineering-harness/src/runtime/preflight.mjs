@@ -47,7 +47,11 @@ export async function runG12Preflight({
       candidate: evaluator,
       contract,
     });
-    const sourceSnapshot = await createSourceSnapshot({ evaluator, contract });
+    const sourceSnapshot = await createSourceSnapshot({
+      evaluator,
+      contract,
+      contractSha256,
+    });
     const redBaseline = requireConfirmedRed(
       await verifyBaseline({ candidate: evaluator, contract, signal }),
     );

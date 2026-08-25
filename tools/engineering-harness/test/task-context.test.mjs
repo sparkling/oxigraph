@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { createGitHome, runGit } from "../src/candidate/git.mjs";
 import { loadTaskContract } from "../src/contract.mjs";
+import { canonicalSha256 } from "../src/routing/features.mjs";
 import {
   createG12SourceSnapshot,
   createG12TaskContext,
@@ -27,9 +28,18 @@ function digest(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function gitObject(value) {
+  return createHash("sha1").update(value).digest("hex");
+}
+
 function patch() {
   const path = G12_SOURCE_ALLOWLIST[0];
   return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-fn mutable() {}\n+fn mutable() { serialize(); }\n`;
+}
+
+function repairedPatch() {
+  const path = G12_SOURCE_ALLOWLIST[0];
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-fn mutable() {}\n+fn mutable() { serialize_with_poison_recovery(); }\n`;
 }
 
 const outputs = Object.freeze({
@@ -190,7 +200,24 @@ function prior(...roles) {
   return Object.fromEntries(roles.map((role) => [role, outputs[role]]));
 }
 
-function verifierReceipt(contract, verdict = "ACCEPT") {
+function candidateDescriptor(contract, patchBytes = patch(), name = "initial") {
+  return {
+    patch: patchBytes,
+    patchSha256: digest(patchBytes),
+    commit: gitObject(`${name}-commit`),
+    tree: gitObject(`${name}-tree`),
+    protectedManifest: {
+      entries: contract.protectedInputs.evaluatorManifest.protectedEntries,
+      sha256: contract.protectedInputs.evaluatorManifest.protectedSha256,
+    },
+  };
+}
+
+function verifierReceipt(
+  contract,
+  verdict = "ACCEPT",
+  candidate = candidateDescriptor(contract),
+) {
   return {
     verdict,
     stage: verdict === "ACCEPT" ? "complete" : "evaluation",
@@ -215,11 +242,8 @@ function verifierReceipt(contract, verdict = "ACCEPT") {
     })),
     artifacts: [{ name: "transaction_concurrency-sealed", sha256: digest("artifact"), bytes: 10 }],
     durationMs: 5,
-    candidateTree: "a".repeat(40),
-    protectedManifest: {
-      entries: contract.protectedInputs.evaluatorManifest.protectedEntries,
-      sha256: contract.protectedInputs.evaluatorManifest.protectedSha256,
-    },
+    candidateTree: candidate.tree,
+    protectedManifest: structuredClone(candidate.protectedManifest),
   };
 }
 
@@ -228,6 +252,7 @@ test("architecture task includes only tree-verified allowlisted UTF-8 sources an
   const sourceSnapshot = await createG12SourceSnapshot({
     evaluator: state.evaluator,
     contract: state.contract,
+    contractSha256: state.contractSha256,
   });
   await rm(state.workspace, { recursive: true, force: true });
   const task = await createG12TaskContext({
@@ -243,16 +268,19 @@ test("architecture task includes only tree-verified allowlisted UTF-8 sources an
     [...state.source.values()].reduce((total, value) => total + Buffer.byteLength(value), 0),
   );
   assert.ok(task.sourceSnapshot.totalBytes < G12_SOURCE_BYTE_CEILING);
+  assert.equal(task.sourceSnapshot.contractSha256, state.contractSha256);
   assert.match(task.sourceSnapshot.sha256, /^[0-9a-f]{64}$/u);
   assert.ok(task.sourceSnapshot.files.every((file) => /^[0-9a-f]{64}$/u.test(file.sha256)));
   assert.equal(task.bindings.contractSha256, state.contractSha256);
   assert.equal(task.bindings.evaluator.tree, state.contract.evaluator.tree);
   assert.equal(task.bindings.sourceSnapshotSha256, task.sourceSnapshot.sha256);
+  assert.equal(task.bindings.currentCandidateSha256, null);
   assert.deepEqual(task.bindings.scope.mutableExact, [G12_SOURCE_ALLOWLIST[0]]);
   assert.deepEqual(task.bindings.verification.commands.public.argv, state.contract.commands.public.argv);
   assert.equal(task.bindings.verification.success.publicPassed, 2);
   assert.deepEqual(Object.values(task.authority), [false, false, false, false, false, false, false, false]);
   assert.equal(task.prior, null);
+  assert.equal(task.currentCandidate, null);
   assert.equal(task.verifier, null);
   assert.equal(Object.isFrozen(task.sourceSnapshot.files[0]), true);
 
@@ -287,6 +315,15 @@ test("architecture task includes only tree-verified allowlisted UTF-8 sources an
     }),
     /sealed for a different task contract/u,
   );
+  await assert.rejects(
+    createG12TaskContext({
+      role: "architecture",
+      sourceSnapshot,
+      contract: state.contract,
+      contractSha256: digest("different trusted contract bytes"),
+    }),
+    /raw contract digest differs/u,
+  );
 });
 
 test("source sealing rejects workspace tamper, symlinks, path escape, non-UTF8, and oversized files", async (t) => {
@@ -297,6 +334,7 @@ test("source sealing rejects workspace tamper, symlinks, path escape, non-UTF8, 
     createG12SourceSnapshot({
       evaluator: state.evaluator,
       contract: state.contract,
+      contractSha256: state.contractSha256,
     }),
     /differs from evaluator tree/u,
   );
@@ -309,6 +347,7 @@ test("source sealing rejects workspace tamper, symlinks, path escape, non-UTF8, 
     createG12SourceSnapshot({
       evaluator: state.evaluator,
       contract: state.contract,
+      contractSha256: state.contractSha256,
     }),
     /symlink/u,
   );
@@ -318,6 +357,7 @@ test("source sealing rejects workspace tamper, symlinks, path escape, non-UTF8, 
     createG12SourceSnapshot({
       evaluator: escaped,
       contract: state.contract,
+      contractSha256: state.contractSha256,
     }),
     /escapes|private temporary root/u,
   );
@@ -328,6 +368,7 @@ test("source sealing rejects workspace tamper, symlinks, path escape, non-UTF8, 
     createG12SourceSnapshot({
       evaluator: state.evaluator,
       contract: state.contract,
+      contractSha256: state.contractSha256,
     }),
     /not valid UTF-8/u,
   );
@@ -337,6 +378,7 @@ test("source sealing rejects workspace tamper, symlinks, path escape, non-UTF8, 
     createG12SourceSnapshot({
       evaluator: state.evaluator,
       contract: state.contract,
+      contractSha256: state.contractSha256,
     }),
     /byte ceiling/u,
   );
@@ -347,6 +389,7 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
   const sourceSnapshot = await createG12SourceSnapshot({
     evaluator: state.evaluator,
     contract: state.contract,
+    contractSha256: state.contractSha256,
   });
   const critique = await createG12TaskContext({
     role: "critique",
@@ -367,17 +410,29 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
   assert.deepEqual(Object.keys(implementation.prior.outputs), ["architecture", "critique"]);
   assert.equal(implementation.response.patch, "required-unified-diff-within-mutable-exact");
 
-  const receipt = verifierReceipt(state.contract);
+  const initialCandidate = candidateDescriptor(state.contract);
+  const receipt = verifierReceipt(state.contract, "ACCEPT", initialCandidate);
   const review = await createG12TaskContext({
     role: "review",
     sourceSnapshot,
     contract: state.contract,
     contractSha256: state.contractSha256,
     priorOutputs: prior("architecture", "critique", "implementation"),
+    currentCandidate: initialCandidate,
     verifierReceipt: receipt,
   });
   assert.match(review.verifier.sha256, /^[0-9a-f]{64}$/u);
   assert.equal(review.verifier.receipt.verdict, "ACCEPT");
+  assert.deepEqual(review.currentCandidate, initialCandidate);
+  assert.equal(
+    review.bindings.currentCandidateSha256,
+    canonicalSha256(initialCandidate),
+  );
+  assert.equal(
+    review.verifier.currentCandidateSha256,
+    review.bindings.currentCandidateSha256,
+  );
+  assert.equal(Object.isFrozen(review.currentCandidate), true);
   assert.equal(review.response.patch, "must-be-null");
 
   const repair = await createG12TaskContext({
@@ -386,10 +441,58 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
     contract: state.contract,
     contractSha256: state.contractSha256,
     priorOutputs: prior("architecture", "critique", "implementation"),
-    verifierReceipt: verifierReceipt(state.contract, "REJECT"),
+    currentCandidate: initialCandidate,
+    verifierReceipt: verifierReceipt(
+      state.contract,
+      "REJECT",
+      initialCandidate,
+    ),
   });
   assert.equal(repair.verifier.receipt.verdict, "REJECT");
   assert.equal(repair.response.patch, "required-unified-diff-within-mutable-exact");
+
+  const repairedCandidate = candidateDescriptor(
+    state.contract,
+    repairedPatch(),
+    "repair-1",
+  );
+  const repairCycleTwo = await createG12TaskContext({
+    role: "repair",
+    sourceSnapshot,
+    contract: state.contract,
+    contractSha256: state.contractSha256,
+    priorOutputs: prior("architecture", "critique", "implementation"),
+    currentCandidate: repairedCandidate,
+    verifierReceipt: verifierReceipt(
+      state.contract,
+      "REJECT",
+      repairedCandidate,
+    ),
+  });
+  assert.notEqual(
+    repairCycleTwo.currentCandidate.patch,
+    repairCycleTwo.prior.outputs.implementation.patch,
+  );
+  assert.equal(repairCycleTwo.currentCandidate.patch, repairedPatch());
+
+  const reviewAfterRepair = await createG12TaskContext({
+    role: "review",
+    sourceSnapshot,
+    contract: state.contract,
+    contractSha256: state.contractSha256,
+    priorOutputs: prior("architecture", "critique", "implementation"),
+    currentCandidate: repairedCandidate,
+    verifierReceipt: verifierReceipt(
+      state.contract,
+      "ACCEPT",
+      repairedCandidate,
+    ),
+  });
+  assert.equal(reviewAfterRepair.currentCandidate.patch, repairedPatch());
+  assert.notEqual(
+    reviewAfterRepair.currentCandidate.patchSha256,
+    initialCandidate.patchSha256,
+  );
 
   await assert.rejects(
     createG12TaskContext({
@@ -398,6 +501,71 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
       contract: state.contract,
       contractSha256: state.contractSha256,
       priorOutputs: prior("architecture", "critique", "implementation"),
+      currentCandidate: {
+        ...initialCandidate,
+        patchSha256: digest("different patch"),
+      },
+      verifierReceipt: verifierReceipt(
+        state.contract,
+        "REJECT",
+        initialCandidate,
+      ),
+    }),
+    /does not bind the admitted patch bytes/u,
+  );
+  await assert.rejects(
+    createG12TaskContext({
+      role: "review",
+      sourceSnapshot,
+      contract: state.contract,
+      contractSha256: state.contractSha256,
+      priorOutputs: prior("architecture", "critique", "implementation"),
+      currentCandidate: initialCandidate,
+      verifierReceipt: {
+        ...receipt,
+        candidateTree: gitObject("different candidate tree"),
+      },
+    }),
+    /does not match the exact current candidate/u,
+  );
+  const incompleteReceipt = {
+    ...verifierReceipt(state.contract, "REJECT", initialCandidate),
+  };
+  delete incompleteReceipt.candidateTree;
+  delete incompleteReceipt.protectedManifest;
+  await assert.rejects(
+    createG12TaskContext({
+      role: "repair",
+      sourceSnapshot,
+      contract: state.contract,
+      contractSha256: state.contractSha256,
+      priorOutputs: prior("architecture", "critique", "implementation"),
+      currentCandidate: initialCandidate,
+      verifierReceipt: incompleteReceipt,
+    }),
+    /must bind the exact current candidate/u,
+  );
+  await assert.rejects(
+    createG12TaskContext({
+      role: "review",
+      sourceSnapshot,
+      contract: state.contract,
+      contractSha256: state.contractSha256,
+      priorOutputs: prior("architecture", "critique", "implementation"),
+      currentCandidate: { ...initialCandidate, injected: true },
+      verifierReceipt: receipt,
+    }),
+    /currentCandidate keys must be exactly/u,
+  );
+
+  await assert.rejects(
+    createG12TaskContext({
+      role: "repair",
+      sourceSnapshot,
+      contract: state.contract,
+      contractSha256: state.contractSha256,
+      priorOutputs: prior("architecture", "critique", "implementation"),
+      currentCandidate: initialCandidate,
       verifierReceipt: receipt,
     }),
     /repair requires a rejecting verifier receipt/u,
@@ -409,7 +577,12 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
       contract: state.contract,
       contractSha256: state.contractSha256,
       priorOutputs: prior("architecture", "critique", "implementation"),
-      verifierReceipt: verifierReceipt(state.contract, "REJECT"),
+      currentCandidate: initialCandidate,
+      verifierReceipt: verifierReceipt(
+        state.contract,
+        "REJECT",
+        initialCandidate,
+      ),
     }),
     /review requires an accepted complete verifier receipt/u,
   );
@@ -420,7 +593,12 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
       contract: state.contract,
       contractSha256: state.contractSha256,
       priorOutputs: prior("architecture", "critique", "implementation", "review"),
-      verifierReceipt: verifierReceipt(state.contract, "REJECT"),
+      currentCandidate: initialCandidate,
+      verifierReceipt: verifierReceipt(
+        state.contract,
+        "REJECT",
+        initialCandidate,
+      ),
     }),
     /keys must be exactly/u,
   );
@@ -452,6 +630,7 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
       contract: state.contract,
       contractSha256: state.contractSha256,
       priorOutputs: prior("architecture", "critique", "implementation"),
+      currentCandidate: initialCandidate,
       verifierReceipt: { ...receipt, injected: "untrusted" },
     }),
     /keys must be exactly/u,

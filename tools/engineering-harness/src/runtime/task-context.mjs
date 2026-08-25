@@ -91,6 +91,13 @@ const EVALUATOR_KEYS = Object.freeze([
   "protectedManifest",
   "kind",
 ]);
+const CURRENT_CANDIDATE_KEYS = Object.freeze([
+  "patch",
+  "patchSha256",
+  "commit",
+  "tree",
+  "protectedManifest",
+]);
 const COMMAND_EVIDENCE_KEYS = Object.freeze([
   "name",
   "logicalArgv",
@@ -561,7 +568,12 @@ function sourceDigest(files) {
   return digest.digest("hex");
 }
 
-async function sealedSourceSnapshot(evaluator, contract, workspace) {
+async function sealedSourceSnapshot(
+  evaluator,
+  contract,
+  contractSha256,
+  workspace,
+) {
   const output = await runGit({
     args: ["ls-tree", "-r", "-z", contract.evaluator.tree, "--", ...G12_SOURCE_ALLOWLIST],
     cwd: workspace,
@@ -589,6 +601,7 @@ async function sealedSourceSnapshot(evaluator, contract, workspace) {
   }
   return deepFreeze({
     algorithm: SOURCE_DIGEST_ALGORITHM,
+    contractSha256,
     totalBytes,
     sha256: sourceDigest(files),
     files,
@@ -667,7 +680,56 @@ function normalizeCommandEvidence(value, index, contract) {
   };
 }
 
-function normalizeVerifierReceipt(role, receipt, contract) {
+function normalizeCurrentCandidate(value, contract) {
+  exactKeys(value, CURRENT_CANDIDATE_KEYS, "currentCandidate");
+  const patch = requireString(
+    value.patch,
+    "currentCandidate.patch",
+    contract.ceilings.maxPatchBytes,
+  );
+  validateCandidatePatch(patch, contract);
+  requireHash(value.patchSha256, HEX64, "currentCandidate.patchSha256");
+  if (hash(patch) !== value.patchSha256) {
+    fail("currentCandidate.patchSha256 does not bind the admitted patch bytes");
+  }
+  requireHash(value.commit, HEX40, "currentCandidate.commit");
+  requireHash(value.tree, HEX40, "currentCandidate.tree");
+  exactKeys(
+    value.protectedManifest,
+    ["entries", "sha256"],
+    "currentCandidate.protectedManifest",
+  );
+  requireSafeInteger(
+    value.protectedManifest.entries,
+    "currentCandidate.protectedManifest.entries",
+    1,
+  );
+  requireHash(
+    value.protectedManifest.sha256,
+    HEX64,
+    "currentCandidate.protectedManifest.sha256",
+  );
+  if (
+    value.protectedManifest.entries !==
+      contract.protectedInputs.evaluatorManifest.protectedEntries ||
+    value.protectedManifest.sha256 !==
+      contract.protectedInputs.evaluatorManifest.protectedSha256
+  ) {
+    fail("currentCandidate protected manifest does not match the trusted contract");
+  }
+  return deepFreeze({
+    patch,
+    patchSha256: value.patchSha256,
+    commit: value.commit,
+    tree: value.tree,
+    protectedManifest: {
+      entries: value.protectedManifest.entries,
+      sha256: value.protectedManifest.sha256,
+    },
+  });
+}
+
+function normalizeVerifierReceipt(role, receipt, contract, currentCandidate) {
   if (!Array.isArray(receipt?.commands)) fail("verifierReceipt.commands must be an array");
   const complete = Object.hasOwn(receipt, "candidateTree");
   exactKeys(
@@ -750,9 +812,27 @@ function normalizeVerifierReceipt(role, receipt, contract) {
   } else if (receipt.verdict === "ACCEPT") {
     fail("an accepted verifier receipt must bind the candidate tree");
   }
+  if (["review", "repair"].includes(role)) {
+    if (!complete) {
+      fail(`${role} verifier receipt must bind the exact current candidate`);
+    }
+    if (
+      normalized.candidateTree !== currentCandidate.tree ||
+      normalized.protectedManifest.entries !==
+        currentCandidate.protectedManifest.entries ||
+      normalized.protectedManifest.sha256 !==
+        currentCandidate.protectedManifest.sha256
+    ) {
+      fail(`${role} verifier receipt does not match the exact current candidate`);
+    }
+  }
   const encoded = canonicalJson(normalized);
   if (Buffer.byteLength(encoded) > MAX_RECEIPT_BYTES) fail("verifier receipt exceeds its byte ceiling");
-  return deepFreeze({ sha256: hash(encoded), receipt: normalized });
+  return deepFreeze({
+    sha256: hash(encoded),
+    currentCandidateSha256: hash(canonicalJson(currentCandidate)),
+    receipt: normalized,
+  });
 }
 
 function contractProjection(contract, contractSha256) {
@@ -797,14 +877,18 @@ function contractProjection(contract, contractSha256) {
   });
 }
 
-function validateCachedSourceSnapshot(snapshot, contract) {
+function validateCachedSourceSnapshot(snapshot, contract, contractSha256) {
   exactKeys(
     snapshot,
-    ["algorithm", "totalBytes", "sha256", "files"],
+    ["algorithm", "contractSha256", "totalBytes", "sha256", "files"],
     "sourceSnapshot",
   );
   if (snapshot.algorithm !== SOURCE_DIGEST_ALGORITHM) {
     fail("sourceSnapshot uses an unsupported digest algorithm");
+  }
+  requireHash(snapshot.contractSha256, HEX64, "sourceSnapshot.contractSha256");
+  if (snapshot.contractSha256 !== contractSha256) {
+    fail("sourceSnapshot raw contract digest differs from the task contract digest");
   }
   requireSafeInteger(snapshot.totalBytes, "sourceSnapshot.totalBytes", 1);
   if (snapshot.totalBytes > G12_SOURCE_BYTE_CEILING) {
@@ -846,15 +930,22 @@ function validateCachedSourceSnapshot(snapshot, contract) {
   ) {
     fail("sourceSnapshot does not bind the trusted mutable/evaluator sources");
   }
-  const sealedContractSha256 = sealedSnapshotAuthority.get(snapshot);
-  if (sealedContractSha256 === undefined) {
+  const authority = sealedSnapshotAuthority.get(snapshot);
+  if (authority === undefined) {
     fail("sourceSnapshot was not sealed by this process");
   }
-  if (sealedContractSha256 !== hash(canonicalJson(contract))) {
+  if (authority.canonicalContractSha256 !== hash(canonicalJson(contract))) {
     fail("sourceSnapshot was sealed for a different task contract");
+  }
+  if (
+    authority.contractSha256 !== contractSha256 ||
+    authority.contractSha256 !== snapshot.contractSha256
+  ) {
+    fail("sourceSnapshot was sealed for a different raw contract digest");
   }
   return deepFreeze({
     algorithm: snapshot.algorithm,
+    contractSha256: snapshot.contractSha256,
     totalBytes,
     sha256: snapshot.sha256,
     files,
@@ -866,11 +957,26 @@ function validateCachedSourceSnapshot(snapshot, contract) {
  * exists. The returned JSON value remains usable after that checkout is disposed.
  */
 export async function createG12SourceSnapshot(input) {
-  exactKeys(input, ["evaluator", "contract"], "source snapshot input");
-  validateContract(input.contract);
+  exactKeys(
+    input,
+    ["evaluator", "contract", "contractSha256"],
+    "source snapshot input",
+  );
+  validateContract(input.contract, input.contractSha256);
   const { workspace } = await validateEvaluator(input.evaluator, input.contract);
-  const snapshot = await sealedSourceSnapshot(input.evaluator, input.contract, workspace);
-  sealedSnapshotAuthority.set(snapshot, hash(canonicalJson(input.contract)));
+  const snapshot = await sealedSourceSnapshot(
+    input.evaluator,
+    input.contract,
+    input.contractSha256,
+    workspace,
+  );
+  sealedSnapshotAuthority.set(
+    snapshot,
+    Object.freeze({
+      canonicalContractSha256: hash(canonicalJson(input.contract)),
+      contractSha256: input.contractSha256,
+    }),
+  );
   return snapshot;
 }
 
@@ -884,17 +990,28 @@ export async function createG12TaskContext(input) {
   if (!TASK_ROLES.includes(input.role)) fail("worker role is not admitted for G1.2");
   const requiredKeys = ["role", "sourceSnapshot", "contract", "contractSha256"];
   if (ROLE_PRIORS[input.role].length > 0) requiredKeys.push("priorOutputs");
-  if (["review", "repair"].includes(input.role)) requiredKeys.push("verifierReceipt");
+  if (["review", "repair"].includes(input.role)) {
+    requiredKeys.push("currentCandidate", "verifierReceipt");
+  }
   exactKeys(input, requiredKeys, "task context input");
 
   validateContract(input.contract, input.contractSha256);
   const sourceSnapshot = validateCachedSourceSnapshot(
     input.sourceSnapshot,
     input.contract,
+    input.contractSha256,
   );
   const prior = normalizePriorOutputs(input.role, input.priorOutputs, input.contract);
+  const currentCandidate = ["review", "repair"].includes(input.role)
+    ? normalizeCurrentCandidate(input.currentCandidate, input.contract)
+    : null;
   const verifier = ["review", "repair"].includes(input.role)
-    ? normalizeVerifierReceipt(input.role, input.verifierReceipt, input.contract)
+    ? normalizeVerifierReceipt(
+        input.role,
+        input.verifierReceipt,
+        input.contract,
+        currentCandidate,
+      )
     : null;
   const bindings = contractProjection(input.contract, input.contractSha256);
 
@@ -907,9 +1024,14 @@ export async function createG12TaskContext(input) {
     bindings: {
       ...bindings,
       sourceSnapshotSha256: sourceSnapshot.sha256,
+      currentCandidateSha256:
+        currentCandidate === null
+          ? null
+          : hash(canonicalJson(currentCandidate)),
     },
     sourceSnapshot,
     prior,
+    currentCandidate,
     verifier,
     authority: {
       tools: false,
