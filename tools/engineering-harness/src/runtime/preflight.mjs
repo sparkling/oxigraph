@@ -20,6 +20,21 @@ const commandNames = new Set(["format", "build", "public", "independent", "regre
 const commandDispositions = new Set(["completed", "timed-out", "output-limit"]);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 
+function redactedFailureClass(command) {
+  if (command?.disposition === "timed-out") return "timeout";
+  if (command?.disposition === "output-limit") return "output-limit";
+  const output = `${command?.stdoutTail ?? ""}\n${command?.stderrTail ?? ""}`;
+  if (/No space left on device|\bENOSPC\b/iu.test(output)) {
+    return "state-exhausted";
+  }
+  if (/Cannot allocate memory|out of memory|\bENOMEM\b/iu.test(output)) {
+    return "memory-exhausted";
+  }
+  return Number.isInteger(command?.exitCode) && command.exitCode !== 0
+    ? "command-failed"
+    : null;
+}
+
 function boundedRedDiagnostic(receipt) {
   const commands = Array.isArray(receipt?.commands)
     ? receipt.commands.slice(0, commandNames.size).map((command) => ({
@@ -36,6 +51,7 @@ function boundedRedDiagnostic(receipt) {
           Number.isSafeInteger(command?.durationMs) && command.durationMs >= 0
             ? command.durationMs
             : null,
+        failureClass: redactedFailureClass(command),
         stdoutSha256: sha256Pattern.test(command?.stdoutSha256)
           ? command.stdoutSha256
           : null,

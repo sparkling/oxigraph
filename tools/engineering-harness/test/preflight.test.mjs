@@ -90,6 +90,17 @@ test("preflight fails closed on a non-discriminating baseline and still disposes
             stdoutTail: "sensitive evaluator output",
             stderrTail: "sensitive compiler output",
           },
+          {
+            name: "independent",
+            disposition: "completed",
+            exitCode: 101,
+            signal: null,
+            durationMs: 19,
+            stdoutSha256: "d".repeat(64),
+            stderrSha256: "e".repeat(64),
+            stdoutTail: "",
+            stderrTail: "failed to write output: No space left on device",
+          },
         ],
       };
     },
@@ -101,7 +112,7 @@ test("preflight fails closed on a non-discriminating baseline and still disposes
     );
     assert.match(
       error.message,
-      /"commands":\[\{"name":"public","disposition":"completed","exitCode":101,"signal":null,"durationMs":17,"stdoutSha256":"b{64}","stderrSha256":"c{64}"\}\]/u,
+      /"commands":\[\{"name":"public","disposition":"completed","exitCode":101,"signal":null,"durationMs":17,"failureClass":"command-failed","stdoutSha256":"b{64}","stderrSha256":"c{64}"\},\{"name":"independent","disposition":"completed","exitCode":101,"signal":null,"durationMs":19,"failureClass":"state-exhausted","stdoutSha256":"d{64}","stderrSha256":"e{64}"\}\]/u,
     );
     assert.doesNotMatch(error.message, /sensitive/u);
     return true;

@@ -972,7 +972,7 @@ const EXPECTED_G15C = Object.freeze({
     maxChangedFiles: 3,
     maxChangedLines: 1_024,
     maxResidentBytes: 17_179_869_184,
-    maxVerifierDiskBytes: 8_589_934_592,
+    maxVerifierDiskBytes: 12_884_901_888,
     cargoBuildJobs: 1,
   },
   initialRed: {

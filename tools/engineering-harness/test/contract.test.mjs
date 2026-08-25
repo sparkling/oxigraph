@@ -147,7 +147,7 @@ test("loads the compiler-red G1.5c negotiated-update contract and binds it to Gi
   assert.equal(resolution.contract.success.regressionPassed, 3);
   assert.equal(resolution.contract.ceilings.cargoBuildJobs, 1);
   assert.equal(resolution.contract.ceilings.maxResidentBytes, 17_179_869_184);
-  assert.equal(resolution.contract.ceilings.maxVerifierDiskBytes, 8_589_934_592);
+  assert.equal(resolution.contract.ceilings.maxVerifierDiskBytes, 12_884_901_888);
   assert.ok(
     resolution.contract.ceilings.maxResidentBytes >
       resolution.contract.ceilings.maxVerifierDiskBytes,

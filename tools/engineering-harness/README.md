@@ -34,7 +34,8 @@ Current activation boundary:
   its regression command runs cancellation, egress, and transactional-dataset
   targets. Command exit status proves every target in each set; the scalar
   receipt counts bind the final Cargo result lines (9 independent, 3 regression).
-  Clean RocksDB builds use one Cargo job and an 8 GiB `/state` tmpfs ceiling.
+  Clean RocksDB builds use one Cargo job and a 12 GiB `/state` tmpfs ceiling so
+  the feature-active build and later default-feature reference artefacts coexist.
   `maxResidentBytes` is the 16 GiB aggregate cgroup ceiling and includes that
   tmpfs state together with compiler, linker, and verifier process memory;
 - `receipt verify` independently verifies stored application receipts without
