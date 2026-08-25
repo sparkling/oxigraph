@@ -200,6 +200,66 @@ test("preflight classifies sandbox filesystem failures without leaking paths", a
   });
 });
 
+test("preflight exposes bounded compiler evidence without command text", async () => {
+  const state = fixture({
+    async verifyBaseline(input) {
+      state.calls.push(["verify", input]);
+      return {
+        verdict: "INCONCLUSIVE",
+        initialRedMatched: false,
+        referencesGreen: false,
+        commands: [
+          {
+            name: "build",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail: [
+              "error[E0599]: private missing method",
+              "error[E0277]: private trait failure",
+              "process didn't exit successfully: `rustc private arguments` (signal: 9, SIGKILL: kill)",
+              "could not compile `secret` due to 2 previous errors",
+            ].join("\n"),
+          },
+        ],
+      };
+    },
+  });
+  await assert.rejects(runG12Preflight(state.options), (error) => {
+    assert.match(error.message, /"failureClass":"compiler-process-killed"/u);
+    assert.match(error.message, /"rustcCodes":\["E0277","E0599"\]/u);
+    assert.match(error.message, /"compilerSignal":"SIGKILL"/u);
+    assert.doesNotMatch(error.message, /private|secret|rustc .*arguments|missing method/u);
+    return true;
+  });
+});
+
+test("preflight recognizes bounded compiler temporary-state failures", async () => {
+  const state = fixture({
+    async verifyBaseline(input) {
+      state.calls.push(["verify", input]);
+      return {
+        verdict: "INCONCLUSIVE",
+        initialRedMatched: false,
+        referencesGreen: false,
+        commands: [
+          {
+            name: "build",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail:
+              "error: couldn't create a temp dir: No such file or directory (os error 2) at path /private/state",
+          },
+        ],
+      };
+    },
+  });
+  await assert.rejects(runG12Preflight(state.options), (error) => {
+    assert.match(error.message, /"failureClass":"sandbox-filesystem"/u);
+    assert.doesNotMatch(error.message, /private|No such file|temp dir/u);
+    return true;
+  });
+});
+
 test("preflight disposes after preparation failures without invoking the verifier", async () => {
   const state = fixture({
     async createSourceSnapshot(input) {

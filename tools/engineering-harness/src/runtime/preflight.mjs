@@ -20,11 +20,42 @@ const redVerdicts = new Set(["CONFIRMED_RED", "INCONCLUSIVE", "INVALID_BASELINE"
 const commandNames = new Set(["format", "build", "public", "independent", "regression"]);
 const commandDispositions = new Set(["completed", "timed-out", "output-limit"]);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
+const compilerSignals = new Set([
+  "SIGABRT",
+  "SIGBUS",
+  "SIGILL",
+  "SIGKILL",
+  "SIGSEGV",
+  "SIGSYS",
+  "SIGTERM",
+  "SIGXCPU",
+  "SIGXFSZ",
+]);
+
+function commandOutput(command) {
+  return `${command?.stdoutTail ?? ""}\n${command?.stderrTail ?? ""}`;
+}
+
+function redactedCompilerEvidence(command) {
+  const output = commandOutput(command);
+  const rustcCodes = [
+    ...new Set([...output.matchAll(/error\[(E\d{4})\]/gu)].map((match) => match[1])),
+  ]
+    .sort()
+    .slice(0, 8);
+  const signalMatch = output.match(/\(signal:\s*\d+,\s*(SIG[A-Z]+)(?::[^)]*)?\)/u);
+  const compilerSignal =
+    /\brustc\b|\bcc1plus\b|\bclang(?:\+\+)?\b/iu.test(output) &&
+    compilerSignals.has(signalMatch?.[1])
+      ? signalMatch[1]
+      : null;
+  return Object.freeze({ rustcCodes: Object.freeze(rustcCodes), compilerSignal });
+}
 
 function redactedFailureClass(command) {
   if (command?.disposition === "timed-out") return "timeout";
   if (command?.disposition === "output-limit") return "output-limit";
-  const output = `${command?.stdoutTail ?? ""}\n${command?.stderrTail ?? ""}`;
+  const output = commandOutput(command);
   if (/No space left on device|\bENOSPC\b/iu.test(output)) {
     return "state-exhausted";
   }
@@ -47,8 +78,19 @@ function redactedFailureClass(command) {
   ) {
     return "offline-dependency";
   }
-  if (/Read-only file system|\bEROFS\b|Permission denied|\bEACCES\b/iu.test(output)) {
+  if (
+    /Read-only file system|\bEROFS\b|Permission denied|\bEACCES\b|couldn't create a temp dir:[^\n]{0,160}No such file or directory/iu.test(
+      output,
+    )
+  ) {
     return "sandbox-filesystem";
+  }
+  const { compilerSignal } = redactedCompilerEvidence(command);
+  if (compilerSignal === "SIGKILL") {
+    return "compiler-process-killed";
+  }
+  if (compilerSignal !== null) {
+    return "compiler-process-terminated";
   }
   if (/error\[E\d{4}\]|could not compile/iu.test(output)) {
     return "compiler-error";
@@ -60,28 +102,33 @@ function redactedFailureClass(command) {
 
 function boundedRedDiagnostic(receipt) {
   const commands = Array.isArray(receipt?.commands)
-    ? receipt.commands.slice(0, commandNames.size).map((command) => ({
-        name: commandNames.has(command?.name) ? command.name : "unknown",
-        disposition: commandDispositions.has(command?.disposition)
-          ? command.disposition
-          : "unknown",
-        exitCode: Number.isInteger(command?.exitCode) ? command.exitCode : null,
-        signal:
-          typeof command?.signal === "string" && /^[A-Z0-9]{1,16}$/u.test(command.signal)
-            ? command.signal
+    ? receipt.commands.slice(0, commandNames.size).map((command) => {
+        const { rustcCodes, compilerSignal } = redactedCompilerEvidence(command);
+        return {
+          name: commandNames.has(command?.name) ? command.name : "unknown",
+          disposition: commandDispositions.has(command?.disposition)
+            ? command.disposition
+            : "unknown",
+          exitCode: Number.isInteger(command?.exitCode) ? command.exitCode : null,
+          signal:
+            typeof command?.signal === "string" && /^[A-Z0-9]{1,16}$/u.test(command.signal)
+              ? command.signal
+              : null,
+          durationMs:
+            Number.isSafeInteger(command?.durationMs) && command.durationMs >= 0
+              ? command.durationMs
+              : null,
+          failureClass: redactedFailureClass(command),
+          ...(rustcCodes.length > 0 ? { rustcCodes } : {}),
+          ...(compilerSignal === null ? {} : { compilerSignal }),
+          stdoutSha256: sha256Pattern.test(command?.stdoutSha256)
+            ? command.stdoutSha256
             : null,
-        durationMs:
-          Number.isSafeInteger(command?.durationMs) && command.durationMs >= 0
-            ? command.durationMs
+          stderrSha256: sha256Pattern.test(command?.stderrSha256)
+            ? command.stderrSha256
             : null,
-        failureClass: redactedFailureClass(command),
-        stdoutSha256: sha256Pattern.test(command?.stdoutSha256)
-          ? command.stdoutSha256
-          : null,
-        stderrSha256: sha256Pattern.test(command?.stderrSha256)
-          ? command.stderrSha256
-          : null,
-      }))
+        };
+      })
     : [];
   return {
     verdict: redVerdicts.has(receipt?.verdict) ? receipt.verdict : "missing",
