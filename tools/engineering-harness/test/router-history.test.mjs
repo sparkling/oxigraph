@@ -82,6 +82,13 @@ async function admit(history, authority, value) {
   return history.append(value, capability);
 }
 
+async function admitBatch(history, authority, values) {
+  const capabilities = await Promise.all(
+    values.map((value) => authority.verifyAndMint(value, { direct: true })),
+  );
+  return history.appendBatch(values, capabilities);
+}
+
 async function admitPair(history, authority, index, qualities = [0.8, 0.8], drift = {}) {
   const taskId = `pair-${index}`;
   await admit(
@@ -211,7 +218,78 @@ test("one task may admit independently verified outcomes for different roles", a
   assert.equal(history.snapshot().length, 2);
   await assert.rejects(
     admit(history, authority, { ...review, quality: 0.7 }),
-    /duplicates shared-task\/review\/codex/,
+    /conflicts with shared-task\/review\/codex/,
+  );
+});
+
+test("receipt outcomes append atomically and exact replay is idempotent", async (t) => {
+  const { path, history, authority } = await fixture(t);
+  const values = [
+    outcome({ taskId: "atomic-pair", provider: "codex", quality: 0.3 }),
+    outcome({ taskId: "atomic-pair", provider: "claude", quality: 0.9 }),
+  ];
+  const firstCapability = await authority.verifyAndMint(values[0], { direct: true });
+  await assert.rejects(
+    history.appendBatch(values, [firstCapability, Object.freeze({})]),
+    /capability/,
+  );
+  assert.equal(history.snapshot().length, 0);
+  await history.append(values[0], firstCapability);
+  assert.equal(history.snapshot().length, 1, "failed batch released its valid capability");
+
+  const secondCapability = await authority.verifyAndMint(values[1], { direct: true });
+  await history.append(values[1], secondCapability);
+  const beforeReplay = await readFile(path, "utf8");
+  const replayed = await admitBatch(history, authority, values);
+  assert.equal(replayed.length, 2);
+  assert.equal(await readFile(path, "utf8"), beforeReplay);
+
+  const secondPair = [
+    outcome({ taskId: "second-atomic-pair", provider: "codex", quality: 0.4 }),
+    outcome({ taskId: "second-atomic-pair", provider: "claude", quality: 0.8 }),
+  ];
+  const appended = await admitBatch(history, authority, secondPair);
+  assert.equal(appended.length, 2);
+  assert.equal(history.snapshot().length, 4);
+
+  const conflicting = { ...values[1], quality: 0.1 };
+  const conflictCapability = await authority.verifyAndMint(conflicting, {
+    direct: true,
+  });
+  await assert.rejects(
+    history.appendBatch([conflicting], [conflictCapability]),
+    /conflicts with atomic-pair\/implementation\/claude/,
+  );
+});
+
+test("a dead controller lock is recovered but malformed locks fail closed", async (t) => {
+  const { path, history, authority } = await fixture(t);
+  const lockPath = `${path}.lock`;
+  await writeFile(
+    lockPath,
+    `${JSON.stringify({
+      schema: 1,
+      pid: 99_999_999,
+      processStartTime: "0",
+      createdAt: "2026-08-25T00:00:00.000Z",
+    })}\n`,
+    { mode: 0o600 },
+  );
+  await admit(
+    history,
+    authority,
+    outcome({ taskId: "after-stale-lock", provider: "codex", quality: 0.8 }),
+  );
+  assert.equal(history.snapshot().length, 1);
+
+  await writeFile(lockPath, "not-json\n", { mode: 0o600 });
+  await assert.rejects(
+    admit(
+      history,
+      authority,
+      outcome({ taskId: "malformed-lock", provider: "claude", quality: 0 }),
+    ),
+    /lock is malformed/,
   );
 });
 

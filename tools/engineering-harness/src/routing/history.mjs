@@ -3,6 +3,7 @@ import {
   closeSync,
   constants,
   fstatSync,
+  lstatSync,
   openSync,
   readFileSync,
   realpathSync,
@@ -25,6 +26,7 @@ export const NATIVE_PROVIDERS = Object.freeze(["codex", "claude"]);
 export const ROUTER_HISTORY_SCHEMA = 1;
 
 const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
+const HISTORY_LOCK_SCHEMA = 1;
 const DIGEST = /^[0-9a-f]{64}$/;
 const WORKER_ROLES = new Set([
   "architecture",
@@ -232,6 +234,147 @@ function claimCapability(capability, outcome) {
 function releaseCapability(state, succeeded, capability) {
   if (succeeded) admissionCapabilities.delete(capability);
   else state.state = "minted";
+}
+
+function processStartTime(pid) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    if (close < 0) return null;
+    const fields = stat.slice(close + 2).trim().split(/\s+/u);
+    const startTime = fields[19];
+    return /^\d+$/u.test(startTime ?? "") ? startTime : null;
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ESRCH") return null;
+    throw error;
+  }
+}
+
+function lockRecord() {
+  const startTime = processStartTime(process.pid);
+  if (startTime === null) {
+    throw new Error("router history cannot bind the controller process identity");
+  }
+  return Object.freeze({
+    schema: HISTORY_LOCK_SCHEMA,
+    pid: process.pid,
+    processStartTime: startTime,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function parseLockRecord(bytes) {
+  if (bytes.length === 0 || bytes.length > 4_096) {
+    throw new Error("router history lock has an invalid size");
+  }
+  let record;
+  try {
+    record = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    throw new Error(`router history lock is malformed: ${error.message}`);
+  }
+  exactKeys(
+    record,
+    new Set(["schema", "pid", "processStartTime", "createdAt"]),
+    "router history lock",
+  );
+  if (
+    record.schema !== HISTORY_LOCK_SCHEMA ||
+    !Number.isSafeInteger(record.pid) ||
+    record.pid < 1 ||
+    typeof record.processStartTime !== "string" ||
+    !/^\d+$/u.test(record.processStartTime) ||
+    typeof record.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(record.createdAt))
+  ) {
+    throw new Error("router history lock has invalid process metadata");
+  }
+  return record;
+}
+
+function existingLock(path) {
+  let descriptor;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const metadata = fstatSync(descriptor);
+    const uid = typeof process.getuid === "function" ? process.getuid() : metadata.uid;
+    if (
+      !metadata.isFile() ||
+      metadata.uid !== uid ||
+      (metadata.mode & 0o077) !== 0
+    ) {
+      throw new Error("router history lock must be a private owner-only regular file");
+    }
+    return Object.freeze({
+      metadata: Object.freeze({ dev: metadata.dev, ino: metadata.ino }),
+      record: parseLockRecord(readFileSync(descriptor)),
+    });
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+async function recoverStaleLock(path, isIgnoredRuntimePath) {
+  const observed = existingLock(path);
+  const liveStartTime = processStartTime(observed.record.pid);
+  if (liveStartTime === observed.record.processStartTime) {
+    throw new Error(`router history is locked by live process ${observed.record.pid}`);
+  }
+  const current = lstatSync(path);
+  if (current.dev !== observed.metadata.dev || current.ino !== observed.metadata.ino) {
+    throw new Error("router history lock changed during stale-lock inspection");
+  }
+  const quarantine = `${path}.stale.${process.pid}.${randomUUID()}`;
+  if ((await isIgnoredRuntimePath(quarantine)) !== true) {
+    throw new Error("router history stale-lock quarantine is not ignored");
+  }
+  await rename(path, quarantine);
+  await rm(quarantine, { force: true });
+}
+
+async function acquireHistoryLock(path, isIgnoredRuntimePath) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle;
+    try {
+      handle = await open(
+        path,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600,
+      );
+      const record = lockRecord();
+      await handle.writeFile(`${canonicalJson(record)}\n`, "utf8");
+      await handle.sync();
+      const metadata = await handle.stat();
+      return Object.freeze({ handle, metadata, record });
+    } catch (error) {
+      await handle?.close();
+      if (handle !== undefined) await rm(path, { force: true });
+      if (error.code !== "EEXIST" || attempt > 0) throw error;
+      await recoverStaleLock(path, isIgnoredRuntimePath);
+    }
+  }
+  throw new Error("router history lock acquisition exhausted");
+}
+
+async function releaseHistoryLock(path, lock) {
+  let cleanupError;
+  try {
+    const current = lstatSync(path);
+    if (current.dev !== lock.metadata.dev || current.ino !== lock.metadata.ino) {
+      throw new Error("router history lock identity changed before release");
+    }
+    await unlink(path);
+  } catch (error) {
+    cleanupError = error;
+  }
+  try {
+    await lock.handle.close();
+  } catch (error) {
+    cleanupError ??= error;
+  }
+  if (cleanupError !== undefined) {
+    throw new Error(`router history lock cleanup failed: ${cleanupError.message}`);
+  }
 }
 
 function frozenEntry(value) {
@@ -465,44 +608,100 @@ export class RouterHistory {
   }
 
   async append(outcome, capability) {
-    const normalized = normalizeQualityOutcome(outcome);
-    const capabilityState = claimCapability(capability, normalized);
+    return (await this.appendBatch([outcome], [capability]))[0];
+  }
+
+  async appendBatch(outcomes, capabilities) {
+    if (
+      !Array.isArray(outcomes) ||
+      outcomes.length === 0 ||
+      outcomes.length > 1_024 ||
+      !Array.isArray(capabilities) ||
+      capabilities.length !== outcomes.length
+    ) {
+      throw new Error("router history batch requires matching bounded outcomes and capabilities");
+    }
+    const normalized = outcomes.map((outcome) => normalizeQualityOutcome(outcome));
+    const batchIdentities = new Set();
+    for (const outcome of normalized) {
+      const identity = `${outcome.taskId}\u0000${outcome.role}\u0000${outcome.provider}`;
+      if (batchIdentities.has(identity)) {
+        throw new Error(
+          `router history batch duplicates ${outcome.taskId}/${outcome.role}/${outcome.provider}`,
+        );
+      }
+      batchIdentities.add(identity);
+    }
+    const claimed = [];
+    try {
+      for (let index = 0; index < normalized.length; index += 1) {
+        claimed.push({
+          capability: capabilities[index],
+          state: claimCapability(capabilities[index], normalized[index]),
+        });
+      }
+    } catch (error) {
+      for (const item of claimed) releaseCapability(item.state, false, item.capability);
+      throw error;
+    }
     const lockPath = `${this.#path}.lock`;
     let lock;
     let succeeded = false;
-    let cleanupError;
     try {
-      lock = await open(
-        lockPath,
-        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
-        0o600,
-      );
-      await lock.sync();
+      lock = await acquireHistoryLock(lockPath, this.#isIgnoredRuntimePath);
       const current = validateHistoryFile(this.#path);
-      const sequence = current.length + 1;
-      const previousSha256 = current.at(-1)?.entrySha256 ?? null;
-      const payload = envelopePayload(sequence, previousSha256, normalized);
-      const entry = frozenEntry({
-        ...payload,
-        entrySha256: canonicalSha256(payload),
-      });
-      const next = Object.freeze([...current, entry]);
+      const byIdentity = new Map(
+        current.map((entry) => [
+          `${entry.outcome.taskId}\u0000${entry.outcome.role}\u0000${entry.outcome.provider}`,
+          entry,
+        ]),
+      );
+      const appended = [];
+      const returned = [];
+      let sequence = current.length;
+      let previousSha256 = current.at(-1)?.entrySha256 ?? null;
+      for (const outcome of normalized) {
+        const identity = `${outcome.taskId}\u0000${outcome.role}\u0000${outcome.provider}`;
+        const existing = byIdentity.get(identity);
+        if (existing !== undefined) {
+          if (canonicalJson(existing.outcome) !== canonicalJson(outcome)) {
+            throw new Error(
+              `router history conflicts with ${outcome.taskId}/${outcome.role}/${outcome.provider}`,
+            );
+          }
+          returned.push(existing);
+          continue;
+        }
+        sequence += 1;
+        const payload = envelopePayload(sequence, previousSha256, outcome);
+        const entry = frozenEntry({
+          ...payload,
+          entrySha256: canonicalSha256(payload),
+        });
+        appended.push(entry);
+        returned.push(entry);
+        byIdentity.set(identity, entry);
+        previousSha256 = entry.entrySha256;
+      }
+      const next = Object.freeze([...current, ...appended]);
       validateCrossEntryInvariants(next);
-      await atomicReplace(this.#path, next, this.#isIgnoredRuntimePath);
+      if (appended.length > 0) {
+        await atomicReplace(this.#path, next, this.#isIgnoredRuntimePath);
+      }
       this.#entries = next;
       succeeded = true;
-      return entry;
+      return Object.freeze(returned);
     } finally {
+      let cleanupError;
       try {
-        await lock?.close();
-        if (lock !== undefined) await unlink(lockPath);
+        if (lock !== undefined) await releaseHistoryLock(lockPath, lock);
       } catch (error) {
         cleanupError = error;
       }
-      releaseCapability(capabilityState, succeeded, capability);
-      if (cleanupError !== undefined) {
-        throw new Error(`router history lock cleanup failed: ${cleanupError.message}`);
+      for (const item of claimed) {
+        releaseCapability(item.state, succeeded, item.capability);
       }
+      if (cleanupError !== undefined) throw cleanupError;
     }
   }
 }
