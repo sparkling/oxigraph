@@ -87,6 +87,93 @@ async function createFixture(root) {
   return workspace;
 }
 
+async function createAnchorProbeFixture(root) {
+  const workspace = await createFixture(root);
+  await writeFile(
+    join(workspace, "Cargo.toml"),
+    '[package]\nname = "session_fixture"\nversion = "0.1.0"\nedition = "2021"\nbuild = "build.rs"\n',
+  );
+  await writeFile(
+    join(workspace, "build.rs"),
+    [
+      "use std::ffi::{c_char, c_void, CString};",
+      "use std::fs;",
+      "",
+      'unsafe extern "C" {',
+      "    fn mount(",
+      "        source: *const c_char,",
+      "        target: *const c_char,",
+      "        filesystem_type: *const c_char,",
+      "        mount_flags: usize,",
+      "        data: *const c_void,",
+      "    ) -> i32;",
+      "    fn unshare(flags: i32) -> i32;",
+      "}",
+      "",
+      "fn main() {",
+      '    for (source, destination) in [',
+      '        ("/state/home", "/state/home-moved"),',
+      '        ("/state/tmp", "/state/tmp-moved"),',
+      '        ("/state/target", "/state/target-moved"),',
+      '    ] {',
+      '        assert!(',
+      '            fs::rename(source, destination).is_err(),',
+      '            "a verifier state anchor was renameable"',
+      '        );',
+      '    }',
+      '    let probe = std::env::temp_dir().join("oxigraph-anchor-probe");',
+      '    fs::write(&probe, b"bounded").expect("the protected temp anchor must stay writable");',
+      '    fs::remove_file(probe).expect("the temp probe must be removable");',
+      "    const CLONE_NEWUSER: i32 = 0x1000_0000;",
+      "    const CLONE_NEWNS: i32 = 0x0002_0000;",
+      "    // SAFETY: the fixed namespace flags have no pointer arguments.",
+      "    assert_ne!(unsafe { unshare(CLONE_NEWUSER | CLONE_NEWNS) }, 0);",
+      '    let source = CString::new("none").expect("the source has no NUL");',
+      '    let target = CString::new("/state/tmp").expect("the target has no NUL");',
+      '    let file_system = CString::new("tmpfs").expect("the file system has no NUL");',
+      "    // SAFETY: every string is NUL-terminated and data is unused for this probe.",
+      "    assert_ne!(",
+      "        unsafe {",
+      "            mount(",
+      "                source.as_ptr(),",
+      "                target.as_ptr(),",
+      "                file_system.as_ptr(),",
+      "                0,",
+      "                std::ptr::null(),",
+      "            )",
+      "        },",
+      "        0,",
+      "    );",
+      '    assert!(fs::write("/dev/oxigraph-quota-escape", b"escape").is_err());',
+      "}",
+      "",
+    ].join("\n"),
+  );
+  return workspace;
+}
+
+async function createAnchorMutationFixture(root) {
+  const workspace = await createFixture(root);
+  await writeFile(
+    join(workspace, "Cargo.toml"),
+    '[package]\nname = "session_fixture"\nversion = "0.1.0"\nedition = "2021"\nbuild = "build.rs"\n',
+  );
+  await writeFile(
+    join(workspace, "build.rs"),
+    [
+      "use std::fs;",
+      "use std::os::unix::fs::PermissionsExt;",
+      "",
+      "fn main() {",
+      '    fs::set_permissions("/state/tmp", fs::Permissions::from_mode(0o700))',
+      '        .expect("the mutation probe must reach the writable anchor");',
+      "}",
+      "",
+    ].join("\n"),
+  );
+  return workspace;
+}
+
 async function processRecordsMatching(needles) {
   const records = [];
   for (const entry of await readdir("/proc", { withFileTypes: true })) {
@@ -255,6 +342,16 @@ test("one quota-bound namespace preserves build state across every evaluator", {
     assert.ok(structural.includes("--unshare-pid"));
     assert.ok(structural.includes("--clearenv"));
     assert.ok(structural.includes("--remount-ro"));
+    assert.notEqual(
+      structural.findIndex(
+        (value, index) =>
+          value === "--dev" &&
+          structural[index + 1] === "/dev" &&
+          structural[index + 2] === "--remount-ro" &&
+          structural[index + 3] === "/dev",
+      ),
+      -1,
+    );
     const workspaceIndex = structural.indexOf("/workspace");
     assert.equal(structural[workspaceIndex - 2], "--ro-bind");
     assert.ok(!structural.includes("/target"));
@@ -303,6 +400,61 @@ test("one quota-bound namespace preserves build state across every evaluator", {
     assert.equal(report.invocation.workspace, "read-only");
     assert.equal(report.invocation.state, "single-quota-tmpfs");
     await assert.rejects(access(join(workspace, "target")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("production verifier protects writable state anchors from candidate code", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-session-anchor-test-"));
+  try {
+    const workspace = await createAnchorProbeFixture(root);
+    const report = await runSandboxVerificationSession({
+      workspace,
+      commands: commandPlan(),
+      maxTotalWallMs: 150_000,
+      maxResidentBytes: 2 * 1024 * mebibyte,
+      maxDiskBytes: 512 * mebibyte,
+      cargoBuildJobs: 2,
+      maxBuildOutputBytes: mebibyte,
+      maxTestOutputBytesPerCommand: mebibyte,
+    });
+    assert.equal(report.session.status, "completed", report.session.error);
+    assert.equal(
+      report.session.stage,
+      "complete",
+      report.session.commands.map(({ stderr, stdout }) => `${stdout}\n${stderr}`).join("\n"),
+    );
+    assert.ok(
+      report.session.commands.every(
+        ({ disposition, exitCode }) => disposition === "completed" && exitCode === 0,
+      ),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("production verifier treats state-anchor mutation as infrastructure failure", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-session-anchor-mutation-test-"));
+  try {
+    const workspace = await createAnchorMutationFixture(root);
+    const report = await runSandboxVerificationSession({
+      workspace,
+      commands: commandPlan(),
+      maxTotalWallMs: 150_000,
+      maxResidentBytes: 2 * 1024 * mebibyte,
+      maxDiskBytes: 512 * mebibyte,
+      cargoBuildJobs: 2,
+      maxBuildOutputBytes: mebibyte,
+      maxTestOutputBytesPerCommand: mebibyte,
+    });
+    assert.equal(report.session.status, "error");
+    assert.equal(report.session.stage, "infrastructure");
+    assert.deepEqual(report.session.commands, []);
+    assert.deepEqual(report.session.artifacts, []);
+    assert.match(report.session.error, /StateInvariantError: verifier state anchor identity changed: temp/u);
+    assert.doesNotMatch(report.session.error, /\/state|target|debug|deps/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

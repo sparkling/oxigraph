@@ -5,6 +5,7 @@ import {
   createReadStream,
   lstatSync,
   openSync,
+  readFileSync,
   readdirSync,
   readSync,
   statfsSync,
@@ -28,9 +29,23 @@ const commandOrder = Object.freeze([
 ]);
 const cargoExecutable = "/state/cargo/bin/cargo";
 const mountExecutable = "/usr/bin/mount";
+const pythonExecutable = "/usr/bin/python3";
+const seccompLauncher = "/runner/seccomp-launcher.py";
 const setprivExecutable = "/usr/bin/setpriv";
 const maxConfigurationBytes = 1_048_576;
 const resultReserveMs = 750;
+const stateAnchorDefinitions = Object.freeze([
+  Object.freeze({ name: "home", path: "/state/home" }),
+  Object.freeze({ name: "temp", path: "/state/tmp" }),
+  Object.freeze({ name: "target", path: "/state/target" }),
+]);
+
+class StateInvariantError extends Error {
+  constructor(anchor, phase) {
+    super(`verifier state anchor ${phase}: ${anchor}`);
+    this.name = "StateInvariantError";
+  }
+}
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -148,6 +163,76 @@ function remountResult(mode) {
   }
 }
 
+function bindStateAnchor({ name, path }) {
+  const outcome = spawnSync(mountExecutable, ["--bind", path, path], {
+    env: Object.freeze({
+      LANG: "C.UTF-8",
+      LC_ALL: "C.UTF-8",
+      PATH: "/usr/bin:/bin",
+    }),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (outcome.status !== 0) {
+    throw new StateInvariantError(name, "setup failed");
+  }
+}
+
+function mountId(path, name) {
+  const matches = readFileSync("/proc/self/mountinfo", "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => line.split(" "))
+    .filter((fields) => fields[4] === path);
+  if (matches.length !== 1 || !/^\d+$/u.test(matches[0][0])) {
+    throw new StateInvariantError(name, "mount identity changed");
+  }
+  return matches[0][0];
+}
+
+function stateAnchorIdentity({ name, path }) {
+  try {
+    const metadata = lstatSync(path, { bigint: true });
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new StateInvariantError(name, "type changed");
+    }
+    return Object.freeze({
+      name,
+      path,
+      device: metadata.dev.toString(),
+      group: metadata.gid.toString(),
+      inode: metadata.ino.toString(),
+      mode: metadata.mode.toString(),
+      mountId: mountId(path, name),
+      owner: metadata.uid.toString(),
+    });
+  } catch (error) {
+    if (error instanceof StateInvariantError) throw error;
+    throw new StateInvariantError(name, "identity unavailable");
+  }
+}
+
+function protectStateAnchors() {
+  for (const anchor of stateAnchorDefinitions) bindStateAnchor(anchor);
+  return Object.freeze(stateAnchorDefinitions.map(stateAnchorIdentity));
+}
+
+function assertStateAnchors(expected) {
+  for (const anchor of expected) {
+    const observed = stateAnchorIdentity(anchor);
+    if (
+      observed.device !== anchor.device ||
+      observed.group !== anchor.group ||
+      observed.inode !== anchor.inode ||
+      observed.mode !== anchor.mode ||
+      observed.mountId !== anchor.mountId ||
+      observed.owner !== anchor.owner
+    ) {
+      throw new StateInvariantError(anchor.name, "identity changed");
+    }
+  }
+}
+
 function terminateProcessGroup(child, signal) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   try {
@@ -174,20 +259,43 @@ function commandEnvironment(cargoBuildJobs) {
   });
 }
 
+function candidateCommandArguments(argv) {
+  return [
+    "--bounding-set=-all",
+    "--inh-caps=-all",
+    "--ambient-caps=-all",
+    "--no-new-privs",
+    "--pdeathsig=SIGKILL",
+    pythonExecutable,
+    "-I",
+    "-S",
+    seccompLauncher,
+    ...argv,
+  ];
+}
+
+function verifyCandidateSandbox(cargoBuildJobs) {
+  const outcome = spawnSync(
+    setprivExecutable,
+    candidateCommandArguments(["/bin/true"]),
+    {
+      cwd: workspace,
+      env: commandEnvironment(cargoBuildJobs),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (outcome.status !== 0) {
+    throw new Error("candidate syscall filter did not initialize");
+  }
+}
+
 function runCargoCommand({ command, timeoutMs, cargoBuildJobs }) {
   return new Promise((resolve, reject) => {
     const started = performance.now();
     const child = spawn(
       setprivExecutable,
-      [
-        "--bounding-set=-all",
-        "--inh-caps=-all",
-        "--ambient-caps=-all",
-        "--no-new-privs",
-        "--pdeathsig=SIGKILL",
-        cargoExecutable,
-        ...command.argv.slice(1),
-      ],
+      candidateCommandArguments([cargoExecutable, ...command.argv.slice(1)]),
       {
         cwd: workspace,
         detached: true,
@@ -393,11 +501,12 @@ function commandRecord(command, outcome) {
   });
 }
 
-async function executeSession(configuration, started) {
+async function executeSession(configuration, started, stateAnchors) {
   const commands = [];
   let artifacts = Object.freeze([]);
   let stage = "format";
   for (const command of configuration.commands) {
+    assertStateAnchors(stateAnchors);
     const elapsed = performance.now() - started;
     const remaining = Math.floor(
       configuration.totalTimeoutMs - elapsed - resultReserveMs,
@@ -411,6 +520,7 @@ async function executeSession(configuration, started) {
       cargoBuildJobs: configuration.cargoBuildJobs,
     });
     await quiesceUntrustedProcesses();
+    assertStateAnchors(stateAnchors);
     commands.push(commandRecord(command, outcome));
     if (command.name === "format") {
       if (outcome.disposition !== "completed" || outcome.exitCode !== 0) {
@@ -480,7 +590,9 @@ async function main() {
     }
     remountResult("ro");
     resultProtected = true;
-    const execution = await executeSession(configuration, started);
+    const stateAnchors = protectStateAnchors();
+    verifyCandidateSandbox(configuration.cargoBuildJobs);
+    const execution = await executeSession(configuration, started, stateAnchors);
     result = {
       schemaVersion: 1,
       status: "completed",

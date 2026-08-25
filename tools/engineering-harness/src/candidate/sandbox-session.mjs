@@ -23,6 +23,9 @@ const systemdRunExecutable = "/usr/bin/systemd-run";
 const workerSource = fileURLToPath(
   new URL("./sandbox-session-worker.mjs", import.meta.url),
 );
+const seccompLauncherSource = fileURLToPath(
+  new URL("./seccomp-launcher.py", import.meta.url),
+);
 const commandOrder = Object.freeze([
   "format",
   "build",
@@ -162,6 +165,7 @@ export function sandboxSessionArguments({
     workspace,
     outputFile,
     workerSource,
+    seccompLauncherSource,
     cargo,
     rustup,
   ]) {
@@ -203,6 +207,8 @@ export function sandboxSessionArguments({
     "/proc",
     "--dev",
     "/dev",
+    "--remount-ro",
+    "/dev",
     "--size",
     String(maxDiskBytes),
     "--tmpfs",
@@ -232,6 +238,9 @@ export function sandboxSessionArguments({
     "--ro-bind",
     realpathSync(workerSource),
     "/runner/session-worker.mjs",
+    "--ro-bind",
+    realpathSync(seccompLauncherSource),
+    "/runner/seccomp-launcher.py",
     "--dir",
     "/result",
     "--bind",
