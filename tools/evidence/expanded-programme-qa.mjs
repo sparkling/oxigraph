@@ -1,11 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   lstatSync,
+  mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  writeFileSync,
 } from "node:fs";
 import {
   dirname,
@@ -21,6 +26,16 @@ import { parseStrictJson } from "../w3c-tests/strict-json.mjs";
 
 export const expandedProgrammePolicyPath =
   "tools/evidence/expanded-programme-qa-policy.json";
+export const expandedProgrammeImplementationPaths = Object.freeze([
+  "tools/evidence/expanded-programme-qa-policy.json",
+  "tools/evidence/expanded-programme-qa.mjs",
+  "tools/evidence/expanded-programme-qa.test.mjs",
+  "tools/evidence/run-expanded-programme-qa.mjs",
+  "tools/evidence/verify-expanded-programme-qa.mjs",
+  "tools/evidence/verify-expanded-programme-qa.test.mjs",
+  "tools/evidence/package.json",
+  "tools/w3c-tests/strict-json.mjs",
+]);
 
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 const gitObjectPattern = /^[0-9a-f]{40}$/u;
@@ -93,6 +108,15 @@ function fileManifest(root, paths) {
     return { path, bytes: bytes.length, sha256: sha256(bytes) };
   });
   return { files, sha256: sha256(canonicalJsonBytes(files)) };
+}
+
+export function createRepositoryManifest(rootInput, paths) {
+  return fileManifest(canonicalRoot(rootInput), paths);
+}
+
+export function readStrictRepositoryJson(rootInput, path) {
+  const root = canonicalRoot(rootInput);
+  return JSON.parse(JSON.stringify(parseStrictJson(readContained(root, path), path)));
 }
 
 function normalizeCell(value) {
@@ -280,8 +304,15 @@ export function validateMarkdownLinks(rootInput, documents) {
     const linkPattern = /!?\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/gu;
     for (const match of text.matchAll(linkPattern)) {
       const rawTarget = match[1];
-      if (/^[a-z][a-z0-9+.-]*:/iu.test(rawTarget) || rawTarget.startsWith("//")) continue;
       checked += 1;
+      if (/^[a-z][a-z0-9+.-]*:/iu.test(rawTarget) || rawTarget.startsWith("//")) {
+        try {
+          new URL(rawTarget, "https://local.invalid/");
+        } catch {
+          errors.push({ code: "EXTERNAL_URL", path: sourcePath, target: rawTarget });
+        }
+        continue;
+      }
       const error = localLinkError(root, sourcePath, rawTarget, anchors);
       if (error) errors.push(error);
     }
@@ -321,6 +352,10 @@ function gitSubject(root) {
     tree: value(["rev-parse", "HEAD^{tree}"]),
     trackedClean: value(["status", "--porcelain=v1", "--untracked-files=no"]) === "",
   };
+}
+
+export function readExpandedProgrammeGitSubject(rootInput) {
+  return gitSubject(canonicalRoot(rootInput));
 }
 
 export function loadExpandedProgrammePolicy(
@@ -559,4 +594,296 @@ export function validateExpandedProgramme(
 
 export function receiptBytesSha256(value) {
   return sha256(canonicalJsonBytes(value));
+}
+
+export function trackedCleanFromPorcelain(value) {
+  return String(value)
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .every((line) => line.startsWith("?? "));
+}
+
+function taskValues(store) {
+  if (Array.isArray(store?.tasks)) return store.tasks;
+  if (store?.tasks && typeof store.tasks === "object") return Object.values(store.tasks);
+  return [];
+}
+
+export function normalizeTaskStore(store, policy) {
+  const stable = new Set(Object.keys(policy.tasks));
+  const rollups = new Set(Object.keys(policy.rollups));
+  const controls = new Set(Object.keys(policy.controls));
+  const records = [];
+  const errors = [];
+  for (const task of taskValues(store)) {
+    const tags = Array.isArray(task?.tags) ? task.tags : [];
+    const planTags = tags.filter((tag) => typeof tag === "string" && tag.startsWith("plan:"));
+    for (const tag of planTags) {
+      const planId = tag.slice("plan:".length);
+      if (!/^G[0-9]\.\d+[a-z]?$/u.test(planId)) continue;
+      records.push({
+        kind: stable.has(planId) ? "stable" : rollups.has(planId) ? "rollup" : "unknown",
+        planId,
+        taskId: typeof task.taskId === "string" ? task.taskId : null,
+      });
+    }
+    const isControl =
+      typeof task?.description === "string" &&
+      task.description.startsWith("[HARNESS-REGISTRY]");
+    if (isControl || tags.includes("harness:static-registry")) {
+      records.push({
+        kind: controls.has("HARNESS-REGISTRY") ? "control" : "unknown",
+        planId: "HARNESS-REGISTRY",
+        taskId: typeof task.taskId === "string" ? task.taskId : null,
+      });
+    }
+  }
+  records.sort((left, right) =>
+    `${left.planId}:${left.taskId}`.localeCompare(`${right.planId}:${right.taskId}`),
+  );
+  const ids = records.map((record) => record.planId);
+  if (new Set(ids).size !== ids.length) errors.push("duplicate programme task mapping");
+  for (const record of records) {
+    if (record.kind === "unknown") errors.push(`unknown programme task mapping ${record.planId}`);
+    if (!record.taskId) errors.push(`missing Ruflo task ID for ${record.planId}`);
+  }
+  const counts = {
+    stable: records.filter((record) => record.kind === "stable").length,
+    rollup: records.filter((record) => record.kind === "rollup").length,
+    control: records.filter((record) => record.kind === "control").length,
+  };
+  if (counts.stable !== policy.ruflo.stableRows) errors.push("stable Ruflo row count drift");
+  if (counts.rollup !== policy.ruflo.rollupRows) errors.push("rollup Ruflo row count drift");
+  if (counts.control !== policy.ruflo.controlRows) errors.push("control Ruflo row count drift");
+  return { records, counts, errors: [...new Set(errors)].sort(), sha256: sha256(canonicalJsonBytes(records)) };
+}
+
+function findObjectProperty(value, names, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return null;
+  seen.add(value);
+  for (const name of names) {
+    const candidate = value[name];
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) return candidate;
+  }
+  for (const candidate of Object.values(value)) {
+    const found = findObjectProperty(candidate, names, seen);
+    if (found) return found;
+  }
+  return null;
+}
+
+function exactRecord(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function observeRufloState({
+  policy,
+  taskStore,
+  memoryMaps,
+  runtime = null,
+}) {
+  const authority = "non-authoritative-local-audit";
+  if (!taskStore || !memoryMaps) {
+    return {
+      authority,
+      disposition: "UNAVAILABLE",
+      memoryKeys: [...policy.ruflo.memoryKeys],
+      mapValueHashes: [],
+      taskProjectionHash: null,
+      stableRows: null,
+      rollupRows: null,
+      controlRows: null,
+      runtime,
+      diagnostics: ["Ruflo task store or task-plan memory is unavailable"],
+    };
+  }
+  const projection = normalizeTaskStore(taskStore, policy);
+  const errors = [...projection.errors];
+  const mapValueHashes = [];
+  for (const key of policy.ruflo.memoryKeys) {
+    if (!(key in memoryMaps)) errors.push(`missing Ruflo memory map ${key}`);
+    else mapValueHashes.push({ key, sha256: sha256(canonicalJsonBytes(memoryMaps[key])) });
+  }
+  const latestKey = policy.ruflo.memoryKeys.at(-1);
+  const latest = memoryMaps[latestKey];
+  const dependencies = findObjectProperty(latest, ["dependencies", "dependencyGraph", "adjacency"]);
+  const expectedDependencies = {
+    ...Object.fromEntries(
+      Object.entries(policy.tasks).map(([id, task]) => [id, task.dependencies]),
+    ),
+    ...Object.fromEntries(
+      Object.entries(policy.controls).map(([id, control]) => [id, control.dependencies]),
+    ),
+  };
+  if (!dependencies) {
+    errors.push("corrected Ruflo dependency map is missing");
+  } else {
+    const observedIds = Object.keys(dependencies).filter((id) => id in expectedDependencies).sort();
+    if (!sameArray(observedIds, Object.keys(expectedDependencies).sort())) {
+      errors.push("corrected Ruflo dependency node set drift");
+    }
+    for (const [id, expected] of Object.entries(expectedDependencies)) {
+      if (!exactRecord(dependencies[id], expected)) errors.push(`${id}: corrected Ruflo dependency drift`);
+    }
+  }
+  const taskIds = {};
+  for (const value of Object.values(memoryMaps)) {
+    Object.assign(taskIds, findObjectProperty(value, ["taskIds", "rufloTaskIds", "taskMap"]) ?? {});
+  }
+  const projectedTaskIds = Object.fromEntries(
+    projection.records.map((record) => [record.planId, record.taskId]),
+  );
+  if (!exactRecord(
+    Object.fromEntries(Object.entries(taskIds).sort(([left], [right]) => left.localeCompare(right))),
+    Object.fromEntries(Object.entries(projectedTaskIds).sort(([left], [right]) => left.localeCompare(right))),
+  )) {
+    errors.push("Ruflo memory/task-store pointer drift");
+  }
+  return {
+    authority,
+    disposition: errors.length === 0 ? "MATCH" : "MISMATCH",
+    memoryKeys: [...policy.ruflo.memoryKeys],
+    mapValueHashes: mapValueHashes.sort((left, right) => left.key.localeCompare(right.key)),
+    taskProjectionHash: projection.sha256,
+    stableRows: projection.counts.stable,
+    rollupRows: projection.counts.rollup,
+    controlRows: projection.counts.control,
+    runtime,
+    diagnostics: [...new Set(errors)].sort(),
+  };
+}
+
+export function classifyQaVerdict({
+  sourceOk,
+  commandsDisposition,
+  rufloDisposition,
+}) {
+  if (!sourceOk || commandsDisposition === "FAIL" || rufloDisposition === "MISMATCH") {
+    return { verdict: "FAIL", exitCode: 1 };
+  }
+  if (commandsDisposition !== "PASS" || rufloDisposition !== "MATCH") {
+    return { verdict: "INCONCLUSIVE", exitCode: 2 };
+  }
+  return { verdict: "PASS", exitCode: 0 };
+}
+
+function commandDisposition(commands, expectedCount) {
+  if (Array.isArray(commands) && commands.some((command) => command.disposition === "FAIL")) return "FAIL";
+  if (!Array.isArray(commands) || commands.length !== expectedCount) return "INCONCLUSIVE";
+  if (commands.some((command) => command.disposition !== "PASS")) return "INCONCLUSIVE";
+  return "PASS";
+}
+
+export function buildExpandedProgrammeReceipt({
+  policy,
+  source,
+  commands,
+  rufloObservation,
+  implementation,
+}) {
+  const commandsState = commandDisposition(commands, policy.quickCommands.length);
+  const toolingStatus = commandsState;
+  const toolingAssertion = {
+    id: "tooling.bounded-contracts",
+    category: "tooling",
+    authority: "committed-source",
+    mandatory: true,
+    weight: policy.assertionWeights["tooling.bounded-contracts"],
+    status: toolingStatus,
+    evidence: { commands: commands?.length ?? 0 },
+    diagnostics: commands
+      .filter((command) => command.disposition !== "PASS")
+      .map((command) => `${command.id}:${command.failureClass ?? command.disposition}`)
+      .sort(),
+  };
+  const assertions = [...source.assertions, toolingAssertion];
+  const committedScore = assertions
+    .filter((item) => item.status === "PASS")
+    .reduce((sum, item) => sum + item.weight, 0);
+  const observationalScore = rufloObservation.disposition === "MATCH" ? 2 : 0;
+  const classification = classifyQaVerdict({
+    sourceOk: source.ok,
+    commandsDisposition: commandsState,
+    rufloDisposition: rufloObservation.disposition,
+  });
+  const policyFile = source.model.inputManifest.files.find(
+    (file) => file.path === expandedProgrammePolicyPath,
+  );
+  return {
+    schema: "oxigraph.expanded-programme-qa/v1",
+    programme: policy.programme,
+    subject: {
+      commit: source.model.subject.commit,
+      tree: source.model.subject.tree,
+      trackedClean: source.model.subject.trackedClean,
+      policy: { path: expandedProgrammePolicyPath, sha256: policyFile.sha256 },
+      implementation,
+      inputs: source.model.inputManifest,
+    },
+    scope: source.scope,
+    assertions,
+    commands,
+    rufloObservation,
+    score: {
+      source: committedScore,
+      observational: observationalScore,
+      total: committedScore + observationalScore,
+      threshold: 98,
+      criticalFailure: classification.verdict === "FAIL",
+    },
+    verdict: classification.verdict,
+    authority: structuredClone(policy.authority),
+  };
+}
+
+function ensurePublicationDirectory(root, path) {
+  const child = relative(root, path);
+  if (!isInside(root, path)) throw new Error("receipt publication escapes root");
+  let cursor = root;
+  for (const component of child.split(sep)) {
+    cursor = join(cursor, component);
+    if (existsSync(cursor)) {
+      const metadata = lstatSync(cursor);
+      if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+        throw new Error(`unsafe receipt publication directory: ${portable(relative(root, cursor))}`);
+      }
+    } else {
+      mkdirSync(cursor, { mode: 0o700 });
+    }
+  }
+}
+
+export function publishExpandedProgrammeReceipt(rootInput, receipt) {
+  const root = canonicalRoot(rootInput);
+  if (!gitObjectPattern.test(receipt?.subject?.commit ?? "")) {
+    throw new Error("receipt subject commit is invalid");
+  }
+  const bytes = canonicalJsonBytes(receipt);
+  const digest = sha256(bytes);
+  const directory = resolve(
+    root,
+    "target",
+    "programme-qa",
+    "runs",
+    receipt.subject.commit,
+    digest,
+  );
+  ensurePublicationDirectory(root, directory);
+  const path = join(directory, "receipt.json");
+  if (existsSync(path)) {
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      throw new Error("existing receipt path is unsafe");
+    }
+    if (!readFileSync(path).equals(bytes)) throw new Error("immutable receipt collision");
+    return { path, sha256: digest, bytes, idempotent: true };
+  }
+  const descriptor = openSync(path, "wx", 0o600);
+  try {
+    writeFileSync(descriptor, bytes);
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  return { path, sha256: digest, bytes, idempotent: false };
 }

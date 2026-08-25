@@ -4,6 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test *.test.mjs",
+    "qa:expanded:test": "node --test expanded-programme-qa.test.mjs verify-expanded-programme-qa.test.mjs",
+    "qa:expanded": "node run-expanded-programme-qa.mjs --root ../..",
+    "qa:expanded:verify": "node verify-expanded-programme-qa.mjs --root ../..",
     "verify": "node verify-programme.mjs --source-only",
     "verify:full": "node verify-programme.mjs --full"
   }

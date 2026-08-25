@@ -165,7 +165,7 @@ test("should reject missing escaping and symlinked local link targets", (t) => {
   mkdirSync(join(root, "docs"));
   writeFileSync(
     join(root, "docs", "source.md"),
-    "[missing](missing.md) [escape](../../outside.md) [link](linked.md)\n",
+    "[missing](missing.md) [escape](../../outside.md) [link](linked.md) [bad](https://[bad)\n",
   );
   writeFileSync(join(root, "outside.md"), "# Outside\n");
   symlinkSync(join(root, "outside.md"), join(root, "docs", "linked.md"));
@@ -174,7 +174,7 @@ test("should reject missing escaping and symlinked local link targets", (t) => {
 
   assert.deepEqual(
     result.errors.map((error) => error.code).sort(),
-    ["LINK_ESCAPE", "LINK_MISSING", "LINK_SYMLINK"],
+    ["EXTERNAL_URL", "LINK_ESCAPE", "LINK_MISSING", "LINK_SYMLINK"],
   );
 });
 
