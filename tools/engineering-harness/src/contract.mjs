@@ -971,6 +971,7 @@ const EXPECTED_G15C = Object.freeze({
     maxPatchBytes: 196_608,
     maxChangedFiles: 3,
     maxChangedLines: 1_024,
+    cargoBuildJobs: 2,
   },
   initialRed: {
     kind: "compiler",
