@@ -34,7 +34,6 @@ import {
   writeJsonAtomic,
 } from "./path-policy.mjs";
 
-export const EXPECTED_CARGO_MUTANTS_VERSION = "27.1.0";
 const PROFILE = "oxdatalog-d2-complete";
 const CONFIG_PATH = "tools/mutation/oxdatalog.toml";
 const RECEIPT_KEYS = [
@@ -133,6 +132,11 @@ function runtimeRecordShape(record, program) {
   );
 }
 
+export function parseCargoMutantsVersion(output) {
+  if (typeof output !== "string") return null;
+  return /^cargo-mutants ([^\s]+)\r?$/m.exec(output)?.[1] ?? null;
+}
+
 function validateRuntime(runtime, expectedRuntime) {
   const programs = ["cargo", "cargo-mutants", "rustc"];
   if (
@@ -150,7 +154,14 @@ function validateRuntime(runtime, expectedRuntime) {
   ) {
     throw new Error("mutation executable provenance differs from current tools");
   }
-  return runtime[0].toolchainPath ?? runtime[0].path;
+  const cargoMutantsVersion = parseCargoMutantsVersion(runtime[1].version);
+  if (cargoMutantsVersion === null) {
+    throw new Error("mutation cargo-mutants provenance has an invalid version");
+  }
+  return {
+    cargoPath: runtime[0].toolchainPath ?? runtime[0].path,
+    cargoMutantsVersion,
+  };
 }
 
 function validateTimes(receipt, outcomes) {
@@ -300,7 +311,7 @@ export function validateMutationReceipt(
     outcomeBytes,
     inventoryBytes,
     configBytes,
-    expectedVersion,
+    expectedVersion = receipt?.cargoMutantsVersion,
     expectedRuntime,
   },
 ) {
@@ -335,9 +346,14 @@ export function validateMutationReceipt(
   ) {
     throw new Error("mutation receipt failed its gate or current-source contract");
   }
-  const cargoPath = validateRuntime(receipt.runtime, expectedRuntime);
+  const runtime = validateRuntime(receipt.runtime, expectedRuntime);
+  if (runtime.cargoMutantsVersion !== expectedVersion) {
+    throw new Error(
+      "mutation cargo-mutants provenance version differs from the receipt",
+    );
+  }
   const validation = validateOutcomes(outcomes, expectedVersion, inventory, {
-    cargoPath,
+    cargoPath: runtime.cargoPath,
   });
   validateTimes(receipt, outcomes);
   validateEvidencePathsAndHashes(
@@ -396,7 +412,7 @@ export function validateMutationPublication(
   {
     repositoryRoot,
     currentContentHash,
-    expectedVersion = EXPECTED_CARGO_MUTANTS_VERSION,
+    expectedVersion = receipt?.cargoMutantsVersion,
     expectedRuntime = currentRuntimeProvenance(),
     inventoryLister = listCurrentMutationInventory,
   },

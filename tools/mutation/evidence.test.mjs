@@ -28,7 +28,7 @@ import {
   publishMutationPublication,
 } from "./publication.mjs";
 
-const version = "27.1.0";
+const version = "99.88.77";
 const cargoPath = "/test/cargo";
 
 function cargoArgv(phase) {
@@ -164,7 +164,10 @@ function runtimeRecords() {
     invokedPath: program === "cargo" ? cargoPath : `/test/${program}`,
     path: program === "cargo" ? cargoPath : `/test/${program}`,
     executableSha256: "b".repeat(64),
-    version: `${program} test`,
+    version:
+      program === "cargo-mutants"
+        ? `cargo-mutants ${version}`
+        : `${program} test`,
   }));
 }
 
@@ -269,6 +272,12 @@ test("mutation receipt verifier reopens native evidence and rejects tampering", 
   };
 
   assert.doesNotThrow(() => validateMutationReceipt(receipt, inputs));
+  assert.doesNotThrow(() =>
+    validateMutationReceipt(receipt, {
+      ...inputs,
+      expectedVersion: undefined,
+    }),
+  );
   assert.throws(
     () =>
       validateMutationReceipt(
@@ -316,6 +325,36 @@ test("mutation receipt verifier reopens native evidence and rejects tampering", 
         ),
       }),
     /provenance differs/,
+  );
+  assert.throws(
+    () =>
+      validateMutationReceipt(receipt, {
+        ...inputs,
+        expectedVersion: undefined,
+        expectedRuntime: runtimeRecords().map((record) =>
+          record.program === "cargo-mutants"
+            ? { ...record, version: "cargo-mutants 88.77.66" }
+            : record,
+        ),
+      }),
+    /provenance differs/,
+  );
+  const inconsistentRuntimeReceipt = structuredClone(receipt);
+  inconsistentRuntimeReceipt.runtime[1].version = "cargo-mutants 88.77.66";
+  inconsistentRuntimeReceipt.contentHash = mutationReceiptContentHash(
+    inconsistentRuntimeReceipt,
+  );
+  inconsistentRuntimeReceipt.executionHash = mutationReceiptExecutionHash(
+    inconsistentRuntimeReceipt,
+  );
+  assert.throws(
+    () =>
+      validateMutationReceipt(inconsistentRuntimeReceipt, {
+        ...inputs,
+        expectedVersion: undefined,
+        expectedRuntime: undefined,
+      }),
+    /provenance version differs from the receipt/,
   );
   const mismatchedConfig = validReceipt({
     configBytes: Buffer.from("[different]\n"),

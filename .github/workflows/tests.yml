@@ -379,7 +379,7 @@ jobs:
       - run: node --test tools/mutation/*.test.mjs
       - run: npm test
         working-directory: ./tools/metaharness
-      - run: cargo install --locked cargo-mutants --version 27.1.0
+      - run: cargo install --locked cargo-mutants
       - run: node tools/mutation/oxdatalog.mjs --jobs 2
       - run: npm run qualify
         working-directory: ./tools/metaharness

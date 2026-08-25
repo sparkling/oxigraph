@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  EXPECTED_CARGO_MUTANTS_VERSION,
   MUTATION_RECEIPT_SCHEMA_VERSION,
   readMutationFileBytes,
   snapshotProtectedInputs,
@@ -144,7 +143,6 @@ function loadPublication(repositoryRoot, relativePath) {
   const publication = validateMutationPublication(receipt, {
     repositoryRoot,
     currentContentHash: current.contentHash,
-    expectedVersion: EXPECTED_CARGO_MUTANTS_VERSION,
   });
   if (!publication.receiptBytes.equals(sourceBytes)) {
     throw new Error("mutation receipt differs from its immutable publication");

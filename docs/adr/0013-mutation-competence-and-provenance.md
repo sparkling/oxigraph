@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-27
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Evidence state: the policy remains Accepted. The named July receipt is
   historical for its sealed source; library changes in `1da47285` invalidate
   it as current-HEAD evidence. Its scope is OxDatalog and does not establish
@@ -28,10 +28,13 @@ viable alternative program and must be reported separately.
 
 ## Decision
 
-Pin `cargo-mutants` 27.1.0 and the reviewed
-`oxdatalog-d2-complete` configuration under `tools/mutation`. The configured
-source surface covers the generic D0–D2 engine, validation and strata,
-provenance, RDF adapter, rule execution, storage, and control logic.
+Acquire the latest `cargo-mutants` registry release with
+`cargo install --locked cargo-mutants`, without a top-level release constraint,
+and keep the reviewed `oxdatalog-d2-complete` configuration under
+`tools/mutation`. Each run freezes the observed Cargo Mutants version and exact
+executable provenance in its receipt. The configured source surface covers the
+generic D0–D2 engine, validation and strata, provenance, RDF adapter, rule
+execution, storage, and control logic.
 
 A passing gate requires:
 
@@ -39,7 +42,8 @@ A passing gate requires:
 2. at least one generated mutant;
 3. exactly one unique native outcome for every generated mutant;
 4. aggregate and per-mutant count conservation;
-5. the pinned native outcome schema and tool version;
+5. exact agreement between the receipt, runtime, and native outcome tool
+   versions;
 6. stable protected inputs before and after execution;
 7. zero missed viable mutants;
 8. zero timed-out mutants; and
@@ -84,6 +88,11 @@ candidate through the latest pointer, then reopens the run-addressed receipt,
 native outcomes, and configuration with stable no-follow reads. It requires
 their exact bytes, manifest, and hashes to agree and both protected snapshots
 to equal the current source snapshot.
+
+Registry latest is an acquisition policy, not a moving validation input.
+Publishing a newer Cargo Mutants release does not rewrite or reinterpret an
+immutable historical receipt. The next clean run acquires the new release and
+must publish a new source- and runtime-bound receipt.
 
 A source edit after the run makes the receipt stale even when the edited line
 does not appear in a surviving mutant. Copying counts from an older receipt is

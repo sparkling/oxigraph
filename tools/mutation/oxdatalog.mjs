@@ -9,11 +9,11 @@ import {
   createExclusiveDirectoryInside,
   currentRuntimeProvenance,
   ensureDirectoryInside,
-  EXPECTED_CARGO_MUTANTS_VERSION,
   MUTATION_RECEIPT_SCHEMA_VERSION,
   mutationReceiptContentHash,
   mutationReceiptBytes,
   mutationReceiptExecutionHash,
+  parseCargoMutantsVersion,
   portable,
   readStableFileBytes,
   rejectSymlinksUnder,
@@ -31,7 +31,6 @@ import {
   publishMutationPublication,
 } from "./publication.mjs";
 
-export const EXPECTED_TOOL_VERSION = EXPECTED_CARGO_MUTANTS_VERSION;
 export const PROFILE = "oxdatalog-d2-complete";
 export const DEFAULT_OUTER_TIMEOUT_MS = 3_600_000;
 const toolDir = realpathSync(dirname(fileURLToPath(import.meta.url)));
@@ -54,18 +53,18 @@ async function installedVersion() {
   });
   if (result.error?.code === "ENOENT" || result.status !== 0 || result.timedOut) {
     throw new Error(
-      `cargo-mutants ${EXPECTED_TOOL_VERSION} is required; install it with:\n` +
-        `cargo install --locked cargo-mutants --version ${EXPECTED_TOOL_VERSION}`,
+      "cargo-mutants is required; install the latest release with:\n" +
+        "cargo install --locked cargo-mutants",
     );
   }
-  const match = /^cargo-mutants ([^\s]+)\r?$/m.exec(result.stdout);
-  if (!match || match[1] !== EXPECTED_TOOL_VERSION) {
+  const version = parseCargoMutantsVersion(result.stdout);
+  if (version === null) {
     throw new Error(
-      `cargo-mutants ${EXPECTED_TOOL_VERSION} is required, found ` +
-        `${match?.[1] ?? "an unknown version"}`,
+      "cargo-mutants returned an invalid version; reinstall the latest release with:\n" +
+        "cargo install --locked cargo-mutants",
     );
   }
-  return match[1];
+  return version;
 }
 
 function usage() {
@@ -83,7 +82,7 @@ Options:
   --help          Show this help
 
 Prerequisite:
-  cargo install --locked cargo-mutants --version ${EXPECTED_TOOL_VERSION}
+  cargo install --locked cargo-mutants
 
 The gate requires a stable protected-input snapshot, one passing baseline,
 complete and internally consistent native outcomes, at least one mutant, zero
@@ -196,7 +195,7 @@ function buildReceipt(
     baselinePassed: validation.baselinePassed,
     baselineSummary: validation.baselineSummary,
     cargoMutantsVersion: version,
-    expectedCargoMutantsVersion: EXPECTED_TOOL_VERSION,
+    expectedCargoMutantsVersion: version,
     command: {
       status: command.status,
       signal: command.signal,

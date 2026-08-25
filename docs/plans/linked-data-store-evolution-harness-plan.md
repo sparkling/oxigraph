@@ -254,7 +254,7 @@ Run three independent lanes, then integrate sequentially:
 | G0.3 Review current Jena subject and refresh profile lock | Evidence | G0.2 | Lock diff reviewed; two complete byte-identical runs |
 | G0.4 Reconcile Agentic-QE exact CLI counts/IDs | Evidence | none | 144 default and 129 no-default inventories deliberately accepted or corrected |
 | G0.5 Add `persistence-write` evidence profile | Conformance | none | Exact IDs cover transactional dataset, update atomicity, topology, service claims, and failure injection |
-| G0.6 Verify and regenerate OxDatalog mutation receipt | Evidence | none | `node --test tools/mutation/*.test.mjs` passes; pinned `cargo-mutants` 27.1.0 run has zero survivors/timeouts and reopens its exact source-bound receipt |
+| G0.6 Verify and regenerate OxDatalog mutation receipt | Evidence | none | `node --test tools/mutation/*.test.mjs` passes; the latest registry `cargo-mutants` release is acquired without a top-level version constraint; the run has zero survivors/timeouts and reopens its exact source- and runtime-bound receipt |
 | G0.7 Reconcile and freeze protected evidence documents | ADR/claims | G0.1-G0.6 | Ledger, README, ADRs, plans, and research mark historical versus current receipts accurately and are frozen before qualification |
 
 No lock, expected count, manifest, threshold, or receipt is refreshed
@@ -542,8 +542,10 @@ the working directories and warning policy in `.github/workflows/tests.yml`.
 3. After G0.2, refresh the Jena lock only through its reviewed lock operation,
    inspect the diff, then run `bash tools/jena-parity/scripts/run.sh` twice and
    require byte-identical receipts.
-4. Run `node --test tools/mutation/*.test.mjs`, require
-   `cargo mutants --version` to report 27.1.0, then run
+4. Run `node --test tools/mutation/*.test.mjs`, acquire the current registry
+   release with `cargo install --locked cargo-mutants`, require
+   `cargo mutants --version` to agree exactly with the version frozen in the
+   native outcomes, executable provenance, and new receipt, then run
    `node tools/mutation/oxdatalog.mjs --jobs 2`. Keep ADR-0013's OxDatalog
    scope explicit; P0 needs a separate reviewed mutation or deterministic
    failure-injection competence profile.

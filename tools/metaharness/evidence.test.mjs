@@ -24,7 +24,6 @@ import {
   writeJsonAtomic,
 } from "./evidence.mjs";
 import {
-  EXPECTED_CARGO_MUTANTS_VERSION,
   MUTATION_RECEIPT_SCHEMA_VERSION,
   mutationReceiptContentHash,
   mutationReceiptExecutionHash,
@@ -40,6 +39,7 @@ function temporaryDirectory() {
 }
 
 const mutationRunId = "00000000-0000-4000-8000-000000000000";
+const fixtureCargoMutantsVersion = "99.88.77";
 
 function mutationCounts() {
   return {
@@ -109,7 +109,7 @@ function mutationFixture() {
     success: 0,
     start_time: "2026-07-27T00:00:00.000000Z",
     end_time: "2026-07-27T00:01:00.000000Z",
-    cargo_mutants_version: EXPECTED_CARGO_MUTANTS_VERSION,
+    cargo_mutants_version: fixtureCargoMutantsVersion,
   };
   const inventory = [{ diff: "--- before\n+++ after\n", ...mutant }];
   const outcomeBytes = Buffer.from(JSON.stringify(outcomes));
@@ -132,7 +132,10 @@ function mutationFixture() {
     invokedPath: program === "cargo" ? "/test/cargo" : `/test/${program}`,
     path: program === "cargo" ? "/test/cargo" : `/test/${program}`,
     executableSha256: "b".repeat(64),
-    version: `${program} test`,
+    version:
+      program === "cargo-mutants"
+        ? `cargo-mutants ${fixtureCargoMutantsVersion}`
+        : `${program} test`,
   }));
   const runRoot = `target/mutation/oxdatalog/native/${mutationRunId}/mutants.out`;
   const receipt = {
@@ -142,8 +145,8 @@ function mutationFixture() {
     gateClosed: true,
     baselinePassed: true,
     baselineSummary: "Success",
-    cargoMutantsVersion: EXPECTED_CARGO_MUTANTS_VERSION,
-    expectedCargoMutantsVersion: EXPECTED_CARGO_MUTANTS_VERSION,
+    cargoMutantsVersion: fixtureCargoMutantsVersion,
+    expectedCargoMutantsVersion: fixtureCargoMutantsVersion,
     command: {
       status: 0,
       signal: null,
@@ -190,7 +193,7 @@ function mutationFixture() {
       outcomeBytes,
       inventoryBytes,
       configBytes,
-      expectedVersion: EXPECTED_CARGO_MUTANTS_VERSION,
+      expectedVersion: fixtureCargoMutantsVersion,
       expectedRuntime: runtime,
     },
   };

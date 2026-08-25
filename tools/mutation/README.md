@@ -1,9 +1,13 @@
 # Datalog mutation qualification
 
-This lane pins `cargo-mutants` 27.1.0 and reviews the complete configured
-`oxdatalog` D0–D2 mutation inventory.
+This lane acquires the latest `cargo-mutants` registry release without a
+top-level version constraint and reviews the complete configured `oxdatalog`
+D0–D2 mutation inventory. `--locked` preserves the selected release's
+published dependency resolution; the receipt freezes the observed release and
+executable rather than making acquisition itself a repository version pin.
 
 ```bash
+cargo install --locked cargo-mutants
 node --test tools/mutation/*.test.mjs
 node tools/mutation/oxdatalog.mjs --list
 node tools/mutation/oxdatalog.mjs --jobs 2
@@ -12,8 +16,9 @@ node tools/mutation/oxdatalog.mjs --jobs 2
 The runner rejects symlinked or escaping output paths, enforces a bounded
 process-tree timeout, and snapshots the workspace libraries, manifests,
 toolchain configuration, runner, and mutation policy before and after native
-execution. A passing receipt requires exactly one successful baseline, the
-pinned native outcome version, one unique native record per generated mutant,
+execution. A passing receipt requires exactly one successful baseline, exact
+agreement between the receipt-recorded, runtime, and native outcome
+`cargo-mutants` versions, one unique native record per generated mutant,
 consistent aggregate counts, no input drift, no survivors, and no timeouts.
 The receipt hashes the native outcome and policy files, records canonical
 paths, versions, and SHA-256 hashes for Cargo, Cargo Mutants, Rustc, and the
@@ -36,7 +41,8 @@ Consumers should call `validateMutationPublication` from `evidence.mjs` with
 the repository root and current protected-input content hash. The API reopens
 the immutable receipt, outcomes, inventory, and configuration; requires both
 recorded full snapshots to equal an independently recomputed current snapshot;
-recomputes executable provenance; and runs the exact pinned bounded
-`cargo mutants --list --json` invocation against the current source. The
-sorted current inventory must equal immutable `mutants.json`, while every
+recomputes executable provenance; requires the current Cargo Mutants binary,
+hash, path, and observed version to equal the receipt; and runs the exact
+bounded `cargo mutants --list --json` invocation against the current source.
+The sorted current inventory must equal immutable `mutants.json`, while every
 inventory Mutant must have one strict, phase-consistent native outcome.

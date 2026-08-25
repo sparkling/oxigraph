@@ -310,9 +310,10 @@ reopens them. Gate 8 is per-run authority and never closes permanently:
 7. **Evidence repair:** refresh the Jena subject lock through its separate
    reviewed operation, update exact Agentic-QE test inventories, run the Jena
    profile, verify the mutation harness and regenerate the exact OxDatalog
-   receipt with pinned `cargo-mutants` 27.1.0, freeze all protected ADR, plan,
-   and research documents, then close full MetaHarness qualification and
-   independent evidence verification.
+   receipt with the latest registry `cargo-mutants` release resolved without a
+   top-level version pin and sealed by observed-version and executable
+   provenance, freeze all protected ADR, plan, and research documents, then
+   close full MetaHarness qualification and independent evidence verification.
 8. **Operator decision:** obtain explicit authorization for any schedule or
    external publication after reviewing the generated routine byte-for-byte.
    Re-obtain it for every active task and exact generated artifact.

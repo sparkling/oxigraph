@@ -11,13 +11,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   changedInputs,
   createExclusiveDirectoryInside,
   ensureDirectoryInside,
   executableProvenance,
+  parseCargoMutantsVersion,
   readStableFileBytes,
   snapshotProtectedInputs,
   validateOutcomes,
@@ -26,8 +28,11 @@ import {
 import { runProcess } from "./process.mjs";
 import { syncDirectory } from "./publication.mjs";
 
-const version = "27.1.0";
+const version = "99.88.77";
 const cargoPath = "/test/cargo";
+const repoRoot = realpathSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+);
 
 function cargoArgv(phase) {
   return phase === "Build"
@@ -136,6 +141,37 @@ test("runtime provenance binds the executable, path, hash, and version", () => {
   assert.match(provenance.executableSha256, /^[0-9a-f]{64}$/);
   assert.match(provenance.version, /^v\d+/);
   assert.equal(realpathSync(provenance.path), provenance.path);
+});
+
+test("cargo-mutants version parsing preserves the observed release", () => {
+  assert.equal(
+    parseCargoMutantsVersion("cargo-mutants 99.88.77\n"),
+    "99.88.77",
+  );
+  assert.equal(parseCargoMutantsVersion("cargo-mutants unknown version\n"), null);
+});
+
+test("cargo-mutants acquisition floats while receipts freeze runtime provenance", () => {
+  const workflow = readFileSync(
+    join(repoRoot, ".github", "workflows", "tests.yml"),
+    "utf8",
+  );
+  const runner = readFileSync(
+    join(repoRoot, "tools", "mutation", "oxdatalog.mjs"),
+    "utf8",
+  );
+  const installs = `${workflow}\n${runner}`.match(
+    /cargo install[^\n]*cargo-mutants[^\n]*/g,
+  );
+  assert.ok(installs?.length >= 2);
+  assert.equal(
+    installs.every(
+      (command) =>
+        command.includes("cargo install --locked cargo-mutants") &&
+        !command.includes("--version"),
+    ),
+    true,
+  );
 });
 
 test("directory durability is an explicit safe no-op on Windows", () => {
