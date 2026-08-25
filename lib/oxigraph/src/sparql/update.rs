@@ -10,7 +10,7 @@ use crate::model::{
 };
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
-use crate::storage::{Storage, StorageError, StorageTransaction};
+use crate::storage::{Storage, StorageTransaction};
 use crate::store::{
     NegotiatedTransactionalDataset, Store, Transaction, TransactionRequest,
     TransactionStartControl, TransactionStartError, TransactionalDataset, WritableDataset,
@@ -191,6 +191,28 @@ impl PreparedSparqlUpdate {
         }
     }
 
+    /// Binds this update to a capability-negotiating transactional dataset.
+    ///
+    /// The request is checked before a transaction is opened. Admission uses
+    /// this evaluator's cancellation token, and failures after admission are
+    /// explicitly rolled back before they are returned.
+    pub fn on_dataset_with_request<D: NegotiatedTransactionalDataset>(
+        self,
+        dataset: &D,
+        request: TransactionRequest,
+    ) -> BoundNegotiatedSparqlUpdate<'_, D> {
+        BoundNegotiatedSparqlUpdate {
+            evaluator: self.evaluator,
+            update: self.update,
+            using_datasets: self.using_datasets,
+            cancellation_token: self.cancellation_token,
+            #[cfg(feature = "http-client")]
+            client: self.client,
+            dataset,
+            request,
+        }
+    }
+
     /// Bind the prepared update to the [`Transaction`] it should be evaluated on.
     ///
     /// Usage example:
@@ -282,6 +304,68 @@ impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
     }
 }
 
+/// A prepared SPARQL update bound to a capability-negotiating transactional
+/// dataset.
+#[must_use]
+pub struct BoundNegotiatedSparqlUpdate<'a, D: NegotiatedTransactionalDataset> {
+    evaluator: QueryEvaluator,
+    update: Update,
+    using_datasets: Vec<Option<QueryDatasetSpecification>>,
+    cancellation_token: Option<CancellationToken>,
+    #[cfg(feature = "http-client")]
+    client: HttpClient,
+    dataset: &'a D,
+    request: TransactionRequest,
+}
+
+impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
+    /// Negotiates, evaluates, and atomically commits the update.
+    pub fn execute(self) -> Result<(), UpdateEvaluationError> {
+        ensure_update_start_alive(
+            &self.update,
+            self.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.client,
+        )?;
+        let control = self
+            .cancellation_token
+            .as_ref()
+            .map_or_else(TransactionStartControl::new, |token| {
+                TransactionStartControl::new().with_cancellation_token(token.clone())
+            });
+        let mut transaction = self
+            .dataset
+            .start_transaction_with_control(self.request, control)
+            .map_err(update_transaction_start_error)?
+            .into_transaction();
+        let result = (|| {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
+            ReadableUpdateEvaluator {
+                transaction: &mut transaction,
+                base_iri: self.update.base_iri.clone(),
+                query_evaluator: self.evaluator,
+                cancellation_token: self.cancellation_token.clone(),
+                #[cfg(feature = "http-client")]
+                client: self.client,
+            }
+            .eval_all(&self.update.operations, &self.using_datasets)?;
+            ensure_update_alive(self.cancellation_token.as_ref())
+        })();
+        match result {
+            Ok(()) => transaction.commit().map_err(UpdateEvaluationError::dataset),
+            Err(error) => match transaction.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(UpdateEvaluationError::Unexpected(Box::new(
+                    UpdateRollbackError {
+                        update: error,
+                        rollback: Box::new(rollback),
+                    },
+                ))),
+            },
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("SPARQL update failed ({update}) and transaction rollback also failed ({rollback})")]
 struct UpdateRollbackError {
@@ -289,6 +373,12 @@ struct UpdateRollbackError {
     update: UpdateEvaluationError,
     rollback: Box<dyn std::error::Error + Send + Sync + 'static>,
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct UpdateTransactionStartError<E: std::error::Error + 'static>(
+    #[source] TransactionStartError<E>,
+);
 
 /// A prepared SPARQL query bound to a storage, ready to be executed.
 ///
@@ -1040,14 +1130,17 @@ fn ensure_update_alive(
     }
 }
 
-fn update_transaction_start_error(
-    start_error: TransactionStartError<StorageError>,
-) -> UpdateEvaluationError {
+fn update_transaction_start_error<E>(start_error: TransactionStartError<E>) -> UpdateEvaluationError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
     match start_error {
         TransactionStartError::Cancelled => UpdateEvaluationError::Cancelled,
-        TransactionStartError::Backend(error) => UpdateEvaluationError::Storage(error),
+        TransactionStartError::Backend(error) => UpdateEvaluationError::dataset(error),
         error @ (TransactionStartError::RequirementsNotMet { .. }
-        | TransactionStartError::TimedOut) => UpdateEvaluationError::Unexpected(Box::new(error)),
+        | TransactionStartError::TimedOut) => {
+            UpdateEvaluationError::Unexpected(Box::new(UpdateTransactionStartError(error)))
+        }
     }
 }
 

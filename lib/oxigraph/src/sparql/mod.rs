@@ -26,7 +26,8 @@ pub use crate::sparql::error::UpdateEvaluationError;
 #[cfg(feature = "http-client")]
 use crate::sparql::http::HttpServiceHandler;
 pub use crate::sparql::update::{
-    BoundPreparedSparqlUpdate, BoundTransactionalSparqlUpdate, PreparedSparqlUpdate,
+    BoundNegotiatedSparqlUpdate, BoundPreparedSparqlUpdate, BoundTransactionalSparqlUpdate,
+    PreparedSparqlUpdate,
 };
 use crate::store::{Store, Transaction};
 pub use spareval::{

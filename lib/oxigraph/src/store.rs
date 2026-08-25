@@ -426,6 +426,19 @@ pub struct NegotiatedTransaction<T> {
 }
 
 impl<T> NegotiatedTransaction<T> {
+    /// Creates a transaction paired with the capabilities negotiated for it.
+    ///
+    /// This constructor is intended for custom
+    /// [`NegotiatedTransactionalDataset`] implementations. The supplied
+    /// capabilities must be the effective profile used while admitting this
+    /// exact transaction.
+    pub const fn new(transaction: T, effective: TransactionCapabilities) -> Self {
+        Self {
+            transaction,
+            effective,
+        }
+    }
+
     pub const fn effective_capabilities(&self) -> &TransactionCapabilities {
         &self.effective
     }
