@@ -284,6 +284,15 @@ test("one quota-bound namespace preserves build state across every evaluator", {
         ({ disposition, exitCode }) => disposition === "completed" && exitCode === 0,
       ),
     );
+    assert.ok(
+      report.session.commands.every(
+        ({ diagnostic }) =>
+          diagnostic.primaryClass === null &&
+          diagnostic.rustcCodes.length === 0 &&
+          diagnostic.childTermination === null &&
+          diagnostic.ioErrno === null,
+      ),
+    );
     assert.deepEqual(
       new Set(report.session.artifacts.map(({ name }) => name.split("-")[0])),
       new Set(["public", "independent", "regression"]),

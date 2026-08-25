@@ -112,7 +112,7 @@ test("preflight fails closed on a non-discriminating baseline and still disposes
     );
     assert.match(
       error.message,
-      /"commands":\[\{"name":"public","disposition":"completed","exitCode":101,"signal":null,"durationMs":17,"failureClass":"command-failed","stdoutSha256":"b{64}","stderrSha256":"c{64}"\},\{"name":"independent","disposition":"completed","exitCode":101,"signal":null,"durationMs":19,"failureClass":"state-exhausted","stdoutSha256":"d{64}","stderrSha256":"e{64}"\}\]/u,
+      /"commands":\[\{"name":"public","disposition":"completed","exitCode":101,"signal":null,"durationMs":17,"failureClass":"cargo-build-failed-unclassified","stdoutSha256":"b{64}","stderrSha256":"c{64}"\},\{"name":"independent","disposition":"completed","exitCode":101,"signal":null,"durationMs":19,"failureClass":"state-exhausted","ioArea":"unknown","ioErrno":"ENOSPC","stdoutSha256":"d{64}","stderrSha256":"e{64}"\}\]/u,
     );
     assert.doesNotMatch(error.message, /sensitive/u);
     return true;
@@ -164,7 +164,7 @@ test("preflight exposes bounded cold-build failure classes without raw tails", a
     },
   });
   await assert.rejects(runG12Preflight(state.options), (error) => {
-    assert.match(error.message, /"failureClass":"compiler-error"/u);
+    assert.match(error.message, /"failureClass":"rust-compiler-diagnostic"/u);
     assert.match(error.message, /"failureClass":"linker-error"/u);
     assert.match(error.message, /"failureClass":"native-build-error"/u);
     assert.match(error.message, /"failureClass":"toolchain-error"/u);
@@ -213,22 +213,31 @@ test("preflight exposes bounded compiler evidence without command text", async (
             name: "build",
             disposition: "completed",
             exitCode: 101,
-            stderrTail: [
-              "error[E0599]: private missing method",
-              "error[E0277]: private trait failure",
-              "process didn't exit successfully: `rustc private arguments` (signal: 9, SIGKILL: kill)",
-              "could not compile `secret` due to 2 previous errors",
-            ].join("\n"),
+            stderrTail: "could not compile `secret`",
+            diagnostic: {
+              primaryClass: "child-process-signaled",
+              rustcCodes: ["E0277", "E0599"],
+              childRole: "rustc",
+              childTermination: "signal",
+              childExitCode: null,
+              childSignalNumber: 9,
+              childSignalName: "SIGKILL",
+              ioArea: "unknown",
+              ioErrno: null,
+            },
           },
         ],
       };
     },
   });
   await assert.rejects(runG12Preflight(state.options), (error) => {
-    assert.match(error.message, /"failureClass":"compiler-process-killed"/u);
+    assert.match(error.message, /"failureClass":"child-process-signaled"/u);
     assert.match(error.message, /"rustcCodes":\["E0277","E0599"\]/u);
-    assert.match(error.message, /"compilerSignal":"SIGKILL"/u);
-    assert.doesNotMatch(error.message, /private|secret|rustc .*arguments|missing method/u);
+    assert.match(
+      error.message,
+      /"childRole":"rustc","childTermination":"signal","childExitCode":null,"childSignalNumber":9,"childSignalName":"SIGKILL"/u,
+    );
+    assert.doesNotMatch(error.message, /private|secret|missing method/u);
     return true;
   });
 });

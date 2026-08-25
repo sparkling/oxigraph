@@ -1,4 +1,5 @@
 import { runGit } from "./git.mjs";
+import { normalizeCommandFailureDiagnostic } from "./failure-diagnostic.mjs";
 import { runSandboxVerificationSession } from "./sandbox-session.mjs";
 import {
   MAX_SANDBOX_ARGV_ITEMS,
@@ -167,15 +168,30 @@ function candidateIdentity(candidate) {
   });
 }
 
-function earlyVerdict(session, candidate, verdict, stage) {
+function earlyVerdict(session, candidate, verdict, stage, commands = session.commands) {
   return Object.freeze({
     verdict,
     stage,
-    commands: session.commands,
+    commands,
     artifacts: session.artifacts,
     durationMs: session.durationMs,
     ...candidateIdentity(candidate),
   });
+}
+
+function redBaselineCommands(session) {
+  return Object.freeze(
+    session.commands.map((command) => {
+      const diagnostic = session.rawOutcomes.get(command.name)?.diagnostic;
+      return Object.freeze({
+        ...command,
+        diagnostic:
+          diagnostic === undefined || diagnostic === null
+            ? null
+            : normalizeCommandFailureDiagnostic(diagnostic),
+      });
+    }),
+  );
 }
 
 function commandPassed(command, expectedPassed) {
@@ -232,23 +248,28 @@ async function verifyRedBaselineWithRunner({ candidate, contract, signal }, sess
     throw new Error("red-baseline verification requires the sealed evaluator tree");
   }
   const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
-  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, candidate, "INCONCLUSIVE", "format");
-  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, candidate, "INCONCLUSIVE", "build");
-  const publicEvidence = session.commands.find(({ name }) => name === "public");
+  const commands = redBaselineCommands(session);
+  if (commands[0]?.disposition !== "completed" || commands[0]?.exitCode !== 0) {
+    return earlyVerdict(session, candidate, "INCONCLUSIVE", "format", commands);
+  }
+  if (commands[1]?.disposition !== "completed" || commands[1]?.exitCode !== 0) {
+    return earlyVerdict(session, candidate, "INCONCLUSIVE", "build", commands);
+  }
+  const publicEvidence = commands.find(({ name }) => name === "public");
   const publicOutcome = session.rawOutcomes.get("public");
   const red = initialRedMatched(
     publicEvidence,
     publicOutcome,
     contract.initialRed,
   );
-  const independent = session.commands.find(({ name }) => name === "independent");
-  const regression = session.commands.find(({ name }) => name === "regression");
+  const independent = commands.find(({ name }) => name === "independent");
+  const regression = commands.find(({ name }) => name === "regression");
   const referencesGreen = commandPassed(independent, contract.success.independentPassed) && commandPassed(regression, contract.success.regressionPassed);
   const confirmed = red && referencesGreen;
   return Object.freeze({
     verdict: confirmed ? "CONFIRMED_RED" : "INVALID_BASELINE",
     stage: "complete",
-    commands: session.commands,
+    commands,
     artifacts: session.artifacts,
     durationMs: session.durationMs,
     ...candidateIdentity(candidate),

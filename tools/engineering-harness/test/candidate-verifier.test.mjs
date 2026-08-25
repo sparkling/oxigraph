@@ -58,6 +58,18 @@ const contract = Object.freeze({
   success: { publicPassed: 2, independentPassed: 3, regressionPassed: 2 },
 });
 
+const emptyDiagnostic = Object.freeze({
+  primaryClass: null,
+  rustcCodes: Object.freeze([]),
+  childRole: "unknown",
+  childTermination: null,
+  childExitCode: null,
+  childSignalNumber: null,
+  childSignalName: null,
+  ioArea: "unknown",
+  ioErrno: null,
+});
+
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-verifier-fixture-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -108,6 +120,7 @@ function fakeSessionRunner({
   buildFails = false,
   formatFails = false,
   failureDisposition = "completed",
+  failureDiagnostic = emptyDiagnostic,
   sandboxArgv = null,
 }) {
   return async (options) => {
@@ -159,6 +172,7 @@ function fakeSessionRunner({
         stderr,
         stdoutSha256: sha256(stdout),
         stderrSha256: sha256(stderr),
+        diagnostic: failed ? failureDiagnostic : emptyDiagnostic,
       });
     });
     return Object.freeze({
@@ -386,4 +400,42 @@ test("compiler-red baseline requires one exact rustc error and green controls", 
     result.commands.map(({ name }) => name),
     ["format", "build", "public", "independent", "regression"],
   );
+});
+
+test("red baseline retains bounded full-buffer diagnostics without changing candidate receipts", async (t) => {
+  const { candidate } = await fixture(t);
+  const evaluator = Object.freeze({
+    ...candidate,
+    candidatePatchSha256: null,
+    kind: "evaluator",
+  });
+  const redContract = Object.freeze({
+    ...contract,
+    evaluator: Object.freeze({ commit: evaluator.candidateCommit }),
+  });
+  const failureDiagnostic = Object.freeze({
+    ...emptyDiagnostic,
+    primaryClass: "child-process-signaled",
+    childRole: "rustc",
+    childTermination: "signal",
+    childSignalNumber: 9,
+    childSignalName: "SIGKILL",
+  });
+  const runner = fakeSessionRunner({
+    calls: [],
+    buildFails: true,
+    failureDiagnostic,
+  });
+  const verifier = createVerifierForTesting(runner);
+
+  const baseline = await verifier.verifyRedBaseline({
+    candidate: evaluator,
+    contract: redContract,
+  });
+  assert.equal(baseline.verdict, "INCONCLUSIVE");
+  assert.deepEqual(baseline.commands[1].diagnostic, failureDiagnostic);
+
+  const product = await verifier.verifyCandidate({ candidate, contract });
+  assert.equal(product.verdict, "REJECT");
+  assert.equal(Object.hasOwn(product.commands[1], "diagnostic"), false);
 });

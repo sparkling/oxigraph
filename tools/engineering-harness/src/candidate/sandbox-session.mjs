@@ -15,6 +15,7 @@ import { tmpdir, userInfo } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBoundedProcess } from "../native/process.mjs";
+import { summarizeCommandFailure } from "./failure-diagnostic.mjs";
 
 const bwrapExecutable = "/usr/bin/bwrap";
 const prlimitExecutable = "/usr/bin/prlimit";
@@ -353,6 +354,12 @@ function normalizeSession(raw, commands, maxDiskBytes) {
       stderr: stderr.toString("utf8"),
       stdoutSha256: record.stdoutSha256,
       stderrSha256: record.stderrSha256,
+      diagnostic: summarizeCommandFailure({
+        stdout,
+        stderr,
+        disposition: record.disposition,
+        exitCode: record.exitCode,
+      }),
       terminationErrors: Object.freeze([...(record.terminationErrors ?? [])]),
     });
   });

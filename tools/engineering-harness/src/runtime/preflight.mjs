@@ -1,4 +1,5 @@
 import { reconstructEvaluator, disposeCandidate } from "../candidate/reconstruct.mjs";
+import { normalizeCommandFailureDiagnostic } from "../candidate/failure-diagnostic.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
 import { verifyRedBaseline } from "../candidate/verifier.mjs";
 import {
@@ -20,90 +21,96 @@ const redVerdicts = new Set(["CONFIRMED_RED", "INCONCLUSIVE", "INVALID_BASELINE"
 const commandNames = new Set(["format", "build", "public", "independent", "regression"]);
 const commandDispositions = new Set(["completed", "timed-out", "output-limit"]);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
-const compilerSignals = new Set([
-  "SIGABRT",
-  "SIGBUS",
-  "SIGILL",
-  "SIGKILL",
-  "SIGSEGV",
-  "SIGSYS",
-  "SIGTERM",
-  "SIGXCPU",
-  "SIGXFSZ",
-]);
 
 function commandOutput(command) {
   return `${command?.stdoutTail ?? ""}\n${command?.stderrTail ?? ""}`;
 }
 
-function redactedCompilerEvidence(command) {
+function legacyFailureDiagnostic(command) {
   const output = commandOutput(command);
+  if (command?.disposition === "completed" && command.exitCode === 0) {
+    return normalizeCommandFailureDiagnostic({
+      primaryClass: null,
+      rustcCodes: [],
+      childRole: "unknown",
+      childTermination: null,
+      childExitCode: null,
+      childSignalNumber: null,
+      childSignalName: null,
+      ioArea: "unknown",
+      ioErrno: null,
+    });
+  }
   const rustcCodes = [
     ...new Set([...output.matchAll(/error\[(E\d{4})\]/gu)].map((match) => match[1])),
   ]
     .sort()
     .slice(0, 8);
-  const signalMatch = output.match(/\(signal:\s*\d+,\s*(SIG[A-Z]+)(?::[^)]*)?\)/u);
-  const compilerSignal =
-    /\brustc\b|\bcc1plus\b|\bclang(?:\+\+)?\b/iu.test(output) &&
-    compilerSignals.has(signalMatch?.[1])
-      ? signalMatch[1]
-      : null;
-  return Object.freeze({ rustcCodes: Object.freeze(rustcCodes), compilerSignal });
-}
-
-function redactedFailureClass(command) {
-  if (command?.disposition === "timed-out") return "timeout";
-  if (command?.disposition === "output-limit") return "output-limit";
-  const output = commandOutput(command);
-  if (/No space left on device|\bENOSPC\b/iu.test(output)) {
-    return "state-exhausted";
-  }
-  if (/Cannot allocate memory|out of memory|\bENOMEM\b/iu.test(output)) {
-    return "memory-exhausted";
-  }
-  if (/rustc-LLVM ERROR|internal compiler error/iu.test(output)) {
-    return "toolchain-error";
-  }
-  if (/linking with .{0,80} failed|linker .{0,80} failed|collect2: error/iu.test(output)) {
-    return "linker-error";
-  }
-  if (/failed to run custom build command|CMake Error/iu.test(output)) {
-    return "native-build-error";
-  }
-  if (
+  let primaryClass = null;
+  let ioErrno = null;
+  if (command?.disposition === "timed-out") {
+    primaryClass = "timeout";
+  } else if (command?.disposition === "output-limit") {
+    primaryClass = "output-limit";
+  } else if (/Cannot allocate memory|out of memory|\bENOMEM\b/iu.test(output)) {
+    primaryClass = "memory-exhausted";
+    ioErrno = "ENOMEM";
+  } else if (/No space left on device|\bENOSPC\b/iu.test(output)) {
+    primaryClass = "state-exhausted";
+    ioErrno = "ENOSPC";
+  } else if (/rustc-LLVM ERROR|internal compiler error/iu.test(output)) {
+    primaryClass = "toolchain-error";
+  } else if (/linking with .{0,80} failed|linker .{0,80} failed|collect2: error/iu.test(output)) {
+    primaryClass = "linker-error";
+  } else if (/failed to run custom build command|CMake Error/iu.test(output)) {
+    primaryClass = "native-build-error";
+  } else if (
     /attempting to make an HTTP request|failed to download|no matching package named.{0,120}offline/iu.test(
       output,
     )
   ) {
-    return "offline-dependency";
-  }
-  if (
-    /Read-only file system|\bEROFS\b|Permission denied|\bEACCES\b|couldn't create a temp dir:[^\n]{0,160}No such file or directory/iu.test(
+    primaryClass = "offline-dependency";
+  } else if (/Read-only file system|\bEROFS\b/iu.test(output)) {
+    primaryClass = "sandbox-filesystem";
+    ioErrno = "EROFS";
+  } else if (/Permission denied|\bEACCES\b/iu.test(output)) {
+    primaryClass = "sandbox-filesystem";
+    ioErrno = "EACCES";
+  } else if (
+    /couldn't create a temp dir:[^\n]{0,160}No such file or directory|\bENOENT\b/iu.test(
       output,
     )
   ) {
-    return "sandbox-filesystem";
+    primaryClass = "sandbox-filesystem";
+    ioErrno = "ENOENT";
+  } else if (rustcCodes.length > 0) {
+    primaryClass = "rust-compiler-diagnostic";
+  } else if (Number.isInteger(command?.exitCode) && command.exitCode !== 0) {
+    primaryClass = "cargo-build-failed-unclassified";
   }
-  const { compilerSignal } = redactedCompilerEvidence(command);
-  if (compilerSignal === "SIGKILL") {
-    return "compiler-process-killed";
-  }
-  if (compilerSignal !== null) {
-    return "compiler-process-terminated";
-  }
-  if (/error\[E\d{4}\]|could not compile/iu.test(output)) {
-    return "compiler-error";
-  }
-  return Number.isInteger(command?.exitCode) && command.exitCode !== 0
-    ? "command-failed"
-    : null;
+  return normalizeCommandFailureDiagnostic({
+    primaryClass,
+    rustcCodes,
+    childRole: "unknown",
+    childTermination: null,
+    childExitCode: null,
+    childSignalNumber: null,
+    childSignalName: null,
+    ioArea: "unknown",
+    ioErrno,
+  });
+}
+
+function commandFailureDiagnostic(command) {
+  return command?.diagnostic === undefined || command.diagnostic === null
+    ? legacyFailureDiagnostic(command)
+    : normalizeCommandFailureDiagnostic(command.diagnostic);
 }
 
 function boundedRedDiagnostic(receipt) {
   const commands = Array.isArray(receipt?.commands)
     ? receipt.commands.slice(0, commandNames.size).map((command) => {
-        const { rustcCodes, compilerSignal } = redactedCompilerEvidence(command);
+        const diagnostic = commandFailureDiagnostic(command);
         return {
           name: commandNames.has(command?.name) ? command.name : "unknown",
           disposition: commandDispositions.has(command?.disposition)
@@ -118,9 +125,22 @@ function boundedRedDiagnostic(receipt) {
             Number.isSafeInteger(command?.durationMs) && command.durationMs >= 0
               ? command.durationMs
               : null,
-          failureClass: redactedFailureClass(command),
-          ...(rustcCodes.length > 0 ? { rustcCodes } : {}),
-          ...(compilerSignal === null ? {} : { compilerSignal }),
+          failureClass: diagnostic.primaryClass,
+          ...(diagnostic.rustcCodes.length > 0
+            ? { rustcCodes: diagnostic.rustcCodes }
+            : {}),
+          ...(diagnostic.childTermination === null
+            ? {}
+            : {
+                childRole: diagnostic.childRole,
+                childTermination: diagnostic.childTermination,
+                childExitCode: diagnostic.childExitCode,
+                childSignalNumber: diagnostic.childSignalNumber,
+                childSignalName: diagnostic.childSignalName,
+              }),
+          ...(diagnostic.ioErrno === null
+            ? {}
+            : { ioArea: diagnostic.ioArea, ioErrno: diagnostic.ioErrno }),
           stdoutSha256: sha256Pattern.test(command?.stdoutSha256)
             ? command.stdoutSha256
             : null,
