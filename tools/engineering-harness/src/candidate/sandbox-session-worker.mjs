@@ -415,14 +415,17 @@ async function quiesceUntrustedProcesses() {
 function artifactPrefixes(buildArgv) {
   const prefixes = [];
   for (let index = 0; index < buildArgv.length; index += 1) {
-    if (buildArgv[index] === "--test" && typeof buildArgv[index + 1] === "string") {
+    if (
+      ["--bin", "--test"].includes(buildArgv[index]) &&
+      typeof buildArgv[index + 1] === "string"
+    ) {
       prefixes.push(buildArgv[index + 1]);
       index += 1;
     }
   }
   const unique = [...new Set(prefixes)];
   if (unique.length === 0) {
-    throw new Error("build command declares no exact test artifacts");
+    throw new Error("build command declares no exact executable targets");
   }
   return unique;
 }

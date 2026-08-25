@@ -77,6 +77,10 @@ async function createFixture(root) {
       join(workspace, "src", "lib.rs"),
       "pub fn answer() -> u8 {\n    42\n}\n",
     ),
+    writeFile(
+      join(workspace, "src", "main.rs"),
+      "fn main() {\n    assert_eq!(session_fixture::answer(), 42);\n}\n",
+    ),
     ...["public", "independent", "regression"].map((name) =>
       writeFile(
         join(workspace, "tests", `${name}.rs`),
@@ -85,6 +89,33 @@ async function createFixture(root) {
     ),
   ]);
   return workspace;
+}
+
+function binaryCommandPlan() {
+  return Object.freeze({
+    ...commandPlan(),
+    build: Object.freeze({
+      argv: Object.freeze([
+        "cargo",
+        "test",
+        "--locked",
+        "--no-run",
+        "--bin",
+        "session_fixture",
+      ]),
+      timeoutMs: 90_000,
+    }),
+    public: Object.freeze({
+      argv: Object.freeze([
+        "cargo",
+        "test",
+        "--locked",
+        "--bin",
+        "session_fixture",
+      ]),
+      timeoutMs: 30_000,
+    }),
+  });
 }
 
 async function createAnchorProbeFixture(root) {
@@ -428,6 +459,32 @@ test("production verifier protects writable state anchors from candidate code", 
     assert.ok(
       report.session.commands.every(
         ({ disposition, exitCode }) => disposition === "completed" && exitCode === 0,
+      ),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("production verifier attests an exact binary build target", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-session-bin-test-"));
+  try {
+    const workspace = await createFixture(root);
+    const report = await runSandboxVerificationSession({
+      workspace,
+      commands: binaryCommandPlan(),
+      maxTotalWallMs: 150_000,
+      maxResidentBytes: 2 * 1024 * mebibyte,
+      maxDiskBytes: 512 * mebibyte,
+      cargoBuildJobs: 2,
+      maxBuildOutputBytes: mebibyte,
+      maxTestOutputBytesPerCommand: mebibyte,
+    });
+    assert.equal(report.session.status, "completed", report.session.error);
+    assert.equal(report.session.stage, "complete");
+    assert.ok(
+      report.session.artifacts.some(({ name }) =>
+        name.startsWith("session_fixture-"),
       ),
     );
   } finally {
