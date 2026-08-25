@@ -193,6 +193,17 @@ function stringArray(value, label, { min = 0, max = 1024 } = {}) {
   );
 }
 
+function argumentArray(value, label, { min = 0, max = 1024 } = {}) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) {
+    throw new Error(`${label} must contain ${min}..${max} strings`);
+  }
+  return Object.freeze(
+    value.map((item, index) =>
+      boundedText(item, `${label}[${index}]`, 16_384),
+    ),
+  );
+}
+
 function uniqueStrings(value, label, options) {
   const normalized = stringArray(value, label, options);
   if (new Set(normalized).size !== normalized.length) {
@@ -859,7 +870,9 @@ function normalizeNativeInvocations(value, control) {
       if (!isAbsolute(executable) || /openrouter/i.test(executable)) {
         throw new Error(`${label}.executable must be an absolute native path`);
       }
-      const args = stringArray(item.args, `${label}.args`, { min: 1, max: 512 });
+      // Empty argv elements are semantically meaningful. Claude's native
+      // tool-free boundary is expressed as the literal pair `--tools`, `""`.
+      const args = argumentArray(item.args, `${label}.args`, { min: 1, max: 512 });
       if (args.some((argument) => /openrouter/i.test(argument))) {
         throw new Error(`${label}.args may not route through OpenRouter`);
       }

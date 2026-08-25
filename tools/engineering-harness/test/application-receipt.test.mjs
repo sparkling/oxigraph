@@ -527,8 +527,12 @@ function addRejectedRepair(
 }
 
 test("application receipt has an exact deterministic round trip and quality binding", () => {
-  const left = createApplicationReceipt(draft());
-  const right = createApplicationReceipt(draft());
+  const value = draft();
+  value.nativeInvocations[3].args.push("--tools", "");
+  const left = createApplicationReceipt(value);
+  const rightValue = draft();
+  rightValue.nativeInvocations[3].args.push("--tools", "");
+  const right = createApplicationReceipt(rightValue);
   const serialized = serializeApplicationReceipt(left);
   assert.equal(serialized.match(/"schema":/g)?.length, 1);
   assert.equal(serialized, serializeApplicationReceipt(right));
@@ -543,6 +547,7 @@ test("application receipt has an exact deterministic round trip and quality bind
     implementation: "codex",
   });
   assert.equal(left.attempts[0].verifier.commands[0].workspace, "read-only");
+  assert.deepEqual(left.nativeInvocations[3].args.slice(-2), ["--tools", ""]);
   assert.equal(
     left.attempts[0].verifier.commands[2].stdoutTail,
     "test result: ok. 1 passed; 0 failed;",
