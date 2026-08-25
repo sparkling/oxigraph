@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.6-runtime-derived-service-claims",
+  "programme": "linked-data-store",
+  "decision": "ADR-0019",
+  "objective": "Qualify runtime-derived SPARQL service-description claims so federation and remote-load capabilities are advertised only when the same evaluator's effective handlers, egress policy, and compiled transport support them.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "826bd7a2622282b4194aa03ffc1b9effbb0adae0",
+    "tree": "a7b1c37e9965b6dcdbebd9cf76377110e9e6ef85"
+  },
+  "evaluator": {
+    "commit": "6f447333dcd6d61fc31cf9ef17d925d432d26f4e",
+    "parent": "826bd7a2622282b4194aa03ffc1b9effbb0adae0",
+    "tree": "351d320efe1527f0c3e1b81c817707adc341f169",
+    "path": "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+    "changeStatus": "A",
+    "blob": "4f8156e3b3e34af2482bb40a87110f35576c458c",
+    "contentSha256": "4a150b695de39baba392a9282365bd74c86cde20422f64e7dd3c3e054cc80416",
+    "patchSha256": "ae10ef58a5e74a744201694e7c65d34f095605da7e0ed2c780fad1a13129dd1b"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/http.rs",
+    "mutableBaselineBlob": "01bcc5be2fd40da24ba4d8a022f512d41a8da988",
+    "mutableBaselineSha256": "d682ac111541190229dd43da434efbad3c370baf9229c5b304730d7e2be53109",
+    "baselineManifest": {
+      "entries": 1401,
+      "fullSha256": "4efcf0307f589726806454375a39d675559d0759fc801e81def86a49c7f6f097",
+      "protectedEntries": 1397,
+      "protectedSha256": "93c149eaa757440b506bb8cfab42540dbe356a01f317077f7f817df4a54ed434"
+    },
+    "evaluatorManifest": {
+      "entries": 1402,
+      "fullSha256": "471ad926edaaea79e7701433f43cf70df0d4099f44d72d759d5d46dbef9b8590",
+      "protectedEntries": 1398,
+      "protectedSha256": "9dec147750fffea5f504db1b0fd3b29a3aeba9514f297e6d9c2bf6ae2b359fe9"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/http.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "cli/src/service_description.rs",
+      "cli/src/main.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "cli/Cargo.toml",
+      "lib/oxigraph/src/lib.rs",
+      "cli/src/service_description/tests.rs",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/io",
+      "lib/oxigraph/src/storage",
+      "lib/oxigraph/src/store",
+      "cli/tests",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph-cli", "--bin", "oxigraph", "--no-run"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "-p", "oxigraph-cli", "--features", "oxigraph/http-client-native-tls,oxigraph/rdf-12,oxigraph-cli/native-tls,oxigraph-cli/rdf-12", "--test", "sparql_effective_capabilities", "--bin", "oxigraph"],
+      "timeoutMs": 300000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "rdf-12", "--test", "sparql_version"],
+      "timeoutMs": 120000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client,rdf-12", "--test", "sparql_egress_policy"],
+      "timeoutMs": 180000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 196608,
+    "maxChangedFiles": 4,
+    "maxChangedLines": 1024,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 17179869184,
+    "maxVerifierDiskBytes": 12884901888,
+    "cargoBuildJobs": 1,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "kind": "compiler",
+    "commandRole": "public",
+    "exitCode": 101,
+    "rustcCode": "E0599",
+    "rustcErrorCount": 1,
+    "primaryPath": "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+    "requiredExports": [
+      "effective_capabilities"
+    ],
+    "requiredSubstrings": [
+      "no method named `effective_capabilities` found for reference `&SparqlEvaluator` in the current scope",
+      "could not compile `oxigraph` (test \"sparql_effective_capabilities\") due to 1 previous error"
+    ],
+    "forbiddenSubstrings": [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device"
+    ]
+  },
+  "success": {
+    "publicPassed": 4,
+    "independentPassed": 1,
+    "regressionPassed": 12
+  }
+}

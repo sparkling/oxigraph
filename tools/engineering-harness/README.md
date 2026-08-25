@@ -38,6 +38,14 @@ Current activation boundary:
   the feature-active build and later default-feature reference artefacts coexist.
   `maxResidentBytes` is the 16 GiB aggregate cgroup ceiling and includes that
   tmpfs state together with compiler, linker, and verifier process memory;
+- `g1.6 preflight|run|replay` binds the four-file runtime-service-capability
+  slice to a frozen two-path evaluator. The public evaluator identity remains
+  the added `sparql_effective_capabilities` target, while private repository
+  validation also freezes the modified CLI service-description tests, their
+  Git order, and both blob/content identities. The task derives federation and
+  remote-load claims from the shared evaluator's effective handlers, egress
+  policy, and compiled transport without DNS or network probes; the server
+  profile remains deny-all while standalone CLI query/update stay permissive;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without
@@ -77,6 +85,7 @@ npm run g1.4:preflight
 npm run g1.5:preflight
 npm run g1.5b:preflight
 npm run g1.5c:preflight
+npm run g1.6:preflight
 ```
 
 The package is local-only. Presence of this directory is not an engineering
