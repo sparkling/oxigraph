@@ -1,6 +1,6 @@
 {
   "profile_id": "jena-6.1.0-outcome-intersection-2026-07-27-v1",
-  "subject_sha256": "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d",
+  "subject_sha256": "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63",
   "inventory_sha256": {
     "inventory/index.json": "66a98e828b5fdc9d6eb4fc75bf46083319db92a1769509ec81638829ceff4541",
     "inventory/owl2-rl.json": "26d7e7629a88bf5194b6930d38ab664c0b5fe74c34d843b0d0ed99438bdd7cf5",
@@ -25,7 +25,7 @@
     "jena-extension": 1
   },
   "source_sha256": {
-    "harness/.gitignore": "702f49350a3276f960024a38a297175d0a34e560bdee91d62632042ffaa3b629",
+    "harness/.gitignore": "b4a6c12bbcdc0e2649eb38e39dc67777c55345a60a26d809e4647d97143dbaa2",
     "harness/.mise.toml": "051c99fe1a1dc1b5ea2c954922fbd3405bbff50f7affcef94876e775b81b4dc4",
     "harness/oracle/pom.xml": "bdfeb36c1f52bd72b749522c0f35e97ff2ecd68f03620066fbeac180414ca0c8",
     "harness/oracle/src/main/java/org/oxigraph/parity/Canonicalizer.java": "67b99d79a83ff45b38167eebf352738595173857d6a2d3460ee0855bd2ca506a",
@@ -34,12 +34,12 @@
     "harness/oracle/src/main/java/org/oxigraph/parity/Scenario.java": "b0757457913a89d25ad3a4e191c8e8e17018868a37e4cc557378bc1be91e4d12",
     "harness/oracle/src/test/java/org/oxigraph/parity/CanonicalizerTest.java": "8f50f98322c6e72d49a86a25d6fe49309c20a1ae3ffb91b8a5c50f6bd7262e26",
     "harness/oracle/src/test/java/org/oxigraph/parity/JenaEngineTest.java": "f5e63e23c49c59f2ea372caa34abca4b7e420ae739e9d6f624b6925bff70a4b6",
-    "harness/runner/Cargo.lock": "3f18d861e403d0ea20e0b286f5e3bb4d368f33664356d5468e79c27ae129bdd1",
+    "harness/runner/Cargo.lock": "283f842c98885131fdccfb07b79222e3a2f13dac5cab113f7cb86306182fba47",
     "harness/runner/Cargo.toml": "8f90dd88704b2f44e250c6e9a4bb41933294de1dc28c14449cbaf20c349e8e61",
     "harness/runner/rust-toolchain.toml": "fa0addad5676243d360310f981a69528b0341d295cb5012253d9721aba4d30c0",
     "harness/runner/src/assertions.rs": "537d382f06ff15c0ef472cacbe53621af6ed6d2ec5a613d720dd1fb3aa90a4bc",
     "harness/runner/src/canonical.rs": "11c381a51687aea3e5283792cf1dc2847c2d0092843c6fd0f3d28e77a4eb0623",
-    "harness/runner/src/engine.rs": "74182a0e479096e6585270f7b6d9345c5cffd34bafae8f2ed2ad889873eb9a0f",
+    "harness/runner/src/engine.rs": "5298db064c35c8bdc42f7759c2879b6002815512783b18e04c0fe4765432dbea",
     "harness/runner/src/harness.rs": "f16adcea796edea81b1bed0a86149cc250055c53b28d50cb829ad989d3711e57",
     "harness/runner/src/inventory.rs": "0364292e3c252b750432e1b3660f4d879b9b2147b580013efd6c755f48ac161e",
     "harness/runner/src/lock.rs": "8ca761249127da7a1f1d037b03ff43e5c40b908d88b7148eb0353f095ff770f0",
