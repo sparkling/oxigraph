@@ -108,12 +108,14 @@ read cancellation. G1.5b is implemented in `280872dc` plus review hardening
 `9b84bed6` and accepted by its frozen 6/6/12 evaluator split. One cancellation
 token now covers validation, built-in RocksDB writer admission, local mutation,
 and the final pre-commit checkpoint; owned transactions roll back before a
-typed cancellation is returned. The legacy generic transaction opener cannot
-observe cancellation while an arbitrary backend blocks, and a caller-owned
-transaction remains the caller's rollback responsibility. G1.5c owns the
-additive negotiated-backend binding, and G1.6 still owns runtime-derived
-service claims, so ADR-0019 stays Proposed. ADR-0018 likewise remains Proposed
-until the G1.7 compatibility, performance, and current-evidence promotion gate.
+typed cancellation is returned. G1.5c is implemented in `3afe1e78` and
+accepted by its frozen 5/15/21 evaluator split: the additive negotiated
+binding carries the caller's exact transaction request and cancellation token
+through custom-backend and `Store` admission without changing the minimal
+transaction traits. A caller-owned transaction remains the caller's rollback
+responsibility. G1.6 still owns runtime-derived service claims, so ADR-0019
+stays Proposed. ADR-0018 likewise remains Proposed until the G1.7
+compatibility, performance, and current-evidence promotion gate.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

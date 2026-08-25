@@ -4,9 +4,10 @@
 - Date: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
-- Implementation status: G1.5's unified-egress profile and G1.5b's owned-update
-  cancellation profile are implemented and source-bound; G1.5c negotiated
-  backend admission and G1.6 runtime-derived service claims remain outstanding
+- Implementation status: G1.5's unified-egress, G1.5b's owned-update
+  cancellation, and G1.5c's negotiated backend-admission profiles are
+  implemented and source-bound; G1.6 runtime-derived service claims remain
+  outstanding
 - Depends on:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - Related:
@@ -155,12 +156,39 @@ regressions in 431.682 seconds. Its 113,635-byte session artifact has SHA-256
 That receipt proves typed cancellation and rollback for transactions owned by
 the update binding, including built-in Store admission. The plain
 `TransactionalDataset::start_transaction` method is checked before and after
-the call but cannot be interrupted while an arbitrary implementation blocks;
-G1.5c owns an additive `NegotiatedTransactionalDataset` binding for that case.
+the call but cannot be interrupted while an arbitrary implementation blocks.
 `on_transaction` borrows caller-owned state and cannot roll back only the
 current update without savepoints, so it is explicitly outside this receipt.
-G1.6 service-description claims also remain open. ADR-0019 therefore remains
-Proposed; G1.5c and G1.6 own completion in that order—G1.6 depends on the
-negotiated backend-admission contract from G1.5c. The executable dependency is
-recorded in the
+
+G1.5c is implemented by product commit
+`3afe1e7850d60945342a8a6e7072e85a63683be1`, tree
+`938a1f3a1a68f67c1725b4240dd6ce2e7cff1188`. Evaluator-only commit
+`fbd11e1802c295da3b4e510686e18090b62f381b`, tree
+`d36eeb470334b7be3fe381b52c640d95e724c479`, has patch SHA-256
+`6a67bad0ce50de23e7a926218e163d2508a1e6f766231cec41d41db8193752cc`.
+The frozen preflight returned `CONFIRMED_RED` with green references; its
+118,757-byte artifact has SHA-256
+`b4d4ba3af11d85727ec13157e3a07a11548436d4bfff74f0bb92c16efd22a262`.
+
+Frozen contract
+`05b6ba498344fc412a810bb79eb80344f90577a442ce03c41637cbabd4a26ce1`
+reconstructed exact 7,252-byte three-path product patch
+`229d326bb22f46b992bc6d6212be1346de88b0d5bf1b9cad56dc0150611066c8`
+as candidate commit `bbbbc5aa6b1cb1ba283c272e1f87fbc53483b728`, tree
+`40137fa6306e8c282da16fbeb0d46418e27d0f3a`. It retained 1,389 protected
+entries with manifest
+`f0d009cd1b48b6c850b45026a2956fea752c8e9cf932022d7e34aa37cf5fb2bb`
+and returned `ACCEPT` after format/build, five public negotiated-admission
+tests, fifteen independent capability/writer-admission tests, and twenty-one
+cancellation/egress/transaction regressions in 1,337.018 seconds. Its
+118,202-byte `verifier-session-result.json` has SHA-256
+`94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
+The run used one Cargo job, a 12 GiB state ceiling, and a 16 GiB aggregate
+ceiling; directly observed peaks stayed below both and every cgroup memory
+event counter remained zero.
+
+This receipt closes cancellable negotiated admission for owned updates while
+preserving the minimal traits and the caller-owned rollback boundary. G1.6
+service-description claims remain open, so ADR-0019 remains Proposed. The
+executable dependency is recorded in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

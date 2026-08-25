@@ -161,11 +161,27 @@ pre-commit checkpoint. Frozen contract
 accepted its 6/6/12 profile as candidate tree
 `d5413be86dae88f4b353ef4979ca8307f408357d`. This proves rollback for
 transactions owned by the update binding, not update-scoped rollback inside a
-caller-owned transaction. G1.5c separately owns the additive negotiated
-backend binding so the minimal `TransactionalDataset` trait remains compatible.
+caller-owned transaction.
+
+G1.5c implements the additive negotiated backend binding in product commit
+`3afe1e7850d60945342a8a6e7072e85a63683be1`, without changing the minimal
+`TransactionalDataset` or `WritableDataset` traits. The binding carries the
+caller's exact `TransactionRequest` and cancellation token through custom and
+`Store` admission, rejects unmet requirements before opening a transaction,
+and explicitly rolls back an owned transaction after post-admission failure.
+Frozen contract
+`05b6ba498344fc412a810bb79eb80344f90577a442ce03c41637cbabd4a26ce1`
+accepted exact three-path patch
+`229d326bb22f46b992bc6d6212be1346de88b0d5bf1b9cad56dc0150611066c8`
+as candidate tree `40137fa6306e8c282da16fbeb0d46418e27d0f3a`. The isolated verifier
+retained the 1,389-entry protected manifest
+`f0d009cd1b48b6c850b45026a2956fea752c8e9cf932022d7e34aa37cf5fb2bb`
+and returned `ACCEPT` for format/build, five public, fifteen independent, and
+twenty-one regression tests. Its 118,202-byte session artifact has SHA-256
+`94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
 
 ADR-0018 remains Proposed until G1.7 closes the compatibility, performance,
-and current-evidence promotion boundary; G1.5b completion alone does not grant
-promotion authority.
+and current-evidence promotion boundary; G1.5c completion alone does not grant
+promotion authority or add savepoints to caller-owned transactions.
 The executable plan identifiers are G1.1-G1.5c in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

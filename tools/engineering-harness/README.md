@@ -74,6 +74,18 @@ and returned `ACCEPT` for format/build/public-6/independent-2/regression-2 in
 313.959 seconds. The verifier session receipt has SHA-256
 `1a6061c95e1cf960aeb8d7f0145b032c60a0423e0f69afbc5a92731a3594729a`.
 
+G1.5c product commit `3afe1e78` passed its direct frozen verification after an
+exact `CONFIRMED_RED` preflight. Contract
+`05b6ba498344fc412a810bb79eb80344f90577a442ce03c41637cbabd4a26ce1`
+admitted the 7,252-byte three-path patch
+`229d326bb22f46b992bc6d6212be1346de88b0d5bf1b9cad56dc0150611066c8`
+as candidate tree `40137fa6306e8c282da16fbeb0d46418e27d0f3a`, retained the
+1,389-entry protected manifest
+`f0d009cd1b48b6c850b45026a2956fea752c8e9cf932022d7e34aa37cf5fb2bb`,
+and returned `ACCEPT` for format/build/public-5/independent-15/regression-21 in
+1,337.018 seconds. The 118,202-byte verifier session has SHA-256
+`94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
+
 Install and verify from this directory:
 
 ```bash

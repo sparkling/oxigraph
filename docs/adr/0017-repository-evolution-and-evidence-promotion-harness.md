@@ -268,14 +268,14 @@ initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
 and G2.4a-G2.4b leaves, and G4.1-G4.8. `HARNESS-REGISTRY` is a named harness
 control between G1.6 and the G2.1 evaluator freeze, not a product G-identifier.
 
-The current native `task_create` surface stores rows in the local file-backed
-`.claude-flow/tasks/store.json` ledger and has no dependency argument, so
-creation is serialized and rows carry dependencies in their descriptions and
-`depends:<plan-id>` tags. Historical task descriptions may be stale. The
-committed G-identifiers and GOAP tables remain the portable authority; any
-committed Ruflo task IDs are repository-local audit pointers only and never
-prove product behavior. The corrected repository-local adjacency map was read
-back through the managed bridge at
+The current managed task surface persists repository-local execution state but
+does not expose a dependency or description-edit argument. Rows therefore
+carry the dependency text available when they were created, and historical
+descriptions may be stale. The committed G-identifiers and GOAP tables remain
+the portable authority; any committed Ruflo task IDs are repository-local
+audit pointers only and never prove product behavior. The corrected
+repository-local adjacency map was stored and read back through the managed
+Ruflo CLI against `.swarm/memory.db` at
 `task-plans/linked-data-store-g0-g4-2026-08-25-v2`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
@@ -429,8 +429,10 @@ Source-bound engineering evidence on 2026-08-25 established:
 - direct frozen candidate acceptance for G1.5's unified-egress 12/8/13
   evaluator split in a read-only, network-isolated verifier session; and
 - direct frozen candidate acceptance for G1.5b's update-owned cancellation
-  6/6/12 evaluator split. G1.5c negotiated generic admission and G1.6 runtime
-  claims remain separate evaluator-first tasks.
+  6/6/12 evaluator split; and
+- direct frozen candidate acceptance for G1.5c's negotiated generic admission
+  5/15/21 evaluator split. G1.6 runtime claims remain a separate
+  evaluator-first task.
 
 ## Decision boundary
 

@@ -30,7 +30,8 @@ and reviews application candidates without promotion authority. The green
 G1.1 reference oracle, separate red G1.2 evaluator, and source-bound G1.2-G1.4
 product slices have landed. G1.5's unified-egress profile and G1.5b's
 owned-update cancellation profile are also source-bound. G1.5c negotiated
-backend admission and G1.6 runtime-derived service claims remain open.
+backend admission is accepted by its frozen 5/15/21 evaluator split; G1.6
+runtime-derived service claims remain open.
 G0.1-G0.5 are complete for their exact source-bound scopes; G0.6 mutation,
 G0.7 protected-evidence freeze, and G1.7 promotion remain open.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
@@ -61,14 +62,14 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Backend-neutral write seam | Implemented and verified in `1da47285` | Preserve the minimal GAT traits; add optional capabilities through extension traits |
 | Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
 | RocksDB writers | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis |
-| Built-in remote egress and owned updates | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary | Advertise only those proven profiles; complete negotiated generic admission and runtime-derived claims before accepting ADR-0019 |
+| Built-in remote egress and owned updates | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary; G1.5c's 5/15/21 profile carries the exact request/token through negotiated custom and `Store` admission | Advertise only those proven profiles; complete runtime-derived claims before accepting ADR-0019 |
 | Jena differential | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for that exact subject | Scoped task complete; later protected-source drift is reconciled by G0.7 and promoted only through G1.7 |
 | Jena runner lock | G0.2 restored the reviewed `runner/Cargo.lock` strategy in `46ef17fc`, so the pinned runner executes with `--locked` from a clean checkout | Scoped task complete; retain the lock as protected evidence |
 | Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` bind 144/144 default, 129/129 no-default, and 34/34 `persistence-write` tests | Scoped tasks complete; later count or ID drift still fails closed |
 | Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
 | MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by G0.6 mutation evidence and G0.7 protected-evidence reconciliation/freeze; G1.7 promotion is separate |
-| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest receipts are implemented; G1.2-G1.5b have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact receipt |
+| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest receipts are implemented; G1.2-G1.5c have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact receipt |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -105,7 +106,7 @@ outside the programme until a further named decision admits them.
 | Brain | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims | Local source/tests remain authoritative for Oxigraph |
 | MetaHarness genome/score/OIA | Readiness and risk diagnostics | Generic identity and scores are advisory |
 | Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof; do not make it a worker host |
-| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Implemented for G1.2-G1.5b; still no semantic or promotion authority |
+| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate receipts | Implemented for G1.2-G1.6 registration and accepted product candidates through G1.5c; still no semantic or promotion authority |
 | Darwin | Deterministic, bounded policy mutation after a product slice exists | `--confirm` requires operator review; never mutate product or oracle inputs |
 | Dream Machine | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled |
 
@@ -334,10 +335,22 @@ Execution record on 2026-08-25:
   `65cedf8d5a2cb289b3cd60d929fbc04fbbd1332e508a2bfd697f738b51c2c0f3`,
   and the verifier artifact is
   `4f6107ca9357ccc15b353a858729e8110495ec5079a40785f2edb9a83ca18f48`.
-  The receipt covers transactions owned by the update binding. G1.5c still
-  owns cancellable negotiated admission for a generic backend, while
-  caller-owned transactions require caller rollback and are outside this
-  receipt. G1.5c and G1.6 therefore keep ADR-0019 Proposed.
+  The receipt covers transactions owned by the update binding; caller-owned
+  transactions require caller rollback and remain outside it.
+- G1.5c's negotiated backend-admission profile is implemented in product
+  commit `3afe1e78`. Frozen contract
+  `05b6ba498344fc412a810bb79eb80344f90577a442ce03c41637cbabd4a26ce1`
+  reconstructed exact patch
+  `229d326bb22f46b992bc6d6212be1346de88b0d5bf1b9cad56dc0150611066c8`
+  as candidate commit `bbbbc5aa6b1cb1ba283c272e1f87fbc53483b728`, tree
+  `40137fa6306e8c282da16fbeb0d46418e27d0f3a`, retained protected
+  manifest `f0d009cd1b48b6c850b45026a2956fea752c8e9cf932022d7e34aa37cf5fb2bb`,
+  and returned `ACCEPT` for format/build/public-5/independent-15/regression-21
+  in 1,337.018 seconds. The frozen evaluator is `fbd11e18`; the verifier
+  artifact is
+  `94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
+  This closes negotiated admission without adding savepoints or changing the
+  caller-owned rollback boundary. G1.6 alone now keeps ADR-0019 Proposed.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -367,11 +380,11 @@ Engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
 baseline commit, evaluator commit, mutable/blocked paths, features, targets,
 three command roles, time/output/resource ceilings, and success criteria.
-The G1.1-G1.5b evaluator files and the G1.2-G1.5b task contracts are
-implemented. G1.5c and later task contracts remain gated on their direct
-evaluator-only commits. G1.5 covers remote egress; G1.5b covers cancellation
-for update-owned transactions. Neither erases the separately outstanding
-negotiated generic-admission boundary.
+The G1.1-G1.6 evaluator files and G1.2-G1.6 task contracts are implemented.
+Direct candidate acceptance is current through G1.5c; G1.6 remains at its
+evaluator-first qualification gate. G1.5 covers remote egress, G1.5b covers
+cancellation for update-owned transactions, and G1.5c covers negotiated
+generic admission without changing the caller-owned rollback boundary.
 
 Implementation order is fixed: accept the version/authority policy; land the
 green G1.1 reference oracle and the separate red G1.2 evaluator-only commit;
