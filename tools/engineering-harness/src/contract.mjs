@@ -812,7 +812,7 @@ const EXPECTED_G15B = Object.freeze({
     primaryPath: "lib/oxigraph/tests/sparql_update_cancellation.rs",
     requiredExports: ["Cancelled"],
     requiredSubstrings: [
-      "no variant or associated item named `Cancelled` found for enum `UpdateEvaluationError`",
+      "no variant, associated function, or constant named `Cancelled` found for enum `UpdateEvaluationError`",
       "could not compile `oxigraph` (test \"sparql_update_cancellation\") due to 1 previous error",
     ],
     forbiddenSubstrings: [
