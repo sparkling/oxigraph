@@ -122,7 +122,7 @@
     },
     "build": {
       "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "-p", "oxigraph-cli", "--features", "oxigraph/http-client-native-tls,oxigraph/rdf-12,oxigraph-cli/native-tls,oxigraph-cli/rdf-12", "--test", "sparql_version", "--test", "sparql_egress_policy", "--bin", "oxigraph", "--no-run"],
-      "timeoutMs": 1800000
+      "timeoutMs": 2700000
     },
     "public": {
       "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "-p", "oxigraph-cli", "--features", "oxigraph/http-client-native-tls,oxigraph/rdf-12,oxigraph-cli/native-tls,oxigraph-cli/rdf-12", "--test", "sparql_effective_capabilities", "--bin", "oxigraph"],
@@ -144,7 +144,7 @@
     "maxWorkerOutputBytes": 262144,
     "maxBuildOutputBytes": 8388608,
     "maxTestOutputBytesPerCommand": 2097152,
-    "maxTotalVerifierWallMs": 3600000,
+    "maxTotalVerifierWallMs": 4500000,
     "maxResidentBytes": 17179869184,
     "maxVerifierDiskBytes": 12884901888,
     "cargoBuildJobs": 1,

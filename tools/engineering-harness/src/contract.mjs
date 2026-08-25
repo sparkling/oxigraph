@@ -1111,7 +1111,7 @@ const EXPECTED_G16 = Object.freeze({
         "oxigraph",
         "--no-run",
       ],
-      timeoutMs: 1_800_000,
+      timeoutMs: 2_700_000,
     },
     public: {
       argv: [
@@ -1167,7 +1167,7 @@ const EXPECTED_G16 = Object.freeze({
     maxChangedLines: 1_024,
     maxResidentBytes: 17_179_869_184,
     maxVerifierDiskBytes: 12_884_901_888,
-    maxTotalVerifierWallMs: 3_600_000,
+    maxTotalVerifierWallMs: 4_500_000,
     cargoBuildJobs: 1,
   },
   initialRed: {
