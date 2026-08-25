@@ -236,6 +236,18 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     ),
     false,
   );
+  assert.equal(
+    resolution.contract.commands.independent.argv[
+      resolution.contract.commands.independent.argv.indexOf("--features") + 1
+    ],
+    "http-client-native-tls,rdf-12",
+  );
+  assert.equal(
+    resolution.contract.commands.regression.argv[
+      resolution.contract.commands.regression.argv.indexOf("--features") + 1
+    ],
+    "http-client-native-tls,rdf-12",
+  );
   assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
