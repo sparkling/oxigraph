@@ -105,12 +105,16 @@ test("candidate choice and review retain deterministic native and cross-vendor r
   ];
   assert.equal(chooseVerifiedCandidate(attempts).candidateSha256, "b".repeat(64));
   assert.deepEqual(reviewProviderPlan(routed("codex"), "codex"), {
-    providers: ["codex", "claude"],
-    forcedCrossVendor: true,
+    providers: ["codex"],
+    crossVendorAvailable: false,
   });
   assert.deepEqual(reviewProviderPlan(routed("claude"), "codex"), {
     providers: ["claude"],
-    forcedCrossVendor: false,
+    crossVendorAvailable: true,
+  });
+  assert.deepEqual(reviewProviderPlan(paired, "codex"), {
+    providers: ["codex", "claude"],
+    crossVendorAvailable: true,
   });
 });
 

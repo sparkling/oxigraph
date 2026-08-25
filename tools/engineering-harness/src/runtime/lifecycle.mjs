@@ -134,19 +134,16 @@ export function reviewProviderPlan(decision, implementationProvider) {
   if (decision.mode === "paired") {
     return Object.freeze({
       providers: Object.freeze([...NATIVE_PROVIDERS]),
-      forcedCrossVendor: false,
+      crossVendorAvailable: true,
     });
   }
-  const crossProvider = NATIVE_PROVIDERS.find(
-    (provider) => provider !== implementationProvider,
-  );
-  const providers =
-    decision.provider === implementationProvider
-      ? [decision.provider, crossProvider]
-      : [decision.provider];
   return Object.freeze({
-    providers: Object.freeze(providers),
-    forcedCrossVendor: decision.provider === implementationProvider,
+    // A routed decision authorizes only its selected provider. Manufacturing a
+    // second "forced" provider here would make the invocation impossible to
+    // bind to its routing receipt. The programme must remain INCONCLUSIVE when
+    // this provider produced the selected patch and wait for a paired route.
+    providers: Object.freeze([decision.provider]),
+    crossVendorAvailable: decision.provider !== implementationProvider,
   });
 }
 
