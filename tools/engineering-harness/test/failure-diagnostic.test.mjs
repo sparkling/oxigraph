@@ -139,6 +139,16 @@ test("errno and IO-area evidence follows the reviewed precedence matrix", async 
       ioArea: "source",
     },
     {
+      name: "missing source template",
+      line: [
+        "error: couldn't read `cli/src/../templates/yasgui/yasgui.min.js`: No such file or directory (os error 2)",
+        "  --> cli/src/main.rs:71:28",
+      ].join("\n"),
+      primaryClass: "sandbox-filesystem",
+      ioErrno: "ENOENT",
+      ioArea: "source",
+    },
+    {
       name: "missing",
       line: "failed to open /unclassified/location: No such file or directory",
       primaryClass: "sandbox-filesystem",

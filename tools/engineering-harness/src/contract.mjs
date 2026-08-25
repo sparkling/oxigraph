@@ -1203,7 +1203,14 @@ const EXPECTED_G16 = Object.freeze({
       protectedSha256:
         "9dec147750fffea5f504db1b0fd3b29a3aeba9514f297e6d9c2bf6ae2b359fe9",
     },
-    submodules: EXPECTED.protectedInputs.submodules,
+    submodules: [
+      ...EXPECTED.protectedInputs.submodules,
+      {
+        path: "cli/templates/yasgui",
+        commit: "05a7ac428edeab35e40f66cafe0589ac9d224ee6",
+        tree: "84c72c5bced4d33c566a915aa7bb126d9220fe84",
+      },
+    ],
   },
 });
 
@@ -1411,8 +1418,11 @@ function validateProtectedInputs(inputs, expected) {
     validateHash(manifest.fullSha256, HEX64, `${name} full digest`);
     validateHash(manifest.protectedSha256, HEX64, `${name} protected digest`);
   }
-  if (!Array.isArray(inputs.submodules) || inputs.submodules.length !== 2) {
-    fail("protectedInputs.submodules must contain the two frozen gitlinks");
+  if (
+    !Array.isArray(inputs.submodules) ||
+    inputs.submodules.length !== expected.protectedInputs.submodules.length
+  ) {
+    fail("protectedInputs.submodules must contain every frozen gitlink");
   }
   for (const [index, submodule] of inputs.submodules.entries()) {
     exactKeys(submodule, ["path", "commit", "tree"], `submodules[${index}]`);
@@ -1420,7 +1430,10 @@ function validateProtectedInputs(inputs, expected) {
     validateHash(submodule.commit, HEX40, `submodules[${index}].commit`);
     validateHash(submodule.tree, HEX40, `submodules[${index}].tree`);
   }
-  if (new Set(inputs.submodules.map(({ path }) => path)).size !== 2) {
+  if (
+    new Set(inputs.submodules.map(({ path }) => path)).size !==
+    inputs.submodules.length
+  ) {
     fail("protectedInputs.submodules paths must be unique");
   }
   exactValue(inputs, expected.protectedInputs, "protectedInputs");

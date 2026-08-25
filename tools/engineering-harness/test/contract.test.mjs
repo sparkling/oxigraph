@@ -195,6 +195,11 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
   assert.equal(resolution.contract.ceilings.cargoBuildJobs, 1);
   assert.equal(resolution.contract.ceilings.maxResidentBytes, 17_179_869_184);
   assert.equal(resolution.contract.ceilings.maxVerifierDiskBytes, 12_884_901_888);
+  assert.deepEqual(resolution.contract.protectedInputs.submodules.at(-1), {
+    path: "cli/templates/yasgui",
+    commit: "05a7ac428edeab35e40f66cafe0589ac9d224ee6",
+    tree: "84c72c5bced4d33c566a915aa7bb126d9220fe84",
+  });
   assert.deepEqual(resolution.contract.scope.mutableExact, g16Profile.mutablePaths);
   assert.equal(g16Profile.taskClass, "runtime-service-capabilities");
   assert.deepEqual(g16Profile.sourceAllowlist, [

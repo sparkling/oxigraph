@@ -63,6 +63,11 @@
         "path": "oxrocksdb-sys/rocksdb",
         "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
         "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      },
+      {
+        "path": "cli/templates/yasgui",
+        "commit": "05a7ac428edeab35e40f66cafe0589ac9d224ee6",
+        "tree": "84c72c5bced4d33c566a915aa7bb126d9220fe84"
       }
     ]
   },

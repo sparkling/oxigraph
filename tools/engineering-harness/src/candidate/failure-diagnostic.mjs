@@ -267,7 +267,7 @@ function ioArea(output, index) {
   if (/(?:^|[\s'"`])\/state\/tmp(?:[\/\s'"`:]|$)/u.test(context)) {
     return "temp";
   }
-  if (/temporary|temp(?:\s+(?:dir|directory|file))?|TMPDIR|(?:^|[\\/])tmp[\\/]/iu.test(context)) {
+  if (/\btemporary\b|\btemp(?:\s+(?:dir|directory|file))?\b|TMPDIR|(?:^|[\\/])tmp[\\/]/iu.test(context)) {
     return "temp";
   }
   if (/CARGO_TARGET_DIR|(?:^|[\\/])target[\\/]|target\s+(?:dir|directory)/iu.test(context)) {
