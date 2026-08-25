@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createGitHome, runGit } from "../src/candidate/git.mjs";
-import {
-  verifyCandidate,
-  verifyRedBaseline,
-} from "../src/candidate/verifier.mjs";
+import { createVerifierForTesting } from "../src/candidate/verifier.mjs";
+import { sha256 } from "../src/candidate/manifest.mjs";
 
 const identity = Object.freeze({
   GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
@@ -103,89 +101,135 @@ async function fixture(t) {
   };
 }
 
-function fakeRunner({ calls, publicRed = false, buildFails = false }) {
-  return async ({ argv, targetRoot }) => {
-    const name = Object.entries(commands).find(
-      ([, definition]) => JSON.stringify(definition.argv) === JSON.stringify(argv),
-    )?.[0];
-    if (name === undefined) throw new Error(`unexpected command: ${argv.join(" ")}`);
-    calls.push(name);
-    if (name === "build" && !buildFails) {
-      const deps = join(targetRoot, "debug", "deps");
-      await mkdir(deps, { recursive: true });
-      for (const prefix of [
-        "public_fixture",
-        "independent_fixture",
-        "regression_fixture",
-      ]) {
-        const artifact = join(deps, `${prefix}-sealed`);
-        await writeFile(artifact, prefix, "utf8");
-        await chmod(artifact, 0o700);
+function fakeSessionRunner({ calls, publicRed = false, buildFails = false }) {
+  return async (options) => {
+    calls.push(options);
+    const names = buildFails
+      ? ["format", "build"]
+      : ["format", "build", "public", "independent", "regression"];
+    const records = names.map((name) => {
+      let exitCode = name === "build" && buildFails ? 101 : 0;
+      let stdout = "";
+      if (name === "public") {
+        if (publicRed) {
+          exitCode = 101;
+          stdout = [
+            "lost update reproduced",
+            "write skew reproduced",
+            "test result: FAILED. 0 passed; 2 failed; 0 ignored",
+          ].join("\n");
+        } else {
+          stdout = "test result: ok. 2 passed; 0 failed; 0 ignored";
+        }
       }
-    }
-    let exitCode = name === "build" && buildFails ? 101 : 0;
-    let stdout = "";
-    if (name === "public") {
-      if (publicRed) {
-        exitCode = 101;
-        stdout = [
-          "lost update reproduced",
-          "write skew reproduced",
-          "test result: FAILED. 0 passed; 2 failed; 0 ignored",
-        ].join("\n");
-      } else {
+      if (name === "independent") {
+        stdout = "test result: ok. 3 passed; 0 failed; 0 ignored";
+      }
+      if (name === "regression") {
         stdout = "test result: ok. 2 passed; 0 failed; 0 ignored";
       }
-    }
-    if (name === "independent") {
-      stdout = "test result: ok. 3 passed; 0 failed; 0 ignored";
-    }
-    if (name === "regression") {
-      stdout = "test result: ok. 2 passed; 0 failed; 0 ignored";
-    }
-    return {
-      logicalArgv: Object.freeze([...argv]),
-      argv: Object.freeze(["sandbox", ...argv]),
-      network: "isolated",
-      workspace: "read-only",
-      outcome: Object.freeze({
+      return Object.freeze({
+        name,
+        logicalArgv: Object.freeze([...commands[name].argv]),
         exitCode,
         signal: null,
         disposition: "completed",
         durationMs: 1,
         stdout,
         stderr: "",
+        stdoutSha256: sha256(stdout),
+        stderrSha256: sha256(""),
+      });
+    });
+    return Object.freeze({
+      invocation: Object.freeze({
+        argv: Object.freeze([
+          "/usr/bin/systemd-run",
+          "--user",
+          "--scope",
+          "--",
+          "/usr/bin/bwrap",
+          "--size",
+          String(options.maxDiskBytes),
+          "--tmpfs",
+          "/state",
+        ]),
+        logicalCommands: Object.freeze([]),
+        network: "isolated",
+        workspace: "read-only",
+        state: "single-quota-tmpfs",
       }),
-    };
+      outcome: Object.freeze({
+        exitCode: 0,
+        signal: null,
+        disposition: "completed",
+        durationMs: 5,
+        stdout: "",
+        stderr: "",
+      }),
+      resultSha256: sha256(`session:${publicRed}:${buildFails}`),
+      resultBytes: 1024,
+      session: Object.freeze({
+        schemaVersion: 1,
+        status: "completed",
+        stage: buildFails ? "build" : "complete",
+        commands: Object.freeze(records),
+        artifacts: buildFails
+          ? Object.freeze([])
+          : Object.freeze(
+              ["public_fixture", "independent_fixture", "regression_fixture"].map(
+                (name) => Object.freeze({
+                  name: `${name}-sealed`,
+                  sha256: sha256(name),
+                  bytes: name.length,
+                  mode: 0o700,
+                }),
+              ),
+            ),
+        stateBytes: 4096,
+        durationMs: 5,
+      }),
+    });
   };
 }
 
-test("candidate verifier rebuilds before every independent evaluator and binds artifacts", async (t) => {
+test("candidate verifier runs one persistent session and binds invocation and result evidence", async (t) => {
   const { candidate } = await fixture(t);
   const calls = [];
-  const result = await verifyCandidate({
+  const verifier = createVerifierForTesting(fakeSessionRunner({ calls }));
+  const result = await verifier.verifyCandidate({
     candidate,
     contract,
-    commandRunner: fakeRunner({ calls }),
   });
   assert.equal(result.verdict, "ACCEPT");
-  assert.deepEqual(calls, ["format", "build", "public", "independent", "regression"]);
-  assert.equal(result.artifacts.length, 3);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].workspace, candidate.workspace);
+  assert.equal(Object.hasOwn(calls[0], "targetRoot"), false);
+  assert.equal(Object.hasOwn(calls[0], "commandTemp"), false);
+  assert.equal(result.artifacts.length, 4);
   assert.ok(result.artifacts.every(({ sha256 }) => /^[0-9a-f]{64}$/.test(sha256)));
   assert.ok(result.commands.every(({ network }) => network === "isolated"));
+  assert.ok(result.commands.every(({ sandboxArgv }) => sandboxArgv === result.commands[0].sandboxArgv));
+  assert.deepEqual(result.artifacts.at(-1), {
+    name: "verifier-session-result.json",
+    sha256: sha256("session:false:false"),
+    bytes: 1024,
+  });
 });
 
 test("candidate verifier stops at a failed build", async (t) => {
   const { candidate } = await fixture(t);
   const calls = [];
-  const result = await verifyCandidate({
+  const verifier = createVerifierForTesting(fakeSessionRunner({ calls, buildFails: true }));
+  const result = await verifier.verifyCandidate({
     candidate,
     contract,
-    commandRunner: fakeRunner({ calls, buildFails: true }),
   });
   assert.equal(result.verdict, "REJECT");
   assert.equal(result.stage, "build");
-  assert.deepEqual(calls, ["format", "build"]);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(result.commands.map(({ name }) => name), ["format", "build"]);
+  assert.deepEqual(result.artifacts.map(({ name }) => name), ["verifier-session-result.json"]);
 });
 
 test("red baseline requires the exact anomaly and green independent references", async (t) => {
@@ -200,13 +244,17 @@ test("red baseline requires the exact anomaly and green independent references",
     evaluator: Object.freeze({ commit: evaluator.candidateCommit }),
   });
   const calls = [];
-  const result = await verifyRedBaseline({
+  const verifier = createVerifierForTesting(fakeSessionRunner({ calls, publicRed: true }));
+  const result = await verifier.verifyRedBaseline({
     candidate: evaluator,
     contract: redContract,
-    commandRunner: fakeRunner({ calls, publicRed: true }),
   });
   assert.equal(result.verdict, "CONFIRMED_RED");
   assert.equal(result.initialRedMatched, true);
   assert.equal(result.referencesGreen, true);
-  assert.deepEqual(calls, ["format", "build", "public", "independent", "regression"]);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(
+    result.commands.map(({ name }) => name),
+    ["format", "build", "public", "independent", "regression"],
+  );
 });

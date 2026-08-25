@@ -1,113 +1,20 @@
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
-import { performance } from "node:perf_hooks";
-import { basename, join } from "node:path";
 import { runGit } from "./git.mjs";
-import { sha256 } from "./manifest.mjs";
-import { runSandboxCommand } from "./sandbox.mjs";
+import { runSandboxVerificationSession } from "./sandbox-session.mjs";
 
-async function directoryBytes(path) {
-  let total = 0;
-  for (const entry of await readdir(path, { withFileTypes: true })) {
-    const child = join(path, entry.name);
-    if (entry.isDirectory()) total += await directoryBytes(child);
-    else total += (await lstat(child)).size;
-  }
-  return total;
-}
-
-function fileSha256(path) {
-  return new Promise((resolve, reject) => {
-    const hash = createHash("sha256");
-    const stream = createReadStream(path);
-    stream.on("error", reject);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("end", () => resolve(hash.digest("hex")));
-  });
-}
-
-async function artifactEvidence(targetRoot, prefixes) {
-  if (!Array.isArray(prefixes) || prefixes.length === 0) {
-    throw new Error("task contract must declare rebuilt artifact prefixes");
-  }
-  const dependencyRoot = join(targetRoot, "debug", "deps");
-  const entries = await readdir(dependencyRoot, { withFileTypes: true });
-  const reports = [];
-  for (const prefix of prefixes) {
-    const matches = entries
-      .filter(
-        (entry) =>
-          entry.isFile() &&
-          entry.name.startsWith(`${prefix}-`) &&
-          !entry.name.endsWith(".d"),
-      )
-      .map((entry) => join(dependencyRoot, entry.name))
-      .sort();
-    if (matches.length === 0) {
-      throw new Error(`fresh build did not produce the ${prefix} test artifact`);
-    }
-    for (const path of matches) {
-      const mode = (await lstat(path)).mode;
-      if ((mode & 0o111) === 0) continue;
-      reports.push(
-        Object.freeze({
-          name: basename(path),
-          sha256: await fileSha256(path),
-          bytes: (await lstat(path)).size,
-        }),
-      );
-    }
-    if (!reports.some(({ name }) => name.startsWith(`${prefix}-`))) {
-      throw new Error(`fresh ${prefix} artifact is not executable`);
-    }
-  }
-  return Object.freeze(reports);
-}
-
-function artifactPrefixes(contract) {
-  const prefixes = [];
-  const argv = contract.commands.build.argv;
-  for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === "--test" && typeof argv[index + 1] === "string") {
-      prefixes.push(argv[index + 1]);
-      index += 1;
-    }
-  }
-  return [...new Set(prefixes)];
-}
-
-function commandEvidence(name, execution) {
-  const { outcome } = execution;
-  return Object.freeze({
-    name,
-    logicalArgv: execution.logicalArgv,
-    sandboxArgv: execution.argv,
-    network: execution.network,
-    workspace: execution.workspace,
-    exitCode: outcome.exitCode,
-    signal: outcome.signal,
-    disposition: outcome.disposition,
-    durationMs: outcome.durationMs,
-    stdoutSha256: sha256(outcome.stdout),
-    stderrSha256: sha256(outcome.stderr),
-    stdoutTail: outcome.stdout.slice(-4096),
-    stderrTail: outcome.stderr.slice(-4096),
-  });
-}
+const commandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "independent",
+  "regression",
+]);
+const evaluatorNames = Object.freeze(["public", "independent", "regression"]);
+const sessionArtifactName = "verifier-session-result.json";
 
 async function assertCandidateIdentity(candidate) {
   const [commit, tree] = await Promise.all([
-    runGit({
-      args: ["rev-parse", "HEAD"],
-      cwd: candidate.workspace,
-      home: candidate.gitHome,
-    }),
-    runGit({
-      args: ["rev-parse", "HEAD^{tree}"],
-      cwd: candidate.workspace,
-      home: candidate.gitHome,
-    }),
+    runGit({ args: ["rev-parse", "HEAD"], cwd: candidate.workspace, home: candidate.gitHome }),
+    runGit({ args: ["rev-parse", "HEAD^{tree}"], cwd: candidate.workspace, home: candidate.gitHome }),
   ]);
   if (commit.trim() !== candidate.candidateCommit) {
     throw new Error("candidate workspace no longer resolves to its sealed commit");
@@ -117,207 +24,196 @@ async function assertCandidateIdentity(candidate) {
   }
 }
 
-function commandPassed(command, expectedPassed) {
-  return (
-    command.disposition === "completed" &&
-    command.exitCode === 0 &&
-    `${command.stdoutTail}\n${command.stderrTail}`.includes(
-      `test result: ok. ${expectedPassed} passed; 0 failed;`,
-    )
-  );
+function sameArgv(left, right) {
+  return Array.isArray(left) && left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-async function createVerificationSession({
-  candidate,
-  contract,
-  signal,
-  commandRunner,
-}) {
-  const started = performance.now();
-  const totalCeiling = contract.ceilings.maxTotalVerifierWallMs;
-  const totalSignal = signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(totalCeiling)])
-    : AbortSignal.timeout(totalCeiling);
+function normalizedDisposition(value) {
+  if (["timeout", "timeout-unreaped"].includes(value)) return "timed-out";
+  if (["output-limit", "output-limit-unreaped"].includes(value)) return "output-limit";
+  return value;
+}
+
+function commandEvidence(record, sandboxArgv) {
+  return Object.freeze({
+    name: record.name,
+    logicalArgv: record.logicalArgv,
+    sandboxArgv,
+    network: "isolated",
+    workspace: "read-only",
+    exitCode: record.exitCode,
+    signal: record.signal,
+    disposition: normalizedDisposition(record.disposition),
+    durationMs: record.durationMs,
+    stdoutSha256: record.stdoutSha256,
+    stderrSha256: record.stderrSha256,
+    stdoutTail: record.stdout.slice(-4096),
+    stderrTail: record.stderr.slice(-4096),
+  });
+}
+
+function sessionResultArtifact(report) {
+  return Object.freeze({ name: sessionArtifactName, sha256: report.resultSha256, bytes: report.resultBytes });
+}
+
+function normalizedArtifacts(report) {
+  if (report.session.artifacts.some(({ name }) => name === sessionArtifactName)) {
+    throw new Error("verifier executable artifact collides with reserved session evidence");
+  }
+  return Object.freeze([
+    ...report.session.artifacts.map(({ name, sha256, bytes }) => Object.freeze({ name, sha256, bytes })),
+    sessionResultArtifact(report),
+  ]);
+}
+
+function validateSessionReport(report, contract) {
+  if (
+    report?.session?.status !== "completed" ||
+    report?.outcome?.disposition !== "completed" ||
+    report.outcome.exitCode !== 0 ||
+    report?.invocation?.network !== "isolated" ||
+    report.invocation.workspace !== "read-only" ||
+    report.invocation.state !== "single-quota-tmpfs" ||
+    !Array.isArray(report.invocation.argv) ||
+    report.invocation.argv.length < 2 ||
+    report.invocation.argv.some((argument) => typeof argument !== "string" || argument.includes("\0")) ||
+    !/^[a-f0-9]{64}$/.test(report.resultSha256) ||
+    !Number.isSafeInteger(report.resultBytes) ||
+    report.resultBytes < 1 ||
+    !Array.isArray(report.session.commands) ||
+    !Array.isArray(report.session.artifacts)
+  ) {
+    throw new Error("single-session verifier returned invalid infrastructure evidence");
+  }
+  const expectedCounts = Object.freeze({ format: 1, build: 2, complete: 5 });
+  if (report.session.commands.length !== expectedCounts[report.session.stage]) {
+    throw new Error("single-session verifier stage and command count disagree");
+  }
+  for (let index = 0; index < report.session.commands.length; index += 1) {
+    const record = report.session.commands[index];
+    const name = commandOrder[index];
+    if (
+      record?.name !== name ||
+      !sameArgv(record.logicalArgv, contract.commands[name].argv) ||
+      !["completed", "timeout", "timeout-unreaped", "output-limit", "output-limit-unreaped"].includes(record.disposition) ||
+      typeof record.stdout !== "string" ||
+      typeof record.stderr !== "string" ||
+      !/^[a-f0-9]{64}$/.test(record.stdoutSha256) ||
+      !/^[a-f0-9]{64}$/.test(record.stderrSha256)
+    ) {
+      throw new Error(`single-session verifier returned invalid ${name} evidence`);
+    }
+  }
+  for (const artifact of report.session.artifacts) {
+    if (
+      artifact === null ||
+      typeof artifact !== "object" ||
+      typeof artifact.name !== "string" ||
+      !/^[a-f0-9]{64}$/.test(artifact.sha256) ||
+      !Number.isSafeInteger(artifact.bytes) ||
+      artifact.bytes < 1
+    ) {
+      throw new Error("single-session verifier returned invalid artifact evidence");
+    }
+  }
+  return report;
+}
+
+async function createVerificationSession({ candidate, contract, signal, sessionRunner }) {
   await assertCandidateIdentity(candidate);
-  const commands = [];
-  const rawOutcomes = new Map();
-  const execute = async (name, definition, outputCeiling) => {
-    const execution = await commandRunner({
+  const report = validateSessionReport(
+    await sessionRunner({
       workspace: candidate.workspace,
-      targetRoot: candidate.targetRoot,
-      commandTemp: candidate.commandTemp,
-      argv: definition.argv,
-      timeoutMs: definition.timeoutMs,
-      maxOutputBytes: outputCeiling,
-      cargoBuildJobs: contract.ceilings.cargoBuildJobs,
+      commands: contract.commands,
+      maxTotalWallMs: contract.ceilings.maxTotalVerifierWallMs,
       maxResidentBytes: contract.ceilings.maxResidentBytes,
       maxDiskBytes: contract.ceilings.maxVerifierDiskBytes,
-      signal: totalSignal,
-    });
-    const evidence = commandEvidence(name, execution);
-    commands.push(evidence);
-    rawOutcomes.set(name, execution.outcome);
-    const diskBytes =
-      (await directoryBytes(candidate.targetRoot)) +
-      (await directoryBytes(candidate.commandTemp));
-    if (diskBytes > contract.ceilings.maxVerifierDiskBytes) {
-      throw new Error(`candidate verifier exceeded its disk ceiling: ${diskBytes}`);
-    }
-    await assertCandidateIdentity(candidate);
-    return evidence;
-  };
+      cargoBuildJobs: contract.ceilings.cargoBuildJobs,
+      maxBuildOutputBytes: contract.ceilings.maxBuildOutputBytes,
+      maxTestOutputBytesPerCommand: contract.ceilings.maxTestOutputBytesPerCommand,
+      signal,
+    }),
+    contract,
+  );
+  await assertCandidateIdentity(candidate);
+  const commands = Object.freeze(report.session.commands.map((record) => commandEvidence(record, report.invocation.argv)));
   return Object.freeze({
-    started,
+    report,
     commands,
-    rawOutcomes,
-    execute,
+    rawOutcomes: new Map(report.session.commands.map((record) => [record.name, record])),
+    artifacts: normalizedArtifacts(report),
+    durationMs: report.session.durationMs,
   });
 }
 
 function earlyVerdict(session, verdict, stage) {
-  return Object.freeze({
-    verdict,
-    stage,
-    commands: Object.freeze([...session.commands]),
-    artifacts: Object.freeze([]),
-    durationMs: Math.round(performance.now() - session.started),
-  });
+  return Object.freeze({ verdict, stage, commands: session.commands, artifacts: session.artifacts, durationMs: session.durationMs });
 }
 
-export async function verifyCandidate({
-  candidate,
-  contract,
-  signal,
-  commandRunner = runSandboxCommand,
-}) {
+function commandPassed(command, expectedPassed) {
+  return command.disposition === "completed" && command.exitCode === 0 && `${command.stdoutTail}\n${command.stderrTail}`.includes(`test result: ok. ${expectedPassed} passed; 0 failed;`);
+}
+
+async function verifyCandidateWithRunner({ candidate, contract, signal }, sessionRunner) {
   if (candidate.kind !== "candidate" || candidate.candidatePatchSha256 === null) {
     throw new Error("candidate verification requires a sealed product patch");
   }
-  const session = await createVerificationSession({
-    candidate,
-    contract,
-    signal,
-    commandRunner,
-  });
-
-  const format = await session.execute(
-    "format",
-    contract.commands.format,
-    contract.ceilings.maxTestOutputBytesPerCommand,
-  );
-  if (format.disposition !== "completed" || format.exitCode !== 0) {
-    return earlyVerdict(session, "REJECT", "format");
-  }
-  const build = await session.execute(
-    "build",
-    contract.commands.build,
-    contract.ceilings.maxBuildOutputBytes,
-  );
-  if (build.disposition !== "completed" || build.exitCode !== 0) {
-    return earlyVerdict(session, "REJECT", "build");
-  }
-  const artifacts = await artifactEvidence(
-    candidate.targetRoot,
-    artifactPrefixes(contract),
-  );
-  for (const name of ["public", "independent", "regression"]) {
-    await session.execute(
-      name,
-      contract.commands[name],
-      contract.ceilings.maxTestOutputBytesPerCommand,
-    );
-  }
-  const evaluatorCommands = session.commands.filter(({ name }) =>
-    ["public", "independent", "regression"].includes(name),
-  );
-  const green = evaluatorCommands.every(
-    (command) =>
-      commandPassed(command, contract.success[`${command.name}Passed`]),
-  );
+  const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
+  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, "REJECT", "format");
+  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, "REJECT", "build");
+  const evaluatorCommands = session.commands.filter(({ name }) => evaluatorNames.includes(name));
+  const green = evaluatorCommands.length === evaluatorNames.length && evaluatorCommands.every((command) => commandPassed(command, contract.success[`${command.name}Passed`]));
   return Object.freeze({
     verdict: green ? "ACCEPT" : "REJECT",
     stage: green ? "complete" : "evaluation",
-    commands: Object.freeze([...session.commands]),
-    artifacts,
-    durationMs: Math.round(performance.now() - session.started),
+    commands: session.commands,
+    artifacts: session.artifacts,
+    durationMs: session.durationMs,
     candidateTree: candidate.candidateTree,
     protectedManifest: candidate.protectedManifest,
   });
 }
 
-export async function verifyRedBaseline({
-  candidate,
-  contract,
-  signal,
-  commandRunner = runSandboxCommand,
-}) {
-  if (
-    candidate.kind !== "evaluator" ||
-    candidate.candidateCommit !== contract.evaluator.commit ||
-    candidate.candidatePatchSha256 !== null
-  ) {
+async function verifyRedBaselineWithRunner({ candidate, contract, signal }, sessionRunner) {
+  if (candidate.kind !== "evaluator" || candidate.candidateCommit !== contract.evaluator.commit || candidate.candidatePatchSha256 !== null) {
     throw new Error("red-baseline verification requires the sealed evaluator tree");
   }
-  const session = await createVerificationSession({
-    candidate,
-    contract,
-    signal,
-    commandRunner,
-  });
-  const format = await session.execute(
-    "format",
-    contract.commands.format,
-    contract.ceilings.maxTestOutputBytesPerCommand,
-  );
-  if (format.disposition !== "completed" || format.exitCode !== 0) {
-    return earlyVerdict(session, "INCONCLUSIVE", "format");
-  }
-  const build = await session.execute(
-    "build",
-    contract.commands.build,
-    contract.ceilings.maxBuildOutputBytes,
-  );
-  if (build.disposition !== "completed" || build.exitCode !== 0) {
-    return earlyVerdict(session, "INCONCLUSIVE", "build");
-  }
-  const artifacts = await artifactEvidence(
-    candidate.targetRoot,
-    artifactPrefixes(contract),
-  );
-  for (const name of ["public", "independent", "regression"]) {
-    await session.execute(
-      name,
-      contract.commands[name],
-      contract.ceilings.maxTestOutputBytesPerCommand,
-    );
-  }
-
+  const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
+  if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, "INCONCLUSIVE", "format");
+  if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, "INCONCLUSIVE", "build");
   const publicEvidence = session.commands.find(({ name }) => name === "public");
   const publicOutcome = session.rawOutcomes.get("public");
   const publicText = `${publicOutcome.stdout}\n${publicOutcome.stderr}`;
-  const red =
-    publicEvidence.disposition === "completed" &&
-    publicEvidence.exitCode === contract.initialRed.exitCode &&
-    publicText.includes(
-      `test result: FAILED. ${contract.initialRed.passed} passed; ${contract.initialRed.failed} failed;`,
-    ) &&
-    contract.initialRed.requiredSubstrings.every((value) => publicText.includes(value)) &&
-    contract.initialRed.forbiddenSubstrings.every((value) => !publicText.includes(value));
+  const red = publicEvidence.disposition === "completed" && publicEvidence.exitCode === contract.initialRed.exitCode && publicText.includes(`test result: FAILED. ${contract.initialRed.passed} passed; ${contract.initialRed.failed} failed;`) && contract.initialRed.requiredSubstrings.every((value) => publicText.includes(value)) && contract.initialRed.forbiddenSubstrings.every((value) => !publicText.includes(value));
   const independent = session.commands.find(({ name }) => name === "independent");
   const regression = session.commands.find(({ name }) => name === "regression");
-  const referencesGreen =
-    commandPassed(independent, contract.success.independentPassed) &&
-    commandPassed(regression, contract.success.regressionPassed);
+  const referencesGreen = commandPassed(independent, contract.success.independentPassed) && commandPassed(regression, contract.success.regressionPassed);
   const confirmed = red && referencesGreen;
   return Object.freeze({
     verdict: confirmed ? "CONFIRMED_RED" : "INVALID_BASELINE",
     stage: "complete",
-    commands: Object.freeze([...session.commands]),
-    artifacts,
-    durationMs: Math.round(performance.now() - session.started),
+    commands: session.commands,
+    artifacts: session.artifacts,
+    durationMs: session.durationMs,
     candidateTree: candidate.candidateTree,
     protectedManifest: candidate.protectedManifest,
     initialRedMatched: red,
     referencesGreen,
+  });
+}
+
+export async function verifyCandidate(args) {
+  return verifyCandidateWithRunner(args, runSandboxVerificationSession);
+}
+
+export async function verifyRedBaseline(args) {
+  return verifyRedBaselineWithRunner(args, runSandboxVerificationSession);
+}
+
+export function createVerifierForTesting(sessionRunner) {
+  if (typeof sessionRunner !== "function") throw new Error("test verifier requires a whole-session runner");
+  return Object.freeze({
+    verifyCandidate: (args) => verifyCandidateWithRunner(args, sessionRunner),
+    verifyRedBaseline: (args) => verifyRedBaselineWithRunner(args, sessionRunner),
   });
 }
