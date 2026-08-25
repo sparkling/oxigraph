@@ -101,8 +101,7 @@ impl TransactionStartControl {
 
 impl std::fmt::Debug for TransactionStartControl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("TransactionStartControl")
+        f.debug_struct("TransactionStartControl")
             .field("cancelled", &self.is_cancelled())
             .field("timeout", &self.timeout)
             .finish_non_exhaustive()
