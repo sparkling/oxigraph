@@ -99,8 +99,15 @@ in `b2ed9119` plus formatting follow-up `5a704914` and accepted by its frozen
 6/2/2 evaluator split: 1/4/16 writers serialize without lost commits, readers
 remain live, rollback/drop release the permit, and queued cancellation or
 timeout occurs before snapshot creation without publication. This does not
-claim cancellation after transaction start. ADR-0018 remains Proposed until
-the G1.7 compatibility, performance, and current-evidence promotion gate.
+claim cancellation after transaction start. G1.5's unified egress profile is
+implemented in `e452bad1` plus lifecycle hardening `3f4cdfd7` and accepted by
+its frozen 12/8/13 evaluator split. Built-in `SERVICE`, `LOAD`, and nested
+document retrieval now share a deny-by-default policy with typed failures,
+separate encoded/decoded byte bounds, time and connection budgets, and remote
+read cancellation. Complete cancellation through every local mutation phase
+and G1.6 runtime-derived service claims remain outstanding, so ADR-0019 stays
+Proposed. ADR-0018 likewise remains Proposed until the G1.7 compatibility,
+performance, and current-evidence promotion gate.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

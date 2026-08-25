@@ -8,7 +8,7 @@
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
   one-session sandbox, repair/review lifecycle, and application receipts are
   implemented and directly tested. A dual-provider G1.2 application run is
-  accepted, and G1.3-G1.4 have direct source-bound candidate acceptances. The
+  accepted, and G1.3-G1.5 have direct source-bound candidate acceptances. The
   existing `tools/metaharness` semantic qualifier remains separate; unattended
   Dream Machine execution remains deferred behind the activation gates in this
   ADR
@@ -400,14 +400,16 @@ Non-authoritative local verification on 2026-08-24 established:
 
 Source-bound engineering evidence on 2026-08-25 established:
 
-- 108/108 engineering-harness tests and a passing dependency/provider doctor;
+- 110/110 engineering-harness tests and a passing dependency/provider doctor;
 - accepted dual-provider G1.2 application receipt
   `d303b85b766bd0c6d459044da4ca891e2d6b1feb728124cbeb2668c1372c8e2c`,
   with native Claude and Codex represented and every required cross-vendor
   review accepting the selected candidate;
 - direct frozen candidate acceptance for G1.3's 9/3/3 evaluator split; and
-- direct frozen candidate acceptance for G1.4's 6/2/2 evaluator split in a
-  read-only, network-isolated verifier session.
+- direct frozen candidate acceptance for G1.4's 6/2/2 evaluator split; and
+- direct frozen candidate acceptance for G1.5's unified-egress 12/8/13
+  evaluator split in a read-only, network-isolated verifier session. This
+  application receipt does not close end-to-end mutation cancellation or G1.6.
 
 ## Decision boundary
 

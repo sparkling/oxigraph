@@ -2,7 +2,7 @@
 
 - Status: active plan; implementation slice 0 complete
 - Date: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-08-25
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Upstream merge: `a2415a4e`
@@ -29,14 +29,16 @@ now implemented by `TransactionalDataset` and `WritableDataset`, with generic
 SPARQL Update binding through `PreparedSparqlUpdate::on_dataset`.
 
 The remaining work is hardening and linked-data-store breadth. Transaction
-capability negotiation and bounded writer admission are now source-bound; the
-highest-risk open P0 gaps are complete cancellation and outbound-request
-policy. The service-description drift found during this audit
-is closed in `7dc190d3`: even an RDF 1.2 build now advertises only receipted
-SPARQL 1.0/1.1 languages and version 1.1. Namespace metadata, durable change
-delivery, transaction-time SHACL validation, operational observability,
-statistics and bounded join planning, full-text and spatial indexes, and
-federation planning follow in that dependency order.
+capability negotiation, bounded writer admission, and G1.5's unified remote
+egress profile are now source-bound. The highest-risk open P0 gap is complete
+cancellation through every mutation phase and writer-gate wait; G1.6 must then
+derive service claims from closed runtime receipts. The service-description
+drift found during this audit is closed in `7dc190d3`: even an RDF 1.2 build
+now advertises only receipted SPARQL 1.0/1.1 languages and version 1.1.
+Namespace metadata, durable change delivery, transaction-time SHACL
+validation, operational observability, statistics and bounded join planning,
+full-text and spatial indexes, and federation planning follow in that
+dependency order.
 
 ## Evidence policy
 
