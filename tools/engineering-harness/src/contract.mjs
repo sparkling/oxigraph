@@ -11,6 +11,7 @@ import {
   g14Profile,
   g15Profile,
   g15bProfile,
+  g15cProfile,
   taskProfile,
 } from "./task-profile.mjs";
 
@@ -19,6 +20,7 @@ export const g13ContractPath = g13Profile.contractPath;
 export const g14ContractPath = g14Profile.contractPath;
 export const g15ContractPath = g15Profile.contractPath;
 export const g15bContractPath = g15bProfile.contractPath;
+export const g15cContractPath = g15cProfile.contractPath;
 
 const HEX40 = /^[0-9a-f]{40}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -849,12 +851,181 @@ const EXPECTED_G15B = Object.freeze({
   },
 });
 
+const EXPECTED_G15C = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  decision: "ADR-0019",
+  baseline: {
+    commit: "86d93890ad5f9504a267a571bdeff01431e9144b",
+    tree: "572089d8becd9b7ab1cbb1ab77b6e0166d686950",
+  },
+  evaluator: {
+    commit: "fbd11e1802c295da3b4e510686e18090b62f381b",
+    parent: "86d93890ad5f9504a267a571bdeff01431e9144b",
+    tree: "d36eeb470334b7be3fe381b52c640d95e724c479",
+    path: "lib/oxigraph/tests/sparql_negotiated_update.rs",
+    changeStatus: "A",
+    blob: "1338d8d55520f9405aaeba1b5d06ee340bed4deb",
+    contentSha256:
+      "fa7515ca0b0a058d6f1a2613d65f45a8d9fb29459d269a8a391aa5b2bb57cac6",
+    patchSha256:
+      "6a67bad0ce50de23e7a926218e163d2508a1e6f766231cec41d41db8193752cc",
+  },
+  mutableExact: [
+    "lib/oxigraph/src/sparql/update.rs",
+    "lib/oxigraph/src/sparql/mod.rs",
+    "lib/oxigraph/src/store.rs",
+  ],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/store",
+    "lib/oxigraph/src/storage",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--no-run",
+        "--test",
+        "transaction_capabilities",
+        "--test",
+        "rocksdb_writer_serialization",
+        "--test",
+        "sparql_update_cancellation",
+        "--test",
+        "sparql_egress_policy",
+        "--test",
+        "transactional_dataset",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "sparql_negotiated_update",
+      ],
+      timeoutMs: 180_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_capabilities",
+        "--test",
+        "rocksdb_writer_serialization",
+      ],
+      timeoutMs: 240_000,
+    },
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_update_cancellation",
+        "--test",
+        "sparql_egress_policy",
+        "--test",
+        "transactional_dataset",
+      ],
+      timeoutMs: 300_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 196_608,
+    maxChangedFiles: 3,
+    maxChangedLines: 1_024,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0599",
+    rustcErrorCount: 2,
+    primaryPath: "lib/oxigraph/tests/sparql_negotiated_update.rs",
+    requiredExports: ["new", "on_dataset_with_request"],
+    requiredSubstrings: [
+      "no associated function or constant named `new` found for struct `NegotiatedTransaction<T>` in the current scope",
+      "no method named `on_dataset_with_request` found for struct `PreparedSparqlUpdate` in the current scope",
+      "could not compile `oxigraph` (test \"sparql_negotiated_update\") due to 2 previous errors",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 5, independentPassed: 9, regressionPassed: 3 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/sparql/update.rs",
+    mutableBaselineBlob: "6d8eaab90f5ee4becfb2fe16f11656a3ac5619cc",
+    mutableBaselineSha256:
+      "04aeabff6ee95ed0c7c566da0876397c586c02c34553ae99009c3891b7a6594a",
+    baselineManifest: {
+      entries: 1391,
+      fullSha256:
+        "cca20d5db9845a5c8b9f07bbac7e4bff3b830d4b9e4e2aa7e4de91617797a2da",
+      protectedEntries: 1388,
+      protectedSha256:
+        "9024f8985ced26f3b7493b1b9e0529e47c3757d9a346db17edcbdd579504e584",
+    },
+    evaluatorManifest: {
+      entries: 1392,
+      fullSha256:
+        "6b847357e16e59e9a6bd586069e08100838babd3625e16be2e050b6bacde5783",
+      protectedEntries: 1389,
+      protectedSha256:
+        "f0d009cd1b48b6c850b45026a2956fea752c8e9cf932022d7e34aa37cf5fb2bb",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
 const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
   "g1.4-bounded-writer-admission": EXPECTED_G14,
   "g1.5-unified-egress-policy": EXPECTED_G15,
   "g1.5b-update-cancellation": EXPECTED_G15B,
+  "g1.5c-negotiated-update": EXPECTED_G15C,
 });
 
 function fail(message) {

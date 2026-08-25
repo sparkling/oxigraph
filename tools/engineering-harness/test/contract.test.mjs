@@ -7,6 +7,7 @@ import {
   g14ContractPath,
   g15ContractPath,
   g15bContractPath,
+  g15cContractPath,
   loadTaskContract,
   resolveTaskContract,
   validateTaskContract,
@@ -17,6 +18,7 @@ import {
   g14Profile,
   g15Profile,
   g15bProfile,
+  g15cProfile,
 } from "../src/task-profile.mjs";
 
 function changed(contract, mutate) {
@@ -129,6 +131,40 @@ test("loads the compiler-red G1.5b update-cancellation contract and binds it to 
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
 
+test("loads the compiler-red G1.5c negotiated-update contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ contractPath: g15cContractPath });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.5c/contract.json",
+  );
+  assert.equal(resolution.contract.decision, "ADR-0019");
+  assert.equal(resolution.contract.initialRed.kind, "compiler");
+  assert.equal(resolution.contract.initialRed.rustcCode, "E0599");
+  assert.equal(resolution.contract.initialRed.rustcErrorCount, 2);
+  assert.equal(resolution.contract.success.publicPassed, 5);
+  assert.equal(resolution.contract.success.independentPassed, 9);
+  assert.equal(resolution.contract.success.regressionPassed, 3);
+  assert.deepEqual(resolution.contract.scope.mutableExact, g15cProfile.mutablePaths);
+  assert.deepEqual(
+    resolution.contract.commands.independent.argv.slice(-4),
+    ["--test", "transaction_capabilities", "--test", "rocksdb_writer_serialization"],
+  );
+  assert.deepEqual(
+    resolution.contract.commands.regression.argv.slice(-6),
+    [
+      "--test",
+      "sparql_update_cancellation",
+      "--test",
+      "sparql_egress_policy",
+      "--test",
+      "transactional_dataset",
+    ],
+  );
+  assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
+  assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
+});
+
 test("keeps the containing control commit outside the self-declared contract", () => {
   const { contract } = loadTaskContract();
 
@@ -231,4 +267,5 @@ test("rejects contract paths outside the harness", () => {
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g14ContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g15ContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g15bContractPath }));
+  assert.doesNotThrow(() => loadTaskContract({ contractPath: g15cContractPath }));
 });

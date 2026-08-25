@@ -27,6 +27,13 @@ Current activation boundary:
   closure to typed cancellation before validation, during serialized RocksDB
   writer admission, and throughout mutation, while independently preserving
   writer-admission and G1.5 egress-policy evidence;
+- `g1.5c preflight|run|replay` binds the three-file additive negotiated-update
+  admission slice to the caller's exact request and cancellation token for
+  custom backends and `Store`, while preserving the minimal transaction traits;
+  its independent command runs both capability and writer-admission targets and
+  its regression command runs cancellation, egress, and transactional-dataset
+  targets. Command exit status proves every target in each set; the scalar
+  receipt counts bind the final Cargo result lines (9 independent, 3 regression);
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without
@@ -65,6 +72,7 @@ npm run g1.3:preflight
 npm run g1.4:preflight
 npm run g1.5:preflight
 npm run g1.5b:preflight
+npm run g1.5c:preflight
 ```
 
 The package is local-only. Presence of this directory is not an engineering

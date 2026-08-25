@@ -121,6 +121,32 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/sparql_egress_policy.rs",
     ]),
   }),
+  "g1.5c-negotiated-update": profile({
+    slug: "g1.5c",
+    label: "G1.5c",
+    decision: "ADR-0019",
+    taskClass: "negotiated-update-admission",
+    evaluatorChangeStatus: "A",
+    mutablePath: "lib/oxigraph/src/sparql/update.rs",
+    mutablePaths: Object.freeze([
+      "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/store.rs",
+    ]),
+    guidance:
+      "Add a backend-neutral negotiated SPARQL UPDATE binding without changing the minimal TransactionalDataset or WritableDataset traits. Carry the caller's exact TransactionRequest and evaluator CancellationToken through NegotiatedTransactionalDataset::start_transaction_with_control, reject unmet requirements before opening a transaction, preserve typed start errors, and commit or explicitly roll back the complete owned update. Keep the legacy on_dataset binding compatible and preserve Store writer admission, update cancellation, and unified egress behavior.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/tests/sparql_negotiated_update.rs",
+      "lib/oxigraph/tests/transaction_capabilities.rs",
+      "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+      "lib/oxigraph/tests/sparql_update_cancellation.rs",
+      "lib/oxigraph/tests/sparql_egress_policy.rs",
+      "lib/oxigraph/tests/transactional_dataset.rs",
+    ]),
+  }),
 });
 
 export function taskProfile(value) {
@@ -137,4 +163,5 @@ export const g13Profile = profiles["g1.3-transaction-capabilities"];
 export const g14Profile = profiles["g1.4-bounded-writer-admission"];
 export const g15Profile = profiles["g1.5-unified-egress-policy"];
 export const g15bProfile = profiles["g1.5b-update-cancellation"];
+export const g15cProfile = profiles["g1.5c-negotiated-update"];
 export const engineeringTaskProfiles = profiles;
