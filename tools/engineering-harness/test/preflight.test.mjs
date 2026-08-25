@@ -269,6 +269,44 @@ test("preflight recognizes bounded compiler temporary-state failures", async () 
   });
 });
 
+test("preflight exposes only the admitted target area for compiler temp failures", async () => {
+  const state = fixture({
+    async verifyBaseline(input) {
+      state.calls.push(["verify", input]);
+      return {
+        verdict: "INCONCLUSIVE",
+        initialRedMatched: false,
+        referencesGreen: false,
+        commands: [
+          {
+            name: "build",
+            disposition: "completed",
+            exitCode: 101,
+            stdoutSha256: "0".repeat(64),
+            stderrSha256: "1".repeat(64),
+            diagnostic: {
+              primaryClass: "sandbox-filesystem",
+              rustcCodes: [],
+              childRole: "unknown",
+              childTermination: null,
+              childExitCode: null,
+              childSignalNumber: null,
+              childSignalName: null,
+              ioArea: "target",
+              ioErrno: "ENOENT",
+            },
+          },
+        ],
+      };
+    },
+  });
+  await assert.rejects(runG12Preflight(state.options), (error) => {
+    assert.match(error.message, /"ioArea":"target","ioErrno":"ENOENT"/u);
+    assert.doesNotMatch(error.message, /\/state\/target|rustc|temp dir|No such file/u);
+    return true;
+  });
+});
+
 test("preflight disposes after preparation failures without invoking the verifier", async () => {
   const state = fixture({
     async createSourceSnapshot(input) {

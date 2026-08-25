@@ -261,6 +261,12 @@ function ioArea(output, index) {
   if (/CARGO_HOME|\.cargo[\\/](?:registry|git)|registry[\\/](?:cache|src)/iu.test(context)) {
     return "cargo-cache";
   }
+  if (/(?:^|[\s'"`])\/state\/target(?:[\/\s'"`:]|$)/u.test(context)) {
+    return "target";
+  }
+  if (/(?:^|[\s'"`])\/state\/tmp(?:[\/\s'"`:]|$)/u.test(context)) {
+    return "temp";
+  }
   if (/temporary|temp(?:\s+(?:dir|directory|file))?|TMPDIR|(?:^|[\\/])tmp[\\/]/iu.test(context)) {
     return "temp";
   }

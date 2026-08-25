@@ -114,6 +114,24 @@ test("errno and IO-area evidence follows the reviewed precedence matrix", async 
       ioArea: "temp",
     },
     {
+      name: "rustc target temp directory",
+      line:
+        "error: couldn't create a temp dir: No such file or directory (os error 2) at path /state/target/debug/deps/rmetavQ3x7P",
+      primaryClass: "sandbox-filesystem",
+      ioErrno: "ENOENT",
+      ioArea: "target",
+      privateSuffix: "rmetavQ3x7P",
+    },
+    {
+      name: "rustc process temp directory",
+      line:
+        "error: couldn't create a temp dir: No such file or directory (os error 2) at path /state/tmp/rustcT9p4Lm",
+      primaryClass: "sandbox-filesystem",
+      ioErrno: "ENOENT",
+      ioArea: "temp",
+      privateSuffix: "rustcT9p4Lm",
+    },
+    {
       name: "access",
       line: "failed to read /workspace/src/private.rs: Permission denied",
       primaryClass: "sandbox-filesystem",
@@ -141,6 +159,9 @@ test("errno and IO-area evidence follows the reviewed precedence matrix", async 
       assert.equal(diagnostic.primaryClass, fixture.primaryClass);
       assert.equal(diagnostic.ioErrno, fixture.ioErrno);
       assert.equal(diagnostic.ioArea, fixture.ioArea);
+      if (fixture.privateSuffix !== undefined) {
+        assert.doesNotMatch(JSON.stringify(diagnostic), new RegExp(fixture.privateSuffix, "u"));
+      }
     });
   }
 });
