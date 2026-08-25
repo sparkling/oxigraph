@@ -3,6 +3,8 @@ use crate::model::vocab::rdf;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BlankNode, Triple};
 use crate::model::{GraphName, NamedOrBlankNode, OxString, Quad, Term};
+use crate::storage::StorageTransactionStartError;
+use crate::storage::TransactionStartControl;
 use crate::storage::binary_encoder::{
     QuadEncoding, TYPE_STAR_TRIPLE, WRITTEN_TERM_MAX_SIZE, decode_term, encode_term,
     encode_term_pair, encode_term_quad, encode_term_triple, write_gosp_quad, write_gpos_quad,
@@ -32,6 +34,7 @@ use std::path::{Path, PathBuf};
 use std::str::Utf8Error;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Instant;
 use std::{io, thread};
 
 const BATCH_SIZE: usize = 100_000;
@@ -372,6 +375,20 @@ impl RocksDbStorage {
         Ok(RocksDbStorageReadableTransaction {
             buffer: Vec::new(),
             transaction: self.db.start_readable_transaction()?,
+            storage: self,
+        })
+    }
+
+    pub fn start_readable_transaction_with_control(
+        &self,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<RocksDbStorageReadableTransaction<'_>, StorageTransactionStartError> {
+        Ok(RocksDbStorageReadableTransaction {
+            buffer: Vec::new(),
+            transaction: self
+                .db
+                .start_readable_transaction_with_control(control, started_at)?,
             storage: self,
         })
     }

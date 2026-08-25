@@ -13,6 +13,9 @@ use crate::storage::rocksdb::{
 };
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 #[cfg(not(target_family = "wasm"))]
 use std::{io, thread};
 
@@ -28,6 +31,110 @@ mod rocksdb_wrapper;
 pub mod small_string;
 
 pub const DEFAULT_BULK_LOAD_BATCH_SIZE: usize = 1_000_000;
+
+const TRANSACTION_START_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Controls how long transaction admission may wait and allows that wait to be cancelled.
+///
+/// Clones share cancellation state. The timeout is measured independently from the start of
+/// each transaction attempt that receives this control.
+#[derive(Clone, Default)]
+pub struct TransactionStartControl {
+    cancellation: Arc<AtomicBool>,
+    timeout: Option<Duration>,
+}
+
+impl TransactionStartControl {
+    /// Creates an unbounded, active transaction-start control.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the maximum time allowed for transaction admission.
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Cancels transaction admission for this control and all of its clones.
+    pub fn cancel(&self) {
+        self.cancellation.store(true, Ordering::Release);
+    }
+
+    /// Returns whether transaction admission has been cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.load(Ordering::Acquire)
+    }
+
+    /// Returns the configured transaction-admission timeout, if any.
+    pub const fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    pub(crate) fn check(&self, started_at: Instant) -> Result<(), TransactionStartControlError> {
+        if self.is_cancelled() {
+            return Err(TransactionStartControlError::Cancelled);
+        }
+        if self
+            .timeout
+            .is_some_and(|timeout| started_at.elapsed() >= timeout)
+        {
+            return Err(TransactionStartControlError::TimedOut);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn next_wait(
+        &self,
+        started_at: Instant,
+    ) -> Result<Duration, TransactionStartControlError> {
+        self.check(started_at)?;
+        Ok(self
+            .timeout
+            .map_or(TRANSACTION_START_CANCELLATION_POLL_INTERVAL, |timeout| {
+                TRANSACTION_START_CANCELLATION_POLL_INTERVAL
+                    .min(timeout.saturating_sub(started_at.elapsed()))
+            }))
+    }
+}
+
+impl std::fmt::Debug for TransactionStartControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f
+            .debug_struct("TransactionStartControl")
+            .field("cancelled", &self.is_cancelled())
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransactionStartControlError {
+    Cancelled,
+    TimedOut,
+}
+
+pub(crate) enum StorageTransactionStartError {
+    Cancelled,
+    TimedOut,
+    Backend(StorageError),
+}
+
+impl From<TransactionStartControlError> for StorageTransactionStartError {
+    fn from(error: TransactionStartControlError) -> Self {
+        match error {
+            TransactionStartControlError::Cancelled => Self::Cancelled,
+            TransactionStartControlError::TimedOut => Self::TimedOut,
+        }
+    }
+}
+
+impl From<StorageError> for StorageTransactionStartError {
+    fn from(error: StorageError) -> Self {
+        Self::Backend(error)
+    }
+}
 
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 #[derive(Clone, Copy, Debug, Default)]
@@ -138,6 +245,24 @@ impl Storage {
                 StorageKind::Memory(storage) => {
                     StorageReadableTransactionKind::Memory(storage.start_transaction())
                 }
+            },
+        })
+    }
+
+    pub(crate) fn start_readable_transaction_with_control(
+        &self,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<StorageReadableTransaction<'_>, StorageTransactionStartError> {
+        Ok(StorageReadableTransaction {
+            kind: match &self.kind {
+                #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+                StorageKind::RocksDb(storage) => StorageReadableTransactionKind::RocksDb(
+                    storage.start_readable_transaction_with_control(control, started_at)?,
+                ),
+                StorageKind::Memory(storage) => StorageReadableTransactionKind::Memory(
+                    storage.start_transaction_with_control(control, started_at)?,
+                ),
             },
         })
     }

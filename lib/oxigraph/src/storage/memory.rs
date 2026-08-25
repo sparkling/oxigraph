@@ -4,6 +4,7 @@ pub use crate::storage::error::StorageError;
 use crate::storage::numeric_encoder::{
     Decoder, EncodedQuad, EncodedTerm, StrHash, StrHashHasher, StrLookup, insert_term,
 };
+use crate::storage::{TransactionStartControl, TransactionStartControlError};
 use dashmap::iter::Iter;
 use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
@@ -14,6 +15,7 @@ use std::marker::PhantomData;
 use std::mem::{take, transmute};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};
+use std::time::Instant;
 
 /// In-memory storage working with MVCC
 ///
@@ -72,6 +74,24 @@ impl MemoryStorage {
     pub fn start_transaction(&self) -> MemoryStorageTransaction<'_> {
         // We ensure there is only one transaction running
         let transaction_guard = self.transaction_lock.lock();
+        self.start_transaction_with_guard(transaction_guard)
+    }
+
+    pub fn start_transaction_with_control(
+        &self,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<MemoryStorageTransaction<'_>, TransactionStartControlError> {
+        let transaction_guard = self
+            .transaction_lock
+            .lock_with_control(control, started_at)?;
+        Ok(self.start_transaction_with_guard(transaction_guard))
+    }
+
+    fn start_transaction_with_guard<'a>(
+        &'a self,
+        transaction_guard: LockGuard<'a>,
+    ) -> MemoryStorageTransaction<'a> {
         let transaction_id = self.transaction_counter.fetch_add(1, Ordering::Acquire);
         let snapshot_id = self.version_counter.load(Ordering::Relaxed);
         MemoryStorageTransaction {
@@ -1051,6 +1071,31 @@ impl Lock {
             mutex: &self.mutex,
             condvar: &self.condvar,
         }
+    }
+
+    fn lock_with_control(
+        &self,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<LockGuard<'_>, TransactionStartControlError> {
+        control.check(started_at)?;
+        let mut occupied = self
+            .mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while *occupied {
+            let wait = control.next_wait(started_at)?;
+            (occupied, _) = self
+                .condvar
+                .wait_timeout(occupied, wait)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        control.check(started_at)?;
+        *occupied = true;
+        Ok(LockGuard {
+            mutex: &self.mutex,
+            condvar: &self.condvar,
+        })
     }
 }
 

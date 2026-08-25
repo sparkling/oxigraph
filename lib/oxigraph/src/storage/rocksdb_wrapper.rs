@@ -7,6 +7,8 @@
     clippy::unwrap_in_result
 )]
 
+use crate::storage::StorageTransactionStartError;
+use crate::storage::TransactionStartControl;
 use crate::storage::error::{CorruptionError, StorageError};
 use oxrocksdb_sys::*;
 use rand::random;
@@ -21,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::available_parallelism;
+use std::time::Instant;
 use std::{fmt, io, ptr, slice};
 
 macro_rules! ffi_result {
@@ -90,17 +93,41 @@ impl WriterGate {
         let mut occupied = self
             .occupied
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         while *occupied {
             occupied = self
                 .available
                 .wait(occupied)
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
         *occupied = true;
         WriterPermit {
             gate: Arc::clone(self),
         }
+    }
+
+    fn acquire_with_control(
+        self: &Arc<Self>,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<WriterPermit, StorageTransactionStartError> {
+        control.check(started_at)?;
+        let mut occupied = self
+            .occupied
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while *occupied {
+            let wait = control.next_wait(started_at)?;
+            (occupied, _) = self
+                .available
+                .wait_timeout(occupied, wait)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        control.check(started_at)?;
+        *occupied = true;
+        Ok(WriterPermit {
+            gate: Arc::clone(self),
+        })
     }
 }
 
@@ -114,7 +141,7 @@ impl Drop for WriterPermit {
             .gate
             .occupied
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *occupied = false;
         self.gate.available.notify_one();
     }
@@ -525,6 +552,35 @@ impl Db {
             ));
         };
         let writer_permit = db.writer_gate.acquire();
+        let (batch, read_options, snapshot) = unsafe {
+            let snapshot = rocksdb_create_snapshot(db.db);
+            let options = oxrocksdb_readoptions_create_copy(db.read_options);
+            rocksdb_readoptions_set_snapshot(options, snapshot);
+            let batch = rocksdb_writebatch_wi_create(0, 1);
+            (batch, options, snapshot)
+        };
+        assert!(!batch.is_null(), "rocksdb_writebatch_create returned null");
+        Ok(ReadableTransaction {
+            db,
+            batch,
+            snapshot,
+            read_options,
+            _writer_permit: writer_permit,
+        })
+    }
+
+    pub fn start_readable_transaction_with_control(
+        &self,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<ReadableTransaction<'_>, StorageTransactionStartError> {
+        let DbKind::ReadWrite(db) = &self.inner else {
+            return Err(StorageError::Other(
+                "Transaction are only possible on read-write instances".into(),
+            )
+            .into());
+        };
+        let writer_permit = db.writer_gate.acquire_with_control(control, started_at)?;
         let (batch, read_options, snapshot) = unsafe {
             let snapshot = rocksdb_create_snapshot(db.db);
             let options = oxrocksdb_readoptions_create_copy(db.read_options);

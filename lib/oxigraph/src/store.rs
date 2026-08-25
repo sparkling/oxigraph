@@ -34,6 +34,7 @@
 //! ```
 mod transactional;
 
+pub use crate::storage::TransactionStartControl;
 pub use transactional::{TransactionalDataset, WritableDataset};
 
 /// Isolation provided between concurrent writers.
@@ -290,7 +291,7 @@ use crate::storage::numeric_encoder::{Decoder, EncodedQuad, EncodedTerm};
 pub use crate::storage::{CorruptionError, LoaderError, SerializerError, StorageError};
 use crate::storage::{
     DEFAULT_BULK_LOAD_BATCH_SIZE, DecodingGraphIterator, DecodingQuadIterator, Storage,
-    StorageBulkLoader, StorageReadableTransaction, StorageReader,
+    StorageBulkLoader, StorageReadableTransaction, StorageReader, StorageTransactionStartError,
 };
 #[cfg(not(target_family = "wasm"))]
 use std::cmp::max;
@@ -328,6 +329,8 @@ pub enum TransactionStartError<E> {
         unmet: Vec<UnmetTransactionRequirement>,
         effective: TransactionCapabilities,
     },
+    Cancelled,
+    TimedOut,
     Backend(E),
 }
 
@@ -337,6 +340,8 @@ impl<E: fmt::Display> fmt::Display for TransactionStartError<E> {
             Self::RequirementsNotMet { .. } => {
                 formatter.write_str("transaction requirements are not met")
             }
+            Self::Cancelled => formatter.write_str("transaction start was cancelled"),
+            Self::TimedOut => formatter.write_str("transaction start timed out"),
             Self::Backend(error) => write!(formatter, "failed to open transaction: {error}"),
         }
     }
@@ -346,7 +351,7 @@ impl<E: std::error::Error + 'static> std::error::Error for TransactionStartError
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Backend(error) => Some(error),
-            Self::RequirementsNotMet { .. } => None,
+            Self::RequirementsNotMet { .. } | Self::Cancelled | Self::TimedOut => None,
         }
     }
 }
@@ -446,6 +451,47 @@ pub trait NegotiatedTransactionalDataset: TransactionalDataset {
         }
         let transaction = TransactionalDataset::start_transaction(self)
             .map_err(TransactionStartError::Backend)?;
+        Ok(NegotiatedTransaction {
+            transaction,
+            effective,
+        })
+    }
+
+    /// Negotiates and opens a transaction with bounded, cancellable admission.
+    ///
+    /// Implementations with a blocking admission queue should override this method so that the
+    /// control remains observable while queued. The default implementation checks the control
+    /// before and after the backend start call and rolls back by drop if the latter check fails.
+    fn start_transaction_with_control(
+        &self,
+        request: TransactionRequest,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Self::Transaction<'_>>, TransactionStartError<Self::Error>>
+    {
+        let started_at = std::time::Instant::now();
+        let effective = self.transaction_capabilities();
+        let unmet = effective.unmet_requirements(request.requirements());
+        if !unmet.is_empty() {
+            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
+        }
+        control.check(started_at).map_err(|error| match error {
+            crate::storage::TransactionStartControlError::Cancelled => {
+                TransactionStartError::Cancelled
+            }
+            crate::storage::TransactionStartControlError::TimedOut => {
+                TransactionStartError::TimedOut
+            }
+        })?;
+        let transaction = TransactionalDataset::start_transaction(self)
+            .map_err(TransactionStartError::Backend)?;
+        control.check(started_at).map_err(|error| match error {
+            crate::storage::TransactionStartControlError::Cancelled => {
+                TransactionStartError::Cancelled
+            }
+            crate::storage::TransactionStartControlError::TimedOut => {
+                TransactionStartError::TimedOut
+            }
+        })?;
         Ok(NegotiatedTransaction {
             transaction,
             effective,
@@ -1738,6 +1784,34 @@ impl TransactionalDataset for Store {
 impl NegotiatedTransactionalDataset for Store {
     fn transaction_capabilities(&self) -> TransactionCapabilities {
         Store::transaction_capabilities(self)
+    }
+
+    fn start_transaction_with_control(
+        &self,
+        request: TransactionRequest,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Self::Transaction<'_>>, TransactionStartError<Self::Error>>
+    {
+        let started_at = std::time::Instant::now();
+        let effective = self.transaction_capabilities();
+        let unmet = effective.unmet_requirements(request.requirements());
+        if !unmet.is_empty() {
+            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
+        }
+        let inner = self
+            .storage
+            .start_readable_transaction_with_control(&control, started_at)
+            .map_err(|error| match error {
+                StorageTransactionStartError::Cancelled => TransactionStartError::Cancelled,
+                StorageTransactionStartError::TimedOut => TransactionStartError::TimedOut,
+                StorageTransactionStartError::Backend(error) => {
+                    TransactionStartError::Backend(error)
+                }
+            })?;
+        Ok(NegotiatedTransaction {
+            transaction: Transaction { inner },
+            effective,
+        })
     }
 }
 
