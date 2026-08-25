@@ -1036,6 +1036,7 @@ export async function createG12TaskContext(input) {
   exactKeys(input, requiredKeys, "task context input");
 
   validateContract(input.contract, input.contractSha256);
+  const profile = taskProfile(input.contract);
   const sourceSnapshot = validateCachedSourceSnapshot(
     input.sourceSnapshot,
     input.contract,
@@ -1060,7 +1061,10 @@ export async function createG12TaskContext(input) {
     taskId: input.contract.id,
     role: input.role,
     objective: input.contract.objective,
-    directive: ROLE_DIRECTIVES[input.role],
+    directive:
+      profile.guidance === undefined
+        ? ROLE_DIRECTIVES[input.role]
+        : `${ROLE_DIRECTIVES[input.role]} ${profile.guidance}`,
     bindings: {
       ...bindings,
       sourceSnapshotSha256: sourceSnapshot.sha256,

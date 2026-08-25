@@ -9,6 +9,7 @@ import {
   validateTaskContract,
   verifyTaskContractRepository,
 } from "../src/contract.mjs";
+import { g13Profile } from "../src/task-profile.mjs";
 
 function changed(contract, mutate) {
   const clone = structuredClone(contract);
@@ -46,6 +47,12 @@ test("loads the post-G1.2 compiler-red G1.3 contract and binds it to Git", () =>
   assert.equal(resolution.contract.initialRed.rustcCode, "E0432");
   assert.equal(resolution.contract.initialRed.rustcErrorCount, 1);
   assert.equal(resolution.contract.success.publicPassed, 9);
+  assert.deepEqual(g13Profile.sourceAllowlist, [
+    "lib/oxigraph/src/store.rs",
+    "lib/oxigraph/src/store/transactional.rs",
+    "lib/oxigraph/src/storage/mod.rs",
+    "lib/oxigraph/tests/transaction_capabilities.rs",
+  ]);
   assert.equal(
     resolution.repository.baseline.commit,
     "7eec1f0715e4f28434b2f505e289c9b599991aae",

@@ -30,17 +30,13 @@ const profiles = Object.freeze({
     taskClass: "transaction-capabilities",
     evaluatorChangeStatus: "M",
     mutablePath: "lib/oxigraph/src/store.rs",
+    guidance:
+      "Keep the legacy WritableDataset and TransactionalDataset traits byte-identical. Add the capability and outcome vocabulary in store.rs, negotiate every requirement before opening a backend transaction, advertise conservative constructor-specific Store profiles, and do not implement OutcomeAwareWritableDataset for Store because its current storage error cannot prove a non-commit versus an indeterminate commit.",
     sourceAllowlist: Object.freeze([
       "lib/oxigraph/src/store.rs",
       "lib/oxigraph/src/store/transactional.rs",
       "lib/oxigraph/src/storage/mod.rs",
-      "lib/oxigraph/src/storage/memory.rs",
-      "lib/oxigraph/src/storage/rocksdb.rs",
-      "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
       "lib/oxigraph/tests/transaction_capabilities.rs",
-      "lib/oxigraph/tests/transaction_concurrency.rs",
-      "lib/oxigraph/tests/transaction_state_model.rs",
-      "lib/oxigraph/tests/transactional_dataset.rs",
     ]),
   }),
 });
