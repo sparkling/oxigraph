@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.4-bounded-writer-admission",
+  "programme": "linked-data-store",
+  "decision": "ADR-0018",
+  "objective": "Qualify the serialized RocksDB writer gate under a 1/4/16-writer matrix and add bounded, cancellable admission before snapshot creation without weakening rollback or reader-liveness guarantees.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "1f187690ac574fc87433065fc0a6cc85c5b74106",
+    "tree": "a1168bdc7d25e09507dfd4818dff4caed817f876"
+  },
+  "evaluator": {
+    "commit": "27b7856e7eaca96de112ab53b969f0e3d17c82eb",
+    "parent": "1f187690ac574fc87433065fc0a6cc85c5b74106",
+    "tree": "b0e8d3e825cb1c08bcea61af24ad42d94dbe8271",
+    "path": "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+    "changeStatus": "A",
+    "blob": "7dbb5dec56e7b242ccc8f620a5fba61d497ab70c",
+    "contentSha256": "0d916490c19d26b65ec65e4ec770a244e2f828e6c6f15b4aef1eee6999039239",
+    "patchSha256": "1b782aaa979d7159fcc66ce47bfd83f6696c9fb5b6b98840b494231e2c5c701b"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/store.rs",
+    "mutableBaselineBlob": "313b3322d8254fdd8db94e7e7445b7fe52c4bb72",
+    "mutableBaselineSha256": "b33ca0ed372fbfe2a80f0b81027c1e07fa9a772c420afab27560f45477df3c01",
+    "baselineManifest": {
+      "entries": 1385,
+      "fullSha256": "31bb7fb5535277db14956295e9173379b6a8035710813e5d4ea82b709d5319fe",
+      "protectedEntries": 1380,
+      "protectedSha256": "d80f43dfae5a48170cf285a38b93031434c88c729a2fb1a34cfb869aa41c04b7"
+    },
+    "evaluatorManifest": {
+      "entries": 1386,
+      "fullSha256": "4c965224804fca4a5355ff8e54b1a8597333359ec216a72122c0cb5bd5f5164d",
+      "protectedEntries": 1381,
+      "protectedSha256": "537184400702bd927208c3f314c014386a65390061f263d7924855d38777bb3b"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "lib/oxigraph/src/lib.rs",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/sparql",
+      "lib/oxigraph/src/store",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "rocksdb_writer_serialization", "--test", "transaction_concurrency", "--test", "update_atomicity"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "rocksdb_writer_serialization"],
+      "timeoutMs": 120000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_concurrency"],
+      "timeoutMs": 120000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "update_atomicity"],
+      "timeoutMs": 120000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 131072,
+    "maxChangedFiles": 5,
+    "maxChangedLines": 512,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 4,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "kind": "compiler",
+    "commandRole": "public",
+    "exitCode": 101,
+    "rustcCode": "E0432",
+    "rustcErrorCount": 5,
+    "primaryPath": "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+    "requiredExports": [
+      "TransactionStartControl",
+      "start_transaction_with_control",
+      "Cancelled",
+      "TimedOut"
+    ],
+    "requiredSubstrings": [
+      "error[E0432]: unresolved import `oxigraph::store::TransactionStartControl`",
+      "could not compile `oxigraph` (test \"rocksdb_writer_serialization\") due to 5 previous errors"
+    ],
+    "forbiddenSubstrings": [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device"
+    ]
+  },
+  "success": {
+    "publicPassed": 6,
+    "independentPassed": 2,
+    "regressionPassed": 2
+  }
+}

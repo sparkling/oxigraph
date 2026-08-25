@@ -16,6 +16,9 @@ Current activation boundary:
 - `g1.3 preflight|run|replay` binds the additive transaction-capability task to
   its post-G1.2 evaluator, including the expected single `E0432` compiler-red
   baseline and independently green controls;
+- `g1.4 preflight|run|replay` binds the five-file writer-admission slice to its
+  frozen 1/4/16-writer, reader-liveness, rollback/drop, timeout, and
+  cancellation evaluator while protecting every other repository path;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without
@@ -40,6 +43,7 @@ npm ci --ignore-scripts
 npm test
 npm run doctor
 npm run g1.3:preflight
+npm run g1.4:preflight
 ```
 
 The package is local-only. Presence of this directory is not an engineering

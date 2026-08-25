@@ -361,14 +361,14 @@ function validateContract(contract, contractSha256) {
   }
 
   exactKeys(contract.scope, SCOPE_KEYS, "contract.scope");
+  const mutablePaths = profile.mutablePaths ?? [profile.mutablePath];
   if (
     !Array.isArray(contract.scope.mutableExact) ||
-    contract.scope.mutableExact.length !== 1 ||
-    contract.scope.mutableExact[0] !== profile.mutablePath ||
+    canonicalJson(contract.scope.mutableExact) !== canonicalJson(mutablePaths) ||
     !Array.isArray(contract.scope.mutablePrefixes) ||
     contract.scope.mutablePrefixes.length !== 0
   ) {
-    fail("contract scope must contain the sole registered mutable path");
+    fail("contract scope must contain the registered mutable paths");
   }
   requireStringArray(contract.scope.blockedExact, "contract.scope.blockedExact");
   requireStringArray(contract.scope.blockedPrefixes, "contract.scope.blockedPrefixes");

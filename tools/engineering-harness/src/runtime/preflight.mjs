@@ -4,6 +4,7 @@ import { verifyRedBaseline } from "../candidate/verifier.mjs";
 import {
   g12ContractPath,
   g13ContractPath,
+  g14ContractPath,
   resolveTaskContract,
 } from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
@@ -90,4 +91,8 @@ export function runG12Preflight(options = {}) {
 
 export function runG13Preflight(options = {}) {
   return runTaskPreflight({ ...options, contractPath: g13ContractPath });
+}
+
+export function runG14Preflight(options = {}) {
+  return runTaskPreflight({ ...options, contractPath: g14ContractPath });
 }

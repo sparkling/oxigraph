@@ -5,10 +5,11 @@ import { isDeepStrictEqual } from "node:util";
 import { join, relative, resolve } from "node:path";
 
 import { harnessRoot, isContained, repositoryRoot } from "./paths.mjs";
-import { g12Profile, g13Profile, taskProfile } from "./task-profile.mjs";
+import { g12Profile, g13Profile, g14Profile, taskProfile } from "./task-profile.mjs";
 
 export const g12ContractPath = g12Profile.contractPath;
 export const g13ContractPath = g13Profile.contractPath;
+export const g14ContractPath = g14Profile.contractPath;
 
 const HEX40 = /^[0-9a-f]{40}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -368,9 +369,157 @@ const EXPECTED_G13 = Object.freeze({
   },
 });
 
+const EXPECTED_G14 = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  baseline: {
+    commit: "1f187690ac574fc87433065fc0a6cc85c5b74106",
+    tree: "a1168bdc7d25e09507dfd4818dff4caed817f876",
+  },
+  evaluator: {
+    commit: "27b7856e7eaca96de112ab53b969f0e3d17c82eb",
+    parent: "1f187690ac574fc87433065fc0a6cc85c5b74106",
+    tree: "b0e8d3e825cb1c08bcea61af24ad42d94dbe8271",
+    path: "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+    changeStatus: "A",
+    blob: "7dbb5dec56e7b242ccc8f620a5fba61d497ab70c",
+    contentSha256:
+      "0d916490c19d26b65ec65e4ec770a244e2f828e6c6f15b4aef1eee6999039239",
+    patchSha256:
+      "1b782aaa979d7159fcc66ce47bfd83f6696c9fb5b6b98840b494231e2c5c701b",
+  },
+  mutableExact: [
+    "lib/oxigraph/src/store.rs",
+    "lib/oxigraph/src/storage/mod.rs",
+    "lib/oxigraph/src/storage/memory.rs",
+    "lib/oxigraph/src/storage/rocksdb.rs",
+    "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+  ],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/sparql",
+    "lib/oxigraph/src/store",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--no-run",
+        "--test",
+        "rocksdb_writer_serialization",
+        "--test",
+        "transaction_concurrency",
+        "--test",
+        "update_atomicity",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "rocksdb_writer_serialization",
+      ],
+      timeoutMs: 120_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_concurrency",
+      ],
+      timeoutMs: 120_000,
+    },
+    regression: EXPECTED.commands.regression,
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 131_072,
+    maxChangedFiles: 5,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0432",
+    rustcErrorCount: 5,
+    primaryPath: "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+    requiredExports: [
+      "TransactionStartControl",
+      "start_transaction_with_control",
+      "Cancelled",
+      "TimedOut",
+    ],
+    requiredSubstrings: [
+      "error[E0432]: unresolved import `oxigraph::store::TransactionStartControl`",
+      "could not compile `oxigraph` (test \"rocksdb_writer_serialization\") due to 5 previous errors",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 6, independentPassed: 2, regressionPassed: 2 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/store.rs",
+    mutableBaselineBlob: "313b3322d8254fdd8db94e7e7445b7fe52c4bb72",
+    mutableBaselineSha256:
+      "b33ca0ed372fbfe2a80f0b81027c1e07fa9a772c420afab27560f45477df3c01",
+    baselineManifest: {
+      entries: 1385,
+      fullSha256:
+        "31bb7fb5535277db14956295e9173379b6a8035710813e5d4ea82b709d5319fe",
+      protectedEntries: 1380,
+      protectedSha256:
+        "d80f43dfae5a48170cf285a38b93031434c88c729a2fb1a34cfb869aa41c04b7",
+    },
+    evaluatorManifest: {
+      entries: 1386,
+      fullSha256:
+        "4c965224804fca4a5355ff8e54b1a8597333359ec216a72122c0cb5bd5f5164d",
+      protectedEntries: 1381,
+      protectedSha256:
+        "537184400702bd927208c3f314c014386a65390061f263d7924855d38777bb3b",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
 const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
+  "g1.4-bounded-writer-admission": EXPECTED_G14,
 });
 
 function fail(message) {
@@ -543,7 +692,7 @@ function validateProtectedInputs(inputs, expected) {
   }
   validatePath(inputs.mutableExclusion, "protectedInputs.mutableExclusion");
   if (inputs.mutableExclusion !== expected.mutableExact[0]) {
-    fail("protectedInputs.mutableExclusion must equal the sole mutable path");
+    fail("protectedInputs.mutableExclusion must equal the primary mutable path");
   }
   validateHash(inputs.mutableBaselineBlob, HEX40, "mutable baseline blob");
   validateHash(inputs.mutableBaselineSha256, HEX64, "mutable baseline digest");
@@ -559,8 +708,10 @@ function validateProtectedInputs(inputs, expected) {
         fail(`protectedInputs.${name}.${count} must be a positive safe integer`);
       }
     }
-    if (manifest.protectedEntries !== manifest.entries - 1) {
-      fail(`protectedInputs.${name} must exclude exactly one mutable entry`);
+    if (manifest.protectedEntries !== manifest.entries - expected.mutableExact.length) {
+      fail(
+        `protectedInputs.${name} must exclude every registered mutable entry`,
+      );
     }
     validateHash(manifest.fullSha256, HEX64, `${name} full digest`);
     validateHash(manifest.protectedSha256, HEX64, `${name} protected digest`);
@@ -730,7 +881,10 @@ function requireAncestor(repoRoot, ancestor, descendant) {
   }
 }
 
-function manifest(repoRoot, commit, excludedPath) {
+function manifest(repoRoot, commit, excludedPaths) {
+  const excluded = new Set(
+    Array.isArray(excludedPaths) ? excludedPaths : [excludedPaths],
+  );
   const raw = git(repoRoot, ["ls-tree", "-r", "-z", commit], { buffer: true });
   const records = raw
     .toString("utf8")
@@ -740,7 +894,7 @@ function manifest(repoRoot, commit, excludedPath) {
   const protectedRecords = records.filter((record) => {
     const separator = record.indexOf("\t");
     if (separator < 0) fail(`malformed ls-tree record for ${commit}`);
-    return record.slice(separator + 1) !== excludedPath;
+    return !excluded.has(record.slice(separator + 1));
   });
   const encoded = (values) => Buffer.from(`${values.join("\0")}\0`, "utf8");
   return {
@@ -843,6 +997,7 @@ export function verifyTaskContractRepository(contract, options = {}) {
     fail("evaluator content digest does not match");
   }
 
+  const mutablePaths = contract.scope.mutableExact;
   const mutablePath = contract.protectedInputs.mutableExclusion;
   const mutableBlob = git(repoRoot, ["rev-parse", `${baseline}:${mutablePath}`]).trim();
   if (mutableBlob !== contract.protectedInputs.mutableBaselineBlob) {
@@ -862,8 +1017,16 @@ export function verifyTaskContractRepository(contract, options = {}) {
     fail("evaluator commit modified the mutable product path");
   }
 
-  const baselineManifest = manifest(repoRoot, baseline, mutablePath);
-  const evaluatorManifest = manifest(repoRoot, evaluator, mutablePath);
+  for (const path of mutablePaths) {
+    const baselineBlob = git(repoRoot, ["rev-parse", `${baseline}:${path}`]).trim();
+    const evaluatorBlob = git(repoRoot, ["rev-parse", `${evaluator}:${path}`]).trim();
+    if (evaluatorBlob !== baselineBlob) {
+      fail(`evaluator commit modified mutable product path ${path}`);
+    }
+  }
+
+  const baselineManifest = manifest(repoRoot, baseline, mutablePaths);
+  const evaluatorManifest = manifest(repoRoot, evaluator, mutablePaths);
   exactValue(
     baselineManifest,
     contract.protectedInputs.baselineManifest,

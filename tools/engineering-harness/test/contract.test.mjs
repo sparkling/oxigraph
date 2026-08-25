@@ -4,12 +4,13 @@ import { test } from "node:test";
 import {
   g12ContractPath,
   g13ContractPath,
+  g14ContractPath,
   loadTaskContract,
   resolveTaskContract,
   validateTaskContract,
   verifyTaskContractRepository,
 } from "../src/contract.mjs";
-import { g13Profile } from "../src/task-profile.mjs";
+import { g13Profile, g14Profile } from "../src/task-profile.mjs";
 
 function changed(contract, mutate) {
   const clone = structuredClone(contract);
@@ -61,6 +62,21 @@ test("loads the post-G1.2 compiler-red G1.3 contract and binds it to Git", () =>
     resolution.repository.evaluator.commit,
     "4ad118a039d6ee57c63b9c45e47368454762e2ee",
   );
+});
+
+test("loads the five-path compiler-red G1.4 contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ contractPath: g14ContractPath });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.4/contract.json",
+  );
+  assert.equal(resolution.contract.initialRed.kind, "compiler");
+  assert.equal(resolution.contract.initialRed.rustcErrorCount, 5);
+  assert.equal(resolution.contract.success.publicPassed, 6);
+  assert.deepEqual(resolution.contract.scope.mutableExact, g14Profile.mutablePaths);
+  assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
+  assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
 
 test("keeps the containing control commit outside the self-declared contract", () => {
@@ -162,4 +178,5 @@ test("rejects contract paths outside the harness", () => {
   );
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g12ContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g13ContractPath }));
+  assert.doesNotThrow(() => loadTaskContract({ contractPath: g14ContractPath }));
 });

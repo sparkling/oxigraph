@@ -39,6 +39,31 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/transaction_capabilities.rs",
     ]),
   }),
+  "g1.4-bounded-writer-admission": profile({
+    slug: "g1.4",
+    label: "G1.4",
+    taskClass: "writer-admission",
+    evaluatorChangeStatus: "A",
+    mutablePath: "lib/oxigraph/src/store.rs",
+    mutablePaths: Object.freeze([
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    ]),
+    guidance:
+      "Preserve the legacy transaction path and the conservative cancellation capability claim. Add typed timeout/cancellation only to transaction admission, observe controls while queued, acquire before snapshot creation, and hold the existing per-instance writer permit through commit, rollback, or drop.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+      "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+      "lib/oxigraph/tests/transaction_concurrency.rs",
+    ]),
+  }),
 });
 
 export function taskProfile(value) {
@@ -52,4 +77,5 @@ export function taskProfile(value) {
 
 export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];
 export const g13Profile = profiles["g1.3-transaction-capabilities"];
+export const g14Profile = profiles["g1.4-bounded-writer-admission"];
 export const engineeringTaskProfiles = profiles;
