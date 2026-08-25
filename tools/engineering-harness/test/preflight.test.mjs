@@ -120,6 +120,86 @@ test("preflight fails closed on a non-discriminating baseline and still disposes
   assert.equal(state.calls.at(-1)[0], "dispose");
 });
 
+test("preflight exposes bounded cold-build failure classes without raw tails", async () => {
+  const state = fixture({
+    async verifyBaseline(input) {
+      state.calls.push(["verify", input]);
+      return {
+        verdict: "INCONCLUSIVE",
+        initialRedMatched: false,
+        referencesGreen: false,
+        commands: [
+          {
+            name: "format",
+            disposition: "completed",
+            exitCode: 1,
+            stderrTail: "error[E0599]: private compiler detail\ncould not compile `secret`",
+          },
+          {
+            name: "build",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail: "error: linking with `cc` failed: private linker detail",
+          },
+          {
+            name: "public",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail: "failed to run custom build command for `secret-native`",
+          },
+          {
+            name: "independent",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail: "rustc-LLVM ERROR: private toolchain detail",
+          },
+          {
+            name: "regression",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail: "attempting to make an HTTP request, but --offline was specified",
+          },
+        ],
+      };
+    },
+  });
+  await assert.rejects(runG12Preflight(state.options), (error) => {
+    assert.match(error.message, /"failureClass":"compiler-error"/u);
+    assert.match(error.message, /"failureClass":"linker-error"/u);
+    assert.match(error.message, /"failureClass":"native-build-error"/u);
+    assert.match(error.message, /"failureClass":"toolchain-error"/u);
+    assert.match(error.message, /"failureClass":"offline-dependency"/u);
+    assert.doesNotMatch(error.message, /private|secret|rustc-LLVM|HTTP request/u);
+    return true;
+  });
+});
+
+test("preflight classifies sandbox filesystem failures without leaking paths", async () => {
+  const state = fixture({
+    async verifyBaseline(input) {
+      state.calls.push(["verify", input]);
+      return {
+        verdict: "INCONCLUSIVE",
+        initialRedMatched: false,
+        referencesGreen: false,
+        commands: [
+          {
+            name: "build",
+            disposition: "completed",
+            exitCode: 101,
+            stderrTail: "failed to write /private/path: Read-only file system (os error 30)",
+          },
+        ],
+      };
+    },
+  });
+  await assert.rejects(runG12Preflight(state.options), (error) => {
+    assert.match(error.message, /"failureClass":"sandbox-filesystem"/u);
+    assert.doesNotMatch(error.message, /private\/path|Read-only/u);
+    return true;
+  });
+});
+
 test("preflight disposes after preparation failures without invoking the verifier", async () => {
   const state = fixture({
     async createSourceSnapshot(input) {

@@ -31,6 +31,28 @@ function redactedFailureClass(command) {
   if (/Cannot allocate memory|out of memory|\bENOMEM\b/iu.test(output)) {
     return "memory-exhausted";
   }
+  if (/rustc-LLVM ERROR|internal compiler error/iu.test(output)) {
+    return "toolchain-error";
+  }
+  if (/linking with .{0,80} failed|linker .{0,80} failed|collect2: error/iu.test(output)) {
+    return "linker-error";
+  }
+  if (/failed to run custom build command|CMake Error/iu.test(output)) {
+    return "native-build-error";
+  }
+  if (
+    /attempting to make an HTTP request|failed to download|no matching package named.{0,120}offline/iu.test(
+      output,
+    )
+  ) {
+    return "offline-dependency";
+  }
+  if (/Read-only file system|\bEROFS\b|Permission denied|\bEACCES\b/iu.test(output)) {
+    return "sandbox-filesystem";
+  }
+  if (/error\[E\d{4}\]|could not compile/iu.test(output)) {
+    return "compiler-error";
+  }
   return Number.isInteger(command?.exitCode) && command.exitCode !== 0
     ? "command-failed"
     : null;
