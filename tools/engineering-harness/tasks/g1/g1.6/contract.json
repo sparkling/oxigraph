@@ -121,7 +121,7 @@
       "timeoutMs": 120000
     },
     "build": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph-cli", "--bin", "oxigraph", "--no-run"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "-p", "oxigraph-cli", "--features", "oxigraph/http-client-native-tls,oxigraph/rdf-12,oxigraph-cli/native-tls,oxigraph-cli/rdf-12", "--test", "sparql_version", "--test", "sparql_egress_policy", "--bin", "oxigraph", "--no-run"],
       "timeoutMs": 1800000
     },
     "public": {

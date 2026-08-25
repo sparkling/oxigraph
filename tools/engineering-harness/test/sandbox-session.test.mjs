@@ -100,6 +100,8 @@ function binaryCommandPlan() {
         "test",
         "--locked",
         "--no-run",
+        "--test",
+        "independent",
         "--bin",
         "session_fixture",
       ]),
@@ -466,7 +468,7 @@ test("production verifier protects writable state anchors from candidate code", 
   }
 });
 
-test("production verifier attests an exact binary build target", { timeout: 180_000 }, async () => {
+test("production verifier attests exact mixed binary and test build targets", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-session-bin-test-"));
   try {
     const workspace = await createFixture(root);
@@ -482,10 +484,9 @@ test("production verifier attests an exact binary build target", { timeout: 180_
     });
     assert.equal(report.session.status, "completed", report.session.error);
     assert.equal(report.session.stage, "complete");
-    assert.ok(
-      report.session.artifacts.some(({ name }) =>
-        name.startsWith("session_fixture-"),
-      ),
+    assert.deepEqual(
+      new Set(report.session.artifacts.map(({ name }) => name.split("-")[0])),
+      new Set(["independent", "session_fixture"]),
     );
   } finally {
     await rm(root, { recursive: true, force: true });

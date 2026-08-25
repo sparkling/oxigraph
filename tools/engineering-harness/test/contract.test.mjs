@@ -221,6 +221,21 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     "--bin",
     "oxigraph",
   ]);
+  assert.deepEqual(resolution.contract.commands.build.argv.slice(-7), [
+    "--test",
+    "sparql_version",
+    "--test",
+    "sparql_egress_policy",
+    "--bin",
+    "oxigraph",
+    "--no-run",
+  ]);
+  assert.equal(
+    resolution.contract.commands.build.argv.includes(
+      "sparql_effective_capabilities",
+    ),
+    false,
+  );
   assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
