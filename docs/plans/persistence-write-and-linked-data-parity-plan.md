@@ -2,7 +2,7 @@
 
 - Status: active plan; implementation slice 0 complete
 - Date: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Upstream merge: `a2415a4e`
@@ -714,7 +714,9 @@ the research ledger mechanics, not any claim about Oxigraph, Jena, or RDF4J.
 
 ## QA score
 
-The plan scores **98/100** against the programme rubric:
+Author self-assessment: **98/100** against the programme rubric. The last
+completed scored QA task covers the pre-expansion 8-ADR/26-task graph; this
+score is not yet a current QA receipt for the expanded 16-ADR/39-ID programme.
 
 | Dimension | Score | Basis |
 |---|---:|---|

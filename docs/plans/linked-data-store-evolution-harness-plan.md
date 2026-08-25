@@ -2,7 +2,7 @@
 
 - Status: active execution plan; unattended Dream Machine activation blocked
 - Date: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -229,7 +229,8 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
 | G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted qualification policy; implemented engineering control |
 | G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
-| G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| G1.5-G1.5b and G1.6 egress/cancellation/claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
+| G1.5c negotiated backend admission | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
 | G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control; product decisions Proposed |
 | G2.1-G2.3c metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | G2.4a-G2.4b transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
@@ -497,13 +498,13 @@ widens core RDF semantics implicitly.
 | Task | Depends on | Size | Exit gate |
 |---|---|---:|---|
 | G4.1 Service identity and authorization | G1.5-G1.6 | XL | Principal propagation plus coarse endpoint/whole-operation and direct Graph Store authorization fail closed without leaking protected data |
-| G4.2 Workload admission and operator resources | G1.4-G1.5; G4.1 for principal quotas | XL | Queue, deadline, memory/row/byte/concurrency budgets, cancellation, fairness, and bounded telemetry survive overload without weakening transaction or egress guarantees |
+| G4.2 Workload admission and operator resources | G1.4, G1.5, G1.5b; G1.5c for replacement-backend admission; G4.1 for principal quotas | XL | Queue, deadline, memory/row/byte/concurrency budgets, cancellation, fairness, and bounded telemetry survive overload without weakening transaction or egress guarantees |
 | G4.3 Safe storage schema upgrades | G2.7 | L | Version discovery, preflight, backup receipt, resumable shadow copy, source-preserving cutover, crash matrix, and old/new binary compatibility fail closed |
 | G4.4 RDF4J REST interoperability | G2.3c, G4.1-G4.2, G4.5 | XL | A versioned endpoint profile passes an exact RDF4J client/HTTP corpus for statements, namespaces, query/update, contexts, transactions, errors, and content negotiation |
 | G4.5 Leased remote HTTP transactions | G2.3a, G4.1-G4.2 | XL | Opaque leases, expiry, idempotent terminal operations, disconnect/crash cleanup, and bounded ownership prevent orphaned writers and ambiguous replay |
-| G4.6 Multi-repository lifecycle | G2.7, G4.1-G4.3 | XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration |
+| G4.6 Multi-repository lifecycle | G2.7, G4.1-G4.3; G4.5 for a combined leased-transaction profile | XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration |
 | G4.7 Incremental entailment projections | G2.3c, G2.7 | XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed |
-| G4.8 Analytical and WCOJ research path | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback |
+| G4.8 Analytical and WCOJ research path | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A frozen semantic/resource benchmark returns `ACCEPT`, `REJECT`, or `INCONCLUSIVE`; `REJECT` or `INCONCLUSIVE` closes research without promotion, and only `ACCEPT` with reproducible benefit may admit server/`Auto` while preserving the ordinary fallback |
 
 ## Evaluator DAG
 
@@ -703,7 +704,8 @@ audit pointers needed for the expanded and corrected control edges are:
 
 | Plan IDs | Ruflo task rows |
 |---|---|
-| G1.5c / G1.6 / `HARNESS-REGISTRY` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787603736400-274ola` |
+| G1.5b / G1.5c | `task-1787664776785-qte1rx` / `task-1787667172994-ru8mm1` |
+| G1.6 / `HARNESS-REGISTRY` / G2.1 | `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787603736400-274ola` |
 | G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
 | G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
 | G4.1 / G4.2 / G4.3 | `task-1787670631989-m5vxqk` / `task-1787670632138-mq9112` / `task-1787670632284-k0cti5` |
@@ -716,6 +718,9 @@ stored and read back through the managed Ruflo bridge in the explicit
 repository database at
 `task-plans/linked-data-store-g0-g4-2026-08-25-v2`. It records the dependency
 corrections in this plan, including the non-product `HARNESS-REGISTRY` control.
+Its task-ID map predates the G1.5b pointer correction above and does not include
+G1.5b; the committed mapping remains authoritative until a versioned v3 map is
+stored and read back through the managed bridge.
 
 The Brain-grounded implementation source
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts` shows that the current
@@ -731,7 +736,9 @@ current MCP task surface enforces them.
 
 ## QA score
 
-This plan scores **98/100** against the programme rubric:
+Author self-assessment: **98/100** against the programme rubric. The last
+completed scored QA task covers the pre-expansion 8-ADR/26-task graph; this
+score is not yet a current QA receipt for the expanded 16-ADR/39-ID programme.
 
 | Dimension | Score | Evidence |
 |---|---:|---|
