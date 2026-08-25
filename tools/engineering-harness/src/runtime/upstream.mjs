@@ -365,6 +365,12 @@ function wrapAgent(agent, recoveries) {
         try {
           raw = await agent.run(input);
         } catch (error) {
+          if (error?.code === "OXIGRAPH_CANCELLED") {
+            return failureOutput("cancelled", [boundedMessage(error)]);
+          }
+          if (error?.code === "OXIGRAPH_PREPARATION_FAILED") {
+            return failureOutput("preparation-failed", [boundedMessage(error)]);
+          }
           recovery?.recordFailure();
           if (recovery?.tryRetry(0)) continue;
           return failureOutput("worker-invocation-failed", [boundedMessage(error)]);

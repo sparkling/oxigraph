@@ -95,6 +95,27 @@ test("inconclusive native invocation retains executable, args, attestation, and 
   assert.ok(/^[a-f0-9]{64}$/.test(result.invocation.attestation.sha256));
 });
 
+test("an already-aborted native task never reaches the provider process", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let processCalls = 0;
+  await assert.rejects(
+    runNativeWorker({
+      provider: "codex",
+      role: "review",
+      model: "gpt-test",
+      task: { id: "cancelled" },
+      signal: controller.signal,
+      processRunner: async () => {
+        processCalls += 1;
+        return completed();
+      },
+    }),
+    (error) => error.code === "OXIGRAPH_CANCELLED",
+  );
+  assert.equal(processCalls, 0);
+});
+
 test("native Claude worker decodes schema output and rejects unsupported providers", async () => {
   const output = { ...accepted, patch: null };
   const result = await runNativeWorker({

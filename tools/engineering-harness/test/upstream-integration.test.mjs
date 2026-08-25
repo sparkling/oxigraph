@@ -244,3 +244,37 @@ test("host recovery retries only the same selected agent while kernel retries st
   assert.equal(recovery.snapshot().retriesRemaining, 0);
   assert.equal(run.steps[0].attempts, 0, "HarnessKernel itself did not retry");
 });
+
+test("cancellation and preparation failures do not spend retry budget or open host breakers", async () => {
+  for (const [code, expected] of [
+    ["OXIGRAPH_CANCELLED", "cancelled"],
+    ["OXIGRAPH_PREPARATION_FAILED", "preparation-failed"],
+  ]) {
+    const recovery = createHostRecovery({
+      threshold: 1,
+      cooldownMs: 100,
+      maxRetries: 1,
+    });
+    const selected = agent("review", [], { id: "codex:review" });
+    selected.run = async () => {
+      const error = new Error(expected);
+      error.code = code;
+      throw error;
+    };
+    const run = await runUpstreamAttempt({
+      intent: "oxigraph-review",
+      goal: { text: expected },
+      selectedAgents: [selected],
+      recoveries: new Map([[selected.id, recovery]]),
+      structuralCheck: passesMatchingRole,
+      runId: `classified-${expected}`,
+    });
+    assert.equal(run.success, false);
+    assert.match(run.steps[0].verdict.reasons.join(" "), new RegExp(expected));
+    assert.deepEqual(recovery.snapshot(), {
+      state: "closed",
+      retriesRemaining: 1,
+      retrySpendUsd: 0,
+    });
+  }
+});

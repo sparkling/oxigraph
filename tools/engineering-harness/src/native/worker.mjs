@@ -19,6 +19,12 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function cancellationError() {
+  const error = new Error("native worker cancelled before spawn");
+  error.code = "OXIGRAPH_CANCELLED";
+  return error;
+}
+
 function promptFor({ role, encodedTask }) {
   return [
     "You are a bounded Oxigraph engineering worker.",
@@ -51,6 +57,7 @@ export async function runNativeWorker({
   signal,
   processRunner = runBoundedProcess,
 }) {
+  if (signal?.aborted) throw cancellationError();
   if (provider !== "codex" && provider !== "claude") {
     throw new Error(`unsupported native provider: ${provider}`);
   }

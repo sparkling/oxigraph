@@ -189,6 +189,37 @@ test("native pool records task preparation ERROR with an explicit null provenanc
   });
 });
 
+test("native pool classifies pre-spawn cancellation without calling task or provider", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let taskCalls = 0;
+  let workerCalls = 0;
+  const pool = new NativeWorkerPool({
+    contract,
+    workerRunner: async (request) => {
+      workerCalls += 1;
+      return result(request);
+    },
+  });
+  const selected = pool.agentsFor({
+    intent: "oxigraph-review",
+    providersByRole: { review: "codex" },
+    signal: controller.signal,
+    taskFactory: () => {
+      taskCalls += 1;
+      return { review: "never" };
+    },
+  });
+  await assert.rejects(
+    selected.selectedAgents[0].run({}),
+    (error) => error.code === "OXIGRAPH_CANCELLED",
+  );
+  assert.equal(taskCalls, 0);
+  assert.equal(workerCalls, 0);
+  assert.equal(pool.evidence()[0].status, "ERROR");
+  assert.equal(pool.evidence()[0].taskSha256, null);
+});
+
 test("native pool refuses OpenRouter and non-native declarations", () => {
   for (const providers of [
     [

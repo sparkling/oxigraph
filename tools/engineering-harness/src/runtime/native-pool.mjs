@@ -98,6 +98,20 @@ function failedInvocationEvidence(sequence, { provider, model, role, error }) {
   });
 }
 
+function classifiedError(code, message, cause) {
+  const error = new Error(message, { cause });
+  error.code = code;
+  return error;
+}
+
+function cancelledResult(result, signal) {
+  return (
+    signal?.aborted === true ||
+    result?.outcome?.disposition === "cancelled" ||
+    result?.outcome?.disposition === "cancelled-unreaped"
+  );
+}
+
 function strategyRoles(intent) {
   const strategy = UPSTREAM_STRATEGIES[intent];
   if (strategy === undefined) throw new Error(`unsupported native pool intent: ${intent}`);
@@ -158,8 +172,35 @@ export class NativeWorkerPool {
           run: async (input) => {
             let result;
             let evidence;
+            let task;
             try {
-              const task = await taskFactory({ role, provider, input });
+              if (signal?.aborted) {
+                throw classifiedError(
+                  "OXIGRAPH_CANCELLED",
+                  `${provider} ${role} cancelled before task preparation`,
+                );
+              }
+              task = await taskFactory({ role, provider, input });
+            } catch (error) {
+              const classified =
+                error?.code === "OXIGRAPH_CANCELLED"
+                  ? error
+                  : classifiedError(
+                      "OXIGRAPH_PREPARATION_FAILED",
+                      error instanceof Error ? error.message : String(error),
+                      error,
+                    );
+              this.#evidence.push(
+                failedInvocationEvidence(this.#evidence.length + 1, {
+                  provider,
+                  model,
+                  role,
+                  error: classified,
+                }),
+              );
+              throw classified;
+            }
+            try {
               result = await this.#workerRunner({
                 provider,
                 role,
@@ -194,6 +235,12 @@ export class NativeWorkerPool {
             }
             this.#evidence.push(evidence);
             if (result.status === "INCONCLUSIVE" || result.output === undefined) {
+              if (cancelledResult(result, signal)) {
+                throw classifiedError(
+                  "OXIGRAPH_CANCELLED",
+                  `${provider} ${role} worker was cancelled`,
+                );
+              }
               throw new Error(`${provider} ${role} worker was inconclusive`);
             }
             const output = validateWorkerOutput(result.output, role);
