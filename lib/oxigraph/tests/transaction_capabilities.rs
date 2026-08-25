@@ -41,6 +41,20 @@ impl ProbeDataset {
     }
 }
 
+struct FailingProbeDataset {
+    capabilities: TransactionCapabilities,
+    opens: Cell<usize>,
+}
+
+impl FailingProbeDataset {
+    fn new(capabilities: TransactionCapabilities) -> Self {
+        Self {
+            capabilities,
+            opens: Cell::new(0),
+        }
+    }
+}
+
 struct ProbeTransaction;
 
 impl TransactionalDataset for ProbeDataset {
@@ -54,6 +68,22 @@ impl TransactionalDataset for ProbeDataset {
 }
 
 impl NegotiatedTransactionalDataset for ProbeDataset {
+    fn transaction_capabilities(&self) -> TransactionCapabilities {
+        self.capabilities.clone()
+    }
+}
+
+impl TransactionalDataset for FailingProbeDataset {
+    type Error = ProbeError;
+    type Transaction<'a> = ProbeTransaction;
+
+    fn start_transaction(&self) -> Result<Self::Transaction<'_>, Self::Error> {
+        self.opens.set(self.opens.get() + 1);
+        Err(ProbeError("open failed"))
+    }
+}
+
+impl NegotiatedTransactionalDataset for FailingProbeDataset {
     fn transaction_capabilities(&self) -> TransactionCapabilities {
         self.capabilities.clone()
     }
@@ -211,6 +241,56 @@ fn serial_writer_prevention_does_not_claim_conflict_notification() {
         ),
         vec![UnmetTransactionRequirement::ConflictBehavior]
     );
+}
+
+#[test]
+fn all_capability_dimensions_are_negotiated_independently() {
+    let requirements = TransactionRequirements::legacy()
+        .requiring_writer_isolation(WriterIsolation::Serialized)
+        .requiring_conflict_behavior(ConflictBehavior::DetectedAndRejected)
+        .requiring_cancellation(CancellationGuarantee::BeforeCommitAttempt)
+        .requiring_outcome_lookup(OutcomeLookup::DurableByTransactionKey);
+
+    assert_eq!(
+        TransactionCapabilities::none().unmet_requirements(&requirements),
+        vec![
+            UnmetTransactionRequirement::AtomicPublication,
+            UnmetTransactionRequirement::ReadYourWrites,
+            UnmetTransactionRequirement::WriterIsolation,
+            UnmetTransactionRequirement::ConflictBehavior,
+            UnmetTransactionRequirement::Cancellation,
+            UnmetTransactionRequirement::Rollback,
+            UnmetTransactionRequirement::OutcomeLookup,
+        ]
+    );
+
+    let full_profile = TransactionCapabilities::none()
+        .with_atomic_publication()
+        .with_read_your_writes()
+        .with_writer_isolation(WriterIsolation::Serialized)
+        .with_conflict_behavior(ConflictBehavior::DetectedAndRejected)
+        .with_cancellation(CancellationGuarantee::BeforeCommitAttempt)
+        .with_rollback(RollbackGuarantee::ExplicitOrDropBeforeCommit)
+        .with_outcome_lookup(OutcomeLookup::DurableByTransactionKey);
+    assert!(full_profile.unmet_requirements(&requirements).is_empty());
+}
+
+#[test]
+fn backend_open_failure_is_typed_once_after_successful_negotiation() {
+    let dataset = FailingProbeDataset::new(serialized_profile());
+    let Err(error) = dataset.start_transaction_with(TransactionRequest::default()) else {
+        panic!("a backend-open failure was silently accepted")
+    };
+
+    assert_eq!(dataset.opens.get(), 1);
+    assert_eq!(
+        Error::source(&error).map(ToString::to_string),
+        Some("open failed".into())
+    );
+    let TransactionStartError::Backend(source) = error else {
+        panic!("a negotiated backend-open failure was reclassified")
+    };
+    assert_eq!(source.to_string(), "open failed");
 }
 
 #[test]
