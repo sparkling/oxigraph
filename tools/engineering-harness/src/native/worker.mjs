@@ -37,7 +37,26 @@ function promptFor({ role, encodedTask }) {
 }
 
 function decodeClaude(stdout) {
-  const envelope = JSON.parse(stdout);
+  const decoded = JSON.parse(stdout);
+  // Claude Code 2.1.x may serialize the complete stream as a JSON array even
+  // when --output-format json is requested. Only the unique terminal result
+  // envelope has application authority; lifecycle and assistant events are
+  // deliberately ignored.
+  const envelope = Array.isArray(decoded)
+    ? (() => {
+        if (decoded.length === 0 || decoded.length > 4096) {
+          throw new Error("Claude event envelope is empty or exceeds its bound");
+        }
+        const terminal = decoded.filter((item) => item?.type === "result");
+        if (terminal.length !== 1 || terminal[0] !== decoded.at(-1)) {
+          throw new Error("Claude event envelope lacks a unique terminal result");
+        }
+        return terminal[0];
+      })()
+    : decoded;
+  if (envelope === null || typeof envelope !== "object") {
+    throw new Error("Claude result envelope must be an object");
+  }
   if (envelope.structured_output !== undefined) return envelope.structured_output;
   if (envelope.result !== undefined && typeof envelope.result === "object") {
     return envelope.result;

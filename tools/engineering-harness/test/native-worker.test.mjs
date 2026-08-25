@@ -138,6 +138,45 @@ test("native Claude worker decodes schema output and rejects unsupported provide
   );
 });
 
+test("native Claude worker admits only the unique terminal result from array envelopes", async () => {
+  const output = { ...accepted, patch: null };
+  const result = await runNativeWorker({
+    provider: "claude",
+    role: "review",
+    model: "claude-test",
+    task: { id: "array-envelope", sourceSnapshot: "old" },
+    processRunner: async () =>
+      completed(
+        JSON.stringify([
+          { type: "system", subtype: "init" },
+          { type: "assistant", message: {} },
+          { type: "result", subtype: "success", structured_output: output },
+        ]),
+      ),
+  });
+  assert.equal(result.status, "ACCEPT");
+  assert.equal(result.output.patch, null);
+
+  for (const malformed of [
+    [],
+    [{ type: "result", structured_output: output }, { type: "system" }],
+    [
+      { type: "result", structured_output: output },
+      { type: "result", structured_output: output },
+    ],
+  ]) {
+    const rejected = await runNativeWorker({
+      provider: "claude",
+      role: "review",
+      model: "claude-test",
+      task: { id: "invalid-array-envelope", sourceSnapshot: "old" },
+      processRunner: async () => completed(JSON.stringify(malformed)),
+    });
+    assert.equal(rejected.status, "INCONCLUSIVE");
+    assert.equal(rejected.output, undefined);
+  }
+});
+
 test("native worker validates role and candidate paths before admitting output", async () => {
   let called = false;
   await assert.rejects(

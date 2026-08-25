@@ -1,9 +1,10 @@
 import { blockedChildEnvironmentName } from "../../../child-environment.mjs";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { harnessRoot, isContained } from "../paths.mjs";
 import { nativeChildEnvironment } from "../native/environment.mjs";
+import { claudeWorkerOutputSchema } from "../native/worker-schema.mjs";
 
 export const PROVIDERS = Object.freeze(["codex", "claude"]);
 export const FORBIDDEN_ARGUMENTS = Object.freeze([
@@ -150,10 +151,7 @@ export function validateProviderInvocation({
   } else {
     const model = args[11];
     validateModel(model, provider);
-    const schema = readFileSync(
-      join(harnessRoot, "schemas/worker-output.schema.json"),
-      "utf8",
-    );
+    const schema = claudeWorkerOutputSchema();
     assertSequence(
       args,
       [

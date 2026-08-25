@@ -29,6 +29,16 @@ test("native invocations are explicit, read-only, ephemeral, and provider-local"
     assert.ok(claude.args.includes("--safe-mode"));
     assert.ok(claude.args.includes('{"mcpServers":{}}'));
     assert.equal(claude.args[claude.args.indexOf("--tools") + 1], "");
+    const claudeSchema = JSON.parse(
+      claude.args[claude.args.indexOf("--json-schema") + 1],
+    );
+    assert.equal(Object.hasOwn(claudeSchema, "$schema"), false);
+    assert.deepEqual(claudeSchema.required, [
+      "summary",
+      "patch",
+      "findings",
+      "verdict",
+    ]);
     assert.ok(!claude.args.includes("--bare"));
     for (const invocation of [codex, claude]) {
       assert.doesNotMatch(JSON.stringify(invocation.args), /openrouter/i);

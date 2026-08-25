@@ -1,17 +1,12 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { harnessRoot } from "../paths.mjs";
 import { validateProviderInvocation } from "../policy/providers.mjs";
 import { nativeChildEnvironment } from "./environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
+import { claudeWorkerOutputSchema } from "./worker-schema.mjs";
 
 export function claudeInvocation({ executionRoot, model, prompt }) {
   const environment = nativeChildEnvironment();
   const attestation = resolveNativeExecutable("claude");
-  const schema = readFileSync(
-    join(harnessRoot, "schemas/worker-output.schema.json"),
-    "utf8",
-  );
+  const schema = claudeWorkerOutputSchema();
   const args = [
     "--print",
     "--safe-mode",
