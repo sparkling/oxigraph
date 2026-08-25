@@ -45,6 +45,10 @@ function pathPrefixed(path, prefix) {
 export function validateCandidatePath(path, contract) {
   const normalized = normalizeCandidatePath(path);
   const scope = contract.scope ?? {};
+  const scopeMutableExact = (scope.mutableExact ?? []).map(normalizeCandidatePath);
+  const nestedManifestOverride =
+    posix.dirname(normalized) !== "." &&
+    scopeMutableExact.some((path) => pathEquals(normalized, path));
   const blockedPrefixes = [
     ...globalPolicy.blockedPrefixes,
     ...(contract.blockedPaths ?? []),
@@ -60,16 +64,15 @@ export function validateCandidatePath(path, contract) {
       pathPrefixed(normalized, normalizeCandidatePath(prefix)),
     ) ||
     blockedExact.some((path) => pathEquals(normalized, path)) ||
-    globalPolicy.blockedBasenames.some((basename) =>
+    (globalPolicy.blockedBasenames.some((basename) =>
       pathEquals(posix.basename(normalized), basename),
-    )
+    ) && !nestedManifestOverride)
   ) {
     throw new Error(`candidate path is protected: ${normalized}`);
   }
   const mutableExact = [
     ...(contract.mutableExact ?? []),
-    ...(scope.mutableExact ?? []),
-  ].map(normalizeCandidatePath);
+  ].map(normalizeCandidatePath).concat(scopeMutableExact);
   const mutablePrefixes = [
     ...(contract.mutablePaths ?? []),
     ...(scope.mutablePrefixes ?? []),

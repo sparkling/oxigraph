@@ -32,6 +32,29 @@ test("path policy admits only exact task-owned product paths", () => {
   }
 });
 
+test("an exact task scope may admit a nested package manifest", () => {
+  const manifestContract = {
+    evaluatorPath: "lib/oxigraph/tests/sparql_egress_policy.rs",
+    scope: {
+      mutableExact: ["lib/oxigraph/Cargo.toml"],
+      mutablePrefixes: [],
+      blockedExact: ["Cargo.toml"],
+      blockedPrefixes: ["lib/oxigraph/tests"],
+    },
+    ceilings: { maxPatchBytes: 4096 },
+  };
+  assert.deepEqual(
+    validateCandidatePatch(patch("lib/oxigraph/Cargo.toml"), manifestContract),
+    ["lib/oxigraph/Cargo.toml"],
+  );
+  manifestContract.scope.mutableExact = ["Cargo.toml"];
+  manifestContract.scope.blockedExact = [];
+  assert.throws(
+    () => validateCandidatePatch(patch("Cargo.toml"), manifestContract),
+    /protected/,
+  );
+});
+
 test("patch canonicalization repairs only mechanical hunk syntax", () => {
   const path = "lib/oxigraph/src/storage/rocksdb_wrapper.rs";
   const raw = [
