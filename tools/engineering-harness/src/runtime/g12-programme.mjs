@@ -8,6 +8,7 @@ import {
   g13ContractPath,
   g14ContractPath,
   g15ContractPath,
+  g15bContractPath,
 } from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
 import { validateWorkerOutput } from "../policy/authority.mjs";
@@ -763,6 +764,10 @@ export function runG15Programme(options = {}) {
   return runTaskProgramme({ ...options, contractPath: g15ContractPath });
 }
 
+export function runG15bProgramme(options = {}) {
+  return runTaskProgramme({ ...options, contractPath: g15bContractPath });
+}
+
 /**
  * Test-only construction seam. It cannot use production persistence or
  * admission; callers must supply isolated history and finalize operations.
@@ -829,4 +834,8 @@ export function replayG14ProgrammeReceipt(options) {
 
 export function replayG15ProgrammeReceipt(options) {
   return replayTaskProgrammeReceipt({ ...options, contractPath: g15ContractPath });
+}
+
+export function replayG15bProgrammeReceipt(options) {
+  return replayTaskProgrammeReceipt({ ...options, contractPath: g15bContractPath });
 }

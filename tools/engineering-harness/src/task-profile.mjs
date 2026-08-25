@@ -96,6 +96,31 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/sparql_update_load_http.rs",
     ]),
   }),
+  "g1.5b-update-cancellation": profile({
+    slug: "g1.5b",
+    label: "G1.5b",
+    decision: "ADR-0019",
+    taskClass: "update-cancellation",
+    evaluatorChangeStatus: "A",
+    mutablePath: "lib/oxigraph/src/sparql/update.rs",
+    mutablePaths: Object.freeze([
+      "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/src/sparql/error.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+    ]),
+    guidance:
+      "Expose one typed UpdateEvaluationError::Cancelled outcome and carry the existing CancellationToken through local SPARQL UPDATE execution. Observe cancellation before validation and transaction admission, while queued at the serialized RocksDB writer gate, and throughout each mutation phase. Roll back staged work, perform no mutation after cancellation is observed, and preserve the qualified writer-admission and egress-policy contracts.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/src/sparql/error.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/tests/sparql_update_cancellation.rs",
+      "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
+      "lib/oxigraph/tests/sparql_egress_policy.rs",
+    ]),
+  }),
 });
 
 export function taskProfile(value) {
@@ -111,4 +136,5 @@ export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];
 export const g13Profile = profiles["g1.3-transaction-capabilities"];
 export const g14Profile = profiles["g1.4-bounded-writer-admission"];
 export const g15Profile = profiles["g1.5-unified-egress-policy"];
+export const g15bProfile = profiles["g1.5b-update-cancellation"];
 export const engineeringTaskProfiles = profiles;

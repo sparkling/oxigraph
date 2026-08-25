@@ -23,6 +23,10 @@ Current activation boundary:
   binds the six-file unified egress slice to deny-by-default SERVICE, LOAD,
   nested-document, response-limit, connection-budget, cancellation, and
   rollback evidence;
+- `g1.5b preflight|run|replay` binds the four-file local UPDATE cancellation
+  closure to typed cancellation before validation, during serialized RocksDB
+  writer admission, and throughout mutation, while independently preserving
+  writer-admission and G1.5 egress-policy evidence;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without
@@ -60,6 +64,7 @@ npm run doctor
 npm run g1.3:preflight
 npm run g1.4:preflight
 npm run g1.5:preflight
+npm run g1.5b:preflight
 ```
 
 The package is local-only. Presence of this directory is not an engineering

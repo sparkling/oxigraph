@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.5b-update-cancellation",
+  "programme": "linked-data-store",
+  "decision": "ADR-0019",
+  "objective": "Qualify typed and bounded SPARQL UPDATE cancellation before transaction admission, while queued for the serialized RocksDB writer gate, and throughout local mutation with atomic rollback and no post-cancellation writes.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "9408e9cd9253c5a606f390d9dec075b22588c4b0",
+    "tree": "888767f478acd47a1e0664cf483885dfac20c209"
+  },
+  "evaluator": {
+    "commit": "776b212dda26a4967f82098a90ade4c2d83aade1",
+    "parent": "9408e9cd9253c5a606f390d9dec075b22588c4b0",
+    "tree": "8f966046c4aa9f160a0869e0bac6d72cde04efa2",
+    "path": "lib/oxigraph/tests/sparql_update_cancellation.rs",
+    "changeStatus": "A",
+    "blob": "e7f615028a043a2b49c32e3115d7309f55067a7b",
+    "contentSha256": "0e323a7020917b0e17a77d12d2cb00505167d54c8089b9297b66198bac8c448a",
+    "patchSha256": "fbb93b4cfead8c6cf333241a647f13478c3380580bb0a9547c473fee0f6b5a7e"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/sparql/update.rs",
+    "mutableBaselineBlob": "111ee935fc3a4a4be54aaf8e58d145aa2151bcaf",
+    "mutableBaselineSha256": "6f370674352fb0a33c5b74fd3052fa47cd2fad449138559397ae3ea507baed3d",
+    "baselineManifest": {
+      "entries": 1389,
+      "fullSha256": "f795407f620e470cd755c243145ced1bef41a7eaf8ea306da72b22172737066f",
+      "protectedEntries": 1385,
+      "protectedSha256": "7b614631844d644aedb617d654813448f226ba35c59fd0b64e72c850fcf4e91f"
+    },
+    "evaluatorManifest": {
+      "entries": 1390,
+      "fullSha256": "031eaf844ac6dda195ccc40d08d22df6120c4899c90a3b9c192b756e05e4369e",
+      "protectedEntries": 1386,
+      "protectedSha256": "65cedf8d5a2cb289b3cd60d929fbc04fbbd1332e508a2bfd697f738b51c2c0f3"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/sparql/update.rs",
+      "lib/oxigraph/src/sparql/error.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "lib/oxigraph/src/storage/mod.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "lib/oxigraph/src/lib.rs",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/store",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client,rdf-12", "--no-run", "--test", "rocksdb_writer_serialization", "--test", "sparql_egress_policy"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "sparql_update_cancellation"],
+      "timeoutMs": 180000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "rocksdb_writer_serialization"],
+      "timeoutMs": 120000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client,rdf-12", "--test", "sparql_egress_policy"],
+      "timeoutMs": 180000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 196608,
+    "maxChangedFiles": 4,
+    "maxChangedLines": 1024,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 4,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "kind": "compiler",
+    "commandRole": "public",
+    "exitCode": 101,
+    "rustcCode": "E0599",
+    "rustcErrorCount": 1,
+    "primaryPath": "lib/oxigraph/tests/sparql_update_cancellation.rs",
+    "requiredExports": [
+      "Cancelled"
+    ],
+    "requiredSubstrings": [
+      "no variant or associated item named `Cancelled` found for enum `UpdateEvaluationError`",
+      "could not compile `oxigraph` (test \"sparql_update_cancellation\") due to 1 previous error"
+    ],
+    "forbiddenSubstrings": [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device"
+    ]
+  },
+  "success": {
+    "publicPassed": 6,
+    "independentPassed": 6,
+    "regressionPassed": 12
+  }
+}

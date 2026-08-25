@@ -18,6 +18,8 @@
     "g1.4:run": "node bin/oxigraph-engineering-harness.mjs g1.4 run",
     "g1.5:preflight": "node bin/oxigraph-engineering-harness.mjs g1.5 preflight",
     "g1.5:run": "node bin/oxigraph-engineering-harness.mjs g1.5 run",
+    "g1.5b:preflight": "node bin/oxigraph-engineering-harness.mjs g1.5b preflight",
+    "g1.5b:run": "node bin/oxigraph-engineering-harness.mjs g1.5b run",
     "factory:diagnose": "node bin/oxigraph-engineering-harness.mjs factory diagnose"
   },
   "dependencies": {

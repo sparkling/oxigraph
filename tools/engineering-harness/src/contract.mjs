@@ -10,6 +10,7 @@ import {
   g13Profile,
   g14Profile,
   g15Profile,
+  g15bProfile,
   taskProfile,
 } from "./task-profile.mjs";
 
@@ -17,6 +18,7 @@ export const g12ContractPath = g12Profile.contractPath;
 export const g13ContractPath = g13Profile.contractPath;
 export const g14ContractPath = g14Profile.contractPath;
 export const g15ContractPath = g15Profile.contractPath;
+export const g15bContractPath = g15bProfile.contractPath;
 
 const HEX40 = /^[0-9a-f]{40}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -692,11 +694,167 @@ const EXPECTED_G15 = Object.freeze({
   },
 });
 
+const EXPECTED_G15B = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  decision: "ADR-0019",
+  baseline: {
+    commit: "9408e9cd9253c5a606f390d9dec075b22588c4b0",
+    tree: "888767f478acd47a1e0664cf483885dfac20c209",
+  },
+  evaluator: {
+    commit: "776b212dda26a4967f82098a90ade4c2d83aade1",
+    parent: "9408e9cd9253c5a606f390d9dec075b22588c4b0",
+    tree: "8f966046c4aa9f160a0869e0bac6d72cde04efa2",
+    path: "lib/oxigraph/tests/sparql_update_cancellation.rs",
+    changeStatus: "A",
+    blob: "e7f615028a043a2b49c32e3115d7309f55067a7b",
+    contentSha256:
+      "0e323a7020917b0e17a77d12d2cb00505167d54c8089b9297b66198bac8c448a",
+    patchSha256:
+      "fbb93b4cfead8c6cf333241a647f13478c3380580bb0a9547c473fee0f6b5a7e",
+  },
+  mutableExact: [
+    "lib/oxigraph/src/sparql/update.rs",
+    "lib/oxigraph/src/sparql/error.rs",
+    "lib/oxigraph/src/sparql/mod.rs",
+    "lib/oxigraph/src/storage/mod.rs",
+  ],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/store",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--no-run",
+        "--test",
+        "rocksdb_writer_serialization",
+        "--test",
+        "sparql_egress_policy",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "sparql_update_cancellation",
+      ],
+      timeoutMs: 180_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "rocksdb_writer_serialization",
+      ],
+      timeoutMs: 120_000,
+    },
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_egress_policy",
+      ],
+      timeoutMs: 180_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 196_608,
+    maxChangedFiles: 4,
+    maxChangedLines: 1_024,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0599",
+    rustcErrorCount: 1,
+    primaryPath: "lib/oxigraph/tests/sparql_update_cancellation.rs",
+    requiredExports: ["Cancelled"],
+    requiredSubstrings: [
+      "no variant or associated item named `Cancelled` found for enum `UpdateEvaluationError`",
+      "could not compile `oxigraph` (test \"sparql_update_cancellation\") due to 1 previous error",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 6, independentPassed: 6, regressionPassed: 12 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/sparql/update.rs",
+    mutableBaselineBlob: "111ee935fc3a4a4be54aaf8e58d145aa2151bcaf",
+    mutableBaselineSha256:
+      "6f370674352fb0a33c5b74fd3052fa47cd2fad449138559397ae3ea507baed3d",
+    baselineManifest: {
+      entries: 1389,
+      fullSha256:
+        "f795407f620e470cd755c243145ced1bef41a7eaf8ea306da72b22172737066f",
+      protectedEntries: 1385,
+      protectedSha256:
+        "7b614631844d644aedb617d654813448f226ba35c59fd0b64e72c850fcf4e91f",
+    },
+    evaluatorManifest: {
+      entries: 1390,
+      fullSha256:
+        "031eaf844ac6dda195ccc40d08d22df6120c4899c90a3b9c192b756e05e4369e",
+      protectedEntries: 1386,
+      protectedSha256:
+        "65cedf8d5a2cb289b3cd60d929fbc04fbbd1332e508a2bfd697f738b51c2c0f3",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
 const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
   "g1.4-bounded-writer-admission": EXPECTED_G14,
   "g1.5-unified-egress-policy": EXPECTED_G15,
+  "g1.5b-update-cancellation": EXPECTED_G15B,
 });
 
 function fail(message) {

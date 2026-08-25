@@ -6,6 +6,7 @@ import {
   g13ContractPath,
   g14ContractPath,
   g15ContractPath,
+  g15bContractPath,
   resolveTaskContract,
 } from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
@@ -100,4 +101,8 @@ export function runG14Preflight(options = {}) {
 
 export function runG15Preflight(options = {}) {
   return runTaskPreflight({ ...options, contractPath: g15ContractPath });
+}
+
+export function runG15bPreflight(options = {}) {
+  return runTaskPreflight({ ...options, contractPath: g15bContractPath });
 }
