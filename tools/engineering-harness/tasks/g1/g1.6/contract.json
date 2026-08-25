@@ -129,11 +129,11 @@
       "timeoutMs": 300000
     },
     "independent": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client-native-tls,rdf-12", "--test", "sparql_version"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client-native-tls,rdf-12,geosparql,rdfs,owl2-rl", "--test", "sparql_version"],
       "timeoutMs": 120000
     },
     "regression": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client-native-tls,rdf-12", "--test", "sparql_egress_policy"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client-native-tls,rdf-12,geosparql,rdfs,owl2-rl", "--test", "sparql_egress_policy"],
       "timeoutMs": 180000
     }
   },
