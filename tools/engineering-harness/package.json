@@ -12,6 +12,8 @@
     "doctor": "node bin/oxigraph-engineering-harness.mjs doctor",
     "g1.2:preflight": "node bin/oxigraph-engineering-harness.mjs g1.2 preflight",
     "g1.2:run": "node bin/oxigraph-engineering-harness.mjs g1.2 run",
+    "g1.3:preflight": "node bin/oxigraph-engineering-harness.mjs g1.3 preflight",
+    "g1.3:run": "node bin/oxigraph-engineering-harness.mjs g1.3 run",
     "factory:diagnose": "node bin/oxigraph-engineering-harness.mjs factory diagnose"
   },
   "dependencies": {

@@ -11,14 +11,9 @@ import {
   MAX_TASK_ARG_BYTES,
 } from "../policy/evidence-limits.mjs";
 import { validateCandidatePatch } from "../policy/paths.mjs";
+import { g12Profile, taskProfile } from "../task-profile.mjs";
 
-export const G12_SOURCE_ALLOWLIST = Object.freeze([
-  "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
-  "lib/oxigraph/src/storage/rocksdb.rs",
-  "lib/oxigraph/src/storage/mod.rs",
-  "lib/oxigraph/src/store.rs",
-  "lib/oxigraph/tests/transaction_concurrency.rs",
-]);
+export const G12_SOURCE_ALLOWLIST = g12Profile.sourceAllowlist;
 
 export const G12_SOURCE_BYTE_CEILING = 512 * 1024;
 const PER_FILE_BYTE_CEILING = 256 * 1024;
@@ -127,7 +122,7 @@ const ROLE_PRIORS = Object.freeze({
 });
 const ROLE_DIRECTIVES = Object.freeze({
   architecture:
-    "Design a minimal implementation within the sole mutable file. Explain concurrency, lifetime, failure, and regression risks. Do not return a patch.",
+    "Design a minimal implementation within the sole mutable file. Explain state, concurrency, lifetime, failure, and regression risks. Do not return a patch.",
   critique:
     "Critique the supplied architecture against the frozen source, anomalies, scope, and verification contract. Do not return a patch.",
   implementation:
@@ -139,7 +134,7 @@ const ROLE_DIRECTIVES = Object.freeze({
 });
 
 function fail(message) {
-  throw new Error(`invalid G1.2 worker task context: ${message}`);
+  throw new Error(`invalid engineering worker task context: ${message}`);
 }
 
 function plainObject(value, label) {
@@ -255,12 +250,11 @@ function assertLiteralArgv(value, label, maximum) {
 
 function validateContract(contract, contractSha256) {
   exactKeys(contract, CONTRACT_KEYS, "contract");
+  const profile = taskProfile(contract);
   if (contractSha256 !== undefined) {
     requireHash(contractSha256, HEX64, "contractSha256");
   }
-  if (contract.schemaVersion !== 1 || contract.id !== "g1.2-rocksdb-serialized-writers") {
-    fail("contract must identify the G1.2 schema-v1 task");
-  }
+  if (contract.schemaVersion !== 1) fail("contract must use task schema v1");
   for (const [name, expected] of [
     ["programme", "linked-data-store"],
     ["decision", "ADR-0018"],
@@ -318,10 +312,10 @@ function validateContract(contract, contractSha256) {
     fail("evaluator parent must equal the baseline commit");
   }
   if (
-    contract.evaluator.path !== G12_SOURCE_ALLOWLIST.at(-1) ||
-    contract.evaluator.changeStatus !== "A"
+    !profile.sourceAllowlist.includes(contract.evaluator.path) ||
+    contract.evaluator.changeStatus !== profile.evaluatorChangeStatus
   ) {
-    fail("contract evaluator path/status is not the G1.2 frozen evaluator");
+    fail("contract evaluator path/status is not the registered frozen evaluator");
   }
   requireHash(contract.evaluator.contentSha256, HEX64, "contract.evaluator.contentSha256");
   requireHash(contract.evaluator.patchSha256, HEX64, "contract.evaluator.patchSha256");
@@ -339,8 +333,8 @@ function validateContract(contract, contractSha256) {
     ],
     "contract.protectedInputs",
   );
-  if (contract.protectedInputs.mutableExclusion !== G12_SOURCE_ALLOWLIST[0]) {
-    fail("contract mutable exclusion is not the sole G1.2 source path");
+  if (contract.protectedInputs.mutableExclusion !== profile.mutablePath) {
+    fail("contract mutable exclusion is not the registered mutable source path");
   }
   requireHash(contract.protectedInputs.mutableBaselineBlob, HEX40, "mutable baseline blob");
   requireHash(contract.protectedInputs.mutableBaselineSha256, HEX64, "mutable baseline source digest");
@@ -370,11 +364,11 @@ function validateContract(contract, contractSha256) {
   if (
     !Array.isArray(contract.scope.mutableExact) ||
     contract.scope.mutableExact.length !== 1 ||
-    contract.scope.mutableExact[0] !== G12_SOURCE_ALLOWLIST[0] ||
+    contract.scope.mutableExact[0] !== profile.mutablePath ||
     !Array.isArray(contract.scope.mutablePrefixes) ||
     contract.scope.mutablePrefixes.length !== 0
   ) {
-    fail("contract scope must contain the sole exact G1.2 mutable path");
+    fail("contract scope must contain the sole registered mutable path");
   }
   requireStringArray(contract.scope.blockedExact, "contract.scope.blockedExact");
   requireStringArray(contract.scope.blockedPrefixes, "contract.scope.blockedPrefixes");
@@ -387,7 +381,7 @@ function validateContract(contract, contractSha256) {
     !Array.isArray(contract.verificationSequence) ||
     canonicalJson(contract.verificationSequence) !== canonicalJson(sequence)
   ) {
-    fail("contract verification sequence is not the G1.2 sequence");
+    fail("contract verification sequence is not the frozen five-stage sequence");
   }
   exactKeys(contract.commands, sequence, "contract.commands");
   for (const name of sequence) {
@@ -406,14 +400,39 @@ function validateContract(contract, contractSha256) {
   if (contract.ceilings.networkDuringVerification !== false) {
     fail("contract verification must forbid network access");
   }
-  exactKeys(
-    contract.initialRed,
-    ["commandRole", "exitCode", "passed", "failed", "requiredSubstrings", "forbiddenSubstrings"],
-    "contract.initialRed",
-  );
+  const redKeys =
+    contract.initialRed.kind === "compiler"
+      ? [
+          "kind",
+          "commandRole",
+          "exitCode",
+          "rustcCode",
+          "rustcErrorCount",
+          "primaryPath",
+          "requiredExports",
+          "requiredSubstrings",
+          "forbiddenSubstrings",
+        ]
+      : [
+          "commandRole",
+          "exitCode",
+          "passed",
+          "failed",
+          "requiredSubstrings",
+          "forbiddenSubstrings",
+        ];
+  exactKeys(contract.initialRed, redKeys, "contract.initialRed");
   if (contract.initialRed.commandRole !== "public") fail("initial red command must be public");
-  for (const name of ["exitCode", "passed", "failed"]) {
+  for (const name of
+    contract.initialRed.kind === "compiler"
+      ? ["exitCode", "rustcErrorCount"]
+      : ["exitCode", "passed", "failed"]) {
     requireSafeInteger(contract.initialRed[name], `contract.initialRed.${name}`, 0);
+  }
+  if (contract.initialRed.kind === "compiler") {
+    requireString(contract.initialRed.rustcCode, "contract.initialRed.rustcCode", 16);
+    requireString(contract.initialRed.primaryPath, "contract.initialRed.primaryPath", 4_096);
+    requireStringArray(contract.initialRed.requiredExports, "contract.initialRed.requiredExports", 64);
   }
   requireStringArray(contract.initialRed.requiredSubstrings, "contract.initialRed.requiredSubstrings", 32);
   requireStringArray(contract.initialRed.forbiddenSubstrings, "contract.initialRed.forbiddenSubstrings", 32);
@@ -483,7 +502,7 @@ async function validateEvaluator(evaluator, contract) {
   return Object.freeze({ temporaryRoot, workspace });
 }
 
-function parseTreeEntries(output) {
+function parseTreeEntries(output, sourceAllowlist) {
   const entries = new Map();
   for (const record of output.split("\0").filter(Boolean)) {
     const match = /^(\d{6}) blob ([0-9a-f]{40})\t(.+)$/u.exec(record);
@@ -494,8 +513,8 @@ function parseTreeEntries(output) {
     entries.set(match[3], match[2]);
   }
   if (
-    entries.size !== G12_SOURCE_ALLOWLIST.length ||
-    G12_SOURCE_ALLOWLIST.some((path) => !entries.has(path))
+    entries.size !== sourceAllowlist.length ||
+    sourceAllowlist.some((path) => !entries.has(path))
   ) {
     fail("evaluator tree does not contain the complete fixed source allowlist");
   }
@@ -583,16 +602,18 @@ async function sealedSourceSnapshot(
   contractSha256,
   workspace,
 ) {
+  const profile = taskProfile(contract);
+  const sourceAllowlist = profile.sourceAllowlist;
   const output = await runGit({
-    args: ["ls-tree", "-r", "-z", contract.evaluator.tree, "--", ...G12_SOURCE_ALLOWLIST],
+    args: ["ls-tree", "-r", "-z", contract.evaluator.tree, "--", ...sourceAllowlist],
     cwd: workspace,
     home: evaluator.gitHome,
     maxOutputBytes: 256 * 1024,
   });
-  const treeEntries = parseTreeEntries(output);
+  const treeEntries = parseTreeEntries(output, sourceAllowlist);
   const files = [];
   let totalBytes = 0;
-  for (const path of G12_SOURCE_ALLOWLIST) {
+  for (const path of sourceAllowlist) {
     const file = await readSealedFile({ workspace, path, gitOid: treeEntries.get(path) });
     totalBytes += file.bytes;
     if (totalBytes > G12_SOURCE_BYTE_CEILING) {
@@ -602,7 +623,7 @@ async function sealedSourceSnapshot(
   }
   const byPath = new Map(files.map((file) => [file.path, file]));
   if (
-    byPath.get(G12_SOURCE_ALLOWLIST[0]).sha256 !==
+    byPath.get(profile.mutablePath).sha256 !==
       contract.protectedInputs.mutableBaselineSha256 ||
     byPath.get(contract.evaluator.path).sha256 !== contract.evaluator.contentSha256
   ) {
@@ -895,6 +916,8 @@ function contractProjection(contract, contractSha256) {
 }
 
 function validateCachedSourceSnapshot(snapshot, contract, contractSha256) {
+  const profile = taskProfile(contract);
+  const sourceAllowlist = profile.sourceAllowlist;
   exactKeys(
     snapshot,
     ["algorithm", "contractSha256", "totalBytes", "sha256", "files"],
@@ -914,13 +937,13 @@ function validateCachedSourceSnapshot(snapshot, contract, contractSha256) {
   requireHash(snapshot.sha256, HEX64, "sourceSnapshot.sha256");
   if (
     !Array.isArray(snapshot.files) ||
-    snapshot.files.length !== G12_SOURCE_ALLOWLIST.length
+    snapshot.files.length !== sourceAllowlist.length
   ) {
     fail("sourceSnapshot must contain the complete fixed allowlist");
   }
   const files = snapshot.files.map((file, index) => {
     exactKeys(file, ["path", "bytes", "sha256", "content"], `sourceSnapshot.files[${index}]`);
-    if (file.path !== G12_SOURCE_ALLOWLIST[index]) {
+    if (file.path !== sourceAllowlist[index]) {
       fail("sourceSnapshot file order/path differs from the fixed allowlist");
     }
     requireSafeInteger(file.bytes, `sourceSnapshot.files[${index}].bytes`, 1);
@@ -941,7 +964,7 @@ function validateCachedSourceSnapshot(snapshot, contract, contractSha256) {
   }
   const byPath = new Map(files.map((file) => [file.path, file]));
   if (
-    byPath.get(G12_SOURCE_ALLOWLIST[0]).sha256 !==
+    byPath.get(profile.mutablePath).sha256 !==
       contract.protectedInputs.mutableBaselineSha256 ||
     byPath.get(contract.evaluator.path).sha256 !== contract.evaluator.contentSha256
   ) {
@@ -998,13 +1021,13 @@ export async function createG12SourceSnapshot(input) {
 }
 
 /**
- * Builds the only JSON task shape admitted to a tool-free native G1.2 worker.
+ * Builds the only JSON task shape admitted to a tool-free native task worker.
  * It consumes only an already sealed, self-verifying source snapshot.
  */
 export async function createG12TaskContext(input) {
   plainObject(input, "task context input");
   validateWorkerRole(input.role);
-  if (!TASK_ROLES.includes(input.role)) fail("worker role is not admitted for G1.2");
+  if (!TASK_ROLES.includes(input.role)) fail("worker role is not admitted");
   const requiredKeys = ["role", "sourceSnapshot", "contract", "contractSha256"];
   if (ROLE_PRIORS[input.role].length > 0) requiredKeys.push("priorOutputs");
   if (["review", "repair"].includes(input.role)) {
@@ -1069,3 +1092,6 @@ export async function createG12TaskContext(input) {
     },
   });
 }
+
+export const createTaskSourceSnapshot = createG12SourceSnapshot;
+export const createTaskContext = createG12TaskContext;

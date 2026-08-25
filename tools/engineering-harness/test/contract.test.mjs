@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   g12ContractPath,
+  g13ContractPath,
   loadTaskContract,
   resolveTaskContract,
   validateTaskContract,
@@ -32,6 +33,27 @@ test("loads the frozen G1.2 contract and binds it to real Git objects", () => {
     "eaf7161c142fb8afecd37dd9dad02463c0efa107",
   );
   assert.equal(resolution.repository.registration, null);
+});
+
+test("loads the post-G1.2 compiler-red G1.3 contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ contractPath: g13ContractPath });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.3/contract.json",
+  );
+  assert.equal(resolution.contract.initialRed.kind, "compiler");
+  assert.equal(resolution.contract.initialRed.rustcCode, "E0432");
+  assert.equal(resolution.contract.initialRed.rustcErrorCount, 1);
+  assert.equal(resolution.contract.success.publicPassed, 9);
+  assert.equal(
+    resolution.repository.baseline.commit,
+    "7eec1f0715e4f28434b2f505e289c9b599991aae",
+  );
+  assert.equal(
+    resolution.repository.evaluator.commit,
+    "4ad118a039d6ee57c63b9c45e47368454762e2ee",
+  );
 });
 
 test("keeps the containing control commit outside the self-declared contract", () => {
@@ -91,7 +113,10 @@ test("fails closed on authority, native routing, scope, commands, ceilings, and 
   ];
 
   for (const invalid of cases) {
-    assert.throws(() => validateTaskContract(invalid), /invalid G1\.2 task contract/u);
+    assert.throws(
+      () => validateTaskContract(invalid),
+      /invalid engineering task contract/u,
+    );
   }
 });
 
@@ -115,7 +140,7 @@ test("fails closed when frozen repository claims are altered", () => {
   for (const invalid of cases) {
     assert.throws(
       () => verifyTaskContractRepository(invalid),
-      /invalid G1\.2 task contract/u,
+      /invalid engineering task contract/u,
     );
   }
 });
@@ -129,4 +154,5 @@ test("rejects contract paths outside the harness", () => {
     /contract path escapes the engineering harness/u,
   );
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g12ContractPath }));
+  assert.doesNotThrow(() => loadTaskContract({ contractPath: g13ContractPath }));
 });

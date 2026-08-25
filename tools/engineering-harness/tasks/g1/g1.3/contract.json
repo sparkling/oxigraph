@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.3-transaction-capabilities",
+  "programme": "linked-data-store",
+  "decision": "ADR-0018",
+  "objective": "Add explicit transaction capability negotiation and typed start, commit, rollback, cancellation, conflict, and outcome semantics without changing the protected legacy transaction traits.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "7eec1f0715e4f28434b2f505e289c9b599991aae",
+    "tree": "5d1034cac3a37c8cecc9f26b3f5844c4ed248f53"
+  },
+  "evaluator": {
+    "commit": "4ad118a039d6ee57c63b9c45e47368454762e2ee",
+    "parent": "7eec1f0715e4f28434b2f505e289c9b599991aae",
+    "tree": "aaf08375b441fefa8051dede88e0603283084215",
+    "path": "lib/oxigraph/tests/transaction_capabilities.rs",
+    "changeStatus": "M",
+    "blob": "1908194b5a7fc0a3e0319710a7ce319b69fee6ae",
+    "contentSha256": "543209b7de7e82a0f0c894b925871788222dca3aaa393cae0d656ff3332375d3",
+    "patchSha256": "8c5187ff50158dc66a9e6df095201f3c6503c9d05769a45ef02d8c29eb16115a"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/store.rs",
+    "mutableBaselineBlob": "aed3bba9d9839efcb7ba9b376bbbd5ca4c536290",
+    "mutableBaselineSha256": "88591c979240bb33a1ddcca287c7a31dc10080ff83fabbd0f15511265e20a182",
+    "baselineManifest": {
+      "entries": 1383,
+      "fullSha256": "11cfe7a7649acb16f2d8e3c469bf6c863f50044a8cd96947bbb2ea45f88b5d7e",
+      "protectedEntries": 1382,
+      "protectedSha256": "48d97e50b3c73a4ea22604201f79058e3adcbfab0e34f29ada9f0b4754206226"
+    },
+    "evaluatorManifest": {
+      "entries": 1383,
+      "fullSha256": "5b1852f142b5adf64bb4afab121cf0090d5a8c2ddc6f04ddb0bbaf4e43c869f0",
+      "protectedEntries": 1382,
+      "protectedSha256": "679e1ce34462d761090534c186e6bbbde5ba9297b7d00dda60d3748f8b16e189"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/store.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/sparql",
+      "lib/oxigraph/src/store",
+      "lib/oxigraph/src/storage",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "transaction_state_model", "--test", "transactional_dataset"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_capabilities"],
+      "timeoutMs": 120000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_state_model"],
+      "timeoutMs": 420000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transactional_dataset"],
+      "timeoutMs": 120000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 98304,
+    "maxChangedFiles": 1,
+    "maxChangedLines": 768,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 4,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "kind": "compiler",
+    "commandRole": "public",
+    "exitCode": 101,
+    "rustcCode": "E0432",
+    "rustcErrorCount": 1,
+    "primaryPath": "lib/oxigraph/tests/transaction_capabilities.rs",
+    "requiredExports": [
+      "CancellationGuarantee",
+      "ConflictBehavior",
+      "NegotiatedTransactionalDataset",
+      "OutcomeAwareWritableDataset",
+      "OutcomeLookup",
+      "RollbackGuarantee",
+      "TransactionCapabilities",
+      "TransactionCommitError",
+      "TransactionKey",
+      "TransactionRequest",
+      "TransactionRequirements",
+      "TransactionRollbackError",
+      "TransactionStartError",
+      "UnmetTransactionRequirement",
+      "WriterIsolation"
+    ],
+    "requiredSubstrings": [
+      "error[E0432]: unresolved imports",
+      "could not compile `oxigraph` (test \"transaction_capabilities\") due to 1 previous error"
+    ],
+    "forbiddenSubstrings": [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device"
+    ]
+  },
+  "success": {
+    "publicPassed": 9,
+    "independentPassed": 3,
+    "regressionPassed": 3
+  }
+}

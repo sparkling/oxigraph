@@ -104,6 +104,7 @@ async function fixture(t) {
 function fakeSessionRunner({
   calls,
   publicRed = false,
+  compilerRed = false,
   buildFails = false,
   formatFails = false,
   failureDisposition = "completed",
@@ -120,8 +121,17 @@ function fakeSessionRunner({
       const failed = (name === "format" && formatFails) || (name === "build" && buildFails);
       let exitCode = failed ? (failureDisposition === "completed" ? 101 : null) : 0;
       let stdout = "";
+      let stderr = "";
       if (name === "public") {
-        if (publicRed) {
+        if (compilerRed) {
+          exitCode = 101;
+          stderr = [
+            "error[E0432]: unresolved imports `crate::Alpha`, `crate::Beta`",
+            "  --> lib/oxigraph/tests/compiler_fixture.rs:9:5",
+            "Alpha Beta",
+            "error: could not compile `oxigraph` (test \"compiler_fixture\") due to 1 previous error",
+          ].join("\n");
+        } else if (publicRed) {
           exitCode = 101;
           stdout = [
             "lost update reproduced",
@@ -146,9 +156,9 @@ function fakeSessionRunner({
         disposition: failed ? failureDisposition : "completed",
         durationMs: 1,
         stdout,
-        stderr: "",
+        stderr,
         stdoutSha256: sha256(stdout),
-        stderrSha256: sha256(""),
+        stderrSha256: sha256(stderr),
       });
     });
     return Object.freeze({
@@ -179,7 +189,7 @@ function fakeSessionRunner({
         stdout: "",
         stderr: "",
       }),
-      resultSha256: sha256(`session:${publicRed}:${buildFails}:${formatFails}:${failureDisposition}`),
+      resultSha256: sha256(`session:${publicRed}:${compilerRed}:${buildFails}:${formatFails}:${failureDisposition}`),
       resultBytes: 1024,
       session: Object.freeze({
         schemaVersion: 1,
@@ -224,7 +234,7 @@ test("candidate verifier runs one persistent session and binds invocation and re
   assert.ok(result.commands.every(({ sandboxArgv }) => sandboxArgv === result.commands[0].sandboxArgv));
   assert.deepEqual(result.artifacts.at(-1), {
     name: "verifier-session-result.json",
-    sha256: sha256("session:false:false:false:completed"),
+    sha256: sha256("session:false:false:false:false:completed"),
     bytes: 1024,
   });
 });
@@ -329,6 +339,49 @@ test("red baseline requires the exact anomaly and green independent references",
   assert.equal(result.initialRedMatched, true);
   assert.equal(result.referencesGreen, true);
   assert.equal(calls.length, 1);
+  assert.deepEqual(
+    result.commands.map(({ name }) => name),
+    ["format", "build", "public", "independent", "regression"],
+  );
+});
+
+test("compiler-red baseline requires one exact rustc error and green controls", async (t) => {
+  const { candidate } = await fixture(t);
+  const evaluator = Object.freeze({
+    ...candidate,
+    candidatePatchSha256: null,
+    kind: "evaluator",
+  });
+  const compilerContract = Object.freeze({
+    ...contract,
+    evaluator: Object.freeze({ commit: evaluator.candidateCommit }),
+    initialRed: Object.freeze({
+      kind: "compiler",
+      commandRole: "public",
+      exitCode: 101,
+      rustcCode: "E0432",
+      rustcErrorCount: 1,
+      primaryPath: "lib/oxigraph/tests/compiler_fixture.rs",
+      requiredExports: Object.freeze(["Alpha", "Beta"]),
+      requiredSubstrings: Object.freeze([
+        "error[E0432]: unresolved imports",
+        "could not compile `oxigraph` (test \"compiler_fixture\") due to 1 previous error",
+      ]),
+      forbiddenSubstrings: Object.freeze(["no test target named", "timed out"]),
+    }),
+    success: Object.freeze({ publicPassed: 2, independentPassed: 3, regressionPassed: 2 }),
+  });
+  const verifier = createVerifierForTesting(
+    fakeSessionRunner({ calls: [], compilerRed: true }),
+  );
+  const result = await verifier.verifyRedBaseline({
+    candidate: evaluator,
+    contract: compilerContract,
+  });
+
+  assert.equal(result.verdict, "CONFIRMED_RED");
+  assert.equal(result.initialRedMatched, true);
+  assert.equal(result.referencesGreen, true);
   assert.deepEqual(
     result.commands.map(({ name }) => name),
     ["format", "build", "public", "independent", "regression"],

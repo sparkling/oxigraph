@@ -11,6 +11,13 @@ lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 Current activation boundary:
 
 - `doctor` verifies the local installation and dependency bindings;
+- `g1.2 preflight|run|replay` preserves the accepted RocksDB writer-serialization
+  contract and its historical receipts;
+- `g1.3 preflight|run|replay` binds the additive transaction-capability task to
+  its post-G1.2 evaluator, including the expected single `E0432` compiler-red
+  baseline and independently green controls;
+- `receipt verify` independently verifies stored application receipts without
+  granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without
   adopting its publication settings, broad permissions, legacy dependencies,
   or nonexistent MCP commands;
@@ -24,6 +31,7 @@ Install and verify from this directory:
 npm ci --ignore-scripts
 npm test
 npm run doctor
+npm run g1.3:preflight
 ```
 
 The package is local-only. Presence of this directory is not an engineering

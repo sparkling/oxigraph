@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { disposeCandidate, reconstructCandidate } from "../candidate/reconstruct.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
 import { verifyCandidate } from "../candidate/verifier.mjs";
+import { g12ContractPath, g13ContractPath } from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
 import { validateWorkerOutput } from "../policy/authority.mjs";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../receipts/application.mjs";
 import { QualityFirstRouter } from "../routing/quality-router.mjs";
 import { RouterHistory } from "../routing/history.mjs";
+import { taskProfile } from "../task-profile.mjs";
 import { admitApplicationReceipt } from "./application-admission.mjs";
 import { currentControlIdentity } from "./control-identity.mjs";
 import {
@@ -25,20 +27,19 @@ import {
   upstreamRoleOutputs,
 } from "./lifecycle.mjs";
 import { NativeWorkerPool } from "./native-pool.mjs";
-import { runG12Preflight } from "./preflight.mjs";
+import { runTaskPreflight } from "./preflight.mjs";
 import {
   isIgnoredRuntimePath,
   readPrivateRuntimeArtifact,
   runtimePath,
   writePrivateRuntimeArtifact,
 } from "./storage.mjs";
-import { createG12TaskContext } from "./task-context.mjs";
+import { createTaskContext } from "./task-context.mjs";
 import {
   runUpstreamAttempt,
   upstreamFailureSummary,
 } from "./upstream.mjs";
 
-const TASK_CLASS = "transaction-concurrency";
 const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const PROVIDERS = Object.freeze(["codex", "claude"]);
 
@@ -48,7 +49,7 @@ function sha256(value) {
 
 function requireRunId(runId) {
   if (typeof runId !== "string" || !SAFE_RUN_ID.test(runId)) {
-    throw new Error("G1.2 programme runId must be a safe bounded identifier");
+    throw new Error("engineering programme runId must be a safe bounded identifier");
   }
   return runId;
 }
@@ -56,13 +57,13 @@ function requireRunId(runId) {
 function isoNow(clock) {
   const value = clock();
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.valueOf())) throw new Error("G1.2 programme clock is invalid");
+  if (Number.isNaN(date.valueOf())) throw new Error("engineering programme clock is invalid");
   return date.toISOString();
 }
 
 function abortBeforeEvidence(signal) {
   if (signal?.aborted) {
-    const error = new Error("G1.2 programme cancelled before native evidence");
+    const error = new Error("engineering programme cancelled before native evidence");
     error.code = "OXIGRAPH_CANCELLED";
     throw error;
   }
@@ -157,11 +158,11 @@ function boundedIssue(error) {
 
 function defaultOperations() {
   return Object.freeze({
-    preflight: (options) => runG12Preflight(options),
+    preflight: (options) => runTaskPreflight(options),
     router: (history) => new QualityFirstRouter({ history }),
     pool: (contract) => new NativeWorkerPool({ contract }),
     runAttempt: runUpstreamAttempt,
-    taskContext: createG12TaskContext,
+    taskContext: createTaskContext,
     reconstruct: reconstructCandidate,
     materializeSubmodules: materializeFrozenSubmodules,
     verify: verifyCandidate,
@@ -172,29 +173,36 @@ function defaultOperations() {
 }
 
 async function executeProgramme(
-  { runId = randomUUID(), signal, repoRoot = repositoryRoot, clock = () => new Date() } = {},
+  {
+    runId = randomUUID(),
+    signal,
+    repoRoot = repositoryRoot,
+    contractPath = g12ContractPath,
+    clock = () => new Date(),
+  } = {},
   operations,
 ) {
   requireRunId(runId);
-  if (typeof clock !== "function") throw new Error("G1.2 programme requires a clock");
+  if (typeof clock !== "function") throw new Error("engineering programme requires a clock");
   abortBeforeEvidence(signal);
   const startedAt = isoNow(clock);
-  const preflight = await operations.preflight({ signal, repoRoot });
+  const preflight = await operations.preflight({ signal, repoRoot, contractPath });
   const contract = preflight.contract;
+  const profile = taskProfile(contract);
   const pool = operations.pool(contract);
   const models = pool.models;
   const declaredModels = Object.fromEntries(
     contract.routing.providers.map(({ provider, model }) => [provider, model]),
   );
   if (PROVIDERS.some((provider) => models[provider] !== declaredModels[provider])) {
-    throw new Error("native pool models do not match the frozen G1.2 contract");
+    throw new Error("native pool models do not match the frozen task contract");
   }
   const history = await operations.history({ preflight, repoRoot });
   const router = operations.router(history);
   const applicationTaskId = `${contract.id}:${runId}`;
   const baseRoutingContext = Object.freeze({
     taskId: applicationTaskId,
-    taskClass: TASK_CLASS,
+    taskClass: profile.taskClass,
     contractSha256: preflight.contractSha256,
     evaluatorSha256: contract.evaluator.patchSha256,
     harnessSha256: preflight.control.harnessSha256,
@@ -625,7 +633,7 @@ async function executeProgramme(
   }
 
   if (nativeInvocations.length === 0) {
-    throw new Error("G1.2 programme produced no native invocation evidence");
+    throw new Error(`${profile.label} programme produced no native invocation evidence`);
   }
   const selectedCandidate =
     selected === null
@@ -648,7 +656,7 @@ async function executeProgramme(
     run: Object.freeze({
       id: runId,
       taskId: applicationTaskId,
-      taskClass: TASK_CLASS,
+      taskClass: profile.taskClass,
       startedAt,
       completedAt,
     }),
@@ -680,7 +688,7 @@ async function executeProgramme(
     repoRoot,
   });
   return Object.freeze({
-    schema: "oxigraph.g1.2-programme-result/v1",
+    schema: `oxigraph.${profile.slug}-programme-result/v1`,
     runId,
     taskId: applicationTaskId,
     final,
@@ -705,7 +713,8 @@ async function productionFinalize({
   history,
   repoRoot,
 }) {
-  const receiptName = `g1.2-application-${runId}.json`;
+  const profile = taskProfile(preflight.contract);
+  const receiptName = `${profile.slug}-application-${runId}.json`;
   const receiptPath = await writePrivateRuntimeArtifact(receiptName, receiptBytes);
   try {
     const freshControl = await currentControlIdentity({
@@ -724,13 +733,21 @@ async function productionFinalize({
   }
 }
 
-/** Execute the committed, local-only G1.2 programme with native providers. */
-export async function runG12Programme(options = {}) {
+/** Execute a committed, local-only task programme with native providers. */
+export async function runTaskProgramme(options = {}) {
   return executeProgramme(options, {
     ...defaultOperations(),
     history: productionHistory,
     finalize: productionFinalize,
   });
+}
+
+export function runG12Programme(options = {}) {
+  return runTaskProgramme({ ...options, contractPath: g12ContractPath });
+}
+
+export function runG13Programme(options = {}) {
+  return runTaskProgramme({ ...options, contractPath: g13ContractPath });
 }
 
 /**
@@ -744,21 +761,27 @@ export function createG12ProgrammeForTesting(overrides) {
     typeof overrides.history !== "function" ||
     typeof overrides.finalize !== "function"
   ) {
-    throw new Error("test G1.2 programme requires isolated history and finalize operations");
+    throw new Error("test engineering programme requires isolated history and finalize operations");
   }
   const operations = Object.freeze({ ...defaultOperations(), ...overrides });
   return (options = {}) => executeProgramme(options, operations);
 }
 
 /** Replay one private receipt against a fresh red preflight and current control. */
-export async function replayG12ProgrammeReceipt({ name, signal, repoRoot = repositoryRoot }) {
+export async function replayTaskProgrammeReceipt({
+  name,
+  signal,
+  repoRoot = repositoryRoot,
+  contractPath = g12ContractPath,
+}) {
   const receiptBytes = (await readPrivateRuntimeArtifact(name)).toString("utf8");
   const receipt = replayApplicationReceipt(receiptBytes);
   const independent = verifyApplicationReceipt(receiptBytes);
   if (!independent.ok || receipt.run.id.length === 0) {
-    throw new Error("stored G1.2 receipt failed independent replay");
+    throw new Error("stored task receipt failed independent replay");
   }
-  const preflight = await runG12Preflight({ signal, repoRoot });
+  const preflight = await runTaskPreflight({ signal, repoRoot, contractPath });
+  const profile = taskProfile(preflight.contract);
   const history = await productionHistory();
   const freshControl = await currentControlIdentity({
     contract: preflight.contract,
@@ -770,11 +793,19 @@ export async function replayG12ProgrammeReceipt({ name, signal, repoRoot = repos
     history,
   });
   return Object.freeze({
-    schema: "oxigraph.g1.2-replay-result/v1",
+    schema: `oxigraph.${profile.slug}-replay-result/v1`,
     runId: receipt.run.id,
     final: receipt.final,
     selectedCandidate: receipt.selectedCandidate,
     receiptSha256: receipt.receiptSha256,
     admittedOutcomes: admission.outcomeCount,
   });
+}
+
+export function replayG12ProgrammeReceipt(options) {
+  return replayTaskProgrammeReceipt({ ...options, contractPath: g12ContractPath });
+}
+
+export function replayG13ProgrammeReceipt(options) {
+  return replayTaskProgrammeReceipt({ ...options, contractPath: g13ContractPath });
 }

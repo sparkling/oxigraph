@@ -7,9 +7,11 @@ import { verifyApplicationReceipt } from "../src/receipts/application.mjs";
 import { RouterHistory } from "../src/routing/history.mjs";
 import {
   replayG12ProgrammeReceipt,
+  replayG13ProgrammeReceipt,
   runG12Programme,
+  runG13Programme,
 } from "../src/runtime/g12-programme.mjs";
-import { runG12Preflight } from "../src/runtime/preflight.mjs";
+import { runG12Preflight, runG13Preflight } from "../src/runtime/preflight.mjs";
 import {
   isIgnoredRuntimePath,
   readPrivateRuntimeArtifact,
@@ -74,6 +76,31 @@ async function main(args) {
     );
     return;
   }
+  if (args[0] === "g1.3" && args[1] === "preflight" && args.length === 2) {
+    const preflight = await runG13Preflight({ signal: shutdown.signal });
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          schema: "oxigraph.g1.3-preflight-result/v1",
+          contractId: preflight.contract.id,
+          contractSha256: preflight.contractSha256,
+          harnessSha256: preflight.control.harnessSha256,
+          evaluator: {
+            commit: preflight.contract.evaluator.commit,
+            tree: preflight.contract.evaluator.tree,
+            patchSha256: preflight.contract.evaluator.patchSha256,
+          },
+          redBaseline: preflight.redBaseline,
+          submodules: preflight.submodules,
+          localOnly: true,
+          promotionAuthority: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
   if (args[0] === "g1.2" && args[1] === "run") {
     const runId = optionalValue(args, "--run-id");
     const allowedLength = runId === undefined ? 2 : 4;
@@ -86,8 +113,30 @@ async function main(args) {
     if (result.final.verdict === "INCONCLUSIVE") process.exitCode = 4;
     return;
   }
+  if (args[0] === "g1.3" && args[1] === "run") {
+    const runId = optionalValue(args, "--run-id");
+    const allowedLength = runId === undefined ? 2 : 4;
+    if (args.length !== allowedLength) {
+      throw new Error("usage: g1.3 run [--run-id <safe-id>]");
+    }
+    const result = await runG13Programme({ runId, signal: shutdown.signal });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (result.final.verdict === "REJECT") process.exitCode = 3;
+    if (result.final.verdict === "INCONCLUSIVE") process.exitCode = 4;
+    return;
+  }
   if (args[0] === "g1.2" && args[1] === "replay" && args.length === 4) {
     const result = await replayG12ProgrammeReceipt({
+      name: value(args, "--receipt"),
+      signal: shutdown.signal,
+    });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (result.final.verdict === "REJECT") process.exitCode = 3;
+    if (result.final.verdict === "INCONCLUSIVE") process.exitCode = 4;
+    return;
+  }
+  if (args[0] === "g1.3" && args[1] === "replay" && args.length === 4) {
+    const result = await replayG13ProgrammeReceipt({
       name: value(args, "--receipt"),
       signal: shutdown.signal,
     });

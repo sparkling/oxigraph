@@ -12,8 +12,11 @@ test("canonical CLI registry exposes programme, replay, receipt, and history com
   assert.deepEqual(commandIds(), [
     "doctor",
     "g1.2.preflight",
+    "g1.3.preflight",
     "g1.2.run",
     "g1.2.replay",
+    "g1.3.run",
+    "g1.3.replay",
     "receipt.verify",
     "history.inspect",
     "factory.diagnose",

@@ -4,15 +4,15 @@
   "programme": "linked-data-store",
   "decision": "ADR-0018",
   "kind": "compiler-red-control",
-  "runnableByCurrentHarness": false,
+  "runnableByCurrentHarness": true,
   "observedBaseline": {
-    "commit": "253a2b34079c1cae6eb9cfd196380a14a7ca092f",
-    "tree": "ec104c6ab9f3fa4246181166c0b91eb39e5715ed"
+    "commit": "7eec1f0715e4f28434b2f505e289c9b599991aae",
+    "tree": "5d1034cac3a37c8cecc9f26b3f5844c4ed248f53"
   },
   "evaluator": {
     "path": "lib/oxigraph/tests/transaction_capabilities.rs",
-    "contentSha256": "154acc7d10fcf110f2b798752518ea67ef74c8199b706032246a97d37efa8821",
-    "gitBlob": "5ada1355510926e386cd3f3f6d432a7cd6a0b6ff"
+    "contentSha256": "543209b7de7e82a0f0c894b925871788222dca3aaa393cae0d656ff3332375d3",
+    "gitBlob": "1908194b5a7fc0a3e0319710a7ce319b69fee6ae"
   },
   "protectedLegacySurface": {
     "path": "lib/oxigraph/src/store/transactional.rs",
@@ -96,7 +96,7 @@
     }
   ],
   "futureGreen": {
-    "publicPassed": 7,
+    "publicPassed": 9,
     "requirements": [
       "default requests retain the legacy minimum and return the advertised effective profile",
       "unmet dimensions are typed and rejected before opening a backend transaction",
@@ -108,11 +108,8 @@
     ]
   },
   "registration": {
-    "status": "awaiting-evaluator-only-commit",
-    "futureContractPath": "tools/engineering-harness/tasks/g1/g1.3/contract.json",
-    "blockers": [
-      "The current G1.2-specific harness contract admits runtime test failures and deliberately rejects compiler failures.",
-      "A runnable contract requires immutable evaluator commit, parent, tree, blob, and patch identities that do not exist before the evaluator-only commit."
-    ]
+    "status": "registered",
+    "contractPath": "tools/engineering-harness/tasks/g1/g1.3/contract.json",
+    "evaluatorCommit": "4ad118a039d6ee57c63b9c45e47368454762e2ee"
   }
 }

@@ -182,6 +182,32 @@ function commandPassed(command, expectedPassed) {
   return command.disposition === "completed" && command.exitCode === 0 && `${command.stdoutTail}\n${command.stderrTail}`.includes(`test result: ok. ${expectedPassed} passed; 0 failed;`);
 }
 
+function initialRedMatched(evidence, outcome, initialRed) {
+  if (
+    evidence?.disposition !== "completed" ||
+    evidence.exitCode !== initialRed.exitCode
+  ) {
+    return false;
+  }
+  const text = `${outcome.stdout}\n${outcome.stderr}`;
+  const common =
+    initialRed.requiredSubstrings.every((value) => text.includes(value)) &&
+    initialRed.forbiddenSubstrings.every((value) => !text.includes(value));
+  if (!common) return false;
+  if (initialRed.kind !== "compiler") {
+    return text.includes(
+      `test result: FAILED. ${initialRed.passed} passed; ${initialRed.failed} failed;`,
+    );
+  }
+  const rustcErrors = text.match(/^error\[E\d{4}\]:/gmu) ?? [];
+  return (
+    rustcErrors.length === initialRed.rustcErrorCount &&
+    text.includes(`error[${initialRed.rustcCode}]:`) &&
+    text.includes(`--> ${initialRed.primaryPath}:`) &&
+    initialRed.requiredExports.every((value) => text.includes(value))
+  );
+}
+
 async function verifyCandidateWithRunner({ candidate, contract, signal }, sessionRunner) {
   if (candidate.kind !== "candidate" || candidate.candidatePatchSha256 === null) {
     throw new Error("candidate verification requires a sealed product patch");
@@ -210,8 +236,11 @@ async function verifyRedBaselineWithRunner({ candidate, contract, signal }, sess
   if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, candidate, "INCONCLUSIVE", "build");
   const publicEvidence = session.commands.find(({ name }) => name === "public");
   const publicOutcome = session.rawOutcomes.get("public");
-  const publicText = `${publicOutcome.stdout}\n${publicOutcome.stderr}`;
-  const red = publicEvidence.disposition === "completed" && publicEvidence.exitCode === contract.initialRed.exitCode && publicText.includes(`test result: FAILED. ${contract.initialRed.passed} passed; ${contract.initialRed.failed} failed;`) && contract.initialRed.requiredSubstrings.every((value) => publicText.includes(value)) && contract.initialRed.forbiddenSubstrings.every((value) => !publicText.includes(value));
+  const red = initialRedMatched(
+    publicEvidence,
+    publicOutcome,
+    contract.initialRed,
+  );
   const independent = session.commands.find(({ name }) => name === "independent");
   const regression = session.commands.find(({ name }) => name === "regression");
   const referencesGreen = commandPassed(independent, contract.success.independentPassed) && commandPassed(regression, contract.success.regressionPassed);

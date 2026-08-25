@@ -5,14 +5,10 @@ import { isDeepStrictEqual } from "node:util";
 import { join, relative, resolve } from "node:path";
 
 import { harnessRoot, isContained, repositoryRoot } from "./paths.mjs";
+import { g12Profile, g13Profile, taskProfile } from "./task-profile.mjs";
 
-export const g12ContractPath = join(
-  harnessRoot,
-  "tasks",
-  "g1",
-  "g1.2",
-  "contract.json",
-);
+export const g12ContractPath = g12Profile.contractPath;
+export const g13ContractPath = g13Profile.contractPath;
 
 const HEX40 = /^[0-9a-f]{40}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -222,8 +218,163 @@ const EXPECTED = Object.freeze({
   },
 });
 
+const EXPECTED_G13 = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  baseline: {
+    commit: "7eec1f0715e4f28434b2f505e289c9b599991aae",
+    tree: "5d1034cac3a37c8cecc9f26b3f5844c4ed248f53",
+  },
+  evaluator: {
+    commit: "4ad118a039d6ee57c63b9c45e47368454762e2ee",
+    parent: "7eec1f0715e4f28434b2f505e289c9b599991aae",
+    tree: "aaf08375b441fefa8051dede88e0603283084215",
+    path: "lib/oxigraph/tests/transaction_capabilities.rs",
+    changeStatus: "M",
+    blob: "1908194b5a7fc0a3e0319710a7ce319b69fee6ae",
+    contentSha256:
+      "543209b7de7e82a0f0c894b925871788222dca3aaa393cae0d656ff3332375d3",
+    patchSha256:
+      "8c5187ff50158dc66a9e6df095201f3c6503c9d05769a45ef02d8c29eb16115a",
+  },
+  mutableExact: ["lib/oxigraph/src/store.rs"],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/sparql",
+    "lib/oxigraph/src/store",
+    "lib/oxigraph/src/storage",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--no-run",
+        "--test",
+        "transaction_state_model",
+        "--test",
+        "transactional_dataset",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_capabilities",
+      ],
+      timeoutMs: 120_000,
+    },
+    independent: EXPECTED.commands.independent,
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transactional_dataset",
+      ],
+      timeoutMs: 120_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 98_304,
+    maxChangedLines: 768,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0432",
+    rustcErrorCount: 1,
+    primaryPath: "lib/oxigraph/tests/transaction_capabilities.rs",
+    requiredExports: [
+      "CancellationGuarantee",
+      "ConflictBehavior",
+      "NegotiatedTransactionalDataset",
+      "OutcomeAwareWritableDataset",
+      "OutcomeLookup",
+      "RollbackGuarantee",
+      "TransactionCapabilities",
+      "TransactionCommitError",
+      "TransactionKey",
+      "TransactionRequest",
+      "TransactionRequirements",
+      "TransactionRollbackError",
+      "TransactionStartError",
+      "UnmetTransactionRequirement",
+      "WriterIsolation",
+    ],
+    requiredSubstrings: [
+      "error[E0432]: unresolved imports",
+      "could not compile `oxigraph` (test \"transaction_capabilities\") due to 1 previous error",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 9, independentPassed: 3, regressionPassed: 3 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/store.rs",
+    mutableBaselineBlob: "aed3bba9d9839efcb7ba9b376bbbd5ca4c536290",
+    mutableBaselineSha256:
+      "88591c979240bb33a1ddcca287c7a31dc10080ff83fabbd0f15511265e20a182",
+    baselineManifest: {
+      entries: 1383,
+      fullSha256:
+        "11cfe7a7649acb16f2d8e3c469bf6c863f50044a8cd96947bbb2ea45f88b5d7e",
+      protectedEntries: 1382,
+      protectedSha256:
+        "48d97e50b3c73a4ea22604201f79058e3adcbfab0e34f29ada9f0b4754206226",
+    },
+    evaluatorManifest: {
+      entries: 1383,
+      fullSha256:
+        "5b1852f142b5adf64bb4afab121cf0090d5a8c2ddc6f04ddb0bbaf4e43c869f0",
+      protectedEntries: 1382,
+      protectedSha256:
+        "679e1ce34462d761090534c186e6bbbde5ba9297b7d00dda60d3748f8b16e189",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
+const EXPECTED_BY_ID = Object.freeze({
+  "g1.2-rocksdb-serialized-writers": EXPECTED,
+  "g1.3-transaction-capabilities": EXPECTED_G13,
+});
+
 function fail(message) {
-  throw new Error(`invalid G1.2 task contract: ${message}`);
+  throw new Error(`invalid engineering task contract: ${message}`);
 }
 
 function plainObject(value, label) {
@@ -248,7 +399,7 @@ function exactKeys(value, expected, label) {
 
 function exactValue(actual, expected, label) {
   if (!isDeepStrictEqual(actual, expected)) {
-    fail(`${label} does not match the frozen G1.2 value`);
+    fail(`${label} does not match the frozen task value`);
   }
 }
 
@@ -290,7 +441,7 @@ function pathMatchesPrefix(path, prefix) {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
 
-function validateScope(scope) {
+function validateScope(scope, expected) {
   exactKeys(
     scope,
     [
@@ -333,23 +484,23 @@ function validateScope(scope) {
       fail(`mutable path ${mutable} overlaps blocked scope`);
     }
   }
-  exactValue(scope.mutableExact, EXPECTED.mutableExact, "scope.mutableExact");
+  exactValue(scope.mutableExact, expected.mutableExact, "scope.mutableExact");
   exactValue(
     scope.mutablePrefixes,
-    EXPECTED.mutablePrefixes,
+    expected.mutablePrefixes,
     "scope.mutablePrefixes",
   );
-  exactValue(scope.blockedExact, EXPECTED.blockedExact, "scope.blockedExact");
+  exactValue(scope.blockedExact, expected.blockedExact, "scope.blockedExact");
   exactValue(
     scope.blockedPrefixes,
-    EXPECTED.blockedPrefixes,
+    expected.blockedPrefixes,
     "scope.blockedPrefixes",
   );
 }
 
-function validateCommands(commands) {
-  exactKeys(commands, Object.keys(EXPECTED.commands), "commands");
-  for (const [role, expected] of Object.entries(EXPECTED.commands)) {
+function validateCommands(commands, expectedCommands) {
+  exactKeys(commands, Object.keys(expectedCommands), "commands");
+  for (const [role, expected] of Object.entries(expectedCommands)) {
     const command = commands[role];
     exactKeys(command, ["argv", "timeoutMs"], `commands.${role}`);
     if (
@@ -373,7 +524,7 @@ function validateCommands(commands) {
   }
 }
 
-function validateProtectedInputs(inputs) {
+function validateProtectedInputs(inputs, expected) {
   exactKeys(
     inputs,
     [
@@ -391,7 +542,7 @@ function validateProtectedInputs(inputs) {
     fail(`protectedInputs.manifestAlgorithm must be ${MANIFEST_ALGORITHM}`);
   }
   validatePath(inputs.mutableExclusion, "protectedInputs.mutableExclusion");
-  if (inputs.mutableExclusion !== EXPECTED.mutableExact[0]) {
+  if (inputs.mutableExclusion !== expected.mutableExact[0]) {
     fail("protectedInputs.mutableExclusion must equal the sole mutable path");
   }
   validateHash(inputs.mutableBaselineBlob, HEX40, "mutable baseline blob");
@@ -426,15 +577,16 @@ function validateProtectedInputs(inputs) {
   if (new Set(inputs.submodules.map(({ path }) => path)).size !== 2) {
     fail("protectedInputs.submodules paths must be unique");
   }
-  exactValue(inputs, EXPECTED.protectedInputs, "protectedInputs");
+  exactValue(inputs, expected.protectedInputs, "protectedInputs");
 }
 
 export function validateTaskContract(contract) {
-  exactKeys(contract, EXPECTED.topKeys, "contract");
+  plainObject(contract, "contract");
+  const expected = EXPECTED_BY_ID[contract.id];
+  if (expected === undefined) fail("id must identify a registered frozen task");
+  const profile = taskProfile(contract);
+  exactKeys(contract, expected.topKeys, "contract");
   if (contract.schemaVersion !== 1) fail("schemaVersion must be 1");
-  if (contract.id !== "g1.2-rocksdb-serialized-writers") {
-    fail("id must identify the frozen G1.2 task");
-  }
   if (contract.programme !== "linked-data-store") {
     fail("programme must be linked-data-store");
   }
@@ -452,7 +604,7 @@ export function validateTaskContract(contract) {
     ["pairedCalibration", "forbidOpenRouter", "providers"],
     "routing",
   );
-  exactValue(contract.routing, EXPECTED.routing, "routing");
+  exactValue(contract.routing, expected.routing, "routing");
 
   exactKeys(contract.baseline, ["commit", "tree"], "baseline");
   exactKeys(
@@ -482,11 +634,19 @@ export function validateTaskContract(contract) {
   validateHash(contract.evaluator.contentSha256, HEX64, "evaluator content digest");
   validateHash(contract.evaluator.patchSha256, HEX64, "evaluator patch digest");
   validatePath(contract.evaluator.path, "evaluator.path");
-  exactValue(contract.baseline, EXPECTED.baseline, "baseline");
-  exactValue(contract.evaluator, EXPECTED.evaluator, "evaluator");
+  if (
+    contract.evaluator.path !== profile.sourceAllowlist.find(
+      (path) => path === contract.evaluator.path,
+    ) ||
+    contract.evaluator.changeStatus !== profile.evaluatorChangeStatus
+  ) {
+    fail("evaluator path/status does not match the registered task profile");
+  }
+  exactValue(contract.baseline, expected.baseline, "baseline");
+  exactValue(contract.evaluator, expected.evaluator, "evaluator");
 
-  validateProtectedInputs(contract.protectedInputs);
-  validateScope(contract.scope);
+  validateProtectedInputs(contract.protectedInputs, expected);
+  validateScope(contract.scope, expected);
   if (
     !contract.scope.blockedPrefixes.some((prefix) =>
       pathMatchesPrefix(contract.evaluator.path, prefix),
@@ -496,16 +656,16 @@ export function validateTaskContract(contract) {
   }
   exactValue(
     contract.verificationSequence,
-    EXPECTED.verificationSequence,
+    expected.verificationSequence,
     "verificationSequence",
   );
   if (contract.verificationSequence.indexOf("build") > 1) {
     fail("build must precede every test command");
   }
-  validateCommands(contract.commands);
+  validateCommands(contract.commands, expected.commands);
 
-  exactKeys(contract.ceilings, Object.keys(EXPECTED.ceilings), "ceilings");
-  exactValue(contract.ceilings, EXPECTED.ceilings, "ceilings");
+  exactKeys(contract.ceilings, Object.keys(expected.ceilings), "ceilings");
+  exactValue(contract.ceilings, expected.ceilings, "ceilings");
   for (const [name, value] of Object.entries(contract.ceilings)) {
     if (name !== "networkDuringVerification" && !Number.isSafeInteger(value)) {
       fail(`ceilings.${name} must be a safe integer`);
@@ -515,10 +675,10 @@ export function validateTaskContract(contract) {
     fail("verification network access must be disabled");
   }
 
-  exactKeys(contract.initialRed, Object.keys(EXPECTED.initialRed), "initialRed");
-  exactValue(contract.initialRed, EXPECTED.initialRed, "initialRed");
-  exactKeys(contract.success, Object.keys(EXPECTED.success), "success");
-  exactValue(contract.success, EXPECTED.success, "success");
+  exactKeys(contract.initialRed, Object.keys(expected.initialRed), "initialRed");
+  exactValue(contract.initialRed, expected.initialRed, "initialRed");
+  exactKeys(contract.success, Object.keys(expected.success), "success");
+  exactValue(contract.success, expected.success, "success");
   return contract;
 }
 
