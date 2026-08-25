@@ -12,6 +12,7 @@ import {
   g15Profile,
   g15bProfile,
   g15cProfile,
+  g16Profile,
   taskProfile,
 } from "./task-profile.mjs";
 
@@ -21,6 +22,7 @@ export const g14ContractPath = g14Profile.contractPath;
 export const g15ContractPath = g15Profile.contractPath;
 export const g15bContractPath = g15bProfile.contractPath;
 export const g15cContractPath = g15cProfile.contractPath;
+export const g16ContractPath = g16Profile.contractPath;
 
 const HEX40 = /^[0-9a-f]{40}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -1022,6 +1024,189 @@ const EXPECTED_G15C = Object.freeze({
   },
 });
 
+const EXPECTED_G16 = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  decision: "ADR-0019",
+  baseline: {
+    commit: "826bd7a2622282b4194aa03ffc1b9effbb0adae0",
+    tree: "a7b1c37e9965b6dcdbebd9cf76377110e9e6ef85",
+  },
+  evaluator: {
+    commit: "6f447333dcd6d61fc31cf9ef17d925d432d26f4e",
+    parent: "826bd7a2622282b4194aa03ffc1b9effbb0adae0",
+    tree: "351d320efe1527f0c3e1b81c817707adc341f169",
+    path: "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+    changeStatus: "A",
+    blob: "4f8156e3b3e34af2482bb40a87110f35576c458c",
+    contentSha256:
+      "4a150b695de39baba392a9282365bd74c86cde20422f64e7dd3c3e054cc80416",
+    patchSha256:
+      "ae10ef58a5e74a744201694e7c65d34f095605da7e0ed2c780fad1a13129dd1b",
+  },
+  evaluatorChanges: Object.freeze([
+    Object.freeze({
+      changeStatus: "M",
+      path: "cli/src/service_description/tests.rs",
+      blob: "3b8fd22c73ab4bba5429ab7b13cef3ca18ec2ac9",
+      contentSha256:
+        "434d8e351fb4ed15482c9f970d50911ba750fff38528c66e10f8150df7e17e78",
+    }),
+    Object.freeze({
+      changeStatus: "A",
+      path: "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+      blob: "4f8156e3b3e34af2482bb40a87110f35576c458c",
+      contentSha256:
+        "4a150b695de39baba392a9282365bd74c86cde20422f64e7dd3c3e054cc80416",
+    }),
+  ]),
+  mutableExact: [
+    "lib/oxigraph/src/http.rs",
+    "lib/oxigraph/src/sparql/mod.rs",
+    "cli/src/service_description.rs",
+    "cli/src/main.rs",
+  ],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "cli/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "cli/src/service_description/tests.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/io",
+    "lib/oxigraph/src/storage",
+    "lib/oxigraph/src/store",
+    "cli/tests",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph-cli",
+        "--bin",
+        "oxigraph",
+        "--no-run",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "-p",
+        "oxigraph-cli",
+        "--features",
+        "oxigraph/http-client-native-tls,oxigraph/rdf-12,oxigraph-cli/native-tls,oxigraph-cli/rdf-12",
+        "--test",
+        "sparql_effective_capabilities",
+        "--bin",
+        "oxigraph",
+      ],
+      timeoutMs: 300_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "rdf-12",
+        "--test",
+        "sparql_version",
+      ],
+      timeoutMs: 120_000,
+    },
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_egress_policy",
+      ],
+      timeoutMs: 180_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 196_608,
+    maxChangedFiles: 4,
+    maxChangedLines: 1_024,
+    maxResidentBytes: 17_179_869_184,
+    maxVerifierDiskBytes: 12_884_901_888,
+    cargoBuildJobs: 1,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0599",
+    rustcErrorCount: 1,
+    primaryPath: "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+    requiredExports: ["effective_capabilities"],
+    requiredSubstrings: [
+      "no method named `effective_capabilities` found for reference `&SparqlEvaluator` in the current scope",
+      "could not compile `oxigraph` (test \"sparql_effective_capabilities\") due to 1 previous error",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 4, independentPassed: 1, regressionPassed: 12 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/http.rs",
+    mutableBaselineBlob: "01bcc5be2fd40da24ba4d8a022f512d41a8da988",
+    mutableBaselineSha256:
+      "d682ac111541190229dd43da434efbad3c370baf9229c5b304730d7e2be53109",
+    baselineManifest: {
+      entries: 1401,
+      fullSha256:
+        "4efcf0307f589726806454375a39d675559d0759fc801e81def86a49c7f6f097",
+      protectedEntries: 1397,
+      protectedSha256:
+        "93c149eaa757440b506bb8cfab42540dbe356a01f317077f7f817df4a54ed434",
+    },
+    evaluatorManifest: {
+      entries: 1402,
+      fullSha256:
+        "471ad926edaaea79e7701433f43cf70df0d4099f44d72d759d5d46dbef9b8590",
+      protectedEntries: 1398,
+      protectedSha256:
+        "9dec147750fffea5f504db1b0fd3b29a3aeba9514f297e6d9c2bf6ae2b359fe9",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
 const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
@@ -1029,6 +1214,7 @@ const EXPECTED_BY_ID = Object.freeze({
   "g1.5-unified-egress-policy": EXPECTED_G15,
   "g1.5b-update-cancellation": EXPECTED_G15B,
   "g1.5c-negotiated-update": EXPECTED_G15C,
+  "g1.6-runtime-derived-service-claims": EXPECTED_G16,
 });
 
 function fail(message) {
@@ -1307,12 +1493,16 @@ export function validateTaskContract(contract) {
 
   validateProtectedInputs(contract.protectedInputs, expected);
   validateScope(contract.scope, expected);
-  if (
-    !contract.scope.blockedPrefixes.some((prefix) =>
-      pathMatchesPrefix(contract.evaluator.path, prefix),
-    )
-  ) {
-    fail("evaluator path must be in blocked prefix scope");
+  for (const evaluatorChange of frozenEvaluatorChanges(contract)) {
+    const blocked =
+      contract.scope.blockedExact.includes(evaluatorChange.path) ||
+      contract.scope.blockedPrefixes.some((prefix) =>
+        pathMatchesPrefix(evaluatorChange.path, prefix),
+      );
+    if (!blocked) fail(`evaluator path ${evaluatorChange.path} must be blocked`);
+    if (!profile.sourceAllowlist.includes(evaluatorChange.path)) {
+      fail(`evaluator path ${evaluatorChange.path} must be source-allowlisted`);
+    }
   }
   exactValue(
     contract.verificationSequence,
@@ -1446,6 +1636,20 @@ function verifySubmodule(repoRoot, evaluatorCommit, declaration) {
   }
 }
 
+function frozenEvaluatorChanges(contract) {
+  const registered = EXPECTED_BY_ID[contract.id].evaluatorChanges;
+  return (
+    registered ?? [
+      Object.freeze({
+        changeStatus: contract.evaluator.changeStatus,
+        path: contract.evaluator.path,
+        blob: contract.evaluator.blob,
+        contentSha256: contract.evaluator.contentSha256,
+      }),
+    ]
+  );
+}
+
 export function verifyTaskContractRepository(contract, options = {}) {
   validateTaskContract(contract);
   const repoRoot = realpathSync(options.repoRoot ?? repositoryRoot);
@@ -1481,9 +1685,12 @@ export function verifyTaskContractRepository(contract, options = {}) {
     .trim()
     .split("\n")
     .filter(Boolean);
-  const expectedChange = `${contract.evaluator.changeStatus}\t${contract.evaluator.path}`;
-  if (!isDeepStrictEqual(changes, [expectedChange])) {
-    fail("evaluator commit must add exactly the frozen evaluator-only path");
+  const evaluatorChanges = frozenEvaluatorChanges(contract);
+  const expectedChanges = evaluatorChanges.map(
+    ({ changeStatus, path }) => `${changeStatus}\t${path}`,
+  );
+  if (!isDeepStrictEqual(changes, expectedChanges)) {
+    fail("evaluator commit must contain exactly the frozen evaluator changes");
   }
 
   const patch = git(repoRoot, ["diff", "--binary", baseline, evaluator], {
@@ -1492,18 +1699,20 @@ export function verifyTaskContractRepository(contract, options = {}) {
   if (digest(patch) !== contract.evaluator.patchSha256) {
     fail("evaluator binary patch digest does not match");
   }
-  const evaluatorBlob = git(repoRoot, [
-    "rev-parse",
-    `${evaluator}:${contract.evaluator.path}`,
-  ]).trim();
-  if (evaluatorBlob !== contract.evaluator.blob) fail("evaluator blob does not match");
-  const evaluatorContent = git(
-    repoRoot,
-    ["show", `${evaluator}:${contract.evaluator.path}`],
-    { buffer: true },
-  );
-  if (digest(evaluatorContent) !== contract.evaluator.contentSha256) {
-    fail("evaluator content digest does not match");
+  for (const change of evaluatorChanges) {
+    const evaluatorBlob = git(repoRoot, [
+      "rev-parse",
+      `${evaluator}:${change.path}`,
+    ]).trim();
+    if (evaluatorBlob !== change.blob) {
+      fail(`evaluator blob does not match for ${change.path}`);
+    }
+    const evaluatorContent = git(repoRoot, ["show", `${evaluator}:${change.path}`], {
+      buffer: true,
+    });
+    if (digest(evaluatorContent) !== change.contentSha256) {
+      fail(`evaluator content digest does not match for ${change.path}`);
+    }
   }
 
   const mutablePaths = contract.scope.mutableExact;

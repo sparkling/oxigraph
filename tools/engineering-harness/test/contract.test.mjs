@@ -8,6 +8,7 @@ import {
   g15ContractPath,
   g15bContractPath,
   g15cContractPath,
+  g16ContractPath,
   loadTaskContract,
   resolveTaskContract,
   validateTaskContract,
@@ -19,6 +20,7 @@ import {
   g15Profile,
   g15bProfile,
   g15cProfile,
+  g16Profile,
 } from "../src/task-profile.mjs";
 
 function changed(contract, mutate) {
@@ -172,6 +174,59 @@ test("loads the compiler-red G1.5c negotiated-update contract and binds it to Gi
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
 
+test("loads the two-change compiler-red G1.6 service-claims contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ contractPath: g16ContractPath });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.6/contract.json",
+  );
+  assert.equal(resolution.contract.id, "g1.6-runtime-derived-service-claims");
+  assert.equal(resolution.contract.decision, "ADR-0019");
+  assert.equal(resolution.contract.initialRed.kind, "compiler");
+  assert.equal(resolution.contract.initialRed.rustcCode, "E0599");
+  assert.equal(resolution.contract.initialRed.rustcErrorCount, 1);
+  assert.deepEqual(resolution.contract.initialRed.requiredExports, [
+    "effective_capabilities",
+  ]);
+  assert.equal(resolution.contract.success.publicPassed, 4);
+  assert.equal(resolution.contract.success.independentPassed, 1);
+  assert.equal(resolution.contract.success.regressionPassed, 12);
+  assert.equal(resolution.contract.ceilings.cargoBuildJobs, 1);
+  assert.equal(resolution.contract.ceilings.maxResidentBytes, 17_179_869_184);
+  assert.equal(resolution.contract.ceilings.maxVerifierDiskBytes, 12_884_901_888);
+  assert.deepEqual(resolution.contract.scope.mutableExact, g16Profile.mutablePaths);
+  assert.equal(g16Profile.taskClass, "runtime-service-capabilities");
+  assert.deepEqual(g16Profile.sourceAllowlist, [
+    "lib/oxigraph/src/http.rs",
+    "lib/oxigraph/src/sparql/mod.rs",
+    "cli/src/service_description.rs",
+    "cli/src/main.rs",
+    "cli/src/service_description/tests.rs",
+    "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+    "lib/oxigraph/tests/sparql_version.rs",
+    "lib/oxigraph/tests/sparql_egress_policy.rs",
+  ]);
+  assert.ok(g16Profile.sourceAllowlist.includes(resolution.contract.evaluator.path));
+  assert.equal(Object.hasOwn(resolution.contract.evaluator, "changes"), false);
+  assert.equal(Object.hasOwn(resolution.contract, "evaluatorChanges"), false);
+  assert.deepEqual(resolution.contract.commands.public.argv.slice(-4), [
+    "--test",
+    "sparql_effective_capabilities",
+    "--bin",
+    "oxigraph",
+  ]);
+  assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
+  assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
+});
+
+test("G1.6 exposes its frozen independent and regression oracle sources", () => {
+  assert.deepEqual(g16Profile.sourceAllowlist.slice(-2), [
+    "lib/oxigraph/tests/sparql_version.rs",
+    "lib/oxigraph/tests/sparql_egress_policy.rs",
+  ]);
+});
+
 test("keeps the containing control commit outside the self-declared contract", () => {
   const { contract } = loadTaskContract();
 
@@ -275,4 +330,5 @@ test("rejects contract paths outside the harness", () => {
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g15ContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g15bContractPath }));
   assert.doesNotThrow(() => loadTaskContract({ contractPath: g15cContractPath }));
+  assert.doesNotThrow(() => loadTaskContract({ contractPath: g16ContractPath }));
 });

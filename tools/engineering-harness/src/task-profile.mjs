@@ -147,6 +147,32 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/transactional_dataset.rs",
     ]),
   }),
+  "g1.6-runtime-derived-service-claims": profile({
+    slug: "g1.6",
+    label: "G1.6",
+    decision: "ADR-0019",
+    taskClass: "runtime-service-capabilities",
+    evaluatorChangeStatus: "A",
+    mutablePath: "lib/oxigraph/src/http.rs",
+    mutablePaths: Object.freeze([
+      "lib/oxigraph/src/http.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "cli/src/service_description.rs",
+      "cli/src/main.rs",
+    ]),
+    guidance:
+      "Expose a deterministic immutable snapshot of effective runtime remote capabilities. Treat an explicit custom default SERVICE handler as federation support, named-only handlers as insufficient, and built-in SERVICE/LOAD as available only when the configured egress policy contains at least one matching literal origin/IP pair supported by the compiled HTTP transport. Construct the server evaluator with deny-all and reuse that evaluator for query, update, and service descriptions; keep standalone CLI query/update permissive, preserve base/version/cancellation, and perform no DNS or network probe.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/http.rs",
+      "lib/oxigraph/src/sparql/mod.rs",
+      "cli/src/service_description.rs",
+      "cli/src/main.rs",
+      "cli/src/service_description/tests.rs",
+      "lib/oxigraph/tests/sparql_effective_capabilities.rs",
+      "lib/oxigraph/tests/sparql_version.rs",
+      "lib/oxigraph/tests/sparql_egress_policy.rs",
+    ]),
+  }),
 });
 
 export function taskProfile(value) {
@@ -164,4 +190,5 @@ export const g14Profile = profiles["g1.4-bounded-writer-admission"];
 export const g15Profile = profiles["g1.5-unified-egress-policy"];
 export const g15bProfile = profiles["g1.5b-update-cancellation"];
 export const g15cProfile = profiles["g1.5c-negotiated-update"];
+export const g16Profile = profiles["g1.6-runtime-derived-service-claims"];
 export const engineeringTaskProfiles = profiles;
