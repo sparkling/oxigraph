@@ -292,6 +292,15 @@ const semanticGate = [
 export const profiles = {
   "agentic-adapter": ["agenticAdapter"],
   existing,
+  "persistence-write": [
+    "transactionalDatasetWrites",
+    "sparqlUpdateAtomicity",
+    "persistenceDatasetAdapterTopology",
+    "persistenceDatasetTopology",
+    "persistenceServiceClaims",
+    "persistenceServiceClaimsNoDefault",
+    "parallelLoadFailureSemantics",
+  ],
   "supporting-suites": ["supportingParserSuites"],
   w3c: w3c12,
   "rdfc-10": ["rdfc10"],

@@ -189,6 +189,23 @@ test("runtime planning binds latest Agentic-QE and semantic authorities", () => 
       1,
     );
   }
+  const persistenceWrite = [
+    "transactionalDatasetWrites",
+    "sparqlUpdateAtomicity",
+    "persistenceDatasetAdapterTopology",
+    "persistenceDatasetTopology",
+    "persistenceServiceClaims",
+    "persistenceServiceClaimsNoDefault",
+    "parallelLoadFailureSemantics",
+  ];
+  assert.deepEqual(profiles["persistence-write"], persistenceWrite);
+  for (const id of persistenceWrite) {
+    const [program, args, policy] = commands[id];
+    assert.equal(program, "cargo");
+    assert.deepEqual(args.slice(0, 2), ["test", "--locked"]);
+    assert.equal(policy.requiredTestIds, undefined);
+    assert.equal(policy.expectedTestIds.length, policy.expectedPassedTests);
+  }
   assert.equal(profiles["metaharness-semantic-gate"].length, 41);
   assert.equal(profiles.parity.length, 47);
 });

@@ -15,6 +15,7 @@ cd tools/agentic-qe
 npm ci --ignore-scripts
 npm run test:adapter
 npm run test:existing
+npm run test:persistence-write
 npm run test:supporting-suites
 npm run test:w3c
 npm run test:datalog
@@ -36,8 +37,9 @@ API, proxy, credential, and runtime-injection variables are removed; advisory
 candidate mode therefore has no ambient model-provider authority. Receipts
 also bind the shared dependency and child-environment policy modules.
 
-The focused `test:datalog-jena`, `test:rdfs-jena`, `test:datalog-souffle`,
-`test:owl2-rl-inventory`, and `test:owl2-rl-w3c` scripts are also available.
+The focused `test:persistence-write`, `test:datalog-jena`, `test:rdfs-jena`,
+`test:datalog-souffle`, `test:owl2-rl-inventory`, and `test:owl2-rl-w3c`
+scripts are also available.
 `test:metaharness-semantic-gate` is the immutable native-oracle set consumed
 by the full MetaHarness/Darwin qualification.
 
@@ -86,6 +88,11 @@ reject symlink components and canonical escapes.
   parsing/evaluation/results, atomic updates, bounded query entailment,
   empty named-graph topology across TriG, JSON-LD, Store, and CLI boundaries,
   hermetic federated `SERVICE`, and GeoSPARQL regression suites.
+- `persistence-write`: 34 exact test executions across seven locked native
+  commands: replacement transactional-dataset writes, request-atomic SPARQL
+  Update, dataset-adapter and Store graph topology, default and no-default
+  service claims, and deterministic open/load/commit failure handling for
+  parallel bulk loads.
 - `supporting-suites`: five exact-count N3 and JSON-LD parser/interchange
   wrappers; their bounded exclusions remain supporting evidence only.
 - `w3c`: pinned official RDF 1.2, SPARQL 1.2, and SHACL 1.2 lanes plus the

@@ -64,6 +64,18 @@ export const commands = {
     40,
     ["spareval"],
   ),
+  transactionalDatasetWrites: cargo(
+    ["-p", "oxigraph", "--test", "transactional_dataset"],
+    3,
+    ["oxigraph"],
+    {
+      expectedTestIds: [
+        "custom_persistence_plane_executes_sparql_update_with_read_your_writes",
+        "custom_persistence_plane_rolls_back_the_whole_failed_request",
+        "explicit_transaction_rollback_discards_visible_staged_writes",
+      ],
+    },
+  ),
   sparqlUpdateAtomicity: cargo(
     ["-p", "oxigraph", "--test", "update_atomicity"],
     2,
@@ -72,6 +84,85 @@ export const commands = {
       expectedTestIds: [
         "tests::failing_update_operation_aborts_all_following_operations",
         "tests::whole_update_request_rolls_back_when_a_later_operation_fails",
+      ],
+    },
+  ),
+  persistenceDatasetAdapterTopology: cargo(
+    ["-p", "spareval", "--test", "dataset_topology"],
+    1,
+    ["spareval"],
+    {
+      expectedTestIds: [
+        "empty_named_graphs_are_visible_through_the_dataset_adapter",
+      ],
+    },
+  ),
+  persistenceDatasetTopology: cargo(
+    ["-p", "oxigraph", "--test", "dataset_topology"],
+    9,
+    ["oxigraph"],
+    {
+      expectedTestIds: [
+        "bulk_reader_load_preserves_empty_named_graphs",
+        "bulk_slice_load_preserves_empty_named_graphs_atomically",
+        "dump_fails_before_writing_when_format_cannot_represent_topology",
+        "json_ld_store_load_bulk_and_dump_preserve_topology",
+        "rocksdb_bulk_load_persists_empty_named_graphs",
+        "store_reader_load_preserves_empty_named_graphs",
+        "store_slice_load_preserves_empty_named_graphs",
+        "transaction_load_is_parse_atomic_and_preserves_topology",
+        "trig_dump_round_trips_empty_named_graph_topology",
+      ],
+    },
+  ),
+  persistenceServiceClaims: cargo(
+    ["-p", "oxigraph-cli", "service_description::tests"],
+    9,
+    ["oxigraph-cli"],
+    {
+      expectedTestIds: [
+        "service_description::tests::advertised_features_are_an_exact_capability_set",
+        "service_description::tests::bounded_entailment_is_disclosed_only_on_query_endpoints",
+        "service_description::tests::emitted_service_vocabulary_and_endpoint_shape_are_exact",
+        "service_description::tests::empty_graph_feature_matches_store_remove_and_clear_behavior",
+        "service_description::tests::input_format_iris_match_the_rdf_load_surface",
+        "service_description::tests::query_description_advertises_only_established_language_and_version",
+        "service_description::tests::result_format_iris_are_exact_for_each_endpoint_kind",
+        "service_description::tests::serialized_description_uses_only_the_negotiated_rdf_version",
+        "service_description::tests::update_description_advertises_only_established_language_and_version",
+      ],
+    },
+  ),
+  persistenceServiceClaimsNoDefault: cargo(
+    [
+      "-p",
+      "oxigraph-cli",
+      "--no-default-features",
+      "service_description::tests",
+    ],
+    7,
+    ["oxigraph-cli"],
+    {
+      expectedTestIds: [
+        "service_description::tests::advertised_features_are_an_exact_capability_set",
+        "service_description::tests::emitted_service_vocabulary_and_endpoint_shape_are_exact",
+        "service_description::tests::empty_graph_feature_matches_store_remove_and_clear_behavior",
+        "service_description::tests::input_format_iris_match_the_rdf_load_surface",
+        "service_description::tests::query_description_advertises_only_established_language_and_version",
+        "service_description::tests::result_format_iris_are_exact_for_each_endpoint_kind",
+        "service_description::tests::update_description_advertises_only_established_language_and_version",
+      ],
+    },
+  ),
+  parallelLoadFailureSemantics: cargo(
+    ["-p", "oxigraph-cli", "tests::parallel_load_"],
+    3,
+    ["oxigraph-cli"],
+    {
+      expectedTestIds: [
+        "tests::parallel_load_collects_commit_failures_in_input_order",
+        "tests::parallel_load_parse_failure_is_file_atomic",
+        "tests::parallel_load_reports_all_open_failures_and_keeps_successful_files",
       ],
     },
   ),
@@ -294,7 +385,7 @@ export const commands = {
   ),
   cliHttp: cargo(
     ["-p", "oxigraph-cli", "--all-targets"],
-    133,
+    144,
     ["oxigraph-cli"],
     {
       requiredTestIds: [
@@ -316,14 +407,15 @@ export const commands = {
   ),
   cliHttpNoDefault: cargo(
     ["-p", "oxigraph-cli", "--all-targets", "--no-default-features"],
-    116,
+    129,
     ["oxigraph-cli"],
     {
       requiredTestIds: [
         "graph_store_http_tests::graph_store_dataset_get_preserves_empty_named_graphs",
         "graph_store_http_tests::selectorless_post_distinguishes_zero_length_from_empty_rdf_graphs",
-        "service_description::tests::rdf11_build_does_not_advertise_rdf12_versions",
+        "service_description::tests::query_description_advertises_only_established_language_and_version",
         "service_description::tests::result_format_iris_are_exact_for_each_endpoint_kind",
+        "service_description::tests::update_description_advertises_only_established_language_and_version",
         "tests::convert_fails_if_empty_graph_topology_is_not_representable",
         "tests::convert_preserves_and_maps_empty_named_graph_topology",
         "tests::graph_store_head_matches_get_metadata_without_a_body",
