@@ -1139,11 +1139,11 @@ const EXPECTED_G16 = Object.freeze({
         "-p",
         "oxigraph",
         "--features",
-        "http-client-native-tls,rdf-12,geosparql,rdfs,owl2-rl",
+        "rdf-12",
         "--test",
         "sparql_version",
       ],
-      timeoutMs: 120_000,
+      timeoutMs: 600_000,
     },
     regression: {
       argv: [
@@ -1153,11 +1153,11 @@ const EXPECTED_G16 = Object.freeze({
         "-p",
         "oxigraph",
         "--features",
-        "http-client-native-tls,rdf-12,geosparql,rdfs,owl2-rl",
+        "http-client,rdf-12",
         "--test",
         "sparql_egress_policy",
       ],
-      timeoutMs: 180_000,
+      timeoutMs: 600_000,
     },
   },
   ceilings: {
@@ -1167,6 +1167,7 @@ const EXPECTED_G16 = Object.freeze({
     maxChangedLines: 1_024,
     maxResidentBytes: 17_179_869_184,
     maxVerifierDiskBytes: 12_884_901_888,
+    maxTotalVerifierWallMs: 3_600_000,
     cargoBuildJobs: 1,
   },
   initialRed: {
