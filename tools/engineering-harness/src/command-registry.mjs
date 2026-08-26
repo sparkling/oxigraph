@@ -13,9 +13,6 @@ function taskCommand(profile, action) {
   return command({
     id: `${profile.slug}.${action}`,
     usage: `${profile.slug} ${suffix}`,
-    taskId: profile.id,
-    taskSlug: profile.slug,
-    action,
   });
 }
 

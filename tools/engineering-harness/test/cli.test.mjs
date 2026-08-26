@@ -39,6 +39,10 @@ test("canonical CLI registry exposes programme, replay, receipt, and history com
     "help",
     "version",
   ]);
+  for (const entry of COMMANDS) {
+    assert.deepEqual(Object.keys(entry), ["id", "usage"]);
+    assert.equal(Object.isFrozen(entry), true);
+  }
   const { stdout, stderr } = await execute(process.execPath, [executable.pathname, "help"]);
   assert.equal(stderr, "");
   for (const { usage } of COMMANDS) assert.match(stdout, new RegExp(usage.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
