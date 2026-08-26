@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
+  mkdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -27,9 +28,18 @@ function initializeRepository(root) {
   execFileSync("git", ["config", "user.email", "mutation@example.invalid"], {
     cwd: root,
   });
-  writeFileSync(join(root, ".gitignore"), "ignored-product.rs\n");
+  writeFileSync(
+    join(root, ".gitignore"),
+    "target/\ntools/metaharness/node_modules/\n.agentic-qe/\nignored-product.rs\n",
+  );
+  mkdirSync(join(root, "tools", "metaharness"), { recursive: true });
+  writeFileSync(join(root, "tools", "metaharness", "package.json"), "{}\n");
   writeFileSync(join(root, "tracked.txt"), "tracked\n");
-  execFileSync("git", ["add", ".gitignore", "tracked.txt"], { cwd: root });
+  execFileSync(
+    "git",
+    ["add", ".gitignore", "tracked.txt", "tools/metaharness/package.json"],
+    { cwd: root },
+  );
   execFileSync("git", ["commit", "--quiet", "-m", "fixture"], { cwd: root });
 }
 
@@ -80,6 +90,18 @@ test("qualification rejects hidden index flags and ignored product files", () =>
       ["update-index", "--no-assume-unchanged", "tracked.txt"],
       { cwd: root },
     );
+    mkdirSync(join(root, "target"));
+    writeFileSync(join(root, "target", "build-cache.bin"), "generated\n");
+    mkdirSync(join(root, "tools", "metaharness", "node_modules"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, "tools", "metaharness", "node_modules", "package.json"),
+      "{}\n",
+    );
+    mkdirSync(join(root, ".agentic-qe"));
+    writeFileSync(join(root, ".agentic-qe", "result.json"), "{}\n");
+    assert.doesNotThrow(() => assertCleanQualificationWorktree(root));
     const ignored = join(root, "ignored-product.rs");
     writeFileSync(ignored, "ignored but executable product input\n");
     assert.throws(

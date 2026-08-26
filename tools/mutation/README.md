@@ -22,14 +22,17 @@ The runner creates a UUID-scoped `TMPDIR`, `TMP`, and `TEMP` below
 `target/cargo-mutants-tmp/`, so no ambient or sandbox `/tmp` is part of the
 execution precondition.
 
-The Git preflight rejects ordinary dirt, ignored untracked paths, and tracked
-entries carrying `skip-worktree` or `assume-unchanged`; it never removes those
-paths. Use a new disposable checkout instead of deleting repository-local
-runtime state to make a shared checkout look clean. The UUID temporary
-directory is atomically moved to a same-parent quarantine name and removed on
-handled success or failure. An uncatchable host or process termination may
-leave that UUID directory as diagnostic debris, in which case use another
-disposable checkout.
+The Git preflight rejects ordinary dirt, tracked entries carrying
+`skip-worktree` or `assume-unchanged`, and ignored untracked paths outside an
+explicit generated-output allowlist; it never removes rejected paths. The
+allowlist contains `target` trees, the programme's installed Node dependencies
+and runtime output, and the generated RocksDB compatibility fixture—not
+ignored source, configuration, credentials, or arbitrary data. Use a new
+disposable checkout instead of deleting repository-local runtime state to make
+a shared checkout look clean. The UUID temporary directory is atomically moved
+to a same-parent quarantine name and removed on handled success or failure. An
+uncatchable host or process termination may leave that UUID directory as
+diagnostic debris, in which case use another disposable checkout.
 
 The runner rejects symlinked or escaping output paths, enforces a bounded
 process-tree timeout, and snapshots the workspace libraries, manifests,

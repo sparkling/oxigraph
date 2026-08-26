@@ -45,6 +45,24 @@ function runGit(root, args, execute, environment) {
   });
 }
 
+const allowedGeneratedRoots = [
+  ".agentic-qe",
+  "js/node_modules",
+  "lib/tests/rocksdb_bc_data",
+  "tools/agentic-qe/node_modules",
+  "tools/engineering-harness/.runtime",
+  "tools/engineering-harness/node_modules",
+  "tools/metaharness/node_modules",
+];
+
+function allowedIgnoredGeneratedPath(path) {
+  const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (normalized.split("/").includes("target")) return true;
+  return allowedGeneratedRoots.some(
+    (root) => normalized === root || normalized.startsWith(`${root}/`),
+  );
+}
+
 export function assertCleanQualificationWorktree(
   repositoryRoot,
   { execute = execFileSync, baseEnvironment = process.env } = {},
@@ -102,9 +120,12 @@ export function assertCleanQualificationWorktree(
     ),
     "ignored inventory",
   );
-  if (ignored.length > 0) {
+  const rejectedIgnored = ignored.filter(
+    (path) => !allowedIgnoredGeneratedPath(path),
+  );
+  if (rejectedIgnored.length > 0) {
     throw new Error(
-      `mutation qualification rejects ignored untracked paths in its disposable worktree: ${ignored.join(", ")}`,
+      `mutation qualification rejects ignored untracked paths outside its generated-output allowlist: ${rejectedIgnored.join(", ")}`,
     );
   }
   return root;

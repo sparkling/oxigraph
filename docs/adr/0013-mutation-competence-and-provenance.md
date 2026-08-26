@@ -38,8 +38,12 @@ execution, storage, and control logic.
 
 The qualification runner refuses a dirty Git worktree; operators and CI must
 run it in a clean, single-use disposable checkout. It rejects untracked files,
-ignored untracked files, and tracked entries hidden by `skip-worktree` or
-`assume-unchanged`, while leaving every rejected path untouched. It allocates a
+ignored untracked files outside an explicit generated-output allowlist, and
+tracked entries hidden by `skip-worktree` or `assume-unchanged`, while leaving
+every rejected path untouched. The allowlist covers Cargo/Maven `target`
+trees, the programme's installed Node dependencies and runtime output, and the
+generated RocksDB compatibility fixture; it does not accept ignored source,
+configuration, credentials, or arbitrary data. The runner allocates a
 UUID-scoped `TMPDIR`, `TMP`, and `TEMP` below
 `target/cargo-mutants-tmp/` rather than relying on an ambient temporary
 filesystem, binds every native execution to that environment, and atomically
@@ -131,8 +135,8 @@ not evidence.
 
 - The gate measures test competence against a reviewed source surface.
 - Baseline, timeout, inventory, and provenance failures are fail-closed.
-- Dirty, hidden-index, ignored-untracked, ambient-temporary, and failed or
-  raced latest-pointer states are fail-closed.
+- Dirty, hidden-index, non-generated ignored-untracked, ambient-temporary, and
+  failed or raced latest-pointer states are fail-closed.
 - Redundant code is removed instead of creating unverifiable equivalent-mutant
   waivers.
 - Exact provenance and resource-accounting behavior receive the same mutation
