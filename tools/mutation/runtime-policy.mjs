@@ -1,7 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { join } from "node:path";
-import { createExclusiveDirectoryInside } from "./path-policy.mjs";
+import { randomUUID } from "node:crypto";
+import { realpathSync, renameSync, rmSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import {
+  assertDirectoryIdentity,
+  createExclusiveDirectoryInside,
+  directoryIdentity,
+  syncDirectory,
+} from "./path-policy.mjs";
 
 // The prior complete qualification occupied a 65-75 minute execution
 // envelope. Ninety minutes keeps the exact default command bounded while
@@ -14,29 +20,91 @@ const uuid = (value) =>
     value ?? "",
   );
 
+function nulRecords(value, label) {
+  if (typeof value !== "string") {
+    throw new Error(`mutation Git ${label} did not return text`);
+  }
+  return value.split("\0").filter(Boolean);
+}
+
+function qualificationGitEnvironment(baseEnvironment) {
+  return Object.fromEntries(
+    Object.entries(baseEnvironment).filter(
+      ([name]) => !name.toUpperCase().startsWith("GIT_"),
+    ),
+  );
+}
+
+function runGit(root, args, execute, environment) {
+  return execute("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    env: environment,
+    maxBuffer: 8 * 1024 * 1024,
+    windowsHide: true,
+  });
+}
+
 export function assertCleanQualificationWorktree(
   repositoryRoot,
-  { execute = execFileSync } = {},
+  { execute = execFileSync, baseEnvironment = process.env } = {},
 ) {
   const root = realpathSync(repositoryRoot);
-  const status = execute(
-    "git",
-    ["status", "--porcelain=v1", "--untracked-files=all"],
-    {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: 8 * 1024 * 1024,
-      windowsHide: true,
-    },
+  const environment = qualificationGitEnvironment(baseEnvironment);
+  const status = nulRecords(
+    runGit(
+      root,
+      ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+      execute,
+      environment,
+    ),
+    "status",
   );
-  if (typeof status !== "string") {
-    throw new Error("mutation Git status did not return text");
-  }
-  const entries = status.trim().split(/\r?\n/).filter(Boolean);
-  if (entries.length > 0) {
-    const paths = entries.map((entry) => entry.slice(3)).join(", ");
+  if (status.length > 0) {
+    const paths = status.map((entry) => entry.slice(3)).join(", ");
     throw new Error(
       `mutation qualification requires a clean disposable worktree; dirty paths: ${paths}`,
+    );
+  }
+
+  const indexFlags = nulRecords(
+    runGit(root, ["ls-files", "-v", "-z"], execute, environment),
+    "index inventory",
+  );
+  const hidden = indexFlags.flatMap((entry) => {
+    const flag = entry[0];
+    const path = entry.slice(2);
+    if (flag === "S") return [`skip-worktree ${path}`];
+    if (flag === "s") return [`skip-worktree/assume-unchanged ${path}`];
+    if (/^[a-z]$/.test(flag)) return [`assume-unchanged ${path}`];
+    return [];
+  });
+  if (hidden.length > 0) {
+    throw new Error(
+      `mutation qualification rejects hidden Git index flags: ${hidden.join(", ")}`,
+    );
+  }
+
+  const ignored = nulRecords(
+    runGit(
+      root,
+      [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        "--no-empty-directory",
+        "-z",
+      ],
+      execute,
+      environment,
+    ),
+    "ignored inventory",
+  );
+  if (ignored.length > 0) {
+    throw new Error(
+      `mutation qualification rejects ignored untracked paths in its disposable worktree: ${ignored.join(", ")}`,
     );
   }
   return root;
@@ -62,10 +130,48 @@ export function createMutationEnvironment(
     root,
     join(root, "target", "cargo-mutants-tmp", runId),
   );
-  return {
+  return Object.freeze({
     ...baseEnvironment,
     TMPDIR: temporaryDirectory,
     TMP: temporaryDirectory,
     TEMP: temporaryDirectory,
-  };
+  });
+}
+
+export function cleanupMutationEnvironment(repositoryRoot, environment) {
+  const root = realpathSync(repositoryRoot);
+  if (
+    environment === null ||
+    typeof environment !== "object" ||
+    Array.isArray(environment) ||
+    typeof environment.TMPDIR !== "string" ||
+    environment.TMPDIR !== environment.TMP ||
+    environment.TMPDIR !== environment.TEMP
+  ) {
+    throw new Error("mutation temporary directory binding is invalid");
+  }
+  const parent = join(root, "target", "cargo-mutants-tmp");
+  const temporaryDirectory = resolve(environment.TMPDIR);
+  const runId = basename(temporaryDirectory);
+  if (
+    dirname(temporaryDirectory) !== parent ||
+    !uuid(runId) ||
+    relative(parent, temporaryDirectory).includes(sep) ||
+    realpathSync(parent) !== parent ||
+    realpathSync(temporaryDirectory) !== temporaryDirectory
+  ) {
+    throw new Error("mutation temporary directory binding is invalid");
+  }
+
+  const parentIdentity = directoryIdentity(parent);
+  const temporaryIdentity = directoryIdentity(temporaryDirectory);
+  const quarantine = join(parent, `.cleanup-${runId}-${randomUUID()}`);
+  assertDirectoryIdentity(parentIdentity);
+  renameSync(temporaryDirectory, quarantine);
+  assertDirectoryIdentity(parentIdentity);
+  assertDirectoryIdentity({ ...temporaryIdentity, path: quarantine });
+  rmSync(quarantine, { recursive: true, force: false });
+  assertDirectoryIdentity(parentIdentity);
+  syncDirectory(parent);
+  assertDirectoryIdentity(parentIdentity);
 }

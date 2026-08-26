@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { assertStableMutationQualificationReopen } from "./current-qualification.mjs";
 import { assertExpectedCurrentQualification } from "./verify-current.mjs";
 
 function binding(runId = "00000000-0000-4000-8000-000000000000") {
@@ -51,4 +52,56 @@ test("fresh-process verifier accepts only the expected current run", () => {
       ),
     /stale source/,
   );
+});
+
+function publication(seed = "a") {
+  return {
+    publication: { root: "immutable-run" },
+    receiptBytes: Buffer.from(`receipt-${seed}`),
+    outcomeBytes: Buffer.from(`outcomes-${seed}`),
+    inventoryBytes: Buffer.from(`inventory-${seed}`),
+    configBytes: Buffer.from(`config-${seed}`),
+  };
+}
+
+test("qualification rejects latest-pointer and immutable-publication races", () => {
+  const initialPointer = Buffer.from("latest-a");
+  const initialPublication = publication();
+  assert.doesNotThrow(() =>
+    assertStableMutationQualificationReopen(
+      initialPointer,
+      initialPublication,
+      Buffer.from(initialPointer),
+      publication(),
+    ),
+  );
+  assert.throws(
+    () =>
+      assertStableMutationQualificationReopen(
+        initialPointer,
+        initialPublication,
+        Buffer.from("latest-b"),
+        publication(),
+      ),
+    /pointer changed/,
+  );
+  for (const field of [
+    "receiptBytes",
+    "outcomeBytes",
+    "inventoryBytes",
+    "configBytes",
+  ]) {
+    const changed = publication();
+    changed[field] = Buffer.from("changed");
+    assert.throws(
+      () =>
+        assertStableMutationQualificationReopen(
+          initialPointer,
+          initialPublication,
+          Buffer.from(initialPointer),
+          changed,
+        ),
+      new RegExp(`${field} changed`),
+    );
+  }
 });

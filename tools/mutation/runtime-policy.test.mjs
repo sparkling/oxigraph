@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   realpathSync,
   rmSync,
@@ -11,6 +12,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   assertCleanQualificationWorktree,
+  cleanupMutationEnvironment,
   createMutationEnvironment,
   DEFAULT_OUTER_TIMEOUT_MS,
 } from "./runtime-policy.mjs";
@@ -25,8 +27,9 @@ function initializeRepository(root) {
   execFileSync("git", ["config", "user.email", "mutation@example.invalid"], {
     cwd: root,
   });
+  writeFileSync(join(root, ".gitignore"), "ignored-product.rs\n");
   writeFileSync(join(root, "tracked.txt"), "tracked\n");
-  execFileSync("git", ["add", "tracked.txt"], { cwd: root });
+  execFileSync("git", ["add", ".gitignore", "tracked.txt"], { cwd: root });
   execFileSync("git", ["commit", "--quiet", "-m", "fixture"], { cwd: root });
 }
 
@@ -49,8 +52,49 @@ test("qualification requires a clean Git worktree", () => {
   }
 });
 
+test("qualification rejects hidden index flags and ignored product files", () => {
+  const root = temporaryDirectory();
+  try {
+    initializeRepository(root);
+    execFileSync("git", ["update-index", "--skip-worktree", "tracked.txt"], {
+      cwd: root,
+    });
+    assert.throws(
+      () => assertCleanQualificationWorktree(root),
+      /skip-worktree.*tracked\.txt/,
+    );
+    execFileSync("git", ["update-index", "--no-skip-worktree", "tracked.txt"], {
+      cwd: root,
+    });
+    execFileSync(
+      "git",
+      ["update-index", "--assume-unchanged", "tracked.txt"],
+      { cwd: root },
+    );
+    assert.throws(
+      () => assertCleanQualificationWorktree(root),
+      /assume-unchanged.*tracked\.txt/,
+    );
+    execFileSync(
+      "git",
+      ["update-index", "--no-assume-unchanged", "tracked.txt"],
+      { cwd: root },
+    );
+    const ignored = join(root, "ignored-product.rs");
+    writeFileSync(ignored, "ignored but executable product input\n");
+    assert.throws(
+      () => assertCleanQualificationWorktree(root),
+      /ignored untracked paths.*ignored-product\.rs/,
+    );
+    assert.equal(existsSync(ignored), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("cargo-mutants receives a run-scoped temporary directory under target", () => {
   const root = temporaryDirectory();
+  const outside = temporaryDirectory();
   const runId = "00000000-0000-4000-8000-000000000000";
   try {
     const environment = createMutationEnvironment(root, runId, {
@@ -70,7 +114,19 @@ test("cargo-mutants receives a run-scoped temporary directory under target", () 
         }),
       /refusing to reuse exclusive directory/,
     );
+    cleanupMutationEnvironment(root, environment);
+    assert.equal(existsSync(expected), false);
+    assert.throws(
+      () =>
+        cleanupMutationEnvironment(root, {
+          TMPDIR: outside,
+          TMP: outside,
+          TEMP: outside,
+        }),
+      /mutation temporary directory binding is invalid/,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });

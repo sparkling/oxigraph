@@ -5,6 +5,7 @@ import {
   snapshotProtectedInputs,
   validateMutationPublication,
 } from "./evidence.mjs";
+import { readMutationPublication } from "./publication.mjs";
 
 const latestReceipt = "target/mutation/oxdatalog/receipt.json";
 const hash = (value) => /^[0-9a-f]{64}$/.test(value ?? "");
@@ -36,6 +37,49 @@ const projectionKeys = [
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+const publicationByteFields = [
+  "receiptBytes",
+  "outcomeBytes",
+  "inventoryBytes",
+  "configBytes",
+];
+
+export function assertStableMutationQualificationReopen(
+  initialPointerBytes,
+  initialPublication,
+  reopenedPointerBytes,
+  reopenedPublication,
+) {
+  if (
+    !Buffer.isBuffer(initialPointerBytes) ||
+    !Buffer.isBuffer(reopenedPointerBytes) ||
+    initialPublication === null ||
+    typeof initialPublication !== "object" ||
+    reopenedPublication === null ||
+    typeof reopenedPublication !== "object"
+  ) {
+    throw new Error("mutation qualification reopen inputs are invalid");
+  }
+  if (!initialPointerBytes.equals(reopenedPointerBytes)) {
+    throw new Error("mutation latest pointer changed during qualification");
+  }
+  if (
+    JSON.stringify(initialPublication.publication) !==
+    JSON.stringify(reopenedPublication.publication)
+  ) {
+    throw new Error("mutation immutable publication manifest changed");
+  }
+  for (const field of publicationByteFields) {
+    if (
+      !Buffer.isBuffer(initialPublication[field]) ||
+      !Buffer.isBuffer(reopenedPublication[field]) ||
+      !initialPublication[field].equals(reopenedPublication[field])
+    ) {
+      throw new Error(`mutation immutable ${field} changed during qualification`);
+    }
+  }
 }
 
 function validCounts(counts) {
@@ -152,6 +196,22 @@ function loadPublication(repositoryRoot, relativePath) {
   });
   if (!publication.receiptBytes.equals(sourceBytes)) {
     throw new Error("mutation receipt differs from its immutable publication");
+  }
+  const reopenedPublication = readMutationPublication(receipt, {
+    repositoryRoot,
+  });
+  const reopenedSourceBytes = readMutationFileBytes(relativePath, {
+    repositoryRoot,
+  });
+  assertStableMutationQualificationReopen(
+    sourceBytes,
+    publication,
+    reopenedSourceBytes,
+    reopenedPublication,
+  );
+  const reopenedCurrent = snapshotProtectedInputs(repositoryRoot);
+  if (JSON.stringify(current) !== JSON.stringify(reopenedCurrent)) {
+    throw new Error("mutation protected inputs changed during qualification");
   }
   return {
     receipt,

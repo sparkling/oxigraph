@@ -10,7 +10,10 @@ import {
   assertExactCurrentSnapshots,
   snapshotProtectedInputs,
 } from "./source-snapshot.mjs";
-import { createMutationEnvironment } from "./runtime-policy.mjs";
+import {
+  cleanupMutationEnvironment,
+  createMutationEnvironment,
+} from "./runtime-policy.mjs";
 
 export const INVENTORY_TIMEOUT_MS = 120_000;
 
@@ -63,6 +66,8 @@ export function listCurrentMutationInventory(
     throw new Error(
       `independent cargo-mutants inventory failed: ${error?.message ?? error}`,
     );
+  } finally {
+    cleanupMutationEnvironment(root, environment);
   }
   const after = snapshotProtectedInputs(root);
   assertExactCurrentSnapshots(before, after, after);

@@ -37,12 +37,16 @@ generic D0–D2 engine, validation and strata, provenance, RDF adapter, rule
 execution, storage, and control logic.
 
 The qualification runner refuses a dirty Git worktree; operators and CI must
-run it in a clean, disposable checkout. It allocates a UUID-scoped `TMPDIR`,
-`TMP`, and `TEMP` below `target/cargo-mutants-tmp/` rather than relying on an
-ambient temporary filesystem. The exact default command has a 90-minute outer
-process-tree ceiling, derived from the observed 65–75-minute full-run envelope
-rather than a stale mutant count; an explicit override remains bounded at two
-hours.
+run it in a clean, single-use disposable checkout. It rejects untracked files,
+ignored untracked files, and tracked entries hidden by `skip-worktree` or
+`assume-unchanged`, while leaving every rejected path untouched. It allocates a
+UUID-scoped `TMPDIR`, `TMP`, and `TEMP` below
+`target/cargo-mutants-tmp/` rather than relying on an ambient temporary
+filesystem, binds every native execution to that environment, and atomically
+quarantines and removes the run directory on handled success or failure. The
+exact default command has a 90-minute outer process-tree ceiling, derived from
+the observed 65–75-minute full-run envelope rather than a stale mutant count;
+an explicit override remains bounded at two hours.
 
 A passing gate requires:
 
@@ -98,9 +102,12 @@ including the selected Rustup toolchain executables. Qualification discovers a
 candidate through the latest pointer, then reopens the run-addressed receipt,
 native outcomes, and configuration with stable no-follow reads. It requires
 their exact bytes, manifest, and hashes to agree and both protected snapshots
-to equal the current source snapshot. The final reopen happens only after the
-latest pointer is written and must succeed in a fresh process for the same run
-UUID before the runner reports `PASS`.
+to equal the current source snapshot. Qualification then reopens the immutable
+receipt, outcomes, inventory, configuration, mutable latest pointer, and
+protected source snapshot after the current-inventory check and requires their
+bytes to remain unchanged. The final reopen happens only after the latest
+pointer is written and must succeed in a fresh process for the same run UUID
+before the runner reports `PASS`.
 
 Registry latest is an acquisition policy, not a moving validation input.
 Publishing a newer Cargo Mutants release does not rewrite or reinterpret an
@@ -115,6 +122,8 @@ not evidence.
 
 - [Reviewed mutation configuration](../../tools/mutation/oxdatalog.toml)
 - [Source-bound mutation runner](../../tools/mutation/oxdatalog.mjs)
+- [Qualification runtime policy](../../tools/mutation/runtime-policy.mjs)
+- [Current source-bound qualification](../../tools/mutation/current-qualification.mjs)
 - [Independent receipt validator](../../tools/mutation/evidence.mjs)
 - [Mutation-competence tests](../../lib/oxdatalog/tests/mutation_competence.rs)
 
@@ -122,8 +131,8 @@ not evidence.
 
 - The gate measures test competence against a reviewed source surface.
 - Baseline, timeout, inventory, and provenance failures are fail-closed.
-- Dirty worktrees, ambient temporary paths, and failed or raced latest-pointer
-  reopening are fail-closed.
+- Dirty, hidden-index, ignored-untracked, ambient-temporary, and failed or
+  raced latest-pointer states are fail-closed.
 - Redundant code is removed instead of creating unverifiable equivalent-mutant
   waivers.
 - Exact provenance and resource-accounting behavior receive the same mutation

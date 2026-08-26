@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdtempSync,
   mkdirSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -85,6 +86,10 @@ test("independent inventory uses the exact bounded reviewed invocation", () => {
     assert.equal(invoked, true);
     assert.deepEqual(result.inventory, inventory());
     assert.deepEqual(result.before, result.after);
+    assert.deepEqual(
+      readdirSync(join(root, "target", "cargo-mutants-tmp")),
+      [],
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

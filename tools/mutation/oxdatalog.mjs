@@ -28,6 +28,7 @@ import {
 import { runProcess } from "./process.mjs";
 import {
   assertCleanQualificationWorktree,
+  cleanupMutationEnvironment,
   createMutationEnvironment,
   CURRENT_QUALIFICATION_TIMEOUT_MS,
   DEFAULT_OUTER_TIMEOUT_MS,
@@ -255,14 +256,13 @@ function buildReceipt(
   };
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args === null) return;
-  assertCleanQualificationWorktree(repoRoot);
-  const version = await installedVersion();
-  const safeOutputRoot = ensureDirectoryInside(repoRoot, outputRoot);
-  const runId = randomUUID();
-  const environment = createMutationEnvironment(repoRoot, runId);
+async function runQualification(
+  args,
+  version,
+  safeOutputRoot,
+  runId,
+  environment,
+) {
   const commonArgs = [
     "--config",
     configPath,
@@ -418,6 +418,21 @@ async function main() {
         : `\ncurrentQualification=${currentQualification.path}`),
   );
   process.exitCode = receipt.gateClosed ? 0 : command.status || 1;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args === null) return;
+  assertCleanQualificationWorktree(repoRoot);
+  const version = await installedVersion();
+  const safeOutputRoot = ensureDirectoryInside(repoRoot, outputRoot);
+  const runId = randomUUID();
+  const environment = createMutationEnvironment(repoRoot, runId);
+  try {
+    await runQualification(args, version, safeOutputRoot, runId, environment);
+  } finally {
+    cleanupMutationEnvironment(repoRoot, environment);
+  }
 }
 
 if (

@@ -175,6 +175,7 @@ test("cargo-mutants acquisition floats while receipts freeze runtime provenance"
   );
   assert.equal(DEFAULT_OUTER_TIMEOUT_MS, 5_400_000);
   assert.match(runner, /assertCleanQualificationWorktree\(repoRoot\)/);
+  assert.match(runner, /cleanupMutationEnvironment\(repoRoot, environment\)/);
   assert.match(runner, /verify-current\.mjs/);
 });
 
@@ -331,6 +332,51 @@ test("outer timeout terminates the subprocess tree and records bounded time", as
     assert.match(result.startedAt, /^\d{4}-/);
     assert.match(result.endedAt, /^\d{4}-/);
     assert(Number.isSafeInteger(result.durationMs));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("outer timeout kills a descendant that ignores graceful termination", async (context) => {
+  if (process.platform === "win32") {
+    context.skip("POSIX process-group semantics are tested on non-Windows hosts");
+    return;
+  }
+  const root = temporaryDirectory();
+  const pidPath = join(root, "descendant.pid");
+  try {
+    const script = [
+      'const { spawn } = require("node:child_process")',
+      'const { writeFileSync } = require("node:fs")',
+      'const descendant = spawn(process.execPath, ["-e", "process.on(\\"SIGTERM\\", () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" })',
+      'writeFileSync(process.argv[1], String(descendant.pid))',
+      'process.on("SIGTERM", () => {})',
+      'setInterval(() => {}, 1000)',
+    ].join("; ");
+    const result = await runProcess(process.execPath, ["-e", script, pidPath], {
+      cwd: root,
+      timeoutMs: 100,
+      forceKillAfterMs: 50,
+    });
+    const descendantPid = Number(readFileSync(pidPath, "utf8"));
+    assert.equal(result.timedOut, true);
+    assert(Number.isSafeInteger(descendantPid));
+    let descendantState = "";
+    try {
+      descendantState = execFileSync(
+        "ps",
+        ["-o", "stat=", "-p", String(descendantPid)],
+        { encoding: "utf8" },
+      ).trim();
+    } catch {
+      descendantState = "";
+    }
+    assert.equal(
+      descendantState === "" || descendantState.startsWith("Z"),
+      true,
+      `descendant remained live with state ${descendantState}`,
+    );
+    assert(result.durationMs < 1_000);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
