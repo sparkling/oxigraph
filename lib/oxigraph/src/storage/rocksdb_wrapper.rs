@@ -761,6 +761,7 @@ impl Db {
                 options: db.ingest_external_file_options,
             })
             .collect::<Vec<_>>();
+        let _writer_permit = db.writer_gate.acquire();
         unsafe {
             ffi_result!(oxrocksdb_ingest_external_files(
                 db.db,
