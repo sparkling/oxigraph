@@ -31,8 +31,18 @@ function draft() {
       evaluatorBlobSha256: "7".repeat(64),
     },
     evidence: {
-      semantic: { status: "MISSING", sha256: null },
-      compatibility: { status: "MISSING", sha256: null },
+      semantic: {
+        status: "MISSING",
+        sha256: null,
+        reasons: ["independent-verification-absent"],
+        projection: null,
+      },
+      compatibility: {
+        status: "MISSING",
+        sha256: null,
+        reasons: ["agentic-receipt-absent"],
+        projection: null,
+      },
     },
     benchmark: {
       status: "NOT_RUN",
@@ -125,4 +135,35 @@ test("G1.7 receipt creation rejects verdict and evidence inconsistencies", () =>
   const duplicate = draft();
   duplicate.artifacts[1].name = duplicate.artifacts[0].name;
   assert.throws(() => createG17Receipt(duplicate), /artifact inventory/u);
+});
+
+test("G1.7 receipt creation rejects vacuous PASS evidence and benchmark claims", () => {
+  const invalid = draft();
+  invalid.contract.referenceDecision = "SELECTED";
+  invalid.contract.budgetDecision = "APPROVED";
+  invalid.contract.noiseDecision = "APPROVED";
+  invalid.evidence.semantic = {
+    status: "PASS",
+    sha256: null,
+    reasons: [],
+    projection: null,
+  };
+  invalid.evidence.compatibility = {
+    status: "PASS",
+    sha256: null,
+    reasons: [],
+    projection: null,
+  };
+  invalid.benchmark = {
+    status: "PASS",
+    sampleCount: 0,
+    samplesSha256: null,
+    summarySha256: null,
+    budgetBreaches: [],
+  };
+  invalid.final = { verdict: "ACCEPT", reasons: [] };
+  assert.throws(
+    () => createG17Receipt(invalid),
+    /PASS evidence requires a hash-bound projection|executed benchmark/u,
+  );
 });

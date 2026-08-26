@@ -164,13 +164,43 @@ function validateIdentity(identity) {
 function validateEvidence(evidence) {
   exactKeys(evidence, ["semantic", "compatibility"], "evidence");
   for (const label of ["semantic", "compatibility"]) {
-    plainObject(evidence[label], `${label} evidence`);
-    status(evidence[label].status, label);
+    const entry = evidence[label];
+    exactKeys(
+      entry,
+      ["status", "sha256", "reasons", "projection"],
+      `${label} evidence`,
+    );
+    status(entry.status, label);
     if (
-      !Object.hasOwn(evidence[label], "sha256") ||
-      !(evidence[label].sha256 === null || DIGEST.test(evidence[label].sha256))
+      !(entry.sha256 === null || DIGEST.test(entry.sha256)) ||
+      !Array.isArray(entry.reasons) ||
+      entry.reasons.some(
+        (reason) => typeof reason !== "string" || reason.length === 0,
+      ) ||
+      !(
+        entry.projection === null ||
+        (typeof entry.projection === "object" && !Array.isArray(entry.projection))
+      )
     ) {
-      fail(`${label} evidence digest is invalid`);
+      fail(`${label} evidence is malformed`);
+    }
+    if (
+      entry.projection !== null &&
+      (entry.sha256 !== canonicalSha256(entry.projection) ||
+        entry.projection.status !== entry.status)
+    ) {
+      fail(`${label} evidence projection is not hash-bound`);
+    }
+    if (
+      entry.status === "PASS" &&
+      (entry.projection === null ||
+        !DIGEST.test(entry.sha256 ?? "") ||
+        entry.reasons.length !== 0)
+    ) {
+      fail(`${label} PASS evidence requires a hash-bound projection`);
+    }
+    if (entry.status !== "PASS" && entry.reasons.length === 0) {
+      fail(`${label} non-PASS evidence requires a reason`);
     }
   }
 }
@@ -211,6 +241,27 @@ function validateBenchmark(benchmark) {
       benchmark.summarySha256 !== null)
   ) {
     fail("not-run benchmark contains execution evidence");
+  }
+  const executed = ["PASS", "FAIL", "NOISY"].includes(benchmark.status);
+  if (
+    executed &&
+    (benchmark.sampleCount < 1 ||
+      !DIGEST.test(benchmark.samplesSha256 ?? "") ||
+      !DIGEST.test(benchmark.summarySha256 ?? ""))
+  ) {
+    fail("executed benchmark requires samples and summary digests");
+  }
+  if (
+    !executed &&
+    benchmark.status !== "NOT_RUN" &&
+    (benchmark.sampleCount !== 0 ||
+      benchmark.samplesSha256 !== null ||
+      benchmark.summarySha256 !== null)
+  ) {
+    fail("unexecuted benchmark contains execution evidence");
+  }
+  if (benchmark.status === "PASS" && benchmark.budgetBreaches.length !== 0) {
+    fail("passing benchmark contains budget breaches");
   }
 }
 

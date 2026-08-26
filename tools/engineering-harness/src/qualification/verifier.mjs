@@ -57,6 +57,62 @@ function sealedIdentityProjection(identity) {
   };
 }
 
+function requireArtifact(bytesByName, name, message) {
+  if (!bytesByName.has(name)) fail(message);
+}
+
+function verifyEvidenceArtifactInventory(receipt, bytesByName) {
+  if (receipt.evidence.compatibility.status === "PASS") {
+    requireArtifact(
+      bytesByName,
+      "agentic-receipt.json",
+      "compatibility PASS artifacts are incomplete",
+    );
+    requireArtifact(
+      bytesByName,
+      "agentic-oracle.json",
+      "compatibility PASS artifacts are incomplete",
+    );
+    const archiveCount = receipt.evidence.compatibility.projection?.agenticQe?.archiveFileCount;
+    if (!Number.isSafeInteger(archiveCount) || archiveCount < 1) {
+      fail("compatibility PASS archive inventory is invalid");
+    }
+    for (let index = 0; index < archiveCount; index += 1) {
+      requireArtifact(
+        bytesByName,
+        `agentic-archive-${String(index).padStart(4, "0")}.bin`,
+        "compatibility PASS artifacts are incomplete",
+      );
+    }
+  }
+
+  if (receipt.evidence.semantic.status === "PASS") {
+    requireArtifact(
+      bytesByName,
+      "semantic-qualification.json",
+      "semantic PASS artifacts are incomplete",
+    );
+    requireArtifact(
+      bytesByName,
+      "semantic-verification.json",
+      "semantic PASS artifacts are incomplete",
+    );
+  }
+
+  if (["PASS", "FAIL", "NOISY"].includes(receipt.benchmark.status)) {
+    requireArtifact(
+      bytesByName,
+      "benchmark-samples.json",
+      "executed benchmark artifacts are incomplete",
+    );
+    requireArtifact(
+      bytesByName,
+      "benchmark-summary.json",
+      "executed benchmark artifacts are incomplete",
+    );
+  }
+}
+
 export async function verifySealedG17Run({
   runId,
   runsRoot = g17RunsRoot,
@@ -80,6 +136,7 @@ export async function verifySealedG17Run({
     }
     bytesByName.set(artifact.name, bytes);
   }
+  verifyEvidenceArtifactInventory(receipt, bytesByName);
   const contractBytes = bytesByName.get("contract.json");
   const contract = validateG17Contract(JSON.parse(contractBytes));
   if (

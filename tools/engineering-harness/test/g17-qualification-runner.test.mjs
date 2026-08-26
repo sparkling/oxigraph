@@ -133,3 +133,53 @@ test("sealed verifier imports no live identity, evidence, process, Git, or Route
     /currentG17|application-evidence|child_process|Router|routing\/history|\bgit\b/u,
   );
 });
+
+test("sealed verifier rejects a hash-consistent compatibility PASS without copied owner evidence", async (t) => {
+  const { runsRoot } = await fixture(t);
+  const loaded = loadG17Contract();
+  const projection = {
+    status: "PASS",
+    agenticQe: {
+      status: "PASS",
+      subjectCommit: "a".repeat(40),
+      profile: "g1-regression",
+      runId: "00000000-0000-4000-8000-000000000000",
+      generatedAt: "2026-08-26T17:59:59.000Z",
+      commandCount: 11,
+      passedTests: 66,
+      receiptSha256: "1".repeat(64),
+      oracleSha256: "2".repeat(64),
+      contentHash: "3".repeat(64),
+      executionHash: "4".repeat(64),
+      implementationContentHash: "5".repeat(64),
+      artifactContentHash: "6".repeat(64),
+      archiveContentHash: "7".repeat(64),
+      archiveFileCount: 1,
+    },
+    native: [],
+    applicationReceipts: [],
+  };
+  const times = [
+    new Date("2026-08-26T18:00:00.000Z"),
+    new Date("2026-08-26T18:00:01.000Z"),
+  ];
+  const result = await runG17Qualification({
+    runId: "run-vacuous-pass",
+    runsRoot,
+    contractLoader: () => loaded,
+    identityProvider: async () => identity(),
+    semanticProvider: async () => missing("MISSING", "missing"),
+    compatibilityProvider: async () => ({
+      status: "PASS",
+      sha256: canonicalSha256(projection),
+      reasons: [],
+      projection,
+      artifacts: [],
+    }),
+    clock: () => times.shift(),
+  });
+  await assert.rejects(
+    verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
+    /compatibility PASS artifacts are incomplete/u,
+  );
+});
