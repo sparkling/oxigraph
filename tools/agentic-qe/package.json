@@ -9,6 +9,7 @@
     "test:adapter": "node --test ./execution-provenance.test.mjs ./path-policy.test.mjs ./process-runner.test.mjs ../owl2-tests/safe-output.test.mjs",
     "test:existing": "node ./oxigraph-aqe.mjs run existing",
     "test:persistence-write": "node ./oxigraph-aqe.mjs run persistence-write",
+    "test:g1-regression": "node ./oxigraph-aqe.mjs run g1-regression",
     "test:supporting-suites": "node ./oxigraph-aqe.mjs run supporting-suites",
     "test:w3c": "node ./oxigraph-aqe.mjs run w3c",
     "test:rdfc-1.0": "node ./oxigraph-aqe.mjs run rdfc-10",

@@ -209,3 +209,228 @@ test("runtime planning binds latest Agentic-QE and semantic authorities", () => 
   assert.equal(profiles["metaharness-semantic-gate"].length, 41);
   assert.equal(profiles.parity.length, 47);
 });
+
+test("G1 regression profile freezes the exact implemented transaction surface", () => {
+  const commandIds = [
+    "g11TransactionStateModel",
+    "g12TransactionConcurrency",
+    "g13TransactionCapabilities",
+    "g14RocksdbWriterSerialization",
+    "g15SparqlEgressPolicy",
+    "g15bSparqlUpdateCancellation",
+    "g15cSparqlNegotiatedUpdate",
+    "g16EffectiveCapabilities",
+    "g16ServiceClaims",
+    "g16CompatibilityCanary",
+    "g16SparqlVersion",
+  ];
+  assert.deepEqual(profiles["g1-regression"], commandIds);
+
+  const expected = {
+    g11TransactionStateModel: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_state_model",
+      ],
+      count: 3,
+      packages: ["oxigraph"],
+      timeoutMs: 420_000,
+    },
+    g12TransactionConcurrency: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_concurrency",
+      ],
+      count: 2,
+      packages: ["oxigraph"],
+      timeoutMs: 90_000,
+    },
+    g13TransactionCapabilities: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_capabilities",
+      ],
+      count: 9,
+      packages: ["oxigraph"],
+      timeoutMs: 120_000,
+    },
+    g14RocksdbWriterSerialization: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "rocksdb_writer_serialization",
+      ],
+      count: 6,
+      packages: ["oxigraph"],
+      timeoutMs: 120_000,
+    },
+    g15SparqlEgressPolicy: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client,rdf-12",
+        "--test",
+        "sparql_egress_policy",
+      ],
+      count: 12,
+      packages: ["oxigraph"],
+      timeoutMs: 180_000,
+    },
+    g15bSparqlUpdateCancellation: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "sparql_update_cancellation",
+      ],
+      count: 6,
+      packages: ["oxigraph"],
+      timeoutMs: 180_000,
+    },
+    g15cSparqlNegotiatedUpdate: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "sparql_negotiated_update",
+      ],
+      count: 5,
+      packages: ["oxigraph"],
+      timeoutMs: 180_000,
+    },
+    g16EffectiveCapabilities: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "http-client-native-tls,rdf-12",
+        "--test",
+        "sparql_effective_capabilities",
+      ],
+      count: 4,
+      packages: ["oxigraph"],
+      timeoutMs: 300_000,
+    },
+    g16ServiceClaims: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph-cli",
+        "--features",
+        "native-tls,rdf-12",
+        "--bin",
+        "oxigraph",
+        "service_description::tests::",
+      ],
+      count: 17,
+      packages: ["oxigraph-cli"],
+      timeoutMs: 300_000,
+    },
+    g16CompatibilityCanary: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph-cli",
+        "--no-default-features",
+        "--features",
+        "oxigraph/http-client-native-tls,rdfs,geosparql,owl2-rl",
+        "--bin",
+        "oxigraph",
+        "service_description::tests::dependency_qualified_library_tls_is_enforced_without_cli_tls",
+        "--",
+        "--exact",
+        "--ignored",
+      ],
+      count: 1,
+      packages: ["oxigraph-cli"],
+      timeoutMs: 300_000,
+    },
+    g16SparqlVersion: {
+      args: [
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--features",
+        "rdf-12",
+        "--test",
+        "sparql_version",
+      ],
+      count: 1,
+      packages: ["oxigraph"],
+      timeoutMs: 2_700_000,
+    },
+  };
+
+  let totalTests = 0;
+  for (const id of commandIds) {
+    const [program, args, policy] = commands[id];
+    const contract = expected[id];
+    assert.equal(program, "cargo", id);
+    assert.deepEqual(args, contract.args, id);
+    assert.equal(policy.expectedPassedTests, contract.count, id);
+    assert.equal(policy.minimumPassedTests, contract.count, id);
+    assert.equal(policy.timeoutMs, contract.timeoutMs, id);
+    assert.deepEqual(policy.evidencePackages, contract.packages, id);
+    assert.equal(policy.requiredTestIds, undefined, id);
+    assert.equal(policy.expectedTestIds.length, contract.count, id);
+    assert.deepEqual(
+      policy.expectedTestIds,
+      [...policy.expectedTestIds].sort(),
+      `${id}: reviewed IDs must be sorted`,
+    );
+    assert.equal(
+      new Set(policy.expectedTestIds).size,
+      contract.count,
+      `${id}: reviewed IDs must be unique`,
+    );
+    assert.doesNotThrow(() =>
+      validateCargoTestIds(id, policy.expectedTestIds, policy),
+    );
+    totalTests += contract.count;
+  }
+  assert.equal(totalTests, 66);
+
+  const policy = commands.g13TransactionCapabilities[2];
+  const ids = policy.expectedTestIds;
+  for (const invalid of [
+    ids.slice(1),
+    [...ids, "attacker::extra"],
+    ["attacker::replacement", ...ids.slice(1)],
+    [ids[0], ids[0], ...ids.slice(2)],
+  ]) {
+    assert.throws(() =>
+      validateCargoTestIds("g13TransactionCapabilities", invalid, policy),
+    );
+  }
+
+  assert.equal(commands.agenticAdapter[2].expectedNodeTests, 19);
+  assert.equal(profiles["metaharness-semantic-gate"].length, 41);
+  assert.equal(profiles.parity.length, 47);
+});

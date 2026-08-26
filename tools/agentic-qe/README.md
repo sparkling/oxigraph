@@ -16,6 +16,7 @@ npm ci --ignore-scripts
 npm run test:adapter
 npm run test:existing
 npm run test:persistence-write
+npm run test:g1-regression
 npm run test:supporting-suites
 npm run test:w3c
 npm run test:datalog
@@ -37,9 +38,9 @@ API, proxy, credential, and runtime-injection variables are removed; advisory
 candidate mode therefore has no ambient model-provider authority. Receipts
 also bind the shared dependency and child-environment policy modules.
 
-The focused `test:persistence-write`, `test:datalog-jena`, `test:rdfs-jena`,
-`test:datalog-souffle`, `test:owl2-rl-inventory`, and `test:owl2-rl-w3c`
-scripts are also available.
+The focused `test:persistence-write`, `test:g1-regression`,
+`test:datalog-jena`, `test:rdfs-jena`, `test:datalog-souffle`,
+`test:owl2-rl-inventory`, and `test:owl2-rl-w3c` scripts are also available.
 `test:metaharness-semantic-gate` is the immutable native-oracle set consumed
 by the full MetaHarness/Darwin qualification.
 
@@ -56,13 +57,14 @@ these are checked as a subset of the complete recorded inventory and are never
 treated as an exact inventory.
 
 Profile commands execute sequentially in their reviewed order and stop at the
-first failure. A failed receipt may therefore contain only a strict prefix; a
-passing receipt must contain the exact full ordered profile inventory. One
-repository-wide exclusive lease is acquired before snapshots or output
-invalidation and held through publication. A competing profile fails before
-touching evidence. On Unix, a later run reclaims a crashed owner only after two
-stable inode/token reads prove that the recorded PID and process-start identity
-are dead or reused; uncertainty and Windows remain fail-closed.
+first failure. Schema-v4 receipts are positive evidence only: a failure aborts
+positive-evidence publication, while a passing receipt must contain the exact
+full ordered profile inventory. One repository-wide exclusive lease is acquired
+before snapshots or output invalidation and held through publication. A
+competing profile fails before touching evidence. On Unix, a later run reclaims
+a crashed owner only after two stable inode/token reads prove that the recorded
+PID and process-start identity are dead or reused; uncertainty and Windows
+remain fail-closed.
 
 Before execution the adapter invalidates the old oracle, receipt, and complete
 selected-output set. Every successful run copies the exact declared output
@@ -93,6 +95,14 @@ reject symlink components and canonical escapes.
   Update, dataset-adapter and Store graph topology, default and no-default
   service claims, and deterministic open/load/commit failure handling for
   parallel bulk loads.
+- `g1-regression`: 66 exact test executions across 11 ordered locked native
+  commands, covering the implemented G1.1 through G1.6 transaction state,
+  concurrency, capability, writer-serialization, egress, cancellation,
+  negotiated-update, effective-capability, service-claim, compatibility-canary,
+  and SPARQL-version surfaces. Its immutable run-addressed receipt is a
+  current-green prerequisite for G1.7 only; it does not set performance budgets,
+  classify or promote a candidate, write Router history, or authorize
+  publication.
 - `supporting-suites`: five exact-count N3 and JSON-LD parser/interchange
   wrappers; their bounded exclusions remain supporting evidence only.
 - `w3c`: pinned official RDF 1.2, SPARQL 1.2, and SHACL 1.2 lanes plus the
@@ -131,7 +141,7 @@ from the trusted profile definition. Extra spoof-like lines or a fabricated
 receipt policy fail. On POSIX, timeouts
 terminate the detached process group with TERM and then KILL.
 The adapter's own Node suite is forced through the TAP 13 reporter and must end
-with one exact, contiguous, conserved 18-test/18-pass terminal summary.
+with one exact, contiguous, conserved 19-test/19-pass terminal summary.
 
 ## Candidate test generation
 
