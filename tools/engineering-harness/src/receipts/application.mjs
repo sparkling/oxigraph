@@ -18,6 +18,8 @@ import {
 import { validateNativeFailureCode } from "../policy/native-failures.mjs";
 
 export const APPLICATION_RECEIPT_SCHEMA =
+  "oxigraph.engineering-application-receipt/v5";
+const LEGACY_APPLICATION_RECEIPT_SCHEMA_V4 =
   "oxigraph.engineering-application-receipt/v4";
 const LEGACY_APPLICATION_RECEIPT_SCHEMA_V3 =
   "oxigraph.engineering-application-receipt/v3";
@@ -56,12 +58,25 @@ const SERVICE_VERIFIER_COMMANDS = Object.freeze([
   "independent",
   "regression",
 ]);
-const ALLOWED_VERIFIER_COMMANDS = new Set(SERVICE_VERIFIER_COMMANDS);
+const COMPATIBILITY_VERIFIER_COMMANDS = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
+  "compatibility",
+  "independent",
+  "regression",
+]);
+const ALLOWED_VERIFIER_COMMANDS = new Set(COMPATIBILITY_VERIFIER_COMMANDS);
 
 function requiredVerifierCommands(contract) {
-  return Object.hasOwn(contract.success, "servicePassed")
-    ? SERVICE_VERIFIER_COMMANDS
-    : LEGACY_VERIFIER_COMMANDS;
+  if (Object.hasOwn(contract.success, "compatibilityPassed")) {
+    return COMPATIBILITY_VERIFIER_COMMANDS;
+  }
+  if (Object.hasOwn(contract.success, "servicePassed")) {
+    return SERVICE_VERIFIER_COMMANDS;
+  }
+  return LEGACY_VERIFIER_COMMANDS;
 }
 
 function evaluatorCommandNames(contract) {
@@ -333,15 +348,39 @@ function normalizeEvaluator(value) {
   });
 }
 
-function normalizeContract(value) {
+function normalizeContract(value, { allowCompatibility = true } = {}) {
   exactKeys(
     value,
     new Set(["sha256", "baseline", "evaluator", "success"]),
     "application contract binding",
   );
-  const successKeys = Object.hasOwn(value.success, "servicePassed")
-    ? ["publicPassed", "servicePassed", "independentPassed", "regressionPassed"]
-    : ["publicPassed", "independentPassed", "regressionPassed"];
+  const hasService = Object.hasOwn(value.success, "servicePassed");
+  const hasCompatibility = Object.hasOwn(
+    value.success,
+    "compatibilityPassed",
+  );
+  if (hasCompatibility && !hasService) {
+    throw new Error(
+      "contract compatibility success count requires the service evaluator",
+    );
+  }
+  const successKeys =
+    allowCompatibility && hasCompatibility
+      ? [
+          "publicPassed",
+          "servicePassed",
+          "compatibilityPassed",
+          "independentPassed",
+          "regressionPassed",
+        ]
+      : hasService
+        ? [
+            "publicPassed",
+            "servicePassed",
+            "independentPassed",
+            "regressionPassed",
+          ]
+        : ["publicPassed", "independentPassed", "regressionPassed"];
   exactKeys(value.success, new Set(successKeys), "contract success counts");
   const success = {
     publicPassed: integer(
@@ -360,10 +399,17 @@ function normalizeContract(value) {
       { min: 1 },
     ),
   };
-  if (Object.hasOwn(value.success, "servicePassed")) {
+  if (hasService) {
     success.servicePassed = integer(
       value.success.servicePassed,
       "contract.success.servicePassed",
+      { min: 1 },
+    );
+  }
+  if (allowCompatibility && hasCompatibility) {
+    success.compatibilityPassed = integer(
+      value.success.compatibilityPassed,
+      "contract.success.compatibilityPassed",
       { min: 1 },
     );
   }
@@ -2180,6 +2226,7 @@ function normalizeReceipt(value) {
   exactKeys(value, RECEIPT_KEYS, "application receipt");
   if (
     value.schema !== APPLICATION_RECEIPT_SCHEMA &&
+    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V4 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V3 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V2 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1
@@ -2189,7 +2236,9 @@ function normalizeReceipt(value) {
   const schema = value.schema;
   const run = normalizeRun(value.run);
   const control = normalizeControl(value.control);
-  const contract = normalizeContract(value.contract);
+  const contract = normalizeContract(value.contract, {
+    allowCompatibility: schema === APPLICATION_RECEIPT_SCHEMA,
+  });
   const routing = normalizeRouting(value.routing, run, control, contract, {
     sealed: true,
   });
@@ -2200,11 +2249,13 @@ function normalizeReceipt(value) {
       requireDiagnostics: schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1,
       critiqueDiagnosticPolicy:
         schema === APPLICATION_RECEIPT_SCHEMA ||
+        schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V4 ||
         schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V3
           ? "required"
           : "forbidden",
       reviewDiagnosticPolicy:
-        schema === APPLICATION_RECEIPT_SCHEMA
+        schema === APPLICATION_RECEIPT_SCHEMA ||
+        schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V4
           ? "required"
           : schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V3
             ? "optional"

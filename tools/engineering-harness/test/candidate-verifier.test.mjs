@@ -130,6 +130,8 @@ function fakeSessionRunner({
   failureDisposition = "completed",
   failureDiagnostic = emptyDiagnostic,
   sandboxArgv = null,
+  servicePassed = 17,
+  compatibilityPassed = 1,
 }) {
   return async (options) => {
     calls.push(options);
@@ -163,6 +165,12 @@ function fakeSessionRunner({
         } else {
           stdout = "test result: ok. 2 passed; 0 failed; 0 ignored";
         }
+      }
+      if (name === "service") {
+        stdout = `test result: ok. ${servicePassed} passed; 0 failed; 0 ignored`;
+      }
+      if (name === "compatibility") {
+        stdout = `test result: ok. ${compatibilityPassed} passed; 0 failed; 0 ignored`;
       }
       if (name === "independent") {
         stdout = "test result: ok. 3 passed; 0 failed; 0 ignored";
@@ -492,6 +500,78 @@ test("six-stage compiler-red baseline preserves the exact public red and green r
     result.commands.find(({ name }) => name === "service").exitCode,
     101,
   );
+});
+
+test("seven-stage verification requires one non-vacuous compatibility result", async (t) => {
+  const { candidate } = await fixture(t);
+  const sevenStageCommands = Object.freeze({
+    format: commands.format,
+    build: commands.build,
+    public: commands.public,
+    service: Object.freeze({
+      argv: Object.freeze(["cargo", "test", "service"]),
+      timeoutMs: 1_000,
+    }),
+    compatibility: Object.freeze({
+      argv: Object.freeze(["cargo", "test", "compatibility"]),
+      timeoutMs: 1_000,
+    }),
+    independent: commands.independent,
+    regression: commands.regression,
+  });
+  const sevenStageContract = Object.freeze({
+    ...contract,
+    commands: sevenStageCommands,
+    verificationSequence: Object.freeze([
+      "format",
+      "build",
+      "public",
+      "service",
+      "compatibility",
+      "independent",
+      "regression",
+    ]),
+    success: Object.freeze({
+      publicPassed: 2,
+      servicePassed: 17,
+      compatibilityPassed: 1,
+      independentPassed: 3,
+      regressionPassed: 2,
+    }),
+  });
+
+  const accepted = await createVerifierForTesting(
+    fakeSessionRunner({ calls: [] }),
+  ).verifyCandidate({ candidate, contract: sevenStageContract });
+  assert.equal(accepted.verdict, "ACCEPT");
+  assert.deepEqual(
+    accepted.commands.map(({ name }) => name),
+    [
+      "format",
+      "build",
+      "public",
+      "service",
+      "compatibility",
+      "independent",
+      "regression",
+    ],
+  );
+
+  for (const compatibilityPassed of [0, 2]) {
+    const rejected = await createVerifierForTesting(
+      fakeSessionRunner({ calls: [], compatibilityPassed }),
+    ).verifyCandidate({ candidate, contract: sevenStageContract });
+    assert.equal(rejected.verdict, "REJECT", `${compatibilityPassed} passed`);
+    assert.equal(rejected.stage, "evaluation", `${compatibilityPassed} passed`);
+    const evidence = rejected.commands.find(
+      ({ name }) => name === "compatibility",
+    );
+    assert.equal(evidence.exitCode, 0);
+    assert.match(
+      evidence.stdoutTail,
+      new RegExp(`test result: ok\\. ${compatibilityPassed} passed; 0 failed;`, "u"),
+    );
+  }
 });
 
 test("red baseline retains bounded full-buffer diagnostics without changing candidate receipts", async (t) => {

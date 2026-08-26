@@ -35,6 +35,15 @@ const serviceCommandOrder = Object.freeze([
   "independent",
   "regression",
 ]);
+const compatibilityCommandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
+  "compatibility",
+  "independent",
+  "regression",
+]);
 const cargoExecutable = "/state/cargo/bin/cargo";
 const mountExecutable = "/usr/bin/mount";
 const pythonExecutable = "/usr/bin/python3";
@@ -78,7 +87,11 @@ function readConfiguration() {
 
 function commandOrder(commands) {
   const names = commands.map(({ name }) => name);
-  const order = [legacyCommandOrder, serviceCommandOrder].find(
+  const order = [
+    legacyCommandOrder,
+    serviceCommandOrder,
+    compatibilityCommandOrder,
+  ].find(
     (candidate) =>
       candidate.length === names.length &&
       candidate.every((name, index) => names[index] === name),

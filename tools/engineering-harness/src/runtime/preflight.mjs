@@ -23,6 +23,7 @@ const commandNames = new Set([
   "build",
   "public",
   "service",
+  "compatibility",
   "independent",
   "regression",
 ]);

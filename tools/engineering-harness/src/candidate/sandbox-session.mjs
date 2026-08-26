@@ -41,6 +41,15 @@ const serviceCommandOrder = Object.freeze([
   "independent",
   "regression",
 ]);
+const compatibilityCommandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
+  "compatibility",
+  "independent",
+  "regression",
+]);
 const minimumDiskBytes = 33_554_432;
 const maximumDiskBytes = 137_438_953_472;
 
@@ -107,9 +116,11 @@ function frozenCommands(commands, maxBuildOutputBytes, maxTestOutputBytesPerComm
   if (commands === null || typeof commands !== "object") {
     throw new Error("verifier commands are required");
   }
-  const order = Object.hasOwn(commands, "service")
-    ? serviceCommandOrder
-    : legacyCommandOrder;
+  const order = Object.hasOwn(commands, "compatibility")
+    ? compatibilityCommandOrder
+    : Object.hasOwn(commands, "service")
+      ? serviceCommandOrder
+      : legacyCommandOrder;
   if (
     Object.keys(commands).length !== order.length ||
     order.some((name) => !Object.hasOwn(commands, name))
