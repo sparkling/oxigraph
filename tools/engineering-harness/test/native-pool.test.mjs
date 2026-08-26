@@ -86,6 +86,7 @@ test("persistent native pool freezes providers and records non-secret invocation
     calls.map(({ provider, role }) => `${provider}:${role}`),
     ["codex:architecture", "claude:critique", "codex:implementation"],
   );
+  assert.deepEqual(calls.map(({ timeoutMs }) => timeoutMs), [30_000, 30_000, 30_000]);
   const evidence = pool.evidence();
   assert.equal(evidence.length, 3);
   assert.equal(pool.evidenceFor("candidate-pipeline-a").length, 3);
@@ -104,6 +105,58 @@ test("persistent native pool freezes providers and records non-secret invocation
   );
   assert.ok(evidence.every((entry) => !Object.hasOwn(entry, "environment")));
   assert.equal(pool.recoverySnapshot().codex.state, "closed");
+});
+
+test("native pool applies explicit role ceilings without changing provider identity", async () => {
+  const calls = [];
+  const productionContract = {
+    ...contract,
+    ceilings: {
+      ...contract.ceilings,
+      maxTotalVerifierWallMs: 7_200_000,
+    },
+  };
+  const pool = new NativeWorkerPool({
+    contract: productionContract,
+    workerRunner: async (request) => {
+      calls.push(request);
+      return result(request);
+    },
+  });
+  const executions = [
+    pool.agentsFor({
+      intent: "oxigraph-candidate",
+      providersByRole: {
+        architecture: "codex",
+        critique: "claude",
+        implementation: "codex",
+      },
+      taskFactory: ({ role }) => ({ role }),
+    }),
+    pool.agentsFor({
+      intent: "oxigraph-repair",
+      providersByRole: { repair: "claude" },
+      taskFactory: ({ role }) => ({ role }),
+    }),
+    pool.agentsFor({
+      intent: "oxigraph-review",
+      providersByRole: { review: "codex" },
+      taskFactory: ({ role }) => ({ role }),
+    }),
+  ];
+  for (const execution of executions) {
+    for (const agent of execution.selectedAgents) await agent.run({});
+  }
+  assert.deepEqual(
+    calls.map(({ provider, role, timeoutMs }) => ({ provider, role, timeoutMs })),
+    [
+      { provider: "codex", role: "architecture", timeoutMs: 600_000 },
+      { provider: "claude", role: "critique", timeoutMs: 600_000 },
+      { provider: "codex", role: "implementation", timeoutMs: 1_200_000 },
+      { provider: "claude", role: "repair", timeoutMs: 1_200_000 },
+      { provider: "codex", role: "review", timeoutMs: 600_000 },
+    ],
+  );
 });
 
 test("native pool rejects identity swaps before exposing worker output", async () => {

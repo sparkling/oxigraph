@@ -8,6 +8,16 @@ The package requests current upstream `latest` dist-tags. Its committed npm
 lock binds exact registry tarballs and SHA-512 integrity, and `.npmrc` disables
 lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 
+Native provider processes use an attested role-specific timeout policy. The
+architecture, critique, and review roles retain the ten-minute ceiling;
+implementation and repair receive a bounded twenty minutes because patch
+generation must synthesize and encode the complete frozen-source diff. The
+task contract's aggregate wall ceiling may reduce, but never increase, those
+limits. The selected value is bound into each tool-free task and the complete
+ceiling map is bound into the committed control identity; unknown roles fail
+before provider spawn. Same-host retry, circuit-breaking, and cancellation
+remain unchanged.
+
 Current activation boundary:
 
 - `doctor` verifies the local installation and dependency bindings;

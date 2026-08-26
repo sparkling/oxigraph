@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { canonicalSha256 } from "../routing/features.mjs";
 import { installedDependencyResolution } from "../dependency-binding.mjs";
 import { nativeHostDiagnostics } from "../native/diagnostics.mjs";
+import { NATIVE_WORKER_TIMEOUT_CEILINGS_MS } from "../policy/native-timeouts.mjs";
 import { repositoryRoot } from "../paths.mjs";
 import { verifyTaskContractRepository } from "../contract.mjs";
 
@@ -91,6 +92,7 @@ export async function currentControlIdentity({
     npmrcSha256: dependencies.npmrcSha256,
     dependencies: dependencies.packages,
     nativeHosts,
+    nativeWorkerTimeoutCeilingsMs: NATIVE_WORKER_TIMEOUT_CEILINGS_MS,
     registration: repositoryBinding.registration,
   });
   return Object.freeze({

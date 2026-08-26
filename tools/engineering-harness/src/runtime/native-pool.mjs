@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { validateWorkerOutput, validateWorkerRole } from "../policy/authority.mjs";
 import { NATIVE_FAILURE_CODES } from "../policy/native-failures.mjs";
+import { nativeWorkerTimeoutMs } from "../policy/native-timeouts.mjs";
 import { runNativeWorker } from "../native/worker.mjs";
 import { createHostRecovery, UPSTREAM_STRATEGIES } from "./upstream.mjs";
 
@@ -238,8 +239,8 @@ export class NativeWorkerPool {
                 model,
                 task,
                 contract: this.#contract,
-                timeoutMs: Math.min(
-                  600_000,
+                timeoutMs: nativeWorkerTimeoutMs(
+                  role,
                   this.#contract.ceilings.maxTotalVerifierWallMs,
                 ),
                 maxOutputBytes: this.#contract.ceilings.maxWorkerOutputBytes,
