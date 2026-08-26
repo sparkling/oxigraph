@@ -376,7 +376,7 @@ test("same-producer routed review remains receipt-valid and INCONCLUSIVE", async
   assert.equal(verifyApplicationReceipt(finalized[0].receipt).ok, true);
 });
 
-test("rejected terminal reviews retain bounded diagnostics in the v3 receipt", async () => {
+test("rejected terminal reviews retain bounded diagnostics in the v4 receipt", async () => {
   const { run, finalized } = fixture({
     reviewVerdict: "REJECT",
     verification: "all-accept",
@@ -384,7 +384,7 @@ test("rejected terminal reviews retain bounded diagnostics in the v3 receipt", a
   const result = await run({ runId: "rejected-review", clock: clock() });
   assert.equal(result.final.verdict, "REJECT");
   const receipt = finalized[0].receipt;
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v3");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v4");
   for (const review of receipt.reviews) {
     const invocation = receipt.nativeInvocations.find(
       ({ id }) => id === review.invocationId,
