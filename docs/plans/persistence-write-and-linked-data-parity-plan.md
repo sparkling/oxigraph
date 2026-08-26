@@ -3,7 +3,7 @@
 - Status: active plan; write seam and G1.3-G1.6 P0 slices complete; the G1.7
   qualification-control scaffold is implemented while P0.5 remains open
 - Date: 2026-08-24
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Upstream merge: `a2415a4e`

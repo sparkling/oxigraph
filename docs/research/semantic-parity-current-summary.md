@@ -2,7 +2,7 @@
 
 Status: G0 scoped receipts are reconciled and green; full current-HEAD
 qualification and broad parity claims are withheld
-Evidence cut: 2026-07-26 normative baseline; reconciled: 2026-08-26
+Evidence cut: 2026-07-26 normative baseline; reconciled: 2026-08-27
 
 ## Bottom line
 

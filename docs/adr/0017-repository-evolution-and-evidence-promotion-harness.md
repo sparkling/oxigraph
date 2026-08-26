@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -473,15 +473,19 @@ Non-authoritative local verification on 2026-08-24 established:
 - a deterministic two-generation/two-child Darwin dry-run plan with no write
   execution.
 
-Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
+Source-bound engineering evidence on 2026-08-25 through 2026-08-27 established:
 
-- the dedicated G1.7 qualification-control implementation preserves an outer
+- committed control subject
+  `d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` preserves an outer
   receipt-v1/projection-v2 boundary, separates structural validation from
   sealed owner-contract replay, and leaves synthetic, legacy, Agentic-only,
-  and incomplete native compatibility evidence ineligible. Its exact
-  clean-subject test result and commit identity are recorded only after a
-  committed clean-worktree rerun; this control is not benchmark evidence or a
-  promotion decision;
+  and incomplete native compatibility evidence ineligible. From that clean
+  committed subject, `node --test --test-concurrency=1
+  tools/agentic-qe/*.test.mjs tools/metaharness/*.test.mjs
+  tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
+  298/298 under Node 24.14.1 on Linux 6.8.0-137-generic x86_64. This is
+  candidate-slice control evidence, not semantic qualification, benchmark
+  evidence, or a promotion decision;
 
 - 180/180 engineering-harness tests on the committed registry tree and a
   `runner-implemented` dependency/provider doctor. The doctor exposes the exact

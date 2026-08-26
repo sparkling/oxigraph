@@ -164,7 +164,11 @@ correspondence, native execution, benchmark acceptance, or promotion. The
 compatibility replay currently closes only its Agentic-QE sublane; native
 compatibility replay, selected reference and approved budgets, current semantic
 evidence, and the real benchmark remain open, so qualification eligibility is
-withheld.
+withheld. Committed control subject
+`d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passes 298/298 serialized
+JavaScript contract/control tests under Node 24.14.1 on Linux x86_64; that is
+candidate-slice control evidence, not semantic qualification, benchmark
+evidence, or a promotion decision.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 

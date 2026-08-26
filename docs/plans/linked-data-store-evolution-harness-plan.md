@@ -2,7 +2,7 @@
 
 - Status: active execution plan; unattended Dream Machine activation blocked
 - Date: 2026-08-24
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -294,7 +294,7 @@ frozen once G2.1's own prerequisites are current. The dependency edge remains
 G1.6 → `HARNESS-REGISTRY` → `HARNESS-REJECTION-EVIDENCE` → G2.1
 evaluator freeze.
 
-Execution record through 2026-08-26:
+Execution record through 2026-08-27:
 
 - G1.1 is complete in `3edfb86a`: 10,000 deterministic shrinking traces each
   passed for memory, RocksDB, and the independent rewritten adapter. The full
@@ -456,8 +456,11 @@ Execution record through 2026-08-26:
   Compatibility replay currently stops at
   `AGENTIC_OWNER_CONTRACT_REPLAYED`; reference selection is `UNSELECTED`, the
   budget/noise decisions are `ABSENT`, and the benchmark is `NOT_RUN`, so G1.7
-  remains `INCONCLUSIVE`. The exact control commit and clean-subject test result
-  will be added only after the candidate is committed and rerun cleanly.
+  remains `INCONCLUSIVE`. Committed control subject
+  `d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passed 298/298 serialized
+  JavaScript contract/control tests under Node 24.14.1 on Linux
+  6.8.0-137-generic x86_64. This proves the candidate control slice only; it is
+  not semantic qualification, benchmark evidence, or promotion.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured

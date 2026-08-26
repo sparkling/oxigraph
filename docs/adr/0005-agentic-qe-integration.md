@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: latest-compatible adapter implemented; the manifest
   requests the `latest` dist-tag and the current integrity-bound lockfile

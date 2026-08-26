@@ -67,7 +67,7 @@ Source authority and revision metadata live in
 shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
-2026-08-26. Individual sealed results retain their original evidence dates.
+2026-08-27. Individual sealed results retain their original evidence dates.
 G0.1-G0.7 have source-bound completion evidence: registered sources, the
 locked Jena runner, two byte-identical runs of the refreshed 76/198 profile,
 the 144/129 Agentic-QE inventories, and the 34-test `persistence-write`

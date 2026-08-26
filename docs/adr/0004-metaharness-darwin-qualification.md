@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: policy-only adapter, synthetic mechanics, full
   semantic mode, independent receipt verification, and latest-compatible

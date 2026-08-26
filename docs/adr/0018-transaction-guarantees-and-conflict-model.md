@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.1-G1.4 implemented and source-bound. The dedicated
   G1.7 qualification-control scaffold is implemented, while native

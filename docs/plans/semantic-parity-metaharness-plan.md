@@ -1,7 +1,7 @@
 # Semantic parity implementation and qualification plan
 
 - Programme date: 2026-07-26
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Target: version-pinned Apache Jena compatibility, then current reviewed W3C
   RDF 1.2, SPARQL 1.2, and SHACL 1.2 parity
 - Reasoning scope: RDFS, bounded Datalog D0–D2, and OWL 2 RL/RDF only
