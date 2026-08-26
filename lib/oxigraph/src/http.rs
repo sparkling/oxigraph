@@ -296,6 +296,24 @@ impl EgressPolicy {
             .acquire()
             .ok_or(EgressErrorKind::ConnectionBudgetExceeded)
     }
+
+    pub(crate) fn allows_compiled_http_transport(&self) -> bool {
+        self.origins.iter().any(|origin| {
+            let Ok(url) = Url::parse(origin) else {
+                return false;
+            };
+            let scheme_supported = match url.scheme() {
+                "http" => true,
+                "https" => cfg!(any(
+                    feature = "http-client-native-tls",
+                    feature = "http-client-rustls-native",
+                    feature = "http-client-rustls-webpki"
+                )),
+                _ => false,
+            };
+            scheme_supported && literal_ip(&url).is_some_and(|ip| self.ips.contains(&ip))
+        })
+    }
 }
 
 impl Default for EgressPolicy {

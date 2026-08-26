@@ -20,6 +20,12 @@ use oxigraph::io::{
 use oxigraph::model::{
     GraphName, IriParseError, NamedNode, NamedOrBlankNode, OxString, RdfVersion,
 };
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+use oxigraph::sparql::EgressPolicy;
 use oxigraph::sparql::results::{QueryResultsFormat, QueryResultsSerializer};
 use oxigraph::sparql::{
     CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, SparqlEvaluator,
@@ -268,7 +274,7 @@ pub fn main() -> anyhow::Result<()> {
                 io::read_to_string(stdin().lock())?
             };
             let store = Store::open_read_only(location)?;
-            let mut evaluator = sparql_evaluator();
+            let mut evaluator = SparqlEvaluator::new();
             if let Some(base) = query_base {
                 evaluator = evaluator.with_base_iri(&base)?;
             }
@@ -421,7 +427,7 @@ pub fn main() -> anyhow::Result<()> {
                 io::read_to_string(stdin().lock())?
             };
             let store = Store::open(location)?;
-            let mut evaluator = sparql_evaluator();
+            let mut evaluator = SparqlEvaluator::new();
             if let Some(base) = update_base {
                 evaluator = evaluator.with_base_iri(&base)?;
             }
@@ -1208,6 +1214,7 @@ fn handle_request(
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
                     store,
+                    sparql_evaluator,
                     RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
@@ -1217,6 +1224,7 @@ fn handle_request(
             } else if content_type.media_type == "application/x-www-form-urlencoded" {
                 configure_and_evaluate_sparql_update(
                     store,
+                    sparql_evaluator,
                     RequestParams::from_request_url_and_body(request)?,
                     None,
                     None,
@@ -1278,6 +1286,7 @@ fn handle_request(
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
                     store,
+                    sparql_evaluator,
                     RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
@@ -1312,6 +1321,7 @@ fn handle_request(
                         }
                         configure_and_evaluate_sparql_update(
                             store,
+                            sparql_evaluator,
                             args,
                             None,
                             None,
@@ -1740,6 +1750,7 @@ fn evaluate_sparql_query(
 
 fn configure_and_evaluate_sparql_update(
     store: &Store,
+    evaluator: &SparqlEvaluator,
     mut args: RequestParams,
     update: Option<String>,
     media_type_version: Option<SparqlVersion>,
@@ -1781,6 +1792,7 @@ fn configure_and_evaluate_sparql_update(
     let effective_version = validate_sparql_version(&update, request_version)?;
     evaluate_sparql_update(
         store,
+        evaluator,
         &update,
         effective_version,
         use_default_graph_as_union,
@@ -1792,6 +1804,7 @@ fn configure_and_evaluate_sparql_update(
 
 fn evaluate_sparql_update(
     store: &Store,
+    evaluator: &SparqlEvaluator,
     update: &str,
     version: Option<SparqlVersion>,
     use_default_graph_as_union: bool,
@@ -1799,7 +1812,8 @@ fn evaluate_sparql_update(
     named_graph_uris: Vec<String>,
     request: &Request<Body>,
 ) -> Result<Response<Body>, HttpError> {
-    let mut evaluator = SparqlEvaluator::new()
+    let mut evaluator = evaluator
+        .clone()
         .with_base_iri(base_url(request).as_str())
         .map_err(bad_request)?;
     if let Some(version) = version {
@@ -2735,6 +2749,20 @@ fn rdf_response_media_type(format: RdfResponseFormat) -> &'static str {
     format.media_type()
 }
 
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+))]
+fn sparql_evaluator() -> SparqlEvaluator {
+    SparqlEvaluator::new().with_egress_policy(EgressPolicy::deny_all())
+}
+
+#[cfg(not(any(
+    feature = "native-tls",
+    feature = "rustls-native",
+    feature = "rustls-webpki"
+)))]
 fn sparql_evaluator() -> SparqlEvaluator {
     SparqlEvaluator::new()
 }
