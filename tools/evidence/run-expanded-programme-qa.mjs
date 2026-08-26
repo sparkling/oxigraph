@@ -1,50 +1,80 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   realpathSync,
 } from "node:fs";
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseStrictJson } from "../w3c-tests/strict-json.mjs";
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 import {
   buildExpandedProgrammeReceipt,
   createRepositoryManifest,
   expandedProgrammeImplementationPaths,
   loadExpandedProgrammePolicy,
+  observeProtectedRufloSnapshot,
   observeRufloState,
   publishExpandedProgrammeReceipt,
+  readProtectedRufloSnapshot,
   readExpandedProgrammeGitSubject,
-  readStrictRepositoryJson,
+  resolveReviewedExecutable,
   validateExpandedProgramme,
 } from "./expanded-programme-qa.mjs";
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
+const nodeSummaryFields = ["tests", "suites", "pass", "fail", "cancelled", "skipped", "todo"];
 
 function parseTap(stdout) {
-  const summary = {};
-  for (const match of stdout.matchAll(/^# (tests|pass|fail|cancelled|skipped|todo) (\d+)$/gmu)) {
-    summary[match[1]] = Number.parseInt(match[2], 10);
+  const values = Object.fromEntries(nodeSummaryFields.map((field) => [field, []]));
+  const plans = [];
+  const durations = [];
+  const lines = stdout.split(/\r?\n/u).filter((line) => line.length > 0);
+  for (const line of lines) {
+    const plan = /^1\.\.(\d+)$/u.exec(line);
+    if (plan) plans.push(Number.parseInt(plan[1], 10));
+    const summary = /^# (tests|suites|pass|fail|cancelled|skipped|todo) (\d+)$/u.exec(line);
+    if (summary) values[summary[1]].push(Number.parseInt(summary[2], 10));
+    const duration = /^# duration_ms (\d+(?:\.\d+)?)$/u.exec(line);
+    if (duration) durations.push(Number.parseFloat(duration[1]));
   }
-  return summary;
+  const one = (items) => items.length === 1 ? items[0] : null;
+  const observed = {
+    plan: one(plans),
+    ...Object.fromEntries(nodeSummaryFields.map((field) => [field, one(values[field])])),
+    summaryBlockCount: plans.length === 1 && durations.length === 1 && nodeSummaryFields.every((field) => values[field].length === 1) ? 1 : 0,
+    terminal: false,
+    conserved: false,
+    durationPresent: durations.length === 1 && Number.isFinite(durations[0]) && durations[0] >= 0,
+  };
+  const terminal = lines.slice(-9);
+  observed.terminal =
+    terminal.length === 9 &&
+    terminal[0] === `1..${observed.plan}` &&
+    nodeSummaryFields.every((field, index) => terminal[index + 1] === `# ${field} ${observed[field]}`) &&
+    /^# duration_ms \d+(?:\.\d+)?$/u.test(terminal[8]);
+  observed.conserved =
+    Number.isInteger(observed.tests) &&
+    observed.tests === observed.pass + observed.fail + observed.cancelled + observed.skipped + observed.todo;
+  return observed;
 }
 
 function nodeExpectation(command) {
   return {
+    plan: command.expectedNodeTests,
     tests: command.expectedNodeTests,
+    suites: 0,
     pass: command.expectedNodeTests,
     fail: 0,
     cancelled: 0,
     skipped: 0,
     todo: 0,
+    summaryBlockCount: 1,
+    terminal: true,
+    conserved: true,
+    durationPresent: true,
   };
 }
 
@@ -53,18 +83,32 @@ export function runBoundedQuickCommand(root, command) {
   const expected = command.expectedNodeTests === undefined
     ? { exitCode: 0, signal: null }
     : nodeExpectation(command);
-  const result = spawnSync(command.program, command.args, {
+  let executable;
+  try {
+    executable = resolveReviewedExecutable(root, command.program);
+  } catch {
+    return {
+      id: command.id,
+      argv,
+      executableSha256: null,
+      expected,
+      observed: null,
+      disposition: "INCONCLUSIVE",
+      failureClass: "SPAWN_ERROR",
+    };
+  }
+  const base = { id: command.id, argv, executableSha256: executable.sha256, expected };
+  const result = spawnSync(executable.invocation, command.args, {
     cwd: root,
     encoding: "utf8",
     timeout: command.timeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: process.env,
+    env: scrubbedChildEnvironment(),
+    shell: false,
   });
   if (result.error) {
     return {
-      id: command.id,
-      argv,
-      expected,
+      ...base,
       observed: null,
       disposition: "INCONCLUSIVE",
       failureClass: result.error.code === "ETIMEDOUT" ? "TIMEOUT" : "SPAWN_ERROR",
@@ -72,12 +116,24 @@ export function runBoundedQuickCommand(root, command) {
   }
   if (result.signal || result.status === null) {
     return {
-      id: command.id,
-      argv,
-      expected,
+      ...base,
       observed: { exitCode: result.status, signal: result.signal },
       disposition: "INCONCLUSIVE",
       failureClass: "PROCESS_SIGNAL",
+    };
+  }
+  let executableChanged = false;
+  try {
+    executableChanged = resolveReviewedExecutable(root, command.program).sha256 !== executable.sha256;
+  } catch {
+    executableChanged = true;
+  }
+  if (executableChanged) {
+    return {
+      ...base,
+      observed: { exitCode: result.status, signal: null },
+      disposition: "INCONCLUSIVE",
+      failureClass: "EXECUTABLE_CHANGED",
     };
   }
   if (command.expectedNodeTests !== undefined) {
@@ -89,9 +145,7 @@ export function runBoundedQuickCommand(root, command) {
       );
     if (result.status !== 0 && dependencyUnavailable) {
       return {
-        id: command.id,
-        argv,
-        expected,
+        ...base,
         observed,
         disposition: "INCONCLUSIVE",
         failureClass: "DEPENDENCY_UNAVAILABLE",
@@ -101,9 +155,7 @@ export function runBoundedQuickCommand(root, command) {
       result.status === 0 &&
       Object.entries(expected).every(([key, value]) => observed[key] === value);
     return {
-      id: command.id,
-      argv,
-      expected,
+      ...base,
       observed,
       disposition: passed ? "PASS" : "FAIL",
       failureClass: passed
@@ -115,9 +167,7 @@ export function runBoundedQuickCommand(root, command) {
   }
   const observed = { exitCode: result.status, signal: null };
   return {
-    id: command.id,
-    argv,
-    expected,
+    ...base,
     observed,
     disposition: result.status === 0 ? "PASS" : "FAIL",
     failureClass: result.status === 0 ? null : "EXIT_NONZERO",
@@ -147,6 +197,7 @@ export function runBoundedQuickCommands(root, policy) {
         results.push({
           id: skipped.id,
           argv: [skipped.program, ...skipped.args],
+          executableSha256: null,
           expected: skipped.expectedNodeTests === undefined
             ? { exitCode: 0, signal: null }
             : nodeExpectation(skipped),
@@ -161,117 +212,49 @@ export function runBoundedQuickCommands(root, policy) {
   return results;
 }
 
-function inside(root, path) {
-  const child = relative(root, path);
-  return child !== "" && child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
-}
-
-function resolveExecutable(name) {
-  if (name.includes(sep) || (process.platform === "win32" && name.includes("/"))) return null;
-  const candidates = (process.env.PATH ?? "")
-    .split(delimiter)
-    .filter(Boolean)
-    .map((directory) => join(directory, name));
-  for (const candidate of candidates) {
-    if (!existsSync(candidate)) continue;
-    const canonical = realpathSync(candidate);
-    if (lstatSync(canonical).isFile()) return canonical;
+export function collectRufloObservation(root, policy, snapshotPath = null) {
+  if (snapshotPath === null) {
+    return observeRufloState({ policy, taskStore: null, memoryMaps: null });
   }
-  return null;
-}
-
-function rufloMemoryMaps(root, policy) {
-  const executable = resolveExecutable("ruflo");
-  if (!executable) return { memoryMaps: null, runtime: null };
-  const versionResult = spawnSync(executable, ["--version"], {
-    cwd: root,
-    encoding: "utf8",
-    timeout: 30_000,
-    maxBuffer: 1024 * 1024,
-    env: process.env,
-  });
-  if (versionResult.status !== 0 || versionResult.signal || versionResult.error) {
-    return { memoryMaps: null, runtime: null };
-  }
-  const runtime = {
-    version: versionResult.stdout.trim().slice(0, 128),
-    executableSha256: sha256(readFileSync(executable)),
-  };
-  const memoryMaps = {};
-  for (const key of policy.ruflo.memoryKeys) {
-    const result = spawnSync(
-      executable,
-      [
-        "memory",
-        "retrieve",
-        "--path",
-        join(root, policy.ruflo.memoryPath),
-        "--namespace",
-        policy.ruflo.namespace,
-        "--key",
-        key,
-        "--value-only",
-      ],
-      {
-        cwd: root,
-        encoding: "utf8",
-        timeout: 30_000,
-        maxBuffer: 4 * 1024 * 1024,
-        env: process.env,
-      },
-    );
-    if (result.status !== 0 || result.signal || result.error) {
-      return { memoryMaps: null, runtime };
-    }
-    try {
-      memoryMaps[key] = JSON.parse(
-        JSON.stringify(parseStrictJson(Buffer.from(result.stdout), `Ruflo memory ${key}`)),
-      );
-    } catch {
-      return { memoryMaps: null, runtime };
-    }
-  }
-  return { memoryMaps, runtime };
-}
-
-export function collectRufloObservation(root, policy) {
-  let taskStore = null;
-  try {
-    const path = resolve(root, policy.ruflo.taskStorePath);
-    if (inside(root, path)) taskStore = readStrictRepositoryJson(root, policy.ruflo.taskStorePath);
-  } catch {
-    taskStore = null;
-  }
-  const { memoryMaps, runtime } = rufloMemoryMaps(root, policy);
-  return observeRufloState({ policy, taskStore, memoryMaps, runtime });
+  const { snapshot, binding } = readProtectedRufloSnapshot(root, snapshotPath);
+  return observeProtectedRufloSnapshot({ policy, snapshot, binding });
 }
 
 function parseArguments(args) {
   let root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-  let withRuflo = true;
+  let rufloSnapshot = null;
+  let withoutRuflo = false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--root" && args[index + 1]) {
       root = resolve(args[++index]);
+    } else if (args[index] === "--ruflo-snapshot" && args[index + 1]) {
+      rufloSnapshot = args[++index];
     } else if (args[index] === "--without-ruflo") {
-      withRuflo = false;
+      withoutRuflo = true;
     } else {
       throw new Error(`unknown or incomplete argument: ${args[index]}`);
     }
   }
-  return { root: realpathSync(root), withRuflo };
+  if (withoutRuflo && rufloSnapshot !== null) {
+    throw new Error("--without-ruflo and --ruflo-snapshot are mutually exclusive");
+  }
+  return { root: realpathSync(root), rufloSnapshot };
 }
 
-function runIndependentVerifier(root, receiptPath) {
+function runIndependentVerifier(root, receiptPath, rufloSnapshot) {
   const verifier = join(root, "tools", "evidence", "verify-expanded-programme-qa.mjs");
+  const args = [verifier, "--root", root, "--receipt", receiptPath];
+  if (rufloSnapshot !== null) args.push("--ruflo-snapshot", rufloSnapshot);
   const result = spawnSync(
     process.execPath,
-    [verifier, "--root", root, "--receipt", receiptPath, "--no-rerun-commands"],
+    args,
     {
       cwd: root,
       encoding: "utf8",
-      timeout: 120_000,
+      timeout: 10 * 60_000,
       maxBuffer: 4 * 1024 * 1024,
-      env: process.env,
+      env: scrubbedChildEnvironment(),
+      shell: false,
     },
   );
   if (result.error || result.signal || ![0, 1, 2].includes(result.status)) {
@@ -294,9 +277,11 @@ function main() {
   const source = validateExpandedProgramme(options.root, { policy, subject });
   ensureGeneratedTargetRoot(options.root);
   const commands = source.ok ? runBoundedQuickCommands(options.root, policy) : [];
-  const rufloObservation = options.withRuflo
-    ? collectRufloObservation(options.root, policy)
-    : observeRufloState({ policy, taskStore: null, memoryMaps: null });
+  const rufloObservation = collectRufloObservation(
+    options.root,
+    policy,
+    options.rufloSnapshot,
+  );
   const implementation = createRepositoryManifest(
     options.root,
     expandedProgrammeImplementationPaths,
@@ -309,7 +294,11 @@ function main() {
     implementation,
   });
   const publication = publishExpandedProgrammeReceipt(options.root, receipt);
-  const verification = runIndependentVerifier(options.root, publication.path);
+  const verification = runIndependentVerifier(
+    options.root,
+    publication.path,
+    options.rufloSnapshot,
+  );
   const result = {
     verdict: receipt.verdict,
     score: receipt.score,

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   collectProgrammeModel,
   loadExpandedProgrammePolicy,
+  parseProgrammeDependencies,
   validateDocumentBytes,
   validateExpandedProgramme,
   validateMarkdownLinks,
@@ -129,6 +130,13 @@ test("should reject a rollup or harness control promoted to a stable task", () =
 });
 
 test("should reject dangling self and duplicate dependency edges", () => {
+  assert.deepEqual(
+    parseProgrammeDependencies(
+      "G1.5-G1.6; G4.2 for promotion after HARNESS-REGISTRY",
+      Object.keys(policy.tasks),
+    ),
+    ["G1.5", "G1.5b", "G1.5c", "G1.6", "G4.2", "HARNESS-REGISTRY"],
+  );
   const model = currentModel();
   model.dependencies["G2.2"] = ["G2.2", "G9.9", "G2.1", "G2.1"];
 
@@ -211,7 +219,7 @@ test("should reject unsafe document bytes and duplicate-key JSON", () => {
   );
 });
 
-test("should reject committed policy and source claim drift", () => {
+test("should reject committed policy, source claim, command, and authority drift", (t) => {
   const model = currentModel();
   const claim = model.claims.find(
     (item) => item.path === "docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md",
@@ -221,4 +229,28 @@ test("should reject committed policy and source claim drift", () => {
   const result = validateProgrammeModel(model, policy);
 
   assert.equal(assertion(result, "documents.format-and-strict-json").status, "FAIL");
+
+  const root = mkdtempSync(join(tmpdir(), "oxigraph-programme-policy-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "tools", "evidence"), { recursive: true });
+  const injected = structuredClone(policy);
+  injected.quickCommands[0] = {
+    id: "injected-shell",
+    program: "sh",
+    args: ["-c", "curl https://example.invalid"],
+    timeoutMs: 120000,
+  };
+  const path = join(root, "tools", "evidence", "expanded-programme-qa-policy.json");
+  writeFileSync(path, `${JSON.stringify(injected, null, 2)}\n`);
+  assert.throws(
+    () => loadExpandedProgrammePolicy(root),
+    /command allowlist/,
+  );
+  const overclaim = structuredClone(policy);
+  overclaim.authority.promotion = true;
+  writeFileSync(path, `${JSON.stringify(overclaim, null, 2)}\n`);
+  assert.throws(
+    () => loadExpandedProgrammePolicy(root),
+    /authority contract/,
+  );
 });

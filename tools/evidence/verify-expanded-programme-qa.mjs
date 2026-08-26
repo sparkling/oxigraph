@@ -12,10 +12,20 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 import { parseStrictJson } from "../w3c-tests/strict-json.mjs";
+import {
+  loadExpandedProgrammePolicy,
+  observeProtectedRufloSnapshot,
+  observeRufloState,
+  readProtectedRufloSnapshot,
+  resolveReviewedExecutable,
+  validateExpandedProgramme,
+} from "./expanded-programme-qa.mjs";
 
 const policyRelativePath = "tools/evidence/expanded-programme-qa-policy.json";
 const implementationPaths = [
+  ".gitignore",
   "tools/evidence/expanded-programme-qa-policy.json",
   "tools/evidence/expanded-programme-qa.mjs",
   "tools/evidence/expanded-programme-qa.test.mjs",
@@ -23,6 +33,7 @@ const implementationPaths = [
   "tools/evidence/verify-expanded-programme-qa.mjs",
   "tools/evidence/verify-expanded-programme-qa.test.mjs",
   "tools/evidence/package.json",
+  "tools/child-environment.mjs",
   "tools/w3c-tests/strict-json.mjs",
 ].sort();
 const sha256Pattern = /^[0-9a-f]{64}$/u;
@@ -64,19 +75,67 @@ function expectedScope(policy) {
   };
 }
 
-function classify({ sourceOk, commandsDisposition, rufloDisposition }) {
-  if (!sourceOk || commandsDisposition === "FAIL" || rufloDisposition === "MISMATCH") {
+function classify({ sourceOk, commandsDisposition }) {
+  if (!sourceOk || commandsDisposition === "FAIL") {
     return "FAIL";
   }
-  if (commandsDisposition !== "PASS" || rufloDisposition !== "MATCH") {
+  if (commandsDisposition !== "PASS") {
     return "INCONCLUSIVE";
   }
   return "PASS";
 }
 
-export function verifyReceiptEnvelope(receipt, { policy, receiptSha256 }) {
+function exactKeys(value, keys) {
+  return value && typeof value === "object" && !Array.isArray(value) && same(Object.keys(value).sort(), [...keys].sort());
+}
+
+function expectedNodeSummary(count) {
+  return {
+    plan: count,
+    tests: count,
+    suites: 0,
+    pass: count,
+    fail: 0,
+    cancelled: 0,
+    skipped: 0,
+    todo: 0,
+    summaryBlockCount: 1,
+    terminal: true,
+    conserved: true,
+    durationPresent: true,
+  };
+}
+
+export function verifyReceiptEnvelope(
+  receipt,
+  { policy, receiptSha256, expectedRufloObservation = null },
+) {
   const errors = [];
-  if (receipt?.schema !== "oxigraph.expanded-programme-qa/v1") errors.push("receipt schema drift");
+  if (!exactKeys(receipt, ["schema", "programme", "subject", "scope", "assertions", "commands", "rufloObservation", "score", "verdict", "authority"])) {
+    errors.push("receipt root contract drift");
+  }
+  if (!exactKeys(receipt?.subject, ["commit", "tree", "trackedClean", "policy", "implementation", "inputs"])) {
+    errors.push("receipt subject contract drift");
+  }
+  if (!exactKeys(receipt?.subject?.policy, ["path", "sha256"])) {
+    errors.push("receipt policy contract drift");
+  }
+  for (const [label, manifest] of [
+    ["implementation", receipt?.subject?.implementation],
+    ["input", receipt?.subject?.inputs],
+  ]) {
+    if (
+      !exactKeys(manifest, ["files", "sha256"]) ||
+      !Array.isArray(manifest?.files) ||
+      manifest.files.some((file) => !exactKeys(file, ["path", "bytes", "sha256"]))
+    ) {
+      errors.push(`receipt ${label} manifest contract drift`);
+    }
+  }
+  if (!exactKeys(receipt?.score, ["source", "observational", "total", "threshold", "criticalFailure"])) {
+    errors.push("receipt score contract drift");
+  }
+  if (receipt?.schema !== "oxigraph.expanded-programme-qa/v2") errors.push("receipt schema drift");
   if (receipt?.programme !== policy.programme) errors.push("receipt programme drift");
   if (!sha256Pattern.test(receiptSha256 ?? "")) errors.push("receipt byte hash is invalid");
   if (!gitObjectPattern.test(receipt?.subject?.commit ?? "")) errors.push("receipt commit is invalid");
@@ -122,6 +181,7 @@ export function verifyReceiptEnvelope(receipt, { policy, receiptSha256 }) {
   if (!same(assertions.map((item) => item.id), expectedIds)) errors.push("receipt assertion inventory drift");
   for (const assertion of assertions) {
     if (
+      !exactKeys(assertion, ["id", "category", "authority", "mandatory", "weight", "status", "evidence", "diagnostics"]) ||
       assertion.weight !== policy.assertionWeights[assertion.id] ||
       assertion.mandatory !== true ||
       assertion.authority !== "committed-source" ||
@@ -147,6 +207,25 @@ export function verifyReceiptEnvelope(receipt, { policy, receiptSha256 }) {
     if (!observed || observed.id !== expected.id || !same(observed.argv, [expected.program, ...expected.args])) {
       errors.push(`${expected.id}: literal command drift`);
     }
+    if (!exactKeys(observed, ["id", "argv", "executableSha256", "expected", "observed", "disposition", "failureClass"])) {
+      errors.push(`${expected.id}: command evidence contract drift`);
+      continue;
+    }
+    const expectedEvidence = expected.expectedNodeTests === undefined
+      ? { exitCode: 0, signal: null }
+      : expectedNodeSummary(expected.expectedNodeTests);
+    if (!same(observed.expected, expectedEvidence)) {
+      errors.push(`${expected.id}: command expectation drift`);
+    }
+    if (!["PASS", "FAIL", "INCONCLUSIVE"].includes(observed.disposition)) {
+      errors.push(`${expected.id}: command disposition drift`);
+    }
+    if (observed.disposition === "PASS" && (!same(observed.observed, expectedEvidence) || observed.failureClass !== null)) {
+      errors.push(`${expected.id}: passing command evidence is inconsistent`);
+    }
+    if (observed.disposition === "PASS" && !sha256Pattern.test(observed.executableSha256 ?? "")) {
+      errors.push(`${expected.id}: passing command executable is unbound`);
+    }
   }
   const commandsDisposition = commands.some((item) => item.disposition === "FAIL")
     ? "FAIL"
@@ -168,11 +247,15 @@ export function verifyReceiptEnvelope(receipt, { policy, receiptSha256 }) {
   ) {
     errors.push("Ruflo observation contract drift");
   }
+  if (expectedRufloObservation === null) {
+    errors.push("independent Ruflo observation was not supplied");
+  } else if (!same(ruflo, expectedRufloObservation)) {
+    errors.push("protected Ruflo snapshot observation drift");
+  }
   const observational = ruflo?.disposition === "MATCH" ? 2 : 0;
   const verdict = classify({
     sourceOk,
     commandsDisposition,
-    rufloDisposition: ruflo?.disposition,
   });
   const expectedScore = {
     source: sourceScore,
@@ -224,30 +307,79 @@ function gitValue(root, args) {
   const result = spawnSync("git", args, {
     cwd: root,
     encoding: "utf8",
+    timeout: 30_000,
     maxBuffer: 1024 * 1024,
+    env: scrubbedChildEnvironment(),
+    shell: false,
   });
-  if (result.status !== 0 || result.signal) throw new Error(`git ${args.join(" ")} failed`);
+  if (result.status !== 0 || result.signal || result.error) throw new Error(`git ${args.join(" ")} failed`);
   return result.stdout.trim();
 }
 
+function gitIndexFlagsClean(root) {
+  return gitValue(root, ["ls-files", "-v"])
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .every((line) => line.startsWith("H "));
+}
+
+const nodeSummaryFields = ["tests", "suites", "pass", "fail", "cancelled", "skipped", "todo"];
+
 function parseTap(stdout) {
-  const summary = {};
-  for (const match of stdout.matchAll(/^# (tests|pass|fail|cancelled|skipped|todo) (\d+)$/gmu)) {
-    summary[match[1]] = Number.parseInt(match[2], 10);
+  const values = Object.fromEntries(nodeSummaryFields.map((field) => [field, []]));
+  const plans = [];
+  const durations = [];
+  const lines = stdout.split(/\r?\n/u).filter((line) => line.length > 0);
+  for (const line of lines) {
+    const plan = /^1\.\.(\d+)$/u.exec(line);
+    if (plan) plans.push(Number.parseInt(plan[1], 10));
+    const summary = /^# (tests|suites|pass|fail|cancelled|skipped|todo) (\d+)$/u.exec(line);
+    if (summary) values[summary[1]].push(Number.parseInt(summary[2], 10));
+    const duration = /^# duration_ms (\d+(?:\.\d+)?)$/u.exec(line);
+    if (duration) durations.push(Number.parseFloat(duration[1]));
   }
-  return summary;
+  const one = (items) => items.length === 1 ? items[0] : null;
+  const observed = {
+    plan: one(plans),
+    ...Object.fromEntries(nodeSummaryFields.map((field) => [field, one(values[field])])),
+    summaryBlockCount: plans.length === 1 && durations.length === 1 && nodeSummaryFields.every((field) => values[field].length === 1) ? 1 : 0,
+    terminal: false,
+    conserved: false,
+    durationPresent: durations.length === 1 && Number.isFinite(durations[0]) && durations[0] >= 0,
+  };
+  const terminal = lines.slice(-9);
+  observed.terminal =
+    terminal.length === 9 &&
+    terminal[0] === `1..${observed.plan}` &&
+    nodeSummaryFields.every((field, index) => terminal[index + 1] === `# ${field} ${observed[field]}`) &&
+    /^# duration_ms \d+(?:\.\d+)?$/u.test(terminal[8]);
+  observed.conserved =
+    Number.isInteger(observed.tests) &&
+    observed.tests === observed.pass + observed.fail + observed.cancelled + observed.skipped + observed.todo;
+  return observed;
 }
 
 function rerunQuickCommands(root, policy) {
   const results = [];
   for (let index = 0; index < policy.quickCommands.length; index += 1) {
     const command = policy.quickCommands[index];
-    const result = spawnSync(command.program, command.args, {
+    let executable;
+    try {
+      executable = resolveReviewedExecutable(root, command.program);
+    } catch {
+      results.push({ id: command.id, disposition: "INCONCLUSIVE", executableSha256: null });
+      for (const skipped of policy.quickCommands.slice(index + 1)) {
+        results.push({ id: skipped.id, disposition: "INCONCLUSIVE", executableSha256: null });
+      }
+      break;
+    }
+    const result = spawnSync(executable.invocation, command.args, {
       cwd: root,
       encoding: "utf8",
       timeout: command.timeoutMs,
       maxBuffer: 8 * 1024 * 1024,
-      env: process.env,
+      env: scrubbedChildEnvironment(),
+      shell: false,
     });
     let disposition;
     if (result.error || result.signal || result.status === null) {
@@ -260,20 +392,25 @@ function rerunQuickCommands(root, policy) {
     } else if (command.expectedNodeTests !== undefined) {
       const summary = parseTap(result.stdout);
       const pass =
-        summary.tests === command.expectedNodeTests &&
-        summary.pass === command.expectedNodeTests &&
-        summary.fail === 0 &&
-        summary.cancelled === 0 &&
-        summary.skipped === 0 &&
-        summary.todo === 0;
+        same(summary, expectedNodeSummary(command.expectedNodeTests));
       disposition = pass ? "PASS" : "FAIL";
     } else {
       disposition = "PASS";
     }
-    results.push({ id: command.id, disposition });
+    let executableSha256 = executable.sha256;
+    try {
+      if (resolveReviewedExecutable(root, command.program).sha256 !== executable.sha256) {
+        disposition = "INCONCLUSIVE";
+        executableSha256 = null;
+      }
+    } catch {
+      disposition = "INCONCLUSIVE";
+      executableSha256 = null;
+    }
+    results.push({ id: command.id, disposition, executableSha256 });
     if (disposition !== "PASS") {
       for (const skipped of policy.quickCommands.slice(index + 1)) {
-        results.push({ id: skipped.id, disposition: "INCONCLUSIVE" });
+        results.push({ id: skipped.id, disposition: "INCONCLUSIVE", executableSha256: null });
       }
       break;
     }
@@ -284,7 +421,11 @@ function rerunQuickCommands(root, policy) {
 export function verifyExpandedProgrammeReceipt(
   rootInput,
   receiptInput,
-  { rerunCommands = false } = {},
+  {
+    rerunCommands = false,
+    rufloSnapshot = null,
+    expectedRufloObservation = null,
+  } = {},
 ) {
   const root = realpathSync(resolve(rootInput));
   const receiptPath = safeFile(root, receiptInput);
@@ -295,15 +436,56 @@ export function verifyExpandedProgrammeReceipt(
   const receiptSha256 = sha256(receiptBytes);
   if (receiptSha256 !== match[2]) return { ok: false, errors: ["receipt path hash mismatch"], verdict: null };
   const receipt = JSON.parse(JSON.stringify(parseStrictJson(receiptBytes, relativeReceipt)));
+  if (!receiptBytes.equals(canonicalBytes(receipt))) {
+    return { ok: false, errors: ["receipt bytes are not canonical"], verdict: null };
+  }
   const policyBytes = readFileSync(safeFile(root, policyRelativePath));
-  const policy = JSON.parse(JSON.stringify(parseStrictJson(policyBytes, policyRelativePath)));
-  const envelope = verifyReceiptEnvelope(receipt, { policy, receiptSha256 });
+  const policy = loadExpandedProgrammePolicy(root);
+  let independentRuflo = expectedRufloObservation;
+  if (independentRuflo === null) {
+    if (rufloSnapshot === null) {
+      independentRuflo = observeRufloState({
+        policy,
+        taskStore: null,
+        memoryMaps: null,
+      });
+    } else {
+      const protectedInput = readProtectedRufloSnapshot(root, rufloSnapshot);
+      independentRuflo = observeProtectedRufloSnapshot({
+        policy,
+        ...protectedInput,
+      });
+    }
+  }
+  const envelope = verifyReceiptEnvelope(receipt, {
+    policy,
+    receiptSha256,
+    expectedRufloObservation: independentRuflo,
+  });
   const errors = [...envelope.errors];
   if (receipt.subject.commit !== match[1]) errors.push("receipt path commit mismatch");
   if (receipt.subject.policy.sha256 !== sha256(policyBytes)) errors.push("current policy hash mismatch");
   if (gitValue(root, ["rev-parse", "HEAD"]) !== receipt.subject.commit) errors.push("receipt is not for current HEAD");
   if (gitValue(root, ["rev-parse", "HEAD^{tree}"]) !== receipt.subject.tree) errors.push("receipt is not for current tree");
-  if (gitValue(root, ["status", "--porcelain=v1", "--untracked-files=no"]) !== "") errors.push("tracked worktree is dirty");
+  if (!gitIndexFlagsClean(root)) errors.push("worktree has unsafe Git index flags");
+  if (gitValue(root, ["status", "--porcelain=v1", "--untracked-files=all"]) !== "") errors.push("worktree is dirty");
+  try {
+    const source = validateExpandedProgramme(root, {
+      policy,
+      subject: receipt.subject,
+    });
+    const recordedSourceAssertions = receipt.assertions.filter(
+      (assertion) => assertion.id !== "tooling.bounded-contracts",
+    );
+    if (!same(source.assertions, recordedSourceAssertions)) {
+      errors.push("current source assertions do not match the receipt");
+    }
+    if (!same(source.scope, receipt.scope)) {
+      errors.push("current source scope does not match the receipt");
+    }
+  } catch (error) {
+    errors.push(`source assertion verification failed: ${error.message}`);
+  }
   try {
     const inputs = recomputeManifest(root, receipt.subject.inputs);
     if (!same(inputs, receipt.subject.inputs)) errors.push("current input manifest mismatch");
@@ -317,8 +499,38 @@ export function verifyExpandedProgrammeReceipt(
     const recorded = receipt.commands.map((item) => ({
       id: item.id,
       disposition: item.disposition,
+      executableSha256: item.executableSha256,
     }));
     if (!same(rerun, recorded)) errors.push("bounded command rerun disposition drift");
+    if (gitValue(root, ["rev-parse", "HEAD"]) !== receipt.subject.commit) errors.push("HEAD changed during command rerun");
+    if (gitValue(root, ["rev-parse", "HEAD^{tree}"]) !== receipt.subject.tree) errors.push("tree changed during command rerun");
+    if (!gitIndexFlagsClean(root)) errors.push("Git index flags changed during command rerun");
+    if (gitValue(root, ["status", "--porcelain=v1", "--untracked-files=all"]) !== "") errors.push("worktree changed during command rerun");
+    try {
+      if (!same(recomputeManifest(root, receipt.subject.inputs), receipt.subject.inputs)) {
+        errors.push("input manifest changed during command rerun");
+      }
+      if (!same(recomputeManifest(root, receipt.subject.implementation), receipt.subject.implementation)) {
+        errors.push("implementation manifest changed during command rerun");
+      }
+    } catch (error) {
+      errors.push(`post-command manifest verification failed: ${error.message}`);
+    }
+    if (sha256(readFileSync(receiptPath)) !== receiptSha256) {
+      errors.push("receipt changed during command rerun");
+    }
+    if (rufloSnapshot !== null) {
+      try {
+        const postRuflo = readProtectedRufloSnapshot(root, rufloSnapshot);
+        if (!same(postRuflo.binding, independentRuflo.snapshot)) {
+          errors.push("protected Ruflo snapshot changed during command rerun");
+        }
+      } catch (error) {
+        errors.push(`post-command Ruflo snapshot verification failed: ${error.message}`);
+      }
+    }
+  } else if (receipt.verdict === "PASS") {
+    errors.push("passing receipt commands were not independently rerun");
   }
   return {
     ok: errors.length === 0,
@@ -335,6 +547,7 @@ function parseArguments(args) {
   let root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
   let receipt = null;
   let rerunCommands = true;
+  let rufloSnapshot = null;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--root" && args[index + 1]) {
       root = resolve(args[++index]);
@@ -342,11 +555,13 @@ function parseArguments(args) {
       receipt = args[++index];
     } else if (args[index] === "--no-rerun-commands") {
       rerunCommands = false;
+    } else if (args[index] === "--ruflo-snapshot" && args[index + 1]) {
+      rufloSnapshot = args[++index];
     } else {
       throw new Error(`unknown or incomplete argument: ${args[index]}`);
     }
   }
-  return { root, receipt, rerunCommands };
+  return { root, receipt, rerunCommands, rufloSnapshot };
 }
 
 function discoverReceipt(root) {
@@ -366,6 +581,7 @@ function main() {
   const receipt = options.receipt ?? discoverReceipt(options.root);
   const result = verifyExpandedProgrammeReceipt(options.root, receipt, {
     rerunCommands: options.rerunCommands,
+    rufloSnapshot: options.rufloSnapshot,
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (!result.ok || result.verdict === "FAIL") process.exitCode = 1;

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,7 +25,9 @@ import {
   loadExpandedProgrammePolicy,
   normalizeTaskStore,
   observeRufloState,
+  observeProtectedRufloSnapshot,
   publishExpandedProgrammeReceipt,
+  readProtectedRufloSnapshot,
   trackedCleanFromPorcelain,
   validateProgrammeModel,
 } from "./expanded-programme-qa.mjs";
@@ -102,15 +107,45 @@ function passingCommands() {
   return policy.quickCommands.map((command) => ({
     id: command.id,
     argv: [command.program, ...command.args],
+    executableSha256: "d".repeat(64),
     expected: command.expectedNodeTests
-      ? { tests: command.expectedNodeTests, pass: command.expectedNodeTests, fail: 0 }
+      ? { plan: command.expectedNodeTests, tests: command.expectedNodeTests, suites: 0, pass: command.expectedNodeTests, fail: 0, cancelled: 0, skipped: 0, todo: 0, summaryBlockCount: 1, terminal: true, conserved: true, durationPresent: true }
       : { exitCode: 0, signal: null },
     observed: command.expectedNodeTests
-      ? { tests: command.expectedNodeTests, pass: command.expectedNodeTests, fail: 0 }
+      ? { plan: command.expectedNodeTests, tests: command.expectedNodeTests, suites: 0, pass: command.expectedNodeTests, fail: 0, cancelled: 0, skipped: 0, todo: 0, summaryBlockCount: 1, terminal: true, conserved: true, durationPresent: true }
       : { exitCode: 0, signal: null },
     disposition: "PASS",
     failureClass: null,
   }));
+}
+
+function protectedSnapshot(store = taskStore()) {
+  const maps = memoryMaps(store);
+  return {
+    schema: "oxigraph.expanded-programme-ruflo-snapshot/v1",
+    producer: {
+      transport: "native-ruflo-mcp",
+      taskInterfaces: ["task_list", "task_status"],
+      memoryInterface: "memory_export",
+    },
+    tasks: Object.values(store.tasks)
+      .map((task) => ({
+        taskId: task.taskId,
+        description: task.description,
+        tags: [...task.tags].sort(),
+      }))
+      .sort((left, right) => left.taskId < right.taskId ? -1 : left.taskId > right.taskId ? 1 : 0),
+    memoryExport: {
+      schema: "ruflo-memory-export/v1",
+      namespace: policy.ruflo.namespace,
+      count: policy.ruflo.memoryKeys.length,
+      entries: policy.ruflo.memoryKeys.map((key) => ({
+        key,
+        namespace: policy.ruflo.namespace,
+        value: JSON.stringify(maps[key]),
+      })),
+    },
+  };
 }
 
 function passingRuflo() {
@@ -157,7 +192,7 @@ test("should normalize task mappings without volatile status or timestamp fields
   );
 });
 
-test("should distinguish matching unavailable and mismatched Ruflo observations", () => {
+test("should distinguish observations and reject unprotected Ruflo snapshots", (t) => {
   const matching = passingRuflo();
   const unavailable = observeRufloState({ policy, taskStore: null, memoryMaps: null });
   const injected = taskStore({
@@ -179,6 +214,36 @@ test("should distinguish matching unavailable and mismatched Ruflo observations"
     [matching.disposition, unavailable.disposition, mismatched.disposition],
     ["MATCH", "UNAVAILABLE", "MISMATCH"],
   );
+
+  const root = mkdtempSync(join(tmpdir(), "oxigraph-programme-ruflo-snapshot-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const snapshotPath = join(root, "snapshot.json");
+  writeFileSync(snapshotPath, canonicalJsonBytes(protectedSnapshot()));
+  assert.throws(
+    () => readProtectedRufloSnapshot(repoRoot, snapshotPath),
+    /must be read-only/,
+  );
+  chmodSync(snapshotPath, 0o444);
+  const protectedInput = readProtectedRufloSnapshot(repoRoot, snapshotPath);
+  assert.equal(
+    observeProtectedRufloSnapshot({ policy, ...protectedInput }).disposition,
+    "MATCH",
+  );
+  const snapshotLink = join(root, "snapshot-link.json");
+  symlinkSync(snapshotPath, snapshotLink);
+  assert.throws(
+    () => readProtectedRufloSnapshot(repoRoot, snapshotLink),
+    /non-symlink/,
+  );
+
+  const insidePath = join(repoRoot, "target", "untrusted-ruflo-snapshot.json");
+  mkdirSync(dirname(insidePath), { recursive: true });
+  writeFileSync(insidePath, canonicalJsonBytes(protectedSnapshot()), { mode: 0o444 });
+  t.after(() => rmSync(insidePath, { force: true }));
+  assert.throws(
+    () => readProtectedRufloSnapshot(repoRoot, insidePath),
+    /outside the candidate repository/,
+  );
 });
 
 test("should ignore untracked porcelain rows and apply fail-closed verdict exits", () => {
@@ -187,11 +252,13 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
     "ok 1 - fixture",
     "1..1",
     "# tests 1",
+    "# suites 0",
     "# pass 1",
     "# fail 0",
     "# cancelled 0",
     "# skipped 0",
     "# todo 0",
+    "# duration_ms 1",
     "",
   ].join("\n");
   const command = runBoundedQuickCommand(repoRoot, {
@@ -208,6 +275,13 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
       "-e",
       "process.stderr.write('Error [ERR_MODULE_NOT_FOUND]: Cannot find package'); process.exit(1)",
     ],
+    expectedNodeTests: 1,
+    timeoutMs: 10_000,
+  });
+  const spoofedCommand = runBoundedQuickCommand(repoRoot, {
+    id: "duplicate-summary",
+    program: process.execPath,
+    args: ["-e", `process.stdout.write(${JSON.stringify(`${tap}${tap}`)})`],
     expectedNodeTests: 1,
     timeoutMs: 10_000,
   });
@@ -233,10 +307,11 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
   });
   assert.deepEqual(
     {
-      untrackedOnly: trackedCleanFromPorcelain("?? target/runtime.json\n"),
+      untrackedOnly: trackedCleanFromPorcelain("?? candidate-controlled.json\n"),
       tracked: trackedCleanFromPorcelain(" M docs/adr/README.md\n"),
       pass: classifyQaVerdict({ sourceOk: true, commandsDisposition: "PASS", rufloDisposition: "MATCH" }),
       unavailable: classifyQaVerdict({ sourceOk: true, commandsDisposition: "PASS", rufloDisposition: "UNAVAILABLE" }),
+      mismatch: classifyQaVerdict({ sourceOk: true, commandsDisposition: "PASS", rufloDisposition: "MISMATCH" }),
       fail: classifyQaVerdict({ sourceOk: false, commandsDisposition: "PASS", rufloDisposition: "MATCH" }),
       redCommand: classifyQaVerdict({ sourceOk: true, commandsDisposition: "FAIL", rufloDisposition: "UNAVAILABLE" }),
       command: command.disposition,
@@ -244,20 +319,23 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
         unavailableCommand.disposition,
         unavailableCommand.failureClass,
       ],
+      spoofedCommand: spoofedCommand.disposition,
       stoppedCommands: stoppedCommands.map((item) => [
         item.disposition,
         item.failureClass,
       ]),
     },
     {
-      untrackedOnly: true,
+      untrackedOnly: false,
       tracked: false,
       pass: { verdict: "PASS", exitCode: 0 },
-      unavailable: { verdict: "INCONCLUSIVE", exitCode: 2 },
+      unavailable: { verdict: "PASS", exitCode: 0 },
+      mismatch: { verdict: "PASS", exitCode: 0 },
       fail: { verdict: "FAIL", exitCode: 1 },
       redCommand: { verdict: "FAIL", exitCode: 1 },
       command: "PASS",
       unavailableCommand: ["INCONCLUSIVE", "DEPENDENCY_UNAVAILABLE"],
+      spoofedCommand: "FAIL",
       stoppedCommands: [
         ["INCONCLUSIVE", "DEPENDENCY_UNAVAILABLE"],
         ["INCONCLUSIVE", "NOT_RUN_AFTER_FAILURE"],
@@ -292,7 +370,11 @@ test("should publish byte-deterministic immutable receipts idempotently", (t) =>
 
 test("should reject receipt subject score hash and authority tampering", (t) => {
   const value = receipt();
-  const options = { policy, receiptSha256: "e".repeat(64) };
+  const options = {
+    policy,
+    receiptSha256: "e".repeat(64),
+    expectedRufloObservation: value.rufloObservation,
+  };
   assert.equal(verifyReceiptEnvelope(value, options).ok, true);
 
   const variants = [
@@ -301,6 +383,9 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
     (candidate) => { candidate.subject.inputs.sha256 = "0".repeat(64); },
     (candidate) => { candidate.subject.implementation.files.pop(); },
     (candidate) => { candidate.authority.semanticQualification = true; },
+    (candidate) => { candidate.promotionAuthority = true; },
+    (candidate) => { candidate.subject.releaseAuthority = true; },
+    (candidate) => { candidate.commands[0] = { id: candidate.commands[0].id, argv: candidate.commands[0].argv, disposition: "PASS" }; },
   ];
   assert.deepEqual(
     variants.map((mutate) => {
@@ -308,7 +393,7 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
       mutate(candidate);
       return verifyReceiptEnvelope(candidate, options).ok;
     }),
-    [false, false, false, false, false],
+    [false, false, false, false, false, false, false, false],
   );
 
   const root = mkdtempSync(join(tmpdir(), "oxigraph-programme-verifier-"));
@@ -318,14 +403,13 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
     repoRoot,
     expandedProgrammeImplementationPaths,
   );
-  for (const file of [
-    ...source.model.inputManifest.files,
-    ...implementation.files,
-  ]) {
-    const destination = join(root, file.path);
-    mkdirSync(dirname(destination), { recursive: true });
-    cpSync(join(repoRoot, file.path), destination);
-  }
+  cpSync(repoRoot, root, {
+    recursive: true,
+    filter(sourcePath) {
+      const relativePath = sourcePath.slice(repoRoot.length).replace(/^\//u, "");
+      return !/^(?:\.git|target|\.claude-flow|\.swarm)(?:\/|$)/u.test(relativePath);
+    },
+  });
   for (const args of [
     ["init", "--quiet"],
     ["add", "."],
@@ -343,15 +427,34 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
   const bound = buildExpandedProgrammeReceipt({
     policy,
     source,
-    commands: passingCommands(),
+    commands: passingCommands().map((command, index) => index === 0
+      ? { ...command, observed: null, disposition: "INCONCLUSIVE", failureClass: "DEPENDENCY_UNAVAILABLE" }
+      : command),
     rufloObservation: passingRuflo(),
     implementation,
   });
   const publication = publishExpandedProgrammeReceipt(root, bound);
-  const verification = verifyExpandedProgrammeReceipt(root, publication.path);
+  const verification = verifyExpandedProgrammeReceipt(root, publication.path, {
+    expectedRufloObservation: bound.rufloObservation,
+  });
   assert.equal(
     verification.ok,
     true,
     verification.errors.join("; "),
+  );
+  const forgedSourceEvidence = structuredClone(bound);
+  forgedSourceEvidence.assertions.find(
+    (assertion) => assertion.id === "adr.corpus",
+  ).evidence.adrCount = 999;
+  const forgedPublication = publishExpandedProgrammeReceipt(root, forgedSourceEvidence);
+  const forgedVerification = verifyExpandedProgrammeReceipt(
+    root,
+    forgedPublication.path,
+    { expectedRufloObservation: bound.rufloObservation },
+  );
+  assert.equal(forgedVerification.ok, false);
+  assert.match(
+    forgedVerification.errors.join("; "),
+    /source assertions do not match/,
   );
 });

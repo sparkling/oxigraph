@@ -2,7 +2,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  constants,
   existsSync,
+  fstatSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
@@ -13,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import {
+  delimiter,
   dirname,
   isAbsolute,
   join,
@@ -22,11 +25,13 @@ import {
 } from "node:path";
 import { TextDecoder } from "node:util";
 
+import { scrubbedChildEnvironment } from "../child-environment.mjs";
 import { parseStrictJson } from "../w3c-tests/strict-json.mjs";
 
 export const expandedProgrammePolicyPath =
   "tools/evidence/expanded-programme-qa-policy.json";
 export const expandedProgrammeImplementationPaths = Object.freeze([
+  ".gitignore",
   "tools/evidence/expanded-programme-qa-policy.json",
   "tools/evidence/expanded-programme-qa.mjs",
   "tools/evidence/expanded-programme-qa.test.mjs",
@@ -34,15 +39,90 @@ export const expandedProgrammeImplementationPaths = Object.freeze([
   "tools/evidence/verify-expanded-programme-qa.mjs",
   "tools/evidence/verify-expanded-programme-qa.test.mjs",
   "tools/evidence/package.json",
+  "tools/child-environment.mjs",
   "tools/w3c-tests/strict-json.mjs",
 ]);
 
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 const gitObjectPattern = /^[0-9a-f]{40}$/u;
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+const rufloSnapshotSchema = "oxigraph.expanded-programme-ruflo-snapshot/v1";
+const rufloSnapshotProducer = Object.freeze({
+  transport: "native-ruflo-mcp",
+  taskInterfaces: ["task_list", "task_status"],
+  memoryInterface: "memory_export",
+});
+const expectedAuthority = Object.freeze({
+  claim: "committed programme document and graph consistency at one exact Git subject; Ruflo task-map consistency is observational only",
+  semanticQualification: false,
+  productImplementation: false,
+  promotion: false,
+  release: false,
+  taskStatusAuthority: false,
+  rufloObservationAffectsVerdict: false,
+});
+const reviewedQuickCommands = Object.freeze([
+  {
+    id: "evidence-tests",
+    program: "node",
+    args: ["--test", "--test-reporter=tap", "tools/evidence/normative-clause-inventory.test.mjs", "tools/evidence/normative-control.test.mjs", "tools/evidence/verify-programme.test.mjs", "tools/evidence/expanded-programme-qa.test.mjs", "tools/evidence/verify-expanded-programme-qa.test.mjs"],
+    expectedNodeTests: 42,
+    timeoutMs: 120000,
+  },
+  {
+    id: "metaharness-tests",
+    program: "node",
+    args: ["--test", "--test-reporter=tap", "tools/metaharness/evidence.test.mjs", "tools/metaharness/qualification-contract.test.mjs"],
+    expectedNodeTests: 13,
+    timeoutMs: 120000,
+  },
+  {
+    id: "agentic-adapter-tests",
+    program: "node",
+    args: ["--test", "--test-reporter=tap", "tools/agentic-qe/execution-provenance.test.mjs", "tools/agentic-qe/path-policy.test.mjs", "tools/agentic-qe/process-runner.test.mjs", "tools/owl2-tests/safe-output.test.mjs"],
+    expectedNodeTests: 18,
+    timeoutMs: 120000,
+  },
+  {
+    id: "cargo-format",
+    program: "cargo",
+    args: ["fmt", "--all", "--", "--check"],
+    timeoutMs: 120000,
+  },
+]);
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+export function resolveReviewedExecutable(rootInput, program) {
+  const root = canonicalRoot(rootInput);
+  const candidates = program === "node"
+    ? [process.execPath]
+    : isAbsolute(program)
+      ? [program]
+      : (process.env.PATH ?? "")
+        .split(delimiter)
+        .filter(Boolean)
+        .map((directory) => resolve(root, directory, program));
+  for (const candidate of candidates) {
+    try {
+      const metadata = lstatSync(candidate);
+      if (!metadata.isFile() && !metadata.isSymbolicLink()) continue;
+      const canonical = realpathSync(candidate);
+      const canonicalMetadata = lstatSync(canonical);
+      if (!canonicalMetadata.isFile()) continue;
+      if (process.platform !== "win32" && (canonicalMetadata.mode & 0o111) === 0) continue;
+      return {
+        invocation: candidate,
+        canonical,
+        sha256: sha256(readFileSync(canonical)),
+      };
+    } catch {
+      // Continue to the next literal PATH candidate.
+    }
+  }
+  throw new Error(`reviewed executable is unavailable: ${program}`);
 }
 
 function portable(value) {
@@ -117,6 +197,138 @@ export function createRepositoryManifest(rootInput, paths) {
 export function readStrictRepositoryJson(rootInput, path) {
   const root = canonicalRoot(rootInput);
   return JSON.parse(JSON.stringify(parseStrictJson(readContained(root, path), path)));
+}
+
+function sameRecord(left, right) {
+  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+}
+
+function strictlySortedUnique(values) {
+  return values.every((value, index) => index === 0 || values[index - 1] < value);
+}
+
+function compareStrings(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function snapshotMemoryMaps(snapshot, policy) {
+  const memoryExport = snapshot?.memoryExport;
+  if (
+    memoryExport?.schema !== "ruflo-memory-export/v1" ||
+    memoryExport?.namespace !== policy.ruflo.namespace ||
+    !Array.isArray(memoryExport?.entries) ||
+    memoryExport.count !== memoryExport.entries.length ||
+    !sameArray(
+      Object.keys(memoryExport).sort(),
+      ["count", "entries", "namespace", "schema"],
+    ) ||
+    memoryExport.entries.some((entry) =>
+      !sameArray(Object.keys(entry ?? {}).sort(), ["key", "namespace", "value"])
+    ) ||
+    !sameArray(
+      memoryExport.entries.map((entry) => entry.key),
+      [...policy.ruflo.memoryKeys].sort(),
+    )
+  ) {
+    throw new Error("protected Ruflo memory export contract is invalid");
+  }
+  const maps = {};
+  for (const key of policy.ruflo.memoryKeys) {
+    const matches = memoryExport.entries.filter(
+      (entry) => entry?.key === key && entry?.namespace === policy.ruflo.namespace,
+    );
+    if (matches.length !== 1 || typeof matches[0].value !== "string") {
+      throw new Error(`protected Ruflo memory export does not contain exactly one ${key}`);
+    }
+    maps[key] = JSON.parse(JSON.stringify(parseStrictJson(
+      Buffer.from(matches[0].value),
+      `protected Ruflo memory ${key}`,
+    )));
+  }
+  return maps;
+}
+
+export function readProtectedRufloSnapshot(rootInput, pathInput) {
+  const root = canonicalRoot(rootInput);
+  if (typeof pathInput !== "string" || !isAbsolute(pathInput)) {
+    throw new Error("protected Ruflo snapshot path must be absolute");
+  }
+  const requested = resolve(pathInput);
+  const metadata = lstatSync(requested);
+  if (metadata.isSymbolicLink() || !metadata.isFile()) {
+    throw new Error("protected Ruflo snapshot must be a regular non-symlink file");
+  }
+  const canonical = realpathSync(requested);
+  if (isInside(root, canonical, { allowRoot: true })) {
+    throw new Error("protected Ruflo snapshot must be outside the candidate repository");
+  }
+  if (process.platform !== "win32" && (metadata.mode & 0o222) !== 0) {
+    throw new Error("protected Ruflo snapshot must be read-only");
+  }
+  if (metadata.size <= 0 || metadata.size > 8 * 1024 * 1024) {
+    throw new Error("protected Ruflo snapshot size is invalid");
+  }
+  const noFollow = constants.O_NOFOLLOW ?? 0;
+  const descriptor = openSync(requested, constants.O_RDONLY | noFollow);
+  let bytes;
+  try {
+    const before = fstatSync(descriptor);
+    if (
+      !before.isFile() ||
+      before.dev !== metadata.dev ||
+      before.ino !== metadata.ino ||
+      before.size !== metadata.size ||
+      (process.platform !== "win32" && (before.mode & 0o222) !== 0)
+    ) {
+      throw new Error("protected Ruflo snapshot changed before open");
+    }
+    bytes = readFileSync(descriptor);
+    const after = fstatSync(descriptor);
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs
+    ) {
+      throw new Error("protected Ruflo snapshot changed while reading");
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  const snapshot = JSON.parse(JSON.stringify(parseStrictJson(
+    bytes,
+    "protected Ruflo snapshot",
+  )));
+  if (
+    snapshot?.schema !== rufloSnapshotSchema ||
+    !sameRecord(snapshot?.producer, rufloSnapshotProducer) ||
+    !Array.isArray(snapshot?.tasks) ||
+    snapshot.tasks.length > 1_000 ||
+    snapshot.tasks.some((task) =>
+      !sameArray(Object.keys(task ?? {}).sort(), ["description", "tags", "taskId"]) ||
+      typeof task.taskId !== "string" ||
+      typeof task.description !== "string" ||
+      !Array.isArray(task.tags) ||
+      task.tags.some((tag) => typeof tag !== "string") ||
+      !strictlySortedUnique(task.tags)
+    ) ||
+    !strictlySortedUnique(snapshot.tasks.map((task) => task.taskId)) ||
+    !sameArray(Object.keys(snapshot).sort(), ["memoryExport", "producer", "schema", "tasks"])
+  ) {
+    throw new Error("protected Ruflo snapshot contract is invalid");
+  }
+  if (!bytes.equals(canonicalJsonBytes(snapshot))) {
+    throw new Error("protected Ruflo snapshot bytes are not canonical");
+  }
+  return {
+    snapshot,
+    binding: {
+      schema: snapshot.schema,
+      producer: structuredClone(snapshot.producer),
+      bytes: bytes.length,
+      sha256: sha256(bytes),
+    },
+  };
 }
 
 function normalizeCell(value) {
@@ -207,7 +419,51 @@ function expectedOwnership(policy) {
   return ownership;
 }
 
-function parseOwnership(text, policy) {
+function taskIdParts(id) {
+  const match = /^G(\d+)\.(\d+)([a-z]?)$/u.exec(id);
+  return match
+    ? [Number.parseInt(match[1], 10), Number.parseInt(match[2], 10), match[3]]
+    : null;
+}
+
+function compareTaskIds(left, right) {
+  const leftParts = taskIdParts(left);
+  const rightParts = taskIdParts(right);
+  if (!leftParts || !rightParts) return left < right ? -1 : left > right ? 1 : 0;
+  return leftParts[0] - rightParts[0] || leftParts[1] - rightParts[1] ||
+    (leftParts[2] < rightParts[2] ? -1 : leftParts[2] > rightParts[2] ? 1 : 0);
+}
+
+export function parseProgrammeDependencies(value, availableTaskIds) {
+  const available = [...new Set(availableTaskIds)].sort(compareTaskIds);
+  const dependencies = [];
+  const append = (id) => {
+    if (!dependencies.includes(id)) dependencies.push(id);
+  };
+  for (const match of String(value).matchAll(
+    /\b(G\d+\.\d+[a-z]?)\s*-\s*(G\d+\.\d+[a-z]?)\b|\b(G\d+\.\d+[a-z]?)\b|HARNESS-REGISTRY/gu,
+  )) {
+    if (match[1] && match[2]) {
+      const start = match[1];
+      const end = match[2];
+      const startParts = taskIdParts(start);
+      const endParts = taskIdParts(end);
+      if (startParts && endParts && startParts[0] === endParts[0]) {
+        for (const id of available) {
+          if (compareTaskIds(id, start) >= 0 && compareTaskIds(id, end) <= 0) append(id);
+        }
+      } else {
+        append(start);
+        append(end);
+      }
+    } else {
+      append(match[3] ?? match[0]);
+    }
+  }
+  return dependencies;
+}
+
+function parseOwnership(text, taskIds) {
   const ownershipText = section(text, "### ADR ownership map", "### G0 —");
   const sourceRows = [];
   const ownership = {};
@@ -216,9 +472,8 @@ function parseOwnership(text, policy) {
     if (!cells || cells.length < 2 || !/^G[0-4]\./u.test(cells[0])) continue;
     const owners = [...cells[1].matchAll(/ADR-\d{4}/gu)].map((match) => match[0]);
     sourceRows.push({ label: cells[0], owners });
-    const declared = policy.ownershipRows.find((row) => row.label === cells[0]);
-    if (declared) {
-      for (const task of declared.tasks) ownership[task] = [...owners];
+    for (const task of parseProgrammeDependencies(cells[0], taskIds)) {
+      if (taskIds.includes(task)) ownership[task] = [...owners];
     }
   }
   return { ownership, sourceRows };
@@ -346,11 +601,23 @@ export function validateDocumentBytes(path, bytes) {
 
 function gitSubject(root) {
   const value = (args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      env: scrubbedChildEnvironment(),
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+    }).trim();
+  const indexFlagsClean = value(["ls-files", "-v"])
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .every((line) => line.startsWith("H "));
   return {
     commit: value(["rev-parse", "HEAD"]),
     tree: value(["rev-parse", "HEAD^{tree}"]),
-    trackedClean: value(["status", "--porcelain=v1", "--untracked-files=no"]) === "",
+    trackedClean:
+      indexFlagsClean &&
+      value(["status", "--porcelain=v1", "--untracked-files=all"]) === "",
   };
 }
 
@@ -365,7 +632,7 @@ export function loadExpandedProgrammePolicy(
   const root = canonicalRoot(rootInput);
   const parsed = parseStrictJson(readContained(root, path), path);
   const policy = JSON.parse(JSON.stringify(parsed));
-  if (policy?.schema !== "oxigraph.expanded-programme-qa-policy/v1") {
+  if (policy?.schema !== "oxigraph.expanded-programme-qa-policy/v2") {
     throw new Error("expanded programme QA policy schema is invalid");
   }
   if (Object.values(policy.assertionWeights).reduce((sum, value) => sum + value, 0) !== 98) {
@@ -373,6 +640,21 @@ export function loadExpandedProgrammePolicy(
   }
   if (Object.keys(policy.tasks).length !== 39 || policy.adrs.length !== 16) {
     throw new Error("expanded programme QA policy inventory is invalid");
+  }
+  if (!sameRecord(policy.authority, expectedAuthority)) {
+    throw new Error("expanded programme QA authority contract is invalid");
+  }
+  if (!sameRecord(policy.quickCommands, reviewedQuickCommands)) {
+    throw new Error("expanded programme QA command allowlist is invalid");
+  }
+  if (
+    policy.ruflo?.snapshotSchema !== rufloSnapshotSchema ||
+    !sameArray(
+      Object.keys(policy.ruflo).sort(),
+      ["controlRows", "memoryKeys", "namespace", "rollupRows", "snapshotSchema", "stableRows"],
+    )
+  ) {
+    throw new Error("expanded programme QA Ruflo snapshot policy is invalid");
   }
   return policy;
 }
@@ -390,7 +672,13 @@ export function collectProgrammeModel(rootInput, policy) {
     .filter((name) => /^\d{4}-.*\.md$/u.test(name))
     .map((name) => `docs/adr/${name}`)
     .sort();
-  const parsedOwnership = parseOwnership(plan, policy);
+  const tasks = parseTasks(plan);
+  const taskIds = tasks.map((task) => task.id);
+  const parsedOwnership = parseOwnership(plan, taskIds);
+  const controlEdges = {};
+  for (const match of plan.matchAll(/\b(G\d+\.\d+[a-z]?)\s*→\s*`?(HARNESS-[A-Z-]+)`?\s*→\s*(G\d+\.\d+[a-z]?)/gu)) {
+    controlEdges[match[2]] = { dependencies: [match[1]], blocks: [match[3]] };
+  }
   const documentErrors = [expandedProgrammePolicyPath, ...policy.sourceDocuments]
     .flatMap((path) => validateDocumentBytes(path, readContained(root, path)));
   const links = validateMarkdownLinks(root, policy.sourceDocuments);
@@ -404,10 +692,11 @@ export function collectProgrammeModel(rootInput, policy) {
     adrs,
     allAdrFiles,
     indexRows,
-    tasks: parseTasks(plan),
+    tasks,
     dependencies: Object.fromEntries(
-      Object.entries(policy.tasks).map(([id, task]) => [id, [...task.dependencies]]),
+      tasks.map((task) => [task.id, parseProgrammeDependencies(task.dependencyText, taskIds)]),
     ),
+    controls: controlEdges,
     ownership: parsedOwnership.ownership,
     ownershipRows: parsedOwnership.sourceRows,
     claims,
@@ -444,8 +733,13 @@ function graphErrors(model, policy) {
   const controls = new Set(Object.keys(policy.controls));
   const allowed = new Set([...stable, ...controls]);
   const graph = { ...model.dependencies };
-  for (const [id, control] of Object.entries(policy.controls)) {
+  for (const [id, control] of Object.entries(model.controls ?? {})) {
     graph[id] = [...control.dependencies];
+  }
+  for (const [id, expected] of Object.entries(policy.controls)) {
+    if (!sameRecord(model.controls?.[id], expected)) {
+      errors.push(`${id}: source control-edge drift`);
+    }
   }
   for (const [id, expected] of Object.entries(policy.tasks)) {
     const observed = model.dependencies[id];
@@ -597,10 +891,7 @@ export function receiptBytesSha256(value) {
 }
 
 export function trackedCleanFromPorcelain(value) {
-  return String(value)
-    .split(/\r?\n/u)
-    .filter(Boolean)
-    .every((line) => line.startsWith("?? "));
+  return String(value).trim() === "";
 }
 
 function taskValues(store) {
@@ -639,7 +930,7 @@ export function normalizeTaskStore(store, policy) {
     }
   }
   records.sort((left, right) =>
-    `${left.planId}:${left.taskId}`.localeCompare(`${right.planId}:${right.taskId}`),
+    compareStrings(`${left.planId}:${left.taskId}`, `${right.planId}:${right.taskId}`),
   );
   const ids = records.map((record) => record.planId);
   if (new Set(ids).size !== ids.length) errors.push("duplicate programme task mapping");
@@ -681,6 +972,7 @@ export function observeRufloState({
   taskStore,
   memoryMaps,
   runtime = null,
+  snapshot = null,
 }) {
   const authority = "non-authoritative-local-audit";
   if (!taskStore || !memoryMaps) {
@@ -694,7 +986,8 @@ export function observeRufloState({
       rollupRows: null,
       controlRows: null,
       runtime,
-      diagnostics: ["Ruflo task store or task-plan memory is unavailable"],
+      snapshot,
+      diagnostics: ["protected public-interface Ruflo snapshot is unavailable"],
     };
   }
   const projection = normalizeTaskStore(taskStore, policy);
@@ -734,8 +1027,8 @@ export function observeRufloState({
     projection.records.map((record) => [record.planId, record.taskId]),
   );
   if (!exactRecord(
-    Object.fromEntries(Object.entries(taskIds).sort(([left], [right]) => left.localeCompare(right))),
-    Object.fromEntries(Object.entries(projectedTaskIds).sort(([left], [right]) => left.localeCompare(right))),
+    Object.fromEntries(Object.entries(taskIds).sort(([left], [right]) => compareStrings(left, right))),
+    Object.fromEntries(Object.entries(projectedTaskIds).sort(([left], [right]) => compareStrings(left, right))),
   )) {
     errors.push("Ruflo memory/task-store pointer drift");
   }
@@ -743,25 +1036,48 @@ export function observeRufloState({
     authority,
     disposition: errors.length === 0 ? "MATCH" : "MISMATCH",
     memoryKeys: [...policy.ruflo.memoryKeys],
-    mapValueHashes: mapValueHashes.sort((left, right) => left.key.localeCompare(right.key)),
+    mapValueHashes: mapValueHashes.sort((left, right) => compareStrings(left.key, right.key)),
     taskProjectionHash: projection.sha256,
     stableRows: projection.counts.stable,
     rollupRows: projection.counts.rollup,
     controlRows: projection.counts.control,
     runtime,
+    snapshot,
     diagnostics: [...new Set(errors)].sort(),
   };
+}
+
+export function observeProtectedRufloSnapshot({ policy, snapshot, binding }) {
+  if (!snapshot || !binding) {
+    return observeRufloState({
+      policy,
+      taskStore: null,
+      memoryMaps: null,
+      snapshot: null,
+    });
+  }
+  const memoryMaps = snapshotMemoryMaps(snapshot, policy);
+  return observeRufloState({
+    policy,
+    taskStore: { tasks: snapshot.tasks },
+    memoryMaps,
+    runtime: {
+      transport: snapshot.producer.transport,
+      taskInterfaces: [...snapshot.producer.taskInterfaces],
+      memoryInterface: snapshot.producer.memoryInterface,
+    },
+    snapshot: binding,
+  });
 }
 
 export function classifyQaVerdict({
   sourceOk,
   commandsDisposition,
-  rufloDisposition,
 }) {
-  if (!sourceOk || commandsDisposition === "FAIL" || rufloDisposition === "MISMATCH") {
+  if (!sourceOk || commandsDisposition === "FAIL") {
     return { verdict: "FAIL", exitCode: 1 };
   }
-  if (commandsDisposition !== "PASS" || rufloDisposition !== "MATCH") {
+  if (commandsDisposition !== "PASS") {
     return { verdict: "INCONCLUSIVE", exitCode: 2 };
   }
   return { verdict: "PASS", exitCode: 0 };
@@ -804,13 +1120,12 @@ export function buildExpandedProgrammeReceipt({
   const classification = classifyQaVerdict({
     sourceOk: source.ok,
     commandsDisposition: commandsState,
-    rufloDisposition: rufloObservation.disposition,
   });
   const policyFile = source.model.inputManifest.files.find(
     (file) => file.path === expandedProgrammePolicyPath,
   );
   return {
-    schema: "oxigraph.expanded-programme-qa/v1",
+    schema: "oxigraph.expanded-programme-qa/v2",
     programme: policy.programme,
     subject: {
       commit: source.model.subject.commit,

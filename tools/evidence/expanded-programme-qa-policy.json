@@ -1,5 +1,5 @@
 {
-  "schema": "oxigraph.expanded-programme-qa-policy/v1",
+  "schema": "oxigraph.expanded-programme-qa-policy/v2",
   "programme": "linked-data-store",
   "indexedAdrCount": 33,
   "sourceDocuments": [
@@ -113,15 +113,15 @@
     "G3.2": { "sourceDependencies": "G3.1", "dependencies": ["G3.1"] },
     "G3.3": { "sourceDependencies": "G2.3c, G2.5-G2.7", "dependencies": ["G2.3c", "G2.5", "G2.6", "G2.7"] },
     "G3.4": { "sourceDependencies": "G2.3c, G2.5-G2.7", "dependencies": ["G2.3c", "G2.5", "G2.6", "G2.7"] },
-    "G3.5": { "sourceDependencies": "G1.5, G3.1-G3.2; G1.6 for promotion/advertisement", "dependencies": ["G1.5", "G3.1", "G3.2"] },
-    "G4.1": { "sourceDependencies": "G1.5-G1.6", "dependencies": ["G1.5", "G1.6"] },
+    "G3.5": { "sourceDependencies": "G1.5, G3.1-G3.2; G1.6 for promotion/advertisement", "dependencies": ["G1.5", "G3.1", "G3.2", "G1.6"] },
+    "G4.1": { "sourceDependencies": "G1.5-G1.6", "dependencies": ["G1.5", "G1.5b", "G1.5c", "G1.6"] },
     "G4.2": { "sourceDependencies": "G1.4-G1.5; G4.1 for principal quotas", "dependencies": ["G1.4", "G1.5", "G4.1"] },
     "G4.3": { "sourceDependencies": "G2.7", "dependencies": ["G2.7"] },
     "G4.4": { "sourceDependencies": "G2.3c, G4.1-G4.2, G4.5", "dependencies": ["G2.3c", "G4.1", "G4.2", "G4.5"] },
     "G4.5": { "sourceDependencies": "G2.3a, G4.1-G4.2", "dependencies": ["G2.3a", "G4.1", "G4.2"] },
     "G4.6": { "sourceDependencies": "G2.7, G4.1-G4.3", "dependencies": ["G2.7", "G4.1", "G4.2", "G4.3"] },
     "G4.7": { "sourceDependencies": "G2.3c, G2.7", "dependencies": ["G2.3c", "G2.7"] },
-    "G4.8": { "sourceDependencies": "G3.2; G4.2 for server/Auto promotion", "dependencies": ["G3.2"] }
+    "G4.8": { "sourceDependencies": "G3.2; G4.2 for server/Auto promotion", "dependencies": ["G3.2", "G4.2"] }
   },
   "rollups": {
     "G2.3": ["G2.3a", "G2.3b", "G2.3c"],
@@ -207,8 +207,7 @@
     }
   ],
   "ruflo": {
-    "taskStorePath": ".claude-flow/tasks/store.json",
-    "memoryPath": ".swarm/memory.db",
+    "snapshotSchema": "oxigraph.expanded-programme-ruflo-snapshot/v1",
     "memoryKeys": [
       "linked-data-store-g0-g3-2026-08-24",
       "linked-data-store-g0-g4-2026-08-25-v2"
@@ -219,11 +218,12 @@
     "controlRows": 1
   },
   "authority": {
-    "claim": "programme document, graph, and local task-map consistency at one exact Git subject",
+    "claim": "committed programme document and graph consistency at one exact Git subject; Ruflo task-map consistency is observational only",
     "semanticQualification": false,
     "productImplementation": false,
     "promotion": false,
     "release": false,
-    "taskStatusAuthority": false
+    "taskStatusAuthority": false,
+    "rufloObservationAffectsVerdict": false
   }
 }
