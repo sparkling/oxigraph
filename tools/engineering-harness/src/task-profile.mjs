@@ -1,16 +1,84 @@
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
-import { harnessRoot } from "./paths.mjs";
+import { harnessRoot, isContained } from "./paths.mjs";
 
-function profile(value) {
-  return Object.freeze({
-    ...value,
-    contractPath: join(harnessRoot, "tasks", "g1", value.slug, "contract.json"),
+const TASK_ID = /^g(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)[a-z]?)+-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const TASK_SLUG = /^g(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)[a-z]?)+$/u;
+
+export function buildEngineeringTaskRegistry(declarations) {
+  if (!Array.isArray(declarations) || declarations.length === 0) {
+    throw new Error("engineering task registry must be a non-empty array");
+  }
+  const ids = new Set();
+  const slugs = new Set();
+  const contractPaths = new Set();
+  const registry = declarations.map((declaration) => {
+    if (
+      declaration === null ||
+      typeof declaration !== "object" ||
+      Array.isArray(declaration)
+    ) {
+      throw new Error("engineering task declaration must be an object");
+    }
+    if (Object.hasOwn(declaration, "contractPath")) {
+      throw new Error("engineering task contractPath must be derived");
+    }
+    const idDescriptor = Object.getOwnPropertyDescriptor(declaration, "id");
+    const slugDescriptor = Object.getOwnPropertyDescriptor(declaration, "slug");
+    if (
+      idDescriptor?.enumerable !== true ||
+      !Object.hasOwn(idDescriptor, "value") ||
+      slugDescriptor?.enumerable !== true ||
+      !Object.hasOwn(slugDescriptor, "value")
+    ) {
+      throw new Error(
+        "engineering task declaration must define enumerable data id and slug",
+      );
+    }
+    const { id, slug } = declaration;
+    if (typeof id !== "string" || !TASK_ID.test(id)) {
+      throw new Error("engineering task id must be canonical");
+    }
+    if (typeof slug !== "string" || !TASK_SLUG.test(slug)) {
+      throw new Error("engineering task slug must be canonical");
+    }
+    if (ids.has(id)) throw new Error(`duplicate engineering task id: ${id}`);
+    if (slugs.has(slug)) throw new Error(`duplicate engineering task slug: ${slug}`);
+    if (!id.startsWith(`${slug}-`)) {
+      throw new Error(`engineering task id must be prefixed by its slug: ${id}`);
+    }
+
+    const taskGroup = slug.slice(0, slug.indexOf("."));
+    const canonicalRelativePath = join(
+      "tasks",
+      taskGroup,
+      slug,
+      "contract.json",
+    );
+    const contractPath = join(harnessRoot, canonicalRelativePath);
+    if (
+      !isAbsolute(contractPath) ||
+      resolve(contractPath) !== contractPath ||
+      !isContained(harnessRoot, contractPath) ||
+      relative(harnessRoot, contractPath) !== canonicalRelativePath
+    ) {
+      throw new Error(`engineering task contract path is not canonical: ${id}`);
+    }
+    if (contractPaths.has(contractPath)) {
+      throw new Error(`duplicate engineering task contract path: ${contractPath}`);
+    }
+
+    ids.add(id);
+    slugs.add(slug);
+    contractPaths.add(contractPath);
+    return Object.freeze({ ...declaration, contractPath });
   });
+  return Object.freeze(registry);
 }
 
-const profiles = Object.freeze({
-  "g1.2-rocksdb-serialized-writers": profile({
+export const engineeringTaskRegistry = buildEngineeringTaskRegistry([
+  {
+    id: "g1.2-rocksdb-serialized-writers",
     slug: "g1.2",
     label: "G1.2",
     decision: "ADR-0018",
@@ -24,8 +92,9 @@ const profiles = Object.freeze({
       "lib/oxigraph/src/store.rs",
       "lib/oxigraph/tests/transaction_concurrency.rs",
     ]),
-  }),
-  "g1.3-transaction-capabilities": profile({
+  },
+  {
+    id: "g1.3-transaction-capabilities",
     slug: "g1.3",
     label: "G1.3",
     decision: "ADR-0018",
@@ -40,8 +109,9 @@ const profiles = Object.freeze({
       "lib/oxigraph/src/storage/mod.rs",
       "lib/oxigraph/tests/transaction_capabilities.rs",
     ]),
-  }),
-  "g1.4-bounded-writer-admission": profile({
+  },
+  {
+    id: "g1.4-bounded-writer-admission",
     slug: "g1.4",
     label: "G1.4",
     decision: "ADR-0018",
@@ -66,8 +136,9 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
       "lib/oxigraph/tests/transaction_concurrency.rs",
     ]),
-  }),
-  "g1.5-unified-egress-policy": profile({
+  },
+  {
+    id: "g1.5-unified-egress-policy",
     slug: "g1.5",
     label: "G1.5",
     decision: "ADR-0019",
@@ -95,8 +166,9 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/sparql_service_http.rs",
       "lib/oxigraph/tests/sparql_update_load_http.rs",
     ]),
-  }),
-  "g1.5b-update-cancellation": profile({
+  },
+  {
+    id: "g1.5b-update-cancellation",
     slug: "g1.5b",
     label: "G1.5b",
     decision: "ADR-0019",
@@ -120,8 +192,9 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/rocksdb_writer_serialization.rs",
       "lib/oxigraph/tests/sparql_egress_policy.rs",
     ]),
-  }),
-  "g1.5c-negotiated-update": profile({
+  },
+  {
+    id: "g1.5c-negotiated-update",
     slug: "g1.5c",
     label: "G1.5c",
     decision: "ADR-0019",
@@ -146,8 +219,9 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/sparql_egress_policy.rs",
       "lib/oxigraph/tests/transactional_dataset.rs",
     ]),
-  }),
-  "g1.6-runtime-derived-service-claims": profile({
+  },
+  {
+    id: "g1.6-runtime-derived-service-claims",
     slug: "g1.6",
     label: "G1.6",
     decision: "ADR-0019",
@@ -173,16 +247,45 @@ const profiles = Object.freeze({
       "lib/oxigraph/tests/sparql_version.rs",
       "lib/oxigraph/tests/sparql_egress_policy.rs",
     ]),
-  }),
-});
+  },
+]);
+
+const profiles = Object.freeze(
+  Object.fromEntries(engineeringTaskRegistry.map((entry) => [entry.id, entry])),
+);
+const profilesBySlug = Object.freeze(
+  Object.fromEntries(engineeringTaskRegistry.map((entry) => [entry.slug, entry])),
+);
+
+export const engineeringTaskIds = Object.freeze(
+  engineeringTaskRegistry.map(({ id }) => id),
+);
 
 export function taskProfile(value) {
-  const id = typeof value === "string" ? value : value?.id;
-  const profile = profiles[id];
-  if (profile === undefined) {
+  const id =
+    typeof value === "string"
+      ? value
+      : value !== null &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          Object.hasOwn(value, "id")
+        ? value.id
+        : undefined;
+  if (typeof id !== "string" || !TASK_ID.test(id) || !Object.hasOwn(profiles, id)) {
     throw new Error(`unsupported engineering task: ${id ?? "<missing>"}`);
   }
-  return profile;
+  return profiles[id];
+}
+
+export function taskProfileBySlug(slug) {
+  if (
+    typeof slug !== "string" ||
+    !TASK_SLUG.test(slug) ||
+    !Object.hasOwn(profilesBySlug, slug)
+  ) {
+    throw new Error(`unsupported engineering task slug: ${slug ?? "<missing>"}`);
+  }
+  return profilesBySlug[slug];
 }
 
 export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];

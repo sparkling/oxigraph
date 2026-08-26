@@ -3,15 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { disposeCandidate, reconstructCandidate } from "../candidate/reconstruct.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
 import { verifyCandidate } from "../candidate/verifier.mjs";
-import {
-  g12ContractPath,
-  g13ContractPath,
-  g14ContractPath,
-  g15ContractPath,
-  g15bContractPath,
-  g15cContractPath,
-  g16ContractPath,
-} from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
 import { validateWorkerOutput } from "../policy/authority.mjs";
 import {
@@ -22,7 +13,16 @@ import {
 } from "../receipts/application.mjs";
 import { QualityFirstRouter } from "../routing/quality-router.mjs";
 import { RouterHistory } from "../routing/history.mjs";
-import { taskProfile } from "../task-profile.mjs";
+import {
+  g12Profile,
+  g13Profile,
+  g14Profile,
+  g15Profile,
+  g15bProfile,
+  g15cProfile,
+  g16Profile,
+  taskProfile,
+} from "../task-profile.mjs";
 import { admitApplicationReceipt } from "./application-admission.mjs";
 import { currentControlIdentity } from "./control-identity.mjs";
 import {
@@ -184,23 +184,34 @@ function defaultOperations() {
   });
 }
 
-async function executeProgramme(
-  {
+async function executeProgramme(options = {}, operations) {
+  if (Object.hasOwn(options, "contractPath")) {
+    throw new Error(
+      "engineering programme contractPath selection is forbidden; select taskId",
+    );
+  }
+  const {
+    taskId = g12Profile.id,
     runId = randomUUID(),
     signal,
     repoRoot = repositoryRoot,
-    contractPath = g12ContractPath,
     clock = () => new Date(),
-  } = {},
-  operations,
-) {
+  } = options;
+  const selectedProfile = taskProfile(taskId);
   requireRunId(runId);
   if (typeof clock !== "function") throw new Error("engineering programme requires a clock");
   abortBeforeEvidence(signal);
   const startedAt = isoNow(clock);
-  const preflight = await operations.preflight({ signal, repoRoot, contractPath });
+  const preflight = await operations.preflight({
+    signal,
+    repoRoot,
+    taskId: selectedProfile.id,
+  });
   const contract = preflight.contract;
   const profile = taskProfile(contract);
+  if (profile !== selectedProfile) {
+    throw new Error("preflight contract does not match the selected engineering task");
+  }
   const pool = operations.pool(contract);
   const models = pool.models;
   const declaredModels = Object.fromEntries(
@@ -759,31 +770,31 @@ export async function runTaskProgramme(options = {}) {
 }
 
 export function runG12Programme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g12ContractPath });
+  return runTaskProgramme({ ...options, taskId: g12Profile.id });
 }
 
 export function runG13Programme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g13ContractPath });
+  return runTaskProgramme({ ...options, taskId: g13Profile.id });
 }
 
 export function runG14Programme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g14ContractPath });
+  return runTaskProgramme({ ...options, taskId: g14Profile.id });
 }
 
 export function runG15Programme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g15ContractPath });
+  return runTaskProgramme({ ...options, taskId: g15Profile.id });
 }
 
 export function runG15bProgramme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g15bContractPath });
+  return runTaskProgramme({ ...options, taskId: g15bProfile.id });
 }
 
 export function runG15cProgramme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g15cContractPath });
+  return runTaskProgramme({ ...options, taskId: g15cProfile.id });
 }
 
 export function runG16Programme(options = {}) {
-  return runTaskProgramme({ ...options, contractPath: g16ContractPath });
+  return runTaskProgramme({ ...options, taskId: g16Profile.id });
 }
 
 /**
@@ -804,20 +815,34 @@ export function createG12ProgrammeForTesting(overrides) {
 }
 
 /** Replay one private receipt against a fresh red preflight and current control. */
-export async function replayTaskProgrammeReceipt({
-  name,
-  signal,
-  repoRoot = repositoryRoot,
-  contractPath = g12ContractPath,
-}) {
+export async function replayTaskProgrammeReceipt(options = {}) {
+  if (Object.hasOwn(options, "contractPath")) {
+    throw new Error(
+      "engineering replay contractPath selection is forbidden; select taskId",
+    );
+  }
+  const {
+    taskId = g12Profile.id,
+    name,
+    signal,
+    repoRoot = repositoryRoot,
+  } = options;
+  const selectedProfile = taskProfile(taskId);
   const receiptBytes = (await readPrivateRuntimeArtifact(name)).toString("utf8");
   const receipt = replayApplicationReceipt(receiptBytes);
   const independent = verifyApplicationReceipt(receiptBytes);
   if (!independent.ok || receipt.run.id.length === 0) {
     throw new Error("stored task receipt failed independent replay");
   }
-  const preflight = await runTaskPreflight({ signal, repoRoot, contractPath });
+  const preflight = await runTaskPreflight({
+    signal,
+    repoRoot,
+    taskId: selectedProfile.id,
+  });
   const profile = taskProfile(preflight.contract);
+  if (profile !== selectedProfile) {
+    throw new Error("preflight contract does not match the selected engineering task");
+  }
   const history = await productionHistory();
   const freshControl = await currentControlIdentity({
     contract: preflight.contract,
@@ -839,29 +864,29 @@ export async function replayTaskProgrammeReceipt({
 }
 
 export function replayG12ProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g12ContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g12Profile.id });
 }
 
 export function replayG13ProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g13ContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g13Profile.id });
 }
 
 export function replayG14ProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g14ContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g14Profile.id });
 }
 
 export function replayG15ProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g15ContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g15Profile.id });
 }
 
 export function replayG15bProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g15bContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g15bProfile.id });
 }
 
 export function replayG15cProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g15cContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g15cProfile.id });
 }
 
 export function replayG16ProgrammeReceipt(options) {
-  return replayTaskProgrammeReceipt({ ...options, contractPath: g16ContractPath });
+  return replayTaskProgrammeReceipt({ ...options, taskId: g16Profile.id });
 }

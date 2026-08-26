@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runG12Preflight } from "../src/runtime/preflight.mjs";
+import {
+  runG12Preflight,
+  runTaskPreflight,
+} from "../src/runtime/preflight.mjs";
+import { g12Profile } from "../src/task-profile.mjs";
 
 const digest = "a".repeat(64);
 
@@ -12,8 +16,8 @@ function fixture(overrides = {}) {
     calls,
     options: {
       repoRoot: "/controller",
-      resolveContract({ repoRoot }) {
-        calls.push(["contract", repoRoot]);
+      resolveContract({ repoRoot, taskId }) {
+        calls.push(["contract", repoRoot, taskId]);
         return {
           contract,
           contractPath: "contract.json",
@@ -52,6 +56,51 @@ function fixture(overrides = {}) {
     },
   };
 }
+
+test("generic preflight selects a registered task id", async () => {
+  const state = fixture();
+  const result = await runTaskPreflight({
+    ...state.options,
+    taskId: g12Profile.id,
+  });
+  assert.equal(result.schema, "oxigraph.g1.2-preflight/v1");
+  assert.deepEqual(state.calls[0], ["contract", "/controller", g12Profile.id]);
+});
+
+test("generic preflight rejects contractPath and unknown ids before resolution", async () => {
+  let resolutions = 0;
+  const resolveContract = () => {
+    resolutions += 1;
+    throw new Error("must not resolve");
+  };
+  await assert.rejects(
+    runTaskPreflight({
+      contractPath: "/tmp/copied-contract.json",
+      resolveContract,
+    }),
+    /contractPath selection is forbidden/u,
+  );
+  await assert.rejects(
+    runTaskPreflight({ taskId: "g9.9-unregistered", resolveContract }),
+    /unsupported engineering task/u,
+  );
+  assert.equal(resolutions, 0);
+});
+
+test("generic preflight rejects a resolver result for a different registered task", async () => {
+  const state = fixture();
+  await assert.rejects(
+    runTaskPreflight({
+      ...state.options,
+      taskId: "g1.3-transaction-capabilities",
+    }),
+    /resolved contract does not match the selected engineering task/u,
+  );
+  assert.deepEqual(
+    state.calls.map(([name]) => name),
+    ["contract"],
+  );
+});
 
 test("preflight freezes control before reconstructing and disposes the evaluator", async () => {
   const state = fixture();

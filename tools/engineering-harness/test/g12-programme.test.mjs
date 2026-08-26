@@ -10,6 +10,7 @@ import { canonicalSha256, routingEmbedding } from "../src/routing/features.mjs";
 import { QualityFirstRouter } from "../src/routing/quality-router.mjs";
 import { NativeWorkerPool } from "../src/runtime/native-pool.mjs";
 import { createG12ProgrammeForTesting } from "../src/runtime/g12-programme.mjs";
+import { g12Profile } from "../src/task-profile.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const oid = (value) => createHash("sha1").update(value).digest("hex");
@@ -260,6 +261,7 @@ function fixture({
   const calls = [];
   const disposed = [];
   const finalized = [];
+  const preflightCalls = [];
   const pool = new NativeWorkerPool({
     contract: preflight.contract,
     workerRunner: workerRunner({
@@ -271,7 +273,10 @@ function fixture({
     }),
   });
   const run = createG12ProgrammeForTesting({
-    preflight: async () => preflight,
+    preflight: async (input) => {
+      preflightCalls.push(input);
+      return preflight;
+    },
     history: async () => pairedRouter(),
     router:
       routedProvider === null
@@ -323,7 +328,7 @@ function fixture({
       });
     },
   });
-  return { run, calls, disposed, finalized, pool };
+  return { run, calls, disposed, finalized, pool, preflightCalls };
 }
 
 function clock() {
@@ -335,8 +340,12 @@ function clock() {
 }
 
 test("cold paired programme preserves both pipelines and accepts cross-vendor review", async () => {
-  const { run, calls, disposed, finalized, pool } = fixture();
-  const result = await run({ runId: "paired-happy", clock: clock() });
+  const { run, calls, disposed, finalized, pool, preflightCalls } = fixture();
+  const result = await run({
+    taskId: g12Profile.id,
+    runId: "paired-happy",
+    clock: clock(),
+  });
   assert.equal(result.final.verdict, "ACCEPT");
   assert.match(result.selectedPatch, /implementation:codex$/u);
   assert.equal(result.admittedOutcomes, 8);
@@ -358,6 +367,36 @@ test("cold paired programme preserves both pipelines and accepts cross-vendor re
   );
   assert.equal(receipt.events.at(-2).kind, "selected-candidate");
   assert.equal(receipt.events.at(-1).kind, "final");
+  assert.equal(preflightCalls.length, 1);
+  assert.equal(preflightCalls[0].taskId, g12Profile.id);
+});
+
+test("programme rejects path injection and unknown ids before preflight", async () => {
+  const { run, preflightCalls } = fixture();
+  await assert.rejects(
+    run({ contractPath: "/tmp/copied-contract.json" }),
+    /contractPath selection is forbidden/u,
+  );
+  await assert.rejects(
+    run({ taskId: "g9.9-unregistered" }),
+    /unsupported engineering task/u,
+  );
+  assert.equal(preflightCalls.length, 0);
+});
+
+test("programme rejects preflight evidence for a different registered task", async () => {
+  const { run, preflightCalls, calls } = fixture();
+  await assert.rejects(
+    run({
+      taskId: "g1.3-transaction-capabilities",
+      runId: "mismatched-task",
+      clock: clock(),
+    }),
+    /preflight contract does not match the selected engineering task/u,
+  );
+  assert.equal(preflightCalls.length, 1);
+  assert.equal(preflightCalls[0].taskId, "g1.3-transaction-capabilities");
+  assert.equal(calls.length, 0);
 });
 
 test("same-producer routed review remains receipt-valid and INCONCLUSIVE", async () => {

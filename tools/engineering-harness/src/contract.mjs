@@ -13,6 +13,7 @@ import {
   g15bProfile,
   g15cProfile,
   g16Profile,
+  engineeringTaskIds,
   taskProfile,
 } from "./task-profile.mjs";
 
@@ -1277,6 +1278,12 @@ const EXPECTED_BY_ID = Object.freeze({
   "g1.6-runtime-derived-service-claims": EXPECTED_G16,
 });
 
+if (!isDeepStrictEqual(Object.keys(EXPECTED_BY_ID), engineeringTaskIds)) {
+  throw new Error(
+    "engineering task registry must exactly match the ordered frozen contract ids",
+  );
+}
+
 function fail(message) {
   throw new Error(`invalid engineering task contract: ${message}`);
 }
@@ -1843,17 +1850,21 @@ export function verifyTaskContractRepository(contract, options = {}) {
 }
 
 export function loadTaskContract(options = {}) {
-  const requestedPath = resolve(options.contractPath ?? g12ContractPath);
-  if (!isContained(harnessRoot, requestedPath)) {
-    fail("contract path escapes the engineering harness");
+  if (Object.hasOwn(options, "contractPath")) {
+    fail("contractPath selection is forbidden; select a registered taskId");
   }
+  const selectedProfile = taskProfile(options.taskId ?? g12Profile.id);
+  const requestedPath = resolve(selectedProfile.contractPath);
   const stat = lstatSync(requestedPath);
   if (!stat.isFile() || stat.isSymbolicLink()) {
     fail("contract must be a regular, non-symbolic-link file");
   }
   const canonicalPath = realpathSync(requestedPath);
-  if (!isContained(harnessRoot, canonicalPath)) {
-    fail("contract resolves outside the engineering harness");
+  if (
+    canonicalPath !== requestedPath ||
+    !isContained(harnessRoot, canonicalPath)
+  ) {
+    fail("contract must resolve to its registered canonical path");
   }
   const raw = readFileSync(canonicalPath);
   let contract;
@@ -1863,6 +1874,9 @@ export function loadTaskContract(options = {}) {
     fail(`contract JSON could not be parsed: ${error.message}`);
   }
   validateTaskContract(contract);
+  if (contract.id !== selectedProfile.id) {
+    fail("contract id does not match the selected registered task");
+  }
   return {
     contract,
     contractPath: relative(repositoryRoot, canonicalPath),
