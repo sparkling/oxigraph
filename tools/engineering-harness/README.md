@@ -45,7 +45,16 @@ Current activation boundary:
   Git order, and both blob/content identities. The task derives federation and
   remote-load claims from the shared evaluator's effective handlers, egress
   policy, and compiled transport without DNS or network probes; the server
-  profile remains deny-all while standalone CLI query/update stay permissive;
+  profile remains deny-all while standalone CLI query/update stay permissive.
+  Verification runs the four-test `sparql_effective_capabilities` integration
+  target as `public`, then runs only the 17 feature-active filtered
+  `service_description::tests::` binary-unit tests as a separate bounded
+  `service` stage; unrelated CLI binary tests are outside both argv surfaces.
+  The verifier disables Cargo incremental state and test-profile debug info to
+  keep cold state deterministic and bounded. Command timeout or exhausted
+  verifier state (`ENOSPC`/`EDQUOT`) is infrastructure-inconclusive, cannot
+  trigger a repair lane, and cannot mint routing quality. Five-stage contracts
+  and their existing receipts remain replayable;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - `factory diagnose` evaluates disposable `metaharness new` output without

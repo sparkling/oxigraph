@@ -297,7 +297,7 @@ function fixture({
       }
       if (verification === "repair") return verifier(candidate, "REJECT");
       if (verification === "infrastructure") {
-        return verifier(candidate, "REJECT", { infrastructure: true });
+        return verifier(candidate, "INCONCLUSIVE", { infrastructure: true });
       }
       return verifier(candidate, provider === "codex" ? "ACCEPT" : "REJECT");
     },
@@ -369,7 +369,7 @@ test("same-producer routed review remains receipt-valid and INCONCLUSIVE", async
   assert.equal(verifyApplicationReceipt(finalized[0].receipt).ok, true);
 });
 
-test("infrastructure rejection is neither repaired nor admitted as quality", async () => {
+test("infrastructure outcome is neither repaired nor admitted as quality", async () => {
   const { run, calls, finalized } = fixture({ verification: "infrastructure" });
   const result = await run({ runId: "infrastructure-reject", clock: clock() });
   assert.equal(result.final.verdict, "INCONCLUSIVE");

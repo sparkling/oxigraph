@@ -190,6 +190,7 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     "effective_capabilities",
   ]);
   assert.equal(resolution.contract.success.publicPassed, 4);
+  assert.equal(resolution.contract.success.servicePassed, 17);
   assert.equal(resolution.contract.success.independentPassed, 1);
   assert.equal(resolution.contract.success.regressionPassed, 12);
   assert.equal(resolution.contract.ceilings.cargoBuildJobs, 1);
@@ -215,12 +216,25 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
   assert.ok(g16Profile.sourceAllowlist.includes(resolution.contract.evaluator.path));
   assert.equal(Object.hasOwn(resolution.contract.evaluator, "changes"), false);
   assert.equal(Object.hasOwn(resolution.contract, "evaluatorChanges"), false);
-  assert.deepEqual(resolution.contract.commands.public.argv.slice(-4), [
+  assert.deepEqual(resolution.contract.verificationSequence, [
+    "format",
+    "build",
+    "public",
+    "service",
+    "independent",
+    "regression",
+  ]);
+  assert.deepEqual(resolution.contract.commands.public.argv.slice(-3), [
+    "http-client-native-tls,rdf-12",
     "--test",
     "sparql_effective_capabilities",
+  ]);
+  assert.deepEqual(resolution.contract.commands.service.argv.slice(-3), [
     "--bin",
     "oxigraph",
+    "service_description::tests::",
   ]);
+  assert.equal(resolution.contract.commands.service.timeoutMs, 300_000);
   assert.deepEqual(resolution.contract.commands.build.argv.slice(-7), [
     "--test",
     "sparql_version",

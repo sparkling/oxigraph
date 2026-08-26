@@ -591,6 +591,35 @@ test("application receipt has an exact deterministic round trip and quality bind
   assert.equal(reviewBinding.reviewId, "review-1");
 });
 
+test("application receipts admit an optional frozen service evaluator without invalidating five-stage receipts", () => {
+  const value = draft();
+  value.contract.success.servicePassed = 17;
+  const service = command("service");
+  service.logicalArgv = [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "oxigraph-cli",
+    "--bin",
+    "oxigraph",
+    "service_description::tests::",
+  ];
+  service.sandboxArgv = ["--unshare-net", "--", ...service.logicalArgv];
+  service.stdoutTail = "test result: ok. 17 passed; 0 failed;";
+  value.attempts[0].verifier.commands.splice(3, 0, service);
+
+  const receipt = createApplicationReceipt(value);
+  assert.deepEqual(
+    receipt.attempts[0].verifier.commands.map(({ name }) => name),
+    ["format", "build", "public", "service", "independent", "regression"],
+  );
+  assert.equal(applicationReceiptQualityOutcomes(receipt).length, 4);
+  assert.equal(verifyApplicationReceipt(receipt).ok, true);
+
+  assert.equal(verifyApplicationReceipt(createApplicationReceipt(draft())).ok, true);
+});
+
 test("legacy v1 receipts remain replayable but preserve their reduced evidence shape", () => {
   const legacy = JSON.parse(
     serializeApplicationReceipt(createApplicationReceipt(draft())),
