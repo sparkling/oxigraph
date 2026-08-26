@@ -317,8 +317,10 @@ Execution record through 2026-08-27:
   as candidate tree `7d47e7352d64171563da8dd8d00fcb9b4c1f790d` and accepted
   format/build/public-6/independent-2/regression-2 in 313.959 seconds. The
   writer gate passed its 1/4/16-writer, concurrent-reader, drop, rollback,
-  timeout, and queued-cancellation oracle. ADR-0018 remains Proposed until
-  G1.7, not because G1.4 evidence is missing.
+  timeout, and queued-cancellation oracle. G1.4 evidence is complete, but
+  ADR-0018 remains Proposed because the built-in `Store`
+  single-`CommitAttempted`/typed terminal-outcome and durable-lookup boundary
+  plus G1.7 remain open.
 - G1.5's unified-egress profile is implemented in product commits `e452bad1`
   and `3f4cdfd7`. Frozen contract
   `e77e11a02e55e995583f0bab118878a42c490b562e0826c6b1611db096c6dfec`

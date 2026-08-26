@@ -127,9 +127,12 @@ and CLI-TLS-gated server disclosure
 (`3635ef690d75d10d8d5b4d7b316b7c6d487d7f6e9a8b47055a0c86630e387f5d`).
 The disclosed profile is a deterministic configured-and-compiled capability
 snapshot, not a remote-health or current-admission probe. ADR-0019 is therefore
-Implemented. ADR-0018 remains Proposed until the G1.7 compatibility,
-performance, and current-evidence promotion gate. The verifier artifacts are
-local-only evidence and grant no semantic-qualification or promotion authority.
+Implemented. ADR-0018 remains Proposed because the built-in `Store` still lacks
+the decision's explicit single-`CommitAttempted`/typed terminal-outcome
+lifecycle and durable lost-acknowledgement lookup, and because the G1.7
+compatibility, performance, and current-evidence promotion gate remains open.
+The verifier artifacts are local-only evidence and grant no
+semantic-qualification or promotion authority.
 
 Engineering-harness commit
 `4a15caa07df37d884e7c74d4b69c0505ce3de6e1` centralizes those seven G1 task
