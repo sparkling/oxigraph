@@ -13,6 +13,7 @@ import {
   g15bProfile,
   g15cProfile,
   g16Profile,
+  engineeringTaskIds,
   taskProfile,
 } from "./task-profile.mjs";
 
@@ -1237,6 +1238,22 @@ function fail(message) {
   throw new Error(`invalid engineering task contract: ${message}`);
 }
 
+export function assertTaskContractRegistry({
+  registryIds = engineeringTaskIds,
+  expectedIds = Object.keys(EXPECTED_BY_ID),
+} = {}) {
+  if (
+    !Array.isArray(registryIds) ||
+    !Array.isArray(expectedIds) ||
+    !isDeepStrictEqual(registryIds, expectedIds)
+  ) {
+    fail("registry ids do not match the frozen expected contract ids");
+  }
+  return true;
+}
+
+assertTaskContractRegistry();
+
 function plainObject(value, label) {
   if (
     value === null ||
@@ -1799,7 +1816,11 @@ export function verifyTaskContractRepository(contract, options = {}) {
 }
 
 export function loadTaskContract(options = {}) {
-  const requestedPath = resolve(options.contractPath ?? g12ContractPath);
+  if (Object.hasOwn(options, "contractPath")) {
+    fail("contractPath selection is forbidden; select a registered taskId");
+  }
+  const selectedProfile = taskProfile(options.taskId ?? g12Profile.id);
+  const requestedPath = resolve(selectedProfile.contractPath);
   if (!isContained(harnessRoot, requestedPath)) {
     fail("contract path escapes the engineering harness");
   }
@@ -1811,6 +1832,9 @@ export function loadTaskContract(options = {}) {
   if (!isContained(harnessRoot, canonicalPath)) {
     fail("contract resolves outside the engineering harness");
   }
+  if (canonicalPath !== requestedPath) {
+    fail("registered contract path is not canonical");
+  }
   const raw = readFileSync(canonicalPath);
   let contract;
   try {
@@ -1819,6 +1843,9 @@ export function loadTaskContract(options = {}) {
     fail(`contract JSON could not be parsed: ${error.message}`);
   }
   validateTaskContract(contract);
+  if (contract.id !== selectedProfile.id) {
+    fail("registered contract file contains a copied or mismatched task id");
+  }
   return {
     contract,
     contractPath: relative(repositoryRoot, canonicalPath),

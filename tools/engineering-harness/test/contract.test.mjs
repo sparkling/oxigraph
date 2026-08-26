@@ -9,18 +9,21 @@ import {
   g15bContractPath,
   g15cContractPath,
   g16ContractPath,
+  assertTaskContractRegistry,
   loadTaskContract,
   resolveTaskContract,
   validateTaskContract,
   verifyTaskContractRepository,
 } from "../src/contract.mjs";
 import {
+  engineeringTaskIds,
   g13Profile,
   g14Profile,
   g15Profile,
   g15bProfile,
   g15cProfile,
   g16Profile,
+  taskProfile,
 } from "../src/task-profile.mjs";
 
 function changed(contract, mutate) {
@@ -49,7 +52,7 @@ test("loads the frozen G1.2 contract and binds it to real Git objects", () => {
 });
 
 test("loads the post-G1.2 compiler-red G1.3 contract and binds it to Git", () => {
-  const resolution = resolveTaskContract({ contractPath: g13ContractPath });
+  const resolution = resolveTaskContract({ taskId: g13Profile.id });
 
   assert.equal(
     resolution.contractPath,
@@ -76,7 +79,7 @@ test("loads the post-G1.2 compiler-red G1.3 contract and binds it to Git", () =>
 });
 
 test("loads the five-path compiler-red G1.4 contract and binds it to Git", () => {
-  const resolution = resolveTaskContract({ contractPath: g14ContractPath });
+  const resolution = resolveTaskContract({ taskId: g14Profile.id });
 
   assert.equal(
     resolution.contractPath,
@@ -91,7 +94,7 @@ test("loads the five-path compiler-red G1.4 contract and binds it to Git", () =>
 });
 
 test("loads the feature-active compiler-red G1.5 contract and binds it to Git", () => {
-  const resolution = resolveTaskContract({ contractPath: g15ContractPath });
+  const resolution = resolveTaskContract({ taskId: g15Profile.id });
 
   assert.equal(
     resolution.contractPath,
@@ -111,7 +114,7 @@ test("loads the feature-active compiler-red G1.5 contract and binds it to Git", 
 });
 
 test("loads the compiler-red G1.5b update-cancellation contract and binds it to Git", () => {
-  const resolution = resolveTaskContract({ contractPath: g15bContractPath });
+  const resolution = resolveTaskContract({ taskId: g15bProfile.id });
 
   assert.equal(
     resolution.contractPath,
@@ -134,7 +137,7 @@ test("loads the compiler-red G1.5b update-cancellation contract and binds it to 
 });
 
 test("loads the compiler-red G1.5c negotiated-update contract and binds it to Git", () => {
-  const resolution = resolveTaskContract({ contractPath: g15cContractPath });
+  const resolution = resolveTaskContract({ taskId: g15cProfile.id });
 
   assert.equal(
     resolution.contractPath,
@@ -175,7 +178,7 @@ test("loads the compiler-red G1.5c negotiated-update contract and binds it to Gi
 });
 
 test("loads the two-change compiler-red G1.6 service-claims contract and binds it to Git", () => {
-  const resolution = resolveTaskContract({ contractPath: g16ContractPath });
+  const resolution = resolveTaskContract({ taskId: g16Profile.id });
 
   assert.equal(
     resolution.contractPath,
@@ -352,19 +355,55 @@ test("fails closed when frozen repository claims are altered", () => {
   }
 });
 
-test("rejects contract paths outside the harness", () => {
+test("registry and frozen expected contracts have exact ordered id parity", () => {
+  assert.doesNotThrow(() => assertTaskContractRegistry());
+  assert.deepEqual(engineeringTaskIds, [
+    "g1.2-rocksdb-serialized-writers",
+    "g1.3-transaction-capabilities",
+    "g1.4-bounded-writer-admission",
+    "g1.5-unified-egress-policy",
+    "g1.5b-update-cancellation",
+    "g1.5c-negotiated-update",
+    "g1.6-runtime-derived-service-claims",
+  ]);
+  assert.throws(
+    () => assertTaskContractRegistry({ registryIds: engineeringTaskIds.slice(0, -1) }),
+    /registry ids do not match/u,
+  );
+  assert.throws(
+    () =>
+      assertTaskContractRegistry({
+        registryIds: [...engineeringTaskIds, engineeringTaskIds[0]],
+      }),
+    /registry ids do not match/u,
+  );
+});
+
+test("rejects caller-selected, copied, and noncanonical contract paths", () => {
   assert.throws(
     () =>
       loadTaskContract({
         contractPath: new URL("../../../README.md", import.meta.url).pathname,
       }),
-    /contract path escapes the engineering harness/u,
+    /contractPath selection is forbidden/u,
   );
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g12ContractPath }));
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g13ContractPath }));
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g14ContractPath }));
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g15ContractPath }));
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g15bContractPath }));
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g15cContractPath }));
-  assert.doesNotThrow(() => loadTaskContract({ contractPath: g16ContractPath }));
+  for (const taskId of engineeringTaskIds) {
+    assert.doesNotThrow(() => loadTaskContract({ taskId }));
+  }
+  assert.throws(
+    () => loadTaskContract({ taskId: "tools/engineering-harness/tasks/g1/g1.2" }),
+    /unsupported engineering task/u,
+  );
+  assert.deepEqual(
+    [
+      g12ContractPath,
+      g13ContractPath,
+      g14ContractPath,
+      g15ContractPath,
+      g15bContractPath,
+      g15cContractPath,
+      g16ContractPath,
+    ],
+    engineeringTaskIds.map((taskId) => taskProfile(taskId).contractPath),
+  );
 });

@@ -289,6 +289,8 @@ test("architecture task includes only tree-verified allowlisted UTF-8 sources an
   assert.equal(task.bindings.evaluator.tree, state.contract.evaluator.tree);
   assert.equal(task.bindings.sourceSnapshotSha256, task.sourceSnapshot.sha256);
   assert.equal(task.bindings.currentCandidateSha256, null);
+  assert.match(task.directive, /frozen mutable path set/u);
+  assert.doesNotMatch(task.directive, /sole mutable file/u);
   assert.deepEqual(task.bindings.scope.mutableExact, [G12_SOURCE_ALLOWLIST[0]]);
   assert.deepEqual(task.bindings.verification.commands.public.argv, state.contract.commands.public.argv);
   assert.equal(task.bindings.verification.success.publicPassed, 2);
@@ -421,6 +423,8 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
     contractSha256: state.contractSha256,
     priorOutputs: prior("architecture", "critique"),
   });
+  assert.match(implementation.directive, /frozen mutable path set/u);
+  assert.doesNotMatch(implementation.directive, /sole mutable file/u);
   assert.deepEqual(Object.keys(implementation.prior.outputs), ["architecture", "critique"]);
   assert.equal(implementation.response.patch, "required-unified-diff-within-mutable-exact");
 

@@ -2,18 +2,18 @@ import { reconstructEvaluator, disposeCandidate } from "../candidate/reconstruct
 import { normalizeCommandFailureDiagnostic } from "../candidate/failure-diagnostic.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
 import { verifyRedBaseline } from "../candidate/verifier.mjs";
-import {
-  g12ContractPath,
-  g13ContractPath,
-  g14ContractPath,
-  g15ContractPath,
-  g15bContractPath,
-  g15cContractPath,
-  g16ContractPath,
-  resolveTaskContract,
-} from "../contract.mjs";
+import { resolveTaskContract } from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
-import { taskProfile } from "../task-profile.mjs";
+import {
+  g12Profile,
+  g13Profile,
+  g14Profile,
+  g15Profile,
+  g15bProfile,
+  g15cProfile,
+  g16Profile,
+  taskProfile,
+} from "../task-profile.mjs";
 import { currentControlIdentity } from "./control-identity.mjs";
 import { createTaskSourceSnapshot } from "./task-context.mjs";
 
@@ -177,19 +177,23 @@ function requireConfirmedRed(receipt, label) {
  * process-sealed source snapshot needed by native workers. The evaluator
  * checkout is always destroyed before this function returns.
  */
-export async function runTaskPreflight({
-  signal,
-  repoRoot = repositoryRoot,
-  contractPath: requestedContractPath = g12ContractPath,
-  resolveContract = resolveTaskContract,
-  resolveControl = currentControlIdentity,
-  reconstruct = reconstructEvaluator,
-  materializeSubmodules = materializeFrozenSubmodules,
-  createSourceSnapshot = createTaskSourceSnapshot,
-  verifyBaseline = verifyRedBaseline,
-  dispose = disposeCandidate,
-} = {}) {
-  const resolved = resolveContract({ repoRoot, contractPath: requestedContractPath });
+export async function runTaskPreflight(options = {}) {
+  if (Object.hasOwn(options, "contractPath")) {
+    throw new Error("engineering preflight contractPath selection is forbidden; select taskId");
+  }
+  const selectedProfile = taskProfile(options.taskId ?? g12Profile.id);
+  const {
+    signal,
+    repoRoot = repositoryRoot,
+    resolveContract = resolveTaskContract,
+    resolveControl = currentControlIdentity,
+    reconstruct = reconstructEvaluator,
+    materializeSubmodules = materializeFrozenSubmodules,
+    createSourceSnapshot = createTaskSourceSnapshot,
+    verifyBaseline = verifyRedBaseline,
+    dispose = disposeCandidate,
+  } = options;
+  const resolved = resolveContract({ repoRoot, taskId: selectedProfile.id });
   const {
     contract,
     contractPath: resolvedContractPath,
@@ -197,6 +201,9 @@ export async function runTaskPreflight({
     repository,
   } = resolved;
   const profile = taskProfile(contract);
+  if (profile.id !== selectedProfile.id) {
+    throw new Error("engineering preflight resolved a different registered task");
+  }
   const control = await resolveControl({ contract, repoRoot });
   let evaluator;
   try {
@@ -232,29 +239,29 @@ export async function runTaskPreflight({
 }
 
 export function runG12Preflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g12ContractPath });
+  return runTaskPreflight({ ...options, taskId: g12Profile.id });
 }
 
 export function runG13Preflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g13ContractPath });
+  return runTaskPreflight({ ...options, taskId: g13Profile.id });
 }
 
 export function runG14Preflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g14ContractPath });
+  return runTaskPreflight({ ...options, taskId: g14Profile.id });
 }
 
 export function runG15Preflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g15ContractPath });
+  return runTaskPreflight({ ...options, taskId: g15Profile.id });
 }
 
 export function runG15bPreflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g15bContractPath });
+  return runTaskPreflight({ ...options, taskId: g15bProfile.id });
 }
 
 export function runG15cPreflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g15cContractPath });
+  return runTaskPreflight({ ...options, taskId: g15cProfile.id });
 }
 
 export function runG16Preflight(options = {}) {
-  return runTaskPreflight({ ...options, contractPath: g16ContractPath });
+  return runTaskPreflight({ ...options, taskId: g16Profile.id });
 }

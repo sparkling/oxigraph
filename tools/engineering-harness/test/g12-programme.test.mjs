@@ -253,6 +253,7 @@ function fixture({
 } = {}) {
   const preflight = frozenPreflight();
   const calls = [];
+  const preflightCalls = [];
   const disposed = [];
   const finalized = [];
   const pool = new NativeWorkerPool({
@@ -264,7 +265,10 @@ function fixture({
     }),
   });
   const run = createG12ProgrammeForTesting({
-    preflight: async () => preflight,
+    preflight: async (options) => {
+      preflightCalls.push(options);
+      return preflight;
+    },
     history: async () => pairedRouter(),
     router:
       routedProvider === null
@@ -316,7 +320,7 @@ function fixture({
       });
     },
   });
-  return { run, calls, disposed, finalized, pool };
+  return { run, calls, preflightCalls, disposed, finalized, pool };
 }
 
 function clock() {
@@ -328,11 +332,12 @@ function clock() {
 }
 
 test("cold paired programme preserves both pipelines and accepts cross-vendor review", async () => {
-  const { run, calls, disposed, finalized, pool } = fixture();
+  const { run, calls, preflightCalls, disposed, finalized, pool } = fixture();
   const result = await run({ runId: "paired-happy", clock: clock() });
   assert.equal(result.final.verdict, "ACCEPT");
   assert.match(result.selectedPatch, /implementation:codex$/u);
   assert.equal(result.admittedOutcomes, 8);
+  assert.equal(preflightCalls[0].taskId, "g1.2-rocksdb-serialized-writers");
   assert.equal(disposed.length, 2);
   assert.deepEqual(
     calls.filter(({ role }) => role === "implementation").map(({ provider }) => provider).sort(),
@@ -351,6 +356,19 @@ test("cold paired programme preserves both pipelines and accepts cross-vendor re
   );
   assert.equal(receipt.events.at(-2).kind, "selected-candidate");
   assert.equal(receipt.events.at(-1).kind, "final");
+});
+
+test("generic programme rejects caller-selected contract paths before preflight", async () => {
+  const { run, preflightCalls } = fixture();
+  await assert.rejects(
+    run({
+      runId: "copied-contract",
+      clock: clock(),
+      contractPath: "/tmp/copied-contract.json",
+    }),
+    /contractPath selection is forbidden/u,
+  );
+  assert.deepEqual(preflightCalls, []);
 });
 
 test("same-producer routed review remains receipt-valid and INCONCLUSIVE", async () => {

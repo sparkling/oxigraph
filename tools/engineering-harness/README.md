@@ -11,6 +11,10 @@ lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 Current activation boundary:
 
 - `doctor` verifies the local installation and dependency bindings;
+- the ordered task registry binds each task ID and slug to one canonical
+  committed contract path. Generic preflight, run, and replay APIs accept only
+  a registered task ID and reject caller-selected contract paths; the existing
+  G1 wrappers, receipt schemas, and 27-command CLI order remain compatible;
 - `g1.2 preflight|run|replay` preserves the accepted RocksDB writer-serialization
   contract and its historical receipts;
 - `g1.3 preflight|run|replay` binds the additive transaction-capability task to

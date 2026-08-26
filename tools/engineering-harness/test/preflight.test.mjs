@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runG12Preflight } from "../src/runtime/preflight.mjs";
+import {
+  runG12Preflight,
+  runG16Preflight,
+  runTaskPreflight,
+} from "../src/runtime/preflight.mjs";
 
 const digest = "a".repeat(64);
 
-function fixture(overrides = {}) {
+function fixture(overrides = {}, contractId = "g1.2-rocksdb-serialized-writers") {
   const calls = [];
   const evaluator = Object.freeze({ kind: "evaluator" });
-  const contract = Object.freeze({ id: "g1.2-rocksdb-serialized-writers" });
+  const contract = Object.freeze({ id: contractId });
   return {
     calls,
     options: {
       repoRoot: "/controller",
-      resolveContract({ repoRoot }) {
-        calls.push(["contract", repoRoot]);
+      resolveContract({ repoRoot, taskId }) {
+        calls.push(["contract", { repoRoot, taskId }]);
         return {
           contract,
           contractPath: "contract.json",
@@ -60,6 +64,10 @@ test("preflight freezes control before reconstructing and disposes the evaluator
   assert.equal(result.contractSha256, digest);
   assert.equal(result.sourceSnapshot.contractSha256, digest);
   assert.equal(result.redBaseline.verdict, "CONFIRMED_RED");
+  assert.deepEqual(state.calls[0][1], {
+    repoRoot: "/controller",
+    taskId: "g1.2-rocksdb-serialized-writers",
+  });
   assert.deepEqual(
     state.calls.map(([name]) => name),
     ["contract", "control", "reconstruct", "submodules", "snapshot", "verify", "dispose"],
@@ -68,6 +76,22 @@ test("preflight freezes control before reconstructing and disposes the evaluator
   assert.equal(snapshotInput.evaluator.kind, "evaluator");
   assert.equal(snapshotInput.contract, result.contract);
   assert.equal(snapshotInput.contractSha256, digest);
+});
+
+test("generic preflight selects by task id and G1 wrappers preserve their schema", async () => {
+  const state = fixture({}, "g1.6-runtime-derived-service-claims");
+  const result = await runG16Preflight(state.options);
+  assert.equal(result.schema, "oxigraph.g1.6-preflight/v1");
+  assert.equal(state.calls[0][1].taskId, "g1.6-runtime-derived-service-claims");
+});
+
+test("generic preflight rejects contractPath before contract resolution", async () => {
+  const state = fixture();
+  await assert.rejects(
+    runTaskPreflight({ ...state.options, contractPath: "/tmp/copied-contract.json" }),
+    /contractPath selection is forbidden/u,
+  );
+  assert.deepEqual(state.calls, []);
 });
 
 test("preflight fails closed on a non-discriminating baseline and still disposes", async () => {

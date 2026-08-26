@@ -1,79 +1,42 @@
+import { engineeringTaskRegistry } from "./task-profile.mjs";
+
+function command(value) {
+  return Object.freeze(value);
+}
+
+function taskCommand(profile, action) {
+  const suffix = {
+    preflight: "preflight",
+    run: "run [--run-id <safe-id>]",
+    replay: "replay --receipt <runtime-name>",
+  }[action];
+  return command({
+    id: `${profile.slug}.${action}`,
+    usage: `${profile.slug} ${suffix}`,
+    taskId: profile.id,
+    taskSlug: profile.slug,
+    action,
+  });
+}
+
 export const COMMANDS = Object.freeze([
-  Object.freeze({ id: "doctor", usage: "doctor" }),
-  Object.freeze({ id: "g1.2.preflight", usage: "g1.2 preflight" }),
-  Object.freeze({ id: "g1.3.preflight", usage: "g1.3 preflight" }),
-  Object.freeze({ id: "g1.4.preflight", usage: "g1.4 preflight" }),
-  Object.freeze({ id: "g1.5.preflight", usage: "g1.5 preflight" }),
-  Object.freeze({ id: "g1.5b.preflight", usage: "g1.5b preflight" }),
-  Object.freeze({ id: "g1.5c.preflight", usage: "g1.5c preflight" }),
-  Object.freeze({ id: "g1.6.preflight", usage: "g1.6 preflight" }),
-  Object.freeze({
-    id: "g1.2.run",
-    usage: "g1.2 run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.2.replay",
-    usage: "g1.2 replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
-    id: "g1.3.run",
-    usage: "g1.3 run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.3.replay",
-    usage: "g1.3 replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
-    id: "g1.4.run",
-    usage: "g1.4 run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.4.replay",
-    usage: "g1.4 replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
-    id: "g1.5.run",
-    usage: "g1.5 run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.5.replay",
-    usage: "g1.5 replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
-    id: "g1.5b.run",
-    usage: "g1.5b run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.5b.replay",
-    usage: "g1.5b replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
-    id: "g1.5c.run",
-    usage: "g1.5c run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.5c.replay",
-    usage: "g1.5c replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
-    id: "g1.6.run",
-    usage: "g1.6 run [--run-id <safe-id>]",
-  }),
-  Object.freeze({
-    id: "g1.6.replay",
-    usage: "g1.6 replay --receipt <runtime-name>",
-  }),
-  Object.freeze({
+  command({ id: "doctor", usage: "doctor" }),
+  ...engineeringTaskRegistry.map((profile) => taskCommand(profile, "preflight")),
+  ...engineeringTaskRegistry.flatMap((profile) => [
+    taskCommand(profile, "run"),
+    taskCommand(profile, "replay"),
+  ]),
+  command({
     id: "receipt.verify",
     usage: "receipt verify --receipt <runtime-name>",
   }),
-  Object.freeze({ id: "history.inspect", usage: "history inspect" }),
-  Object.freeze({
+  command({ id: "history.inspect", usage: "history inspect" }),
+  command({
     id: "factory.diagnose",
     usage: "factory diagnose --claude <outside-path> --codex <outside-path>",
   }),
-  Object.freeze({ id: "help", usage: "help" }),
-  Object.freeze({ id: "version", usage: "version" }),
+  command({ id: "help", usage: "help" }),
+  command({ id: "version", usage: "version" }),
 ]);
 
 export function commandIds() {
