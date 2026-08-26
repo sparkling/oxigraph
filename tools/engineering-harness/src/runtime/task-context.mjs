@@ -122,15 +122,15 @@ const ROLE_PRIORS = Object.freeze({
 });
 const ROLE_DIRECTIVES = Object.freeze({
   architecture:
-    "Design a minimal implementation within the sole mutable file. Explain state, concurrency, lifetime, failure, and regression risks. Do not return a patch.",
+    "Design a minimal implementation within the frozen mutable path set. Explain state, concurrency, lifetime, failure, and regression risks. Do not return a patch.",
   critique:
     "Critique the supplied architecture against the frozen source, anomalies, scope, and verification contract. Do not return a patch.",
   implementation:
-    "Produce one minimal unified diff for the sole mutable file that implements the accepted architecture and satisfies every frozen verifier command, including stable cargo fmt output.",
+    "Produce one minimal unified diff confined to the frozen mutable path set that implements the accepted architecture and satisfies every frozen verifier command, including stable cargo fmt output.",
   review:
     "Independently review the candidate patch and verifier evidence for correctness, safety, scope compliance, and hidden regressions. Do not return a patch.",
   repair:
-    "Produce one complete replacement unified diff from the frozen evaluator source to the repaired final file. Preserve every accepted candidate change, address the rejecting verifier evidence, and satisfy stable cargo fmt. Do not return an incremental diff against currentCandidate: reconstruction applies your patch directly to the evaluator tree.",
+    "Produce one complete replacement unified diff from the frozen evaluator source to the repaired final state within the frozen mutable path set. Preserve every accepted candidate change, address the rejecting verifier evidence, and satisfy stable cargo fmt. Do not return an incremental diff against currentCandidate: reconstruction applies your patch directly to the evaluator tree.",
 });
 
 function fail(message) {
