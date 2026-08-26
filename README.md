@@ -170,8 +170,16 @@ scoped source-registration, Jena runner/profile, and Agentic-QE refresh work:
 the exact 144/144 default, 129/129 no-default, and 34/34
 `persistence-write` inventories. Those source-bound results do not make a
 later HEAD or the aggregate semantic qualification current by themselves.
-G0.6 mutation evidence, G0.7 protected-evidence reconciliation and freeze,
-and the separate G1.7 compatibility/performance promotion gate remain open.
+G0.6 has now regenerated immutable OxDatalog run
+`731e6467-2cab-4260-8d15-b34e4ebc8ed6` with 358 generated, 278 caught,
+80 unviable, zero missed, and zero timed out under `cargo-mutants` 27.1.0.
+G0.7 reconciles the ledger and all protected claim documents against those
+scoped Jena, Agentic-QE, and mutation receipts; root `README.md` is itself now
+part of the MetaHarness protected snapshot. These closures make the named
+lower receipts current for their exact scopes only. Full MetaHarness semantic
+qualification, its independent verification, and the separate G1.7
+compatibility/performance promotion gate remain open, so the umbrella claim
+is still withheld.
 
 ### Published documentation and evidence
 

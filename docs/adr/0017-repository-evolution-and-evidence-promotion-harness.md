@@ -89,12 +89,13 @@ accepted the exact 144/129 Agentic-QE CLI inventories plus a 34-test
 `persistence-write` profile. These are source-bound task closures, not an
 umbrella current-HEAD qualification.
 
-The OxDatalog mutation receipt remains valid only for its sealed source
-snapshot, so G0.6 remains open. G0.7 must then reconcile and freeze the
-receipt-sensitive ledger, README, ADR, plan, and research claims against the
-complete protected subject. Full semantic MetaHarness qualification and the
-separate G1.7 promotion gate remain unavailable until those open gates close.
-A passing synthetic Darwin run proves only the policy mechanics.
+G0.6 now binds the current generic OxDatalog D0-D2 source/runtime scope to
+immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6`, with zero missed or
+timed-out mutants. G0.7 reconciles and freezes the receipt-sensitive ledger,
+README, ADR, plan, and research claims; root `README.md` is now an explicit
+MetaHarness protected input. These closures do not make the aggregate semantic
+qualification or G1.7 promotion current. A passing synthetic Darwin run proves
+only the policy mechanics.
 
 The repository now contains a separate application-delivery control plane,
 quality-first model router, native Codex and Claude worker adapters, and a
@@ -350,14 +351,12 @@ reopens them. Gate 8 is per-run authority and never closes permanently:
    over subsequently modified bytes is invalid.
 6. **Isolation:** run only from a clean, disposable worktree with bounded
    resources and no ambient GitHub publication authority.
-7. **Evidence repair:** revalidate the completed G0.1-G0.5 source, Jena, and
-   Agentic-QE inputs against their exact bindings; verify the mutation harness
-   and regenerate the exact G0.6 OxDatalog receipt with the latest registry
-   `cargo-mutants` release resolved without a top-level version pin and sealed
-   by observed-version and executable provenance; then complete G0.7 by
-   reconciling and freezing all protected ADR, plan, ledger, and research
-   documents before full MetaHarness qualification and independent evidence
-   verification.
+7. **Evidence repair:** G0.1-G0.5 revalidated the registered source, Jena, and
+   Agentic-QE bindings. G0.6 regenerated the exact OxDatalog receipt with the
+   latest observed registry `cargo-mutants` release acquired without a
+   top-level version pin and sealed by executable provenance. G0.7 reconciles
+   and freezes root README, ADR, plan, ledger, and research documents before
+   full MetaHarness qualification and independent evidence verification.
 8. **Operator decision:** obtain explicit authorization for any schedule or
    external publication after reviewing the generated routine byte-for-byte.
    Re-obtain it for every active task and exact generated artifact.
@@ -376,10 +375,11 @@ and approving actor. Prompt text and a bare checksum are not closure evidence.
   hypotheses, and bounded policy evolution without creating a second oracle.
 - Dream Machine's useful vocabulary and deterministic tools can be evaluated
   locally while its high-authority autonomous path remains disabled.
-- Existing fail-closed drift is visible. Historical Jena and mutation receipts
-  remain valid for their sealed July subjects but are not current-HEAD proof.
-- G0.1-G0.5 have source-bound completion evidence; this does not close G0.6,
-  G0.7, full semantic qualification, or G1.7 promotion.
+- Existing fail-closed drift is visible. The original July Jena and mutation
+  receipts remain historical, while G0.3 and G0.6 now carry refreshed scoped
+  identities reconciled by G0.7.
+- G0.1-G0.7 have completion evidence for their exact scopes; this does not
+  close full semantic qualification or G1.7 promotion.
 - A synthetic Darwin qualification may demonstrate deterministic policy
   mechanics, but only a fresh full qualification plus independent verification
   supports a semantic-qualification claim.

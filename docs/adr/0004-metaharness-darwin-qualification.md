@@ -2,21 +2,22 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: policy-only adapter, synthetic mechanics, full
   semantic mode, independent receipt verification, and latest-compatible
   dependency policy implemented; the current integrity-bound lockfile resolves
   `@metaharness/darwin` 0.9.3 and qualification remains receipt-dependent
-- Update note: the local MetaHarness 13-test suite and a synthetic-only
-  qualification passed with Darwin 0.9.3 on their recorded 2026-08-25 source.
-  G0.1-G0.5 have closed
-  their scoped source-registration, Jena runner/profile, and Agentic-QE refresh
-  work with source-bound evidence. Full qualification is intentionally not
-  claimable while the OxDatalog mutation receipt remains historical under
-  G0.6 and the protected evidence has not been reconciled and frozen under
-  G0.7. On 2026-08-25 the dependency refresh also made lifecycle-script
-  suppression and lock/ledger reconciliation explicit.
+- Update note: the local MetaHarness 13-test suite remains green with Darwin
+  0.9.3. G0.1-G0.7 now close their exact source registration, Jena
+  runner/profile, Agentic-QE inventory, OxDatalog mutation, and protected-claim
+  reconciliation scopes. G0.6 binds immutable mutation run
+  `731e6467-2cab-4260-8d15-b34e4ebc8ed6`; G0.7 also adds root `README.md` to
+  the protected snapshot. The earlier synthetic-only receipt is stale by
+  design after these protected changes, and no current full semantic
+  qualification or independent verification is claimed. On 2026-08-25 the
+  dependency refresh also made lifecycle-script suppression and lock/ledger
+  reconciliation explicit.
 - **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),

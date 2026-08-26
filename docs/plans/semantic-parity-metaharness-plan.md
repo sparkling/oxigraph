@@ -1,7 +1,7 @@
 # Semantic parity implementation and qualification plan
 
 - Programme date: 2026-07-26
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Target: version-pinned Apache Jena compatibility, then current reviewed W3C
   RDF 1.2, SPARQL 1.2, and SHACL 1.2 parity
 - Reasoning scope: RDFS, bounded Datalog D0–D2, and OWL 2 RL/RDF only
@@ -26,19 +26,22 @@ This plan separates implementation completion from evidence completion. A
 green finite suite never marks a broader phase complete by itself.
 The `tools/metaharness` package described here remains the semantic qualifier;
 ADR-0017 assigns future application delivery to a separate
-`tools/engineering-harness`, which is not implemented by this plan.
+`tools/engineering-harness`, which is now implemented and independently
+bounded but is not owned or qualified by this semantic plan.
 
 ## Current evidence snapshot
 
-The counts below describe the last sealed reviewed receipts for their exact
-subjects. They are not current-HEAD qualification after `1da47285`: the Jena
-subject/runner lock, Agentic-QE CLI inventories, mutation source binding, and
-full MetaHarness receipts require the reviewed G0 refresh in the
-[evolution harness plan](linked-data-store-evolution-harness-plan.md).
+The counts below describe bounded receipts for their exact subjects. G0.1-G0.7
+have refreshed and reconciled the registered sources, locked Jena profile,
+Agentic-QE CLI and persistence-write inventories, and generic OxDatalog
+mutation binding described by the
+[evolution harness plan](linked-data-store-evolution-harness-plan.md). Those
+scoped closures do not create a current full MetaHarness receipt or an umbrella
+semantic claim.
 
 | Capability | Executable evidence | Current classification |
 |---|---|---|
-| Datalog D0–D2 | 70 native tests; 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts | Implemented bounded engine profile; historical sealed-subject mutation gate closed, current source binding open |
+| Datalog D0–D2 | 70 native tests; G0.6 run `731e6467...` has 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts | Implemented bounded engine profile; current source/runtime-bound mutation gate for the generic D0-D2 scope only |
 | Semantic store integration | 4 tests | RDFS, OWL 2 RL, SHACL, and chained RDFS→SHACL stable-snapshot integration |
 | RDFS | 37 native tests; RDF 1.2 Semantics aggregate 77/77, including 26/26 RDFS-regime cases | Finite active-vocabulary profile; the aggregate also contains 24 Simple- and 27 RDF-regime cases and is not an RDFS-only receipt |
 | OWL 2 RL/RDF | 34 native tests; 98/98 assertions over 68 cases; 78-rule inventory | Bounded RDF-rule profile; broader OWL excluded |
@@ -46,9 +49,9 @@ full MetaHarness receipts require the reviewed G0 refresh in the
 | SPARQL 1.2 | 269/269 official tests, 0 unsupported | Official-suite complete; normative family ledger open |
 | RDF Dataset Canonicalization 1.0 | 86/86 official tests | Supporting specification; not RDF 1.2 family parity |
 | SHACL 1.2 | 521 discovered and 519/519 eligible across five separately classified lanes; two hash-pinned invalid upstream exclusions; native Rust 167/167 all-feature and 114/114 no-default; Jena SHACL-C 32/32 | Root, legacy, supplemental Rules, and informative SHACL-C evidence; family claim open |
-| Jena 6.1.0 | 76 reviewed scenarios; 198 assertions | Closed scoped outcome intersection with one W3C-permitted implementation variant; full Apache Jena parity not claimed |
+| Jena 6.1.0 | G0.3 subject `182972ec...`: 76 reviewed scenarios; 198 assertions; two byte-identical runs | Current locked outcome-intersection scope with one W3C-permitted implementation variant; full Apache Jena parity not claimed |
 | Soufflé 2.5 | 1 stratified Datalog fixture | Narrow D1 differential only |
-| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 18/18 adapter adversarial tests; 47-command parity inventory | Acceptance requires a complete, current, independently verified receipt; native commands remain authoritative |
+| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 18/18 adapter adversarial tests; reconciled 144/129 CLI and 34/34 persistence-write profiles; 47-command parity inventory | Scoped profiles are current; aggregate acceptance still requires a complete, current, independently verified receipt; native commands remain authoritative |
 | MetaHarness/Darwin | Full semantic-mode runner plus independent receipt verifier | No qualification result exists unless both current receipts verify against the same protected snapshot |
 
 Exact SHACL lane counts, exclusions, and artifact locations are read from the
@@ -185,9 +188,11 @@ The immutable `jena-6.1.0-outcome-intersection-2026-07-27-v1` matrix contains
 The result classifies 70 scenarios as agreement, four as W3C-overrides-Jena,
 one as a W3C-permitted divergence, one as a Jena extension, and zero as
 unsupported. The permitted divergence records `CLEAR GRAPH` implementation
-freedom expressly allowed by SPARQL 1.2; it is not a failed scenario. Two
-complete runs produced the same sealed receipt hash
-`48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76`.
+freedom expressly allowed by SPARQL 1.2; it is not a failed scenario. G0.3
+refreshed subject
+`182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63`;
+two complete runs produced byte-identical receipt SHA-256
+`7209da6a1610f4f5252de97d13f75b46483b88f8f8a754d0d30170a92b6c401e`.
 This closes the reviewed intersection only. Any broader Apache Jena claim
 requires a new versioned, set-equal scenario inventory.
 
@@ -228,9 +233,11 @@ seven policy surfaces; implementation, specifications, pins, manifests,
 expected results, profiles, exclusions, limits, and evidence definitions are
 protected. Every dependency refresh invalidates prior qualification receipts
 until the newly resolved bytes pass the same gates.
-The protected snapshot excludes only the repository-relative generated output
-`js/pkg`; JavaScript source and every other `pkg` directory remain protected,
-and a symlink at that path still fails closed.
+The protected snapshot includes root `README.md` plus ADR, plan, research,
+product, evaluator, and workflow surfaces. It excludes only the
+repository-relative generated output `js/pkg`; JavaScript source and every
+other `pkg` directory remain protected, and a symlink at that path still fails
+closed.
 
 ```bash
 cd tools/metaharness
@@ -264,10 +271,10 @@ Run from a clean, pinned toolchain state:
 3. RDF 1.2, SPARQL 1.2, RDF Dataset Canonicalization, RDFS, OWL, and SHACL
    official or explicitly classified supporting lanes;
 4. Jena 6.1.0 and Soufflé 2.5 required differentials;
-5. publish and reopen the fresh full OxDatalog schema-v3 receipt, native
-   outcomes, and policy copy from one immutable UUID-addressed run after source
-   freeze (current inventory: 358 generated, 278 caught, 80 unviable, zero
-   missed/timeouts);
+5. reopen the G0.6 OxDatalog schema-v3 receipt, native outcomes, and policy copy
+   from immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` after confirming
+   its protected snapshot is still current (358 generated, 278 caught,
+   80 unviable, zero missed/timeouts); regenerate it after any protected drift;
 6. Agentic-QE parity receipt;
 7. MetaHarness/Darwin full qualification;
 8. adversarial review of path, receipt, resource, transaction, and claim

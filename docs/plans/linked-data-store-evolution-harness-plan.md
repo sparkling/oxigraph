@@ -7,7 +7,7 @@
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Observed fork source before this documentation slice:
-  `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`
+  `70db135d500d95af30e6d9c921432517c77d28de`
 - Semantic Builder handover reviewed against:
   `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
@@ -33,8 +33,9 @@ owned-update cancellation profile are also source-bound. G1.5c negotiated
 backend admission is accepted by its frozen 5/15/21 evaluator split. G1.6
 runtime-derived service claims are implemented and accepted by their frozen
 seven-stage 4/17/1/1/12 evaluator split.
-G0.1-G0.5 are complete for their exact source-bound scopes; G0.6 mutation,
-G0.7 protected-evidence freeze, and G1.7 promotion remain open.
+G0.1-G0.7 are complete for their exact source- and receipt-bound scopes.
+Full MetaHarness semantic qualification, its independent verification, and
+G1.7 compatibility/performance promotion remain open.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
@@ -64,12 +65,12 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
 | RocksDB writers | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis |
 | Built-in remote egress, owned updates, and service claims | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary; G1.5c's 5/15/21 profile carries the exact request/token through negotiated custom and `Store` admission; G1.6's seven-stage 4/17/1/1/12 profile derives deterministic service claims from effective handlers, egress policy, and compiled transport | Advertise only those proven configured-and-compiled profiles; do not present capability disclosure as remote health or current admission |
-| Jena differential | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for that exact subject | Scoped task complete; later protected-source drift is reconciled by G0.7 and promoted only through G1.7 |
+| Jena differential | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for subject `182972ec...` and receipt `7209da6a...` | Scoped task complete and reconciled by G0.7; later protected-source drift reopens it, and promotion remains separate under G1.7 |
 | Jena runner lock | G0.2 restored the reviewed `runner/Cargo.lock` strategy in `46ef17fc`, so the pinned runner executes with `--locked` from a clean checkout | Scoped task complete; retain the lock as protected evidence |
 | Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` bind 144/144 default, 129/129 no-default, and 34/34 `persistence-write` tests | Scoped tasks complete; later count or ID drift still fails closed |
 | Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
-| Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
-| MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by G0.6 mutation evidence and G0.7 protected-evidence reconciliation/freeze; G1.7 promotion is separate |
+| Mutation receipt | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification |
+| MetaHarness | 13/13 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate |
 | Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered seven-task registry, and its exact generated 27-command registry are implemented; G1.2-G1.6 have source-bound accepted candidates | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
@@ -258,8 +259,8 @@ Run three independent lanes, then integrate sequentially:
 | G0.3 Review current Jena subject and refresh profile lock | Complete (`22a8033e`) | Evidence | G0.2 | Lock diff reviewed; two complete byte-identical 76/198 runs |
 | G0.4 Reconcile Agentic-QE exact CLI counts/IDs | Complete (`253a2b34`) | Evidence | none | 144 default and 129 no-default inventories deliberately accepted |
 | G0.5 Add `persistence-write` evidence profile | Complete (`253a2b34`) | Conformance | none | 34 exact IDs cover transactional dataset, update atomicity, topology, service claims, and failure injection |
-| G0.6 Verify and regenerate OxDatalog mutation receipt | Open | Evidence | none | `node --test tools/mutation/*.test.mjs` passes; the latest registry `cargo-mutants` release is acquired without a top-level version constraint; the run has zero survivors/timeouts and reopens its exact source- and runtime-bound receipt |
-| G0.7 Reconcile and freeze protected evidence documents | Open | ADR/claims | G0.1-G0.6 | Ledger, README, ADRs, plans, and research mark historical versus current receipts accurately and are frozen before qualification |
+| G0.6 Verify and regenerate OxDatalog mutation receipt | Complete (run `731e6467-2cab-4260-8d15-b34e4ebc8ed6`) | Evidence | none | Mutation tests pass; registry-latest `cargo-mutants` 27.1.0 was acquired without a top-level version constraint; 358 = 278 caught + 80 unviable with zero missed/timeouts; immutable and latest receipt bytes both have SHA-256 `fc0ec6db...` and reopen against input `9898ef56...` |
+| G0.7 Reconcile and freeze protected evidence documents | Complete (2026-08-26 checkpoint) | ADR/claims | G0.1-G0.6 | Ledger, root README, ADRs, plans, research, and the visual report distinguish historical, current-scoped, aggregate-qualified, and promoted evidence; README is now a protected MetaHarness input |
 
 No lock, expected count, manifest, threshold, or receipt is refreshed
 automatically by Dream Machine or Darwin.
@@ -417,7 +418,8 @@ Execution record through 2026-08-26:
   harness tests, and the `runner-implemented` doctor pass. The doctor retains
   `latest` dependency requests, valid native Codex and Claude interfaces,
   `mcpRegistered: false`, `localOnly: true`, and `promotionAuthority: false`.
-  This closes registry drift only; G0.6, G0.7, and G1.7 remain open.
+  This closed registry drift only; G0.6, G0.7, and G1.7 were still open at
+  that checkpoint.
 - `HARNESS-REJECTION-EVIDENCE` is complete in commit
   `afe30c7de7e3df6e72a0a855d83efc612339f261`. Current application receipt v6
   records every failed reconstruction/applicability lane independently, binds
@@ -429,8 +431,23 @@ Execution record through 2026-08-26:
   minting. All 194 harness tests and the `runner-implemented` doctor pass,
   including malformed/resigned/reordered evidence, identical-patch lanes,
   raw-detail non-retention, and frozen pre-v6 fixture controls. This closes the
-  rejection-evidence control only; G0.6, G0.7, and G1.7 remain open and no
-  semantic qualification or promotion authority follows.
+  rejection-evidence control only; G0.6, G0.7, and G1.7 were still open at
+  that checkpoint, and no semantic qualification or promotion authority
+  followed.
+- G0.6 is complete with immutable mutation run
+  `731e6467-2cab-4260-8d15-b34e4ebc8ed6`. The 358 generated outcomes conserve
+  exactly as 278 caught plus 80 unviable, with zero missed and zero timed out;
+  immutable and latest receipt bytes share SHA-256 `fc0ec6db...`. Independent
+  reopen verifies input `9898ef56...`, content `88de934c...`, execution
+  `cfe719d3...`, and `cargo-mutants` 27.1.0 provenance. This is current only
+  for the protected generic OxDatalog D0-D2 scope.
+- G0.7 is complete for this checkpoint. Commit `70db135d` makes the source
+  verifier pin the refreshed Jena, 144/129 CLI, 34-test persistence-write, and
+  mutation identities and adds root README to the MetaHarness protected set.
+  The synchronized README, ADR, plan, ledger, research, and visual-report
+  claims keep full MetaHarness qualification, independent verification, and
+  G1.7 promotion withheld. Any later protected product or claim edit reopens
+  the earliest affected receipt.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -653,16 +670,18 @@ the working directories and warning policy in `.github/workflows/tests.yml`.
    `bash tools/jena-parity/scripts/run.sh` twice and require byte-identical
    receipts for the same protected subject; drift requires another separately
    reviewed lock operation, never an automatic refresh.
-4. Run `node --test tools/mutation/*.test.mjs`, acquire the current registry
-   release with `cargo install --locked cargo-mutants`, require
-   `cargo mutants --version` to agree exactly with the version frozen in the
-   native outcomes, executable provenance, and new receipt, then run
-   `node tools/mutation/oxdatalog.mjs --jobs 2`. Keep ADR-0013's OxDatalog
-   scope explicit; P0 needs a separate reviewed mutation or deterministic
-   failure-injection competence profile.
-5. Reconcile the machine-readable ledger and freeze every protected ADR, plan,
-   and research document. MetaHarness hashes these inputs, so editing claims
-   after qualification invalidates the receipt.
+4. G0.6 ran `node --test tools/mutation/*.test.mjs`, acquired registry-latest
+   `cargo-mutants` 27.1.0 with `cargo install --locked cargo-mutants`, verified
+   executable/version agreement, and published run
+   `731e6467-2cab-4260-8d15-b34e4ebc8ed6` through
+   `node tools/mutation/oxdatalog.mjs --jobs 2`. Repeat this sequence after any
+   protected OxDatalog drift. Keep ADR-0013's scope explicit; P0 needs a
+   separate reviewed mutation or deterministic failure-injection competence
+   profile.
+5. G0.7 reconciled the machine-readable ledger and froze root README plus every
+   protected ADR, plan, and research document. MetaHarness hashes these inputs,
+   so editing claims after qualification invalidates the receipt; editing them
+   before qualification intentionally changes the candidate snapshot.
 6. Only after every lower receipt is current, run
    `(cd tools/metaharness && npm ci --ignore-scripts && npm test && npm run qualify)`; `qualify`
    includes the MetaHarness independent verifier.

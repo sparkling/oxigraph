@@ -51,10 +51,11 @@ archives remain under `target/metaharness/`. `npm run qualify` also invokes an
 independent verifier and writes `target/metaharness/verification.json`.
 Qualification hashes the semantic library tree and oracles, the complete
 Agentic-QE/MetaHarness/mutation/programme-evidence gate code, the CI workflow,
-the executing Node binary, and the exact installed Darwin package before and
-after every run. The JavaScript source tree is protected, while exactly the
-repository-relative generated directory `js/pkg` is excluded; other `pkg`
-directories remain protected and a symlink at `js/pkg` still fails closed.
+root `README.md`, the ADR/plan/research claim surfaces, the executing Node
+binary, and the exact installed Darwin package before and after every run. The
+JavaScript source tree is protected, while exactly the repository-relative
+generated directory `js/pkg` is excluded; other `pkg` directories remain
+protected and a symlink at `js/pkg` still fails closed.
 Before the real gate, it validates the mutation receipt,
 outcomes, and policy copy from one UUID-addressed immutable publication rather
 than later-mutable native output paths. The real gate additionally requires and

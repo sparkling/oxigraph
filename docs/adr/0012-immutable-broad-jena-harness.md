@@ -79,9 +79,10 @@ authority.
 to source-bound subject SHA-256
 `182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63`
 in `22a8033e` and completed two byte-identical executions. Both results remain
-bounded to their exact protected subjects. Later source changes are reconciled
-at G0.7 and promoted only through G1.7; neither receipt is a timeless
-current-HEAD claim.
+bounded to their exact protected subjects. The 2026-08-26 G0.7 reconciliation
+records the refreshed subject as current for this locked differential scope;
+later protected-source changes must reopen that status. Promotion remains a
+separate G1.7 decision, and neither receipt is a timeless current-HEAD claim.
 
 The reviewed inventory contains 76 scenarios and 198 assertions:
 
@@ -120,8 +121,12 @@ and
 `b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4`.
 
 The G0.3 refresh in `22a8033e` also produced two complete byte-identical runs
-for its reviewed subject. This ADR records that source-bound closure without
-copying mutable target receipt identities into architectural law.
+for its reviewed subject. Its profile-lock SHA-256 is
+`b6b176c674451451b8b456ea8fc1e81a4dc6e01f471858e3b912d7c0af0e61e6`
+and its byte-identical receipt SHA-256 is
+`7209da6a1610f4f5252de97d13f75b46483b88f8f8a754d0d30170a92b6c401e`.
+These are evidence identities recorded by G0.7, not architectural constants
+that authorize future subjects.
 
 ## Consequences
 

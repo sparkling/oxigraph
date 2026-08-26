@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-26
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: latest-compatible adapter implemented; the manifest
   requests the `latest` dist-tag and the current integrity-bound lockfile
@@ -10,8 +10,9 @@
 - Evidence state: G0.4-G0.5 are source-bound in `253a2b34`: the reviewed CLI
   inventories are 144/144 default and 129/129 no-default, and the narrow
   `persistence-write` profile binds 34/34 exact write-interface tests. These
-  scoped results do not replace G0.6 mutation evidence, G0.7 protected-evidence
-  reconciliation, or a current aggregate qualification receipt.
+  scoped results are reconciled by G0.7 alongside the separate current G0.6
+  mutation receipt. They do not constitute a current 41/47-command aggregate
+  receipt, full MetaHarness qualification, or G1.7 promotion.
 - Update note: on 2026-08-25 the adapter moved to the latest-compatible lock
   policy, disabled dependency lifecycle scripts, and bound source-only ledger
   claims to the exact lock resolution and SRI.

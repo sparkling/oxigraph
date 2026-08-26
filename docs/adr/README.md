@@ -65,14 +65,16 @@ shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
 2026-08-26. Individual sealed results retain their original evidence dates.
-G0.1-G0.5 have source-bound completion evidence: registered sources, the
+G0.1-G0.7 have source-bound completion evidence: registered sources, the
 locked Jena runner, two byte-identical runs of the refreshed 76/198 profile,
 the 144/129 Agentic-QE inventories, and the 34-test `persistence-write`
-profile. G1.6 has bounded source-bound acceptance from the seven-stage
+profile, plus the current generic OxDatalog mutation run
+`731e6467-2cab-4260-8d15-b34e4ebc8ed6` and reconciled protected claims. G1.6
+has bounded source-bound acceptance from the seven-stage
 4/17/1/1/12 verifier split and three rejecting product controls. That closes
 ADR-0019 but does not grant current-HEAD umbrella qualification, which remains
-withheld because G0.6 mutation evidence and G0.7 protected-evidence
-reconciliation/freeze are open; the receipt-sensitive claim ledger is
-reconciled only by G0.7.
+withheld. Full MetaHarness semantic qualification and independent verification
+have not yet been regenerated, and ADR-0018/G1.7
+compatibility/performance promotion remains open.
 Working Draft and editor-draft material is never described as a W3C
 Recommendation.

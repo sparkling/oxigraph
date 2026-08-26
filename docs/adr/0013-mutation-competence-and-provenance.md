@@ -2,11 +2,16 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-27
-- Updated: 2026-08-25
-- Evidence state: the policy remains Accepted. The named July receipt is
-  historical for its sealed source; library changes in `1da47285` invalidate
-  it as current-HEAD evidence. Its scope is OxDatalog and does not establish
-  mutation competence for the new persistence-write surface.
+- Updated: 2026-08-26
+- Evidence state: the policy remains Accepted. G0.6 regenerated immutable run
+  `731e6467-2cab-4260-8d15-b34e4ebc8ed6` with `cargo-mutants` 27.1.0:
+  358 generated, 278 caught, 80 unviable, zero missed, and zero timed out.
+  Receipt SHA-256
+  `fc0ec6dbb0c8dec0b3c9e2d58814372c8feebc8ec291528df1fdf432879b2ba5`
+  reopens against the current protected generic OxDatalog input hash
+  `9898ef56c90cbcd8eef9cd490c2d63c9ed42a9a96c5ccab39d99ba834d707c3d`.
+  This scope does not establish mutation competence for persistence writes or
+  downstream semantic integrations.
 - Deciders: Oxigraph parity programme
 - **Related**:
   [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md),

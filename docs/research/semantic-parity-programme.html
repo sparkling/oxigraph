@@ -370,7 +370,10 @@
         inventory, and independently verified. Acceptance does not prove broad
         Jena parity, RDF/SPARQL/SHACL 1.2 family parity, unrestricted RDFS
         entailment, or any OWL profile beyond the declared OWL 2 RL/RDF
-        surface.</p></div></div>
+        surface. The 26 August reconciliation makes the refreshed Jena,
+        144/129 CLI, 34-test persistence-write, and generic OxDatalog mutation
+        receipts current only for their scoped subjects; no current aggregate
+        Agentic/MetaHarness qualification or G1.7 promotion follows.</p></div></div>
     <div class="receipt">
       <div class="callout"><div class="mark">✓</div><div><h3>Parity receipt acceptance</h3>
         <p>Historical July receipt: Agentic-QE 3.13.2 · schema v4 · 47 commands.
@@ -388,13 +391,13 @@
     <div class="table-wrap" style="margin-top:18px"><table>
       <thead><tr><th>Evidence lane</th><th>Current bounded result</th><th>Claim boundary</th></tr></thead>
       <tbody>
-        <tr><td>OxDatalog D0–D2</td><td>70/70 tests; 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts</td><td>runtime-safe declared D0–D2 feature surface</td></tr>
+        <tr><td>OxDatalog D0–D2</td><td>70/70 tests; current G0.6 run has 358 mutants = 278 caught + 80 unviable, 0 missed/timeouts</td><td>source/runtime-bound generic D0–D2 scope; no persistence-write mutation authority</td></tr>
         <tr><td>RDF 1.2 + RDFS</td><td>575/575 pinned RDF cases; 77/77 RDF 1.2 Semantics cases; 15-pattern Oxigraph profile</td><td>suite compatibility and bounded finite materialization, not document-family conformance</td></tr>
         <tr><td>SPARQL 1.2</td><td>269/269 pinned language cases</td><td>non-language documents remain clause-ledger work</td></tr>
         <tr><td>RDF Dataset Canonicalization 1.0</td><td>86/86 official cases</td><td>bounded work factor, deterministic error on exhaustion</td></tr>
         <tr><td>OWL 2 RL/RDF</td><td>98/98 assertions over 68 cases using exactly 78 rules</td><td>OWL 2 RL only</td></tr>
         <tr><td>SHACL 1.2</td><td>521 discovered; 519/519 eligible; two invalid upstream exclusions; native 167/167 all-feature and 114/114 no-default</td><td>Rules supplemental; SHACL-C informative; synchronous WebAssembly SPARQL-backed execution fails closed</td></tr>
-        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56, CLI 133/133 default and 116/116 no-default</td><td>empty named graphs preserved where representable; lossy formats fail closed</td></tr>
+        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56, CLI 144/144 default and 129/129 no-default; persistence-write 34/34</td><td>empty named graphs preserved where representable; lossy formats fail closed</td></tr>
         <tr><td>Apache Jena 6.1.0</td><td>76 scenarios · 198 assertions · gate closed; RDF 17/46 · SPARQL 30/77 · SHACL 13/43 · RDFS 7/14 · OWL 2 RL 9/18</td><td>70 agreement, 4 W3C overrides, 1 W3C-permitted divergence, 1 extension</td></tr>
         <tr><td>Semantic store integration</td><td>4/4 tests</td><td>read-only snapshots and explicit materialization seams</td></tr>
       </tbody>

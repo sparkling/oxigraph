@@ -1,8 +1,8 @@
 # Semantic parity programme — current evidence summary
 
-Status: last sealed bounded implementation evidence is green; current-HEAD
-qualification is stale and broad parity claims are withheld
-Evidence cut: 2026-07-26; reconciled: 2026-08-25
+Status: G0 scoped receipts are reconciled and green; full current-HEAD
+qualification and broad parity claims are withheld
+Evidence cut: 2026-07-26 normative baseline; reconciled: 2026-08-26
 
 ## Bottom line
 
@@ -11,12 +11,14 @@ query behavior, RDF Dataset Canonicalization, finite RDFS, OWL 2 RL/RDF,
 SHACL feature lanes, Datalog D0–D2, and a reviewed Apache Jena outcome
 intersection. These results establish only the named tested surfaces.
 
-They are not current-HEAD qualification after the backend-neutral write work.
-The Jena profile seals subject `1fe53cef...`, while the current subject is
-`997e2579...`; Agentic-QE also expects 133/116 CLI tests while current exact
-default/no-default inventories contain 144/129. The Jena, Agentic aggregate,
-mutation, and full MetaHarness receipts must therefore be regenerated through
-their reviewed fail-closed workflows before being called current.
+G0.3 now seals the reviewed Jena profile to subject `182972ec...` with two
+byte-identical 76/198 runs. G0.4-G0.5 reconcile the exact 144/129 CLI and
+34-test persistence-write profiles. G0.6 seals the current generic OxDatalog
+D0-D2 scope to immutable run `731e6467...`, and G0.7 freezes these identities
+across the ledger and protected claim documents. Each is current only for its
+named scope. The 41/47-command aggregate Agentic receipt and full MetaHarness
+qualification plus independent verification have not been regenerated, so no
+umbrella current-HEAD qualification follows.
 
 They do **not** establish Apache Jena parity, RDF 1.2 parity, SPARQL 1.2 parity,
 SHACL 1.2 parity, OWL family conformance, or aggregate W3C 1.2 parity. The
@@ -29,7 +31,7 @@ closure remain incomplete.
 
 | Surface | Last sealed bounded result | Claim boundary |
 |---|---:|---|
-| OxDatalog D0–D2 | 70 native tests pass; 358 mutants generated, 278 caught, 80 unviable, 0 missed, 0 timed out | Full-source mutation gate closed for its sealed source snapshot with 100% of viable mutants caught; current binding open |
+| OxDatalog D0–D2 | 70 native tests pass; current G0.6 run has 358 mutants generated, 278 caught, 80 unviable, 0 missed, 0 timed out | Generic D0-D2 source/runtime-bound mutation gate closed with 100% of viable mutants caught; no persistence-write or umbrella authority |
 | Semantic store integration | 4 integration tests pass | Stable-snapshot public profile integration only |
 | RDF 1.2 official manifests | 575/575 pass | Exact pinned suite, not full family parity |
 | SPARQL 1.2 official manifest | 269/269 pass | Does not cover every protocol, service, federation, entailment, or result-format obligation |
@@ -39,7 +41,7 @@ closure remain incomplete.
 | OWL 2 RL/RDF | 98/98 assertions across 68 RDF-based cases | Exact 78-rule inventory: 46 Datalog rules and 32 specialized operators |
 | SHACL 1.2 evidence lanes | 521 discovered; 519/519 eligible cases pass; 2 invalid upstream exclusions; Rust 167/167 all-feature and 114/114 no-default tests; Jena SHACL-C 32/32 | Five separately classified lanes; synchronous WebAssembly SPARQL-backed validation fails closed because cooperative timeout/cancellation cannot be guaranteed; no family-parity claim |
 | Apache Jena 6.1.0 differential | 76 scenarios and 198 assertions | Reviewed outcome intersection only; one distinct successful outcome is a W3C-permitted implementation variant |
-| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 18/18 adversarial tests; exact ordered 41-command Meta gate and 47-command parity profiles | Sequential, repository-leased coordinator and receipt recorder; never the semantic oracle |
+| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 18/18 adversarial tests; 144/129 CLI and 34/34 persistence-write scoped profiles; exact ordered 41-command Meta gate and 47-command parity definitions | Sequential, repository-leased coordinator and receipt recorder; scoped evidence is not a current aggregate receipt and never the semantic oracle |
 | MetaHarness/Darwin `latest` (lock-resolved 0.9.3) | Full semantic-mode runner plus independent verification | No qualification result exists unless both current receipts verify against the same protected snapshot; never a semantic oracle |
 
 The Jena matrix classifies 70 scenarios as agreement, 4 as
@@ -51,21 +53,24 @@ allowed by SPARQL 1.2; it is neither an override nor a conformance failure.
 The immutable profile closes that reviewed intersection, not the larger Apache
 Jena capability portfolio.
 
-The sealed profile is
+The current scoped G0.3 profile is
 `jena-6.1.0-outcome-intersection-2026-07-27-v1`. Two complete runs produced
 byte-identical evidence with subject SHA-256
-`1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d`
+`182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63`
 and receipt SHA-256
-`48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76`.
+`7209da6a1610f4f5252de97d13f75b46483b88f8f8a754d0d30170a92b6c401e`.
+The original July subject and receipt remain historical evidence only.
 
-The final full-source mutation receipt is valid for its frozen library and
-mutation-policy inputs, not current HEAD. Immutable run
-`5c7397b1-881e-4548-a5f5-f978da254bde` has receipt SHA-256
-`ad3dba338080e1f748570aba6c6a8ecec495bd1b9086d160e7f09b7308023727`
-and content hash
-`221f1875b906cf29e6cb918cfdcedc004671e8671a030e48d9f10f4dc4120f26`;
-its native outcomes contain one successful baseline, 358 unique mutants,
-zero survivors, and zero timeouts.
+The current scoped G0.6 mutation evidence is immutable run
+`731e6467-2cab-4260-8d15-b34e4ebc8ed6`, with receipt SHA-256
+`fc0ec6dbb0c8dec0b3c9e2d58814372c8feebc8ec291528df1fdf432879b2ba5`,
+content hash
+`88de934ca8eba02ac985ab7bab25e7ea98d8b5412ecfcb623261b27e7cfec308`,
+and protected input hash
+`9898ef56c90cbcd8eef9cd490c2d63c9ed42a9a96c5ccab39d99ba834d707c3d`.
+Its native outcomes contain one successful baseline, 358 unique mutants,
+zero survivors, and zero timeouts under `cargo-mutants` 27.1.0. Later changes
+to its protected OxDatalog roots reopen this evidence.
 
 ## SHACL evidence topology
 
@@ -135,9 +140,14 @@ parity.
 3. Prove Rust, Python, JavaScript, CLI, and HTTP agreement wherever a
    capability is public.
 4. Keep the full MetaHarness/Darwin receipt and its independent verification
-   current after every protected-input change; neither can close a normative
-   gap on its own.
+   current after every protected-input change. No current full receipt exists
+   at this checkpoint, and neither receipt can close a normative gap on its
+   own.
 5. Advance reviewed draft pins only through an explicit drift review.
+
+G1.7 compatibility/performance evidence and its human promotion decision are a
+separate product gate. They cannot be inferred from semantic qualification or
+from the scoped G0 receipts above.
 
 ## Canonical references
 

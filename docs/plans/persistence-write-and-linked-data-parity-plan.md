@@ -287,7 +287,7 @@ The unfinished work is split by architectural ownership:
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Harness registry and rejection-evidence controls implemented; ADR-0018 and G0.6/G0.7/G1.7 promotion gate remain open |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Harness registry and rejection-evidence controls implemented; G0.6/G0.7 scoped evidence is reconciled; ADR-0018 and G1.7 compatibility/performance promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -312,8 +312,9 @@ ADR-0017's two post-G1.6 harness controls are now closed independently. Commit
 command registries authoritative; commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` adds replay-verified application
 receipt v6 rejection evidence without granting Router quality. Both controls
-remain local-only and non-promoting. They do not complete ADR-0018 or the G0.6,
-G0.7, and G1.7 compatibility/performance promotion gate.
+remain local-only and non-promoting. G0.6 and G0.7 subsequently closed their
+scoped mutation and claim-reconciliation checkpoints; those closures do not
+complete ADR-0018 or the G1.7 compatibility/performance promotion gate.
 
 ### Slice 0 — upstream and write seam (complete)
 
