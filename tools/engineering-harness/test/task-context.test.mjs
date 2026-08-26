@@ -233,7 +233,7 @@ function verifierReceipt(
       durationMs: 1,
       stdoutSha256: digest(`${name}-stdout`),
       stderrSha256: digest(`${name}-stderr`),
-      stdoutTail: ["public", "independent", "regression"].includes(name)
+      stdoutTail: contract.verificationSequence.slice(2).includes(name)
         ? verdict === "REJECT" && name === "public"
           ? "test result: FAILED. 0 passed; 2 failed;"
           : `test result: ok. ${contract.success[`${name}Passed`]} passed; 0 failed;`
@@ -246,6 +246,55 @@ function verifierReceipt(
     protectedManifest: structuredClone(candidate.protectedManifest),
   };
 }
+
+test("task context binds the optional service evaluator and its accepted evidence", async (t) => {
+  const state = await fixture(t);
+  state.contract.verificationSequence.splice(3, 0, "service");
+  state.contract.commands.service = {
+    argv: [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "oxigraph-cli",
+      "--bin",
+      "oxigraph",
+      "service_description::tests::",
+    ],
+    timeoutMs: 300_000,
+  };
+  state.contract.success.servicePassed = 17;
+  const sourceSnapshot = await createG12SourceSnapshot({
+    evaluator: state.evaluator,
+    contract: state.contract,
+    contractSha256: state.contractSha256,
+  });
+  const candidate = candidateDescriptor(state.contract);
+  const task = await createG12TaskContext({
+    role: "review",
+    sourceSnapshot,
+    contract: state.contract,
+    contractSha256: state.contractSha256,
+    priorOutputs: prior("architecture", "critique", "implementation"),
+    currentCandidate: candidate,
+    verifierReceipt: verifierReceipt(state.contract, "ACCEPT", candidate),
+  });
+
+  assert.deepEqual(task.bindings.verification.sequence, [
+    "format",
+    "build",
+    "public",
+    "service",
+    "independent",
+    "regression",
+  ]);
+  assert.equal(task.bindings.verification.success.servicePassed, 17);
+  assert.match(
+    task.verifier.receipt.commands.find(({ name }) => name === "service")
+      .stdoutTail,
+    /test result: ok\. 17 passed; 0 failed;/u,
+  );
+});
 
 function formatRejectReceipt(contract, candidate, sandboxArgc) {
   const receipt = verifierReceipt(contract, "REJECT", candidate);

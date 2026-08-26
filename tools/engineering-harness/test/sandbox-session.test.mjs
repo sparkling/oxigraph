@@ -84,7 +84,21 @@ async function createFixture(root) {
     ...["public", "independent", "regression"].map((name) =>
       writeFile(
         join(workspace, "tests", `${name}.rs`),
-        '#[test]\nfn evaluator_is_green() {\n    assert_eq!(session_fixture::answer(), 42);\n}\n',
+        [
+          "#[test]",
+          "fn evaluator_is_green() {",
+          "    assert_eq!(",
+          '        std::env::var("CARGO_INCREMENTAL").expect("incremental control"),',
+          '        "0"',
+          "    );",
+          "    assert_eq!(",
+          '        std::env::var("CARGO_PROFILE_TEST_DEBUG").expect("debug control"),',
+          '        "0"',
+          "    );",
+          "    assert_eq!(session_fixture::answer(), 42);",
+          "}",
+          "",
+        ].join("\n"),
       ),
     ),
   ]);
@@ -117,6 +131,28 @@ function binaryCommandPlan() {
       ]),
       timeoutMs: 30_000,
     }),
+  });
+}
+
+function serviceCommandPlan() {
+  const plan = commandPlan();
+  return Object.freeze({
+    format: plan.format,
+    build: plan.build,
+    public: plan.public,
+    service: Object.freeze({
+      argv: Object.freeze([
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "public",
+        "evaluator_is_green",
+      ]),
+      timeoutMs: 30_000,
+    }),
+    independent: plan.independent,
+    regression: plan.regression,
   });
 }
 
@@ -374,6 +410,14 @@ test("one quota-bound namespace preserves build state across every evaluator", {
     assert.ok(structural.includes("--unshare-net"));
     assert.ok(structural.includes("--unshare-pid"));
     assert.ok(structural.includes("--clearenv"));
+    const incrementalIndex = structural.indexOf("CARGO_INCREMENTAL");
+    assert.ok(incrementalIndex > 0);
+    assert.equal(structural[incrementalIndex - 1], "--setenv");
+    assert.equal(structural[incrementalIndex + 1], "0");
+    const testDebugIndex = structural.indexOf("CARGO_PROFILE_TEST_DEBUG");
+    assert.ok(testDebugIndex > 0);
+    assert.equal(structural[testDebugIndex - 1], "--setenv");
+    assert.equal(structural[testDebugIndex + 1], "0");
     assert.ok(structural.includes("--remount-ro"));
     assert.notEqual(
       structural.findIndex(
@@ -462,6 +506,43 @@ test("production verifier protects writable state anchors from candidate code", 
       report.session.commands.every(
         ({ disposition, exitCode }) => disposition === "completed" && exitCode === 0,
       ),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("production verifier executes the optional service evaluator as its own bounded stage", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-session-service-test-"));
+  try {
+    const workspace = await createFixture(root);
+    const report = await runSandboxVerificationSession({
+      workspace,
+      commands: serviceCommandPlan(),
+      verificationSequence: [
+        "format",
+        "build",
+        "public",
+        "service",
+        "independent",
+        "regression",
+      ],
+      maxTotalWallMs: 150_000,
+      maxResidentBytes: 2 * 1024 * mebibyte,
+      maxDiskBytes: 512 * mebibyte,
+      cargoBuildJobs: 2,
+      maxBuildOutputBytes: mebibyte,
+      maxTestOutputBytesPerCommand: mebibyte,
+    });
+    assert.equal(report.session.status, "completed", report.session.error);
+    assert.equal(report.session.stage, "complete");
+    assert.deepEqual(
+      report.session.commands.map(({ name }) => name),
+      ["format", "build", "public", "service", "independent", "regression"],
+    );
+    assert.match(
+      report.session.commands.find(({ name }) => name === "service").stdout,
+      /test result: ok\. 1 passed; 0 failed;/u,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

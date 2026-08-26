@@ -18,7 +18,14 @@ import { currentControlIdentity } from "./control-identity.mjs";
 import { createTaskSourceSnapshot } from "./task-context.mjs";
 
 const redVerdicts = new Set(["CONFIRMED_RED", "INCONCLUSIVE", "INVALID_BASELINE"]);
-const commandNames = new Set(["format", "build", "public", "independent", "regression"]);
+const commandNames = new Set([
+  "format",
+  "build",
+  "public",
+  "service",
+  "independent",
+  "regression",
+]);
 const commandDispositions = new Set(["completed", "timed-out", "output-limit"]);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 

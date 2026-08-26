@@ -6,15 +6,38 @@ import {
   MAX_TASK_ARG_BYTES,
 } from "../policy/evidence-limits.mjs";
 
-const commandOrder = Object.freeze([
+const legacyCommandOrder = Object.freeze([
   "format",
   "build",
   "public",
   "independent",
   "regression",
 ]);
-const evaluatorNames = Object.freeze(["public", "independent", "regression"]);
+const serviceCommandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
+  "independent",
+  "regression",
+]);
 const sessionArtifactName = "verifier-session-result.json";
+
+function commandOrder(contract) {
+  const sequence = contract.verificationSequence;
+  if (
+    ![legacyCommandOrder, serviceCommandOrder].some((expected) =>
+      sameArgv(sequence, expected),
+    )
+  ) {
+    throw new Error("contract has an unsupported verifier command sequence");
+  }
+  return sequence;
+}
+
+function evaluatorNames(contract) {
+  return commandOrder(contract).slice(2);
+}
 
 async function assertCandidateIdentity(candidate) {
   const [commit, tree] = await Promise.all([
@@ -81,6 +104,7 @@ function normalizedArtifacts(report) {
 }
 
 function validateSessionReport(report, contract) {
+  const order = commandOrder(contract);
   if (
     report?.session?.status !== "completed" ||
     report?.outcome?.disposition !== "completed" ||
@@ -100,13 +124,17 @@ function validateSessionReport(report, contract) {
   ) {
     throw new Error("single-session verifier returned invalid infrastructure evidence");
   }
-  const expectedCounts = Object.freeze({ format: 1, build: 2, complete: 5 });
+  const expectedCounts = Object.freeze({
+    format: 1,
+    build: 2,
+    complete: order.length,
+  });
   if (report.session.commands.length !== expectedCounts[report.session.stage]) {
     throw new Error("single-session verifier stage and command count disagree");
   }
   for (let index = 0; index < report.session.commands.length; index += 1) {
     const record = report.session.commands[index];
-    const name = commandOrder[index];
+    const name = order[index];
     if (
       record?.name !== name ||
       !sameArgv(record.logicalArgv, contract.commands[name].argv) ||
@@ -144,6 +172,7 @@ async function createVerificationSession({ candidate, contract, signal, sessionR
       maxResidentBytes: contract.ceilings.maxResidentBytes,
       maxDiskBytes: contract.ceilings.maxVerifierDiskBytes,
       cargoBuildJobs: contract.ceilings.cargoBuildJobs,
+      verificationSequence: commandOrder(contract),
       maxBuildOutputBytes: contract.ceilings.maxBuildOutputBytes,
       maxTestOutputBytesPerCommand: contract.ceilings.maxTestOutputBytesPerCommand,
       signal,
@@ -198,6 +227,21 @@ function commandPassed(command, expectedPassed) {
   return command.disposition === "completed" && command.exitCode === 0 && `${command.stdoutTail}\n${command.stderrTail}`.includes(`test result: ok. ${expectedPassed} passed; 0 failed;`);
 }
 
+function infrastructureFailure(session) {
+  return session.commands.some((command) => {
+    const outcome = session.rawOutcomes.get(command.name);
+    const diagnostic =
+      outcome?.diagnostic === undefined || outcome.diagnostic === null
+        ? null
+        : normalizeCommandFailureDiagnostic(outcome.diagnostic);
+    return (
+      ["timeout", "timeout-unreaped"].includes(outcome?.disposition) ||
+      diagnostic?.primaryClass === "state-exhausted" ||
+      ["ENOSPC", "EDQUOT"].includes(diagnostic?.ioErrno)
+    );
+  });
+}
+
 function initialRedMatched(evidence, outcome, initialRed) {
   if (
     evidence?.disposition !== "completed" ||
@@ -229,10 +273,20 @@ async function verifyCandidateWithRunner({ candidate, contract, signal }, sessio
     throw new Error("candidate verification requires a sealed product patch");
   }
   const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
+  if (infrastructureFailure(session)) {
+    return earlyVerdict(session, candidate, "INCONCLUSIVE", "infrastructure");
+  }
   if (session.commands[0]?.disposition !== "completed" || session.commands[0]?.exitCode !== 0) return earlyVerdict(session, candidate, "REJECT", "format");
   if (session.commands[1]?.disposition !== "completed" || session.commands[1]?.exitCode !== 0) return earlyVerdict(session, candidate, "REJECT", "build");
-  const evaluatorCommands = session.commands.filter(({ name }) => evaluatorNames.includes(name));
-  const green = evaluatorCommands.length === evaluatorNames.length && evaluatorCommands.every((command) => commandPassed(command, contract.success[`${command.name}Passed`]));
+  const expectedEvaluators = evaluatorNames(contract);
+  const evaluatorCommands = session.commands.filter(({ name }) =>
+    expectedEvaluators.includes(name),
+  );
+  const green =
+    evaluatorCommands.length === expectedEvaluators.length &&
+    evaluatorCommands.every((command) =>
+      commandPassed(command, contract.success[`${command.name}Passed`]),
+    );
   return Object.freeze({
     verdict: green ? "ACCEPT" : "REJECT",
     stage: green ? "complete" : "evaluation",
@@ -249,6 +303,15 @@ async function verifyRedBaselineWithRunner({ candidate, contract, signal }, sess
   }
   const session = await createVerificationSession({ candidate, contract, signal, sessionRunner });
   const commands = redBaselineCommands(session);
+  if (infrastructureFailure(session)) {
+    return earlyVerdict(
+      session,
+      candidate,
+      "INCONCLUSIVE",
+      "infrastructure",
+      commands,
+    );
+  }
   if (commands[0]?.disposition !== "completed" || commands[0]?.exitCode !== 0) {
     return earlyVerdict(session, candidate, "INCONCLUSIVE", "format", commands);
   }

@@ -112,7 +112,7 @@ function successfulInvocation(invocation) {
   );
 }
 
-function actionableProductRejection(verifier) {
+function actionableProductRejection(verifier, contract) {
   if (
     verifier?.verdict !== "REJECT" ||
     !Array.isArray(verifier.commands) ||
@@ -127,7 +127,11 @@ function actionableProductRejection(verifier) {
   ) {
     return false;
   }
-  const expected = { format: 1, build: 2, evaluation: 5 }[verifier.stage];
+  const expected = {
+    format: 1,
+    build: 2,
+    evaluation: 2 + Object.keys(contract.success).length,
+  }[verifier.stage];
   if (expected !== verifier.commands.length) return false;
   if (verifier.stage === "format") return verifier.commands[0].exitCode !== 0;
   if (verifier.commands[0].exitCode !== 0) return false;
@@ -467,7 +471,9 @@ async function executeProgramme(
   let selected = chooseVerifiedCandidate(attempts);
   let repairParent =
     selected === null
-      ? attempts.find(({ verifier }) => actionableProductRejection(verifier)) ?? null
+      ? attempts.find(({ verifier }) =>
+          actionableProductRejection(verifier, contract),
+        ) ?? null
       : null;
   for (
     let cycle = 1;
@@ -540,7 +546,9 @@ async function executeProgramme(
     selected = chooseVerifiedCandidate(attempts);
     repairParent =
       selected === null
-        ? cycleAttempts.find(({ verifier }) => actionableProductRejection(verifier)) ?? null
+        ? cycleAttempts.find(({ verifier }) =>
+            actionableProductRejection(verifier, contract),
+          ) ?? null
         : null;
   }
 
@@ -606,7 +614,7 @@ async function executeProgramme(
   let final;
   if (selected === null) {
     const productRejected = attempts.some(({ verifier }) =>
-      actionableProductRejection(verifier),
+      actionableProductRejection(verifier, contract),
     );
     final = Object.freeze({
       verdict: productRejected ? "REJECT" : "INCONCLUSIVE",

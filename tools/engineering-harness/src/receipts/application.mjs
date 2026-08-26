@@ -37,13 +37,32 @@ const WORKER_ROLES = new Set([
   "repair",
 ]);
 const FINAL_VERDICTS = new Set(["ACCEPT", "REJECT", "INCONCLUSIVE"]);
-const REQUIRED_ACCEPT_COMMANDS = Object.freeze([
+const LEGACY_VERIFIER_COMMANDS = Object.freeze([
   "format",
   "build",
   "public",
   "independent",
   "regression",
 ]);
+const SERVICE_VERIFIER_COMMANDS = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
+  "independent",
+  "regression",
+]);
+const ALLOWED_VERIFIER_COMMANDS = new Set(SERVICE_VERIFIER_COMMANDS);
+
+function requiredVerifierCommands(contract) {
+  return Object.hasOwn(contract.success, "servicePassed")
+    ? SERVICE_VERIFIER_COMMANDS
+    : LEGACY_VERIFIER_COMMANDS;
+}
+
+function evaluatorCommandNames(contract) {
+  return requiredVerifierCommands(contract).slice(2);
+}
 
 const DRAFT_KEYS = new Set([
   "run",
@@ -316,32 +335,39 @@ function normalizeContract(value) {
     new Set(["sha256", "baseline", "evaluator", "success"]),
     "application contract binding",
   );
-  exactKeys(
-    value.success,
-    new Set(["publicPassed", "independentPassed", "regressionPassed"]),
-    "contract success counts",
-  );
+  const successKeys = Object.hasOwn(value.success, "servicePassed")
+    ? ["publicPassed", "servicePassed", "independentPassed", "regressionPassed"]
+    : ["publicPassed", "independentPassed", "regressionPassed"];
+  exactKeys(value.success, new Set(successKeys), "contract success counts");
+  const success = {
+    publicPassed: integer(
+      value.success.publicPassed,
+      "contract.success.publicPassed",
+      { min: 1 },
+    ),
+    independentPassed: integer(
+      value.success.independentPassed,
+      "contract.success.independentPassed",
+      { min: 1 },
+    ),
+    regressionPassed: integer(
+      value.success.regressionPassed,
+      "contract.success.regressionPassed",
+      { min: 1 },
+    ),
+  };
+  if (Object.hasOwn(value.success, "servicePassed")) {
+    success.servicePassed = integer(
+      value.success.servicePassed,
+      "contract.success.servicePassed",
+      { min: 1 },
+    );
+  }
   return Object.freeze({
     sha256: digest(value.sha256, "contract.sha256"),
     baseline: normalizeBaseline(value.baseline),
     evaluator: normalizeEvaluator(value.evaluator),
-    success: Object.freeze({
-      publicPassed: integer(
-        value.success.publicPassed,
-        "contract.success.publicPassed",
-        { min: 1 },
-      ),
-      independentPassed: integer(
-        value.success.independentPassed,
-        "contract.success.independentPassed",
-        { min: 1 },
-      ),
-      regressionPassed: integer(
-        value.success.regressionPassed,
-        "contract.success.regressionPassed",
-        { min: 1 },
-      ),
-    }),
+    success: Object.freeze(success),
   });
 }
 
@@ -1148,7 +1174,7 @@ function normalizeCommand(value, index, label) {
     commandLabel,
   );
   const name = string(value.name, `${commandLabel}.name`, 64);
-  if (!REQUIRED_ACCEPT_COMMANDS.includes(name)) {
+  if (!ALLOWED_VERIFIER_COMMANDS.has(name)) {
     throw new Error(`${commandLabel}.name is not a frozen verifier command`);
   }
   const logicalArgv = stringArray(
@@ -1228,11 +1254,12 @@ function commandPassedCount(command, expectedPassed) {
 
 function verifierQuality(verifier, contract) {
   if (!new Set(["ACCEPT", "REJECT"]).has(verifier.verdict)) return null;
+  const requiredCommands = requiredVerifierCommands(contract);
   const expectedCount = {
     format: 1,
     build: 2,
-    evaluation: 5,
-    complete: 5,
+    evaluation: requiredCommands.length,
+    complete: requiredCommands.length,
   }[verifier.stage];
   if (
     expectedCount === undefined ||
@@ -1262,7 +1289,7 @@ function verifierQuality(verifier, contract) {
   ) {
     return null;
   }
-  const evaluatorsPassed = ["public", "independent", "regression"].every(
+  const evaluatorsPassed = evaluatorCommandNames(contract).every(
     (name) =>
       commandPassedCount(
         verifier.commands.find((command) => command.name === name),
@@ -1299,10 +1326,11 @@ function normalizeVerifier(value, contract, label) {
     value.commands.map((command, index) => normalizeCommand(command, index, label)),
   );
   const commandNames = commands.map(({ name }) => name);
+  const requiredCommands = requiredVerifierCommands(contract);
   if (new Set(commandNames).size !== commandNames.length) {
     throw new Error(`${label}.commands contains duplicate command names`);
   }
-  const expectedPrefix = REQUIRED_ACCEPT_COMMANDS.slice(0, commandNames.length);
+  const expectedPrefix = requiredCommands.slice(0, commandNames.length);
   if (canonicalJson(commandNames) !== canonicalJson(expectedPrefix)) {
     throw new Error(`${label}.commands are not in the frozen execution order`);
   }
@@ -1324,9 +1352,9 @@ function normalizeVerifier(value, contract, label) {
   if (
     verifierVerdict === "ACCEPT" &&
     (value.stage !== "complete" ||
-      canonicalJson(commandNames) !== canonicalJson(REQUIRED_ACCEPT_COMMANDS) ||
+      canonicalJson(commandNames) !== canonicalJson(requiredCommands) ||
       !commands.every(commandSucceeded) ||
-      !["public", "independent", "regression"].every((name) =>
+      !evaluatorCommandNames(contract).every((name) =>
         commandPassedCount(
           commands.find((command) => command.name === name),
           contract.success[`${name}Passed`],

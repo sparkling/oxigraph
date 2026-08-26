@@ -26,10 +26,18 @@ const workerSource = fileURLToPath(
 const seccompLauncherSource = fileURLToPath(
   new URL("./seccomp-launcher.py", import.meta.url),
 );
-const commandOrder = Object.freeze([
+const legacyCommandOrder = Object.freeze([
   "format",
   "build",
   "public",
+  "independent",
+  "regression",
+]);
+const serviceCommandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
   "independent",
   "regression",
 ]);
@@ -99,8 +107,17 @@ function frozenCommands(commands, maxBuildOutputBytes, maxTestOutputBytesPerComm
   if (commands === null || typeof commands !== "object") {
     throw new Error("verifier commands are required");
   }
+  const order = Object.hasOwn(commands, "service")
+    ? serviceCommandOrder
+    : legacyCommandOrder;
+  if (
+    Object.keys(commands).length !== order.length ||
+    order.some((name) => !Object.hasOwn(commands, name))
+  ) {
+    throw new Error("verifier commands do not match a supported frozen sequence");
+  }
   return Object.freeze(
-    commandOrder.map((name) => {
+    order.map((name) => {
       const command = commands[name];
       if (
         command === null ||
@@ -260,8 +277,14 @@ export function sandboxSessionArguments({
     "CARGO_HOME",
     "/state/cargo",
     "--setenv",
+    "CARGO_INCREMENTAL",
+    "0",
+    "--setenv",
     "CARGO_NET_OFFLINE",
     "true",
+    "--setenv",
+    "CARGO_PROFILE_TEST_DEBUG",
+    "0",
     "--setenv",
     "CARGO_TARGET_DIR",
     "/state/target",
@@ -433,6 +456,7 @@ export async function runSandboxVerificationSession({
   cargoBuildJobs,
   maxBuildOutputBytes,
   maxTestOutputBytesPerCommand,
+  verificationSequence,
   signal,
   processRunner = runBoundedProcess,
 }) {
@@ -449,6 +473,15 @@ export async function runSandboxVerificationSession({
     maxBuildOutputBytes,
     maxTestOutputBytesPerCommand,
   );
+  if (
+    verificationSequence !== undefined &&
+    !sameArgv(
+      verificationSequence,
+      logicalCommands.map(({ name }) => name),
+    )
+  ) {
+    throw new Error("contract verification sequence disagrees with frozen commands");
+  }
   if (logicalCommands.some(({ timeoutMs }) => timeoutMs > maxTotalWallMs)) {
     throw new Error("command timeout exceeds the total verifier timeout");
   }

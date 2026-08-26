@@ -376,12 +376,23 @@ function validateContract(contract, contractSha256) {
     if (contract.scope[name] !== false) fail(`contract.scope.${name} must be false`);
   }
 
-  const sequence = ["format", "build", "public", "independent", "regression"];
+  const legacySequence = ["format", "build", "public", "independent", "regression"];
+  const serviceSequence = [
+    "format",
+    "build",
+    "public",
+    "service",
+    "independent",
+    "regression",
+  ];
+  const sequence = Object.hasOwn(contract.commands, "service")
+    ? serviceSequence
+    : legacySequence;
   if (
     !Array.isArray(contract.verificationSequence) ||
     canonicalJson(contract.verificationSequence) !== canonicalJson(sequence)
   ) {
-    fail("contract verification sequence is not the frozen five-stage sequence");
+    fail("contract verification sequence is not a supported frozen sequence");
   }
   exactKeys(contract.commands, sequence, "contract.commands");
   for (const name of sequence) {
@@ -436,7 +447,11 @@ function validateContract(contract, contractSha256) {
   }
   requireStringArray(contract.initialRed.requiredSubstrings, "contract.initialRed.requiredSubstrings", 32);
   requireStringArray(contract.initialRed.forbiddenSubstrings, "contract.initialRed.forbiddenSubstrings", 32);
-  exactKeys(contract.success, ["publicPassed", "independentPassed", "regressionPassed"], "contract.success");
+  exactKeys(
+    contract.success,
+    sequence.slice(2).map((name) => `${name}Passed`),
+    "contract.success",
+  );
   for (const name of Object.keys(contract.success)) {
     requireSafeInteger(contract.success[name], `contract.success.${name}`, 1);
   }
@@ -812,7 +827,7 @@ function normalizeVerifierReceipt(role, receipt, contract, currentCandidate) {
     ) {
       fail("accepted verifier receipt is not complete and green");
     }
-    for (const name of ["public", "independent", "regression"]) {
+    for (const name of contract.verificationSequence.slice(2)) {
       const command = commands.find((entry) => entry.name === name);
       const expected = contract.success[`${name}Passed`];
       if (

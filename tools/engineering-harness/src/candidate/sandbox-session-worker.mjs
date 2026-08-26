@@ -20,10 +20,18 @@ import { performance } from "node:perf_hooks";
 const resultPath = "/result/session.json";
 const workspace = "/workspace";
 const targetRoot = "/state/target";
-const commandOrder = Object.freeze([
+const legacyCommandOrder = Object.freeze([
   "format",
   "build",
   "public",
+  "independent",
+  "regression",
+]);
+const serviceCommandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
   "independent",
   "regression",
 ]);
@@ -68,6 +76,19 @@ function readConfiguration() {
   return JSON.parse(source);
 }
 
+function commandOrder(commands) {
+  const names = commands.map(({ name }) => name);
+  const order = [legacyCommandOrder, serviceCommandOrder].find(
+    (candidate) =>
+      candidate.length === names.length &&
+      candidate.every((name, index) => names[index] === name),
+  );
+  if (order === undefined) {
+    throw new Error("verifier commands are not in a supported frozen order");
+  }
+  return order;
+}
+
 function validateConfiguration(value) {
   if (value?.schemaVersion !== 1 || !Array.isArray(value.commands)) {
     throw new Error("invalid verifier-session configuration");
@@ -93,11 +114,9 @@ function validateConfiguration(value) {
   ) {
     throw new Error("invalid Cargo build-job ceiling");
   }
-  if (value.commands.length !== commandOrder.length) {
-    throw new Error("verifier session requires the five frozen command roles");
-  }
+  const order = commandOrder(value.commands);
   const commands = value.commands.map((command, index) => {
-    if (command?.name !== commandOrder[index]) {
+    if (command?.name !== order[index]) {
       throw new Error("verifier commands are not in frozen order");
     }
     if (
@@ -246,7 +265,9 @@ function commandEnvironment(cargoBuildJobs) {
   return Object.freeze({
     CARGO_BUILD_JOBS: String(cargoBuildJobs),
     CARGO_HOME: "/state/cargo",
+    CARGO_INCREMENTAL: "0",
     CARGO_NET_OFFLINE: "true",
+    CARGO_PROFILE_TEST_DEBUG: "0",
     CARGO_TARGET_DIR: targetRoot,
     HOME: "/state/home",
     LANG: "C.UTF-8",

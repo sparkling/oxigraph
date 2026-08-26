@@ -112,6 +112,7 @@
     "format",
     "build",
     "public",
+    "service",
     "independent",
     "regression"
   ],
@@ -125,7 +126,11 @@
       "timeoutMs": 2700000
     },
     "public": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "-p", "oxigraph-cli", "--features", "oxigraph/http-client-native-tls,oxigraph/rdf-12,oxigraph-cli/native-tls,oxigraph-cli/rdf-12", "--test", "sparql_effective_capabilities", "--bin", "oxigraph"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--features", "http-client-native-tls,rdf-12", "--test", "sparql_effective_capabilities"],
+      "timeoutMs": 300000
+    },
+    "service": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph-cli", "--features", "native-tls,rdf-12", "--bin", "oxigraph", "service_description::tests::"],
       "timeoutMs": 300000
     },
     "independent": {
@@ -175,6 +180,7 @@
   },
   "success": {
     "publicPassed": 4,
+    "servicePassed": 17,
     "independentPassed": 1,
     "regressionPassed": 12
   }

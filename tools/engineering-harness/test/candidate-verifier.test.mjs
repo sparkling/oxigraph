@@ -39,6 +39,13 @@ const commands = Object.freeze({
 
 const contract = Object.freeze({
   commands,
+  verificationSequence: Object.freeze([
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression",
+  ]),
   evaluator: { commit: "fixture" },
   ceilings: {
     maxTotalVerifierWallMs: 10_000,
@@ -119,19 +126,21 @@ function fakeSessionRunner({
   compilerRed = false,
   buildFails = false,
   formatFails = false,
+  failureName = null,
   failureDisposition = "completed",
   failureDiagnostic = emptyDiagnostic,
   sandboxArgv = null,
 }) {
   return async (options) => {
     calls.push(options);
-    const names = formatFails
+    const failedName = failureName ?? (formatFails ? "format" : buildFails ? "build" : null);
+    const names = failedName === "format"
       ? ["format"]
-      : buildFails
+      : failedName === "build"
         ? ["format", "build"]
-        : ["format", "build", "public", "independent", "regression"];
+        : [...options.verificationSequence];
     const records = names.map((name) => {
-      const failed = (name === "format" && formatFails) || (name === "build" && buildFails);
+      const failed = name === failedName;
       let exitCode = failed ? (failureDisposition === "completed" ? 101 : null) : 0;
       let stdout = "";
       let stderr = "";
@@ -208,7 +217,7 @@ function fakeSessionRunner({
       session: Object.freeze({
         schemaVersion: 1,
         status: "completed",
-        stage: formatFails ? "format" : buildFails ? "build" : "complete",
+        stage: failedName === "format" ? "format" : failedName === "build" ? "build" : "complete",
         commands: Object.freeze(records),
         artifacts: formatFails || buildFails
           ? Object.freeze([])
@@ -270,18 +279,34 @@ test("candidate verifier stops at a failed build", async (t) => {
   assert.strictEqual(result.protectedManifest, candidate.protectedManifest);
 });
 
-test("candidate verifier binds exact identity on product and infrastructure fail-fast outcomes", async (t) => {
+test("candidate verifier binds exact identity and keeps infrastructure failures inconclusive", async (t) => {
   const { candidate } = await fixture(t);
   const cases = [
     {
       name: "format product rejection",
       options: { formatFails: true },
       stage: "format",
+      verdict: "REJECT",
     },
     {
       name: "build infrastructure timeout",
       options: { buildFails: true, failureDisposition: "timeout" },
-      stage: "build",
+      stage: "infrastructure",
+      verdict: "INCONCLUSIVE",
+    },
+    {
+      name: "evaluation ENOSPC",
+      options: {
+        failureName: "public",
+        failureDiagnostic: Object.freeze({
+          ...emptyDiagnostic,
+          primaryClass: "state-exhausted",
+          ioArea: "target",
+          ioErrno: "ENOSPC",
+        }),
+      },
+      stage: "infrastructure",
+      verdict: "INCONCLUSIVE",
     },
   ];
   for (const fixtureCase of cases) {
@@ -290,7 +315,7 @@ test("candidate verifier binds exact identity on product and infrastructure fail
       fakeSessionRunner({ calls, ...fixtureCase.options }),
     );
     const result = await verifier.verifyCandidate({ candidate, contract });
-    assert.equal(result.verdict, "REJECT", fixtureCase.name);
+    assert.equal(result.verdict, fixtureCase.verdict, fixtureCase.name);
     assert.equal(result.stage, fixtureCase.stage, fixtureCase.name);
     assert.equal(result.candidateTree, candidate.candidateTree, fixtureCase.name);
     assert.strictEqual(
