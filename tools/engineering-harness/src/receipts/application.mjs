@@ -800,7 +800,7 @@ function successfulProcess(outcome) {
   );
 }
 
-function normalizeCritiqueDiagnostic(value, label) {
+function normalizeTerminalDiagnostic(value, label) {
   exactKeys(value, new Set(["summary", "findings"]), label);
   if (!Array.isArray(value.findings) || value.findings.length > 128) {
     throw new Error(`${label}.findings must contain 0..128 strings`);
@@ -815,7 +815,7 @@ function normalizeCritiqueDiagnostic(value, label) {
   });
 }
 
-function rejectedCritiqueOutputSha256(diagnostic) {
+function rejectedTerminalOutputSha256(diagnostic) {
   return sha256Bytes(
     JSON.stringify({
       summary: diagnostic.summary,
@@ -832,6 +832,7 @@ function normalizeNativeInvocations(
   {
     requireDiagnostics = false,
     requireCritiqueDiagnostics = false,
+    requireReviewDiagnostics = false,
   } = {},
 ) {
   if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
@@ -847,6 +848,7 @@ function normalizeNativeInvocations(
       const hasFailureCode = Object.hasOwn(item, "failureCode");
       const hasFailureDetail = Object.hasOwn(item, "failureDetailSha256");
       const hasCritiqueDiagnostic = Object.hasOwn(item, "critiqueDiagnostic");
+      const hasReviewDiagnostic = Object.hasOwn(item, "reviewDiagnostic");
       if (hasFailureCode !== hasFailureDetail) {
         throw new Error(`${label} must bind both native failure fields together`);
       }
@@ -907,6 +909,9 @@ function normalizeNativeInvocations(
       }
       if (hasCritiqueDiagnostic && requireCritiqueDiagnostics && !failed) {
         keys.add("critiqueDiagnostic");
+      }
+      if (hasReviewDiagnostic && requireReviewDiagnostics && !failed) {
+        keys.add("reviewDiagnostic");
       }
       exactKeys(
         item,
@@ -1009,16 +1014,39 @@ function normalizeNativeInvocations(
         );
       }
       const critiqueDiagnostic = hasCritiqueDiagnostic
-        ? normalizeCritiqueDiagnostic(
+        ? normalizeTerminalDiagnostic(
             item.critiqueDiagnostic,
             `${label}.critiqueDiagnostic`,
           )
         : null;
       if (
         critiqueDiagnostic !== null &&
-        rejectedCritiqueOutputSha256(critiqueDiagnostic) !== outputSha256
+        rejectedTerminalOutputSha256(critiqueDiagnostic) !== outputSha256
       ) {
         throw new Error(`${label}.critiqueDiagnostic does not bind its output hash`);
+      }
+      const expectsReviewDiagnostic =
+        requireReviewDiagnostics &&
+        common.role === "review" &&
+        status === "REJECT";
+      if (hasReviewDiagnostic !== expectsReviewDiagnostic) {
+        throw new Error(
+          expectsReviewDiagnostic
+            ? `${label} must retain its rejected review diagnostic`
+            : `${label} may not retain a review diagnostic`,
+        );
+      }
+      const reviewDiagnostic = hasReviewDiagnostic
+        ? normalizeTerminalDiagnostic(
+            item.reviewDiagnostic,
+            `${label}.reviewDiagnostic`,
+          )
+        : null;
+      if (
+        reviewDiagnostic !== null &&
+        rejectedTerminalOutputSha256(reviewDiagnostic) !== outputSha256
+      ) {
+        throw new Error(`${label}.reviewDiagnostic does not bind its output hash`);
       }
       if (
         ["implementation", "repair"].includes(common.role) &&
@@ -1044,6 +1072,7 @@ function normalizeNativeInvocations(
         outputSha256,
         patchSha256,
         ...(critiqueDiagnostic === null ? {} : { critiqueDiagnostic }),
+        ...(reviewDiagnostic === null ? {} : { reviewDiagnostic }),
         ...(hasFailureCode
           ? {
               failureCode: validateNativeFailureCode(
@@ -2149,6 +2178,7 @@ function normalizeReceipt(value) {
     {
       requireDiagnostics: schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1,
       requireCritiqueDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA,
+      requireReviewDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA,
     },
   );
   const attempts = normalizeAttempts(value.attempts, control, contract, {
@@ -2215,7 +2245,11 @@ export function createApplicationReceipt(draft) {
   const nativeInvocations = normalizeNativeInvocations(
     draft.nativeInvocations,
     control,
-    { requireDiagnostics: true, requireCritiqueDiagnostics: true },
+    {
+      requireDiagnostics: true,
+      requireCritiqueDiagnostics: true,
+      requireReviewDiagnostics: true,
+    },
   );
   const attempts = normalizeAttempts(draft.attempts, control, contract);
   const reviews = normalizeReviews(draft.reviews);

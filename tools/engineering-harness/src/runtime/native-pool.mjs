@@ -78,8 +78,8 @@ function invocationEvidence(sequence, executionId, result) {
   if (output !== null && output.verdict !== result.status) {
     throw new Error("native worker status does not match its validated output verdict");
   }
-  const critiqueDiagnostic =
-    result.role === "critique" && result.status === "REJECT"
+  const rejectedDiagnostic =
+    ["critique", "review"].includes(result.role) && result.status === "REJECT"
       ? Object.freeze({
           summary: output.summary,
           findings: Object.freeze([...output.findings]),
@@ -102,7 +102,9 @@ function invocationEvidence(sequence, executionId, result) {
     patchSha256: output?.patch === null || output?.patch === undefined
       ? null
       : sha256(output.patch),
-    ...(critiqueDiagnostic === null ? {} : { critiqueDiagnostic }),
+    ...(rejectedDiagnostic === null
+      ? {}
+      : { [`${result.role}Diagnostic`]: rejectedDiagnostic }),
     ...(failure === null
       ? {}
       : {

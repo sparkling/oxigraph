@@ -251,6 +251,7 @@ function routedDecision(context, provider) {
 function fixture({
   routedProvider = null,
   verification = "mixed",
+  reviewVerdict = "ACCEPT",
   claudeArchitectureReject = false,
   codexCritiqueReject = false,
   implementationOutputRejected = false,
@@ -263,6 +264,7 @@ function fixture({
     contract: preflight.contract,
     workerRunner: workerRunner({
       calls,
+      reviewVerdict,
       claudeArchitectureReject,
       codexCritiqueReject,
       implementationOutputRejected,
@@ -372,6 +374,27 @@ test("same-producer routed review remains receipt-valid and INCONCLUSIVE", async
   );
   assert.equal(finalized[0].receipt.reviews.length, 1);
   assert.equal(verifyApplicationReceipt(finalized[0].receipt).ok, true);
+});
+
+test("rejected terminal reviews retain bounded diagnostics in the v3 receipt", async () => {
+  const { run, finalized } = fixture({
+    reviewVerdict: "REJECT",
+    verification: "all-accept",
+  });
+  const result = await run({ runId: "rejected-review", clock: clock() });
+  assert.equal(result.final.verdict, "REJECT");
+  const receipt = finalized[0].receipt;
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v3");
+  for (const review of receipt.reviews) {
+    const invocation = receipt.nativeInvocations.find(
+      ({ id }) => id === review.invocationId,
+    );
+    assert.deepEqual(invocation.reviewDiagnostic, {
+      summary: `${review.provider} review`,
+      findings: [],
+    });
+  }
+  assert.equal(verifyApplicationReceipt(receipt).ok, true);
 });
 
 test("infrastructure outcome is neither repaired nor admitted as quality", async () => {
