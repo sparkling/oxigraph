@@ -10,6 +10,8 @@
 - Deterministic upstream test correction: `f9033c2b`
 - Conservative service-description reconciliation: `7dc190d3`
 - Runtime-derived service claims: `baeabb067c8c8419973842e5e060adf832e3f738`
+- Engineering harness registry:
+  `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
   [ADR-0018 and ADR-0020 through ADR-0033](../adr/README.md)
@@ -285,7 +287,7 @@ The unfinished work is split by architectural ownership:
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Accepted control and implemented egress decision; ADR-0018 and promotion remain open |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Implemented harness control and egress decision; ADR-0018 and promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |

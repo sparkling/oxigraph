@@ -6,18 +6,21 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
-  one-session sandbox, repair/review lifecycle, and application receipts are
-  implemented and directly tested. A dual-provider G1.2 application run is
-  accepted, and G1.3-G1.6 have direct source-bound candidate acceptances. The
-  existing `tools/metaharness` semantic qualifier remains separate; unattended
-  Dream Machine execution remains deferred behind the activation gates in this
-  ADR
+  one-session sandbox, repair/review lifecycle, application receipts, canonical
+  task registry, and generated command registry are implemented and directly
+  tested. A dual-provider G1.2 application run is accepted, and G1.3-G1.6 have
+  direct source-bound candidate acceptances. The existing `tools/metaharness`
+  semantic qualifier remains separate; unattended Dream Machine execution
+  remains deferred behind the activation gates in this ADR
 - Update note: implementation preserves human-only promotion and the
   committed G0-G4 task graph without treating Ruflo rows, installed packages,
   generic scores, or application receipts as semantic qualification. Native
   patch admission now also requires the exact canonical bytes to pass a
   bounded Git parser before an implementation or repair output can be labelled
-  accepted; sealed evaluator reconstruction remains the applicability authority
+  accepted; sealed evaluator reconstruction remains the applicability
+  authority. Commit `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`
+  makes registered task IDs the only task-selection authority and retains the
+  historical per-task exports only as compatibility shims
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -271,6 +274,15 @@ initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
 2026-08-24; the 2026-08-25 expansion added G1.5b-G1.5c, explicit G2.3a-G2.3c
 and G2.4a-G2.4b leaves, and G4.1-G4.8. `HARNESS-REGISTRY` is a named harness
 control between G1.6 and the G2.1 evaluator freeze, not a product G-identifier.
+It is implemented by commit
+`4a15caa07df37d884e7c74d4b69c0505ce3de6e1`: an exact ordered seven-task
+registry derives canonical contract paths and an exact ordered 27-command CLI
+surface. Contract, preflight, programme, and replay entrypoints accept a
+registered `taskId`; caller-selected contract paths and malformed, inherited,
+accessor-backed, duplicate, or unregistered identities fail before I/O. The
+next distinct control, `HARNESS-REJECTION-EVIDENCE`, must bind bounded
+candidate-specific reconstruction/applicability rejection evidence before the
+G2.1 evaluator is frozen.
 
 The current managed task surface persists repository-local execution state but
 does not expose a dependency or description-edit argument. Rows therefore
@@ -423,7 +435,12 @@ Non-authoritative local verification on 2026-08-24 established:
 
 Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
 
-- 111/111 engineering-harness tests and a passing dependency/provider doctor;
+- 180/180 engineering-harness tests on the committed registry tree and a
+  `runner-implemented` dependency/provider doctor. The doctor exposes the exact
+  27-command surface, confirms all five dependencies use the `latest` request
+  policy with integrity-bound installed artifacts, validates both native host
+  interfaces, and retains `mcpRegistered: false`, `localOnly: true`, and
+  `promotionAuthority: false`;
 - accepted dual-provider G1.2 application receipt
   `d303b85b766bd0c6d459044da4ca891e2d6b1feb728124cbeb2668c1372c8e2c`,
   with native Claude and Codex represented and every required cross-vendor
@@ -449,8 +466,10 @@ Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
 This ADR implements the engineering architecture and authority boundary; it
 does not claim that Dream Machine is an approved unattended runner, full
 MetaHarness qualification is current, or an application-harness acceptance is
-safe to promote. ADR-0018 and ADR-0020 through ADR-0033 remain Proposed until
-their product behavior and evidence exist. Each task still requires a
+safe to promote. The canonical registry control is closed, but bounded
+candidate-specific application rejection evidence remains a separate control
+before G2.1 evaluator freeze. ADR-0018 and ADR-0020 through ADR-0033 remain
+Proposed until their product behavior and evidence exist. Each task still requires a
 red/evaluator-separated corpus, direct control-plane tests, continuously
 current prerequisites,
 per-run authorization, activation status, and exact receipts above.

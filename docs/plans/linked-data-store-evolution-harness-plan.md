@@ -7,7 +7,7 @@
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Observed fork source before this documentation slice:
-  `baeabb067c8c8419973842e5e060adf832e3f738`
+  `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`
 - Semantic Builder handover reviewed against:
   `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
@@ -70,7 +70,7 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
 | Mutation receipt | Source-bound to the pre-write-interface library tree | Historical for its sealed OxDatalog subject; verify the harness and regenerate that exact scope before full qualification, without claiming persistence mutation coverage |
 | MetaHarness | 13/13 MetaHarness tests and synthetic qualification pass | Full qualification remains blocked by G0.6 mutation evidence and G0.7 protected-evidence reconciliation/freeze; G1.7 promotion is separate |
-| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, and digest evidence are implemented; G1.2-G1.6 have source-bound accepted candidates | Preserve separation from semantic qualification; each later task still needs its own direct evaluator and exact verifier artifact |
+| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered seven-task registry, and its exact generated 27-command registry are implemented; G1.2-G1.6 have source-bound accepted candidates | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -107,7 +107,7 @@ outside the programme until a further named decision admits them.
 | Brain | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims | Local source/tests remain authoritative for Oxigraph |
 | MetaHarness genome/score/OIA | Readiness and risk diagnostics | Generic identity and scores are advisory |
 | Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof; do not make it a worker host |
-| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, and candidate artifacts | Implemented for G1.2-G1.6 registration and accepted product candidates through G1.6; still no semantic or promotion authority |
+| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, candidate artifacts, and canonical task/command registration | Implemented for G1.2-G1.6: generic APIs are task-ID-only and CLI slugs resolve through the same registry; accepted product candidates are current through G1.6; still no semantic or promotion authority |
 | Darwin | Deterministic, bounded policy mutation after a product slice exists | `--confirm` requires operator review; never mutate product or oracle inputs |
 | Dream Machine | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled |
 
@@ -278,11 +278,16 @@ automatically by Dream Machine or Darwin.
 | G1.6 Runtime-derived service claims | G1.3, G1.5, G1.5b, G1.5c | M | Complete: seven ordered verifier stages accepted exact public/service/compatibility/independent/regression counts 4/17/1/1/12, and three product controls rejected |
 | G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6 | M | Existing semantics and current evidence green; approved write/read budgets met |
 
-`HARNESS-REGISTRY` is a harness-maintenance control, not a new product G task.
-It follows G1.6 and replaces duplicated per-task dispatch registration with a
-fail-closed static registry. G2.1's evaluator may be designed earlier, but its
-contract is not frozen until that control closes. The sequencing edge is
-therefore G1.6 → `HARNESS-REGISTRY` → G2.1 evaluator freeze.
+`HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` are harness-maintenance
+controls, not new product G tasks. The registry control follows G1.6 and is
+implemented by commit `4a15caa07df37d884e7c74d4b69c0505ce3de6e1` with an
+exact ordered seven-task registry, task-ID-only generic APIs, and an exact
+ordered 27-command surface. The rejection-evidence control follows it and must
+persist bounded candidate-specific reconstruction/applicability failures in
+replay-verified application receipts. G2.1's evaluator may be designed
+earlier, but its contract is not frozen until both controls close. The
+sequencing edge is therefore G1.6 → `HARNESS-REGISTRY` →
+`HARNESS-REJECTION-EVIDENCE` → G2.1 evaluator freeze.
 
 Execution record through 2026-08-26:
 
@@ -400,6 +405,17 @@ Execution record through 2026-08-26:
   `promotionAuthority: false`; they are not application receipts and grant no
   semantic-qualification or promotion authority. ADR-0019 is Implemented;
   ADR-0018 and G1.7 remain open.
+- `HARNESS-REGISTRY` is complete in commit
+  `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`. The registry derives canonical
+  `tasks/g1/<slug>/contract.json` paths for exactly G1.2, G1.3, G1.4, G1.5,
+  G1.5b, G1.5c, and G1.6; the generic contract, preflight, programme, and replay
+  APIs reject direct contract-path selection and unknown or malformed task
+  identities before I/O. The exact generated 27-command surface, all 180
+  harness tests, and the `runner-implemented` doctor pass. The doctor retains
+  `latest` dependency requests, valid native Codex and Claude interfaces,
+  `mcpRegistered: false`, `localOnly: true`, and `promotionAuthority: false`.
+  This closes registry drift only; `HARNESS-REJECTION-EVIDENCE`, G0.6, G0.7,
+  and G1.7 remain open.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -426,14 +442,17 @@ task.
 | G1.7 | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest | `cargo bench --locked -p oxigraph --bench transactional_write` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
 
 Engineering task contracts live below
-`tools/engineering-harness/tasks/g1/<task-id>/contract.json` and bind the
+`tools/engineering-harness/tasks/g1/<slug>/contract.json` and bind the
 baseline commit, evaluator commit, mutable/blocked paths, features, targets,
 ordered stage-specific commands, time/output/resource ceilings, and success
 criteria. G1.6 has seven ordered stages: format, build, public, service,
 compatibility, independent, and regression; its five counted stages require
 exactly 4/17/1/1/12 passing results.
 The G1.1-G1.6 evaluator files and G1.2-G1.6 task contracts are implemented.
-Direct candidate acceptance is current through G1.6. G1.5 covers remote egress, G1.5b covers
+The exact ordered registry for G1.2-G1.6 is implemented. Compatibility path
+constants are aliases of derived registry paths, while named wrappers delegate
+to the same generic task-ID API rather than registering a second path. Direct
+candidate acceptance is current through G1.6. G1.5 covers remote egress, G1.5b covers
 cancellation for update-owned transactions, and G1.5c covers negotiated
 generic admission without changing the caller-owned rollback boundary. G1.6
 derives deterministic configured-and-compiled disclosure from those effective
@@ -476,7 +495,7 @@ synthetic Darwin runs are prerequisites or diagnostics, not completion.
 
 | Task | Depends on | Size | Exit gate |
 |---|---|---:|---|
-| G2.1 Transactional namespace registry | G1.3-G1.4; evaluator freeze after `HARNESS-REGISTRY` | M | Namespace changes commit/rollback with data without affecting dataset equality |
+| G2.1 Transactional namespace registry | G1.3-G1.4; evaluator freeze after `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` | M | Namespace changes commit/rollback with data without affecting dataset equality |
 | G2.2 Normalized semantic change set | G1.1, G2.1 | L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously |
 | G2.3a Durable outcomes and atomic receipts | G1.3-G1.4, G2.2 | L | Durable key reservation, commit ID, primary state, and receipt commit atomically; lost-response/reopen lookup proves committed, durably absent, or indeterminate without replay |
 | G2.3b Authoritative transaction outbox | G2.3a | L | Receipt and ordered semantic events share the primary commit; at-least-once replay and deduplication have no crash gaps |
@@ -756,7 +775,7 @@ audit pointers needed for the expanded and corrected control edges are:
 
 | Plan IDs | Ruflo task rows |
 |---|---|
-| G1.5c / G1.6 / `HARNESS-REGISTRY` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787603736400-274ola` |
+| G1.5c / G1.6 / `HARNESS-REGISTRY` / `HARNESS-REJECTION-EVIDENCE` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787740750614-4bv1fw` / `task-1787603736400-274ola` |
 | G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
 | G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
 | G4.1 / G4.2 / G4.3 | `task-1787670631989-m5vxqk` / `task-1787728711461-3isex6` / `task-1787670632284-k0cti5` |

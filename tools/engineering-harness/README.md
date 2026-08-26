@@ -92,6 +92,70 @@ Current activation boundary:
 - no MCP server is registered until one canonical command registry is exercised
   through both the CLI and real JSON-RPC tests.
 
+The committed control surface is now generated from one fail-closed registry.
+`engineeringTaskRegistry` is the sole ordered identity authority for these
+exact task IDs:
+
+```text
+g1.2-rocksdb-serialized-writers
+g1.3-transaction-capabilities
+g1.4-bounded-writer-admission
+g1.5-unified-egress-policy
+g1.5b-update-cancellation
+g1.5c-negotiated-update
+g1.6-runtime-derived-service-claims
+```
+
+Each contract path is derived as `tasks/g1/<slug>/contract.json`; public contract, preflight,
+programme, and replay APIs select by canonical `taskId` only. Unknown,
+path-like, inherited, accessor-backed, duplicate, or caller-path-selected task
+identities are rejected before filesystem, runtime, verifier, or receipt I/O.
+The exported per-G1 profiles, contract-path constants, and named wrappers are
+compatibility shims over that generic task API, not parallel dispatch
+authorities.
+
+The same registry generates the task portion of an exact ordered 27-command
+CLI surface. The CLI resolves a slug to its registered `taskId` and dispatches
+preflight, run, and replay dynamically; the registry admits no extra, missing,
+duplicate, reordered, or malformed command. Its canonical order is:
+
+```text
+doctor           -> doctor
+g1.2.preflight   -> g1.2 preflight
+g1.3.preflight   -> g1.3 preflight
+g1.4.preflight   -> g1.4 preflight
+g1.5.preflight   -> g1.5 preflight
+g1.5b.preflight  -> g1.5b preflight
+g1.5c.preflight  -> g1.5c preflight
+g1.6.preflight   -> g1.6 preflight
+g1.2.run         -> g1.2 run [--run-id <safe-id>]
+g1.2.replay      -> g1.2 replay --receipt <runtime-name>
+g1.3.run         -> g1.3 run [--run-id <safe-id>]
+g1.3.replay      -> g1.3 replay --receipt <runtime-name>
+g1.4.run         -> g1.4 run [--run-id <safe-id>]
+g1.4.replay      -> g1.4 replay --receipt <runtime-name>
+g1.5.run         -> g1.5 run [--run-id <safe-id>]
+g1.5.replay      -> g1.5 replay --receipt <runtime-name>
+g1.5b.run        -> g1.5b run [--run-id <safe-id>]
+g1.5b.replay     -> g1.5b replay --receipt <runtime-name>
+g1.5c.run        -> g1.5c run [--run-id <safe-id>]
+g1.5c.replay     -> g1.5c replay --receipt <runtime-name>
+g1.6.run         -> g1.6 run [--run-id <safe-id>]
+g1.6.replay      -> g1.6 replay --receipt <runtime-name>
+receipt.verify   -> receipt verify --receipt <runtime-name>
+history.inspect  -> history inspect
+factory.diagnose -> factory diagnose --claude <outside-path> --codex <outside-path>
+help             -> help
+version          -> version
+```
+
+The right-hand forms are the usage strings printed by `help`. Commit
+`4a15caa07df37d884e7c74d4b69c0505ce3de6e1` implements this control. Its
+committed tree passes all 180 engineering-harness tests and reports
+`runner-implemented` from `doctor`, with all five dependencies requested from
+`latest`, both native host interfaces valid, `mcpRegistered: false`,
+`localOnly: true`, and `promotionAuthority: false`.
+
 G1.3 product commit `3bf9468c` has also passed the harness's direct candidate
 reconstruction and frozen verifier: exact patch `2d5412df6210246266426e3b7ee8be599744fc1093c9ac272b8d8d64a34fef04`,
 candidate tree `b369e766a3f8c02f6d580924dd943e08ebafcdf0`, unchanged protected

@@ -131,6 +131,15 @@ Implemented. ADR-0018 remains Proposed until the G1.7 compatibility,
 performance, and current-evidence promotion gate. The verifier artifacts are
 local-only evidence and grant no semantic-qualification or promotion authority.
 
+Engineering-harness commit
+`4a15caa07df37d884e7c74d4b69c0505ce3de6e1` centralizes those seven G1 task
+profiles in one ordered fail-closed registry and derives the exact 27-command
+CLI surface from it. Generic contract, preflight, run, and replay entrypoints
+accept registered task IDs only; direct contract-path selection and malformed
+or unregistered identities fail before runtime I/O. The committed control
+passes 180/180 harness tests and a `runner-implemented` doctor while remaining
+local-only, unregistered as MCP, and without promotion authority.
+
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
 ```toml
