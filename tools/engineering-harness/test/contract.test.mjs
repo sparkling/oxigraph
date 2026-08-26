@@ -206,6 +206,7 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
   assert.deepEqual(g16Profile.sourceAllowlist, [
     "lib/oxigraph/src/http.rs",
     "lib/oxigraph/src/sparql/mod.rs",
+    "lib/spareval/src/lib.rs",
     "cli/src/service_description.rs",
     "cli/src/main.rs",
     "cli/src/service_description/tests.rs",
@@ -213,6 +214,10 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     "lib/oxigraph/tests/sparql_version.rs",
     "lib/oxigraph/tests/sparql_egress_policy.rs",
   ]);
+  assert.match(g16Profile.guidance, /QueryEvaluator::has_default_service_handler/u);
+  assert.match(g16Profile.guidance, /Do not shadow that authority/u);
+  assert.match(g16Profile.guidance, /must not be gated by CLI TLS features/u);
+  assert.match(g16Profile.guidance, /UnionDefaultGraph only for query-capable endpoints/u);
   assert.ok(g16Profile.sourceAllowlist.includes(resolution.contract.evaluator.path));
   assert.equal(Object.hasOwn(resolution.contract.evaluator, "changes"), false);
   assert.equal(Object.hasOwn(resolution.contract, "evaluatorChanges"), false);

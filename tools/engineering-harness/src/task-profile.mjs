@@ -161,10 +161,11 @@ const profiles = Object.freeze({
       "cli/src/main.rs",
     ]),
     guidance:
-      "Expose a deterministic immutable snapshot of effective runtime remote capabilities. Treat an explicit custom default SERVICE handler as federation support, named-only handlers as insufficient, and built-in SERVICE/LOAD as available only when the configured egress policy contains at least one matching literal origin/IP pair supported by the compiled HTTP transport. Construct the server evaluator with deny-all and reuse that evaluator for query, update, and service descriptions; keep standalone CLI query/update permissive, preserve base/version/cancellation, and perform no DNS or network probe.",
+      "Expose a deterministic immutable snapshot of effective runtime remote capabilities. Derive explicit custom default SERVICE support directly from QueryEvaluator::has_default_service_handler(). Do not shadow that authority in SparqlEvaluator state. Treat named-only handlers as insufficient, and built-in SERVICE/LOAD as available only when the configured egress policy contains at least one matching literal origin/IP pair supported by the compiled HTTP transport. Service-description claims must not be gated by CLI TLS features: derive BasicFederatedQuery and input formats only from the passed evaluator snapshot, and disclose UnionDefaultGraph only for query-capable endpoints. Construct the server evaluator with deny-all and reuse that evaluator for query, update, and service descriptions; keep standalone CLI query/update permissive, preserve base/version/cancellation, and perform no DNS or network probe.",
     sourceAllowlist: Object.freeze([
       "lib/oxigraph/src/http.rs",
       "lib/oxigraph/src/sparql/mod.rs",
+      "lib/spareval/src/lib.rs",
       "cli/src/service_description.rs",
       "cli/src/main.rs",
       "cli/src/service_description/tests.rs",
