@@ -172,7 +172,7 @@ function fakeSessionRunner({
       }
       return Object.freeze({
         name,
-        logicalArgv: Object.freeze([...commands[name].argv]),
+        logicalArgv: Object.freeze([...options.commands[name].argv]),
         exitCode,
         signal: failed && failureDisposition !== "completed" ? "SIGKILL" : null,
         disposition: failed ? failureDisposition : "completed",
@@ -424,6 +424,73 @@ test("compiler-red baseline requires one exact rustc error and green controls", 
   assert.deepEqual(
     result.commands.map(({ name }) => name),
     ["format", "build", "public", "independent", "regression"],
+  );
+});
+
+test("six-stage compiler-red baseline preserves the exact public red and green references", async (t) => {
+  const { candidate } = await fixture(t);
+  const evaluator = Object.freeze({
+    ...candidate,
+    candidatePatchSha256: null,
+    kind: "evaluator",
+  });
+  const serviceCommands = Object.freeze({
+    ...commands,
+    service: Object.freeze({
+      argv: Object.freeze([
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph-cli",
+        "--bin",
+        "oxigraph",
+        "service_description::tests::",
+      ]),
+      timeoutMs: 1_000,
+    }),
+  });
+  const serviceContract = Object.freeze({
+    ...contract,
+    commands: serviceCommands,
+    verificationSequence: Object.freeze([
+      "format",
+      "build",
+      "public",
+      "service",
+      "independent",
+      "regression",
+    ]),
+    evaluator: Object.freeze({ commit: evaluator.candidateCommit }),
+    success: Object.freeze({
+      publicPassed: 2,
+      servicePassed: 17,
+      independentPassed: 3,
+      regressionPassed: 2,
+    }),
+  });
+  const verifier = createVerifierForTesting(
+    fakeSessionRunner({
+      calls: [],
+      publicRed: true,
+      failureName: "service",
+    }),
+  );
+  const result = await verifier.verifyRedBaseline({
+    candidate: evaluator,
+    contract: serviceContract,
+  });
+
+  assert.equal(result.verdict, "CONFIRMED_RED");
+  assert.equal(result.initialRedMatched, true);
+  assert.equal(result.referencesGreen, true);
+  assert.deepEqual(
+    result.commands.map(({ name }) => name),
+    ["format", "build", "public", "service", "independent", "regression"],
+  );
+  assert.equal(
+    result.commands.find(({ name }) => name === "service").exitCode,
+    101,
   );
 });
 
