@@ -16,9 +16,11 @@ const EXPECTED = Object.freeze({
   shaclRustAllFeatures: 167,
   shaclRustNoDefault: 114,
   shaclJenaCompact: 32,
+  cliDefault: 144,
+  cliNoDefault: 129,
   jenaProfile: "jena-6.1.0-outcome-intersection-2026-07-27-v1",
   jenaSubjectSha256:
-    "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d",
+    "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63",
   jenaScenarios: 76,
   jenaAssertions: 198,
   jenaDomains: Object.freeze({
@@ -43,15 +45,41 @@ const EXPECTED = Object.freeze({
   }),
   jenaReproducibilityRuns: 2,
   jenaProfileLockSha256:
-    "00b01191d9c15661f9d8743261d2e104980d6ea73d444794acd56a822749bf4e",
+    "b6b176c674451451b8b456ea8fc1e81a4dc6e01f471858e3b912d7c0af0e61e6",
   jenaReceiptSha256:
-    "48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76",
+    "7209da6a1610f4f5252de97d13f75b46483b88f8f8a754d0d30170a92b6c401e",
   jenaResolvedInventorySha256:
     "be03e50517be71a7574d89982644fc3c1e54030c5d8375a792180ad37c476cb5",
   jenaObservationsSha256:
     "b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4",
   datalog: 70,
   agentic: 18,
+  agenticPersistenceWrite: 34,
+  agenticPersistenceCommands: 7,
+  agenticPersistenceRunId: "47a995c5-5cf0-4cf6-baaf-8b0cfa44a149",
+  agenticPersistenceReceiptSha256:
+    "e965c63fd696c3bdd2f50c6f6028e15d53d6567fa8d64cdfa4d2c10615b864a0",
+  agenticPersistenceContentHash:
+    "2561ffb02391d5d0b36bf3c29e91b75d27244e4abddcfedb49e2d7927f7471a8",
+  agenticPersistenceExecutionHash:
+    "1de5ea6f38a4ee0e266228ac1ff875526f5138233de193b14a1f9e5dcadc2814",
+  mutationRunId: "731e6467-2cab-4260-8d15-b34e4ebc8ed6",
+  mutationReceiptSha256:
+    "fc0ec6dbb0c8dec0b3c9e2d58814372c8feebc8ec291528df1fdf432879b2ba5",
+  mutationContentHash:
+    "88de934ca8eba02ac985ab7bab25e7ea98d8b5412ecfcb623261b27e7cfec308",
+  mutationExecutionHash:
+    "cfe719d36a35d22325ba980690bdb1a5e6f69303dab3761f54b043744139353d",
+  mutationInputContentHash:
+    "9898ef56c90cbcd8eef9cd490c2d63c9ed42a9a96c5ccab39d99ba834d707c3d",
+  mutationPublicationContentHash:
+    "7e029baef4c99817d7ea126e852e4b280591d985d61effd97f78ca52f87280c7",
+  mutationNativeOutcomesSha256:
+    "edce7e97639bb40aa3846031d12d4e8581eb644a33962e8d6468b00cf81e95bd",
+  mutationNativeInventorySha256:
+    "ff5244d9a7386627731f193aaba76d91b923590421551833d959c9bb284cc052",
+  mutationConfigSha256:
+    "26cb0050c153299e5b98839c1a620d14deb25dc23ac765813b476acbb7825084",
   semanticIntegration: 4,
   supportingWrapper: 5,
 });
@@ -415,6 +443,32 @@ export function validateLedgerCounts(ledger, errors) {
   equal(errors, "SHACL Jena Compact unsupported", shaclJena?.result?.unsupported, 0);
   equal(errors, "SHACL Jena Compact excluded", shaclJena?.result?.excluded, 0);
 
+  const cli = evidence.get("E-CLI-HTTP-NATIVE");
+  equal(
+    errors,
+    "CLI default-feature tests",
+    cli?.result?.defaultFeatures?.passed,
+    EXPECTED.cliDefault,
+  );
+  equal(
+    errors,
+    "CLI default-feature failures",
+    cli?.result?.defaultFeatures?.failed,
+    0,
+  );
+  equal(
+    errors,
+    "CLI no-default-feature tests",
+    cli?.result?.noDefaultFeatures?.passed,
+    EXPECTED.cliNoDefault,
+  );
+  equal(
+    errors,
+    "CLI no-default-feature failures",
+    cli?.result?.noDefaultFeatures?.failed,
+    0,
+  );
+
   const jena = evidence.get("E-JENA-PARITY");
   equal(errors, "Jena profile", jena?.profile, EXPECTED.jenaProfile);
   equal(errors, "Jena scenarios", jena?.result?.scenarios, EXPECTED.jenaScenarios);
@@ -474,6 +528,64 @@ export function validateLedgerCounts(ledger, errors) {
     EXPECTED.jenaObservationsSha256,
   );
 
+  const mutation = evidence.get("E-DATALOG-MUTATION");
+  equal(errors, "mutation ledger gate", mutation?.result?.gateClosed, true);
+  equal(errors, "mutation ledger baseline", mutation?.result?.baselinePassed, true);
+  equal(errors, "mutation ledger generated", mutation?.result?.generated, 358);
+  equal(errors, "mutation ledger caught", mutation?.result?.caught, 278);
+  equal(errors, "mutation ledger missed", mutation?.result?.missed, 0);
+  equal(errors, "mutation ledger timeouts", mutation?.result?.timeout, 0);
+  equal(errors, "mutation ledger unviable", mutation?.result?.unviable, 80);
+  equal(errors, "mutation ledger run", mutation?.runId, EXPECTED.mutationRunId);
+  equal(
+    errors,
+    "mutation ledger receipt hash",
+    mutation?.receiptSha256,
+    EXPECTED.mutationReceiptSha256,
+  );
+  equal(
+    errors,
+    "mutation ledger content hash",
+    mutation?.contentHash,
+    EXPECTED.mutationContentHash,
+  );
+  equal(
+    errors,
+    "mutation ledger execution hash",
+    mutation?.executionHash,
+    EXPECTED.mutationExecutionHash,
+  );
+  equal(
+    errors,
+    "mutation ledger input hash",
+    mutation?.inputContentHash,
+    EXPECTED.mutationInputContentHash,
+  );
+  equal(
+    errors,
+    "mutation ledger publication hash",
+    mutation?.publicationContentHash,
+    EXPECTED.mutationPublicationContentHash,
+  );
+  equal(
+    errors,
+    "mutation ledger native outcomes hash",
+    mutation?.nativeOutcomesSha256,
+    EXPECTED.mutationNativeOutcomesSha256,
+  );
+  equal(
+    errors,
+    "mutation ledger native inventory hash",
+    mutation?.nativeInventorySha256,
+    EXPECTED.mutationNativeInventorySha256,
+  );
+  equal(
+    errors,
+    "mutation ledger config hash",
+    mutation?.configSha256,
+    EXPECTED.mutationConfigSha256,
+  );
+
   const qualification = idMap(ledger?.qualification, "conformance ledger qualification", errors);
   const agenticQualification = qualification.get("agentic-qe");
   const agentic = agenticQualification?.adapterAdversarialTests;
@@ -490,6 +602,54 @@ export function validateLedgerCounts(ledger, errors) {
     "Agentic-QE parity command inventory",
     agenticQualification?.parityCommandInventory,
     47,
+  );
+  equal(
+    errors,
+    "Agentic-QE reconciled default CLI tests",
+    agenticQualification?.reconciledProfiles?.cliDefault?.passed,
+    EXPECTED.cliDefault,
+  );
+  equal(
+    errors,
+    "Agentic-QE reconciled no-default CLI tests",
+    agenticQualification?.reconciledProfiles?.cliNoDefault?.passed,
+    EXPECTED.cliNoDefault,
+  );
+  equal(
+    errors,
+    "Agentic-QE persistence-write tests",
+    agenticQualification?.reconciledProfiles?.persistenceWrite?.passed,
+    EXPECTED.agenticPersistenceWrite,
+  );
+  equal(
+    errors,
+    "Agentic-QE persistence-write commands",
+    agenticQualification?.reconciledProfiles?.persistenceWrite?.commands,
+    EXPECTED.agenticPersistenceCommands,
+  );
+  equal(
+    errors,
+    "Agentic-QE persistence-write run",
+    agenticQualification?.reconciledProfiles?.persistenceWrite?.runId,
+    EXPECTED.agenticPersistenceRunId,
+  );
+  equal(
+    errors,
+    "Agentic-QE persistence-write receipt hash",
+    agenticQualification?.reconciledProfiles?.persistenceWrite?.receiptSha256,
+    EXPECTED.agenticPersistenceReceiptSha256,
+  );
+  equal(
+    errors,
+    "Agentic-QE persistence-write content hash",
+    agenticQualification?.reconciledProfiles?.persistenceWrite?.contentHash,
+    EXPECTED.agenticPersistenceContentHash,
+  );
+  equal(
+    errors,
+    "Agentic-QE persistence-write execution hash",
+    agenticQualification?.reconciledProfiles?.persistenceWrite?.executionHash,
+    EXPECTED.agenticPersistenceExecutionHash,
   );
 }
 

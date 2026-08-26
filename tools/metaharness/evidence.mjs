@@ -43,6 +43,7 @@ export const protectedInputs = Object.freeze([
   ".github/workflows/tests.yml",
   "Cargo.toml",
   "Cargo.lock",
+  "README.md",
   "cli",
   "docs/adr",
   "docs/plans",

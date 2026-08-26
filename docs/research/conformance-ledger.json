@@ -1,16 +1,14 @@
 {
   "schemaVersion": 2,
   "observedAt": "2026-07-27",
-  "reconciledAt": "2026-08-25",
-  "reconciledAgainstBaseCommit": "e1097e482476030f012da538151fd967614fb619",
+  "reconciledAt": "2026-08-26",
+  "reconciledAgainstBaseCommit": "d79cc9a55065200533d6a7b968387ecd91d6212a",
   "currentHeadFreshness": {
     "status": "not-qualified",
     "policy": "An evidence entry remains authoritative for its sealed subject, but is current-HEAD evidence only when its freshness status is current and its protected source/inventory binding verifies.",
     "blockers": [
-      "Jena profile subject lock predates the backend-neutral write changes",
-      "Agentic-QE exact CLI inventories expect 133 default and 116 no-default tests while the reconciled inventories contain 144 and 129",
-      "OxDatalog mutation receipt predates the changed protected source snapshot",
-      "Full MetaHarness qualification and independent full verification have not been regenerated after those repairs"
+      "Full MetaHarness qualification and independent full verification have not been regenerated after the G0.7 protected-evidence freeze",
+      "G1.7 compatibility/performance evidence and the human promotion decision remain open and are separate from semantic qualification"
     ]
   },
   "scope": "Oxigraph semantic-parity programme",
@@ -169,7 +167,13 @@
     {
       "id": "E-CLI-HTTP-NATIVE", "title": "Oxigraph CLI native suite including HTTP protocol and feature boundaries", "kind": "native-tests",
       "commands": ["cargo test -p oxigraph-cli --all-targets --locked","cargo test -p oxigraph-cli --all-targets --no-default-features --locked"],
-      "result": {"defaultFeatures":{"passed":133,"failed":0},"noDefaultFeatures":{"passed":116,"failed":0}},
+      "result": {"defaultFeatures":{"passed":144,"failed":0},"noDefaultFeatures":{"passed":129,"failed":0}},
+      "freshness": {
+        "status": "current-source-bound-scope",
+        "reconciledAt": "2026-08-26",
+        "sourceCommit": "253a2b34079c1cae6eb9cfd196380a14a7ca092f",
+        "reason": "G0.4 deliberately accepted the exact 144/129 command inventories; later ID or count drift remains fail-closed."
+      },
       "authority": "Native HTTP and wire behavior, including the bounded SPARQL Protocol and Graph Store Protocol surfaces; not an official W3C suite or SPARQL 1.2 family-conformance receipt"},
     {
       "id": "E-RDFC10-OFFICIAL",
@@ -299,19 +303,19 @@
       },
       "reproducibility": {
         "runs": 2,
-        "subjectSha256": "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d",
-        "profileLockSha256": "00b01191d9c15661f9d8743261d2e104980d6ea73d444794acd56a822749bf4e",
-        "receiptSha256": "48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76",
+        "subjectSha256": "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63",
+        "profileLockSha256": "b6b176c674451451b8b456ea8fc1e81a4dc6e01f471858e3b912d7c0af0e61e6",
+        "receiptSha256": "7209da6a1610f4f5252de97d13f75b46483b88f8f8a754d0d30170a92b6c401e",
         "resolvedInventorySha256": "be03e50517be71a7574d89982644fc3c1e54030c5d8375a792180ad37c476cb5",
         "jenaObservationsSha256": "b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4"
       },
       "freshness": {
-        "status": "historical-sealed-subject",
-        "reconciledAt": "2026-08-24",
-        "reconciledAgainstBaseCommit": "2b9c89175088cc2a0aa459d5d6289a350ff39d8d",
-        "sealedSubjectSha256": "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d",
-        "reconciledCurrentSubjectSha256": "997e257933399687d6b6c3ea2b0be7f4db46e717484029f426b763dec59ddb20",
-        "reason": "The reviewed lock remains evidence for its July subject but does not bind current protected inputs."
+        "status": "current-source-bound-scope",
+        "reconciledAt": "2026-08-26",
+        "reconciledAgainstBaseCommit": "d79cc9a55065200533d6a7b968387ecd91d6212a",
+        "sealedSubjectSha256": "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63",
+        "reconciledCurrentSubjectSha256": "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63",
+        "reason": "G0.3 refreshed the reviewed lock and produced two byte-identical 76/198 runs for this exact subject. This is current only for the locked differential scope, not an umbrella current-HEAD semantic qualification."
       },
       "receipt": "target/jena-parity/parity-receipt.json",
       "authority": "Exact reviewed outcome intersection only: agreement and W3C-overrides-Jena are distinct from one W3C-permitted implementation variant; not complete Apache Jena or W3C parity"
@@ -323,21 +327,25 @@
       "command": "node tools/mutation/oxdatalog.mjs --jobs 2",
       "result": {"gateClosed":true,"baselinePassed":true,"generated":358,"caught":278,"unviable":80,"missed":0,"timeout":0,"mutationScorePercent":100},
       "freshness": {
-        "status": "historical-sealed-subject",
-        "reconciledAt": "2026-08-24",
-        "reconciledAgainstBaseCommit": "2b9c89175088cc2a0aa459d5d6289a350ff39d8d",
-        "reason": "The receipt remains valid for its exact OxDatalog source snapshot, but protected library inputs changed after publication and the receipt cannot satisfy a current full MetaHarness binding."
+        "status": "current-source-runtime-bound-scope",
+        "reconciledAt": "2026-08-26",
+        "reconciledAgainstBaseCommit": "d79cc9a55065200533d6a7b968387ecd91d6212a",
+        "sealedInputContentHash": "9898ef56c90cbcd8eef9cd490c2d63c9ed42a9a96c5ccab39d99ba834d707c3d",
+        "reason": "G0.6 regenerated and independently reopened the complete configured OxDatalog D0-D2 inventory with cargo-mutants 27.1.0. The receipt does not establish persistence-write mutation competence or umbrella semantic qualification."
       },
-      "receipt": "target/mutation/oxdatalog/runs/5c7397b1-881e-4548-a5f5-f978da254bde/receipt.json",
+      "receipt": "target/mutation/oxdatalog/runs/731e6467-2cab-4260-8d15-b34e4ebc8ed6/receipt.json",
       "latestReceipt": "target/mutation/oxdatalog/receipt.json",
-      "runId": "5c7397b1-881e-4548-a5f5-f978da254bde",
-      "receiptSha256": "ad3dba338080e1f748570aba6c6a8ecec495bd1b9086d160e7f09b7308023727",
-      "contentHash": "221f1875b906cf29e6cb918cfdcedc004671e8671a030e48d9f10f4dc4120f26",
-      "executionHash": "ca55eda189d02aa57d7b59d8607dc2421aae3a307b02a3aa300288b0f9edc4e1",
-      "inputContentHash": "36987e8b84e1d0e4703807659b616ecf561c1654d0b5f1f2348e7d6270df40e3",
-      "publicationContentHash": "aed0d98f523397961e68ff9d2759c28fb79e358a64b1906029dba31f61472d24",
-      "nativeOutcomesSha256": "a818f2cbf62e35730eef0cfb9f7db3d89c4bebb04fbd53a6e6a5cef7643c5b37",
-      "authority": "Complete configured cargo-mutants inventory for the protected OxDatalog source and policy snapshot"
+      "runId": "731e6467-2cab-4260-8d15-b34e4ebc8ed6",
+      "cargoMutantsVersion": "27.1.0",
+      "receiptSha256": "fc0ec6dbb0c8dec0b3c9e2d58814372c8feebc8ec291528df1fdf432879b2ba5",
+      "contentHash": "88de934ca8eba02ac985ab7bab25e7ea98d8b5412ecfcb623261b27e7cfec308",
+      "executionHash": "cfe719d36a35d22325ba980690bdb1a5e6f69303dab3761f54b043744139353d",
+      "inputContentHash": "9898ef56c90cbcd8eef9cd490c2d63c9ed42a9a96c5ccab39d99ba834d707c3d",
+      "publicationContentHash": "7e029baef4c99817d7ea126e852e4b280591d985d61effd97f78ca52f87280c7",
+      "nativeOutcomesSha256": "edce7e97639bb40aa3846031d12d4e8581eb644a33962e8d6468b00cf81e95bd",
+      "nativeInventorySha256": "ff5244d9a7386627731f193aaba76d91b923590421551833d959c9bb284cc052",
+      "configSha256": "26cb0050c153299e5b98839c1a620d14deb25dc23ac765813b476acbb7825084",
+      "authority": "Complete configured cargo-mutants inventory for the protected generic OxDatalog D0-D2 source and policy snapshot; no persistence-write, consumer-semantic, or umbrella authority"
     },
     {
       "id": "E-SOUFFLE-DATALOG",
@@ -560,8 +568,22 @@
       "adapterAdversarialTests": {"passed": 18, "failed": 0},
       "semanticGateCommandInventory": 41,
       "parityCommandInventory": 47,
-      "currentEvidence": "Adapter mechanics remain bounded evidence, but aggregate current-HEAD qualification is open: declared CLI inventories are 133 default and 116 no-default while the reconciled exact inventories are 144 and 129.",
-      "freshnessStatus": "open-inventory-drift",
+      "reconciledProfiles": {
+        "cliDefault": {"passed":144,"failed":0,"sourceCommit":"253a2b34079c1cae6eb9cfd196380a14a7ca092f"},
+        "cliNoDefault": {"passed":129,"failed":0,"sourceCommit":"253a2b34079c1cae6eb9cfd196380a14a7ca092f"},
+        "persistenceWrite": {
+          "passed": 34,
+          "failed": 0,
+          "commands": 7,
+          "sourceCommit": "253a2b34079c1cae6eb9cfd196380a14a7ca092f",
+          "runId": "47a995c5-5cf0-4cf6-baaf-8b0cfa44a149",
+          "receiptSha256": "e965c63fd696c3bdd2f50c6f6028e15d53d6567fa8d64cdfa4d2c10615b864a0",
+          "contentHash": "2561ffb02391d5d0b36bf3c29e91b75d27244e4abddcfedb49e2d7927f7471a8",
+          "executionHash": "1de5ea6f38a4ee0e266228ac1ff875526f5138233de193b14a1f9e5dcadc2814"
+        }
+      },
+      "currentEvidence": "G0.4-G0.5 reconciled the exact 144 default, 129 no-default, and 34-test persistence-write source-bound profiles. The 34-test receipt is immutable and byte-bound, but no current 41/47-command aggregate receipt or umbrella semantic qualification follows from these scoped results.",
+      "freshnessStatus": "current-scoped-profiles",
       "receiptBindings": "Schema v4 immutable run UUID publication and exact-receipt oracle binding, content-addressed output archive, exact ordered profile inventory, crash-recoverable global profile lease, Cargo and Node test inventories/counts, repository tuple, implementation/artifact hashes, oracle roles, timeouts, and executable path/version/SHA-256",
       "authority": "None beyond referenced native commands",
       "receiptLocation": "target/agentic-qe"
@@ -579,8 +601,8 @@
     {
       "id": "mutation",
       "role": "Competence gate for OxDatalog",
-      "currentEvidence": "Historical sealed-subject gate: 358 generated, 278 caught, 80 unviable, zero missed, zero timed out. It is not current-HEAD qualification evidence after protected source changes and must be regenerated for the same OxDatalog scope.",
-      "freshnessStatus": "historical-sealed-subject",
+      "currentEvidence": "G0.6 current scoped gate: immutable run 731e6467-2cab-4260-8d15-b34e4ebc8ed6 generated 358 mutants, caught 278, classified 80 unviable, and recorded zero missed and zero timed out under cargo-mutants 27.1.0. Its authority is limited to the protected generic OxDatalog D0-D2 scope.",
+      "freshnessStatus": "current-source-runtime-bound-scope",
       "requiredResult": {
         "viableSurvivors": 0,
         "timeouts": 0

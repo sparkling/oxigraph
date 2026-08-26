@@ -202,6 +202,7 @@ function mutationFixture() {
 test("qualification protects every gate implementation and workflow surface", () => {
   for (const required of [
     ".github/workflows/tests.yml",
+    "README.md",
     "js",
     "lib",
     "tools/agentic-qe",

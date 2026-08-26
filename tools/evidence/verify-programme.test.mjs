@@ -22,7 +22,7 @@ const agenticIntegrity =
 const darwinIntegrity =
   "sha512-V+AhQvj9ijR8OK9TvogSngtz47q8pHPjMm1mWMoDUk1JaRKz88oJu/sPUQ5BApCIgeSWEKo/bzrFSV4Krb/3Fg==";
 const jenaSubjectSha256 =
-  "1fe53cef38fb579188b61f1ccd60c383b1098c922012753733c4ef9c154b095d";
+  "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63";
 const jenaDomains = {
   rdf: 17,
   sparql: 30,
@@ -47,9 +47,9 @@ const jenaReproducibility = {
   runs: 2,
   subjectSha256: jenaSubjectSha256,
   profileLockSha256:
-    "00b01191d9c15661f9d8743261d2e104980d6ea73d444794acd56a822749bf4e",
+    "b6b176c674451451b8b456ea8fc1e81a4dc6e01f471858e3b912d7c0af0e61e6",
   receiptSha256:
-    "48673fdb0540dfe3a41a8c624f6ce98f31fe39a06e193007a5f84db3df005c76",
+    "7209da6a1610f4f5252de97d13f75b46483b88f8f8a754d0d30170a92b6c401e",
   resolvedInventorySha256:
     "be03e50517be71a7574d89982644fc3c1e54030c5d8375a792180ad37c476cb5",
   jenaObservationsSha256:
@@ -104,6 +104,13 @@ function ledgerFixture() {
       {
         id: "E-SPARQL12-OFFICIAL",
         result: { cases: 269, passed: 269, failed: 0, unsupported: 0 },
+      },
+      {
+        id: "E-CLI-HTTP-NATIVE",
+        result: {
+          defaultFeatures: { passed: 144, failed: 0 },
+          noDefaultFeatures: { passed: 129, failed: 0 },
+        },
       },
       {
         id: "E-RDFC10-OFFICIAL",
@@ -199,6 +206,35 @@ function ledgerFixture() {
         },
         reproducibility: { ...jenaReproducibility },
       },
+      {
+        id: "E-DATALOG-MUTATION",
+        result: {
+          gateClosed: true,
+          baselinePassed: true,
+          generated: 358,
+          caught: 278,
+          unviable: 80,
+          missed: 0,
+          timeout: 0,
+        },
+        runId: "731e6467-2cab-4260-8d15-b34e4ebc8ed6",
+        receiptSha256:
+          "fc0ec6dbb0c8dec0b3c9e2d58814372c8feebc8ec291528df1fdf432879b2ba5",
+        contentHash:
+          "88de934ca8eba02ac985ab7bab25e7ea98d8b5412ecfcb623261b27e7cfec308",
+        executionHash:
+          "cfe719d36a35d22325ba980690bdb1a5e6f69303dab3761f54b043744139353d",
+        inputContentHash:
+          "9898ef56c90cbcd8eef9cd490c2d63c9ed42a9a96c5ccab39d99ba834d707c3d",
+        publicationContentHash:
+          "7e029baef4c99817d7ea126e852e4b280591d985d61effd97f78ca52f87280c7",
+        nativeOutcomesSha256:
+          "edce7e97639bb40aa3846031d12d4e8581eb644a33962e8d6468b00cf81e95bd",
+        nativeInventorySha256:
+          "ff5244d9a7386627731f193aaba76d91b923590421551833d959c9bb284cc052",
+        configSha256:
+          "26cb0050c153299e5b98839c1a620d14deb25dc23ac765813b476acbb7825084",
+      },
     ],
     qualification: [
       {
@@ -209,6 +245,22 @@ function ledgerFixture() {
         adapterAdversarialTests: { passed: 18, failed: 0 },
         semanticGateCommandInventory: 41,
         parityCommandInventory: 47,
+        reconciledProfiles: {
+          cliDefault: { passed: 144, failed: 0 },
+          cliNoDefault: { passed: 129, failed: 0 },
+          persistenceWrite: {
+            passed: 34,
+            failed: 0,
+            commands: 7,
+            runId: "47a995c5-5cf0-4cf6-baaf-8b0cfa44a149",
+            receiptSha256:
+              "e965c63fd696c3bdd2f50c6f6028e15d53d6567fa8d64cdfa4d2c10615b864a0",
+            contentHash:
+              "2561ffb02391d5d0b36bf3c29e91b75d27244e4abddcfedb49e2d7927f7471a8",
+            executionHash:
+              "1de5ea6f38a4ee0e266228ac1ff875526f5138233de193b14a1f9e5dcadc2814",
+          },
+        },
       },
       {
         id: "metaharness-darwin",
@@ -264,6 +316,15 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
   ledger.evidence.find(
     (item) => item.id === "E-JENA-PARITY",
   ).result.classifications["w3c-permitted-divergence"] = 0;
+  ledger.evidence.find(
+    (item) => item.id === "E-CLI-HTTP-NATIVE",
+  ).result.defaultFeatures.passed = 143;
+  ledger.evidence.find(
+    (item) => item.id === "E-DATALOG-MUTATION",
+  ).runId = "stale-run";
+  ledger.qualification.find(
+    (item) => item.id === "agentic-qe",
+  ).reconciledProfiles.persistenceWrite.receiptSha256 = "0".repeat(64);
   validateLedgerCounts(ledger, errors);
   assert(errors.some((error) => error.startsWith("Datalog passed tests:")));
   assert(errors.some((error) => error.startsWith("RDF Semantics RDFS-regime cases:")));
@@ -274,6 +335,13 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
       error.startsWith(
         "Jena classifications w3c-permitted-divergence:",
       ),
+    ),
+  );
+  assert(errors.some((error) => error.startsWith("CLI default-feature tests:")));
+  assert(errors.some((error) => error.startsWith("mutation ledger run:")));
+  assert(
+    errors.some((error) =>
+      error.startsWith("Agentic-QE persistence-write receipt hash:"),
     ),
   );
   assert(errors.some((error) => error.startsWith("Agentic-QE adapter passed tests:")));
