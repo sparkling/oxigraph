@@ -1,10 +1,10 @@
 # ADR-0002: RDF-native Datalog engine
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
 - Implementation status: D0, D1, and D2 implemented as bounded native profiles
-- Related:
+- **Related**:
   [ADR-0007 — OWL 2 RL over Datalog](0007-owl-profiles-over-datalog.md),
   [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md),
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),

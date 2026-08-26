@@ -1,14 +1,14 @@
 # ADR-0014: End-to-end RDF dataset graph topology
 
-- Status: Accepted
-- Date: 2026-07-27
+- **Status**: Accepted
+- **Date**: 2026-07-27
 - Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
 - Update note: the public transactional write seam now requires independent
   persistence planes to preserve empty named-graph topology and graph lifecycle.
-- Related:
+- **Related**:
   [ADR-0006 — W3C-first RDF, SPARQL, and SHACL 1.2 parity](0006-w3c-first-12-parity.md),
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0011 — SPARQL VERSION and protocol semantics](0011-sparql-version-and-protocol-semantics.md),

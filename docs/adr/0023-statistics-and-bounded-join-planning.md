@@ -1,14 +1,14 @@
 # ADR-0023: Statistics and bounded join planning
 
-- Status: Proposed
-- Date: 2026-08-24
+- **Status**: Proposed
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G3.1-G3.2
-- Depends on:
+- **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
-- Related:
+- **Related**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
   [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)

@@ -1,10 +1,10 @@
 # ADR-0015: Parallel bulk-load failure semantics
 
-- Status: Accepted
-- Date: 2026-07-27
+- **Status**: Accepted
+- **Date**: 2026-07-27
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented and regression-tested
-- Related:
+- **Related**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0014 — RDF dataset graph topology](0014-rdf-dataset-graph-topology.md)
 

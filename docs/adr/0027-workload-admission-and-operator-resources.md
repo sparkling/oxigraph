@@ -1,15 +1,15 @@
 # ADR-0027: Workload admission and operator resources
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G4.2
 - Programme task: `task-1787670632138-mq9112`
-- Depends on:
+- **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)
-- Related:
+- **Related**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),

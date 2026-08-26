@@ -1,10 +1,10 @@
 # ADR-0009: Snapshot reasoning and explicit materialization
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
 - Implementation status: optional Oxigraph Datalog integration implemented
-- Related:
+- **Related**:
   [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md),
   [ADR-0007 — OWL 2 RL over Datalog](0007-owl-profiles-over-datalog.md),
   [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md)

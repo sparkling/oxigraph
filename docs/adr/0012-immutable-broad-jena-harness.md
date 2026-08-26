@@ -1,7 +1,7 @@
 # ADR-0012: Immutable broad Jena differential harness
 
-- Status: Accepted
-- Date: 2026-07-27
+- **Status**: Accepted
+- **Date**: 2026-07-27
 - Updated: 2026-08-25
 - Evidence state: the sealed July result remains historical evidence for its
   exact subject. G0.2 restored the reproducible runner lock in `46ef17fc`, and
@@ -10,7 +10,7 @@
   G0.2-G0.3 work for its exact source; it does not make later protected-source
   changes or full MetaHarness qualification current.
 - Deciders: Oxigraph parity programme
-- Related:
+- **Related**:
   [ADR-0001 — Outcome-oriented Apache Jena parity](0001-outcome-oriented-jena-parity.md),
   [ADR-0006 — W3C-first 1.2 parity](0006-w3c-first-12-parity.md)
 

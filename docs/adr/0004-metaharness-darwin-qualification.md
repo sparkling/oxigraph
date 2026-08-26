@@ -1,7 +1,7 @@
 # ADR-0004: MetaHarness and Darwin qualification
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: policy-only adapter, synthetic mechanics, full
@@ -17,7 +17,7 @@
   G0.6 and the protected evidence has not been reconciled and frozen under
   G0.7. On 2026-08-25 the dependency refresh also made lifecycle-script
   suppression and lock/ledger reconciliation explicit.
-- Related:
+- **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
   [ADR-0017 — Repository evolution and evidence promotion

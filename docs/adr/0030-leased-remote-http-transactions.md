@@ -1,18 +1,18 @@
 # ADR-0030: Leased remote HTTP transactions
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the server has no remote transaction
   route, lease registry, or owned server transaction handle
 - Programme task: `task-1787670632421-dkucm8` (G4.5)
-- Depends on:
+- **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
   [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md)
-- Related:
+- **Related**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),

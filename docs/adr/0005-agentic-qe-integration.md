@@ -1,7 +1,7 @@
 # ADR-0005: Agentic-QE integration
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: latest-compatible adapter implemented; the manifest
@@ -15,7 +15,7 @@
 - Update note: on 2026-08-25 the adapter moved to the latest-compatible lock
   policy, disabled dependency lifecycle scripts, and bound source-only ledger
   claims to the exact lock resolution and SRI.
-- Related:
+- **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md)
 

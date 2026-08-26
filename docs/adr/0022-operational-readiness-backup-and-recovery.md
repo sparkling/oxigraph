@@ -1,13 +1,13 @@
 # ADR-0022: Operational readiness, backup, and recovery
 
-- Status: Proposed
-- Date: 2026-08-24
+- **Status**: Proposed
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G2.5-G2.7
-- Depends on:
+- **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
-- Related:
+- **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),

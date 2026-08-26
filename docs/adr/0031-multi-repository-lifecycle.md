@@ -1,18 +1,18 @@
 # ADR-0031: Multi-repository lifecycle
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; each current server process owns one
   `Store` and has no durable repository catalog or administrative lifecycle
 - Programme task: `task-1787670632716-513bjt` (G4.6)
-- Depends on:
+- **Depends on**:
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
   [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),
   [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md)
-- Related:
+- **Related**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),

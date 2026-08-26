@@ -1,11 +1,11 @@
 # ADR-0008: SHACL processor profiles
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
 - Implementation status: dated feature-set processor implemented; complete
   SHACL 1.2 conformance requests fail closed
-- Related:
+- **Related**:
   [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md),
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0006 — W3C-first 1.2 parity](0006-w3c-first-12-parity.md)
