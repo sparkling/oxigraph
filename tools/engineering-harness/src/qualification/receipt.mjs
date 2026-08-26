@@ -1,7 +1,13 @@
 import { isDeepStrictEqual } from "node:util";
 
+import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import { classifyG17Qualification } from "./classification.mjs";
+import {
+  G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  G17_SEMANTIC_EVIDENCE_SCHEMA,
+  g17EvidenceSchemaState,
+} from "./evidence-contract.mjs";
 
 export const G17_RECEIPT_SCHEMA =
   "oxigraph.g1.7-qualification-receipt/v1";
@@ -161,8 +167,15 @@ function validateIdentity(identity) {
   }
 }
 
-function validateEvidence(evidence) {
+function validateEvidence(
+  evidence,
+  { requireCurrentPassSchemas = false } = {},
+) {
   exactKeys(evidence, ["semantic", "compatibility"], "evidence");
+  const currentSchemas = {
+    semantic: G17_SEMANTIC_EVIDENCE_SCHEMA,
+    compatibility: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  };
   for (const label of ["semantic", "compatibility"]) {
     const entry = evidence[label];
     exactKeys(
@@ -198,6 +211,19 @@ function validateEvidence(evidence) {
         entry.reasons.length !== 0)
     ) {
       fail(`${label} PASS evidence requires a hash-bound projection`);
+    }
+    if (
+      entry.projection?.schema !== undefined &&
+      entry.projection.schema !== currentSchemas[label]
+    ) {
+      fail(`${label} evidence projection schema is unsupported`);
+    }
+    if (
+      requireCurrentPassSchemas &&
+      entry.status === "PASS" &&
+      entry.projection.schema !== currentSchemas[label]
+    ) {
+      fail(`${label} PASS evidence requires its current v2 projection schema`);
     }
     if (entry.status !== "PASS" && entry.reasons.length === 0) {
       fail(`${label} non-PASS evidence requires a reason`);
@@ -302,7 +328,7 @@ function validateArtifacts(artifacts) {
     if (
       !SAFE_ARTIFACT.test(artifact.name) ||
       names.has(artifact.name) ||
-      artifact.name <= previous ||
+      comparePortablePaths(artifact.name, previous) <= 0 ||
       !Number.isSafeInteger(artifact.bytes) ||
       artifact.bytes < 1 ||
       !DIGEST.test(artifact.sha256)
@@ -354,13 +380,13 @@ function receiptProjection(receipt) {
   };
 }
 
-function validateStructure(receipt) {
+function validateStructure(receipt, options) {
   exactKeys(receipt, RECEIPT_KEYS, "receipt");
   if (receipt.schema !== G17_RECEIPT_SCHEMA) fail("schema is not v1");
   validateRun(receipt.run);
   validateContractProjection(receipt.contract);
   validateIdentity(receipt.identity);
-  validateEvidence(receipt.evidence);
+  validateEvidence(receipt.evidence, options);
   validateBenchmark(receipt.benchmark);
   if (!isDeepStrictEqual(receipt.authority, AUTHORITY)) fail("authority drifted");
   validateFinal(receipt.final, receipt);
@@ -392,7 +418,9 @@ export function createG17Receipt(draft) {
   receipt.contentHash = canonicalSha256(contentProjection(receipt));
   receipt.executionHash = canonicalSha256(executionProjection(receipt));
   receipt.receiptSha256 = canonicalSha256(receiptProjection(receipt));
-  return deepFreeze(validateStructure(receipt));
+  return deepFreeze(
+    validateStructure(receipt, { requireCurrentPassSchemas: true }),
+  );
 }
 
 export function g17ReceiptBytes(receipt) {
@@ -414,8 +442,27 @@ export function verifyG17Receipt(input) {
     if (bytes !== null && !bytes.equals(g17ReceiptBytes(verified))) {
       fail("serialized bytes are not canonical");
     }
+    const evidenceSchemaState = Object.freeze({
+      semantic: g17EvidenceSchemaState(
+        verified.evidence.semantic,
+        G17_SEMANTIC_EVIDENCE_SCHEMA,
+      ),
+      compatibility: g17EvidenceSchemaState(
+        verified.evidence.compatibility,
+        G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+      ),
+    });
+    const legacyReplayOnly = Object.values(evidenceSchemaState).includes(
+      "LEGACY_REPLAY_ONLY",
+    );
     return Object.freeze({
-      ok: true,
+      ok: !legacyReplayOnly,
+      structurallyValid: true,
+      verificationStatus: legacyReplayOnly
+        ? "LEGACY_REPLAY_ONLY"
+        : "STRUCTURALLY_VALID",
+      qualificationEligible: false,
+      evidenceSchemaState,
       receipt: verified,
       contentHash: verified.contentHash,
       executionHash: verified.executionHash,

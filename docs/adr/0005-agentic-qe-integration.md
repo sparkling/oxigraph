@@ -15,7 +15,11 @@
   receipt, full MetaHarness qualification, or G1.7 promotion.
 - Update note: on 2026-08-25 the adapter moved to the latest-compatible lock
   policy, disabled dependency lifecycle scripts, and bound source-only ledger
-  claims to the exact lock resolution and SRI.
+  claims to the exact lock resolution and SRI. The G1.7 consumer now requires
+  an explicit v2 compatibility PASS projection and pure-replays the exact
+  Agentic-QE receipt, oracle, dependency, installed package, and archive bytes.
+  Its scope-explicit replay label covers only that Agentic-QE sublane; it does
+  not replay native compatibility or complete G1.7.
 - **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md)
@@ -82,7 +86,7 @@ The adapter:
   authority;
 - validates exact nonzero test counts;
 - forces its Node adversarial suite through TAP 13 and requires one exact,
-  terminal, conserved 18-test/18-pass summary;
+  terminal, conserved 19-test/19-pass summary;
 - scans complete stdout and stderr streams for count guards, including tokens
   split across process chunks;
 - kills the whole POSIX process group on timeout;
@@ -110,7 +114,7 @@ pass. An unavailable tool, missing credential, count mismatch, timeout,
 changed protected input, active/stale lease, or incomplete command inventory
 is failure or inconclusive, never success.
 
-The adapter's own adversarial suite passes 18 of 18 tests. Receipts bind exact
+The adapter's own adversarial suite passes 19 of 19 tests. Receipts bind exact
 Cargo `--list` inventories, the repository tuple, implementation and artifact
 hashes, oracle roles, timeouts, and each executable's resolved path, version,
 and SHA-256. Consumers re-derive each program, argument vector, timeout, exact

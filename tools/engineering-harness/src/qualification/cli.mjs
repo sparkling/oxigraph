@@ -34,3 +34,21 @@ export function parseG17CliArgs(args) {
   }
   usage();
 }
+
+export function g17VerdictExitCode(verdict) {
+  if (verdict === "REJECT") return 3;
+  if (verdict === "INCONCLUSIVE") return 4;
+  if (verdict === "ACCEPT") return 0;
+  return 2;
+}
+
+export function g17VerificationExitCode(result) {
+  if (
+    result?.ok !== true ||
+    result.verificationStatus !== "SEALED_RUN_VERIFIED" ||
+    (result.verdict === "ACCEPT" && result.qualificationEligible !== true)
+  ) {
+    return 2;
+  }
+  return g17VerdictExitCode(result.verdict);
+}

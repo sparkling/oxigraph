@@ -1,9 +1,19 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
+import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import { validateG17Contract } from "./contract.mjs";
+import {
+  G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  G17_SEMANTIC_EVIDENCE_SCHEMA,
+  g17EvidenceSchemaState,
+} from "./evidence-contract.mjs";
 import { verifyG17Receipt } from "./receipt.mjs";
+import {
+  verifySealedAgenticEvidence,
+  verifySealedSemanticEvidence,
+} from "./sealed-evidence.mjs";
 import {
   g17RunsRoot,
   openSealedG17Run,
@@ -74,7 +84,7 @@ function verifyEvidenceArtifactInventory(receipt, bytesByName) {
       "compatibility PASS artifacts are incomplete",
     );
     const archiveCount = receipt.evidence.compatibility.projection?.agenticQe?.archiveFileCount;
-    if (!Number.isSafeInteger(archiveCount) || archiveCount < 1) {
+    if (!Number.isSafeInteger(archiveCount) || archiveCount < 0) {
       fail("compatibility PASS archive inventory is invalid");
     }
     for (let index = 0; index < archiveCount; index += 1) {
@@ -123,7 +133,7 @@ export async function verifySealedG17Run({
   const expectedEntries = [
     ...receipt.artifacts.map(({ name }) => name),
     "receipt.json",
-  ].sort();
+  ].sort(comparePortablePaths);
   if (!isDeepStrictEqual(run.entries, expectedEntries)) {
     fail("sealed run contains missing or extra entries");
   }
@@ -153,6 +163,41 @@ export async function verifySealedG17Run({
   if (!isDeepStrictEqual(sealedIdentityProjection(identity), receipt.identity)) {
     fail("sealed identity projection differs from the receipt");
   }
+  const evidenceSchemaState = Object.freeze({
+    semantic: g17EvidenceSchemaState(
+      receipt.evidence.semantic,
+      G17_SEMANTIC_EVIDENCE_SCHEMA,
+    ),
+    compatibility: g17EvidenceSchemaState(
+      receipt.evidence.compatibility,
+      G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+    ),
+  });
+  if (evidenceSchemaState.compatibility === "CURRENT_SCHEMA_UNREPLAYED") {
+    try {
+      verifySealedAgenticEvidence({
+        contract,
+        g17Receipt: receipt,
+        identity,
+        compatibility: receipt.evidence.compatibility,
+        bytesByName,
+      });
+    } catch {
+      fail("copied Agentic-QE evidence is invalid");
+    }
+  }
+  if (evidenceSchemaState.semantic === "CURRENT_SCHEMA_UNREPLAYED") {
+    try {
+      verifySealedSemanticEvidence({
+        g17Receipt: receipt,
+        identity,
+        semantic: receipt.evidence.semantic,
+        bytesByName,
+      });
+    } catch {
+      fail("copied MetaHarness evidence is invalid");
+    }
+  }
   const observations = parseCanonical(
     bytesByName.get("observations.json"),
     "observations",
@@ -177,8 +222,38 @@ export async function verifySealedG17Run({
   ) {
     fail("sealed artifact manifest differs from the receipt");
   }
+  const legacyReplayOnly = Object.values(evidenceSchemaState).includes(
+    "LEGACY_REPLAY_ONLY",
+  );
+  const evidenceAssurance = Object.freeze(
+    Object.fromEntries(
+      Object.entries(evidenceSchemaState).map(([lane, schemaState]) => [
+        lane,
+        schemaState === "CURRENT_SCHEMA_UNREPLAYED"
+          ? lane === "semantic"
+            ? "METAHARNESS_OWNER_CONTRACT_REPLAYED"
+            : "AGENTIC_OWNER_CONTRACT_REPLAYED"
+          : schemaState,
+      ]),
+    ),
+  );
+  // Compatibility PASS currently replays the copied Agentic-QE owner contract,
+  // but not the native Cargo lane. Keep promotion eligibility closed until a
+  // full compatibility owner contract is independently replayable.
+  const qualificationEligible =
+    !legacyReplayOnly &&
+    receipt.final.verdict === "ACCEPT" &&
+    evidenceAssurance.semantic ===
+      "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&
+    evidenceAssurance.compatibility ===
+      "COMPATIBILITY_OWNER_CONTRACT_REPLAYED";
   return Object.freeze({
-    ok: true,
+    ok: !legacyReplayOnly,
+    verificationStatus: legacyReplayOnly
+      ? "LEGACY_REPLAY_ONLY"
+      : "SEALED_RUN_VERIFIED",
+    qualificationEligible,
+    evidenceAssurance,
     runId: receipt.run.id,
     receiptSha256: receipt.receiptSha256,
     contentHash: receipt.contentHash,

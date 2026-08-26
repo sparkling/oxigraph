@@ -102,7 +102,10 @@ reject symlink components and canonical escapes.
   and SPARQL-version surfaces. Its immutable run-addressed receipt is a
   current-green prerequisite for G1.7 only; it does not set performance budgets,
   classify or promote a candidate, write Router history, or authorize
-  publication.
+  publication. The G1.7 sealed verifier can copy and replay the exact receipt,
+  oracle, dependency manifests, installed-package metadata, and archive bytes;
+  that proves only the Agentic-QE owner-contract sublane, not native
+  compatibility, benchmark acceptance, full G1.7 qualification, or promotion.
 - `supporting-suites`: five exact-count N3 and JSON-LD parser/interchange
   wrappers; their bounded exclusions remain supporting evidence only.
 - `w3c`: pinned official RDF 1.2, SPARQL 1.2, and SHACL 1.2 lanes plus the

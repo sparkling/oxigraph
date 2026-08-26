@@ -4,7 +4,11 @@ import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { parseG17CliArgs } from "../src/qualification/cli.mjs";
+import {
+  g17VerificationExitCode,
+  g17VerdictExitCode,
+  parseG17CliArgs,
+} from "../src/qualification/cli.mjs";
 
 const execute = promisify(execFile);
 const executable = new URL("../bin/oxigraph-g1.7-qualification.mjs", import.meta.url);
@@ -47,6 +51,58 @@ test("dedicated G1.7 CLI rejects malformed input with operational exit 2", async
       return true;
     });
   }
+});
+
+test("G1.7 CLI exits fail closed for legacy or unqualified ACCEPT verification", () => {
+  assert.equal(g17VerdictExitCode("ACCEPT"), 0);
+  assert.equal(g17VerdictExitCode("REJECT"), 3);
+  assert.equal(g17VerdictExitCode("INCONCLUSIVE"), 4);
+  assert.equal(g17VerdictExitCode("unknown"), 2);
+  assert.equal(
+    g17VerificationExitCode({
+      ok: false,
+      verificationStatus: "LEGACY_REPLAY_ONLY",
+      qualificationEligible: false,
+      verdict: "ACCEPT",
+    }),
+    2,
+  );
+  assert.equal(
+    g17VerificationExitCode({
+      ok: true,
+      verificationStatus: "VERIFIED",
+      qualificationEligible: true,
+      verdict: "ACCEPT",
+    }),
+    2,
+  );
+  assert.equal(
+    g17VerificationExitCode({
+      ok: true,
+      verificationStatus: "SEALED_RUN_VERIFIED",
+      qualificationEligible: false,
+      verdict: "ACCEPT",
+    }),
+    2,
+  );
+  assert.equal(
+    g17VerificationExitCode({
+      ok: true,
+      verificationStatus: "SEALED_RUN_VERIFIED",
+      qualificationEligible: true,
+      verdict: "ACCEPT",
+    }),
+    0,
+  );
+  assert.equal(
+    g17VerificationExitCode({
+      ok: true,
+      verificationStatus: "SEALED_RUN_VERIFIED",
+      qualificationEligible: false,
+      verdict: "INCONCLUSIVE",
+    }),
+    4,
+  );
 });
 
 test("package exposes scripts only; application bin and latest dependency surface stay exact", async () => {

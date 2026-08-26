@@ -152,6 +152,20 @@ evidence is non-trainable, v1-v5 receipts remain byte-exact replay-only, and a
 candidate-disposal failure aborts receipt minting. The committed control passes
 194/194 harness tests and the same `runner-implemented`, local-only doctor.
 
+The dedicated G1.7 qualification path now uses explicit v2 semantic and
+compatibility projection schemas, artifact-first sealed runs, canonical
+portable-path ordering, and pure copied-receipt replay. Structural receipt
+parsing reports current PASS projections as `CURRENT_SCHEMA_UNREPLAYED`; only
+the sealed verifier may report scope-specific MetaHarness or Agentic-QE owner
+contract replay, and `SEALED_RUN_VERIFIED` means that the sealed envelope was
+verified rather than that G1.7 qualified. Positive unit fixtures are synthetic
+contract fixtures: they do not establish owner-process emission, subject-file
+correspondence, native execution, benchmark acceptance, or promotion. The
+compatibility replay currently closes only its Agentic-QE sublane; native
+compatibility replay, selected reference and approved budgets, current semantic
+evidence, and the real benchmark remain open, so qualification eligibility is
+withheld.
+
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
 ```toml

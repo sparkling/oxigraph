@@ -31,6 +31,7 @@ import {
   validateAgenticReceipt,
   validateAgenticOracle,
 } from "./evidence.mjs";
+import { validateAgenticDependencyEvidence } from "./receipt-contract.mjs";
 import {
   createImplementationManifest,
   implementationContentHash,
@@ -373,6 +374,98 @@ test("receipt verification recomputes content and execution hashes", () => {
         agenticReceiptBytes(receipt),
       ),
     /exact receipt/,
+  );
+  const manifestBytes = readFileSync(join(repoRoot, "tools/agentic-qe/package.json"));
+  const lockfileBytes = readFileSync(
+    join(repoRoot, "tools/agentic-qe/package-lock.json"),
+  );
+  const npmrcBytes = readFileSync(join(repoRoot, "tools/agentic-qe/.npmrc"));
+  const installedPackageJsonBytes = readFileSync(
+    join(
+      repoRoot,
+      "tools/agentic-qe/node_modules/agentic-qe/package.json",
+    ),
+  );
+  const lockfile = JSON.parse(lockfileBytes);
+  const locked = lockfile.packages["node_modules/agentic-qe"];
+  const dependency = {
+    name: "agentic-qe",
+    policy: "latest",
+    version: locked.version,
+    resolved: locked.resolved,
+    integrity: locked.integrity,
+    manifest: "tools/agentic-qe/package.json",
+    manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
+    lockfile: "tools/agentic-qe/package-lock.json",
+    lockfileSha256: createHash("sha256").update(lockfileBytes).digest("hex"),
+    npmrc: "tools/agentic-qe/.npmrc",
+    npmrcSha256: createHash("sha256").update(npmrcBytes).digest("hex"),
+    installedPackageJsonSha256: createHash("sha256")
+      .update(installedPackageJsonBytes)
+      .digest("hex"),
+  };
+  assert.doesNotThrow(() =>
+    validateAgenticDependencyEvidence({
+      dependency,
+      manifestBytes,
+      lockfileBytes,
+      npmrcBytes,
+      installedPackageJsonBytes,
+    }),
+  );
+  assert.throws(
+    () =>
+      validateAgenticDependencyEvidence({
+        dependency: {
+          ...dependency,
+          version: "9.9.9",
+          resolved: "https://evil.invalid/fabricated.tgz",
+          integrity: "sha512-ZmFicmljYXRlZA==",
+        },
+        manifestBytes,
+        lockfileBytes,
+        npmrcBytes,
+        installedPackageJsonBytes,
+      }),
+    /dependency evidence is invalid|resolution is inconsistent/u,
+  );
+  const unsafeNpmrcBytes = Buffer.from("ignore-scripts=false\n", "utf8");
+  assert.throws(
+    () =>
+      validateAgenticDependencyEvidence({
+        dependency: {
+          ...dependency,
+          npmrcSha256: createHash("sha256")
+            .update(unsafeNpmrcBytes)
+            .digest("hex"),
+        },
+        manifestBytes,
+        lockfileBytes,
+        npmrcBytes: unsafeNpmrcBytes,
+        installedPackageJsonBytes,
+      }),
+    /dependency evidence is invalid|resolution is inconsistent/u,
+  );
+  const unsafeIntegrity = "sha512-ZmFicmljYXRlZA==";
+  const unsafeLockfile = structuredClone(lockfile);
+  unsafeLockfile.packages["node_modules/agentic-qe"].integrity = unsafeIntegrity;
+  const unsafeLockfileBytes = Buffer.from(JSON.stringify(unsafeLockfile), "utf8");
+  assert.throws(
+    () =>
+      validateAgenticDependencyEvidence({
+        dependency: {
+          ...dependency,
+          integrity: unsafeIntegrity,
+          lockfileSha256: createHash("sha256")
+            .update(unsafeLockfileBytes)
+            .digest("hex"),
+        },
+        manifestBytes,
+        lockfileBytes: unsafeLockfileBytes,
+        npmrcBytes,
+        installedPackageJsonBytes,
+      }),
+    /dependency evidence is invalid|resolution is inconsistent/u,
   );
   assert.throws(
     () =>

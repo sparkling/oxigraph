@@ -51,7 +51,7 @@ semantic claim.
 | SHACL 1.2 | 521 discovered and 519/519 eligible across five separately classified lanes; two hash-pinned invalid upstream exclusions; native Rust 167/167 all-feature and 114/114 no-default; Jena SHACL-C 32/32 | Root, legacy, supplemental Rules, and informative SHACL-C evidence; family claim open |
 | Jena 6.1.0 | G0.3 subject `182972ec...`: 76 reviewed scenarios; 198 assertions; two byte-identical runs | Current locked outcome-intersection scope with one W3C-permitted implementation variant; full Apache Jena parity not claimed |
 | Soufflé 2.5 | 1 stratified Datalog fixture | Narrow D1 differential only |
-| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 18/18 adapter adversarial tests; reconciled 144/129 CLI and 34/34 persistence-write profiles; 47-command parity inventory | Scoped profiles are current; aggregate acceptance still requires a complete, current, independently verified receipt; native commands remain authoritative |
+| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 19/19 adapter adversarial tests; reconciled 144/129 CLI and 34/34 persistence-write profiles; 47-command parity inventory | Scoped profiles are current; aggregate acceptance still requires a complete, current, independently verified receipt; native commands remain authoritative |
 | MetaHarness/Darwin | Full semantic-mode runner plus independent receipt verifier | No qualification result exists unless both current receipts verify against the same protected snapshot |
 
 Exact SHACL lane counts, exclusions, and artifact locations are read from the
@@ -203,7 +203,7 @@ that the installed CLI version matches the exact version in the
 integrity-bearing lockfile resolution, and records the lock SRI, package
 metadata, version, and executable hash. The current lockfile resolves 3.13.12.
 Agentic-QE is not a Rust oracle. The adapter adversarial suite currently passes
-18/18.
+19/19.
 
 ```bash
 cd tools/agentic-qe

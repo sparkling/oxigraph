@@ -12,9 +12,15 @@ import {
   writeExclusiveDurableFile,
 } from "./path-policy.mjs";
 import { sha256 } from "./source-snapshot.mjs";
+import {
+  MUTATION_PUBLICATION_SCHEMA_VERSION,
+  MUTATION_RECEIPT_SCHEMA_VERSION,
+} from "./schema.mjs";
 
-export const MUTATION_RECEIPT_SCHEMA_VERSION = 3;
-export const MUTATION_PUBLICATION_SCHEMA_VERSION = 1;
+export {
+  MUTATION_PUBLICATION_SCHEMA_VERSION,
+  MUTATION_RECEIPT_SCHEMA_VERSION,
+} from "./schema.mjs";
 const PROFILE = "oxdatalog-d2-complete";
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

@@ -10,9 +10,12 @@
   task registry, generated command registry, and bounded candidate-rejection
   receipts are implemented and directly tested. A dual-provider G1.2
   application run is accepted, and G1.3-G1.6 have direct source-bound candidate
-  acceptances. The existing `tools/metaharness`
-  semantic qualifier remains separate; unattended Dream Machine execution
-  remains deferred behind the activation gates in this ADR
+  acceptances. A dedicated artifact-first G1.7 runner, structural verifier,
+  sealed-inventory reopen and owner-contract replay, and fail-closed CLI are
+  implemented and directly tested, but do not close the G1.7 product gate. The
+  existing `tools/metaharness` semantic qualifier remains separate; unattended
+  Dream Machine execution remains deferred behind the activation gates in this
+  ADR
 - Update note: implementation preserves human-only promotion and the
   committed G0-G4 task graph without treating Ruflo rows, installed packages,
   generic scores, or application receipts as semantic qualification. Native
@@ -25,7 +28,13 @@
   `afe30c7de7e3df6e72a0a855d83efc612339f261` adds current receipt v6,
   exact attempt-or-rejection accounting for every successful patch-producing
   invocation, non-trainable reconstruction/applicability rejection records,
-  and byte-exact replay-only handling for v1-v5
+  and byte-exact replay-only handling for v1-v5. The outer G1.7 qualification
+  receipt remains v1. Newly minted semantic or
+  compatibility `PASS` projections carry explicit v2 schemas. Structural
+  verification proves canonical serialization, hashes, and schema state only;
+  sealed verification reopens the inventory and replays copied MetaHarness and
+  Agentic-QE owner contracts. Legacy unversioned `PASS` evidence remains
+  `LEGACY_REPLAY_ONLY`
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -264,6 +273,25 @@ implemented and directly tested:
 Package installation, factory scaffolding, mocked workers, a readiness score,
 or a synthetic Darwin run does not satisfy this definition.
 
+### G1.7 qualification-control boundary
+
+The outer G1.7 qualification receipt remains
+`oxigraph.g1.7-qualification-receipt/v1`. Newly minted semantic or
+compatibility `PASS` projections must carry their explicit v2 schema.
+Structural verification proves canonical serialization, hashes, and schema
+state only: a current structural `PASS` is `CURRENT_SCHEMA_UNREPLAYED` and is
+never qualification-eligible. Sealed verification reopens the sealed artifact
+inventory and replays the copied MetaHarness and Agentic-QE owner contracts.
+Legacy unversioned `PASS` evidence is `LEGACY_REPLAY_ONLY`.
+
+Compatibility replay currently reaches only
+`AGENTIC_OWNER_CONTRACT_REPLAYED`. It does not independently replay the native
+Cargo lane summaries contained in the compatibility projection, cannot produce
+`COMPATIBILITY_OWNER_CONTRACT_REPLAYED`, and therefore leaves
+`qualificationEligible` false. Reference selection remains `UNSELECTED`, the
+performance-budget and noise decisions remain `ABSENT`, and the benchmark is
+`NOT_RUN`; G1.7 consequently remains `INCONCLUSIVE`.
+
 ## Programme decisions and task ownership
 
 The programme keeps three different records deliberately separate:
@@ -446,6 +474,14 @@ Non-authoritative local verification on 2026-08-24 established:
   execution.
 
 Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
+
+- the dedicated G1.7 qualification-control implementation preserves an outer
+  receipt-v1/projection-v2 boundary, separates structural validation from
+  sealed owner-contract replay, and leaves synthetic, legacy, Agentic-only,
+  and incomplete native compatibility evidence ineligible. Its exact
+  clean-subject test result and commit identity are recorded only after a
+  committed clean-worktree rerun; this control is not benchmark evidence or a
+  promotion decision;
 
 - 180/180 engineering-harness tests on the committed registry tree and a
   `runner-implemented` dependency/provider doctor. The doctor exposes the exact

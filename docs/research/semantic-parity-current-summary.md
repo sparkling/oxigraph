@@ -41,7 +41,7 @@ closure remain incomplete.
 | OWL 2 RL/RDF | 98/98 assertions across 68 RDF-based cases | Exact 78-rule inventory: 46 Datalog rules and 32 specialized operators |
 | SHACL 1.2 evidence lanes | 521 discovered; 519/519 eligible cases pass; 2 invalid upstream exclusions; Rust 167/167 all-feature and 114/114 no-default tests; Jena SHACL-C 32/32 | Five separately classified lanes; synchronous WebAssembly SPARQL-backed validation fails closed because cooperative timeout/cancellation cannot be guaranteed; no family-parity claim |
 | Apache Jena 6.1.0 differential | 76 scenarios and 198 assertions | Reviewed outcome intersection only; one distinct successful outcome is a W3C-permitted implementation variant |
-| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 18/18 adversarial tests; 144/129 CLI and 34/34 persistence-write scoped profiles; exact ordered 41-command Meta gate and 47-command parity definitions | Sequential, repository-leased coordinator and receipt recorder; scoped evidence is not a current aggregate receipt and never the semantic oracle |
+| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 19/19 adversarial tests; 144/129 CLI and 34/34 persistence-write scoped profiles; exact ordered 41-command Meta gate and 47-command parity definitions | Sequential, repository-leased coordinator and receipt recorder; scoped evidence is not a current aggregate receipt and never the semantic oracle |
 | MetaHarness/Darwin `latest` (lock-resolved 0.9.3) | Full semantic-mode runner plus independent verification | No qualification result exists unless both current receipts verify against the same protected snapshot; never a semantic oracle |
 
 The Jena matrix classifies 70 scenarios as agreement, 4 as

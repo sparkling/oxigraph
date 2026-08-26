@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -31,39 +31,28 @@ import {
 } from "../dependency-policy.mjs";
 import { validateMutationReceipt } from "../mutation/evidence.mjs";
 import {
-  mutationProjectionValid,
-  mutationQualificationBindingValid,
-} from "./mutation-binding.mjs";
-import {
-  agenticProjectionValid,
-  agenticQualificationBindingValid,
-} from "./agentic-binding.mjs";
+  comparePortablePaths,
+  protectedInputs,
+} from "./policy-contract.mjs";
+import { sha256 } from "./receipt-contract.mjs";
 
-export const protectedInputs = Object.freeze([
-  ".github/workflows/tests.yml",
-  "Cargo.toml",
-  "Cargo.lock",
-  "README.md",
-  "cli",
-  "docs/adr",
-  "docs/plans",
-  "docs/research",
-  "js",
-  "lib",
-  "python",
-  "testsuite",
-  "tools/agentic-qe",
-  "tools/child-environment.mjs",
-  "tools/datalog-oracles",
-  "tools/dependency-policy.mjs",
-  "tools/evidence",
-  "tools/jena-parity",
-  "tools/metaharness",
-  "tools/mutation",
-  "tools/owl2-tests",
-  "tools/shacl-tests",
-  "tools/w3c-tests",
-]);
+export {
+  qualificationContentHash,
+  qualificationReceiptBytes,
+  sha256,
+  trustedRealGateValid,
+  validateQualificationReceipt,
+  validateSemanticEvidencePair,
+  validateVerificationReceipt,
+  verificationContentHash,
+  verificationFromQualification,
+  verificationReceiptBytes,
+} from "./receipt-contract.mjs";
+export {
+  comparePortablePaths,
+  mutablePolicy,
+  protectedInputs,
+} from "./policy-contract.mjs";
 
 const skippedDirectoryNames = new Set([
   ".git",
@@ -77,10 +66,6 @@ const skippedDirectoryNames = new Set([
 ]);
 
 const skippedRepositoryDirectories = new Set(["js/pkg"]);
-
-export function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 export function portable(path) {
   return path.split("\\").join("/");
@@ -180,7 +165,7 @@ function inputFiles(root, path, output, { skipDirectories = true } = {}) {
     throw new Error(`unsupported protected input: ${path}`);
   }
   for (const entry of readdirSync(path, { withFileTypes: true }).sort((a, b) =>
-    a.name.localeCompare(b.name),
+    comparePortablePaths(a.name, b.name),
   )) {
     const entryPath = join(path, entry.name);
     if (
@@ -208,7 +193,6 @@ export function snapshotRoots(root, roots, options = {}) {
     }
     inputFiles(canonicalRoot, absolute, files, options);
   }
-  files.sort((left, right) => left.path.localeCompare(right.path));
   const records = files.map((input) => {
     const name = portable(relative(canonicalRoot, input.path));
     if (input.linkTarget !== undefined) {
@@ -238,6 +222,12 @@ export function snapshotRoots(root, roots, options = {}) {
       bytes: bytes.length,
     };
   });
+  records.sort((left, right) => comparePortablePaths(left.path, right.path));
+  for (let index = 1; index < records.length; index += 1) {
+    if (records[index - 1].path === records[index].path) {
+      throw new Error(`protected input roots overlap at: ${records[index].path}`);
+    }
+  }
   return {
     algorithm: "sha256",
     contentHash: sha256(JSON.stringify(records)),
@@ -256,7 +246,7 @@ export function changedInputs(before, after) {
   const right = new Map(after.files.map((item) => [item.path, item.sha256]));
   return [...new Set([...left.keys(), ...right.keys()])]
     .filter((path) => left.get(path) !== right.get(path))
-    .sort();
+    .sort(comparePortablePaths);
 }
 
 export function validateMutationQualification(value, inputs) {
@@ -349,199 +339,4 @@ export function darwinInstallationSnapshot(repoRoot, toolDir) {
     contentHash: packageSnapshot.contentHash,
     fileCount: packageSnapshot.fileCount,
   };
-}
-
-export function qualificationContentHash(receipt) {
-  const realGate = receipt.realGate;
-  return sha256(
-    JSON.stringify({
-      schemaVersion: receipt.schemaVersion,
-      qualification: receipt.qualification,
-      darwinVersion: receipt.darwinVersion,
-      mode: receipt.mode,
-      startedAt: receipt.startedAt,
-      finishedAt: receipt.finishedAt,
-      runtime: receipt.runtime,
-      policyBoundary: receipt.policyBoundary,
-      inputs: receipt.inputs,
-      synthetic: receipt.synthetic,
-      safety: receipt.safety,
-      mutation: receipt.mutation,
-      realGate:
-        realGate === null
-          ? null
-          : {
-              taskId: realGate.taskId,
-              exitCode: realGate.exitCode,
-              timedOut: realGate.timedOut,
-              blockedActions: realGate.blockedActions,
-              durationMs: realGate.durationMs,
-              stdoutHash: realGate.stdoutHash,
-              stderrHash: realGate.stderrHash,
-              agenticReceipt: realGate.agenticReceipt,
-              receiptError: realGate.receiptError,
-              passed: realGate.passed,
-            },
-      gates: receipt.gates,
-      passed: receipt.passed,
-    }),
-  );
-}
-
-const realGateKeys = Object.freeze(
-  [
-    "agenticReceipt",
-    "blockedActions",
-    "durationMs",
-    "exitCode",
-    "passed",
-    "receiptError",
-    "stderrHash",
-    "stdoutHash",
-    "taskId",
-    "timedOut",
-  ].sort(),
-);
-const qualificationGateKeys = Object.freeze(
-  ["solve", "regression", "safety", "cost", "reproducibility"].sort(),
-);
-
-export function trustedRealGateValid(
-  realGate,
-  { timeoutMs = 1_200_000 } = {},
-) {
-  const hash = (value) => /^[0-9a-f]{64}$/.test(value ?? "");
-  return (
-    realGate !== null &&
-    typeof realGate === "object" &&
-    !Array.isArray(realGate) &&
-    JSON.stringify(Object.keys(realGate).sort()) ===
-      JSON.stringify(realGateKeys) &&
-    typeof realGate.taskId === "string" &&
-    realGate.taskId.length > 0 &&
-    realGate.exitCode === 0 &&
-    realGate.timedOut === false &&
-    Array.isArray(realGate.blockedActions) &&
-    realGate.blockedActions.length === 0 &&
-    Number.isFinite(timeoutMs) &&
-    timeoutMs >= 0 &&
-    Number.isFinite(realGate.durationMs) &&
-    realGate.durationMs >= 0 &&
-    realGate.durationMs <= timeoutMs &&
-    hash(realGate.stdoutHash) &&
-    hash(realGate.stderrHash) &&
-    agenticQualificationBindingValid(realGate.agenticReceipt) &&
-    realGate.receiptError === null &&
-    realGate.passed === true
-  );
-}
-
-function strictIsoTimestampMs(value) {
-  if (typeof value !== "string") return NaN;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value
-    ? parsed
-    : NaN;
-}
-
-export function validateQualificationReceipt(
-  receipt,
-  { expectedDarwinVersion, requireFull = true },
-) {
-  const startedAt = strictIsoTimestampMs(receipt?.startedAt);
-  const finishedAt = strictIsoTimestampMs(receipt?.finishedAt);
-  const agenticGeneratedAt = strictIsoTimestampMs(
-    receipt?.realGate?.agenticReceipt?.generatedAt,
-  );
-  const fullMode = receipt?.mode === "synthetic-and-semantic-gate";
-  const syntheticMode = receipt?.mode === "synthetic-only";
-  if (
-    !receipt ||
-    typeof receipt !== "object" ||
-    receipt.schemaVersion !== 2 ||
-    receipt.qualification !== "oxigraph-policy-only-darwin" ||
-    receipt.darwinVersion !== expectedDarwinVersion ||
-    (!fullMode && !syntheticMode) ||
-    (requireFull && !fullMode) ||
-    receipt.passed !== true ||
-    !Number.isFinite(startedAt) ||
-    !Number.isFinite(finishedAt) ||
-    finishedAt < startedAt ||
-    receipt.inputs?.protectedInputsStable !== true ||
-    receipt.inputs?.implementationStable !== true ||
-    receipt.inputs?.darwin?.stable !== true ||
-    receipt.inputs?.before?.contentHash !== receipt.inputs?.after?.contentHash ||
-    !Array.isArray(receipt.inputs?.changedPaths) ||
-    receipt.inputs.changedPaths.length !== 0 ||
-    receipt.synthetic?.projectionHash !==
-      receipt.synthetic?.replayProjectionHash ||
-    receipt.safety?.directoryBlocked !== true ||
-    receipt.safety?.generatedCodeBlocked !== true ||
-    receipt.gates === null ||
-    typeof receipt.gates !== "object" ||
-    Array.isArray(receipt.gates) ||
-    JSON.stringify(Object.keys(receipt.gates).sort()) !==
-      JSON.stringify(qualificationGateKeys) ||
-    qualificationGateKeys.some((gate) => receipt.gates[gate] !== true) ||
-    (fullMode &&
-      (!mutationQualificationBindingValid(receipt.mutation) ||
-        !trustedRealGateValid(receipt.realGate) ||
-        !Number.isFinite(agenticGeneratedAt) ||
-        agenticGeneratedAt < startedAt ||
-        agenticGeneratedAt > finishedAt)) ||
-    (syntheticMode &&
-      (receipt.mutation !== null || receipt.realGate !== null)) ||
-    receipt.contentHash !== qualificationContentHash(receipt)
-  ) {
-    throw new Error("Darwin qualification receipt failed its hash or gate contract");
-  }
-  return receipt;
-}
-
-export function verificationContentHash(receipt) {
-  return sha256(
-    JSON.stringify({
-      schemaVersion: receipt.schemaVersion,
-      verified: receipt.verified,
-      qualification: receipt.qualification,
-      protectedContentHash: receipt.protectedContentHash,
-      darwinContentHash: receipt.darwinContentHash,
-      mutation: receipt.mutation,
-      agentic: receipt.agentic,
-    }),
-  );
-}
-
-export function validateVerificationReceipt(
-  receipt,
-  {
-    qualification,
-    protectedContentHash,
-    darwinContentHash,
-    mutation,
-    agentic,
-  },
-) {
-  const hash = (value) => /^[0-9a-f]{64}$/.test(value ?? "");
-  if (
-    !receipt ||
-    typeof receipt !== "object" ||
-    receipt.schemaVersion !== 1 ||
-    receipt.verified !== true ||
-    !hash(receipt.qualification?.sha256) ||
-    !hash(receipt.qualification?.contentHash) ||
-    !hash(receipt.protectedContentHash) ||
-    !hash(receipt.darwinContentHash) ||
-    !mutationProjectionValid(receipt.mutation) ||
-    !agenticProjectionValid(receipt.agentic) ||
-    JSON.stringify(receipt.qualification) !== JSON.stringify(qualification) ||
-    receipt.protectedContentHash !== protectedContentHash ||
-    receipt.darwinContentHash !== darwinContentHash ||
-    JSON.stringify(receipt.mutation) !== JSON.stringify(mutation) ||
-    JSON.stringify(receipt.agentic) !== JSON.stringify(agentic) ||
-    receipt.contentHash !== verificationContentHash(receipt)
-  ) {
-    throw new Error("Darwin verification receipt failed its evidence bindings");
-  }
-  return receipt;
 }

@@ -2,11 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
-- Implementation status: G1.1-G1.4 implemented and source-bound; G1.7's
-  compatibility, performance, and current-evidence promotion gate remains
-  outstanding
+- Implementation status: G1.1-G1.4 implemented and source-bound. The dedicated
+  G1.7 qualification-control scaffold is implemented, while native
+  compatibility replay, reviewed reference and budgets, benchmark/noise
+  evidence, and the current-evidence promotion decision remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
@@ -76,7 +77,8 @@ This ADR may move to Implemented only when:
 - the 1/4/16-writer matrix passes while concurrent readers remain live;
 - gate acquisition and cancellation are bounded and leak no partial writes;
 - every public capability claim is backed by an executable receipt; and
-- compatibility and performance promotion remains blocked on G0 and G1.7.
+- compatibility and performance promotion remains blocked on the still-open
+  G1.7 gate and any stale lower receipt.
 
 ## Consequences
 
@@ -183,5 +185,10 @@ twenty-one regression tests. Its 118,202-byte session artifact has SHA-256
 ADR-0018 remains Proposed until G1.7 closes the compatibility, performance,
 and current-evidence promotion boundary; G1.5c completion alone does not grant
 promotion authority or add savepoints to caller-owned transactions.
-The executable plan identifiers are G1.1-G1.5c in the
+The current G1.7 scaffold can structurally verify current v2 projections and
+sealed-replay copied MetaHarness and Agentic-QE contracts, but compatibility
+replay currently reaches only `AGENTIC_OWNER_CONTRACT_REPLAYED`. It does not
+independently replay native Cargo lane summaries and cannot make the evidence
+qualification-eligible. The transaction identifiers are G1.1-G1.5c; G1.7 is
+the joint compatibility/performance promotion gate in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

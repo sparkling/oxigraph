@@ -44,6 +44,7 @@ import {
   validateQualificationReceipt,
   writeJsonAtomic,
 } from "./evidence.mjs";
+import { mutablePolicy } from "./policy-contract.mjs";
 
 const toolDir = realpathSync(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = realpathSync(resolve(toolDir, "../.."));
@@ -366,15 +367,7 @@ async function main() {
     startedAt,
     finishedAt: new Date().toISOString(),
     policyBoundary: {
-      mutable: [
-        "planner",
-        "contextBuilder",
-        "reviewer",
-        "retryPolicy",
-        "toolPolicy",
-        "memoryPolicy",
-        "scorePolicy",
-      ],
+      mutable: mutablePolicy,
       protectedInputs,
     },
     inputs: {

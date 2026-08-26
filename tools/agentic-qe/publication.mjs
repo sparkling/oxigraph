@@ -5,28 +5,9 @@ import {
   stableRegularFileBytes,
 } from "./file-safety.mjs";
 import { portablePath, repoRoot } from "./path-policy.mjs";
+import { publicationStructureMatches } from "./receipt-contract.mjs";
 
-function expectedPublication(receipt) {
-  const root = `target/agentic-qe/${receipt.profile}/runs/${receipt.runId}`;
-  return {
-    schemaVersion: 1,
-    immutable: true,
-    root,
-    receiptPath: `${root}/receipt.json`,
-    oraclePath: `${root}/oracle.json`,
-  };
-}
-
-export function publicationStructureMatches(receipt) {
-  const expected = expectedPublication(receipt);
-  return (
-    receipt?.publication?.schemaVersion === expected.schemaVersion &&
-    receipt.publication.immutable === true &&
-    receipt.publication.root === expected.root &&
-    receipt.publication.receiptPath === expected.receiptPath &&
-    receipt.publication.oraclePath === expected.oraclePath
-  );
-}
+export { publicationStructureMatches } from "./receipt-contract.mjs";
 
 function stablePublicationBytes(repositoryRoot, relativePath) {
   const lexical = resolve(repositoryRoot, relativePath);

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { canonicalSha256 } from "../src/routing/features.mjs";
+import {
+  G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  G17_SEMANTIC_EVIDENCE_SCHEMA,
+} from "../src/qualification/evidence-contract.mjs";
 import {
   createG17Receipt,
   g17ReceiptBytes,
@@ -77,6 +82,36 @@ function draft() {
   };
 }
 
+function passEvidence(schema) {
+  const projection = { schema, status: "PASS" };
+  return {
+    status: "PASS",
+    sha256: canonicalSha256(projection),
+    reasons: [],
+    projection,
+  };
+}
+
+function acceptingDraft() {
+  const value = draft();
+  value.contract.referenceDecision = "SELECTED";
+  value.contract.budgetDecision = "APPROVED";
+  value.contract.noiseDecision = "APPROVED";
+  value.evidence.semantic = passEvidence(G17_SEMANTIC_EVIDENCE_SCHEMA);
+  value.evidence.compatibility = passEvidence(
+    G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  );
+  value.benchmark = {
+    status: "PASS",
+    sampleCount: 1,
+    samplesSha256: "a".repeat(64),
+    summarySha256: "b".repeat(64),
+    budgetBreaches: [],
+  };
+  value.final = { verdict: "ACCEPT", reasons: [] };
+  return value;
+}
+
 test("G1.7 receipt is canonical, hash-bound, and permanently non-authoritative", () => {
   const receipt = createG17Receipt(draft());
   assert.deepEqual(receipt.authority, {
@@ -92,11 +127,65 @@ test("G1.7 receipt is canonical, hash-bound, and permanently non-authoritative",
   assert.equal(bytes.at(-1), 0x0a);
   assert.deepEqual(verifyG17Receipt(bytes), {
     ok: true,
+    structurallyValid: true,
+    verificationStatus: "STRUCTURALLY_VALID",
+    qualificationEligible: false,
+    evidenceSchemaState: {
+      semantic: "NOT_APPLICABLE",
+      compatibility: "NOT_APPLICABLE",
+    },
     receipt,
     contentHash: receipt.contentHash,
     executionHash: receipt.executionHash,
     receiptSha256: receipt.receiptSha256,
   });
+});
+
+test("structural verification marks current PASS evidence as unreplayed", () => {
+  const receipt = createG17Receipt(acceptingDraft());
+  const verification = verifyG17Receipt(g17ReceiptBytes(receipt));
+  assert.equal(verification.ok, true);
+  assert.equal(verification.structurallyValid, true);
+  assert.equal(verification.verificationStatus, "STRUCTURALLY_VALID");
+  assert.equal(verification.qualificationEligible, false);
+  assert.deepEqual(verification.evidenceSchemaState, {
+    semantic: "CURRENT_SCHEMA_UNREPLAYED",
+    compatibility: "CURRENT_SCHEMA_UNREPLAYED",
+  });
+  assert.equal("evidenceAssurance" in verification, false);
+});
+
+test("G1.7 receipt creation requires each PASS projection's exact v2 schema", () => {
+  assert.doesNotThrow(() => createG17Receipt(acceptingDraft()));
+
+  for (const lane of ["semantic", "compatibility"]) {
+    const absent = acceptingDraft();
+    delete absent.evidence[lane].projection.schema;
+    absent.evidence[lane].sha256 = canonicalSha256(
+      absent.evidence[lane].projection,
+    );
+    assert.throws(
+      () => createG17Receipt(absent),
+      /PASS evidence requires its current v2 projection schema/u,
+    );
+
+    for (const schema of [
+      lane === "semantic"
+        ? G17_COMPATIBILITY_EVIDENCE_SCHEMA
+        : G17_SEMANTIC_EVIDENCE_SCHEMA,
+      "oxigraph.g1.7-unknown-evidence/v99",
+    ]) {
+      const unsupported = acceptingDraft();
+      unsupported.evidence[lane].projection.schema = schema;
+      unsupported.evidence[lane].sha256 = canonicalSha256(
+        unsupported.evidence[lane].projection,
+      );
+      assert.throws(
+        () => createG17Receipt(unsupported),
+        /evidence projection schema is unsupported/u,
+      );
+    }
+  }
 });
 
 test("G1.7 receipt verifier rejects authority, identity, artifact, and hash tampering", () => {

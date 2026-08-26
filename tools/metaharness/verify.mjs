@@ -28,6 +28,7 @@ import {
   validateQualificationReceipt,
   validateVerificationReceipt,
   verificationContentHash,
+  verificationFromQualification,
   writeJsonAtomic,
 } from "./evidence.mjs";
 import { agenticQualificationBindingValid } from "./agentic-binding.mjs";
@@ -118,6 +119,7 @@ function main() {
   validateQualificationReceipt(qualification, {
     expectedDarwinVersion: darwin.version,
     requireFull: true,
+    strictNested: true,
   });
   if (!trustedRealGateValid(qualification.realGate)) {
     throw new Error("Darwin qualification real gate is not independently closed");
@@ -166,12 +168,21 @@ function main() {
     agentic,
   };
   verification.contentHash = verificationContentHash(verification);
+  const derivedVerification = verificationFromQualification(
+    qualification,
+    qualificationBytes,
+  );
+  if (JSON.stringify(verification) !== JSON.stringify(derivedVerification)) {
+    throw new Error(
+      "Darwin verification evidence is not derived from qualification",
+    );
+  }
   validateVerificationReceipt(verification, {
-    qualification: verification.qualification,
-    protectedContentHash: current.contentHash,
-    darwinContentHash: darwin.contentHash,
-    mutation,
-    agentic,
+    qualification: derivedVerification.qualification,
+    protectedContentHash: derivedVerification.protectedContentHash,
+    darwinContentHash: derivedVerification.darwinContentHash,
+    mutation: derivedVerification.mutation,
+    agentic: derivedVerification.agentic,
   });
   const outputPath = join(
     repoRoot,

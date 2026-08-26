@@ -83,14 +83,7 @@ export function validateImplementationManifest(manifest) {
   return manifest;
 }
 
-export function implementationManifestValid(manifest) {
-  try {
-    validateImplementationManifest(manifest);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { implementationManifestValid } from "./receipt-contract.mjs";
 
 export function createImplementationManifest(files) {
   const records = files

@@ -1,6 +1,7 @@
 # Persistence writes and linked-data-store parity plan
 
-- Status: active plan; write seam and G1.3-G1.6 P0 slices complete
+- Status: active plan; write seam and G1.3-G1.6 P0 slices complete; the G1.7
+  qualification-control scaffold is implemented while P0.5 remains open
 - Date: 2026-08-24
 - Updated: 2026-08-26
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
@@ -287,7 +288,7 @@ The unfinished work is split by architectural ownership:
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Harness registry and rejection-evidence controls implemented; G0.6/G0.7 scoped evidence is reconciled; ADR-0018 and G1.7 compatibility/performance promotion remain open |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Harness registry, rejection-evidence controls, and the G1.7 qualification-control scaffold are implemented; compatibility replay is Agentic-only, qualification-ineligible, and P0.5 remains open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -426,6 +427,17 @@ Acceptance:
 #### P0.5 Compatibility and performance gate — M
 
 Dependencies: P0.1–P0.4.
+
+The local G1.7 control preserves the outer qualification receipt v1 while
+requiring explicit v2 schemas for newly minted semantic and compatibility
+`PASS` projections. Structural verification proves serialization, hashes, and
+schema state only; sealed verification reopens the inventory and replays copied
+MetaHarness and Agentic-QE owner contracts. Compatibility currently reaches
+only `AGENTIC_OWNER_CONTRACT_REPLAYED`, does not independently replay native
+Cargo lane summaries, and cannot make `qualificationEligible` true. Legacy
+unversioned `PASS` evidence remains `LEGACY_REPLAY_ONLY`. This scaffold does not
+replace the benchmark, semantic, compatibility, or human-promotion acceptance
+requirements below.
 
 - Benchmark built-in `on_store` before/after and generic `on_dataset` on memory
   and disk.

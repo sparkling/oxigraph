@@ -20,13 +20,16 @@ import {
   ensureDirectoryInside,
   executableProvenance,
   parseCargoMutantsVersion,
+  protectedSnapshotValid,
   readStableFileBytes,
+  sha256,
   snapshotProtectedInputs,
   validateOutcomes,
   writeJsonAtomic,
 } from "./evidence.mjs";
 import { runProcess } from "./process.mjs";
 import { syncDirectory } from "./publication.mjs";
+import { comparePortablePaths } from "./source-snapshot.mjs";
 
 const version = "99.88.77";
 const cargoPath = "/test/cargo";
@@ -304,6 +307,130 @@ test("protected snapshots expose added and changed files", () => {
       "inputs/a.txt",
       "inputs/b.txt",
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("mutation protected snapshots sort emitted portable paths and reject overlaps", () => {
+  const root = temporaryDirectory();
+  try {
+    mkdirSync(join(root, "inputs", "a"), { recursive: true });
+    for (const path of ["a-z", "a.b", "a0", "a_b"]) {
+      writeFileSync(join(root, "inputs", path), `${path}\n`);
+    }
+    writeFileSync(join(root, "inputs", "a", "b"), "nested\n");
+    const expected = [
+      "inputs/a-z",
+      "inputs/a.b",
+      "inputs/a/b",
+      "inputs/a0",
+      "inputs/a_b",
+    ];
+    const snapshot = snapshotProtectedInputs(root, ["inputs"]);
+    assert.deepEqual(snapshot.files.map(({ path }) => path), expected);
+    assert.deepEqual([...expected].sort(comparePortablePaths), expected);
+    assert.equal(snapshot.contentHash, sha256(JSON.stringify(snapshot.files)));
+
+    mkdirSync(join(root, "other"));
+    writeFileSync(join(root, "other", "z"), "z\n");
+    assert.deepEqual(
+      snapshotProtectedInputs(root, ["other", "inputs"]).roots,
+      ["inputs", "other"],
+    );
+
+    const nativeOrder = expected
+      .map((path) => path.replaceAll("/", "\\"))
+      .sort(comparePortablePaths)
+      .map((path) => path.replaceAll("\\", "/"));
+    assert.deepEqual(nativeOrder, [
+      "inputs/a-z",
+      "inputs/a.b",
+      "inputs/a0",
+      "inputs/a/b",
+      "inputs/a_b",
+    ]);
+    assert.notDeepEqual(nativeOrder, expected);
+
+    for (const { path } of snapshot.files) {
+      writeFileSync(join(root, ...path.split("/")), `changed:${path}\n`);
+    }
+    const changed = snapshotProtectedInputs(root, ["inputs"]);
+    assert.deepEqual(changedInputs(snapshot, changed), expected);
+    assert.throws(
+      () => snapshotProtectedInputs(root, ["inputs", "inputs"]),
+      /roots contain duplicates/u,
+    );
+    assert.throws(
+      () => snapshotProtectedInputs(root, ["inputs", "inputs/a-z"]),
+      /roots overlap/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("mutation protected snapshot verifier rejects non-portable roots and files", () => {
+  const root = temporaryDirectory();
+  try {
+    mkdirSync(join(root, "inputs"));
+    writeFileSync(join(root, "inputs", "a"), "a\n");
+    const valid = snapshotProtectedInputs(root, ["inputs"]);
+    assert.equal(protectedSnapshotValid(valid), true);
+
+    const duplicateRoots = structuredClone(valid);
+    duplicateRoots.roots = ["inputs", "inputs"];
+    assert.equal(protectedSnapshotValid(duplicateRoots), false);
+
+    const duplicateFiles = structuredClone(valid);
+    duplicateFiles.files.push(structuredClone(duplicateFiles.files[0]));
+    duplicateFiles.fileCount = duplicateFiles.files.length;
+    duplicateFiles.contentHash = sha256(JSON.stringify(duplicateFiles.files));
+    assert.equal(protectedSnapshotValid(duplicateFiles), false);
+
+    const reordered = structuredClone(valid);
+    reordered.files = [
+      { path: "inputs/b", sha256: "b".repeat(64), bytes: 1 },
+      ...reordered.files,
+    ];
+    reordered.fileCount = reordered.files.length;
+    reordered.contentHash = sha256(JSON.stringify(reordered.files));
+    assert.equal(protectedSnapshotValid(reordered), false);
+
+    for (const unsafeRoot of [
+      null,
+      {},
+      1,
+      "",
+      "/abs",
+      "../escape",
+      "a\\b",
+      ".",
+      "a//b",
+      "a/./b",
+      "a/\0b",
+    ]) {
+      const candidate = structuredClone(valid);
+      candidate.roots = [unsafeRoot];
+      assert.equal(protectedSnapshotValid(candidate), false);
+    }
+
+    for (const unsafePath of [
+      "inputs//a",
+      "inputs/./a",
+      "inputs/a/",
+      "inputs/\0a",
+      ".",
+      "./a",
+      "/inputs/a",
+      "inputs\\a",
+      "inputs/../a",
+    ]) {
+      const candidate = structuredClone(valid);
+      candidate.files[0].path = unsafePath;
+      candidate.contentHash = sha256(JSON.stringify(candidate.files));
+      assert.equal(protectedSnapshotValid(candidate), false);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

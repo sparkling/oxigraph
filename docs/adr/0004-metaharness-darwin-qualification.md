@@ -8,7 +8,7 @@
   semantic mode, independent receipt verification, and latest-compatible
   dependency policy implemented; the current integrity-bound lockfile resolves
   `@metaharness/darwin` 0.9.3 and qualification remains receipt-dependent
-- Update note: the local MetaHarness 13-test suite remains green with Darwin
+- Update note: the local MetaHarness 16-test suite remains green with Darwin
   0.9.3. G0.1-G0.7 now close their exact source registration, Jena
   runner/profile, Agentic-QE inventory, OxDatalog mutation, and protected-claim
   reconciliation scopes. G0.6 binds immutable mutation run
@@ -17,7 +17,11 @@
   design after these protected changes, and no current full semantic
   qualification or independent verification is claimed. On 2026-08-25 the
   dependency refresh also made lifecycle-script suppression and lock/ledger
-  reconciliation explicit.
+  reconciliation explicit. The G1.7 consumer can now project copied
+  qualification and verification bytes into an explicit v2 semantic PASS
+  projection and replay them through the pure receipt contract, but that
+  consumer replay neither regenerates nor makes the full semantic receipt
+  current.
 - **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),

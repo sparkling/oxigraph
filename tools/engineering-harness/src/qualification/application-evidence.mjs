@@ -15,6 +15,10 @@ import {
   validateAgenticReceipt,
 } from "../../../agentic-qe/evidence.mjs";
 import {
+  agenticDependencyEvidenceNames,
+  validateAgenticDependencyEvidence,
+} from "../../../agentic-qe/receipt-contract.mjs";
+import {
   commands as agenticCommands,
   profiles as agenticProfiles,
 } from "../../../agentic-qe/profile-definitions.mjs";
@@ -22,13 +26,16 @@ import { agenticQeDependencyResolution } from "../../../agentic-qe/version-polic
 import {
   darwinInstallationSnapshot,
   protectedSnapshot,
-  trustedRealGateValid,
-  validateQualificationReceipt,
-  validateVerificationReceipt,
+  validateSemanticEvidencePair,
 } from "../../../metaharness/evidence.mjs";
+import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { cargoTestInventory } from "../../../agentic-qe/execution-provenance.mjs";
 import { execute } from "../../../agentic-qe/process-runner.mjs";
 import { canonicalSha256 } from "../routing/features.mjs";
+import {
+  G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  G17_SEMANTIC_EVIDENCE_SCHEMA,
+} from "./evidence-contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
 
 const MAX_EVIDENCE_BYTES = 64 * 1024 * 1024;
@@ -197,6 +204,39 @@ export async function inspectG17AgenticEvidence({
       maximumGeneratedAtMs,
     });
     validateAgenticArtifactArchive(receipt, { repositoryRoot: root });
+    const dependencyBytes = {
+      manifestBytes: boundedRegularFile(
+        join(root, dependency.manifest),
+        root,
+        "Agentic dependency manifest",
+      ),
+      lockfileBytes: boundedRegularFile(
+        join(root, dependency.lockfile),
+        root,
+        "Agentic dependency lockfile",
+      ),
+      npmrcBytes: boundedRegularFile(
+        join(root, dependency.npmrc),
+        root,
+        "Agentic dependency npm policy",
+      ),
+      installedPackageJsonBytes: boundedRegularFile(
+        join(
+          root,
+          "tools",
+          "agentic-qe",
+          "node_modules",
+          "agentic-qe",
+          "package.json",
+        ),
+        root,
+        "installed Agentic dependency manifest",
+      ),
+    };
+    const dependencyEvidence = validateAgenticDependencyEvidence({
+      dependency,
+      ...dependencyBytes,
+    });
     const head = git(root, ["rev-parse", "HEAD"]).trim();
     const status = git(root, ["status", "--short"]);
     if (
@@ -218,6 +258,22 @@ export async function inspectG17AgenticEvidence({
     }
     const artifacts = [
       {
+        name: agenticDependencyEvidenceNames.installedPackageJson,
+        bytes: dependencyBytes.installedPackageJsonBytes,
+      },
+      {
+        name: agenticDependencyEvidenceNames.lockfile,
+        bytes: dependencyBytes.lockfileBytes,
+      },
+      {
+        name: agenticDependencyEvidenceNames.manifest,
+        bytes: dependencyBytes.manifestBytes,
+      },
+      {
+        name: agenticDependencyEvidenceNames.npmrc,
+        bytes: dependencyBytes.npmrcBytes,
+      },
+      {
         name: "agentic-oracle.json",
         bytes: publication.oracleBytes,
       },
@@ -236,7 +292,7 @@ export async function inspectG17AgenticEvidence({
         ),
       });
     }
-    artifacts.sort((left, right) => left.name.localeCompare(right.name));
+    artifacts.sort((left, right) => comparePortablePaths(left.name, right.name));
     const projection = {
       status: "PASS",
       subjectCommit: receipt.repository.gitHead,
@@ -253,6 +309,7 @@ export async function inspectG17AgenticEvidence({
       artifactContentHash: receipt.artifacts.contentHash,
       archiveContentHash: receipt.artifacts.archive.contentHash,
       archiveFileCount: receipt.artifacts.archive.files.length,
+      dependencyContentHash: dependencyEvidence.contentHash,
     };
     return Object.freeze({
       status: "PASS",
@@ -395,39 +452,27 @@ export async function inspectG17SemanticEvidence({
     const qualification = JSON.parse(qualificationBytes);
     const verification = JSON.parse(verificationBytes);
     const darwin = darwinInstallationSnapshot(root, join(root, "tools", "metaharness"));
-    validateQualificationReceipt(qualification, {
-      expectedDarwinVersion: darwin.version,
-      requireFull: true,
-    });
-    if (!trustedRealGateValid(qualification.realGate)) {
-      throw new Error("semantic real gate is not trusted");
-    }
     const protectedContentHash = protectedSnapshot(root).contentHash;
-    validateVerificationReceipt(verification, {
-      qualification: {
-        path: "target/metaharness/qualification.json",
-        sha256: sha256(qualificationBytes),
-        contentHash: qualification.contentHash,
+    if (
+      qualification.inputs?.after?.contentHash !== protectedContentHash ||
+      qualification.inputs?.darwin?.after?.contentHash !== darwin.contentHash
+    ) {
+      throw new Error("semantic qualification inputs are stale");
+    }
+    const ownerProjection = validateSemanticEvidencePair({
+      qualification,
+      qualificationBytes,
+      verification,
+      verificationBytes,
+      expectedDarwinVersion: darwin.version,
+      expectedDarwinDependency: {
+        ...darwin,
+        installedPackageJsonSha256: darwin.packageJsonSha256,
       },
-      protectedContentHash,
-      darwinContentHash: darwin.contentHash,
-      mutation: verification.mutation,
-      agentic: verification.agentic,
     });
     const projection = {
-      status: "PASS",
-      qualification: {
-        sha256: sha256(qualificationBytes),
-        contentHash: qualification.contentHash,
-        mode: qualification.mode,
-        darwinVersion: qualification.darwinVersion,
-      },
-      verification: {
-        sha256: sha256(verificationBytes),
-        contentHash: verification.contentHash,
-        protectedContentHash: verification.protectedContentHash,
-        darwinContentHash: verification.darwinContentHash,
-      },
+      ...ownerProjection,
+      schema: G17_SEMANTIC_EVIDENCE_SCHEMA,
     };
     return Object.freeze({
       status: "PASS",
@@ -463,6 +508,7 @@ export async function collectG17CompatibilityEvidence(options) {
         ? "STALE"
         : "MISSING";
   const projection = {
+    schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status,
     agenticQe: agenticQe.projection,
     native: native.lanes,

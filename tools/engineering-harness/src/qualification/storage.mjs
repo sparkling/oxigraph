@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 
+import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { ignoredByGit } from "../runtime/control-identity.mjs";
 import {
   ensureRuntimeRoot,
@@ -241,7 +242,9 @@ export async function openSealedG17Run({ runId, runsRoot = g17RunsRoot }) {
   ) {
     fail("sealed run entries are invalid");
   }
-  const entries = directoryEntries.map(({ name }) => name).sort();
+  const entries = directoryEntries
+    .map(({ name }) => name)
+    .sort(comparePortablePaths);
   if (!entries.includes("receipt.json") || entries.some((name) => !SAFE_ARTIFACT.test(name))) {
     fail("sealed run entries are invalid");
   }

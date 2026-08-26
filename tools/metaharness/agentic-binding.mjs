@@ -80,3 +80,21 @@ export function agenticProjectionValid(value) {
     projectionKeys.slice(3).every((key) => hash(value[key]))
   );
 }
+
+export function agenticProjectionFromQualificationBinding(binding) {
+  if (!agenticQualificationBindingValid(binding)) {
+    throw new Error("Agentic-QE qualification binding is invalid");
+  }
+  return {
+    schemaVersion: binding.schemaVersion,
+    runId: binding.runId,
+    generatedAt: binding.generatedAt,
+    receiptSha256: binding.sha256,
+    oracleSha256: binding.oracleSha256,
+    contentHash: binding.contentHash,
+    executionHash: binding.executionHash,
+    implementationContentHash: binding.implementationContentHash,
+    artifactContentHash: binding.artifactContentHash,
+    archiveContentHash: binding.archiveContentHash,
+  };
+}

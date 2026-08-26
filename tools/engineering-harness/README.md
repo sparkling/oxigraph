@@ -77,6 +77,17 @@ Current activation boundary:
   trigger a repair lane, and cannot mint routing quality. G1.6 requires exact
   counted-stage results 4/17/1/1/12. Five- and six-stage historical contracts
   and their existing application receipts remain replayable;
+- `g1.7:preflight`, `g1.7:run`, and `g1.7:verify` use a separate qualification
+  binary rather than the application-task registry. The runner writes copied
+  evidence artifacts before a canonical receipt and reopens the sealed run
+  through pure receipt-contract modules. Current v2 PASS projections are
+  structurally `CURRENT_SCHEMA_UNREPLAYED` until that replay succeeds; legacy
+  unversioned PASS evidence remains `LEGACY_REPLAY_ONLY`. A successful reopen
+  reports `SEALED_RUN_VERIFIED`, which covers envelope integrity only. Semantic
+  replay is labelled for the MetaHarness owner contract and compatibility
+  replay for the Agentic-QE owner contract; native compatibility is not yet
+  independently replayed, so neither an Agentic-only result nor a synthetic
+  fixture can make the run qualification-eligible;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v6 adds an exact `candidateRejections` collection and
@@ -266,6 +277,7 @@ npm run g1.5:preflight
 npm run g1.5b:preflight
 npm run g1.5c:preflight
 npm run g1.6:preflight
+npm run g1.7:preflight
 ```
 
 The package is local-only. Presence of this directory is not an engineering

@@ -31,6 +31,28 @@ export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+// ECMAScript relational string comparison is defined over UTF-16 code units.
+// Keep owner and verifier ordering independent of host locale and separators.
+export function comparePortablePaths(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function portableRelativePath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !value.startsWith("/") &&
+    !value.includes("\\") &&
+    !value.includes("\0") &&
+    value.split("/").every(
+      (component) =>
+        component.length > 0 && component !== "." && component !== "..",
+    )
+  );
+}
+
 export function executableProvenance(program, versionArguments) {
   const locator = process.platform === "win32" ? "where" : "which";
   const invokedPath = execFileSync(locator, [program], {
@@ -84,7 +106,7 @@ function inputFiles(path, output) {
     throw new Error(`unsupported protected input: ${path}`);
   }
   for (const entry of readdirSync(path, { withFileTypes: true }).sort((a, b) =>
-    a.name.localeCompare(b.name),
+    comparePortablePaths(a.name, b.name),
   )) {
     inputFiles(join(path, entry.name), output);
   }
@@ -95,7 +117,7 @@ function protectedRoots(root) {
   for (const path of optionalProtectedRoots) {
     if (existsSync(join(root, path))) roots.push(path);
   }
-  return roots.sort();
+  return roots.sort(comparePortablePaths);
 }
 
 export function snapshotProtectedInputs(
@@ -103,8 +125,18 @@ export function snapshotProtectedInputs(
   roots = protectedRoots(root),
 ) {
   const canonicalRoot = realpathSync(root);
+  const orderedRoots = [...roots].sort(comparePortablePaths);
+  if (
+    orderedRoots.length === 0 ||
+    orderedRoots.some((input) => !portableRelativePath(input))
+  ) {
+    throw new Error("protected input roots contain an unsafe path");
+  }
+  if (new Set(orderedRoots).size !== orderedRoots.length) {
+    throw new Error("protected input roots contain duplicates");
+  }
   const files = [];
-  for (const input of roots) {
+  for (const input of orderedRoots) {
     const lexical = resolve(canonicalRoot, input);
     if (!isInside(canonicalRoot, lexical)) {
       throw new Error(`protected input escapes repository: ${input}`);
@@ -114,17 +146,22 @@ export function snapshotProtectedInputs(
     }
     inputFiles(lexical, files);
   }
-  files.sort();
   const records = files.map((path) => {
     const name = portable(relative(canonicalRoot, path));
     const bytes = readStableFileBytes(canonicalRoot, path);
     return { path: name, sha256: sha256(bytes), bytes: bytes.length };
   });
+  records.sort((left, right) => comparePortablePaths(left.path, right.path));
+  for (let index = 1; index < records.length; index += 1) {
+    if (records[index - 1].path === records[index].path) {
+      throw new Error(`protected input roots overlap at: ${records[index].path}`);
+    }
+  }
   return {
     algorithm: "sha256",
     contentHash: sha256(JSON.stringify(records)),
     fileCount: records.length,
-    roots,
+    roots: orderedRoots,
     files: records,
   };
 }
@@ -134,7 +171,7 @@ export function changedInputs(before, after) {
   const right = new Map(after.files.map((item) => [item.path, item.sha256]));
   return [...new Set([...left.keys(), ...right.keys()])]
     .filter((path) => left.get(path) !== right.get(path))
-    .sort();
+    .sort(comparePortablePaths);
 }
 
 function exactKeys(value, keys) {
@@ -160,6 +197,7 @@ export function protectedSnapshotValid(snapshot) {
     !Number.isSafeInteger(snapshot.fileCount) ||
     snapshot.fileCount < 1 ||
     !Array.isArray(snapshot.roots) ||
+    snapshot.roots.length < 1 ||
     !Array.isArray(snapshot.files) ||
     snapshot.fileCount !== snapshot.files.length ||
     snapshot.contentHash !== sha256(JSON.stringify(snapshot.files))
@@ -167,9 +205,17 @@ export function protectedSnapshotValid(snapshot) {
     return false;
   }
   if (
-    JSON.stringify([...snapshot.roots].sort()) !==
+    snapshot.roots.some((root) => !portableRelativePath(root)) ||
+    new Set(snapshot.roots).size !== snapshot.roots.length ||
+    new Set(snapshot.files.map((file) => file?.path)).size !==
+      snapshot.files.length ||
+    JSON.stringify([...snapshot.roots].sort(comparePortablePaths)) !==
       JSON.stringify(snapshot.roots) ||
-    JSON.stringify(snapshot.files.map((file) => file?.path).sort()) !==
+    JSON.stringify(
+      snapshot.files
+        .map((file) => file?.path)
+        .sort(comparePortablePaths),
+    ) !==
       JSON.stringify(snapshot.files.map((file) => file?.path))
   ) {
     return false;
@@ -177,11 +223,7 @@ export function protectedSnapshotValid(snapshot) {
   return snapshot.files.every(
     (file) =>
       exactKeys(file, ["path", "sha256", "bytes"]) &&
-      typeof file.path === "string" &&
-      file.path.length > 0 &&
-      !file.path.startsWith("/") &&
-      !file.path.includes("\\") &&
-      !file.path.split("/").includes("..") &&
+      portableRelativePath(file.path) &&
       /^[0-9a-f]{64}$/.test(file.sha256) &&
       Number.isSafeInteger(file.bytes) &&
       file.bytes >= 0,

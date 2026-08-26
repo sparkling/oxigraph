@@ -24,6 +24,9 @@ import {
   portablePath,
   repoRoot,
 } from "./path-policy.mjs";
+import { archiveStructureMatches } from "./receipt-contract.mjs";
+
+export { archiveStructureMatches } from "./receipt-contract.mjs";
 
 const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 
@@ -209,74 +212,6 @@ export function archiveOutputArtifacts(profile, artifacts) {
     totalBytes,
     contentHash: sha256(JSON.stringify(files)),
   };
-}
-
-export function archiveStructureMatches(receipt) {
-  const artifacts = receipt?.artifacts;
-  const archive = artifacts?.archive;
-  if (
-    artifacts?.algorithm !== "sha256" ||
-    artifacts?.complete !== true ||
-    !Array.isArray(artifacts?.files) ||
-    !Array.isArray(artifacts?.missingPaths) ||
-    artifacts.missingPaths.length !== 0 ||
-    !Array.isArray(artifacts?.invalidPaths) ||
-    artifacts.invalidPaths.length !== 0 ||
-    artifacts.contentHash !== sha256(JSON.stringify(artifacts.files)) ||
-    !archive ||
-    archive.algorithm !== "sha256" ||
-    archive.complete !== true ||
-    !Array.isArray(archive.files) ||
-    archive.files.length !== artifacts.files.length ||
-    !Number.isSafeInteger(archive.totalBytes) ||
-    archive.totalBytes < 0 ||
-    archive.totalBytes > MAX_ARCHIVE_BYTES ||
-    !/^[0-9a-f]{64}$/.test(archive.contentHash ?? "")
-  ) {
-    return false;
-  }
-  let expectedRoot;
-  try {
-    expectedRoot = archiveRootFor(receipt.profile, artifacts.contentHash);
-  } catch {
-    return false;
-  }
-  if (archive.root !== portablePath(relative(repoRoot, expectedRoot))) {
-    return false;
-  }
-  let totalBytes = 0;
-  const seen = new Set();
-  for (const [index, file] of archive.files.entries()) {
-    const source = artifacts.files[index];
-    const canonicalSourcePath =
-      typeof source?.path === "string"
-        ? portablePath(relative(repoRoot, resolve(repoRoot, source.path)))
-        : null;
-    const expectedPath = portablePath(
-      relative(repoRoot, join(expectedRoot, `${String(index).padStart(4, "0")}.bin`)),
-    );
-    if (
-      !source ||
-      source.path !== canonicalSourcePath ||
-      (index > 0 && artifacts.files[index - 1].path >= source.path) ||
-      !Number.isSafeInteger(source.bytes) ||
-      source.bytes < 0 ||
-      !/^[0-9a-f]{64}$/.test(source.sha256 ?? "") ||
-      seen.has(file?.sourcePath) ||
-      file.sourcePath !== source.path ||
-      file.path !== expectedPath ||
-      file.bytes !== source.bytes ||
-      file.sha256 !== source.sha256
-    ) {
-      return false;
-    }
-    seen.add(file.sourcePath);
-    totalBytes += file.bytes;
-  }
-  return (
-    totalBytes === archive.totalBytes &&
-    archive.contentHash === sha256(JSON.stringify(archive.files))
-  );
 }
 
 export function validateAgenticArtifactArchive(

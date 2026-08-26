@@ -50,7 +50,10 @@ implementation profile; fifteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; both remain
 local-only engineering controls and grant no semantic-qualification or
-promotion authority.
+promotion authority. ADR-0017 now also defines and tests a dedicated local
+G1.7 qualification scaffold whose structural and sealed replay states remain
+non-promoting; the still-missing native compatibility replay, reviewed
+reference/budgets, benchmark evidence, and human decision keep G1.7 open.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

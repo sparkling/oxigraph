@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
-import { parseG17CliArgs } from "../src/qualification/cli.mjs";
+import {
+  g17VerificationExitCode,
+  g17VerdictExitCode,
+  parseG17CliArgs,
+} from "../src/qualification/cli.mjs";
 import {
   preflightG17Qualification,
   runG17Qualification,
@@ -12,8 +16,7 @@ function print(value) {
 }
 
 function applyVerdictExit(verdict) {
-  if (verdict === "REJECT") process.exitCode = 3;
-  if (verdict === "INCONCLUSIVE") process.exitCode = 4;
+  process.exitCode = g17VerdictExitCode(verdict);
 }
 
 async function main(args) {
@@ -32,7 +35,7 @@ async function main(args) {
   }
   const result = await verifySealedG17Run({ runId: command.runId });
   print(result);
-  applyVerdictExit(result.verdict);
+  process.exitCode = g17VerificationExitCode(result);
 }
 
 main(process.argv.slice(2)).catch((error) => {

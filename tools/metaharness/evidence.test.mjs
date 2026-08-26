@@ -14,10 +14,12 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   changedInputs,
+  comparePortablePaths,
   darwinLockResolution,
   darwinInstallationSnapshot,
   ensureDirectoryInside,
   protectedInputs,
+  sha256,
   snapshotRoots,
   validateDarwinLockPolicy,
   validateMutationQualification,
@@ -351,6 +353,90 @@ test("protected snapshots expose changed and added files", () => {
       "inputs/added.txt",
       "inputs/before.txt",
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("protected snapshots use locale-independent UTF-16 code-unit ordering", () => {
+  const root = temporaryDirectory();
+  try {
+    mkdirSync(join(root, "inputs"));
+    for (const name of [
+      "-dash",
+      ".dot",
+      "0-digit",
+      "build.rs",
+      "Cargo.toml",
+      "_underscore",
+      "a-lower",
+      "A-upper",
+      "z-last",
+    ]) {
+      writeFileSync(join(root, "inputs", name), `${name}\n`);
+    }
+
+    const expected = [
+      "inputs/-dash",
+      "inputs/.dot",
+      "inputs/0-digit",
+      "inputs/A-upper",
+      "inputs/Cargo.toml",
+      "inputs/_underscore",
+      "inputs/a-lower",
+      "inputs/build.rs",
+      "inputs/z-last",
+    ];
+    const snapshot = snapshotRoots(root, ["inputs"]);
+    assert.deepEqual(snapshot.files.map(({ path }) => path), expected);
+    assert.equal(snapshot.contentHash, sha256(JSON.stringify(snapshot.files)));
+    assert.deepEqual([...expected].sort(comparePortablePaths), expected);
+    assert.ok(comparePortablePaths("cli/build.rs", "cli/Cargo.toml") > 0);
+    assert.deepEqual(
+      ["é", "z", "e\u0301", "a", "_x", "A", "0", ".x", "-x"].sort(
+        comparePortablePaths,
+      ),
+      ["-x", ".x", "0", "A", "_x", "a", "e\u0301", "z", "é"],
+    );
+    assert.ok(comparePortablePaths("e\u0301", "é") < 0);
+    assert.equal(comparePortablePaths("same", "same"), 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("protected snapshots reject overlapping roots instead of emitting duplicates", () => {
+  const root = temporaryDirectory();
+  try {
+    mkdirSync(join(root, "inputs"));
+    writeFileSync(join(root, "inputs", "file.txt"), "protected\n");
+    assert.throws(
+      () => snapshotRoots(root, ["inputs", "inputs/file.txt"]),
+      /protected input roots overlap/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("protected snapshots sort the emitted portable path across nested and sibling names", () => {
+  const root = temporaryDirectory();
+  try {
+    mkdirSync(join(root, "inputs", "a"), { recursive: true });
+    for (const name of ["a-z", "a.b", "a0", "a_b"]) {
+      writeFileSync(join(root, "inputs", name), `${name}\n`);
+    }
+    writeFileSync(join(root, "inputs", "a", "b"), "nested\n");
+    assert.deepEqual(
+      snapshotRoots(root, ["inputs"]).files.map(({ path }) => path),
+      [
+        "inputs/a-z",
+        "inputs/a.b",
+        "inputs/a/b",
+        "inputs/a0",
+        "inputs/a_b",
+      ],
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

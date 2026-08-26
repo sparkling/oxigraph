@@ -25,6 +25,14 @@ The synthetic score is evidence about the harness only. The native Cargo,
 W3C, Jena, and Soufflé commands coordinated by Agentic-QE remain the semantic
 oracles.
 
+The engineering harness's G1.7 consumer copies the qualification and
+independent-verification bytes into a sealed run and replays them through the
+pure MetaHarness receipt contract. An explicit v2 projection schema is only a
+structural version marker: the outer receipt reports it as unreplayed until the
+copied pair passes that pure verifier. This consumer replay does not regenerate
+current semantic evidence, prove owner-process provenance, or grant G1.7
+qualification or promotion authority.
+
 ```bash
 cd tools/metaharness
 npm ci --ignore-scripts

@@ -6,7 +6,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadG17Contract } from "../src/qualification/contract.mjs";
+import { G17_COMPATIBILITY_EVIDENCE_SCHEMA } from "../src/qualification/evidence-contract.mjs";
 import {
+  collectG17CompatibilityEvidence,
   g17AgenticProfileContract,
   inspectG17AgenticEvidence,
   runG17NativeCompatibility,
@@ -17,7 +19,7 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-test("G1.7 binds the owner-defined exact 11-command, 66-test Agentic profile", () => {
+test("G1.7 contract matches the checked-in 11-command/66-test Agentic profile definition", () => {
   const { contract } = loadG17Contract();
   assert.deepEqual(g17AgenticProfileContract(contract), {
     profile: "g1-regression",
@@ -82,7 +84,7 @@ test("G1.7 reopens legitimate empty implementation inputs without weakening evid
   );
 });
 
-test("native compatibility inventories and runs all exact lanes without retaining output text", async () => {
+test("compatibility coordinator invokes inventory and execution adapters for every frozen lane without retaining output text", async () => {
   const { contract } = loadG17Contract();
   const calls = [];
   const result = await runG17NativeCompatibility({
@@ -142,7 +144,7 @@ test("native compatibility inventories and runs all exact lanes without retainin
   assert.equal(calls.length, 6);
 });
 
-test("native product failure rejects while timeout remains inconclusive", async () => {
+test("compatibility coordinator maps an injected command failure to FAIL and a timeout to MISSING", async () => {
   const { contract } = loadG17Contract();
   const inventory = async (_id, _args, policy) => ({
     observedTests: policy.expectedPassedTests,
@@ -197,6 +199,44 @@ test("native product failure rejects while timeout remains inconclusive", async 
     });
     assert.equal(result.status, expectedStatus);
   }
+});
+
+test("compatibility producer always emits the explicit v2 outer projection schema", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-compatibility-v2-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { contract } = loadG17Contract();
+  const result = await collectG17CompatibilityEvidence({
+    contract,
+    identity: { subject: { commit: "a".repeat(40) } },
+    evidenceRepositoryRoot: root,
+    repoRoot: root,
+    maximumGeneratedAtMs: Date.now(),
+    inventory: async (_id, _args, policy) => ({
+      observedTests: policy.expectedPassedTests,
+      ids: [],
+      output: null,
+    }),
+    executeCommand: async (program, args, options) => {
+      const lane = contract.compatibility.native.find(
+        ({ argv }) =>
+          argv[0] === program &&
+          JSON.stringify(argv.slice(1)) === JSON.stringify(args),
+      );
+      return {
+        code: 0,
+        signal: null,
+        spawnError: null,
+        timedOut: false,
+        timeoutMs: options.timeoutMs,
+        durationMs: 1,
+        observedPassedTests: lane.expectedPassedTests,
+        output: null,
+      };
+    },
+  });
+  assert.equal(result.status, "MISSING");
+  assert.equal(result.projection.schema, G17_COMPATIBILITY_EVIDENCE_SCHEMA);
+  assert.equal(result.projection.status, "MISSING");
 });
 
 test("application evidence module has no Router, admission, or replay authority imports", async () => {

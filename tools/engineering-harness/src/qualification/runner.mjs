@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson } from "../routing/features.mjs";
 import { repositoryRoot } from "../paths.mjs";
 import {
@@ -91,7 +92,9 @@ function artifactRecord(name, bytes) {
 }
 
 function uniqueArtifacts(artifacts) {
-  const sorted = [...artifacts].sort((left, right) => left.name.localeCompare(right.name));
+  const sorted = [...artifacts].sort((left, right) =>
+    comparePortablePaths(left.name, right.name),
+  );
   const names = new Set();
   for (const artifact of sorted) {
     if (
@@ -204,7 +207,9 @@ export async function runG17Qualification({
   const manifestBytes = canonicalBytes(manifest);
   await run.write("manifest.json", manifestBytes);
   artifactRecords.push(artifactRecord("manifest.json", manifestBytes));
-  artifactRecords.sort((left, right) => left.name.localeCompare(right.name));
+  artifactRecords.sort((left, right) =>
+    comparePortablePaths(left.name, right.name),
+  );
 
   const receipt = createG17Receipt({
     run: {

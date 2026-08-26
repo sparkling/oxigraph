@@ -70,8 +70,9 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` bind 144/144 default, 129/129 no-default, and 34/34 `persistence-write` tests | Scoped tasks complete; later count or ID drift still fails closed |
 | Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
 | Mutation receipt | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification |
-| MetaHarness | 13/13 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate |
+| MetaHarness | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate |
 | Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered seven-task registry, and its exact generated 27-command registry are implemented; G1.2-G1.6 have source-bound accepted candidates | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact |
+| G1.7 qualification control | Outer qualification receipt v1 with explicit semantic/compatibility PASS projection v2 schemas; structural verification reports current PASS as `CURRENT_SCHEMA_UNREPLAYED`, while sealed verification reopens inventory and replays copied MetaHarness and Agentic-QE owner contracts | Compatibility currently reaches only `AGENTIC_OWNER_CONTRACT_REPLAYED`; native Cargo summaries are not independently replayed, `qualificationEligible` remains false, and this scaffold is neither benchmark evidence nor promotion |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -448,6 +449,15 @@ Execution record through 2026-08-26:
   claims keep full MetaHarness qualification, independent verification, and
   G1.7 promotion withheld. Any later protected product or claim edit reopens
   the earliest affected receipt.
+- The dedicated G1.7 qualification-control candidate now separates structural
+  receipt verification from sealed owner-contract replay, requires explicit v2
+  schemas on newly minted semantic and compatibility `PASS` projections, and
+  classifies legacy unversioned `PASS` evidence as `LEGACY_REPLAY_ONLY`.
+  Compatibility replay currently stops at
+  `AGENTIC_OWNER_CONTRACT_REPLAYED`; reference selection is `UNSELECTED`, the
+  budget/noise decisions are `ABSENT`, and the benchmark is `NOT_RUN`, so G1.7
+  remains `INCONCLUSIVE`. The exact control commit and clean-subject test result
+  will be added only after the candidate is committed and rerun cleanly.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -783,6 +793,15 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | SOTA RDF storage/optimization | `task-1787600167815-d5ki1t` | Correctness first; serialize writers, then receipts/SHACL/ops/statistics/indexes/federation |
 | Dream installation proof | `task-1787600167854-42vvou` | User-scoped 0.1.1, deterministic compile, no schedule/publication/provider execution |
 | MetaHarness assessment | `task-1787600167962-6qk4jb` | Non-authoritative local observation: genome ready, score 71, point-in-time OIA clean/generic, Darwin dry-run, synthetic PASS |
+| G1.7 portable ordering/replay audit | `task-1787778499571-d8wwyk` | Read-only review clean; focused ordering and replay suite 51/51 |
+| G1.7 schema/assurance-boundary audit | `task-1787778501119-1krv3k` | Read-only review clean; focused structural/sealed/CLI suite 35/35 |
+| G1.7 claims/documentation audit | `task-1787780431763-1cqm80` | Read-only review completed; bounded v1/v2, replay, eligibility, and count wording reconciled |
+
+The three G1.7 reviews ran under reviewer swarm
+`swarm-1787778496656-aq8q1c`. They are adversarial control review, not product
+qualification: ordering, schema, and claim checks cannot substitute for the
+still-missing native compatibility replay, benchmark/noise evidence, or human
+promotion decision.
 
 Repository-local memory remains supplementary to the committed plan. The
 sql.js wrapper correctly refused an unsafe whole-image write while a native WAL
