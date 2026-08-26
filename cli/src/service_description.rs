@@ -27,11 +27,6 @@ mod sd {
     );
     pub const FEATURE: NamedNode =
         NamedNode::new_const_unchecked("http://www.w3.org/ns/sparql-service-description#feature");
-    #[cfg(any(
-        feature = "native-tls",
-        feature = "rustls-native",
-        feature = "rustls-webpki"
-    ))]
     pub const INPUT_FORMAT: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/ns/sparql-service-description#inputFormat",
     );
@@ -47,11 +42,6 @@ mod sd {
     pub const EMPTY_GRAPHS: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/ns/sparql-service-description#EmptyGraphs",
     );
-    #[cfg(any(
-        feature = "native-tls",
-        feature = "rustls-native",
-        feature = "rustls-webpki"
-    ))]
     pub const BASIC_FEDERATED_QUERY: NamedNode = NamedNode::new_const_unchecked(
         "http://www.w3.org/ns/sparql-service-description#BasicFederatedQuery",
     );
@@ -128,6 +118,7 @@ fn generate_service_description_graph(
     evaluator: &SparqlEvaluator,
 ) -> Vec<Triple> {
     let mut graph = Vec::new();
+    let capabilities = evaluator.effective_capabilities();
     let root = BlankNode::default();
     graph.push(Triple::new(root.clone(), rdf::TYPE, sd::SERVICE));
     graph.push(Triple::new(
@@ -182,12 +173,7 @@ fn generate_service_description_graph(
             ));
         }
     }
-    #[cfg(any(
-        feature = "native-tls",
-        feature = "rustls-native",
-        feature = "rustls-webpki"
-    ))]
-    if kind.update {
+    if kind.update && capabilities.remote_load() {
         for format in supported_rdf_formats() {
             graph.push(Triple::new(
                 root.clone(),
@@ -196,12 +182,7 @@ fn generate_service_description_graph(
             ));
         }
     }
-    #[cfg(any(
-        feature = "native-tls",
-        feature = "rustls-native",
-        feature = "rustls-webpki"
-    ))]
-    if kind.query {
+    if kind.query && capabilities.default_service_handler() {
         graph.push(Triple::new(
             root.clone(),
             sd::FEATURE,
@@ -209,7 +190,7 @@ fn generate_service_description_graph(
         ));
     }
     graph.push(Triple::new(root.clone(), sd::FEATURE, sd::EMPTY_GRAPHS));
-    if union_default_graph {
+    if union_default_graph && (kind.query || kind.update) {
         graph.push(Triple::new(
             root.clone(),
             sd::FEATURE,

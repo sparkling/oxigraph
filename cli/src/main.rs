@@ -268,7 +268,7 @@ pub fn main() -> anyhow::Result<()> {
                 io::read_to_string(stdin().lock())?
             };
             let store = Store::open_read_only(location)?;
-            let mut evaluator = sparql_evaluator();
+            let mut evaluator = SparqlEvaluator::new();
             if let Some(base) = query_base {
                 evaluator = evaluator.with_base_iri(&base)?;
             }
@@ -421,7 +421,7 @@ pub fn main() -> anyhow::Result<()> {
                 io::read_to_string(stdin().lock())?
             };
             let store = Store::open(location)?;
-            let mut evaluator = sparql_evaluator();
+            let mut evaluator = SparqlEvaluator::new();
             if let Some(base) = update_base {
                 evaluator = evaluator.with_base_iri(&base)?;
             }
@@ -1208,6 +1208,7 @@ fn handle_request(
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
                     store,
+                    sparql_evaluator,
                     RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
@@ -1217,6 +1218,7 @@ fn handle_request(
             } else if content_type.media_type == "application/x-www-form-urlencoded" {
                 configure_and_evaluate_sparql_update(
                     store,
+                    sparql_evaluator,
                     RequestParams::from_request_url_and_body(request)?,
                     None,
                     None,
@@ -1278,6 +1280,7 @@ fn handle_request(
                 let body = limited_string_body(request)?;
                 configure_and_evaluate_sparql_update(
                     store,
+                    sparql_evaluator,
                     RequestParams::from_request_url(request),
                     Some(body),
                     content_type.version,
@@ -1312,6 +1315,7 @@ fn handle_request(
                         }
                         configure_and_evaluate_sparql_update(
                             store,
+                            sparql_evaluator,
                             args,
                             None,
                             None,
@@ -1740,6 +1744,7 @@ fn evaluate_sparql_query(
 
 fn configure_and_evaluate_sparql_update(
     store: &Store,
+    evaluator: &SparqlEvaluator,
     mut args: RequestParams,
     update: Option<String>,
     media_type_version: Option<SparqlVersion>,
@@ -1781,6 +1786,7 @@ fn configure_and_evaluate_sparql_update(
     let effective_version = validate_sparql_version(&update, request_version)?;
     evaluate_sparql_update(
         store,
+        evaluator,
         &update,
         effective_version,
         use_default_graph_as_union,
@@ -1792,6 +1798,7 @@ fn configure_and_evaluate_sparql_update(
 
 fn evaluate_sparql_update(
     store: &Store,
+    evaluator: &SparqlEvaluator,
     update: &str,
     version: Option<SparqlVersion>,
     use_default_graph_as_union: bool,
@@ -1799,7 +1806,8 @@ fn evaluate_sparql_update(
     named_graph_uris: Vec<String>,
     request: &Request<Body>,
 ) -> Result<Response<Body>, HttpError> {
-    let mut evaluator = SparqlEvaluator::new()
+    let mut evaluator = evaluator
+        .clone()
         .with_base_iri(base_url(request).as_str())
         .map_err(bad_request)?;
     if let Some(version) = version {
@@ -2736,7 +2744,7 @@ fn rdf_response_media_type(format: RdfResponseFormat) -> &'static str {
 }
 
 fn sparql_evaluator() -> SparqlEvaluator {
-    SparqlEvaluator::new()
+    SparqlEvaluator::new().with_deny_all_egress_policy()
 }
 
 fn service_description_response(
@@ -4915,19 +4923,35 @@ mod tests {
     }
 
     #[test]
-    fn post_federated_query_wikidata() -> Result<()> {
-        let request = Request::builder().method(Method::POST).uri("http://localhost/query")
+    fn post_federated_query_is_denied_by_server_policy() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/query")
             .header(CONTENT_TYPE, "application/sparql-query")
-            .body("SELECT * WHERE { SERVICE <https://query.wikidata.org/sparql> { <https://en.wikipedia.org/wiki/Paris> ?p ?o } }")?;
-        ServerTest::new()?.test_status(request, StatusCode::OK)
+            .body("ASK { SERVICE <http://127.0.0.1:9/sparql> { ?s ?p ?o } }")?;
+        let mut response = ServerTest::new()?.exec(request);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            read_to_string(response.body_mut())?,
+            "SERVICE egress request: policy denied"
+        );
+        Ok(())
     }
 
     #[test]
-    fn post_federated_query_dbpedia() -> Result<()> {
-        let request = Request::builder().method(Method::POST).uri("http://localhost/query")
-            .header(CONTENT_TYPE, "application/sparql-query")
-            .body("SELECT * WHERE { SERVICE <https://dbpedia.org/sparql> { <http://dbpedia.org/resource/Paris> ?p ?o } }")?;
-        ServerTest::new()?.test_status(request, StatusCode::OK)
+    fn post_remote_load_is_denied_by_server_policy() -> Result<()> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("http://localhost/update")
+            .header(CONTENT_TYPE, "application/sparql-update")
+            .body("LOAD <http://127.0.0.1:10/data.nt>")?;
+        let mut response = ServerTest::new()?.exec(request);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            read_to_string(response.body_mut())?,
+            "LOAD egress request: policy denied"
+        );
+        Ok(())
     }
 
     #[test]

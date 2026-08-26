@@ -47,6 +47,27 @@ use std::time::Duration;
 /// Dataset specification applied while evaluating a prepared SPARQL query.
 pub type QueryDataset = QueryDatasetSpecification;
 
+/// An immutable snapshot of the evaluator's effective remote capabilities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffectiveCapabilities {
+    default_service_handler: bool,
+    remote_load: bool,
+}
+
+impl EffectiveCapabilities {
+    /// Whether a default `SERVICE` handler is available.
+    #[inline]
+    pub const fn default_service_handler(self) -> bool {
+        self.default_service_handler
+    }
+
+    /// Whether remote `LOAD` is available.
+    #[inline]
+    pub const fn remote_load(self) -> bool {
+        self.remote_load
+    }
+}
+
 /// SPARQL evaluator.
 ///
 /// It supports [SPARQL 1.1 query](https://www.w3.org/TR/sparql11-query/) and [SPARQL 1.1 update](https://www.w3.org/TR/sparql11-update/).
@@ -222,6 +243,47 @@ impl SparqlEvaluator {
     pub fn with_egress_policy(mut self, policy: EgressPolicy) -> Self {
         self.egress_policy = Some(policy);
         self
+    }
+
+    /// Denies all built-in remote `SERVICE`, `LOAD`, and nested document
+    /// retrieval.
+    ///
+    /// This method is always available so callers do not need to mirror this
+    /// crate's feature resolution. If the `http-client` feature is disabled,
+    /// Oxigraph has no built-in HTTP egress and this method is a no-op.
+    #[inline]
+    pub fn with_deny_all_egress_policy(self) -> Self {
+        #[cfg(feature = "http-client")]
+        {
+            self.with_egress_policy(EgressPolicy::deny_all())
+        }
+        #[cfg(not(feature = "http-client"))]
+        {
+            self
+        }
+    }
+
+    /// Returns an immutable snapshot of the effective remote capabilities.
+    pub fn effective_capabilities(&self) -> EffectiveCapabilities {
+        #[cfg(feature = "http-client")]
+        {
+            let built_in_remote = self
+                .egress_policy
+                .as_ref()
+                .is_none_or(EgressPolicy::allows_compiled_http_transport);
+            EffectiveCapabilities {
+                default_service_handler: self.inner.has_default_service_handler()
+                    || (built_in_remote && self.with_http_default_service_handler),
+                remote_load: built_in_remote,
+            }
+        }
+        #[cfg(not(feature = "http-client"))]
+        {
+            EffectiveCapabilities {
+                default_service_handler: self.inner.has_default_service_handler(),
+                remote_load: false,
+            }
+        }
     }
 
     /// Adds a custom SPARQL evaluation function.
