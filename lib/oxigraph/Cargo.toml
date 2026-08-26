@@ -101,3 +101,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 name = "store"
 harness = false
 required-features = ["rocksdb"]
+
+[[bench]]
+name = "transactional_write"
+harness = false
+required-features = ["rocksdb"]
