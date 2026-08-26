@@ -336,6 +336,7 @@ test("architecture task includes only tree-verified allowlisted UTF-8 sources an
   assert.ok(task.sourceSnapshot.files.every((file) => /^[0-9a-f]{64}$/u.test(file.sha256)));
   assert.equal(task.bindings.contractSha256, state.contractSha256);
   assert.equal(task.bindings.evaluator.tree, state.contract.evaluator.tree);
+  assert.equal(task.bindings.nativeWorkerTimeoutMs, 600_000);
   assert.equal(task.bindings.sourceSnapshotSha256, task.sourceSnapshot.sha256);
   assert.equal(task.bindings.currentCandidateSha256, null);
   assert.match(task.directive, /frozen mutable path set/u);
@@ -464,6 +465,7 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
     priorOutputs: prior("architecture"),
   });
   assert.deepEqual(Object.keys(critique.prior.outputs), ["architecture"]);
+  assert.equal(critique.bindings.nativeWorkerTimeoutMs, 600_000);
 
   const implementation = await createG12TaskContext({
     role: "implementation",
@@ -476,6 +478,7 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
   assert.doesNotMatch(implementation.directive, /sole mutable file/u);
   assert.deepEqual(Object.keys(implementation.prior.outputs), ["architecture", "critique"]);
   assert.equal(implementation.response.patch, "required-unified-diff-within-mutable-exact");
+  assert.equal(implementation.bindings.nativeWorkerTimeoutMs, 1_200_000);
 
   const initialCandidate = candidateDescriptor(state.contract);
   const receipt = verifierReceipt(state.contract, "ACCEPT", initialCandidate);
@@ -501,6 +504,7 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
   );
   assert.equal(Object.isFrozen(review.currentCandidate), true);
   assert.equal(review.response.patch, "must-be-null");
+  assert.equal(review.bindings.nativeWorkerTimeoutMs, 600_000);
 
   const repair = await createG12TaskContext({
     role: "repair",
@@ -519,6 +523,7 @@ test("role contexts require exactly the appropriate prior outputs and verifier r
   assert.match(repair.directive, /not return an incremental diff/u);
   assert.equal(repair.verifier.receipt.verdict, "REJECT");
   assert.equal(repair.response.patch, "required-unified-diff-within-mutable-exact");
+  assert.equal(repair.bindings.nativeWorkerTimeoutMs, 1_200_000);
 
   const repairedCandidate = candidateDescriptor(
     state.contract,

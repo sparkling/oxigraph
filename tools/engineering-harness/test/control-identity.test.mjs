@@ -20,6 +20,13 @@ test("committed control identity binds Git, dependencies, and both native hosts"
     ["codex", "claude"],
   );
   assert.ok(identity.nativeHosts.every(({ available }) => available));
+  assert.deepEqual(identity.nativeWorkerTimeoutCeilingsMs, {
+    architecture: 600_000,
+    critique: 600_000,
+    implementation: 1_200_000,
+    review: 600_000,
+    repair: 1_200_000,
+  });
 });
 
 test("runtime state is admitted only below the committed ignored directory", () => {

@@ -10,6 +10,7 @@ import {
   validateWorkerRole,
 } from "../policy/authority.mjs";
 import { NATIVE_FAILURE_CODES } from "../policy/native-failures.mjs";
+import { nativeWorkerTimeoutCeilingMs } from "../policy/native-timeouts.mjs";
 import {
   canonicalizeCandidatePatch,
   validateCandidatePatch,
@@ -17,7 +18,6 @@ import {
 } from "../policy/paths.mjs";
 
 const MAX_TASK_BYTES = 2_097_152;
-const MAX_TIMEOUT_MS = 600_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 
 function sha256(value) {
@@ -139,8 +139,15 @@ export async function runNativeWorker({
   ) {
     throw new Error(`native worker task exceeds the ${MAX_TASK_BYTES}-byte structural ceiling`);
   }
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`native worker timeout must be within 1..${MAX_TIMEOUT_MS} ms`);
+  const timeoutCeilingMs = nativeWorkerTimeoutCeilingMs(role);
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs <= 0 ||
+    timeoutMs > timeoutCeilingMs
+  ) {
+    throw new Error(
+      `native worker timeout must be within 1..${timeoutCeilingMs} ms for ${role}`,
+    );
   }
   if (
     !Number.isInteger(maxOutputBytes) ||

@@ -4,6 +4,10 @@ import { access, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import test from "node:test";
 import { runNativeWorker } from "../src/native/worker.mjs";
+import {
+  NATIVE_WORKER_TIMEOUT_CEILINGS_MS,
+  nativeWorkerTimeoutMs,
+} from "../src/policy/native-timeouts.mjs";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -65,6 +69,68 @@ test("native Codex worker consumes structured output and removes its private out
   assert.ok(result.invocation.args.includes("gpt-test"));
   assert.ok(/^[a-f0-9]{64}$/.test(result.invocation.attestation.sha256));
   await assert.rejects(access(outputRoot));
+});
+
+test("native patch workers admit the bounded twenty-minute ceiling", async () => {
+  let observedTimeoutMs = null;
+  const result = await runNativeWorker({
+    provider: "codex",
+    role: "implementation",
+    model: "gpt-test",
+    task: { id: "role-timeout" },
+    contract,
+    timeoutMs: 1_200_000,
+    processRunner: async ({ args, timeoutMs }) => {
+      observedTimeoutMs = timeoutMs;
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(outputPath, JSON.stringify(accepted), "utf8");
+      return completed();
+    },
+  });
+  assert.equal(observedTimeoutMs, 1_200_000);
+  assert.equal(result.status, "ACCEPT");
+});
+
+test("native readonly and patch worker ceilings remain fail-closed", async () => {
+  let processCalls = 0;
+  for (const [role, timeoutMs] of [
+    ["architecture", 600_001],
+    ["critique", 600_001],
+    ["review", 600_001],
+    ["implementation", 1_200_001],
+    ["repair", 1_200_001],
+  ]) {
+    await assert.rejects(
+      runNativeWorker({
+        provider: "codex",
+        role,
+        model: "gpt-test",
+        task: { id: `excessive-${role}` },
+        ...(role === "implementation" || role === "repair" ? { contract } : {}),
+        timeoutMs,
+        processRunner: async () => {
+          processCalls += 1;
+          return completed();
+        },
+      }),
+      /native worker timeout must be within/u,
+    );
+  }
+  assert.equal(processCalls, 0);
+});
+
+test("native timeout policy is frozen, aggregate-bounded, and rejects unknown roles", () => {
+  assert.equal(Object.isFrozen(NATIVE_WORKER_TIMEOUT_CEILINGS_MS), true);
+  assert.equal(nativeWorkerTimeoutMs("implementation", 900_000), 900_000);
+  assert.equal(nativeWorkerTimeoutMs("review", 7_200_000), 600_000);
+  assert.throws(
+    () => nativeWorkerTimeoutMs("unknown", 7_200_000),
+    /unsupported worker role/u,
+  );
+  assert.throws(
+    () => nativeWorkerTimeoutMs("repair", 0),
+    /aggregate timeout ceiling/u,
+  );
 });
 
 test("native implementation admission canonicalizes mechanical diff defects", async () => {

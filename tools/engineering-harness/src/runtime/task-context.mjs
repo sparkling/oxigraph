@@ -11,6 +11,7 @@ import {
   MAX_TASK_ARG_BYTES,
 } from "../policy/evidence-limits.mjs";
 import { validateCandidatePatch } from "../policy/paths.mjs";
+import { nativeWorkerTimeoutMs } from "../policy/native-timeouts.mjs";
 import { g12Profile, taskProfile } from "../task-profile.mjs";
 
 export const G12_SOURCE_ALLOWLIST = g12Profile.sourceAllowlist;
@@ -1082,6 +1083,10 @@ export async function createG12TaskContext(input) {
         : `${ROLE_DIRECTIVES[input.role]} ${profile.guidance}`,
     bindings: {
       ...bindings,
+      nativeWorkerTimeoutMs: nativeWorkerTimeoutMs(
+        input.role,
+        input.contract.ceilings.maxTotalVerifierWallMs,
+      ),
       sourceSnapshotSha256: sourceSnapshot.sha256,
       currentCandidateSha256:
         currentCandidate === null
