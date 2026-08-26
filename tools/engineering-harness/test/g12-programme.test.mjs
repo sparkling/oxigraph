@@ -100,6 +100,7 @@ function workerRunner({
   calls,
   reviewVerdict = "ACCEPT",
   claudeArchitectureReject = false,
+  codexCritiqueReject = false,
   implementationOutputRejected = false,
 }) {
   return async ({ provider, role, model, task }) => {
@@ -154,6 +155,8 @@ function workerRunner({
           ? reviewVerdict
           : claudeArchitectureReject && provider === "claude" && role === "architecture"
             ? "REJECT"
+            : codexCritiqueReject && provider === "codex" && role === "critique"
+              ? "REJECT"
             : "ACCEPT",
     });
     return Object.freeze({
@@ -249,6 +252,7 @@ function fixture({
   routedProvider = null,
   verification = "mixed",
   claudeArchitectureReject = false,
+  codexCritiqueReject = false,
   implementationOutputRejected = false,
 } = {}) {
   const preflight = frozenPreflight();
@@ -260,6 +264,7 @@ function fixture({
     workerRunner: workerRunner({
       calls,
       claudeArchitectureReject,
+      codexCritiqueReject,
       implementationOutputRejected,
     }),
   });
@@ -408,6 +413,34 @@ test("a declined paired lane retains failures without suppressing the valid lane
       ({ provider, role, status }) =>
         provider === "claude" && role === "critique" && status === "ERROR",
     ),
+  );
+});
+
+test("a rejected critique is retained and stops only its candidate lane", async () => {
+  const { run, calls, finalized } = fixture({
+    codexCritiqueReject: true,
+    verification: "all-accept",
+  });
+  const result = await run({ runId: "rejected-critique", clock: clock() });
+  assert.equal(result.final.verdict, "ACCEPT");
+  const receipt = finalized[0].receipt;
+  const rejected = receipt.nativeInvocations.find(
+    ({ provider, role, status }) =>
+      provider === "codex" && role === "critique" && status === "REJECT",
+  );
+  assert.deepEqual(rejected.critiqueDiagnostic, {
+    summary: "codex critique",
+    findings: [],
+  });
+  assert.ok(
+    receipt.nativeInvocations.some(
+      ({ provider, role, status }) =>
+        provider === "codex" && role === "implementation" && status === "ERROR",
+    ),
+  );
+  assert.equal(
+    calls.some(({ provider, role }) => provider === "codex" && role === "implementation"),
+    false,
   );
 });
 

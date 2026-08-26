@@ -641,6 +641,78 @@ test("legacy v1 receipts remain replayable but preserve their reduced evidence s
   );
 });
 
+test("v3 receipts retain hash-bound rejected critique diagnostics while v2 remains replayable", () => {
+  const summary = "The architecture is not safe to implement.";
+  const findings = ["The capability boundary is underspecified."];
+  const rejectedOutput = {
+    summary,
+    patch: null,
+    findings,
+    verdict: "REJECT",
+  };
+  const value = draft();
+  const critique = value.nativeInvocations[1];
+  critique.status = "REJECT";
+  critique.outputSha256 = sha(JSON.stringify(rejectedOutput));
+  critique.critiqueDiagnostic = { summary, findings };
+  value.nativeInvocations = value.nativeInvocations.slice(0, 2);
+  value.attempts = [];
+  value.reviews = [];
+  value.selectedCandidate = null;
+  value.final = {
+    verdict: "INCONCLUSIVE",
+    reason: "the critique rejected the architecture before implementation",
+  };
+  value.events = [
+    { kind: "routing", id: "route-architecture" },
+    { kind: "native-invocation", id: "invoke-architecture" },
+    { kind: "routing", id: "route-critique" },
+    { kind: "native-invocation", id: "invoke-critique" },
+    { kind: "routing", id: "route-implementation" },
+    { kind: "routing", id: "route-review" },
+    { kind: "selected-candidate", id: "none" },
+    { kind: "final", id: value.run.id },
+  ];
+
+  const receipt = createApplicationReceipt(value);
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v3");
+  assert.deepEqual(receipt.nativeInvocations[1].critiqueDiagnostic, {
+    summary,
+    findings,
+  });
+  assert.equal(Object.isFrozen(receipt.nativeInvocations[1].critiqueDiagnostic), true);
+
+  const missing = structuredClone(value);
+  delete missing.nativeInvocations[1].critiqueDiagnostic;
+  assert.throws(
+    () => createApplicationReceipt(missing),
+    /must retain its rejected critique diagnostic/,
+  );
+
+  const oversized = structuredClone(value);
+  oversized.nativeInvocations[1].critiqueDiagnostic.summary = "x".repeat(4097);
+  assert.throws(
+    () => createApplicationReceipt(oversized),
+    /summary must be a string of at most 4096 characters/,
+  );
+
+  const tampered = JSON.parse(serializeApplicationReceipt(receipt));
+  tampered.nativeInvocations[1].critiqueDiagnostic.findings[0] =
+    "A different finding.";
+  resealTamperedReceipt(tampered);
+  const tamperedResult = verifyApplicationReceipt(tampered);
+  assert.equal(tamperedResult.ok, false);
+  assert.match(tamperedResult.reason, /output hash|critique diagnostic/i);
+
+  const legacyV2 = JSON.parse(serializeApplicationReceipt(receipt));
+  legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
+  delete legacyV2.nativeInvocations[1].critiqueDiagnostic;
+  resealTamperedReceipt(legacyV2);
+  const legacyResult = verifyApplicationReceipt(legacyV2);
+  assert.equal(legacyResult.ok, true);
+  assert.equal(legacyResult.receipt.schema, legacyV2.schema);
+});
+
 test("single-field tampering and unknown fields fail closed", () => {
   const tampered = JSON.parse(serializeApplicationReceipt(createApplicationReceipt(draft())));
   tampered.attempts[0].verifier.commands[2].exitCode = 1;
