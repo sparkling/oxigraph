@@ -192,7 +192,8 @@
           "--test",
           "transaction_compatibility"
         ],
-        "expectedPassedTests": 20
+        "expectedPassedTests": 20,
+        "timeoutMs": 300000
       },
       {
         "id": "bulk-sst-writer-serialization",
@@ -206,7 +207,8 @@
           "--test",
           "rocksdb_bulk_writer_serialization"
         ],
-        "expectedPassedTests": 1
+        "expectedPassedTests": 1,
+        "timeoutMs": 300000
       },
       {
         "id": "update-atomicity",
@@ -220,7 +222,8 @@
           "--test",
           "update_atomicity"
         ],
-        "expectedPassedTests": 2
+        "expectedPassedTests": 2,
+        "timeoutMs": 300000
       }
     ],
     "semantic": {

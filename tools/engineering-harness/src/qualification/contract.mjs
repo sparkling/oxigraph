@@ -312,6 +312,7 @@ function validateContract(value) {
           "transaction_compatibility",
         ],
         expectedPassedTests: 20,
+        timeoutMs: 300_000,
       },
       {
         id: "bulk-sst-writer-serialization",
@@ -326,6 +327,7 @@ function validateContract(value) {
           "rocksdb_bulk_writer_serialization",
         ],
         expectedPassedTests: 1,
+        timeoutMs: 300_000,
       },
       {
         id: "update-atomicity",
@@ -340,6 +342,7 @@ function validateContract(value) {
           "update_atomicity",
         ],
         expectedPassedTests: 2,
+        timeoutMs: 300_000,
       },
     ]),
     "native compatibility lanes drifted",

@@ -79,14 +79,15 @@ test("G1.7 freezes an immutable Darwin suite and honest unapproved decisions", a
     expectedPassedTests: 66,
   });
   assert.deepEqual(
-    loaded.contract.compatibility.native.map(({ id, expectedPassedTests }) => ({
+    loaded.contract.compatibility.native.map(({ id, expectedPassedTests, timeoutMs }) => ({
       id,
       expectedPassedTests,
+      timeoutMs,
     })),
     [
-      { id: "transaction-compatibility", expectedPassedTests: 20 },
-      { id: "bulk-sst-writer-serialization", expectedPassedTests: 1 },
-      { id: "update-atomicity", expectedPassedTests: 2 },
+      { id: "transaction-compatibility", expectedPassedTests: 20, timeoutMs: 300_000 },
+      { id: "bulk-sst-writer-serialization", expectedPassedTests: 1, timeoutMs: 300_000 },
+      { id: "update-atomicity", expectedPassedTests: 2, timeoutMs: 300_000 },
     ],
   );
   assert.equal(Object.isFrozen(loaded.contract), true);

@@ -107,6 +107,9 @@ test("unregistered and path-selected tasks fail closed before runtime", async ()
   for (const args of [
     ["tasks/g1/g1.2", "preflight"],
     ["g1.2", "preflight", "--contract-path", "tasks/g1/g1.2/contract.json"],
+    ["g1.7", "preflight"],
+    ["g1.7", "run"],
+    ["g1.7", "verify"],
   ]) {
     await assert.rejects(execute(process.execPath, [executable.pathname, ...args]), (error) => {
       assert.equal(error.code, 2);
