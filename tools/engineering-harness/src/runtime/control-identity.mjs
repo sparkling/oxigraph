@@ -48,8 +48,7 @@ function frozenNativeHosts(reports) {
   );
 }
 
-export async function currentControlIdentity({
-  contract,
+export function currentCommittedHarnessIdentity({
   repoRoot = repositoryRoot,
 } = {}) {
   const root = realpathSync(repoRoot);
@@ -73,17 +72,8 @@ export async function currentControlIdentity({
     ["ls-tree", "-r", "-z", controlCommit, "--", "tools/engineering-harness"],
     { buffer: true },
   );
-  const repositoryBinding = verifyTaskContractRepository(contract, {
-    repoRoot: root,
-    registrationCommit: controlCommit,
-  });
   const dependencies = installedDependencyResolution();
-  const nativeHosts = frozenNativeHosts(await nativeHostDiagnostics());
-  if (!nativeHosts.every(({ available, interfaceValid }) => available && interfaceValid)) {
-    throw new Error("both native provider hosts must be available and interface-attested");
-  }
-  const binding = Object.freeze({
-    schema: "oxigraph.engineering-control-identity/v1",
+  return Object.freeze({
     controlCommit,
     harnessTree,
     harnessManifestSha256: sha256(harnessManifest),
@@ -91,6 +81,32 @@ export async function currentControlIdentity({
     lockfileSha256: dependencies.lockfileSha256,
     npmrcSha256: dependencies.npmrcSha256,
     dependencies: dependencies.packages,
+  });
+}
+
+export async function currentControlIdentity({
+  contract,
+  repoRoot = repositoryRoot,
+} = {}) {
+  const root = realpathSync(repoRoot);
+  const committed = currentCommittedHarnessIdentity({ repoRoot: root });
+  const repositoryBinding = verifyTaskContractRepository(contract, {
+    repoRoot: root,
+    registrationCommit: committed.controlCommit,
+  });
+  const nativeHosts = frozenNativeHosts(await nativeHostDiagnostics());
+  if (!nativeHosts.every(({ available, interfaceValid }) => available && interfaceValid)) {
+    throw new Error("both native provider hosts must be available and interface-attested");
+  }
+  const binding = Object.freeze({
+    schema: "oxigraph.engineering-control-identity/v1",
+    controlCommit: committed.controlCommit,
+    harnessTree: committed.harnessTree,
+    harnessManifestSha256: committed.harnessManifestSha256,
+    manifestSha256: committed.manifestSha256,
+    lockfileSha256: committed.lockfileSha256,
+    npmrcSha256: committed.npmrcSha256,
+    dependencies: committed.dependencies,
     nativeHosts,
     nativeWorkerTimeoutCeilingsMs: NATIVE_WORKER_TIMEOUT_CEILINGS_MS,
     registration: repositoryBinding.registration,
