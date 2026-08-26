@@ -67,6 +67,10 @@ Current activation boundary:
   and their existing receipts remain replayable;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
+- application receipt v4 binds bounded rejected critique and review diagnostics;
+  v3 keeps rejected critique diagnostics mandatory and rejected review
+  diagnostics optional for historical replay, while v1-v3 are all replay-only
+  and cannot mint current routing quality;
 - `factory diagnose` evaluates disposable `metaharness new` output without
   adopting its publication settings, broad permissions, legacy dependencies,
   or nonexistent MCP commands;

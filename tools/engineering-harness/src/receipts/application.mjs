@@ -18,6 +18,8 @@ import {
 import { validateNativeFailureCode } from "../policy/native-failures.mjs";
 
 export const APPLICATION_RECEIPT_SCHEMA =
+  "oxigraph.engineering-application-receipt/v4";
+const LEGACY_APPLICATION_RECEIPT_SCHEMA_V3 =
   "oxigraph.engineering-application-receipt/v3";
 const LEGACY_APPLICATION_RECEIPT_SCHEMA_V2 =
   "oxigraph.engineering-application-receipt/v2";
@@ -831,8 +833,8 @@ function normalizeNativeInvocations(
   control,
   {
     requireDiagnostics = false,
-    requireCritiqueDiagnostics = false,
-    requireReviewDiagnostics = false,
+    critiqueDiagnosticPolicy = "forbidden",
+    reviewDiagnosticPolicy = "forbidden",
   } = {},
 ) {
   if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
@@ -907,10 +909,18 @@ function normalizeNativeInvocations(
         keys.add("failureCode");
         keys.add("failureDetailSha256");
       }
-      if (hasCritiqueDiagnostic && requireCritiqueDiagnostics && !failed) {
+      if (
+        hasCritiqueDiagnostic &&
+        critiqueDiagnosticPolicy !== "forbidden" &&
+        !failed
+      ) {
         keys.add("critiqueDiagnostic");
       }
-      if (hasReviewDiagnostic && requireReviewDiagnostics && !failed) {
+      if (
+        hasReviewDiagnostic &&
+        reviewDiagnosticPolicy !== "forbidden" &&
+        !failed
+      ) {
         keys.add("reviewDiagnostic");
       }
       exactKeys(
@@ -1002,13 +1012,18 @@ function normalizeNativeInvocations(
       if (status !== "INCONCLUSIVE" && outputSha256 === null) {
         throw new Error(`${label} completed worker evidence must bind its output`);
       }
-      const expectsCritiqueDiagnostic =
-        requireCritiqueDiagnostics &&
+      const critiqueMayRetainDiagnostic =
+        critiqueDiagnosticPolicy !== "forbidden" &&
         common.role === "critique" &&
         status === "REJECT";
-      if (hasCritiqueDiagnostic !== expectsCritiqueDiagnostic) {
+      const critiqueMustRetainDiagnostic =
+        critiqueDiagnosticPolicy === "required" && critiqueMayRetainDiagnostic;
+      if (
+        (critiqueMustRetainDiagnostic && !hasCritiqueDiagnostic) ||
+        (hasCritiqueDiagnostic && !critiqueMayRetainDiagnostic)
+      ) {
         throw new Error(
-          expectsCritiqueDiagnostic
+          critiqueMustRetainDiagnostic
             ? `${label} must retain its rejected critique diagnostic`
             : `${label} may not retain a critique diagnostic`,
         );
@@ -1025,13 +1040,18 @@ function normalizeNativeInvocations(
       ) {
         throw new Error(`${label}.critiqueDiagnostic does not bind its output hash`);
       }
-      const expectsReviewDiagnostic =
-        requireReviewDiagnostics &&
+      const reviewMayRetainDiagnostic =
+        reviewDiagnosticPolicy !== "forbidden" &&
         common.role === "review" &&
         status === "REJECT";
-      if (hasReviewDiagnostic !== expectsReviewDiagnostic) {
+      const reviewMustRetainDiagnostic =
+        reviewDiagnosticPolicy === "required" && reviewMayRetainDiagnostic;
+      if (
+        (reviewMustRetainDiagnostic && !hasReviewDiagnostic) ||
+        (hasReviewDiagnostic && !reviewMayRetainDiagnostic)
+      ) {
         throw new Error(
-          expectsReviewDiagnostic
+          reviewMustRetainDiagnostic
             ? `${label} must retain its rejected review diagnostic`
             : `${label} may not retain a review diagnostic`,
         );
@@ -2160,6 +2180,7 @@ function normalizeReceipt(value) {
   exactKeys(value, RECEIPT_KEYS, "application receipt");
   if (
     value.schema !== APPLICATION_RECEIPT_SCHEMA &&
+    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V3 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V2 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1
   ) {
@@ -2177,8 +2198,17 @@ function normalizeReceipt(value) {
     control,
     {
       requireDiagnostics: schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1,
-      requireCritiqueDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA,
-      requireReviewDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA,
+      critiqueDiagnosticPolicy:
+        schema === APPLICATION_RECEIPT_SCHEMA ||
+        schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V3
+          ? "required"
+          : "forbidden",
+      reviewDiagnosticPolicy:
+        schema === APPLICATION_RECEIPT_SCHEMA
+          ? "required"
+          : schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V3
+            ? "optional"
+            : "forbidden",
     },
   );
   const attempts = normalizeAttempts(value.attempts, control, contract, {
@@ -2247,8 +2277,8 @@ export function createApplicationReceipt(draft) {
     control,
     {
       requireDiagnostics: true,
-      requireCritiqueDiagnostics: true,
-      requireReviewDiagnostics: true,
+      critiqueDiagnosticPolicy: "required",
+      reviewDiagnosticPolicy: "required",
     },
   );
   const attempts = normalizeAttempts(draft.attempts, control, contract);

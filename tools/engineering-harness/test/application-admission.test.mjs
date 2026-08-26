@@ -360,6 +360,7 @@ test("valid legacy receipts are replay-only and cannot mint current Router quali
   for (const schema of [
     "oxigraph.engineering-application-receipt/v1",
     "oxigraph.engineering-application-receipt/v2",
+    "oxigraph.engineering-application-receipt/v3",
   ]) {
     const legacy = legacyReceipt(rejectedReceipt(frozen), schema);
     assert.equal(verifyApplicationReceipt(legacy).ok, true, schema);

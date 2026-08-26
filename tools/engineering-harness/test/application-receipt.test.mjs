@@ -666,7 +666,7 @@ test("legacy v1 receipts remain replayable but preserve their reduced evidence s
   );
 });
 
-test("v3 receipts retain hash-bound rejected critique diagnostics while v2 remains replayable", () => {
+test("v4 receipts retain hash-bound rejected critique diagnostics while v3 and v2 remain replayable", () => {
   const summary = "The architecture is not safe to implement.";
   const findings = ["The capability boundary is underspecified."];
   const rejectedOutput = {
@@ -700,7 +700,7 @@ test("v3 receipts retain hash-bound rejected critique diagnostics while v2 remai
   ];
 
   const receipt = createApplicationReceipt(value);
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v3");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v4");
   assert.deepEqual(receipt.nativeInvocations[1].critiqueDiagnostic, {
     summary,
     findings,
@@ -729,6 +729,22 @@ test("v3 receipts retain hash-bound rejected critique diagnostics while v2 remai
   assert.equal(tamperedResult.ok, false);
   assert.match(tamperedResult.reason, /output hash|critique diagnostic/i);
 
+  const legacyV3 = JSON.parse(serializeApplicationReceipt(receipt));
+  legacyV3.schema = "oxigraph.engineering-application-receipt/v3";
+  resealTamperedReceipt(legacyV3);
+  const legacyV3Result = verifyApplicationReceipt(legacyV3);
+  assert.equal(legacyV3Result.ok, true);
+  assert.equal(legacyV3Result.receipt.schema, legacyV3.schema);
+  assert.deepEqual(
+    legacyV3Result.receipt.nativeInvocations[1].critiqueDiagnostic,
+    { summary, findings },
+  );
+
+  const invalidLegacyV3 = structuredClone(legacyV3);
+  delete invalidLegacyV3.nativeInvocations[1].critiqueDiagnostic;
+  resealTamperedReceipt(invalidLegacyV3);
+  assert.equal(verifyApplicationReceipt(invalidLegacyV3).ok, false);
+
   const legacyV2 = JSON.parse(serializeApplicationReceipt(receipt));
   legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
   delete legacyV2.nativeInvocations[1].critiqueDiagnostic;
@@ -742,7 +758,7 @@ test("v3 receipts retain hash-bound rejected critique diagnostics while v2 remai
   );
 });
 
-test("v3 receipts retain only hash-bound rejected review diagnostics", () => {
+test("v4 receipts retain only hash-bound rejected review diagnostics", () => {
   const value = rejectedReviewDraft();
   const receipt = createApplicationReceipt(value);
   const review = receipt.nativeInvocations[3];
@@ -803,13 +819,40 @@ test("v3 receipts retain only hash-bound rejected review diagnostics", () => {
     );
   }
 
-  const legacyV2 = JSON.parse(serializeApplicationReceipt(receipt));
+  const legacyV3WithDiagnostic = JSON.parse(serializeApplicationReceipt(receipt));
+  legacyV3WithDiagnostic.schema = "oxigraph.engineering-application-receipt/v3";
+  resealTamperedReceipt(legacyV3WithDiagnostic);
+  assert.equal(verifyApplicationReceipt(legacyV3WithDiagnostic).ok, true);
+
+  const tamperedLegacyV3 = structuredClone(legacyV3WithDiagnostic);
+  tamperedLegacyV3.nativeInvocations[3].reviewDiagnostic.summary =
+    "A different review summary.";
+  resealTamperedReceipt(tamperedLegacyV3);
+  const tamperedLegacyV3Result = verifyApplicationReceipt(tamperedLegacyV3);
+  assert.equal(tamperedLegacyV3Result.ok, false);
+  assert.match(tamperedLegacyV3Result.reason, /output hash|review diagnostic/iu);
+
+  const historicalV3 = structuredClone(legacyV3WithDiagnostic);
+  delete historicalV3.nativeInvocations[3].reviewDiagnostic;
+  resealTamperedReceipt(historicalV3);
+  const historicalV3Result = verifyApplicationReceipt(historicalV3);
+  assert.equal(historicalV3Result.ok, true);
+  assert.equal(historicalV3Result.receipt.schema, historicalV3.schema);
+  assert.equal(
+    Object.hasOwn(historicalV3Result.receipt.nativeInvocations[3], "reviewDiagnostic"),
+    false,
+  );
+  assert.equal(
+    replayApplicationReceipt(serializeApplicationReceipt(historicalV3)).schema,
+    historicalV3.schema,
+  );
+
+  const legacyV2 = structuredClone(historicalV3);
   legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
-  delete legacyV2.nativeInvocations[3].reviewDiagnostic;
   resealTamperedReceipt(legacyV2);
-  const legacyResult = verifyApplicationReceipt(legacyV2);
-  assert.equal(legacyResult.ok, true);
-  assert.equal(legacyResult.receipt.schema, legacyV2.schema);
+  const legacyV2Result = verifyApplicationReceipt(legacyV2);
+  assert.equal(legacyV2Result.ok, true);
+  assert.equal(legacyV2Result.receipt.schema, legacyV2.schema);
 });
 
 test("single-field tampering and unknown fields fail closed", () => {
