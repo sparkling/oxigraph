@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,7 +10,12 @@ import {
   g17AgenticProfileContract,
   inspectG17AgenticEvidence,
   runG17NativeCompatibility,
+  verifyG17ImplementationFiles,
 } from "../src/qualification/application-evidence.mjs";
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
 
 test("G1.7 binds the owner-defined exact 11-command, 66-test Agentic profile", () => {
   const { contract } = loadG17Contract();
@@ -39,6 +45,40 @@ test("missing fixed Agentic publication is evidence-missing, not success", async
       projection: null,
       artifacts: [],
     },
+  );
+});
+
+test("G1.7 reopens legitimate empty implementation inputs without weakening evidence files", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-empty-input-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const bytes = Buffer.alloc(0);
+  await writeFile(join(root, "empty.rs"), bytes);
+  const files = [{ path: "empty.rs", bytes: 0, sha256: sha256(bytes) }];
+  assert.doesNotThrow(() =>
+    verifyG17ImplementationFiles(
+      {
+        implementation: {
+          files,
+          contentHash: sha256(JSON.stringify(files)),
+        },
+      },
+      root,
+    ),
+  );
+
+  files[0].sha256 = "0".repeat(64);
+  assert.throws(
+    () =>
+      verifyG17ImplementationFiles(
+        {
+          implementation: {
+            files,
+            contentHash: sha256(JSON.stringify(files)),
+          },
+        },
+        root,
+      ),
+    /differs from its receipt/u,
   );
 });
 

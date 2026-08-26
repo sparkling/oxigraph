@@ -51,14 +51,20 @@ function contained(parent, candidate) {
   return child === "" || (child !== ".." && !child.startsWith(`..${sep}`));
 }
 
-function boundedRegularFile(path, root, label, maxBytes = MAX_EVIDENCE_BYTES) {
+function boundedRegularFile(
+  path,
+  root,
+  label,
+  maxBytes = MAX_EVIDENCE_BYTES,
+  minBytes = 1,
+) {
   const lexical = resolve(path);
   if (!contained(root, lexical)) throw new Error(`${label} escapes its evidence root`);
   const metadata = lstatSync(lexical);
   if (
     metadata.isSymbolicLink() ||
     !metadata.isFile() ||
-    metadata.size < 1 ||
+    metadata.size < minBytes ||
     metadata.size > maxBytes
   ) {
     throw new Error(`${label} is not a bounded regular file`);
@@ -127,13 +133,19 @@ function staleAgentic(observedSha256) {
   });
 }
 
-function verifyImplementationFiles(receipt, root) {
+export function verifyG17ImplementationFiles(receipt, root) {
   for (const file of receipt.implementation.files) {
     const path = resolve(root, file.path);
     if (!contained(root, path) || relative(root, path).split(sep).includes("..")) {
       throw new Error("Agentic implementation path escapes evidence repository");
     }
-    const bytes = boundedRegularFile(path, root, "Agentic implementation input");
+    const bytes = boundedRegularFile(
+      path,
+      root,
+      "Agentic implementation input",
+      MAX_EVIDENCE_BYTES,
+      0,
+    );
     if (bytes.length !== file.bytes || sha256(bytes) !== file.sha256) {
       throw new Error("Agentic implementation input differs from its receipt");
     }
@@ -196,7 +208,7 @@ export async function inspectG17AgenticEvidence({
     ) {
       throw new Error("Agentic receipt is not for the clean qualification subject");
     }
-    verifyImplementationFiles(receipt, root);
+    verifyG17ImplementationFiles(receipt, root);
     const passedTests = receipt.commands.reduce(
       (sum, command) => sum + command.testSafeguard.observedPassedTests,
       0,
