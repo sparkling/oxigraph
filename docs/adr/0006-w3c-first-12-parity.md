@@ -1,13 +1,13 @@
 # ADR-0006: W3C-first RDF, SPARQL, and SHACL 1.2 parity
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
-- Amends:
+- **Amends**:
   [ADR-0001 — Outcome-oriented Apache Jena parity](0001-outcome-oriented-jena-parity.md)
   and
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md)
-- Related:
+- **Related**:
   [ADR-0007 — OWL 2 RL over Datalog](0007-owl-profiles-over-datalog.md),
   [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md)
 

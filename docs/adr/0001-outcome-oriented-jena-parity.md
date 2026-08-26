@@ -1,11 +1,11 @@
 # ADR-0001: Outcome-oriented Apache Jena parity
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
-- Amended by:
+- **Amended by**:
   [ADR-0006 — W3C-first 1.2 parity](0006-w3c-first-12-parity.md)
-- Related:
+- **Related**:
   [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md),
   [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md),
   [ADR-0012 — Immutable broad Jena differential

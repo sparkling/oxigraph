@@ -1,13 +1,13 @@
 # ADR-0016: Backend-neutral transactional RDF writes
 
-- Status: Implemented
-- Date: 2026-08-24
+- **Status**: Implemented
+- **Date**: 2026-08-24
 - Updated: 2026-08-24
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented and locally verified in `1da47285`
 - Update note: the public traits, built-in adapters, generic SPARQL Update
   binding, rollback/error behavior, and topology regression tests are merged.
-- Related:
+- **Related**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0014 — RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),

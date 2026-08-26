@@ -1,14 +1,14 @@
 # ADR-0021: Transaction-time SHACL validation
 
-- Status: Proposed
-- Date: 2026-08-24
+- **Status**: Proposed
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G2.4a-G2.4b
-- Depends on:
+- **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
-- Related:
+- **Related**:
   [ADR-0008 — SHACL processor profiles](0008-shacl-processor-profiles.md),
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
   [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),

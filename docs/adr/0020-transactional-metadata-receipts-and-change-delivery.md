@@ -1,13 +1,13 @@
 # ADR-0020: Transactional metadata, receipts, and change delivery
 
-- Status: Proposed
-- Date: 2026-08-24
+- **Status**: Proposed
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G2.1-G2.3c
-- Depends on:
+- **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
-- Related:
+- **Related**:
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0015 — Parallel bulk-load failure semantics](0015-parallel-bulk-load-failure-semantics.md),
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),

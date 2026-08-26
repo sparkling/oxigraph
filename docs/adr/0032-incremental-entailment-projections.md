@@ -1,17 +1,17 @@
 # ADR-0032: Incremental entailment projections
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; entailment currently uses full
   snapshot evaluation or explicit one-shot materialization
 - Programme task: `task-1787670632864-10hfsk` (G4.7)
-- Depends on:
+- **Depends on**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
-- Related:
+- **Related**:
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
   [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md),

@@ -1,10 +1,10 @@
 # ADR-0007: OWL 2 RL support over the Datalog engine
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
 - Implementation status: bounded `owl2-rl-rdf` rule profile implemented
-- Related:
+- **Related**:
   [ADR-0002 — RDF-native Datalog engine](0002-rdf-native-datalog-engine.md),
   [ADR-0006 — W3C-first 1.2 parity](0006-w3c-first-12-parity.md),
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md)

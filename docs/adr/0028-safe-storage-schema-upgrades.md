@@ -1,16 +1,16 @@
 # ADR-0028: Safe storage schema upgrades
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the current RocksDB opener performs
   legacy migrations in place and has no upgrade receipt
 - Programme task: `task-1787670632284-k0cti5` (G4.3)
-- Depends on:
+- **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
-- Related:
+- **Related**:
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md)

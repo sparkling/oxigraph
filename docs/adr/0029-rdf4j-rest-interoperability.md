@@ -1,13 +1,13 @@
 # ADR-0029: RDF4J REST interoperability
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the current server exposes W3C and
   Oxigraph routes, not an RDF4J REST compatibility profile
 - Programme task: `task-1787670632568-gk92vo` (G4.4)
-- Depends on:
+- **Depends on**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0014 — End-to-end RDF dataset graph topology](0014-rdf-dataset-graph-topology.md),
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
@@ -15,7 +15,7 @@
   [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),
   [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md),
   [ADR-0030 — Leased remote HTTP transactions](0030-leased-remote-http-transactions.md)
-- Related:
+- **Related**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
   [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),

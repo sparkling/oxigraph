@@ -1,14 +1,14 @@
 # ADR-0025: Explicit SERVICE federation
 
-- Status: Proposed
-- Date: 2026-08-24
+- **Status**: Proposed
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G3.5
-- Depends on:
+- **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
-- Related:
+- **Related**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),

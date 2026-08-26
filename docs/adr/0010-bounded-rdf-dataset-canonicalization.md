@@ -1,10 +1,10 @@
 # ADR-0010: Bounded RDF Dataset Canonicalization 1.0
 
-- Status: Accepted
-- Date: 2026-07-26
+- **Status**: Accepted
+- **Date**: 2026-07-26
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented and qualified against the pinned W3C suite
-- Related:
+- **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md)
 

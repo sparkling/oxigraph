@@ -1,7 +1,7 @@
 # ADR-0017: Repository evolution and evidence promotion harness
 
-- Status: Implemented
-- Date: 2026-08-24
+- **Status**: Implemented
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
@@ -15,7 +15,7 @@
 - Update note: implementation preserves human-only promotion and the
   committed G0-G4 task graph without treating Ruflo rows, installed packages,
   generic scores, or application receipts as semantic qualification
-- Related:
+- **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
   [ADR-0012 — Immutable broad Jena differential harness](0012-immutable-broad-jena-harness.md),

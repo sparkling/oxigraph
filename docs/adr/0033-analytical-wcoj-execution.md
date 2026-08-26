@@ -1,15 +1,15 @@
 # ADR-0033: Analytical/WCOJ execution
 
-- Status: Proposed
-- Date: 2026-08-25
+- **Status**: Proposed
+- **Date**: 2026-08-25
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the existing `sparopt` and
   `spareval` paths remain the only production SPARQL planner and executor
 - Programme task: `task-1787670633003-hoxn3e` (G4.8)
-- Depends on:
+- **Depends on**:
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
-- Related:
+- **Related**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),

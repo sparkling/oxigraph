@@ -1,16 +1,16 @@
 # ADR-0019: Unified egress, cancellation, and service claims
 
-- Status: Proposed
-- Date: 2026-08-24
+- **Status**: Proposed
+- **Date**: 2026-08-24
 - Updated: 2026-08-25
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.5's unified-egress, G1.5b's owned-update
   cancellation, and G1.5c's negotiated backend-admission profiles are
   implemented and source-bound; G1.6 runtime-derived service claims remain
   outstanding
-- Depends on:
+- **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
-- Related:
+- **Related**:
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md),
   [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)
