@@ -336,6 +336,9 @@ export function readProtectedRufloSnapshot(rootInput, pathInput) {
       before.dev !== metadata.dev ||
       before.ino !== metadata.ino ||
       before.size !== metadata.size ||
+      before.mode !== metadata.mode ||
+      before.mtimeMs !== metadata.mtimeMs ||
+      before.ctimeMs !== metadata.ctimeMs ||
       (process.platform !== "win32" && (before.mode & 0o222) !== 0)
     ) {
       throw new Error("protected Ruflo snapshot changed before open");
