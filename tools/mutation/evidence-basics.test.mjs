@@ -174,6 +174,11 @@ test("cargo-mutants acquisition floats while receipts freeze runtime provenance"
     true,
   );
   assert.equal(DEFAULT_OUTER_TIMEOUT_MS, 5_400_000);
+  assert.doesNotMatch(
+    workflow,
+    /curl -fsSLO https:\/\/github\.com\/souffle-lang\/souffle/,
+  );
+  assert.match(workflow, /souffle_package="\$RUNNER_TEMP\//);
   assert.match(runner, /assertCleanQualificationWorktree\(repoRoot\)/);
   assert.match(runner, /cleanupMutationEnvironment\(repoRoot, environment\)/);
   assert.match(runner, /verify-current\.mjs/);

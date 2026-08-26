@@ -353,10 +353,11 @@ jobs:
             tools/shacl-tests/jena-compact/pom.xml
       - name: Install Soufflé 2.5
         run: |
-          curl -fsSLO https://github.com/souffle-lang/souffle/releases/download/2.5/x86_64-ubuntu-2404-souffle-2.5-Linux.deb
-          echo "6b86e554f6aa5abf8a8b55d8312ae37c0957c5bd6c9edeea89246db9406f645ec5e600b84fe6636b1c163da556f0da6c3d2dad46c1083413f2fcf4f95b9ac62c  x86_64-ubuntu-2404-souffle-2.5-Linux.deb" | sha512sum --check -
+          souffle_package="$RUNNER_TEMP/x86_64-ubuntu-2404-souffle-2.5-Linux.deb"
+          curl -fsSL -o "$souffle_package" https://github.com/souffle-lang/souffle/releases/download/2.5/x86_64-ubuntu-2404-souffle-2.5-Linux.deb
+          echo "6b86e554f6aa5abf8a8b55d8312ae37c0957c5bd6c9edeea89246db9406f645ec5e600b84fe6636b1c163da556f0da6c3d2dad46c1083413f2fcf4f95b9ac62c  $souffle_package" | sha512sum --check -
           sudo apt-get update
-          sudo apt-get install -y ./x86_64-ubuntu-2404-souffle-2.5-Linux.deb
+          sudo apt-get install -y "$souffle_package"
       - run: npm ci --ignore-scripts
         working-directory: ./tools/agentic-qe
       - run: npm ci --ignore-scripts
