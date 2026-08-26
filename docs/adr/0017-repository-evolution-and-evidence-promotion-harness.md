@@ -7,9 +7,10 @@
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
   one-session sandbox, repair/review lifecycle, application receipts, canonical
-  task registry, and generated command registry are implemented and directly
-  tested. A dual-provider G1.2 application run is accepted, and G1.3-G1.6 have
-  direct source-bound candidate acceptances. The existing `tools/metaharness`
+  task registry, generated command registry, and bounded candidate-rejection
+  receipts are implemented and directly tested. A dual-provider G1.2
+  application run is accepted, and G1.3-G1.6 have direct source-bound candidate
+  acceptances. The existing `tools/metaharness`
   semantic qualifier remains separate; unattended Dream Machine execution
   remains deferred behind the activation gates in this ADR
 - Update note: implementation preserves human-only promotion and the
@@ -20,7 +21,11 @@
   accepted; sealed evaluator reconstruction remains the applicability
   authority. Commit `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`
   makes registered task IDs the only task-selection authority and retains the
-  historical per-task exports only as compatibility shims
+  historical per-task exports only as compatibility shims. Commit
+  `afe30c7de7e3df6e72a0a855d83efc612339f261` adds current receipt v6,
+  exact attempt-or-rejection accounting for every successful patch-producing
+  invocation, non-trainable reconstruction/applicability rejection records,
+  and byte-exact replay-only handling for v1-v5
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -244,7 +249,13 @@ implemented and directly tested:
   and binds the role, task class, model, evaluator, and exact candidate;
 - candidate receipts bind the baseline, evaluator commit, admitted patch,
   rebuilt outputs, literal commands, runtime identities, exits, and relevant
-  digests, with adversarial receipt and replay tests; and
+  digests, with adversarial receipt and replay tests;
+- current v6 candidate-rejection records bind the exact candidate execution,
+  successful patch-producing invocation and patch digest to a typed
+  reconstruction/applicability failure and bounded canonical-detail digest.
+  They are non-trainable, the detail digest is tamper-evident rather than a
+  signature or recovery channel, pre-v6 receipts remain replay-only, and a
+  candidate-disposal failure aborts receipt minting; and
 - one real G1 task completes end to end with both native vendors represented,
   while the existing Agentic-QE, Jena, mutation, and MetaHarness semantic
   receipts remain authoritative and unmodified.
@@ -280,9 +291,10 @@ registry derives canonical contract paths and an exact ordered 27-command CLI
 surface. Contract, preflight, programme, and replay entrypoints accept a
 registered `taskId`; caller-selected contract paths and malformed, inherited,
 accessor-backed, duplicate, or unregistered identities fail before I/O. The
-next distinct control, `HARNESS-REJECTION-EVIDENCE`, must bind bounded
+next distinct control, `HARNESS-REJECTION-EVIDENCE`, is implemented by commit
+`afe30c7de7e3df6e72a0a855d83efc612339f261`. Receipt v6 binds bounded
 candidate-specific reconstruction/applicability rejection evidence before the
-G2.1 evaluator is frozen.
+G2.1 evaluator is frozen, while v1-v5 remain replay-only.
 
 The current managed task surface persists repository-local execution state but
 does not expose a dependency or description-edit argument. Rows therefore
@@ -441,6 +453,13 @@ Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
   policy with integrity-bound installed artifacts, validates both native host
   interfaces, and retains `mcpRegistered: false`, `localOnly: true`, and
   `promotionAuthority: false`;
+- 194/194 engineering-harness tests on committed rejection-evidence tree
+  `afe30c7de7e3df6e72a0a855d83efc612339f261` and the same
+  `runner-implemented` doctor boundary. The tests preserve frozen pre-v6
+  SHA-256/byte-length fixtures for receipts v1-v5; reject malformed, duplicate,
+  unaccounted, or reordered v6 evidence; retain two failed provider lanes
+  independently; exclude rejections from Router quality; and abort receipt
+  minting when candidate disposal fails;
 - accepted dual-provider G1.2 application receipt
   `d303b85b766bd0c6d459044da4ca891e2d6b1feb728124cbeb2668c1372c8e2c`,
   with native Claude and Codex represented and every required cross-vendor
@@ -466,9 +485,10 @@ Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
 This ADR implements the engineering architecture and authority boundary; it
 does not claim that Dream Machine is an approved unattended runner, full
 MetaHarness qualification is current, or an application-harness acceptance is
-safe to promote. The canonical registry control is closed, but bounded
-candidate-specific application rejection evidence remains a separate control
-before G2.1 evaluator freeze. ADR-0018 and ADR-0020 through ADR-0033 remain
+safe to promote. The canonical registry and candidate-rejection evidence
+controls are closed. G2.1's evaluator freeze is now blocked by its own
+prerequisites rather than those two harness controls. ADR-0018 and ADR-0020
+through ADR-0033 remain
 Proposed until their product behavior and evidence exist. Each task still requires a
 red/evaluator-separated corpus, direct control-plane tests, continuously
 current prerequisites,

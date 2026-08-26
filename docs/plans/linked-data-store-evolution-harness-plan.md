@@ -282,12 +282,15 @@ automatically by Dream Machine or Darwin.
 controls, not new product G tasks. The registry control follows G1.6 and is
 implemented by commit `4a15caa07df37d884e7c74d4b69c0505ce3de6e1` with an
 exact ordered seven-task registry, task-ID-only generic APIs, and an exact
-ordered 27-command surface. The rejection-evidence control follows it and must
-persist bounded candidate-specific reconstruction/applicability failures in
-replay-verified application receipts. G2.1's evaluator may be designed
-earlier, but its contract is not frozen until both controls close. The
-sequencing edge is therefore G1.6 → `HARNESS-REGISTRY` →
-`HARNESS-REJECTION-EVIDENCE` → G2.1 evaluator freeze.
+ordered 27-command surface. The rejection-evidence control follows it and is
+implemented by commit `afe30c7de7e3df6e72a0a855d83efc612339f261`:
+application receipt v6 persists bounded candidate-specific
+reconstruction/applicability failures, binds each to its exact successful
+patch-producing invocation, and replay-verifies exact attempt-or-rejection
+accounting. Both harness controls are closed. G2.1's evaluator may now be
+frozen once G2.1's own prerequisites are current. The dependency edge remains
+G1.6 → `HARNESS-REGISTRY` → `HARNESS-REJECTION-EVIDENCE` → G2.1
+evaluator freeze.
 
 Execution record through 2026-08-26:
 
@@ -414,8 +417,20 @@ Execution record through 2026-08-26:
   harness tests, and the `runner-implemented` doctor pass. The doctor retains
   `latest` dependency requests, valid native Codex and Claude interfaces,
   `mcpRegistered: false`, `localOnly: true`, and `promotionAuthority: false`.
-  This closes registry drift only; `HARNESS-REJECTION-EVIDENCE`, G0.6, G0.7,
-  and G1.7 remain open.
+  This closes registry drift only; G0.6, G0.7, and G1.7 remain open.
+- `HARNESS-REJECTION-EVIDENCE` is complete in commit
+  `afe30c7de7e3df6e72a0a855d83efc612339f261`. Current application receipt v6
+  records every failed reconstruction/applicability lane independently, binds
+  the exact candidate execution, successful implementation/repair invocation,
+  patch digest, typed phase/code, and bounded canonical-detail digest, and
+  requires each successful patch-producing invocation to have exactly one
+  attempt or rejection. The records are non-trainable, v1-v5 receipts remain
+  byte-exact replay-only, and candidate-disposal failure aborts receipt
+  minting. All 194 harness tests and the `runner-implemented` doctor pass,
+  including malformed/resigned/reordered evidence, identical-patch lanes,
+  raw-detail non-retention, and frozen pre-v6 fixture controls. This closes the
+  rejection-evidence control only; G0.6, G0.7, and G1.7 remain open and no
+  semantic qualification or promotion authority follows.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -788,9 +803,10 @@ historical audit records. The current corrected v4 map is stored and read back
 through the managed Ruflo bridge in the explicit repository database at
 `task-plans/linked-data-store-g0-g4-2026-08-26-v4`. It preserves all 39 stable
 plan identifiers, records the three replacement task rows above, includes the
-non-product `HARNESS-REGISTRY` and rejection-evidence controls, and points
-G1.6 to the accepted seven-stage product/control evidence rather than the
-earlier rejected application run.
+non-product `HARNESS-REGISTRY` and rejection-evidence controls, points G1.6 to
+the accepted seven-stage product/control evidence rather than the earlier
+rejected application run, and is updated after each control closes with exact
+commit, test, doctor, and authority-boundary evidence.
 
 The Brain-grounded implementation source
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts` shows that the current

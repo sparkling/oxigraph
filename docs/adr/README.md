@@ -47,6 +47,10 @@ outstanding work. Their Proposed status is deliberate: the corresponding
 G1-G4 tasks and promotion evidence are not implemented merely because the
 architecture is recorded. ADR-0019 alone has closed its bounded G1.5-G1.6
 implementation profile; fifteen decisions in this range remain Proposed.
+ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
+controls are implemented in commits `4a15caa0` and `afe30c7d`; both remain
+local-only engineering controls and grant no semantic-qualification or
+promotion authority.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

@@ -140,6 +140,18 @@ or unregistered identities fail before runtime I/O. The committed control
 passes 180/180 harness tests and a `runner-implemented` doctor while remaining
 local-only, unregistered as MCP, and without promotion authority.
 
+Follow-on harness commit
+`afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate
+candidate-rejection evidence control. Application receipt v6 now hash-binds
+each reconstruction or applicability failure to one exact candidate execution,
+successful implementation/repair invocation, patch digest, typed phase/code,
+and bounded-detail digest. Every successful patch-producing invocation is
+accounted for by either one verifier attempt or one rejection record; failed
+lanes remain distinct even when their patch bytes match. This pre-verifier
+evidence is non-trainable, v1-v5 receipts remain byte-exact replay-only, and a
+candidate-disposal failure aborts receipt minting. The committed control passes
+194/194 harness tests and the same `runner-implemented`, local-only doctor.
+
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
 ```toml

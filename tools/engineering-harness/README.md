@@ -79,12 +79,20 @@ Current activation boundary:
   and their existing application receipts remain replayable;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
-- application receipt v5 binds bounded rejected critique and review diagnostics
-  together with the optional exact-count `compatibility` verifier stage; v4
-  preserves both diagnostics as mandatory, and v3 keeps rejected critique
-  diagnostics mandatory with rejected review diagnostics optional for
-  historical replay. Versions v1-v4 are replay-only and cannot mint current
-  routing quality;
+- application receipt v6 adds an exact `candidateRejections` collection and
+  event kind. Each record binds one candidate execution, one successful
+  implementation or repair invocation, its patch SHA-256, a typed
+  reconstruction/applicability phase and failure code, and a digest of bounded
+  canonical failure detail. One invocation may be represented by an attempt or
+  one rejection, never both; paired lanes are not deduplicated by patch digest.
+  These pre-verifier failures authorize no Router quality. Candidate-disposal
+  failure is outside this evidence type and aborts receipt minting;
+- v5 retains bounded rejected critique and review diagnostics together with the
+  optional exact-count `compatibility` verifier stage; v4 preserves both
+  diagnostics as mandatory, and v3 keeps rejected critique diagnostics
+  mandatory with rejected review diagnostics optional for historical replay.
+  Versions v1-v5 are byte-exact replay-only and cannot mint current routing
+  quality;
 - `factory diagnose` evaluates disposable `metaharness new` output without
   adopting its publication settings, broad permissions, legacy dependencies,
   or nonexistent MCP commands;
@@ -155,6 +163,16 @@ committed tree passes all 180 engineering-harness tests and reports
 `runner-implemented` from `doctor`, with all five dependencies requested from
 `latest`, both native host interfaces valid, `mcpRegistered: false`,
 `localOnly: true`, and `promotionAuthority: false`.
+
+Commit `afe30c7de7e3df6e72a0a855d83efc612339f261` implements the follow-on
+rejection-evidence control. Its committed tree passes all 194 harness tests and
+the same doctor boundary. Adversarial coverage includes two independently
+failed provider lanes, a mixed accepted/rejected run, frozen-submodule and
+thrown-verifier failures, repair reconstruction, exact event ordering,
+identical-patch lane separation, raw-detail non-retention, disposal abort, and
+fixed SHA-256/byte-length replay fixtures captured from pre-v6 v1-v5 receipts.
+The detail digest is hash-bound evidence, not a signature or a way to recover
+the deliberately discarded raw error.
 
 G1.3 product commit `3bf9468c` has also passed the harness's direct candidate
 reconstruction and frozen verifier: exact patch `2d5412df6210246266426e3b7ee8be599744fc1093c9ac272b8d8d64a34fef04`,
