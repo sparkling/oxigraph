@@ -156,6 +156,29 @@ function serviceCommandPlan() {
   });
 }
 
+function compatibilityCommandPlan() {
+  const plan = serviceCommandPlan();
+  return Object.freeze({
+    format: plan.format,
+    build: plan.build,
+    public: plan.public,
+    service: plan.service,
+    compatibility: Object.freeze({
+      argv: Object.freeze([
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "public",
+        "evaluator_is_green",
+      ]),
+      timeoutMs: 30_000,
+    }),
+    independent: plan.independent,
+    regression: plan.regression,
+  });
+}
+
 async function createAnchorProbeFixture(root) {
   const workspace = await createFixture(root);
   await writeFile(
@@ -512,18 +535,19 @@ test("production verifier protects writable state anchors from candidate code", 
   }
 });
 
-test("production verifier executes the optional service evaluator as its own bounded stage", { timeout: 180_000 }, async () => {
+test("production verifier executes service and compatibility as separate bounded stages", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-session-service-test-"));
   try {
     const workspace = await createFixture(root);
     const report = await runSandboxVerificationSession({
       workspace,
-      commands: serviceCommandPlan(),
+      commands: compatibilityCommandPlan(),
       verificationSequence: [
         "format",
         "build",
         "public",
         "service",
+        "compatibility",
         "independent",
         "regression",
       ],
@@ -538,10 +562,22 @@ test("production verifier executes the optional service evaluator as its own bou
     assert.equal(report.session.stage, "complete");
     assert.deepEqual(
       report.session.commands.map(({ name }) => name),
-      ["format", "build", "public", "service", "independent", "regression"],
+      [
+        "format",
+        "build",
+        "public",
+        "service",
+        "compatibility",
+        "independent",
+        "regression",
+      ],
     );
     assert.match(
       report.session.commands.find(({ name }) => name === "service").stdout,
+      /test result: ok\. 1 passed; 0 failed;/u,
+    );
+    assert.match(
+      report.session.commands.find(({ name }) => name === "compatibility").stdout,
       /test result: ok\. 1 passed; 0 failed;/u,
     );
   } finally {

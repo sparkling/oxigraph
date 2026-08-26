@@ -1033,24 +1033,24 @@ const EXPECTED_G16 = Object.freeze({
     tree: "a7b1c37e9965b6dcdbebd9cf76377110e9e6ef85",
   },
   evaluator: {
-    commit: "6f447333dcd6d61fc31cf9ef17d925d432d26f4e",
+    commit: "8dcb795a08e3605c18c662d13b040311a260ac2b",
     parent: "826bd7a2622282b4194aa03ffc1b9effbb0adae0",
-    tree: "351d320efe1527f0c3e1b81c817707adc341f169",
+    tree: "973d5ed5615fc2f34a1e9d0da657d01f5c899755",
     path: "lib/oxigraph/tests/sparql_effective_capabilities.rs",
     changeStatus: "A",
     blob: "4f8156e3b3e34af2482bb40a87110f35576c458c",
     contentSha256:
       "4a150b695de39baba392a9282365bd74c86cde20422f64e7dd3c3e054cc80416",
     patchSha256:
-      "ae10ef58a5e74a744201694e7c65d34f095605da7e0ed2c780fad1a13129dd1b",
+      "93893693ed9804d56589169168c4dcd464bdeef2bc8dfea9e0eee0689888cee6",
   },
   evaluatorChanges: Object.freeze([
     Object.freeze({
       changeStatus: "M",
       path: "cli/src/service_description/tests.rs",
-      blob: "3b8fd22c73ab4bba5429ab7b13cef3ca18ec2ac9",
+      blob: "79a47ba4feb872e79fa4b6e6291eb8bdf4b8d293",
       contentSha256:
-        "434d8e351fb4ed15482c9f970d50911ba750fff38528c66e10f8150df7e17e78",
+        "5de8a8dfdc0d3730792babcc7b671f1c0fa5bb0c6056417c0ae821a10a2b20b9",
     }),
     Object.freeze({
       changeStatus: "A",
@@ -1094,6 +1094,7 @@ const EXPECTED_G16 = Object.freeze({
     "build",
     "public",
     "service",
+    "compatibility",
     "independent",
     "regression",
   ],
@@ -1146,6 +1147,25 @@ const EXPECTED_G16 = Object.freeze({
         "--bin",
         "oxigraph",
         "service_description::tests::",
+      ],
+      timeoutMs: 300_000,
+    },
+    compatibility: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph-cli",
+        "--no-default-features",
+        "--features",
+        "oxigraph/http-client-native-tls,rdfs,geosparql,owl2-rl",
+        "--bin",
+        "oxigraph",
+        "service_description::tests::dependency_qualified_library_tls_is_enforced_without_cli_tls",
+        "--",
+        "--exact",
+        "--ignored",
       ],
       timeoutMs: 300_000,
     },
@@ -1210,6 +1230,7 @@ const EXPECTED_G16 = Object.freeze({
   success: {
     publicPassed: 4,
     servicePassed: 17,
+    compatibilityPassed: 1,
     independentPassed: 1,
     regressionPassed: 12,
   },
@@ -1230,10 +1251,10 @@ const EXPECTED_G16 = Object.freeze({
     evaluatorManifest: {
       entries: 1402,
       fullSha256:
-        "471ad926edaaea79e7701433f43cf70df0d4099f44d72d759d5d46dbef9b8590",
+        "e8cf534cde4c2d572b08a46604641441ed503a0ffb32cf4be1fb5e46bd9edc8c",
       protectedEntries: 1398,
       protectedSha256:
-        "9dec147750fffea5f504db1b0fd3b29a3aeba9514f297e6d9c2bf6ae2b359fe9",
+        "a5c3f5c448a9aa1a615f7b4b1d60b8c5e43965240c5981acb66fa356831b155f",
     },
     submodules: [
       ...EXPECTED.protectedInputs.submodules,

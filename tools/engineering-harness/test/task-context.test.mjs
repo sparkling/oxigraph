@@ -247,9 +247,14 @@ function verifierReceipt(
   };
 }
 
-test("task context binds the optional service evaluator and its accepted evidence", async (t) => {
+test("task context binds the service and compatibility evaluators in frozen order", async (t) => {
   const state = await fixture(t);
-  state.contract.verificationSequence.splice(3, 0, "service");
+  state.contract.verificationSequence.splice(
+    3,
+    0,
+    "service",
+    "compatibility",
+  );
   state.contract.commands.service = {
     argv: [
       "cargo",
@@ -263,7 +268,24 @@ test("task context binds the optional service evaluator and its accepted evidenc
     ],
     timeoutMs: 300_000,
   };
+  state.contract.commands.compatibility = {
+    argv: [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "oxigraph-cli",
+      "--bin",
+      "oxigraph",
+      "service_description::tests::dependency_qualified_library_tls_is_enforced_without_cli_tls",
+      "--",
+      "--exact",
+      "--ignored",
+    ],
+    timeoutMs: 300_000,
+  };
   state.contract.success.servicePassed = 17;
+  state.contract.success.compatibilityPassed = 1;
   const sourceSnapshot = await createG12SourceSnapshot({
     evaluator: state.evaluator,
     contract: state.contract,
@@ -285,14 +307,21 @@ test("task context binds the optional service evaluator and its accepted evidenc
     "build",
     "public",
     "service",
+    "compatibility",
     "independent",
     "regression",
   ]);
   assert.equal(task.bindings.verification.success.servicePassed, 17);
+  assert.equal(task.bindings.verification.success.compatibilityPassed, 1);
   assert.match(
     task.verifier.receipt.commands.find(({ name }) => name === "service")
       .stdoutTail,
     /test result: ok\. 17 passed; 0 failed;/u,
+  );
+  assert.match(
+    task.verifier.receipt.commands.find(({ name }) => name === "compatibility")
+      .stdoutTail,
+    /test result: ok\. 1 passed; 0 failed;/u,
   );
 });
 

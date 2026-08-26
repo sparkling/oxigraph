@@ -191,7 +191,13 @@ function command(name) {
     durationMs: 2,
     stdoutSha256: sha(`${name}-stdout`),
     stderrSha256: sha(`${name}-stderr`),
-    stdoutTail: ["public", "independent", "regression"].includes(name)
+    stdoutTail: [
+      "public",
+      "service",
+      "compatibility",
+      "independent",
+      "regression",
+    ].includes(name)
       ? "test result: ok. 1 passed; 0 failed;"
       : "",
     stderrTail: "",
@@ -376,6 +382,24 @@ function rejectedReviewDraft({
   value.reviews[0].outputSha256 = invocation.outputSha256;
   value.reviews[0].disposition = "REJECT";
   value.final = { verdict: "REJECT", reason: "independent review rejected" };
+  return value;
+}
+
+function sevenStageDraft({ compatibilityOutputPassed = 1 } = {}) {
+  const value = draft();
+  value.contract.success.servicePassed = 17;
+  value.contract.success.compatibilityPassed = 1;
+  const service = command("service");
+  service.stdoutTail = "test result: ok. 17 passed; 0 failed;";
+  const compatibility = command("compatibility");
+  compatibility.stdoutTail =
+    `test result: ok. ${compatibilityOutputPassed} passed; 0 failed;`;
+  value.attempts[0].verifier.commands.splice(
+    3,
+    0,
+    service,
+    compatibility,
+  );
   return value;
 }
 
@@ -631,6 +655,7 @@ test("application receipts admit an optional frozen service evaluator without in
   value.attempts[0].verifier.commands.splice(3, 0, service);
 
   const receipt = createApplicationReceipt(value);
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
   assert.deepEqual(
     receipt.attempts[0].verifier.commands.map(({ name }) => name),
     ["format", "build", "public", "service", "independent", "regression"],
@@ -638,7 +663,48 @@ test("application receipts admit an optional frozen service evaluator without in
   assert.equal(applicationReceiptQualityOutcomes(receipt).length, 4);
   assert.equal(verifyApplicationReceipt(receipt).ok, true);
 
+  const historicalV4 = JSON.parse(serializeApplicationReceipt(receipt));
+  historicalV4.schema = "oxigraph.engineering-application-receipt/v4";
+  resealTamperedReceipt(historicalV4);
+  const historicalBytes = serializeApplicationReceipt(historicalV4);
+  assert.equal(verifyApplicationReceipt(historicalBytes).ok, true);
+  assert.equal(
+    serializeApplicationReceipt(replayApplicationReceipt(historicalBytes)),
+    historicalBytes,
+  );
+
   assert.equal(verifyApplicationReceipt(createApplicationReceipt(draft())).ok, true);
+});
+
+test("v5 receipts bind the seven-stage compatibility gate and reject vacuous success", () => {
+  const receipt = createApplicationReceipt(sevenStageDraft());
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
+  assert.deepEqual(
+    receipt.attempts[0].verifier.commands.map(({ name }) => name),
+    [
+      "format",
+      "build",
+      "public",
+      "service",
+      "compatibility",
+      "independent",
+      "regression",
+    ],
+  );
+  assert.equal(receipt.contract.success.compatibilityPassed, 1);
+  assert.equal(verifyApplicationReceipt(receipt).ok, true);
+
+  assert.throws(
+    () => createApplicationReceipt(sevenStageDraft({ compatibilityOutputPassed: 0 })),
+    /ACCEPT without full successful verification/u,
+  );
+
+  const mislabelledV4 = JSON.parse(serializeApplicationReceipt(receipt));
+  mislabelledV4.schema = "oxigraph.engineering-application-receipt/v4";
+  resealTamperedReceipt(mislabelledV4);
+  const legacyResult = verifyApplicationReceipt(mislabelledV4);
+  assert.equal(legacyResult.ok, false);
+  assert.match(legacyResult.reason, /unknown field: compatibilityPassed/u);
 });
 
 test("legacy v1 receipts remain replayable but preserve their reduced evidence shape", () => {
@@ -666,7 +732,7 @@ test("legacy v1 receipts remain replayable but preserve their reduced evidence s
   );
 });
 
-test("v4 receipts retain hash-bound rejected critique diagnostics while v3 and v2 remain replayable", () => {
+test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v3 and v2 remain replayable", () => {
   const summary = "The architecture is not safe to implement.";
   const findings = ["The capability boundary is underspecified."];
   const rejectedOutput = {
@@ -700,12 +766,21 @@ test("v4 receipts retain hash-bound rejected critique diagnostics while v3 and v
   ];
 
   const receipt = createApplicationReceipt(value);
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v4");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
   assert.deepEqual(receipt.nativeInvocations[1].critiqueDiagnostic, {
     summary,
     findings,
   });
   assert.equal(Object.isFrozen(receipt.nativeInvocations[1].critiqueDiagnostic), true);
+
+  const legacyV4 = JSON.parse(serializeApplicationReceipt(receipt));
+  legacyV4.schema = "oxigraph.engineering-application-receipt/v4";
+  resealTamperedReceipt(legacyV4);
+  assert.equal(verifyApplicationReceipt(legacyV4).ok, true);
+  const invalidLegacyV4 = structuredClone(legacyV4);
+  delete invalidLegacyV4.nativeInvocations[1].critiqueDiagnostic;
+  resealTamperedReceipt(invalidLegacyV4);
+  assert.equal(verifyApplicationReceipt(invalidLegacyV4).ok, false);
 
   const missing = structuredClone(value);
   delete missing.nativeInvocations[1].critiqueDiagnostic;
@@ -758,7 +833,7 @@ test("v4 receipts retain hash-bound rejected critique diagnostics while v3 and v
   );
 });
 
-test("v4 receipts retain only hash-bound rejected review diagnostics", () => {
+test("v5 and v4 receipts retain only hash-bound rejected review diagnostics", () => {
   const value = rejectedReviewDraft();
   const receipt = createApplicationReceipt(value);
   const review = receipt.nativeInvocations[3];
@@ -769,6 +844,15 @@ test("v4 receipts retain only hash-bound rejected review diagnostics", () => {
       .reviewDiagnostic,
     review.reviewDiagnostic,
   );
+
+  const legacyV4 = JSON.parse(serializeApplicationReceipt(receipt));
+  legacyV4.schema = "oxigraph.engineering-application-receipt/v4";
+  resealTamperedReceipt(legacyV4);
+  assert.equal(verifyApplicationReceipt(legacyV4).ok, true);
+  const invalidLegacyV4 = structuredClone(legacyV4);
+  delete invalidLegacyV4.nativeInvocations[3].reviewDiagnostic;
+  resealTamperedReceipt(invalidLegacyV4);
+  assert.equal(verifyApplicationReceipt(invalidLegacyV4).ok, false);
 
   const missing = structuredClone(value);
   delete missing.nativeInvocations[3].reviewDiagnostic;

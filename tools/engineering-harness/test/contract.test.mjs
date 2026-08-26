@@ -191,6 +191,7 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
   ]);
   assert.equal(resolution.contract.success.publicPassed, 4);
   assert.equal(resolution.contract.success.servicePassed, 17);
+  assert.equal(resolution.contract.success.compatibilityPassed, 1);
   assert.equal(resolution.contract.success.independentPassed, 1);
   assert.equal(resolution.contract.success.regressionPassed, 12);
   assert.equal(resolution.contract.ceilings.cargoBuildJobs, 1);
@@ -216,8 +217,11 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
   ]);
   assert.match(g16Profile.guidance, /QueryEvaluator::has_default_service_handler/u);
   assert.match(g16Profile.guidance, /Do not shadow that authority/u);
-  assert.match(g16Profile.guidance, /must not be gated by CLI TLS features/u);
-  assert.match(g16Profile.guidance, /UnionDefaultGraph only for query-capable endpoints/u);
+  assert.match(g16Profile.guidance, /must not mirror CLI TLS cfg values/u);
+  assert.match(g16Profile.guidance, /legacy absent policy remains permissive/u);
+  assert.match(g16Profile.guidance, /owning oxigraph\/http-client feature/u);
+  assert.match(g16Profile.guidance, /UnionDefaultGraph for query and update endpoints/u);
+  assert.match(g16Profile.guidance, /always-available deny-all wrapper/u);
   assert.ok(g16Profile.sourceAllowlist.includes(resolution.contract.evaluator.path));
   assert.equal(Object.hasOwn(resolution.contract.evaluator, "changes"), false);
   assert.equal(Object.hasOwn(resolution.contract, "evaluatorChanges"), false);
@@ -226,6 +230,7 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     "build",
     "public",
     "service",
+    "compatibility",
     "independent",
     "regression",
   ]);
@@ -240,6 +245,23 @@ test("loads the two-change compiler-red G1.6 service-claims contract and binds i
     "service_description::tests::",
   ]);
   assert.equal(resolution.contract.commands.service.timeoutMs, 300_000);
+  assert.deepEqual(resolution.contract.commands.compatibility.argv, [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "oxigraph-cli",
+    "--no-default-features",
+    "--features",
+    "oxigraph/http-client-native-tls,rdfs,geosparql,owl2-rl",
+    "--bin",
+    "oxigraph",
+    "service_description::tests::dependency_qualified_library_tls_is_enforced_without_cli_tls",
+    "--",
+    "--exact",
+    "--ignored",
+  ]);
+  assert.equal(resolution.contract.commands.compatibility.timeoutMs, 300_000);
   assert.deepEqual(resolution.contract.commands.build.argv.slice(-7), [
     "--test",
     "sparql_version",

@@ -386,9 +386,20 @@ function validateContract(contract, contractSha256) {
     "independent",
     "regression",
   ];
-  const sequence = Object.hasOwn(contract.commands, "service")
-    ? serviceSequence
-    : legacySequence;
+  const compatibilitySequence = [
+    "format",
+    "build",
+    "public",
+    "service",
+    "compatibility",
+    "independent",
+    "regression",
+  ];
+  const sequence = Object.hasOwn(contract.commands, "compatibility")
+    ? compatibilitySequence
+    : Object.hasOwn(contract.commands, "service")
+      ? serviceSequence
+      : legacySequence;
   if (
     !Array.isArray(contract.verificationSequence) ||
     canonicalJson(contract.verificationSequence) !== canonicalJson(sequence)

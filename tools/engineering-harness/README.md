@@ -62,18 +62,26 @@ Current activation boundary:
   Verification runs the four-test `sparql_effective_capabilities` integration
   target as `public`, then runs only the 17 feature-active filtered
   `service_description::tests::` binary-unit tests as a separate bounded
-  `service` stage; unrelated CLI binary tests are outside both argv surfaces.
+  `service` stage. The separate `compatibility` stage requires exactly one
+  ignored
+  `service_description::tests::dependency_qualified_library_tls_is_enforced_without_cli_tls`
+  canary under dependency-qualified library TLS with every CLI TLS feature
+  disabled. The final frozen references require exactly one `independent` and
+  12 `regression` results; unrelated CLI binary tests are outside these argv
+  surfaces.
   The verifier disables Cargo incremental state and test-profile debug info to
   keep cold state deterministic and bounded. Command timeout or exhausted
   verifier state (`ENOSPC`/`EDQUOT`) is infrastructure-inconclusive, cannot
-  trigger a repair lane, and cannot mint routing quality. Five-stage contracts
-  and their existing receipts remain replayable;
+  trigger a repair lane, and cannot mint routing quality. Five- and six-stage
+  historical contracts and their existing receipts remain replayable;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
-- application receipt v4 binds bounded rejected critique and review diagnostics;
-  v3 keeps rejected critique diagnostics mandatory and rejected review
-  diagnostics optional for historical replay, while v1-v3 are all replay-only
-  and cannot mint current routing quality;
+- application receipt v5 binds bounded rejected critique and review diagnostics
+  together with the optional exact-count `compatibility` verifier stage; v4
+  preserves both diagnostics as mandatory, and v3 keeps rejected critique
+  diagnostics mandatory with rejected review diagnostics optional for
+  historical replay. Versions v1-v4 are replay-only and cannot mint current
+  routing quality;
 - `factory diagnose` evaluates disposable `metaharness new` output without
   adopting its publication settings, broad permissions, legacy dependencies,
   or nonexistent MCP commands;

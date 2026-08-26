@@ -21,12 +21,25 @@ const serviceCommandOrder = Object.freeze([
   "independent",
   "regression",
 ]);
+const compatibilityCommandOrder = Object.freeze([
+  "format",
+  "build",
+  "public",
+  "service",
+  "compatibility",
+  "independent",
+  "regression",
+]);
 const sessionArtifactName = "verifier-session-result.json";
 
 function commandOrder(contract) {
   const sequence = contract.verificationSequence;
   if (
-    ![legacyCommandOrder, serviceCommandOrder].some((expected) =>
+    ![
+      legacyCommandOrder,
+      serviceCommandOrder,
+      compatibilityCommandOrder,
+    ].some((expected) =>
       sameArgv(sequence, expected),
     )
   ) {
