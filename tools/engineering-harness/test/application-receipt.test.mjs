@@ -11,6 +11,7 @@ import {
   verifyApplicationReceiptOutcome,
 } from "../src/receipts/application.mjs";
 import {
+  canonicalJson,
   canonicalSha256,
   routingEmbedding,
 } from "../src/routing/features.mjs";
@@ -127,7 +128,7 @@ function invocation(
   provider,
   workerRole,
   selectedModel,
-  { status = "ACCEPT", patch = null } = {},
+  { status = "ACCEPT", patch = null, executionId = null } = {},
 ) {
   const executable = `/usr/bin/${provider}`;
   return {
@@ -135,11 +136,12 @@ function invocation(
     routingId,
     sequence,
     executionId:
-      workerRole === "review"
+      executionId ??
+      (workerRole === "review"
         ? "review-execution"
         : workerRole === "repair"
           ? `${id}-execution`
-          : "candidate-execution",
+          : "candidate-execution"),
     provider,
     role: workerRole,
     model: selectedModel,
@@ -358,10 +360,47 @@ function draft() {
     nativeInvocations,
     attempts,
     reviews,
+    candidateRejections: [],
     selectedCandidate,
     final,
     events,
   };
+}
+
+function reconstructionRejectionDraft() {
+  const value = draft();
+  const invocation = value.nativeInvocations[2];
+  const rejection = {
+    id: "candidate-rejection-1",
+    candidateId: invocation.executionId,
+    invocationId: invocation.id,
+    patchSha256: invocation.patchSha256,
+    phase: "reconstruction",
+    failureCode: "candidate-reconstruction-failed",
+    failureDetailSha256: sha("bounded canonical reconstruction failure"),
+  };
+  value.routing = value.routing.slice(0, 3);
+  value.nativeInvocations = value.nativeInvocations.slice(0, 3);
+  value.attempts = [];
+  value.reviews = [];
+  value.candidateRejections = [rejection];
+  value.selectedCandidate = null;
+  value.final = {
+    verdict: "INCONCLUSIVE",
+    reason: "no application-verifiable candidate was produced",
+  };
+  value.events = [
+    { kind: "routing", id: "route-architecture" },
+    { kind: "native-invocation", id: "invoke-architecture" },
+    { kind: "routing", id: "route-critique" },
+    { kind: "native-invocation", id: "invoke-critique" },
+    { kind: "routing", id: "route-implementation" },
+    { kind: "native-invocation", id: "invoke-implementation" },
+    { kind: "candidate-rejection", id: rejection.id },
+    { kind: "selected-candidate", id: "none" },
+    { kind: "final", id: value.run.id },
+  ];
+  return value;
 }
 
 function rejectedReviewDraft({
@@ -409,11 +448,21 @@ function recordFor(receipt, event) {
     "native-invocation": receipt.nativeInvocations,
     attempt: receipt.attempts,
     review: receipt.reviews,
+    "candidate-rejection": receipt.candidateRejections,
   }[event.kind];
   if (collection) return collection.find(({ id }) => id === event.id);
   if (event.kind === "selected-candidate") return receipt.selectedCandidate;
   if (event.kind === "final") return receipt.final;
   throw new Error(`unknown event ${event.kind}`);
+}
+
+function relabelLegacyReceipt(receipt, schema) {
+  receipt.schema = schema;
+  delete receipt.candidateRejections;
+  receipt.events = receipt.events.filter(
+    ({ kind }) => kind !== "candidate-rejection",
+  );
+  return receipt;
 }
 
 function resealTamperedReceipt(receipt) {
@@ -478,6 +527,31 @@ function qualityOutcomeFor(
     outcome.predictedQuality = route.decision.predictedQuality;
   }
   return outcome;
+}
+
+function rejectionOutcomeFor(receipt, quality) {
+  const rejection = receipt.candidateRejections[0];
+  const invocation = receipt.nativeInvocations.find(
+    ({ id }) => id === rejection.invocationId,
+  );
+  const route = receipt.routing.find(({ id }) => id === invocation.routingId);
+  return {
+    taskId: route.context.taskId,
+    taskClass: route.context.taskClass,
+    role: invocation.role,
+    provider: invocation.provider,
+    model: invocation.model,
+    models: structuredClone(receipt.control.providerModels),
+    candidateSha256: rejection.patchSha256,
+    evaluatorSha256: receipt.contract.evaluator.patchSha256,
+    contractSha256: receipt.contract.sha256,
+    harnessSha256: receipt.control.harnessSha256,
+    disposition: "verified",
+    quality,
+    mode: route.decision.mode,
+    pairId: `${route.context.taskId}:${invocation.role}`,
+    repairCycles: 0,
+  };
 }
 
 function addRejectedRepair(
@@ -636,6 +710,380 @@ test("application receipt has an exact deterministic round trip and quality bind
   assert.equal(reviewBinding.reviewId, "review-1");
 });
 
+test("v6 receipts seal candidate-specific reconstruction rejection evidence without quality", () => {
+  const left = createApplicationReceipt(reconstructionRejectionDraft());
+  const right = createApplicationReceipt(reconstructionRejectionDraft());
+  assert.equal(left.schema, "oxigraph.engineering-application-receipt/v6");
+  assert.deepEqual(left.candidateRejections, [
+    {
+      id: "candidate-rejection-1",
+      candidateId: "candidate-execution",
+      invocationId: "invoke-implementation",
+      patchSha256: sha([
+        "diff --git a/lib.rs b/lib.rs",
+        "--- a/lib.rs",
+        "+++ b/lib.rs",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n")),
+      phase: "reconstruction",
+      failureCode: "candidate-reconstruction-failed",
+      failureDetailSha256: sha("bounded canonical reconstruction failure"),
+    },
+  ]);
+  assert.equal(serializeApplicationReceipt(left), serializeApplicationReceipt(right));
+  assert.equal(verifyApplicationReceipt(left).ok, true);
+  assert.deepEqual(applicationReceiptQualityOutcomes(left), []);
+  assert.equal(
+    left.events.find(({ kind }) => kind === "candidate-rejection").id,
+    "candidate-rejection-1",
+  );
+});
+
+test("candidate rejection schema is exact, bounded, and pair-classified", () => {
+  for (const field of ["error", "message", "stdout", "stderr", "path", "candidateTree"]) {
+    const value = reconstructionRejectionDraft();
+    value.candidateRejections[0][field] = `private-${field}`;
+    assert.throws(
+      () => createApplicationReceipt(value),
+      new RegExp(`unknown field: ${field}`, "u"),
+    );
+  }
+
+  for (const [phase, failureCode] of [
+    ["reconstruction", "frozen-submodules-failed"],
+    ["applicability", "candidate-reconstruction-failed"],
+    ["cleanup", "candidate-disposal-failed"],
+  ]) {
+    const value = reconstructionRejectionDraft();
+    value.candidateRejections[0].phase = phase;
+    value.candidateRejections[0].failureCode = failureCode;
+    assert.throws(
+      () => createApplicationReceipt(value),
+      /unsupported phase\/failureCode pair/u,
+    );
+  }
+
+  const missing = reconstructionRejectionDraft();
+  delete missing.candidateRejections[0].candidateId;
+  assert.throws(
+    () => createApplicationReceipt(missing),
+    /missing field: candidateId/u,
+  );
+
+  const malformed = reconstructionRejectionDraft();
+  malformed.candidateRejections[0].failureDetailSha256 = "not-a-digest";
+  assert.throws(
+    () => createApplicationReceipt(malformed),
+    /lowercase SHA-256 digest/u,
+  );
+
+  const oversized = reconstructionRejectionDraft();
+  oversized.candidateRejections = Array.from({ length: 2049 }, (_, index) => ({
+    ...oversized.candidateRejections[0],
+    id: `candidate-rejection-${index}`,
+  }));
+  assert.throws(
+    () => createApplicationReceipt(oversized),
+    /candidateRejections must be a bounded array/u,
+  );
+});
+
+test("candidate rejections bind exactly one successful patch-producing invocation", () => {
+  const original = serializeApplicationReceipt(
+    createApplicationReceipt(reconstructionRejectionDraft()),
+  );
+  for (const [mutate, reason] of [
+    [
+      (receipt) => {
+        receipt.candidateRejections[0].candidateId = "different-candidate";
+      },
+      /exact candidate, invocation, and patch/u,
+    ],
+    [
+      (receipt) => {
+        receipt.candidateRejections[0].invocationId = "unknown-invocation";
+      },
+      /successful patch-producing invocation/u,
+    ],
+    [
+      (receipt) => {
+        receipt.candidateRejections[0].patchSha256 = sha("different-patch");
+      },
+      /exact candidate, invocation, and patch/u,
+    ],
+    [
+      (receipt) => {
+        receipt.candidateRejections[0].invocationId = "invoke-architecture";
+      },
+      /successful patch-producing invocation/u,
+    ],
+    [
+      (receipt) => {
+        receipt.nativeInvocations[2].status = "REJECT";
+      },
+      /successful patch-producing invocation/u,
+    ],
+  ]) {
+    const receipt = JSON.parse(original);
+    mutate(receipt);
+    resealTamperedReceipt(receipt);
+    const result = verifyApplicationReceipt(receipt);
+    assert.equal(result.ok, false);
+    assert.match(result.reason, reason);
+  }
+
+  const duplicate = reconstructionRejectionDraft();
+  duplicate.candidateRejections.push({
+    ...duplicate.candidateRejections[0],
+    id: "candidate-rejection-2",
+    phase: "applicability",
+    failureCode: "candidate-verifier-failed",
+  });
+  duplicate.events.splice(-2, 0, {
+    kind: "candidate-rejection",
+    id: "candidate-rejection-2",
+  });
+  assert.throws(
+    () => createApplicationReceipt(duplicate),
+    /duplicates a rejection for native invocation/u,
+  );
+
+  const admitted = draft();
+  admitted.candidateRejections = [
+    {
+      ...reconstructionRejectionDraft().candidateRejections[0],
+      id: "candidate-rejection-admitted",
+    },
+  ];
+  admitted.events.splice(-2, 0, {
+    kind: "candidate-rejection",
+    id: "candidate-rejection-admitted",
+  });
+  assert.throws(
+    () => createApplicationReceipt(admitted),
+    /already admitted by an attempt or review/u,
+  );
+});
+
+test("v6 accounts for every successful patch invocation and orders rejection events", () => {
+  const missing = reconstructionRejectionDraft();
+  missing.candidateRejections = [];
+  missing.events = missing.events.filter(
+    ({ kind }) => kind !== "candidate-rejection",
+  );
+  assert.throws(
+    () => createApplicationReceipt(missing),
+    /successful patch-producing invocation invoke-implementation is not accounted/u,
+  );
+
+  const original = JSON.parse(
+    serializeApplicationReceipt(
+      createApplicationReceipt(reconstructionRejectionDraft()),
+    ),
+  );
+  const invocationIndex = original.events.findIndex(
+    ({ kind, id }) =>
+      kind === "native-invocation" && id === "invoke-implementation",
+  );
+  const rejectionIndex = original.events.findIndex(
+    ({ kind }) => kind === "candidate-rejection",
+  );
+  [original.events[invocationIndex], original.events[rejectionIndex]] = [
+    original.events[rejectionIndex],
+    original.events[invocationIndex],
+  ];
+  resealTamperedReceipt(original);
+  const reordered = verifyApplicationReceipt(original);
+  assert.equal(reordered.ok, false);
+  assert.match(reordered.reason, /occurs before its native invocation/u);
+
+  const afterSelection = JSON.parse(
+    serializeApplicationReceipt(
+      createApplicationReceipt(reconstructionRejectionDraft()),
+    ),
+  );
+  const rejection = afterSelection.events.splice(
+    afterSelection.events.findIndex(({ kind }) => kind === "candidate-rejection"),
+    1,
+  )[0];
+  afterSelection.events.splice(-1, 0, rejection);
+  resealTamperedReceipt(afterSelection);
+  const late = verifyApplicationReceipt(afterSelection);
+  assert.equal(late.ok, false);
+  assert.match(late.reason, /selection and final verdict must close/u);
+});
+
+test("parallel rejection lanes remain distinct even for identical patch bytes", () => {
+  const value = reconstructionRejectionDraft();
+  const patch = [
+    "diff --git a/lib.rs b/lib.rs",
+    "--- a/lib.rs",
+    "+++ b/lib.rs",
+    "@@ -1 +1 @@",
+    "-old",
+    "+new",
+    "",
+  ].join("\n");
+  const secondInvocation = invocation(
+    "invoke-implementation-2",
+    "route-implementation",
+    4,
+    "claude",
+    "implementation",
+    value.control.providerModels.claude,
+    { patch, executionId: "candidate-execution-2" },
+  );
+  const secondRejection = {
+    ...value.candidateRejections[0],
+    id: "candidate-rejection-2",
+    candidateId: secondInvocation.executionId,
+    invocationId: secondInvocation.id,
+    failureDetailSha256: sha("second bounded rejection detail"),
+  };
+  value.nativeInvocations.push(secondInvocation);
+  value.candidateRejections.push(secondRejection);
+  value.events.splice(
+    -2,
+    0,
+    { kind: "native-invocation", id: secondInvocation.id },
+    { kind: "candidate-rejection", id: secondRejection.id },
+  );
+  const receipt = createApplicationReceipt(value);
+  assert.equal(receipt.candidateRejections.length, 2);
+  assert.equal(
+    new Set(receipt.candidateRejections.map(({ patchSha256 }) => patchSha256)).size,
+    1,
+  );
+  assert.equal(
+    new Set(receipt.candidateRejections.map(({ invocationId }) => invocationId)).size,
+    2,
+  );
+  assert.equal(
+    new Set(receipt.candidateRejections.map(({ candidateId }) => candidateId)).size,
+    2,
+  );
+
+  const omitted = JSON.parse(serializeApplicationReceipt(receipt));
+  omitted.candidateRejections.pop();
+  omitted.events = omitted.events.filter(
+    ({ kind, id }) => kind !== "candidate-rejection" || id !== secondRejection.id,
+  );
+  resealTamperedReceipt(omitted);
+  const omittedResult = verifyApplicationReceipt(omitted);
+  assert.equal(omittedResult.ok, false);
+  assert.match(omittedResult.reason, /is not accounted/u);
+});
+
+test("candidate rejection evidence never authorizes Router quality", () => {
+  const rejectionOnly = createApplicationReceipt(reconstructionRejectionDraft());
+  for (const quality of [0, 1]) {
+    assert.equal(
+      verifyApplicationReceiptOutcome(
+        rejectionOnly,
+        rejectionOutcomeFor(rejectionOnly, quality),
+      ).verified,
+      false,
+    );
+  }
+
+  const mixed = draft();
+  const rejectedPatch = "diff --git a/rejected.rs b/rejected.rs\n--- a/rejected.rs\n+++ b/rejected.rs\n";
+  const rejectedInvocation = invocation(
+    "invoke-rejected-implementation",
+    "route-implementation",
+    5,
+    "claude",
+    "implementation",
+    mixed.control.providerModels.claude,
+    { patch: rejectedPatch, executionId: "rejected-candidate-execution" },
+  );
+  const rejection = {
+    id: "candidate-rejection-mixed",
+    candidateId: rejectedInvocation.executionId,
+    invocationId: rejectedInvocation.id,
+    patchSha256: rejectedInvocation.patchSha256,
+    phase: "reconstruction",
+    failureCode: "candidate-reconstruction-failed",
+    failureDetailSha256: sha("mixed rejection detail"),
+  };
+  mixed.nativeInvocations.push(rejectedInvocation);
+  mixed.candidateRejections.push(rejection);
+  mixed.events.splice(
+    -2,
+    0,
+    { kind: "native-invocation", id: rejectedInvocation.id },
+    { kind: "candidate-rejection", id: rejection.id },
+  );
+  const mixedReceipt = createApplicationReceipt(mixed);
+  const outcomes = applicationReceiptQualityOutcomes(mixedReceipt);
+  assert.equal(outcomes.length, 4);
+  assert.equal(
+    outcomes.some(
+      ({ outcome }) => outcome.candidateSha256 === rejectedInvocation.patchSha256,
+    ),
+    false,
+  );
+});
+
+test("legacy v1 through v5 receipts replay byte-for-byte without v6 fields", () => {
+  const current = createApplicationReceipt(draft());
+  // Frozen from committed pre-v6 control HEAD 8a6abd6e using this historical
+  // draft and the then-current v1-v5 replay paths.
+  const frozenLegacyFixtures = new Map([
+    [
+      "oxigraph.engineering-application-receipt/v1",
+      ["0b7d3695e374a007d4ea93bb0d2b536cec1bc9ac3c2426b276a51f897193b94c", 21001],
+    ],
+    [
+      "oxigraph.engineering-application-receipt/v2",
+      ["a6f2854f2f9aa706ed982ffae1c4dde72e464f307fc8bda6f01b658ff7ee5309", 21142],
+    ],
+    [
+      "oxigraph.engineering-application-receipt/v3",
+      ["f647421dbdb2d99e03c03029a072061b8906229d89b98007423450bf01e6c550", 21142],
+    ],
+    [
+      "oxigraph.engineering-application-receipt/v4",
+      ["847a2509d2e348a721678a484b285e8a40e69d5e1df97f757ea02c58dbb17eab", 21142],
+    ],
+    [
+      "oxigraph.engineering-application-receipt/v5",
+      ["b3fb59d79311a4a9714d3a5ace8425c506106cf2d4b0e4f4b6930fe9e3206c49", 21142],
+    ],
+  ]);
+  for (const schema of [
+    "oxigraph.engineering-application-receipt/v1",
+    "oxigraph.engineering-application-receipt/v2",
+    "oxigraph.engineering-application-receipt/v3",
+    "oxigraph.engineering-application-receipt/v4",
+    "oxigraph.engineering-application-receipt/v5",
+  ]) {
+    const legacy = relabelLegacyReceipt(
+      JSON.parse(serializeApplicationReceipt(current)),
+      schema,
+    );
+    if (schema.endsWith("/v1")) {
+      for (const invocation of legacy.nativeInvocations) {
+        delete invocation.executionId;
+        delete invocation.failureCode;
+        delete invocation.failureDetailSha256;
+      }
+    }
+    resealTamperedReceipt(legacy);
+    const bytes = canonicalJson(legacy);
+    const [expectedSha256, expectedBytes] = frozenLegacyFixtures.get(schema);
+    assert.equal(sha(bytes), expectedSha256, schema);
+    assert.equal(Buffer.byteLength(bytes, "utf8"), expectedBytes, schema);
+    const replayed = replayApplicationReceipt(bytes);
+    assert.equal(serializeApplicationReceipt(replayed), bytes, schema);
+    assert.equal(verifyApplicationReceipt(bytes).ok, true, schema);
+    assert.equal(Object.hasOwn(replayed, "candidateRejections"), false, schema);
+  }
+});
+
 test("application receipts admit an optional frozen service evaluator without invalidating five-stage receipts", () => {
   const value = draft();
   value.contract.success.servicePassed = 17;
@@ -655,7 +1103,7 @@ test("application receipts admit an optional frozen service evaluator without in
   value.attempts[0].verifier.commands.splice(3, 0, service);
 
   const receipt = createApplicationReceipt(value);
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v6");
   assert.deepEqual(
     receipt.attempts[0].verifier.commands.map(({ name }) => name),
     ["format", "build", "public", "service", "independent", "regression"],
@@ -664,7 +1112,10 @@ test("application receipts admit an optional frozen service evaluator without in
   assert.equal(verifyApplicationReceipt(receipt).ok, true);
 
   const historicalV4 = JSON.parse(serializeApplicationReceipt(receipt));
-  historicalV4.schema = "oxigraph.engineering-application-receipt/v4";
+  relabelLegacyReceipt(
+    historicalV4,
+    "oxigraph.engineering-application-receipt/v4",
+  );
   resealTamperedReceipt(historicalV4);
   const historicalBytes = serializeApplicationReceipt(historicalV4);
   assert.equal(verifyApplicationReceipt(historicalBytes).ok, true);
@@ -676,9 +1127,9 @@ test("application receipts admit an optional frozen service evaluator without in
   assert.equal(verifyApplicationReceipt(createApplicationReceipt(draft())).ok, true);
 });
 
-test("v5 receipts bind the seven-stage compatibility gate and reject vacuous success", () => {
+test("v6 and legacy v5 receipts bind the seven-stage compatibility gate and reject vacuous success", () => {
   const receipt = createApplicationReceipt(sevenStageDraft());
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v6");
   assert.deepEqual(
     receipt.attempts[0].verifier.commands.map(({ name }) => name),
     [
@@ -694,13 +1145,24 @@ test("v5 receipts bind the seven-stage compatibility gate and reject vacuous suc
   assert.equal(receipt.contract.success.compatibilityPassed, 1);
   assert.equal(verifyApplicationReceipt(receipt).ok, true);
 
+  const historicalV5 = JSON.parse(serializeApplicationReceipt(receipt));
+  relabelLegacyReceipt(
+    historicalV5,
+    "oxigraph.engineering-application-receipt/v5",
+  );
+  resealTamperedReceipt(historicalV5);
+  assert.equal(verifyApplicationReceipt(historicalV5).ok, true);
+
   assert.throws(
     () => createApplicationReceipt(sevenStageDraft({ compatibilityOutputPassed: 0 })),
     /ACCEPT without full successful verification/u,
   );
 
   const mislabelledV4 = JSON.parse(serializeApplicationReceipt(receipt));
-  mislabelledV4.schema = "oxigraph.engineering-application-receipt/v4";
+  relabelLegacyReceipt(
+    mislabelledV4,
+    "oxigraph.engineering-application-receipt/v4",
+  );
   resealTamperedReceipt(mislabelledV4);
   const legacyResult = verifyApplicationReceipt(mislabelledV4);
   assert.equal(legacyResult.ok, false);
@@ -711,7 +1173,7 @@ test("legacy v1 receipts remain replayable but preserve their reduced evidence s
   const legacy = JSON.parse(
     serializeApplicationReceipt(createApplicationReceipt(draft())),
   );
-  legacy.schema = "oxigraph.engineering-application-receipt/v1";
+  relabelLegacyReceipt(legacy, "oxigraph.engineering-application-receipt/v1");
   for (const invocation of legacy.nativeInvocations) {
     delete invocation.executionId;
     delete invocation.failureCode;
@@ -732,7 +1194,7 @@ test("legacy v1 receipts remain replayable but preserve their reduced evidence s
   );
 });
 
-test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v3 and v2 remain replayable", () => {
+test("v6 through v3 receipts retain hash-bound rejected critique diagnostics while v2 remains replayable", () => {
   const summary = "The architecture is not safe to implement.";
   const findings = ["The capability boundary is underspecified."];
   const rejectedOutput = {
@@ -766,7 +1228,7 @@ test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v
   ];
 
   const receipt = createApplicationReceipt(value);
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v6");
   assert.deepEqual(receipt.nativeInvocations[1].critiqueDiagnostic, {
     summary,
     findings,
@@ -774,7 +1236,7 @@ test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v
   assert.equal(Object.isFrozen(receipt.nativeInvocations[1].critiqueDiagnostic), true);
 
   const legacyV4 = JSON.parse(serializeApplicationReceipt(receipt));
-  legacyV4.schema = "oxigraph.engineering-application-receipt/v4";
+  relabelLegacyReceipt(legacyV4, "oxigraph.engineering-application-receipt/v4");
   resealTamperedReceipt(legacyV4);
   assert.equal(verifyApplicationReceipt(legacyV4).ok, true);
   const invalidLegacyV4 = structuredClone(legacyV4);
@@ -805,7 +1267,7 @@ test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v
   assert.match(tamperedResult.reason, /output hash|critique diagnostic/i);
 
   const legacyV3 = JSON.parse(serializeApplicationReceipt(receipt));
-  legacyV3.schema = "oxigraph.engineering-application-receipt/v3";
+  relabelLegacyReceipt(legacyV3, "oxigraph.engineering-application-receipt/v3");
   resealTamperedReceipt(legacyV3);
   const legacyV3Result = verifyApplicationReceipt(legacyV3);
   assert.equal(legacyV3Result.ok, true);
@@ -821,7 +1283,7 @@ test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v
   assert.equal(verifyApplicationReceipt(invalidLegacyV3).ok, false);
 
   const legacyV2 = JSON.parse(serializeApplicationReceipt(receipt));
-  legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
+  relabelLegacyReceipt(legacyV2, "oxigraph.engineering-application-receipt/v2");
   delete legacyV2.nativeInvocations[1].critiqueDiagnostic;
   resealTamperedReceipt(legacyV2);
   const legacyResult = verifyApplicationReceipt(legacyV2);
@@ -833,7 +1295,7 @@ test("v5 and v4 receipts retain hash-bound rejected critique diagnostics while v
   );
 });
 
-test("v5 and v4 receipts retain only hash-bound rejected review diagnostics", () => {
+test("v6 through v4 receipts retain only hash-bound rejected review diagnostics", () => {
   const value = rejectedReviewDraft();
   const receipt = createApplicationReceipt(value);
   const review = receipt.nativeInvocations[3];
@@ -846,7 +1308,7 @@ test("v5 and v4 receipts retain only hash-bound rejected review diagnostics", ()
   );
 
   const legacyV4 = JSON.parse(serializeApplicationReceipt(receipt));
-  legacyV4.schema = "oxigraph.engineering-application-receipt/v4";
+  relabelLegacyReceipt(legacyV4, "oxigraph.engineering-application-receipt/v4");
   resealTamperedReceipt(legacyV4);
   assert.equal(verifyApplicationReceipt(legacyV4).ok, true);
   const invalidLegacyV4 = structuredClone(legacyV4);
@@ -904,7 +1366,10 @@ test("v5 and v4 receipts retain only hash-bound rejected review diagnostics", ()
   }
 
   const legacyV3WithDiagnostic = JSON.parse(serializeApplicationReceipt(receipt));
-  legacyV3WithDiagnostic.schema = "oxigraph.engineering-application-receipt/v3";
+  relabelLegacyReceipt(
+    legacyV3WithDiagnostic,
+    "oxigraph.engineering-application-receipt/v3",
+  );
   resealTamperedReceipt(legacyV3WithDiagnostic);
   assert.equal(verifyApplicationReceipt(legacyV3WithDiagnostic).ok, true);
 
@@ -932,7 +1397,7 @@ test("v5 and v4 receipts retain only hash-bound rejected review diagnostics", ()
   );
 
   const legacyV2 = structuredClone(historicalV3);
-  legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
+  relabelLegacyReceipt(legacyV2, "oxigraph.engineering-application-receipt/v2");
   resealTamperedReceipt(legacyV2);
   const legacyV2Result = verifyApplicationReceipt(legacyV2);
   assert.equal(legacyV2Result.ok, true);

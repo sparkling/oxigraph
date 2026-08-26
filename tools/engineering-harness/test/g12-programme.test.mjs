@@ -249,6 +249,11 @@ function routedDecision(context, provider) {
   });
 }
 
+function throwInjectedFailure(operationFailures, operation, patch) {
+  const failure = operationFailures[operation]?.get(patch);
+  if (failure !== undefined) throw failure;
+}
+
 function fixture({
   routedProvider = null,
   verification = "mixed",
@@ -256,6 +261,7 @@ function fixture({
   claudeArchitectureReject = false,
   codexCritiqueReject = false,
   implementationOutputRejected = false,
+  operationFailures = {},
 } = {}) {
   const preflight = frozenPreflight();
   const calls = [];
@@ -292,17 +298,27 @@ function fixture({
       }
       return structuredClone(input);
     },
-    reconstruct: async ({ patch }) =>
-      Object.freeze({
+    reconstruct: async ({ patch }) => {
+      throwInjectedFailure(operationFailures, "reconstruct", patch);
+      return Object.freeze({
         patch,
         kind: "candidate",
         candidateCommit: oid(`${patch}:commit`),
         candidateTree: oid(`${patch}:tree`),
         candidatePatchSha256: sha256(patch),
         protectedManifest: Object.freeze({ entries: 12, sha256: sha256("protected") }),
-      }),
-    materializeSubmodules: async () => Object.freeze([]),
+      });
+    },
+    materializeSubmodules: async ({ candidate }) => {
+      throwInjectedFailure(
+        operationFailures,
+        "materializeSubmodules",
+        candidate.patch,
+      );
+      return Object.freeze([]);
+    },
     verify: async ({ candidate }) => {
+      throwInjectedFailure(operationFailures, "verify", candidate.patch);
       const provider = candidate.patch.endsWith(":claude") ? "claude" : "codex";
       if (verification === "all-accept" || candidate.patch.startsWith("patch:repair")) {
         return verifier(candidate, "ACCEPT");
@@ -315,13 +331,14 @@ function fixture({
     },
     dispose: async (candidate) => {
       disposed.push(candidate.candidateTree);
+      throwInjectedFailure(operationFailures, "dispose", candidate.patch);
     },
     finalize: async ({ receipt, receiptBytes }) => {
       const verificationResult = verifyApplicationReceipt(receiptBytes);
       assert.equal(verificationResult.ok, true);
       assert.equal(verificationResult.receiptSha256, receipt.receiptSha256);
       const targets = applicationReceiptQualityOutcomes(receiptBytes);
-      finalized.push({ receipt, targets });
+      finalized.push({ receipt, receiptBytes, targets });
       return Object.freeze({
         receiptPath: "/private/test-receipt.json",
         admission: Object.freeze({ outcomeCount: targets.length }),
@@ -337,6 +354,44 @@ function clock() {
     new Date("2026-08-25T10:00:01.000Z"),
   ];
   return () => values.shift();
+}
+
+function rejectionDetailSha256(error) {
+  return canonicalSha256({
+    name: error.name.slice(0, 128),
+    code: typeof error.code === "string" ? error.code.slice(0, 128) : null,
+    message: error.message.slice(0, 512),
+  });
+}
+
+function assertExactRejection(
+  receipt,
+  rejection,
+  { candidateId, patch, phase, failureCode, error },
+) {
+  assert.equal(rejection.candidateId, candidateId);
+  assert.equal(rejection.patchSha256, sha256(patch));
+  assert.equal(rejection.phase, phase);
+  assert.equal(rejection.failureCode, failureCode);
+  assert.equal(rejection.failureDetailSha256, rejectionDetailSha256(error));
+  const invocation = receipt.nativeInvocations.find(
+    ({ id }) => id === rejection.invocationId,
+  );
+  assert.equal(invocation.executionId, candidateId);
+  assert.ok(["implementation", "repair"].includes(invocation.role));
+  assert.equal(invocation.status, "ACCEPT");
+  assert.equal(invocation.process.disposition, "completed");
+  assert.equal(invocation.process.exitCode, 0);
+  assert.equal(invocation.process.signal, null);
+  assert.equal(invocation.patchSha256, rejection.patchSha256);
+  const invocationEvent = receipt.events.find(
+    ({ kind, id }) => kind === "native-invocation" && id === invocation.id,
+  );
+  const rejectionEvent = receipt.events.find(
+    ({ kind, id }) => kind === "candidate-rejection" && id === rejection.id,
+  );
+  assert.ok(invocationEvent.sequence < rejectionEvent.sequence);
+  return invocation;
 }
 
 test("cold paired programme preserves both pipelines and accepts cross-vendor review", async () => {
@@ -369,6 +424,196 @@ test("cold paired programme preserves both pipelines and accepts cross-vendor re
   assert.equal(receipt.events.at(-1).kind, "final");
   assert.equal(preflightCalls.length, 1);
   assert.equal(preflightCalls[0].taskId, g12Profile.id);
+});
+
+test("paired reconstruction failures remain separate, hash-bound, and raw-free", async () => {
+  const codexError = new Error("private-codex-reconstruction-secret");
+  codexError.code = "E_CODEX_PRIVATE";
+  const claudeError = new Error("private-claude-reconstruction-secret");
+  claudeError.code = "E_CLAUDE_PRIVATE";
+  const operationFailures = {
+    reconstruct: new Map([
+      ["patch:implementation:codex", codexError],
+      ["patch:implementation:claude", claudeError],
+    ]),
+  };
+  const { run, finalized, disposed } = fixture({
+    verification: "all-accept",
+    operationFailures,
+  });
+  const result = await run({ runId: "paired-reconstruction-failures", clock: clock() });
+  assert.equal(result.final.verdict, "INCONCLUSIVE");
+  assert.equal(result.admittedOutcomes, 0);
+  assert.equal(disposed.length, 0);
+  const { receipt, receiptBytes, targets } = finalized[0];
+  assert.equal(receipt.attempts.length, 0);
+  assert.equal(receipt.candidateRejections.length, 2);
+  assert.deepEqual(targets, []);
+  const expected = [
+    {
+      candidateId: "paired-reconstruction-failures:candidate:1",
+      patch: "patch:implementation:codex",
+      error: codexError,
+    },
+    {
+      candidateId: "paired-reconstruction-failures:candidate:2",
+      patch: "patch:implementation:claude",
+      error: claudeError,
+    },
+  ];
+  for (let index = 0; index < expected.length; index += 1) {
+    assertExactRejection(receipt, receipt.candidateRejections[index], {
+      ...expected[index],
+      phase: "reconstruction",
+      failureCode: "candidate-reconstruction-failed",
+    });
+  }
+  for (const raw of [
+    "patch:implementation:codex",
+    "patch:implementation:claude",
+    codexError.message,
+    claudeError.message,
+    "codex:implementation:stdout",
+    "claude:implementation:stdout",
+  ]) {
+    assert.equal(receiptBytes.includes(raw), false, raw);
+  }
+  for (const { patch, error } of expected) {
+    assert.equal(receiptBytes.includes(sha256(patch)), true);
+    assert.equal(receiptBytes.includes(rejectionDetailSha256(error)), true);
+  }
+});
+
+test("one reconstruction failure does not suppress a separately accepted lane", async () => {
+  const failure = new Error("private-claude-reconstruction-failure");
+  const { run, finalized } = fixture({
+    verification: "all-accept",
+    operationFailures: {
+      reconstruct: new Map([["patch:implementation:claude", failure]]),
+    },
+  });
+  const result = await run({ runId: "mixed-reconstruction", clock: clock() });
+  assert.equal(result.final.verdict, "ACCEPT");
+  assert.match(result.selectedPatch, /implementation:codex$/u);
+  assert.equal(result.admittedOutcomes, 5);
+  const { receipt, targets } = finalized[0];
+  assert.equal(receipt.attempts.length, 1);
+  assert.equal(receipt.candidateRejections.length, 1);
+  assertExactRejection(receipt, receipt.candidateRejections[0], {
+    candidateId: "mixed-reconstruction:candidate:2",
+    patch: "patch:implementation:claude",
+    phase: "reconstruction",
+    failureCode: "candidate-reconstruction-failed",
+    error: failure,
+  });
+  assert.equal(
+    targets.some(
+      ({ outcome }) => outcome.candidateSha256 === sha256("patch:implementation:claude"),
+    ),
+    false,
+  );
+});
+
+test("frozen submodule failure is a distinct non-trainable applicability rejection", async () => {
+  const failure = new Error("private-submodule-materialization-failure");
+  const { run, finalized, disposed } = fixture({
+    verification: "all-accept",
+    operationFailures: {
+      materializeSubmodules: new Map([
+        ["patch:implementation:claude", failure],
+      ]),
+    },
+  });
+  const result = await run({ runId: "submodule-applicability", clock: clock() });
+  assert.equal(result.final.verdict, "ACCEPT");
+  assert.equal(disposed.length, 2);
+  const { receipt, targets } = finalized[0];
+  assert.equal(receipt.attempts.length, 1);
+  assertExactRejection(receipt, receipt.candidateRejections[0], {
+    candidateId: "submodule-applicability:candidate:2",
+    patch: "patch:implementation:claude",
+    phase: "applicability",
+    failureCode: "frozen-submodules-failed",
+    error: failure,
+  });
+  assert.equal(
+    targets.some(
+      ({ outcome }) => outcome.candidateSha256 === sha256("patch:implementation:claude"),
+    ),
+    false,
+  );
+});
+
+test("thrown verifier failure remains INCONCLUSIVE and cannot trigger repair quality", async () => {
+  const failure = new Error("private-verifier-runtime-failure");
+  const { run, calls, finalized, disposed } = fixture({
+    routedProvider: "codex",
+    verification: "all-accept",
+    operationFailures: {
+      verify: new Map([["patch:implementation:codex", failure]]),
+    },
+  });
+  const result = await run({ runId: "verifier-applicability", clock: clock() });
+  assert.equal(result.final.verdict, "INCONCLUSIVE");
+  assert.equal(result.admittedOutcomes, 0);
+  assert.equal(calls.some(({ role }) => role === "repair"), false);
+  assert.equal(disposed.length, 1);
+  const { receipt, targets } = finalized[0];
+  assert.equal(receipt.attempts.length, 0);
+  assert.deepEqual(targets, []);
+  assertExactRejection(receipt, receipt.candidateRejections[0], {
+    candidateId: "verifier-applicability:candidate:1",
+    patch: "patch:implementation:codex",
+    phase: "applicability",
+    failureCode: "candidate-verifier-failed",
+    error: failure,
+  });
+});
+
+test("repair reconstruction failure binds the repair invocation without quality", async () => {
+  const failure = new Error("private-codex-repair-reconstruction-failure");
+  const { run, finalized } = fixture({
+    verification: "repair",
+    operationFailures: {
+      reconstruct: new Map([["patch:repair:codex", failure]]),
+    },
+  });
+  const result = await run({ runId: "repair-reconstruction", clock: clock() });
+  assert.equal(result.final.verdict, "ACCEPT");
+  assert.match(result.selectedPatch, /repair:claude$/u);
+  const { receipt, targets } = finalized[0];
+  assert.equal(receipt.attempts.length, 3);
+  assert.equal(receipt.candidateRejections.length, 1);
+  const invocation = assertExactRejection(receipt, receipt.candidateRejections[0], {
+    candidateId: "repair-reconstruction:repair:1:codex",
+    patch: "patch:repair:codex",
+    phase: "reconstruction",
+    failureCode: "candidate-reconstruction-failed",
+    error: failure,
+  });
+  assert.equal(invocation.role, "repair");
+  assert.equal(
+    targets.some(
+      ({ outcome }) => outcome.candidateSha256 === sha256("patch:repair:codex"),
+    ),
+    false,
+  );
+});
+
+test("candidate disposal failure aborts receipt minting", async () => {
+  const failure = new Error("private-disposal-failure");
+  const { run, finalized, disposed } = fixture({
+    verification: "all-accept",
+    operationFailures: {
+      dispose: new Map([["patch:implementation:claude", failure]]),
+    },
+  });
+  await assert.rejects(
+    run({ runId: "disposal-failure", clock: clock() }),
+    /candidate disposal failed/u,
+  );
+  assert.equal(disposed.length, 2);
+  assert.equal(finalized.length, 0);
 });
 
 test("programme rejects path injection and unknown ids before preflight", async () => {
@@ -415,7 +660,7 @@ test("same-producer routed review remains receipt-valid and INCONCLUSIVE", async
   assert.equal(verifyApplicationReceipt(finalized[0].receipt).ok, true);
 });
 
-test("rejected terminal reviews retain bounded diagnostics in the v5 receipt", async () => {
+test("rejected terminal reviews retain bounded diagnostics in the v6 receipt", async () => {
   const { run, finalized } = fixture({
     reviewVerdict: "REJECT",
     verification: "all-accept",
@@ -423,7 +668,7 @@ test("rejected terminal reviews retain bounded diagnostics in the v5 receipt", a
   const result = await run({ runId: "rejected-review", clock: clock() });
   assert.equal(result.final.verdict, "REJECT");
   const receipt = finalized[0].receipt;
-  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v5");
+  assert.equal(receipt.schema, "oxigraph.engineering-application-receipt/v6");
   for (const review of receipt.reviews) {
     const invocation = receipt.nativeInvocations.find(
       ({ id }) => id === review.invocationId,

@@ -263,6 +263,7 @@ function rejectedReceipt(frozen) {
     nativeInvocations: invocations,
     attempts: [attempt],
     reviews: [],
+    candidateRejections: [],
     selectedCandidate: null,
     final: { verdict: "REJECT", reason: "candidate failed the frozen verifier" },
     events: [
@@ -278,6 +279,10 @@ function rejectedReceipt(frozen) {
 function legacyReceipt(current, schema) {
   const receipt = structuredClone(current);
   receipt.schema = schema;
+  delete receipt.candidateRejections;
+  receipt.events = receipt.events.filter(
+    ({ kind }) => kind !== "candidate-rejection",
+  );
   if (schema === "oxigraph.engineering-application-receipt/v1") {
     for (const invocation of receipt.nativeInvocations) {
       delete invocation.executionId;
@@ -318,7 +323,9 @@ function legacyReceipt(current, schema) {
 
 test("pinned application admission is atomic and exact replay is idempotent", async (t) => {
   const frozen = preflight();
-  const bytes = serializeApplicationReceipt(rejectedReceipt(frozen));
+  const current = rejectedReceipt(frozen);
+  assert.equal(current.schema, "oxigraph.engineering-application-receipt/v6");
+  const bytes = serializeApplicationReceipt(current);
   const path = await runtimePath(`admission-history-${process.pid}-${Date.now()}.jsonl`);
   t.after(() => rm(path, { force: true }));
   const history = await RouterHistory.open({ path, isIgnoredRuntimePath });
@@ -362,6 +369,7 @@ test("valid legacy receipts are replay-only and cannot mint current Router quali
     "oxigraph.engineering-application-receipt/v2",
     "oxigraph.engineering-application-receipt/v3",
     "oxigraph.engineering-application-receipt/v4",
+    "oxigraph.engineering-application-receipt/v5",
   ]) {
     const legacy = legacyReceipt(rejectedReceipt(frozen), schema);
     assert.equal(verifyApplicationReceipt(legacy).ok, true, schema);
@@ -370,4 +378,34 @@ test("valid legacy receipts are replay-only and cannot mint current Router quali
       /replay-only/,
     );
   }
+});
+
+test("legacy replay is rejected before RouterHistory mutation", async () => {
+  const frozen = preflight();
+  let historyCalls = 0;
+  const history = {
+    appendBatch: async () => {
+      historyCalls += 1;
+      return [];
+    },
+    reload: async () => {
+      historyCalls += 1;
+      return [];
+    },
+  };
+  for (const schema of [
+    "oxigraph.engineering-application-receipt/v1",
+    "oxigraph.engineering-application-receipt/v2",
+    "oxigraph.engineering-application-receipt/v3",
+    "oxigraph.engineering-application-receipt/v4",
+    "oxigraph.engineering-application-receipt/v5",
+  ]) {
+    const legacy = legacyReceipt(rejectedReceipt(frozen), schema);
+    const bytes = serializeApplicationReceipt(legacy);
+    await assert.rejects(
+      admitApplicationReceipt({ receiptBytes: bytes, preflight: frozen, history }),
+      /replay-only/u,
+    );
+  }
+  assert.equal(historyCalls, 0);
 });

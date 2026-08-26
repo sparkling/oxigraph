@@ -18,6 +18,8 @@ import {
 import { validateNativeFailureCode } from "../policy/native-failures.mjs";
 
 export const APPLICATION_RECEIPT_SCHEMA =
+  "oxigraph.engineering-application-receipt/v6";
+const LEGACY_APPLICATION_RECEIPT_SCHEMA_V5 =
   "oxigraph.engineering-application-receipt/v5";
 const LEGACY_APPLICATION_RECEIPT_SCHEMA_V4 =
   "oxigraph.engineering-application-receipt/v4";
@@ -68,6 +70,13 @@ const COMPATIBILITY_VERIFIER_COMMANDS = Object.freeze([
   "regression",
 ]);
 const ALLOWED_VERIFIER_COMMANDS = new Set(COMPATIBILITY_VERIFIER_COMMANDS);
+const CANDIDATE_REJECTION_CODES = Object.freeze({
+  reconstruction: new Set(["candidate-reconstruction-failed"]),
+  applicability: new Set([
+    "frozen-submodules-failed",
+    "candidate-verifier-failed",
+  ]),
+});
 
 function requiredVerifierCommands(contract) {
   if (Object.hasOwn(contract.success, "compatibilityPassed")) {
@@ -91,13 +100,23 @@ const DRAFT_KEYS = new Set([
   "nativeInvocations",
   "attempts",
   "reviews",
+  "candidateRejections",
   "selectedCandidate",
   "final",
   "events",
 ]);
+const LEGACY_DRAFT_KEYS = new Set(
+  [...DRAFT_KEYS].filter((key) => key !== "candidateRejections"),
+);
 const RECEIPT_KEYS = new Set([
   "schema",
   ...DRAFT_KEYS,
+  "chain",
+  "receiptSha256",
+]);
+const LEGACY_RECEIPT_KEYS = new Set([
+  "schema",
+  ...LEGACY_DRAFT_KEYS,
   "chain",
   "receiptSha256",
 ]);
@@ -1718,6 +1737,55 @@ function normalizeReviews(value, { sealed = false } = {}) {
   );
 }
 
+function normalizeCandidateRejections(value) {
+  if (!Array.isArray(value) || value.length > 2048) {
+    throw new Error("candidateRejections must be a bounded array");
+  }
+  const ids = new Set();
+  return Object.freeze(
+    value.map((item, index) => {
+      const label = `candidateRejections[${index}]`;
+      exactKeys(
+        item,
+        new Set([
+          "id",
+          "candidateId",
+          "invocationId",
+          "patchSha256",
+          "phase",
+          "failureCode",
+          "failureDetailSha256",
+        ]),
+        label,
+      );
+      const id = string(item.id, `${label}.id`);
+      if (ids.has(id)) throw new Error(`duplicate candidate rejection id: ${id}`);
+      ids.add(id);
+      const phase = string(item.phase, `${label}.phase`, 32);
+      const failureCode = string(
+        item.failureCode,
+        `${label}.failureCode`,
+        64,
+      );
+      if (!CANDIDATE_REJECTION_CODES[phase]?.has(failureCode)) {
+        throw new Error(`${label} has an unsupported phase/failureCode pair`);
+      }
+      return Object.freeze({
+        id,
+        candidateId: string(item.candidateId, `${label}.candidateId`),
+        invocationId: string(item.invocationId, `${label}.invocationId`),
+        patchSha256: digest(item.patchSha256, `${label}.patchSha256`),
+        phase,
+        failureCode,
+        failureDetailSha256: digest(
+          item.failureDetailSha256,
+          `${label}.failureDetailSha256`,
+        ),
+      });
+    }),
+  );
+}
+
 function normalizeSelectedCandidate(value) {
   if (value === null) return null;
   exactKeys(
@@ -1746,11 +1814,21 @@ const EVENT_KINDS = new Set([
   "native-invocation",
   "attempt",
   "review",
+  "candidate-rejection",
   "selected-candidate",
   "final",
 ]);
 
-function eventRecords({ run, routing, nativeInvocations, attempts, reviews, selectedCandidate, final }) {
+function eventRecords({
+  run,
+  routing,
+  nativeInvocations,
+  attempts,
+  reviews,
+  candidateRejections,
+  selectedCandidate,
+  final,
+}) {
   const records = new Map();
   const put = (kind, id, value) => {
     const key = `${kind}\u0000${id}`;
@@ -1761,6 +1839,9 @@ function eventRecords({ run, routing, nativeInvocations, attempts, reviews, sele
   for (const item of nativeInvocations) put("native-invocation", item.id, item);
   for (const item of attempts) put("attempt", item.id, item);
   for (const item of reviews) put("review", item.id, item);
+  for (const item of candidateRejections) {
+    put("candidate-rejection", item.id, item);
+  }
   put(
     "selected-candidate",
     selectedCandidate?.attemptId ?? "none",
@@ -1942,7 +2023,10 @@ function eventIndex(events, kind, id) {
   return events.findIndex((entry) => entry.kind === kind && entry.id === id);
 }
 
-function assertSemanticInvariants(state) {
+function assertSemanticInvariants(
+  state,
+  { requireCandidateAccounting = false } = {},
+) {
   const {
     run,
     control,
@@ -1950,6 +2034,7 @@ function assertSemanticInvariants(state) {
     nativeInvocations,
     attempts,
     reviews,
+    candidateRejections,
     selectedCandidate,
     final,
     events,
@@ -1958,6 +2043,7 @@ function assertSemanticInvariants(state) {
   const invocations = new Map(nativeInvocations.map((item) => [item.id, item]));
   const attemptsById = new Map(attempts.map((item) => [item.id, item]));
   const referencedInvocations = new Set();
+  const rejectedInvocations = new Set();
   const repairOutcomeIdentities = new Set();
   const executionBound = nativeInvocations.every((item) =>
     Object.hasOwn(item, "executionId"),
@@ -2122,8 +2208,66 @@ function assertSemanticInvariants(state) {
     );
   }
 
-  // Unreferenced evidence is retained deliberately: a native worker may finish
-  // before trusted reconstruction fails, which is not a Router quality sample.
+  for (const rejection of candidateRejections) {
+    const invocation = invocations.get(rejection.invocationId);
+    if (
+      invocation === undefined ||
+      !["implementation", "repair"].includes(invocation.role) ||
+      invocation.status !== "ACCEPT" ||
+      !successfulProcess(invocation.process) ||
+      invocation.patchSha256 === null
+    ) {
+      throw new Error(
+        `${rejection.id} does not bind a successful patch-producing invocation`,
+      );
+    }
+    if (
+      rejection.candidateId !== invocation.executionId ||
+      rejection.patchSha256 !== invocation.patchSha256
+    ) {
+      throw new Error(
+        `${rejection.id} does not bind its exact candidate, invocation, and patch`,
+      );
+    }
+    if (referencedInvocations.has(invocation.id)) {
+      throw new Error(
+        `${rejection.id} may not reject an invocation already admitted by an attempt or review`,
+      );
+    }
+    if (rejectedInvocations.has(invocation.id)) {
+      throw new Error(
+        `${rejection.id} duplicates a rejection for native invocation ${invocation.id}`,
+      );
+    }
+    rejectedInvocations.add(invocation.id);
+    if (
+      eventIndex(events, "native-invocation", invocation.id) >=
+      eventIndex(events, "candidate-rejection", rejection.id)
+    ) {
+      throw new Error(`${rejection.id} occurs before its native invocation`);
+    }
+  }
+
+  if (requireCandidateAccounting) {
+    for (const invocation of nativeInvocations) {
+      if (
+        ["implementation", "repair"].includes(invocation.role) &&
+        invocation.status === "ACCEPT" &&
+        successfulProcess(invocation.process) &&
+        invocation.patchSha256 !== null &&
+        !referencedInvocations.has(invocation.id) &&
+        !rejectedInvocations.has(invocation.id)
+      ) {
+        throw new Error(
+          `successful patch-producing invocation ${invocation.id} is not accounted for by an attempt or candidate rejection`,
+        );
+      }
+    }
+  }
+
+  // Non-patch structural evidence may remain unreferenced when a pipeline stops
+  // before it can produce a candidate. Patch-producing evidence is accounted for
+  // by either an attempt or one bounded rejection record in current v6.
   const selectionIndex = eventIndex(
     events,
     "selected-candidate",
@@ -2202,7 +2346,7 @@ function normalizeChain(value, bindingSha256, events) {
 }
 
 function receiptBody(state, schema = APPLICATION_RECEIPT_SCHEMA) {
-  return {
+  const body = {
     schema,
     run: state.run,
     control: state.control,
@@ -2211,6 +2355,12 @@ function receiptBody(state, schema = APPLICATION_RECEIPT_SCHEMA) {
     nativeInvocations: state.nativeInvocations,
     attempts: state.attempts,
     reviews: state.reviews,
+  };
+  if (schema === APPLICATION_RECEIPT_SCHEMA) {
+    body.candidateRejections = state.candidateRejections;
+  }
+  return {
+    ...body,
     selectedCandidate: state.selectedCandidate,
     final: state.final,
     events: state.events,
@@ -2223,9 +2373,10 @@ function receiptControlBinding(run, control, contract) {
 }
 
 function normalizeReceipt(value) {
-  exactKeys(value, RECEIPT_KEYS, "application receipt");
+  plainObject(value, "application receipt");
   if (
     value.schema !== APPLICATION_RECEIPT_SCHEMA &&
+    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V5 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V4 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V3 &&
     value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V2 &&
@@ -2234,10 +2385,17 @@ function normalizeReceipt(value) {
     throw new Error(`unsupported application receipt schema: ${value.schema}`);
   }
   const schema = value.schema;
+  exactKeys(
+    value,
+    schema === APPLICATION_RECEIPT_SCHEMA ? RECEIPT_KEYS : LEGACY_RECEIPT_KEYS,
+    "application receipt",
+  );
   const run = normalizeRun(value.run);
   const control = normalizeControl(value.control);
   const contract = normalizeContract(value.contract, {
-    allowCompatibility: schema === APPLICATION_RECEIPT_SCHEMA,
+    allowCompatibility:
+      schema === APPLICATION_RECEIPT_SCHEMA ||
+      schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V5,
   });
   const routing = normalizeRouting(value.routing, run, control, contract, {
     sealed: true,
@@ -2249,12 +2407,14 @@ function normalizeReceipt(value) {
       requireDiagnostics: schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1,
       critiqueDiagnosticPolicy:
         schema === APPLICATION_RECEIPT_SCHEMA ||
+        schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V5 ||
         schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V4 ||
         schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V3
           ? "required"
           : "forbidden",
       reviewDiagnosticPolicy:
         schema === APPLICATION_RECEIPT_SCHEMA ||
+        schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V5 ||
         schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V4
           ? "required"
           : schema === LEGACY_APPLICATION_RECEIPT_SCHEMA_V3
@@ -2266,6 +2426,10 @@ function normalizeReceipt(value) {
     sealed: true,
   });
   const reviews = normalizeReviews(value.reviews, { sealed: true });
+  const candidateRejections =
+    schema === APPLICATION_RECEIPT_SCHEMA
+      ? normalizeCandidateRejections(value.candidateRejections)
+      : Object.freeze([]);
   const selectedCandidate = normalizeSelectedCandidate(value.selectedCandidate);
   const final = normalizeFinal(value.final);
   const bindingSha256 = canonicalSha256(
@@ -2279,12 +2443,15 @@ function normalizeReceipt(value) {
     nativeInvocations,
     attempts,
     reviews,
+    candidateRejections,
     selectedCandidate,
     final,
   };
   const events = normalizeSealedEvents(value.events, partial, bindingSha256);
   const state = { ...partial, events };
-  assertSemanticInvariants(state);
+  assertSemanticInvariants(state, {
+    requireCandidateAccounting: schema === APPLICATION_RECEIPT_SCHEMA,
+  });
   const chain = normalizeChain(value.chain, bindingSha256, events);
   const body = receiptBody({ ...state, chain }, schema);
   const receiptSha256 = canonicalSha256(body);
@@ -2334,6 +2501,9 @@ export function createApplicationReceipt(draft) {
   );
   const attempts = normalizeAttempts(draft.attempts, control, contract);
   const reviews = normalizeReviews(draft.reviews);
+  const candidateRejections = normalizeCandidateRejections(
+    draft.candidateRejections,
+  );
   const selectedCandidate = normalizeSelectedCandidate(draft.selectedCandidate);
   const final = normalizeFinal(draft.final);
   const bindingSha256 = canonicalSha256(
@@ -2347,12 +2517,13 @@ export function createApplicationReceipt(draft) {
     nativeInvocations,
     attempts,
     reviews,
+    candidateRejections,
     selectedCandidate,
     final,
   };
   const events = buildEvents(draft.events, partial, bindingSha256);
   const state = { ...partial, events };
-  assertSemanticInvariants(state);
+  assertSemanticInvariants(state, { requireCandidateAccounting: true });
   const chain = chainMetadata(bindingSha256, events);
   const body = receiptBody({ ...state, chain });
   const receipt = deepFreeze({

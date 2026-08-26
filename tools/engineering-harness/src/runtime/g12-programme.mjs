@@ -13,6 +13,7 @@ import {
 } from "../receipts/application.mjs";
 import { QualityFirstRouter } from "../routing/quality-router.mjs";
 import { RouterHistory } from "../routing/history.mjs";
+import { canonicalSha256 } from "../routing/features.mjs";
 import {
   g12Profile,
   g13Profile,
@@ -168,6 +169,20 @@ function boundedIssue(error) {
   return (error instanceof Error ? error.message : String(error)).slice(0, 512);
 }
 
+function rejectionDetailSha256(error) {
+  const name =
+    error instanceof Error && typeof error.name === "string"
+      ? error.name.slice(0, 128)
+      : "NonError";
+  const code =
+    error !== null &&
+    typeof error === "object" &&
+    typeof error.code === "string"
+      ? error.code.slice(0, 128)
+      : null;
+  return canonicalSha256({ name, code, message: boundedIssue(error) });
+}
+
 function defaultOperations() {
   return Object.freeze({
     preflight: (options) => runTaskPreflight(options),
@@ -236,6 +251,7 @@ async function executeProgramme(options = {}, operations) {
   const nativeInvocations = [];
   const attempts = [];
   const reviews = [];
+  const candidateRejections = [];
   const events = [];
   const issues = [];
   const executionRoutes = new Map();
@@ -244,6 +260,7 @@ async function executeProgramme(options = {}, operations) {
   let routeSequence = 0;
   let attemptSequence = 0;
   let reviewSequence = 0;
+  let rejectionSequence = 0;
   let capturedEvidence = 0;
 
   function addRoutes(taskId, decisions, roles) {
@@ -315,6 +332,27 @@ async function executeProgramme(options = {}, operations) {
     return invocation;
   }
 
+  function recordCandidateRejection({
+    executionId,
+    invocation,
+    phase,
+    failureCode,
+    error,
+  }) {
+    const record = Object.freeze({
+      id: `${runId}:candidate-rejection:${++rejectionSequence}`,
+      candidateId: executionId,
+      invocationId: invocation.id,
+      patchSha256: invocation.patchSha256,
+      phase,
+      failureCode,
+      failureDetailSha256: rejectionDetailSha256(error),
+    });
+    candidateRejections.push(record);
+    events.push(Object.freeze({ kind: "candidate-rejection", id: record.id }));
+    return record;
+  }
+
   async function runNativeExecution({
     intent,
     executionId,
@@ -357,21 +395,68 @@ async function executeProgramme(options = {}, operations) {
     repairCycle,
     originalPriorOutputs,
   }) {
+    const patchRole = repairCycle === 0 ? "implementation" : "repair";
+    const patchInvocation = invocationFor(
+      execution.executionId,
+      patchRole,
+      output.outputs[patchRole],
+    );
+    if (patchInvocation.patchSha256 !== sha256(output.patch)) {
+      throw new Error(
+        `${execution.executionId} patch bytes differ from exact native ${patchRole} evidence`,
+      );
+    }
     let candidate;
     let completed;
-    let disposalFailed = false;
     try {
-      candidate = await operations.reconstruct({
-        repositoryRoot: repoRoot,
-        contract,
-        patch: output.patch,
-      });
-      await operations.materializeSubmodules({
-        controllerRoot: repoRoot,
-        candidate,
-        contract,
-      });
-      const verifier = await operations.verify({ candidate, contract, signal });
+      try {
+        candidate = await operations.reconstruct({
+          repositoryRoot: repoRoot,
+          contract,
+          patch: output.patch,
+        });
+      } catch (error) {
+        recordCandidateRejection({
+          executionId: execution.executionId,
+          invocation: patchInvocation,
+          phase: "reconstruction",
+          failureCode: "candidate-reconstruction-failed",
+          error,
+        });
+        issues.push(`${execution.executionId}: ${boundedIssue(error)}`);
+        return null;
+      }
+      try {
+        await operations.materializeSubmodules({
+          controllerRoot: repoRoot,
+          candidate,
+          contract,
+        });
+      } catch (error) {
+        recordCandidateRejection({
+          executionId: execution.executionId,
+          invocation: patchInvocation,
+          phase: "applicability",
+          failureCode: "frozen-submodules-failed",
+          error,
+        });
+        issues.push(`${execution.executionId}: ${boundedIssue(error)}`);
+        return null;
+      }
+      let verifier;
+      try {
+        verifier = await operations.verify({ candidate, contract, signal });
+      } catch (error) {
+        recordCandidateRejection({
+          executionId: execution.executionId,
+          invocation: patchInvocation,
+          phase: "applicability",
+          failureCode: "candidate-verifier-failed",
+          error,
+        });
+        issues.push(`${execution.executionId}: ${boundedIssue(error)}`);
+        return null;
+      }
       const invocationIds = roles.map(
         (role) => invocationFor(execution.executionId, role, output.outputs[role]).id,
       );
@@ -405,19 +490,21 @@ async function executeProgramme(options = {}, operations) {
         repairCycles: repairCycle,
         measuredCostUsd: execution.run.totalCostUsd ?? 0,
       });
-    } catch (error) {
-      issues.push(`${execution.executionId}: ${boundedIssue(error)}`);
     } finally {
       if (candidate !== undefined) {
         try {
           await operations.dispose(candidate);
         } catch (error) {
-          disposalFailed = true;
-          issues.push(`${execution.executionId}: disposal: ${boundedIssue(error)}`);
+          const disposalError = new Error(
+            `${execution.executionId} candidate disposal failed: ${boundedIssue(error)}`,
+            { cause: error },
+          );
+          disposalError.code = "OXIGRAPH_CANDIDATE_DISPOSAL_FAILED";
+          throw disposalError;
         }
       }
     }
-    if (completed === undefined || disposalFailed) return null;
+    if (completed === undefined) return null;
     attempts.push(completed);
     priorOutputsByAttempt.set(completed.id, originalPriorOutputs);
     events.push(Object.freeze({ kind: "attempt", id: completed.id }));
@@ -475,6 +562,7 @@ async function executeProgramme(options = {}, operations) {
         originalPriorOutputs: outputs,
       });
     } catch (error) {
+      if (error?.code === "OXIGRAPH_CANDIDATE_DISPOSAL_FAILED") throw error;
       issues.push(`${execution.executionId}: ${boundedIssue(error)}`);
     }
   }
@@ -551,6 +639,7 @@ async function executeProgramme(options = {}, operations) {
         });
         if (attempt !== null) cycleAttempts.push(attempt);
       } catch (error) {
+        if (error?.code === "OXIGRAPH_CANDIDATE_DISPOSAL_FAILED") throw error;
         issues.push(`${execution.executionId}: ${boundedIssue(error)}`);
       }
     }
@@ -631,7 +720,17 @@ async function executeProgramme(options = {}, operations) {
       verdict: productRejected ? "REJECT" : "INCONCLUSIVE",
       reason: productRejected
         ? "every application-verifiable candidate failed the frozen verifier"
-        : `no application-verifiable candidate was produced${issues.length === 0 ? "" : `: ${issues[0]}`}`,
+        : [
+            "no application-verifiable candidate was produced",
+            candidateRejections.length === 0
+              ? null
+              : `${candidateRejections.length} candidate rejection record(s) sealed`,
+            issues.length === 0
+              ? null
+              : `${issues.length} operational issue(s) observed`,
+          ]
+            .filter((part) => part !== null)
+            .join("; "),
     });
   } else {
     const requiredReviews = reviewPlan?.providers.length ?? 0;
@@ -701,6 +800,7 @@ async function executeProgramme(options = {}, operations) {
       }) => record,
     ),
     reviews,
+    candidateRejections,
     selectedCandidate,
     final,
     events,
