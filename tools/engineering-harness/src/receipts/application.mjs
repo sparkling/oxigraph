@@ -18,8 +18,10 @@ import {
 import { validateNativeFailureCode } from "../policy/native-failures.mjs";
 
 export const APPLICATION_RECEIPT_SCHEMA =
+  "oxigraph.engineering-application-receipt/v3";
+const LEGACY_APPLICATION_RECEIPT_SCHEMA_V2 =
   "oxigraph.engineering-application-receipt/v2";
-const LEGACY_APPLICATION_RECEIPT_SCHEMA =
+const LEGACY_APPLICATION_RECEIPT_SCHEMA_V1 =
   "oxigraph.engineering-application-receipt/v1";
 
 const CHAIN_ALGORITHM = "sha256-canonical-json-chain/v1";
@@ -798,10 +800,39 @@ function successfulProcess(outcome) {
   );
 }
 
+function normalizeCritiqueDiagnostic(value, label) {
+  exactKeys(value, new Set(["summary", "findings"]), label);
+  if (!Array.isArray(value.findings) || value.findings.length > 128) {
+    throw new Error(`${label}.findings must contain 0..128 strings`);
+  }
+  return Object.freeze({
+    summary: boundedText(value.summary, `${label}.summary`, 4096),
+    findings: Object.freeze(
+      value.findings.map((finding, index) =>
+        boundedText(finding, `${label}.findings[${index}]`, 2048),
+      ),
+    ),
+  });
+}
+
+function rejectedCritiqueOutputSha256(diagnostic) {
+  return sha256Bytes(
+    JSON.stringify({
+      summary: diagnostic.summary,
+      patch: null,
+      findings: diagnostic.findings,
+      verdict: "REJECT",
+    }),
+  );
+}
+
 function normalizeNativeInvocations(
   value,
   control,
-  { requireDiagnostics = false } = {},
+  {
+    requireDiagnostics = false,
+    requireCritiqueDiagnostics = false,
+  } = {},
 ) {
   if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
     throw new Error("nativeInvocations must be a non-empty bounded array");
@@ -815,6 +846,7 @@ function normalizeNativeInvocations(
       const hasExecutionId = Object.hasOwn(item, "executionId");
       const hasFailureCode = Object.hasOwn(item, "failureCode");
       const hasFailureDetail = Object.hasOwn(item, "failureDetailSha256");
+      const hasCritiqueDiagnostic = Object.hasOwn(item, "critiqueDiagnostic");
       if (hasFailureCode !== hasFailureDetail) {
         throw new Error(`${label} must bind both native failure fields together`);
       }
@@ -872,6 +904,9 @@ function normalizeNativeInvocations(
       if (hasFailureCode) {
         keys.add("failureCode");
         keys.add("failureDetailSha256");
+      }
+      if (hasCritiqueDiagnostic && requireCritiqueDiagnostics && !failed) {
+        keys.add("critiqueDiagnostic");
       }
       exactKeys(
         item,
@@ -962,6 +997,29 @@ function normalizeNativeInvocations(
       if (status !== "INCONCLUSIVE" && outputSha256 === null) {
         throw new Error(`${label} completed worker evidence must bind its output`);
       }
+      const expectsCritiqueDiagnostic =
+        requireCritiqueDiagnostics &&
+        common.role === "critique" &&
+        status === "REJECT";
+      if (hasCritiqueDiagnostic !== expectsCritiqueDiagnostic) {
+        throw new Error(
+          expectsCritiqueDiagnostic
+            ? `${label} must retain its rejected critique diagnostic`
+            : `${label} may not retain a critique diagnostic`,
+        );
+      }
+      const critiqueDiagnostic = hasCritiqueDiagnostic
+        ? normalizeCritiqueDiagnostic(
+            item.critiqueDiagnostic,
+            `${label}.critiqueDiagnostic`,
+          )
+        : null;
+      if (
+        critiqueDiagnostic !== null &&
+        rejectedCritiqueOutputSha256(critiqueDiagnostic) !== outputSha256
+      ) {
+        throw new Error(`${label}.critiqueDiagnostic does not bind its output hash`);
+      }
       if (
         ["implementation", "repair"].includes(common.role) &&
         status === "ACCEPT" &&
@@ -985,6 +1043,7 @@ function normalizeNativeInvocations(
         process,
         outputSha256,
         patchSha256,
+        ...(critiqueDiagnostic === null ? {} : { critiqueDiagnostic }),
         ...(hasFailureCode
           ? {
               failureCode: validateNativeFailureCode(
@@ -2072,7 +2131,8 @@ function normalizeReceipt(value) {
   exactKeys(value, RECEIPT_KEYS, "application receipt");
   if (
     value.schema !== APPLICATION_RECEIPT_SCHEMA &&
-    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA
+    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V2 &&
+    value.schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1
   ) {
     throw new Error(`unsupported application receipt schema: ${value.schema}`);
   }
@@ -2086,7 +2146,10 @@ function normalizeReceipt(value) {
   const nativeInvocations = normalizeNativeInvocations(
     value.nativeInvocations,
     control,
-    { requireDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA },
+    {
+      requireDiagnostics: schema !== LEGACY_APPLICATION_RECEIPT_SCHEMA_V1,
+      requireCritiqueDiagnostics: schema === APPLICATION_RECEIPT_SCHEMA,
+    },
   );
   const attempts = normalizeAttempts(value.attempts, control, contract, {
     sealed: true,
@@ -2152,7 +2215,7 @@ export function createApplicationReceipt(draft) {
   const nativeInvocations = normalizeNativeInvocations(
     draft.nativeInvocations,
     control,
-    { requireDiagnostics: true },
+    { requireDiagnostics: true, requireCritiqueDiagnostics: true },
   );
   const attempts = normalizeAttempts(draft.attempts, control, contract);
   const reviews = normalizeReviews(draft.reviews);

@@ -49,7 +49,9 @@ function boundedOutcome(outcome) {
 
 function invocationEvidence(sequence, executionId, result) {
   const invocation = result.invocation ?? null;
-  const output = result.output ?? null;
+  const output = result.output === undefined
+    ? null
+    : validateWorkerOutput(result.output, result.role);
   if (
     invocation === null ||
     typeof invocation.executable !== "string" ||
@@ -73,6 +75,16 @@ function invocationEvidence(sequence, executionId, result) {
   if (result.status !== "INCONCLUSIVE" && failure !== null) {
     throw new Error("completed native worker attached an invalid failure classification");
   }
+  if (output !== null && output.verdict !== result.status) {
+    throw new Error("native worker status does not match its validated output verdict");
+  }
+  const critiqueDiagnostic =
+    result.role === "critique" && result.status === "REJECT"
+      ? Object.freeze({
+          summary: output.summary,
+          findings: Object.freeze([...output.findings]),
+        })
+      : null;
   return Object.freeze({
     sequence,
     executionId,
@@ -90,6 +102,7 @@ function invocationEvidence(sequence, executionId, result) {
     patchSha256: output?.patch === null || output?.patch === undefined
       ? null
       : sha256(output.patch),
+    ...(critiqueDiagnostic === null ? {} : { critiqueDiagnostic }),
     ...(failure === null
       ? {}
       : {

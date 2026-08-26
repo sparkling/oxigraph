@@ -159,6 +159,40 @@ test("native pool applies explicit role ceilings without changing provider ident
   );
 });
 
+test("rejected critique evidence retains bounded findings without retaining a patch", async () => {
+  const summary = "The architecture is not safe to implement.";
+  const findings = ["The capability boundary is underspecified."];
+  const pool = new NativeWorkerPool({
+    contract,
+    workerRunner: async (request) => ({
+      ...result(request),
+      status: "REJECT",
+      output: {
+        summary,
+        patch: null,
+        findings,
+        verdict: "REJECT",
+      },
+    }),
+  });
+  const selected = pool.agentsFor({
+    intent: "oxigraph-candidate",
+    executionId: "rejected-candidate-pipeline",
+    providersByRole: {
+      architecture: "codex",
+      critique: "claude",
+      implementation: "codex",
+    },
+    taskFactory: ({ role }) => ({ role }),
+  });
+
+  const critique = selected.selectedAgents[1];
+  const run = await critique.run({ step: { kind: "critique" }, upstream: {} });
+  assert.equal(run.output.verdict, "REJECT");
+  assert.deepEqual(pool.evidence()[0].critiqueDiagnostic, { summary, findings });
+  assert.equal(Object.hasOwn(pool.evidence()[0].critiqueDiagnostic, "patch"), false);
+});
+
 test("native pool rejects identity swaps before exposing worker output", async () => {
   let attempts = 0;
   const pool = new NativeWorkerPool({
