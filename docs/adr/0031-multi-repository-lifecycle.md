@@ -2,11 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; each current server process owns one
   `Store` and has no durable repository catalog or administrative lifecycle
-- Programme task: `task-1787670632716-513bjt` (G4.6)
+- Programme task: `task-1787728710646-enu8i1` (G4.6)
 - **Depends on**:
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md),

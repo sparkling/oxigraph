@@ -1,13 +1,14 @@
 # ADR-0019: Unified egress, cancellation, and service claims
 
-- **Status**: Proposed
+- **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.5's unified-egress, G1.5b's owned-update
   cancellation, and G1.5c's negotiated backend-admission profiles are
-  implemented and source-bound; G1.6 runtime-derived service claims remain
-  outstanding
+  implemented and source-bound; G1.6 runtime-derived service claims are also
+  implemented and accepted by the sealed seven-stage verifier and its negative
+  controls
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - **Related**:
@@ -56,14 +57,16 @@ Cancellation after that transition follows ADR-0018 and ADR-0020 and may
 return an indeterminate transaction key; it may not claim rollback without
 proof.
 
-Generate service descriptions from effective runtime capabilities and closed
-receipts. A disabled, policy-blocked, untested, or unavailable capability is
-not advertised. ADR-0011's conservative SPARQL 1.0/1.1 disclosure remains the
+Generate service descriptions from the evaluator's effective configured and
+compiled capabilities and closed evidence. This deterministic snapshot is not
+a remote-health probe or a promise that a later request will be admitted. A
+disabled, policy-blocked, untested, or unavailable capability is not
+advertised. ADR-0011's conservative SPARQL 1.0/1.1 disclosure remains the
 baseline until richer claims have exact endpoint evidence.
 
 ## Acceptance boundary
 
-This ADR remains Proposed until G1.5-G1.6 prove:
+The accepted bounded G1.5-G1.6 implementation profile proves:
 
 - loopback fixtures for allowed and denied targets, DNS rebinding, redirects,
   cross-origin credentials, partial/compressed streams, response limits,
@@ -74,8 +77,9 @@ This ADR remains Proposed until G1.5-G1.6 prove:
   state, including negotiated backend admission;
 - error variants distinguish policy denial, timeout, cancellation, remote
   failure, conflict, and indeterminate commit;
-- every advertised service-description feature has a closed endpoint receipt;
-  and
+- every capability-qualified service-description feature is exercised by the
+  sealed endpoint evaluator, including absent claims under the deny-all
+  control; and
 - query text, RDF payloads, credentials, IRIs, and user identifiers are absent
   from default telemetry.
 
@@ -187,8 +191,79 @@ The run used one Cargo job, a 12 GiB state ceiling, and a 16 GiB aggregate
 ceiling; directly observed peaks stayed below both and every cgroup memory
 event counter remained zero.
 
-This receipt closes cancellable negotiated admission for owned updates while
-preserving the minimal traits and the caller-owned rollback boundary. G1.6
-service-description claims remain open, so ADR-0019 remains Proposed. The
-executable dependency is recorded in the
+This verifier evidence closes cancellable negotiated admission for owned
+updates while preserving the minimal traits and the caller-owned rollback
+boundary.
+
+G1.6 is implemented by exact product commit
+`96d0ae7b177026506f4c8bfc74cf2eb88e71abc4`, tree
+`269ccb9b519c6beaf311bfc9ec5c7539acb79498`, with product patch SHA-256
+`6ac04ebee08ce571e403a3937c41d258521bf9e172b2f3e666949266b73239b3`.
+It was integrated without changing those four product blobs by merge commit
+`baeabb067c8c8419973842e5e060adf832e3f738`. The implementation is confined to
+[`main.rs`](../../cli/src/main.rs),
+[`service_description.rs`](../../cli/src/service_description.rs),
+[`http.rs`](../../lib/oxigraph/src/http.rs), and
+[`sparql/mod.rs`](../../lib/oxigraph/src/sparql/mod.rs). Service-description
+input and federation claims now come from the evaluator's effective
+capability snapshot, union-default-graph configuration is disclosed for both
+query and update endpoints, and every server query and update path uses the
+same deny-all egress evaluator. The standalone CLI remains explicitly
+permissive rather than inheriting the server profile.
+
+The sealed run reconstructed that product against baseline
+`826bd7a2622282b4194aa03ffc1b9effbb0adae0` with evaluator commit
+`8dcb795a08e3605c18c662d13b040311a260ac2b`, evaluator tree
+`973d5ed5615fc2f34a1e9d0da657d01f5c899755`, evaluator patch SHA-256
+`93893693ed9804d56589169168c4dcd464bdeef2bc8dfea9e0eee0689888cee6`,
+and frozen contract SHA-256
+`abd16ee2f4d2c7c4b89b651e9412e126cac468456e7a1633c1143dce1f5accd3`.
+Preflight returned `CONFIRMED_RED` with green references. All 1,398 protected
+entries were retained with manifest SHA-256
+`a5c3f5c448a9aa1a615f7b4b1d60b8c5e43965240c5981acb66fa356831b155f`.
+The isolated seven-stage verifier returned `ACCEPT` after format, build, four
+public capability tests, seventeen service-description tests, one non-vacuous
+compatibility test, one independent test, and twelve regressions in
+1,153.499 seconds. Its 126,368-byte `verifier-session-result.json` has SHA-256
+`4ff0fdafa3b8584f81033a89000814320a952bbc384523cd72dd57150963458b`.
+
+Three exact negative candidates establish that the positive verdict depends
+on the complete product behavior:
+
+- The previous product patch over `6f447333..27bd0d43`, SHA-256
+  `1b30556c3392aaf1a4f0041ce3f69fd00a929fba4fd62ee2b4c04edb6297566e`,
+  tree `7b3cf9567cd6ca763165f38727675dec66870c00`, was reconstructed as
+  `9aad0121280e32ddbbc0893c4cc583d10f065eb7` and returned `REJECT`. It
+  passed 4 public tests, failed 2 of 17 service-description tests, failed the
+  1 compatibility canary, and passed the independent test and 12 regressions
+  in 1,139.452 seconds. The failed service tests were
+  `union_default_graph_is_disclosed_for_query_and_update_evaluation` and
+  `server_endpoints_use_the_shared_deny_all_evaluator`. Its 129,120-byte
+  verifier artifact has SHA-256
+  `96dc288bc70f5d5dfb62ce02d5954330534ac7921da17e912d74af4b6a200740`;
+  the 57,145-byte atomic outer evidence has SHA-256
+  `9e5c54a5e687948b4183bb57878764975cc0a7701a86e02ce3ab8254eb89287c`.
+- The union-only patch, SHA-256
+  `543379f0df24e5f8e144239d7dc674e1e618521494fa9f0c7b2132b12e88e330`,
+  tree `f249d49ebf440734e0e05368ea78ac6c0f444e52`, returned `REJECT` after
+  4 public, 16 of 17 service-description, 1 compatibility, 1 independent, and
+  12 regression tests in 1,148.684 seconds. Its 127,834-byte verifier artifact
+  has SHA-256
+  `393b8c7239986a654e80f5213b653ea5c494fec4878b7fd79ced9a9c39321046`.
+- The CLI-TLS-gated server patch, SHA-256
+  `e3f15a88f61711873a1e7f9f41a79fae737b8531d9f9422309ec7d488e4e9578`,
+  tree `964a63bf5f91a44f569565e1fa1de7bb262ce7cd`, returned `REJECT` after
+  4 public, 17 service-description, 0 of 1 compatibility, 1 independent, and
+  12 regression tests in 1,147.933 seconds. Its 127,654-byte verifier artifact
+  has SHA-256
+  `3635ef690d75d10d8d5b4d7b316b7c6d487d7f6e9a8b47055a0c86630e387f5d`;
+  the 53,766-byte atomic outer evidence has SHA-256
+  `33049ddad8d1136015f7b5a866ba4ba9b8e0d2953606de9195d7ef7f17c38333`.
+
+A direct verifier test also proves that zero or two compatibility results are
+rejected, preserving the single non-vacuous compatibility canary. These are
+verifier-session artifacts and atomic control evidence, not application
+receipts. They close this ADR's bounded implementation profile only; they do
+not grant current-HEAD semantic umbrella qualification. Remaining programme
+dependencies are recorded in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

@@ -8,7 +8,7 @@
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
   one-session sandbox, repair/review lifecycle, and application receipts are
   implemented and directly tested. A dual-provider G1.2 application run is
-  accepted, and G1.3-G1.5 have direct source-bound candidate acceptances. The
+  accepted, and G1.3-G1.6 have direct source-bound candidate acceptances. The
   existing `tools/metaharness` semantic qualifier remains separate; unattended
   Dream Machine execution remains deferred behind the activation gates in this
   ADR
@@ -262,8 +262,9 @@ The programme keeps three different records deliberately separate:
 G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
-ADR-0026 through ADR-0033. Those sixteen decisions are Proposed living plans,
-not implementation claims.
+ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
+ADR-0020 through ADR-0033 are fifteen Proposed living plans, not implementation
+claims.
 
 The linked execution plan contains 39 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
@@ -279,7 +280,7 @@ the portable authority; any committed Ruflo task IDs are repository-local
 audit pointers only and never prove product behavior. The corrected
 repository-local adjacency map was stored and read back through the managed
 Ruflo CLI against `.swarm/memory.db` at
-`task-plans/linked-data-store-g0-g4-2026-08-25-v2`.
+`task-plans/linked-data-store-g0-g4-2026-08-26-v4`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
@@ -420,7 +421,7 @@ Non-authoritative local verification on 2026-08-24 established:
 - a deterministic two-generation/two-child Darwin dry-run plan with no write
   execution.
 
-Source-bound engineering evidence on 2026-08-25 established:
+Source-bound engineering evidence on 2026-08-25 and 2026-08-26 established:
 
 - 111/111 engineering-harness tests and a passing dependency/provider doctor;
 - accepted dual-provider G1.2 application receipt
@@ -434,16 +435,22 @@ Source-bound engineering evidence on 2026-08-25 established:
 - direct frozen candidate acceptance for G1.5b's update-owned cancellation
   6/6/12 evaluator split; and
 - direct frozen candidate acceptance for G1.5c's negotiated generic admission
-  5/15/21 evaluator split. G1.6 runtime claims remain a separate
-  evaluator-first task.
+  5/15/21 evaluator split; and
+- direct frozen candidate acceptance for G1.6's runtime-derived service claims
+  with the seven-stage 4/17/1/1/12 evaluator split. The accepted
+  126,368-byte verifier-session artifact has SHA-256
+  `4ff0fdafa3b8584f81033a89000814320a952bbc384523cd72dd57150963458b`;
+  previous-product, union-only, and CLI-TLS-gated-server controls all returned
+  `REJECT`. These are verifier-session and control artifacts, not application
+  receipts.
 
 ## Decision boundary
 
 This ADR implements the engineering architecture and authority boundary; it
 does not claim that Dream Machine is an approved unattended runner, full
 MetaHarness qualification is current, or an application-harness acceptance is
-safe to promote. ADR-0018 through ADR-0033 remain Proposed until their product
-behavior and evidence exist. Each task still requires a
+safe to promote. ADR-0018 and ADR-0020 through ADR-0033 remain Proposed until
+their product behavior and evidence exist. Each task still requires a
 red/evaluator-separated corpus, direct control-plane tests, continuously
 current prerequisites,
 per-run authorization, activation status, and exact receipts above.

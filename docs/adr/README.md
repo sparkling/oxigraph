@@ -26,7 +26,7 @@ mapping.
 | [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md) | Implemented | Let replacement persistence planes execute request-atomic SPARQL Update without private storage types |
 | [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md) | Implemented | Keep engineering work separate from semantic qualification, rebuild patched candidates before focused evaluation, and retain human-only promotion |
 | [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md) | Proposed | Negotiate dimensioned guarantees and prove a serialized-writer RocksDB baseline before stronger isolation claims |
-| [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md) | Proposed | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from runtime receipts |
+| [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md) | Implemented | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from effective evaluator capabilities |
 | [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | Commit namespaces, semantic effects, durable outcome receipts, and an ordered outbox atomically |
 | [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md) | Proposed | Validate the complete resulting staged view under the same isolation gate as commit |
 | [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md) | Proposed | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore |
@@ -42,10 +42,11 @@ mapping.
 | [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md) | Proposed | Maintain optional rebuildable inferred views while keeping primary RDF authoritative and differential proof continuous |
 | [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md) | Proposed | Research a bounded opt-in analytical join operator without replacing ordinary SPARQL planning or semantics |
 
-ADR-0018 through ADR-0033 are living implementation decisions for outstanding
-work. Their Proposed status is deliberate: the corresponding G1-G4 tasks and
-promotion evidence are not implemented merely because the architecture is
-recorded.
+ADR-0018 and ADR-0020 through ADR-0033 are living implementation decisions for
+outstanding work. Their Proposed status is deliberate: the corresponding
+G1-G4 tasks and promotion evidence are not implemented merely because the
+architecture is recorded. ADR-0019 alone has closed its bounded G1.5-G1.6
+implementation profile; fifteen decisions in this range remain Proposed.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);
@@ -59,12 +60,15 @@ Source authority and revision metadata live in
 shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
-2026-08-25. Individual sealed results retain their original evidence dates.
+2026-08-26. Individual sealed results retain their original evidence dates.
 G0.1-G0.5 have source-bound completion evidence: registered sources, the
 locked Jena runner, two byte-identical runs of the refreshed 76/198 profile,
 the 144/129 Agentic-QE inventories, and the 34-test `persistence-write`
-profile. Current-HEAD umbrella qualification remains withheld because G0.6
-mutation evidence and G0.7 protected-evidence reconciliation/freeze are open;
-the receipt-sensitive claim ledger is reconciled only by G0.7.
+profile. G1.6 has bounded source-bound acceptance from the seven-stage
+4/17/1/1/12 verifier split and three rejecting product controls. That closes
+ADR-0019 but does not grant current-HEAD umbrella qualification, which remains
+withheld because G0.6 mutation evidence and G0.7 protected-evidence
+reconciliation/freeze are open; the receipt-sensitive claim ledger is
+reconciled only by G0.7.
 Working Draft and editor-draft material is never described as a W3C
 Recommendation.

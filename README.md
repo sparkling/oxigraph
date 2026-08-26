@@ -65,8 +65,8 @@ The extension includes:
   built-in `Store` implements the contract; production replacement adapters
   remain gated by the shared conformance and isolation work in the linked plan.
 - SPARQL 1.2 syntax/version handling, result-media negotiation, active-dataset
-  semantics, atomic update behavior, conservative service-description
-  disclosure, and protocol/Graph Store validation.
+  semantics, atomic update behavior, runtime-derived capability-qualified
+  service-description disclosure, and protocol/Graph Store validation.
 - `oxdatalog`, an RDF-native bounded Datalog engine with D0 positive recursion,
   D1 stratified negation, D2 run-once generated terms, limits, cancellation,
   deterministic provenance, and queryable inferred views.
@@ -113,9 +113,23 @@ accepted by its frozen 5/15/21 evaluator split: the additive negotiated
 binding carries the caller's exact transaction request and cancellation token
 through custom-backend and `Store` admission without changing the minimal
 transaction traits. A caller-owned transaction remains the caller's rollback
-responsibility. G1.6 still owns runtime-derived service claims, so ADR-0019
-stays Proposed. ADR-0018 likewise remains Proposed until the G1.7
-compatibility, performance, and current-evidence promotion gate.
+responsibility. G1.6 is implemented by exact product commit
+`96d0ae7b177026506f4c8bfc74cf2eb88e71abc4` and integrated by
+`baeabb067c8c8419973842e5e060adf832e3f738`. Its source-bound seven-stage
+verifier returned `ACCEPT` for format/build/public-4/service-17/
+compatibility-1/independent-1/regression-12, with artifact SHA-256
+`4ff0fdafa3b8584f81033a89000814320a952bbc384523cd72dd57150963458b`.
+Three product controls were rejected as required: the earlier product
+(`96dc288bc70f5d5dfb62ce02d5954330534ac7921da17e912d74af4b6a200740`),
+union-only disclosure
+(`393b8c7239986a654e80f5213b653ea5c494fec4878b7fd79ced9a9c39321046`),
+and CLI-TLS-gated server disclosure
+(`3635ef690d75d10d8d5b4d7b316b7c6d487d7f6e9a8b47055a0c86630e387f5d`).
+The disclosed profile is a deterministic configured-and-compiled capability
+snapshot, not a remote-health or current-admission probe. ADR-0019 is therefore
+Implemented. ADR-0018 remains Proposed until the G1.7 compatibility,
+performance, and current-evidence promotion gate. The verifier artifacts are
+local-only evidence and grant no semantic-qualification or promotion authority.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -182,14 +196,15 @@ The ADRs explain the principal boundaries:
   define the public persistence-plane seam and the exact atomicity, rollback,
   read-your-writes, and graph-topology guarantees required by generic SPARQL
   Update.
-- [The outstanding linked-data-store ADR programme](./docs/adr/README.md)
+- [The linked-data-store ADR programme](./docs/adr/README.md)
   splits transaction guarantees, egress/cancellation, durable commits,
   transaction-time SHACL, operations/recovery, statistics/planning, derived
   indexes, explicit federation, service identity, workload governance, safe
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
-  research into ADR-0018 through ADR-0033. All sixteen are Proposed living
-  plans, not claims of implemented behavior.
+  research into ADR-0018 and ADR-0020 through ADR-0033; ADR-0019 records the
+  implemented egress, cancellation, and service-claim slice. Fifteen decisions
+  remain Proposed living plans, not claims of implemented behavior.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

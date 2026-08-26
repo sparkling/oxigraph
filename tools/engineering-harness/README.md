@@ -59,8 +59,10 @@ Current activation boundary:
   remote-load claims from the shared evaluator's effective handlers, egress
   policy, and compiled transport without DNS or network probes; the server
   profile remains deny-all while standalone CLI query/update stay permissive.
-  Verification runs the four-test `sparql_effective_capabilities` integration
-  target as `public`, then runs only the 17 feature-active filtered
+  Its seven ordered stages are format, build, public, service, compatibility,
+  independent, and regression. Verification runs the four-test
+  `sparql_effective_capabilities` integration target as `public`, then runs
+  only the 17 feature-active filtered
   `service_description::tests::` binary-unit tests as a separate bounded
   `service` stage. The separate `compatibility` stage requires exactly one
   ignored
@@ -72,8 +74,9 @@ Current activation boundary:
   The verifier disables Cargo incremental state and test-profile debug info to
   keep cold state deterministic and bounded. Command timeout or exhausted
   verifier state (`ENOSPC`/`EDQUOT`) is infrastructure-inconclusive, cannot
-  trigger a repair lane, and cannot mint routing quality. Five- and six-stage
-  historical contracts and their existing receipts remain replayable;
+  trigger a repair lane, and cannot mint routing quality. G1.6 requires exact
+  counted-stage results 4/17/1/1/12. Five- and six-stage historical contracts
+  and their existing application receipts remain replayable;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v5 binds bounded rejected critique and review diagnostics
@@ -105,7 +108,7 @@ admitted exact patch
 as candidate tree `7d47e7352d64171563da8dd8d00fcb9b4c1f790d`, retained protected
 manifest `537184400702bd927208c3f314c014386a65390061f263d7924855d38777bb3b`,
 and returned `ACCEPT` for format/build/public-6/independent-2/regression-2 in
-313.959 seconds. The verifier session receipt has SHA-256
+313.959 seconds. The verifier session artifact has SHA-256
 `1a6061c95e1cf960aeb8d7f0145b032c60a0423e0f69afbc5a92731a3594729a`.
 
 G1.5c product commit `3afe1e78` passed its direct frozen verification after an
@@ -119,6 +122,55 @@ as candidate tree `40137fa6306e8c282da16fbeb0d46418e27d0f3a`, retained the
 and returned `ACCEPT` for format/build/public-5/independent-15/regression-21 in
 1,337.018 seconds. The 118,202-byte verifier session has SHA-256
 `94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
+
+G1.6 exact product commit `96d0ae7b177026506f4c8bfc74cf2eb88e71abc4`
+is integrated unchanged by merge commit
+`baeabb067c8c8419973842e5e060adf832e3f738`. Evaluator
+`8dcb795a08e3605c18c662d13b040311a260ac2b`, evaluator tree
+`973d5ed5615fc2f34a1e9d0da657d01f5c899755`, evaluator patch SHA-256
+`93893693ed9804d56589169168c4dcd464bdeef2bc8dfea9e0eee0689888cee6`,
+contract SHA-256
+`abd16ee2f4d2c7c4b89b651e9412e126cac468456e7a1633c1143dce1f5accd3`,
+and protected 1,398-entry manifest SHA-256
+`a5c3f5c448a9aa1a615f7b4b1d60b8c5e43965240c5981acb66fa356831b155f`
+bound the accepted run. The exact product patch SHA-256
+`6ac04ebee08ce571e403a3937c41d258521bf9e172b2f3e666949266b73239b3`
+reconstructed candidate tree `269ccb9b519c6beaf311bfc9ec5c7539acb79498`.
+After a `CONFIRMED_RED` preflight, the verifier returned `ACCEPT` for
+format/build/public-4/service-17/compatibility-1/independent-1/regression-12
+in 1,153.499 seconds. Its 126,368-byte artifact has SHA-256
+`4ff0fdafa3b8584f81033a89000814320a952bbc384523cd72dd57150963458b`.
+
+The exact negative-control matrix also closed:
+
+- Earlier-product patch
+  `1b30556c3392aaf1a4f0041ce3f69fd00a929fba4fd62ee2b4c04edb6297566e`,
+  tree `7b3cf9567cd6ca763165f38727675dec66870c00`, candidate
+  `9aad0121280e32ddbbc0893c4cc583d10f065eb7`, was rejected after public-4,
+  service-15 with two failures, compatibility-0 with one failure,
+  independent-1, and regression-12. Its 1,139.452-second verifier artifact is
+  `96dc288bc70f5d5dfb62ce02d5954330534ac7921da17e912d74af4b6a200740`;
+  atomic outer evidence is
+  `9e5c54a5e687948b4183bb57878764975cc0a7701a86e02ce3ab8254eb89287c`.
+- Union-only patch
+  `543379f0df24e5f8e144239d7dc674e1e618521494fa9f0c7b2132b12e88e330`,
+  tree `f249d49ebf440734e0e05368ea78ac6c0f444e52`, was rejected after
+  public-4, service-16 with one failure, compatibility-1, independent-1, and
+  regression-12. Its 1,148.684-second verifier artifact is
+  `393b8c7239986a654e80f5213b653ea5c494fec4878b7fd79ced9a9c39321046`.
+- CLI-TLS-gated server patch
+  `e3f15a88f61711873a1e7f9f41a79fae737b8531d9f9422309ec7d488e4e9578`,
+  tree `964a63bf5f91a44f569565e1fa1de7bb262ce7cd`, was rejected after public-4,
+  service-17, compatibility-0 with one failure, independent-1, and
+  regression-12. Its 1,147.933-second verifier artifact is
+  `3635ef690d75d10d8d5b4d7b316b7c6d487d7f6e9a8b47055a0c86630e387f5d`;
+  atomic outer evidence is
+  `33049ddad8d1136015f7b5a866ba4ba9b8e0d2953606de9195d7ef7f17c38333`.
+
+A direct verifier test rejects compatibility counts of zero or two. These are
+verifier-session artifacts, not application receipts. The contract remains
+`localOnly: true` and `promotionAuthority: false`; acceptance neither qualifies
+semantics nor authorizes product promotion or publication.
 
 Install and verify from this directory:
 

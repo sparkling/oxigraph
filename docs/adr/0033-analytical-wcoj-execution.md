@@ -2,11 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-25
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; the existing `sparopt` and
   `spareval` paths remain the only production SPARQL planner and executor
-- Programme task: `task-1787670633003-hoxn3e` (G4.8)
+- Programme task: `task-1787728711087-ibcg53` (G4.8)
 - **Depends on**:
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
 - **Related**:

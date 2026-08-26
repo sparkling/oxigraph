@@ -1,17 +1,18 @@
 # Persistence writes and linked-data-store parity plan
 
-- Status: active plan; implementation slice 0 complete
+- Status: active plan; write seam and G1.3-G1.6 P0 slices complete
 - Date: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Upstream merge: `a2415a4e`
 - Transactional write implementation: `1da47285`
 - Deterministic upstream test correction: `f9033c2b`
 - Conservative service-description reconciliation: `7dc190d3`
+- Runtime-derived service claims: `baeabb067c8c8419973842e5e060adf832e3f738`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
-  [ADR-0018 through ADR-0033](../adr/README.md)
+  [ADR-0018 and ADR-0020 through ADR-0033](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
@@ -31,10 +32,14 @@ SPARQL Update binding through `PreparedSparqlUpdate::on_dataset`.
 The remaining work is hardening and linked-data-store breadth. Transaction
 capability negotiation, bounded writer admission, G1.5's unified remote egress,
 G1.5b's update-owned cancellation, and G1.5c's negotiated backend-admission
-profiles are now source-bound. G1.6 must derive service claims from closed
-runtime receipts. The service-description
-drift found during this audit is closed in `7dc190d3`: even an RDF 1.2 build
-now advertises only receipted SPARQL 1.0/1.1 languages and version 1.1.
+profiles are now source-bound. G1.6 is also implemented: its seven-stage
+verifier accepted exact public/service/compatibility/independent/regression
+counts 4/17/1/1/12 and rejected the earlier-product, union-only, and
+CLI-TLS-gated-server controls. Service descriptions now derive deterministic
+configured-and-compiled SPARQL capabilities from the same evaluator's
+effective handlers, egress policy, and transport. They are not network-health
+or current-admission probes. The earlier conservative reconciliation in
+`7dc190d3` remains part of the lineage rather than the final claim model.
 Namespace metadata, durable change delivery, transaction-time SHACL
 validation, operational observability, statistics and bounded join planning,
 full-text and spatial indexes, and federation planning follow in that
@@ -97,8 +102,9 @@ Evidence grade A applies to this section.
 - Backend-neutral transactional writes with `TransactionalDataset` and
   `WritableDataset`.
 - Generic SPARQL Update over a replacement persistence plane.
-- Conservative service descriptions whose SPARQL claims do not expand from an
-  RDF 1.2 compile feature alone.
+- Runtime-derived service descriptions whose SPARQL claims follow effective
+  handlers, egress policy, and compiled transport rather than an RDF 1.2
+  feature alone.
 - RDF 1.1/1.2 modes, broad RDF I/O, JSON-LD, SPARQL result formats, and explicit
   version/media-type negotiation.
 - Basic federated `SERVICE`, cancellation for query evaluation, and HTTP
@@ -144,9 +150,9 @@ Evidence grade A applies to this section.
 | G06 | Durable change delivery | None | RDF Patch and patch-log ecosystem | Connection/store listeners; notifications | P1 ordered durable feed; RDF Patch adapter optional |
 | G07 | Commit receipt/idempotency | No durable commit ID; commit error can be ambiguous | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
 | G08 | SHACL on write | Snapshot validation API; not a commit gate | SHACL Core/SPARQL and Fuseki validation endpoint | ShaclSail validates during commit | P1 pre-commit participant over staged view |
-| G09 | Outbound `SERVICE`/`LOAD` policy | Default HTTP SERVICE can be disabled programmatically; `LOAD` client is hard-wired; no shared allowlist/CIDR/size policy | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | P0 security boundary |
+| G09 | Outbound `SERVICE`/`LOAD` policy | G1.5 implements one deny-by-default policy for `SERVICE`, `LOAD`, and nested retrieval with typed policy failures, origin/IP allow controls, encoded/decoded byte ceilings, time/connection budgets, and remote-read cancellation | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | ADR-0019 implemented; retain one fail-closed egress boundary |
 | G10 | Update-wide cancellation | G1.5b proves one token across validation, built-in writer admission, owned mutation, and the final pre-commit rollback boundary; G1.5c carries that exact control through negotiated custom-backend and `Store` admission; caller-owned rollback remains explicitly separate | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | Preserve the accepted negotiated binding; do not claim update-scoped rollback for a borrowed transaction without savepoints |
-| G11 | Truthful service description | Conservative SPARQL 1.0/1.1 claims restored in `7dc190d3`; richer claims are not runtime-derived yet | Broad Service Description/Fuseki feature disclosure | Repository metadata and protocols | P0 capability-derived claims before any expansion |
+| G11 | Truthful service description | G1.6 derives deterministic federation and remote-load disclosure from effective handlers, egress policy, and compiled transport; the exact seven-stage 4/17/1/1/12 verifier accepted the product and rejected all three controls | Broad Service Description/Fuseki feature disclosure | Repository metadata and protocols | ADR-0019 implemented; keep configured capability distinct from remote health/current admission |
 | G12 | Operational metrics/admin | Logs and CLI operations; no stable stats/Prometheus/admin task surface | Ping, stats, Prometheus, backup, compaction, tasks | Server/Workbench/Console and slow-query/circuit-breaker work | P1 metrics and recovery; multi-repo admin is a product choice |
 | G13 | Backup/restore verification | Backup and optimize exist; recovery is not continuously proven | Live consistent backup and compaction administration | Store-specific recovery tooling | P1 restore drills and receipts |
 | G14 | Full-text indexing | No index or SPARQL extension | Lucene text dataset and SPARQL property function | Lucene/Elasticsearch SAIL | P2 optional derived-index capability |
@@ -162,6 +168,8 @@ Evidence grade A applies to this section.
 | G24 | RDF4J REST interoperability | SPARQL and Graph Store protocols exist; RDF4J repository REST paths, transactions, namespace endpoints, and error shapes are absent | No RDF4J compatibility target | Native Server/Workbench REST contract and client APIs | ADR-0029 defines an explicit versioned compatibility profile, not wholesale Java API emulation |
 | G25 | Remote HTTP transactions | No server-side transaction lease protocol | Fuseki/Jena transaction APIs are local/internal rather than this target contract | RDF4J REST exposes remote transaction lifecycle | ADR-0030 defines the native lease state machine; ADR-0029 translates RDF4J requests onto it |
 | G26 | Multi-repository lifecycle | One configured store per server process | Fuseki hosts and administers multiple datasets | RepositoryManager/Server manage multiple repositories | ADR-0031; privileged, resource-isolated lifecycle with receipt-bound delete/restore |
+| G27 | Incremental entailment projections | Full snapshot evaluation and explicit one-shot materialization exist; no durable incremental projection, support state, applied-commit cursor, or recovery evaluator exists | Reasoner and inference facilities provide comparison outcomes, not this projection/cursor contract | Inferencer SAILs provide an extension comparison, not proof of equivalent durable projection semantics | ADR-0032; rebuildable derived state with full-closure differential and cursor/recovery gates |
+| G28 | Analytical/WCOJ execution | `sparopt` and `spareval` remain the only production planner/executor; there is no analytical cursor or WCOJ operator | ARQ/TDB planning is a workload comparison; no WCOJ-equivalence claim is made | Query algebra/evaluation and FedX provide comparison workloads; no WCOJ-equivalence claim is made | ADR-0033; disabled frozen experiment before any explicit or automatic promotion |
 
 ## Target architecture
 
@@ -276,8 +284,8 @@ The unfinished work is split by architectural ownership:
 | Delivery work | Owning ADR | Status |
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
-| P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Proposed |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Accepted control; product decisions Proposed |
+| P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Accepted control and implemented egress decision; ADR-0018 and promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -721,7 +729,7 @@ The plan scores **98/100** against the programme rubric:
 | Source authority and currency | 20/20 | Exact local commits plus current official Jena/RDF4J pages |
 | Implementation traceability | 20/20 | Public API, tests, commits, and Ruflo memory keys named |
 | Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit |
-| Architectural decision coverage | 10/10 | ADR-0018 through ADR-0033 own every admitted P0-P3 public or operational seam without claiming implementation |
+| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0018 and ADR-0020 through ADR-0033 own every remaining admitted P0-P3 public or operational seam without claiming implementation |
 | Verifiable acceptance criteria | 14/15 | Negative, crash, concurrency, security, and performance gates; production adapter still pending |
 | Risk and security coverage | 10/10 | Commit ambiguity, replay, egress, index drift, and leakage covered |
 | Scope discipline | 9/10 | Core versus product choices separated; P3 decisions remain independently gated and unimplemented |
@@ -729,5 +737,6 @@ The plan scores **98/100** against the programme rubric:
 The two withheld points are real open state, not formatting debt: a production
 replacement adapter has not yet run the conformance kit, and the newly admitted
 P3 decisions do not yet have product receipts. ADR-0016 is Implemented for the
-public write seam; the remaining P0-P3 capabilities are follow-on work under
-this plan.
+public write seam and ADR-0019 is Implemented for egress, cancellation, and
+runtime-derived service claims; ADR-0018 and ADR-0020 through ADR-0033 remain
+follow-on work under this plan.

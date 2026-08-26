@@ -2,9 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G3.5
+- Implementation status: not implemented; planned by G3.5. G1.6 has satisfied
+  the runtime-derived service-claim prerequisite, but no federation planner or
+  endpoint catalog has been implemented
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
@@ -55,10 +57,13 @@ capability probing also requires its own egress- and identity-aware decision.
 
 ## Acceptance boundary
 
-G3.5 research may begin after G1.5 and G3.1-G3.2. Promotion or advertisement
-of the federated profile additionally waits for G1.6 to close runtime-derived
-service claims; a planner cannot advertise a capability that the running
-endpoint has not proved. G3.5 must use controlled loopback endpoints to prove:
+G3.5 research may begin after G1.5 and G3.1-G3.2. G1.6 closed the
+runtime-derived service-claim prerequisite on 2026-08-26: the server suppresses
+federation and remote-input claims under its shared deny-all evaluator, while
+capability-enabled evaluators disclose only their effective configured and
+compiled capability snapshot. That snapshot is not remote endpoint health or
+current request admission. G3.5 remains Proposed and must still use controlled
+loopback endpoints to prove:
 
 - source selection and bound joins return the same results as the unplanned
   explicit-`SERVICE` oracle;
@@ -94,3 +99,6 @@ The current handler boundary is
 [`service.rs`](../../lib/spareval/src/service.rs), with evaluation in
 [`eval.rs`](../../lib/spareval/src/eval.rs). G3.5 owns delivery in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
+G1.6's accepted verifier and rejecting controls satisfy only this ADR's
+service-claim prerequisite; they do not implement endpoint selection,
+bound-join planning, federation telemetry, or the G3.5 evaluator.

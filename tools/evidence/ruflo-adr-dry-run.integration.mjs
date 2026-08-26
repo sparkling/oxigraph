@@ -42,8 +42,8 @@ test("official Ruflo parser sees the exact numeric ADR graph", () => {
   );
   assert.deepEqual(report.official.byStatus, {
     accepted: 15,
-    implemented: 2,
-    proposed: 16,
+    implemented: 3,
+    proposed: 15,
   });
   assert.deepEqual(report.official.byRelation, {
     amends: 4,
