@@ -193,6 +193,56 @@ test("rejected critique evidence retains bounded findings without retaining a pa
   assert.equal(Object.hasOwn(pool.evidence()[0].critiqueDiagnostic, "patch"), false);
 });
 
+test("rejected review evidence retains only its bounded diagnostic projection", async () => {
+  const summary = "The candidate violates the effective-capability boundary.";
+  const findings = ["The advertised SERVICE claim exceeds the effective handler."];
+  const rawSecrets = [
+    "RAW_STDOUT_SECRET_5cf2",
+    "RAW_PROMPT_SECRET_9ee1",
+    "/private/provider/session-42",
+  ];
+  const pool = new NativeWorkerPool({
+    contract,
+    workerRunner: async (request) => {
+      const base = result(request);
+      return {
+        ...base,
+        status: "REJECT",
+        output: {
+          summary,
+          patch: null,
+          findings,
+          verdict: "REJECT",
+        },
+        invocation: {
+          ...base.invocation,
+          rawPrompt: rawSecrets[1],
+          privatePath: rawSecrets[2],
+        },
+        outcome: {
+          ...base.outcome,
+          stdout: rawSecrets[0],
+          stderr: rawSecrets[2],
+        },
+      };
+    },
+  });
+  const selected = pool.agentsFor({
+    intent: "oxigraph-review",
+    executionId: "rejected-review",
+    providersByRole: { review: "codex" },
+    taskFactory: () => ({ review: true }),
+  });
+
+  const run = await selected.selectedAgents[0].run({});
+  assert.equal(run.output.verdict, "REJECT");
+  const [evidence] = pool.evidence();
+  assert.deepEqual(evidence.reviewDiagnostic, { summary, findings });
+  assert.deepEqual(Object.keys(evidence.reviewDiagnostic), ["summary", "findings"]);
+  const encoded = JSON.stringify(evidence);
+  for (const secret of rawSecrets) assert.doesNotMatch(encoded, new RegExp(secret, "u"));
+});
+
 test("native pool rejects identity swaps before exposing worker output", async () => {
   let attempts = 0;
   const pool = new NativeWorkerPool({

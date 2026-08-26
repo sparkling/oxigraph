@@ -275,11 +275,13 @@ function rejectedReceipt(frozen) {
   });
 }
 
-function legacyReceipt(current) {
+function legacyReceipt(current, schema) {
   const receipt = structuredClone(current);
-  receipt.schema = "oxigraph.engineering-application-receipt/v1";
-  for (const invocation of receipt.nativeInvocations) {
-    delete invocation.executionId;
+  receipt.schema = schema;
+  if (schema === "oxigraph.engineering-application-receipt/v1") {
+    for (const invocation of receipt.nativeInvocations) {
+      delete invocation.executionId;
+    }
   }
   const collections = {
     routing: receipt.routing,
@@ -355,10 +357,15 @@ test("pinned verification rejects stale controls and executable swaps", () => {
 
 test("valid legacy receipts are replay-only and cannot mint current Router quality", () => {
   const frozen = preflight();
-  const legacy = legacyReceipt(rejectedReceipt(frozen));
-  assert.equal(verifyApplicationReceipt(legacy).ok, true);
-  assert.throws(
-    () => verifyPinnedApplicationReceipt(legacy, frozen),
-    /replay-only/,
-  );
+  for (const schema of [
+    "oxigraph.engineering-application-receipt/v1",
+    "oxigraph.engineering-application-receipt/v2",
+  ]) {
+    const legacy = legacyReceipt(rejectedReceipt(frozen), schema);
+    assert.equal(verifyApplicationReceipt(legacy).ok, true, schema);
+    assert.throws(
+      () => verifyPinnedApplicationReceipt(legacy, frozen),
+      /replay-only/,
+    );
+  }
 });

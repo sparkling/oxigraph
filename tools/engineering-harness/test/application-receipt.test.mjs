@@ -358,6 +358,27 @@ function draft() {
   };
 }
 
+function rejectedReviewDraft({
+  summary = "The candidate violates the effective-capability boundary.",
+  findings = ["The advertised SERVICE claim exceeds the effective handler."],
+} = {}) {
+  const value = draft();
+  const output = {
+    summary,
+    patch: null,
+    findings,
+    verdict: "REJECT",
+  };
+  const invocation = value.nativeInvocations[3];
+  invocation.status = "REJECT";
+  invocation.outputSha256 = sha(JSON.stringify(output));
+  invocation.reviewDiagnostic = { summary, findings };
+  value.reviews[0].outputSha256 = invocation.outputSha256;
+  value.reviews[0].disposition = "REJECT";
+  value.final = { verdict: "REJECT", reason: "independent review rejected" };
+  return value;
+}
+
 function recordFor(receipt, event) {
   const collection = {
     routing: receipt.routing,
@@ -634,6 +655,10 @@ test("legacy v1 receipts remain replayable but preserve their reduced evidence s
   const verified = verifyApplicationReceipt(legacy);
   assert.equal(verified.ok, true);
   assert.equal(verified.receipt.schema, legacy.schema);
+  assert.equal(
+    replayApplicationReceipt(serializeApplicationReceipt(legacy)).schema,
+    legacy.schema,
+  );
   assert.ok(
     verified.receipt.nativeInvocations.every(
       (invocation) => !Object.hasOwn(invocation, "executionId"),
@@ -707,6 +732,80 @@ test("v3 receipts retain hash-bound rejected critique diagnostics while v2 remai
   const legacyV2 = JSON.parse(serializeApplicationReceipt(receipt));
   legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
   delete legacyV2.nativeInvocations[1].critiqueDiagnostic;
+  resealTamperedReceipt(legacyV2);
+  const legacyResult = verifyApplicationReceipt(legacyV2);
+  assert.equal(legacyResult.ok, true);
+  assert.equal(legacyResult.receipt.schema, legacyV2.schema);
+  assert.equal(
+    replayApplicationReceipt(serializeApplicationReceipt(legacyV2)).schema,
+    legacyV2.schema,
+  );
+});
+
+test("v3 receipts retain only hash-bound rejected review diagnostics", () => {
+  const value = rejectedReviewDraft();
+  const receipt = createApplicationReceipt(value);
+  const review = receipt.nativeInvocations[3];
+  assert.deepEqual(review.reviewDiagnostic, value.nativeInvocations[3].reviewDiagnostic);
+  assert.equal(Object.isFrozen(review.reviewDiagnostic), true);
+  assert.deepEqual(
+    replayApplicationReceipt(serializeApplicationReceipt(receipt)).nativeInvocations[3]
+      .reviewDiagnostic,
+    review.reviewDiagnostic,
+  );
+
+  const missing = structuredClone(value);
+  delete missing.nativeInvocations[3].reviewDiagnostic;
+  assert.throws(
+    () => createApplicationReceipt(missing),
+    /must retain its rejected review diagnostic/u,
+  );
+
+  for (const diagnostic of [
+    { summary: "x".repeat(4097), findings: [] },
+    { summary: "bounded", findings: ["x".repeat(2049)] },
+  ]) {
+    const oversized = rejectedReviewDraft(diagnostic);
+    assert.throws(
+      () => createApplicationReceipt(oversized),
+      /at most 4096 characters|at most 2048 characters/u,
+    );
+  }
+
+  const accepted = draft();
+  const acceptedReceipt = createApplicationReceipt(accepted);
+  assert.equal(
+    Object.hasOwn(acceptedReceipt.nativeInvocations[3], "reviewDiagnostic"),
+    false,
+  );
+  accepted.nativeInvocations[3].reviewDiagnostic = {
+    summary: "must not be retained",
+    findings: [],
+  };
+  assert.throws(
+    () => createApplicationReceipt(accepted),
+    /may not retain a review diagnostic/u,
+  );
+
+  const tampered = JSON.parse(serializeApplicationReceipt(receipt));
+  tampered.nativeInvocations[3].reviewDiagnostic.findings[0] = "Different finding.";
+  resealTamperedReceipt(tampered);
+  const tamperedResult = verifyApplicationReceipt(tampered);
+  assert.equal(tamperedResult.ok, false);
+  assert.match(tamperedResult.reason, /output hash|review diagnostic/iu);
+
+  for (const field of ["stdout", "prompt", "secret", "path"]) {
+    const hostile = rejectedReviewDraft();
+    hostile.nativeInvocations[3].reviewDiagnostic[field] = `private-${field}`;
+    assert.throws(
+      () => createApplicationReceipt(hostile),
+      new RegExp(`unknown field: ${field}`, "u"),
+    );
+  }
+
+  const legacyV2 = JSON.parse(serializeApplicationReceipt(receipt));
+  legacyV2.schema = "oxigraph.engineering-application-receipt/v2";
+  delete legacyV2.nativeInvocations[3].reviewDiagnostic;
   resealTamperedReceipt(legacyV2);
   const legacyResult = verifyApplicationReceipt(legacyV2);
   assert.equal(legacyResult.ok, true);
@@ -925,10 +1024,7 @@ test("winning and losing attempts authorize every role with exact binary quality
 });
 
 test("a completed rejected review authorizes quality zero", () => {
-  const value = draft();
-  value.reviews[0].disposition = "REJECT";
-  value.nativeInvocations[3].status = "REJECT";
-  value.final = { verdict: "REJECT", reason: "independent review rejected" };
+  const value = rejectedReviewDraft();
   const receipt = createApplicationReceipt(value);
   const rejectedReview = qualityOutcomeFor(receipt, {
     reviewId: "review-1",
