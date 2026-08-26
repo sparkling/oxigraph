@@ -182,7 +182,7 @@
       "id": "evidence-tests",
       "program": "node",
       "args": ["--test", "--test-reporter=tap", "tools/evidence/normative-clause-inventory.test.mjs", "tools/evidence/normative-control.test.mjs", "tools/evidence/verify-programme.test.mjs", "tools/evidence/expanded-programme-qa.test.mjs", "tools/evidence/verify-expanded-programme-qa.test.mjs"],
-      "expectedNodeTests": 42,
+      "expectedNodeTests": 44,
       "timeoutMs": 120000
     },
     {

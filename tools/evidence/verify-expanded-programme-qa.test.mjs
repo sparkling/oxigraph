@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -38,6 +40,7 @@ import {
 import {
   runBoundedQuickCommand,
   runBoundedQuickCommands,
+  unexecutedQuickCommands,
 } from "./run-expanded-programme-qa.mjs";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -108,6 +111,13 @@ function passingCommands() {
     id: command.id,
     argv: [command.program, ...command.args],
     executableSha256: "d".repeat(64),
+    sandbox: {
+      executableSha256: "e".repeat(64),
+      network: "isolated",
+      processTree: "pid-namespace",
+      workspace: "read-only",
+      target: "ephemeral",
+    },
     expected: command.expectedNodeTests
       ? { plan: command.expectedNodeTests, tests: command.expectedNodeTests, suites: 0, pass: command.expectedNodeTests, fail: 0, cancelled: 0, skipped: 0, todo: 0, summaryBlockCount: 1, terminal: true, conserved: true, durationPresent: true }
       : { exitCode: 0, signal: null },
@@ -233,7 +243,22 @@ test("should distinguish observations and reject unprotected Ruflo snapshots", (
   symlinkSync(snapshotPath, snapshotLink);
   assert.throws(
     () => readProtectedRufloSnapshot(repoRoot, snapshotLink),
-    /non-symlink/,
+    /symlink/,
+  );
+  const realDirectory = join(root, "real-snapshot-directory");
+  mkdirSync(realDirectory);
+  const nestedSnapshot = join(realDirectory, "snapshot.json");
+  writeFileSync(nestedSnapshot, canonicalJsonBytes(protectedSnapshot()), {
+    mode: 0o444,
+  });
+  const linkedDirectory = join(root, "linked-snapshot-directory");
+  symlinkSync(realDirectory, linkedDirectory, "dir");
+  assert.throws(
+    () => readProtectedRufloSnapshot(
+      repoRoot,
+      join(linkedDirectory, "snapshot.json"),
+    ),
+    /path component must not be a symlink/,
   );
 
   const insidePath = join(repoRoot, "target", "untrusted-ruflo-snapshot.json");
@@ -246,7 +271,7 @@ test("should distinguish observations and reject unprotected Ruflo snapshots", (
   );
 });
 
-test("should ignore untracked porcelain rows and apply fail-closed verdict exits", () => {
+test("should ignore untracked porcelain rows and apply fail-closed verdict exits", async () => {
   const tap = [
     "TAP version 13",
     "ok 1 - fixture",
@@ -261,14 +286,14 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
     "# duration_ms 1",
     "",
   ].join("\n");
-  const command = runBoundedQuickCommand(repoRoot, {
+  const command = await runBoundedQuickCommand(repoRoot, {
     id: "fixture",
     program: process.execPath,
     args: ["-e", `process.stdout.write(${JSON.stringify(tap)})`],
     expectedNodeTests: 1,
     timeoutMs: 10_000,
   });
-  const unavailableCommand = runBoundedQuickCommand(repoRoot, {
+  const unavailableCommand = await runBoundedQuickCommand(repoRoot, {
     id: "missing-dependency",
     program: process.execPath,
     args: [
@@ -278,14 +303,14 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
     expectedNodeTests: 1,
     timeoutMs: 10_000,
   });
-  const spoofedCommand = runBoundedQuickCommand(repoRoot, {
+  const spoofedCommand = await runBoundedQuickCommand(repoRoot, {
     id: "duplicate-summary",
     program: process.execPath,
     args: ["-e", `process.stdout.write(${JSON.stringify(`${tap}${tap}`)})`],
     expectedNodeTests: 1,
     timeoutMs: 10_000,
   });
-  const stoppedCommands = runBoundedQuickCommands(repoRoot, {
+  const stoppedCommands = await runBoundedQuickCommands(repoRoot, {
     quickCommands: [
       {
         id: "missing-dependency",
@@ -344,6 +369,120 @@ test("should ignore untracked porcelain rows and apply fail-closed verdict exits
   );
 });
 
+test("should isolate quick-command network and terminate escaped descendants", async (t) => {
+  const network = await runBoundedQuickCommand(repoRoot, {
+    id: "network-isolation",
+    program: process.execPath,
+    args: [
+      "-e",
+      "const fs=require('node:fs');const routes=fs.readFileSync('/proc/net/route','utf8').trim().split(/\\n/).slice(1).filter(Boolean);let readOnly=false;try{fs.writeFileSync('README.md','tamper')}catch{readOnly=true}fs.writeFileSync('target/scratch-proof','ephemeral');process.exit(routes.length===0&&readOnly?0:9)",
+    ],
+    timeoutMs: 10_000,
+  });
+  assert.equal(network.disposition, "PASS");
+  assert.equal(network.sandbox.network, "isolated");
+  assert.equal(network.sandbox.processTree, "pid-namespace");
+  assert.equal(network.sandbox.workspace, "read-only");
+  assert.equal(network.sandbox.target, "ephemeral");
+
+  const coldRoot = mkdtempSync(join(tmpdir(), "oxigraph-programme-cold-sandbox-"));
+  t.after(() => rmSync(coldRoot, { recursive: true, force: true }));
+  const initialized = spawnSync("/usr/bin/git", ["init", "--quiet"], {
+    cwd: coldRoot,
+    encoding: "utf8",
+  });
+  assert.equal(initialized.status, 0, initialized.stderr);
+  writeFileSync(join(coldRoot, "README.md"), "fixture\n");
+  for (const args of [
+    ["add", "README.md"],
+    [
+      "-c",
+      "user.name=QA",
+      "-c",
+      "user.email=qa@example.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "fixture",
+    ],
+  ]) {
+    const result = spawnSync("/usr/bin/git", args, {
+      cwd: coldRoot,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  for (const directory of [
+    ".agentic-qe",
+    ".claude",
+    ".claude-flow",
+    ".swarm",
+    "var",
+  ]) {
+    mkdirSync(join(coldRoot, directory));
+    writeFileSync(join(coldRoot, directory, "private-state"), "protected\n");
+  }
+  for (const file of [
+    ".env",
+    ".htpasswd",
+    ".npmrc",
+    "agentdb.rvf",
+    "agentdb.rvf.idmap.json",
+    "agentdb.rvf.lock",
+    "ignored-local-state",
+    "ruvector.db",
+  ]) {
+    writeFileSync(join(coldRoot, file), "protected\n");
+  }
+  const protectedPaths = [
+    ".agentic-qe/private-state",
+    ".claude/private-state",
+    ".claude-flow/private-state",
+    ".env",
+    ".htpasswd",
+    ".npmrc",
+    ".swarm/private-state",
+    "agentdb.rvf",
+    "agentdb.rvf.idmap.json",
+    "agentdb.rvf.lock",
+    "ignored-local-state",
+    "ruvector.db",
+    "var/private-state",
+  ];
+  const cold = await runBoundedQuickCommand(coldRoot, {
+    id: "cold-target",
+    program: process.execPath,
+    args: [
+      "-e",
+      `const fs=require('node:fs');let readOnly=false;try{fs.writeFileSync('new-top-level','tamper')}catch{readOnly=true}const protectedPaths=${JSON.stringify(protectedPaths)};const hidden=protectedPaths.every(path=>!fs.existsSync(path));const tracked=fs.readFileSync('README.md','utf8')==='fixture\\n';fs.writeFileSync('target/proof','ephemeral');process.exit(readOnly&&hidden&&tracked?0:9)`,
+    ],
+    timeoutMs: 10_000,
+  });
+  assert.equal(cold.disposition, "PASS");
+  assert.equal(existsSync(join(coldRoot, "target")), false);
+  assert.equal(existsSync(join(coldRoot, "new-top-level")), false);
+
+  const token = `oxigraph-programme-descendant-${randomUUID()}`;
+  const escaped = await runBoundedQuickCommand(repoRoot, {
+    id: "escaped-descendant",
+    program: process.execPath,
+    args: [
+      "-e",
+      `const {spawn}=require('node:child_process');spawn(process.execPath,['-e','setInterval(()=>{},1000)',${JSON.stringify(token)}],{detached:true,stdio:'ignore'}).unref();setInterval(()=>{},1000)`,
+    ],
+    timeoutMs: 250,
+  });
+  assert.deepEqual(
+    [escaped.disposition, escaped.failureClass],
+    ["INCONCLUSIVE", "TIMEOUT"],
+  );
+  const processes = spawnSync("/usr/bin/ps", ["-eo", "args"], {
+    encoding: "utf8",
+  });
+  assert.equal(processes.status, 0, processes.stderr);
+  assert.equal(processes.stdout.includes(token), false);
+});
+
 test("should publish byte-deterministic immutable receipts idempotently", (t) => {
   const root = mkdtempSync(join(tmpdir(), "oxigraph-programme-receipt-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -368,7 +507,7 @@ test("should publish byte-deterministic immutable receipts idempotently", (t) =>
   );
 });
 
-test("should reject receipt subject score hash and authority tampering", (t) => {
+test("should reject receipt subject score hash and authority tampering", async (t) => {
   const value = receipt();
   const options = {
     policy,
@@ -386,6 +525,8 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
     (candidate) => { candidate.promotionAuthority = true; },
     (candidate) => { candidate.subject.releaseAuthority = true; },
     (candidate) => { candidate.commands[0] = { id: candidate.commands[0].id, argv: candidate.commands[0].argv, disposition: "PASS" }; },
+    (candidate) => { candidate.commands[0].sandbox.network = "inherited"; },
+    (candidate) => { candidate.assertions.find((assertion) => assertion.id === "tooling.bounded-contracts").evidence.commands = 999; },
   ];
   assert.deepEqual(
     variants.map((mutate) => {
@@ -393,7 +534,39 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
       mutate(candidate);
       return verifyReceiptEnvelope(candidate, options).ok;
     }),
-    [false, false, false, false, false, false, false, false],
+    [false, false, false, false, false, false, false, false, false, false],
+  );
+
+  const failedSource = sourceResult();
+  failedSource.ok = false;
+  const failedAssertion = failedSource.assertions.find(
+    (assertion) => assertion.id === "adr.corpus",
+  );
+  failedAssertion.status = "FAIL";
+  failedAssertion.diagnostics = ["adversarial fixture"];
+  const failedReceipt = buildExpandedProgrammeReceipt({
+    policy,
+    source: failedSource,
+    commands: unexecutedQuickCommands(
+      policy,
+      "NOT_RUN_AFTER_SOURCE_FAILURE",
+    ),
+    rufloObservation: passingRuflo(),
+    implementation: createRepositoryManifest(
+      repoRoot,
+      expandedProgrammeImplementationPaths,
+    ),
+  });
+  assert.deepEqual(
+    {
+      envelope: verifyReceiptEnvelope(failedReceipt, {
+        policy,
+        receiptSha256: "e".repeat(64),
+        expectedRufloObservation: failedReceipt.rufloObservation,
+      }).ok,
+      verdict: failedReceipt.verdict,
+    },
+    { envelope: true, verdict: "FAIL" },
   );
 
   const root = mkdtempSync(join(tmpdir(), "oxigraph-programme-verifier-"));
@@ -434,7 +607,7 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
     implementation,
   });
   const publication = publishExpandedProgrammeReceipt(root, bound);
-  const verification = verifyExpandedProgrammeReceipt(root, publication.path, {
+  const verification = await verifyExpandedProgrammeReceipt(root, publication.path, {
     expectedRufloObservation: bound.rufloObservation,
   });
   assert.equal(
@@ -447,7 +620,7 @@ test("should reject receipt subject score hash and authority tampering", (t) => 
     (assertion) => assertion.id === "adr.corpus",
   ).evidence.adrCount = 999;
   const forgedPublication = publishExpandedProgrammeReceipt(root, forgedSourceEvidence);
-  const forgedVerification = verifyExpandedProgrammeReceipt(
+  const forgedVerification = await verifyExpandedProgrammeReceipt(
     root,
     forgedPublication.path,
     { expectedRufloObservation: bound.rufloObservation },

@@ -10,12 +10,13 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   readdirSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
+import { userInfo } from "node:os";
 import {
-  delimiter,
   dirname,
   isAbsolute,
   join,
@@ -46,6 +47,8 @@ export const expandedProgrammeImplementationPaths = Object.freeze([
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 const gitObjectPattern = /^[0-9a-f]{40}$/u;
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+const systemGitExecutable = "/usr/bin/git";
+const bubblewrapExecutable = "/usr/bin/bwrap";
 const rufloSnapshotSchema = "oxigraph.expanded-programme-ruflo-snapshot/v1";
 const rufloSnapshotProducer = Object.freeze({
   transport: "native-ruflo-mcp",
@@ -66,7 +69,7 @@ const reviewedQuickCommands = Object.freeze([
     id: "evidence-tests",
     program: "node",
     args: ["--test", "--test-reporter=tap", "tools/evidence/normative-clause-inventory.test.mjs", "tools/evidence/normative-control.test.mjs", "tools/evidence/verify-programme.test.mjs", "tools/evidence/expanded-programme-qa.test.mjs", "tools/evidence/verify-expanded-programme-qa.test.mjs"],
-    expectedNodeTests: 42,
+    expectedNodeTests: 44,
     timeoutMs: 120000,
   },
   {
@@ -96,15 +99,35 @@ function sha256(value) {
 }
 
 export function resolveReviewedExecutable(rootInput, program) {
-  const root = canonicalRoot(rootInput);
-  const candidates = program === "node"
-    ? [process.execPath]
-    : isAbsolute(program)
-      ? [program]
-      : (process.env.PATH ?? "")
-        .split(delimiter)
-        .filter(Boolean)
-        .map((directory) => resolve(root, directory, program));
+  canonicalRoot(rootInput);
+  const requestedCanonical = (() => {
+    if (!isAbsolute(program)) return null;
+    try {
+      return realpathSync(program);
+    } catch {
+      return null;
+    }
+  })();
+  const nodeCanonical = realpathSync(process.execPath);
+  let candidates;
+  if (program === "node" || requestedCanonical === nodeCanonical) {
+    candidates = [process.execPath];
+  } else if (program === "cargo") {
+    candidates = [
+      "/cargo/bin/cargo",
+      join(userInfo().homedir, ".cargo", "bin", "cargo"),
+      "/usr/bin/cargo",
+    ];
+  } else if (program === "git" || requestedCanonical === realpathSync(systemGitExecutable)) {
+    candidates = [systemGitExecutable];
+  } else if (
+    program === bubblewrapExecutable ||
+    requestedCanonical === realpathSync(bubblewrapExecutable)
+  ) {
+    candidates = [bubblewrapExecutable];
+  } else {
+    throw new Error(`executable is not in the reviewed allowlist: ${program}`);
+  }
   for (const candidate of candidates) {
     try {
       const metadata = lstatSync(candidate);
@@ -119,7 +142,7 @@ export function resolveReviewedExecutable(rootInput, program) {
         sha256: sha256(readFileSync(canonical)),
       };
     } catch {
-      // Continue to the next literal PATH candidate.
+      // Continue to the next reviewed executable location.
     }
   }
   throw new Error(`reviewed executable is unavailable: ${program}`);
@@ -160,6 +183,33 @@ function containedPath(root, path, { allowDirectory = false } = {}) {
 
 function readContained(root, path) {
   return readFileSync(containedPath(root, path));
+}
+
+function assertNoSymlinkComponents(path) {
+  const components = [];
+  let cursor = path;
+  while (dirname(cursor) !== cursor) {
+    components.push(cursor);
+    cursor = dirname(cursor);
+  }
+  for (const component of components.reverse()) {
+    if (lstatSync(component).isSymbolicLink()) {
+      throw new Error("protected Ruflo snapshot path component must not be a symlink");
+    }
+  }
+}
+
+function readDescriptorSnapshot(descriptor, size) {
+  const bytes = Buffer.allocUnsafe(size);
+  let offset = 0;
+  while (offset < size) {
+    const count = readSync(descriptor, bytes, offset, size - offset, offset);
+    if (count === 0) {
+      throw new Error("protected Ruflo snapshot ended while reading");
+    }
+    offset += count;
+  }
+  return bytes;
 }
 
 function textContained(root, path) {
@@ -254,6 +304,7 @@ export function readProtectedRufloSnapshot(rootInput, pathInput) {
     throw new Error("protected Ruflo snapshot path must be absolute");
   }
   const requested = resolve(pathInput);
+  assertNoSymlinkComponents(requested);
   const metadata = lstatSync(requested);
   if (metadata.isSymbolicLink() || !metadata.isFile()) {
     throw new Error("protected Ruflo snapshot must be a regular non-symlink file");
@@ -268,8 +319,15 @@ export function readProtectedRufloSnapshot(rootInput, pathInput) {
   if (metadata.size <= 0 || metadata.size > 8 * 1024 * 1024) {
     throw new Error("protected Ruflo snapshot size is invalid");
   }
-  const noFollow = constants.O_NOFOLLOW ?? 0;
-  const descriptor = openSync(requested, constants.O_RDONLY | noFollow);
+  if (!Number.isInteger(constants.O_NOFOLLOW)) {
+    throw new Error("protected Ruflo snapshot requires no-follow file opens");
+  }
+  const descriptor = openSync(
+    requested,
+    constants.O_RDONLY |
+      constants.O_NOFOLLOW |
+      (constants.O_CLOEXEC ?? 0),
+  );
   let bytes;
   try {
     const before = fstatSync(descriptor);
@@ -282,16 +340,23 @@ export function readProtectedRufloSnapshot(rootInput, pathInput) {
     ) {
       throw new Error("protected Ruflo snapshot changed before open");
     }
-    bytes = readFileSync(descriptor);
+    const first = readDescriptorSnapshot(descriptor, before.size);
+    const middle = fstatSync(descriptor);
+    const second = readDescriptorSnapshot(descriptor, before.size);
     const after = fstatSync(descriptor);
     if (
       before.dev !== after.dev ||
       before.ino !== after.ino ||
       before.size !== after.size ||
-      before.mtimeMs !== after.mtimeMs
+      before.mtimeMs !== middle.mtimeMs ||
+      before.ctimeMs !== middle.ctimeMs ||
+      before.mtimeMs !== after.mtimeMs ||
+      before.ctimeMs !== after.ctimeMs ||
+      !first.equals(second)
     ) {
       throw new Error("protected Ruflo snapshot changed while reading");
     }
+    bytes = first;
   } finally {
     closeSync(descriptor);
   }
@@ -600,11 +665,22 @@ export function validateDocumentBytes(path, bytes) {
 }
 
 function gitSubject(root) {
+  const executable = resolveReviewedExecutable(root, "git");
   const value = (args) =>
-    execFileSync("git", args, {
+    execFileSync(executable.invocation, [
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.untrackedCache=false",
+      ...args,
+    ], {
       cwd: root,
       encoding: "utf8",
-      env: scrubbedChildEnvironment(),
+      env: scrubbedChildEnvironment({
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_SYSTEM: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+      }),
       timeout: 30_000,
       maxBuffer: 1024 * 1024,
     }).trim();
@@ -676,8 +752,18 @@ export function collectProgrammeModel(rootInput, policy) {
   const taskIds = tasks.map((task) => task.id);
   const parsedOwnership = parseOwnership(plan, taskIds);
   const controlEdges = {};
+  const controlRows = [];
   for (const match of plan.matchAll(/\b(G\d+\.\d+[a-z]?)\s*→\s*`?(HARNESS-[A-Z-]+)`?\s*→\s*(G\d+\.\d+[a-z]?)/gu)) {
-    controlEdges[match[2]] = { dependencies: [match[1]], blocks: [match[3]] };
+    const control = {
+      id: match[2],
+      dependencies: [match[1]],
+      blocks: [match[3]],
+    };
+    controlRows.push(control);
+    controlEdges[control.id] = {
+      dependencies: control.dependencies,
+      blocks: control.blocks,
+    };
   }
   const documentErrors = [expandedProgrammePolicyPath, ...policy.sourceDocuments]
     .flatMap((path) => validateDocumentBytes(path, readContained(root, path)));
@@ -697,6 +783,7 @@ export function collectProgrammeModel(rootInput, policy) {
       tasks.map((task) => [task.id, parseProgrammeDependencies(task.dependencyText, taskIds)]),
     ),
     controls: controlEdges,
+    controlRows,
     ownership: parsedOwnership.ownership,
     ownershipRows: parsedOwnership.sourceRows,
     claims,
@@ -733,6 +820,13 @@ function graphErrors(model, policy) {
   const controls = new Set(Object.keys(policy.controls));
   const allowed = new Set([...stable, ...controls]);
   const graph = { ...model.dependencies };
+  const controlRows = Array.isArray(model.controlRows) ? model.controlRows : [];
+  if (controlRows.length !== controls.size) {
+    errors.push("source control-edge row count drift");
+  }
+  if (!uniqueIds(controlRows.map((row) => row.id))) {
+    errors.push("duplicate source control edge");
+  }
   for (const [id, control] of Object.entries(model.controls ?? {})) {
     graph[id] = [...control.dependencies];
   }
@@ -806,8 +900,26 @@ export function validateProgrammeModel(model, policy) {
   const indexErrors = [];
   if (model.allAdrFiles.length !== policy.indexedAdrCount) indexErrors.push("numbered ADR file count drift");
   if (model.indexRows.length !== policy.indexedAdrCount) indexErrors.push("ADR index row count drift");
+  const expectedIndexedAdrIds = Array.from(
+    { length: policy.indexedAdrCount },
+    (_, index) => `ADR-${String(index + 1).padStart(4, "0")}`,
+  );
+  const numberedAdrIds = model.allAdrFiles.map(
+    (file) => `ADR-${/^docs\/adr\/(\d{4})-/u.exec(file)?.[1] ?? "invalid"}`,
+  );
+  const indexIds = model.indexRows.map((row) => row.id);
+  if (!sameArray(numberedAdrIds, expectedIndexedAdrIds)) {
+    indexErrors.push("numbered ADR identifier set drift");
+  }
+  if (!uniqueIds(indexIds) || !sameArray([...indexIds].sort(), expectedIndexedAdrIds)) {
+    indexErrors.push("ADR index identifier set drift");
+  }
   const indexedFiles = model.indexRows.map((row) => row.file).sort();
   if (!sameArray(indexedFiles, model.allAdrFiles)) indexErrors.push("ADR index file set drift");
+  for (const row of model.indexRows) {
+    const fileId = `ADR-${/^docs\/adr\/(\d{4})-/u.exec(row.file)?.[1] ?? "invalid"}`;
+    if (row.id !== fileId) indexErrors.push(`${row.id}: ADR index identifier/file drift`);
+  }
   const indexById = new Map(model.indexRows.map((row) => [row.id, row]));
   for (const expected of policy.adrs) {
     const row = indexById.get(expected.id);

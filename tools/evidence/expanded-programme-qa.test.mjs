@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -15,6 +17,7 @@ import {
   collectProgrammeModel,
   loadExpandedProgrammePolicy,
   parseProgrammeDependencies,
+  readExpandedProgrammeGitSubject,
   validateDocumentBytes,
   validateExpandedProgramme,
   validateMarkdownLinks,
@@ -103,6 +106,16 @@ test("should reject ADR index target title and status drift", () => {
     assertion(result, "adr.index-title-status-parity").status,
     "FAIL",
   );
+
+  const duplicateId = currentModel();
+  duplicateId.indexRows[0].id = duplicateId.indexRows[1].id;
+  assert.equal(
+    assertion(
+      validateProgrammeModel(duplicateId, policy),
+      "adr.index-title-status-parity",
+    ).status,
+    "FAIL",
+  );
 });
 
 test("should reject missing duplicate and unknown stable G identifiers", () => {
@@ -143,6 +156,16 @@ test("should reject dangling self and duplicate dependency edges", () => {
   const result = validateProgrammeModel(model, policy);
 
   assert.equal(assertion(result, "goap.dependencies-dag").status, "FAIL");
+
+  const duplicateControl = currentModel();
+  duplicateControl.controlRows.push(structuredClone(duplicateControl.controlRows[0]));
+  assert.equal(
+    assertion(
+      validateProgrammeModel(duplicateControl, policy),
+      "goap.dependencies-dag",
+    ).status,
+    "FAIL",
+  );
 });
 
 test("should reject a dependency cycle", () => {
@@ -253,4 +276,27 @@ test("should reject committed policy, source claim, command, and authority drift
     () => loadExpandedProgrammePolicy(root),
     /authority contract/,
   );
+});
+
+test("should resolve the Git subject independently of a caller-controlled PATH", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oxigraph-programme-git-path-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fakeGit = join(root, "git");
+  writeFileSync(
+    fakeGit,
+    "#!/bin/sh\nprintf '%s\\n' ffffffffffffffffffffffffffffffffffffffff\n",
+  );
+  chmodSync(fakeGit, 0o755);
+  const expected = spawnSync("/usr/bin/git", ["rev-parse", "HEAD"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }).stdout.trim();
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${root}:${previousPath ?? ""}`;
+  t.after(() => {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+  });
+
+  assert.equal(readExpandedProgrammeGitSubject(repoRoot).commit, expected);
 });

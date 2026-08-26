@@ -22,6 +22,10 @@ import {
   resolveReviewedExecutable,
   validateExpandedProgramme,
 } from "./expanded-programme-qa.mjs";
+import {
+  runBoundedQuickCommands,
+  unexecutedQuickCommands,
+} from "./run-expanded-programme-qa.mjs";
 
 const policyRelativePath = "tools/evidence/expanded-programme-qa-policy.json";
 const implementationPaths = [
@@ -185,6 +189,7 @@ export function verifyReceiptEnvelope(
       assertion.weight !== policy.assertionWeights[assertion.id] ||
       assertion.mandatory !== true ||
       assertion.authority !== "committed-source" ||
+      assertion.category !== String(assertion.id).split(".", 1)[0] ||
       !["PASS", "FAIL", "INCONCLUSIVE"].includes(assertion.status)
     ) {
       errors.push(`${assertion.id ?? "unknown"}: assertion contract drift`);
@@ -207,9 +212,18 @@ export function verifyReceiptEnvelope(
     if (!observed || observed.id !== expected.id || !same(observed.argv, [expected.program, ...expected.args])) {
       errors.push(`${expected.id}: literal command drift`);
     }
-    if (!exactKeys(observed, ["id", "argv", "executableSha256", "expected", "observed", "disposition", "failureClass"])) {
+    if (!exactKeys(observed, ["id", "argv", "executableSha256", "sandbox", "expected", "observed", "disposition", "failureClass"])) {
       errors.push(`${expected.id}: command evidence contract drift`);
       continue;
+    }
+    if (
+      !exactKeys(observed.sandbox, ["executableSha256", "network", "processTree", "workspace", "target"]) ||
+      observed.sandbox.network !== "isolated" ||
+      observed.sandbox.processTree !== "pid-namespace" ||
+      observed.sandbox.workspace !== "read-only" ||
+      observed.sandbox.target !== "ephemeral"
+    ) {
+      errors.push(`${expected.id}: command sandbox contract drift`);
     }
     const expectedEvidence = expected.expectedNodeTests === undefined
       ? { exitCode: 0, signal: null }
@@ -226,6 +240,12 @@ export function verifyReceiptEnvelope(
     if (observed.disposition === "PASS" && !sha256Pattern.test(observed.executableSha256 ?? "")) {
       errors.push(`${expected.id}: passing command executable is unbound`);
     }
+    if (
+      observed.disposition === "PASS" &&
+      !sha256Pattern.test(observed.sandbox?.executableSha256 ?? "")
+    ) {
+      errors.push(`${expected.id}: passing command sandbox is unbound`);
+    }
   }
   const commandsDisposition = commands.some((item) => item.disposition === "FAIL")
     ? "FAIL"
@@ -233,7 +253,22 @@ export function verifyReceiptEnvelope(
       ? "INCONCLUSIVE"
       : "PASS";
   const tooling = assertions.find((item) => item.id === "tooling.bounded-contracts");
-  if (tooling?.status !== commandsDisposition) errors.push("tooling assertion does not match commands");
+  const expectedTooling = {
+    id: "tooling.bounded-contracts",
+    category: "tooling",
+    authority: "committed-source",
+    mandatory: true,
+    weight: policy.assertionWeights["tooling.bounded-contracts"],
+    status: commandsDisposition,
+    evidence: { commands: commands.length },
+    diagnostics: commands
+      .filter((command) => command.disposition !== "PASS")
+      .map((command) => `${command.id}:${command.failureClass ?? command.disposition}`)
+      .sort(),
+  };
+  if (!same(tooling, expectedTooling)) {
+    errors.push("tooling assertion does not match commands");
+  }
 
   const sourceAssertions = assertions.filter((item) => item.id !== "tooling.bounded-contracts");
   const sourceOk = sourceAssertions.every((item) => item.status === "PASS");
@@ -304,12 +339,23 @@ function recomputeManifest(root, manifest) {
 }
 
 function gitValue(root, args) {
-  const result = spawnSync("git", args, {
+  const executable = resolveReviewedExecutable(root, "git");
+  const result = spawnSync(executable.invocation, [
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    ...args,
+  ], {
     cwd: root,
     encoding: "utf8",
     timeout: 30_000,
     maxBuffer: 1024 * 1024,
-    env: scrubbedChildEnvironment(),
+    env: scrubbedChildEnvironment({
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+      GIT_TERMINAL_PROMPT: "0",
+    }),
     shell: false,
   });
   if (result.status !== 0 || result.signal || result.error) throw new Error(`git ${args.join(" ")} failed`);
@@ -323,102 +369,11 @@ function gitIndexFlagsClean(root) {
     .every((line) => line.startsWith("H "));
 }
 
-const nodeSummaryFields = ["tests", "suites", "pass", "fail", "cancelled", "skipped", "todo"];
-
-function parseTap(stdout) {
-  const values = Object.fromEntries(nodeSummaryFields.map((field) => [field, []]));
-  const plans = [];
-  const durations = [];
-  const lines = stdout.split(/\r?\n/u).filter((line) => line.length > 0);
-  for (const line of lines) {
-    const plan = /^1\.\.(\d+)$/u.exec(line);
-    if (plan) plans.push(Number.parseInt(plan[1], 10));
-    const summary = /^# (tests|suites|pass|fail|cancelled|skipped|todo) (\d+)$/u.exec(line);
-    if (summary) values[summary[1]].push(Number.parseInt(summary[2], 10));
-    const duration = /^# duration_ms (\d+(?:\.\d+)?)$/u.exec(line);
-    if (duration) durations.push(Number.parseFloat(duration[1]));
-  }
-  const one = (items) => items.length === 1 ? items[0] : null;
-  const observed = {
-    plan: one(plans),
-    ...Object.fromEntries(nodeSummaryFields.map((field) => [field, one(values[field])])),
-    summaryBlockCount: plans.length === 1 && durations.length === 1 && nodeSummaryFields.every((field) => values[field].length === 1) ? 1 : 0,
-    terminal: false,
-    conserved: false,
-    durationPresent: durations.length === 1 && Number.isFinite(durations[0]) && durations[0] >= 0,
-  };
-  const terminal = lines.slice(-9);
-  observed.terminal =
-    terminal.length === 9 &&
-    terminal[0] === `1..${observed.plan}` &&
-    nodeSummaryFields.every((field, index) => terminal[index + 1] === `# ${field} ${observed[field]}`) &&
-    /^# duration_ms \d+(?:\.\d+)?$/u.test(terminal[8]);
-  observed.conserved =
-    Number.isInteger(observed.tests) &&
-    observed.tests === observed.pass + observed.fail + observed.cancelled + observed.skipped + observed.todo;
-  return observed;
+async function rerunQuickCommands(root, policy) {
+  return runBoundedQuickCommands(root, policy);
 }
 
-function rerunQuickCommands(root, policy) {
-  const results = [];
-  for (let index = 0; index < policy.quickCommands.length; index += 1) {
-    const command = policy.quickCommands[index];
-    let executable;
-    try {
-      executable = resolveReviewedExecutable(root, command.program);
-    } catch {
-      results.push({ id: command.id, disposition: "INCONCLUSIVE", executableSha256: null });
-      for (const skipped of policy.quickCommands.slice(index + 1)) {
-        results.push({ id: skipped.id, disposition: "INCONCLUSIVE", executableSha256: null });
-      }
-      break;
-    }
-    const result = spawnSync(executable.invocation, command.args, {
-      cwd: root,
-      encoding: "utf8",
-      timeout: command.timeoutMs,
-      maxBuffer: 8 * 1024 * 1024,
-      env: scrubbedChildEnvironment(),
-      shell: false,
-    });
-    let disposition;
-    if (result.error || result.signal || result.status === null) {
-      disposition = "INCONCLUSIVE";
-    } else if (result.status !== 0) {
-      const diagnostics = `${result.stdout}\n${result.stderr}`;
-      disposition = /ERR_MODULE_NOT_FOUND|Cannot find package|ENOENT[^\n]*node_modules/iu.test(diagnostics)
-        ? "INCONCLUSIVE"
-        : "FAIL";
-    } else if (command.expectedNodeTests !== undefined) {
-      const summary = parseTap(result.stdout);
-      const pass =
-        same(summary, expectedNodeSummary(command.expectedNodeTests));
-      disposition = pass ? "PASS" : "FAIL";
-    } else {
-      disposition = "PASS";
-    }
-    let executableSha256 = executable.sha256;
-    try {
-      if (resolveReviewedExecutable(root, command.program).sha256 !== executable.sha256) {
-        disposition = "INCONCLUSIVE";
-        executableSha256 = null;
-      }
-    } catch {
-      disposition = "INCONCLUSIVE";
-      executableSha256 = null;
-    }
-    results.push({ id: command.id, disposition, executableSha256 });
-    if (disposition !== "PASS") {
-      for (const skipped of policy.quickCommands.slice(index + 1)) {
-        results.push({ id: skipped.id, disposition: "INCONCLUSIVE", executableSha256: null });
-      }
-      break;
-    }
-  }
-  return results;
-}
-
-export function verifyExpandedProgrammeReceipt(
+export async function verifyExpandedProgrammeReceipt(
   rootInput,
   receiptInput,
   {
@@ -469,11 +424,13 @@ export function verifyExpandedProgrammeReceipt(
   if (gitValue(root, ["rev-parse", "HEAD^{tree}"]) !== receipt.subject.tree) errors.push("receipt is not for current tree");
   if (!gitIndexFlagsClean(root)) errors.push("worktree has unsafe Git index flags");
   if (gitValue(root, ["status", "--porcelain=v1", "--untracked-files=all"]) !== "") errors.push("worktree is dirty");
+  let currentSourceOk = false;
   try {
     const source = validateExpandedProgramme(root, {
       policy,
       subject: receipt.subject,
     });
+    currentSourceOk = source.ok;
     const recordedSourceAssertions = receipt.assertions.filter(
       (assertion) => assertion.id !== "tooling.bounded-contracts",
     );
@@ -495,13 +452,15 @@ export function verifyExpandedProgrammeReceipt(
     errors.push(`manifest verification failed: ${error.message}`);
   }
   if (rerunCommands) {
-    const rerun = rerunQuickCommands(root, policy);
-    const recorded = receipt.commands.map((item) => ({
-      id: item.id,
-      disposition: item.disposition,
-      executableSha256: item.executableSha256,
-    }));
-    if (!same(rerun, recorded)) errors.push("bounded command rerun disposition drift");
+    const rerun = currentSourceOk
+      ? await rerunQuickCommands(root, policy)
+      : unexecutedQuickCommands(
+        policy,
+        "NOT_RUN_AFTER_SOURCE_FAILURE",
+      );
+    if (!same(rerun, receipt.commands)) {
+      errors.push("bounded command rerun evidence drift");
+    }
     if (gitValue(root, ["rev-parse", "HEAD"]) !== receipt.subject.commit) errors.push("HEAD changed during command rerun");
     if (gitValue(root, ["rev-parse", "HEAD^{tree}"]) !== receipt.subject.tree) errors.push("tree changed during command rerun");
     if (!gitIndexFlagsClean(root)) errors.push("Git index flags changed during command rerun");
@@ -576,10 +535,10 @@ function discoverReceipt(root) {
   return receipts[0];
 }
 
-function main() {
+async function main() {
   const options = parseArguments(process.argv.slice(2));
   const receipt = options.receipt ?? discoverReceipt(options.root);
-  const result = verifyExpandedProgrammeReceipt(options.root, receipt, {
+  const result = await verifyExpandedProgrammeReceipt(options.root, receipt, {
     rerunCommands: options.rerunCommands,
     rufloSnapshot: options.rufloSnapshot,
   });
@@ -589,10 +548,8 @@ function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
-  }
+  });
 }
