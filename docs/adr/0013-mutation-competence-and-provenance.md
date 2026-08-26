@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-27
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Evidence state: the policy remains Accepted. The named July receipt is
   historical for its sealed source; library changes in `1da47285` invalidate
   it as current-HEAD evidence. Its scope is OxDatalog and does not establish
@@ -36,6 +36,14 @@ executable provenance in its receipt. The configured source surface covers the
 generic D0–D2 engine, validation and strata, provenance, RDF adapter, rule
 execution, storage, and control logic.
 
+The qualification runner refuses a dirty Git worktree; operators and CI must
+run it in a clean, disposable checkout. It allocates a UUID-scoped `TMPDIR`,
+`TMP`, and `TEMP` below `target/cargo-mutants-tmp/` rather than relying on an
+ambient temporary filesystem. The exact default command has a 90-minute outer
+process-tree ceiling, derived from the observed 65–75-minute full-run envelope
+rather than a stale mutant count; an explicit override remains bounded at two
+hours.
+
 A passing gate requires:
 
 1. exactly one successful native baseline;
@@ -46,8 +54,11 @@ A passing gate requires:
    versions;
 6. stable protected inputs before and after execution;
 7. zero missed viable mutants;
-8. zero timed-out mutants; and
-9. successful bounded process-tree execution.
+8. zero timed-out mutants;
+9. successful bounded process-tree execution; and
+10. a new Node process reopening the mutable latest pointer, the named
+    immutable run, current source inventory, runtime executables, and exact
+    expected run UUID through `currentMutationQualification`.
 
 The 70-test all-target/all-feature OxDatalog suite is the exercised native
 test surface. The exact generated, caught, missed, timeout, and unviable counts
@@ -87,7 +98,9 @@ including the selected Rustup toolchain executables. Qualification discovers a
 candidate through the latest pointer, then reopens the run-addressed receipt,
 native outcomes, and configuration with stable no-follow reads. It requires
 their exact bytes, manifest, and hashes to agree and both protected snapshots
-to equal the current source snapshot.
+to equal the current source snapshot. The final reopen happens only after the
+latest pointer is written and must succeed in a fresh process for the same run
+UUID before the runner reports `PASS`.
 
 Registry latest is an acquisition policy, not a moving validation input.
 Publishing a newer Cargo Mutants release does not rewrite or reinterpret an
@@ -109,6 +122,8 @@ not evidence.
 
 - The gate measures test competence against a reviewed source surface.
 - Baseline, timeout, inventory, and provenance failures are fail-closed.
+- Dirty worktrees, ambient temporary paths, and failed or raced latest-pointer
+  reopening are fail-closed.
 - Redundant code is removed instead of creating unverifiable equivalent-mutant
   waivers.
 - Exact provenance and resource-accounting behavior receive the same mutation

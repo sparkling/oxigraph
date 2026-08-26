@@ -27,12 +27,18 @@ import {
 } from "./evidence.mjs";
 import { runProcess } from "./process.mjs";
 import {
+  assertCleanQualificationWorktree,
+  createMutationEnvironment,
+  CURRENT_QUALIFICATION_TIMEOUT_MS,
+  DEFAULT_OUTER_TIMEOUT_MS,
+} from "./runtime-policy.mjs";
+import {
   createMutationPublication,
   publishMutationPublication,
 } from "./publication.mjs";
 
 export const PROFILE = "oxdatalog-d2-complete";
-export const DEFAULT_OUTER_TIMEOUT_MS = 3_600_000;
+export { DEFAULT_OUTER_TIMEOUT_MS };
 const toolDir = realpathSync(dirname(fileURLToPath(import.meta.url)));
 export const repoRoot = realpathSync(resolve(toolDir, "../.."));
 const configPath = join(toolDir, "oxdatalog.toml");
@@ -76,7 +82,7 @@ Usage:
 Options:
   --jobs <count>  Parallel cargo-mutants jobs (default: 2, maximum: 8)
   --outer-timeout-seconds <seconds>
-                  Whole cargo-mutants process-tree ceiling (default: 3600;
+                  Whole cargo-mutants process-tree ceiling (default: 5400;
                   accepted range: 30 through 7200)
   --list          List the reviewed mutation inventory without executing it
   --help          Show this help
@@ -124,11 +130,12 @@ function parseArgs(values) {
   return args;
 }
 
-async function listInventory(commonArgs, version, timeoutMs) {
+async function listInventory(commonArgs, version, timeoutMs, environment) {
   const before = snapshotProtectedInputs(repoRoot);
   const result = await runCargoMutants([...commonArgs, "--list", "--json"], {
     capture: true,
     timeoutMs,
+    env: environment,
   });
   const after = snapshotProtectedInputs(repoRoot);
   const changedPaths = changedInputs(before, after);
@@ -251,8 +258,11 @@ function buildReceipt(
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args === null) return;
+  assertCleanQualificationWorktree(repoRoot);
   const version = await installedVersion();
   const safeOutputRoot = ensureDirectoryInside(repoRoot, outputRoot);
+  const runId = randomUUID();
+  const environment = createMutationEnvironment(repoRoot, runId);
   const commonArgs = [
     "--config",
     configPath,
@@ -265,11 +275,10 @@ async function main() {
   ];
   if (args.list) {
     rejectSymlinksUnder(safeOutputRoot);
-    await listInventory(commonArgs, version, args.outerTimeoutMs);
+    await listInventory(commonArgs, version, args.outerTimeoutMs, environment);
     return;
   }
 
-  const runId = randomUUID();
   const nativeParent = ensureDirectoryInside(
     repoRoot,
     join(safeOutputRoot, "native"),
@@ -292,7 +301,7 @@ async function main() {
       "--output",
       nativeRunRoot,
     ],
-    { timeoutMs: args.outerTimeoutMs },
+    { timeoutMs: args.outerTimeoutMs, env: environment },
   );
   const after = snapshotProtectedInputs(repoRoot);
   if (command.timedOut) {
@@ -364,12 +373,49 @@ async function main() {
     });
   }
   writeJsonAtomic(receiptPath, receipt, repoRoot);
+  let currentQualification = null;
+  if (receipt.gateClosed) {
+    const reopened = await runProcess(
+      process.execPath,
+      [
+        join(toolDir, "verify-current.mjs"),
+        "--expected-run-id",
+        runId,
+      ],
+      {
+        cwd: repoRoot,
+        capture: true,
+        timeoutMs: CURRENT_QUALIFICATION_TIMEOUT_MS,
+        env: environment,
+      },
+    );
+    if (reopened.timedOut) {
+      throw new Error("fresh-process mutation qualification reopen timed out");
+    }
+    if (reopened.status !== 0 || reopened.error) {
+      process.stderr.write(reopened.stderr);
+      throw new Error("fresh-process mutation qualification reopen failed");
+    }
+    try {
+      currentQualification = JSON.parse(reopened.stdout);
+    } catch {
+      throw new Error(
+        "fresh-process mutation qualification returned invalid JSON",
+      );
+    }
+    if (currentQualification.runId !== runId) {
+      throw new Error("fresh-process mutation qualification reopened another run");
+    }
+  }
   console.log(
     `${PROFILE}: ${receipt.gateClosed ? "PASS" : "FAIL"}\n` +
       `caught=${receipt.counts.caught} missed=${receipt.counts.missed} ` +
       `timeout=${receipt.counts.timeout} unviable=${receipt.counts.unviable}\n` +
       `receipt=${portable(relative(repoRoot, receiptPath))}\n` +
-      `immutableReceipt=${immutable.publication.receiptPath}`,
+      `immutableReceipt=${immutable.publication.receiptPath}` +
+      (currentQualification === null
+        ? ""
+        : `\ncurrentQualification=${currentQualification.path}`),
   );
   process.exitCode = receipt.gateClosed ? 0 : command.status || 1;
 }

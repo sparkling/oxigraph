@@ -7,11 +7,20 @@ published dependency resolution; the receipt freezes the observed release and
 executable rather than making acquisition itself a repository version pin.
 
 ```bash
+# Run from a clean, disposable worktree; the runner rejects Git dirt.
 cargo install --locked cargo-mutants
 node --test tools/mutation/*.test.mjs
 node tools/mutation/oxdatalog.mjs --list
 node tools/mutation/oxdatalog.mjs --jobs 2
 ```
+
+The exact default command has a 5,400-second process-tree ceiling. That
+90-minute bound covers the observed 65–75-minute full-run envelope with bounded
+headroom; it is not inferred from the historical mutant count. Operators may
+use `--outer-timeout-seconds` only within the reviewed 30–7,200-second range.
+The runner creates a UUID-scoped `TMPDIR`, `TMP`, and `TEMP` below
+`target/cargo-mutants-tmp/`, so no ambient or sandbox `/tmp` is part of the
+execution precondition.
 
 The runner rejects symlinked or escaping output paths, enforces a bounded
 process-tree timeout, and snapshots the workspace libraries, manifests,
@@ -46,3 +55,11 @@ hash, path, and observed version to equal the receipt; and runs the exact
 bounded `cargo mutants --list --json` invocation against the current source.
 The sorted current inventory must equal immutable `mutants.json`, while every
 inventory Mutant must have one strict, phase-consistent native outcome.
+
+After publishing and writing the mutable latest pointer, the runner launches
+`verify-current.mjs` in a new Node process. That process calls
+`currentMutationQualification`, reopens the exact immutable run, recomputes the
+current source inventory and executable provenance, and requires the result to
+identify the just-published UUID. The command reports
+`currentQualification=<immutable receipt path>` only after this independent
+reopen succeeds.

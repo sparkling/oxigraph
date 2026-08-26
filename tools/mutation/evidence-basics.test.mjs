@@ -27,6 +27,7 @@ import {
 } from "./evidence.mjs";
 import { runProcess } from "./process.mjs";
 import { syncDirectory } from "./publication.mjs";
+import { DEFAULT_OUTER_TIMEOUT_MS } from "./oxdatalog.mjs";
 
 const version = "99.88.77";
 const cargoPath = "/test/cargo";
@@ -172,6 +173,9 @@ test("cargo-mutants acquisition floats while receipts freeze runtime provenance"
     ),
     true,
   );
+  assert.equal(DEFAULT_OUTER_TIMEOUT_MS, 5_400_000);
+  assert.match(runner, /assertCleanQualificationWorktree\(repoRoot\)/);
+  assert.match(runner, /verify-current\.mjs/);
 });
 
 test("directory durability is an explicit safe no-op on Windows", () => {

@@ -71,6 +71,14 @@ test("independent inventory uses the exact bounded reviewed invocation", () => {
         ]);
         assert.equal(options.cwd, root);
         assert.equal(options.timeout, 5_000);
+        assert.equal(
+          options.env.TMPDIR.startsWith(
+            join(root, "target", "cargo-mutants-tmp"),
+          ),
+          true,
+        );
+        assert.equal(options.env.TMP, options.env.TMPDIR);
+        assert.equal(options.env.TEMP, options.env.TMPDIR);
         return JSON.stringify(inventory());
       },
     });

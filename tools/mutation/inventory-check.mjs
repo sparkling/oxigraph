@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import {
   assertExactCurrentSnapshots,
   snapshotProtectedInputs,
 } from "./source-snapshot.mjs";
+import { createMutationEnvironment } from "./runtime-policy.mjs";
 
 export const INVENTORY_TIMEOUT_MS = 120_000;
 
@@ -29,6 +31,7 @@ export function listCurrentMutationInventory(
   const root = realpathSync(repositoryRoot);
   const configPath = join(root, "tools", "mutation", "oxdatalog.toml");
   const before = snapshotProtectedInputs(root);
+  const environment = createMutationEnvironment(root, randomUUID());
   let stdout;
   try {
     stdout = execute(
@@ -53,6 +56,7 @@ export function listCurrentMutationInventory(
         killSignal: "SIGKILL",
         maxBuffer: 32 * 1024 * 1024,
         windowsHide: true,
+        env: environment,
       },
     );
   } catch (error) {
