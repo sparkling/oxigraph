@@ -60,6 +60,15 @@ test("should accept the exact current 16-ADR and 39-task committed corpus", () =
       adrCount: result.scope.adrCount,
       stableGCount: result.scope.stableGCount,
       phaseCounts: result.scope.phaseCounts,
+      correctedOwnership: Object.fromEntries(
+        ["G1.5", "G1.5b", "G1.5c", "G1.6"].map(
+          (id) => [id, result.model.ownership[id]],
+        ),
+      ),
+      correctedDependencies: {
+        "G4.2": result.model.dependencies["G4.2"],
+        "G4.6": result.model.dependencies["G4.6"],
+      },
     },
     {
       ok: true,
@@ -67,6 +76,16 @@ test("should accept the exact current 16-ADR and 39-task committed corpus", () =
       adrCount: 16,
       stableGCount: 39,
       phaseCounts: { G0: 7, G1: 9, G2: 10, G3: 5, G4: 8 },
+      correctedOwnership: {
+        "G1.5": ["ADR-0019"],
+        "G1.5b": ["ADR-0019"],
+        "G1.5c": ["ADR-0018", "ADR-0019"],
+        "G1.6": ["ADR-0019"],
+      },
+      correctedDependencies: {
+        "G4.2": ["G1.4", "G1.5", "G1.5b", "G1.5c", "G4.1"],
+        "G4.6": ["G2.7", "G4.1", "G4.2", "G4.3", "G4.5"],
+      },
     },
   );
 });
