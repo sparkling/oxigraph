@@ -15,8 +15,11 @@ generation must synthesize and encode the complete frozen-source diff. The
 task contract's aggregate wall ceiling may reduce, but never increase, those
 limits. The selected value is bound into each tool-free task and the complete
 ceiling map is bound into the committed control identity; unknown roles fail
-before provider spawn. Same-host retry, circuit-breaking, and cancellation
-remain unchanged.
+before provider spawn. Canonical implementation and repair patches must also
+pass Git's bounded parse-only `apply --numstat --whitespace=error` oracle before
+the native invocation can be labelled `ACCEPT`; applicability to the frozen
+evaluator remains the sealed reconstruction stage's authority. Same-host retry,
+circuit-breaking, and cancellation remain unchanged.
 
 Current activation boundary:
 

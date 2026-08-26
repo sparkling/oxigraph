@@ -172,6 +172,50 @@ test("native implementation admission canonicalizes mechanical diff defects", as
   );
 });
 
+test("native patch admission requires the exact canonical bytes to pass Git's parser", async () => {
+  const gitRejected = {
+    ...accepted,
+    patch: accepted.patch.replace("+new\n", "+new \n"),
+  };
+  const result = await runNativeWorker({
+    provider: "codex",
+    role: "implementation",
+    model: "gpt-test",
+    task: { id: "git-parser-rejection" },
+    contract,
+    processRunner: async ({ args }) => {
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(outputPath, JSON.stringify(gitRejected), "utf8");
+      return completed();
+    },
+  });
+  assert.equal(result.status, "INCONCLUSIVE");
+  assert.equal(result.failure.code, "patch-policy-invalid");
+  assert.match(result.failure.detailSha256, /^[a-f0-9]{64}$/);
+});
+
+test("native patch admission gives the parser the canonical bytes before acceptance", async () => {
+  let parsedPatch = null;
+  const result = await runNativeWorker({
+    provider: "codex",
+    role: "implementation",
+    model: "gpt-test",
+    task: { id: "git-parser-exact-bytes" },
+    contract,
+    processRunner: async ({ args }) => {
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(outputPath, JSON.stringify(accepted), "utf8");
+      return completed();
+    },
+    patchParser: async ({ patch }) => {
+      parsedPatch = patch;
+    },
+  });
+  assert.equal(result.status, "ACCEPT");
+  assert.equal(parsedPatch, accepted.patch);
+  assert.equal(result.output.patch, parsedPatch);
+});
+
 test("native implementation admission applies the contract ceiling to raw bytes", async () => {
   const rawPatch = accepted.patch.replaceAll("\n", "\r\n");
   const tightContract = {

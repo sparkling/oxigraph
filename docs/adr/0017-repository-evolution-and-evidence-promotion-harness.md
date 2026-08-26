@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-26
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -14,7 +14,10 @@
   ADR
 - Update note: implementation preserves human-only promotion and the
   committed G0-G4 task graph without treating Ruflo rows, installed packages,
-  generic scores, or application receipts as semantic qualification
+  generic scores, or application receipts as semantic qualification. Native
+  patch admission now also requires the exact canonical bytes to pass a
+  bounded Git parser before an implementation or repair output can be labelled
+  accepted; sealed evaluator reconstruction remains the applicability authority
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),

@@ -19,6 +19,8 @@ import {
 
 const MAX_TASK_BYTES = 2_097_152;
 const MAX_OUTPUT_BYTES = 1_048_576;
+const PATCH_PARSE_TIMEOUT_MS = 30_000;
+const PATCH_PARSE_OUTPUT_BYTES = 65_536;
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -50,6 +52,33 @@ function inconclusiveResult({ provider, model, role, outcome, invocation, failur
     invocation,
     failure,
   });
+}
+
+async function parseCandidatePatchWithGit({ patch, cwd, signal }) {
+  const outcome = await runBoundedProcess({
+    executable: "/usr/bin/git",
+    args: ["apply", "--numstat", "--whitespace=error", "-"],
+    cwd,
+    environment: Object.freeze({
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+      HOME: cwd,
+      LANG: "C.UTF-8",
+      LC_ALL: "C.UTF-8",
+      PATH: "/usr/bin:/bin",
+    }),
+    stdin: patch,
+    timeoutMs: PATCH_PARSE_TIMEOUT_MS,
+    maxOutputBytes: PATCH_PARSE_OUTPUT_BYTES,
+    signal,
+  });
+  if (outcome.disposition !== "completed" || outcome.exitCode !== 0) {
+    const diagnostic = `${outcome.stderr}\n${outcome.stdout}`.trim().slice(0, 4096);
+    throw new Error(
+      `candidate patch is not accepted by git's parser (${outcome.disposition}, exit ${outcome.exitCode}): ${diagnostic}`,
+    );
+  }
 }
 
 function cancellationError() {
@@ -115,6 +144,7 @@ export async function runNativeWorker({
   maxOutputBytes = 1_048_576,
   signal,
   processRunner = runBoundedProcess,
+  patchParser = parseCandidatePatchWithGit,
 }) {
   if (signal?.aborted) throw cancellationError();
   if (provider !== "codex" && provider !== "claude") {
@@ -158,6 +188,9 @@ export async function runNativeWorker({
   }
   if (["implementation", "repair"].includes(role) && contract === undefined) {
     throw new Error(`${role} workers require a trusted path contract`);
+  }
+  if (typeof patchParser !== "function") {
+    throw new Error("native worker patch parser must be callable");
   }
   const outputRoot = await mkdtemp(join(tmpdir(), "oxigraph-worker-"));
   try {
@@ -259,6 +292,7 @@ export async function runNativeWorker({
         validateCandidatePatchSize(output.patch, contract);
         const canonicalPatch = canonicalizeCandidatePatch(output.patch);
         validateCandidatePatch(canonicalPatch, contract);
+        await patchParser({ patch: canonicalPatch, cwd: outputRoot, signal });
         output = Object.freeze({ ...output, patch: canonicalPatch });
       } catch (error) {
         return inconclusiveResult({
