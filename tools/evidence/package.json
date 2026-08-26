@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test *.test.mjs",
-    "verify:adr": "node ruflo-adr-dry-run.mjs",
+    "verify:adr": "node --test ruflo-adr-dry-run.integration.mjs",
     "verify": "node verify-programme.mjs --source-only",
     "verify:full": "node verify-programme.mjs --full"
   }
