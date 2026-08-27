@@ -11,11 +11,17 @@ import {
 } from "../src/qualification/cli.mjs";
 
 const execute = promisify(execFile);
-const executable = new URL("../bin/oxigraph-g1.7-qualification.mjs", import.meta.url);
+const executable = new URL(
+  "../bin/oxigraph-g1.7-qualification.mjs",
+  import.meta.url,
+);
 
 test("dedicated G1.7 parser accepts only preflight, run, and verify", () => {
   assert.deepEqual(parseG17CliArgs(["preflight"]), { action: "preflight" });
-  assert.deepEqual(parseG17CliArgs(["run"]), { action: "run", runId: undefined });
+  assert.deepEqual(parseG17CliArgs(["run"]), {
+    action: "run",
+    runId: undefined,
+  });
   assert.deepEqual(parseG17CliArgs(["run", "--run-id", "run-00000001"]), {
     action: "run",
     runId: "run-00000001",
@@ -45,11 +51,14 @@ test("dedicated G1.7 CLI rejects malformed input with operational exit 2", async
     ["verify"],
     ["run", "--contract", "contract.json"],
   ]) {
-    await assert.rejects(execute(process.execPath, [executable.pathname, ...args]), (error) => {
-      assert.equal(error.code, 2);
-      assert.match(error.stderr, /G1\.7 qualification usage/u);
-      return true;
-    });
+    await assert.rejects(
+      execute(process.execPath, [executable.pathname, ...args]),
+      (error) => {
+        assert.equal(error.code, 2);
+        assert.match(error.stderr, /G1\.7 qualification usage/u);
+        return true;
+      },
+    );
   }
 });
 
@@ -155,7 +164,9 @@ test("package exposes scripts only; application bin and latest dependency surfac
   assert.deepEqual(lock.packages[""].bin, manifest.bin);
   assert.deepEqual(lock.packages[""].dependencies, manifest.dependencies);
   assert.equal(Object.keys(manifest.dependencies).length, 5);
-  assert.ok(Object.values(manifest.dependencies).every((value) => value === "latest"));
+  assert.ok(
+    Object.values(manifest.dependencies).every((value) => value === "latest"),
+  );
 });
 
 test("dedicated CLI source has no application, Router, publish, or replay imports", async () => {

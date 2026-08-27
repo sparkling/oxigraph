@@ -49,7 +49,9 @@ export function decodeReviewedG17V4Contract({
   } catch (error) {
     throw new Error(`contract bytes are invalid JSON: ${error.message}`);
   }
-  if (!contractBytes.equals(Buffer.from(`${canonicalJson(contract)}\n`, "utf8"))) {
+  if (
+    !contractBytes.equals(Buffer.from(`${canonicalJson(contract)}\n`, "utf8"))
+  ) {
     throw new Error("reviewed v4 contract bytes are not canonical");
   }
   if (

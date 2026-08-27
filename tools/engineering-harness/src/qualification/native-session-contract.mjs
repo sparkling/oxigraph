@@ -8,9 +8,7 @@ import {
   replayG17NativeLaneOutputContract,
 } from "./native-compatibility-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
-import {
-  decodeReviewedG17V4Contract,
-} from "./contract-identity.mjs";
+import { decodeReviewedG17V4Contract } from "./contract-identity.mjs";
 
 export const G17_NATIVE_SESSION_CONFIGURATION_SCHEMA =
   "oxigraph.g1.7-native-session-configuration/v4";
@@ -31,8 +29,7 @@ const TARGET_DIRECTORY = "/state/target";
 const MAX_CONTRACT_BYTES = 1024 * 1024;
 const CURRENT_PLATFORM_SCHEMA =
   "oxigraph.g1.7-linux-native-platform-closure/v4";
-const CURRENT_POLICY_SCHEMA =
-  "oxigraph.g1.7-linux-native-isolation-policy/v4";
+const CURRENT_POLICY_SCHEMA = "oxigraph.g1.7-linux-native-isolation-policy/v4";
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 const SIGNALS = new Set([
   "SIGABRT",
@@ -133,11 +130,15 @@ function roleLogicalPath(roles, id, expectedRoot) {
     role.path.length === 0 ||
     role.path.startsWith("/") ||
     role.path.includes("\\") ||
-    role.path.split("/").some((part) => part.length === 0 || part === "." || part === "..")
+    role.path
+      .split("/")
+      .some((part) => part.length === 0 || part === "." || part === "..")
   ) {
     fail(`platform role ${id} path is invalid`);
   }
-  return expectedRoot === "toolchain" ? `/toolchain/${role.path}` : `/${role.path}`;
+  return expectedRoot === "toolchain"
+    ? `/toolchain/${role.path}`
+    : `/${role.path}`;
 }
 
 function reviewedLimits(contract) {
@@ -157,7 +158,10 @@ export function g17NativeSessionCommands({ contractBytes, contractSha256 }) {
     const reviewed = decodeReviewedContract({ contractBytes, contractSha256 });
     return deepFreeze(
       reviewed.compatibility.native.flatMap((lane) => {
-        const executionArgv = g17NativeExecutionArgv(lane.argv, TARGET_DIRECTORY);
+        const executionArgv = g17NativeExecutionArgv(
+          lane.argv,
+          TARGET_DIRECTORY,
+        );
         return [
           {
             name: `inventory:${lane.id}`,
@@ -249,7 +253,9 @@ function resultCeiling(commands) {
   );
   const maximum = Math.ceil(capturedBytes / 3) * 4 + 2_097_152;
   if (maximum < 65_536 || maximum > G17_NATIVE_SESSION_MAX_BYTES) {
-    fail("reviewed command output cannot fit the native-session artifact ceiling");
+    fail(
+      "reviewed command output cannot fit the native-session artifact ceiling",
+    );
   }
   return maximum;
 }
@@ -276,13 +282,15 @@ export function createG17NativeSessionConfiguration(input) {
       cloneCanonical(input.platform, "platform binding"),
       "platform binding",
     );
-    if (platform.schema !== CURRENT_PLATFORM_SCHEMA) fail("platform generation is not current");
+    if (platform.schema !== CURRENT_PLATFORM_SCHEMA)
+      fail("platform generation is not current");
     digest(platform.manifestSha256, "platform manifest");
     const policy = plainObject(
       cloneCanonical(input.policy, "isolation policy binding"),
       "isolation policy binding",
     );
-    if (policy.schema !== CURRENT_POLICY_SCHEMA) fail("isolation policy generation is not current");
+    if (policy.schema !== CURRENT_POLICY_SCHEMA)
+      fail("isolation policy generation is not current");
     digest(policy.sha256, "isolation policy");
     digest(input.workspaceProjectionSha256, "workspace projection");
     const requestedLimits = plainObject(
@@ -337,12 +345,15 @@ export function createG17NativeSessionConfiguration(input) {
 function strictBase64(value, label) {
   if (
     typeof value !== "string" ||
-    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
+      value,
+    )
   ) {
     fail(`${label} is not canonical base64`);
   }
   const bytes = Buffer.from(value, "base64");
-  if (bytes.toString("base64") !== value) fail(`${label} is not canonical base64`);
+  if (bytes.toString("base64") !== value)
+    fail(`${label} is not canonical base64`);
   return bytes;
 }
 
@@ -362,7 +373,10 @@ function boundedRawText(value, label, maximumBytes) {
 }
 
 function parseSingleIdMap(text, label) {
-  const rows = text.trim().split("\n").map((line) => line.trim().split(/\s+/u));
+  const rows = text
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/u));
   if (
     rows.length !== 1 ||
     rows[0].length !== 3 ||
@@ -390,7 +404,9 @@ function validateNamespaces(value, label) {
     uts: "uts",
   };
   for (const [key, tag] of Object.entries(tags)) {
-    if (!new RegExp(`^${tag}:\\[([1-9][0-9]*)\\]$`, "u").test(value[key] ?? "")) {
+    if (
+      !new RegExp(`^${tag}:\\[([1-9][0-9]*)\\]$`, "u").test(value[key] ?? "")
+    ) {
       fail(`${label} ${key} identity is invalid`);
     }
   }
@@ -434,7 +450,10 @@ function assertZeroCommandAuthority(status, label) {
   }
   for (const key of ["CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"]) {
     const value = status.get(key);
-    if (!/^[0-9a-fA-F]{16}$/u.test(value ?? "") || BigInt(`0x${value}`) !== 0n) {
+    if (
+      !/^[0-9a-fA-F]{16}$/u.test(value ?? "") ||
+      BigInt(`0x${value}`) !== 0n
+    ) {
       fail(`${label} retains command capability authority`);
     }
   }
@@ -459,7 +478,13 @@ function validateNormalizedMounts(value, label) {
     "/runner/seccomp-launcher.py",
     "/result/session.json",
   ];
-  const requiredReadWrite = ["/proc", "/state", "/state/home", "/state/tmp", "/state/target"];
+  const requiredReadWrite = [
+    "/proc",
+    "/state",
+    "/state/home",
+    "/state/tmp",
+    "/state/target",
+  ];
   if (!Array.isArray(value) || value.length < 14 || value.length > 512) {
     fail(`${label} mount inventory is not bounded`);
   }
@@ -497,7 +522,12 @@ function validateNormalizedMounts(value, label) {
     return mount;
   });
   const sorted = [...mounts].sort((left, right) =>
-    left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0);
+    left.destination < right.destination
+      ? -1
+      : left.destination > right.destination
+        ? 1
+        : 0,
+  );
   if (
     !isDeepStrictEqual(mounts, sorted) ||
     new Set(mounts.map(({ mountId }) => mountId)).size !== mounts.length ||
@@ -507,7 +537,8 @@ function validateNormalizedMounts(value, label) {
   }
   const uniqueMount = (destination) => {
     const matches = mounts.filter((mount) => mount.destination === destination);
-    if (matches.length !== 1) fail(`${label} does not contain one ${destination} mount`);
+    if (matches.length !== 1)
+      fail(`${label} does not contain one ${destination} mount`);
     return matches[0];
   };
   for (const destination of requiredReadOnly) {
@@ -547,13 +578,13 @@ function validateNormalizedMounts(value, label) {
     "/state/home",
     "/state/target",
     "/state/tmp",
-      "/toolchain",
-      "/workspace",
-      "/cargo-home",
-      "/control/cgroup2",
-      "/runner/contained-session-worker.mjs",
-      "/runner/seccomp-launcher.py",
-      "/result/session.json",
+    "/toolchain",
+    "/workspace",
+    "/cargo-home",
+    "/control/cgroup2",
+    "/runner/contained-session-worker.mjs",
+    "/runner/seccomp-launcher.py",
+    "/result/session.json",
   ]);
   if (mounts.some(({ destination }) => !allowedDestinations.has(destination))) {
     fail(`${label} contains an unreviewed mount destination`);
@@ -570,19 +601,23 @@ function validateNormalizedMounts(value, label) {
     ["/result/session.json", "result"],
   ]);
   for (const mount of mounts) {
-    const expectedRole = mount.destination === "/state" ||
-        mount.destination.startsWith("/state/")
-      ? "state"
-      : mount.destination === "/dev" || mount.destination.startsWith("/dev/")
-        ? "device"
-        : roles.get(mount.destination);
-    const expectedSubpath = new Map([
-      ["/state", "/"],
-      ["/state/home", "/home"],
-      ["/state/target", "/target"],
-      ["/state/tmp", "/tmp"],
-    ]).get(mount.destination) ?? null;
-    if (mount.sourceRole !== expectedRole || mount.sourceSubpath !== expectedSubpath) {
+    const expectedRole =
+      mount.destination === "/state" || mount.destination.startsWith("/state/")
+        ? "state"
+        : mount.destination === "/dev" || mount.destination.startsWith("/dev/")
+          ? "device"
+          : roles.get(mount.destination);
+    const expectedSubpath =
+      new Map([
+        ["/state", "/"],
+        ["/state/home", "/home"],
+        ["/state/target", "/target"],
+        ["/state/tmp", "/tmp"],
+      ]).get(mount.destination) ?? null;
+    if (
+      mount.sourceRole !== expectedRole ||
+      mount.sourceSubpath !== expectedSubpath
+    ) {
       fail(`${label} ${mount.destination} source role or subpath drifted`);
     }
   }
@@ -630,8 +665,12 @@ function validateNormalizedMounts(value, label) {
 
 function validateNetwork(devices, ipv4, ipv6, addresses, label) {
   const deviceLines = devices.trimEnd().split("\n");
-  if (deviceLines.length < 3 || deviceLines.slice(2).some((line) =>
-    line.slice(0, line.indexOf(":"))?.trim() !== "lo")) {
+  if (
+    deviceLines.length < 3 ||
+    deviceLines
+      .slice(2)
+      .some((line) => line.slice(0, line.indexOf(":"))?.trim() !== "lo")
+  ) {
     fail(`${label} exposes a non-loopback network device`);
   }
   const ipv4Lines = ipv4.trimEnd().split("\n");
@@ -719,8 +758,16 @@ function validateRawIsolationProcess(record, label, requested) {
       `${label} network devices`,
       16_384,
     ),
-    ipv4Routes: boundedRawText(record.ipv4RoutesBase64, `${label} IPv4 routes`, 262_144),
-    ipv6Routes: boundedRawText(record.ipv6RoutesBase64, `${label} IPv6 routes`, 262_144),
+    ipv4Routes: boundedRawText(
+      record.ipv4RoutesBase64,
+      `${label} IPv4 routes`,
+      262_144,
+    ),
+    ipv6Routes: boundedRawText(
+      record.ipv6RoutesBase64,
+      `${label} IPv6 routes`,
+      262_144,
+    ),
     ipv6Addresses: boundedRawText(
       record.ipv6AddressesBase64,
       `${label} IPv6 addresses`,
@@ -780,13 +827,21 @@ function validateRawIsolationProcess(record, label, requested) {
   );
   const cgroup = validateSemanticCgroup(record.cgroup, `${label} cgroup`);
   validateLimitsText(raw.limits, requested, `${label} limits`);
-  exactUnsignedText(cgroupFiles.memoryMax, requested.residentBytes, `${label} memory.max`);
+  exactUnsignedText(
+    cgroupFiles.memoryMax,
+    requested.residentBytes,
+    `${label} memory.max`,
+  );
   exactUnsignedText(
     cgroupFiles.memorySwapMax,
     requested.memorySwapBytes,
     `${label} memory.swap.max`,
   );
-  exactUnsignedText(cgroupFiles.tasksMax, requested.tasksMax, `${label} pids.max`);
+  exactUnsignedText(
+    cgroupFiles.tasksMax,
+    requested.tasksMax,
+    `${label} pids.max`,
+  );
   const tasksCurrent = Number(cgroupFiles.tasksCurrent.trim());
   if (
     !/^\d+$/u.test(cgroupFiles.tasksCurrent.trim()) ||
@@ -852,7 +907,10 @@ function validateStateObservation(value, requested, mounts, label) {
     ["target", "/state/target"],
     ["temp", "/state/tmp"],
   ];
-  if (!Array.isArray(value.anchors) || value.anchors.length !== definitions.length) {
+  if (
+    !Array.isArray(value.anchors) ||
+    value.anchors.length !== definitions.length
+  ) {
     fail(`${label} state-anchor inventory is not exact`);
   }
   for (const [index, anchor] of value.anchors.entries()) {
@@ -941,7 +999,10 @@ function verifyIsolationObservations(value, requested, stateBytes) {
     }
   }
   if (
-    !isDeepStrictEqual(value.beforeCommands.namespaces, value.afterCommands.namespaces) ||
+    !isDeepStrictEqual(
+      value.beforeCommands.namespaces,
+      value.afterCommands.namespaces,
+    ) ||
     !isDeepStrictEqual(before.mounts, after.mounts) ||
     !isDeepStrictEqual(before.cgroup, after.cgroup) ||
     before.cgroupFiles.memoryMax !== after.cgroupFiles.memoryMax ||
@@ -977,8 +1038,10 @@ function verifyIsolationObservations(value, requested, stateBytes) {
   );
   if (
     workerPid < 2 ||
-    statusInteger(before.status, "PPid", "worker before-commands status") !== 1 ||
-    statusInteger(after.status, "Pid", "worker after-commands status") !== workerPid ||
+    statusInteger(before.status, "PPid", "worker before-commands status") !==
+      1 ||
+    statusInteger(after.status, "Pid", "worker after-commands status") !==
+      workerPid ||
     statusInteger(after.status, "PPid", "worker after-commands status") !== 1
   ) {
     fail("worker PID-namespace topology is contradictory");
@@ -1004,7 +1067,10 @@ function verifyIsolationObservations(value, requested, stateBytes) {
   if (used > BigInt(Number.MAX_SAFE_INTEGER) || Number(used) !== stateBytes) {
     fail("session state usage differs from the final tmpfs observation");
   }
-  if (!Array.isArray(value.finalProcesses) || value.finalProcesses.length !== 2) {
+  if (
+    !Array.isArray(value.finalProcesses) ||
+    value.finalProcesses.length !== 2
+  ) {
     fail("final process snapshot is not exact");
   }
   const expectedPids = [1, workerPid].sort((left, right) => left - right);
@@ -1014,10 +1080,17 @@ function verifyIsolationObservations(value, requested, stateBytes) {
       fail("final process snapshot retains an untrusted process");
     }
     const status = parseStatus(
-      boundedRawText(processRecord.statusBase64, `final process ${index} status`, 65_536),
+      boundedRawText(
+        processRecord.statusBase64,
+        `final process ${index} status`,
+        65_536,
+      ),
       `final process ${index} status`,
     );
-    if (statusInteger(status, "Pid", `final process ${index} status`) !== processRecord.pid) {
+    if (
+      statusInteger(status, "Pid", `final process ${index} status`) !==
+      processRecord.pid
+    ) {
       fail("final process snapshot identity is contradictory");
     }
   }
@@ -1181,14 +1254,24 @@ function validateLaunchAttestation({
     value.cgroup,
     `command ${expected.name} cgroup`,
   );
-  if (limitsText !== worker.raw.limits || !isDeepStrictEqual(cgroup, worker.cgroup)) {
-    fail(`command ${expected.name} limits or cgroup membership differs from worker`);
+  if (
+    limitsText !== worker.raw.limits ||
+    !isDeepStrictEqual(cgroup, worker.cgroup)
+  ) {
+    fail(
+      `command ${expected.name} limits or cgroup membership differs from worker`,
+    );
   }
   const status = parseStatus(statusText, `command ${expected.name} status`);
   assertZeroCommandAuthority(status, `command ${expected.name} status`);
   if (
-    statusInteger(status, "TracerPid", `command ${expected.name} status`) !== 0 ||
-    statusInteger(status, "Seccomp_filters", `command ${expected.name} status`) !==
+    statusInteger(status, "TracerPid", `command ${expected.name} status`) !==
+      0 ||
+    statusInteger(
+      status,
+      "Seccomp_filters",
+      `command ${expected.name} status`,
+    ) !==
       statusInteger(worker.status, "Seccomp_filters", "worker status") + 1
   ) {
     fail(`command ${expected.name} tracing or seccomp-filter count drifted`);
@@ -1200,7 +1283,10 @@ function validateLaunchAttestation({
   );
   const processIds = Object.fromEntries(
     Object.entries(value.process).map(([key, item]) => {
-      const parsed = decimalString(item, `command ${expected.name} process ${key}`);
+      const parsed = decimalString(
+        item,
+        `command ${expected.name} process ${key}`,
+      );
       if (parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
         fail(`command ${expected.name} process ${key} is too large`);
       }
@@ -1212,10 +1298,14 @@ function validateLaunchAttestation({
     processIds.parentPid !== workerPid ||
     processIds.processGroup !== processIds.pid ||
     processIds.session !== processIds.pid ||
-    statusInteger(status, "Pid", `command ${expected.name} status`) !== processIds.pid ||
-    statusInteger(status, "PPid", `command ${expected.name} status`) !== workerPid ||
-    statusLastInteger(status, "NSpgid", `command ${expected.name} status`) !== processIds.pid ||
-    statusLastInteger(status, "NSsid", `command ${expected.name} status`) !== processIds.pid
+    statusInteger(status, "Pid", `command ${expected.name} status`) !==
+      processIds.pid ||
+    statusInteger(status, "PPid", `command ${expected.name} status`) !==
+      workerPid ||
+    statusLastInteger(status, "NSpgid", `command ${expected.name} status`) !==
+      processIds.pid ||
+    statusLastInteger(status, "NSsid", `command ${expected.name} status`) !==
+      processIds.pid
   ) {
     fail(`command ${expected.name} process/session topology is contradictory`);
   }
@@ -1289,9 +1379,13 @@ function decodedCommandRecord(record, expected, index, isolation, environment) {
   if (
     record.name !== expected.name ||
     !isDeepStrictEqual(record.logicalArgv, expected.argv) ||
-    !["completed", "timeout", "timeout-unreaped", "output-limit", "output-limit-unreaped"].includes(
-      record.disposition,
-    ) ||
+    ![
+      "completed",
+      "timeout",
+      "timeout-unreaped",
+      "output-limit",
+      "output-limit-unreaped",
+    ].includes(record.disposition) ||
     !Number.isSafeInteger(record.durationMs) ||
     record.durationMs < 0 ||
     record.durationMs > expected.timeoutMs ||
@@ -1419,9 +1513,9 @@ function verifySessionValue({
   const errorReasonCodes = new Set(["infrastructure", "result-too-large"]);
   if (
     value.reason !== null &&
-    (!commandReasonCodes.has(value.reason.code) &&
-      !errorReasonCodes.has(value.reason.code) &&
-      value.reason.code !== "final-live-descendants")
+    !commandReasonCodes.has(value.reason.code) &&
+    !errorReasonCodes.has(value.reason.code) &&
+    value.reason.code !== "final-live-descendants"
   ) {
     fail("session reason code is not reviewed");
   }
@@ -1459,7 +1553,8 @@ function verifySessionValue({
       index,
       isolationReplay,
       expectedConfiguration.environment,
-    ));
+    ),
+  );
   if (
     decoded.reduce((total, command) => total + command.value.durationMs, 0) >
     value.durationMs + decoded.length
@@ -1473,40 +1568,50 @@ function verifySessionValue({
     if (record.disposition !== "completed") {
       return { outcome: "incomplete", code: `command-${record.disposition}` };
     }
-    if (record.signal !== null) return { outcome: "fail", code: "command-signal" };
-    if (record.exitCode !== 0) return { outcome: "fail", code: "command-exit-nonzero" };
+    if (record.signal !== null)
+      return { outcome: "fail", code: "command-signal" };
+    if (record.exitCode !== 0)
+      return { outcome: "fail", code: "command-exit-nonzero" };
     return null;
   };
-  const commandClassifications = decoded.map(({ value: record }) => classifyCommand(record));
-  const firstTerminal = commandClassifications.findIndex((item) => item !== null);
+  const commandClassifications = decoded.map(({ value: record }) =>
+    classifyCommand(record),
+  );
+  const firstTerminal = commandClassifications.findIndex(
+    (item) => item !== null,
+  );
   if (
     value.outcome !== "error" &&
-    ((firstTerminal < 0 && decoded.length !== expectedConfiguration.commands.length) ||
+    ((firstTerminal < 0 &&
+      decoded.length !== expectedConfiguration.commands.length) ||
       (firstTerminal >= 0 && firstTerminal !== decoded.length - 1))
   ) {
     fail("session command prefix did not stop at its first non-success");
   }
-  const terminal = firstTerminal < 0 ? null : commandClassifications[firstTerminal];
+  const terminal =
+    firstTerminal < 0 ? null : commandClassifications[firstTerminal];
   const last = decoded.at(-1)?.value;
-  const expectedCommandReason = terminal === null
-    ? null
-    : { code: terminal.code, command: last.name };
+  const expectedCommandReason =
+    terminal === null ? null : { code: terminal.code, command: last.name };
   const finalContainment =
     value.reason?.code === "final-live-descendants" &&
     value.reason.command === null;
   if (
     (value.outcome === "pass" &&
-      (value.reason !== null || terminal !== null || value.finalDescendantsObserved !== 0)) ||
+      (value.reason !== null ||
+        terminal !== null ||
+        value.finalDescendantsObserved !== 0)) ||
     (value.outcome === "fail" &&
       (terminal?.outcome !== "fail" ||
         !isDeepStrictEqual(value.reason, expectedCommandReason) ||
         value.finalDescendantsObserved !== 0)) ||
     (value.outcome === "incomplete" &&
       (finalContainment
-        ? (value.finalDescendantsObserved < 1 || terminal?.outcome === "incomplete")
-        : (terminal?.outcome !== "incomplete" ||
+        ? value.finalDescendantsObserved < 1 ||
+          terminal?.outcome === "incomplete"
+        : terminal?.outcome !== "incomplete" ||
           !isDeepStrictEqual(value.reason, expectedCommandReason) ||
-          value.finalDescendantsObserved !== 0))) ||
+          value.finalDescendantsObserved !== 0)) ||
     (value.outcome !== "incomplete" && finalContainment)
   ) {
     fail("session typed outcome or reason contradicts command evidence");
@@ -1561,7 +1666,10 @@ function verifySessionValue({
     schema: G17_NATIVE_SESSION_PROJECTION_SCHEMA,
     status: value.outcome.toUpperCase(),
     runId: expectedConfiguration.runId,
-    bindings: cloneCanonical(expectedConfiguration.bindings, "session bindings"),
+    bindings: cloneCanonical(
+      expectedConfiguration.bindings,
+      "session bindings",
+    ),
     artifact: {
       name: G17_NATIVE_SESSION_ARTIFACT_NAME,
       bytes: bytes.length,
@@ -1600,7 +1708,8 @@ export function verifyG17NativeSessionArtifact({
       fail(`session artifact is invalid JSON: ${error.message}`);
     }
     const expectedBytes = Buffer.from(`${canonicalJson(value)}\n`, "utf8");
-    if (!bytes.equals(expectedBytes)) fail("session artifact is not canonical JSON");
+    if (!bytes.equals(expectedBytes))
+      fail("session artifact is not canonical JSON");
     return verifySessionValue({
       value,
       bytes,

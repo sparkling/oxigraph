@@ -147,17 +147,26 @@ test("native session configuration is derived exactly from contract v4 and platf
   );
   for (const [index, command] of commands.entries()) {
     assert.equal(command.argv[0], "cargo");
-    assert.equal(command.argv.filter((value) => value === "--target-dir").length, 1);
+    assert.equal(
+      command.argv.filter((value) => value === "--target-dir").length,
+      1,
+    );
     assert.equal(
       command.argv[command.argv.indexOf("--target-dir") + 1],
       "/state/target",
     );
     assert.equal(command.argv.includes("--locked"), true);
     assert.equal(command.argv.includes("--offline"), true);
-    assert.equal(command.name.startsWith(index % 2 === 0 ? "inventory:" : "execution:"), true);
+    assert.equal(
+      command.name.startsWith(index % 2 === 0 ? "inventory:" : "execution:"),
+      true,
+    );
   }
 
-  const environment = g17NativeSessionEnvironment(platform, limits.cargoBuildJobs);
+  const environment = g17NativeSessionEnvironment(
+    platform,
+    limits.cargoBuildJobs,
+  );
   assert.equal(environment.CC, "/usr/bin/x86_64-linux-gnu-gcc-13");
   assert.equal(environment.CXX, "/usr/bin/x86_64-linux-gnu-g++-13");
   assert.equal(environment.AR, "/usr/bin/x86_64-linux-gnu-ar");
@@ -177,13 +186,28 @@ test("native session configuration is derived exactly from contract v4 and platf
   assert.deepEqual(configuration.commands, commands);
   assert.deepEqual(configuration.environment, environment);
   assert.deepEqual(configuration.requestedLimits, limits);
-  assert.equal(configuration.bindings.contractSha256, sealedContract.contractSha256);
-  assert.equal(configuration.bindings.platformManifestSha256, platform.manifestSha256);
+  assert.equal(
+    configuration.bindings.contractSha256,
+    sealedContract.contractSha256,
+  );
+  assert.equal(
+    configuration.bindings.platformManifestSha256,
+    platform.manifestSha256,
+  );
   assert.equal(configuration.bindings.policySha256, policy.sha256);
   assert.equal(configuration.bindings.workspaceProjectionSha256, digest("c"));
-  assert.equal(configuration.bindings.environmentSha256, canonicalSha256(environment));
-  assert.equal(configuration.bindings.logicalArgvSha256, canonicalSha256(commands));
-  assert.equal(configuration.bindings.requestedLimitsSha256, canonicalSha256(limits));
+  assert.equal(
+    configuration.bindings.environmentSha256,
+    canonicalSha256(environment),
+  );
+  assert.equal(
+    configuration.bindings.logicalArgvSha256,
+    canonicalSha256(commands),
+  );
+  assert.equal(
+    configuration.bindings.requestedLimitsSha256,
+    canonicalSha256(limits),
+  );
   assert.ok(configuration.maxResultBytes > 65_536);
   assert.ok(configuration.maxResultBytes <= 16 * 1024 * 1024);
 });
@@ -197,15 +221,25 @@ test("native session configuration rejects drift from the reviewed contract", ()
   };
   const limits = requestedLimits(sealedContract.contract);
   for (const mutate of [
-    (input) => { input.contractSha256 = digest("d"); },
+    (input) => {
+      input.contractSha256 = digest("d");
+    },
     (input) => {
       input.contractBytes = Buffer.from(input.contractBytes);
       input.contractBytes[0] ^= 1;
     },
-    (input) => { input.platform.manifestSha256 = "not-a-digest"; },
-    (input) => { input.policy.schema = "oxigraph.g1.7-linux-native-isolation-policy/v1"; },
-    (input) => { input.requestedLimits.cargoBuildJobs += 1; },
-    (input) => { input.workspaceProjectionSha256 = "not-a-digest"; },
+    (input) => {
+      input.platform.manifestSha256 = "not-a-digest";
+    },
+    (input) => {
+      input.policy.schema = "oxigraph.g1.7-linux-native-isolation-policy/v1";
+    },
+    (input) => {
+      input.requestedLimits.cargoBuildJobs += 1;
+    },
+    (input) => {
+      input.workspaceProjectionSha256 = "not-a-digest";
+    },
   ]) {
     const input = {
       runId: "g17-native-session-fixture",
@@ -226,7 +260,10 @@ test("native session configuration rejects drift from the reviewed contract", ()
 
 test("native session replay stays process- and filesystem-free", async () => {
   const source = await readFile(
-    new URL("../src/qualification/native-session-contract.mjs", import.meta.url),
+    new URL(
+      "../src/qualification/native-session-contract.mjs",
+      import.meta.url,
+    ),
     "utf8",
   );
   for (const forbidden of [
@@ -250,7 +287,10 @@ test("native session artifact independently replays all six raw Cargo records", 
     contractSha256: sealedContract.contractSha256,
   });
   assert.equal(created.artifact.name, G17_NATIVE_SESSION_ARTIFACT_NAME);
-  assert.equal(JSON.parse(created.artifact.bytes).schema, G17_NATIVE_SESSION_RESULT_SCHEMA);
+  assert.equal(
+    JSON.parse(created.artifact.bytes).schema,
+    G17_NATIVE_SESSION_RESULT_SCHEMA,
+  );
   assert.equal(
     JSON.parse(created.artifact.bytes).isolation.schema,
     G17_NATIVE_SESSION_ISOLATION_SCHEMA,
@@ -263,7 +303,10 @@ test("native session artifact independently replays all six raw Cargo records", 
     created.projection.effectiveIsolation.normalizedMountTopologyObserved,
     true,
   );
-  assert.equal(created.projection.effectiveIsolation.cgroupMembershipMatched, true);
+  assert.equal(
+    created.projection.effectiveIsolation.cgroupMembershipMatched,
+    true,
+  );
   assert.equal(
     Object.hasOwn(created.projection.effectiveIsolation, "cgroupPath"),
     false,
@@ -322,15 +365,23 @@ test("native session replay rejects canonical rehashing of command and binding l
     contractSha256: sealedContract.contractSha256,
   });
   for (const mutate of [
-    (value) => { value.configuration.bindings.platformManifestSha256 = digest("e"); },
-    (value) => { value.commands.reverse(); },
-    (value) => { value.durationMs = 1; },
+    (value) => {
+      value.configuration.bindings.platformManifestSha256 = digest("e");
+    },
+    (value) => {
+      value.commands.reverse();
+    },
+    (value) => {
+      value.durationMs = 1;
+    },
     (value) => {
       const stdout = Buffer.from("invented_test: test\n", "utf8");
       value.commands[0].stdoutBase64 = stdout.toString("base64");
       value.commands[0].stdoutSha256 = sha256(stdout);
     },
-    (value) => { value.commands[1].descendantsObserved = 1; },
+    (value) => {
+      value.commands[1].descendantsObserved = 1;
+    },
     (value) => {
       value.commands[0].exitCode = null;
       value.commands[0].signal = "SIGFAKE";
@@ -340,22 +391,27 @@ test("native session replay rejects canonical rehashing of command and binding l
     mutate(value);
     const bytes = Buffer.from(`${canonicalJson(value)}\n`, "utf8");
     assert.throws(
-      () => verifyG17NativeSessionArtifact({
-        bytes,
-        expectedConfiguration,
-        contractBytes: sealedContract.bytes,
-        contractSha256: sealedContract.contractSha256,
-      }),
+      () =>
+        verifyG17NativeSessionArtifact({
+          bytes,
+          expectedConfiguration,
+          contractBytes: sealedContract.bytes,
+          contractSha256: sealedContract.contractSha256,
+        }),
       /G1\.7 native session contract/u,
     );
   }
   assert.throws(
-    () => verifyG17NativeSessionArtifact({
-      bytes: Buffer.from(JSON.stringify(JSON.parse(created.artifact.bytes)), "utf8"),
-      expectedConfiguration,
-      contractBytes: sealedContract.bytes,
-      contractSha256: sealedContract.contractSha256,
-    }),
+    () =>
+      verifyG17NativeSessionArtifact({
+        bytes: Buffer.from(
+          JSON.stringify(JSON.parse(created.artifact.bytes)),
+          "utf8",
+        ),
+        expectedConfiguration,
+        contractBytes: sealedContract.bytes,
+        contractSha256: sealedContract.contractSha256,
+      }),
     /canonical/u,
   );
 });
@@ -394,7 +450,8 @@ test("native session replay rejects coherently rehashed isolation and launch lie
             ? -1
             : left.destination > right.destination
               ? 1
-              : 0);
+              : 0,
+        );
       }
     },
     (value) => {
@@ -518,7 +575,9 @@ test("native session replay rejects coherently rehashed isolation and launch lie
         "utf8",
       ).toString("base64");
     },
-    (value) => { value.isolation.stateAfter.anchors[0].owner = "1"; },
+    (value) => {
+      value.isolation.stateAfter.anchors[0].owner = "1";
+    },
     (value) => {
       value.isolation.stateBefore.anchors[0].mountId = "99";
       value.isolation.stateAfter.anchors[0].mountId = "99";
@@ -532,7 +591,9 @@ test("native session replay rejects coherently rehashed isolation and launch lie
           .toString("utf8")
           .replace("Seccomp:\t0", "Seccomp:\t2")
           .replace("Seccomp_filters:\t0", "Seccomp_filters:\t1");
-        observation.statusBase64 = Buffer.from(status, "utf8").toString("base64");
+        observation.statusBase64 = Buffer.from(status, "utf8").toString(
+          "base64",
+        );
       }
     },
     (value) => {
@@ -541,52 +602,62 @@ test("native session replay rejects coherently rehashed isolation and launch lie
         statusBase64: Buffer.from("Pid:\t99\n", "utf8").toString("base64"),
       });
     },
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      const status = Buffer.from(attestation.status.base64, "base64")
-        .toString("utf8")
-        .replace("CapEff:\t0000000000000000", "CapEff:\t0000000000000001");
-      attestation.status = rawRecord(Buffer.from(status, "utf8"));
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      const environment = Buffer.concat([
-        Buffer.from(attestation.environ.base64, "base64"),
-        Buffer.from("EXTRA_AUTHORITY=1\0", "utf8"),
-      ]);
-      attestation.environ = rawRecord(environment);
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.parentDeathSignal = 0;
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.negativeProbes[0].errno = 0;
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.negativeProbes[0].syscallNumber = 9_999;
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.negativeProbes.at(-1).errno = 0;
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.namespaces.network = "net:[999]";
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.cgroup.membershipSha256 = digest("e");
-    }),
-    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
-      attestation.cgroupMembership = rawRecord(
-        Buffer.from("0::/host/leak.scope\n", "utf8"),
-      );
-    }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        const status = Buffer.from(attestation.status.base64, "base64")
+          .toString("utf8")
+          .replace("CapEff:\t0000000000000000", "CapEff:\t0000000000000001");
+        attestation.status = rawRecord(Buffer.from(status, "utf8"));
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        const environment = Buffer.concat([
+          Buffer.from(attestation.environ.base64, "base64"),
+          Buffer.from("EXTRA_AUTHORITY=1\0", "utf8"),
+        ]);
+        attestation.environ = rawRecord(environment);
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.parentDeathSignal = 0;
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.negativeProbes[0].errno = 0;
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.negativeProbes[0].syscallNumber = 9_999;
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.negativeProbes.at(-1).errno = 0;
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.namespaces.network = "net:[999]";
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.cgroup.membershipSha256 = digest("e");
+      }),
+    (value) =>
+      rewriteLaunchAttestation(value, 0, (attestation) => {
+        attestation.cgroupMembership = rawRecord(
+          Buffer.from("0::/host/leak.scope\n", "utf8"),
+        );
+      }),
   ]) {
     const value = JSON.parse(created.artifact.bytes);
     mutate(value);
     assert.throws(
-      () => verifyG17NativeSessionArtifact({
-        bytes: Buffer.from(`${canonicalJson(value)}\n`, "utf8"),
-        expectedConfiguration,
-        contractBytes: sealedContract.bytes,
-        contractSha256: sealedContract.contractSha256,
-      }),
+      () =>
+        verifyG17NativeSessionArtifact({
+          bytes: Buffer.from(`${canonicalJson(value)}\n`, "utf8"),
+          expectedConfiguration,
+          contractBytes: sealedContract.bytes,
+          contractSha256: sealedContract.contractSha256,
+        }),
       /G1\.7 native session contract/u,
     );
   }
@@ -692,12 +763,13 @@ test("native session replay rejects contradictory typed outcome reasons", () => 
     const value = JSON.parse(created.artifact.bytes);
     mutate(value);
     assert.throws(
-      () => verifyG17NativeSessionArtifact({
-        bytes: Buffer.from(`${canonicalJson(value)}\n`, "utf8"),
-        expectedConfiguration,
-        contractBytes: sealedContract.bytes,
-        contractSha256: sealedContract.contractSha256,
-      }),
+      () =>
+        verifyG17NativeSessionArtifact({
+          bytes: Buffer.from(`${canonicalJson(value)}\n`, "utf8"),
+          expectedConfiguration,
+          contractBytes: sealedContract.bytes,
+          contractSha256: sealedContract.contractSha256,
+        }),
       /G1\.7 native session contract/u,
     );
   }
@@ -729,7 +801,10 @@ test("native session replay preserves honest typed error nulls", () => {
 
 test("native session replay preserves an honest contained-null outcome without promoting it", () => {
   const { sealedContract, value: expectedConfiguration } = configuration();
-  const complete = completedSession(expectedConfiguration, sealedContract.contract);
+  const complete = completedSession(
+    expectedConfiguration,
+    sealedContract.contract,
+  );
   const first = complete.commands[0];
   const contained = syntheticG17CommandRecord(
     expectedConfiguration,

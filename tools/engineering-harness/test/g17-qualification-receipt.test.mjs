@@ -279,14 +279,20 @@ test("G1.7 receipt verifier rejects authority, identity, artifact, and hash tamp
   ]) {
     const candidate = structuredClone(pristine);
     mutate(candidate);
-    assert.throws(() => verifyG17Receipt(candidate), /G1\.7 qualification receipt/u);
+    assert.throws(
+      () => verifyG17Receipt(candidate),
+      /G1\.7 qualification receipt/u,
+    );
   }
 });
 
 test("G1.7 receipt creation rejects verdict and evidence inconsistencies", () => {
   const invalid = draft();
   invalid.final.verdict = "ACCEPT";
-  assert.throws(() => createG17Receipt(invalid), /classification does not match/u);
+  assert.throws(
+    () => createG17Receipt(invalid),
+    /classification does not match/u,
+  );
 
   const duplicate = draft();
   duplicate.artifacts[1].name = duplicate.artifacts[0].name;

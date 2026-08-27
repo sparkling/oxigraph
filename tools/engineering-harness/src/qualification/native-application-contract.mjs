@@ -3,9 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
-import {
-  decodeReviewedG17V4Contract,
-} from "./contract-identity.mjs";
+import { decodeReviewedG17V4Contract } from "./contract-identity.mjs";
 import {
   G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
   G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME,
@@ -51,15 +49,17 @@ const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
 const SAFE_RUN_ID = /^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$/u;
 const utf8 = new TextDecoder("utf-8", { fatal: true });
-const artifactByteCeilings = Object.freeze(new Map([
-  [G17_NATIVE_PLATFORM_ARTIFACT_NAME, 64 * 1024 * 1024],
-  [G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME, 4 * 1024 * 1024],
-  [G17_NATIVE_CONTROLLER_ARTIFACT_NAME, 64 * 1024 * 1024],
-  [G17_NATIVE_WORKSPACE_ARTIFACT_NAME, G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES],
-  [G17_NATIVE_ISOLATION_POLICY_ARTIFACT_NAME, 1024 * 1024],
-  [G17_NATIVE_SESSION_ARTIFACT_NAME, G17_NATIVE_SESSION_MAX_BYTES],
-  [G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME, 16 * 1024 * 1024],
-]));
+const artifactByteCeilings = Object.freeze(
+  new Map([
+    [G17_NATIVE_PLATFORM_ARTIFACT_NAME, 64 * 1024 * 1024],
+    [G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME, 4 * 1024 * 1024],
+    [G17_NATIVE_CONTROLLER_ARTIFACT_NAME, 64 * 1024 * 1024],
+    [G17_NATIVE_WORKSPACE_ARTIFACT_NAME, G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES],
+    [G17_NATIVE_ISOLATION_POLICY_ARTIFACT_NAME, 1024 * 1024],
+    [G17_NATIVE_SESSION_ARTIFACT_NAME, G17_NATIVE_SESSION_MAX_BYTES],
+    [G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME, 16 * 1024 * 1024],
+  ]),
+);
 
 const productionDependencies = Object.freeze({
   verifyPlatformBundle: verifyG17NativePlatformBundle,
@@ -153,7 +153,11 @@ function validateIdentity(identity) {
     ],
     "sealed identity",
   );
-  exactKeys(identity.subject, ["commit", "tree", "trackedClean"], "sealed subject");
+  exactKeys(
+    identity.subject,
+    ["commit", "tree", "trackedClean"],
+    "sealed subject",
+  );
   exactKeys(
     identity.control,
     [
@@ -212,7 +216,9 @@ function validateIdentity(identity) {
     !GIT_OBJECT.test(identity.cargoLock.blob ?? "") ||
     !DIGEST.test(identity.cargoLock.sha256 ?? "")
   ) {
-    fail("sealed subject, control, evaluator, or Cargo.lock binding is invalid");
+    fail(
+      "sealed subject, control, evaluator, or Cargo.lock binding is invalid",
+    );
   }
   if (
     !Array.isArray(identity.control.dependencies) ||
@@ -225,7 +231,14 @@ function validateIdentity(identity) {
   for (const dependency of identity.control.dependencies) {
     exactKeys(
       dependency,
-      ["name", "policy", "version", "resolved", "integrity", "installedPackageJsonSha256"],
+      [
+        "name",
+        "policy",
+        "version",
+        "resolved",
+        "integrity",
+        "installedPackageJsonSha256",
+      ],
       `sealed dependency ${dependency?.name ?? "unknown"}`,
     );
     for (const key of ["name", "version", "resolved", "integrity"]) {
@@ -234,15 +247,18 @@ function validateIdentity(identity) {
     if (
       dependency.policy !== "latest" ||
       !DIGEST.test(dependency.installedPackageJsonSha256 ?? "") ||
-      (previousDependencyName !== null && dependency.name <= previousDependencyName)
+      (previousDependencyName !== null &&
+        dependency.name <= previousDependencyName)
     ) {
       fail(`sealed dependency ${dependency.name} binding is invalid`);
     }
     previousDependencyName = dependency.name;
   }
-  const { harnessSha256: ignoredHarnessSha256, ...controlBinding } = identity.control;
+  const { harnessSha256: ignoredHarnessSha256, ...controlBinding } =
+    identity.control;
   if (
-    identity.control.harnessSha256 !== canonicalSha256({
+    identity.control.harnessSha256 !==
+    canonicalSha256({
       schema: "oxigraph.committed-harness-identity/v1",
       ...controlBinding,
     })
@@ -252,7 +268,10 @@ function validateIdentity(identity) {
   if (
     !Array.isArray(identity.toolchain) ||
     identity.toolchain.length !== 2 ||
-    !isDeepStrictEqual(identity.toolchain.map(({ program }) => program), ["cargo", "rustc"])
+    !isDeepStrictEqual(
+      identity.toolchain.map(({ program }) => program),
+      ["cargo", "rustc"],
+    )
   ) {
     fail("sealed identity toolchain inventory is not exact");
   }
@@ -286,7 +305,13 @@ function validateIdentity(identity) {
     }
     tools[tool.program] = tool;
   }
-  for (const key of ["platform", "kernelRelease", "architecture", "targetTriple", "cpuModel"]) {
+  for (const key of [
+    "platform",
+    "kernelRelease",
+    "architecture",
+    "targetTriple",
+    "cpuModel",
+  ]) {
     boundedString(identity.host[key], `sealed host ${key}`, 4_096);
   }
   if (
@@ -365,7 +390,11 @@ function reviewedEvaluator(contractBytes, contractSha256) {
       fail(`reviewed evaluator path ${index} binding is invalid`);
     }
     return {
-      path: boundedString(entry.path, `reviewed evaluator path ${index}`, 4_096),
+      path: boundedString(
+        entry.path,
+        `reviewed evaluator path ${index}`,
+        4_096,
+      ),
       blob: entry.blob,
       contentSha256: entry.contentSha256,
     };
@@ -401,7 +430,9 @@ function deriveWorkspaceExpected(identity, tools, platform) {
       role.kind !== "file" ||
       role.sha256 !== tool.toolchainExecutableSha256
     ) {
-      fail(`verified platform ${program} role differs from the sealed identity`);
+      fail(
+        `verified platform ${program} role differs from the sealed identity`,
+      );
     }
     const probes = (platform.probes ?? []).filter(({ id }) => id === probeId);
     if (probes.length !== 1 || probes[0].program !== logicalPath) {
@@ -413,7 +444,9 @@ function deriveWorkspaceExpected(identity, tools, platform) {
       !stdout.equals(Buffer.from(`${tool.versionStdout}\n`, "utf8")) ||
       stderr.length !== 0
     ) {
-      fail(`verified platform ${program} version differs from the sealed identity`);
+      fail(
+        `verified platform ${program} version differs from the sealed identity`,
+      );
     }
     expectedTools[program] = {
       executableSha256: tool.toolchainExecutableSha256,
@@ -540,8 +573,15 @@ function verifyApplication(input, dependencies) {
     fail("sealed evaluator differs from the reviewed contract");
   }
   const inventory = artifactInventory(suppliedArtifacts);
-  const [platformArtifact, sourcePlanArtifact, controllerArtifact,
-    workspaceArtifact, policyArtifact, sessionArtifact, instanceArtifact] = inventory;
+  const [
+    platformArtifact,
+    sourcePlanArtifact,
+    controllerArtifact,
+    workspaceArtifact,
+    policyArtifact,
+    sessionArtifact,
+    instanceArtifact,
+  ] = inventory;
 
   const platformReplay = dependencies.verifyPlatformBundle({
     platformBytes: platformArtifact.bytes,
@@ -607,72 +647,82 @@ function verifyApplication(input, dependencies) {
     instance?.schema !== G17_NATIVE_ISOLATION_INSTANCE_SCHEMA ||
     instance.runId !== runId ||
     instance.policySha256 !== policy.sha256 ||
-    instance.platformManifestSha256 !== platformReplay.platform.manifestSha256 ||
+    instance.platformManifestSha256 !==
+      platformReplay.platform.manifestSha256 ||
     instance.workspaceProjectionSha256 !== workspaceReplay.projection.sha256 ||
     instance.sessionProjectionSha256 !== canonicalSha256(sessionProjection) ||
     instance.sessionArtifact?.name !== sessionArtifact.name ||
     instance.sessionArtifact?.bytes !== sessionArtifact.record.bytes ||
     instance.sessionArtifact?.sha256 !== sessionArtifact.record.sha256 ||
-    instance.sha256 !== canonicalSha256(
-      Object.fromEntries(Object.entries(instance).filter(([key]) => key !== "sha256")),
-    )
+    instance.sha256 !==
+      canonicalSha256(
+        Object.fromEntries(
+          Object.entries(instance).filter(([key]) => key !== "sha256"),
+        ),
+      )
   ) {
     fail("isolation instance replay is not bound to the composite generation");
   }
 
-  return deepFreeze(canonicalClone({
-    schema: G17_NATIVE_COMPATIBILITY_PROJECTION_SCHEMA,
-    status: "PASS",
-    replayBoundary: REPLAY_BOUNDARY,
-    runId,
-    subjectIdentitySha256: identity.identitySha256,
-    contractSha256,
-    artifacts: inventory.map(({ record }) => record),
-    ownerArtifact: workspaceArtifact.record,
-    platform: {
-      schema: platformReplay.platform.schema,
-      profile: platformReplay.platform.profile,
-      manifestSha256: platformReplay.platform.manifestSha256,
-      toolchainRootSha256: platformReplay.platform.toolchainRootSha256,
-      platformRootSha256: platformReplay.platform.platformRootSha256,
-      sourcePlanProjectionSha256: platformReplay.sourcePlanProjectionSha256,
-      controllerSha256: controllerArtifact.record.sha256,
-    },
-    toolchain: workspaceReplay.projection.binding.toolchain,
-    workspace: workspaceReplay.projection,
-    policy: {
-      schema: policy.schema,
-      sha256: policy.sha256,
-    },
-    lanes: sessionProjection.lanes,
-    totalPassedTests: sessionProjection.totalPassedTests,
-    session: {
-      schema: sessionProjection.schema,
-      status: sessionProjection.status,
-      bindings: sessionProjection.bindings,
-      artifact: sessionProjection.artifact,
-      commandsObserved: sessionProjection.commandsObserved,
-      lanes: sessionProjection.lanes,
-      totalPassedTests: sessionProjection.totalPassedTests,
-      stateBytes: sessionProjection.stateBytes,
-      durationMs: sessionProjection.durationMs,
-      reason: sessionProjection.reason,
-      finalDescendantsObserved: sessionProjection.finalDescendantsObserved,
-    },
-    isolation: {
-      schema: instance.schema,
-      sha256: instance.sha256,
-      sessionProjectionSha256: instance.sessionProjectionSha256,
-      effectiveObservations: instance.effectiveObservations,
-    },
-  }, "native compatibility projection"));
+  return deepFreeze(
+    canonicalClone(
+      {
+        schema: G17_NATIVE_COMPATIBILITY_PROJECTION_SCHEMA,
+        status: "PASS",
+        replayBoundary: REPLAY_BOUNDARY,
+        runId,
+        subjectIdentitySha256: identity.identitySha256,
+        contractSha256,
+        artifacts: inventory.map(({ record }) => record),
+        ownerArtifact: workspaceArtifact.record,
+        platform: {
+          schema: platformReplay.platform.schema,
+          profile: platformReplay.platform.profile,
+          manifestSha256: platformReplay.platform.manifestSha256,
+          toolchainRootSha256: platformReplay.platform.toolchainRootSha256,
+          platformRootSha256: platformReplay.platform.platformRootSha256,
+          sourcePlanProjectionSha256: platformReplay.sourcePlanProjectionSha256,
+          controllerSha256: controllerArtifact.record.sha256,
+        },
+        toolchain: workspaceReplay.projection.binding.toolchain,
+        workspace: workspaceReplay.projection,
+        policy: {
+          schema: policy.schema,
+          sha256: policy.sha256,
+        },
+        lanes: sessionProjection.lanes,
+        totalPassedTests: sessionProjection.totalPassedTests,
+        session: {
+          schema: sessionProjection.schema,
+          status: sessionProjection.status,
+          bindings: sessionProjection.bindings,
+          artifact: sessionProjection.artifact,
+          commandsObserved: sessionProjection.commandsObserved,
+          lanes: sessionProjection.lanes,
+          totalPassedTests: sessionProjection.totalPassedTests,
+          stateBytes: sessionProjection.stateBytes,
+          durationMs: sessionProjection.durationMs,
+          reason: sessionProjection.reason,
+          finalDescendantsObserved: sessionProjection.finalDescendantsObserved,
+        },
+        isolation: {
+          schema: instance.schema,
+          sha256: instance.sha256,
+          sessionProjectionSha256: instance.sessionProjectionSha256,
+          effectiveObservations: instance.effectiveObservations,
+        },
+      },
+      "native compatibility projection",
+    ),
+  );
 }
 
 export function verifyG17NativeApplicationEvidence(input) {
   try {
     return verifyApplication(input, productionDependencies);
   } catch (error) {
-    if (error?.message?.startsWith("G1.7 native application contract:")) throw error;
+    if (error?.message?.startsWith("G1.7 native application contract:"))
+      throw error;
     fail(error?.message ?? String(error));
   }
 }
@@ -690,7 +740,11 @@ export function createG17NativeApplicationVerifierForTesting(dependencies) {
     ],
     "native application test dependencies",
   );
-  if (Object.values(dependencies).some((dependency) => typeof dependency !== "function")) {
+  if (
+    Object.values(dependencies).some(
+      (dependency) => typeof dependency !== "function",
+    )
+  ) {
     fail("native application test dependencies must be functions");
   }
   const frozenDependencies = Object.freeze({ ...dependencies });
@@ -698,7 +752,8 @@ export function createG17NativeApplicationVerifierForTesting(dependencies) {
     try {
       return verifyApplication(input, frozenDependencies);
     } catch (error) {
-      if (error?.message?.startsWith("G1.7 native application contract:")) throw error;
+      if (error?.message?.startsWith("G1.7 native application contract:"))
+        throw error;
       fail(error?.message ?? String(error));
     }
   };
