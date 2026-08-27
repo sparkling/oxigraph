@@ -81,6 +81,30 @@ test("Cargo inventory honors the exact injected program, subject root, and outpu
   }
 });
 
+test("Cargo inventory preserves reviewed libtest selection arguments", async () => {
+  const result = await cargoTestInventory(
+    "selection-aware-inventory",
+    [
+      "-e",
+      'if (process.argv.includes("--skip") && process.argv.includes("excluded")) process.stdout.write("included: test\\n")',
+      "--",
+      "--skip",
+      "excluded",
+    ],
+    {
+      expectedPassedTests: 1,
+      expectedTestIds: ["included"],
+      timeoutMs: 1_000,
+    },
+    {
+      program: process.execPath,
+      captureOutputBytes: 4_096,
+    },
+  );
+  assert.deepEqual(result.args.slice(-2), ["--skip", "excluded"]);
+  assert.deepEqual(result.ids, ["included"]);
+});
+
 test("Cargo inventory distinguishes a completed command failure from infrastructure", async () => {
   await assert.rejects(
     cargoTestInventory(
@@ -525,7 +549,7 @@ test("G1 regression profile freezes the exact implemented transaction surface", 
     );
   }
 
-  assert.equal(commands.agenticAdapter[2].expectedNodeTests, 39);
+  assert.equal(commands.agenticAdapter[2].expectedNodeTests, 40);
   assert.equal(commands.agenticAdapter[2].requireCompleteOutputReplay, true);
   assert.equal(profiles["metaharness-semantic-gate"].length, 41);
   assert.equal(profiles.parity.length, 47);

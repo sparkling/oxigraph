@@ -199,8 +199,8 @@ normative clause in a W3C document family. G0.1-G0.5 previously closed their
 scoped source-registration, Jena runner/profile, and Agentic-QE inventory work:
 `46ef17fc` restores the locked Jena runner, `22a8033e` binds two byte-identical
 76-scenario/198-assertion runs to that reviewed subject, and `253a2b34` binds
-the exact 144/144 default, 129/129 no-default, and 34/34
-`persistence-write` inventories. The adapter contract now passes 39/39 under
+the exact 144/144 default, 129/129 no-default, and 45/45
+`persistence-write` inventories. The adapter contract now passes 40/40 under
 schema v5. The 144/129 inventories remain source-bound, but the last
 `persistence-write` receipt is schema v4 and is historical and invalid under
 the current contract. Until clean schema-v5 receipts are independently

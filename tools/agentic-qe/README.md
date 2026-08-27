@@ -59,8 +59,8 @@ Broader crate suites may instead name a nonempty set of required sentinel IDs;
 these are checked as a subset of the complete recorded inventory and are never
 treated as an exact inventory.
 
-At this checkpoint the adapter contract passes 39/39 under schema v5. The
-144/129 CLI and 34-test `persistence-write` inventories remain source-bound,
+At this checkpoint the adapter contract passes 40/40 under schema v5. The
+144/129 CLI and 45-test `persistence-write` inventories remain source-bound,
 but the last `persistence-write` receipt is schema v4 and is historical and
 invalid under this contract. Freshness is `schema-v5-replay-required`; no
 current scoped or aggregate Agentic receipt is claimed until clean schema-v5
@@ -106,11 +106,13 @@ inner receipt.
   parsing/evaluation/results, atomic updates, bounded query entailment,
   empty named-graph topology across TriG, JSON-LD, Store, and CLI boundaries,
   hermetic federated `SERVICE`, and GeoSPARQL regression suites.
-- `persistence-write`: 34 exact test executions across seven locked native
+- `persistence-write`: 45 exact test executions across seven locked native
   commands: replacement transactional-dataset writes, request-atomic SPARQL
   Update, dataset-adapter and Store graph topology, default and no-default
   service claims, and deterministic open/load/commit failure handling for
-  parallel bulk loads.
+  parallel bulk loads. The no-default command explicitly excludes the ignored,
+  feature-qualified TLS compatibility canary, which remains independently owned
+  and executed by the `g1-regression` profile.
 - `g1-regression`: 66 exact test executions across 11 ordered locked native
   commands, covering the implemented G1.1 through G1.6 transaction state,
   concurrency, capability, writer-serialization, egress, cancellation,

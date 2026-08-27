@@ -72,10 +72,10 @@ ADR statuses and current-evidence qualifiers in this index were reviewed on
 2026-08-27. Individual sealed results retain their original evidence dates.
 G0.1-G0.7 retain historical source-bound completion evidence: registered
 sources, the locked Jena runner, two byte-identical runs of the refreshed
-76/198 profile, the 144/129 Agentic-QE inventories, the 34-test
-`persistence-write` profile, the generic OxDatalog mutation run
+76/198 profile, the 144/129 Agentic-QE inventories, the then-34-test
+`persistence-write` profile (now 45 tests in source), the generic OxDatalog mutation run
 `731e6467-2cab-4260-8d15-b34e4ebc8ed6`, and the prior protected-claims
-reconciliation. The adapter contract now passes 39/39 under schema v5, but the
+reconciliation. The adapter contract now passes 40/40 under schema v5, but the
 last `persistence-write` receipt is schema v4 and invalid under the current
 contract. Freshness is therefore `schema-v5-replay-required`; no current
 scoped or aggregate Agentic receipt is claimed. G1.6

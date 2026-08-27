@@ -7,8 +7,8 @@
 - Implementation status: latest-compatible adapter implemented; the manifest
   requests the `latest` dist-tag and the current integrity-bound lockfile
   resolution is Agentic-QE 3.13.12
-- Evidence state: the schema-v5 adapter contract passes 39/39. G0.4-G0.5 keep
-  the reviewed 144/144 default, 129/129 no-default, and 34/34
+- Evidence state: the schema-v5 adapter contract passes 40/40. G0.4-G0.5 keep
+  the reviewed 144/144 default, 129/129 no-default, and 45/45
   `persistence-write` inventories source-bound in `253a2b34`, but the last
   `persistence-write` receipt is schema v4 and is historical and invalid under
   the current contract. Until clean schema-v5 receipts are independently
@@ -132,7 +132,7 @@ replayed Cargo summary records. Schema-v4 receipts are deliberately invalid
 under this stronger contract and must be regenerated; they cannot retain a
 historical `PASS` by omitting the new fields.
 
-The adapter's own adversarial suite passes 39 of 39 tests. Receipts bind exact
+The adapter's own adversarial suite passes 40 of 40 tests. Receipts bind exact
 Cargo `--list` inventories, the repository tuple, implementation and artifact
 hashes, oracle roles, timeouts, and each executable's resolved path, version,
 and SHA-256. Consumers re-derive each program, argument vector, timeout, exact
@@ -154,7 +154,7 @@ It separates:
 - RDF 1.2 and SPARQL 1.2 official manifests;
 - Datalog D0, D1, D2, whole-crate, store, Jena, and Soufflé evidence;
 - bounded RDFS, OWL 2 RL/RDF, and SHACL evidence;
-- the 34-test `persistence-write` profile covering transactional dataset,
+- the 45-test `persistence-write` profile covering transactional dataset,
   update atomicity, topology, service claims, and failure injection;
 - the MetaHarness immutable semantic gate; and
 - an aggregate coordination profile.
@@ -219,7 +219,8 @@ current receipt.
 
 The former 133/116 CLI inventories are historical evidence after `1da47285`.
 G0.4-G0.5 deliberately reviewed and replaced them with the source-bound
-144/129 inventories and 34-test `persistence-write` profile in `253a2b34`.
+144/129 inventories and the now-45-test `persistence-write` profile (originally
+34 tests in `253a2b34`).
 Any later count or ID drift remains a deliberate fail-closed condition, not
 permission to loosen the inventory automatically.
 

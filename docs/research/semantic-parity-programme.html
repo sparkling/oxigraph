@@ -305,7 +305,7 @@
       <article class="card risk"><h3>Agentic-QE 3.13.2 · historical snapshot</h3>
         <ul class="compact"><li>This July snapshot used a 3.13.2 lock. The
             current adapter requests <code>latest</code> and commits the exact
-            integrity-bound resolution, with 39/39 current adapter mechanics
+            integrity-bound resolution, with 40/40 current adapter mechanics
             tests; see the
             <a href="semantic-parity-current-summary.md">current summary</a>.</li>
           <li>The historical adapter suite passed 16/16 adversarial tests.</li>
@@ -373,7 +373,7 @@
         Jena parity, RDF/SPARQL/SHACL 1.2 family parity, unrestricted RDFS
         entailment, or any OWL profile beyond the declared OWL 2 RL/RDF
         surface. The prior reconciliation keeps the refreshed Jena, 144/129
-        CLI, 34-test persistence-write, and generic OxDatalog identities
+        CLI, then-34-test persistence-write, and generic OxDatalog identities
         historical for their scoped subjects. The last persistence-write
         receipt is schema v4 and invalid under the current contract, so
         freshness is <code>schema-v5-replay-required</code>; no current scoped
@@ -402,7 +402,7 @@
         <tr><td>RDF Dataset Canonicalization 1.0</td><td>86/86 official cases</td><td>bounded work factor, deterministic error on exhaustion</td></tr>
         <tr><td>OWL 2 RL/RDF</td><td>98/98 assertions over 68 cases using exactly 78 rules</td><td>OWL 2 RL only</td></tr>
         <tr><td>SHACL 1.2</td><td>521 discovered; 519/519 eligible; two invalid upstream exclusions; native 167/167 all-feature and 114/114 no-default</td><td>Rules supplemental; SHACL-C informative; synchronous WebAssembly SPARQL-backed execution fails closed</td></tr>
-        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56; source-bound CLI 144/144 default, 129/129 no-default, and persistence-write inventory 34/34</td><td>empty named graphs preserved where representable; lossy formats fail closed; the persistence receipt is schema-v4 historical and schema-v5 replay is required</td></tr>
+        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56; source-bound CLI 144/144 default, 129/129 no-default, and persistence-write inventory 45/45</td><td>empty named graphs preserved where representable; lossy formats fail closed; the persistence receipt is schema-v4 historical and schema-v5 replay is required</td></tr>
         <tr><td>Apache Jena 6.1.0</td><td>76 scenarios · 198 assertions · gate closed; RDF 17/46 · SPARQL 30/77 · SHACL 13/43 · RDFS 7/14 · OWL 2 RL 9/18</td><td>70 agreement, 4 W3C overrides, 1 W3C-permitted divergence, 1 extension</td></tr>
         <tr><td>Semantic store integration</td><td>4/4 tests</td><td>read-only snapshots and explicit materialization seams</td></tr>
       </tbody>

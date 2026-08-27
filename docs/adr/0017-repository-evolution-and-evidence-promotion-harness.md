@@ -95,8 +95,9 @@ The evidence repair programme has closed G0.1-G0.5 for their exact scopes:
 registered source revisions were initialized and checked, `46ef17fc` restored
 the locked Jena runner, `22a8033e` refreshed the protected Jena profile and
 produced two byte-identical 76-scenario/198-assertion runs, and `253a2b34`
-accepted the exact 144/129 Agentic-QE CLI inventories plus a 34-test
-`persistence-write` profile. These are source-bound task closures, not an
+accepted the exact 144/129 Agentic-QE CLI inventories plus the then-34-test
+`persistence-write` profile, since expanded to 45 tests in source. These are
+source-bound task closures, not an
 umbrella current-HEAD qualification.
 
 G0.6 now binds the current generic OxDatalog D0-D2 source/runtime scope to

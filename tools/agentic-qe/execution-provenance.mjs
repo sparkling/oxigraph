@@ -67,8 +67,16 @@ function inventoryFailure(message, code, observation) {
 export async function cargoTestInventory(id, args, policy, execution = {}) {
   const separator = args.indexOf("--");
   const cargoArgs = separator < 0 ? args : args.slice(0, separator);
+  const libtestArgs = separator < 0 ? [] : args.slice(separator + 1);
   const program = execution.program ?? "cargo";
-  const inventoryArgs = [...cargoArgs, "--", "--list", "--format", "terse"];
+  const inventoryArgs = [
+    ...cargoArgs,
+    "--",
+    "--list",
+    "--format",
+    "terse",
+    ...libtestArgs,
+  ];
   const result = await execute(program, inventoryArgs, {
     cwd: execution.cwd ?? repoRoot,
     timeoutMs: policy.timeoutMs,
