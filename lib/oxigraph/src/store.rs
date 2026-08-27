@@ -2963,6 +2963,10 @@ impl BulkLoader<'_> {
     }
 }
 
+#[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
+#[path = "store/transaction_outcome_faults.rs"]
+mod transaction_outcome_faults;
+
 #[cfg(test)]
 #[expect(clippy::panic_in_result_fn)]
 mod tests {
