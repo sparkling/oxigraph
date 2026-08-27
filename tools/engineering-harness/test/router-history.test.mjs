@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   ROUTING_EMBEDDING_DIMENSION,
+  canonicalJson,
   canonicalSha256,
   routingEmbedding,
 } from "../src/routing/features.mjs";
@@ -130,6 +131,16 @@ test("routing features are canonical, fixed-size, deterministic, and nonzero", (
   assert.equal(left.length, ROUTING_EMBEDDING_DIMENSION);
   assert.deepEqual(left, right);
   assert.ok(left.every((coordinate) => coordinate > 0 && coordinate <= 1));
+});
+
+test("canonical JSON rejects sparse or property-extended arrays", () => {
+  const sparse = [];
+  sparse.length = 1;
+  assert.throws(() => canonicalJson(sparse), /dense JSON arrays/u);
+
+  const extended = ["bounded"];
+  extended.extra = "unbound";
+  assert.throws(() => canonicalJson(extended), /dense JSON arrays/u);
 });
 
 test("history admits only exact, single-use direct-verifier capabilities", async (t) => {

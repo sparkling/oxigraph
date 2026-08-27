@@ -21,6 +21,15 @@ function canonicalValue(value, ancestors) {
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
+      const keys = Object.keys(value);
+      if (
+        keys.length !== value.length ||
+        keys.some((key, index) => key !== String(index))
+      ) {
+        throw new Error(
+          "routing features require dense JSON arrays without extra properties",
+        );
+      }
       return `[${value.map((item) => canonicalValue(item, ancestors)).join(",")}]`;
     }
     const prototype = Object.getPrototypeOf(value);
