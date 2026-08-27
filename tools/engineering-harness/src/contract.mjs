@@ -9,6 +9,7 @@ import {
   g12Profile,
   g13Profile,
   g14Profile,
+  g14aProfile,
   g15Profile,
   g15bProfile,
   g15cProfile,
@@ -20,6 +21,7 @@ import {
 export const g12ContractPath = g12Profile.contractPath;
 export const g13ContractPath = g13Profile.contractPath;
 export const g14ContractPath = g14Profile.contractPath;
+export const g14aContractPath = g14aProfile.contractPath;
 export const g15ContractPath = g15Profile.contractPath;
 export const g15bContractPath = g15bProfile.contractPath;
 export const g15cContractPath = g15cProfile.contractPath;
@@ -526,6 +528,201 @@ const EXPECTED_G14 = Object.freeze({
       protectedEntries: 1381,
       protectedSha256:
         "537184400702bd927208c3f314c014386a65390061f263d7924855d38777bb3b",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
+const EXPECTED_G14A = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  decision: "ADR-0018",
+  baseline: {
+    commit: "ad98c8cdaace7ba9d075cd4591f5212e3b48367b",
+    tree: "5f57a492593158c071fa67533667533380b1b146",
+  },
+  evaluator: {
+    commit: "b6bf1f159810516f03cbf84c703091d61cd27a56",
+    parent: "ad98c8cdaace7ba9d075cd4591f5212e3b48367b",
+    tree: "62c22d70348c9f75b58a7cf87532d6a4ed35633b",
+    path: "lib/oxigraph/tests/transaction_outcomes.rs",
+    changeStatus: "A",
+    blob: "bac1378d741ef3e5335204f25eab543668ce3343",
+    contentSha256:
+      "07ad260bad9297961a850efc1ca859e8f27016ff1d9254618c40a1e4d74be01c",
+    patchSha256:
+      "d881ce0013a193a5bec8310ae335b4cc996c6044122e400d7d08c16f6348ccec",
+  },
+  evaluatorChanges: Object.freeze([
+    Object.freeze({
+      changeStatus: "M",
+      path: "lib/oxigraph/tests/transaction_capabilities.rs",
+      blob: "d4621269efcaa7dd8f0df88ab6adf6947b1b00ce",
+      contentSha256:
+        "bef7988faf7092f16c03f184f5c58ef15a782b29cc37671ce1f2b26bbc838421",
+    }),
+    Object.freeze({
+      changeStatus: "M",
+      path: "lib/oxigraph/tests/transaction_compatibility.rs",
+      blob: "b251e5448e18dfc4dbe7383909da9a0010b40a69",
+      contentSha256:
+        "54cf7d92140cdcf71b72b8d3b5f08f191266926027126e38304baa0ae71f0511",
+    }),
+    Object.freeze({
+      changeStatus: "A",
+      path: "lib/oxigraph/tests/transaction_outcomes.rs",
+      blob: "bac1378d741ef3e5335204f25eab543668ce3343",
+      contentSha256:
+        "07ad260bad9297961a850efc1ca859e8f27016ff1d9254618c40a1e4d74be01c",
+    }),
+  ]),
+  mutableExact: [
+    "lib/oxigraph/src/store.rs",
+    "lib/oxigraph/src/storage/mod.rs",
+    "lib/oxigraph/src/storage/memory.rs",
+    "lib/oxigraph/src/storage/rocksdb.rs",
+    "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+  ],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/sparql",
+    "lib/oxigraph/src/store",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: EXPECTED.verificationSequence,
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--no-run",
+        "--test",
+        "transaction_outcomes",
+        "--test",
+        "transaction_capabilities",
+        "--test",
+        "transaction_compatibility",
+        "--test",
+        "transaction_state_model",
+        "--test",
+        "update_atomicity",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_outcomes",
+      ],
+      timeoutMs: 300_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_capabilities",
+        "--test",
+        "transaction_compatibility",
+      ],
+      timeoutMs: 420_000,
+    },
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_state_model",
+        "--test",
+        "update_atomicity",
+      ],
+      timeoutMs: 420_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 196_608,
+    maxChangedFiles: 5,
+    maxChangedLines: 1_536,
+  },
+  initialRed: {
+    kind: "compiler",
+    commandRole: "public",
+    exitCode: 101,
+    rustcCode: "E0432",
+    rustcErrorCount: 24,
+    primaryPath: "lib/oxigraph/tests/transaction_outcomes.rs",
+    requiredExports: [
+      "OutcomeAwareTransactionalDataset",
+      "TransactionNonCommitReason",
+      "TransactionOutcome",
+      "as_bytes",
+      "into_bytes",
+      "start_transaction_with_key",
+      "lookup_transaction_outcome",
+    ],
+    requiredSubstrings: [
+      "error[E0432]: unresolved imports",
+      "no `OutcomeAwareTransactionalDataset` in `store`",
+      "could not compile `oxigraph` (test \"transaction_outcomes\") due to 24 previous errors",
+    ],
+    forbiddenSubstrings: [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 7, independentPassed: 20, regressionPassed: 2 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/store.rs",
+    mutableBaselineBlob: "3617547b5535100dc1060c9027f740aecf48ca87",
+    mutableBaselineSha256:
+      "55f96dd50b650f39ab36e34c50f86efe3c30b939efdb43b23dcd8ed528845c29",
+    baselineManifest: {
+      entries: 1477,
+      fullSha256:
+        "7431df9ed08b6b46df7c72952038fcf8f0068bad5ef96d77f1a058a90eefd11b",
+      protectedEntries: 1472,
+      protectedSha256:
+        "374cdee1b8c0d15eecf9bb6fdaa78e43e8562ffc999614068ed851ac0d255135",
+    },
+    evaluatorManifest: {
+      entries: 1478,
+      fullSha256:
+        "9b29a9b16490fb9513e7b2bb6231e45144aab73ed7a3c85f30822e8d07936d5c",
+      protectedEntries: 1473,
+      protectedSha256:
+        "54162db0dd0f4dfebb78cade7d136daa16d403f3e520a1b295860a99ea56999c",
     },
     submodules: EXPECTED.protectedInputs.submodules,
   },
@@ -1272,6 +1469,7 @@ const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
   "g1.4-bounded-writer-admission": EXPECTED_G14,
+  "g1.4a-store-terminal-outcomes": EXPECTED_G14A,
   "g1.5-unified-egress-policy": EXPECTED_G15,
   "g1.5b-update-cancellation": EXPECTED_G15B,
   "g1.5c-negotiated-update": EXPECTED_G15C,

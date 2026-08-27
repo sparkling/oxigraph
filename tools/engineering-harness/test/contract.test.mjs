@@ -5,6 +5,7 @@ import {
   g12ContractPath,
   g13ContractPath,
   g14ContractPath,
+  g14aContractPath,
   g15ContractPath,
   g15bContractPath,
   g15cContractPath,
@@ -18,6 +19,7 @@ import {
   g12Profile,
   g13Profile,
   g14Profile,
+  g14aProfile,
   g15Profile,
   g15bProfile,
   g15cProfile,
@@ -88,6 +90,39 @@ test("loads the five-path compiler-red G1.4 contract and binds it to Git", () =>
   assert.equal(resolution.contract.initialRed.rustcErrorCount, 5);
   assert.equal(resolution.contract.success.publicPassed, 6);
   assert.deepEqual(resolution.contract.scope.mutableExact, g14Profile.mutablePaths);
+  assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
+  assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
+});
+
+test("loads the evaluator-separated G1.4a Store outcome contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ taskId: g14aProfile.id });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.4a/contract.json",
+  );
+  assert.equal(resolution.contract.decision, "ADR-0018");
+  assert.equal(resolution.contract.initialRed.kind, "compiler");
+  assert.equal(resolution.contract.initialRed.rustcCode, "E0432");
+  assert.equal(resolution.contract.initialRed.rustcErrorCount, 24);
+  assert.equal(resolution.contract.success.publicPassed, 7);
+  assert.equal(resolution.contract.success.independentPassed, 20);
+  assert.equal(resolution.contract.success.regressionPassed, 2);
+  assert.deepEqual(resolution.contract.scope.mutableExact, g14aProfile.mutablePaths);
+  assert.equal(
+    resolution.contract.evaluator.path,
+    "lib/oxigraph/tests/transaction_outcomes.rs",
+  );
+  assert.equal(
+    resolution.contract.commands.independent.argv.includes("--skip"),
+    false,
+  );
+  assert.deepEqual(resolution.contract.commands.regression.argv.slice(-4), [
+    "--test",
+    "transaction_state_model",
+    "--test",
+    "update_atomicity",
+  ]);
   assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
 });
@@ -415,6 +450,7 @@ test("selects only registered task ids and rejects contractPath before filesyste
     g12Profile,
     g13Profile,
     g14Profile,
+    g14aProfile,
     g15Profile,
     g15bProfile,
     g15cProfile,
@@ -430,6 +466,7 @@ test("legacy contract-path constants remain exact compatibility shims", () => {
       g12ContractPath,
       g13ContractPath,
       g14ContractPath,
+      g14aContractPath,
       g15ContractPath,
       g15bContractPath,
       g15cContractPath,
@@ -439,6 +476,7 @@ test("legacy contract-path constants remain exact compatibility shims", () => {
       g12Profile,
       g13Profile,
       g14Profile,
+      g14aProfile,
       g15Profile,
       g15bProfile,
       g15cProfile,

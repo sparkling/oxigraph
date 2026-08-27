@@ -32,6 +32,12 @@ Current activation boundary:
 - `g1.4 preflight|run|replay` binds the five-file writer-admission slice to its
   frozen 1/4/16-writer, reader-liveness, rollback/drop, timeout, and
   cancellation evaluator while protecting every other repository path;
+- `g1.4a preflight|run|replay` binds the five-file keyed terminal-outcome slice
+  to its evaluator-only public API, memory oracle, RocksDB reopen,
+  duplicate-key, rollback/drop, legacy-compatibility, and process-abort
+  lost-acknowledgement cases. The same evaluator commit updates the two older
+  RocksDB capability assertions, so candidate verification runs the complete
+  capability and compatibility targets without exclusions;
 - `g1.5 preflight|run|replay` activates `http-client,rdf-12` explicitly and
   binds the six-file unified egress slice to deny-by-default SERVICE, LOAD,
   nested-document, response-limit, connection-budget, cancellation, and
@@ -126,6 +132,7 @@ exact task IDs:
 g1.2-rocksdb-serialized-writers
 g1.3-transaction-capabilities
 g1.4-bounded-writer-admission
+g1.4a-store-terminal-outcomes
 g1.5-unified-egress-policy
 g1.5b-update-cancellation
 g1.5c-negotiated-update
@@ -140,7 +147,7 @@ The exported per-G1 profiles, contract-path constants, and named wrappers are
 compatibility shims over that generic task API, not parallel dispatch
 authorities.
 
-The same registry generates the task portion of an exact ordered 27-command
+The same registry generates the task portion of an exact ordered 30-command
 CLI surface. The CLI resolves a slug to its registered `taskId` and dispatches
 preflight, run, and replay dynamically; the registry admits no extra, missing,
 duplicate, reordered, or malformed command. Its canonical order is:
@@ -150,6 +157,7 @@ doctor           -> doctor
 g1.2.preflight   -> g1.2 preflight
 g1.3.preflight   -> g1.3 preflight
 g1.4.preflight   -> g1.4 preflight
+g1.4a.preflight  -> g1.4a preflight
 g1.5.preflight   -> g1.5 preflight
 g1.5b.preflight  -> g1.5b preflight
 g1.5c.preflight  -> g1.5c preflight
@@ -160,6 +168,8 @@ g1.3.run         -> g1.3 run [--run-id <safe-id>]
 g1.3.replay      -> g1.3 replay --receipt <runtime-name>
 g1.4.run         -> g1.4 run [--run-id <safe-id>]
 g1.4.replay      -> g1.4 replay --receipt <runtime-name>
+g1.4a.run        -> g1.4a run [--run-id <safe-id>]
+g1.4a.replay     -> g1.4a replay --receipt <runtime-name>
 g1.5.run         -> g1.5 run [--run-id <safe-id>]
 g1.5.replay      -> g1.5 replay --receipt <runtime-name>
 g1.5b.run        -> g1.5b run [--run-id <safe-id>]

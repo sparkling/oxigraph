@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.4a-store-terminal-outcomes",
+  "programme": "linked-data-store",
+  "decision": "ADR-0018",
+  "objective": "Qualify the built-in Store keyed terminal-outcome lifecycle, exactly one commit-attempt transition, and durable RocksDB lost-acknowledgement lookup without changing the legacy transaction surface or replaying effects.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "ad98c8cdaace7ba9d075cd4591f5212e3b48367b",
+    "tree": "5f57a492593158c071fa67533667533380b1b146"
+  },
+  "evaluator": {
+    "commit": "b6bf1f159810516f03cbf84c703091d61cd27a56",
+    "parent": "ad98c8cdaace7ba9d075cd4591f5212e3b48367b",
+    "tree": "62c22d70348c9f75b58a7cf87532d6a4ed35633b",
+    "path": "lib/oxigraph/tests/transaction_outcomes.rs",
+    "changeStatus": "A",
+    "blob": "bac1378d741ef3e5335204f25eab543668ce3343",
+    "contentSha256": "07ad260bad9297961a850efc1ca859e8f27016ff1d9254618c40a1e4d74be01c",
+    "patchSha256": "d881ce0013a193a5bec8310ae335b4cc996c6044122e400d7d08c16f6348ccec"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/store.rs",
+    "mutableBaselineBlob": "3617547b5535100dc1060c9027f740aecf48ca87",
+    "mutableBaselineSha256": "55f96dd50b650f39ab36e34c50f86efe3c30b939efdb43b23dcd8ed528845c29",
+    "baselineManifest": {
+      "entries": 1477,
+      "fullSha256": "7431df9ed08b6b46df7c72952038fcf8f0068bad5ef96d77f1a058a90eefd11b",
+      "protectedEntries": 1472,
+      "protectedSha256": "374cdee1b8c0d15eecf9bb6fdaa78e43e8562ffc999614068ed851ac0d255135"
+    },
+    "evaluatorManifest": {
+      "entries": 1478,
+      "fullSha256": "9b29a9b16490fb9513e7b2bb6231e45144aab73ed7a3c85f30822e8d07936d5c",
+      "protectedEntries": 1473,
+      "protectedSha256": "54162db0dd0f4dfebb78cade7d136daa16d403f3e520a1b295860a99ea56999c"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "lib/oxigraph/src/lib.rs",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/sparql",
+      "lib/oxigraph/src/store",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "transaction_outcomes", "--test", "transaction_capabilities", "--test", "transaction_compatibility", "--test", "transaction_state_model", "--test", "update_atomicity"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_outcomes"],
+      "timeoutMs": 300000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_capabilities", "--test", "transaction_compatibility"],
+      "timeoutMs": 420000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_state_model", "--test", "update_atomicity"],
+      "timeoutMs": 420000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 196608,
+    "maxChangedFiles": 5,
+    "maxChangedLines": 1536,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 4,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "kind": "compiler",
+    "commandRole": "public",
+    "exitCode": 101,
+    "rustcCode": "E0432",
+    "rustcErrorCount": 24,
+    "primaryPath": "lib/oxigraph/tests/transaction_outcomes.rs",
+    "requiredExports": [
+      "OutcomeAwareTransactionalDataset",
+      "TransactionNonCommitReason",
+      "TransactionOutcome",
+      "as_bytes",
+      "into_bytes",
+      "start_transaction_with_key",
+      "lookup_transaction_outcome"
+    ],
+    "requiredSubstrings": [
+      "error[E0432]: unresolved imports",
+      "no `OutcomeAwareTransactionalDataset` in `store`",
+      "could not compile `oxigraph` (test \"transaction_outcomes\") due to 24 previous errors"
+    ],
+    "forbiddenSubstrings": [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device"
+    ]
+  },
+  "success": {
+    "publicPassed": 7,
+    "independentPassed": 20,
+    "regressionPassed": 2
+  }
+}

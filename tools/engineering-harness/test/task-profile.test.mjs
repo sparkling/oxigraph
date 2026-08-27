@@ -15,6 +15,7 @@ const expected = Object.freeze([
   ["g1.2-rocksdb-serialized-writers", "g1.2"],
   ["g1.3-transaction-capabilities", "g1.3"],
   ["g1.4-bounded-writer-admission", "g1.4"],
+  ["g1.4a-store-terminal-outcomes", "g1.4a"],
   ["g1.5-unified-egress-policy", "g1.5"],
   ["g1.5b-update-cancellation", "g1.5b"],
   ["g1.5c-negotiated-update", "g1.5c"],

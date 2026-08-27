@@ -19,6 +19,7 @@ test("canonical CLI registry exposes programme, replay, receipt, and history com
     "g1.2.preflight",
     "g1.3.preflight",
     "g1.4.preflight",
+    "g1.4a.preflight",
     "g1.5.preflight",
     "g1.5b.preflight",
     "g1.5c.preflight",
@@ -29,6 +30,8 @@ test("canonical CLI registry exposes programme, replay, receipt, and history com
     "g1.3.replay",
     "g1.4.run",
     "g1.4.replay",
+    "g1.4a.run",
+    "g1.4a.replay",
     "g1.5.run",
     "g1.5.replay",
     "g1.5b.run",
@@ -43,7 +46,7 @@ test("canonical CLI registry exposes programme, replay, receipt, and history com
     "help",
     "version",
   ]);
-  assert.equal(COMMANDS.length, 27);
+  assert.equal(COMMANDS.length, 30);
   assert.equal(Object.isFrozen(COMMANDS), true);
   assert.equal(validateCommandRegistry(COMMANDS), true);
   for (const entry of COMMANDS) {
@@ -150,9 +153,17 @@ test("help and version aliases preserve the public CLI surface", async () => {
   assert.deepEqual(version, { stdout: "0.0.0\n", stderr: "" });
 });
 
-test("package scripts expose G1.6 without pinning upstream MetaHarness ranges", async () => {
+test("package scripts expose G1.4a and G1.6 without pinning upstream MetaHarness ranges", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  assert.equal(
+    packageJson.scripts["g1.4a:preflight"],
+    "node bin/oxigraph-engineering-harness.mjs g1.4a preflight",
+  );
+  assert.equal(
+    packageJson.scripts["g1.4a:run"],
+    "node bin/oxigraph-engineering-harness.mjs g1.4a run",
   );
   assert.equal(
     packageJson.scripts["g1.6:preflight"],

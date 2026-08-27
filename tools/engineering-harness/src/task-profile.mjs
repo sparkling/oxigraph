@@ -138,6 +138,36 @@ export const engineeringTaskRegistry = buildEngineeringTaskRegistry([
     ]),
   },
   {
+    id: "g1.4a-store-terminal-outcomes",
+    slug: "g1.4a",
+    label: "G1.4a",
+    decision: "ADR-0018",
+    taskClass: "transaction-terminal-outcomes",
+    evaluatorChangeStatus: "A",
+    mutablePath: "lib/oxigraph/src/store.rs",
+    mutablePaths: Object.freeze([
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    ]),
+    guidance:
+      "Preserve every legacy transaction signature and impose outcome-ledger cost only on the explicit caller-keyed path. Add non-exhaustive public terminal outcome and non-commit reason types, stable TransactionKey byte access, and an additive OutcomeAwareTransactionalDataset extension whose keyed transaction type implements OutcomeAwareWritableDataset without forcing the legacy unkeyed Transaction to manufacture a recovery key. Use the same in-process state oracle for memory without claiming durability; only read-write RocksDB advertises DurableByTransactionKey, while read-only RocksDB may resolve existing keys. Reserve each key as Staging under the existing writer gate, reject reuse before a second attempt, durably record exactly one CommitAttempted transition, and atomically publish RDF changes with Committed in one synchronous final batch. Explicit rollback and ordinary drop resolve as ProvenAbsent(RolledBack); unseen, staging, and commit-attempted keys resolve as Indeterminate. Store versioned ledger records under a reserved prefix in the existing default column family, fail closed on unknown encodings, never replay effects to discover an outcome, and leave receipts, outbox delivery, and retention to ADR-0020.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+      "lib/oxigraph/tests/transaction_outcomes.rs",
+      "lib/oxigraph/tests/transaction_capabilities.rs",
+      "lib/oxigraph/tests/transaction_compatibility.rs",
+      "lib/oxigraph/tests/transaction_state_model.rs",
+      "lib/oxigraph/tests/update_atomicity.rs",
+    ]),
+  },
+  {
     id: "g1.5-unified-egress-policy",
     slug: "g1.5",
     label: "G1.5",
@@ -291,6 +321,7 @@ export function taskProfileBySlug(slug) {
 export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];
 export const g13Profile = profiles["g1.3-transaction-capabilities"];
 export const g14Profile = profiles["g1.4-bounded-writer-admission"];
+export const g14aProfile = profiles["g1.4a-store-terminal-outcomes"];
 export const g15Profile = profiles["g1.5-unified-egress-policy"];
 export const g15bProfile = profiles["g1.5b-update-cancellation"];
 export const g15cProfile = profiles["g1.5c-negotiated-update"];
