@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "id": "g1.4b-outcome-fault-safety",
+  "programme": "linked-data-store",
+  "decision": "ADR-0018",
+  "objective": "Qualify transaction-outcome fault-phase monotonicity so errors before or after the durable commit-attempt marker can never let drop falsely prove rollback, while preserving indeterminate lookup for staging and commit-attempted states.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "9c13454350b951a24b68b996aaefb50e32997a06",
+    "tree": "6a5043617b539d07ec52851fe6113886796088b2"
+  },
+  "evaluator": {
+    "commit": "95440da438da2260b0d5cf1d1d011c9a4574947d",
+    "parent": "9c13454350b951a24b68b996aaefb50e32997a06",
+    "tree": "dd55d0e2c266c5ad08a9b351096f85c106226cc9",
+    "path": "lib/oxigraph/src/store/transaction_outcome_faults.rs",
+    "changeStatus": "M",
+    "blob": "a66a40f42e83616eb60ac2b6250f83923d332d37",
+    "contentSha256": "7ad6c86fab7967278812ec4d69db0cfd209c1ee21208e4434aa020b1677e5923",
+    "patchSha256": "687b25132a15e40c7eee5ad7e13b39f26d1838a1aa3ee25c267a85a4c3da8861"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableExclusion": "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    "mutableBaselineBlob": "10fc79e55633752cb2d11377fe0d142f4038729c",
+    "mutableBaselineSha256": "8e6036308b37333059f5b5ab19c01cf5095e204347bc46e267e61fc3f44bdc6d",
+    "baselineManifest": {
+      "entries": 1480,
+      "fullSha256": "9f008380ead8e69a1a0f357344e27b33692c1882eb20af2a8fe9a762d1e599e5",
+      "protectedEntries": 1479,
+      "protectedSha256": "a5d5793039c1d6ac49df77d36783d3d62818686101bb677ea48a10af8409b920"
+    },
+    "evaluatorManifest": {
+      "entries": 1480,
+      "fullSha256": "c44ab51bcbeab453f510fba38dd435971e4f91440db23cf5fbfb9339b952386e",
+      "protectedEntries": 1479,
+      "protectedSha256": "753e6387004c4055dd5ffda246a369f3ad8bb847dad29723ca028b4ce367aeb1"
+    },
+    "submodules": [
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "lib/oxigraph/Cargo.toml",
+      "lib/oxigraph/src/lib.rs",
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/memory.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "README.md",
+      ".gitmodules"
+    ],
+    "blockedPrefixes": [
+      "lib/oxigraph/tests",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src/sparql",
+      "lib/oxigraph/src/store",
+      "oxrocksdb-sys",
+      "docs",
+      ".github",
+      "tools"
+    ],
+    "allowCreate": false,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression"
+  ],
+  "commands": {
+    "format": {
+      "argv": ["cargo", "fmt", "--all", "--", "--check"],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--lib", "--test", "transaction_outcomes", "--test", "transaction_compatibility"],
+      "timeoutMs": 1800000
+    },
+    "public": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--lib", "store::transaction_outcome_faults::"],
+      "timeoutMs": 300000
+    },
+    "independent": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_outcomes"],
+      "timeoutMs": 300000
+    },
+    "regression": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_compatibility"],
+      "timeoutMs": 420000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 65536,
+    "maxChangedFiles": 1,
+    "maxChangedLines": 512,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 2700000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 4,
+    "maxRepairCycles": 2,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "commandRole": "public",
+    "exitCode": 101,
+    "passed": 6,
+    "failed": 2,
+    "requiredSubstrings": [
+      "store::transaction_outcome_faults::commit_attempted_prewrite_failure_cannot_be_rolled_back",
+      "commit-attempted pre-write failure was falsely proven rolled back",
+      "store::transaction_outcome_faults::commit_attempted_postwrite_error_cannot_be_rolled_back",
+      "commit-attempted post-write error was falsely proven rolled back"
+    ],
+    "forbiddenSubstrings": [
+      "could not compile",
+      "no test target named",
+      "timed out",
+      "No space left on device"
+    ]
+  },
+  "success": {
+    "publicPassed": 8,
+    "independentPassed": 7,
+    "regressionPassed": 20
+  }
+}

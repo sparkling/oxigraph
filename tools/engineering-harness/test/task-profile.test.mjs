@@ -16,6 +16,7 @@ const expected = Object.freeze([
   ["g1.3-transaction-capabilities", "g1.3"],
   ["g1.4-bounded-writer-admission", "g1.4"],
   ["g1.4a-store-terminal-outcomes", "g1.4a"],
+  ["g1.4b-outcome-fault-safety", "g1.4b"],
   ["g1.5-unified-egress-policy", "g1.5"],
   ["g1.5b-update-cancellation", "g1.5b"],
   ["g1.5c-negotiated-update", "g1.5c"],
@@ -51,6 +52,16 @@ test("ordered task registry binds exact ids, slugs, and derived contract paths",
   assert.equal(
     taskProfile("g1.6-runtime-derived-service-claims").sourceAllowlist.includes(
       "lib/spareval/src/lib.rs",
+    ),
+    true,
+  );
+  const g14b = taskProfile("g1.4b-outcome-fault-safety");
+  assert.equal(g14b.evaluatorChangeStatus, "M");
+  assert.equal(g14b.mutablePath, "lib/oxigraph/src/storage/rocksdb_wrapper.rs");
+  assert.equal(Object.hasOwn(g14b, "mutablePaths"), false);
+  assert.equal(
+    g14b.sourceAllowlist.includes(
+      "lib/oxigraph/src/store/transaction_outcome_faults.rs",
     ),
     true,
   );

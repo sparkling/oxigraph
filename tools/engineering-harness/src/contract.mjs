@@ -10,6 +10,7 @@ import {
   g13Profile,
   g14Profile,
   g14aProfile,
+  g14bProfile,
   g15Profile,
   g15bProfile,
   g15cProfile,
@@ -22,6 +23,7 @@ export const g12ContractPath = g12Profile.contractPath;
 export const g13ContractPath = g13Profile.contractPath;
 export const g14ContractPath = g14Profile.contractPath;
 export const g14aContractPath = g14aProfile.contractPath;
+export const g14bContractPath = g14bProfile.contractPath;
 export const g15ContractPath = g15Profile.contractPath;
 export const g15bContractPath = g15bProfile.contractPath;
 export const g15cContractPath = g15cProfile.contractPath;
@@ -1493,11 +1495,169 @@ const EXPECTED_G16 = Object.freeze({
   },
 });
 
+const EXPECTED_G14B = Object.freeze({
+  topKeys: EXPECTED.topKeys,
+  routing: EXPECTED.routing,
+  decision: "ADR-0018",
+  baseline: {
+    commit: "9c13454350b951a24b68b996aaefb50e32997a06",
+    tree: "6a5043617b539d07ec52851fe6113886796088b2",
+  },
+  evaluator: {
+    commit: "95440da438da2260b0d5cf1d1d011c9a4574947d",
+    parent: "9c13454350b951a24b68b996aaefb50e32997a06",
+    tree: "dd55d0e2c266c5ad08a9b351096f85c106226cc9",
+    path: "lib/oxigraph/src/store/transaction_outcome_faults.rs",
+    changeStatus: "M",
+    blob: "a66a40f42e83616eb60ac2b6250f83923d332d37",
+    contentSha256:
+      "7ad6c86fab7967278812ec4d69db0cfd209c1ee21208e4434aa020b1677e5923",
+    patchSha256:
+      "687b25132a15e40c7eee5ad7e13b39f26d1838a1aa3ee25c267a85a4c3da8861",
+  },
+  mutableExact: ["lib/oxigraph/src/storage/rocksdb_wrapper.rs"],
+  mutablePrefixes: [],
+  blockedExact: [
+    "Cargo.toml",
+    "Cargo.lock",
+    "lib/oxigraph/Cargo.toml",
+    "lib/oxigraph/src/lib.rs",
+    "lib/oxigraph/src/store.rs",
+    "lib/oxigraph/src/storage/mod.rs",
+    "lib/oxigraph/src/storage/memory.rs",
+    "lib/oxigraph/src/storage/rocksdb.rs",
+    "README.md",
+    ".gitmodules",
+  ],
+  blockedPrefixes: [
+    "lib/oxigraph/tests",
+    "lib/oxigraph/benches",
+    "lib/oxigraph/src/sparql",
+    "lib/oxigraph/src/store",
+    "oxrocksdb-sys",
+    "docs",
+    ".github",
+    "tools",
+  ],
+  verificationSequence: [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression",
+  ],
+  commands: {
+    format: EXPECTED.commands.format,
+    build: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--no-run",
+        "--lib",
+        "--test",
+        "transaction_outcomes",
+        "--test",
+        "transaction_compatibility",
+      ],
+      timeoutMs: 1_800_000,
+    },
+    public: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--lib",
+        "store::transaction_outcome_faults::",
+      ],
+      timeoutMs: 300_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_outcomes",
+      ],
+      timeoutMs: 300_000,
+    },
+    regression: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_compatibility",
+      ],
+      timeoutMs: 420_000,
+    },
+  },
+  ceilings: {
+    ...EXPECTED.ceilings,
+    maxPatchBytes: 65_536,
+    maxChangedFiles: 1,
+    maxChangedLines: 512,
+  },
+  initialRed: {
+    commandRole: "public",
+    exitCode: 101,
+    passed: 6,
+    failed: 2,
+    requiredSubstrings: [
+      "store::transaction_outcome_faults::commit_attempted_prewrite_failure_cannot_be_rolled_back",
+      "commit-attempted pre-write failure was falsely proven rolled back",
+      "store::transaction_outcome_faults::commit_attempted_postwrite_error_cannot_be_rolled_back",
+      "commit-attempted post-write error was falsely proven rolled back",
+    ],
+    forbiddenSubstrings: [
+      "could not compile",
+      "no test target named",
+      "timed out",
+      "No space left on device",
+    ],
+  },
+  success: { publicPassed: 8, independentPassed: 7, regressionPassed: 20 },
+  protectedInputs: {
+    manifestAlgorithm: MANIFEST_ALGORITHM,
+    mutableExclusion: "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    mutableBaselineBlob: "10fc79e55633752cb2d11377fe0d142f4038729c",
+    mutableBaselineSha256:
+      "8e6036308b37333059f5b5ab19c01cf5095e204347bc46e267e61fc3f44bdc6d",
+    baselineManifest: {
+      entries: 1480,
+      fullSha256:
+        "9f008380ead8e69a1a0f357344e27b33692c1882eb20af2a8fe9a762d1e599e5",
+      protectedEntries: 1479,
+      protectedSha256:
+        "a5d5793039c1d6ac49df77d36783d3d62818686101bb677ea48a10af8409b920",
+    },
+    evaluatorManifest: {
+      entries: 1480,
+      fullSha256:
+        "c44ab51bcbeab453f510fba38dd435971e4f91440db23cf5fbfb9339b952386e",
+      protectedEntries: 1479,
+      protectedSha256:
+        "753e6387004c4055dd5ffda246a369f3ad8bb847dad29723ca028b4ce367aeb1",
+    },
+    submodules: EXPECTED.protectedInputs.submodules,
+  },
+});
+
 const EXPECTED_BY_ID = Object.freeze({
   "g1.2-rocksdb-serialized-writers": EXPECTED,
   "g1.3-transaction-capabilities": EXPECTED_G13,
   "g1.4-bounded-writer-admission": EXPECTED_G14,
   "g1.4a-store-terminal-outcomes": EXPECTED_G14A,
+  "g1.4b-outcome-fault-safety": EXPECTED_G14B,
   "g1.5-unified-egress-policy": EXPECTED_G15,
   "g1.5b-update-cancellation": EXPECTED_G15B,
   "g1.5c-negotiated-update": EXPECTED_G15C,

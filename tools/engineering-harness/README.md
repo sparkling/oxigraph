@@ -40,6 +40,16 @@ Current activation boundary:
   capability and compatibility targets without exclusions. Within the fixed
   seven-stage receipt vocabulary, the supplemental `service` slot carries the
   capability target and `compatibility` carries the compatibility target;
+- `g1.4b preflight|run|replay` binds the sole mutable RocksDB wrapper to a
+  frozen, evaluator-separated fault matrix for storage-call errors before and
+  after staging, commit-attempt, final-batch, and rollback writes. Its runtime
+  red signature is exactly six passing and two failing library tests: both
+  failures expose a false RolledBack proof after commit-attempt marker errors.
+  The qualified change must advance the in-memory phase before that marker
+  call, keep durable Staging and CommitAttempted lookup indeterminate, and
+  preserve one attempt plus one atomic final batch. This evidence covers the
+  simulated state-machine branches only; it does not claim crash, power-loss,
+  or fsync durability;
 - `g1.5 preflight|run|replay` activates `http-client,rdf-12` explicitly and
   binds the six-file unified egress slice to deny-by-default SERVICE, LOAD,
   nested-document, response-limit, connection-budget, cancellation, and
@@ -135,6 +145,7 @@ g1.2-rocksdb-serialized-writers
 g1.3-transaction-capabilities
 g1.4-bounded-writer-admission
 g1.4a-store-terminal-outcomes
+g1.4b-outcome-fault-safety
 g1.5-unified-egress-policy
 g1.5b-update-cancellation
 g1.5c-negotiated-update
@@ -149,7 +160,7 @@ The exported per-G1 profiles, contract-path constants, and named wrappers are
 compatibility shims over that generic task API, not parallel dispatch
 authorities.
 
-The same registry generates the task portion of an exact ordered 30-command
+The same registry generates the task portion of an exact ordered 33-command
 CLI surface. The CLI resolves a slug to its registered `taskId` and dispatches
 preflight, run, and replay dynamically; the registry admits no extra, missing,
 duplicate, reordered, or malformed command. Its canonical order is:
@@ -160,6 +171,7 @@ g1.2.preflight   -> g1.2 preflight
 g1.3.preflight   -> g1.3 preflight
 g1.4.preflight   -> g1.4 preflight
 g1.4a.preflight  -> g1.4a preflight
+g1.4b.preflight  -> g1.4b preflight
 g1.5.preflight   -> g1.5 preflight
 g1.5b.preflight  -> g1.5b preflight
 g1.5c.preflight  -> g1.5c preflight
@@ -172,6 +184,8 @@ g1.4.run         -> g1.4 run [--run-id <safe-id>]
 g1.4.replay      -> g1.4 replay --receipt <runtime-name>
 g1.4a.run        -> g1.4a run [--run-id <safe-id>]
 g1.4a.replay     -> g1.4a replay --receipt <runtime-name>
+g1.4b.run        -> g1.4b run [--run-id <safe-id>]
+g1.4b.replay     -> g1.4b replay --receipt <runtime-name>
 g1.5.run         -> g1.5 run [--run-id <safe-id>]
 g1.5.replay      -> g1.5 replay --receipt <runtime-name>
 g1.5b.run        -> g1.5b run [--run-id <safe-id>]

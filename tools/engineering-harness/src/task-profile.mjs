@@ -168,6 +168,26 @@ export const engineeringTaskRegistry = buildEngineeringTaskRegistry([
     ]),
   },
   {
+    id: "g1.4b-outcome-fault-safety",
+    slug: "g1.4b",
+    label: "G1.4b",
+    decision: "ADR-0018",
+    taskClass: "transaction-outcome-fault-safety",
+    evaluatorChangeStatus: "M",
+    mutablePath: "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    guidance:
+      "Preserve the durable transaction-outcome encoding and change only fault-phase monotonicity. Once commit attempt begins, advance the in-memory phase to CommitAttempted before the durable marker call so pre- and post-write marker errors can never let Drop append RolledBack; keep Staging and CommitAttempted lookup Indeterminate, publish Committed atomically with effects, and maintain exactly one attempt plus one final batch without claiming crash, power-loss, or fsync proof.",
+    sourceAllowlist: Object.freeze([
+      "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+      "lib/oxigraph/src/store.rs",
+      "lib/oxigraph/src/storage/mod.rs",
+      "lib/oxigraph/src/storage/rocksdb.rs",
+      "lib/oxigraph/src/store/transaction_outcome_faults.rs",
+      "lib/oxigraph/tests/transaction_outcomes.rs",
+      "lib/oxigraph/tests/transaction_compatibility.rs",
+    ]),
+  },
+  {
     id: "g1.5-unified-egress-policy",
     slug: "g1.5",
     label: "G1.5",
@@ -322,6 +342,7 @@ export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];
 export const g13Profile = profiles["g1.3-transaction-capabilities"];
 export const g14Profile = profiles["g1.4-bounded-writer-admission"];
 export const g14aProfile = profiles["g1.4a-store-terminal-outcomes"];
+export const g14bProfile = profiles["g1.4b-outcome-fault-safety"];
 export const g15Profile = profiles["g1.5-unified-egress-policy"];
 export const g15bProfile = profiles["g1.5b-update-cancellation"];
 export const g15cProfile = profiles["g1.5c-negotiated-update"];

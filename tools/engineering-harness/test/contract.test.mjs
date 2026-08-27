@@ -6,6 +6,7 @@ import {
   g13ContractPath,
   g14ContractPath,
   g14aContractPath,
+  g14bContractPath,
   g15ContractPath,
   g15bContractPath,
   g15cContractPath,
@@ -20,6 +21,7 @@ import {
   g13Profile,
   g14Profile,
   g14aProfile,
+  g14bProfile,
   g15Profile,
   g15bProfile,
   g15cProfile,
@@ -134,6 +136,51 @@ test("loads the evaluator-separated G1.4a Store outcome contract and binds it to
   ]);
   assert.equal(resolution.repository.baseline.commit, resolution.contract.baseline.commit);
   assert.equal(resolution.repository.evaluator.commit, resolution.contract.evaluator.commit);
+});
+
+test("loads the runtime-red G1.4b outcome fault contract and binds it to Git", () => {
+  const resolution = resolveTaskContract({ taskId: g14bProfile.id });
+
+  assert.equal(
+    resolution.contractPath,
+    "tools/engineering-harness/tasks/g1/g1.4b/contract.json",
+  );
+  assert.equal(resolution.contract.decision, "ADR-0018");
+  assert.equal(Object.hasOwn(resolution.contract.initialRed, "kind"), false);
+  assert.equal(resolution.contract.initialRed.commandRole, "public");
+  assert.equal(resolution.contract.initialRed.exitCode, 101);
+  assert.equal(resolution.contract.initialRed.passed, 6);
+  assert.equal(resolution.contract.initialRed.failed, 2);
+  assert.deepEqual(resolution.contract.scope.mutableExact, [
+    "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+  ]);
+  assert.equal(
+    resolution.contract.evaluator.path,
+    "lib/oxigraph/src/store/transaction_outcome_faults.rs",
+  );
+  assert.equal(resolution.contract.evaluator.changeStatus, "M");
+  assert.deepEqual(resolution.contract.verificationSequence, [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression",
+  ]);
+  assert.deepEqual(resolution.contract.commands.public.argv.slice(-2), [
+    "--lib",
+    "store::transaction_outcome_faults::",
+  ]);
+  assert.equal(resolution.contract.success.publicPassed, 8);
+  assert.equal(resolution.contract.success.independentPassed, 7);
+  assert.equal(resolution.contract.success.regressionPassed, 20);
+  assert.equal(
+    resolution.repository.baseline.commit,
+    "9c13454350b951a24b68b996aaefb50e32997a06",
+  );
+  assert.equal(
+    resolution.repository.evaluator.commit,
+    "95440da438da2260b0d5cf1d1d011c9a4574947d",
+  );
 });
 
 test("loads the feature-active compiler-red G1.5 contract and binds it to Git", () => {
@@ -476,6 +523,7 @@ test("legacy contract-path constants remain exact compatibility shims", () => {
       g13ContractPath,
       g14ContractPath,
       g14aContractPath,
+      g14bContractPath,
       g15ContractPath,
       g15bContractPath,
       g15cContractPath,
@@ -486,6 +534,7 @@ test("legacy contract-path constants remain exact compatibility shims", () => {
       g13Profile,
       g14Profile,
       g14aProfile,
+      g14bProfile,
       g15Profile,
       g15bProfile,
       g15cProfile,
