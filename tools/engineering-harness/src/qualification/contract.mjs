@@ -25,23 +25,26 @@ import {
   G17_REFERENCE_DECISION_SCHEMA,
   g17DecisionSetSha256,
 } from "./decision-contract.mjs";
+import {
+  G17_CONTRACT_GENERATION,
+  G17_CONTRACT_SCHEMA,
+  G17_CURRENT_CONTRACT_SHA256,
+  G17_LEGACY_V1_CONTRACT_SHA256,
+  G17_LEGACY_V3_CONTRACT_SHA256,
+} from "./contract-identity.mjs";
+
+export {
+  G17_CONTRACT_GENERATION,
+  G17_CONTRACT_SCHEMA,
+  G17_CURRENT_CONTRACT_SHA256,
+  G17_LEGACY_CONTRACT_SHA256,
+  G17_LEGACY_V1_CONTRACT_SHA256,
+  G17_LEGACY_V3_CONTRACT_SHA256,
+} from "./contract-identity.mjs";
 
 const { hashTasks: darwinHashTasks, verifySuite: darwinVerifySuite } =
   await loadG17DarwinFunctions();
 
-export const G17_CONTRACT_SCHEMA = "oxigraph.g1.7-qualification-contract/v4";
-export const G17_LEGACY_V1_CONTRACT_SHA256 =
-  "e267e4d276a3d0b7997c2522d3f24ca7a32f669282c5f2ea332a752c3322c54c";
-export const G17_LEGACY_CONTRACT_SHA256 = G17_LEGACY_V1_CONTRACT_SHA256;
-export const G17_LEGACY_V3_CONTRACT_SHA256 =
-  "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
-export const G17_CURRENT_CONTRACT_SHA256 =
-  "dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0";
-export const G17_CONTRACT_GENERATION = Object.freeze({
-  LEGACY_V1: "LEGACY_V1",
-  LEGACY_V3: "LEGACY_V3",
-  CURRENT_V4: "CURRENT_V4",
-});
 export const g17ContractPath = join(
   harnessRoot,
   "qualification",
