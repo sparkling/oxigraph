@@ -14,8 +14,7 @@ import {
   g17EvidenceSchemaState,
 } from "./evidence-contract.mjs";
 
-export const G17_RECEIPT_SCHEMA =
-  "oxigraph.g1.7-qualification-receipt/v1";
+export const G17_RECEIPT_SCHEMA = "oxigraph.g1.7-qualification-receipt/v1";
 
 const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
@@ -79,12 +78,7 @@ function plainObject(value, label) {
 
 function exactKeys(value, expected, label) {
   plainObject(value, label);
-  if (
-    !isDeepStrictEqual(
-      Object.keys(value).sort(),
-      [...expected].sort(),
-    )
-  ) {
+  if (!isDeepStrictEqual(Object.keys(value).sort(), [...expected].sort())) {
     fail(`${label} fields are not exact`);
   }
 }
@@ -124,7 +118,10 @@ function status(value, label) {
 function validateRun(run) {
   exactKeys(run, ["id", "startedAt", "finishedAt"], "run");
   if (!SAFE_ID.test(run.id)) fail("run id is unsafe");
-  if (timestamp(run.finishedAt, "finishedAt") < timestamp(run.startedAt, "startedAt")) {
+  if (
+    timestamp(run.finishedAt, "finishedAt") <
+    timestamp(run.startedAt, "startedAt")
+  ) {
     fail("run finished before it started");
   }
 }
@@ -149,9 +146,7 @@ function validateContractProjection(contract) {
     fail("contract digest is malformed");
   }
   if (
-    !["SELECTED", "UNSELECTED", "PROPOSED"].includes(
-      contract.referenceDecision,
-    )
+    !["SELECTED", "UNSELECTED", "PROPOSED"].includes(contract.referenceDecision)
   ) {
     fail("reference decision is invalid");
   }
@@ -209,7 +204,8 @@ function validateEvidence(
       ) ||
       !(
         entry.projection === null ||
-        (typeof entry.projection === "object" && !Array.isArray(entry.projection))
+        (typeof entry.projection === "object" &&
+          !Array.isArray(entry.projection))
       )
     ) {
       fail(`${label} evidence is malformed`);
@@ -261,7 +257,10 @@ function validateBenchmark(benchmark) {
     "benchmark",
   );
   status(benchmark.status, "benchmark");
-  if (!Number.isSafeInteger(benchmark.sampleCount) || benchmark.sampleCount < 0) {
+  if (
+    !Number.isSafeInteger(benchmark.sampleCount) ||
+    benchmark.sampleCount < 0
+  ) {
     fail("benchmark sampleCount is invalid");
   }
   for (const key of ["samplesSha256", "summarySha256"]) {
@@ -313,7 +312,9 @@ function validateFinal(final, receipt) {
   if (!VERDICTS.has(final.verdict)) fail("final verdict is invalid");
   if (
     !Array.isArray(final.reasons) ||
-    final.reasons.some((reason) => typeof reason !== "string" || reason.length === 0)
+    final.reasons.some(
+      (reason) => typeof reason !== "string" || reason.length === 0,
+    )
   ) {
     fail("final reasons are invalid");
   }
@@ -336,7 +337,11 @@ function validateFinal(final, receipt) {
 function validateArtifacts(artifacts) {
   // The sealed directory ceiling is 64 total files and receipt.json is written
   // separately, leaving at most 63 receipt-listed artifacts.
-  if (!Array.isArray(artifacts) || artifacts.length < 1 || artifacts.length > 63) {
+  if (
+    !Array.isArray(artifacts) ||
+    artifacts.length < 1 ||
+    artifacts.length > 63
+  ) {
     fail("artifact inventory size is invalid");
   }
   const names = new Set();
@@ -407,7 +412,8 @@ function validateStructure(receipt, options) {
   validateIdentity(receipt.identity);
   validateEvidence(receipt.evidence, options);
   validateBenchmark(receipt.benchmark);
-  if (!isDeepStrictEqual(receipt.authority, AUTHORITY)) fail("authority drifted");
+  if (!isDeepStrictEqual(receipt.authority, AUTHORITY))
+    fail("authority drifted");
   validateFinal(receipt.final, receipt);
   validateArtifacts(receipt.artifacts);
   if (
@@ -453,10 +459,7 @@ export function verifyG17Receipt(input) {
       typeof input === "string" || Buffer.isBuffer(input)
         ? Buffer.from(input)
         : null;
-    const receipt =
-      bytes === null
-        ? input
-        : JSON.parse(bytes.toString("utf8"));
+    const receipt = bytes === null ? input : JSON.parse(bytes.toString("utf8"));
     const verified = deepFreeze(validateStructure(receipt));
     if (bytes !== null && !bytes.equals(g17ReceiptBytes(verified))) {
       fail("serialized bytes are not canonical");
@@ -472,11 +475,9 @@ export function verifyG17Receipt(input) {
       ),
     });
     const legacyReplayOnly =
-      [
-        G17_LEGACY_V1_CONTRACT_SHA256,
-        G17_LEGACY_V3_CONTRACT_SHA256,
-      ].includes(verified.contract.sha256) ||
-      Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
+      [G17_LEGACY_V1_CONTRACT_SHA256, G17_LEGACY_V3_CONTRACT_SHA256].includes(
+        verified.contract.sha256,
+      ) || Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
     return Object.freeze({
       ok: !legacyReplayOnly,
       structurallyValid: true,

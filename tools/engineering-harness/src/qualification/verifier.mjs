@@ -23,13 +23,8 @@ import {
   verifySealedNativeCompatibilityEvidence,
   verifySealedSemanticEvidence,
 } from "./sealed-evidence.mjs";
-import {
-  G17_NATIVE_APPLICATION_ARTIFACT_NAMES,
-} from "./native-application-contract.mjs";
-import {
-  g17RunsRoot,
-  openSealedG17Run,
-} from "./storage.mjs";
+import { G17_NATIVE_APPLICATION_ARTIFACT_NAMES } from "./native-application-contract.mjs";
+import { g17RunsRoot, openSealedG17Run } from "./storage.mjs";
 
 function fail(message) {
   throw new Error(`G1.7 sealed verification: ${message}`);
@@ -94,7 +89,7 @@ function verifyEvidenceArtifactInventory(receipt, bytesByName) {
   if (
     currentCompatibility &&
     (projectedNativeOwner !== null && projectedNativeOwner !== undefined) !==
-    hasNativeOwner
+      hasNativeOwner
   ) {
     fail("native compatibility owner artifact projection is asymmetric");
   }
@@ -109,7 +104,8 @@ function verifyEvidenceArtifactInventory(receipt, bytesByName) {
       "agentic-oracle.json",
       "compatibility PASS artifacts are incomplete",
     );
-    const archiveCount = receipt.evidence.compatibility.projection?.agenticQe?.archiveFileCount;
+    const archiveCount =
+      receipt.evidence.compatibility.projection?.agenticQe?.archiveFileCount;
     if (!Number.isSafeInteger(archiveCount) || archiveCount < 0) {
       fail("compatibility PASS archive inventory is invalid");
     }
@@ -247,7 +243,9 @@ export async function verifySealedG17Run({
     fail("executed benchmark replay owner is unavailable");
   }
   const identity = parseCanonical(bytesByName.get("identity.json"), "identity");
-  if (!isDeepStrictEqual(sealedIdentityProjection(identity), receipt.identity)) {
+  if (
+    !isDeepStrictEqual(sealedIdentityProjection(identity), receipt.identity)
+  ) {
     fail("sealed identity projection differs from the receipt");
   }
   const evidenceSchemaState = Object.freeze({
@@ -323,7 +321,10 @@ export async function verifySealedG17Run({
     observations.schema !== "oxigraph.g1.7-qualification-observations/v1" ||
     !isDeepStrictEqual(observations.identity, identity) ||
     !isDeepStrictEqual(observations.semantic, receipt.evidence.semantic) ||
-    !isDeepStrictEqual(observations.compatibility, receipt.evidence.compatibility) ||
+    !isDeepStrictEqual(
+      observations.compatibility,
+      receipt.evidence.compatibility,
+    ) ||
     !isDeepStrictEqual(observations.benchmark, receipt.benchmark)
   ) {
     fail("sealed observations differ from the receipt");
@@ -363,10 +364,8 @@ export async function verifySealedG17Run({
     contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4 &&
     decisionBinding?.approved === true &&
     receipt.final.verdict === "ACCEPT" &&
-    evidenceAssurance.semantic ===
-      "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&
-    evidenceAssurance.compatibility ===
-      "COMPATIBILITY_OWNER_CONTRACT_REPLAYED";
+    evidenceAssurance.semantic === "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&
+    evidenceAssurance.compatibility === "COMPATIBILITY_OWNER_CONTRACT_REPLAYED";
   return Object.freeze({
     ok: !legacyReplayOnly,
     verificationStatus: legacyReplayOnly

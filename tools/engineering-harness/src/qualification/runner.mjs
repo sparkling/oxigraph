@@ -69,12 +69,7 @@ function blockedRunResult(loaded, decisionBinding) {
     schema: "oxigraph.g1.7-qualification-run-gate/v1",
     contract: contractProjection(loaded, decisionBinding),
     decisionAuthority: decisionBinding.authority,
-    final: classifyCurrent(
-      decisionBinding,
-      "NOT_RUN",
-      "NOT_RUN",
-      benchmark,
-    ),
+    final: classifyCurrent(decisionBinding, "NOT_RUN", "NOT_RUN", benchmark),
     authority: AUTHORITY,
   });
 }
@@ -128,12 +123,7 @@ export async function preflightG17Qualification({
     schema: "oxigraph.g1.7-qualification-preflight/v1",
     contract: contractProjection(loaded, decisionBinding),
     identity: g17ReceiptIdentity(identity),
-    final: classifyCurrent(
-      decisionBinding,
-      "MISSING",
-      "MISSING",
-      benchmark,
-    ),
+    final: classifyCurrent(decisionBinding, "MISSING", "MISSING", benchmark),
     authority: AUTHORITY,
   });
 }

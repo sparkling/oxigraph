@@ -655,10 +655,7 @@ export function decodeSealedG17DecisionSet({ contract, bytesByName } = {}) {
     const loaded = Object.fromEntries(
       decisionSpecifications(contract).map((specification) => {
         const bytes = bytesByName.get(specification.descriptor?.sealedName);
-        return [
-          specification.key,
-          decodeDecision({ bytes, ...specification }),
-        ];
+        return [specification.key, decodeDecision({ bytes, ...specification })];
       }),
     );
     return decisionSetResult(contract, loaded);
