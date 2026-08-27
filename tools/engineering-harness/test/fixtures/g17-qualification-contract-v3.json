@@ -1,0 +1,285 @@
+{
+  "schema": "oxigraph.g1.7-qualification-contract/v3",
+  "id": "g1.7-compatibility-performance-qualification",
+  "programme": "linked-data-store",
+  "decisions": ["ADR-0017", "ADR-0018", "ADR-0019"],
+  "objective": "Qualify the current transactional write implementation against an independently selected reference, exact compatibility evidence, and separately approved performance and noise budgets without granting promotion authority.",
+  "authority": {
+    "localOnly": true,
+    "promotionAuthority": false,
+    "routerQualityAuthority": false,
+    "publicationAuthority": false
+  },
+  "evaluator": {
+    "commit": "3aca932e4062f9b087adfa486fac936b5bbeaebb",
+    "parent": "623adae314f3c4093d563900f6376ce78262a9f0",
+    "tree": "a8b0310482b88a813aa602ebb7264b259e066586",
+    "paths": [
+      {
+        "path": "lib/oxigraph/Cargo.toml",
+        "changeStatus": "M",
+        "blob": "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+        "contentSha256": "e83b4ab43124affe47706192de6af6ae462bf6d819f66e8caecf3897888bb868"
+      },
+      {
+        "path": "lib/oxigraph/benches/transactional_write.rs",
+        "changeStatus": "A",
+        "blob": "07560ff94aaf12f9c4bd3e70e58a61edf3446fcb",
+        "contentSha256": "4a1ce885de13b2db4562195c2735b350e0623109c52a44d54f6b7b0076e10727"
+      }
+    ],
+    "patchSha256": "3c3df24b0021b1bfebb42ffed2ff9a2c228d7e0ac302c4a5aa9e6b6e8e68db46"
+  },
+  "referenceDecision": {
+    "status": "UNSELECTED",
+    "commit": null,
+    "tree": null,
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "budgetDecision": {
+    "status": "ABSENT",
+    "path": null,
+    "sha256": null,
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "noiseDecision": {
+    "status": "ABSENT",
+    "path": null,
+    "sha256": null,
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "benchmark": {
+    "suite": {
+      "id": "oxigraph-g1.7-transactional-write",
+      "version": "1",
+      "taskHash": "533a1501130971712ef5ca2a62b3ddfd9115eaaf0b650baacd1e5f04ed44aaba",
+      "tasks": [
+        {
+          "id": "on-store-memory",
+          "backend": "memory",
+          "binding": "on-store",
+          "writers": 1,
+          "concurrentReaders": false,
+          "operations": 10000
+        },
+        {
+          "id": "on-dataset-memory",
+          "backend": "memory",
+          "binding": "on-dataset",
+          "writers": 1,
+          "concurrentReaders": false,
+          "operations": 10000
+        },
+        {
+          "id": "on-store-rocksdb",
+          "backend": "rocksdb",
+          "binding": "on-store",
+          "writers": 1,
+          "concurrentReaders": false,
+          "operations": 10000
+        },
+        {
+          "id": "on-dataset-rocksdb",
+          "backend": "rocksdb",
+          "binding": "on-dataset",
+          "writers": 1,
+          "concurrentReaders": false,
+          "operations": 10000
+        },
+        {
+          "id": "writers-1-rocksdb",
+          "backend": "rocksdb",
+          "binding": "transaction",
+          "writers": 1,
+          "concurrentReaders": true,
+          "operations": 1000
+        },
+        {
+          "id": "writers-4-rocksdb",
+          "backend": "rocksdb",
+          "binding": "transaction",
+          "writers": 4,
+          "concurrentReaders": true,
+          "operations": 1000
+        },
+        {
+          "id": "writers-16-rocksdb",
+          "backend": "rocksdb",
+          "binding": "transaction",
+          "writers": 16,
+          "concurrentReaders": true,
+          "operations": 1000
+        }
+      ]
+    },
+    "build": {
+      "argv": [
+        "cargo",
+        "bench",
+        "--locked",
+        "--offline",
+        "-p",
+        "oxigraph",
+        "--bench",
+        "transactional_write",
+        "--no-run"
+      ],
+      "target": "transactional_write",
+      "profile": "bench",
+      "buildOnceBeforeTiming": true
+    },
+    "protocol": {
+      "sampleSchema": "oxigraph.transactional-write-sample/v1",
+      "qualificationSampleSchema": "oxigraph.g1.7-qualification-sample/v1",
+      "schedules": [
+        ["subject", "reference", "reference", "subject"],
+        ["reference", "subject", "subject", "reference"]
+      ],
+      "warmupBlocks": 2,
+      "measuredBlocks": 5,
+      "seed": 170017,
+      "seedDerivation": "base-plus-case100000-plus-globalblock2-plus-pair",
+      "exclusive": true,
+      "nonTmpfsVolume": true,
+      "adaptiveStopping": false,
+      "outlierDeletion": false
+    },
+    "statistics": {
+      "owner": "@metaharness/darwin",
+      "suiteHashApi": "bench.hashTasks",
+      "suiteVerifyApi": "bench.verifySuite",
+      "bootstrapApi": "bench.bootstrapDelta",
+      "bootstrapSamples": 5000,
+      "bootstrapSeed": 170017,
+      "bootstrapScore": "negative-elapsed-nanoseconds",
+      "median": "integer-midpoint-floor",
+      "p95": "nearest-rank",
+      "dispersion": "median-absolute-deviation"
+    }
+  },
+  "compatibility": {
+    "agenticQe": {
+      "profile": "g1-regression",
+      "commandIds": [
+        "g11TransactionStateModel",
+        "g12TransactionConcurrency",
+        "g13TransactionCapabilities",
+        "g14RocksdbWriterSerialization",
+        "g15SparqlEgressPolicy",
+        "g15bSparqlUpdateCancellation",
+        "g15cSparqlNegotiatedUpdate",
+        "g16EffectiveCapabilities",
+        "g16ServiceClaims",
+        "g16CompatibilityCanary",
+        "g16SparqlVersion"
+      ],
+      "expectedCommands": 11,
+      "expectedPassedTests": 66
+    },
+    "native": [
+      {
+        "id": "transaction-compatibility",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "oxigraph",
+          "--test",
+          "transaction_compatibility"
+        ],
+        "expectedTestIds": [
+          "external_fault_adapter_preserves_the_legacy_transaction_traits",
+          "injected_open_failure_does_not_construct_or_mutate_a_transaction",
+          "injected_prepublication_commit_failure_preserves_source_without_rollback_claim",
+          "injected_read_iteration_failure_rolls_back_and_preserves_source",
+          "injected_rollback_failure_reports_both_failures_and_preserves_source",
+          "injected_second_mutation_failure_rolls_back_all_staged_state",
+          "memory_drop_releases_writer_without_publication",
+          "memory_explicit_rollback_releases_writer_without_publication",
+          "memory_one_four_and_sixteen_writers_are_serialized_without_lost_commits",
+          "memory_queued_writer_cancellation_is_bounded_and_leak_free",
+          "memory_readers_remain_live_and_do_not_see_staged_writes",
+          "memory_store_rejects_durable_outcome_lookup_before_writer_open",
+          "public_transaction_enums_preserve_the_g1_source_shape",
+          "rocksdb_drop_releases_writer_without_publication",
+          "rocksdb_explicit_rollback_releases_writer_without_publication",
+          "rocksdb_one_four_and_sixteen_writers_are_serialized_without_lost_commits",
+          "rocksdb_queued_writer_cancellation_is_bounded_and_leak_free",
+          "rocksdb_readers_remain_live_and_do_not_see_staged_writes",
+          "rocksdb_store_rejects_durable_outcome_lookup_before_writer_open",
+          "rocksdb_without_atomicity_keeps_prior_ingestions_when_later_work_is_dropped"
+        ],
+        "expectedPassedTests": 20,
+        "maxOutputBytes": 1048576,
+        "timeoutMs": 300000
+      },
+      {
+        "id": "bulk-sst-writer-serialization",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "oxigraph",
+          "--test",
+          "rocksdb_bulk_writer_serialization"
+        ],
+        "expectedTestIds": [
+          "rocksdb_bulk_sst_publication_waits_for_the_active_writer"
+        ],
+        "expectedPassedTests": 1,
+        "maxOutputBytes": 1048576,
+        "timeoutMs": 300000
+      },
+      {
+        "id": "update-atomicity",
+        "argv": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "oxigraph",
+          "--test",
+          "update_atomicity"
+        ],
+        "expectedTestIds": [
+          "tests::failing_update_operation_aborts_all_following_operations",
+          "tests::whole_update_request_rolls_back_when_a_later_operation_fails"
+        ],
+        "expectedPassedTests": 2,
+        "maxOutputBytes": 1048576,
+        "timeoutMs": 300000
+      }
+    ],
+    "nativeSession": {
+      "maxTotalWallMs": 1860000,
+      "maxResidentBytes": 17179869184,
+      "maxDiskBytes": 12884901888,
+      "cargoBuildJobs": 4,
+      "tasksMax": 512,
+      "memorySwapMaxBytes": 0
+    },
+    "semantic": {
+      "qualificationPath": "target/metaharness/qualification.json",
+      "verificationPath": "target/metaharness/verification.json",
+      "requireFull": true
+    }
+  },
+  "artifactPolicy": {
+    "receiptSchema": "oxigraph.g1.7-qualification-receipt/v1",
+    "runDirectory": "tools/engineering-harness/.runtime/g1.7/runs",
+    "writeOnce": true,
+    "regularFilesOnly": true,
+    "singleLinkOnly": true,
+    "ownerOnly": true,
+    "maxFiles": 64,
+    "maxBytes": 67108864
+  }
+}
