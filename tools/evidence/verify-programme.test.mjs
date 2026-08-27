@@ -242,23 +242,68 @@ function ledgerFixture() {
         versionPolicy: "latest",
         resolvedVersion: "3.13.12",
         lockIntegrity: agenticIntegrity,
-        adapterAdversarialTests: { passed: 18, failed: 0 },
+        adapterAdversarialTests: { passed: 40, failed: 0 },
         semanticGateCommandInventory: 41,
         parityCommandInventory: 47,
         reconciledProfiles: {
+          agenticAdapter: {
+            passed: 40,
+            failed: 0,
+            commands: 1,
+            receiptSchemaVersion: 5,
+            freshnessStatus: "current-scoped-subject",
+            sourceCommit: "5a93890f792f908da930e97fc3b1e7c910fc5802",
+            runId: "5e6202d7-e020-4af9-ae0d-1d4c8704a28e",
+            receiptSha256:
+              "0f1e3204b821acbd9f83f88f21afbe2cd9b60f48e9154c14c3f1e7509b261d05",
+            oracleSha256:
+              "28b3cf49bfd7af8b4626d085d76745a0d4fe345a15a29ab471bae45e21711d05",
+            contentHash:
+              "c110376a07c11f329011950342db5a9bce78c9975252015dd1c854449482687f",
+            executionHash:
+              "0684c7b14febafb35707ed0980535ca2fbd5275e165946aba4ae10cafde78230",
+            worktreeDirty: true,
+            independentlyReopened: true,
+          },
           cliDefault: { passed: 144, failed: 0 },
           cliNoDefault: { passed: 129, failed: 0 },
           persistenceWrite: {
-            passed: 34,
+            passed: 45,
             failed: 0,
             commands: 7,
-            runId: "47a995c5-5cf0-4cf6-baaf-8b0cfa44a149",
+            receiptSchemaVersion: 5,
+            freshnessStatus: "current-scoped-subject",
+            sourceCommit: "5a93890f792f908da930e97fc3b1e7c910fc5802",
+            runId: "73b6a484-f830-49d2-b4cc-de1549928613",
             receiptSha256:
-              "e965c63fd696c3bdd2f50c6f6028e15d53d6567fa8d64cdfa4d2c10615b864a0",
+              "9f79554a22121e96b90c0861de7b9ff10fc64a2889590c52405de8bb05144ea7",
+            oracleSha256:
+              "f5cfbf2689d95c89098ce836c2f93f0597176c8d24a873221c27ef60abfd3338",
             contentHash:
-              "2561ffb02391d5d0b36bf3c29e91b75d27244e4abddcfedb49e2d7927f7471a8",
+              "b8f70d784e13c1af5db2fca853f5c6324543c2e3c7f221f7bc7de83c6e7e11e7",
             executionHash:
-              "1de5ea6f38a4ee0e266228ac1ff875526f5138233de193b14a1f9e5dcadc2814",
+              "4daf9149c72b9d556168b5ce1becb646df9f73a97f2e19b15f2fc8fdd678f19f",
+            worktreeDirty: true,
+            independentlyReopened: true,
+          },
+          g1Regression: {
+            passed: 66,
+            failed: 0,
+            commands: 11,
+            receiptSchemaVersion: 5,
+            freshnessStatus: "current-scoped-subject",
+            sourceCommit: "5a93890f792f908da930e97fc3b1e7c910fc5802",
+            runId: "34602f2a-7332-4649-aef0-d51029389cfb",
+            receiptSha256:
+              "0b74b063f11b82762fa2b9501430a8eb2db69797eccb28e83c025835a9453fcc",
+            oracleSha256:
+              "b63b707204fddc365820334ea0936809ba020c7a58d278a53ec29043ae3762fe",
+            contentHash:
+              "af605096f4ffb13c3d36dd38ab6275a850a59d18891c3c628f9673075e147a64",
+            executionHash:
+              "828e385bcabe4339594d5cb55e92c108c7537c20b1e2233e765f0d969de357c0",
+            worktreeDirty: true,
+            independentlyReopened: true,
           },
         },
       },
@@ -327,6 +372,9 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
   ledger.qualification.find(
     (item) => item.id === "agentic-qe",
   ).reconciledProfiles.persistenceWrite.receiptSha256 = "0".repeat(64);
+  ledger.qualification.find(
+    (item) => item.id === "agentic-qe",
+  ).reconciledProfiles.g1Regression.oracleSha256 = "0".repeat(64);
   validateLedgerCounts(ledger, errors);
   assert(errors.some((error) => error.startsWith("Datalog passed tests:")));
   assert(
@@ -349,7 +397,12 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
   assert(errors.some((error) => error.startsWith("mutation ledger run:")));
   assert(
     errors.some((error) =>
-      error.startsWith("Agentic-QE persistence-write receipt hash:"),
+      error.startsWith("Agentic-QE persistence-write receiptSha256:"),
+    ),
+  );
+  assert(
+    errors.some((error) =>
+      error.startsWith("Agentic-QE G1 regression oracleSha256:"),
     ),
   );
   assert(
@@ -806,7 +859,7 @@ function fullReceiptsFixture() {
         timedOut: false,
         testSafeguard:
           id === "agenticAdapter"
-            ? { observedPassedTests: 18, passed: true }
+            ? { observedPassedTests: 40, passed: true }
             : id === "supportingParserSuites"
               ? { observedPassedTests: 5, passed: true }
               : null,

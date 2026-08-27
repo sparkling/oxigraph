@@ -75,10 +75,11 @@ sources, the locked Jena runner, two byte-identical runs of the refreshed
 76/198 profile, the 144/129 Agentic-QE inventories, the then-34-test
 `persistence-write` profile (now 45 tests in source), the generic OxDatalog mutation run
 `731e6467-2cab-4260-8d15-b34e4ebc8ed6`, and the prior protected-claims
-reconciliation. The adapter contract now passes 40/40 under schema v5, but the
-last `persistence-write` receipt is schema v4 and invalid under the current
-contract. Freshness is therefore `schema-v5-replay-required`; no current
-scoped or aggregate Agentic receipt is claimed. G1.6
+reconciliation. At tracked-clean subject `5a93890f`, schema-v5 adapter,
+`persistence-write`, and G1 regression runs pass 40/40, 45/45, and 66/66 and
+were independently reopened. The broad dirty flag reflects only protected
+untracked Ruflo/runtime paths. This is current scoped evidence, not an
+aggregate Agentic receipt. G1.6
 has bounded source-bound acceptance from the seven-stage
 4/17/1/1/12 verifier split and three rejecting product controls. That closes
 ADR-0019 but does not grant current-HEAD umbrella qualification, which remains

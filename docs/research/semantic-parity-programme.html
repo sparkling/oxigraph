@@ -316,8 +316,9 @@
             substituted.</li>
           <li>The current schema-v5 contract archives declared outputs and
             publishes immutable UUID-addressed receipt/oracle bytes; the final
-            oracle binds both. The last persistence-write receipt is schema v4,
-            historical/invalid, and requires a clean replay.</li>
+            oracle binds both. Adapter 40/40, persistence 45/45, and G1 66/66
+            receipts at tracked-clean subject <code>5a93890f</code> were
+            independently reopened.</li>
           <li>Agentic-QE itself is a presence/version gate and optional advisory
             candidate generator—not the semantic oracle.</li>
           <li>The receipt binds every declared output artifact and executable
@@ -374,10 +375,11 @@
         entailment, or any OWL profile beyond the declared OWL 2 RL/RDF
         surface. The prior reconciliation keeps the refreshed Jena, 144/129
         CLI, then-34-test persistence-write, and generic OxDatalog identities
-        historical for their scoped subjects. The last persistence-write
-        receipt is schema v4 and invalid under the current contract, so
-        freshness is <code>schema-v5-replay-required</code>; no current scoped
-        or aggregate Agentic/MetaHarness qualification or G1.7 promotion
+        historical for their scoped subjects. Current schema-v5 adapter,
+        persistence, and G1 receipts cover 40, 45, and 66 tests at
+        <code>5a93890f</code> and were independently reopened. Their dirty bit
+        reflects protected untracked runtime paths. This is scoped evidence;
+        no aggregate Agentic/MetaHarness qualification or G1.7 promotion
         follows.</p></div></div>
     <div class="receipt">
       <div class="callout"><div class="mark">✓</div><div><h3>Parity receipt acceptance</h3>
@@ -402,7 +404,7 @@
         <tr><td>RDF Dataset Canonicalization 1.0</td><td>86/86 official cases</td><td>bounded work factor, deterministic error on exhaustion</td></tr>
         <tr><td>OWL 2 RL/RDF</td><td>98/98 assertions over 68 cases using exactly 78 rules</td><td>OWL 2 RL only</td></tr>
         <tr><td>SHACL 1.2</td><td>521 discovered; 519/519 eligible; two invalid upstream exclusions; native 167/167 all-feature and 114/114 no-default</td><td>Rules supplemental; SHACL-C informative; synchronous WebAssembly SPARQL-backed execution fails closed</td></tr>
-        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56; source-bound CLI 144/144 default, 129/129 no-default, and persistence-write inventory 45/45</td><td>empty named graphs preserved where representable; lossy formats fail closed; the persistence receipt is schema-v4 historical and schema-v5 replay is required</td></tr>
+        <tr><td>RDF dataset topology</td><td>JSON-LD 4/4 · generic RDF I/O 11/11 · Store 8/8 · LOAD 8/8 · Graph Store 6/6; Python 222/222, JavaScript 56/56; source-bound CLI 144/144 default, 129/129 no-default, and independently reopened schema-v5 persistence 45/45</td><td>empty named graphs preserved where representable; lossy formats fail closed; scoped receipt only, with no aggregate qualification</td></tr>
         <tr><td>Apache Jena 6.1.0</td><td>76 scenarios · 198 assertions · gate closed; RDF 17/46 · SPARQL 30/77 · SHACL 13/43 · RDFS 7/14 · OWL 2 RL 9/18</td><td>70 agreement, 4 W3C overrides, 1 W3C-permitted divergence, 1 extension</td></tr>
         <tr><td>Semantic store integration</td><td>4/4 tests</td><td>read-only snapshots and explicit materialization seams</td></tr>
       </tbody>

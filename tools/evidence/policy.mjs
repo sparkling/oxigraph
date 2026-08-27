@@ -53,16 +53,40 @@ const EXPECTED = Object.freeze({
   jenaObservationsSha256:
     "b9ad72609b05dbe3aaf29cbf8bdd2b8572f85e833a30bf123a580d7cf59e95b4",
   datalog: 70,
-  agentic: 18,
-  agenticPersistenceWrite: 34,
+  agentic: 40,
+  agenticSubjectCommit: "5a93890f792f908da930e97fc3b1e7c910fc5802",
+  agenticAdapterCommands: 1,
+  agenticAdapterRunId: "5e6202d7-e020-4af9-ae0d-1d4c8704a28e",
+  agenticAdapterReceiptSha256:
+    "0f1e3204b821acbd9f83f88f21afbe2cd9b60f48e9154c14c3f1e7509b261d05",
+  agenticAdapterOracleSha256:
+    "28b3cf49bfd7af8b4626d085d76745a0d4fe345a15a29ab471bae45e21711d05",
+  agenticAdapterContentHash:
+    "c110376a07c11f329011950342db5a9bce78c9975252015dd1c854449482687f",
+  agenticAdapterExecutionHash:
+    "0684c7b14febafb35707ed0980535ca2fbd5275e165946aba4ae10cafde78230",
+  agenticPersistenceWrite: 45,
   agenticPersistenceCommands: 7,
-  agenticPersistenceRunId: "47a995c5-5cf0-4cf6-baaf-8b0cfa44a149",
+  agenticPersistenceRunId: "73b6a484-f830-49d2-b4cc-de1549928613",
   agenticPersistenceReceiptSha256:
-    "e965c63fd696c3bdd2f50c6f6028e15d53d6567fa8d64cdfa4d2c10615b864a0",
+    "9f79554a22121e96b90c0861de7b9ff10fc64a2889590c52405de8bb05144ea7",
+  agenticPersistenceOracleSha256:
+    "f5cfbf2689d95c89098ce836c2f93f0597176c8d24a873221c27ef60abfd3338",
   agenticPersistenceContentHash:
-    "2561ffb02391d5d0b36bf3c29e91b75d27244e4abddcfedb49e2d7927f7471a8",
+    "b8f70d784e13c1af5db2fca853f5c6324543c2e3c7f221f7bc7de83c6e7e11e7",
   agenticPersistenceExecutionHash:
-    "1de5ea6f38a4ee0e266228ac1ff875526f5138233de193b14a1f9e5dcadc2814",
+    "4daf9149c72b9d556168b5ce1becb646df9f73a97f2e19b15f2fc8fdd678f19f",
+  agenticG1: 66,
+  agenticG1Commands: 11,
+  agenticG1RunId: "34602f2a-7332-4649-aef0-d51029389cfb",
+  agenticG1ReceiptSha256:
+    "0b74b063f11b82762fa2b9501430a8eb2db69797eccb28e83c025835a9453fcc",
+  agenticG1OracleSha256:
+    "b63b707204fddc365820334ea0936809ba020c7a58d278a53ec29043ae3762fe",
+  agenticG1ContentHash:
+    "af605096f4ffb13c3d36dd38ab6275a850a59d18891c3c628f9673075e147a64",
+  agenticG1ExecutionHash:
+    "828e385bcabe4339594d5cb55e92c108c7537c20b1e2233e765f0d969de357c0",
   mutationRunId: "731e6467-2cab-4260-8d15-b34e4ebc8ed6",
   mutationReceiptSha256:
     "fc0ec6dbb0c8dec0b3c9e2d58814372c8feebc8ec291528df1fdf432879b2ba5",
@@ -615,41 +639,63 @@ export function validateLedgerCounts(ledger, errors) {
     agenticQualification?.reconciledProfiles?.cliNoDefault?.passed,
     EXPECTED.cliNoDefault,
   );
-  equal(
-    errors,
-    "Agentic-QE persistence-write tests",
-    agenticQualification?.reconciledProfiles?.persistenceWrite?.passed,
-    EXPECTED.agenticPersistenceWrite,
+  const validateScopedReceipt = (label, value, expected) => {
+    for (const [field, expectedValue] of Object.entries({
+      passed: expected.passed,
+      failed: 0,
+      commands: expected.commands,
+      receiptSchemaVersion: 5,
+      freshnessStatus: "current-scoped-subject",
+      sourceCommit: EXPECTED.agenticSubjectCommit,
+      runId: expected.runId,
+      receiptSha256: expected.receiptSha256,
+      oracleSha256: expected.oracleSha256,
+      contentHash: expected.contentHash,
+      executionHash: expected.executionHash,
+      worktreeDirty: true,
+      independentlyReopened: true,
+    })) {
+      equal(errors, `Agentic-QE ${label} ${field}`, value?.[field], expectedValue);
+    }
+  };
+  validateScopedReceipt(
+    "adapter",
+    agenticQualification?.reconciledProfiles?.agenticAdapter,
+    {
+      passed: EXPECTED.agentic,
+      commands: EXPECTED.agenticAdapterCommands,
+      runId: EXPECTED.agenticAdapterRunId,
+      receiptSha256: EXPECTED.agenticAdapterReceiptSha256,
+      oracleSha256: EXPECTED.agenticAdapterOracleSha256,
+      contentHash: EXPECTED.agenticAdapterContentHash,
+      executionHash: EXPECTED.agenticAdapterExecutionHash,
+    },
   );
-  equal(
-    errors,
-    "Agentic-QE persistence-write commands",
-    agenticQualification?.reconciledProfiles?.persistenceWrite?.commands,
-    EXPECTED.agenticPersistenceCommands,
+  validateScopedReceipt(
+    "persistence-write",
+    agenticQualification?.reconciledProfiles?.persistenceWrite,
+    {
+      passed: EXPECTED.agenticPersistenceWrite,
+      commands: EXPECTED.agenticPersistenceCommands,
+      runId: EXPECTED.agenticPersistenceRunId,
+      receiptSha256: EXPECTED.agenticPersistenceReceiptSha256,
+      oracleSha256: EXPECTED.agenticPersistenceOracleSha256,
+      contentHash: EXPECTED.agenticPersistenceContentHash,
+      executionHash: EXPECTED.agenticPersistenceExecutionHash,
+    },
   );
-  equal(
-    errors,
-    "Agentic-QE persistence-write run",
-    agenticQualification?.reconciledProfiles?.persistenceWrite?.runId,
-    EXPECTED.agenticPersistenceRunId,
-  );
-  equal(
-    errors,
-    "Agentic-QE persistence-write receipt hash",
-    agenticQualification?.reconciledProfiles?.persistenceWrite?.receiptSha256,
-    EXPECTED.agenticPersistenceReceiptSha256,
-  );
-  equal(
-    errors,
-    "Agentic-QE persistence-write content hash",
-    agenticQualification?.reconciledProfiles?.persistenceWrite?.contentHash,
-    EXPECTED.agenticPersistenceContentHash,
-  );
-  equal(
-    errors,
-    "Agentic-QE persistence-write execution hash",
-    agenticQualification?.reconciledProfiles?.persistenceWrite?.executionHash,
-    EXPECTED.agenticPersistenceExecutionHash,
+  validateScopedReceipt(
+    "G1 regression",
+    agenticQualification?.reconciledProfiles?.g1Regression,
+    {
+      passed: EXPECTED.agenticG1,
+      commands: EXPECTED.agenticG1Commands,
+      runId: EXPECTED.agenticG1RunId,
+      receiptSha256: EXPECTED.agenticG1ReceiptSha256,
+      oracleSha256: EXPECTED.agenticG1OracleSha256,
+      contentHash: EXPECTED.agenticG1ContentHash,
+      executionHash: EXPECTED.agenticG1ExecutionHash,
+    },
   );
 }
 
@@ -830,7 +876,7 @@ export const documentClaims = Object.freeze([
   { id: "OWL 2 RL", label: /\bOWL 2 RL(?:\/RDF)?\b/i, tokens: [pair(98), /\b68\b[^.]{0,80}\bcases?\b/i, /\b78\b[^.]{0,80}\brule/i], window: 720 },
   { id: "SHACL 1.2", label: /\bSHACL 1\.2\b/i, tokens: [pair(519), /(?:\b2\b|two)[^.]{0,100}\binvalid\b/i], window: 680 },
   { id: "Jena", label: /\b(?:Apache )?Jena 6\.1\.0\b/i, tokens: [/\b76\b[^.]{0,90}\bscenarios?\b/i, /\b198\b[^.]{0,90}\bassertions?\b/i], window: 680 },
-  { id: "Agentic-QE", label: /\bAgentic-QE\b/i, tokens: [pair(18)], window: 500 },
+  { id: "Agentic-QE", label: /\bAgentic-QE\b/i, tokens: [pair(40)], window: 500 },
   { id: "semantic integration", label: /\b(?:semantic store integration|semantic-integration|semantic profile integration|store integration)\b/i, tokens: [/(?:4\s*(?:\/|of)\s*4|\b4\b[^.]{0,80}\btests?\b)/i], window: 460 },
 ]);
 

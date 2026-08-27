@@ -68,7 +68,7 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Built-in remote egress, owned updates, and service claims | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary; G1.5c's 5/15/21 profile carries the exact request/token through negotiated custom and `Store` admission; G1.6's seven-stage 4/17/1/1/12 profile derives deterministic service claims from effective handlers, egress policy, and compiled transport | Advertise only those proven configured-and-compiled profiles; do not present capability disclosure as remote health or current admission |
 | Jena differential | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for subject `182972ec...` and receipt `7209da6a...` | Scoped task complete and reconciled by G0.7; later protected-source drift reopens it, and promotion remains separate under G1.7 |
 | Jena runner lock | G0.2 restored the reviewed `runner/Cargo.lock` strategy in `46ef17fc`, so the pinned runner executes with `--locked` from a clean checkout | Scoped task complete; retain the lock as protected evidence |
-| Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` established the profile; current source binds 144/144 default, 129/129 no-default, and 45/45 `persistence-write` inventories; the schema-v5 adapter contract passes 40/40 | The last `persistence-write` receipt is schema v4 and invalid under the current contract; freshness is `schema-v5-replay-required`, with no current scoped or aggregate Agentic receipt claimed |
+| Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` established the profile; current source binds 144/144 default, 129/129 no-default, and 45/45 `persistence-write` inventories; at tracked-clean subject `5a93890f`, independently reopened schema-v5 runs pass adapter 40/40, persistence 45/45, and G1 66/66 | Scoped authority only; the receipt dirty bit reflects protected untracked runtime paths, the 47-command aggregate profile is unrun, and native commands remain authoritative |
 | Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
 | Mutation receipt | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification |
 | MetaHarness | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate |
@@ -453,10 +453,12 @@ Execution record through 2026-08-27:
   claims keep full MetaHarness qualification, independent verification, and
   G1.7 promotion withheld. Any later protected product or claim edit reopens
   the earliest affected receipt.
-- The schema-v5 adapter hardening in `31f23aea` is such a later change. Its
-  contract passes 40/40, but the last `persistence-write` receipt is schema v4
-  and historical. Current Agentic and protected-claim freshness is
-  `schema-v5-replay-required` until clean receipts are independently reopened.
+- The schema-v5 adapter hardening in `31f23aea` was such a later change.
+  `e8add13c` repaired selection-aware Cargo inventory drift, and `5a93890f`
+  stabilized the tool documentation before the final run. Independently
+  reopened schema-v5 adapter, persistence, and G1 receipts now cover 40, 45,
+  and 66 tests for that tracked-clean subject. Their broad dirty flag is caused
+  only by protected untracked Ruflo/runtime paths; no aggregate receipt follows.
 - The dedicated G1.7 qualification-control candidate now separates structural
   receipt verification from sealed owner-contract replay. Qualification
   contract v3 freezes exact native IDs and output ceilings; semantic projection
@@ -467,7 +469,10 @@ Execution record through 2026-08-27:
   That conjunction can report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`, but
   reference selection is `UNSELECTED`, budget/noise decisions are `ABSENT`, the
   benchmark is `NOT_RUN`, and current clean-subject owner evidence is absent,
-  so G1.7 remains `INCONCLUSIVE`. Historical committed control subject
+  so G1.7 remains `INCONCLUSIVE`. A real preflight at `5a93890f` confirms the
+  six reasons `reference-unselected`, `performance-budget-absent`,
+  `noise-budget-absent`, `semantic-missing`, `compatibility-missing`, and
+  `benchmark-not-run`. Historical committed control subject
   `d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passed 298/298 serialized
   JavaScript contract/control tests under Node 24.14.1 on Linux
   6.8.0-137-generic x86_64. This proves the candidate control slice only; it is

@@ -9,12 +9,13 @@
   resolution is Agentic-QE 3.13.12
 - Evidence state: the schema-v5 adapter contract passes 40/40. G0.4-G0.5 keep
   the reviewed 144/144 default, 129/129 no-default, and 45/45
-  `persistence-write` inventories source-bound in `253a2b34`, but the last
-  `persistence-write` receipt is schema v4 and is historical and invalid under
-  the current contract. Until clean schema-v5 receipts are independently
-  reopened, freshness is `schema-v5-replay-required`; no current scoped or
-  aggregate Agentic receipt, full MetaHarness qualification, or G1.7 promotion
-  is claimed.
+  `persistence-write` inventories source-bound. At tracked-clean subject
+  `5a93890f`, schema-v5 adapter run `5e6202d7-e020-4af9-ae0d-1d4c8704a28e`
+  (40/40), persistence run `73b6a484-f830-49d2-b4cc-de1549928613` (45/45),
+  and G1 run `34602f2a-7332-4649-aef0-d51029389cfb` (66/66) were independently
+  reopened. The receipt dirty bit is true only because protected untracked
+  Ruflo/runtime paths remain present. No 47-command aggregate Agentic receipt,
+  full MetaHarness qualification, or G1.7 promotion is claimed.
 - Update note: on 2026-08-25 the adapter moved to the latest-compatible lock
   policy, disabled dependency lifecycle scripts, and bound source-only ledger
   claims to the exact lock resolution and SRI. The G1.7 consumer now requires

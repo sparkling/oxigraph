@@ -201,11 +201,14 @@ scoped source-registration, Jena runner/profile, and Agentic-QE inventory work:
 76-scenario/198-assertion runs to that reviewed subject, and `253a2b34` binds
 the exact 144/144 default, 129/129 no-default, and 45/45
 `persistence-write` inventories. The adapter contract now passes 40/40 under
-schema v5. The 144/129 inventories remain source-bound, but the last
-`persistence-write` receipt is schema v4 and is historical and invalid under
-the current contract. Until clean schema-v5 receipts are independently
-reopened, freshness is `schema-v5-replay-required`; no current scoped or
-aggregate Agentic receipt is claimed.
+schema v5. At committed tracked-source subject `5a93890f`, immutable adapter
+run `5e6202d7-e020-4af9-ae0d-1d4c8704a28e` (40/40), `persistence-write` run
+`73b6a484-f830-49d2-b4cc-de1549928613` (45/45), and G1 regression run
+`34602f2a-7332-4649-aef0-d51029389cfb` (66/66) were independently reopened
+against freshly acquired runtime, dependency, implementation, publication,
+oracle, and archive evidence. Their broad dirty flag records only the protected
+untracked Ruflo/runtime paths; tracked source was clean. These are scoped
+receipts, not the unrun 47-command aggregate Agentic receipt.
 G0.6 has now regenerated immutable OxDatalog run
 `731e6467-2cab-4260-8d15-b34e4ebc8ed6` with 358 generated, 278 caught,
 80 unviable, zero missed, and zero timed out under `cargo-mutants` 27.1.0.
@@ -213,7 +216,10 @@ G0.7's earlier reconciliation remains historical after the schema-v5 contract
 change and these protected-document edits; root `README.md` remains part of the
 MetaHarness protected snapshot. Full MetaHarness semantic qualification, its
 independent verification, and the separate G1.7 compatibility/performance
-promotion gate remain open, so the umbrella claim is still withheld.
+promotion gate remain open. The clean-subject `5a93890f` preflight was
+`INCONCLUSIVE` because the reference, performance/noise budgets, semantic and
+compatibility owner evidence, and benchmark remain absent, so the umbrella
+claim is still withheld. A dirty working-tree rerun exits before classification.
 
 ### Published documentation and evidence
 

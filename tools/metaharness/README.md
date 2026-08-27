@@ -71,8 +71,9 @@ hashes a fresh schema-v5 Agentic-QE semantic receipt created after that gate
 began. It reopens the receipt's content-addressed output archive and
 run-addressed immutable receipt/oracle pair rather than relying on
 later-mutable shared target files.
-No such current schema-v5 semantic receipt is claimed at this checkpoint; the
-last schema-v4 persistence receipt is historical/invalid and cannot satisfy
-this gate.
+No current schema-v5 41-command semantic-gate receipt is claimed at this
+checkpoint. The scoped schema-v5 `persistence-write` receipt is current for its
+sealed subject, while its nested schema-v4 predecessor is historical and cannot
+satisfy this gate.
 Any drift,
 stale receipt, unverified qualification, or symlinked output path fails closed.

@@ -1,8 +1,8 @@
 # Semantic parity programme — current evidence summary
 
-Status: the schema-v5 Agentic-QE contract is green, but current scoped and
-aggregate Agentic receipts require replay; full current-HEAD qualification and
-broad parity claims are withheld
+Status: scoped schema-v5 Agentic-QE receipts are independently reopened, but
+the aggregate Agentic receipt, full current-HEAD qualification, and broad
+parity claims are withheld
 Evidence cut: 2026-07-26 normative baseline; prior reconciliation: 2026-08-27
 
 ## Bottom line
@@ -15,11 +15,11 @@ intersection. These results establish only the named tested surfaces.
 G0.3 seals the reviewed Jena profile to subject `182972ec...` with two
 byte-identical 76/198 runs. G0.4-G0.5 keep the exact 144/129 CLI and historical
 then-34-test persistence-write inventories source-bound; the current source
-inventory contains 45 executed tests. The adapter contract now passes
-40/40 under schema v5, but the last persistence-write receipt is schema v4 and
-historical/invalid under the current contract. Until clean schema-v5 receipts
-are independently reopened, freshness is `schema-v5-replay-required`; no
-current scoped or aggregate Agentic receipt is claimed. G0.6's generic
+inventory contains 45 executed tests. At tracked-clean subject `5a93890f`,
+schema-v5 adapter, persistence, and G1 runs pass 40/40, 45/45, and 66/66 and
+were independently reopened. Their broad dirty flag records only protected
+untracked Ruflo/runtime paths. This establishes current scoped evidence, not
+the unrun 47-command aggregate Agentic receipt. G0.6's generic
 OxDatalog run remains bounded to its own source/runtime scope. Full MetaHarness
 qualification plus independent verification have not been regenerated, so no
 umbrella current-HEAD qualification follows.
@@ -45,7 +45,7 @@ closure remain incomplete.
 | OWL 2 RL/RDF | 98/98 assertions across 68 RDF-based cases | Exact 78-rule inventory: 46 Datalog rules and 32 specialized operators |
 | SHACL 1.2 evidence lanes | 521 discovered; 519/519 eligible cases pass; 2 invalid upstream exclusions; Rust 167/167 all-feature and 114/114 no-default tests; Jena SHACL-C 32/32 | Five separately classified lanes; synchronous WebAssembly SPARQL-backed validation fails closed because cooperative timeout/cancellation cannot be guaranteed; no family-parity claim |
 | Apache Jena 6.1.0 differential | 76 scenarios and 198 assertions | Reviewed outcome intersection only; one distinct successful outcome is a W3C-permitted implementation variant |
-| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 40/40 adversarial tests and schema-v5 contract; source-bound 144/129 CLI and 45/45 persistence-write inventories; exact ordered 41-command Meta gate and 47-command parity definitions | The last persistence-write receipt is schema v4 and historical/invalid; freshness is `schema-v5-replay-required`, so no current scoped or aggregate Agentic receipt is claimed and the adapter is never the semantic oracle |
+| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 40/40 adversarial tests and schema-v5 contract; source-bound 144/129 CLI; independently reopened adapter 40/40, persistence 45/45, and G1 66/66 receipts at `5a93890f`; exact ordered 41-command Meta gate and 47-command parity definitions | Current scoped evidence only; protected untracked runtime paths set the broad dirty bit, the aggregate profile is unrun, and the adapter is never the semantic oracle |
 | MetaHarness/Darwin `latest` (lock-resolved 0.9.3) | Full semantic-mode runner plus independent verification | No qualification result exists unless both current receipts verify against the same protected snapshot; never a semantic oracle |
 
 The Jena matrix classifies 70 scenarios as agreement, 4 as

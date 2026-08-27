@@ -51,7 +51,7 @@ semantic claim.
 | SHACL 1.2 | 521 discovered and 519/519 eligible across five separately classified lanes; two hash-pinned invalid upstream exclusions; native Rust 167/167 all-feature and 114/114 no-default; Jena SHACL-C 32/32 | Root, legacy, supplemental Rules, and informative SHACL-C evidence; family claim open |
 | Jena 6.1.0 | G0.3 subject `182972ec...`: 76 reviewed scenarios; 198 assertions; two byte-identical runs | Current locked outcome-intersection scope with one W3C-permitted implementation variant; full Apache Jena parity not claimed |
 | Soufflé 2.5 | 1 stratified Datalog fixture | Narrow D1 differential only |
-| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 40/40 adapter adversarial tests and schema-v5 contract; source-bound 144/129 CLI and 45/45 persistence-write inventories; 47-command parity inventory | The last persistence-write receipt is schema v4 and historical/invalid under the current contract; freshness is `schema-v5-replay-required`, so no current scoped or aggregate Agentic receipt is claimed; native commands remain authoritative |
+| Agentic-QE `latest` (currently lock-resolved to 3.13.12) | 40/40 adapter adversarial tests and schema-v5 contract; source-bound 144/129 CLI and 45/45 persistence-write inventories; independently reopened schema-v5 adapter 40/40, persistence 45/45, and G1 66/66 receipts at tracked-clean subject `5a93890f`; 47-command parity inventory | Current scoped evidence only; the broad dirty bit reflects protected untracked runtime paths, the aggregate profile is unrun, and native commands remain authoritative |
 | MetaHarness/Darwin | Full semantic-mode runner plus independent receipt verifier | No qualification result exists unless both current receipts verify against the same protected snapshot |
 
 Exact SHACL lane counts, exclusions, and artifact locations are read from the
@@ -203,8 +203,10 @@ that the installed CLI version matches the exact version in the
 integrity-bearing lockfile resolution, and records the lock SRI, package
 metadata, version, and executable hash. The current lockfile resolves 3.13.12.
 Agentic-QE is not a Rust oracle. The adapter adversarial suite currently passes
-40/40. This validates schema-v5 mechanics only; the last `persistence-write`
-receipt is schema v4 and must be regenerated from a clean committed subject.
+40/40. At tracked-clean subject `5a93890f`, the adapter 40/40, persistence
+45/45, and G1 66/66 schema-v5 receipts were independently reopened. Their
+broad dirty bit reflects only the protected untracked runtime paths. This is
+scoped evidence; the aggregate profile remains unrun.
 
 ```bash
 cd tools/agentic-qe
