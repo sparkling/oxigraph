@@ -4,8 +4,11 @@ import test from "node:test";
 import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   currentG17QualificationIdentity,
+  g17QualificationToolchain,
   g17ReceiptIdentity,
+  verifyG17QualificationIdentity,
 } from "../src/qualification/identity.mjs";
+import { canonicalSha256 } from "../src/routing/features.mjs";
 import { repositoryRoot } from "../src/paths.mjs";
 
 test("G1.7 identity binds clean subject, harness, evaluator, lock, toolchain, and host", async () => {
@@ -45,6 +48,28 @@ test("G1.7 identity binds clean subject, harness, evaluator, lock, toolchain, an
     evaluatorBlobSha256: identity.evaluator.blobSetSha256,
     identitySha256: identity.identitySha256,
   });
+  assert.deepEqual(verifyG17QualificationIdentity(identity), identity);
+  assert.deepEqual(Object.keys(g17QualificationToolchain(identity)), ["cargo", "rustc"]);
+
+  const rehash = (candidate) => {
+    const { identitySha256: _identitySha256, ...binding } = candidate;
+    candidate.identitySha256 = canonicalSha256(binding);
+    return candidate;
+  };
+  const mutants = [
+    (candidate) => delete candidate.toolchain[0].toolchainExecutableSha256,
+    (candidate) => { candidate.toolchain[1].program = "cargo"; },
+    (candidate) => { candidate.toolchain[0].versionStdout += "\n"; },
+    (candidate) => { candidate.toolchain[0].toolchainPath = "relative/cargo"; },
+    (candidate) => { candidate.toolchain[0].toolchainExecutableSha256 = "z".repeat(64); },
+  ];
+  for (const mutate of mutants) {
+    const candidate = structuredClone(identity);
+    mutate(candidate);
+    rehash(candidate);
+    assert.throws(() => verifyG17QualificationIdentity(candidate), /G1\.7 identity/u);
+    assert.throws(() => g17ReceiptIdentity(candidate), /G1\.7 identity/u);
+  }
 });
 
 test("G1.7 identity rejects evaluator claims that do not match Git", async () => {

@@ -6,7 +6,7 @@ import {
   realpathSync,
 } from "node:fs";
 import { cpus, platform, release, totalmem, userInfo } from "node:os";
-import { delimiter, dirname, join, relative, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { scrubbedChildEnvironment } from "../../../child-environment.mjs";
@@ -15,6 +15,7 @@ import { repositoryRoot } from "../paths.mjs";
 import { currentCommittedHarnessIdentity } from "../runtime/control-identity.mjs";
 
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
+const DIGEST = /^[0-9a-f]{64}$/u;
 const TOOL_VERSION_ARGS = Object.freeze({
   cargo: ["--version", "--verbose"],
   rustc: ["--version", "--verbose"],
@@ -163,9 +164,10 @@ function trustedToolRoots() {
   });
 }
 
-function captureTool(program) {
+function captureTool(program, qualificationRoot) {
   const environment = scrubbedChildEnvironment();
   const located = execFileSync("/usr/bin/which", [program], {
+    cwd: qualificationRoot,
     env: environment,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -179,21 +181,16 @@ function captureTool(program) {
     !metadata.isFile() ||
     (metadata.mode & 0o022) !== 0 ||
     (metadata.uid !== 0 && metadata.uid !== uid) ||
-    contained(repositoryRoot, path) ||
+    contained(qualificationRoot, path) ||
     path.split(sep).includes("node_modules") ||
     !trustedToolRoots().some((root) => contained(root, path))
   ) {
     fail(`untrusted ${program} executable`);
   }
-  const versionStdout = execFileSync(located, TOOL_VERSION_ARGS[program], {
-    env: environment,
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
   const rustup = join(dirname(located), "rustup");
   const toolchainPath = realpathSync(
     execFileSync(rustup, ["which", program], {
+      cwd: qualificationRoot,
       env: environment,
       encoding: "utf8",
       maxBuffer: 1024 * 1024,
@@ -203,6 +200,17 @@ function captureTool(program) {
   if (!trustedToolRoots().some((root) => contained(root, toolchainPath))) {
     fail(`untrusted selected ${program} toolchain executable`);
   }
+  const versionStdout = execFileSync(
+    toolchainPath,
+    TOOL_VERSION_ARGS[program],
+    {
+      cwd: qualificationRoot,
+      env: environment,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  ).trim();
   return Object.freeze({
     program,
     invokedPath: located,
@@ -250,7 +258,10 @@ export async function currentG17QualificationIdentity({
       }),
     };
     const evaluator = verifyEvaluator(root, contract?.evaluator);
-    const toolchain = [captureTool("cargo"), captureTool("rustc")];
+    const toolchain = [
+      captureTool("cargo", root),
+      captureTool("rustc", root),
+    ];
     const rustcHost = /^host: ([a-z0-9_.-]+)$/mu.exec(
       toolchain.find(({ program }) => program === "rustc").versionStdout,
     )?.[1];
@@ -290,29 +301,238 @@ export async function currentG17QualificationIdentity({
   }
 }
 
-export function g17ReceiptIdentity(identity) {
+function plainObject(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    [Object.prototype, null].includes(Object.getPrototypeOf(value))
+  );
+}
+
+function exactKeys(value, expected, label) {
+  if (!plainObject(value) || !isDeepStrictEqual(Object.keys(value).sort(), [...expected].sort())) {
+    fail(`${label} fields are not exact`);
+  }
+}
+
+function boundedString(value, label, maximumBytes = 1024 * 1024) {
   if (
-    identity?.schema !== "oxigraph.g1.7-qualified-subject-identity/v1" ||
-    identity.identitySha256 !==
-      canonicalSha256({
-        schema: identity.schema,
-        subject: identity.subject,
-        control: identity.control,
-        evaluator: identity.evaluator,
-        cargoLock: identity.cargoLock,
-        toolchain: identity.toolchain,
-        host: identity.host,
-      })
+    typeof value !== "string" ||
+    value.length < 1 ||
+    Buffer.byteLength(value, "utf8") > maximumBytes ||
+    value.includes("\0")
   ) {
+    fail(`${label} is not bounded text`);
+  }
+  return value;
+}
+
+const qualifiedToolKeys = Object.freeze([
+  "program",
+  "invokedPath",
+  "path",
+  "executableSha256",
+  "toolchainPath",
+  "toolchainExecutableSha256",
+  "versionStdout",
+]);
+function validateQualifiedToolchain(toolchain) {
+  if (
+    !Array.isArray(toolchain) ||
+    toolchain.length !== 2 ||
+    !isDeepStrictEqual(toolchain.map((tool) => tool?.program), ["cargo", "rustc"])
+  ) {
+    fail("qualified Rust toolchain inventory is not exact");
+  }
+  return Object.fromEntries(toolchain.map((tool) => {
+    exactKeys(tool, qualifiedToolKeys, `qualified ${tool?.program ?? "unknown"} tool`);
+    for (const key of ["invokedPath", "path", "toolchainPath"]) {
+      const path = boundedString(tool[key], `qualified ${tool.program} ${key}`, 4096);
+      if (!isAbsolute(path) || resolve(path) !== path) {
+        fail(`qualified ${tool.program} ${key} is not a canonical absolute path`);
+      }
+    }
+    if (
+      !DIGEST.test(tool.executableSha256) ||
+      !DIGEST.test(tool.toolchainExecutableSha256)
+    ) {
+      fail(`qualified ${tool.program} executable digest is invalid`);
+    }
+    const version = boundedString(
+      tool.versionStdout,
+      `qualified ${tool.program} version output`,
+    );
+    if (version.trim() !== version) {
+      fail(`qualified ${tool.program} version output is not canonical`);
+    }
+    return [tool.program, { ...tool }];
+  }));
+}
+
+export function verifyG17QualificationIdentity(identity) {
+  exactKeys(
+    identity,
+    [
+      "schema",
+      "subject",
+      "control",
+      "evaluator",
+      "cargoLock",
+      "toolchain",
+      "host",
+      "identitySha256",
+    ],
+    "qualified subject identity",
+  );
+  exactKeys(identity.subject, ["commit", "tree", "trackedClean"], "qualified subject");
+  exactKeys(
+    identity.control,
+    [
+      "controlCommit",
+      "harnessTree",
+      "harnessManifestSha256",
+      "manifestSha256",
+      "lockfileSha256",
+      "npmrcSha256",
+      "dependencies",
+      "harnessSha256",
+    ],
+    "qualified control",
+  );
+  exactKeys(
+    identity.evaluator,
+    ["commit", "parent", "tree", "patchSha256", "blobSetSha256"],
+    "qualified evaluator",
+  );
+  exactKeys(identity.cargoLock, ["blob", "sha256"], "qualified Cargo lock");
+  exactKeys(
+    identity.host,
+    [
+      "platform",
+      "kernelRelease",
+      "architecture",
+      "targetTriple",
+      "cpuModel",
+      "cpuCount",
+      "totalMemoryBytes",
+    ],
+    "qualified host",
+  );
+  if (
+    identity.schema !== "oxigraph.g1.7-qualified-subject-identity/v1" ||
+    !GIT_OBJECT.test(identity.subject.commit) ||
+    !GIT_OBJECT.test(identity.subject.tree) ||
+    identity.subject.trackedClean !== true ||
+    identity.control.controlCommit !== identity.subject.commit ||
+    !GIT_OBJECT.test(identity.control.controlCommit) ||
+    !GIT_OBJECT.test(identity.control.harnessTree) ||
+    ![
+      identity.control.harnessManifestSha256,
+      identity.control.manifestSha256,
+      identity.control.lockfileSha256,
+      identity.control.npmrcSha256,
+      identity.control.harnessSha256,
+      identity.evaluator.patchSha256,
+      identity.evaluator.blobSetSha256,
+      identity.cargoLock.sha256,
+      identity.identitySha256,
+    ].every((value) => DIGEST.test(value)) ||
+    !GIT_OBJECT.test(identity.evaluator.commit) ||
+    !GIT_OBJECT.test(identity.evaluator.parent) ||
+    !GIT_OBJECT.test(identity.evaluator.tree) ||
+    !GIT_OBJECT.test(identity.cargoLock.blob)
+  ) {
+    fail("qualified subject, control, evaluator, or lock binding is malformed");
+  }
+  if (
+    !Array.isArray(identity.control.dependencies) ||
+    identity.control.dependencies.length < 1 ||
+    identity.control.dependencies.length > 64
+  ) {
+    fail("qualified dependency inventory is not bounded");
+  }
+  let previousDependencyName = null;
+  for (const dependency of identity.control.dependencies) {
+    exactKeys(
+      dependency,
+      ["name", "policy", "version", "resolved", "integrity", "installedPackageJsonSha256"],
+      `qualified dependency ${dependency?.name ?? "unknown"}`,
+    );
+    for (const key of ["name", "version", "resolved", "integrity"]) {
+      boundedString(dependency[key], `qualified dependency ${key}`, 4096);
+    }
+    if (
+      dependency.policy !== "latest" ||
+      !DIGEST.test(dependency.installedPackageJsonSha256) ||
+      (previousDependencyName !== null && dependency.name <= previousDependencyName)
+    ) {
+      fail(`qualified dependency ${dependency.name} binding is malformed`);
+    }
+    previousDependencyName = dependency.name;
+  }
+  const { harnessSha256: _harnessSha256, ...controlBinding } = identity.control;
+  if (
+    identity.control.harnessSha256 !== canonicalSha256({
+      schema: "oxigraph.committed-harness-identity/v1",
+      ...controlBinding,
+    })
+  ) {
+    fail("qualified control digest is invalid");
+  }
+  validateQualifiedToolchain(identity.toolchain);
+  for (const key of ["platform", "kernelRelease", "architecture", "targetTriple", "cpuModel"]) {
+    boundedString(identity.host[key], `qualified host ${key}`, 4096);
+  }
+  if (
+    !Number.isSafeInteger(identity.host.cpuCount) ||
+    identity.host.cpuCount < 1 ||
+    !Number.isSafeInteger(identity.host.totalMemoryBytes) ||
+    identity.host.totalMemoryBytes < 1
+  ) {
+    fail("qualified host capacity is invalid");
+  }
+  const binding = {
+    schema: identity.schema,
+    subject: identity.subject,
+    control: identity.control,
+    evaluator: identity.evaluator,
+    cargoLock: identity.cargoLock,
+    toolchain: identity.toolchain,
+    host: identity.host,
+  };
+  if (identity.identitySha256 !== canonicalSha256(binding)) {
     fail("qualified subject identity hash is invalid");
   }
+  return deepFreeze(structuredClone(identity));
+}
+
+export function g17ReceiptIdentity(identity) {
+  const verified = verifyG17QualificationIdentity(identity);
   return deepFreeze({
     schema: "oxigraph.g1.7-qualification-identity/v1",
-    subjectCommit: identity.subject.commit,
-    subjectTree: identity.subject.tree,
-    harnessSha256: identity.control.harnessSha256,
-    evaluatorCommit: identity.evaluator.commit,
-    evaluatorBlobSha256: identity.evaluator.blobSetSha256,
-    identitySha256: identity.identitySha256,
+    subjectCommit: verified.subject.commit,
+    subjectTree: verified.subject.tree,
+    harnessSha256: verified.control.harnessSha256,
+    evaluatorCommit: verified.evaluator.commit,
+    evaluatorBlobSha256: verified.evaluator.blobSetSha256,
+    identitySha256: verified.identitySha256,
   });
+}
+
+export function g17QualificationToolchain(identity) {
+  const verified = verifyG17QualificationIdentity(identity);
+  return deepFreeze(validateQualifiedToolchain(verified.toolchain));
+}
+
+export async function verifyCurrentG17QualificationIdentity(
+  identity,
+  { contract, repoRoot = repositoryRoot } = {},
+) {
+  const verified = verifyG17QualificationIdentity(identity);
+  const current = await currentG17QualificationIdentity({ contract, repoRoot });
+  if (!isDeepStrictEqual(verified, current)) {
+    fail("qualified subject identity differs from the current repository and host");
+  }
+  return current;
 }

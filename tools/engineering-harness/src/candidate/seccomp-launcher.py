@@ -2,7 +2,10 @@
 """Install the verifier's candidate syscall policy and exec one command."""
 
 import ctypes
+import base64
 import errno
+import hashlib
+import json
 import os
 import sys
 
@@ -12,6 +15,23 @@ SCMP_ACT_ERRNO = 0x00050000
 SCMP_CMP_MASKED_EQ = 7
 CLONE_NEWUSER = 0x10000000
 PR_SET_NO_NEW_PRIVS = 38
+PR_GET_PDEATHSIG = 2
+PR_SET_PDEATHSIG = 1
+ATTESTATION_SCHEMA = "oxigraph.g1.7-native-command-launch-attestation/v1"
+DENIED_SYSCALLS = (
+    "fsconfig",
+    "fsmount",
+    "fsopen",
+    "fspick",
+    "mount",
+    "mount_setattr",
+    "move_mount",
+    "open_tree",
+    "pivot_root",
+    "setns",
+    "umount2",
+    "unshare",
+)
 
 
 class ScmpArgCmp(ctypes.Structure):
@@ -77,22 +97,11 @@ def install_policy():
             ):
                 raise RuntimeError("seccomp rule setup failed")
 
-        for name in (
-            "fsconfig",
-            "fsmount",
-            "fsopen",
-            "fspick",
-            "mount",
-            "mount_setattr",
-            "move_mount",
-            "open_tree",
-            "pivot_root",
-            "setns",
-            "umount",
-            "umount2",
-            "unshare",
-        ):
+        syscall_numbers = {}
+        for name in DENIED_SYSCALLS:
+            syscall_numbers[name] = syscall_number(name)
             deny(name)
+        syscall_numbers["clone3"] = syscall_number("clone3")
         deny("clone3", errno.ENOSYS)
 
         clone = syscall_number("clone")
@@ -115,17 +124,153 @@ def install_policy():
             != 0
         ):
             raise RuntimeError("clone rule setup failed")
+        prctl = syscall_number("prctl")
+        if prctl is None:
+            raise RuntimeError("prctl syscall resolution failed")
+        comparison = ScmpArgCmp(
+            arg=0,
+            op=SCMP_CMP_MASKED_EQ,
+            datum_a=0xFFFFFFFFFFFFFFFF,
+            datum_b=PR_SET_PDEATHSIG,
+        )
+        if (
+            seccomp.seccomp_rule_add_array(
+                context,
+                errno_action(errno.EPERM),
+                prctl,
+                1,
+                ctypes.byref(comparison),
+            )
+            != 0
+        ):
+            raise RuntimeError("parent-death-signal rule setup failed")
         if seccomp.seccomp_load(context) != 0:
             raise RuntimeError("seccomp policy load failed")
+        syscall_numbers["clone-newuser"] = clone
+        syscall_numbers["prctl-clear-pdeathsig"] = prctl
+        return syscall_numbers
     finally:
         seccomp.seccomp_release(context)
 
 
+def negative_syscall_probes(syscall_numbers):
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    results = []
+    recipes = [("clone-newuser", errno.EPERM), ("clone3", errno.ENOSYS)]
+    recipes.extend((name, errno.EPERM) for name in DENIED_SYSCALLS)
+    recipes.append(("prctl-clear-pdeathsig", errno.EPERM))
+    for name, expected_errno in recipes:
+        number = syscall_numbers.get(name)
+        if number is None or number < 0:
+            raise RuntimeError("denied syscall cannot be resolved")
+        ctypes.set_errno(0)
+        if name == "clone-newuser":
+            observed = libc.syscall(
+                number,
+                ctypes.c_ulonglong(CLONE_NEWUSER | (1 << 63)),
+                0,
+                0,
+                0,
+                0,
+            )
+        elif name == "prctl-clear-pdeathsig":
+            observed = libc.syscall(
+                number,
+                ctypes.c_ulonglong(PR_SET_PDEATHSIG),
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+        else:
+            observed = libc.syscall(number, 0, 0, 0, 0, 0, 0)
+        observed_errno = ctypes.get_errno()
+        if observed != -1 or observed_errno != expected_errno:
+            raise RuntimeError("denied syscall negative probe failed")
+        results.append({
+            "name": name,
+            "syscallNumber": number,
+            "observedReturn": observed,
+            "errno": observed_errno,
+        })
+    return results
+
+
+def raw_bytes(path, ceiling):
+    with open(path, "rb", buffering=0) as handle:
+        value = handle.read(ceiling + 1)
+    if len(value) < 1 or len(value) > ceiling:
+        raise RuntimeError("command attestation input exceeded its byte ceiling")
+    return {
+        "bytes": len(value),
+        "sha256": hashlib.sha256(value).hexdigest(),
+        "base64": base64.b64encode(value).decode("ascii"),
+    }
+
+
+def namespace_set():
+    return {
+        "ipc": os.readlink("/proc/self/ns/ipc"),
+        "mount": os.readlink("/proc/self/ns/mnt"),
+        "network": os.readlink("/proc/self/ns/net"),
+        "pid": os.readlink("/proc/self/ns/pid"),
+        "user": os.readlink("/proc/self/ns/user"),
+        "uts": os.readlink("/proc/self/ns/uts"),
+    }
+
+
+def write_attestation(fd, name, syscall_numbers):
+    parent_death_signal = ctypes.c_int(0)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_GET_PDEATHSIG, ctypes.byref(parent_death_signal), 0, 0, 0) != 0:
+        raise RuntimeError("parent-death signal observation failed")
+    value = {
+        "schema": ATTESTATION_SCHEMA,
+        "name": name,
+        "status": raw_bytes("/proc/self/status", 16 * 1024),
+        "limits": raw_bytes("/proc/self/limits", 16 * 1024),
+        "cgroupMembership": raw_bytes("/proc/self/cgroup", 4 * 1024),
+        "cmdline": raw_bytes("/proc/self/cmdline", 64 * 1024),
+        "environ": raw_bytes("/proc/self/environ", 64 * 1024),
+        "namespaces": namespace_set(),
+        "process": {
+            "pid": str(os.getpid()),
+            "parentPid": str(os.getppid()),
+            "processGroup": str(os.getpgid(0)),
+            "session": str(os.getsid(0)),
+        },
+        "parentDeathSignal": parent_death_signal.value,
+        "negativeProbes": negative_syscall_probes(syscall_numbers),
+    }
+    serialized = (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    if len(serialized) > 128 * 1024:
+        raise RuntimeError("command attestation exceeded its byte ceiling")
+    offset = 0
+    while offset < len(serialized):
+        offset += os.write(fd, serialized[offset:])
+    os.close(fd)
+
+
 def main():
-    if len(sys.argv) < 2 or not os.path.isabs(sys.argv[1]):
+    attestation = None
+    command_index = 1
+    if len(sys.argv) >= 7 and sys.argv[1:3] == ["--attest-fd", "3"]:
+        if (
+            sys.argv[3] != "--attest-name"
+            or not sys.argv[4]
+            or sys.argv[5] != "--"
+        ):
+            raise RuntimeError("invalid command-attestation arguments")
+        attestation = (3, sys.argv[4])
+        command_index = 6
+    if len(sys.argv) <= command_index or not os.path.isabs(sys.argv[command_index]):
         raise RuntimeError("an absolute candidate command is required")
-    install_policy()
-    os.execve(sys.argv[1], sys.argv[1:], os.environ)
+    syscall_numbers = install_policy()
+    if attestation is not None:
+        write_attestation(*attestation, syscall_numbers)
+    os.execve(sys.argv[command_index], sys.argv[command_index:], os.environ)
 
 
 try:

@@ -3,20 +3,36 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
+  createG17NativeSessionArtifactForTesting,
+  createG17NativeSessionConfiguration,
+} from "../src/qualification/native-session-contract.mjs";
+
+import {
+  G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
+  G17_NATIVE_CONTROLLER_SCHEMA,
   G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME,
   G17_NATIVE_ISOLATION_POLICY_ARTIFACT_NAME,
   G17_NATIVE_PLATFORM_ARTIFACT_NAME,
-  G17_NATIVE_PLATFORM_REQUIRED_PROBES,
   G17_NATIVE_PLATFORM_REQUIRED_ROLES,
+  G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME,
+  G17_NATIVE_SOURCE_PLAN_SCHEMA,
   createG17NativeIsolationInstanceArtifact,
   createG17NativeIsolationPolicyArtifact,
   createG17NativePlatformClosureArtifact,
+  g17NativePlatformProbeRecipes,
+  replayG17NativePlatformProbe,
   verifyG17NativeIsolationInstanceArtifact,
   verifyG17NativeIsolationPolicyArtifact,
+  verifyG17NativePlatformBundle,
   verifyG17NativePlatformClosureArtifact,
 } from "../src/qualification/native-platform-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
+import {
+  syntheticG17CommandRecord,
+  syntheticG17Isolation,
+} from "./support/g17-native-session-fixture.mjs";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -35,33 +51,128 @@ function stream(text) {
   };
 }
 
-function platformInput() {
-  const entries = G17_NATIVE_PLATFORM_REQUIRED_ROLES.map((role, index) => ({
-    root: role.root,
-    path: role.fixturePath,
-    kind: role.kind,
-    mode: role.kind === "directory" ? 365 : 365,
-    bytes: role.kind === "directory" ? 0 : index + 1,
-    sha256: role.kind === "directory"
-      ? null
-      : sha256(Buffer.from(`${role.id}:${index}`, "utf8")),
-    target: null,
-  }));
-  entries.sort((left, right) =>
-    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
-  );
-  for (const entry of entries.filter(({ kind }) => kind === "directory")) {
+function probeText(id) {
+  switch (id) {
+    case "rust-version":
+      return {
+        stdout: [
+          "rustc 1.96.0 (fixture 2026-08-01)",
+          "binary: rustc",
+          "commit-hash: 0123456789abcdef0123456789abcdef01234567",
+          "commit-date: 2026-08-01",
+          "host: x86_64-unknown-linux-gnu",
+          "release: 1.96.0",
+          "LLVM version: 18.1.8",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    case "cargo-version":
+      return {
+        stdout: [
+          "cargo 1.96.0 (fixture 2026-08-01)",
+          "release: 1.96.0",
+          "commit-hash: 0123456789abcdef0123456789abcdef01234567",
+          "commit-date: 2026-08-01",
+          "host: x86_64-unknown-linux-gnu",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    case "rustfmt-version":
+      return { stdout: "rustfmt 1.8.0-stable (fixture 2026-08-01)\n", stderr: "" };
+    case "rust-target-libdir":
+      return {
+        stdout: "/toolchain/lib/rustlib/x86_64-unknown-linux-gnu/lib\n",
+        stderr: "",
+      };
+    case "rust-cfg":
+      return {
+        stdout: [
+          'target_arch="x86_64"',
+          'target_env="gnu"',
+          'target_os="linux"',
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    case "gcc-version":
+      return { stdout: "gcc (fixture) 13.3.0\n", stderr: "" };
+    case "gcc-target":
+      return { stdout: "x86_64-linux-gnu\n", stderr: "" };
+    case "gcc-search-dirs":
+      return {
+        stdout: [
+          "install: /usr/lib/gcc/x86_64-linux-gnu/13/",
+          "programs: /usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/bin/",
+          "libraries: /usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/x86_64-linux-gnu/",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    case "gxx-version":
+      return { stdout: "g++ (fixture) 13.3.0\n", stderr: "" };
+    case "binutils-version":
+      return { stdout: "GNU ld (fixture) 2.42\n", stderr: "" };
+    case "c-include-search":
+      return {
+        stdout: "",
+        stderr: [
+          "#include <...> search starts here:",
+          " /usr/lib/gcc/x86_64-linux-gnu/13/include",
+          " /usr/include",
+          "End of search list.",
+          "",
+        ].join("\n"),
+      };
+    case "cxx-include-search":
+      return {
+        stdout: "",
+        stderr: [
+          "#include <...> search starts here:",
+          " /usr/include/c++/13",
+          " /usr/include/x86_64-linux-gnu/c++/13",
+          " /usr/include",
+          "End of search list.",
+          "",
+        ].join("\n"),
+      };
+    case "controller-node-version":
+      return { stdout: "v24.13.0\n", stderr: "" };
+    case "controller-python-version":
+      return { stdout: "Python 3.12.3\n", stderr: "" };
+    case "libclang-bindgen-smoke":
+      return { stdout: "clang version 18.1.3\n", stderr: "" };
+    case "python-seccomp-smoke":
+      return { stdout: "2.5.5\n", stderr: "" };
+    case "glibc-version":
+      return { stdout: "ld.so (GNU libc) 2.39\n", stderr: "" };
+    default:
+      return { stdout: "", stderr: "" };
+  }
+}
+
+function bindDirectoryDigests(entries) {
+  const childrenByDirectory = new Map();
+  for (const entry of entries) {
+    const parentPath = entry.path.includes("/")
+      ? entry.path.slice(0, entry.path.lastIndexOf("/"))
+      : null;
+    if (parentPath === null) continue;
+    const parentIdentity = `${entry.root}:${parentPath}`;
+    const children = childrenByDirectory.get(parentIdentity) ?? [];
+    children.push(entry);
+    childrenByDirectory.set(parentIdentity, children);
+  }
+  const directories = entries
+    .filter(({ kind }) => kind === "directory")
+    .sort((left, right) => right.path.split("/").length - left.path.split("/").length);
+  for (const entry of directories) {
     entry.sha256 = canonicalSha256({
-      schema: "oxigraph.g1.7-platform-subtree/v1",
+      schema: "oxigraph.g1.7-platform-directory/v2",
       root: entry.root,
       path: entry.path,
-      descendants: entries
-        .filter(
-          (candidate) =>
-            candidate.root === entry.root &&
-            candidate.path.startsWith(`${entry.path}/`) &&
-            candidate.kind !== "directory",
-        )
+      children: (childrenByDirectory.get(`${entry.root}:${entry.path}`) ?? [])
         .map(({ path, kind, mode, bytes, sha256: digest, target }) => ({
           path,
           kind,
@@ -72,6 +183,53 @@ function platformInput() {
         })),
     });
   }
+}
+
+function platformInput() {
+  const entriesById = new Map();
+  for (const [index, role] of G17_NATIVE_PLATFORM_REQUIRED_ROLES.entries()) {
+    const parts = role.fixturePath.split("/");
+    for (let length = 1; length < parts.length; length += 1) {
+      const path = parts.slice(0, length).join("/");
+      const identity = `${role.root}:${path}`;
+      if (!entriesById.has(identity)) {
+        entriesById.set(identity, {
+          root: role.root,
+          path,
+          kind: "directory",
+          mode: 365,
+          bytes: 0,
+          sha256: null,
+          target: null,
+        });
+      }
+    }
+    entriesById.set(`${role.root}:${role.fixturePath}`, {
+      root: role.root,
+      path: role.fixturePath,
+      kind: role.kind,
+      mode: 365,
+      bytes: role.kind === "directory" ? 0 : index + 1,
+      sha256: role.kind === "directory"
+        ? null
+        : sha256(Buffer.from(`${role.id}:${index}`, "utf8")),
+      target: null,
+    });
+  }
+  const entries = [...entriesById.values()];
+  entries.push({
+    root: "toolchain",
+    path: "lib/rustlib/x86_64-unknown-linux-gnu/lib",
+    kind: "directory",
+    mode: 365,
+    bytes: 0,
+    sha256: null,
+    target: null,
+  });
+  entries.sort((left, right) =>
+    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+  );
+  bindDirectoryDigests(entries);
   const roles = Object.fromEntries(
     G17_NATIVE_PLATFORM_REQUIRED_ROLES.map((role) => {
       const entry = entries.find(
@@ -89,28 +247,40 @@ function platformInput() {
       ];
     }),
   );
-  const probes = G17_NATIVE_PLATFORM_REQUIRED_PROBES.map((id) => ({
-    id,
-    program: "/toolchain/bin/cargo",
-    argv: ["/toolchain/bin/cargo", "--version"],
-    cwd: "/",
-    environment: { LANG: "C.UTF-8", LC_ALL: "C.UTF-8", PATH: "/toolchain/bin:/usr/bin" },
-    environmentSha256: canonicalSha256({
-      LANG: "C.UTF-8",
-      LC_ALL: "C.UTF-8",
-      PATH: "/toolchain/bin:/usr/bin",
-    }),
-    timeoutMs: 10_000,
-    maxOutputBytes: 65_536,
-    disposition: "completed",
-    exitCode: 0,
-    signal: null,
-    durationMs: 1,
-    stdout: stream(`${id}\n`),
-    stderr: stream(""),
-    parsed: { id, ok: true },
-    parsedSha256: canonicalSha256({ id, ok: true }),
-  }));
+  const probes = g17NativePlatformProbeRecipes(roles).map((recipe) => {
+    const { stdout, stderr } = probeText(recipe.id);
+    const products = recipe.productPaths.map((path) => ({
+      path,
+      bytes: path.length,
+      sha256: sha256(Buffer.from(path, "utf8")),
+    }));
+    const parsed = replayG17NativePlatformProbe({
+      id: recipe.id,
+      stdout: stream(stdout),
+      stderr: stream(stderr),
+      products,
+    });
+    return {
+      id: recipe.id,
+      program: recipe.program,
+      argv: recipe.argv,
+      cwd: recipe.cwd,
+      environment: recipe.environment,
+      environmentSha256: canonicalSha256(recipe.environment),
+      timeoutMs: recipe.timeoutMs,
+      maxOutputBytes: recipe.maxOutputBytes,
+      disposition: "completed",
+      exitCode: 0,
+      signal: null,
+      durationMs: 1,
+      stdout: stream(stdout),
+      stderr: stream(stderr),
+      stdin: recipe.stdin,
+      products,
+      parsed,
+      parsedSha256: canonicalSha256(parsed),
+    };
+  });
   const nodes = entries
     .filter(({ kind }) => kind === "file")
     .map(({ root, path, sha256: digest }) => ({
@@ -130,6 +300,9 @@ function platformInput() {
     }));
   return {
     profile: "linux-x86_64-gnu-bundled-rocksdb/v1",
+    subjectIdentitySha256: "6".repeat(64),
+    sourcePlanSha256: "7".repeat(64),
+    controllerAttestationSha256: "8".repeat(64),
     target: {
       os: "linux",
       architecture: "x86_64",
@@ -150,115 +323,309 @@ function platformInput() {
   };
 }
 
-function instanceInput(policy, platform) {
-  const workspaceProjectionSha256 = "9".repeat(64);
-  const mounts = [
-    { source: "platform:usr", destination: "/usr", mode: "read-only" },
-    { source: "platform:lib", destination: "/lib", mode: "read-only" },
-    { source: "platform:lib64", destination: "/lib64", mode: "read-only" },
-    { source: "toolchain:", destination: "/toolchain", mode: "read-only" },
-    { source: "workspace:source", destination: "/workspace", mode: "read-only" },
-    { source: "workspace:cargo-home", destination: "/cargo-home", mode: "read-only" },
-    { source: "state:tmpfs", destination: "/state", mode: "read-write-quota" },
+const sourcePlanSeedFixture = Object.freeze([
+  ["rust-cargo", "toolchain", "bin/cargo", []],
+  ["rust-rustc", "toolchain", "bin/rustc", []],
+  ["rust-rustfmt", "toolchain", "bin/rustfmt", []],
+  ["rust-libraries", "toolchain", "lib", []],
+  ["c-headers", "platform", "usr/include", ["x86_64-linux-gnu/mpi", "x86_64-linux-gnu/openmpi"]],
+  ["gcc-libraries", "platform", "usr/lib/gcc/x86_64-linux-gnu/13", []],
+  ["gcc-libexec", "platform", "usr/libexec/gcc/x86_64-linux-gnu/13", []],
+  ["clang-headers", "platform", "usr/lib/llvm-18/lib/clang/18/include", []],
+  ["python-stdlib", "platform", "usr/lib/python3.12", ["sitecustomize.py"]],
+  ["cc", "platform", "usr/bin/x86_64-linux-gnu-gcc-13", []],
+  ["cxx", "platform", "usr/bin/x86_64-linux-gnu-g++-13", []],
+  ["ar", "platform", "usr/bin/x86_64-linux-gnu-ar", []],
+  ["as", "platform", "usr/bin/x86_64-linux-gnu-as", []],
+  ["ld", "platform", "usr/bin/x86_64-linux-gnu-ld.bfd", []],
+  ["nm", "platform", "usr/bin/x86_64-linux-gnu-nm", []],
+  ["ranlib", "platform", "usr/bin/x86_64-linux-gnu-ranlib", []],
+  ["node", "platform", "usr/bin/node", []],
+  ["python", "platform", "usr/bin/python3.12", []],
+  ["setpriv", "platform", "usr/bin/setpriv", []],
+  ["mount", "platform", "usr/bin/mount", []],
+  ["true", "platform", "usr/bin/true", []],
+  ["os-release", "platform", "usr/lib/os-release", []],
+  ["contained-session-worker", "platform", "runner/contained-session-worker.mjs", []],
+  ["seccomp-launcher", "platform", "runner/seccomp-launcher.py", []],
+]);
+
+function reseal(value) {
+  const { sha256: ignoredSha256, ...binding } = value;
+  value.sha256 = canonicalSha256(binding);
+  return value;
+}
+
+function addBundleEntries(input) {
+  const additions = [
+    ["runner", "directory", 0, null],
+    ["runner/contained-session-worker.mjs", "file", 37, "worker"],
+    ["runner/seccomp-launcher.py", "file", 41, "launcher"],
+    ["usr/lib/os-release", "file", 29, "os-release"],
   ];
-  const environment = {
-    AR: "/usr/bin/x86_64-linux-gnu-ar",
-    CARGO_BUILD_JOBS: "4",
-    CARGO_HOME: "/cargo-home",
-    CARGO_INCREMENTAL: "0",
-    CARGO_NET_OFFLINE: "true",
-    CARGO_PROFILE_TEST_DEBUG: "0",
-    CARGO_TARGET_DIR: "/state/target",
-    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER:
-      "/usr/bin/x86_64-linux-gnu-gcc-13",
-    CARGO_TERM_COLOR: "never",
-    CC: "/usr/bin/x86_64-linux-gnu-gcc-13",
-    CXX: "/usr/bin/x86_64-linux-gnu-g++-13",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_TERMINAL_PROMPT: "0",
-    HOME: "/state/home",
-    LANG: "C.UTF-8",
-    LC_ALL: "C.UTF-8",
-    LD_LIBRARY_PATH:
-      "/toolchain/lib:/usr/lib/llvm-18/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu",
-    LIBCLANG_PATH: "/usr/lib/llvm-18/lib/libclang-18.so.1",
-    LLVM_CONFIG_PATH: "/nonexistent",
-    NO_COLOR: "1",
-    PATH: "/toolchain/bin:/usr/bin",
-    RUSTC: "/toolchain/bin/rustc",
-    RUSTFMT: "/toolchain/bin/rustfmt",
-    SOURCE_DATE_EPOCH: "946684800",
-    TEMP: "/state/tmp",
-    TERM: "dumb",
-    TMP: "/state/tmp",
-    TMPDIR: "/state/tmp",
-    TZ: "UTC",
-    USER: "sandbox",
+  for (const [path, kind, bytes, content] of additions) {
+    input.entries.push({
+      root: "platform",
+      path,
+      kind,
+      mode: 365,
+      bytes,
+      sha256: content === null ? null : sha256(Buffer.from(content, "utf8")),
+      target: null,
+    });
+  }
+  input.entries.sort((left, right) =>
+    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+  );
+  bindDirectoryDigests(input.entries);
+}
+
+function controllerClosure(id) {
+  const records = [{
+    path: `/usr/bin/${id}`,
+    bytes: id.length,
+    sha256: sha256(Buffer.from(`${id}:executable`, "utf8")),
+    soname: null,
+    needed: [],
+  }];
+  return { records, sha256: canonicalSha256(records) };
+}
+
+function platformBundleFixture() {
+  const input = platformInput();
+  addBundleEntries(input);
+  const sourceTarget = { ...input.target };
+  delete sourceTarget.glibcVersion;
+  const sourcePlan = {
+    schema: G17_NATIVE_SOURCE_PLAN_SCHEMA,
+    subjectIdentitySha256: input.subjectIdentitySha256,
+    target: sourceTarget,
+    generations: {
+      gccMajor: "13",
+      llvmMajor: "18",
+      pythonVersion: "python3.12",
+    },
+    seeds: sourcePlanSeedFixture.map(([id, root, destination, excludes]) => ({
+      id,
+      root,
+      destination,
+      excludes,
+    })),
+    roles: Object.fromEntries(
+      Object.entries(input.roles).map(([id, role]) => [
+        id,
+        { root: role.root, path: role.path },
+      ]),
+    ),
+    dependencySourcePrefixes: [
+      "toolchain:lib",
+      "platform:usr/lib/x86_64-linux-gnu",
+      "platform:usr/lib/llvm-18/lib",
+      "platform:usr/lib/gcc/x86_64-linux-gnu/13",
+      "platform:usr/libexec/gcc/x86_64-linux-gnu/13",
+      "platform:usr/lib64",
+    ],
   };
-  const logicalCommands = [
+  const sourcePlanBytes = canonicalBytes(sourcePlan);
+
+  const closures = Object.fromEntries(
+    ["systemd-run", "prlimit", "bwrap"].map((id) => [id, controllerClosure(id)]),
+  );
+  const snapshotHelper = reseal({
+    schema: "oxigraph.g1.7-native-snapshot-helper/v2",
+    source: { bytes: 1, sha256: sha256(Buffer.from("source", "utf8")) },
+    compiler: {
+      path: "/usr/bin/x86_64-linux-gnu-gcc-13",
+      executableSha256: input.roles.cc.sha256,
+      version: stream("gcc fixture 13.3.0\n"),
+    },
+    compile: {
+      argv: [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-std=c17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fstack-protector-strong",
+        "-D_FORTIFY_SOURCE=2",
+        "-Wl,-z,relro,-z,now",
+        "native-snapshot-helper.c",
+        "-o",
+        "g17-native-snapshot-helper",
+      ],
+      stdout: stream(""),
+      stderr: stream(""),
+    },
+    executable: {
+      bytes: 1,
+      sha256: sha256(Buffer.from("helper", "utf8")),
+      identity: {
+        device: "1",
+        inode: "2",
+        mode: "33088",
+        links: "1",
+        size: "1",
+        modifiedNs: "3",
+        changedNs: "4",
+      },
+    },
+    sha256: "0".repeat(64),
+  });
+  const worker = input.entries.find(
+    ({ root, path }) => root === "platform" && path === "runner/contained-session-worker.mjs",
+  );
+  const launcher = input.entries.find(
+    ({ root, path }) => root === "platform" && path === "runner/seccomp-launcher.py",
+  );
+  const tools = [
+    ...["systemd-run", "prlimit", "bwrap"].map((id) => ({
+      id,
+      executableSha256: closures[id].records[0].sha256,
+      version: stream(`${id} fixture\n`),
+      dependencyClosureSha256: closures[id].sha256,
+    })),
     {
-      name: "inventory:fixture",
-      argv: ["cargo", "test", "--locked", "--offline", "--target-dir", "/state/target", "--test", "fixture", "--", "--list", "--format", "terse"],
-      timeoutMs: 300_000,
-      maxOutputBytes: 1_048_576,
+      id: "native-snapshot-helper",
+      executableSha256: snapshotHelper.executable.sha256,
+      version: stream(`${snapshotHelper.schema}\n`),
+      dependencyClosureSha256: canonicalSha256({
+        source: snapshotHelper.source,
+        compiler: snapshotHelper.compiler,
+      }),
     },
     {
-      name: "execution:fixture",
-      argv: ["cargo", "test", "--locked", "--offline", "--target-dir", "/state/target", "--test", "fixture"],
-      timeoutMs: 300_000,
-      maxOutputBytes: 1_048_576,
+      id: "contained-session-worker",
+      executableSha256: worker.sha256,
+      version: stream("contained-session-worker/v4\n"),
+      dependencyClosureSha256: worker.sha256,
+    },
+    {
+      id: "seccomp-launcher",
+      executableSha256: launcher.sha256,
+      version: stream("seccomp-launcher/v2\n"),
+      dependencyClosureSha256: launcher.sha256,
     },
   ];
-  const controllerTools = ["systemd-run", "prlimit", "bwrap"].map((id) => ({
-    id,
-    executableSha256: sha256(Buffer.from(id)),
-    version: stream(`${id} 1\n`),
-    dependencyClosureSha256: sha256(Buffer.from(`${id}:closure`)),
-  }));
+  const controller = reseal({
+    schema: G17_NATIVE_CONTROLLER_SCHEMA,
+    tools,
+    closures,
+    snapshotHelper,
+    sha256: "0".repeat(64),
+  });
+  const controllerBytes = canonicalBytes(controller);
+  input.sourcePlanSha256 = sha256(sourcePlanBytes);
+  input.controllerAttestationSha256 = sha256(controllerBytes);
+  const platform = createG17NativePlatformClosureArtifact(input);
   return {
+    input,
     platform,
+    sourcePlan,
+    sourcePlanBytes,
+    controller,
+    controllerBytes,
+  };
+}
+
+function reboundBundle(fixture, sourcePlan, controller) {
+  const sourcePlanBytes = canonicalBytes(sourcePlan);
+  const controllerBytes = canonicalBytes(controller);
+  const input = structuredClone(fixture.input);
+  input.sourcePlanSha256 = sha256(sourcePlanBytes);
+  input.controllerAttestationSha256 = sha256(controllerBytes);
+  return {
+    platformBytes: createG17NativePlatformClosureArtifact(input).artifact.bytes,
+    sourcePlanBytes,
+    controllerBytes,
+  };
+}
+
+function instanceInput(policy, platform, controllerBytes) {
+  const workspaceProjectionSha256 = "9".repeat(64);
+  const sealedContract = loadG17Contract();
+  const reviewed = sealedContract.contract.compatibility.nativeSession;
+  const configuration = createG17NativeSessionConfiguration({
     runId: "platform-contract-fixture",
-    policySha256: policy.sha256,
-    platformManifestSha256: platform.manifestSha256,
+    contractBytes: sealedContract.bytes,
+    contractSha256: sealedContract.contractSha256,
+    platform,
+    policy,
     workspaceProjectionSha256,
-    mounts,
-    environment,
-    logicalCommands,
-    controllerTools,
     requestedLimits: {
-      totalWallMs: 2_700_000,
-      residentBytes: 8_589_934_592,
-      diskBytes: 17_179_869_184,
-      cargoBuildJobs: 4,
-      tasksMax: 512,
-      memorySwapBytes: 0,
+      totalWallMs: reviewed.maxTotalWallMs,
+      residentBytes: reviewed.maxResidentBytes,
+      diskBytes: reviewed.maxDiskBytes,
+      cargoBuildJobs: reviewed.cargoBuildJobs,
+      tasksMax: reviewed.tasksMax,
+      memorySwapBytes: reviewed.memorySwapMaxBytes,
     },
-    effectiveObservations: {
-      userNamespace: true,
-      mountNamespace: true,
-      networkNamespace: true,
-      pidNamespace: true,
-      ipcNamespace: true,
-      utsNamespace: true,
-      cgroupV2: true,
-      memoryMaxBytes: 8_589_934_592,
-      memorySwapMaxBytes: 0,
-      tasksMax: 512,
-      fileSizeMaxBytes: 17_179_869_184,
-      coreSizeMaxBytes: 0,
+  });
+  const commands = configuration.commands.map((command, index) => {
+    const lane = sealedContract.contract.compatibility.native[Math.floor(index / 2)];
+    return syntheticG17CommandRecord(
+      configuration,
+      command,
+      index,
+      index % 2 === 0
+        ? `${lane.expectedTestIds.map((id) => `${id}: test`).join("\n")}\n`
+        : `test result: ok. ${lane.expectedPassedTests} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n`,
+    );
+  });
+  const session = createG17NativeSessionArtifactForTesting({
+    configuration,
+    session: {
+      status: "completed",
+      stage: "complete",
+      commands,
+      stateBytes: 4_096,
+      durationMs: 30,
+      error: null,
       finalDescendantsObserved: 0,
+      isolation: syntheticG17Isolation(configuration),
     },
-    resultArtifact: {
-      name: "native-session.json",
-      bytes: 512,
-      sha256: "8".repeat(64),
+    contractBytes: sealedContract.bytes,
+    contractSha256: sealedContract.contractSha256,
+  });
+  return {
+    runId: "platform-contract-fixture",
+    policy,
+    platform,
+    controllerBytes,
+    workspaceProjectionSha256,
+    controllerNamespaces: {
+      before: {
+        user: "user:[201]",
+        mount: "mnt:[202]",
+        network: "net:[203]",
+        pid: "pid:[204]",
+        ipc: "ipc:[205]",
+        uts: "uts:[206]",
+      },
+      after: {
+        user: "user:[201]",
+        mount: "mnt:[202]",
+        network: "net:[203]",
+        pid: "pid:[204]",
+        ipc: "ipc:[205]",
+        uts: "uts:[206]",
+      },
     },
+    sessionBytes: session.artifact.bytes,
+    contractBytes: sealedContract.bytes,
+    contractSha256: sealedContract.contractSha256,
   };
 }
 
 test("platform closure, isolation policy, and instance artifacts round-trip canonically", () => {
-  const platform = createG17NativePlatformClosureArtifact(platformInput());
+  const bundle = platformBundleFixture();
+  const { input, platform } = bundle;
+  assert.equal(Object.isFrozen(input), false);
+  assert.equal(Object.isFrozen(input.entries), false);
+  assert.equal(
+    Object.hasOwn(G17_NATIVE_PLATFORM_REQUIRED_ROLES[0], "pathPattern"),
+    false,
+  );
   assert.equal(platform.artifact.name, G17_NATIVE_PLATFORM_ARTIFACT_NAME);
   assert.deepEqual(
     verifyG17NativePlatformClosureArtifact(platform.artifact.bytes),
@@ -272,16 +639,23 @@ test("platform closure, isolation policy, and instance artifacts round-trip cano
     policy.policy,
   );
 
-  const instance = createG17NativeIsolationInstanceArtifact(
-    instanceInput(policy.policy, platform.closure),
+  const instanceFixture = instanceInput(
+    policy.policy,
+    platform.closure,
+    bundle.controllerBytes,
   );
+  const instance = createG17NativeIsolationInstanceArtifact(instanceFixture);
   assert.equal(instance.artifact.name, G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME);
   assert.deepEqual(
     verifyG17NativeIsolationInstanceArtifact({
       bytes: instance.artifact.bytes,
       policy: policy.policy,
       platform: platform.closure,
+      controllerBytes: bundle.controllerBytes,
       workspaceProjectionSha256: "9".repeat(64),
+      sessionBytes: instanceFixture.sessionBytes,
+      contractBytes: instanceFixture.contractBytes,
+      contractSha256: instanceFixture.contractSha256,
     }),
     instance.instance,
   );
@@ -291,6 +665,173 @@ test("platform closure, isolation policy, and instance artifacts round-trip cano
       .join("\n"),
     /(?:\/tmp\/|\/home\/|\/usr$|\/lib64?$)/u,
   );
+
+  const mutableCopy = platform.artifact.bytes;
+  mutableCopy.fill(0);
+  assert.equal(sha256(platform.artifact.bytes), platform.artifact.sha256);
+  assert.deepEqual(
+    verifyG17NativePlatformClosureArtifact(platform.artifact.bytes),
+    platform.closure,
+  );
+});
+
+test("platform bundle replays exact source-plan and controller artifacts", () => {
+  const fixture = platformBundleFixture();
+  const replayed = verifyG17NativePlatformBundle({
+    platformBytes: fixture.platform.artifact.bytes,
+    sourcePlanBytes: fixture.sourcePlanBytes,
+    controllerBytes: fixture.controllerBytes,
+  });
+  assert.deepEqual(replayed.platform, fixture.platform.closure);
+  assert.deepEqual(replayed.sourcePlan, fixture.sourcePlan);
+  assert.deepEqual(replayed.controller, fixture.controller);
+  assert.equal(
+    replayed.sourcePlanProjectionSha256,
+    sha256(fixture.sourcePlanBytes.subarray(0, -1)),
+  );
+  assert.equal(fixture.platform.artifact.name, G17_NATIVE_PLATFORM_ARTIFACT_NAME);
+  assert.equal(G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME, "linux-native-source-plan.json");
+  assert.equal(
+    G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
+    "linux-native-controller-closure.json",
+  );
+});
+
+test("platform bundle rejects semantically rehashed source and controller drift", () => {
+  const fixture = platformBundleFixture();
+  const mutations = [
+    () => {
+      const sourcePlan = structuredClone(fixture.sourcePlan);
+      sourcePlan.subjectIdentitySha256 = "a".repeat(64);
+      return reboundBundle(fixture, sourcePlan, fixture.controller);
+    },
+    () => {
+      const sourcePlan = structuredClone(fixture.sourcePlan);
+      sourcePlan.seeds[0].destination = sourcePlan.seeds[1].destination;
+      return reboundBundle(fixture, sourcePlan, fixture.controller);
+    },
+    () => {
+      const sourcePlan = structuredClone(fixture.sourcePlan);
+      sourcePlan.generations.gccMajor = "14";
+      return reboundBundle(fixture, sourcePlan, fixture.controller);
+    },
+    () => {
+      const sourcePlan = structuredClone(fixture.sourcePlan);
+      sourcePlan.target.architecture = "aarch64";
+      return reboundBundle(fixture, sourcePlan, fixture.controller);
+    },
+    () => {
+      const sourcePlan = structuredClone(fixture.sourcePlan);
+      sourcePlan.roles.cargo.path = sourcePlan.roles.rustc.path;
+      return reboundBundle(fixture, sourcePlan, fixture.controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      const tool = controller.tools.find(({ id }) => id === "contained-session-worker");
+      tool.executableSha256 = "a".repeat(64);
+      tool.dependencyClosureSha256 = tool.executableSha256;
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.snapshotHelper.compiler.executableSha256 = "b".repeat(64);
+      reseal(controller.snapshotHelper);
+      const tool = controller.tools.find(({ id }) => id === "native-snapshot-helper");
+      tool.dependencyClosureSha256 = canonicalSha256({
+        source: controller.snapshotHelper.source,
+        compiler: controller.snapshotHelper.compiler,
+      });
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.snapshotHelper.compiler.path = "/usr/bin/x86_64-linux-gnu-gcc-14";
+      controller.snapshotHelper.compile.argv[0] =
+        controller.snapshotHelper.compiler.path;
+      reseal(controller.snapshotHelper);
+      const tool = controller.tools.find(({ id }) => id === "native-snapshot-helper");
+      tool.dependencyClosureSha256 = canonicalSha256({
+        source: controller.snapshotHelper.source,
+        compiler: controller.snapshotHelper.compiler,
+      });
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.snapshotHelper.executable.identity.size = "2";
+      reseal(controller.snapshotHelper);
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.snapshotHelper.executable.identity.mode = String(0o100700);
+      reseal(controller.snapshotHelper);
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.snapshotHelper.executable.identity.mode = String(0x1_0000_8140);
+      reseal(controller.snapshotHelper);
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.closures.bwrap.records[0].path = "/usr/bin/not-bwrap";
+      controller.closures.bwrap.sha256 = canonicalSha256(
+        controller.closures.bwrap.records,
+      );
+      const tool = controller.tools.find(({ id }) => id === "bwrap");
+      tool.dependencyClosureSha256 = controller.closures.bwrap.sha256;
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.closures.prlimit.records[0].needed = ["missing.so.1"];
+      controller.closures.prlimit.sha256 = canonicalSha256(
+        controller.closures.prlimit.records,
+      );
+      const tool = controller.tools.find(({ id }) => id === "prlimit");
+      tool.dependencyClosureSha256 = controller.closures.prlimit.sha256;
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      controller.tools[0].version.base64 = Buffer.from("changed\n").toString("base64");
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+  ];
+  for (const mutate of mutations) {
+    assert.throws(
+      () => verifyG17NativePlatformBundle(mutate()),
+      /G1\.7 native platform contract/u,
+    );
+  }
+});
+
+test("platform bundle rejects noncanonical artifact framing", () => {
+  const fixture = platformBundleFixture();
+  for (const [sourcePlanBytes, controllerBytes] of [
+    [Buffer.from(JSON.stringify(fixture.sourcePlan), "utf8"), fixture.controllerBytes],
+    [fixture.sourcePlanBytes, Buffer.from(JSON.stringify(fixture.controller), "utf8")],
+  ]) {
+    assert.throws(
+      () => verifyG17NativePlatformBundle({
+        platformBytes: fixture.platform.artifact.bytes,
+        sourcePlanBytes,
+        controllerBytes,
+      }),
+      /G1\.7 native platform contract/u,
+    );
+  }
 });
 
 test("platform replay rejects role, entry, probe, graph, and derived-digest tampering", () => {
@@ -313,19 +854,208 @@ test("platform replay rejects role, entry, probe, graph, and derived-digest tamp
   }
 });
 
-test("isolation replay rejects ambient mounts, mixed bindings, and ineffective limits", () => {
-  const platform = createG17NativePlatformClosureArtifact(platformInput());
-  const policy = createG17NativeIsolationPolicyArtifact();
-  const created = createG17NativeIsolationInstanceArtifact(
-    instanceInput(policy.policy, platform.closure),
-  );
+test("platform replay re-executes exact probe recipes and cross-version checks", () => {
+  const { artifact } = createG17NativePlatformClosureArtifact(platformInput());
   const mutations = [
-    (value) => { value.mounts[0].source = "/usr"; },
+    (value) => { value.probes[0].program = "/toolchain/bin/cargo"; },
+    (value) => { value.probes[0].argv = [value.probes[0].program, "--version"]; },
+    (value) => { value.probes[0].cwd = "/state"; },
+    (value) => { value.probes[0].environment.PATH = "/usr/bin"; },
+    (value) => { value.probes[11].stdin = stream("different input\n"); },
+    (value) => {
+      value.probes[0].parsed.facts.release = "1.95.0";
+      value.probes[0].parsedSha256 = canonicalSha256(value.probes[0].parsed);
+    },
+    (value) => {
+      const probe = value.probes.find(({ id }) => id === "rust-version");
+      const changed = probeText("rust-version").stdout.replaceAll("1.96.0", "1.95.0");
+      probe.stdout = stream(changed);
+      probe.parsed = replayG17NativePlatformProbe({
+        id: probe.id,
+        stdout: probe.stdout,
+        stderr: probe.stderr,
+        products: probe.products,
+      });
+      probe.parsedSha256 = canonicalSha256(probe.parsed);
+    },
+  ];
+  for (const mutate of mutations) {
+    const value = JSON.parse(artifact.bytes);
+    mutate(value);
+    assert.throws(
+      () => verifyG17NativePlatformClosureArtifact(canonicalBytes(value)),
+      /G1\.7 native platform contract/u,
+    );
+  }
+});
+
+test("platform roles require owner-readable and owner-executable modes", () => {
+  for (const [roleId, mode] of [
+    ["cargo", 0o001],
+    ["libclang", 0o004],
+    ["cHeaders", 0o001],
+  ]) {
+    const input = platformInput();
+    const role = input.roles[roleId];
+    const entry = input.entries.find(
+      ({ root, path }) => root === role.root && path === role.resolvedPath,
+    );
+    entry.mode = mode;
+    bindDirectoryDigests(input.entries);
+    assert.throws(
+      () => createG17NativePlatformClosureArtifact(input),
+      /G1\.7 native platform contract/u,
+    );
+  }
+});
+
+test("platform paths model only the mounted namespace and real directory ancestry", () => {
+  const valid = platformInput();
+  valid.entries.push({
+    root: "platform",
+    path: "usr/bin/cc-alias",
+    kind: "symlink",
+    mode: null,
+    bytes: null,
+    sha256: null,
+    target: "/usr/bin/x86_64-linux-gnu-gcc-13",
+  });
+  valid.entries.sort((left, right) =>
+    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+  );
+  bindDirectoryDigests(valid.entries);
+  assert.equal(
+    createG17NativePlatformClosureArtifact(valid).closure.entries.some(
+      ({ root, path, target }) =>
+        root === "platform" &&
+        path === "usr/bin/cc-alias" &&
+        target === "/usr/bin/x86_64-linux-gnu-gcc-13",
+    ),
+    true,
+  );
+
+  const mergedUsr = platformInput();
+  const loaderRole = mergedUsr.roles.dynamicLoader;
+  const loaderEntry = mergedUsr.entries.find(
+    ({ root, path }) => root === "platform" && path === loaderRole.path,
+  );
+  const lib64Entry = mergedUsr.entries.find(
+    ({ root, path }) => root === "platform" && path === "lib64",
+  );
+  Object.assign(lib64Entry, {
+    kind: "symlink",
+    mode: null,
+    bytes: null,
+    sha256: null,
+    target: "usr/lib64",
+  });
+  loaderEntry.path = `usr/${loaderEntry.path}`;
+  mergedUsr.entries.push({
+    root: "platform",
+    path: "usr/lib64",
+    kind: "directory",
+    mode: 365,
+    bytes: 0,
+    sha256: null,
+    target: null,
+  });
+  loaderRole.resolvedPath = loaderEntry.path;
+  const loaderNode = mergedUsr.elfGraph.nodes.find(
+    ({ root, path }) => root === "platform" && path === "lib64/ld-linux-x86-64.so.2",
+  );
+  loaderNode.path = loaderEntry.path;
+  for (const node of mergedUsr.elfGraph.nodes) {
+    if (node.interpreter === "platform:lib64/ld-linux-x86-64.so.2") {
+      node.interpreter = `platform:${loaderEntry.path}`;
+    }
+  }
+  mergedUsr.elfGraph.nodes.sort((left, right) =>
+    `${left.root}:${left.path}`.localeCompare(`${right.root}:${right.path}`),
+  );
+  mergedUsr.entries.sort((left, right) =>
+    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+  );
+  bindDirectoryDigests(mergedUsr.entries);
+  assert.equal(
+    createG17NativePlatformClosureArtifact(mergedUsr).closure.roles.dynamicLoader
+      .resolvedPath,
+    "usr/lib64/ld-linux-x86-64.so.2",
+  );
+
+  for (const mutate of [
+    (input) => {
+      input.entries = input.entries.filter(
+        ({ root, path }) => !(root === "platform" && path === "usr/bin"),
+      );
+    },
+    (input) => {
+      input.entries.push({
+        root: "platform",
+        path: `usr/${"a".repeat(256)}`,
+        kind: "file",
+        mode: 365,
+        bytes: 1,
+        sha256: "1".repeat(64),
+        target: null,
+      });
+      input.entries.sort((left, right) =>
+        `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+      );
+    },
+    (input) => {
+      const entry = input.entries.find(
+        ({ root, path }) => root === "platform" && path === "usr/bin",
+      );
+      Object.assign(entry, {
+        kind: "symlink",
+        mode: null,
+        bytes: null,
+        sha256: null,
+        target: "/usr/lib",
+      });
+    },
+    (input) => {
+      input.entries.push({
+        root: "platform",
+        path: "usr/bin/escape",
+        kind: "symlink",
+        mode: null,
+        bytes: null,
+        sha256: null,
+        target: "/etc/passwd",
+      });
+      input.entries.sort((left, right) =>
+        `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+      );
+      bindDirectoryDigests(input.entries);
+    },
+  ]) {
+    const input = platformInput();
+    mutate(input);
+    assert.throws(
+      () => createG17NativePlatformClosureArtifact(input),
+      /G1\.7 native platform contract/u,
+    );
+  }
+});
+
+test("isolation replay rejects drifted bindings, controller observations, and derived claims", () => {
+  const bundle = platformBundleFixture();
+  const { platform } = bundle;
+  const policy = createG17NativeIsolationPolicyArtifact();
+  const fixture = instanceInput(policy.policy, platform.closure, bundle.controllerBytes);
+  const created = createG17NativeIsolationInstanceArtifact(fixture);
+  const mutations = [
     (value) => { value.policySha256 = "0".repeat(64); },
-    (value) => { value.environment.PATH = "/usr/local/bin:/usr/bin"; },
-    (value) => { value.controllerTools[0].executableSha256 = "1".repeat(64); },
+    (value) => {
+      value.controllerTools[0].executableSha256 = "1".repeat(64);
+      value.controllerToolsSha256 = canonicalSha256(value.controllerTools);
+      reseal(value);
+    },
     (value) => { value.effectiveObservations.memoryMaxBytes -= 1; },
     (value) => { value.effectiveObservations.finalDescendantsObserved = 1; },
+    (value) => { value.controllerNamespaces.before.user = "user:[105]"; },
+    (value) => { value.sessionArtifact.sha256 = "1".repeat(64); },
   ];
   for (const mutate of mutations) {
     const value = JSON.parse(created.artifact.bytes);
@@ -335,11 +1065,46 @@ test("isolation replay rejects ambient mounts, mixed bindings, and ineffective l
         bytes: canonicalBytes(value),
         policy: policy.policy,
         platform: platform.closure,
+        controllerBytes: bundle.controllerBytes,
         workspaceProjectionSha256: "9".repeat(64),
+        sessionBytes: fixture.sessionBytes,
+        contractBytes: fixture.contractBytes,
+        contractSha256: fixture.contractSha256,
       }),
       /G1\.7 native platform contract/u,
     );
   }
+});
+
+test("isolation replay consumes the supplied sealed session bytes", () => {
+  const bundle = platformBundleFixture();
+  const { platform } = bundle;
+  const policy = createG17NativeIsolationPolicyArtifact();
+  const fixture = instanceInput(policy.policy, platform.closure, bundle.controllerBytes);
+  const created = createG17NativeIsolationInstanceArtifact(fixture);
+  const mutatedSession = JSON.parse(fixture.sessionBytes);
+  mutatedSession.stateBytes += 1;
+
+  assert.throws(
+    () => verifyG17NativeIsolationInstanceArtifact({
+      bytes: created.artifact.bytes,
+      policy: policy.policy,
+      platform: platform.closure,
+      controllerBytes: bundle.controllerBytes,
+      workspaceProjectionSha256: "9".repeat(64),
+      sessionBytes: canonicalBytes(mutatedSession),
+      contractBytes: fixture.contractBytes,
+      contractSha256: fixture.contractSha256,
+    }),
+    /G1\.7 native platform contract:/u,
+  );
+});
+
+test("isolation replay prefixes malformed verification inputs", () => {
+  assert.throws(
+    () => verifyG17NativeIsolationInstanceArtifact(null),
+    /^Error: G1\.7 native platform contract:/u,
+  );
 });
 
 test("platform contract replay is process- and filesystem-free", async () => {
