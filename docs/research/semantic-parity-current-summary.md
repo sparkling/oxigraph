@@ -1,8 +1,9 @@
 # Semantic parity programme — current evidence summary
 
-Status: G0 scoped receipts are reconciled and green; full current-HEAD
-qualification and broad parity claims are withheld
-Evidence cut: 2026-07-26 normative baseline; reconciled: 2026-08-27
+Status: the schema-v5 Agentic-QE contract is green, but current scoped and
+aggregate Agentic receipts require replay; full current-HEAD qualification and
+broad parity claims are withheld
+Evidence cut: 2026-07-26 normative baseline; prior reconciliation: 2026-08-27
 
 ## Bottom line
 
@@ -11,12 +12,14 @@ query behavior, RDF Dataset Canonicalization, finite RDFS, OWL 2 RL/RDF,
 SHACL feature lanes, Datalog D0–D2, and a reviewed Apache Jena outcome
 intersection. These results establish only the named tested surfaces.
 
-G0.3 now seals the reviewed Jena profile to subject `182972ec...` with two
-byte-identical 76/198 runs. G0.4-G0.5 reconcile the exact 144/129 CLI and
-34-test persistence-write profiles. G0.6 seals the current generic OxDatalog
-D0-D2 scope to immutable run `731e6467...`, and G0.7 freezes these identities
-across the ledger and protected claim documents. Each is current only for its
-named scope. The 41/47-command aggregate Agentic receipt and full MetaHarness
+G0.3 seals the reviewed Jena profile to subject `182972ec...` with two
+byte-identical 76/198 runs. G0.4-G0.5 keep the exact 144/129 CLI and 34-test
+persistence-write inventories source-bound. The adapter contract now passes
+39/39 under schema v5, but the last persistence-write receipt is schema v4 and
+historical/invalid under the current contract. Until clean schema-v5 receipts
+are independently reopened, freshness is `schema-v5-replay-required`; no
+current scoped or aggregate Agentic receipt is claimed. G0.6's generic
+OxDatalog run remains bounded to its own source/runtime scope. Full MetaHarness
 qualification plus independent verification have not been regenerated, so no
 umbrella current-HEAD qualification follows.
 
@@ -41,7 +44,7 @@ closure remain incomplete.
 | OWL 2 RL/RDF | 98/98 assertions across 68 RDF-based cases | Exact 78-rule inventory: 46 Datalog rules and 32 specialized operators |
 | SHACL 1.2 evidence lanes | 521 discovered; 519/519 eligible cases pass; 2 invalid upstream exclusions; Rust 167/167 all-feature and 114/114 no-default tests; Jena SHACL-C 32/32 | Five separately classified lanes; synchronous WebAssembly SPARQL-backed validation fails closed because cooperative timeout/cancellation cannot be guaranteed; no family-parity claim |
 | Apache Jena 6.1.0 differential | 76 scenarios and 198 assertions | Reviewed outcome intersection only; one distinct successful outcome is a W3C-permitted implementation variant |
-| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 19/19 adversarial tests; 144/129 CLI and 34/34 persistence-write scoped profiles; exact ordered 41-command Meta gate and 47-command parity definitions | Sequential, repository-leased coordinator and receipt recorder; scoped evidence is not a current aggregate receipt and never the semantic oracle |
+| Agentic-QE `latest` (lock-resolved 3.13.12) adapter | 39/39 adversarial tests and schema-v5 contract; source-bound 144/129 CLI and 34/34 persistence-write inventories; exact ordered 41-command Meta gate and 47-command parity definitions | The last persistence-write receipt is schema v4 and historical/invalid; freshness is `schema-v5-replay-required`, so no current scoped or aggregate Agentic receipt is claimed and the adapter is never the semantic oracle |
 | MetaHarness/Darwin `latest` (lock-resolved 0.9.3) | Full semantic-mode runner plus independent verification | No qualification result exists unless both current receipts verify against the same protected snapshot; never a semantic oracle |
 
 The Jena matrix classifies 70 scenarios as agreement, 4 as

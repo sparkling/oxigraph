@@ -80,14 +80,21 @@ Current activation boundary:
 - `g1.7:preflight`, `g1.7:run`, and `g1.7:verify` use a separate qualification
   binary rather than the application-task registry. The runner writes copied
   evidence artifacts before a canonical receipt and reopens the sealed run
-  through pure receipt-contract modules. Current v2 PASS projections are
-  structurally `CURRENT_SCHEMA_UNREPLAYED` until that replay succeeds; legacy
-  unversioned PASS evidence remains `LEGACY_REPLAY_ONLY`. A successful reopen
-  reports `SEALED_RUN_VERIFIED`, which covers envelope integrity only. Semantic
-  replay is labelled for the MetaHarness owner contract and compatibility
-  replay for the Agentic-QE owner contract; native compatibility is not yet
-  independently replayed, so neither an Agentic-only result nor a synthetic
-  fixture can make the run qualification-eligible;
+  through pure receipt-contract modules. Qualification contract v3 freezes the
+  exact native test IDs and per-process byte ceilings. Semantic projection v2
+  and compatibility projection v3 are the current PASS schemas; compatibility
+  v2 and unversioned PASS evidence remain `LEGACY_REPLAY_ONLY`. A successful
+  reopen reports `SEALED_RUN_VERIFIED`, which covers envelope integrity only.
+  Semantic replay is labelled for the MetaHarness owner contract.
+  Compatibility replay requires both the Agentic-QE owner contract and a
+  local-only native owner artifact containing bounded complete Cargo output.
+  The pure verifier reparses the exact inventory IDs and one successful
+  libtest summary per lane without re-executing Cargo, while the public
+  projection exposes only IDs, counts, durations, and digests. Only that
+  conjunction reports `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`; synthetic
+  fixtures and Agentic-only evidence remain ineligible, and the absent
+  reference, budget/noise, benchmark, and current clean-subject evidence keep
+  G1.7 inconclusive;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v6 adds an exact `candidateRejections` collection and

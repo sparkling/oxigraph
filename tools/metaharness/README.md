@@ -67,9 +67,12 @@ protected and a symlink at `js/pkg` still fails closed.
 Before the real gate, it validates the mutation receipt,
 outcomes, and policy copy from one UUID-addressed immutable publication rather
 than later-mutable native output paths. The real gate additionally requires and
-hashes a fresh schema-v4 Agentic-QE semantic receipt created after that gate
+hashes a fresh schema-v5 Agentic-QE semantic receipt created after that gate
 began. It reopens the receipt's content-addressed output archive and
 run-addressed immutable receipt/oracle pair rather than relying on
 later-mutable shared target files.
+No such current schema-v5 semantic receipt is claimed at this checkpoint; the
+last schema-v4 persistence receipt is historical/invalid and cannot satisfy
+this gate.
 Any drift,
 stale receipt, unverified qualification, or symlinked output path fails closed.

@@ -9,9 +9,10 @@
   vocabulary exists, but the built-in `Store` does not yet implement the
   decision's single-`CommitAttempted`/typed terminal-outcome lifecycle or
   durable lost-acknowledgement lookup. The dedicated G1.7 qualification-control
-  scaffold is implemented, while native compatibility replay, reviewed
-  reference and budgets, benchmark/noise evidence, and the current-evidence
-  promotion decision remain outstanding
+  scaffold, including conjunctive Agentic-QE/native owner replay, is
+  implemented, while the reviewed reference and budgets, benchmark/noise
+  evidence, current clean-subject owner evidence, and promotion decision remain
+  outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
@@ -75,7 +76,11 @@ passes the shared oracle for the exact capability value.
 
 This ADR may move to Implemented only when:
 
-- memory, RocksDB, and a replacement adapter pass the same state model;
+- memory and RocksDB pass the same state model, while the test-only
+  `RewrittenPersistencePlane` portability adapter proves that the shared kit is
+  not coupled to built-in storage; any future production adapter must pass that
+  unchanged kit before adoption, but its absence is not an unconditional
+  completion blocker for this ADR;
 - at least 10,000 shrinking traces per backend record replayable seeds;
 - lost-update and write-skew histories have explicit expected outcomes;
 - the 1/4/16-writer matrix passes while concurrent readers remain live;
@@ -115,8 +120,10 @@ Current implementation evidence is in
 [transactional write contract](../../lib/oxigraph/src/store/transactional.rs).
 The G1.1 evaluator in
 [`transaction_state_model.rs`](../../lib/oxigraph/tests/transaction_state_model.rs)
-runs 10,000 replayable shrinking traces against memory, RocksDB, and an
-independent rewritten adapter. The evaluator-only G1.2 history oracle in
+runs 10,000 replayable shrinking traces against memory, RocksDB, and the
+test-only `RewrittenPersistencePlane` portability adapter. This third lane is
+an API-portability proof, not a production persistence implementation. The
+evaluator-only G1.2 history oracle in
 [`transaction_concurrency.rs`](../../lib/oxigraph/tests/transaction_concurrency.rs)
 is intentionally red on its frozen baseline: overlapping RocksDB writers
 reproduce both lost update and write skew. Per-instance RocksDB writer
@@ -193,10 +200,13 @@ single-`CommitAttempted`, typed terminal-outcome, and durable-lookup boundary
 and G1.7 closes the compatibility, performance, and current-evidence promotion
 boundary. G1.5c completion alone does not grant promotion authority or add
 savepoints to caller-owned transactions.
-The current G1.7 scaffold can structurally verify current v2 projections and
-sealed-replay copied MetaHarness and Agentic-QE contracts, but compatibility
-replay currently reaches only `AGENTIC_OWNER_CONTRACT_REPLAYED`. It does not
-independently replay native Cargo lane summaries and cannot make the evidence
-qualification-eligible. The transaction identifiers are G1.1-G1.5c; G1.7 is
-the joint compatibility/performance promotion gate in the
+The current G1.7 scaffold structurally verifies semantic v2 and compatibility
+v3 projections and sealed-replays copied MetaHarness, Agentic-QE, and native
+owner contracts. The native owner binds exact test IDs and bounded complete
+Cargo output and is reparsed without Cargo re-execution; only its conjunction
+with Agentic-QE may report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. That closes
+the replay-control gap but does not qualify the product: reference and
+budget/noise decisions are absent, the benchmark is not run, and current
+clean-subject owner evidence is not yet sealed. The transaction identifiers
+are G1.1-G1.5c; G1.7 is the joint compatibility/performance promotion gate in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).

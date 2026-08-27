@@ -7,6 +7,7 @@
     "status": "not-qualified",
     "policy": "An evidence entry remains authoritative for its sealed subject, but is current-HEAD evidence only when its freshness status is current and its protected source/inventory binding verifies.",
     "blockers": [
+      "The Agentic-QE schema-v5 contract passes 39/39, but the last persistence-write receipt is schema v4 and must be regenerated and independently reopened from a clean committed subject",
       "Full MetaHarness qualification and independent full verification have not been regenerated after the G0.7 protected-evidence freeze",
       "G1.7 compatibility/performance evidence and the human promotion decision remain open and are separate from semantic qualification"
     ]
@@ -565,7 +566,7 @@
       "resolvedVersion": "3.13.12",
       "lockIntegrity": "sha512-1bfL3zJJiwZNvcQ2yV7/6Z98U3LIKGS0eemYAxdVxwQ1DHgE9tuTt6pnluivXs3OSiKbd/v2X1iPP7FU0gFtfw==",
       "role": "Latest-compatible advisory generator and integrity-bound presence gate behind an Oxigraph-owned shell-free coordinator and evidence recorder",
-      "adapterAdversarialTests": {"passed": 18, "failed": 0},
+      "adapterAdversarialTests": {"passed": 39, "failed": 0},
       "semanticGateCommandInventory": 41,
       "parityCommandInventory": 47,
       "reconciledProfiles": {
@@ -575,6 +576,8 @@
           "passed": 34,
           "failed": 0,
           "commands": 7,
+          "receiptSchemaVersion": 4,
+          "freshnessStatus": "historical-invalid-under-schema-v5",
           "sourceCommit": "253a2b34079c1cae6eb9cfd196380a14a7ca092f",
           "runId": "47a995c5-5cf0-4cf6-baaf-8b0cfa44a149",
           "receiptSha256": "e965c63fd696c3bdd2f50c6f6028e15d53d6567fa8d64cdfa4d2c10615b864a0",
@@ -582,9 +585,9 @@
           "executionHash": "1de5ea6f38a4ee0e266228ac1ff875526f5138233de193b14a1f9e5dcadc2814"
         }
       },
-      "currentEvidence": "G0.4-G0.5 reconciled the exact 144 default, 129 no-default, and 34-test persistence-write source-bound profiles. The 34-test receipt is immutable and byte-bound, but no current 41/47-command aggregate receipt or umbrella semantic qualification follows from these scoped results.",
-      "freshnessStatus": "current-scoped-profiles",
-      "receiptBindings": "Schema v4 immutable run UUID publication and exact-receipt oracle binding, content-addressed output archive, exact ordered profile inventory, crash-recoverable global profile lease, Cargo and Node test inventories/counts, repository tuple, implementation/artifact hashes, oracle roles, timeouts, and executable path/version/SHA-256",
+      "currentEvidence": "The schema-v5 adapter contract passes 39/39. The 144 default, 129 no-default, and 34-test persistence-write inventories remain source-bound, but the last persistence-write receipt is schema v4 and historical/invalid under the current contract. Until clean schema-v5 receipts are independently reopened, no current scoped or aggregate Agentic receipt is claimed.",
+      "freshnessStatus": "schema-v5-replay-required",
+      "receiptBindings": "The schema-v5 contract requires immutable run UUID publication and exact-receipt oracle binding, content-addressed output archives, exact ordered profile inventories, bounded complete-output replay, independently bound outer runtime identity, crash-recoverable global profile leases, Cargo and Node inventories/terminal summaries, repository tuple, implementation/artifact hashes, oracle roles, timeouts, and executable path/version/SHA-256. The recorded persistence-write receipt is schema v4 and historical only.",
       "authority": "None beyond referenced native commands",
       "receiptLocation": "target/agentic-qe"
     },

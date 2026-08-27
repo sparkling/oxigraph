@@ -31,7 +31,7 @@ mapping.
 | [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md) | Proposed | Validate the complete resulting staged view under the same isolation gate as commit |
 | [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md) | Proposed | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore |
 | [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md) | Proposed | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback |
-| [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md) | Proposed | Keep text and spatial indexes rebuildable with explicit strict/eventual freshness contracts |
+| [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md) | Proposed | Share one crash-safe rebuild/activation lifecycle, then keep text and spatial providers optional with explicit strict/eventual freshness contracts |
 | [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md) | Proposed | Optimize only explicit SERVICE clauses within endpoint, egress, resource, and SILENT-semantics bounds |
 | [ADR-0026 — Service identity and authorization boundary](0026-service-identity-and-authorization.md) | Proposed | Authenticate and authorize server operations before parsing, storage, or egress without coupling identity to the embedded store |
 | [ADR-0027 — Workload admission and operator resources](0027-workload-admission-and-operator-resources.md) | Proposed | Carry one bounded admission, deadline, cancellation, and resource contract through each server request |
@@ -52,8 +52,10 @@ controls are implemented in commits `4a15caa0` and `afe30c7d`; both remain
 local-only engineering controls and grant no semantic-qualification or
 promotion authority. ADR-0017 now also defines and tests a dedicated local
 G1.7 qualification scaffold whose structural and sealed replay states remain
-non-promoting; the still-missing native compatibility replay, reviewed
-reference/budgets, benchmark evidence, and human decision keep G1.7 open.
+non-promoting. Its compatibility verifier now conjunctively replays the copied
+Agentic-QE contract and bounded native owner bytes, but the still-unselected
+reference, absent budget/noise decisions, unrun benchmark, missing current
+clean-subject evidence, and human decision keep G1.7 open.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);
@@ -68,11 +70,15 @@ shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
 2026-08-27. Individual sealed results retain their original evidence dates.
-G0.1-G0.7 have source-bound completion evidence: registered sources, the
-locked Jena runner, two byte-identical runs of the refreshed 76/198 profile,
-the 144/129 Agentic-QE inventories, and the 34-test `persistence-write`
-profile, plus the current generic OxDatalog mutation run
-`731e6467-2cab-4260-8d15-b34e4ebc8ed6` and reconciled protected claims. G1.6
+G0.1-G0.7 retain historical source-bound completion evidence: registered
+sources, the locked Jena runner, two byte-identical runs of the refreshed
+76/198 profile, the 144/129 Agentic-QE inventories, the 34-test
+`persistence-write` profile, the generic OxDatalog mutation run
+`731e6467-2cab-4260-8d15-b34e4ebc8ed6`, and the prior protected-claims
+reconciliation. The adapter contract now passes 39/39 under schema v5, but the
+last `persistence-write` receipt is schema v4 and invalid under the current
+contract. Freshness is therefore `schema-v5-replay-required`; no current
+scoped or aggregate Agentic receipt is claimed. G1.6
 has bounded source-bound acceptance from the seven-stage
 4/17/1/1/12 verifier split and three rejecting product controls. That closes
 ADR-0019 but does not grant current-HEAD umbrella qualification, which remains

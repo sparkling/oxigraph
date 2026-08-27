@@ -155,23 +155,34 @@ evidence is non-trainable, v1-v5 receipts remain byte-exact replay-only, and a
 candidate-disposal failure aborts receipt minting. The committed control passes
 194/194 harness tests and the same `runner-implemented`, local-only doctor.
 
-The dedicated G1.7 qualification path now uses explicit v2 semantic and
-compatibility projection schemas, artifact-first sealed runs, canonical
-portable-path ordering, and pure copied-receipt replay. Structural receipt
-parsing reports current PASS projections as `CURRENT_SCHEMA_UNREPLAYED`; only
-the sealed verifier may report scope-specific MetaHarness or Agentic-QE owner
-contract replay, and `SEALED_RUN_VERIFIED` means that the sealed envelope was
-verified rather than that G1.7 qualified. Positive unit fixtures are synthetic
-contract fixtures: they do not establish owner-process emission, subject-file
-correspondence, native execution, benchmark acceptance, or promotion. The
-compatibility replay currently closes only its Agentic-QE sublane; native
-compatibility replay, selected reference and approved budgets, current semantic
-evidence, and the real benchmark remain open, so qualification eligibility is
-withheld. Committed control subject
-`d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passes 298/298 serialized
-JavaScript contract/control tests under Node 24.14.1 on Linux x86_64; that is
-candidate-slice control evidence, not semantic qualification, benchmark
-evidence, or a promotion decision.
+The dedicated G1.7 qualification path now uses qualification contract v3,
+semantic projection v2, compatibility projection v3, artifact-first sealed
+runs, canonical portable-path ordering, and pure copied-receipt replay.
+Structural receipt parsing reports current PASS projections as
+`CURRENT_SCHEMA_UNREPLAYED`; explicit compatibility v2 and unversioned PASS
+evidence remain `LEGACY_REPLAY_ONLY`. Only the sealed verifier may report
+scope-specific owner-contract replay, and `SEALED_RUN_VERIFIED` means that the
+sealed envelope was verified rather than that G1.7 qualified.
+
+Current compatibility replay conjunctively verifies the copied Agentic-QE
+owner contract and a local-only native owner artifact. The native artifact
+binds the sealed subject, Cargo and rustc identities, exact reviewed test IDs,
+commands, timeouts, byte ceilings, complete bounded stdout/stderr bytes, and
+one successful libtest summary per lane. The pure verifier reparses those
+sealed bytes without re-executing Cargo; its public projection retains only
+IDs, counts, durations, and digests. Only that conjunction may report
+`COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. Positive unit fixtures remain
+synthetic contract fixtures: they do not establish real owner-process
+emission, subject-file correspondence, benchmark acceptance, or promotion.
+Selected reference and approved budget/noise decisions, current clean-subject
+semantic and compatibility evidence, and the real benchmark remain open, so
+G1.7 remains `INCONCLUSIVE` and qualification eligibility is withheld.
+Historical committed control subject
+`d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passed 298/298 serialized
+JavaScript contract/control tests under Node 24.14.1 on Linux x86_64; that
+historical result and the follow-on replay controls are candidate-slice
+evidence, not semantic qualification, benchmark evidence, or a promotion
+decision.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -184,23 +195,25 @@ official cases, 269/269 SPARQL 1.2 cases, 86/86 RDF Dataset Canonicalization
 cases, 519/519 eligible SHACL cases, 98/98 OWL 2 RL/RDF assertions, and a
 76-scenario/198-assertion Jena differential. These counts are evidence for the
 named pinned suites and profiles only. They are not a substitute for every
-normative clause in a W3C document family. G0.1-G0.5 have since closed their
-scoped source-registration, Jena runner/profile, and Agentic-QE refresh work:
+normative clause in a W3C document family. G0.1-G0.5 previously closed their
+scoped source-registration, Jena runner/profile, and Agentic-QE inventory work:
 `46ef17fc` restores the locked Jena runner, `22a8033e` binds two byte-identical
 76-scenario/198-assertion runs to that reviewed subject, and `253a2b34` binds
 the exact 144/144 default, 129/129 no-default, and 34/34
-`persistence-write` inventories. Those source-bound results do not make a
-later HEAD or the aggregate semantic qualification current by themselves.
+`persistence-write` inventories. The adapter contract now passes 39/39 under
+schema v5. The 144/129 inventories remain source-bound, but the last
+`persistence-write` receipt is schema v4 and is historical and invalid under
+the current contract. Until clean schema-v5 receipts are independently
+reopened, freshness is `schema-v5-replay-required`; no current scoped or
+aggregate Agentic receipt is claimed.
 G0.6 has now regenerated immutable OxDatalog run
 `731e6467-2cab-4260-8d15-b34e4ebc8ed6` with 358 generated, 278 caught,
 80 unviable, zero missed, and zero timed out under `cargo-mutants` 27.1.0.
-G0.7 reconciles the ledger and all protected claim documents against those
-scoped Jena, Agentic-QE, and mutation receipts; root `README.md` is itself now
-part of the MetaHarness protected snapshot. These closures make the named
-lower receipts current for their exact scopes only. Full MetaHarness semantic
-qualification, its independent verification, and the separate G1.7
-compatibility/performance promotion gate remain open, so the umbrella claim
-is still withheld.
+G0.7's earlier reconciliation remains historical after the schema-v5 contract
+change and these protected-document edits; root `README.md` remains part of the
+MetaHarness protected snapshot. Full MetaHarness semantic qualification, its
+independent verification, and the separate G1.7 compatibility/performance
+promotion gate remain open, so the umbrella claim is still withheld.
 
 ### Published documentation and evidence
 

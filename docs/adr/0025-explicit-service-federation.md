@@ -2,11 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-26
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G3.5. G1.6 has satisfied
-  the runtime-derived service-claim prerequisite, but no federation planner or
-  endpoint catalog has been implemented
+  the runtime-derived service-claim prerequisite for later advertisement, but
+  no federation planner or endpoint catalog has been implemented
 - **Depends on**:
   [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)
@@ -41,6 +41,12 @@ endpoint or treats catalog membership as network authorization. ADR-0026
 supplies principal/authorization context, while ADR-0027 supplies resource
 admission; neither is inferred from catalog metadata.
 
+The embedded/research planner may be implemented after G1.5 and G3.1-G3.2.
+Advertising federation additionally requires G1.6's runtime-derived claim
+boundary. Exposing it through the server or promoting that profile additionally
+requires G4.1 identity/authorization and G4.2 workload admission. An embedded
+prototype cannot silently acquire server or promotion authority.
+
 Plans expose endpoint choices, estimated and actual rows, request counts,
 bytes, timeouts, and fallback reasons with bounded, payload-free telemetry.
 Remote streams are treated as untrusted and resource-bounded. Existing SPARQL
@@ -57,13 +63,15 @@ capability probing also requires its own egress- and identity-aware decision.
 
 ## Acceptance boundary
 
-G3.5 research may begin after G1.5 and G3.1-G3.2. G1.6 closed the
-runtime-derived service-claim prerequisite on 2026-08-26: the server suppresses
-federation and remote-input claims under its shared deny-all evaluator, while
-capability-enabled evaluators disclose only their effective configured and
-compiled capability snapshot. That snapshot is not remote endpoint health or
-current request admission. G3.5 remains Proposed and must still use controlled
-loopback endpoints to prove:
+G3.5 embedded research and implementation may begin after G1.5 and G3.1-G3.2.
+Advertisement additionally requires G1.6; server exposure or promotion also
+requires G4.1 and G4.2. G1.6 closed only the runtime-derived service-claim
+prerequisite on 2026-08-26: the server suppresses federation and remote-input
+claims under its shared deny-all evaluator, while capability-enabled evaluators
+disclose only their effective configured and compiled capability snapshot.
+That snapshot is not remote endpoint health, authorization, or current request
+admission. G3.5 remains Proposed and must still use controlled loopback
+endpoints to prove:
 
 - source selection and bound joins return the same results as the unplanned
   explicit-`SERVICE` oracle;

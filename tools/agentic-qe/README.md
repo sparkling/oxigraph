@@ -44,20 +44,30 @@ The focused `test:persistence-write`, `test:g1-regression`,
 `test:metaharness-semantic-gate` is the immutable native-oracle set consumed
 by the full MetaHarness/Darwin qualification.
 
-Receipts are written below `target/agentic-qe/<profile>/`. Schema-v4 receipts
+Receipts are written below `target/agentic-qe/<profile>/`. Schema-v5 receipts
 record the exact Agentic-QE version, Git and W3C provenance, commands, process
 status, complete stdout/stderr hashes, required artifact hashes, the exact
 Cargo `--list --format terse` inventory, and a before/after manifest of every
-selected implementation input. Dirty and untracked scoped files are included.
-Any input drift, timeout, missing artifact, nonzero exit, test-inventory
-cardinality mismatch, or exact Cargo pass-count mismatch fails the profile.
+selected implementation input. They also bind output/scan ceilings, termination
+and cleanup disposition, and normalized Cargo summary records. Dirty and
+untracked scoped files are included. Any input drift, timeout, unconfirmed
+cleanup, missing artifact, nonzero exit, test-inventory cardinality mismatch,
+or exact Cargo pass-count mismatch fails the profile. Schema-v4 receipts omit
+those mandatory lifecycle fields and are invalid under this contract.
 Narrow, fully reviewed oracles additionally require an exact test-ID inventory.
 Broader crate suites may instead name a nonempty set of required sentinel IDs;
 these are checked as a subset of the complete recorded inventory and are never
 treated as an exact inventory.
 
+At this checkpoint the adapter contract passes 39/39 under schema v5. The
+144/129 CLI and 34-test `persistence-write` inventories remain source-bound,
+but the last `persistence-write` receipt is schema v4 and is historical and
+invalid under this contract. Freshness is `schema-v5-replay-required`; no
+current scoped or aggregate Agentic receipt is claimed until clean schema-v5
+runs are independently reopened.
+
 Profile commands execute sequentially in their reviewed order and stop at the
-first failure. Schema-v4 receipts are positive evidence only: a failure aborts
+first failure. Schema-v5 receipts are positive evidence only: a failure aborts
 positive-evidence publication, while a passing receipt must contain the exact
 full ordered profile inventory. One repository-wide exclusive lease is acquired
 before snapshots or output invalidation and held through publication. A
@@ -83,6 +93,12 @@ Receipts record the invoked and canonical paths, versions, and SHA-256 hashes
 for Agentic-QE and every selected runtime; Rustup-backed Cargo and Rustc also
 bind the selected toolchain executable. Output and candidate directories
 reject symlink components and canonical escapes.
+Node TAP and Cargo terminal semantics are reparsed from complete retained bytes
+rather than trusted summary fields. Aggregate retained output is capped at
+32 MiB, serialized receipt/publication reads and writes at 64 MiB, and the final
+oracle at 64 KiB. Every outer consumer independently acquires the expected
+runtime or supplies a trusted outer `runtimeContentHash` before accepting an
+inner receipt.
 
 ## Evidence profiles
 
@@ -138,13 +154,20 @@ itself, a family-wide normative conformance claim.
 Every Cargo oracle uses `--locked`, a nonzero exact test-count safeguard, and
 a timeout. Before execution, the adapter independently asks libtest for the
 selected test inventory and binds the IDs and full-stream hash into the
-receipt. Summary parsing accepts only complete, line-anchored libtest records;
-every consumer re-derives program, arguments, timeout, counts, and reviewed IDs
-from the trusted profile definition. Extra spoof-like lines or a fabricated
-receipt policy fail. On POSIX, timeouts
-terminate the detached process group with TERM and then KILL.
+receipt. Fatal incremental UTF-8 decoding preserves split tokens and rejects
+invalid input; partial lines, identifiers, aggregate identifier bytes, summary
+records, and optional raw capture all have fixed ceilings. Summary parsing
+accepts only complete, line-anchored libtest records. G1 requires exactly one
+terminal `ok` summary on stdout per reviewed lane, zero failed outcomes, and
+conservation against the independent inventory. Every consumer re-derives
+program, arguments, timeout, counts, summary shape, and reviewed IDs from the
+trusted profile definition. Extra spoof-like lines or a fabricated receipt
+policy fail. On POSIX, timeout and output-limit handling attempts process-group
+TERM then KILL, but pure Node cannot prove that a detached descendant is gone;
+the adapter therefore raises `PROCESS_CLEANUP_UNCONFIRMED` and publishes no
+receipt after either termination path.
 The adapter's own Node suite is forced through the TAP 13 reporter and must end
-with one exact, contiguous, conserved 19-test/19-pass terminal summary.
+with one exact, contiguous, conserved 39-test/39-pass terminal summary.
 
 ## Candidate test generation
 

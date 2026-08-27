@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: not implemented; planned by G2.5-G2.7
 - **Depends on**:
@@ -18,7 +18,8 @@
 
 The store can create a backup, optimize RocksDB, and validate storage, but a
 successful method return is not a recovery contract. There is no completed
-backup receipt tying primary state to commit/outbox/index positions, no
+backup receipt tying primary state to its authoritative outbox and declared
+derived-state contributor positions, no
 fresh-directory restore drill, and no stable readiness or bounded-label
 metrics surface.
 
@@ -33,23 +34,34 @@ required only when that operational boundary is explicitly requested.
 Deliver three separately testable operational slices:
 
 1. G2.5 exposes bounded-cardinality metrics, liveness, readiness, cancellation
-   health, outbox/index lag, commit-governance health, and circuit-breaker
-   state. ADR-0027 later consumes these observations; once G4.2 exists,
+   health, authoritative-outbox lag, declared derived-state lag,
+   commit-governance health, and circuit-breaker state. ADR-0027 later consumes
+   these observations; once G4.2 exists,
    readiness observes its workload budgets rather than creating a second
    admission system. Default labels exclude query text, RDF payloads,
    credentials, IRIs, commit IDs, and user IDs.
 2. G2.6 starts with checkpoint-plus-manifest backup creation. A completed
    receipt binds store UUID, schema version, source commit ID, RocksDB
-   sequence, outbox/index cursors, file inventory and checksums, start/end
-   observations, and a completion marker. Interrupted backups cannot acquire
-   that marker.
+   sequence, authoritative-outbox cursor, the canonical derived-state
+   contributor inventory, file inventory and checksums, start/end observations,
+   and a completion marker. Interrupted backups cannot acquire that marker.
 3. G2.7 restores into a fresh directory, opens and validates it, and compares
-   topology, namespaces, primary commit, outbox position, derived-index
-   cursors, inventory, and checksums with the receipt. Drills record numeric
-   RPO and RTO after a baseline is frozen.
+   topology, namespaces, primary commit, authoritative-outbox position, every
+   declared contributor, inventory, and checksums with the receipt. Drills
+   record numeric RPO and RTO after a baseline is frozen.
    Before open, path containment, regular-file policy, manifest completeness,
    sizes, and hashes are verified; symlinks, traversal, missing files, and
    unexpected files fail closed.
+
+G2.5-G2.7 share one engine-neutral, canonical zero-or-more derived-state
+contributor contract. An empty inventory is valid. Each nonempty entry carries
+a stable provider/schema identity, required/optional disposition, source and
+applied cursors, bounded health, a checksummed backup-manifest contribution,
+and restore reconciliation. A test-only fake contributor proves the nonempty
+path. Unknown or duplicate entries, a missing required contributor, and a
+cursor mismatch fail closed. G3.0 later implements the reusable derived-index
+lifecycle and plugs into this hook; G2 does not depend on G3.0 and does not
+pre-create text or spatial providers.
 
 ADR-0027 is an operational and promotion relation, not a hard implementation
 prerequisite for G2.5-G2.7. G2.5 first establishes the bounded metrics,
@@ -72,12 +84,13 @@ primary correctness may not be inferred from index health.
 This ADR may move to Implemented only when:
 
 - metric names, units, label bounds, and privacy tests are stable;
-- liveness and readiness failure fixtures cover storage, feed, index, and
-  cancellation states;
+- liveness and readiness failure fixtures cover storage, feed, cancellation,
+  the empty contributor inventory, and a test-only nonempty contributor;
 - incomplete, missing, modified, or checksum-invalid backups fail closed;
 - backup and compaction interaction has no unrecorded consistency gap;
 - automated fresh-directory restores pass the storage validator and compare
-  every receipt-bound cursor and topology field;
+  every receipt-bound cursor, contributor, and topology field; unknown,
+  duplicate, missing-required, and cursor-mismatched contributors reject;
 - a completed backup remains independently usable after removal of its source
   store; and
 - RPO/RTO thresholds are baselined and frozen before a production promotion,

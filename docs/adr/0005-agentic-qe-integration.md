@@ -7,19 +7,23 @@
 - Implementation status: latest-compatible adapter implemented; the manifest
   requests the `latest` dist-tag and the current integrity-bound lockfile
   resolution is Agentic-QE 3.13.12
-- Evidence state: G0.4-G0.5 are source-bound in `253a2b34`: the reviewed CLI
-  inventories are 144/144 default and 129/129 no-default, and the narrow
-  `persistence-write` profile binds 34/34 exact write-interface tests. These
-  scoped results are reconciled by G0.7 alongside the separate current G0.6
-  mutation receipt. They do not constitute a current 41/47-command aggregate
-  receipt, full MetaHarness qualification, or G1.7 promotion.
+- Evidence state: the schema-v5 adapter contract passes 39/39. G0.4-G0.5 keep
+  the reviewed 144/144 default, 129/129 no-default, and 34/34
+  `persistence-write` inventories source-bound in `253a2b34`, but the last
+  `persistence-write` receipt is schema v4 and is historical and invalid under
+  the current contract. Until clean schema-v5 receipts are independently
+  reopened, freshness is `schema-v5-replay-required`; no current scoped or
+  aggregate Agentic receipt, full MetaHarness qualification, or G1.7 promotion
+  is claimed.
 - Update note: on 2026-08-25 the adapter moved to the latest-compatible lock
   policy, disabled dependency lifecycle scripts, and bound source-only ledger
   claims to the exact lock resolution and SRI. The G1.7 consumer now requires
-  an explicit v2 compatibility PASS projection and pure-replays the exact
+  an explicit v3 compatibility PASS projection and pure-replays the exact
   Agentic-QE receipt, oracle, dependency, installed package, and archive bytes.
-  Its scope-explicit replay label covers only that Agentic-QE sublane; it does
-  not replay native compatibility or complete G1.7.
+  That owner replay remains scoped to the Agentic-QE sublane. The separate
+  native owner contract must also replay before the aggregate verifier may
+  report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`; neither sublane alone
+  completes G1.7.
 - **Related**:
   [ADR-0003 — W3C 1.2 conformance baseline](0003-w3c-12-conformance-baseline.md),
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md)
@@ -84,12 +88,21 @@ The adapter:
   provider, API, proxy, credential, and runtime-injection variables are
   removed, and advisory candidate mode receives no ambient model-provider
   authority;
-- validates exact nonzero test counts;
+- validates exact nonzero test inventories and, for the G1 regression lanes,
+  exactly one terminal successful Cargo/libtest summary on stdout; `FAILED`,
+  stderr, duplicate, nonterminal, unsafe-integer, or outcome-inconsistent
+  summaries fail closed;
 - forces its Node adversarial suite through TAP 13 and requires one exact,
-  terminal, conserved 19-test/19-pass summary;
-- scans complete stdout and stderr streams for count guards, including tokens
-  split across process chunks;
-- kills the whole POSIX process group on timeout;
+  terminal, conserved 39-test/39-pass summary;
+- scans complete stdout and stderr streams with fatal incremental UTF-8
+  decoders, including tokens split across process chunks, and bounds partial
+  lines, inventory identifiers, aggregate inventory bytes, summary records,
+  and optional raw-output capture;
+- makes a best-effort POSIX process-group `TERM`/`KILL` sequence on timeout or
+  output overflow, but does not claim pure Node can prove that a detached
+  descendant is gone: every such termination raises a typed
+  `PROCESS_CLEANUP_UNCONFIRMED` infrastructure error before snapshots,
+  artifacts, or receipts can be published;
 - resolves candidate and output roots through canonical in-repository paths;
 - rejects symlinks, traversal, non-regular inputs, and overwrite collisions;
 - executes each profile sequentially in reviewed order and requires a passing
@@ -101,7 +114,7 @@ The adapter:
   then preserves successful output bytes in a bounded content-addressed
   per-profile archive;
 - publishes the receipt and final oracle exclusively below a UUID-addressed run
-  directory, with the oracle binding the exact serialized schema-v4 receipt;
+  directory, with the oracle binding the exact serialized schema-v5 receipt;
 - writes evidence through exclusive temporary files and atomic rename; and
 - hashes scoped dirty/untracked source, lockfiles, protected inputs, command
   output, required artifacts, and the shared dependency and child-environment
@@ -114,11 +127,22 @@ pass. An unavailable tool, missing credential, count mismatch, timeout,
 changed protected input, active/stale lease, or incomplete command inventory
 is failure or inconclusive, never success.
 
-The adapter's own adversarial suite passes 19 of 19 tests. Receipts bind exact
+Schema v5 binds the scan, termination, and cleanup disposition plus the
+replayed Cargo summary records. Schema-v4 receipts are deliberately invalid
+under this stronger contract and must be regenerated; they cannot retain a
+historical `PASS` by omitting the new fields.
+
+The adapter's own adversarial suite passes 39 of 39 tests. Receipts bind exact
 Cargo `--list` inventories, the repository tuple, implementation and artifact
 hashes, oracle roles, timeouts, and each executable's resolved path, version,
 and SHA-256. Consumers re-derive each program, argument vector, timeout, exact
 count, and reviewed test-ID inventory from the trusted profile definition.
+They also reparse Node TAP and Cargo terminal semantics from the complete
+retained bytes rather than trusting receipt summaries. Aggregate retained
+output is capped at 32 MiB, serialized receipt/publication reads and writes at
+64 MiB, and the final oracle at 64 KiB. An outer consumer must independently
+acquire the expected runtime or supply its trusted outer `runtimeContentHash`;
+an inner receipt cannot attest its own runtime identity.
 
 ## Implemented profiles
 
@@ -198,3 +222,9 @@ G0.4-G0.5 deliberately reviewed and replaced them with the source-bound
 144/129 inventories and 34-test `persistence-write` profile in `253a2b34`.
 Any later count or ID drift remains a deliberate fail-closed condition, not
 permission to loosen the inventory automatically.
+
+The schema-v5 hardening deliberately reopened receipt freshness. The old
+schema-v4 `persistence-write` run remains useful only as historical evidence;
+it cannot satisfy a current protected claim until a clean committed subject is
+executed and the run-addressed receipt, oracle, archive, and runtime binding are
+independently reopened.

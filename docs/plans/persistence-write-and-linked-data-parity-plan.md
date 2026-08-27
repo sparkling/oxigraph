@@ -288,7 +288,7 @@ The unfinished work is split by architectural ownership:
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), ADR-0018, ADR-0019 | Harness registry, rejection-evidence controls, and the G1.7 qualification-control scaffold are implemented; compatibility replay is Agentic-only, qualification-ineligible, and P0.5 remains open |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Harness registry, rejection-evidence controls, and conjunctive Agentic/native owner-replay machinery are implemented; clean current owner evidence, reference and budget/noise decisions, the benchmark, and P0.5 promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -306,7 +306,8 @@ The unfinished work is split by architectural ownership:
 
 P3 now has named user outcomes and separate decisions. It remains outside the
 core write-interface acceptance boundary and is not silently absorbed into
-ADR-0018-0025.
+[ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) through
+[ADR-0025](../adr/0025-explicit-service-federation.md).
 
 ADR-0017's two post-G1.6 harness controls are now closed independently. Commit
 `4a15caa07df37d884e7c74d4b69c0505ce3de6e1` makes the canonical task and
@@ -334,8 +335,8 @@ complete ADR-0018 or the G1.7 compatibility/performance promotion gate.
 
 Dependencies: Slice 0.
 
-- Define a reusable adapter test suite for memory, RocksDB, and the rewritten
-  persistence plane.
+- Define a reusable adapter test suite for memory, RocksDB, and the test-only
+  `RewrittenPersistencePlane` portability adapter.
 - Exercise every graph selector, empty named graphs, duplicate inserts,
   deletion of absent quads, `CREATE`/`CLEAR`/`DROP`, `DELETE/INSERT WHERE`,
   `LOAD`, commit, rollback, and drop-without-commit.
@@ -347,6 +348,9 @@ Dependencies: Slice 0.
 Acceptance:
 
 - The same conformance crate runs unchanged against all three backends.
+- Any future production persistence adapter runs that unchanged kit before
+  adoption. The absence of a third production adapter is operational-realism
+  debt for programme QA, not an unconditional ADR-0018 completion blocker.
 - No failed SPARQL Update operation leaks data or graph membership.
 - Read-your-writes and external isolation are tested with concurrent handles.
 - An implementation that conflates `CLEAR` and `DROP` demonstrably fails.
@@ -428,16 +432,19 @@ Acceptance:
 
 Dependencies: P0.1–P0.4.
 
-The local G1.7 control preserves the outer qualification receipt v1 while
-requiring explicit v2 schemas for newly minted semantic and compatibility
-`PASS` projections. Structural verification proves serialization, hashes, and
-schema state only; sealed verification reopens the inventory and replays copied
-MetaHarness and Agentic-QE owner contracts. Compatibility currently reaches
-only `AGENTIC_OWNER_CONTRACT_REPLAYED`, does not independently replay native
-Cargo lane summaries, and cannot make `qualificationEligible` true. Legacy
-unversioned `PASS` evidence remains `LEGACY_REPLAY_ONLY`. This scaffold does not
-replace the benchmark, semantic, compatibility, or human-promotion acceptance
-requirements below.
+The local G1.7 control preserves outer qualification receipt v1 while using
+qualification contract v3, semantic projection v2, and compatibility projection
+v3. Structural verification proves serialization, hashes, and schema state
+only. Sealed verification reopens the inventory and replays copied MetaHarness
+and Agentic-QE owner contracts plus a local-only native owner artifact. That
+artifact binds exact native IDs, Cargo/rustc identities, commands, timeouts,
+byte ceilings, and complete bounded output; the pure verifier reparses it
+without re-executing Cargo. Only the Agentic/native conjunction may report
+`COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. Explicit compatibility v2 and
+unversioned `PASS` evidence remain `LEGACY_REPLAY_ONLY`. Reference and
+budget/noise decisions, the real benchmark, current clean-subject evidence,
+and the human decision remain open, so this scaffold does not replace any
+acceptance requirement below.
 
 - Benchmark built-in `on_store` before/after and generic `on_dataset` on memory
   and disk.
@@ -534,6 +541,9 @@ Dependencies: P0.2 and P1.2.
   feed lag, and index lag.
 - Add loopback health/readiness endpoints separately from privileged
   maintenance operations and define circuit-breaker/degraded-mode behavior.
+- Define one canonical zero-or-more derived-state contributor registry shared
+  by readiness, backup, and restore. Empty is valid; a test-only contributor
+  proves the nonempty path.
 
 Acceptance:
 
@@ -541,14 +551,17 @@ Acceptance:
   credentials, or user identifiers by default.
 - Health does not report ready when the writer, durable feed, or required index
   is unrecoverably unavailable.
+- Unknown, duplicate, missing-required, or cursor-incoherent contributors fail
+  closed; requiredness is profile-owned and cannot be downgraded by a provider.
 
 #### P1.4b Backup receipts and creation — M
 
 Dependencies: P1.2 and P1.4a.
 
 - Start with a checkpoint-plus-manifest design. Bind store UUID, schema
-  version, source commit ID, RocksDB sequence, outbox/index cursors, file
-  inventory/checksums, start/end state, and a completion marker.
+  version, source commit ID, RocksDB sequence, authoritative-outbox cursor, the
+  canonical contributor inventory, file inventory/checksums, start/end state,
+  and a completion marker.
 - Exercise compaction/optimize with concurrent reads and blocked or rejected
   writes according to its documented contract.
 
@@ -556,15 +569,16 @@ Acceptance:
 
 - Interrupted backups never carry a completion marker or pass receipt
   verification.
-- Backup, retention, outbox, index cursors, and compaction advance without an
-  unrecorded consistency gap.
+- Backup, retention, outbox, contributor cursors, and compaction advance without
+  an unrecorded consistency gap.
 
 #### P1.4c Restore verification and drills — M
 
 Dependencies: P1.4b.
 
 - Restore into a fresh directory, open the store, run its storage validator,
-  and verify topology, namespaces, outbox position, and index cursors.
+  and verify topology, namespaces, outbox position, and every declared
+  contributor.
 - Baseline and receipt recovery-point and recovery-time objectives.
 
 Acceptance:
@@ -594,9 +608,26 @@ Acceptance:
 - Planner fallback returns identical results when statistics are absent,
   corrupt, or stale.
 
+#### Shared P2.2/P2.3 prerequisite (G3.0) — XL
+
+Dependencies: P1.2 and P1.4a-P1.4c.
+
+- Implement one provider-neutral lifecycle with versioned provider/schema
+  identity, source/applied commits, checksummed crash-safe generations, bounded
+  rebuild/delta processing, atomic activation, cancellation/resource ceilings,
+  lag/readiness, and ADR-0022 backup/restore contributions.
+- Prove the lifecycle with a fake provider before selecting text or spatial
+  engines. G3.0 consumes the G2 contributor hook; G2 does not depend on G3.0.
+
+Acceptance:
+
+- Crash, corruption, cancellation, rebuild, activation, backup, and restore
+  matrices fail closed without making a partial generation active.
+- The same lifecycle contract is reused unchanged by P2.2 and P2.3.
+
 #### P2.2 Full-text index — XL
 
-Dependencies: P1.2, P1.4a-P1.4c, and preferably P2.1.
+Dependencies: G3.0 and preferably P2.1.
 
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.
@@ -616,7 +647,7 @@ Acceptance:
 
 #### P2.3 Spatial index — L/XL
 
-Dependencies: P1.2, P1.4a-P1.4c, and existing `spargeo` correctness tests.
+Dependencies: G3.0 and existing `spargeo` correctness tests.
 
 - Index per-CRS geometry envelopes. Transform/normalize only where exact
   transformation semantics and error bounds are proven.
@@ -632,7 +663,8 @@ Acceptance:
 
 #### P2.4 Explicit `SERVICE` federation planner — XL
 
-Dependencies: P0.3, P1.4a, and P2.1.
+Dependencies: P0.3 and P2.1 for embedded/research work; additionally P0.4 for
+advertisement; additionally P3.1 and P3.2 for server exposure or promotion.
 
 - Add endpoint catalogs, source selection, join strategies, per-endpoint
   budgets, cancellation, and explain/metrics for federated plans.

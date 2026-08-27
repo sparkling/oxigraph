@@ -29,12 +29,13 @@
   exact attempt-or-rejection accounting for every successful patch-producing
   invocation, non-trainable reconstruction/applicability rejection records,
   and byte-exact replay-only handling for v1-v5. The outer G1.7 qualification
-  receipt remains v1. Newly minted semantic or
-  compatibility `PASS` projections carry explicit v2 schemas. Structural
-  verification proves canonical serialization, hashes, and schema state only;
-  sealed verification reopens the inventory and replays copied MetaHarness and
-  Agentic-QE owner contracts. Legacy unversioned `PASS` evidence remains
-  `LEGACY_REPLAY_ONLY`
+  receipt remains v1. Qualification contract v3 freezes exact native test IDs
+  and byte ceilings; newly minted semantic `PASS` projections use v2 and
+  compatibility `PASS` projections use v3. Structural verification proves
+  canonical serialization, hashes, and schema state only. Sealed verification
+  reopens the inventory and replays copied MetaHarness, Agentic-QE, and bounded
+  native-output owner contracts. Explicit compatibility v2 and unversioned
+  `PASS` evidence remain `LEGACY_REPLAY_ONLY`
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -70,7 +71,7 @@ ADR-0005, ADR-0012, and ADR-0013.
 The repository already owns stronger proof than a generic agent loop:
 
 - exact native Cargo, W3C, Jena, and Souffle commands;
-- schema-v4 Agentic-QE receipts and immutable run publications;
+- a schema-v5 Agentic-QE receipt contract and immutable publication machinery;
 - source-bound mutation receipts;
 - a policy-only Darwin adapter with protected-input hashing; and
 - an independent MetaHarness qualification verifier.
@@ -125,7 +126,7 @@ authorities and may not replace them.
 | Existing `tools/metaharness` qualifier | ADR-0004 policy evolution against protected semantic evidence | Engineering implementation, repair, or product promotion |
 | `tools/engineering-harness` runtime | Route, build, repair, review, and receipt isolated G1-G3 candidates | Semantic truth, publication, or promotion |
 | Darwin | Bounded evolution of frozen harness-policy surfaces | Rust source, manifests, expected results, thresholds, or semantic answers |
-| Agentic-QE | Exact profile coordination and schema-v4 evidence publication | A simulated or JavaScript substitute for native Rust execution |
+| Agentic-QE | Exact profile coordination and schema-v5 evidence-publication machinery | A simulated or JavaScript substitute for native Rust execution |
 | Dream Machine | Local version/config compilation, rotation vocabulary, three-verdict discipline, and a secondary ledger | Scheduling, provider routing, publication, promotion, or replacement receipts |
 | Native and differential runners | Pass/fail evidence for their exact named scopes | Claims broader than their reviewed inventories |
 
@@ -277,20 +278,28 @@ or a synthetic Darwin run does not satisfy this definition.
 
 The outer G1.7 qualification receipt remains
 `oxigraph.g1.7-qualification-receipt/v1`. Newly minted semantic or
-compatibility `PASS` projections must carry their explicit v2 schema.
+compatibility `PASS` projections must carry semantic v2 or compatibility v3,
+respectively. Qualification contract v3 freezes each native lane's exact test
+IDs, command, timeout, and combined-output ceiling.
 Structural verification proves canonical serialization, hashes, and schema
 state only: a current structural `PASS` is `CURRENT_SCHEMA_UNREPLAYED` and is
 never qualification-eligible. Sealed verification reopens the sealed artifact
 inventory and replays the copied MetaHarness and Agentic-QE owner contracts.
-Legacy unversioned `PASS` evidence is `LEGACY_REPLAY_ONLY`.
+It also replays a local-only native owner artifact that binds the sealed
+subject and Cargo/rustc identities to exact commands, test inventories,
+timeouts, byte ceilings, and complete bounded stdout/stderr bytes. The pure
+verifier reparses those bytes and requires one successful libtest summary per
+lane without re-executing Cargo. The public projection retains only IDs,
+counts, durations, and digests. Explicit compatibility v2 and unversioned
+`PASS` evidence are `LEGACY_REPLAY_ONLY`.
 
-Compatibility replay currently reaches only
-`AGENTIC_OWNER_CONTRACT_REPLAYED`. It does not independently replay the native
-Cargo lane summaries contained in the compatibility projection, cannot produce
-`COMPATIBILITY_OWNER_CONTRACT_REPLAYED`, and therefore leaves
-`qualificationEligible` false. Reference selection remains `UNSELECTED`, the
-performance-budget and noise decisions remain `ABSENT`, and the benchmark is
-`NOT_RUN`; G1.7 consequently remains `INCONCLUSIVE`.
+Compatibility assurance reaches `COMPATIBILITY_OWNER_CONTRACT_REPLAYED` only
+after both the Agentic-QE and native owner contracts replay. This closes the
+control-plane replay gap, not the product gate: reference selection remains
+`UNSELECTED`, the performance-budget and noise decisions remain `ABSENT`, the
+benchmark is `NOT_RUN`, and current clean-subject semantic and compatibility
+owner evidence must still be regenerated. G1.7 consequently remains
+`INCONCLUSIVE` and `qualificationEligible` remains false for current evidence.
 
 ## Programme decisions and task ownership
 
@@ -309,11 +318,15 @@ ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
 ADR-0020 through ADR-0033 are fifteen Proposed living plans, not implementation
 claims.
 
-The linked execution plan contains 39 stable executable G-identifiers. The
+The linked execution plan contains 40 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
 2026-08-24; the 2026-08-25 expansion added G1.5b-G1.5c, explicit G2.3a-G2.3c
-and G2.4a-G2.4b leaves, and G4.1-G4.8. `HARNESS-REGISTRY` is a named harness
-control between G1.6 and the G2.1 evaluator freeze, not a product G-identifier.
+and G2.4a-G2.4b leaves, and G4.1-G4.8. On 2026-08-27 G3.0 was added as the
+shared rebuildable derived-index lifecycle owned jointly by ADR-0022 and
+ADR-0024; G3.3 and G3.4 now own only their text and spatial providers.
+`HARNESS-REGISTRY` and `AGENTIC-SCHEMA-V5-REFRESH` are named harness/evidence
+controls, not product G-identifiers. `HARNESS-REGISTRY` sits between G1.6 and
+the G2.1 evaluator freeze.
 It is implemented by commit
 `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`: an exact ordered seven-task
 registry derives canonical contract paths and an exact ordered 27-command CLI
@@ -326,14 +339,14 @@ candidate-specific reconstruction/applicability rejection evidence before the
 G2.1 evaluator is frozen, while v1-v5 remain replay-only.
 
 The current managed task surface persists repository-local execution state but
-does not expose a dependency or description-edit argument. Rows therefore
-carry the dependency text available when they were created, and historical
-descriptions may be stale. The committed G-identifiers and GOAP tables remain
-the portable authority; any committed Ruflo task IDs are repository-local
-audit pointers only and never prove product behavior. The corrected
-repository-local adjacency map was stored and read back through the managed
-Ruflo CLI against `.swarm/memory.db` at
-`task-plans/linked-data-store-g0-g4-2026-08-26-v4`.
+does not expose a dependency or description-edit argument. Superseded pending
+rows are therefore cancelled and replaced while retained as history. The
+committed G-identifiers and GOAP tables remain the portable authority; Ruflo
+task IDs are repository-local audit pointers only and never prove product
+behavior. The current 40-entry adjacency map was stored and exactly read back
+through the managed Ruflo interface at
+`task-plans/linked-data-store-g0-g4-2026-08-27-v5`; it supersedes, rather than
+rewrites, the historical v4 map.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an

@@ -2,9 +2,9 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G3.3-G3.4
+- Implementation status: not implemented; planned by G3.0, G3.3, and G3.4
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -27,14 +27,20 @@ that does not trust the index.
 
 ## Decision
 
-Implement text and spatial indexes as rebuildable consumers of ADR-0020's
-durable outbox, not participants in primary RDF commit. The shared derived
-index contract includes index/schema version, source commit, applied commit,
-generation, checksum, lag, rebuild state, atomic generation swap, bounded
-delta overlay, and readiness policy. Backup receipts bind their cursors, while
-the index bytes remain reproducible from primary state and the durable feed.
-Lifecycle states distinguish building, ready, lagging, failed, corrupt, and
-unavailable. An interrupted or incompatible generation never becomes active.
+G3.0 first implements one provider-neutral lifecycle for rebuildable consumers
+of ADR-0020's durable outbox. Its contract includes provider/schema identity,
+source commit, applied commit, checksummed generation, lag, rebuild state,
+bounded delta overlay, cancellation/resource ceilings, atomic activation, and
+readiness policy. It contributes backup and restore state through ADR-0022's
+canonical zero-or-more hook; index bytes remain reproducible from primary state
+and the durable feed. Lifecycle states distinguish building, ready, lagging,
+failed, corrupt, and unavailable. An interrupted, corrupt, or incompatible
+generation never becomes active. A fake provider must prove crash, rebuild,
+activation, cancellation, backup, and restore semantics before an engine is
+adopted.
+
+G3.3 and G3.4 then implement text and spatial providers on that lifecycle,
+without duplicating it or participating in primary RDF commit.
 
 G3.3 uses a Tantivy-backed text provider behind an engine-neutral query
 surface. Stale candidates are verified against primary state. Because that
@@ -56,8 +62,10 @@ deletion semantics in ADR-0032.
 
 ## Acceptance boundary
 
-Both indexes must prove insert, delete, clear, drop, rollback, crash, cursor
-replay, corruption, rebuild, generation swap, and backup/restore behavior.
+G3.0 must first pass a fake-provider matrix for insert, delete, clear, drop,
+rollback, crash, cursor replay, corruption, bounded rebuild/delta, atomic
+activation, cancellation/resource ceilings, and backup/restore reconciliation.
+Each real provider then passes the same matrix plus its semantic checks.
 Additionally:
 
 - strict text queries never silently omit lagging additions;
@@ -90,5 +98,6 @@ Additionally:
 
 Exact spatial functions are integrated through
 [`spareval`](../../lib/spareval/src/lib.rs) and
-[`spargeo`](../../lib/spargeo). G3.3-G3.4 own delivery in the
+[`spargeo`](../../lib/spargeo). G3.0 owns the shared lifecycle; G3.3 and G3.4
+own only the text and spatial providers in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
