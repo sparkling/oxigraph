@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { constants } from "node:fs";
 import {
   chmod,
   link,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readlink,
+  rename,
+  rmdir,
   rm,
   symlink,
   writeFile,
@@ -19,9 +24,36 @@ import {
   G17NativeSnapshotFault,
   buildG17NativeSnapshotHelper,
   closeG17NativeSnapshotHelper,
+  deleteG17NativeNode,
   snapshotG17NativeNode,
   verifyG17NativeSnapshotHelper,
 } from "../src/qualification/native-snapshot.mjs";
+
+async function deleteTree(helper, parent, root, overrides = {}) {
+  const parentHandle = await open(
+    parent,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  const rootHandle = await open(
+    root,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    return await deleteG17NativeNode({
+      helper,
+      parentHandle,
+      rootHandle,
+      targetName: root.slice(parent.length + 1),
+      maxEntries: 64,
+      maxDepth: 16,
+      timeoutMs: 10_000,
+      signal: undefined,
+      ...overrides,
+    });
+  } finally {
+    await Promise.allSettled([parentHandle.close(), rootHandle.close()]);
+  }
+}
 
 test("openat2 snapshot helper copies exact files, directories, links, and exclusions", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-openat2-"));
@@ -213,6 +245,120 @@ test("openat2 snapshot helper rejects hard links, overlaps, and bounded inventor
       /overlap/u,
     );
   } finally {
+    if (helper !== undefined) await closeG17NativeSnapshotHelper(helper);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("descriptor-pinned delete removes only the exact bounded tree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-openat2-delete-"));
+  let helper;
+  try {
+    const controller = join(root, "controller");
+    const target = join(root, "target");
+    const sentinel = join(root, "sentinel");
+    await Promise.all([
+      mkdir(controller, { mode: 0o700 }),
+      mkdir(join(target, "nested"), { recursive: true, mode: 0o700 }),
+      writeFile(sentinel, "outside\n"),
+    ]);
+    await Promise.all([
+      writeFile(join(target, "data"), "root data\n"),
+      writeFile(join(target, "nested", "data"), "nested data\n"),
+      symlink(sentinel, join(target, "outside-link")),
+    ]);
+    helper = await buildG17NativeSnapshotHelper({
+      outputDirectory: controller,
+      signal: undefined,
+    });
+    const result = await deleteTree(helper, root, target);
+    assert.deepEqual(result, {
+      schema: "oxigraph.g1.7-openat2-delete/v1",
+      directories: 2,
+      entries: 5,
+      files: 2,
+      symlinks: 1,
+      operation: "delete",
+      limits: {
+        maxEntries: 64,
+        maxDepth: 16,
+        timeoutMs: 10_000,
+      },
+    });
+    await assert.rejects(lstat(target), { code: "ENOENT" });
+    assert.equal(await readFile(sentinel, "utf8"), "outside\n");
+  } finally {
+    if (helper !== undefined) await closeG17NativeSnapshotHelper(helper);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("descriptor-pinned delete fails closed on replacement, depth, inventory, and special files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-openat2-delete-reject-"));
+  let helper;
+  let parentHandle;
+  let targetHandle;
+  try {
+    const controller = join(root, "controller");
+    const target = join(root, "target");
+    const displaced = join(root, "target-displaced");
+    await Promise.all([
+      mkdir(controller, { mode: 0o700 }),
+      mkdir(join(target, "one", "two"), { recursive: true, mode: 0o700 }),
+    ]);
+    await writeFile(join(target, "one", "two", "data"), "data\n");
+    helper = await buildG17NativeSnapshotHelper({
+      outputDirectory: controller,
+      signal: undefined,
+    });
+    parentHandle = await open(
+      root,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    targetHandle = await open(
+      target,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const request = {
+      helper,
+      parentHandle,
+      rootHandle: targetHandle,
+      targetName: "target",
+      maxEntries: 64,
+      maxDepth: 16,
+      timeoutMs: 10_000,
+      signal: undefined,
+    };
+    await rename(target, displaced);
+    await mkdir(target, { mode: 0o700 });
+    await assert.rejects(
+      deleteG17NativeNode(request),
+      /pinned delete root and parent leaf do not match/u,
+    );
+    assert.equal((await lstat(target)).isDirectory(), true);
+    assert.equal((await lstat(displaced)).isDirectory(), true);
+    await rmdir(target);
+    await rename(displaced, target);
+
+    await assert.rejects(
+      deleteG17NativeNode({ ...request, maxDepth: 1 }),
+      /depth ceiling/u,
+    );
+    await assert.rejects(
+      deleteG17NativeNode({ ...request, maxEntries: 2 }),
+      /entry ceiling|inventory/u,
+    );
+    const fifo = join(target, "unsupported-fifo");
+    execFileSync("/usr/bin/mkfifo", [fifo]);
+    await assert.rejects(
+      deleteG17NativeNode(request),
+      /entry type is unsupported/u,
+    );
+    await rm(fifo);
+    await deleteG17NativeNode(request);
+    await assert.rejects(lstat(target), { code: "ENOENT" });
+  } finally {
+    await Promise.allSettled([parentHandle?.close(), targetHandle?.close()]);
     if (helper !== undefined) await closeG17NativeSnapshotHelper(helper);
     await rm(root, { recursive: true, force: true });
   }

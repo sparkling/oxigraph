@@ -165,7 +165,14 @@ function appendBounded(chunks, chunk, state, label) {
   chunks.push(chunk);
 }
 
-async function runController({ executable, args, cwd, signal, inherited = [] }) {
+async function runController({
+  executable,
+  args,
+  cwd,
+  signal,
+  inherited = [],
+  timeoutMs = 120_000,
+}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const stdout = [];
@@ -186,7 +193,7 @@ async function runController({ executable, args, cwd, signal, inherited = [] }) 
     });
     const timer = setTimeout(() => {
       if (!settled) child.kill("SIGKILL");
-    }, 120_000);
+    }, timeoutMs);
     const finish = (callback) => {
       if (settled) return;
       settled = true;
@@ -242,6 +249,25 @@ function validateOutput(value) {
     value.entries < 1
   ) {
     fail("FAIL", "execute", "snapshot helper result is contradictory");
+  }
+  return Object.freeze(value);
+}
+
+function validateDeleteOutput(value) {
+  exactKeys(
+    value,
+    ["directories", "entries", "files", "schema", "symlinks"],
+    "delete result",
+  );
+  if (
+    value.schema !== "oxigraph.g1.7-openat2-delete/v1" ||
+    ["directories", "entries", "files", "symlinks"].some(
+      (key) => !Number.isSafeInteger(value[key]) || value[key] < 0,
+    ) ||
+    value.entries !== value.directories + value.files + value.symlinks ||
+    value.directories < 1
+  ) {
+    fail("FAIL", "execute", "delete helper result is contradictory");
   }
   return Object.freeze(value);
 }
@@ -420,6 +446,8 @@ export async function snapshotG17NativeNode(input) {
       "snapshot destination parent",
     );
     const arguments_ = [
+      "--operation",
+      "copy",
       "--source-name",
       source.name,
       "--destination-name",
@@ -485,6 +513,112 @@ export async function snapshotG17NativeNode(input) {
       destinationParent?.handle.close(),
     ]);
     if (liveHelpers.get(input.helper) === state && state.phase === "snapshotting") {
+      state.phase = "live";
+    }
+  }
+}
+
+export async function deleteG17NativeNode(input) {
+  exactKeys(
+    input,
+    [
+      "helper",
+      "parentHandle",
+      "rootHandle",
+      "targetName",
+      "maxEntries",
+      "maxDepth",
+      "timeoutMs",
+      "signal",
+    ],
+    "delete request",
+  );
+  const state = liveHelpers.get(input.helper);
+  if (state?.phase !== "live") fail("FAIL", "preflight", "snapshot helper is not live");
+  if (
+    typeof input.parentHandle?.stat !== "function" ||
+    !Number.isInteger(input.parentHandle?.fd) ||
+    input.parentHandle.fd < 0 ||
+    typeof input.rootHandle?.stat !== "function" ||
+    !Number.isInteger(input.rootHandle?.fd) ||
+    input.rootHandle.fd < 0 ||
+    typeof input.targetName !== "string" ||
+    !safeRelative.test(input.targetName) ||
+    input.targetName.includes("/") ||
+    Buffer.byteLength(input.targetName) > 255 ||
+    !Number.isSafeInteger(input.maxEntries) ||
+    input.maxEntries < 1 ||
+    input.maxEntries > 500_000 ||
+    !Number.isSafeInteger(input.maxDepth) ||
+    input.maxDepth < 1 ||
+    input.maxDepth > 128 ||
+    !Number.isSafeInteger(input.timeoutMs) ||
+    input.timeoutMs < 1 ||
+    input.timeoutMs > 120_000 ||
+    (input.signal !== undefined && !(input.signal instanceof AbortSignal))
+  ) {
+    fail("FAIL", "preflight", "delete request descriptors, name, or ceilings are invalid");
+  }
+  state.phase = "deleting";
+  try {
+    const [parentBefore, rootBefore] = await Promise.all([
+      input.parentHandle.stat({ bigint: true }),
+      input.rootHandle.stat({ bigint: true }),
+    ]);
+    if (!parentBefore.isDirectory() || !rootBefore.isDirectory()) {
+      fail("FAIL", "preflight", "delete request descriptors are not directories");
+    }
+    const outcome = await runController({
+      executable: "/proc/self/fd/3",
+      args: [
+        "--operation",
+        "delete",
+        "--target-name",
+        input.targetName,
+        "--max-entries",
+        String(input.maxEntries),
+        "--max-depth",
+        String(input.maxDepth),
+      ],
+      cwd: "/",
+      signal: input.signal,
+      inherited: [state.handle.fd, input.parentHandle.fd, input.rootHandle.fd],
+      timeoutMs: input.timeoutMs,
+    }).catch((error) => {
+      if (error instanceof G17NativeSnapshotFault) throw error;
+      fail("FAIL", "execute", "delete helper could not start", error);
+    });
+    if (outcome.code !== 0 || outcome.signal !== null || outcome.stderr.length !== 0) {
+      fail(
+        "FAIL",
+        "execute",
+        `delete helper failed: ${outcome.stderr.toString("utf8").trim().slice(0, 1_024)}`,
+      );
+    }
+    let value;
+    try {
+      value = JSON.parse(outcome.stdout);
+    } catch (error) {
+      fail("FAIL", "execute", `delete helper returned invalid JSON: ${error.message}`);
+    }
+    if (!outcome.stdout.equals(Buffer.from(`${canonicalJson(value)}\n`, "utf8"))) {
+      fail("FAIL", "execute", "delete helper output is not canonical JSON");
+    }
+    const raw = validateDeleteOutput(value);
+    if (raw.entries > input.maxEntries) {
+      fail("FAIL", "execute", "delete helper result exceeds the requested ceiling");
+    }
+    return Object.freeze({
+      ...raw,
+      operation: "delete",
+      limits: Object.freeze({
+        maxEntries: input.maxEntries,
+        maxDepth: input.maxDepth,
+        timeoutMs: input.timeoutMs,
+      }),
+    });
+  } finally {
+    if (liveHelpers.get(input.helper) === state && state.phase === "deleting") {
       state.phase = "live";
     }
   }

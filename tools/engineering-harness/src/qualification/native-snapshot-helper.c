@@ -69,11 +69,34 @@ static bool same_stat(const struct stat *left, const struct stat *right) {
            left->st_ctim.tv_nsec == right->st_ctim.tv_nsec;
 }
 
+static bool same_object(const struct stat *left, const struct stat *right) {
+    return left->st_dev == right->st_dev &&
+           left->st_ino == right->st_ino &&
+           (left->st_mode & S_IFMT) == (right->st_mode & S_IFMT);
+}
+
 static int open_beneath(int directory, const char *path, int flags, mode_t mode) {
     struct open_how how = {
         .flags = (uint64_t)flags,
         .mode = (uint64_t)mode,
         .resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
+    };
+    return (int)syscall(SYS_openat2, directory, path, &how, sizeof(how));
+}
+
+static int open_delete_beneath(
+    int directory,
+    const char *path,
+    int flags,
+    mode_t mode
+) {
+    struct open_how how = {
+        .flags = (uint64_t)flags,
+        .mode = (uint64_t)mode,
+        .resolve = RESOLVE_BENEATH |
+                   RESOLVE_NO_MAGICLINKS |
+                   RESOLVE_NO_SYMLINKS |
+                   RESOLVE_NO_XDEV,
     };
     return (int)syscall(SYS_openat2, directory, path, &how, sizeof(how));
 }
@@ -465,16 +488,185 @@ static void copy_entry(
     die("source entry type is unsupported");
 }
 
+static void delete_entry(
+    int parent,
+    const char *name,
+    uint64_t depth,
+    dev_t root_device,
+    struct counters *counters,
+    uint64_t maximum_depth
+);
+
+static void delete_directory_contents(
+    int directory,
+    uint64_t depth,
+    dev_t root_device,
+    struct counters *counters,
+    uint64_t maximum_depth
+) {
+    if (depth > maximum_depth) die("delete depth ceiling exceeded");
+    if (fchmod(directory, 0700) != 0) {
+        die_errno("cannot make pinned delete directory removable");
+    }
+    int fresh = openat(
+        directory,
+        ".",
+        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+    );
+    if (fresh < 0) die_errno("cannot reopen pinned delete directory");
+    struct stat original;
+    struct stat reopened;
+    if (fstat(directory, &original) != 0 || fstat(fresh, &reopened) != 0 ||
+        !S_ISDIR(reopened.st_mode) || !same_object(&original, &reopened) ||
+        reopened.st_dev != root_device) {
+        close(fresh);
+        die("pinned delete directory identity changed");
+    }
+    size_t name_count = 0U;
+    char **names = directory_names(fresh, &name_count, counters->max_entries);
+    for (size_t index = 0U; index < name_count; index += 1U) {
+        delete_entry(
+            fresh,
+            names[index],
+            depth + 1U,
+            root_device,
+            counters,
+            maximum_depth
+        );
+    }
+    release_names(names, name_count);
+    if (close(fresh) != 0) die_errno("cannot close traversed delete directory");
+}
+
+static void delete_entry(
+    int parent,
+    const char *name,
+    uint64_t depth,
+    dev_t root_device,
+    struct counters *counters,
+    uint64_t maximum_depth
+) {
+    if (depth > maximum_depth) die("delete depth ceiling exceeded");
+    count_entry(counters);
+    struct stat initial;
+    if (fstatat(parent, name, &initial, AT_SYMLINK_NOFOLLOW) != 0) {
+        die_errno("cannot inspect delete entry without following links");
+    }
+    if (initial.st_dev != root_device) {
+        die("delete entry crosses the pinned root device");
+    }
+    if (S_ISDIR(initial.st_mode)) {
+        int child = open_delete_beneath(
+            parent,
+            name,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+            0
+        );
+        if (child < 0) die_errno("cannot open delete directory through openat2");
+        struct stat opened;
+        if (fstat(child, &opened) != 0 || !same_object(&initial, &opened)) {
+            close(child);
+            die("delete directory identity changed before traversal");
+        }
+        delete_directory_contents(
+            child,
+            depth,
+            root_device,
+            counters,
+            maximum_depth
+        );
+        struct stat current;
+        struct stat held;
+        if (fstatat(parent, name, &current, AT_SYMLINK_NOFOLLOW) != 0 ||
+            fstat(child, &held) != 0 ||
+            !same_object(&initial, &current) ||
+            !same_object(&initial, &held)) {
+            close(child);
+            die("delete directory identity changed before removal");
+        }
+        if (close(child) != 0) die_errno("cannot close delete directory");
+        if (unlinkat(parent, name, AT_REMOVEDIR) != 0) {
+            die_errno("cannot remove pinned delete directory");
+        }
+        counters->directories += 1U;
+        return;
+    }
+    if (!S_ISREG(initial.st_mode) && !S_ISLNK(initial.st_mode)) {
+        die("delete entry type is unsupported");
+    }
+    struct stat current;
+    if (fstatat(parent, name, &current, AT_SYMLINK_NOFOLLOW) != 0 ||
+        !same_object(&initial, &current)) {
+        die("delete entry identity changed before removal");
+    }
+    if (unlinkat(parent, name, 0) != 0) {
+        die_errno("cannot unlink pinned delete entry");
+    }
+    if (S_ISREG(initial.st_mode)) {
+        counters->files += 1U;
+    } else {
+        counters->symlinks += 1U;
+    }
+}
+
+static void delete_root(
+    int parent,
+    int root,
+    const char *target_name,
+    struct counters *counters,
+    uint64_t maximum_depth
+) {
+    struct stat held;
+    struct stat named;
+    if (fstat(parent, &named) != 0 || !S_ISDIR(named.st_mode) ||
+        fstat(root, &held) != 0 || !S_ISDIR(held.st_mode) ||
+        fstatat(parent, target_name, &named, AT_SYMLINK_NOFOLLOW) != 0 ||
+        !S_ISDIR(named.st_mode) || !same_object(&held, &named)) {
+        die("pinned delete root and parent leaf do not match");
+    }
+    counters->entries = 1U;
+    counters->directories = 1U;
+    delete_directory_contents(
+        root,
+        0U,
+        held.st_dev,
+        counters,
+        maximum_depth
+    );
+    struct stat held_after;
+    struct stat named_after;
+    if (fstat(root, &held_after) != 0 ||
+        fstatat(parent, target_name, &named_after, AT_SYMLINK_NOFOLLOW) != 0 ||
+        !same_object(&held, &held_after) ||
+        !same_object(&held, &named_after)) {
+        die("pinned delete root identity changed before final removal");
+    }
+    if (unlinkat(parent, target_name, AT_REMOVEDIR) != 0) {
+        die_errno("cannot remove pinned delete root");
+    }
+    if (fstatat(parent, target_name, &named_after, AT_SYMLINK_NOFOLLOW) == 0 ||
+        errno != ENOENT) {
+        die("pinned delete root remains after removal");
+    }
+}
+
 int main(int argc, char **argv) {
+    const char *operation = NULL;
     const char *source_name = NULL;
     const char *destination_name = NULL;
+    const char *target_name = NULL;
+    uint64_t maximum_depth = 0U;
     struct exclusions exclusions = { .length = 0U };
     struct counters counters = {0};
     for (int index = 1; index < argc; index += 1) {
-        if (strcmp(argv[index], "--source-name") == 0 && index + 1 < argc) {
+        if (strcmp(argv[index], "--operation") == 0 && index + 1 < argc) {
+            operation = argv[++index];
+        } else if (strcmp(argv[index], "--source-name") == 0 && index + 1 < argc) {
             source_name = argv[++index];
         } else if (strcmp(argv[index], "--destination-name") == 0 && index + 1 < argc) {
             destination_name = argv[++index];
+        } else if (strcmp(argv[index], "--target-name") == 0 && index + 1 < argc) {
+            target_name = argv[++index];
         } else if (strcmp(argv[index], "--max-file-bytes") == 0 && index + 1 < argc) {
             counters.max_file_bytes = parse_positive_u64(
                 argv[++index],
@@ -484,6 +676,8 @@ int main(int argc, char **argv) {
             counters.max_bytes = parse_positive_u64(argv[++index], "max-bytes is invalid");
         } else if (strcmp(argv[index], "--max-entries") == 0 && index + 1 < argc) {
             counters.max_entries = parse_positive_u64(argv[++index], "max-entries is invalid");
+        } else if (strcmp(argv[index], "--max-depth") == 0 && index + 1 < argc) {
+            maximum_depth = parse_positive_u64(argv[++index], "max-depth is invalid");
         } else if (strcmp(argv[index], "--exclude") == 0 && index + 1 < argc) {
             if (exclusions.length >= MAX_EXCLUDES || !safe_relative_path(argv[index + 1])) {
                 die("exclude inventory is unsafe or unbounded");
@@ -493,7 +687,35 @@ int main(int argc, char **argv) {
             die("arguments are not exact");
         }
     }
-    if (source_name == NULL || destination_name == NULL ||
+    if (operation != NULL && strcmp(operation, "delete") == 0) {
+        if (target_name == NULL || source_name != NULL || destination_name != NULL ||
+            counters.max_file_bytes != 0U || counters.max_bytes != 0U ||
+            counters.max_entries == 0U || maximum_depth == 0U ||
+            exclusions.length != 0U || strlen(target_name) > MAX_NAME_BYTES ||
+            !safe_relative_path(target_name) || strchr(target_name, '/') != NULL) {
+            die("delete name or ceilings are invalid");
+        }
+        int parent = fcntl(4, F_DUPFD_CLOEXEC, 6);
+        int root = fcntl(5, F_DUPFD_CLOEXEC, 6);
+        if (parent < 0 || root < 0) {
+            die_errno("required pinned delete descriptors are absent");
+        }
+        delete_root(parent, root, target_name, &counters, maximum_depth);
+        if (close(parent) != 0 || close(root) != 0) {
+            die_errno("cannot close delete roots");
+        }
+        printf(
+            "{\"directories\":%llu,\"entries\":%llu,\"files\":%llu,\"schema\":\"oxigraph.g1.7-openat2-delete/v1\",\"symlinks\":%llu}\n",
+            (unsigned long long)counters.directories,
+            (unsigned long long)counters.entries,
+            (unsigned long long)counters.files,
+            (unsigned long long)counters.symlinks
+        );
+        return 0;
+    }
+    if (operation == NULL || strcmp(operation, "copy") != 0 ||
+        target_name != NULL || maximum_depth != 0U ||
+        source_name == NULL || destination_name == NULL ||
         counters.max_file_bytes == 0U || counters.max_bytes == 0U ||
         counters.max_entries == 0U ||
         strlen(source_name) > MAX_NAME_BYTES ||

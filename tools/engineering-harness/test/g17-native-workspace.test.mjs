@@ -29,6 +29,10 @@ import {
   productionG17RequiredGitlinks,
   verifyG17NativeWorkspace,
 } from "../src/qualification/native-workspace.mjs";
+import {
+  buildG17NativeSnapshotHelper,
+  closeG17NativeSnapshotHelper,
+} from "../src/qualification/native-snapshot.mjs";
 import { repositoryRoot } from "../src/paths.mjs";
 
 function sha256(bytes) {
@@ -207,6 +211,15 @@ async function createDependencyFixture(root, { lockVersion = 4 } = {}) {
   };
 }
 
+async function buildCleanupHelper(root) {
+  const controller = join(root, "cleanup-controller");
+  await mkdir(controller, { mode: 0o700 });
+  return buildG17NativeSnapshotHelper({
+    outputDirectory: controller,
+    signal: undefined,
+  });
+}
+
 test("source snapshot materializes the exact commit and ignores dirty or untracked authority", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-source-snapshot-"));
   try {
@@ -285,8 +298,10 @@ test("production source closure materializes only the pinned RocksDB and LZ4 git
 test("private workspace derives and verifies an exact offline vendor closure", { timeout: 30_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-private-workspace-"));
   let workspace;
+  let cleanupHelper;
   try {
     const fixture = await createDependencyFixture(root);
+    cleanupHelper = await buildCleanupHelper(root);
     const calls = [];
     const processRunner = async (request) => {
       calls.push(request);
@@ -365,6 +380,7 @@ test("private workspace derives and verifies an exact offline vendor closure", {
       sourceCargoHome: fixture.cargoHome,
       temporaryParent: root,
       processRunner,
+      cleanupHelper,
     });
     workspace = await createWorkspace({
       runId: "fixture",
@@ -424,6 +440,13 @@ test("private workspace derives and verifies an exact offline vendor closure", {
     assert.equal(projection.dependencies.packageCount, 1);
     assert.equal(Object.hasOwn(projection, "root"), false);
     assert.throws(
+      () => g17NativeWorkspaceOwnerEvidence(
+        workspace,
+        structuredClone(afterNative),
+      ),
+      /was not minted here/u,
+    );
+    assert.throws(
       () => g17NativeWorkspaceOwnerEvidence(workspace, afterNative),
       /test workspace cannot mint production owner evidence/u,
     );
@@ -443,18 +466,76 @@ test("private workspace derives and verifies an exact offline vendor closure", {
       verifyG17NativeWorkspace(workspace, "verify"),
       /root identity or ownership changed/u,
     );
+    assert.throws(
+      () => g17NativeWorkspaceProjection(workspace),
+      /projection target is not live/u,
+    );
+    assert.throws(
+      () => g17NativeWorkspaceOwnerEvidence(workspace, afterNative),
+      /owner target is not live/u,
+    );
+    await assert.rejects(
+      verifyG17NativeWorkspace(workspace, "verify"),
+      /verification target is not live/u,
+    );
     await assert.rejects(
       destroyG17NativeWorkspace(workspace),
-      /cleanup target is not its generated directory/u,
+      /root identity or ownership changed/u,
     );
     await rmdir(generatedRoot);
     await rename(displacedRoot, generatedRoot);
 
-    await destroyG17NativeWorkspace(workspace);
+    const destroyedWorkspace = workspace;
     workspace = undefined;
+    await destroyG17NativeWorkspace(destroyedWorkspace);
     await assert.rejects(readFile(generatedRoot));
+    await assert.rejects(
+      destroyG17NativeWorkspace(destroyedWorkspace),
+      /cleanup target is unavailable/u,
+    );
   } finally {
-    if (workspace !== undefined) await destroyG17NativeWorkspace(workspace);
+    if (workspace !== undefined) await destroyG17NativeWorkspace(workspace).catch(() => {});
+    if (cleanupHelper !== undefined) await closeG17NativeSnapshotHelper(cleanupHelper);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("acquisition cleanup failure dominates and deletes neither substituted tree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-cleanup-dominates-"));
+  let cleanupHelper;
+  let replacement;
+  let displaced;
+  try {
+    const fixture = await createDependencyFixture(root);
+    cleanupHelper = await buildCleanupHelper(root);
+    const createWorkspace = createG17NativeWorkspaceForTesting({
+      sourceCargoHome: fixture.cargoHome,
+      temporaryParent: root,
+      cleanupHelper,
+      processRunner: async ({ cwd }) => {
+        replacement = dirname(cwd);
+        displaced = `${replacement}-displaced`;
+        await rename(replacement, displaced);
+        await mkdir(replacement, { mode: 0o700 });
+        throw new Error("injected acquisition failure");
+      },
+    });
+    await assert.rejects(
+      createWorkspace({
+        runId: "cleanup-dominates",
+        repoRoot: fixture.repository,
+        identity: fixture.identity,
+        cargoProgram: fixture.cargoProgram,
+      }),
+      (error) =>
+        error?.classification === "FAIL" &&
+        error?.phase === "cleanup" &&
+        /acquisition failed and exact cleanup did not complete/u.test(error.reason),
+    );
+    assert.equal((await lstatSync(replacement)).isDirectory(), true);
+    assert.equal((await lstatSync(displaced)).isDirectory(), true);
+  } finally {
+    if (cleanupHelper !== undefined) await closeG17NativeSnapshotHelper(cleanupHelper);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -475,6 +556,7 @@ test("workspace constructors reject surplus authority before acquisition", () =>
       sourceCargoHome: "/cargo-home",
       temporaryParent: "/tmp",
       processRunner: async () => undefined,
+      cleanupHelper: {},
       production: true,
     }),
     /native workspace test factory input fields are not exact/u,
@@ -483,6 +565,7 @@ test("workspace constructors reject surplus authority before acquisition", () =>
     sourceCargoHome: "/cargo-home",
     temporaryParent: "/tmp",
     processRunner: async () => undefined,
+    cleanupHelper: {},
   });
   assert.throws(
     () => createWorkspace({
@@ -498,12 +581,15 @@ test("workspace constructors reject surplus authority before acquisition", () =>
 
 test("private workspace rejects a non-v4 committed lock and removes its generated root", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-invalid-lock-"));
+  let cleanupHelper;
   try {
     const fixture = await createDependencyFixture(root, { lockVersion: 3 });
+    cleanupHelper = await buildCleanupHelper(root);
     const createWorkspace = createG17NativeWorkspaceForTesting({
       sourceCargoHome: fixture.cargoHome,
       temporaryParent: root,
       processRunner: async () => assert.fail("Cargo must not run for an invalid lock"),
+      cleanupHelper,
     });
     await assert.rejects(
       createWorkspace({
@@ -522,14 +608,17 @@ test("private workspace rejects a non-v4 committed lock and removes its generate
       false,
     );
   } finally {
+    if (cleanupHelper !== undefined) await closeG17NativeSnapshotHelper(cleanupHelper);
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("private workspace rejects a symlinked Cargo cache ancestor", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-cache-symlink-"));
+  let cleanupHelper;
   try {
     const fixture = await createDependencyFixture(root);
+    cleanupHelper = await buildCleanupHelper(root);
     const registry = join(fixture.cargoHome, "registry");
     await rename(join(registry, "cache"), join(registry, "cache-real"));
     await symlink("cache-real", join(registry, "cache"));
@@ -537,6 +626,7 @@ test("private workspace rejects a symlinked Cargo cache ancestor", async () => {
       sourceCargoHome: fixture.cargoHome,
       temporaryParent: root,
       processRunner: async () => assert.fail("Cargo must not run through a symlinked cache"),
+      cleanupHelper,
     });
     await assert.rejects(
       createWorkspace({
@@ -551,6 +641,7 @@ test("private workspace rejects a symlinked Cargo cache ancestor", async () => {
         /symlink component/u.test(error.reason),
     );
   } finally {
+    if (cleanupHelper !== undefined) await closeG17NativeSnapshotHelper(cleanupHelper);
     await rm(root, { recursive: true, force: true });
   }
 });

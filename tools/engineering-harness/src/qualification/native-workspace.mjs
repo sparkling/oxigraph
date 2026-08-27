@@ -22,6 +22,8 @@ import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { runGit, createGitHome } from "../candidate/git.mjs";
 import { runBoundedProcess } from "../native/process.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
+import { deleteG17NativePlatformTree } from "./native-platform.mjs";
+import { deleteG17NativeNode } from "./native-snapshot.mjs";
 
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
 const sourceSnapshotSchema = "oxigraph.g1.7-source-snapshot/v1";
@@ -1328,10 +1330,21 @@ async function verifySourceSnapshot(sourceSnapshot, phase) {
 }
 
 async function workspaceRootMetadata(root, state, phase) {
-  const metadata = await lstat(root, { bigint: true }).catch((error) =>
-    workspaceFault("FAIL", phase, "workspace root cannot be inspected", error));
-  const resolved = await realpath(root).catch((error) =>
-    workspaceFault("FAIL", phase, "workspace root cannot be resolved", error));
+  const [metadata, resolved, heldRoot, heldParent, parentMetadata, parentResolved] =
+    await Promise.all([
+      lstat(root, { bigint: true }).catch((error) =>
+        workspaceFault("FAIL", phase, "workspace root cannot be inspected", error)),
+      realpath(root).catch((error) =>
+        workspaceFault("FAIL", phase, "workspace root cannot be resolved", error)),
+      state.rootHandle.stat({ bigint: true }).catch((error) =>
+        workspaceFault("FAIL", phase, "workspace root descriptor cannot be inspected", error)),
+      state.parentHandle.stat({ bigint: true }).catch((error) =>
+        workspaceFault("FAIL", phase, "workspace parent descriptor cannot be inspected", error)),
+      lstat(state.parent, { bigint: true }).catch((error) =>
+        workspaceFault("FAIL", phase, "workspace parent cannot be inspected", error)),
+      realpath(state.parent).catch((error) =>
+        workspaceFault("FAIL", phase, "workspace parent cannot be resolved", error)),
+    ]);
   const expectedOwner = typeof process.getuid === "function"
     ? BigInt(process.getuid())
     : metadata.uid;
@@ -1341,10 +1354,18 @@ async function workspaceRootMetadata(root, state, phase) {
   if (
     metadata.isSymbolicLink() ||
     !metadata.isDirectory() ||
+    !heldRoot.isDirectory() ||
+    parentMetadata.isSymbolicLink() ||
+    !parentMetadata.isDirectory() ||
+    !heldParent.isDirectory() ||
     resolved !== root ||
+    parentResolved !== state.parent ||
     dirname(root) !== state.parent ||
     !basename(root).startsWith(`oxigraph-g17-${state.runId}-`) ||
     !isDeepStrictEqual(objectIdentity(metadata), state.rootIdentity) ||
+    !isDeepStrictEqual(objectIdentity(heldRoot), state.rootIdentity) ||
+    !isDeepStrictEqual(objectIdentity(parentMetadata), state.parentIdentity) ||
+    !isDeepStrictEqual(objectIdentity(heldParent), state.parentIdentity) ||
     Number(metadata.mode & 0o7777n) !== 0o700 ||
     metadata.uid !== expectedOwner ||
     metadata.gid !== expectedGroup
@@ -1354,7 +1375,17 @@ async function workspaceRootMetadata(root, state, phase) {
   return metadata;
 }
 
-async function safeRemoveGeneratedRoot({ root, parent, runId, rootIdentity }) {
+async function safeRemoveGeneratedRoot({
+  root,
+  parent,
+  runId,
+  rootIdentity,
+  parentIdentity,
+  rootHandle,
+  parentHandle,
+  platform,
+  cleanupHelper,
+}) {
   if (
     !safeRunId.test(runId ?? "") ||
     !isAbsolute(root) ||
@@ -1375,24 +1406,49 @@ async function safeRemoveGeneratedRoot({ root, parent, runId, rootIdentity }) {
     }
     return;
   }
-  if (
-    metadata.isSymbolicLink() ||
-    !metadata.isDirectory() ||
-    await realpath(root) !== root ||
-    (rootIdentity !== undefined &&
-      !isDeepStrictEqual(objectIdentity(metadata), rootIdentity))
-  ) {
-    workspaceFault("FAIL", "cleanup", "workspace cleanup target is not its generated directory");
-  }
-  await chmod(root, 0o700);
-  if (rootIdentity !== undefined) {
-    const beforeRemove = await lstat(root, { bigint: true });
-    if (!isDeepStrictEqual(objectIdentity(beforeRemove), rootIdentity)) {
-      workspaceFault("FAIL", "cleanup", "workspace cleanup target identity changed");
+  if (rootIdentity === undefined || rootHandle === undefined) {
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      workspaceFault("FAIL", "cleanup", "unidentified workspace root is not an empty directory");
     }
+    await rmdir(root).catch((error) =>
+      workspaceFault(
+        "FAIL",
+        "cleanup",
+        "unidentified workspace root cannot be removed nonrecursively",
+        error,
+      ));
+    return;
   }
-  await rm(root, { recursive: true, force: false }).catch((error) =>
-    workspaceFault("FAIL", "cleanup", "workspace cleanup failed", error));
+  if (
+    parentIdentity === undefined ||
+    parentHandle === undefined ||
+    (platform === undefined) === (cleanupHelper === undefined)
+  ) {
+    workspaceFault("FAIL", "cleanup", "workspace cleanup descriptors are incomplete");
+  }
+  const state = {
+    parent,
+    runId,
+    rootIdentity,
+    parentIdentity,
+    rootHandle,
+    parentHandle,
+  };
+  await workspaceRootMetadata(root, state, "cleanup");
+  const request = {
+    parentHandle,
+    rootHandle,
+    targetName: basename(root),
+    maxEntries: maximumSourceEntries + maximumVendorEntries + 10_000,
+    maxDepth: 128,
+    timeoutMs: 120_000,
+    signal: undefined,
+  };
+  if (platform !== undefined) {
+    await deleteG17NativePlatformTree(platform, request);
+  } else {
+    await deleteG17NativeNode({ helper: cleanupHelper, ...request });
+  }
   const remaining = await lstat(root).catch((error) => {
     if (error?.code === "ENOENT") return undefined;
     workspaceFault("FAIL", "cleanup", "workspace cleanup result cannot be inspected", error);
@@ -1432,6 +1488,8 @@ async function createNativeWorkspaceWithOptions({
   processRunner,
   enforceToolIdentity,
   production,
+  platform,
+  cleanupHelper,
   signal,
 }) {
   if (!safeRunId.test(runId ?? "") || typeof production !== "boolean") {
@@ -1439,6 +1497,15 @@ async function createNativeWorkspaceWithOptions({
   }
   if (signal !== undefined && !(signal instanceof AbortSignal)) {
     workspaceFault("FAIL", "workspace", "native workspace abort signal is invalid");
+  }
+  if (
+    production
+      ? platform === null || typeof platform !== "object" || cleanupHelper !== undefined
+      : cleanupHelper === null ||
+        typeof cleanupHelper !== "object" ||
+        platform !== undefined
+  ) {
+    workspaceFault("FAIL", "workspace", "native workspace cleanup authority is invalid");
   }
   const parent = await requireRealDirectory(
     temporaryParent,
@@ -1465,8 +1532,41 @@ async function createNativeWorkspaceWithOptions({
       workspaceFault("STALE", "toolchain", "sealed Cargo program changed before acquisition");
     }
   }
-  const root = await mkdtemp(join(parent, `oxigraph-g17-${runId}-`));
+  let parentHandle;
+  try {
+    parentHandle = await open(
+      parent,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const [pathMetadata, heldMetadata, resolved] = await Promise.all([
+      lstat(parent, { bigint: true }),
+      parentHandle.stat({ bigint: true }),
+      realpath(parent),
+    ]);
+    if (
+      resolved !== parent ||
+      pathMetadata.isSymbolicLink() ||
+      !pathMetadata.isDirectory() ||
+      !heldMetadata.isDirectory() ||
+      !isDeepStrictEqual(objectIdentity(pathMetadata), objectIdentity(heldMetadata))
+    ) {
+      workspaceFault("FAIL", "workspace", "temporary workspace parent changed while pinned");
+    }
+  } catch (error) {
+    await parentHandle?.close();
+    if (error instanceof G17NativeWorkspaceFault) throw error;
+    workspaceFault("FAIL", "workspace", "temporary workspace parent cannot be pinned", error);
+  }
+  const parentIdentity = objectIdentity(await parentHandle.stat({ bigint: true }));
+  let root;
+  try {
+    root = await mkdtemp(join(parent, `oxigraph-g17-${runId}-`));
+  } catch (error) {
+    await parentHandle.close();
+    workspaceFault("FAIL", "workspace", "native workspace root cannot be created", error);
+  }
   let rootIdentity;
+  let rootHandle;
   let sourceSnapshot;
   let dependencyWorkspace;
   let workspace;
@@ -1474,10 +1574,17 @@ async function createNativeWorkspaceWithOptions({
     await chmod(root, 0o700);
     const rootMetadata = await lstat(root, { bigint: true });
     rootIdentity = objectIdentity(rootMetadata);
+    rootHandle = await open(
+      root,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
     await workspaceRootMetadata(root, {
       parent,
       runId,
       rootIdentity,
+      parentIdentity,
+      rootHandle,
+      parentHandle,
     }, "workspace");
     sourceSnapshot = await materializeSourceSnapshot({
       repoRoot,
@@ -1511,8 +1618,14 @@ async function createNativeWorkspaceWithOptions({
       parent,
       runId,
       rootIdentity,
+      parentIdentity,
+      rootHandle,
+      parentHandle,
       phase: "live",
       production,
+      platform,
+      cleanupHelper,
+      afterNativeVerification: undefined,
     });
     await verifyG17NativeWorkspace(workspace, "after-preparation");
     return workspace;
@@ -1526,21 +1639,38 @@ async function createNativeWorkspaceWithOptions({
     if (sourceSnapshot !== undefined) {
       sourceSnapshotInternals.delete(sourceSnapshot);
     }
-    let cleanupError;
+    const cleanupErrors = [];
     try {
-      await safeRemoveGeneratedRoot({ root, parent, runId, rootIdentity });
+      await safeRemoveGeneratedRoot({
+        root,
+        parent,
+        runId,
+        rootIdentity,
+        parentIdentity,
+        rootHandle,
+        parentHandle,
+        platform,
+        cleanupHelper,
+      });
     } catch (caught) {
-      cleanupError = caught;
+      cleanupErrors.push(caught);
     }
-    if (cleanupError !== undefined) {
-      if (error instanceof G17NativeWorkspaceFault && Object.isExtensible(error)) {
-        error.cleanupError = cleanupError.message;
-      } else {
-        throw new AggregateError(
-          [error, cleanupError],
-          "native workspace acquisition and cleanup failed",
-        );
-      }
+    const closures = await Promise.allSettled([
+      rootHandle?.close(),
+      parentHandle?.close(),
+    ]);
+    cleanupErrors.push(
+      ...closures
+        .filter(({ status }) => status === "rejected")
+        .map(({ reason }) => reason),
+    );
+    if (cleanupErrors.length > 0) {
+      workspaceFault(
+        "FAIL",
+        "cleanup",
+        "workspace acquisition failed and exact cleanup did not complete",
+        new AggregateError([error, ...cleanupErrors]),
+      );
     }
     if (error instanceof G17NativeWorkspaceFault) throw error;
     workspaceFault("FAIL", "workspace", error.message, error);
@@ -1549,6 +1679,8 @@ async function createNativeWorkspaceWithOptions({
 
 export async function verifyG17NativeWorkspace(workspace, phase = "verify") {
   const state = liveWorkspaces.get(workspace);
+  let acquired = false;
+  let succeeded = false;
   try {
     if (
       state === undefined ||
@@ -1557,7 +1689,9 @@ export async function verifyG17NativeWorkspace(workspace, phase = "verify") {
     ) {
       workspaceFault("FAIL", "verify", "native workspace verification target is not live");
     }
+    state.afterNativeVerification = undefined;
     state.phase = "verifying";
+    acquired = true;
     await workspaceRootMetadata(workspace.root, state, phase);
     const source = await verifySourceSnapshot(workspace.sourceSnapshot, phase);
     const dependencyState = dependencyInternals.get(workspace.dependencies);
@@ -1614,15 +1748,20 @@ export async function verifyG17NativeWorkspace(workspace, phase = "verify") {
       vendorChecksumSha256: vendorChecksum.sha256,
       finalConfigSha256: sha256(config),
     };
-    return deepFreeze({
+    const verification = deepFreeze({
       ...workspaceEvidence,
       sha256: canonicalSha256(workspaceEvidence),
     });
+    if (phase === "after-native") state.afterNativeVerification = verification;
+    succeeded = true;
+    return verification;
   } catch (error) {
     if (error instanceof G17NativeWorkspaceFault) throw error;
     workspaceFault("FAIL", phase, error.message, error);
   } finally {
-    if (state?.phase === "verifying") state.phase = "live";
+    if (acquired && state?.phase === "verifying") {
+      state.phase = succeeded ? "live" : "invalid";
+    }
   }
 }
 
@@ -1671,11 +1810,8 @@ export function g17NativeWorkspaceOwnerEvidence(workspace, verification) {
   if (state === undefined || state.phase !== "live") {
     workspaceFault("FAIL", "verify", "native workspace owner target is not live");
   }
-  if (!state.production) {
-    workspaceFault("FAIL", "verify", "test workspace cannot mint production owner evidence");
-  }
-  const projection = g17NativeWorkspaceProjection(workspace);
   if (
+    verification !== state.afterNativeVerification ||
     verification?.schema !== "oxigraph.g1.7-native-workspace-verification/v1" ||
     verification.phase !== "after-native" ||
     verification.source?.beforeSha256 !== workspace.sourceSnapshot.beforeSha256 ||
@@ -1683,10 +1819,20 @@ export function g17NativeWorkspaceOwnerEvidence(workspace, verification) {
     verification.vendor?.beforeSha256 !== workspace.dependencies.vendor.beforeSha256 ||
     verification.vendor?.afterSha256 !== workspace.dependencies.vendor.afterSha256 ||
     verification.vendorChecksumSha256 !== workspace.dependencies.vendorChecksums.sha256 ||
-    verification.finalConfigSha256 !== workspace.dependencies.finalConfigSha256
+    verification.finalConfigSha256 !== workspace.dependencies.finalConfigSha256 ||
+    verification.sha256 !== canonicalSha256(
+      Object.fromEntries(
+        Object.entries(verification).filter(([key]) => key !== "sha256"),
+      ),
+    )
   ) {
-    workspaceFault("FAIL", "verify", "post-native workspace evidence is inconsistent");
+    workspaceFault("FAIL", "verify", "post-native workspace evidence was not minted here");
   }
+  if (!state.production) {
+    workspaceFault("FAIL", "verify", "test workspace cannot mint production owner evidence");
+  }
+  state.afterNativeVerification = undefined;
+  const projection = g17NativeWorkspaceProjection(workspace);
   const source = {
     schema: workspace.sourceSnapshot.schema,
     policy: workspace.sourceSnapshot.policy,
@@ -1750,9 +1896,13 @@ export function g17NativeWorkspaceEnvironment(toolchain, workspace) {
 
 export async function destroyG17NativeWorkspace(workspace) {
   const state = liveWorkspaces.get(workspace);
-  if (state === undefined || state.phase !== "live") {
-    workspaceFault("FAIL", "cleanup", "native workspace cleanup target is not live");
+  if (
+    state === undefined ||
+    !["live", "invalid", "cleanup-failed"].includes(state.phase)
+  ) {
+    workspaceFault("FAIL", "cleanup", "native workspace cleanup target is unavailable");
   }
+  state.afterNativeVerification = undefined;
   state.phase = "destroying";
   try {
     await safeRemoveGeneratedRoot({
@@ -1760,20 +1910,40 @@ export async function destroyG17NativeWorkspace(workspace) {
       parent: state.parent,
       runId: state.runId,
       rootIdentity: state.rootIdentity,
+      parentIdentity: state.parentIdentity,
+      rootHandle: state.rootHandle,
+      parentHandle: state.parentHandle,
+      platform: state.platform,
+      cleanupHelper: state.cleanupHelper,
     });
-    dependencyInternals.delete(workspace.dependencies);
-    sourceSnapshotInternals.delete(workspace.sourceSnapshot);
-    liveWorkspaces.delete(workspace);
   } catch (error) {
-    state.phase = "live";
+    state.phase = "cleanup-failed";
     throw error;
+  }
+  const closures = await Promise.allSettled([
+    state.rootHandle.close(),
+    state.parentHandle.close(),
+  ]);
+  dependencyInternals.delete(workspace.dependencies);
+  sourceSnapshotInternals.delete(workspace.sourceSnapshot);
+  liveWorkspaces.delete(workspace);
+  const closeErrors = closures
+    .filter(({ status }) => status === "rejected")
+    .map(({ reason }) => reason);
+  if (closeErrors.length > 0) {
+    workspaceFault(
+      "FAIL",
+      "cleanup",
+      "native workspace was deleted but its descriptor closure failed",
+      new AggregateError(closeErrors),
+    );
   }
 }
 
 export function createG17NativeWorkspace(options) {
   exactInput(
     options,
-    ["runId", "repoRoot", "identity", "cargoProgram"],
+    ["runId", "repoRoot", "identity", "cargoProgram", "platform"],
     ["signal"],
     "production workspace acquisition input",
   );
@@ -1791,7 +1961,7 @@ export function createG17NativeWorkspace(options) {
 export function createG17NativeWorkspaceForTesting(input) {
   exactInput(
     input,
-    ["sourceCargoHome", "temporaryParent", "processRunner"],
+    ["sourceCargoHome", "temporaryParent", "processRunner", "cleanupHelper"],
     ["requiredGitlinks"],
     "native workspace test factory input",
   );
@@ -1800,12 +1970,15 @@ export function createG17NativeWorkspaceForTesting(input) {
     temporaryParent,
     requiredGitlinks = [],
     processRunner,
+    cleanupHelper,
   } = input;
   if (
     typeof sourceCargoHome !== "string" ||
     typeof temporaryParent !== "string" ||
     !Array.isArray(requiredGitlinks) ||
-    typeof processRunner !== "function"
+    typeof processRunner !== "function" ||
+    cleanupHelper === null ||
+    typeof cleanupHelper !== "object"
   ) {
     throw new Error("G1.7 native workspace test factory inputs are invalid");
   }
@@ -1824,6 +1997,8 @@ export function createG17NativeWorkspaceForTesting(input) {
       processRunner,
       enforceToolIdentity: false,
       production: false,
+      platform: undefined,
+      cleanupHelper,
     });
   };
 }

@@ -51,6 +51,7 @@ import {
 import {
   buildG17NativeSnapshotHelper,
   closeG17NativeSnapshotHelper,
+  deleteG17NativeNode,
   snapshotG17NativeNode,
   verifyG17NativeSnapshotHelper,
 } from "./native-snapshot.mjs";
@@ -2434,6 +2435,42 @@ export async function verifyG17NativePlatform(platform, phase = "verify") {
     platformFault("FAIL", phase, error.message, error);
   } finally {
     if (state?.phase === "verifying") state.phase = "live";
+  }
+}
+
+export async function deleteG17NativePlatformTree(platform, input) {
+  exactKeys(
+    input,
+    [
+      "parentHandle",
+      "rootHandle",
+      "targetName",
+      "maxEntries",
+      "maxDepth",
+      "timeoutMs",
+      "signal",
+    ],
+    "platform delete request",
+  );
+  const state = livePlatforms.get(platform);
+  if (state === undefined || state.phase !== "live" || state.helper === null) {
+    platformFault("FAIL", "cleanup", "platform delete authority is not live");
+  }
+  state.phase = "deleting-external-tree";
+  try {
+    return await deleteG17NativeNode({
+      helper: state.helper,
+      ...input,
+    });
+  } catch (error) {
+    platformFault("FAIL", "cleanup", "platform could not delete the pinned tree", error);
+  } finally {
+    if (
+      livePlatforms.get(platform) === state &&
+      state.phase === "deleting-external-tree"
+    ) {
+      state.phase = "live";
+    }
   }
 }
 
