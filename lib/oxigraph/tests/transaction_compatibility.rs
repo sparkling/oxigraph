@@ -15,10 +15,11 @@ use fault_injecting_dataset::{FaultInjectingDataset, FaultPlan, FaultReceipt};
 use oxigraph::model::{GraphName, NamedNode, Quad};
 use oxigraph::sparql::SparqlEvaluator;
 use oxigraph::store::{
-    CancellationGuarantee, ConflictBehavior, NegotiatedTransactionalDataset, OutcomeLookup,
-    RollbackGuarantee, TransactionCommitError, TransactionRequest, TransactionRequirements,
-    TransactionRollbackError, TransactionStartControl, TransactionStartError,
-    UnmetTransactionRequirement, WritableDataset, WriterIsolation,
+    CancellationGuarantee, ConflictBehavior, NegotiatedTransactionalDataset,
+    OutcomeAwareTransactionalDataset, OutcomeLookup, RollbackGuarantee, TransactionCommitError,
+    TransactionKey, TransactionRequest, TransactionRequirements, TransactionRollbackError,
+    TransactionStartControl, TransactionStartError, UnmetTransactionRequirement, WritableDataset,
+    WriterIsolation,
 };
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -238,6 +239,27 @@ fn assert_durable_lookup_rejected_before_admission(
     Ok(())
 }
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+fn assert_durable_lookup_reaches_keyed_admission(backend: &StoreBackend) -> Result<(), TestError> {
+    let store = Arc::clone(backend.store());
+    let holder = store.start_transaction()?;
+    let request = TransactionRequest::new(
+        TransactionRequirements::legacy()
+            .requiring_outcome_lookup(OutcomeLookup::DurableByTransactionKey),
+    );
+    let outcome = store.start_transaction_with_key_and_control(
+        request,
+        TransactionKey::new([0xA5; 16]),
+        TransactionStartControl::new().with_timeout(Duration::ZERO),
+    );
+    assert!(
+        matches!(outcome, Err(TransactionStartError::TimedOut)),
+        "the durable keyed request did not reach the occupied writer gate"
+    );
+    drop(holder);
+    Ok(())
+}
+
 #[test]
 fn memory_one_four_and_sixteen_writers_are_serialized_without_lost_commits() -> Result<(), TestError>
 {
@@ -302,8 +324,8 @@ fn memory_store_rejects_durable_outcome_lookup_before_writer_open() -> Result<()
 
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 #[test]
-fn rocksdb_store_rejects_durable_outcome_lookup_before_writer_open() -> Result<(), TestError> {
-    assert_durable_lookup_rejected_before_admission(&StoreBackend::rocksdb()?)
+fn rocksdb_store_admits_durable_outcome_lookup_only_with_a_key() -> Result<(), TestError> {
+    assert_durable_lookup_reaches_keyed_admission(&StoreBackend::rocksdb()?)
 }
 
 #[test]

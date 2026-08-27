@@ -313,7 +313,10 @@ fn memory_store_advertises_only_its_proven_effective_profile() -> Result<(), Box
 fn rocksdb_capabilities_are_derived_from_the_open_store_instance() -> Result<(), Box<dyn Error>> {
     let directory = tempfile::tempdir()?;
     let read_write = Store::open(directory.path())?;
-    assert_eq!(read_write.transaction_capabilities(), serialized_profile());
+    assert_eq!(
+        read_write.transaction_capabilities(),
+        serialized_profile().with_outcome_lookup(OutcomeLookup::DurableByTransactionKey)
+    );
     drop(read_write);
 
     let read_only = Store::open_read_only(directory.path())?;
