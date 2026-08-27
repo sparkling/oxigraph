@@ -1,5 +1,5 @@
 {
-  "schema": "oxigraph.g1.7-qualification-contract/v3",
+  "schema": "oxigraph.g1.7-qualification-contract/v1",
   "id": "g1.7-compatibility-performance-qualification",
   "programme": "linked-data-store",
   "decisions": ["ADR-0017", "ADR-0018", "ADR-0019"],
@@ -192,30 +192,7 @@
           "--test",
           "transaction_compatibility"
         ],
-        "expectedTestIds": [
-          "external_fault_adapter_preserves_the_legacy_transaction_traits",
-          "injected_open_failure_does_not_construct_or_mutate_a_transaction",
-          "injected_prepublication_commit_failure_preserves_source_without_rollback_claim",
-          "injected_read_iteration_failure_rolls_back_and_preserves_source",
-          "injected_rollback_failure_reports_both_failures_and_preserves_source",
-          "injected_second_mutation_failure_rolls_back_all_staged_state",
-          "memory_drop_releases_writer_without_publication",
-          "memory_explicit_rollback_releases_writer_without_publication",
-          "memory_one_four_and_sixteen_writers_are_serialized_without_lost_commits",
-          "memory_queued_writer_cancellation_is_bounded_and_leak_free",
-          "memory_readers_remain_live_and_do_not_see_staged_writes",
-          "memory_store_rejects_durable_outcome_lookup_before_writer_open",
-          "public_transaction_enums_preserve_the_g1_source_shape",
-          "rocksdb_drop_releases_writer_without_publication",
-          "rocksdb_explicit_rollback_releases_writer_without_publication",
-          "rocksdb_one_four_and_sixteen_writers_are_serialized_without_lost_commits",
-          "rocksdb_queued_writer_cancellation_is_bounded_and_leak_free",
-          "rocksdb_readers_remain_live_and_do_not_see_staged_writes",
-          "rocksdb_store_rejects_durable_outcome_lookup_before_writer_open",
-          "rocksdb_without_atomicity_keeps_prior_ingestions_when_later_work_is_dropped"
-        ],
         "expectedPassedTests": 20,
-        "maxOutputBytes": 1048576,
         "timeoutMs": 300000
       },
       {
@@ -230,11 +207,7 @@
           "--test",
           "rocksdb_bulk_writer_serialization"
         ],
-        "expectedTestIds": [
-          "rocksdb_bulk_sst_publication_waits_for_the_active_writer"
-        ],
         "expectedPassedTests": 1,
-        "maxOutputBytes": 1048576,
         "timeoutMs": 300000
       },
       {
@@ -249,23 +222,10 @@
           "--test",
           "update_atomicity"
         ],
-        "expectedTestIds": [
-          "tests::failing_update_operation_aborts_all_following_operations",
-          "tests::whole_update_request_rolls_back_when_a_later_operation_fails"
-        ],
         "expectedPassedTests": 2,
-        "maxOutputBytes": 1048576,
         "timeoutMs": 300000
       }
     ],
-    "nativeSession": {
-      "maxTotalWallMs": 1860000,
-      "maxResidentBytes": 17179869184,
-      "maxDiskBytes": 12884901888,
-      "cargoBuildJobs": 4,
-      "tasksMax": 512,
-      "memorySwapMaxBytes": 0
-    },
     "semantic": {
       "qualificationPath": "target/metaharness/qualification.json",
       "verificationPath": "target/metaharness/verification.json",

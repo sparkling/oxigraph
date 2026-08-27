@@ -7,7 +7,15 @@ import { bench } from "@metaharness/darwin";
 import { harnessRoot } from "../paths.mjs";
 
 export const G17_CONTRACT_SCHEMA =
-  "oxigraph.g1.7-qualification-contract/v1";
+  "oxigraph.g1.7-qualification-contract/v3";
+export const G17_LEGACY_CONTRACT_SHA256 =
+  "e267e4d276a3d0b7997c2522d3f24ca7a32f669282c5f2ea332a752c3322c54c";
+export const G17_CURRENT_CONTRACT_SHA256 =
+  "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
+export const G17_CONTRACT_GENERATION = Object.freeze({
+  LEGACY_V1: "LEGACY_V1",
+  CURRENT_V3: "CURRENT_V3",
+});
 export const g17ContractPath = join(
   harnessRoot,
   "qualification",
@@ -132,6 +140,93 @@ const EXPECTED_AGENTIC_COMMANDS = Object.freeze([
   "g16CompatibilityCanary",
   "g16SparqlVersion",
 ]);
+const EXPECTED_NATIVE_SESSION = Object.freeze({
+  maxTotalWallMs: 1_860_000,
+  maxResidentBytes: 17_179_869_184,
+  maxDiskBytes: 12_884_901_888,
+  cargoBuildJobs: 4,
+  tasksMax: 512,
+  memorySwapMaxBytes: 0,
+});
+const EXPECTED_NATIVE_LANES = Object.freeze([
+  {
+    id: "transaction-compatibility",
+    argv: [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "oxigraph",
+      "--test",
+      "transaction_compatibility",
+    ],
+    expectedTestIds: [
+      "external_fault_adapter_preserves_the_legacy_transaction_traits",
+      "injected_open_failure_does_not_construct_or_mutate_a_transaction",
+      "injected_prepublication_commit_failure_preserves_source_without_rollback_claim",
+      "injected_read_iteration_failure_rolls_back_and_preserves_source",
+      "injected_rollback_failure_reports_both_failures_and_preserves_source",
+      "injected_second_mutation_failure_rolls_back_all_staged_state",
+      "memory_drop_releases_writer_without_publication",
+      "memory_explicit_rollback_releases_writer_without_publication",
+      "memory_one_four_and_sixteen_writers_are_serialized_without_lost_commits",
+      "memory_queued_writer_cancellation_is_bounded_and_leak_free",
+      "memory_readers_remain_live_and_do_not_see_staged_writes",
+      "memory_store_rejects_durable_outcome_lookup_before_writer_open",
+      "public_transaction_enums_preserve_the_g1_source_shape",
+      "rocksdb_drop_releases_writer_without_publication",
+      "rocksdb_explicit_rollback_releases_writer_without_publication",
+      "rocksdb_one_four_and_sixteen_writers_are_serialized_without_lost_commits",
+      "rocksdb_queued_writer_cancellation_is_bounded_and_leak_free",
+      "rocksdb_readers_remain_live_and_do_not_see_staged_writes",
+      "rocksdb_store_rejects_durable_outcome_lookup_before_writer_open",
+      "rocksdb_without_atomicity_keeps_prior_ingestions_when_later_work_is_dropped",
+    ],
+    expectedPassedTests: 20,
+    maxOutputBytes: 1_048_576,
+    timeoutMs: 300_000,
+  },
+  {
+    id: "bulk-sst-writer-serialization",
+    argv: [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "oxigraph",
+      "--test",
+      "rocksdb_bulk_writer_serialization",
+    ],
+    expectedTestIds: [
+      "rocksdb_bulk_sst_publication_waits_for_the_active_writer",
+    ],
+    expectedPassedTests: 1,
+    maxOutputBytes: 1_048_576,
+    timeoutMs: 300_000,
+  },
+  {
+    id: "update-atomicity",
+    argv: [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "oxigraph",
+      "--test",
+      "update_atomicity",
+    ],
+    expectedTestIds: [
+      "tests::failing_update_operation_aborts_all_following_operations",
+      "tests::whole_update_request_rolls_back_when_a_later_operation_fails",
+    ],
+    expectedPassedTests: 2,
+    maxOutputBytes: 1_048_576,
+    timeoutMs: 300_000,
+  },
+]);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -180,7 +275,7 @@ function validateContract(value) {
     ],
     "contract",
   );
-  assertInvariant(value.schema === G17_CONTRACT_SCHEMA, "schema is not v1");
+  assertInvariant(value.schema === G17_CONTRACT_SCHEMA, "schema is not v3");
   assertInvariant(
     value.id === "g1.7-compatibility-performance-qualification" &&
       value.programme === "linked-data-store",
@@ -287,7 +382,11 @@ function validateContract(value) {
     "benchmark statistics contract drifted",
   );
 
-  exactKeys(value.compatibility, ["agenticQe", "native", "semantic"], "compatibility");
+  exactKeys(
+    value.compatibility,
+    ["agenticQe", "native", "nativeSession", "semantic"],
+    "compatibility",
+  );
   assertInvariant(
     isDeepStrictEqual(value.compatibility.agenticQe, {
       profile: "g1-regression",
@@ -298,54 +397,12 @@ function validateContract(value) {
     "Agentic-QE G1 profile drifted",
   );
   assertInvariant(
-    isDeepStrictEqual(value.compatibility.native, [
-      {
-        id: "transaction-compatibility",
-        argv: [
-          "cargo",
-          "test",
-          "--locked",
-          "--offline",
-          "-p",
-          "oxigraph",
-          "--test",
-          "transaction_compatibility",
-        ],
-        expectedPassedTests: 20,
-        timeoutMs: 300_000,
-      },
-      {
-        id: "bulk-sst-writer-serialization",
-        argv: [
-          "cargo",
-          "test",
-          "--locked",
-          "--offline",
-          "-p",
-          "oxigraph",
-          "--test",
-          "rocksdb_bulk_writer_serialization",
-        ],
-        expectedPassedTests: 1,
-        timeoutMs: 300_000,
-      },
-      {
-        id: "update-atomicity",
-        argv: [
-          "cargo",
-          "test",
-          "--locked",
-          "--offline",
-          "-p",
-          "oxigraph",
-          "--test",
-          "update_atomicity",
-        ],
-        expectedPassedTests: 2,
-        timeoutMs: 300_000,
-      },
-    ]),
+    isDeepStrictEqual(value.compatibility.native, EXPECTED_NATIVE_LANES),
     "native compatibility lanes drifted",
+  );
+  assertInvariant(
+    isDeepStrictEqual(value.compatibility.nativeSession, EXPECTED_NATIVE_SESSION),
+    "native whole-session policy drifted",
   );
   assertInvariant(
     isDeepStrictEqual(value.compatibility.semantic, {
@@ -379,6 +436,92 @@ export function validateG17Contract(value) {
   }
 }
 
+export function decodeSealedG17Contract({ bytes, receiptSha256 }) {
+  try {
+    if (
+      !Buffer.isBuffer(bytes) ||
+      bytes.length < 1 ||
+      bytes.length > MAX_CONTRACT_BYTES
+    ) {
+      throw new Error("copied bytes are not a bounded Buffer");
+    }
+    const contractSha256 = sha256(bytes);
+    if (!DIGEST.test(receiptSha256 ?? "") || receiptSha256 !== contractSha256) {
+      throw new Error("copied bytes differ from the receipt digest");
+    }
+    let generation;
+    if (contractSha256 === G17_LEGACY_CONTRACT_SHA256) {
+      generation = G17_CONTRACT_GENERATION.LEGACY_V1;
+    } else if (contractSha256 === G17_CURRENT_CONTRACT_SHA256) {
+      generation = G17_CONTRACT_GENERATION.CURRENT_V3;
+    } else {
+      throw new Error("copied contract has an unsupported byte identity");
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(bytes);
+    } catch (error) {
+      throw new Error(`copied contract is invalid JSON: ${error.message}`);
+    }
+    const contract = generation === G17_CONTRACT_GENERATION.CURRENT_V3
+      ? validateG17Contract(parsed)
+      : (() => {
+          if (
+            parsed?.schema !== "oxigraph.g1.7-qualification-contract/v1" ||
+            parsed.id !== "g1.7-compatibility-performance-qualification" ||
+            parsed.programme !== "linked-data-store"
+          ) {
+            throw new Error("legacy byte identity has impossible parsed metadata");
+          }
+          return deepFreeze(parsed);
+        })();
+    return Object.freeze({ contract, bytes, contractSha256, generation });
+  } catch (error) {
+    if (error.message.startsWith("G1.7 qualification contract:")) throw error;
+    throw new Error(`G1.7 qualification contract: ${error.message}`);
+  }
+}
+
+export function g17ContractCompatibilityGeneration({
+  contractGeneration,
+  compatibilityStatus,
+  compatibilitySchemaState,
+}) {
+  try {
+    if (
+      !Object.values(G17_CONTRACT_GENERATION).includes(contractGeneration) ||
+      !["PASS", "FAIL", "MISSING", "STALE", "NOT_RUN"].includes(
+        compatibilityStatus,
+      ) ||
+      ![
+        "CURRENT_SCHEMA_UNREPLAYED",
+        "LEGACY_REPLAY_ONLY",
+        "NOT_APPLICABLE",
+      ].includes(compatibilitySchemaState)
+    ) {
+      throw new Error("contract/evidence generation state is invalid");
+    }
+    const currentContract =
+      contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V3;
+    const currentCompatibility =
+      compatibilitySchemaState === "CURRENT_SCHEMA_UNREPLAYED";
+    if (
+      compatibilityStatus === "PASS" &&
+      currentContract !== currentCompatibility
+    ) {
+      throw new Error("contract and compatibility evidence generations are mixed");
+    }
+    return Object.freeze({
+      currentContract,
+      currentCompatibility,
+      legacyReplayOnly:
+        !currentContract || compatibilitySchemaState === "LEGACY_REPLAY_ONLY",
+    });
+  } catch (error) {
+    throw new Error(`G1.7 qualification contract: ${error.message}`);
+  }
+}
+
 export function loadG17Contract({ contractPath = g17ContractPath } = {}) {
   const metadata = lstatSync(contractPath);
   if (
@@ -390,15 +533,12 @@ export function loadG17Contract({ contractPath = g17ContractPath } = {}) {
     throw new Error("G1.7 qualification contract must be a bounded regular file");
   }
   const bytes = readFileSync(contractPath);
-  let parsed;
-  try {
-    parsed = JSON.parse(bytes);
-  } catch (error) {
-    throw new Error(`G1.7 qualification contract is invalid JSON: ${error.message}`);
-  }
-  return Object.freeze({
-    contract: validateG17Contract(parsed),
+  const decoded = decodeSealedG17Contract({
     bytes,
-    contractSha256: sha256(bytes),
+    receiptSha256: sha256(bytes),
   });
+  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V3) {
+    throw new Error("G1.7 qualification contract: current path is not current generation");
+  }
+  return decoded;
 }
