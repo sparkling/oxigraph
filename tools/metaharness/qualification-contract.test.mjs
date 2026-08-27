@@ -64,27 +64,24 @@ function mutationProjection(inputContentHash) {
   };
 }
 
-function agenticBinding(
-  generatedAt = "2026-07-26T00:00:00.500Z",
-) {
+function agenticBinding(generatedAt = "2026-07-26T00:00:00.500Z") {
   const artifactContentHash = "9".repeat(64);
-  const root =
-    `target/agentic-qe/metaharness-semantic-gate/runs/${agenticRunId}`;
+  const root = `target/agentic-qe/metaharness-semantic-gate/runs/${agenticRunId}`;
   return {
     path: `${root}/receipt.json`,
     sha256: "a".repeat(64),
-    schemaVersion: 4,
+    schemaVersion: 5,
     runId: agenticRunId,
     generatedAt,
     contentHash: "b".repeat(64),
     executionHash: "c".repeat(64),
+    runtimeContentHash: "1".repeat(64),
     oraclePath: `${root}/oracle.json`,
     oracleSha256: "d".repeat(64),
     implementationContentHash: "e".repeat(64),
     artifactContentHash,
     archiveContentHash: "f".repeat(64),
-    archiveRoot:
-      `target/agentic-qe/metaharness-semantic-gate/artifacts/${artifactContentHash}`,
+    archiveRoot: `target/agentic-qe/metaharness-semantic-gate/artifacts/${artifactContentHash}`,
     archiveFileCount: 1,
   };
 }
@@ -99,6 +96,7 @@ function agenticProjection() {
     oracleSha256: binding.oracleSha256,
     contentHash: binding.contentHash,
     executionHash: binding.executionHash,
+    runtimeContentHash: binding.runtimeContentHash,
     implementationContentHash: binding.implementationContentHash,
     artifactContentHash: binding.artifactContentHash,
     archiveContentHash: binding.archiveContentHash,
@@ -218,10 +216,7 @@ test("qualification receipt closes trace, gate, hash, and time contracts", () =>
   }
 
   const { safety: _safety, ...missingGate } = receipt.gates;
-  for (const gates of [
-    missingGate,
-    { ...receipt.gates, unexpected: true },
-  ]) {
+  for (const gates of [missingGate, { ...receipt.gates, unexpected: true }]) {
     expectInvalid(withHash({ ...receipt, gates }));
   }
 

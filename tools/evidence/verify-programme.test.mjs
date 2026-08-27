@@ -307,8 +307,11 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
   validateLedgerCounts(ledger, errors);
   assert.deepEqual(errors, []);
 
-  ledger.evidence.find((item) => item.id === "E-DATALOG-NATIVE").result.passed = 58;
-  ledger.evidence.find((item) => item.id === "E-SHACL12-RUN").result.aggregate.passed = 316;
+  ledger.evidence.find((item) => item.id === "E-DATALOG-NATIVE").result.passed =
+    58;
+  ledger.evidence.find(
+    (item) => item.id === "E-SHACL12-RUN",
+  ).result.aggregate.passed = 316;
   ledger.evidence.find(
     (item) => item.id === "E-RDF12-OFFICIAL",
   ).result.categories.rdfSemanticsAggregate.rdfsRegime = 25;
@@ -319,32 +322,41 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
   ledger.evidence.find(
     (item) => item.id === "E-CLI-HTTP-NATIVE",
   ).result.defaultFeatures.passed = 143;
-  ledger.evidence.find(
-    (item) => item.id === "E-DATALOG-MUTATION",
-  ).runId = "stale-run";
+  ledger.evidence.find((item) => item.id === "E-DATALOG-MUTATION").runId =
+    "stale-run";
   ledger.qualification.find(
     (item) => item.id === "agentic-qe",
   ).reconciledProfiles.persistenceWrite.receiptSha256 = "0".repeat(64);
   validateLedgerCounts(ledger, errors);
   assert(errors.some((error) => error.startsWith("Datalog passed tests:")));
-  assert(errors.some((error) => error.startsWith("RDF Semantics RDFS-regime cases:")));
-  assert(errors.some((error) => error.startsWith("RDF Semantics regime subtotal:")));
+  assert(
+    errors.some((error) =>
+      error.startsWith("RDF Semantics RDFS-regime cases:"),
+    ),
+  );
+  assert(
+    errors.some((error) => error.startsWith("RDF Semantics regime subtotal:")),
+  );
   assert(errors.some((error) => error.startsWith("SHACL passed cases:")));
   assert(
     errors.some((error) =>
-      error.startsWith(
-        "Jena classifications w3c-permitted-divergence:",
-      ),
+      error.startsWith("Jena classifications w3c-permitted-divergence:"),
     ),
   );
-  assert(errors.some((error) => error.startsWith("CLI default-feature tests:")));
+  assert(
+    errors.some((error) => error.startsWith("CLI default-feature tests:")),
+  );
   assert(errors.some((error) => error.startsWith("mutation ledger run:")));
   assert(
     errors.some((error) =>
       error.startsWith("Agentic-QE persistence-write receipt hash:"),
     ),
   );
-  assert(errors.some((error) => error.startsWith("Agentic-QE adapter passed tests:")));
+  assert(
+    errors.some((error) =>
+      error.startsWith("Agentic-QE adapter passed tests:"),
+    ),
+  );
 });
 
 test("dependency claims are derived from exact integrity-bearing locks", () => {
@@ -374,9 +386,7 @@ test("dependency claims are derived from exact integrity-bearing locks", () => {
     errors.some((error) => error.startsWith("Agentic-QE pin resolution:")),
   );
   assert(
-    errors.some((error) =>
-      error.startsWith("Darwin qualification integrity:"),
-    ),
+    errors.some((error) => error.startsWith("Darwin qualification integrity:")),
   );
 });
 
@@ -449,7 +459,9 @@ test("normative family coverage is mechanically derived from dispositions", () =
   ).normativeCoverage.closedRequirements = 0;
   errors = [];
   validateNormativeClaims(normative, ledger, errors);
-  assert(errors.some((error) => error.startsWith("sparql-1.2 closed requirements:")));
+  assert(
+    errors.some((error) => error.startsWith("sparql-1.2 closed requirements:")),
+  );
 });
 
 test("registry pins must match both the reviewed constants and checkout heads", () => {
@@ -473,11 +485,14 @@ test("registry pins must match both the reviewed constants and checkout heads", 
   validateRegistryPins(registry, ledger, heads, errors);
   assert.deepEqual(errors, []);
 
-  registry.testSources.find((item) => item.id === "w3c-json-ld-api").commit = "0".repeat(40);
+  registry.testSources.find((item) => item.id === "w3c-json-ld-api").commit =
+    "0".repeat(40);
   heads["w3c-n3"] = "1".repeat(40);
   errors = [];
   validateRegistryPins(registry, ledger, heads, errors);
-  assert(errors.some((error) => error.startsWith("w3c-json-ld-api registry pin:")));
+  assert(
+    errors.some((error) => error.startsWith("w3c-json-ld-api registry pin:")),
+  );
   assert(errors.some((error) => error.startsWith("w3c-n3 checkout HEAD:")));
 
   registry.testSources.find(
@@ -496,12 +511,19 @@ test("key JSON shape validation rejects missing and non-object documents", () =>
   const documents = new Map([
     ["conformance-ledger.json", []],
     ["normative-requirements.json", { documents: [], requirements: [] }],
-    ["standards-registry.json", { claimPolicy: {}, families: [], testSources: [] }],
+    [
+      "standards-registry.json",
+      { claimPolicy: {}, families: [], testSources: [] },
+    ],
   ]);
   const errors = [];
   validateJsonDocuments(documents, errors);
   assert(errors.some((error) => error.includes("conformance-ledger.json")));
-  assert(errors.some((error) => error.includes("normative-requirements.json: missing reviewState")));
+  assert(
+    errors.some((error) =>
+      error.includes("normative-requirements.json: missing reviewState"),
+    ),
+  );
 });
 
 test("normative SHACL document hashes are pinned to the generated inventory", () => {
@@ -549,8 +571,9 @@ test("normative SHACL document hashes are pinned to the generated inventory", ()
   );
   documents.get("conformance-ledger.json").schemaVersion = 2;
 
-  normative.documents.find((document) => document.id === "shacl12-core").sha256 =
-    "0".repeat(64);
+  normative.documents.find(
+    (document) => document.id === "shacl12-core",
+  ).sha256 = "0".repeat(64);
   errors = [];
   validateJsonDocuments(documents, errors);
   assert(
@@ -603,11 +626,7 @@ test("labelled document checks detect stale evidence without policing unrelated 
 });
 
 test("ADR index validation reports broken targets and unindexed records together", () => {
-  const names = new Set([
-    "README.md",
-    "0001-first.md",
-    "0002-second.md",
-  ]);
+  const names = new Set(["README.md", "0001-first.md", "0002-second.md"]);
   const errors = [];
   validateAdrIndex(
     "# ADRs\n\n[First](0001-first.md)\n[Missing](0003-missing.md)\n",
@@ -622,20 +641,17 @@ test("ADR index validation reports broken targets and unindexed records together
 
 function fullReceiptsFixture() {
   const agenticRunId = "00000000-0000-4000-8000-000000000000";
-  const agenticRoot =
-    `target/agentic-qe/metaharness-semantic-gate/runs/${agenticRunId}`;
+  const agenticRoot = `target/agentic-qe/metaharness-semantic-gate/runs/${agenticRunId}`;
   const agenticArtifactHash = "f".repeat(64);
-  const scenarios = Object.entries(jenaDomains).flatMap(
-    ([domain, count]) => {
-      const total = jenaDomainAssertions[domain];
-      const base = Math.floor(total / count);
-      const remainder = total % count;
-      return Array.from({ length: count }, (_, index) => ({
-        domain,
-        assertion_count: base + (index < remainder ? 1 : 0),
-      }));
-    },
-  );
+  const scenarios = Object.entries(jenaDomains).flatMap(([domain, count]) => {
+    const total = jenaDomainAssertions[domain];
+    const base = Math.floor(total / count);
+    const remainder = total % count;
+    return Array.from({ length: count }, (_, index) => ({
+      domain,
+      assertion_count: base + (index < remainder ? 1 : 0),
+    }));
+  });
   for (const [index, scenario] of scenarios.entries()) {
     scenario.classification =
       index < 70
@@ -775,7 +791,7 @@ function fullReceiptsFixture() {
       },
     },
     agentic: {
-      schemaVersion: 4,
+      schemaVersion: 5,
       runId: agenticRunId,
       profile: "metaharness-semantic-gate",
       generatedAt: "2026-07-26T00:00:00.500Z",
@@ -785,21 +801,27 @@ function fullReceiptsFixture() {
       implementation: { stable: true },
       artifacts: { complete: true, archive: { complete: true } },
       commands: semanticCommandIds.map((id) => ({
-          id,
-          code: 0,
-          timedOut: false,
-          testSafeguard:
-            id === "agenticAdapter"
-              ? { observedPassedTests: 18, passed: true }
-              : id === "supportingParserSuites"
-                ? { observedPassedTests: 5, passed: true }
-                : null,
-        })),
+        id,
+        code: 0,
+        timedOut: false,
+        testSafeguard:
+          id === "agenticAdapter"
+            ? { observedPassedTests: 18, passed: true }
+            : id === "supportingParserSuites"
+              ? { observedPassedTests: 5, passed: true }
+              : null,
+      })),
     },
     mutation: {
       gateClosed: true,
       baselinePassed: true,
-      counts: { generated: 358, caught: 278, missed: 0, timeout: 0, unviable: 80 },
+      counts: {
+        generated: 358,
+        caught: 278,
+        missed: 0,
+        timeout: 0,
+        unviable: 80,
+      },
     },
     meta: {
       mode: "synthetic-and-semantic-gate",
@@ -818,18 +840,18 @@ function fullReceiptsFixture() {
         agenticReceipt: {
           path: `${agenticRoot}/receipt.json`,
           sha256: "1".repeat(64),
-          schemaVersion: 4,
+          schemaVersion: 5,
           runId: agenticRunId,
           generatedAt: "2026-07-26T00:00:00.500Z",
           contentHash: "b".repeat(64),
           executionHash: "c".repeat(64),
+          runtimeContentHash: "5".repeat(64),
           oraclePath: `${agenticRoot}/oracle.json`,
           oracleSha256: "2".repeat(64),
           implementationContentHash: "3".repeat(64),
           artifactContentHash: agenticArtifactHash,
           archiveContentHash: "4".repeat(64),
-          archiveRoot:
-            `target/agentic-qe/metaharness-semantic-gate/artifacts/${agenticArtifactHash}`,
+          archiveRoot: `target/agentic-qe/metaharness-semantic-gate/artifacts/${agenticArtifactHash}`,
           archiveFileCount: 23,
         },
         receiptError: null,
@@ -898,8 +920,12 @@ test("full receipt checks require closed gates and exact bounded counts", () => 
   errors = [];
   validateFullReceipts(receipts, errors);
   assert(errors.some((error) => error.startsWith("mutation missed:")));
-  assert(errors.some((error) => error.startsWith("mutation count conservation:")));
-  assert(errors.some((error) => error.startsWith("SHACL receipt unsupported:")));
+  assert(
+    errors.some((error) => error.startsWith("mutation count conservation:")),
+  );
+  assert(
+    errors.some((error) => error.startsWith("SHACL receipt unsupported:")),
+  );
   assert(
     errors.some((error) =>
       error.startsWith(

@@ -5,17 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  canonicalJson,
-  canonicalSha256,
-} from "../src/routing/features.mjs";
+import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
 import {
   agenticDependencyEvidenceNames,
   agenticOracleBytes,
   agenticReceiptBytes,
   agenticReceiptContentHash,
   agenticReceiptExecutionHash,
+  agenticRuntimeContentHash,
   validateAgenticDependencyEvidence,
+  validateAgenticReceipt,
 } from "../../agentic-qe/receipt-contract.mjs";
 import {
   commands as agenticCommands,
@@ -47,17 +46,11 @@ import {
   g17ReceiptBytes,
   verifyG17Receipt,
 } from "../src/qualification/receipt.mjs";
-import {
-  createG17Run,
-} from "../src/qualification/storage.mjs";
+import { createG17Run } from "../src/qualification/storage.mjs";
 import { verifySealedG17Run } from "../src/qualification/verifier.mjs";
-import {
-  verifyG17NativeApplicationEvidence,
-} from "../src/qualification/native-application-contract.mjs";
+import { verifyG17NativeApplicationEvidence } from "../src/qualification/native-application-contract.mjs";
 import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
-import {
-  createG17NativeApplicationFixture,
-} from "./support/g17-native-application-fixture.mjs";
+import { createG17NativeApplicationFixture } from "./support/g17-native-application-fixture.mjs";
 
 function identity({ subjectCommit = "a".repeat(40), dependencies } = {}) {
   return g17IdentityFixture({ subjectCommit, dependencies });
@@ -165,6 +158,10 @@ async function agenticOwnerEvidence(subjectCommit = "a".repeat(40)) {
     const [program, args, policy] = agenticCommands[id];
     const expected = policy.expectedPassedTests;
     const ids = [...policy.expectedTestIds].sort();
+    const stdoutTail =
+      `test result: ok. ${expected} passed; 0 failed; 0 ignored; ` +
+      "0 measured; 0 filtered out; finished in 0.01s\n";
+    const inventoryStdout = `${ids.map((testId) => `${testId}: test`).join("\n")}\n`;
     return {
       id,
       program,
@@ -173,24 +170,72 @@ async function agenticOwnerEvidence(subjectCommit = "a".repeat(40)) {
       signal: null,
       spawnError: null,
       timedOut: false,
+      cleanupUnconfirmed: false,
+      terminationReason: null,
+      terminationSignalError: null,
+      killAttempted: false,
+      outputLimitExceeded: false,
+      scanLimitExceeded: false,
+      scanFailureReason: null,
+      outputLimitBytes: 64 * 1024 * 1024,
       timeoutMs: policy.timeoutMs,
       testSafeguard: {
+        format: "cargo-libtest-v1",
         minimumPassedTests: policy.minimumPassedTests,
         expectedPassedTests: expected,
         observedPassedTests: expected,
+        expectedSummaryCount: policy.expectedCargoSummaryCount ?? null,
+        observedSummaryCount: 1,
+        observed: {
+          source: "stream",
+          summaries: [
+            {
+              stream: "stdout",
+              status: "ok",
+              passed: expected,
+              failed: 0,
+              ignored: 0,
+              measured: 0,
+              filteredOut: 0,
+            },
+          ],
+          summaryCount: 1,
+          terminal: true,
+          countsSafe: true,
+          allSuccessful: true,
+          allOnStdout: true,
+          outcomeCount: expected,
+          totals: {
+            passed: expected,
+            failed: 0,
+            ignored: 0,
+            measured: 0,
+            filteredOut: 0,
+          },
+        },
         passed: true,
       },
       testInventory: {
         observedTests: expected,
         ids,
-        output: null,
+        outputLimitBytes: 64 * 1024 * 1024,
+        output: {
+          stdoutBytes: Buffer.byteLength(inventoryStdout),
+          stderrBytes: 0,
+          stdoutSha256: sha256(inventoryStdout),
+          stderrSha256: sha256(Buffer.alloc(0)),
+        },
+        stdoutTail: inventoryStdout,
+        stderrTail: "",
       },
       output: {
-        stdoutBytes: 0,
+        stdoutBytes: Buffer.byteLength(stdoutTail),
         stderrBytes: 0,
-        stdoutSha256: sha256(Buffer.alloc(0)),
+        stdoutSha256: sha256(stdoutTail),
         stderrSha256: sha256(Buffer.alloc(0)),
       },
+      stdoutTail,
+      stderrTail: "",
     };
   });
   const implementationFiles = [
@@ -200,15 +245,13 @@ async function agenticOwnerEvidence(subjectCommit = "a".repeat(40)) {
       sha256: "1".repeat(64),
     },
   ];
-  const implementationContentHash = sha256(
-    JSON.stringify(implementationFiles),
-  );
+  const implementationContentHash = sha256(JSON.stringify(implementationFiles));
   const emptyContentHash = sha256("[]");
   const runId = "22222222-2222-4222-8222-222222222222";
   const profile = "g1-regression";
   const publicationRoot = `target/agentic-qe/${profile}/runs/${runId}`;
   const receipt = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     runId,
     adapter: "oxigraph-agentic-qe",
     agenticQeVersion: dependency.version,
@@ -235,9 +278,49 @@ async function agenticOwnerEvidence(subjectCommit = "a".repeat(40)) {
     },
     runtime: [
       {
+        program: "agentic-qe",
+        context: "host",
+        invokedPath: "/repo/tools/agentic-qe/node_modules/.bin/aqe",
+        path: "/repo/tools/agentic-qe/node_modules/agentic-qe/dist/cli.js",
+        executableSha256: "1".repeat(64),
+        versionStdout: dependency.version,
+        versionStderr: "",
+      },
+      {
         program: "cargo",
         context: "host",
+        invokedPath: "/usr/bin/cargo",
+        path: "/usr/bin/cargo",
         executableSha256: "2".repeat(64),
+        versionStdout: "cargo 1.90.0",
+        versionStderr: "",
+      },
+      {
+        program: "git",
+        context: "host",
+        invokedPath: "/usr/bin/git",
+        path: "/usr/bin/git",
+        executableSha256: "3".repeat(64),
+        versionStdout: "git version 2.51.0",
+        versionStderr: "",
+      },
+      {
+        program: "node",
+        context: "host",
+        invokedPath: "/usr/bin/node",
+        path: "/usr/bin/node",
+        executableSha256: "4".repeat(64),
+        versionStdout: "v24.7.0",
+        versionStderr: "",
+      },
+      {
+        program: "rustc",
+        context: "host",
+        invokedPath: "/usr/bin/rustc",
+        path: "/usr/bin/rustc",
+        executableSha256: "5".repeat(64),
+        versionStdout: "rustc 1.90.0",
+        versionStderr: "",
       },
     ],
     commands,
@@ -296,6 +379,7 @@ async function agenticOwnerEvidence(subjectCommit = "a".repeat(40)) {
     oracleSha256: sha256(oracleBytes),
     contentHash: receipt.contentHash,
     executionHash: receipt.executionHash,
+    runtimeContentHash: agenticRuntimeContentHash(receipt.runtime),
     implementationContentHash,
     artifactContentHash: emptyContentHash,
     archiveContentHash: emptyContentHash,
@@ -339,7 +423,9 @@ async function compatibilityOwnerEvidence(runId) {
   const nativeFixture = createG17NativeApplicationFixture({ runId });
   const subjectIdentity = nativeFixture.input.identity;
   const agentic = await agenticOwnerEvidence(subjectIdentity.subject.commit);
-  const nativeProjection = verifyG17NativeApplicationEvidence(nativeFixture.input);
+  const nativeProjection = verifyG17NativeApplicationEvidence(
+    nativeFixture.input,
+  );
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status: "PASS",
@@ -379,8 +465,7 @@ function darwinFixtureDependency(overrides = {}) {
     name: "@metaharness/darwin",
     policy: "latest",
     version,
-    resolved:
-      `https://registry.npmjs.org/@metaharness/darwin/-/darwin-${version}.tgz`,
+    resolved: `https://registry.npmjs.org/@metaharness/darwin/-/darwin-${version}.tgz`,
     integrity: `sha512-${Buffer.alloc(64, 7).toString("base64")}`,
     installedPackageJsonSha256: "1".repeat(64),
     ...overrides,
@@ -421,18 +506,18 @@ function semanticAgenticBinding() {
   return {
     path: `${root}/receipt.json`,
     sha256: "a".repeat(64),
-    schemaVersion: 4,
+    schemaVersion: 5,
     runId,
     generatedAt: "2026-08-26T17:00:00.500Z",
     contentHash: "b".repeat(64),
     executionHash: "c".repeat(64),
+    runtimeContentHash: "1".repeat(64),
     oraclePath: `${root}/oracle.json`,
     oracleSha256: "d".repeat(64),
     implementationContentHash: "e".repeat(64),
     artifactContentHash,
     archiveContentHash: "f".repeat(64),
-    archiveRoot:
-      `target/agentic-qe/metaharness-semantic-gate/artifacts/${artifactContentHash}`,
+    archiveRoot: `target/agentic-qe/metaharness-semantic-gate/artifacts/${artifactContentHash}`,
     archiveFileCount: 1,
   };
 }
@@ -586,10 +671,10 @@ function semanticOwnerEvidence({
   return sealSemanticOwner(dependency, qualification);
 }
 
-function resealSemanticOwner(owner, {
-  mutateQualification,
-  mutateVerification,
-} = {}) {
+function resealSemanticOwner(
+  owner,
+  { mutateQualification, mutateVerification } = {},
+) {
   const qualification = structuredClone(owner.qualification);
   mutateQualification?.(qualification);
   return sealSemanticOwner(
@@ -672,7 +757,12 @@ test("sealed evidence replay imports only pure receipt-contract modules", async 
   const imports = [...agenticContract.matchAll(/from\s+"([^"]+)"/gu)].map(
     (match) => match[1],
   );
-  assert.deepEqual(imports, ["node:crypto"]);
+  assert.deepEqual(imports, [
+    "node:crypto",
+    "./native-test-contract.mjs",
+    "./node-test-contract.mjs",
+    "./runtime-plan.mjs",
+  ]);
   assert.deepEqual(
     [...semanticContract.matchAll(/from\s+"([^"]+)"/gu)].map(
       (match) => match[1],
@@ -702,6 +792,52 @@ test("sealed evidence replay imports only pure receipt-contract modules", async 
   assertNoLiveRuntimeDependencies(semanticPolicyContract);
   assertNoLiveRuntimeDependencies(mutationSchema);
   assertNoLiveRuntimeDependencies(sealedReplay);
+});
+
+test("schema-v5 replay derives Cargo claims from complete retained bytes", async () => {
+  const owner = await agenticOwnerEvidence();
+  const receipt = JSON.parse(owner.receiptBytes);
+  const commandIds = agenticProfiles["g1-regression"];
+  const options = {
+    expectedProfile: "g1-regression",
+    expectedAgenticQeVersion: receipt.agenticQeVersion,
+    expectedAgenticQeDependency: receipt.authority.agenticQeDependency,
+    expectedRuntime: structuredClone(receipt.runtime),
+    expectedCommandIds: commandIds,
+    expectedCommands: agenticCommands,
+  };
+  assert.doesNotThrow(() => validateAgenticReceipt(receipt, options));
+
+  const rebindOutput = (ownerRecord, stdout, stderr) => {
+    ownerRecord.stdoutTail = stdout;
+    ownerRecord.stderrTail = stderr;
+    ownerRecord.output.stdoutBytes = Buffer.byteLength(stdout);
+    ownerRecord.output.stderrBytes = Buffer.byteLength(stderr);
+    ownerRecord.output.stdoutSha256 = sha256(stdout);
+    ownerRecord.output.stderrSha256 = sha256(stderr);
+  };
+  const variants = [
+    (candidate) =>
+      rebindOutput(candidate.commands[0], "no Cargo summary\n", ""),
+    (candidate) =>
+      rebindOutput(candidate.commands[0], "x\n".repeat(524_288), ""),
+    (candidate) =>
+      rebindOutput(candidate.commands[0].testInventory, "wrong: test\n", ""),
+    (candidate) => {
+      const output = candidate.commands[0].stdoutTail;
+      rebindOutput(candidate.commands[0], "", output);
+    },
+  ];
+  for (const mutate of variants) {
+    const candidate = structuredClone(receipt);
+    mutate(candidate);
+    candidate.contentHash = agenticReceiptContentHash(candidate);
+    candidate.executionHash = agenticReceiptExecutionHash(candidate);
+    assert.throws(
+      () => validateAgenticReceipt(candidate, options),
+      /execution or hash contract/u,
+    );
+  }
 });
 
 test("G1.7 preflight reports honest inconclusive decisions without side effects", async () => {
@@ -740,8 +876,10 @@ test("G1.7 run writes artifacts first, receipt last, and the pure verifier reope
     runsRoot,
     contractLoader: () => loaded,
     identityProvider: async () => identity(),
-    semanticProvider: async () => missing("MISSING", "independent-verification-absent"),
-    compatibilityProvider: async () => missing("STALE", "agentic-evidence-stale"),
+    semanticProvider: async () =>
+      missing("MISSING", "independent-verification-absent"),
+    compatibilityProvider: async () =>
+      missing("STALE", "agentic-evidence-stale"),
     clock: () => times.shift(),
   });
   assert.equal(result.receipt.final.verdict, "INCONCLUSIVE");
@@ -831,6 +969,7 @@ test("sealed verifier rejects a hash-consistent compatibility PASS without copie
       oracleSha256: "2".repeat(64),
       contentHash: "3".repeat(64),
       executionHash: "4".repeat(64),
+      runtimeContentHash: "8".repeat(64),
       implementationContentHash: "5".repeat(64),
       artifactContentHash: "6".repeat(64),
       archiveContentHash: "7".repeat(64),
@@ -1089,6 +1228,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
       oracleSha256: "2".repeat(64),
       contentHash: "3".repeat(64),
       executionHash: "4".repeat(64),
+      runtimeContentHash: "8".repeat(64),
       implementationContentHash: "5".repeat(64),
       artifactContentHash: "6".repeat(64),
       archiveContentHash: "7".repeat(64),
@@ -1141,7 +1281,8 @@ test("sealed verifier rejects rehashed native raw-output and derived-projection 
           "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n" +
             "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n",
         );
-        nativeDocument.commands[1].stdoutBase64 = substituted.toString("base64");
+        nativeDocument.commands[1].stdoutBase64 =
+          substituted.toString("base64");
         nativeDocument.commands[1].stdoutSha256 = sha256(substituted);
         const mutatedBytes = canonicalBytes(nativeDocument);
         owner.artifacts = owner.artifacts.map((artifact) =>

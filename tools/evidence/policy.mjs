@@ -1167,7 +1167,7 @@ export function validateFullReceipts(receipts, errors) {
 
   const agentic = receipts.agentic;
   if (agentic) {
-    equal(errors, "Agentic-QE receipt schema", agentic.schemaVersion, 4);
+    equal(errors, "Agentic-QE receipt schema", agentic.schemaVersion, 5);
     equal(errors, "Agentic-QE receipt profile", agentic.profile, "metaharness-semantic-gate");
     equal(errors, "Agentic-QE receipt passed", agentic.passed, true);
     equal(errors, "Agentic-QE implementation stability", agentic.implementation?.stable, true);

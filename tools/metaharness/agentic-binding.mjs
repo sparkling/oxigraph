@@ -12,6 +12,7 @@ const bindingKeys = [
   "generatedAt",
   "contentHash",
   "executionHash",
+  "runtimeContentHash",
   "oraclePath",
   "oracleSha256",
   "implementationContentHash",
@@ -28,6 +29,7 @@ const projectionKeys = [
   "oracleSha256",
   "contentHash",
   "executionHash",
+  "runtimeContentHash",
   "implementationContentHash",
   "artifactContentHash",
   "archiveContentHash",
@@ -49,7 +51,7 @@ export function agenticQualificationBindingValid(value) {
     typeof value === "object" &&
     !Array.isArray(value) &&
     JSON.stringify(Object.keys(value)) === JSON.stringify(bindingKeys) &&
-    value.schemaVersion === 4 &&
+    value.schemaVersion === 5 &&
     uuid(value.runId) &&
     canonicalIso(value.generatedAt) &&
     value.path === `${runRoot}/receipt.json` &&
@@ -58,6 +60,7 @@ export function agenticQualificationBindingValid(value) {
     hash(value.oracleSha256) &&
     hash(value.contentHash) &&
     hash(value.executionHash) &&
+    hash(value.runtimeContentHash) &&
     hash(value.implementationContentHash) &&
     hash(value.artifactContentHash) &&
     hash(value.archiveContentHash) &&
@@ -74,7 +77,7 @@ export function agenticProjectionValid(value) {
     typeof value === "object" &&
     !Array.isArray(value) &&
     JSON.stringify(Object.keys(value)) === JSON.stringify(projectionKeys) &&
-    value.schemaVersion === 4 &&
+    value.schemaVersion === 5 &&
     uuid(value.runId) &&
     canonicalIso(value.generatedAt) &&
     projectionKeys.slice(3).every((key) => hash(value[key]))
@@ -93,6 +96,7 @@ export function agenticProjectionFromQualificationBinding(binding) {
     oracleSha256: binding.oracleSha256,
     contentHash: binding.contentHash,
     executionHash: binding.executionHash,
+    runtimeContentHash: binding.runtimeContentHash,
     implementationContentHash: binding.implementationContentHash,
     artifactContentHash: binding.artifactContentHash,
     archiveContentHash: binding.archiveContentHash,

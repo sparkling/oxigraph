@@ -6,6 +6,8 @@ import { join, relative } from "node:path";
 import { CHILD_ENVIRONMENT_POLICY } from "../child-environment.mjs";
 import { atomicJson, createDurableDirectory } from "./atomic-json.mjs";
 import {
+  MAX_AGENTIC_RETAINED_OUTPUT_BYTES,
+  agenticOracleBytes,
   agenticReceiptContentHash,
   agenticReceiptExecutionHash,
   agenticReceiptBytes,
@@ -21,10 +23,9 @@ import {
   validateAgenticReceipt,
 } from "./evidence.mjs";
 import {
+  agenticRuntimeProvenance,
   cargoTestInventory,
   commandAuthority,
-  executablePathProvenance,
-  runtimeProvenance,
 } from "./execution-provenance.mjs";
 import {
   acquireProfileRunLease,
@@ -44,11 +45,7 @@ import {
   execute,
   validateCommand,
 } from "./process-runner.mjs";
-import {
-  commands,
-  profileNames,
-  profiles,
-} from "./profile-definitions.mjs";
+import { commands, profileNames, profiles } from "./profile-definitions.mjs";
 import { agenticQeDependencyResolution } from "./version-policy.mjs";
 
 const aqeBin = join(
@@ -84,7 +81,9 @@ async function capture(program, args, cwd = repoRoot, timeoutMs = 30_000) {
 async function gitValue(args, cwd = repoRoot) {
   const result = await capture("git", args, cwd);
   if (result.code !== 0 || result.timedOut || result.spawnError) {
-    throw new Error(`unable to capture Git repository state: git ${args.join(" ")}`);
+    throw new Error(
+      `unable to capture Git repository state: git ${args.join(" ")}`,
+    );
   }
   return result.stdoutTail.trim();
 }
@@ -181,14 +180,10 @@ async function executeProfile(profile, selected) {
 
   const agenticQeDependency = await probeAqe();
   const aqeVersion = agenticQeDependency.version;
-  const runtime = await runtimeProvenance(selected, commands);
-  runtime.push(
-    executablePathProvenance("agentic-qe", aqeBin, aqeVersion),
-  );
-  runtime.sort((left, right) =>
-    `${left.context}:${left.program}`.localeCompare(
-      `${right.context}:${right.program}`,
-    ),
+  const runtime = await agenticRuntimeProvenance(
+    selected,
+    commands,
+    aqeVersion,
   );
   const gitHead = await gitValue(["rev-parse", "HEAD"]);
   const worktreeStatus = await gitValue(["status", "--short"]);
@@ -203,16 +198,28 @@ async function executeProfile(profile, selected) {
   const before = implementationSnapshot(selected, commands);
 
   const results = [];
+  let retainedOutputBytes = 0;
+  const accountRetainedOutput = (owner) => {
+    if (owner === null || owner === undefined) return;
+    retainedOutputBytes += Buffer.byteLength(owner.stdoutTail, "utf8");
+    retainedOutputBytes += Buffer.byteLength(owner.stderrTail, "utf8");
+    if (retainedOutputBytes > MAX_AGENTIC_RETAINED_OUTPUT_BYTES) {
+      throw new Error("Agentic-QE run exceeds its retained-output budget");
+    }
+  };
   for (const id of selected) {
     const [program, args, policy = {}] = commands[id];
     const testInventory =
-      program === "cargo"
-        ? await cargoTestInventory(id, args, policy)
-        : null;
+      program === "cargo" ? await cargoTestInventory(id, args, policy) : null;
+    accountRetainedOutput(testInventory);
     const result = applyCommandSafeguards(
-      await execute(program, args, { timeoutMs: policy.timeoutMs }),
+      await execute(program, args, {
+        timeoutMs: policy.timeoutMs,
+        retainCompleteOutput: policy.requireCompleteOutputReplay === true,
+      }),
       policy,
     );
+    accountRetainedOutput(result);
     results.push({ id, program, args, testInventory, ...result });
     if (!commandPassed(result)) {
       safeguardFailure(id, result);
@@ -231,7 +238,9 @@ async function executeProfile(profile, selected) {
     files: before.files,
   };
   if (!implementationStable) {
-    console.error("implementation inputs changed while the profile was running");
+    console.error(
+      "implementation inputs changed while the profile was running",
+    );
   }
 
   const liveArtifacts = outputArtifacts(selected, commands);
@@ -259,7 +268,7 @@ async function executeProfile(profile, selected) {
     );
   }
   const receipt = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     runId,
     adapter: "oxigraph-agentic-qe",
     agenticQeVersion: aqeVersion,
@@ -298,14 +307,15 @@ async function executeProfile(profile, selected) {
     expectedProfile: profile,
     expectedAgenticQeVersion: agenticQeDependency.version,
     expectedAgenticQeDependency: agenticQeDependency,
+    expectedRuntime: structuredClone(runtime),
     expectedCommandIds: selected,
     expectedCommands: commands,
   });
 
-  const receiptPublication = atomicJson(receiptPath, receipt, { replace: false });
-  if (
-    !receiptPublication.bytes.equals(agenticReceiptBytes(receipt))
-  ) {
+  const receiptPublication = atomicJson(receiptPath, receipt, {
+    replace: false,
+  });
+  if (!receiptPublication.bytes.equals(agenticReceiptBytes(receipt))) {
     throw new Error("published Agentic-QE receipt serialization drifted");
   }
   const oracle = {
@@ -318,8 +328,12 @@ async function executeProfile(profile, selected) {
     executionHash: receipt.executionHash,
     receiptSha256: receiptPublication.sha256,
   };
+  const oracleBytes = agenticOracleBytes(oracle);
   validateAgenticOracle(oracle, receipt, receiptPublication.bytes);
-  atomicJson(oraclePath, oracle, { replace: false });
+  const oraclePublication = atomicJson(oraclePath, oracle, { replace: false });
+  if (!oraclePublication.bytes.equals(oracleBytes)) {
+    throw new Error("published Agentic-QE oracle serialization drifted");
+  }
   validateAgenticPublication(receipt);
   atomicJson(latestReceiptPath, receipt);
   atomicJson(latestOraclePath, oracle);
@@ -371,7 +385,8 @@ function auditCandidate(pathArg) {
   const result = JSON.parse(readFileSync(sourcePath, "utf8"));
   const findings = [];
   const tests = Array.isArray(result.tests) ? result.tests : [];
-  if (tests.length === 0) findings.push({ severity: "error", code: "no-tests" });
+  if (tests.length === 0)
+    findings.push({ severity: "error", code: "no-tests" });
   for (const test of tests) {
     if (test.language !== "rust" || test.framework !== "rust-test") {
       findings.push({

@@ -76,15 +76,23 @@ export function stableRegularFileBytes(
     repositoryRoot,
     label = "Agentic-QE file",
     requireSingleLink = false,
+    maximumBytes = Number.POSITIVE_INFINITY,
   },
 ) {
+  if (!(
+    maximumBytes === Number.POSITIVE_INFINITY ||
+    (Number.isSafeInteger(maximumBytes) && maximumBytes >= 0)
+  )) {
+    throw new Error(`${label} byte ceiling is invalid`);
+  }
   const { lexical } = checkedPath(repositoryRoot, path);
   rejectSymlinkComponents(repositoryRoot, lexical);
   const initial = lstatSync(lexical);
   if (
     initial.isSymbolicLink() ||
     !initial.isFile() ||
-    !singleLink(initial, requireSingleLink)
+    !singleLink(initial, requireSingleLink) ||
+    initial.size > maximumBytes
   ) {
     const requirement = requireSingleLink
       ? "a regular file with one stable path"
@@ -101,7 +109,8 @@ export function stableRegularFileBytes(
     const opened = fstatSync(descriptor);
     if (
       !fileStateMatches(initial, opened) ||
-      !singleLink(opened, requireSingleLink)
+      !singleLink(opened, requireSingleLink) ||
+      opened.size > maximumBytes
     ) {
       throw new Error(`${label} changed while opening: ${path}`);
     }
@@ -136,11 +145,7 @@ function directoryEntries(path, expectedEntries, label) {
 
 export function captureDirectorySnapshot(
   path,
-  {
-    repositoryRoot,
-    expectedEntries,
-    label = "Agentic-QE directory",
-  },
+  { repositoryRoot, expectedEntries, label = "Agentic-QE directory" },
 ) {
   const { lexical } = checkedPath(repositoryRoot, path);
   rejectSymlinkComponents(repositoryRoot, lexical);

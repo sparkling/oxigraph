@@ -5,6 +5,7 @@ import {
   agenticDependencyEvidenceNames,
   agenticOracleBytes,
   agenticReceiptBytes,
+  agenticRuntimeContentHash,
   validateAgenticDependencyEvidence,
   validateAgenticOracle,
   validateAgenticReceipt,
@@ -58,6 +59,7 @@ function expectedAgenticProjection(
     oracleSha256: sha256(oracleBytes),
     contentHash: receipt.contentHash,
     executionHash: receipt.executionHash,
+    runtimeContentHash: agenticRuntimeContentHash(receipt.runtime),
     implementationContentHash: receipt.implementation.contentHash,
     artifactContentHash: receipt.artifacts.contentHash,
     archiveContentHash: receipt.artifacts.archive.contentHash,
@@ -136,6 +138,8 @@ export function verifySealedAgenticEvidence({
     expectedProfile: reviewed.profile,
     expectedAgenticQeVersion: dependency.version,
     expectedAgenticQeDependency: dependency,
+    expectedRuntimeContentHash:
+      compatibility.projection?.agenticQe?.runtimeContentHash,
     expectedCommandIds: reviewed.commandIds,
     expectedCommands: agenticCommands,
     minimumGeneratedAtMs: 0,
@@ -156,7 +160,9 @@ export function verifySealedAgenticEvidence({
   validateAgenticOracle(oracle, receipt, receiptBytes);
 
   const archive = receipt.artifacts.archive;
-  const expectedArchiveNames = archive.files.map((_, index) => archiveName(index));
+  const expectedArchiveNames = archive.files.map((_, index) =>
+    archiveName(index),
+  );
   const copiedArchiveNames = [...bytesByName.keys()]
     .filter((name) => /^agentic-archive-[0-9]{4}\.bin$/u.test(name))
     .sort();
@@ -227,7 +233,10 @@ export function verifySealedSemanticEvidence({
 }) {
   const qualificationBytes = bytesByName.get("semantic-qualification.json");
   const verificationBytes = bytesByName.get("semantic-verification.json");
-  if (!Buffer.isBuffer(qualificationBytes) || !Buffer.isBuffer(verificationBytes)) {
+  if (
+    !Buffer.isBuffer(qualificationBytes) ||
+    !Buffer.isBuffer(verificationBytes)
+  ) {
     throw new Error("copied MetaHarness publication is incomplete");
   }
   const qualification = parseJson(

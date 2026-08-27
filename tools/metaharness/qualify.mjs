@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 import {
+  agenticRuntimeContentHash,
   implementationSnapshot as agenticImplementationSnapshot,
   readAgenticFileBytes,
   validateAgenticArtifactArchive,
   validateAgenticPublication,
   validateAgenticReceipt,
 } from "../agentic-qe/evidence.mjs";
+import { agenticRuntimeProvenance } from "../agentic-qe/execution-provenance.mjs";
 import {
   commands as agenticCommands,
   profiles as agenticProfiles,
@@ -96,11 +98,7 @@ function cleanOutput(name) {
 
 function stableScore(score) {
   if (!score) return null;
-  const {
-    variantId: _variantId,
-    reason: _reason,
-    ...stable
-  } = score;
+  const { variantId: _variantId, reason: _reason, ...stable } = score;
   return stable;
 }
 
@@ -203,10 +201,16 @@ async function runRealGate() {
     const publication = validateAgenticPublication(candidate);
     const value = publication.receipt;
     const selected = agenticProfiles[semanticProfile];
+    const expectedRuntime = await agenticRuntimeProvenance(
+      selected,
+      agenticCommands,
+      agenticQeDependency.version,
+    );
     validateAgenticReceipt(value, {
       expectedProfile: semanticProfile,
       expectedAgenticQeVersion: agenticQeDependency.version,
       expectedAgenticQeDependency: agenticQeDependency,
+      expectedRuntime,
       expectedCommandIds: selected,
       expectedCommands: agenticCommands,
       minimumGeneratedAtMs: gateStartedAtMs,
@@ -226,7 +230,9 @@ async function runRealGate() {
       value.publication.receiptPath !== paths.receipt ||
       value.publication.oraclePath !== paths.oracle
     ) {
-      throw new Error("semantic gate publication paths differ from the receipt");
+      throw new Error(
+        "semantic gate publication paths differ from the receipt",
+      );
     }
     if (!publication.receiptBytes.equals(bytes)) {
       throw new Error("semantic gate immutable publication bytes drifted");
@@ -239,6 +245,7 @@ async function runRealGate() {
       generatedAt: value.generatedAt,
       contentHash: value.contentHash,
       executionHash: value.executionHash,
+      runtimeContentHash: agenticRuntimeContentHash(expectedRuntime),
       oraclePath: paths.oracle,
       oracleSha256: sha256(publication.oracleBytes),
       implementationContentHash: value.implementation?.contentHash ?? null,

@@ -1,31 +1,37 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { TextDecoder } from "node:util";
 import { scrubbedChildEnvironment } from "../child-environment.mjs";
+import {
+  countCargoPassedTests,
+  normalizeCargoTestObservation,
+  parseCargoTestSummaries,
+} from "./native-test-contract.mjs";
+import {
+  nodeSummaryFields,
+  nodeTestDuration,
+  nodeTestPlan,
+  nodeTestSummary,
+  normalizeNodeTestSummary,
+  parseNodeTestSummary,
+} from "./node-test-contract.mjs";
 import { repoRoot } from "./path-policy.mjs";
 
-const cargoTestSummary =
-  /^test result: (?:ok|FAILED)\. (\d+) passed; \d+ failed; \d+ ignored; \d+ measured; \d+ filtered out; finished in (?:\d+(?:\.\d+)?|\.\d+)s$/;
-const nodeTestPlan = /^1\.\.(\d+)$/;
-const nodeTestSummary = /^# (tests|suites|pass|fail|cancelled|skipped|todo) (\d+)$/;
-const nodeTestDuration = /^# duration_ms (\d+(?:\.\d+)?)$/;
-const nodeSummaryFields = [
-  "tests",
-  "suites",
-  "pass",
-  "fail",
-  "cancelled",
-  "skipped",
-  "todo",
-];
+const MAX_CAPTURED_OUTPUT_BYTES = 64 * 1024 * 1024;
+const MAX_SCANNER_LINE_BYTES = 65_536;
+const MAX_CARGO_TEST_IDS = 16_384;
+const MAX_CARGO_TEST_ID_BYTES = 4_096;
+const MAX_CARGO_TEST_ID_TOTAL_BYTES = 4 * 1024 * 1024;
+const MAX_CARGO_SUMMARIES = 4_096;
+const MAX_DUPLICATE_MARKERS = 2;
+const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 
 function tail(value, max = 65536) {
   return value.length <= max ? value : value.slice(value.length - max);
 }
 
 function quoteForDisplay(value) {
-  return /^[A-Za-z0-9_./:@=-]+$/.test(value)
-    ? value
-    : JSON.stringify(value);
+  return /^[A-Za-z0-9_./:@=-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 function signalTree(child, signal) {
@@ -45,23 +51,61 @@ function signalTree(child, signal) {
 }
 
 export async function execute(program, args, options = {}) {
+  const captureOutputBytes = options.captureOutputBytes;
+  const outputLimitBytes = captureOutputBytes ?? MAX_CAPTURED_OUTPUT_BYTES;
+  const retainedOutputCharacters =
+    options.retainCompleteOutput === true ? outputLimitBytes : 65_536;
+  const retainOutput = (value) => tail(value, retainedOutputCharacters);
+  const terminationGraceMs =
+    options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS;
+  if (
+    options.inheritEnvironment !== undefined &&
+    typeof options.inheritEnvironment !== "boolean"
+  ) {
+    throw new Error("process environment inheritance policy is invalid");
+  }
+  if (
+    captureOutputBytes !== undefined &&
+    (!Number.isSafeInteger(captureOutputBytes) ||
+      captureOutputBytes < 1 ||
+      captureOutputBytes > MAX_CAPTURED_OUTPUT_BYTES)
+  ) {
+    throw new Error("captured process output ceiling is invalid");
+  }
+  if (
+    !Number.isSafeInteger(terminationGraceMs) ||
+    terminationGraceMs < 1 ||
+    terminationGraceMs > DEFAULT_TERMINATION_GRACE_MS
+  ) {
+    throw new Error("process termination grace period is invalid");
+  }
   const started = Date.now();
   let stdout = "";
   let stderr = "";
   let stdoutBytes = 0;
   let stderrBytes = 0;
+  let outputLimitExceeded = false;
+  let scanLimitExceeded = false;
+  let scanFailureReason = null;
+  let acceptingOutput = true;
+  const capturedStdout = [];
+  const capturedStderr = [];
   const stdoutHash = createHash("sha256");
   const stderrHash = createHash("sha256");
   const cargoTestScan = {
     stdout: "",
     stderr: "",
-    passed: 0,
+    summaries: [],
+    sequence: { stdout: 0, stderr: 0 },
+    lastNonemptySequence: { stdout: 0, stderr: 0 },
+    lastSummarySequence: { stdout: 0, stderr: 0 },
   };
   const cargoTestIdScan = options.captureCargoTestIds
     ? {
         stdout: "",
         stderr: "",
         ids: [],
+        totalBytes: 0,
       }
     : null;
   const nodeTestScan = {
@@ -74,132 +118,341 @@ export async function execute(program, args, options = {}) {
   const display = [program, ...args].map(quoteForDisplay).join(" ");
   if (options.announce !== false) console.log(`\n$ ${display}`);
 
-  const scanCargoTestOutput = (stream, text, flush = false) => {
-    cargoTestScan[stream] += text;
-    const lines = cargoTestScan[stream].split(/\r?\n/);
-    if (!flush) cargoTestScan[stream] = lines.pop() ?? "";
-    for (const line of lines) {
-      const match = cargoTestSummary.exec(line);
-      if (match) cargoTestScan.passed += Number.parseInt(match[1], 10);
+  const failScan = (reason) => {
+    scanLimitExceeded = true;
+    if (scanFailureReason === null) scanFailureReason = reason;
+  };
+
+  const scanLines = (scan, stream, text, onLine, flush = false) => {
+    if (scanLimitExceeded) {
+      scan[stream] = "";
+      return;
     }
-    if (flush) cargoTestScan[stream] = "";
+    const lines = `${scan[stream]}${text}`.split(/\r?\n/u);
+    if (!flush) {
+      const fragment = lines.pop() ?? "";
+      if (Buffer.byteLength(fragment, "utf8") > MAX_SCANNER_LINE_BYTES) {
+        failScan("unterminated-scanner-fragment-limit");
+        scan[stream] = "";
+        return;
+      }
+      scan[stream] = fragment;
+    }
+    for (const line of lines) {
+      if (Buffer.byteLength(line, "utf8") > MAX_SCANNER_LINE_BYTES) {
+        failScan("scanner-line-limit");
+        break;
+      }
+      onLine(line);
+      if (scanLimitExceeded) break;
+    }
+    if (flush) scan[stream] = "";
+  };
+
+  const pushDuplicateMarker = (values, value) => {
+    if (values.length < MAX_DUPLICATE_MARKERS) values.push(value);
+    else failScan("duplicate-node-summary-limit");
+  };
+
+  const scanCargoTestOutput = (stream, text, flush = false) => {
+    scanLines(
+      cargoTestScan,
+      stream,
+      text,
+      (line) => {
+        if (line.length > 0) {
+          cargoTestScan.sequence[stream] += 1;
+          cargoTestScan.lastNonemptySequence[stream] =
+            cargoTestScan.sequence[stream];
+        }
+        for (const summary of parseCargoTestSummaries(line)) {
+          if (cargoTestScan.summaries.length >= MAX_CARGO_SUMMARIES) {
+            failScan("cargo-summary-count-limit");
+            return;
+          }
+          const counts = [
+            summary.passed,
+            summary.failed,
+            summary.ignored,
+            summary.measured,
+            summary.filteredOut,
+          ];
+          if (counts.some((count) => !Number.isSafeInteger(count))) {
+            failScan("cargo-summary-integer-limit");
+            return;
+          }
+          cargoTestScan.summaries.push({ ...summary, stream });
+          cargoTestScan.lastSummarySequence[stream] =
+            cargoTestScan.sequence[stream];
+        }
+      },
+      flush,
+    );
   };
   const scanCargoTestIds = (stream, text, flush = false) => {
     if (cargoTestIdScan === null) return;
-    cargoTestIdScan[stream] += text;
-    const lines = cargoTestIdScan[stream].split(/\r?\n/);
-    if (!flush) cargoTestIdScan[stream] = lines.pop() ?? "";
-    for (const line of lines) {
-      const match = /^(\S(?:.*\S)?): test$/.exec(line);
-      if (match) cargoTestIdScan.ids.push(match[1]);
-    }
-    if (flush) cargoTestIdScan[stream] = "";
+    scanLines(
+      cargoTestIdScan,
+      stream,
+      text,
+      (line) => {
+        const match = /^(\S(?:.*\S)?): test$/u.exec(line);
+        if (match === null) return;
+        const idBytes = Buffer.byteLength(match[1], "utf8");
+        if (idBytes > MAX_CARGO_TEST_ID_BYTES) {
+          failScan("cargo-test-id-byte-limit");
+        } else if (cargoTestIdScan.ids.length >= MAX_CARGO_TEST_IDS) {
+          failScan("cargo-test-id-count-limit");
+        } else if (
+          cargoTestIdScan.totalBytes + idBytes >
+          MAX_CARGO_TEST_ID_TOTAL_BYTES
+        ) {
+          failScan("cargo-test-id-total-byte-limit");
+        } else {
+          cargoTestIdScan.ids.push(match[1]);
+          cargoTestIdScan.totalBytes += idBytes;
+        }
+      },
+      flush,
+    );
   };
   const scanNodeTestOutput = (text, flush = false) => {
-    nodeTestScan.stdout += text;
-    const lines = nodeTestScan.stdout.split(/\r?\n/);
-    if (!flush) nodeTestScan.stdout = lines.pop() ?? "";
-    for (const line of lines) {
-      if (line.length > 0) {
-        nodeTestScan.lastNonemptyLines.push(line);
-        if (nodeTestScan.lastNonemptyLines.length > 9) {
-          nodeTestScan.lastNonemptyLines.shift();
+    scanLines(
+      nodeTestScan,
+      "stdout",
+      text,
+      (line) => {
+        if (line.length > 0) {
+          nodeTestScan.lastNonemptyLines.push(line);
+          if (nodeTestScan.lastNonemptyLines.length > 9) {
+            nodeTestScan.lastNonemptyLines.shift();
+          }
         }
-      }
-      const plan = nodeTestPlan.exec(line);
-      if (plan) {
-        nodeTestScan.plans.push(Number.parseInt(plan[1], 10));
-        continue;
-      }
-      const summary = nodeTestSummary.exec(line);
-      if (summary) {
-        nodeTestScan.values[summary[1]].push(
-          Number.parseInt(summary[2], 10),
-        );
-        continue;
-      }
-      const duration = nodeTestDuration.exec(line);
-      if (duration) nodeTestScan.durations.push(Number.parseFloat(duration[1]));
+        const plan = nodeTestPlan.exec(line);
+        if (plan) {
+          pushDuplicateMarker(nodeTestScan.plans, Number.parseInt(plan[1], 10));
+          return;
+        }
+        const summary = nodeTestSummary.exec(line);
+        if (summary) {
+          pushDuplicateMarker(
+            nodeTestScan.values[summary[1]],
+            Number.parseInt(summary[2], 10),
+          );
+          return;
+        }
+        const duration = nodeTestDuration.exec(line);
+        if (duration) {
+          pushDuplicateMarker(
+            nodeTestScan.durations,
+            Number.parseFloat(duration[1]),
+          );
+        }
+      },
+      flush,
+    );
+  };
+
+  const scannerDecoders = {
+    stdout: new TextDecoder("utf-8", { fatal: true }),
+    stderr: new TextDecoder("utf-8", { fatal: true }),
+  };
+  const decoderFailed = { stdout: false, stderr: false };
+  const decodeScannerText = (stream, chunk, flush = false) => {
+    if (decoderFailed[stream]) return "";
+    try {
+      return scannerDecoders[stream].decode(chunk, { stream: !flush });
+    } catch {
+      decoderFailed[stream] = true;
+      failScan("invalid-or-incomplete-utf8");
+      return "";
     }
-    if (flush) nodeTestScan.stdout = "";
+  };
+  const scanDecodedOutput = (stream, text, flush = false) => {
+    scanCargoTestOutput(stream, text, flush);
+    scanCargoTestIds(stream, text, flush);
+    if (stream === "stdout") scanNodeTestOutput(text, flush);
   };
 
   const result = await new Promise((resolvePromise) => {
     let settled = false;
     let timedOut = false;
+    let terminationStarted = false;
+    let terminationReason = null;
+    let terminationSignalError = null;
+    let terminationCloseResult = null;
     let timeoutHandle;
     let forceKillHandle;
     const child = spawn(program, args, {
       cwd: options.cwd ?? repoRoot,
-      env: scrubbedChildEnvironment(options.env),
+      env: scrubbedChildEnvironment(
+        options.env,
+        options.inheritEnvironment === false ? {} : process.env,
+      ),
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const stopOutputStreams = () => {
+      acceptingOutput = false;
+      child.stdout.removeAllListeners("data");
+      child.stderr.removeAllListeners("data");
+      child.stdout.destroy();
+      child.stderr.destroy();
+    };
     const settle = (value) => {
       if (settled) return;
       settled = true;
+      acceptingOutput = false;
       clearTimeout(timeoutHandle);
       clearTimeout(forceKillHandle);
       resolvePromise(value);
     };
+    const beginTermination = (reason) => {
+      if (terminationStarted) return;
+      terminationStarted = true;
+      terminationReason = reason;
+      acceptingOutput = false;
+      if (reason === "output-limit") {
+        outputLimitExceeded = true;
+        clearTimeout(timeoutHandle);
+      } else {
+        timedOut = true;
+      }
+      try {
+        signalTree(child, "SIGTERM");
+      } catch (error) {
+        terminationSignalError = error.message;
+      }
+      forceKillHandle = setTimeout(() => {
+        try {
+          signalTree(child, "SIGKILL");
+        } catch (error) {
+          terminationSignalError ??= error.message;
+        }
+        stopOutputStreams();
+        settle({
+          code: terminationCloseResult?.code ?? null,
+          signal: terminationCloseResult?.signal ?? "SIGKILL",
+          spawnError: terminationCloseResult?.spawnError ?? null,
+          timedOut,
+          cleanupUnconfirmed: true,
+          terminationReason,
+          terminationSignalError,
+          killAttempted: true,
+        });
+      }, terminationGraceMs);
+    };
+    const captureChunk = (chunks, chunk) => {
+      if (!acceptingOutput) return null;
+      const remaining = outputLimitBytes - stdoutBytes - stderrBytes;
+      if (chunk.length <= remaining) {
+        if (captureOutputBytes !== undefined) chunks.push(Buffer.from(chunk));
+        return chunk;
+      }
+      const prefix = chunk.subarray(0, Math.max(remaining, 0));
+      if (captureOutputBytes !== undefined && remaining > 0) {
+        chunks.push(Buffer.from(prefix));
+      }
+      beginTermination("output-limit");
+      return prefix;
+    };
     if (options.timeoutMs !== undefined) {
       timeoutHandle = setTimeout(() => {
-        timedOut = true;
-        signalTree(child, "SIGTERM");
-        forceKillHandle = setTimeout(() => signalTree(child, "SIGKILL"), 5_000);
-        forceKillHandle.unref();
+        beginTermination("timeout");
       }, options.timeoutMs);
       timeoutHandle.unref();
     }
     child.stdout.on("data", (chunk) => {
-      stdoutBytes += chunk.length;
-      stdoutHash.update(chunk);
-      const text = chunk.toString();
-      scanCargoTestOutput("stdout", text);
-      scanCargoTestIds("stdout", text);
-      scanNodeTestOutput(text);
-      stdout = tail(stdout + text);
+      if (!acceptingOutput) return;
+      const observed = captureChunk(capturedStdout, chunk);
+      if (observed === null || observed.length === 0) return;
+      stdoutBytes += observed.length;
+      stdoutHash.update(observed);
+      const text = decodeScannerText("stdout", observed);
+      if (!outputLimitExceeded) {
+        scanDecodedOutput("stdout", text);
+      }
+      stdout = retainOutput(stdout + text);
       if (!options.quiet) process.stdout.write(text);
     });
     child.stderr.on("data", (chunk) => {
-      stderrBytes += chunk.length;
-      stderrHash.update(chunk);
-      const text = chunk.toString();
-      scanCargoTestOutput("stderr", text);
-      scanCargoTestIds("stderr", text);
-      stderr = tail(stderr + text);
+      if (!acceptingOutput) return;
+      const observed = captureChunk(capturedStderr, chunk);
+      if (observed === null || observed.length === 0) return;
+      stderrBytes += observed.length;
+      stderrHash.update(observed);
+      const text = decodeScannerText("stderr", observed);
+      if (!outputLimitExceeded) {
+        scanDecodedOutput("stderr", text);
+      }
+      stderr = retainOutput(stderr + text);
       if (!options.quiet) process.stderr.write(text);
     });
     child.on("error", (error) => {
-      stderr = tail(`${stderr}\n${error.message}`);
-      settle({
+      stderr = retainOutput(`${stderr}\n${error.message}`);
+      const failure = {
         code: null,
         signal: null,
         spawnError: error.message,
         timedOut,
-      });
+        cleanupUnconfirmed: terminationStarted,
+        terminationReason,
+        terminationSignalError,
+      };
+      if (terminationStarted) terminationCloseResult = failure;
+      else settle(failure);
     });
     child.on("close", (code, signal) => {
-      if (timedOut) signalTree(child, "SIGKILL");
-      settle({ code, signal, spawnError: null, timedOut });
+      const closed = {
+        code,
+        signal,
+        spawnError: null,
+        timedOut,
+        cleanupUnconfirmed: terminationStarted,
+        terminationReason,
+        terminationSignalError,
+      };
+      if (terminationStarted) terminationCloseResult = closed;
+      else settle(closed);
     });
   });
-  scanCargoTestOutput("stdout", "", true);
-  scanCargoTestOutput("stderr", "", true);
-  scanCargoTestIds("stdout", "", true);
-  scanCargoTestIds("stderr", "", true);
-  scanNodeTestOutput("", true);
+  for (const stream of ["stdout", "stderr"]) {
+    const finalText = decodeScannerText(stream, new Uint8Array(), true);
+    scanDecodedOutput(stream, finalText, true);
+    if (stream === "stdout") stdout = retainOutput(stdout + finalText);
+    else stderr = retainOutput(stderr + finalText);
+    if (!options.quiet && finalText.length > 0) {
+      if (stream === "stdout") process.stdout.write(finalText);
+      else process.stderr.write(finalText);
+    }
+  }
+  const cargoObservation = normalizeCargoTestObservation(
+    cargoTestScan.summaries,
+    cargoTestScan.summaries.length > 0 &&
+      cargoTestScan.lastSummarySequence.stdout ===
+        cargoTestScan.lastNonemptySequence.stdout,
+    "stream",
+  );
 
-  return {
+  const processResult = {
     display,
     code: result.code,
     signal: result.signal,
     spawnError: result.spawnError,
     timedOut: result.timedOut,
+    cleanupUnconfirmed: result.cleanupUnconfirmed ?? false,
+    terminationReason: result.terminationReason ?? null,
+    terminationSignalError: result.terminationSignalError ?? null,
+    killAttempted: result.killAttempted ?? false,
+    outputLimitExceeded,
+    outputLimitBytes,
+    scanLimitExceeded,
+    scanFailureReason,
     timeoutMs: options.timeoutMs ?? null,
     durationMs: Date.now() - started,
-    observedPassedTests: cargoTestScan.passed,
+    observedPassedTests: cargoObservation.totals.passed,
+    observedCargoTestSummary: cargoObservation,
     ...(cargoTestIdScan === null
       ? {}
       : { observedCargoTestIds: cargoTestIdScan.ids.sort() }),
@@ -210,92 +463,56 @@ export async function execute(program, args, options = {}) {
       stdoutSha256: stdoutHash.digest("hex"),
       stderrSha256: stderrHash.digest("hex"),
     },
+    ...(captureOutputBytes === undefined
+      ? {}
+      : {
+          capturedOutput: {
+            limitBytes: captureOutputBytes,
+            stdout: Buffer.concat(capturedStdout),
+            stderr: Buffer.concat(capturedStderr),
+          },
+        }),
     stdoutTail: stdout,
     stderrTail: stderr,
   };
-}
-
-function cargoPassedTests(output) {
-  let passed = 0;
-  for (const line of output.split(/\r?\n/)) {
-    const match = cargoTestSummary.exec(line);
-    if (match) passed += Number.parseInt(match[1], 10);
+  if (processResult.cleanupUnconfirmed) {
+    const error = new Error(
+      `process cleanup cannot be confirmed after ${processResult.terminationReason}`,
+    );
+    error.code = "PROCESS_CLEANUP_UNCONFIRMED";
+    error.processResult = processResult;
+    throw error;
   }
-  return passed;
+  return processResult;
 }
 
-export function countCargoPassedTests(output) {
-  return cargoPassedTests(output);
-}
+export { countCargoPassedTests };
 
-function normalizeNodeTestSummary(scan) {
-  const value = (values) => values.length === 1 ? values[0] : null;
-  const result = {
-    plan: value(scan.plans),
-    durationMs: value(scan.durations),
-    duplicateOrMissing:
-      scan.plans.length !== 1 || scan.durations.length !== 1,
-  };
-  for (const field of nodeSummaryFields) {
-    result[field] = value(scan.values[field]);
-    if (scan.values[field].length !== 1) result.duplicateOrMissing = true;
-  }
-  const terminal = scan.lastNonemptyLines ?? [];
-  const expectedTerminal = [
-    `1..${result.plan}`,
-    `# tests ${result.tests}`,
-    `# suites ${result.suites}`,
-    `# pass ${result.pass}`,
-    `# fail ${result.fail}`,
-    `# cancelled ${result.cancelled}`,
-    `# skipped ${result.skipped}`,
-    `# todo ${result.todo}`,
-    `# duration_ms ${result.durationMs}`,
+function cargoObservationFromTails(result) {
+  const stdout = result.stdoutTail ?? "";
+  const stderr = result.stderrTail ?? "";
+  const summaries = [
+    ...parseCargoTestSummaries(stdout).map((summary) => ({
+      ...summary,
+      stream: "stdout",
+    })),
+    ...parseCargoTestSummaries(stderr).map((summary) => ({
+      ...summary,
+      stream: "stderr",
+    })),
   ];
-  result.terminal =
-    terminal.length === expectedTerminal.length &&
-    terminal.every((line, index) => line === expectedTerminal[index]);
-  result.summaryBlockCount =
-    result.terminal && !result.duplicateOrMissing ? 1 : 0;
-  result.conserved =
-    result.tests ===
-    result.pass +
-      result.fail +
-      result.cancelled +
-      result.skipped +
-      result.todo;
-  return result;
+  const nonemptyStdout = stdout
+    .split(/\r?\n/u)
+    .filter((line) => line.length > 0);
+  const terminalLine = nonemptyStdout.at(-1) ?? "";
+  return normalizeCargoTestObservation(
+    summaries,
+    parseCargoTestSummaries(terminalLine).length === 1,
+    "bounded-tail-compatibility",
+  );
 }
 
-export function parseNodeTestSummary(output) {
-  const scan = {
-    plans: [],
-    durations: [],
-    lastNonemptyLines: [],
-    values: Object.fromEntries(nodeSummaryFields.map((field) => [field, []])),
-  };
-  for (const line of output.split(/\r?\n/)) {
-    if (line.length > 0) {
-      scan.lastNonemptyLines.push(line);
-      if (scan.lastNonemptyLines.length > 9) {
-        scan.lastNonemptyLines.shift();
-      }
-    }
-    const plan = nodeTestPlan.exec(line);
-    if (plan) {
-      scan.plans.push(Number.parseInt(plan[1], 10));
-      continue;
-    }
-    const summary = nodeTestSummary.exec(line);
-    if (summary) {
-      scan.values[summary[1]].push(Number.parseInt(summary[2], 10));
-      continue;
-    }
-    const duration = nodeTestDuration.exec(line);
-    if (duration) scan.durations.push(Number.parseFloat(duration[1]));
-  }
-  return normalizeNodeTestSummary(scan);
-}
+export { parseNodeTestSummary };
 
 export function applyCommandSafeguards(result, policy) {
   if (policy.expectedNodeTests !== undefined) {
@@ -304,6 +521,7 @@ export function applyCommandSafeguards(result, policy) {
       parseNodeTestSummary(`${result.stdoutTail}\n${result.stderrTail}`);
     const expectedSuites = policy.expectedNodeSuites ?? 0;
     const passed =
+      result.scanLimitExceeded !== true &&
       observed.duplicateOrMissing === false &&
       observed.terminal === true &&
       observed.summaryBlockCount === 1 &&
@@ -339,20 +557,46 @@ export function applyCommandSafeguards(result, policy) {
   }
   const observedPassedTests = Number.isInteger(result.observedPassedTests)
     ? result.observedPassedTests
-    : cargoPassedTests(`${result.stdoutTail}\n${result.stderrTail}`);
+    : countCargoPassedTests(
+        `${result.stdoutTail ?? ""}\n${result.stderrTail ?? ""}`,
+      );
+  const observed =
+    result.observedCargoTestSummary ?? cargoObservationFromTails(result);
+  const expectedSummaryCount = policy.expectedCargoSummaryCount ?? null;
   const minimumSatisfied =
     policy.minimumPassedTests === undefined ||
     observedPassedTests >= policy.minimumPassedTests;
   const exactSatisfied =
     policy.expectedPassedTests === undefined ||
     observedPassedTests === policy.expectedPassedTests;
+  const summaryCountSatisfied =
+    expectedSummaryCount === null
+      ? observed.summaryCount > 0
+      : observed.summaryCount === expectedSummaryCount;
+  const inventoryConserved =
+    policy.expectedPassedTests === undefined ||
+    observed.outcomeCount === policy.expectedPassedTests;
   return {
     ...result,
     testSafeguard: {
+      format: "cargo-libtest-v1",
       minimumPassedTests: policy.minimumPassedTests ?? null,
       expectedPassedTests: policy.expectedPassedTests ?? null,
       observedPassedTests,
-      passed: minimumSatisfied && exactSatisfied,
+      expectedSummaryCount,
+      observedSummaryCount: observed.summaryCount,
+      observed,
+      passed:
+        result.scanLimitExceeded !== true &&
+        observed.countsSafe === true &&
+        observed.allSuccessful === true &&
+        observed.allOnStdout === true &&
+        observed.terminal === true &&
+        summaryCountSatisfied &&
+        inventoryConserved &&
+        observed.totals.passed === observedPassedTests &&
+        minimumSatisfied &&
+        exactSatisfied,
     },
   };
 }
@@ -360,7 +604,12 @@ export function applyCommandSafeguards(result, policy) {
 export function commandPassed(result) {
   return (
     result.code === 0 &&
+    result.signal === null &&
+    result.spawnError === null &&
     result.timedOut === false &&
+    result.cleanupUnconfirmed !== true &&
+    result.outputLimitExceeded !== true &&
+    result.scanLimitExceeded !== true &&
     result.testSafeguard?.passed !== false
   );
 }
@@ -377,6 +626,12 @@ export function validateCommand(id, program, args, policy) {
     policy.timeoutMs <= 0
   ) {
     throw new Error(`${id}: invalid command or timeout`);
+  }
+  if (
+    policy.requireCompleteOutputReplay !== undefined &&
+    typeof policy.requireCompleteOutputReplay !== "boolean"
+  ) {
+    throw new Error(`${id}: invalid complete-output replay policy`);
   }
   if (policy.expectedNodeTests !== undefined) {
     if (
@@ -407,6 +662,14 @@ export function validateCommand(id, program, args, policy) {
       policy.expectedPassedTests < policy.minimumPassedTests)
   ) {
     throw new Error(`${id}: invalid exact test safeguard`);
+  }
+  if (
+    policy.expectedCargoSummaryCount !== undefined &&
+    (!Number.isSafeInteger(policy.expectedCargoSummaryCount) ||
+      policy.expectedCargoSummaryCount < 1 ||
+      policy.expectedCargoSummaryCount > MAX_CARGO_SUMMARIES)
+  ) {
+    throw new Error(`${id}: invalid Cargo summary-count safeguard`);
   }
   if (policy.expectedTestIds !== undefined) {
     if (

@@ -23,6 +23,7 @@ import {
   agenticReceiptContentHash,
   agenticReceiptExecutionHash,
   agenticReceiptBytes,
+  agenticRuntimeContentHash,
   archiveOutputArtifacts,
   implementationManifestsEqual,
   outputArtifacts,
@@ -31,7 +32,9 @@ import {
   validateAgenticReceipt,
   validateAgenticOracle,
 } from "./evidence.mjs";
+import { stableRegularFileBytes } from "./file-safety.mjs";
 import { validateAgenticDependencyEvidence } from "./receipt-contract.mjs";
+import { parseNodeTestSummary } from "./node-test-contract.mjs";
 import {
   createImplementationManifest,
   implementationContentHash,
@@ -91,7 +94,10 @@ test("canonical evidence paths cannot escape through a file symlink", (context) 
     mkdirSync(join(localRoot, "nested"));
     const lexical = join(localRoot, "nested", "evidence.json");
     symlinkSync(externalFile, lexical, "file");
-    assert.throws(() => canonicalInside(repoRoot, lexical), /escapes allowed root/);
+    assert.throws(
+      () => canonicalInside(repoRoot, lexical),
+      /escapes allowed root/,
+    );
   } finally {
     rmSync(localRoot, { recursive: true, force: true });
     rmSync(externalRoot, { recursive: true, force: true });
@@ -102,6 +108,14 @@ test("generated artifacts are cleared only below a canonical target directory", 
   try {
     const output = join(directory, "receipt.json");
     writeFileSync(output, "stale\n");
+    assert.throws(
+      () =>
+        stableRegularFileBytes(output, {
+          repositoryRoot: repoRoot,
+          maximumBytes: 1,
+        }),
+      /regular file/u,
+    );
     assert.equal(prepareGeneratedOutput(relative(repoRoot, output)), output);
     assert.throws(() => readFileSync(output), /ENOENT/);
     assert.throws(
@@ -173,10 +187,7 @@ test("generated artifacts are cleared only below a canonical target directory", 
       leasePath,
       '{"schemaVersion":1,"token":"replacement","pid":0}\n',
     );
-    assert.throws(
-      () => guarded.release(),
-      /not owned by this process/,
-    );
+    assert.throws(() => guarded.release(), /not owned by this process/);
     assert.equal(readFileSync(leasePath, "utf8").includes("replacement"), true);
     rmSync(leasePath);
   } finally {
@@ -197,11 +208,7 @@ test("generated artifact evidence rejects a post-command symlink", (context) => 
     writeFileSync(source, "{}\n");
     writeFileSync(output, '{"passed":true}\n');
     const commandMap = {
-      probe: [
-        "node",
-        [],
-        { outputPaths: [relative(repoRoot, output)] },
-      ],
+      probe: ["node", [], { outputPaths: [relative(repoRoot, output)] }],
     };
     const artifact = outputArtifacts(["probe"], commandMap);
     assert.equal(artifact.complete, true);
@@ -211,14 +218,10 @@ test("generated artifact evidence rejects a post-command symlink", (context) => 
       profile,
       artifacts: { ...artifact, archive },
     };
-    assert.doesNotThrow(() =>
-      validateAgenticArtifactArchive(archivedReceipt),
-    );
+    assert.doesNotThrow(() => validateAgenticArtifactArchive(archivedReceipt));
     assertArchiveHardening(archivedReceipt, validateAgenticArtifactArchive);
     writeFileSync(output, '{"passed":false}\n');
-    assert.doesNotThrow(() =>
-      validateAgenticArtifactArchive(archivedReceipt),
-    );
+    assert.doesNotThrow(() => validateAgenticArtifactArchive(archivedReceipt));
     writeFileSync(join(repoRoot, archive.files[0].path), "tampered\n");
     assert.throws(
       () => validateAgenticArtifactArchive(archivedReceipt),
@@ -227,10 +230,7 @@ test("generated artifact evidence rejects a post-command symlink", (context) => 
 
     unlinkSync(output);
     symlinkSync(source, output, "file");
-    const invalid = outputArtifacts(
-      ["probe"],
-      commandMap,
-    );
+    const invalid = outputArtifacts(["probe"], commandMap);
     assert.equal(invalid.complete, false);
     assert.deepEqual(invalid.invalidPaths, [relative(repoRoot, output)]);
   } finally {
@@ -257,7 +257,7 @@ test("receipt verification recomputes content and execution hashes", () => {
   const runId = "00000000-0000-4000-8000-000000000000";
   const publicationRoot = `target/agentic-qe/test-profile/runs/${runId}`;
   const receipt = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     runId,
     adapter: "oxigraph-agentic-qe",
     agenticQeVersion: "1.2.3",
@@ -281,9 +281,31 @@ test("receipt verification recomputes content and execution hashes", () => {
     },
     runtime: [
       {
+        program: "agentic-qe",
+        context: "host",
+        invokedPath: "/repo/tools/agentic-qe/node_modules/.bin/aqe",
+        path: "/repo/tools/agentic-qe/node_modules/agentic-qe/dist/cli.js",
+        executableSha256: "d".repeat(64),
+        versionStdout: "1.2.3",
+        versionStderr: "",
+      },
+      {
+        program: "git",
+        context: "host",
+        invokedPath: "/usr/bin/git",
+        path: "/usr/bin/git",
+        executableSha256: "f".repeat(64),
+        versionStdout: "git version 2.51.0",
+        versionStderr: "",
+      },
+      {
         program: "node",
         context: "host",
+        invokedPath: "/usr/bin/node",
+        path: "/usr/bin/node",
         executableSha256: "e".repeat(64),
+        versionStdout: "v24.7.0",
+        versionStderr: "",
       },
     ],
     commands: [
@@ -295,14 +317,24 @@ test("receipt verification recomputes content and execution hashes", () => {
         signal: null,
         spawnError: null,
         timedOut: false,
+        cleanupUnconfirmed: false,
+        terminationReason: null,
+        terminationSignalError: null,
+        killAttempted: false,
+        outputLimitExceeded: false,
+        scanLimitExceeded: false,
+        scanFailureReason: null,
+        outputLimitBytes: 64 * 1024 * 1024,
         timeoutMs: 30_000,
         testInventory: null,
         output: {
           stdoutBytes: 1,
           stderrBytes: 0,
-          stdoutSha256: "f".repeat(64),
-          stderrSha256: "0".repeat(64),
+          stdoutSha256: createHash("sha256").update("x").digest("hex"),
+          stderrSha256: createHash("sha256").update("").digest("hex"),
         },
+        stdoutTail: "x",
+        stderrTail: "",
       },
     ],
     artifacts: {
@@ -335,6 +367,7 @@ test("receipt verification recomputes content and execution hashes", () => {
   const options = {
     expectedProfile: "test-profile",
     expectedAgenticQeVersion: "1.2.3",
+    expectedRuntime: structuredClone(receipt.runtime),
     expectedCommandIds: ["probe"],
     expectedCommands: {
       probe: ["node", ["--version"], { timeoutMs: 30_000 }],
@@ -342,6 +375,16 @@ test("receipt verification recomputes content and execution hashes", () => {
   };
 
   assert.doesNotThrow(() => validateAgenticReceipt(receipt, options));
+  const oversizedRetained = structuredClone(receipt);
+  const retainedChunk = "x".repeat(65_536);
+  oversizedRetained.commands = Array.from({ length: 513 }, () => ({
+    ...oversizedRetained.commands[0],
+    stdoutTail: retainedChunk,
+  }));
+  assert.throws(
+    () => validateAgenticReceipt(oversizedRetained, options),
+    /execution or hash contract/u,
+  );
   assert.equal(
     implementationManifestsEqual(
       receipt.implementation,
@@ -357,8 +400,7 @@ test("receipt verification recomputes content and execution hashes", () => {
     baselinePassed: true,
     contentHash: receipt.contentHash,
     executionHash: receipt.executionHash,
-    receiptSha256:
-      "0".repeat(64),
+    receiptSha256: "0".repeat(64),
   };
   oracle.receiptSha256 = createHash("sha256")
     .update(agenticReceiptBytes(receipt))
@@ -375,16 +417,15 @@ test("receipt verification recomputes content and execution hashes", () => {
       ),
     /exact receipt/,
   );
-  const manifestBytes = readFileSync(join(repoRoot, "tools/agentic-qe/package.json"));
+  const manifestBytes = readFileSync(
+    join(repoRoot, "tools/agentic-qe/package.json"),
+  );
   const lockfileBytes = readFileSync(
     join(repoRoot, "tools/agentic-qe/package-lock.json"),
   );
   const npmrcBytes = readFileSync(join(repoRoot, "tools/agentic-qe/.npmrc"));
   const installedPackageJsonBytes = readFileSync(
-    join(
-      repoRoot,
-      "tools/agentic-qe/node_modules/agentic-qe/package.json",
-    ),
+    join(repoRoot, "tools/agentic-qe/node_modules/agentic-qe/package.json"),
   );
   const lockfile = JSON.parse(lockfileBytes);
   const locked = lockfile.packages["node_modules/agentic-qe"];
@@ -448,8 +489,12 @@ test("receipt verification recomputes content and execution hashes", () => {
   );
   const unsafeIntegrity = "sha512-ZmFicmljYXRlZA==";
   const unsafeLockfile = structuredClone(lockfile);
-  unsafeLockfile.packages["node_modules/agentic-qe"].integrity = unsafeIntegrity;
-  const unsafeLockfileBytes = Buffer.from(JSON.stringify(unsafeLockfile), "utf8");
+  unsafeLockfile.packages["node_modules/agentic-qe"].integrity =
+    unsafeIntegrity;
+  const unsafeLockfileBytes = Buffer.from(
+    JSON.stringify(unsafeLockfile),
+    "utf8",
+  );
   assert.throws(
     () =>
       validateAgenticDependencyEvidence({
@@ -492,9 +537,150 @@ test("receipt verification recomputes content and execution hashes", () => {
     () => validateAgenticReceipt(fabricatedCommand, options),
     /execution or hash contract/,
   );
+  for (const [field, value] of [
+    ["cleanupUnconfirmed", true],
+    ["terminationReason", "timeout"],
+    ["terminationSignalError", "EPERM"],
+    ["killAttempted", true],
+    ["outputLimitExceeded", true],
+    ["scanLimitExceeded", true],
+    ["scanFailureReason", "invalid-or-incomplete-utf8"],
+  ]) {
+    const fabricatedLifecycle = structuredClone(receipt);
+    fabricatedLifecycle.commands[0][field] = value;
+    fabricatedLifecycle.contentHash =
+      agenticReceiptContentHash(fabricatedLifecycle);
+    fabricatedLifecycle.executionHash =
+      agenticReceiptExecutionHash(fabricatedLifecycle);
+    assert.throws(
+      () => validateAgenticReceipt(fabricatedLifecycle, options),
+      /execution or hash contract/u,
+    );
+  }
+  const fabricatedOutput = structuredClone(receipt);
+  fabricatedOutput.commands[0].output.stdoutSha256 = "9".repeat(64);
+  fabricatedOutput.contentHash = agenticReceiptContentHash(fabricatedOutput);
+  fabricatedOutput.executionHash =
+    agenticReceiptExecutionHash(fabricatedOutput);
+  assert.throws(
+    () => validateAgenticReceipt(fabricatedOutput, options),
+    /execution or hash contract/u,
+  );
+  const tapReceipt = structuredClone(receipt);
+  const tapOutput =
+    "TAP version 13\n" +
+    "# Subtest: probe\n" +
+    "ok 1 - probe\n" +
+    "1..1\n" +
+    "# tests 1\n" +
+    "# suites 0\n" +
+    "# pass 1\n" +
+    "# fail 0\n" +
+    "# cancelled 0\n" +
+    "# skipped 0\n" +
+    "# todo 0\n" +
+    "# duration_ms 1\n";
+  tapReceipt.commands[0].args = [
+    "--test",
+    "--test-reporter=tap",
+    "probe.test.mjs",
+  ];
+  tapReceipt.commands[0].stdoutTail = tapOutput;
+  tapReceipt.commands[0].output.stdoutBytes = Buffer.byteLength(tapOutput);
+  tapReceipt.commands[0].output.stdoutSha256 = createHash("sha256")
+    .update(tapOutput)
+    .digest("hex");
+  tapReceipt.commands[0].testSafeguard = {
+    format: "node-tap-v13",
+    minimumPassedTests: 1,
+    expectedPassedTests: 1,
+    observedPassedTests: 1,
+    expectedSuites: 0,
+    observed: parseNodeTestSummary(tapOutput),
+    passed: true,
+  };
+  const tapOptions = {
+    ...options,
+    expectedCommands: {
+      probe: [
+        "node",
+        ["--test", "--test-reporter=tap", "probe.test.mjs"],
+        {
+          timeoutMs: 30_000,
+          expectedNodeTests: 1,
+          expectedNodeSuites: 0,
+          requireCompleteOutputReplay: true,
+        },
+      ],
+    },
+  };
+  tapReceipt.contentHash = agenticReceiptContentHash(tapReceipt);
+  tapReceipt.executionHash = agenticReceiptExecutionHash(tapReceipt);
+  assert.doesNotThrow(() => validateAgenticReceipt(tapReceipt, tapOptions));
+  const fabricatedTap = structuredClone(tapReceipt);
+  fabricatedTap.commands[0].stdoutTail = "not TAP; no tests ran\n";
+  fabricatedTap.commands[0].output.stdoutBytes = Buffer.byteLength(
+    fabricatedTap.commands[0].stdoutTail,
+  );
+  fabricatedTap.commands[0].output.stdoutSha256 = createHash("sha256")
+    .update(fabricatedTap.commands[0].stdoutTail)
+    .digest("hex");
+  fabricatedTap.contentHash = agenticReceiptContentHash(fabricatedTap);
+  fabricatedTap.executionHash = agenticReceiptExecutionHash(fabricatedTap);
+  assert.throws(
+    () => validateAgenticReceipt(fabricatedTap, tapOptions),
+    /execution or hash contract/u,
+  );
+  const runtimeHashOptions = {
+    ...options,
+    expectedRuntime: undefined,
+    expectedRuntimeContentHash: agenticRuntimeContentHash(receipt.runtime),
+  };
+  assert.doesNotThrow(() =>
+    validateAgenticReceipt(receipt, runtimeHashOptions),
+  );
+  for (const mutateRuntime of [
+    (runtime) => {
+      runtime[0].program = "fabricated-runtime";
+    },
+    (runtime) => {
+      delete runtime[0].path;
+    },
+    (runtime) => {
+      Object.assign(runtime[2], {
+        invokedPath: "/tmp/attacker-node",
+        path: "/tmp/attacker-node",
+        executableSha256: "9".repeat(64),
+        versionStdout: "v999.0.0",
+      });
+    },
+    (runtime) => {
+      Object.assign(runtime[0], {
+        invokedPath: "/tmp/attacker-aqe",
+        path: "/tmp/attacker-aqe",
+        executableSha256: "8".repeat(64),
+      });
+    },
+  ]) {
+    const fabricatedRuntime = structuredClone(receipt);
+    mutateRuntime(fabricatedRuntime.runtime);
+    fabricatedRuntime.contentHash =
+      agenticReceiptContentHash(fabricatedRuntime);
+    fabricatedRuntime.executionHash =
+      agenticReceiptExecutionHash(fabricatedRuntime);
+    assert.throws(
+      () => validateAgenticReceipt(fabricatedRuntime, options),
+      /execution or hash contract/u,
+    );
+    assert.throws(
+      () => validateAgenticReceipt(fabricatedRuntime, runtimeHashOptions),
+      /execution or hash contract/u,
+    );
+  }
   const fabricatedManifest = structuredClone(receipt);
   fabricatedManifest.artifacts.algorithm = "not-sha256";
-  fabricatedManifest.contentHash = agenticReceiptContentHash(fabricatedManifest);
+  fabricatedManifest.contentHash =
+    agenticReceiptContentHash(fabricatedManifest);
   fabricatedManifest.executionHash =
     agenticReceiptExecutionHash(fabricatedManifest);
   assert.throws(
@@ -523,10 +709,7 @@ test("receipt verification recomputes content and execution hashes", () => {
       ],
     },
     {
-      files: [
-        { ...implementationFiles[0], bytes: -1 },
-        implementationFiles[1],
-      ],
+      files: [{ ...implementationFiles[0], bytes: -1 }, implementationFiles[1]],
     },
     {
       files: [
@@ -559,7 +742,11 @@ test("receipt verification recomputes content and execution hashes", () => {
     const authoritative = validateAgenticPublication(receipt);
     assert.deepEqual(authoritative.receipt, receipt);
     assert.deepEqual(authoritative.oracle, oracle);
-    assertPublicationHardening(receipt, publicationDirectory, validateAgenticPublication);
+    assertPublicationHardening(
+      receipt,
+      publicationDirectory,
+      validateAgenticPublication,
+    );
 
     if (process.platform !== "win32") {
       const fifoRunId = "00000000-0000-4000-8000-000000000001";

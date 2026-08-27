@@ -1,19 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  lstatSync,
-  readFileSync,
-  realpathSync,
-} from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import {
+  agenticRuntimeContentHash,
   validateAgenticArtifactArchive,
   validateAgenticPublication,
   validateAgenticReceipt,
 } from "../../../agentic-qe/evidence.mjs";
+import { agenticRuntimeProvenance } from "../../../agentic-qe/execution-provenance.mjs";
 import {
   agenticDependencyEvidenceNames,
   validateAgenticDependencyEvidence,
@@ -66,7 +63,8 @@ function boundedRegularFile(
   minBytes = 1,
 ) {
   const lexical = resolve(path);
-  if (!contained(root, lexical)) throw new Error(`${label} escapes its evidence root`);
+  if (!contained(root, lexical))
+    throw new Error(`${label} escapes its evidence root`);
   const metadata = lstatSync(lexical);
   if (
     metadata.isSymbolicLink() ||
@@ -77,7 +75,8 @@ function boundedRegularFile(
     throw new Error(`${label} is not a bounded regular file`);
   }
   const bytes = readFileSync(lexical);
-  if (bytes.length !== metadata.size) throw new Error(`${label} changed during read`);
+  if (bytes.length !== metadata.size)
+    throw new Error(`${label} changed during read`);
   return bytes;
 }
 
@@ -96,7 +95,9 @@ function expectedAgenticPassedTests(commandIds) {
     const policy = agenticCommands[id]?.[2];
     const expected = policy?.expectedPassedTests ?? policy?.expectedNodeTests;
     if (!Number.isSafeInteger(expected) || expected < 1) {
-      throw new Error(`G1.7 Agentic command has no exact test inventory: ${id}`);
+      throw new Error(
+        `G1.7 Agentic command has no exact test inventory: ${id}`,
+      );
     }
     return sum + expected;
   }, 0);
@@ -143,8 +144,13 @@ function staleAgentic(observedSha256) {
 export function verifyG17ImplementationFiles(receipt, root) {
   for (const file of receipt.implementation.files) {
     const path = resolve(root, file.path);
-    if (!contained(root, path) || relative(root, path).split(sep).includes("..")) {
-      throw new Error("Agentic implementation path escapes evidence repository");
+    if (
+      !contained(root, path) ||
+      relative(root, path).split(sep).includes("..")
+    ) {
+      throw new Error(
+        "Agentic implementation path escapes evidence repository",
+      );
     }
     const bytes = boundedRegularFile(
       path,
@@ -161,7 +167,9 @@ export function verifyG17ImplementationFiles(receipt, root) {
     sha256(JSON.stringify(receipt.implementation.files)) !==
     receipt.implementation.contentHash
   ) {
-    throw new Error("Agentic implementation manifest differs from its content hash");
+    throw new Error(
+      "Agentic implementation manifest differs from its content hash",
+    );
   }
 }
 
@@ -194,10 +202,16 @@ export async function inspectG17AgenticEvidence({
       repositoryRoot: root,
     });
     const receipt = publication.receipt;
+    const expectedRuntime = await agenticRuntimeProvenance(
+      profile.commandIds,
+      agenticCommands,
+      dependency.version,
+    );
     validateAgenticReceipt(receipt, {
       expectedProfile: profile.profile,
       expectedAgenticQeVersion: dependency.version,
       expectedAgenticQeDependency: dependency,
+      expectedRuntime,
       expectedCommandIds: profile.commandIds,
       expectedCommands: agenticCommands,
       minimumGeneratedAtMs: 0,
@@ -246,7 +260,9 @@ export async function inspectG17AgenticEvidence({
       receipt.repository?.worktreeDirty !== false ||
       realpathSync(receipt.repository.root) !== root
     ) {
-      throw new Error("Agentic receipt is not for the clean qualification subject");
+      throw new Error(
+        "Agentic receipt is not for the clean qualification subject",
+      );
     }
     verifyG17ImplementationFiles(receipt, root);
     const passedTests = receipt.commands.reduce(
@@ -292,7 +308,9 @@ export async function inspectG17AgenticEvidence({
         ),
       });
     }
-    artifacts.sort((left, right) => comparePortablePaths(left.name, right.name));
+    artifacts.sort((left, right) =>
+      comparePortablePaths(left.name, right.name),
+    );
     const projection = {
       status: "PASS",
       subjectCommit: receipt.repository.gitHead,
@@ -305,6 +323,7 @@ export async function inspectG17AgenticEvidence({
       oracleSha256: sha256(publication.oracleBytes),
       contentHash: receipt.contentHash,
       executionHash: receipt.executionHash,
+      runtimeContentHash: agenticRuntimeContentHash(expectedRuntime),
       implementationContentHash: receipt.implementation.contentHash,
       artifactContentHash: receipt.artifacts.contentHash,
       archiveContentHash: receipt.artifacts.archive.contentHash,
@@ -357,11 +376,22 @@ export async function inspectG17SemanticEvidence({
   executeCommand = execute,
 }) {
   const root = realpathSync(repoRoot);
-  const qualificationPath = join(root, "target", "metaharness", "qualification.json");
-  const verificationPath = join(root, "target", "metaharness", "verification.json");
+  const qualificationPath = join(
+    root,
+    "target",
+    "metaharness",
+    "qualification.json",
+  );
+  const verificationPath = join(
+    root,
+    "target",
+    "metaharness",
+    "verification.json",
+  );
   const missing = [];
   if (!existsSync(qualificationPath)) missing.push("full-qualification-absent");
-  if (!existsSync(verificationPath)) missing.push("independent-verification-absent");
+  if (!existsSync(verificationPath))
+    missing.push("independent-verification-absent");
   if (missing.length > 0) return missingSemantic(missing);
   const observed = Buffer.concat([
     boundedRegularFile(qualificationPath, root, "semantic qualification"),
@@ -393,7 +423,10 @@ export async function inspectG17SemanticEvidence({
     );
     const qualification = JSON.parse(qualificationBytes);
     const verification = JSON.parse(verificationBytes);
-    const darwin = darwinInstallationSnapshot(root, join(root, "tools", "metaharness"));
+    const darwin = darwinInstallationSnapshot(
+      root,
+      join(root, "tools", "metaharness"),
+    );
     const protectedContentHash = protectedSnapshot(root).contentHash;
     if (
       qualification.inputs?.after?.contentHash !== protectedContentHash ||
@@ -422,8 +455,14 @@ export async function inspectG17SemanticEvidence({
       reasons: Object.freeze([]),
       projection: Object.freeze(projection),
       artifacts: Object.freeze([
-        Object.freeze({ name: "semantic-qualification.json", bytes: qualificationBytes }),
-        Object.freeze({ name: "semantic-verification.json", bytes: verificationBytes }),
+        Object.freeze({
+          name: "semantic-qualification.json",
+          bytes: qualificationBytes,
+        }),
+        Object.freeze({
+          name: "semantic-verification.json",
+          bytes: verificationBytes,
+        }),
       ]),
     });
   } catch {
@@ -446,13 +485,14 @@ export async function collectG17CompatibilityEvidence(options) {
 }
 
 export function combineG17CompatibilityEvidence({ agenticQe, native }) {
-  const status = native.status === "FAIL"
-    ? "FAIL"
-    : agenticQe.status === "PASS" && native.status === "PASS"
-      ? "PASS"
-      : agenticQe.status === "STALE" || native.status === "STALE"
-        ? "STALE"
-        : "MISSING";
+  const status =
+    native.status === "FAIL"
+      ? "FAIL"
+      : agenticQe.status === "PASS" && native.status === "PASS"
+        ? "PASS"
+        : agenticQe.status === "STALE" || native.status === "STALE"
+          ? "STALE"
+          : "MISSING";
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status,

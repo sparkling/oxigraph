@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { localNodeModulesRoot } from "../dependency-policy.mjs";
 import {
+  cargoTestInventory,
   commandAuthority,
   parseCargoTestIds,
   runtimeProgramPlan,
@@ -41,6 +42,82 @@ test("Cargo inventory parser accepts only complete libtest inventory lines", () 
         requiredTestIds: ["missing"],
       }),
     /omit required sentinels: missing/,
+  );
+  assert.throws(
+    () =>
+      validateCargoTestIds("duplicates", ["alpha", "alpha"], {
+        expectedPassedTests: 2,
+      }),
+    (error) => error.code === "CARGO_TEST_INVENTORY_MISMATCH",
+  );
+});
+
+test("Cargo inventory honors the exact injected program, subject root, and output ceiling", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cargo-inventory-root-"));
+  try {
+    const result = await cargoTestInventory(
+      "injected-inventory",
+      ["-e", "process.stdout.write(`${process.cwd()}\\nalpha: test\\n`)"],
+      {
+        expectedPassedTests: 1,
+        expectedTestIds: ["alpha"],
+        timeoutMs: 1_000,
+      },
+      {
+        program: process.execPath,
+        cwd: root,
+        captureOutputBytes: 4_096,
+      },
+    );
+    assert.equal(result.program, process.execPath);
+    assert.deepEqual(result.ids, ["alpha"]);
+    assert.match(
+      result.capturedOutput.stdout.toString("utf8"),
+      new RegExp(root),
+    );
+    assert.equal(result.capturedOutput.limitBytes, 4_096);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Cargo inventory distinguishes a completed command failure from infrastructure", async () => {
+  await assert.rejects(
+    cargoTestInventory(
+      "failing-inventory",
+      ["-e", "process.exit(7)"],
+      {
+        expectedPassedTests: 1,
+        timeoutMs: 1_000,
+      },
+      {
+        program: process.execPath,
+        captureOutputBytes: 4_096,
+      },
+    ),
+    (error) =>
+      error.code === "CARGO_TEST_INVENTORY_FAILED" &&
+      error.inventoryResult.code === 7,
+  );
+});
+
+test("Cargo inventory classifies signal termination as infrastructure", async () => {
+  await assert.rejects(
+    cargoTestInventory(
+      "signaled-inventory",
+      ["-e", 'process.kill(process.pid, "SIGTERM")'],
+      {
+        expectedPassedTests: 1,
+        timeoutMs: 1_000,
+      },
+      {
+        program: process.execPath,
+        captureOutputBytes: 4_096,
+      },
+    ),
+    (error) =>
+      error.code === "CARGO_TEST_INVENTORY_INFRASTRUCTURE" &&
+      error.inventoryResult.signal === "SIGTERM",
   );
 });
 
@@ -145,7 +222,14 @@ test("runtime planning binds latest Agentic-QE and semantic authorities", () => 
   }
   assert.deepEqual(
     runtimeProgramPlan(
-      ["datalogJena", "datalogSouffle", "owlW3c", "shaclW3c", "shaclJena", "jenaParity"],
+      [
+        "datalogJena",
+        "datalogSouffle",
+        "owlW3c",
+        "shaclW3c",
+        "shaclJena",
+        "jenaParity",
+      ],
       commands,
     ),
     {
@@ -205,6 +289,15 @@ test("runtime planning binds latest Agentic-QE and semantic authorities", () => 
     assert.deepEqual(args.slice(0, 2), ["test", "--locked"]);
     assert.equal(policy.requiredTestIds, undefined);
     assert.equal(policy.expectedTestIds.length, policy.expectedPassedTests);
+  }
+  for (const [id, [program, , policy]] of Object.entries(commands)) {
+    if (program === "cargo") {
+      assert.equal(
+        policy.requireCompleteOutputReplay,
+        true,
+        `${id} must retain complete Cargo output for schema-v5 replay`,
+      );
+    }
   }
   assert.equal(profiles["metaharness-semantic-gate"].length, 41);
   assert.equal(profiles.parity.length, 47);
@@ -396,6 +489,8 @@ test("G1 regression profile freezes the exact implemented transaction surface", 
     assert.deepEqual(args, contract.args, id);
     assert.equal(policy.expectedPassedTests, contract.count, id);
     assert.equal(policy.minimumPassedTests, contract.count, id);
+    assert.equal(policy.expectedCargoSummaryCount, 1, id);
+    assert.equal(policy.requireCompleteOutputReplay, true, id);
     assert.equal(policy.timeoutMs, contract.timeoutMs, id);
     assert.deepEqual(policy.evidencePackages, contract.packages, id);
     assert.equal(policy.requiredTestIds, undefined, id);
@@ -430,7 +525,8 @@ test("G1 regression profile freezes the exact implemented transaction surface", 
     );
   }
 
-  assert.equal(commands.agenticAdapter[2].expectedNodeTests, 19);
+  assert.equal(commands.agenticAdapter[2].expectedNodeTests, 39);
+  assert.equal(commands.agenticAdapter[2].requireCompleteOutputReplay, true);
   assert.equal(profiles["metaharness-semantic-gate"].length, 41);
   assert.equal(profiles.parity.length, 47);
 });

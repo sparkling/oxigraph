@@ -9,6 +9,8 @@ import { publicationStructureMatches } from "./receipt-contract.mjs";
 
 export { publicationStructureMatches } from "./receipt-contract.mjs";
 
+const MAX_PUBLICATION_FILE_BYTES = 64 * 1024 * 1024;
+
 function stablePublicationBytes(repositoryRoot, relativePath) {
   const lexical = resolve(repositoryRoot, relativePath);
   if (portablePath(relative(repositoryRoot, lexical)) !== relativePath) {
@@ -18,6 +20,7 @@ function stablePublicationBytes(repositoryRoot, relativePath) {
     repositoryRoot,
     label: `Agentic-QE publication ${relativePath}`,
     requireSingleLink: true,
+    maximumBytes: MAX_PUBLICATION_FILE_BYTES,
   }).bytes;
 }
 

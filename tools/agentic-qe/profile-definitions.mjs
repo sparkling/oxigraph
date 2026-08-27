@@ -6,6 +6,7 @@ function cargo(args, expectedPassedTests, evidencePackages, policy = {}) {
       minimumPassedTests: expectedPassedTests,
       expectedPassedTests,
       timeoutMs: 300_000,
+      requireCompleteOutputReplay: true,
       evidencePackages,
       ...policy,
     },
@@ -29,8 +30,9 @@ export const commands = {
     ],
     {
       timeoutMs: 60_000,
-      expectedNodeTests: 19,
+      expectedNodeTests: 39,
       expectedNodeSuites: 0,
+      requireCompleteOutputReplay: true,
       evidencePaths: [
         "tools/agentic-qe",
         "tools/child-environment.mjs",
@@ -45,6 +47,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 420_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "memory_matches_the_transaction_reference_model",
         "rewritten_persistence_plane_matches_the_transaction_reference_model",
@@ -58,6 +62,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 90_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "overlapping_read_modify_write_transactions_do_not_lose_an_update",
         "overlapping_write_skew_transactions_preserve_the_on_call_invariant",
@@ -70,6 +76,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 120_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "all_capability_dimensions_are_negotiated_independently",
         "backend_open_failure_is_typed_once_after_successful_negotiation",
@@ -89,6 +97,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 120_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "drop_releases_the_writer_permit_without_publishing",
         "explicit_rollback_releases_the_writer_permit_without_publishing",
@@ -112,6 +122,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 180_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "cancellation_while_reading_load_rolls_back_staged_update",
         "connection_budget_is_shared_by_policy_clones_and_released",
@@ -134,6 +146,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 180_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "cancellation_after_the_last_mutation_is_checked_before_commit",
         "cancellation_before_validation_does_not_open_a_transaction",
@@ -150,6 +164,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 180_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "cancelled_negotiated_update_explicitly_rolls_back",
         "evaluator_token_cancels_custom_negotiated_admission",
@@ -172,6 +188,8 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 300_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "effective_capabilities_follow_egress_admission_and_http_handler_state",
         "explicit_default_handler_is_basic_federation_without_remote_load",
@@ -194,6 +212,8 @@ export const commands = {
     ["oxigraph-cli"],
     {
       timeoutMs: 300_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "service_description::tests::advertised_features_are_an_exact_capability_set",
         "service_description::tests::bounded_entailment_is_disclosed_only_on_query_endpoints",
@@ -233,6 +253,8 @@ export const commands = {
     ["oxigraph-cli"],
     {
       timeoutMs: 300_000,
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
       expectedTestIds: [
         "service_description::tests::dependency_qualified_library_tls_is_enforced_without_cli_tls",
       ],
@@ -244,36 +266,27 @@ export const commands = {
     ["oxigraph"],
     {
       timeoutMs: 2_700_000,
-      expectedTestIds: [
-        "store_queries_enforce_the_selected_sparql_term_mode",
-      ],
+      expectedCargoSummaryCount: 1,
+      requireCompleteOutputReplay: true,
+      expectedTestIds: ["store_queries_enforce_the_selected_sparql_term_mode"],
     },
   ),
-  oxrdf12: cargo(
-    ["-p", "oxrdf", "--features", "rdf-12"],
-    75,
-    ["oxrdf"],
-    {
-      requiredTestIds: [
-        "clear_graph_retains_presence_but_remove_named_graph_removes_topology",
-        "clone_equality_and_clear_include_named_graph_topology",
-        "empty_blank_named_graphs_participate_in_dataset_isomorphism",
-        "empty_graph_role_affects_blank_node_isomorphism",
-        "graph_mut_creates_empty_named_graph_and_last_quad_removal_preserves_it",
-        "graph_view_clear_retains_blank_named_graph",
-      ],
-    },
-  ),
-  sparql12Parser: cargo(
-    ["-p", "spargebra", "--features", "sparql-12"],
-    28,
-    ["spargebra"],
-  ),
-  sparql12Evaluator: cargo(
-    ["-p", "spareval", "--features", "sparql-12"],
-    40,
-    ["spareval"],
-  ),
+  oxrdf12: cargo(["-p", "oxrdf", "--features", "rdf-12"], 75, ["oxrdf"], {
+    requiredTestIds: [
+      "clear_graph_retains_presence_but_remove_named_graph_removes_topology",
+      "clone_equality_and_clear_include_named_graph_topology",
+      "empty_blank_named_graphs_participate_in_dataset_isomorphism",
+      "empty_graph_role_affects_blank_node_isomorphism",
+      "graph_mut_creates_empty_named_graph_and_last_quad_removal_preserves_it",
+      "graph_view_clear_retains_blank_named_graph",
+    ],
+  }),
+  sparql12Parser: cargo(["-p", "spargebra", "--features", "sparql-12"], 28, [
+    "spargebra",
+  ]),
+  sparql12Evaluator: cargo(["-p", "spareval", "--features", "sparql-12"], 40, [
+    "spareval",
+  ]),
   transactionalDatasetWrites: cargo(
     ["-p", "oxigraph", "--test", "transactional_dataset"],
     3,
@@ -521,16 +534,11 @@ export const commands = {
       ],
     },
   ),
-  rdfXml12: cargo(
-    ["-p", "oxrdfxml", "--all-features"],
-    42,
-    ["oxrdfxml"],
-    {
-      requiredTestIds: [
-        "serializer::tests::xml_10_literal_text_preserves_carriage_returns_and_rejects_forbidden_characters",
-      ],
-    },
-  ),
+  rdfXml12: cargo(["-p", "oxrdfxml", "--all-features"], 42, ["oxrdfxml"], {
+    requiredTestIds: [
+      "serializer::tests::xml_10_literal_text_preserves_carriage_returns_and_rejects_forbidden_characters",
+    ],
+  }),
   terseSerializerApis: cargo(
     ["-p", "oxttl", "--all-features"],
     148,
@@ -774,19 +782,15 @@ export const commands = {
       expectedTestIds: ["sparql12_w3c_testsuite"],
     },
   ),
-  normativeControlAudit: command(
-    "node",
-    ["tools/w3c-tests/audit.mjs"],
-    {
-      timeoutMs: 300_000,
-      evidencePaths: [
-        "docs/research/normative-requirements.json",
-        "docs/research/standards-registry.json",
-        "tools/w3c-tests",
-      ],
-      outputPaths: ["target/w3c/normative-control/audit.json"],
-    },
-  ),
+  normativeControlAudit: command("node", ["tools/w3c-tests/audit.mjs"], {
+    timeoutMs: 300_000,
+    evidencePaths: [
+      "docs/research/normative-requirements.json",
+      "docs/research/standards-registry.json",
+      "tools/w3c-tests",
+    ],
+    outputPaths: ["target/w3c/normative-control/audit.json"],
+  }),
   normativeClauseInventory: command(
     "node",
     ["tools/w3c-tests/clause-inventory.mjs"],
@@ -800,21 +804,15 @@ export const commands = {
       outputPaths: ["target/w3c/normative-control/clause-inventory.json"],
     },
   ),
-  datalogD0: cargo(
-    ["-p", "oxdatalog", "--all-features", "--test", "d0"],
-    13,
-    ["oxdatalog"],
-  ),
-  datalogD1: cargo(
-    ["-p", "oxdatalog", "--all-features", "--test", "d1"],
-    8,
-    ["oxdatalog"],
-  ),
-  datalogD2: cargo(
-    ["-p", "oxdatalog", "--all-features", "--test", "d2"],
-    10,
-    ["oxdatalog"],
-  ),
+  datalogD0: cargo(["-p", "oxdatalog", "--all-features", "--test", "d0"], 13, [
+    "oxdatalog",
+  ]),
+  datalogD1: cargo(["-p", "oxdatalog", "--all-features", "--test", "d1"], 8, [
+    "oxdatalog",
+  ]),
+  datalogD2: cargo(["-p", "oxdatalog", "--all-features", "--test", "d2"], 10, [
+    "oxdatalog",
+  ]),
   datalogFull: cargo(
     ["-p", "oxdatalog", "--all-targets", "--all-features"],
     70,

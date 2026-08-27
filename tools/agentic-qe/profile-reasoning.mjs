@@ -6,6 +6,7 @@ function cargo(args, expectedPassedTests, evidencePackages, policy = {}) {
       minimumPassedTests: expectedPassedTests,
       expectedPassedTests,
       timeoutMs: 300_000,
+      requireCompleteOutputReplay: true,
       evidencePackages,
       ...policy,
     },
@@ -53,10 +54,7 @@ export const reasoningCommands = {
     ["tools/datalog-oracles/run-jena.sh", "--require"],
     {
       evidencePackages: ["oxdatalog"],
-      evidencePaths: [
-        "tools/datalog-oracles",
-        "tools/jena-parity/.mise.toml",
-      ],
+      evidencePaths: ["tools/datalog-oracles", "tools/jena-parity/.mise.toml"],
       outputPaths: [
         "target/datalog-oracles/jena/status.properties",
         "target/datalog-oracles/jena/ancestor.oxdatalog.tsv",
@@ -72,10 +70,7 @@ export const reasoningCommands = {
     ["tools/datalog-oracles/run-jena-rdfs.sh", "--require"],
     {
       evidencePackages: ["oxrdfs"],
-      evidencePaths: [
-        "tools/datalog-oracles",
-        "tools/jena-parity/.mise.toml",
-      ],
+      evidencePaths: ["tools/datalog-oracles", "tools/jena-parity/.mise.toml"],
       outputPaths: [
         "target/datalog-oracles/jena-rdfs/status.properties",
         "target/datalog-oracles/jena-rdfs/rdfs-schema.oxrdfs.tsv",
@@ -97,19 +92,15 @@ export const reasoningCommands = {
       ],
     },
   ),
-  rdfsD0: cargo(
-    ["-p", "oxrdfs", "--all-features", "--test", "rdfs_d0"],
-    14,
-    ["oxrdfs"],
-  ),
+  rdfsD0: cargo(["-p", "oxrdfs", "--all-features", "--test", "rdfs_d0"], 14, [
+    "oxrdfs",
+  ]),
   rdfsFull: cargo(
     ["-p", "oxrdfs", "--all-targets", "--all-features"],
     37,
     ["oxrdfs"],
     {
-      requiredTestIds: [
-        "explicitly_empty_named_graph_gets_graph_local_axioms",
-      ],
+      requiredTestIds: ["explicitly_empty_named_graph_gets_graph_local_axioms"],
     },
   ),
   owlPositiveSeed: cargo(
@@ -122,9 +113,7 @@ export const reasoningCommands = {
     34,
     ["oxowl"],
     {
-      requiredTestIds: [
-        "explicitly_empty_named_graph_gets_graph_local_axioms",
-      ],
+      requiredTestIds: ["explicitly_empty_named_graph_gets_graph_local_axioms"],
     },
   ),
   owlInventory: command(
@@ -136,16 +125,12 @@ export const reasoningCommands = {
       outputPaths: ["target/w3c/owl2-rl-inventory.json"],
     },
   ),
-  owlW3c: command(
-    "node",
-    ["tools/owl2-tests/execute-w3c-owl2-rl.mjs"],
-    {
-      timeoutMs: 900_000,
-      evidencePackages: ["oxowl", "oxrdfio"],
-      evidencePaths: ["tools/owl2-tests"],
-      outputPaths: ["target/w3c/owl2-rl-execution.json"],
-    },
-  ),
+  owlW3c: command("node", ["tools/owl2-tests/execute-w3c-owl2-rl.mjs"], {
+    timeoutMs: 900_000,
+    evidencePackages: ["oxowl", "oxrdfio"],
+    evidencePaths: ["tools/owl2-tests"],
+    outputPaths: ["target/w3c/owl2-rl-execution.json"],
+  }),
   shaclFull: cargo(
     ["-p", "oxshacl", "--all-targets", "--all-features"],
     167,
@@ -177,22 +162,15 @@ export const reasoningCommands = {
       "target/w3c/shacl-1.2/run-cases.json",
     ],
   }),
-  shaclClauseAudit: command(
-    "node",
-    ["tools/shacl-tests/clause-audit.mjs"],
-    {
-      timeoutMs: 300_000,
-      evidencePaths: ["tools/shacl-tests", "testsuite/rdf-tests"],
-      outputPaths: ["target/w3c/shacl-1.2/clause-obligations.json"],
-    },
-  ),
+  shaclClauseAudit: command("node", ["tools/shacl-tests/clause-audit.mjs"], {
+    timeoutMs: 300_000,
+    evidencePaths: ["tools/shacl-tests", "testsuite/rdf-tests"],
+    outputPaths: ["target/w3c/shacl-1.2/clause-obligations.json"],
+  }),
   shaclJena: command("node", ["tools/shacl-tests/jena-compact.mjs"], {
     timeoutMs: 300_000,
     evidencePackages: ["oxshacl"],
-    evidencePaths: [
-      "tools/shacl-tests",
-      "tools/shacl-tests/jena-compact",
-    ],
+    evidencePaths: ["tools/shacl-tests", "tools/shacl-tests/jena-compact"],
     outputPaths: ["target/datalog-oracles/jena-shaclc/receipt.json"],
   }),
   jenaParity: command("bash", ["tools/jena-parity/scripts/run.sh"], {

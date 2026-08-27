@@ -39,6 +39,10 @@ export {
   agenticReceiptBytes,
   agenticReceiptContentHash,
   agenticReceiptExecutionHash,
+  agenticRuntimeContentHash,
+  MAX_AGENTIC_ORACLE_BYTES,
+  MAX_AGENTIC_RECEIPT_BYTES,
+  MAX_AGENTIC_RETAINED_OUTPUT_BYTES,
   archiveStructureMatches,
   outputBinding,
   publicationStructureMatches,
@@ -123,7 +127,9 @@ function packageDirectories(packageNames) {
       const dependencyDirectory = realpathSync(dependency.path);
       const localDependency = byDirectory.get(dependencyDirectory);
       if (!localDependency) {
-        throw new Error(`local dependency is not workspace metadata: ${dependency.path}`);
+        throw new Error(
+          `local dependency is not workspace metadata: ${dependency.path}`,
+        );
       }
       pending.push(localDependency);
     }
@@ -147,7 +153,11 @@ function selectedEvidence(selected, commands) {
     join(repoRoot, "tools", "dependency-policy.mjs"),
     toolDir,
   ]);
-  for (const relativePath of [".cargo", "rust-toolchain", "rust-toolchain.toml"]) {
+  for (const relativePath of [
+    ".cargo",
+    "rust-toolchain",
+    "rust-toolchain.toml",
+  ]) {
     const path = join(repoRoot, relativePath);
     if (existsSync(path)) paths.add(path);
   }
@@ -184,7 +194,8 @@ export function outputArtifacts(selected, commands) {
   const paths = new Set();
   for (const id of selected) {
     const policy = commands[id][2] ?? {};
-    for (const path of policy.outputPaths ?? []) paths.add(join(repoRoot, path));
+    for (const path of policy.outputPaths ?? [])
+      paths.add(join(repoRoot, path));
   }
   if (paths.size === 0) {
     return {
@@ -224,10 +235,7 @@ export function outputArtifacts(selected, commands) {
   };
 }
 
-export function validateAgenticPublication(
-  receipt,
-  options = {},
-) {
+export function validateAgenticPublication(receipt, options = {}) {
   const publication = readAgenticPublication(receipt, options);
   const { receiptBytes, oracleBytes } = publication;
   const authoritativeReceipt = JSON.parse(receiptBytes);
@@ -235,7 +243,9 @@ export function validateAgenticPublication(
     !receiptBytes.equals(agenticReceiptBytes(authoritativeReceipt)) ||
     !receiptBytes.equals(agenticReceiptBytes(receipt))
   ) {
-    throw new Error("Agentic-QE immutable receipt bytes differ from the receipt");
+    throw new Error(
+      "Agentic-QE immutable receipt bytes differ from the receipt",
+    );
   }
   const oracle = JSON.parse(oracleBytes);
   validateAgenticOracle(oracle, authoritativeReceipt, receiptBytes);

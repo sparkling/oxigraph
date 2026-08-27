@@ -1,8 +1,13 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
 import { sha256 } from "./evidence.mjs";
+import {
+  parseCargoTestIds,
+  validateCargoTestIds,
+} from "./native-test-contract.mjs";
 import { repoRoot } from "./path-policy.mjs";
 import { execute } from "./process-runner.mjs";
+import { runtimeProgramPlan } from "./runtime-plan.mjs";
 
 const versionArguments = {
   bash: ["--version"],
@@ -25,64 +30,85 @@ async function capture(program, args, cwd = repoRoot) {
   });
 }
 
-export function parseCargoTestIds(output) {
-  return output
-    .split(/\r?\n/)
-    .map((line) => /^(\S(?:.*\S)?): test$/.exec(line)?.[1])
-    .filter((name) => name !== undefined)
-    .sort();
-}
+export { parseCargoTestIds, validateCargoTestIds };
 
-export function validateCargoTestIds(id, ids, policy) {
-  if (ids.length !== policy.expectedPassedTests) {
-    throw new Error(
-      `${id}: Cargo selected ${ids.length} tests; expected ${policy.expectedPassedTests}`,
-    );
-  }
-  if (policy.expectedTestIds !== undefined) {
-    const expected = [...policy.expectedTestIds].sort();
-    if (JSON.stringify(ids) !== JSON.stringify(expected)) {
-      throw new Error(
-        `${id}: selected Cargo test IDs differ from the reviewed inventory`,
-      );
-    }
-  }
-  if (policy.requiredTestIds !== undefined) {
-    const selected = new Set(ids);
-    const missing = policy.requiredTestIds.filter(
-      (testId) => !selected.has(testId),
-    );
-    if (missing.length > 0) {
-      throw new Error(
-        `${id}: selected Cargo tests omit required sentinels: ${missing.join(", ")}`,
-      );
-    }
-  }
-}
-
-export async function cargoTestInventory(id, args, policy) {
-  const separator = args.indexOf("--");
-  const cargoArgs = separator < 0 ? args : args.slice(0, separator);
-  const result = await execute(
-    "cargo",
-    [...cargoArgs, "--", "--list", "--format", "terse"],
-    {
-      timeoutMs: policy.timeoutMs,
-      quiet: true,
-      announce: false,
-      captureCargoTestIds: true,
-    },
-  );
-  if (result.code !== 0 || result.timedOut || result.spawnError) {
-    throw new Error(`${id}: unable to inventory the selected Cargo tests`);
-  }
-  const ids = result.observedCargoTestIds;
-  validateCargoTestIds(id, ids, policy);
+function cargoInventoryObservation(program, args, result) {
+  const ids = result.observedCargoTestIds ?? [];
   return {
+    program,
+    args,
+    code: result.code,
+    signal: result.signal,
+    spawnError: result.spawnError,
+    timedOut: result.timedOut,
+    outputLimitExceeded: result.outputLimitExceeded,
+    outputLimitBytes: result.outputLimitBytes,
+    scanLimitExceeded: result.scanLimitExceeded,
+    timeoutMs: result.timeoutMs,
+    durationMs: result.durationMs,
     observedTests: ids.length,
     ids,
     output: result.output,
+    stdoutTail: result.stdoutTail,
+    stderrTail: result.stderrTail,
+    ...(result.capturedOutput === undefined
+      ? {}
+      : { capturedOutput: result.capturedOutput }),
   };
+}
+
+function inventoryFailure(message, code, observation) {
+  const error = new Error(message);
+  error.code = code;
+  error.inventoryResult = observation;
+  return error;
+}
+
+export async function cargoTestInventory(id, args, policy, execution = {}) {
+  const separator = args.indexOf("--");
+  const cargoArgs = separator < 0 ? args : args.slice(0, separator);
+  const program = execution.program ?? "cargo";
+  const inventoryArgs = [...cargoArgs, "--", "--list", "--format", "terse"];
+  const result = await execute(program, inventoryArgs, {
+    cwd: execution.cwd ?? repoRoot,
+    timeoutMs: policy.timeoutMs,
+    quiet: true,
+    announce: false,
+    captureCargoTestIds: true,
+    captureOutputBytes: execution.captureOutputBytes,
+    retainCompleteOutput: policy.requireCompleteOutputReplay === true,
+    env: execution.env,
+    inheritEnvironment: execution.inheritEnvironment,
+  });
+  const observation = cargoInventoryObservation(program, inventoryArgs, result);
+  if (
+    result.timedOut ||
+    result.outputLimitExceeded ||
+    result.scanLimitExceeded ||
+    result.spawnError ||
+    result.signal !== null
+  ) {
+    throw inventoryFailure(
+      `${id}: Cargo test inventory infrastructure failed`,
+      "CARGO_TEST_INVENTORY_INFRASTRUCTURE",
+      observation,
+    );
+  }
+  if (result.code !== 0 || result.signal !== null) {
+    throw inventoryFailure(
+      `${id}: Cargo test inventory command failed`,
+      "CARGO_TEST_INVENTORY_FAILED",
+      observation,
+    );
+  }
+  const ids = result.observedCargoTestIds;
+  try {
+    validateCargoTestIds(id, ids, policy);
+  } catch (error) {
+    error.inventoryResult = observation;
+    throw error;
+  }
+  return observation;
 }
 
 async function executableProvenance(program) {
@@ -98,7 +124,9 @@ async function executableProvenance(program) {
     versionArguments[program] ?? ["--version"],
   );
   if (version.code !== 0 || version.timedOut || version.spawnError) {
-    throw new Error(`unable to capture required executable version: ${program}`);
+    throw new Error(
+      `unable to capture required executable version: ${program}`,
+    );
   }
   const provenance = {
     program,
@@ -156,7 +184,9 @@ async function miseExecutableProvenance(program) {
     cwd,
   );
   if (version.code !== 0 || version.timedOut || version.spawnError) {
-    throw new Error(`unable to capture mise-selected executable version: ${program}`);
+    throw new Error(
+      `unable to capture mise-selected executable version: ${program}`,
+    );
   }
   return {
     program,
@@ -170,44 +200,7 @@ async function miseExecutableProvenance(program) {
   };
 }
 
-export function runtimeProgramPlan(selected, commands) {
-  const host = new Set(["git", "node"]);
-  const jenaParityMise = new Set();
-  for (const id of selected) {
-    const [program] = commands[id];
-    host.add(program);
-    if (program === "cargo") host.add("rustc");
-    if (id === "datalogJena" || id === "rdfsJena") {
-      host.add("cargo");
-      host.add("rustc");
-      host.add("java");
-      host.add("mvn");
-    }
-    if (id === "jenaParity") {
-      host.add("mise");
-      for (const selectedProgram of ["cargo", "java", "mvn", "rustc"]) {
-        jenaParityMise.add(selectedProgram);
-      }
-    }
-    if (id === "datalogSouffle") {
-      host.add("cargo");
-      host.add("rustc");
-      host.add("souffle");
-    }
-    if (id === "owlW3c" || id === "shaclW3c") {
-      host.add("cargo");
-      host.add("rustc");
-    }
-    if (id === "shaclJena") {
-      host.add("java");
-      host.add("mvn");
-    }
-  }
-  return {
-    host: [...host].sort(),
-    jenaParityMise: [...jenaParityMise].sort(),
-  };
-}
+export { runtimeProgramPlan };
 
 export async function runtimeProvenance(selected, commands) {
   const plan = runtimeProgramPlan(selected, commands);
@@ -219,6 +212,31 @@ export async function runtimeProvenance(selected, commands) {
     records.push(await miseExecutableProvenance(program));
   }
   return records;
+}
+
+export async function agenticRuntimeProvenance(
+  selected,
+  commands,
+  agenticQeVersion,
+) {
+  const runtime = await runtimeProvenance(selected, commands);
+  const executable = join(
+    repoRoot,
+    "tools",
+    "agentic-qe",
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "aqe.cmd" : "aqe",
+  );
+  runtime.push(
+    executablePathProvenance("agentic-qe", executable, agenticQeVersion),
+  );
+  runtime.sort((left, right) =>
+    `${left.context}:${left.program}`.localeCompare(
+      `${right.context}:${right.program}`,
+    ),
+  );
+  return runtime;
 }
 
 export function commandAuthority(id, program) {

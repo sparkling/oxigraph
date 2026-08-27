@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -19,6 +25,7 @@ import {
   validateRegistryPins,
 } from "./policy.mjs";
 import {
+  agenticRuntimeContentHash,
   implementationSnapshot as agenticImplementationSnapshot,
   readAgenticFileBytes,
   validateAgenticArtifactArchive,
@@ -53,30 +60,37 @@ const toolDir = dirname(fileURLToPath(import.meta.url));
 
 function inside(root, path) {
   const rel = relative(root, path);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+  return (
+    rel === "" ||
+    (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel))
+  );
 }
 
 function regularPath(root, relativePath) {
   const lexical = resolve(root, relativePath);
-  if (!inside(root, lexical)) throw new Error(`${relativePath} escapes repository`);
+  if (!inside(root, lexical))
+    throw new Error(`${relativePath} escapes repository`);
   const metadata = lstatSync(lexical);
   if (metadata.isSymbolicLink() || !metadata.isFile()) {
     throw new Error(`${relativePath} is not a regular non-symlink file`);
   }
   const canonical = realpathSync(lexical);
-  if (!inside(root, canonical)) throw new Error(`${relativePath} resolves outside repository`);
+  if (!inside(root, canonical))
+    throw new Error(`${relativePath} resolves outside repository`);
   return canonical;
 }
 
 function directoryPath(root, relativePath) {
   const lexical = resolve(root, relativePath);
-  if (!inside(root, lexical)) throw new Error(`${relativePath} escapes repository`);
+  if (!inside(root, lexical))
+    throw new Error(`${relativePath} escapes repository`);
   const metadata = lstatSync(lexical);
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
     throw new Error(`${relativePath} is not a regular non-symlink directory`);
   }
   const canonical = realpathSync(lexical);
-  if (!inside(root, canonical)) throw new Error(`${relativePath} resolves outside repository`);
+  if (!inside(root, canonical))
+    throw new Error(`${relativePath} resolves outside repository`);
   return canonical;
 }
 
@@ -88,7 +102,9 @@ function json(root, relativePath) {
   try {
     return JSON.parse(text(root, relativePath));
   } catch (error) {
-    throw new Error(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -96,7 +112,9 @@ function collect(errors, label, operation) {
   try {
     return operation();
   } catch (error) {
-    errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+    errors.push(
+      `${label}: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return undefined;
   }
 }
@@ -119,7 +137,12 @@ const allCurrentClaims = documentClaims;
 const adrClaimIds = Object.freeze({
   "0001-outcome-oriented-jena-parity.md": ["Jena"],
   "0002-rdf-native-datalog-engine.md": ["Datalog"],
-  "0003-w3c-12-conformance-baseline.md": ["RDF 1.2", "SPARQL 1.2", "RDFS", "SHACL 1.2"],
+  "0003-w3c-12-conformance-baseline.md": [
+    "RDF 1.2",
+    "SPARQL 1.2",
+    "RDFS",
+    "SHACL 1.2",
+  ],
   "0005-agentic-qe-integration.md": ["Agentic-QE"],
   "0007-owl-profiles-over-datalog.md": ["OWL 2 RL"],
   "0008-shacl-processor-profiles.md": ["SHACL 1.2"],
@@ -132,12 +155,13 @@ const adrClaimIds = Object.freeze({
 function readResearchJson(root, errors) {
   const directory = resolve(root, "docs/research");
   const documents = new Map();
-  const names = collect(errors, "docs/research", () =>
-    readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.name.endsWith(".json"))
-      .map((entry) => entry.name)
-      .sort(),
-  ) ?? [];
+  const names =
+    collect(errors, "docs/research", () =>
+      readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.name.endsWith(".json"))
+        .map((entry) => entry.name)
+        .sort(),
+    ) ?? [];
   for (const name of names) {
     const value = collect(errors, `docs/research/${name}`, () =>
       json(root, `docs/research/${name}`),
@@ -171,12 +195,15 @@ function verifyDocuments(root, errors) {
 
 function verifyAdrIndex(root, errors) {
   const directory = resolve(root, "docs/adr");
-  const names = collect(errors, "docs/adr", () =>
-    new Set(
-      readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-        .map((entry) => entry.name),
-    ),
+  const names = collect(
+    errors,
+    "docs/adr",
+    () =>
+      new Set(
+        readdirSync(directory, { withFileTypes: true })
+          .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+          .map((entry) => entry.name),
+      ),
   );
   const index = collect(errors, "docs/adr/README.md", () =>
     text(root, "docs/adr/README.md"),
@@ -209,18 +236,27 @@ function checkoutHeads(root, mode, errors, resolveHead) {
     );
     if (head !== undefined) heads["w3c-data-shapes"] = head;
   } else if (mode === "full") {
-    errors.push("w3c-data-shapes checkout: pinned full-mode checkout is missing");
+    errors.push(
+      "w3c-data-shapes checkout: pinned full-mode checkout is missing",
+    );
   }
   return heads;
 }
 
 function verifyShaclSourcePin(root, errors) {
-  const paths = ["tools/shacl-tests/inventory.mjs", "tools/shacl-tests/clause-audit.mjs"];
+  const paths = [
+    "tools/shacl-tests/inventory.mjs",
+    "tools/shacl-tests/clause-audit.mjs",
+  ];
   for (const relativePath of paths) {
-    const value = collect(errors, relativePath, () =>
-      text(root, relativePath));
-    if (value !== undefined && !value.includes(expectedPins["w3c-data-shapes"])) {
-      errors.push(`${relativePath}: does not bind the current W3C Data Shapes pin`);
+    const value = collect(errors, relativePath, () => text(root, relativePath));
+    if (
+      value !== undefined &&
+      !value.includes(expectedPins["w3c-data-shapes"])
+    ) {
+      errors.push(
+        `${relativePath}: does not bind the current W3C Data Shapes pin`,
+      );
     }
   }
 }
@@ -282,6 +318,7 @@ function readReceipts(root, errors) {
           expectedProfile: "metaharness-semantic-gate",
           expectedAgenticQeVersion: agenticQeDependency.version,
           expectedAgenticQeDependency: agenticQeDependency,
+          expectedRuntimeContentHash: binding.runtimeContentHash,
           expectedCommandIds: semanticCommandIds,
           expectedCommands: agenticCommands,
           minimumGeneratedAtMs: Date.parse(receipts.meta.startedAt),
@@ -301,11 +338,15 @@ function readReceipts(root, errors) {
           repositoryRoot: root,
         });
         if (!publication.receiptBytes.equals(agenticBytes)) {
-          throw new Error("qualification receipt differs from immutable publication");
+          throw new Error(
+            "qualification receipt differs from immutable publication",
+          );
         }
         const verifierRoot = realpathSync(resolve(toolDir, "../.."));
         if (root !== verifierRoot) {
-          throw new Error("full verification must execute from the target repository");
+          throw new Error(
+            "full verification must execute from the target repository",
+          );
         }
         const implementation = agenticImplementationSnapshot(
           selected,
@@ -327,13 +368,18 @@ function readReceipts(root, errors) {
           binding.generatedAt !== receipts.agentic.generatedAt ||
           binding.contentHash !== receipts.agentic.contentHash ||
           binding.executionHash !== receipts.agentic.executionHash ||
+          binding.runtimeContentHash !==
+            agenticRuntimeContentHash(receipts.agentic.runtime) ||
           binding.implementationContentHash !== implementation.contentHash ||
-          binding.artifactContentHash !== receipts.agentic.artifacts.contentHash ||
+          binding.artifactContentHash !==
+            receipts.agentic.artifacts.contentHash ||
           binding.archiveContentHash !== archive.contentHash ||
           binding.archiveRoot !== archive.root ||
           binding.archiveFileCount !== archive.files.length
         ) {
-          throw new Error("MetaHarness Agentic-QE binding differs from publication");
+          throw new Error(
+            "MetaHarness Agentic-QE binding differs from publication",
+          );
         }
         receipts.agenticOracle = publication.oracle;
         agenticProjection = {
@@ -344,6 +390,9 @@ function readReceipts(root, errors) {
           oracleSha256: sha256(publication.oracleBytes),
           contentHash: receipts.agentic.contentHash,
           executionHash: receipts.agentic.executionHash,
+          runtimeContentHash: agenticRuntimeContentHash(
+            receipts.agentic.runtime,
+          ),
           implementationContentHash: implementation.contentHash,
           artifactContentHash: receipts.agentic.artifacts.contentHash,
           archiveContentHash: archive.contentHash,
@@ -353,19 +402,17 @@ function readReceipts(root, errors) {
         ["jena", "target/jena-parity/parity-receipt.json"],
         ["shaclInventory", "target/w3c/shacl-1.2/inventory.json"],
         ["shacl", "target/w3c/shacl-1.2/run-receipt.json"],
-        [
-          "shaclJenaCompact",
-          "target/datalog-oracles/jena-shaclc/receipt.json",
-        ],
+        ["shaclJenaCompact", "target/datalog-oracles/jena-shaclc/receipt.json"],
         ["normativeControl", "target/w3c/normative-control/audit.json"],
         [
           "normativeClauseInventory",
           "target/w3c/normative-control/clause-inventory.json",
         ],
       ]) {
-        const matches = receipts.agentic.artifacts?.archive?.files?.filter(
-          (file) => file?.sourcePath === sourcePath,
-        ) ?? [];
+        const matches =
+          receipts.agentic.artifacts?.archive?.files?.filter(
+            (file) => file?.sourcePath === sourcePath,
+          ) ?? [];
         if (matches.length !== 1) {
           errors.push(
             `Agentic-QE archive: expected one ${sourcePath} binding, got ${matches.length}`,
@@ -450,7 +497,8 @@ export function verifyProgramme(
   rootInput,
   { mode = "source-only", resolveHead = gitHead } = {},
 ) {
-  if (!["source-only", "full"].includes(mode)) throw new Error(`unsupported mode: ${mode}`);
+  if (!["source-only", "full"].includes(mode))
+    throw new Error(`unsupported mode: ${mode}`);
   const root = realpathSync(rootInput);
   const errors = [];
   const documents = readResearchJson(root, errors);
@@ -472,7 +520,9 @@ export function verifyProgramme(
   };
   if (ledger) validateDependencyClaims(ledger, dependencyResolutions, errors);
   if (normative && ledger) validateNormativeClaims(normative, ledger, errors);
-  collect(errors, "W3C normative control source", () => validateNormativeControlSource(root));
+  collect(errors, "W3C normative control source", () =>
+    validateNormativeControlSource(root),
+  );
 
   const heads = checkoutHeads(root, mode, errors, resolveHead);
   if (registry && ledger) validateRegistryPins(registry, ledger, heads, errors);
@@ -517,7 +567,10 @@ function main() {
   process.exitCode = 1;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   try {
     main();
   } catch (error) {

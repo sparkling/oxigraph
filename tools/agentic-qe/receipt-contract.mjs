@@ -1,4 +1,15 @@
 import { createHash } from "node:crypto";
+import {
+  lastNonemptyBoundedTestOutputLine,
+  MAX_CARGO_SUMMARIES,
+  MAX_CARGO_TEST_IDS,
+  MAX_CARGO_TEST_ID_TOTAL_BYTES,
+  normalizeCargoTestObservation,
+  parseCargoTestIds,
+  parseCargoTestSummaries,
+} from "./native-test-contract.mjs";
+import { parseNodeTestSummary } from "./node-test-contract.mjs";
+import { runtimeProgramPlan } from "./runtime-plan.mjs";
 
 const CHILD_ENVIRONMENT_POLICY = "inherited-safe-name-allowlist-v1";
 const DIGEST = /^[0-9a-f]{64}$/u;
@@ -68,7 +79,9 @@ function exactVersionValid(value) {
       match[4] !== undefined &&
       match[4]
         .split(".")
-        .some((part) => /^\d+$/u.test(part) && part.length > 1 && part[0] === "0")
+        .some(
+          (part) => /^\d+$/u.test(part) && part.length > 1 && part[0] === "0",
+        )
     )
   );
 }
@@ -98,7 +111,8 @@ export function validateAgenticDependencyEvidence({
     dependency === null ||
     typeof dependency !== "object" ||
     Array.isArray(dependency) ||
-    JSON.stringify(Object.keys(dependency)) !== JSON.stringify(DEPENDENCY_KEYS) ||
+    JSON.stringify(Object.keys(dependency)) !==
+      JSON.stringify(DEPENDENCY_KEYS) ||
     dependency.name !== "agentic-qe" ||
     dependency.policy !== "latest" ||
     !exactVersionValid(dependency.version) ||
@@ -108,26 +122,22 @@ export function validateAgenticDependencyEvidence({
     dependency.manifest !== "tools/agentic-qe/package.json" ||
     dependency.lockfile !== "tools/agentic-qe/package-lock.json" ||
     dependency.npmrc !== "tools/agentic-qe/.npmrc" ||
-    ![manifestBytes, lockfileBytes, npmrcBytes, installedPackageJsonBytes].every(
-      Buffer.isBuffer,
-    ) ||
+    ![
+      manifestBytes,
+      lockfileBytes,
+      npmrcBytes,
+      installedPackageJsonBytes,
+    ].every(Buffer.isBuffer) ||
     !lifecyclePolicyValid(npmrcBytes) ||
     sha256(manifestBytes) !== dependency.manifestSha256 ||
     sha256(lockfileBytes) !== dependency.lockfileSha256 ||
     sha256(npmrcBytes) !== dependency.npmrcSha256 ||
-    sha256(installedPackageJsonBytes) !==
-      dependency.installedPackageJsonSha256
+    sha256(installedPackageJsonBytes) !== dependency.installedPackageJsonSha256
   ) {
     throw new Error("Agentic-QE dependency evidence is invalid");
   }
-  const manifest = parseJsonBytes(
-    manifestBytes,
-    "Agentic-QE adapter manifest",
-  );
-  const lockfile = parseJsonBytes(
-    lockfileBytes,
-    "Agentic-QE adapter lockfile",
-  );
+  const manifest = parseJsonBytes(manifestBytes, "Agentic-QE adapter manifest");
+  const lockfile = parseJsonBytes(lockfileBytes, "Agentic-QE adapter lockfile");
   const installed = parseJsonBytes(
     installedPackageJsonBytes,
     "installed Agentic-QE manifest",
@@ -234,8 +244,7 @@ export function archiveStructureMatches(receipt) {
     return false;
   }
   if (!PROFILE.test(receipt?.profile ?? "")) return false;
-  const expectedRoot =
-    `target/agentic-qe/${receipt.profile}/artifacts/${artifacts.contentHash}`;
+  const expectedRoot = `target/agentic-qe/${receipt.profile}/artifacts/${artifacts.contentHash}`;
   if (archive.root !== expectedRoot) return false;
   let totalBytes = 0;
   let previousSource = "";
@@ -282,6 +291,14 @@ export function stableCommandResult(result) {
     signal,
     spawnError,
     timedOut,
+    cleanupUnconfirmed,
+    terminationReason,
+    terminationSignalError,
+    killAttempted,
+    outputLimitExceeded,
+    scanLimitExceeded,
+    scanFailureReason,
+    outputLimitBytes,
     timeoutMs,
     testSafeguard,
     testInventory,
@@ -294,6 +311,14 @@ export function stableCommandResult(result) {
     signal,
     spawnFailed: spawnError !== null,
     timedOut,
+    cleanupUnconfirmed,
+    terminationReason,
+    terminationSignalError,
+    killAttempted,
+    outputLimitExceeded,
+    scanLimitExceeded,
+    scanFailureReason,
+    outputLimitBytes,
     timeoutMs,
     testSafeguard: testSafeguard ?? null,
     testInventory:
@@ -310,7 +335,17 @@ export function outputBinding(result) {
   return {
     id: result.id,
     ...result.output,
-    testInventoryOutput: result.testInventory?.output ?? null,
+    stdoutTail: result.stdoutTail,
+    stderrTail: result.stderrTail,
+    testInventoryOutput:
+      result.testInventory === null || result.testInventory === undefined
+        ? null
+        : {
+            ...result.testInventory.output,
+            outputLimitBytes: result.testInventory.outputLimitBytes,
+            stdoutTail: result.testInventory.stdoutTail,
+            stderrTail: result.testInventory.stderrTail,
+          },
   };
 }
 
@@ -348,12 +383,24 @@ export function agenticReceiptExecutionHash(receipt) {
   );
 }
 
+export function agenticRuntimeContentHash(runtime) {
+  return sha256(JSON.stringify(runtime));
+}
+
 export function agenticReceiptBytes(receipt) {
-  return Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+  const bytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+  if (bytes.length > MAX_AGENTIC_RECEIPT_BYTES) {
+    throw new Error("Agentic-QE receipt exceeds its serialized byte ceiling");
+  }
+  return bytes;
 }
 
 export function agenticOracleBytes(oracle) {
-  return Buffer.from(`${JSON.stringify(oracle, null, 2)}\n`, "utf8");
+  const bytes = Buffer.from(`${JSON.stringify(oracle, null, 2)}\n`, "utf8");
+  if (bytes.length > MAX_AGENTIC_ORACLE_BYTES) {
+    throw new Error("Agentic-QE oracle exceeds its serialized byte ceiling");
+  }
+  return bytes;
 }
 
 export function validateAgenticOracle(oracle, receipt, receiptBytes) {
@@ -376,6 +423,222 @@ export function validateAgenticOracle(oracle, receipt, receiptBytes) {
   return oracle;
 }
 
+const PROCESS_OUTPUT_KEYS = Object.freeze([
+  "stdoutBytes",
+  "stderrBytes",
+  "stdoutSha256",
+  "stderrSha256",
+]);
+const PROCESS_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
+const PROCESS_TAIL_UTF8_LIMIT_BYTES = PROCESS_OUTPUT_LIMIT_BYTES;
+export const MAX_AGENTIC_RETAINED_OUTPUT_BYTES = 32 * 1024 * 1024;
+export const MAX_AGENTIC_RECEIPT_BYTES = 64 * 1024 * 1024;
+export const MAX_AGENTIC_ORACLE_BYTES = 64 * 1024;
+
+function aggregateRetainedOutputValid(commands) {
+  if (!Array.isArray(commands)) return false;
+  let total = 0;
+  for (const command of commands) {
+    for (const owner of [command, command?.testInventory]) {
+      if (owner === null || owner === undefined) continue;
+      if (
+        typeof owner.stdoutTail !== "string" ||
+        typeof owner.stderrTail !== "string"
+      ) {
+        return false;
+      }
+      total += Buffer.byteLength(owner.stdoutTail, "utf8");
+      total += Buffer.byteLength(owner.stderrTail, "utf8");
+      if (
+        !Number.isSafeInteger(total) ||
+        total > MAX_AGENTIC_RETAINED_OUTPUT_BYTES
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function processOutputValid(owner, requireComplete) {
+  const output = owner?.output;
+  if (
+    JSON.stringify(Object.keys(output ?? {})) !==
+      JSON.stringify(PROCESS_OUTPUT_KEYS) ||
+    owner?.outputLimitBytes !== PROCESS_OUTPUT_LIMIT_BYTES ||
+    typeof owner.stdoutTail !== "string" ||
+    typeof owner.stderrTail !== "string" ||
+    !Number.isSafeInteger(output.stdoutBytes) ||
+    output.stdoutBytes < 0 ||
+    !Number.isSafeInteger(output.stderrBytes) ||
+    output.stderrBytes < 0 ||
+    output.stdoutBytes + output.stderrBytes > PROCESS_OUTPUT_LIMIT_BYTES ||
+    !DIGEST.test(output.stdoutSha256 ?? "") ||
+    !DIGEST.test(output.stderrSha256 ?? "")
+  ) {
+    return false;
+  }
+  const stdout = Buffer.from(owner.stdoutTail, "utf8");
+  const stderr = Buffer.from(owner.stderrTail, "utf8");
+  if (
+    stdout.length > PROCESS_TAIL_UTF8_LIMIT_BYTES ||
+    stderr.length > PROCESS_TAIL_UTF8_LIMIT_BYTES ||
+    stdout.length > output.stdoutBytes ||
+    stderr.length > output.stderrBytes
+  ) {
+    return false;
+  }
+  const stdoutComplete = stdout.length === output.stdoutBytes;
+  const stderrComplete = stderr.length === output.stderrBytes;
+  if (
+    (stdoutComplete && sha256(stdout) !== output.stdoutSha256) ||
+    (stderrComplete && sha256(stderr) !== output.stderrSha256)
+  ) {
+    return false;
+  }
+  return requireComplete !== true || (stdoutComplete && stderrComplete);
+}
+
+function cargoObservationFromCompleteOutput(command) {
+  const summaries = [
+    ...parseCargoTestSummaries(command.stdoutTail).map((summary) => ({
+      ...summary,
+      stream: "stdout",
+    })),
+    ...parseCargoTestSummaries(command.stderrTail).map((summary) => ({
+      ...summary,
+      stream: "stderr",
+    })),
+  ];
+  if (summaries.length > MAX_CARGO_SUMMARIES) {
+    throw new Error("Cargo summaries exceed their combined replay ceiling");
+  }
+  const terminalLine = lastNonemptyBoundedTestOutputLine(command.stdoutTail);
+  return normalizeCargoTestObservation(
+    summaries,
+    summaries.length > 0 && parseCargoTestSummaries(terminalLine).length === 1,
+    "stream",
+  );
+}
+
+function cargoInventoryIdsFromCompleteOutput(inventory) {
+  const ids = [
+    ...parseCargoTestIds(inventory.stdoutTail),
+    ...parseCargoTestIds(inventory.stderrTail),
+  ];
+  if (
+    ids.length > MAX_CARGO_TEST_IDS ||
+    ids.reduce((total, id) => total + Buffer.byteLength(id, "utf8"), 0) >
+      MAX_CARGO_TEST_ID_TOTAL_BYTES
+  ) {
+    throw new Error("Cargo test IDs exceed their combined replay ceiling");
+  }
+  return ids.sort();
+}
+
+function nodeSafeguardReplaysCompleteOutput(command) {
+  try {
+    const observed = command.testSafeguard?.observed;
+    return (
+      JSON.stringify(parseNodeTestSummary(command.stdoutTail)) ===
+      JSON.stringify(observed)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function cargoSafeguardReplaysCompleteOutput(command) {
+  try {
+    return (
+      JSON.stringify(cargoObservationFromCompleteOutput(command)) ===
+        JSON.stringify(command.testSafeguard?.observed) &&
+      JSON.stringify(
+        cargoInventoryIdsFromCompleteOutput(command.testInventory),
+      ) === JSON.stringify(command.testInventory?.ids)
+    );
+  } catch {
+    return false;
+  }
+}
+
+const CARGO_SUMMARY_KEYS = Object.freeze([
+  "stream",
+  "status",
+  "passed",
+  "failed",
+  "ignored",
+  "measured",
+  "filteredOut",
+]);
+const CARGO_TOTAL_KEYS = Object.freeze([
+  "passed",
+  "failed",
+  "ignored",
+  "measured",
+  "filteredOut",
+]);
+
+function cargoSafeguardMatchesPolicy(safeguard, policy) {
+  const observed = safeguard?.observed;
+  const summaries = observed?.summaries;
+  const expectedSummaryCount = policy.expectedCargoSummaryCount ?? null;
+  if (
+    safeguard?.format !== "cargo-libtest-v1" ||
+    safeguard.minimumPassedTests !== policy.minimumPassedTests ||
+    safeguard.expectedPassedTests !== policy.expectedPassedTests ||
+    safeguard.observedPassedTests !== policy.expectedPassedTests ||
+    safeguard.expectedSummaryCount !== expectedSummaryCount ||
+    !Array.isArray(summaries) ||
+    summaries.length === 0 ||
+    summaries.length > 4_096 ||
+    safeguard.observedSummaryCount !== summaries.length ||
+    observed?.source !== "stream" ||
+    observed.summaryCount !== summaries.length ||
+    observed.terminal !== true ||
+    observed.countsSafe !== true ||
+    observed.allSuccessful !== true ||
+    observed.allOnStdout !== true ||
+    safeguard.passed !== true ||
+    (expectedSummaryCount !== null &&
+      summaries.length !== expectedSummaryCount) ||
+    (expectedSummaryCount === null && summaries.length < 1)
+  ) {
+    return false;
+  }
+  const totals = Object.fromEntries(
+    CARGO_TOTAL_KEYS.map((field) => [field, 0]),
+  );
+  for (const summary of summaries) {
+    if (
+      JSON.stringify(Object.keys(summary ?? {})) !==
+        JSON.stringify(CARGO_SUMMARY_KEYS) ||
+      summary.stream !== "stdout" ||
+      summary.status !== "ok" ||
+      summary.failed !== 0
+    ) {
+      return false;
+    }
+    for (const field of CARGO_TOTAL_KEYS) {
+      if (!Number.isSafeInteger(summary[field]) || summary[field] < 0) {
+        return false;
+      }
+      const total = totals[field] + summary[field];
+      if (!Number.isSafeInteger(total)) return false;
+      totals[field] = total;
+    }
+  }
+  const outcomeCount =
+    totals.passed + totals.failed + totals.ignored + totals.measured;
+  return (
+    Number.isSafeInteger(outcomeCount) &&
+    observed.outcomeCount === outcomeCount &&
+    outcomeCount === policy.expectedPassedTests &&
+    totals.passed === policy.expectedPassedTests &&
+    JSON.stringify(observed.totals) === JSON.stringify(totals)
+  );
+}
+
 function trustedCommandContractsValid(receipt, expectedCommands) {
   if (
     !expectedCommands ||
@@ -391,7 +654,8 @@ function trustedCommandContractsValid(receipt, expectedCommands) {
     if (
       command.program !== program ||
       JSON.stringify(command.args) !== JSON.stringify(args) ||
-      command.timeoutMs !== policy.timeoutMs
+      command.timeoutMs !== policy.timeoutMs ||
+      !processOutputValid(command, policy.requireCompleteOutputReplay === true)
     ) {
       return false;
     }
@@ -415,10 +679,12 @@ function trustedCommandContractsValid(receipt, expectedCommands) {
           new Set(requiredIds).size === requiredIds.length &&
           requiredIds.every((testId) => ids.includes(testId)));
       return (
-        safeguard?.minimumPassedTests === policy.minimumPassedTests &&
-        safeguard?.expectedPassedTests === policy.expectedPassedTests &&
-        safeguard?.observedPassedTests === policy.expectedPassedTests &&
-        safeguard?.passed === true &&
+        policy.requireCompleteOutputReplay === true &&
+        cargoSafeguardMatchesPolicy(safeguard, policy) &&
+        processOutputValid(
+          inventory,
+          policy.requireCompleteOutputReplay === true,
+        ) &&
         inventory?.observedTests === policy.expectedPassedTests &&
         Array.isArray(ids) &&
         ids.length === policy.expectedPassedTests &&
@@ -426,7 +692,8 @@ function trustedCommandContractsValid(receipt, expectedCommands) {
         JSON.stringify(ids) === JSON.stringify([...ids].sort()) &&
         (expectedIds === null ||
           JSON.stringify(ids) === JSON.stringify(expectedIds)) &&
-        requiredIdsValid
+        requiredIdsValid &&
+        cargoSafeguardReplaysCompleteOutput(command)
       );
     }
     if (policy.expectedNodeTests !== undefined) {
@@ -434,6 +701,7 @@ function trustedCommandContractsValid(receipt, expectedCommands) {
       const observed = safeguard?.observed;
       const expectedSuites = policy.expectedNodeSuites ?? 0;
       return (
+        policy.requireCompleteOutputReplay === true &&
         command.testInventory === null &&
         safeguard?.format === "node-tap-v13" &&
         safeguard.minimumPassedTests === policy.expectedNodeTests &&
@@ -452,11 +720,145 @@ function trustedCommandContractsValid(receipt, expectedCommands) {
         observed?.fail === 0 &&
         observed?.cancelled === 0 &&
         observed?.skipped === 0 &&
-        observed?.todo === 0
+        observed?.todo === 0 &&
+        nodeSafeguardReplaysCompleteOutput(command)
       );
     }
-    return command.testInventory === null && command.testSafeguard === undefined;
+    return (
+      command.testInventory === null && command.testSafeguard === undefined
+    );
   });
+}
+
+const HOST_RUNTIME_KEYS = Object.freeze([
+  "program",
+  "context",
+  "invokedPath",
+  "path",
+  "executableSha256",
+  "versionStdout",
+  "versionStderr",
+]);
+const RUSTUP_RUNTIME_KEYS = Object.freeze([
+  ...HOST_RUNTIME_KEYS,
+  "toolchainPath",
+  "toolchainExecutableSha256",
+]);
+const MISE_RUNTIME_KEYS = Object.freeze([
+  "program",
+  "context",
+  "launcher",
+  "invokedPath",
+  "path",
+  "executableSha256",
+  "versionStdout",
+  "versionStderr",
+]);
+
+function absoluteExecutablePath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 1 &&
+    value.length <= 32_768 &&
+    !value.includes("\0") &&
+    (value.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(value))
+  );
+}
+
+function versionEvidenceValid(record) {
+  return (
+    typeof record.versionStdout === "string" &&
+    typeof record.versionStderr === "string" &&
+    record.versionStdout.length <= 65_536 &&
+    record.versionStderr.length <= 65_536 &&
+    !record.versionStdout.includes("\0") &&
+    !record.versionStderr.includes("\0") &&
+    record.versionStdout === record.versionStdout.trim() &&
+    record.versionStderr === record.versionStderr.trim() &&
+    (record.versionStdout.length > 0 || record.versionStderr.length > 0)
+  );
+}
+
+function runtimeRecordValid(record, expected, expectedAgenticQeVersion) {
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    Array.isArray(record) ||
+    record.program !== expected.program ||
+    record.context !== expected.context ||
+    !absoluteExecutablePath(record.invokedPath) ||
+    !absoluteExecutablePath(record.path) ||
+    !DIGEST.test(record.executableSha256 ?? "") ||
+    !versionEvidenceValid(record)
+  ) {
+    return false;
+  }
+  const keys = Object.keys(record);
+  if (expected.context === "tools/jena-parity/.mise.toml") {
+    return (
+      JSON.stringify(keys) === JSON.stringify(MISE_RUNTIME_KEYS) &&
+      record.launcher === "mise exec --"
+    );
+  }
+  const extended = JSON.stringify(keys) === JSON.stringify(RUSTUP_RUNTIME_KEYS);
+  if (JSON.stringify(keys) !== JSON.stringify(HOST_RUNTIME_KEYS) && !extended) {
+    return false;
+  }
+  if (
+    extended &&
+    (!["cargo", "rustc"].includes(record.program) ||
+      !absoluteExecutablePath(record.toolchainPath) ||
+      !DIGEST.test(record.toolchainExecutableSha256 ?? ""))
+  ) {
+    return false;
+  }
+  return (
+    record.program !== "agentic-qe" ||
+    (record.versionStdout === expectedAgenticQeVersion &&
+      record.versionStderr === "")
+  );
+}
+
+function runtimeEvidenceValid(
+  runtime,
+  expectedRuntime,
+  expectedRuntimeContentHash,
+  expectedCommandIds,
+  expectedCommands,
+  expectedAgenticQeVersion,
+) {
+  if (
+    !Array.isArray(runtime) ||
+    !Array.isArray(expectedCommandIds) ||
+    (expectedRuntime === undefined &&
+      expectedRuntimeContentHash === undefined) ||
+    (expectedRuntime !== undefined &&
+      (!Array.isArray(expectedRuntime) ||
+        JSON.stringify(runtime) !== JSON.stringify(expectedRuntime))) ||
+    (expectedRuntimeContentHash !== undefined &&
+      (!DIGEST.test(expectedRuntimeContentHash) ||
+        agenticRuntimeContentHash(runtime) !== expectedRuntimeContentHash))
+  )
+    return false;
+  const plan = runtimeProgramPlan(expectedCommandIds, expectedCommands);
+  const expected = [
+    ...plan.host.map((program) => ({ program, context: "host" })),
+    ...plan.jenaParityMise.map((program) => ({
+      program,
+      context: "tools/jena-parity/.mise.toml",
+    })),
+    { program: "agentic-qe", context: "host" },
+  ].sort((left, right) =>
+    `${left.context}:${left.program}`.localeCompare(
+      `${right.context}:${right.program}`,
+    ),
+  );
+  return (
+    runtime.length === expected.length &&
+    runtime.every((record, index) =>
+      runtimeRecordValid(record, expected[index], expectedAgenticQeVersion),
+    )
+  );
 }
 
 export function validateAgenticReceipt(
@@ -465,6 +867,8 @@ export function validateAgenticReceipt(
     expectedProfile,
     expectedAgenticQeVersion,
     expectedAgenticQeDependency,
+    expectedRuntime,
+    expectedRuntimeContentHash,
     expectedCommandIds,
     expectedCommands,
     minimumGeneratedAtMs = 0,
@@ -479,14 +883,27 @@ export function validateAgenticReceipt(
     expectedCommandIds === undefined ||
     (Array.isArray(expectedCommandIds) &&
       expectedCommandIds.length > 0 &&
-      JSON.stringify(observedCommandIds) === JSON.stringify(expectedCommandIds));
+      JSON.stringify(observedCommandIds) ===
+        JSON.stringify(expectedCommandIds));
+  const retainedOutputValid = aggregateRetainedOutputValid(receipt?.commands);
+  let serializedReceiptValid = false;
+  if (retainedOutputValid) {
+    try {
+      serializedReceiptValid =
+        agenticReceiptBytes(receipt).length <= MAX_AGENTIC_RECEIPT_BYTES;
+    } catch {
+      serializedReceiptValid = false;
+    }
+  }
   const trustedContractsValid =
+    retainedOutputValid &&
+    serializedReceiptValid &&
     Array.isArray(receipt?.commands) &&
     trustedCommandContractsValid(receipt, expectedCommands);
   if (
     !receipt ||
     typeof receipt !== "object" ||
-    receipt.schemaVersion !== 4 ||
+    receipt.schemaVersion !== 5 ||
     receipt.adapter !== "oxigraph-agentic-qe" ||
     !UUID.test(receipt.runId ?? "") ||
     receipt.profile !== expectedProfile ||
@@ -508,7 +925,8 @@ export function validateAgenticReceipt(
     generatedAtMs > maximumGeneratedAtMs ||
     receipt.implementation?.stable !== true ||
     !implementationManifestValid(receipt.implementation) ||
-    receipt.implementation.contentHash !== receipt.implementation.afterContentHash ||
+    receipt.implementation.contentHash !==
+      receipt.implementation.afterContentHash ||
     !Array.isArray(receipt.implementation.changedPaths) ||
     receipt.implementation.changedPaths.length !== 0 ||
     receipt.artifacts?.complete !== true ||
@@ -525,17 +943,25 @@ export function validateAgenticReceipt(
     receipt.commands.some(
       (command) =>
         command?.code !== 0 ||
+        command?.signal !== null ||
         command?.spawnError !== null ||
         command?.timedOut !== false ||
+        command?.cleanupUnconfirmed !== false ||
+        command?.terminationReason !== null ||
+        command?.terminationSignalError !== null ||
+        command?.killAttempted !== false ||
+        command?.outputLimitExceeded !== false ||
+        command?.scanLimitExceeded !== false ||
+        command?.scanFailureReason !== null ||
         command?.testSafeguard?.passed === false,
     ) ||
-    !Array.isArray(receipt.runtime) ||
-    receipt.runtime.length === 0 ||
-    receipt.runtime.some(
-      (record) =>
-        typeof record?.program !== "string" ||
-        typeof record?.context !== "string" ||
-        !DIGEST.test(record?.executableSha256 ?? ""),
+    !runtimeEvidenceValid(
+      receipt.runtime,
+      expectedRuntime,
+      expectedRuntimeContentHash,
+      expectedCommandIds,
+      expectedCommands,
+      expectedAgenticQeVersion,
     ) ||
     receipt.contentHash !== agenticReceiptContentHash(receipt) ||
     receipt.executionHash !== agenticReceiptExecutionHash(receipt)

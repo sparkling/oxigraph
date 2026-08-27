@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 
-import {
-  readFileSync,
-  realpathSync,
-} from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  agenticRuntimeContentHash,
   implementationSnapshot as agenticImplementationSnapshot,
   readAgenticFileBytes,
   validateAgenticArtifactArchive,
   validateAgenticPublication,
   validateAgenticReceipt,
 } from "../agentic-qe/evidence.mjs";
+import { agenticRuntimeProvenance } from "../agentic-qe/execution-provenance.mjs";
 import {
   commands as agenticCommands,
   profiles as agenticProfiles,
@@ -37,7 +36,11 @@ const toolDir = realpathSync(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = realpathSync(resolve(toolDir, "../.."));
 const semanticProfile = "metaharness-semantic-gate";
 
-function verifyAgentic(binding, minimumGeneratedAtMs, maximumGeneratedAtMs) {
+async function verifyAgentic(
+  binding,
+  minimumGeneratedAtMs,
+  maximumGeneratedAtMs,
+) {
   const agenticQeDependency = agenticQeDependencyResolution();
   if (!agenticQualificationBindingValid(binding)) {
     throw new Error("Agentic-QE qualification binding is invalid");
@@ -52,10 +55,16 @@ function verifyAgentic(binding, minimumGeneratedAtMs, maximumGeneratedAtMs) {
   const publication = validateAgenticPublication(candidate);
   const receipt = publication.receipt;
   const selected = agenticProfiles[semanticProfile];
+  const expectedRuntime = await agenticRuntimeProvenance(
+    selected,
+    agenticCommands,
+    agenticQeDependency.version,
+  );
   validateAgenticReceipt(receipt, {
     expectedProfile: semanticProfile,
     expectedAgenticQeVersion: agenticQeDependency.version,
     expectedAgenticQeDependency: agenticQeDependency,
+    expectedRuntime,
     expectedCommandIds: selected,
     expectedCommands: agenticCommands,
     minimumGeneratedAtMs,
@@ -91,7 +100,9 @@ function verifyAgentic(binding, minimumGeneratedAtMs, maximumGeneratedAtMs) {
     !publication.receiptBytes.equals(receiptBytes) ||
     publication.oracle.receiptSha256 !== binding.sha256
   ) {
-    throw new Error("Agentic-QE immutable publication differs from qualification");
+    throw new Error(
+      "Agentic-QE immutable publication differs from qualification",
+    );
   }
   return {
     schemaVersion: receipt.schemaVersion,
@@ -101,19 +112,19 @@ function verifyAgentic(binding, minimumGeneratedAtMs, maximumGeneratedAtMs) {
     oracleSha256: sha256(oracleBytes),
     contentHash: receipt.contentHash,
     executionHash: receipt.executionHash,
+    runtimeContentHash: agenticRuntimeContentHash(expectedRuntime),
     implementationContentHash: implementation.contentHash,
     artifactContentHash: receipt.artifacts.contentHash,
     archiveContentHash: archive.contentHash,
   };
 }
 
-function main() {
+async function main() {
   const qualificationRelativePath = "target/metaharness/qualification.json";
   const canonicalQualification = resolve(repoRoot, qualificationRelativePath);
-  const qualificationBytes = readAgenticFileBytes(
-    qualificationRelativePath,
-    { repositoryRoot: repoRoot },
-  );
+  const qualificationBytes = readAgenticFileBytes(qualificationRelativePath, {
+    repositoryRoot: repoRoot,
+  });
   const qualification = JSON.parse(qualificationBytes);
   const darwin = darwinInstallationSnapshot(repoRoot, toolDir);
   validateQualificationReceipt(qualification, {
@@ -122,7 +133,9 @@ function main() {
     strictNested: true,
   });
   if (!trustedRealGateValid(qualification.realGate)) {
-    throw new Error("Darwin qualification real gate is not independently closed");
+    throw new Error(
+      "Darwin qualification real gate is not independently closed",
+    );
   }
   const current = protectedSnapshot(repoRoot);
   if (
@@ -149,7 +162,7 @@ function main() {
     repoRoot,
     qualification.mutation,
   );
-  const agentic = verifyAgentic(
+  const agentic = await verifyAgentic(
     qualification.realGate.agenticReceipt,
     Date.parse(qualification.startedAt),
     Date.parse(qualification.finishedAt),
@@ -197,7 +210,7 @@ function main() {
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   console.error(error instanceof Error ? error.stack : String(error));
   process.exitCode = 1;
