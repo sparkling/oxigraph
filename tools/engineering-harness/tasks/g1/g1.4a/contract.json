@@ -104,6 +104,8 @@
     "format",
     "build",
     "public",
+    "service",
+    "compatibility",
     "independent",
     "regression"
   ],
@@ -113,19 +115,27 @@
       "timeoutMs": 120000
     },
     "build": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "transaction_outcomes", "--test", "transaction_capabilities", "--test", "transaction_compatibility", "--test", "transaction_state_model", "--test", "update_atomicity"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--no-run", "--test", "transaction_state_model", "--test", "update_atomicity"],
       "timeoutMs": 1800000
     },
     "public": {
       "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_outcomes"],
       "timeoutMs": 300000
     },
+    "service": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_capabilities"],
+      "timeoutMs": 420000
+    },
+    "compatibility": {
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_compatibility"],
+      "timeoutMs": 420000
+    },
     "independent": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_capabilities", "--test", "transaction_compatibility"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_state_model"],
       "timeoutMs": 420000
     },
     "regression": {
-      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "transaction_state_model", "--test", "update_atomicity"],
+      "argv": ["cargo", "test", "--locked", "-p", "oxigraph", "--test", "update_atomicity"],
       "timeoutMs": 420000
     }
   },
@@ -174,7 +184,9 @@
   },
   "success": {
     "publicPassed": 7,
-    "independentPassed": 20,
+    "servicePassed": 9,
+    "compatibilityPassed": 20,
+    "independentPassed": 3,
     "regressionPassed": 2
   }
 }

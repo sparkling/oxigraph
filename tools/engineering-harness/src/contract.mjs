@@ -602,7 +602,15 @@ const EXPECTED_G14A = Object.freeze({
     ".github",
     "tools",
   ],
-  verificationSequence: EXPECTED.verificationSequence,
+  verificationSequence: [
+    "format",
+    "build",
+    "public",
+    "service",
+    "compatibility",
+    "independent",
+    "regression",
+  ],
   commands: {
     format: EXPECTED.commands.format,
     build: {
@@ -613,12 +621,6 @@ const EXPECTED_G14A = Object.freeze({
         "-p",
         "oxigraph",
         "--no-run",
-        "--test",
-        "transaction_outcomes",
-        "--test",
-        "transaction_capabilities",
-        "--test",
-        "transaction_compatibility",
         "--test",
         "transaction_state_model",
         "--test",
@@ -638,7 +640,7 @@ const EXPECTED_G14A = Object.freeze({
       ],
       timeoutMs: 300_000,
     },
-    independent: {
+    service: {
       argv: [
         "cargo",
         "test",
@@ -647,8 +649,30 @@ const EXPECTED_G14A = Object.freeze({
         "oxigraph",
         "--test",
         "transaction_capabilities",
+      ],
+      timeoutMs: 420_000,
+    },
+    compatibility: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
         "--test",
         "transaction_compatibility",
+      ],
+      timeoutMs: 420_000,
+    },
+    independent: {
+      argv: [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "oxigraph",
+        "--test",
+        "transaction_state_model",
       ],
       timeoutMs: 420_000,
     },
@@ -659,8 +683,6 @@ const EXPECTED_G14A = Object.freeze({
         "--locked",
         "-p",
         "oxigraph",
-        "--test",
-        "transaction_state_model",
         "--test",
         "update_atomicity",
       ],
@@ -701,7 +723,13 @@ const EXPECTED_G14A = Object.freeze({
       "No space left on device",
     ],
   },
-  success: { publicPassed: 7, independentPassed: 20, regressionPassed: 2 },
+  success: {
+    publicPassed: 7,
+    servicePassed: 9,
+    compatibilityPassed: 20,
+    independentPassed: 3,
+    regressionPassed: 2,
+  },
   protectedInputs: {
     manifestAlgorithm: MANIFEST_ALGORITHM,
     mutableExclusion: "lib/oxigraph/src/store.rs",

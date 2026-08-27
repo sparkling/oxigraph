@@ -37,7 +37,9 @@ Current activation boundary:
   duplicate-key, rollback/drop, legacy-compatibility, and process-abort
   lost-acknowledgement cases. The same evaluator commit updates the two older
   RocksDB capability assertions, so candidate verification runs the complete
-  capability and compatibility targets without exclusions;
+  capability and compatibility targets without exclusions. Within the fixed
+  seven-stage receipt vocabulary, the supplemental `service` slot carries the
+  capability target and `compatibility` carries the compatibility target;
 - `g1.5 preflight|run|replay` activates `http-client,rdf-12` explicitly and
   binds the six-file unified egress slice to deny-by-default SERVICE, LOAD,
   nested-document, response-limit, connection-budget, cancellation, and

@@ -106,18 +106,27 @@ test("loads the evaluator-separated G1.4a Store outcome contract and binds it to
   assert.equal(resolution.contract.initialRed.rustcCode, "E0432");
   assert.equal(resolution.contract.initialRed.rustcErrorCount, 24);
   assert.equal(resolution.contract.success.publicPassed, 7);
-  assert.equal(resolution.contract.success.independentPassed, 20);
+  assert.equal(resolution.contract.success.servicePassed, 9);
+  assert.equal(resolution.contract.success.compatibilityPassed, 20);
+  assert.equal(resolution.contract.success.independentPassed, 3);
   assert.equal(resolution.contract.success.regressionPassed, 2);
   assert.deepEqual(resolution.contract.scope.mutableExact, g14aProfile.mutablePaths);
   assert.equal(
     resolution.contract.evaluator.path,
     "lib/oxigraph/tests/transaction_outcomes.rs",
   );
-  assert.equal(
-    resolution.contract.commands.independent.argv.includes("--skip"),
-    false,
-  );
-  assert.deepEqual(resolution.contract.commands.regression.argv.slice(-4), [
+  assert.deepEqual(resolution.contract.verificationSequence, [
+    "format",
+    "build",
+    "public",
+    "service",
+    "compatibility",
+    "independent",
+    "regression",
+  ]);
+  assert.equal(resolution.contract.commands.service.argv.includes("--skip"), false);
+  assert.equal(resolution.contract.commands.compatibility.argv.includes("--skip"), false);
+  assert.deepEqual(resolution.contract.commands.build.argv.slice(-4), [
     "--test",
     "transaction_state_model",
     "--test",
