@@ -179,7 +179,7 @@ test("loads the runtime-red G1.4b outcome fault contract and binds it to Git", (
   );
   assert.equal(
     resolution.repository.evaluator.commit,
-    "95440da438da2260b0d5cf1d1d011c9a4574947d",
+    "fa832174f3023e035fbaad52721f1b616eb1752e",
   );
 });
 
