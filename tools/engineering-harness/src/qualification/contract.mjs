@@ -1,20 +1,46 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import { bench } from "@metaharness/darwin";
 import { harnessRoot } from "../paths.mjs";
+import { canonicalJson } from "../routing/features.mjs";
+import {
+  G17_BENCHMARK_CASES,
+  G17_BENCHMARK_SUITE_HASH,
+  G17_DARWIN_RUNTIME_MODULES,
+  G17_QUALIFICATION_SAMPLE_SCHEMA,
+  loadG17DarwinFunctions,
+  verifyG17DarwinRuntime,
+} from "./benchmark-contract.mjs";
+import {
+  G17_NOISE_DECISION_SCHEMA,
+  G17_PERFORMANCE_DECISION_SCHEMA,
+  G17_REFERENCE_DECISION_SCHEMA,
+  g17DecisionSetSha256,
+} from "./decision-contract.mjs";
 
-export const G17_CONTRACT_SCHEMA =
-  "oxigraph.g1.7-qualification-contract/v3";
-export const G17_LEGACY_CONTRACT_SHA256 =
+const { hashTasks: darwinHashTasks, verifySuite: darwinVerifySuite } =
+  await loadG17DarwinFunctions();
+
+export const G17_CONTRACT_SCHEMA = "oxigraph.g1.7-qualification-contract/v4";
+export const G17_LEGACY_V1_CONTRACT_SHA256 =
   "e267e4d276a3d0b7997c2522d3f24ca7a32f669282c5f2ea332a752c3322c54c";
-export const G17_CURRENT_CONTRACT_SHA256 =
+export const G17_LEGACY_CONTRACT_SHA256 = G17_LEGACY_V1_CONTRACT_SHA256;
+export const G17_LEGACY_V3_CONTRACT_SHA256 =
   "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
+export const G17_CURRENT_CONTRACT_SHA256 =
+  "dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0";
 export const G17_CONTRACT_GENERATION = Object.freeze({
   LEGACY_V1: "LEGACY_V1",
-  CURRENT_V3: "CURRENT_V3",
+  LEGACY_V3: "LEGACY_V3",
+  CURRENT_V4: "CURRENT_V4",
 });
 export const g17ContractPath = join(
   harnessRoot,
@@ -32,19 +58,37 @@ const AUTHORITY = Object.freeze({
   routerQualityAuthority: false,
   publicationAuthority: false,
 });
-const ABSENT_DECISION = Object.freeze({
-  status: "ABSENT",
-  path: null,
-  sha256: null,
-  approvedBy: null,
-  approvedAt: null,
-});
-const UNSELECTED_REFERENCE = Object.freeze({
-  status: "UNSELECTED",
-  commit: null,
-  tree: null,
-  approvedBy: null,
-  approvedAt: null,
+const EXPECTED_DECISION_DESCRIPTORS = Object.freeze({
+  reference: {
+    id: "reference",
+    path: "qualification/g1.7/decisions/reference.json",
+    sealedName: "reference-decision.json",
+    schema: G17_REFERENCE_DECISION_SCHEMA,
+    sha256: "45fbb9b98f9dabc7742c254a4b5b3bafc0f25174713445965332176df7af3a84",
+    contentHash:
+      "0a3f5e4f1ff40ead49f809cc124f54ce58bf5e3c4ca74114e0c565c33c0ea367",
+    maxBytes: 32_768,
+  },
+  performance: {
+    id: "performance-budget",
+    path: "qualification/g1.7/decisions/performance-budget.json",
+    sealedName: "performance-budget-decision.json",
+    schema: G17_PERFORMANCE_DECISION_SCHEMA,
+    sha256: "b38ae4b929dcf9e5da701808c726ada68a8c8188b7f3700f2fc47d4de6727d12",
+    contentHash:
+      "3184f0603d1a74f66161d097f995f572bf9592c3b90f316f6969ec1b499a5e98",
+    maxBytes: 32_768,
+  },
+  noise: {
+    id: "noise-budget",
+    path: "qualification/g1.7/decisions/noise-budget.json",
+    sealedName: "noise-budget-decision.json",
+    schema: G17_NOISE_DECISION_SCHEMA,
+    sha256: "72666540abf5196bb65bfeab2eac1b6ae8b0f4ab25621f5eadf998e054deeb01",
+    contentHash:
+      "3cf2243f1febc0e86322b1fec21bd67bcf6ba2e66ff4d97cb58783921202cb06",
+    maxBytes: 32_768,
+  },
 });
 const EXPECTED_EVALUATOR = Object.freeze({
   commit: "3aca932e4062f9b087adfa486fac936b5bbeaebb",
@@ -69,64 +113,6 @@ const EXPECTED_EVALUATOR = Object.freeze({
   patchSha256:
     "3c3df24b0021b1bfebb42ffed2ff9a2c228d7e0ac302c4a5aa9e6b6e8e68db46",
 });
-const EXPECTED_CASES = Object.freeze([
-  {
-    id: "on-store-memory",
-    backend: "memory",
-    binding: "on-store",
-    writers: 1,
-    concurrentReaders: false,
-    operations: 10_000,
-  },
-  {
-    id: "on-dataset-memory",
-    backend: "memory",
-    binding: "on-dataset",
-    writers: 1,
-    concurrentReaders: false,
-    operations: 10_000,
-  },
-  {
-    id: "on-store-rocksdb",
-    backend: "rocksdb",
-    binding: "on-store",
-    writers: 1,
-    concurrentReaders: false,
-    operations: 10_000,
-  },
-  {
-    id: "on-dataset-rocksdb",
-    backend: "rocksdb",
-    binding: "on-dataset",
-    writers: 1,
-    concurrentReaders: false,
-    operations: 10_000,
-  },
-  {
-    id: "writers-1-rocksdb",
-    backend: "rocksdb",
-    binding: "transaction",
-    writers: 1,
-    concurrentReaders: true,
-    operations: 1_000,
-  },
-  {
-    id: "writers-4-rocksdb",
-    backend: "rocksdb",
-    binding: "transaction",
-    writers: 4,
-    concurrentReaders: true,
-    operations: 1_000,
-  },
-  {
-    id: "writers-16-rocksdb",
-    backend: "rocksdb",
-    binding: "transaction",
-    writers: 16,
-    concurrentReaders: true,
-    operations: 1_000,
-  },
-]);
 const EXPECTED_AGENTIC_COMMANDS = Object.freeze([
   "g11TransactionStateModel",
   "g12TransactionConcurrency",
@@ -269,13 +255,14 @@ function validateContract(value) {
       "referenceDecision",
       "budgetDecision",
       "noiseDecision",
+      "decisionSetSha256",
       "benchmark",
       "compatibility",
       "artifactPolicy",
     ],
     "contract",
   );
-  assertInvariant(value.schema === G17_CONTRACT_SCHEMA, "schema is not v3");
+  assertInvariant(value.schema === G17_CONTRACT_SCHEMA, "schema is not v4");
   assertInvariant(
     value.id === "g1.7-compatibility-performance-qualification" &&
       value.programme === "linked-data-store",
@@ -289,7 +276,10 @@ function validateContract(value) {
     typeof value.objective === "string" && value.objective.length > 32,
     "objective is missing",
   );
-  assertInvariant(isDeepStrictEqual(value.authority, AUTHORITY), "authority drifted");
+  assertInvariant(
+    isDeepStrictEqual(value.authority, AUTHORITY),
+    "authority drifted",
+  );
   assertInvariant(
     isDeepStrictEqual(value.evaluator, EXPECTED_EVALUATOR),
     "evaluator binding drifted",
@@ -302,30 +292,56 @@ function validateContract(value) {
     "evaluator identifiers are malformed",
   );
   assertInvariant(
-    isDeepStrictEqual(value.referenceDecision, UNSELECTED_REFERENCE),
-    "reference decision is not the reviewed unselected state",
+    isDeepStrictEqual(
+      value.referenceDecision,
+      EXPECTED_DECISION_DESCRIPTORS.reference,
+    ),
+    "reference decision descriptor drifted",
   );
   assertInvariant(
-    isDeepStrictEqual(value.budgetDecision, ABSENT_DECISION),
-    "performance budget decision is not the reviewed absent state",
+    isDeepStrictEqual(
+      value.budgetDecision,
+      EXPECTED_DECISION_DESCRIPTORS.performance,
+    ),
+    "performance budget decision descriptor drifted",
   );
   assertInvariant(
-    isDeepStrictEqual(value.noiseDecision, ABSENT_DECISION),
-    "noise budget decision is not the reviewed absent state",
+    isDeepStrictEqual(value.noiseDecision, EXPECTED_DECISION_DESCRIPTORS.noise),
+    "noise budget decision descriptor drifted",
+  );
+  assertInvariant(
+    value.decisionSetSha256 ===
+      g17DecisionSetSha256({
+        reference: value.referenceDecision,
+        performance: value.budgetDecision,
+        noise: value.noiseDecision,
+      }),
+    "decision-set hash drifted",
   );
 
-  exactKeys(value.benchmark, ["suite", "build", "protocol", "statistics"], "benchmark");
+  exactKeys(
+    value.benchmark,
+    ["suite", "build", "protocol", "statistics"],
+    "benchmark",
+  );
   const { suite, build, protocol, statistics } = value.benchmark;
   exactKeys(suite, ["id", "version", "taskHash", "tasks"], "benchmark suite");
   assertInvariant(
     suite.id === "oxigraph-g1.7-transactional-write" && suite.version === "1",
     "benchmark suite identity drifted",
   );
-  assertInvariant(isDeepStrictEqual(suite.tasks, EXPECTED_CASES), "benchmark cases drifted");
-  assertInvariant(DIGEST.test(suite.taskHash), "benchmark suite hash is malformed");
-  const suiteVerification = bench.verifySuite(suite);
   assertInvariant(
-    suiteVerification.ok && suite.taskHash === bench.hashTasks(suite.tasks),
+    isDeepStrictEqual(suite.tasks, G17_BENCHMARK_CASES),
+    "benchmark cases drifted",
+  );
+  assertInvariant(
+    suite.taskHash === G17_BENCHMARK_SUITE_HASH,
+    "benchmark suite hash is malformed",
+  );
+  verifyG17DarwinRuntime();
+  const suiteVerification = darwinVerifySuite(suite);
+  assertInvariant(
+    suiteVerification.ok && suite.taskHash === darwinHashTasks(suite.tasks),
     "Darwin suite hash does not verify",
   );
   assertInvariant(
@@ -340,8 +356,19 @@ function validateContract(value) {
         "--bench",
         "transactional_write",
         "--no-run",
+        "--message-format",
+        "json-render-diagnostics",
+        "--target-dir",
+        "/state/target",
       ],
+      isolation: {
+        workspacePerProduct: true,
+        targetDirectoryPerProduct: true,
+        crossProductArtifactReuse: false,
+        evaluatorOverlayAppliedBeforeBuild: true,
+      },
       target: "transactional_write",
+      targetDirectory: "/state/target",
       profile: "bench",
       buildOnceBeforeTiming: true,
     }),
@@ -350,7 +377,7 @@ function validateContract(value) {
   assertInvariant(
     isDeepStrictEqual(protocol, {
       sampleSchema: "oxigraph.transactional-write-sample/v1",
-      qualificationSampleSchema: "oxigraph.g1.7-qualification-sample/v1",
+      qualificationSampleSchema: G17_QUALIFICATION_SAMPLE_SCHEMA,
       schedules: [
         ["subject", "reference", "reference", "subject"],
         ["reference", "subject", "subject", "reference"],
@@ -371,11 +398,19 @@ function validateContract(value) {
       owner: "@metaharness/darwin",
       suiteHashApi: "bench.hashTasks",
       suiteVerifyApi: "bench.verifySuite",
-      bootstrapApi: "bench.bootstrapDelta",
+      bootstrapApi: "security.bootstrapDelta",
       bootstrapSamples: 5_000,
       bootstrapSeed: 170_017,
-      bootstrapScore: "negative-elapsed-nanoseconds",
-      median: "integer-midpoint-floor",
+      bootstrapSeedDerivation: "base-plus-case-index",
+      bootstrapScore: "paired-log-noninferiority-margin",
+      bootstrapScorePrecisionDecimals: 12,
+      packageVersion: "0.9.3",
+      packageIntegrity:
+        "sha512-V+AhQvj9ijR8OK9TvogSngtz47q8pHPjMm1mWMoDUk1JaRKz88oJu/sPUQ5BApCIgeSWEKo/bzrFSV4Krb/3Fg==",
+      statisticsModuleSha256:
+        "65adf15656c7850217faeca4e664a7d8cd0f1672c358a727b60e4e67e8fe3141",
+      runtimeModuleSha256: G17_DARWIN_RUNTIME_MODULES,
+      median: "integer-midpoint-overflow-safe-floor",
       p95: "nearest-rank",
       dispersion: "median-absolute-deviation",
     }),
@@ -401,7 +436,10 @@ function validateContract(value) {
     "native compatibility lanes drifted",
   );
   assertInvariant(
-    isDeepStrictEqual(value.compatibility.nativeSession, EXPECTED_NATIVE_SESSION),
+    isDeepStrictEqual(
+      value.compatibility.nativeSession,
+      EXPECTED_NATIVE_SESSION,
+    ),
     "native whole-session policy drifted",
   );
   assertInvariant(
@@ -450,10 +488,12 @@ export function decodeSealedG17Contract({ bytes, receiptSha256 }) {
       throw new Error("copied bytes differ from the receipt digest");
     }
     let generation;
-    if (contractSha256 === G17_LEGACY_CONTRACT_SHA256) {
+    if (contractSha256 === G17_LEGACY_V1_CONTRACT_SHA256) {
       generation = G17_CONTRACT_GENERATION.LEGACY_V1;
+    } else if (contractSha256 === G17_LEGACY_V3_CONTRACT_SHA256) {
+      generation = G17_CONTRACT_GENERATION.LEGACY_V3;
     } else if (contractSha256 === G17_CURRENT_CONTRACT_SHA256) {
-      generation = G17_CONTRACT_GENERATION.CURRENT_V3;
+      generation = G17_CONTRACT_GENERATION.CURRENT_V4;
     } else {
       throw new Error("copied contract has an unsupported byte identity");
     }
@@ -463,18 +503,34 @@ export function decodeSealedG17Contract({ bytes, receiptSha256 }) {
     } catch (error) {
       throw new Error(`copied contract is invalid JSON: ${error.message}`);
     }
-    const contract = generation === G17_CONTRACT_GENERATION.CURRENT_V3
-      ? validateG17Contract(parsed)
-      : (() => {
-          if (
-            parsed?.schema !== "oxigraph.g1.7-qualification-contract/v1" ||
-            parsed.id !== "g1.7-compatibility-performance-qualification" ||
-            parsed.programme !== "linked-data-store"
-          ) {
-            throw new Error("legacy byte identity has impossible parsed metadata");
-          }
-          return deepFreeze(parsed);
-        })();
+    const contract =
+      generation === G17_CONTRACT_GENERATION.CURRENT_V4
+        ? (() => {
+            if (
+              !bytes.equals(Buffer.from(`${canonicalJson(parsed)}\n`, "utf8"))
+            ) {
+              throw new Error(
+                "current contract bytes are not canonical JSON plus one LF",
+              );
+            }
+            return validateG17Contract(parsed);
+          })()
+        : (() => {
+            const expectedSchema =
+              generation === G17_CONTRACT_GENERATION.LEGACY_V1
+                ? "oxigraph.g1.7-qualification-contract/v1"
+                : "oxigraph.g1.7-qualification-contract/v3";
+            if (
+              parsed?.schema !== expectedSchema ||
+              parsed.id !== "g1.7-compatibility-performance-qualification" ||
+              parsed.programme !== "linked-data-store"
+            ) {
+              throw new Error(
+                "legacy byte identity has impossible parsed metadata",
+              );
+            }
+            return deepFreeze(parsed);
+          })();
     return Object.freeze({ contract, bytes, contractSha256, generation });
   } catch (error) {
     if (error.message.startsWith("G1.7 qualification contract:")) throw error;
@@ -502,14 +558,16 @@ export function g17ContractCompatibilityGeneration({
       throw new Error("contract/evidence generation state is invalid");
     }
     const currentContract =
-      contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V3;
+      contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4;
     const currentCompatibility =
       compatibilitySchemaState === "CURRENT_SCHEMA_UNREPLAYED";
     if (
       compatibilityStatus === "PASS" &&
       currentContract !== currentCompatibility
     ) {
-      throw new Error("contract and compatibility evidence generations are mixed");
+      throw new Error(
+        "contract and compatibility evidence generations are mixed",
+      );
     }
     return Object.freeze({
       currentContract,
@@ -522,23 +580,53 @@ export function g17ContractCompatibilityGeneration({
   }
 }
 
-export function loadG17Contract({ contractPath = g17ContractPath } = {}) {
-  const metadata = lstatSync(contractPath);
-  if (
-    metadata.isSymbolicLink() ||
-    !metadata.isFile() ||
-    metadata.size < 1 ||
-    metadata.size > MAX_CONTRACT_BYTES
-  ) {
-    throw new Error("G1.7 qualification contract must be a bounded regular file");
+function stableReadContract(contractPath) {
+  if (!Number.isInteger(constants.O_NOFOLLOW)) {
+    throw new Error("G1.7 qualification contract: O_NOFOLLOW is unavailable");
   }
-  const bytes = readFileSync(contractPath);
+  let descriptor;
+  try {
+    descriptor = openSync(
+      contractPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    const before = fstatSync(descriptor, { bigint: true });
+    if (
+      !before.isFile() ||
+      before.size < 1n ||
+      before.size > BigInt(MAX_CONTRACT_BYTES)
+    ) {
+      throw new Error("must be a bounded regular file");
+    }
+    const bytes = readFileSync(descriptor);
+    const after = fstatSync(descriptor, { bigint: true });
+    for (const key of ["dev", "ino", "size", "mtimeNs", "ctimeNs"]) {
+      if (before[key] !== after[key]) {
+        throw new Error("changed while being read");
+      }
+    }
+    if (BigInt(bytes.length) !== before.size) {
+      throw new Error("read length drifted");
+    }
+    return bytes;
+  } catch (error) {
+    if (error.message.startsWith("G1.7 qualification contract:")) throw error;
+    throw new Error(`G1.7 qualification contract: ${error.message}`);
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+export function loadG17Contract({ contractPath = g17ContractPath } = {}) {
+  const bytes = stableReadContract(contractPath);
   const decoded = decodeSealedG17Contract({
     bytes,
     receiptSha256: sha256(bytes),
   });
-  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V3) {
-    throw new Error("G1.7 qualification contract: current path is not current generation");
+  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V4) {
+    throw new Error(
+      "G1.7 qualification contract: current path is not current generation",
+    );
   }
   return decoded;
 }

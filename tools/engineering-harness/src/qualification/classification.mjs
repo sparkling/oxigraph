@@ -1,3 +1,5 @@
+import { G17_BENCHMARK_CASE_IDS } from "./benchmark-contract.mjs";
+
 const EVIDENCE_STATES = new Set([
   "PASS",
   "FAIL",
@@ -5,6 +7,7 @@ const EVIDENCE_STATES = new Set([
   "STALE",
   "NOISY",
   "NOT_RUN",
+  "INCONCLUSIVE",
 ]);
 
 function status(value, label) {
@@ -41,14 +44,17 @@ export function classifyG17Qualification({
   const referenceStatus = decision(referenceDecision, "reference", [
     "SELECTED",
     "UNSELECTED",
+    "PROPOSED",
   ]);
   const budgetStatus = decision(budgetDecision, "performance budget", [
     "APPROVED",
     "ABSENT",
+    "PROPOSED",
   ]);
   const noiseStatus = decision(noiseDecision, "noise budget", [
     "APPROVED",
     "ABSENT",
+    "PROPOSED",
   ]);
   if (!Array.isArray(benchmark?.budgetBreaches)) {
     throw new Error("benchmark budgetBreaches must be an array");
@@ -60,10 +66,32 @@ export function classifyG17Qualification({
   ) {
     throw new Error("benchmark budgetBreaches must contain non-empty case ids");
   }
+  const observedIndexes = benchmark.budgetBreaches.map((caseId) =>
+    G17_BENCHMARK_CASE_IDS.indexOf(caseId),
+  );
+  if (
+    observedIndexes.some((index) => index < 0) ||
+    new Set(benchmark.budgetBreaches).size !==
+      benchmark.budgetBreaches.length ||
+    observedIndexes.some(
+      (index, position) =>
+        position > 0 && index <= observedIndexes[position - 1],
+    )
+  ) {
+    throw new Error(
+      "benchmark budgetBreaches must be known, unique, and in suite order",
+    );
+  }
+  if (benchmarkStatus !== "FAIL" && benchmark.budgetBreaches.length > 0) {
+    throw new Error(
+      `${benchmarkStatus} benchmark cannot report performance budget breaches`,
+    );
+  }
 
   const rejectionReasons = [];
   if (semanticStatus === "FAIL") rejectionReasons.push("semantic-failed");
-  if (compatibilityStatus === "FAIL") rejectionReasons.push("compatibility-failed");
+  if (compatibilityStatus === "FAIL")
+    rejectionReasons.push("compatibility-failed");
   if (benchmarkStatus === "FAIL") rejectionReasons.push("benchmark-failed");
   if (budgetStatus === "APPROVED") {
     rejectionReasons.push(
@@ -77,21 +105,34 @@ export function classifyG17Qualification({
   }
 
   const inconclusiveReasons = [];
-  if (referenceStatus === "UNSELECTED") {
-    inconclusiveReasons.push("reference-unselected");
+  if (referenceStatus !== "SELECTED") {
+    inconclusiveReasons.push(
+      referenceStatus === "PROPOSED"
+        ? "reference-proposed"
+        : "reference-unselected",
+    );
   }
-  if (budgetStatus === "ABSENT") {
-    inconclusiveReasons.push("performance-budget-absent");
+  if (budgetStatus !== "APPROVED") {
+    inconclusiveReasons.push(
+      budgetStatus === "PROPOSED"
+        ? "performance-budget-proposed"
+        : "performance-budget-absent",
+    );
   }
-  if (noiseStatus === "ABSENT") {
-    inconclusiveReasons.push("noise-budget-absent");
+  if (noiseStatus !== "APPROVED") {
+    inconclusiveReasons.push(
+      noiseStatus === "PROPOSED"
+        ? "noise-budget-proposed"
+        : "noise-budget-absent",
+    );
   }
   for (const [label, observed] of [
     ["semantic", semanticStatus],
     ["compatibility", compatibilityStatus],
     ["benchmark", benchmarkStatus],
   ]) {
-    if (observed !== "PASS") inconclusiveReasons.push(reasonFor(label, observed));
+    if (observed !== "PASS")
+      inconclusiveReasons.push(reasonFor(label, observed));
   }
   if (inconclusiveReasons.length > 0) {
     return Object.freeze({
