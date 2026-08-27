@@ -49,7 +49,11 @@ Current activation boundary:
   call, keep durable Staging and CommitAttempted lookup indeterminate, and
   preserve one attempt plus one atomic final batch. This evidence covers the
   simulated state-machine branches only; it does not claim crash, power-loss,
-  or fsync durability;
+  or fsync durability. Run `g14b-phase-order-20260828` selected patch
+  `02f10b26613ce403120bb68867ea739295225a9c630970e25911694eb94a1314`;
+  receipt `d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
+  and exact replay both returned `ACCEPT`, and product commit `590a3229`
+  passes the exact 8/8, 7/7, and 20/20 counted controls;
 - `g1.5 preflight|run|replay` activates `http-client,rdf-12` explicitly and
   binds the six-file unified egress slice to deny-by-default SERVICE, LOAD,
   nested-document, response-limit, connection-budget, cancellation, and

@@ -2,14 +2,14 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-08-28
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
   one-session sandbox, repair/review lifecycle, application receipts, canonical
   task registry, generated command registry, and bounded candidate-rejection
   receipts are implemented and directly tested. A dual-provider G1.2
-  application run is accepted, and G1.3-G1.6, including G1.4a, have direct
+  application run is accepted, and G1.3-G1.6, including G1.4a-G1.4b, have direct
   source-bound candidate acceptances. A dedicated artifact-first G1.7 runner, structural verifier,
   sealed-inventory reopen and owner-contract replay, and fail-closed CLI are
   implemented and directly tested, but do not close the G1.7 product gate. The
@@ -36,11 +36,12 @@
   reopens the inventory and replays copied MetaHarness, Agentic-QE, and bounded
   native-output owner contracts. Explicit compatibility v2 and unversioned
   `PASS` evidence remain `LEGACY_REPLAY_ONLY`
-- G1.4a registry update: commits `13352ff9` and `c2497225` extend the historical
-  seven-task/27-command registry checkpoint to the current exact
-  eight-task/30-command surface. Its full suite passes 337/337 runnable tests
-  with two expected host-gated skips; doctor evidence remains native-only,
-  local-only, and non-promoting
+- G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
+  the historical seven-task/27-command registry checkpoint to eight tasks/30
+  commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
+  producing the current exact nine-task/33-command surface. Its full suite
+  passes 338/338 runnable tests with two expected host-gated skips; doctor
+  evidence remains native-only, local-only, and non-promoting
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -239,9 +240,9 @@ independent, and one impacted-regression command, resource ceilings, and
 application success criteria. G1.1 is green oracle infrastructure rather than
 a product repair task. The first discriminating candidate is G1.2: baseline
 `3edfb86a` plus evaluator-only commit `eaf7161c`. Continue through G1.3-G1.4,
-the explicit G1.4a Store terminal-outcome slice, and G1.5-G1.7 in dependency
-order. Do not infer engineering-runtime readiness merely from those evaluator
-commits.
+the explicit G1.4a Store terminal-outcome slice, the G1.4b phase-fault slice,
+and G1.5-G1.7 in dependency order. Do not infer engineering-runtime readiness
+merely from those evaluator commits.
 
 Darwin/GEPA may evolve engineering policy around frozen native models only
 after at least five discriminating training tasks and five sealed holdouts
@@ -323,10 +324,10 @@ ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
 ADR-0020 through ADR-0033 are fifteen Proposed living plans, not implementation
-claims. G1.4a is a completed product slice under Proposed ADR-0018; ADR status
-still depends on G1.7 qualification.
+claims. G1.4a and G1.4b are completed product slices under Proposed ADR-0018;
+ADR status still depends on G1.7 qualification.
 
-The linked execution plan contains 41 stable executable G-identifiers. The
+The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
 2026-08-24; the 2026-08-25 expansion added G1.5b-G1.5c, explicit G2.3a-G2.3c
 and G2.4a-G2.4b leaves, and G4.1-G4.8. On 2026-08-27 G3.0 was added as the
@@ -337,6 +338,11 @@ prose-only built-in Store terminal-outcome and durable-lookup blocker an
 executable prerequisite of G1.7. Product commit `2f518e04` and direct frozen
 candidate acceptance now close that prerequisite; the authenticated paired
 application attempt remains `INCONCLUSIVE` and is retained as such.
+On 2026-08-28 G1.4b made the evaluator-separated simulated storage-call fault
+gate explicit. Product commit `590a3229` and application receipt
+`d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
+close that slice after exact replay and 8/8, 7/7, and 20/20 direct controls;
+they do not claim crash, power-loss, or fsync durability.
 `HARNESS-REGISTRY` and
 `AGENTIC-SCHEMA-V5-REFRESH` are named harness/evidence
 controls, not product G-identifiers. `HARNESS-REGISTRY` sits between G1.6 and
@@ -348,9 +354,10 @@ surface. Contract, preflight, programme, and replay entrypoints accept a
 registered `taskId`; caller-selected contract paths and malformed, inherited,
 accessor-backed, duplicate, or unregistered identities fail before I/O. The
 G1.4a registration in `13352ff9` and evaluator separation in `c2497225`
-preserve those controls while expanding the current registry to eight tasks
-and 30 commands; the seven/27 figures above remain the exact historical
-`4a15caa0` checkpoint. The
+preserve those controls while expanding the registry to eight tasks and 30
+commands. G1.4b registration/binding in `1362f250`, `3bb4f0fb`, and
+`695def8d` expands the current registry to nine tasks and 33 commands; the
+seven/27 figures above remain the exact historical `4a15caa0` checkpoint. The
 next distinct control, `HARNESS-REJECTION-EVIDENCE`, is implemented by commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261`. Receipt v6 binds bounded
 candidate-specific reconstruction/applicability rejection evidence before the
@@ -361,14 +368,16 @@ does not expose a dependency or description-edit argument. Superseded pending
 rows are therefore cancelled and replaced while retained as history. The
 committed G-identifiers and GOAP tables remain the portable authority; Ruflo
 task IDs are repository-local audit pointers only and never prove product
-behavior. The current 41-entry adjacency map and checkpoint were stored and
+behavior. The current 42-entry adjacency map and checkpoint were stored and
 exactly read back through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-27-v7`; it supersedes, rather than
-rewrites, the historical v6 map. G1.4a task
-`task-1787855156849-ya7t6b` is complete; replacement G1.7 task
-`task-1787855177955-8o69ui` includes that dependency and is in progress, while
-the earlier G1.7 row remains cancelled history. The G1.4a evidence checkpoint
-is stored under `programme-evidence/g14a-store-terminal-outcomes-2f518e04`.
+`task-plans/linked-data-store-g0-g4-2026-08-28-v8`; it supersedes, rather than
+rewrites, the historical v7 map. G1.4a task
+`task-1787855156849-ya7t6b` and G1.4b task
+`task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
+`task-1787871483413-ki34q2` includes both dependencies and is in progress; its
+two superseded rows remain cancelled history. Evidence checkpoints are stored
+under `programme-evidence/g14a-store-terminal-outcomes-2f518e04` and
+`programme-evidence/g14b-harness-qualified-2026-08-28`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an

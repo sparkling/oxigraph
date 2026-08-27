@@ -48,18 +48,23 @@ G1-G4 tasks and promotion evidence are not implemented merely because the
 architecture is recorded. ADR-0019 alone has closed its bounded G1.5-G1.6
 implementation profile; fifteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
-controls are implemented in commits `4a15caa0` and `afe30c7d`; both remain
+controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
+G1.4b-aware registry has nine tasks and 33 commands. These remain
 local-only engineering controls and grant no semantic-qualification or
 promotion authority. ADR-0017 now also defines and tests a dedicated local
 G1.7 qualification scaffold whose structural and sealed replay states remain
 non-promoting. Recovery analysis added G1.4a as the explicit ADR-0018 built-in
 Store terminal-outcome/durable-lookup prerequisite; product commit `2f518e04`
-and its frozen 7/9/20/3/2 direct acceptance now close that product slice. Its
+and its frozen 7/9/20/3/2 direct acceptance now close that product slice. G1.4b
+product commit `590a3229` and receipt `d4a54f90...` additionally close the
+evaluator-separated simulated storage-call/malformed-ledger fault slice after
+exact replay and 8/8, 7/7, and 20/20 direct controls; crash, power-loss, and
+fsync durability remain explicit non-claims. Its
 compatibility verifier now conjunctively replays the copied
 Agentic-QE contract and bounded native owner bytes, but the still-unselected
-reference, absent budget/noise decisions, unrun benchmark, missing current
-clean-subject and phase-fault evidence, and human decision keep G1.7 and
-ADR-0018 open.
+reference, unapproved reference/performance/noise decisions, unrun benchmark,
+missing current clean-subject evidence, unbound G1.4b outer receipt, and human
+decision keep G1.7 and ADR-0018 open.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);
@@ -73,7 +78,7 @@ Source authority and revision metadata live in
 shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
-2026-08-27. Individual sealed results retain their original evidence dates.
+2026-08-28. Individual sealed results retain their original evidence dates.
 G0.1-G0.7 retain historical source-bound completion evidence: registered
 sources, the locked Jena runner, two byte-identical runs of the refreshed
 76/198 profile, the 144/129 Agentic-QE inventories, the then-34-test

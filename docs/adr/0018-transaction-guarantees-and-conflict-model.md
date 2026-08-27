@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-08-28
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.1-G1.4 core capability, oracle, and writer-gate
   mechanics are implemented and source-bound. G1.4a is implemented in
@@ -13,11 +13,16 @@
   without replay. Accepted tests prove orderly read-only reopen and
   post-commit process-abort recovery separately; phase-injected and power-loss
   behavior remain unproved. Memory exposes a process-local oracle without
-  advertising durability. The dedicated G1.7 qualification-control scaffold,
-  including conjunctive Agentic-QE/native owner replay, is implemented, while
-  fault-path evidence, the reviewed reference and budgets, benchmark/noise
-  evidence, current clean-subject owner evidence, and promotion decision remain
-  outstanding
+  advertising durability. G1.4b product commit `590a3229` is accepted by its
+  evaluator-separated application receipt and exact replay: injected
+  storage-call failures now prove that local `CommitAttempted` state advances
+  before the marker call, conservative lookup remains indeterminate, and drop
+  cannot falsely prove rollback after a commit attempt. That evidence does not
+  simulate crash, power loss, or fsync. The dedicated G1.7
+  qualification-control scaffold, including conjunctive Agentic-QE/native owner
+  replay, is implemented, while the reviewed reference and budgets,
+  benchmark/noise evidence, current clean-subject owner evidence, and promotion
+  decision remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
@@ -74,10 +79,11 @@ to one transaction.
 
 G1.1 supplies a shrinking reference state machine, G1.2 a concurrent-history
 oracle, G1.3 the typed requests/capabilities/outcomes, G1.4 the RocksDB writer
-gate, and G1.4a the built-in Store terminal lifecycle and minimal durable
-transaction-key lookup needed before ADR-0020 adds receipts and outbox state.
-No implementation may advertise a guarantee until that backend passes the
-shared oracle for the exact capability value.
+gate, G1.4a the built-in Store terminal lifecycle and minimal durable
+transaction-key lookup, and G1.4b the evaluator-separated injected
+storage-call/malformed-ledger fault gate needed before ADR-0020 adds receipts
+and outbox state. No implementation may advertise a guarantee until that
+backend passes the shared oracle for the exact capability value.
 
 ## Acceptance boundary
 
@@ -94,6 +100,10 @@ This ADR may move to Implemented only when:
 - gate acquisition and cancellation are bounded and leak no partial writes;
 - the built-in `Store` implements exactly one `CommitAttempted` transition,
   typed terminal outcomes, and durable transaction-key lookup without replay;
+- evaluator-separated pre/post-write injection proves that commit-attempt
+  errors cannot be followed by a false rollback proof, while malformed ledger
+  records fail as corruption and the receipt preserves the crash/power-loss
+  non-claim;
 - every public capability claim is backed by an executable receipt; and
 - compatibility and performance promotion closes only through G1.7 after every
   required lower receipt is current.
@@ -189,8 +199,8 @@ indeterminate. A successful explicit rollback proves `RolledBack`; ordinary
 drop only attempts that marker while still staging and leaves lookup
 indeterminate if the best-effort write fails. Unknown record encodings fail as
 corruption in the implementation, and effects are never replayed to discover
-the outcome. Phase-specific write failures, power loss, and malformed-record
-handling are source/configuration-backed behavior pending G1.7 executable
+the outcome. G1.4b now executes malformed-record and phase-specific simulated
+storage-call behavior; power loss and fsync durability remain outside that
 evidence.
 
 Frozen contract
@@ -213,14 +223,32 @@ separate post-commit process abort; it does not claim phase-injected or
 power-loss proof, malformed-record execution, or read-only lookup after that
 abort.
 
+G1.4b is implemented by product commit
+`590a3229ab1a826a102d52736dc6491530b69998`. Its corrected evaluator commit is
+`fa832174f3023e035fbaad52721f1b616eb1752e`; frozen preflight contract
+`926724ae8c8d206b4a4de576eb0120fc21c75aa96c99fb4f38664a2bdf3b44c8`
+confirmed the intended runtime-red signature of six passing and two failing
+tests while the 7/7 outcome and 20/20 compatibility controls stayed green.
+The paired native application programme selected exact patch
+`02f10b26613ce403120bb68867ea739295225a9c630970e25911694eb94a1314`
+as candidate commit `a1ca1eb45dba23c246ce84f70d67740c9bd388ab`, tree
+`ab5b281da2ee40c12122a9598d19d33b699d0b86`. Receipt
+`d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
+returned `ACCEPT`, admitted eight outcomes with no issues, and exact replay
+returned the same bindings. After application, the direct suites pass 8/8,
+7/7, and 20/20. The qualified fix moves only the local phase assignment to
+immediately before the durable marker call. The evaluator injects storage-call
+pre/post errors; it is not crash, power-loss, or fsync evidence.
+
 Ledger I/O occurs only on the explicit keyed path. The current implementation
 still adds unmeasured optional-state/branch and write-option allocation costs to
 legacy transaction objects/store initialization; G1.7 must measure them before
 any zero-overhead claim. Keyed callers should use the inherent or
 `OutcomeAwareWritableDataset` commit path for a typed indeterminate error;
 generic `WritableDataset::commit` retains its legacy raw error surface, so such
-callers must retain the key and use lookup. G1.7 must also add executable
-malformed-record and phase-specific storage-failure evidence before promotion.
+callers must retain the key and use lookup. G1.7 must copy and replay the
+accepted G1.4b receipt inside the current qualification envelope before it may
+consume this lower-level fault evidence.
 
 G1.5b composes that admission control with SPARQL Update. Product commits
 `280872dc` and `9b84bed6` carry the evaluator's exact cancellation token from
@@ -249,20 +277,21 @@ and returned `ACCEPT` for format/build, five public, fifteen independent, and
 twenty-one regression tests. Its 118,202-byte session artifact has SHA-256
 `94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
 
-ADR-0018 remains Proposed even though G1.4a has closed the built-in `Store`
-single-`CommitAttempted`, typed terminal-outcome, and durable-lookup product
-boundary. G1.7 must still close fault-path, compatibility, performance, and
-current-evidence qualification. G1.4a does not grant promotion authority, add
-semantic commit receipts/outbox delivery, or add savepoints to caller-owned
-transactions.
+ADR-0018 remains Proposed even though G1.4a and G1.4b have closed the built-in
+`Store` terminal-outcome/durable-lookup and simulated storage-call fault
+boundaries. G1.7 must still close compatibility, performance, current-evidence
+qualification, and the separate human decision. Neither slice grants promotion
+authority, adds semantic commit receipts/outbox delivery, or adds savepoints to
+caller-owned transactions.
 The current G1.7 scaffold structurally verifies semantic v2 and compatibility
 v3 projections and sealed-replays copied MetaHarness, Agentic-QE, and native
 owner contracts. The native owner binds exact test IDs and bounded complete
 Cargo output and is reparsed without Cargo re-execution; only its conjunction
 with Agentic-QE may report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. That closes
-the replay-control gap but does not qualify the product: reference and
-budget/noise decisions are absent, the benchmark is not run, and current
-clean-subject owner evidence is not yet sealed. The transaction identifiers
-are G1.1-G1.5c plus G1.4a; G1.7 is the joint compatibility/performance
+the replay-control gap but does not qualify the product: the G1.4b receipt is
+not yet bound into a current outer envelope, the three reference/performance/
+noise decisions are proposed and unapproved, the benchmark is not run, and
+current clean-subject owner evidence is not yet sealed. The transaction
+identifiers are G1.1-G1.5c plus G1.4a-G1.4b; G1.7 is the joint compatibility/performance
 promotion gate in the [linked-data-store evolution
 plan](../plans/linked-data-store-evolution-harness-plan.md).

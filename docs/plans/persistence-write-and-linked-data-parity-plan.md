@@ -1,10 +1,11 @@
 # Persistence writes and linked-data-store parity plan
 
 - Status: active plan; write seam and source-bound G1.3-G1.6 slices complete,
-  including G1.4a Store terminal outcomes/lookup; G1.7 qualification remains
+  including G1.4a Store terminal outcomes/lookup and G1.4b simulated
+  storage-call fault safety; G1.7 qualification remains
   open
 - Date: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-08-28
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Upstream merge: `a2415a4e`
@@ -46,9 +47,14 @@ or current-admission probes. The earlier conservative reconciliation in
 `7dc190d3` remains part of the lineage rather than the final claim model.
 G1.4a is now implemented in `2f518e04`: its evaluator-separated seven-stage
 verifier accepted the built-in Store lifecycle and durable transaction-key
-lookup with exact 7/9/20/3/2 counted stages. G1.7 still owns fault-path and
-performance qualification, reviewed budgets/reference, current owner evidence,
-and the separate human promotion decision.
+lookup with exact 7/9/20/3/2 counted stages. G1.4b is implemented in
+`590a3229`: its accepted and exactly replayed application receipt turns the
+frozen 6/2 red phase-order signature into 8/8 green while 7/7 outcome and 20/20
+compatibility controls remain green. It proves injected storage-call and
+malformed-ledger behavior, not crash, power-loss, or fsync durability. G1.7
+still owns outer receipt binding, performance qualification, genuinely approved
+reference/performance/noise bytes, current owner evidence, and the separate
+human promotion decision.
 Namespace metadata, durable change delivery, transaction-time SHACL
 validation, operational observability, statistics and bounded join planning,
 full-text and spatial indexes, and federation planning follow in that
@@ -153,11 +159,11 @@ Evidence grade A applies to this section.
 |---|---|---|---|---|---|
 | G01 | Pluggable transactional write plane | Implemented in `1da47285`; production adapter proof pending | Dataset/transaction APIs, but not the same Rust extension need | SAIL is the storage decoupling point | Keep the narrow Rust traits; P0 conformance |
 | G02 | Isolation and conflict contract | Dimensioned requirements/capabilities are implemented; memory and RocksDB advertise a serialized-writer baseline proven by lost-update, write-skew, and 1/4/16-writer tests | TDB2 documents serializable transactions and one active writer | Multiple requested levels and compatible-level discovery; documented MemoryStore/NativeStore SAILs use optimistic conflict failure, without implying every third-party store does | Retain serialization until G1.7 measurement justifies a separate OCC/TransactionDB hypothesis |
-| G03 | Transaction lifecycle and uncertain commit | G1.4a adds a caller-keyed built-in `Store` path with typed committed/proven-absent/indeterminate outcomes and durable RocksDB lookup after reopen; memory deliberately does not claim durability; prepare, savepoints, and active-state inspection remain absent | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Preserve the minimal lookup; G2.3a adds receipts/cursors and savepoints remain later scope |
+| G03 | Transaction lifecycle and uncertain commit | G1.4a adds a caller-keyed built-in `Store` path with typed committed/proven-absent/indeterminate outcomes and durable RocksDB lookup after reopen; G1.4b proves injected pre/post-write phase monotonicity and conservative lookup; memory deliberately does not claim durability; prepare, savepoints, active-state inspection, and crash/power-loss proof remain absent | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Preserve the minimal lookup; G2.3a adds receipts/cursors and savepoints remain later scope |
 | G04 | Empty named-graph topology | Strong explicit contract across model, store, I/O, protocol, bindings | Narrow observed divergence in the pinned Jena harness | Context APIs; behavior depends on store/operation | Preserve Oxigraph contract; no change |
 | G05 | Prefix/namespace metadata | Parser prefixes are transient; store has no registry | Prefix mappings and a Fuseki prefix service | Transactional namespace operations | P1 store metadata capability |
 | G06 | Durable change delivery | None | RDF Patch and patch-log ecosystem | Connection/store listeners; notifications | P1 ordered durable feed; RDF Patch adapter optional |
-| G07 | Commit receipt/idempotency | G1.4a can resolve a caller-supplied key as committed, proven rolled back, or indeterminate without replay, but it has no semantic commit receipt, cursor, retention policy, or outbox | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
+| G07 | Commit receipt/idempotency | G1.4a can resolve a caller-supplied key as committed, proven rolled back, or indeterminate without replay, and G1.4b prevents marker-write errors from becoming a false rollback proof; there is still no semantic commit receipt, cursor, retention policy, or outbox | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
 | G08 | SHACL on write | Snapshot validation API; not a commit gate | SHACL Core/SPARQL and Fuseki validation endpoint | ShaclSail validates during commit | P1 pre-commit participant over staged view |
 | G09 | Outbound `SERVICE`/`LOAD` policy | G1.5 implements one deny-by-default policy for `SERVICE`, `LOAD`, and nested retrieval with typed policy failures, origin/IP allow controls, encoded/decoded byte ceilings, time/connection budgets, and remote-read cancellation | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | ADR-0019 implemented; retain one fail-closed egress boundary |
 | G10 | Update-wide cancellation | G1.5b proves one token across validation, built-in writer admission, owned mutation, and the final pre-commit rollback boundary; G1.5c carries that exact control through negotiated custom-backend and `Store` admission; caller-owned rollback remains explicitly separate | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | Preserve the accepted negotiated binding; do not claim update-scoped rollback for a borrowed transaction without savepoints |
@@ -294,7 +300,7 @@ The unfinished work is split by architectural ownership:
 |---|---|---|
 | P0.1-P0.2 conformance, guarantees, conflicts | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
 | P0.3-P0.4 egress, cancellation, service claims | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
-| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Harness registry, rejection-evidence controls, and conjunctive Agentic/native owner-replay machinery are implemented; clean current owner evidence, reference and budget/noise decisions, the benchmark, and P0.5 promotion remain open |
+| P0.5 compatibility/performance promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Harness registry, rejection-evidence controls, conjunctive Agentic/native owner replay, and accepted G1.4b lower fault evidence are implemented; current outer binding/owner evidence, genuinely approved reference/performance/noise decisions, the benchmark, and P0.5 promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
 | P1.3 transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
 | P1.4a-P1.4c readiness, backup, restore | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
@@ -450,7 +456,10 @@ without re-executing Cargo. Only the Agentic/native conjunction may report
 unversioned `PASS` evidence remain `LEGACY_REPLAY_ONLY`. Reference and
 budget/noise decisions, the real benchmark, current clean-subject evidence,
 and the human decision remain open, so this scaffold does not replace any
-acceptance requirement below.
+acceptance requirement below. The G1.4b lower application receipt is accepted
+and exactly replayed, but must still be copied into a current outer envelope;
+the present v4 policy artifacts are proposed/unapproved and cannot authorize
+sample production.
 
 - Benchmark built-in `on_store` before/after and generic `on_dataset` on memory
   and disk.

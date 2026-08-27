@@ -2,7 +2,7 @@
 
 - Status: active execution plan; unattended Dream Machine activation blocked
 - Date: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-08-28
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -35,8 +35,13 @@ runtime-derived service claims are implemented and accepted by their frozen
 seven-stage 4/17/1/1/12 evaluator split. G1.4a is implemented in `2f518e04`:
 its frozen seven-stage verifier accepted exact patch `3a196063...` as candidate
 tree `390bb43a...` for counts 7/9/20/3/2, closing the built-in Store
-terminal-outcome and durable-lookup boundary before G1.7. G0.1-G0.7 retain their historical task
-closures, and scoped schema-v5 Agentic receipts are sealed for subject
+  terminal-outcome and durable-lookup boundary before G1.7. G1.4b product
+  commit `590a3229` then closes the evaluator-separated simulated storage-call
+  fault gate: exact red 6/2 became green 8/8 while the 7/7 outcome and 20/20
+  compatibility controls stayed green; receipt `d4a54f90...` and its exact
+  replay both returned `ACCEPT`. That result does not claim crash, power-loss,
+  or fsync durability. G0.1-G0.7 retain their historical task closures, and
+  scoped schema-v5 Agentic receipts are sealed for subject
 `5a93890f`; no aggregate receipt follows.
 Full MetaHarness semantic qualification, its independent verification, and
 G1.7 compatibility/performance promotion remain open.
@@ -75,8 +80,8 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
 | Mutation receipt | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification |
 | MetaHarness | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate |
-| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered eight-task registry, and its exact generated 30-command registry are implemented; G1.2-G1.6, including G1.4a, have source-bound accepted candidates | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact |
-| G1.7 qualification control | Outer receipt v1, qualification contract v3, semantic projection v2, and compatibility projection v3; structural verification reports current PASS as `CURRENT_SCHEMA_UNREPLAYED`, while sealed verification replays copied MetaHarness, Agentic-QE, and bounded native owner contracts | Conjunctive Agentic/native replay can report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`, but phase-fault evidence, the reference and budgets remain undecided, the benchmark is unrun, current clean-subject owner evidence is absent, and this scaffold is neither benchmark evidence nor promotion |
+| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered nine-task registry, and its exact generated 33-command registry are implemented; G1.2-G1.6, including G1.4a-G1.4b, have source-bound accepted candidates | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact |
+| G1.7 qualification control | Outer receipt v1, qualification contract v3, semantic projection v2, and compatibility projection v3; structural verification reports current PASS as `CURRENT_SCHEMA_UNREPLAYED`, while sealed verification replays copied MetaHarness, Agentic-QE, and bounded native owner contracts | Conjunctive Agentic/native replay can report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`; G1.4b phase-fault evidence is accepted but not yet copied into a current outer envelope. The three reference/performance/noise decisions remain unapproved, the benchmark is unrun, current clean-subject owner evidence is absent, and this scaffold is neither benchmark evidence nor promotion |
 | Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
 | Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
 
@@ -235,7 +240,7 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G0.4-G0.5 Agentic-QE evidence | [ADR-0005](../adr/0005-agentic-qe-integration.md) | Accepted |
 | G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
 | G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted qualification policy; implemented engineering control |
-| G1.1-G1.4a transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Product slices complete through G1.4a; ADR remains Proposed until G1.7 |
+| G1.1-G1.4b transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Product slices complete through G1.4b; ADR remains Proposed until G1.7 |
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
 | G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control and egress decision; ADR-0018 remains Proposed and promotion remains open |
 | G2.1-G2.3c metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
@@ -279,11 +284,12 @@ automatically by Dream Machine or Darwin.
 | G1.3 Typed request/capability/error extensions | G1.1-G1.2 | L | Effective guarantee returned; unmet minimum rejected; conflict and indeterminate outcomes typed |
 | G1.4 RocksDB writer serialization | G1.2-G1.3 | M | Bounded/cancellable gate acquired before snapshot and held through commit/rollback/drop; advertised guarantee passes the 1/4/16-writer oracle while readers remain concurrent |
 | G1.4a Built-in Store terminal outcomes and lookup | G1.4 | L | One `CommitAttempted` transition; typed terminal outcomes; transaction-key reservation and committed/proven-absent/indeterminate lookup; RocksDB reopen resolves lost acknowledgements without replay; legacy minimal traits remain source-compatible |
+| G1.4b Outcome phase-fault safety | G1.4a | S | Evaluator-separated pre/post storage-call faults cannot produce a false rollback proof after commit attempt; malformed records are corruption; durable Staging/CommitAttempted remain indeterminate; crash/power-loss/fsync stay explicit non-claims |
 | G1.5 Unified remote egress | G1.3 | L | Loopback SSRF/redirect/size/timeout fixtures and remote update rollback pass |
 | G1.5b Owned-update cancellation | G1.5 | M | Built-in admission, validation, mutation loops, and the final pre-commit checkpoint return typed cancellation and roll back owned state |
 | G1.5c Negotiated backend admission | G1.5b | M | An additive negotiated binding carries the exact token and request through custom and Store admission without breaking the minimal write trait |
 | G1.6 Runtime-derived service claims | G1.3, G1.5, G1.5b, G1.5c | M | Complete: seven ordered verifier stages accepted exact public/service/compatibility/independent/regression counts 4/17/1/1/12, and three product controls rejected |
-| G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6, G1.4a | M | Existing semantics and current evidence green; separately selected immutable reference and pre-approved performance/noise budgets; sealed benchmark meets the approved write/read limits; human promotion remains separate |
+| G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6, G1.4a-G1.4b | M | G1.4b receipt copied/replayed; existing semantics and current evidence green; exact immutable reference plus genuinely pre-approved reference/performance/noise decision bytes; sealed paired benchmark meets the approved write/read limits; human promotion remains separate |
 
 `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` are harness-maintenance
 controls, not new product G tasks. The registry control follows G1.6 and is
@@ -299,11 +305,12 @@ frozen once G2.1's own prerequisites are current. The dependency edge remains
 G1.6 → `HARNESS-REGISTRY` → `HARNESS-REJECTION-EVIDENCE` → G2.1
 evaluator freeze.
 Commits `13352ff9` and `c2497225` subsequently add the evaluator-separated
-G1.4a profile without rewriting the historical registry receipt. The current
-derived surface is eight tasks and 30 commands; 337 runnable tests pass and
-two native-host fixtures skip by their declared host gate.
+G1.4a profile without rewriting the historical registry receipt. Commits
+`1362f250`, `3bb4f0fb`, and `695def8d` do the same for G1.4b. The current
+derived surface is nine tasks and 33 commands; 338 runnable tests pass and two
+native-host fixtures skip by their declared host gate.
 
-Execution record through 2026-08-27:
+Execution record through 2026-08-28:
 
 - G1.1 is complete in `3edfb86a`: 10,000 deterministic shrinking traces each
   passed for memory, RocksDB, and the test-only
@@ -340,12 +347,25 @@ Execution record through 2026-08-27:
   compatibility-20/independent-3/regression-2 in 395.556 seconds. The session
   artifact has SHA-256
   `9c3ee4481fcc777124cad7bc6d051cdb095de1fe93987c52ef80243735ecc240`.
-  Task `task-1787855156849-ya7t6b` is complete; replacement G1.7 task
-  `task-1787855177955-8o69ui` is now in progress. G1.7 must measure the unmeasured
-  legacy layout/branch cost, add malformed-ledger and phase-specific failure
-  evidence, select reviewed budgets/reference, run the benchmark, and seal
-  current owner evidence. ADR-0020 later extends the minimal outcome ledger
-  with commit receipts and outbox state.
+  Task `task-1787855156849-ya7t6b` is complete. ADR-0020 later extends the
+  minimal outcome ledger with commit receipts and outbox state.
+- G1.4b is complete in product commit
+  `590a3229ab1a826a102d52736dc6491530b69998`. Corrected evaluator commit
+  `fa832174f3023e035fbaad52721f1b616eb1752e` and contract
+  `926724ae8c8d206b4a4de576eb0120fc21c75aa96c99fb4f38664a2bdf3b44c8`
+  froze the exact 6/2 red signature. The application harness selected patch
+  `02f10b26613ce403120bb68867ea739295225a9c630970e25911694eb94a1314`
+  as candidate commit `a1ca1eb45dba23c246ce84f70d67740c9bd388ab`, tree
+  `ab5b281da2ee40c12122a9598d19d33b699d0b86`; receipt
+  `d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
+  and exact replay both returned `ACCEPT`. Direct post-application evidence is
+  8/8 fault, 7/7 outcome, and 20/20 compatibility tests. Task
+  `task-1787869201628-bwe6b0` is complete. Corrected G1.7 task
+  `task-1787871483413-ki34q2` is in progress; it must bind this receipt, obtain
+  genuine pre-result approval for the exact reference/performance/noise bytes,
+  regenerate current owner evidence, run and replay the paired benchmark, and
+  preserve a separate human decision. The G1.4b result covers injected
+  storage-call branches, not crash, power-loss, or fsync durability.
 - G1.5's unified-egress profile is implemented in product commits `e452bad1`
   and `3f4cdfd7`. Frozen contract
   `e77e11a02e55e995583f0bab118878a42c490b562e0826c6b1611db096c6dfec`
@@ -520,12 +540,12 @@ task.
 | G1.3 | `lib/oxigraph/tests/transaction_capabilities.rs` | `cargo test --locked -p oxigraph --test transaction_capabilities` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` |
 | G1.4 | `lib/oxigraph/tests/rocksdb_writer_serialization.rs` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
 | G1.4a | `lib/oxigraph/tests/transaction_outcomes.rs` | `cargo test --locked -p oxigraph --test transaction_outcomes` | `cargo test --locked -p oxigraph --test transaction_compatibility` | `cargo test --locked -p oxigraph --test update_atomicity` |
+| G1.4b | `lib/oxigraph/src/store/transaction_outcome_faults.rs` | `cargo test --locked -p oxigraph --lib store::transaction_outcome_faults::` | `cargo test --locked -p oxigraph --test transaction_outcomes` | `cargo test --locked -p oxigraph --test transaction_compatibility` |
 | G1.5 | `lib/oxigraph/tests/sparql_egress_policy.rs` | `cargo test --locked -p oxigraph --test sparql_egress_policy` | `cargo test --locked -p oxigraph --test sparql_update_load_http` | `cargo test --locked -p oxigraph --test sparql_service_http` |
 | G1.5b | `lib/oxigraph/tests/sparql_update_cancellation.rs` | `cargo test --locked -p oxigraph --test sparql_update_cancellation` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` |
 | G1.5c | `lib/oxigraph/tests/sparql_negotiated_update.rs` | `cargo test --locked -p oxigraph --test sparql_negotiated_update` | `cargo test --locked -p oxigraph --test transaction_capabilities --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_update_cancellation --test sparql_egress_policy --test transactional_dataset` |
 | G1.6 | `lib/oxigraph/tests/sparql_effective_capabilities.rs` plus protected `cli/src/service_description/tests.rs` | `cargo test --locked -p oxigraph --features http-client-native-tls,rdf-12 --test sparql_effective_capabilities` (`public=4`) | Separate bounded feature-active CLI service, dependency-qualified compatibility-canary, and RDF 1.2 version stages (`service=17`, `compatibility=1`, `independent=1`) | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` (`regression=12`) |
 | G1.7 | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest | `cargo bench --locked -p oxigraph --bench transactional_write` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
-| G1.7 fault gate (planned; evaluator freeze pending) | `lib/oxigraph/tests/transaction_outcome_faults.rs` | `cargo test --locked -p oxigraph --test transaction_outcome_faults` | `cargo test --locked -p oxigraph --test transaction_outcomes` | `cargo test --locked -p oxigraph --test transaction_compatibility --test update_atomicity` |
 
 Engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<slug>/contract.json` and bind the
@@ -535,11 +555,11 @@ criteria. G1.6 has seven ordered stages: format, build, public, service,
 compatibility, independent, and regression; its five counted stages require
 exactly 4/17/1/1/12 passing results.
 The G1.1-G1.6 evaluator files and G1.2-G1.6 task contracts are implemented;
-G1.4a is also evaluator-separated, implemented, and directly accepted.
-The exact ordered registry through G1.6, including G1.4a, is implemented. Compatibility path
+G1.4a-G1.4b are also evaluator-separated, implemented, and directly accepted.
+The exact ordered registry through G1.6, including G1.4a-G1.4b, is implemented. Compatibility path
 constants are aliases of derived registry paths, while named wrappers delegate
 to the same generic task-ID API rather than registering a second path. Direct
-candidate acceptance is current through G1.6, including G1.4a. G1.5 covers remote egress, G1.5b covers
+candidate acceptance is current through G1.6, including G1.4a-G1.4b. G1.5 covers remote egress, G1.5b covers
 cancellation for update-owned transactions, and G1.5c covers negotiated
 generic admission without changing the caller-owned rollback boundary. G1.6
 derives deterministic configured-and-compiled disclosure from those effective
@@ -880,11 +900,12 @@ On 2026-08-27 G3.0 raised the total to 40 stable executable identifiers. The
 recovery audit then raised it to 41 by adding G1.4a as the explicit built-in
 Store terminal-outcome prerequisite of G1.7. G3.0 owns the shared derived-index
 lifecycle between G2.3c/G2.5-G2.7 and the G3.3/G3.4 providers. Support and
-roll-up rows remain outside that count.
+roll-up rows remain outside that count. G1.4b raised the total to 42 on
+2026-08-28 by making the outcome phase-fault prerequisite executable.
 
 | Plan IDs | Ruflo task rows |
 |---|---|
-| G1.4a / replacement G1.7 | `task-1787855156849-ya7t6b` / `task-1787855177955-8o69ui` |
+| G1.4a / G1.4b / corrected replacement G1.7 | `task-1787855156849-ya7t6b` / `task-1787869201628-bwe6b0` / `task-1787871483413-ki34q2` |
 | G1.5c / G1.6 / `HARNESS-REGISTRY` / `HARNESS-REJECTION-EVIDENCE` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787740750614-4bv1fw` / `task-1787603736400-274ola` |
 | G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
 | G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
@@ -895,12 +916,12 @@ roll-up rows remain outside that count.
 | G4.6 / G4.7 / G4.8 | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53` |
 
 The original exact map remains at
-`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v6 maps remain
-historical audit records. The current v7 map is stored and exactly read back
+`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v7 maps remain
+historical audit records. The current v8 map is stored and exactly read back
 through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-27-v7`. It preserves all 41 stable
-plan identifiers, records G1.4a, replacement G1.7, G3.0, and the earlier
-replacement rows, and includes the
+`task-plans/linked-data-store-g0-g4-2026-08-28-v8`. It preserves all 42 stable
+plan identifiers, records G1.4a-G1.4b, corrected replacement G1.7, G3.0, and
+the earlier replacement rows, and includes the
 non-product `HARNESS-REGISTRY`, rejection-evidence, and
 `AGENTIC-SCHEMA-V5-REFRESH` controls. Superseded pending rows are cancelled but
 retained as runtime history.

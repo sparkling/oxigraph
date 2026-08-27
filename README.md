@@ -112,6 +112,20 @@ read-write reopen; they do not yet prove the combined read-only-after-abort
 path. The frozen seven-stage verifier accepted exact patch `3a196063...` as
 candidate tree `390bb43a...` for public/service/compatibility/independent/
 regression counts 7/9/20/3/2. This closes G1.4a, not G1.7 or promotion.
+G1.4b closes the evaluator-separated simulated storage-call fault slice in
+product commit `590a3229`. Frozen preflight contract
+`926724ae8c8d206b4a4de576eb0120fc21c75aa96c99fb4f38664a2bdf3b44c8`
+confirmed the exact six-pass/two-fail red signature. The native application
+harness then selected patch
+`02f10b26613ce403120bb68867ea739295225a9c630970e25911694eb94a1314`,
+returned `ACCEPT`, and admitted eight outcomes in receipt
+`d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`;
+exact replay returned the same candidate commit/tree and verdict. The fix
+records the local `CommitAttempted` phase before the durable marker call, so a
+pre- or post-write error cannot let drop falsely append `RolledBack`. Direct
+post-application evidence is 8/8 fault cases, 7/7 outcome cases, and 20/20
+compatibility cases. This is branch/state-machine evidence for injected
+storage-call errors, not crash, power-loss, or fsync durability proof.
 G1.5's unified egress profile is
 implemented in `e452bad1` plus lifecycle hardening `3f4cdfd7` and accepted by
 its frozen 12/8/13 evaluator split. Built-in `SERVICE`, `LOAD`, and nested
@@ -140,10 +154,10 @@ and CLI-TLS-gated server disclosure
 (`3635ef690d75d10d8d5b4d7b316b7c6d487d7f6e9a8b47055a0c86630e387f5d`).
 The disclosed profile is a deterministic configured-and-compiled capability
 snapshot, not a remote-health or current-admission probe. ADR-0019 is therefore
-Implemented. ADR-0018 remains Proposed because, although G1.4a has now closed
-the built-in `Store` single-`CommitAttempted`/typed terminal-outcome and
-source-backed durable lookup boundary, the G1.7 compatibility, fault-path,
-performance, and current-evidence promotion gate remains open.
+Implemented. ADR-0018 remains Proposed because, although G1.4a and G1.4b have
+now closed the built-in `Store` terminal-outcome/durable-lookup and simulated
+storage-call phase-fault boundaries, the G1.7 compatibility, performance,
+current-evidence, and separate human-promotion gates remain open.
 The verifier artifacts are local-only evidence and grant no
 semantic-qualification or promotion authority.
 
@@ -156,10 +170,12 @@ or unregistered identities fail before runtime I/O. The committed control
 passes 180/180 harness tests and a `runner-implemented` doctor while remaining
 local-only, unregistered as MCP, and without promotion authority.
 Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
-G1.4a. The current fail-closed registry therefore contains eight tasks and 30
-commands; its full suite passes 337/337 runnable tests with two expected
-host-gated skips, and the doctor retains the same native-only, local-only,
-non-promoting boundary.
+G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
+G1.4b evaluator without rewriting either historical registry checkpoint. The
+current fail-closed registry therefore contains nine tasks and 33 commands;
+its full suite passes 338/338 runnable tests with two expected host-gated
+skips, and the doctor retains the same native-only, local-only, non-promoting
+boundary.
 
 Follow-on harness commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate
@@ -192,9 +208,12 @@ IDs, counts, durations, and digests. Only that conjunction may report
 `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. Positive unit fixtures remain
 synthetic contract fixtures: they do not establish real owner-process
 emission, subject-file correspondence, benchmark acceptance, or promotion.
-Selected reference and approved budget/noise decisions, current clean-subject
-semantic and compatibility evidence, and the real benchmark remain open, so
-G1.7 remains `INCONCLUSIVE` and qualification eligibility is withheld.
+The accepted G1.4b receipt must still be copied and replayed inside a current
+qualification envelope. A genuinely approved reference decision plus separate
+performance- and noise-budget decisions, current clean-subject semantic and
+compatibility evidence, and the real benchmark remain open, so G1.7 remains
+`INCONCLUSIVE` and qualification eligibility is withheld. No samples may be
+minted from the current proposed/unapproved policy bytes.
 Historical committed control subject
 `d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passed 298/298 serialized
 JavaScript contract/control tests under Node 24.14.1 on Linux x86_64; that
