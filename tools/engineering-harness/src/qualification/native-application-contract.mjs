@@ -4,6 +4,9 @@ import { isDeepStrictEqual } from "node:util";
 
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import {
+  decodeReviewedG17V4Contract,
+} from "./contract-identity.mjs";
+import {
   G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
   G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME,
   G17_NATIVE_ISOLATION_INSTANCE_SCHEMA,
@@ -44,8 +47,6 @@ export const G17_NATIVE_APPLICATION_ARTIFACT_NAMES = Object.freeze([
 
 const REPLAY_BOUNDARY = "sealed-seven-artifact-pure-replay/v1";
 const IDENTITY_SCHEMA = "oxigraph.g1.7-qualified-subject-identity/v1";
-const CURRENT_CONTRACT_SHA256 =
-  "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
 const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
 const SAFE_RUN_ID = /^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$/u;
@@ -329,18 +330,10 @@ function streamBytes(stream, label) {
 }
 
 function reviewedEvaluator(contractBytes, contractSha256) {
-  if (
-    contractSha256 !== CURRENT_CONTRACT_SHA256 ||
-    sha256(contractBytes) !== CURRENT_CONTRACT_SHA256
-  ) {
-    fail("contract bytes are not the reviewed v3 byte identity");
-  }
-  let contract;
-  try {
-    contract = JSON.parse(utf8.decode(contractBytes));
-  } catch (error) {
-    fail(`contract bytes are invalid JSON or UTF-8: ${error.message}`);
-  }
+  const contract = decodeReviewedG17V4Contract({
+    contractBytes,
+    contractSha256,
+  });
   const evaluator = contract?.evaluator;
   exactKeys(
     evaluator,

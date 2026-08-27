@@ -120,7 +120,7 @@ function rewriteLaunchAttestation(value, index, mutate) {
   command.launchAttestationSha256 = sha256(bytes);
 }
 
-test("native session configuration is derived exactly from contract v3 and platform v4", () => {
+test("native session configuration is derived exactly from contract v4 and platform v4", () => {
   const sealedContract = loadG17Contract();
   const platform = platformBinding();
   const policy = {

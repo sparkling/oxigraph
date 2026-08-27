@@ -8,6 +8,9 @@ import {
   replayG17NativeLaneOutputContract,
 } from "./native-compatibility-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
+import {
+  decodeReviewedG17V4Contract,
+} from "./contract-identity.mjs";
 
 export const G17_NATIVE_SESSION_CONFIGURATION_SCHEMA =
   "oxigraph.g1.7-native-session-configuration/v4";
@@ -25,9 +28,6 @@ export const G17_NATIVE_SESSION_MAX_BYTES = 16 * 1024 * 1024;
 const DIGEST = /^[0-9a-f]{64}$/u;
 const SAFE_RUN_ID = /^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$/u;
 const TARGET_DIRECTORY = "/state/target";
-const CURRENT_CONTRACT_SCHEMA = "oxigraph.g1.7-qualification-contract/v3";
-const CURRENT_CONTRACT_SHA256 =
-  "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
 const MAX_CONTRACT_BYTES = 1024 * 1024;
 const CURRENT_PLATFORM_SCHEMA =
   "oxigraph.g1.7-linux-native-platform-closure/v4";
@@ -93,30 +93,18 @@ function decodeReviewedContract({ contractBytes, contractSha256 }) {
   ) {
     fail("contract bytes are not a bounded Buffer");
   }
-  const observedSha256 = sha256(contractBytes);
+  const contract = decodeReviewedG17V4Contract({
+    contractBytes,
+    contractSha256,
+  });
   if (
-    contractSha256 !== CURRENT_CONTRACT_SHA256 ||
-    observedSha256 !== CURRENT_CONTRACT_SHA256
-  ) {
-    fail("contract bytes are not the reviewed v3 byte identity");
-  }
-  let contract;
-  try {
-    contract = JSON.parse(contractBytes);
-  } catch (error) {
-    fail(`contract bytes are invalid JSON: ${error.message}`);
-  }
-  if (
-    contract?.schema !== CURRENT_CONTRACT_SCHEMA ||
-    contract.id !== "g1.7-compatibility-performance-qualification" ||
-    contract.programme !== "linked-data-store" ||
     !Array.isArray(contract.compatibility?.native) ||
     contract.compatibility.native.length !== 3 ||
     contract.compatibility.nativeSession === null ||
     typeof contract.compatibility.nativeSession !== "object" ||
     Array.isArray(contract.compatibility.nativeSession)
   ) {
-    fail("reviewed v3 contract has impossible parsed metadata");
+    fail("reviewed v4 contract has impossible parsed metadata");
   }
   return deepFreeze(contract);
 }
