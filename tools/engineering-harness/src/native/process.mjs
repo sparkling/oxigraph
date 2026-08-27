@@ -1,5 +1,29 @@
 import { spawn } from "node:child_process";
+import { fstatSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+
+const maximumInheritedFileDescriptors = 32;
+
+function validatedInheritedFileDescriptors(value) {
+  if (!Array.isArray(value) || value.length > maximumInheritedFileDescriptors) {
+    throw new Error("inherited file descriptors must be a bounded array");
+  }
+  const descriptors = [...value];
+  if (
+    descriptors.some((descriptor) => !Number.isInteger(descriptor) || descriptor < 0) ||
+    new Set(descriptors).size !== descriptors.length
+  ) {
+    throw new Error("inherited file descriptors must be unique non-negative integers");
+  }
+  for (const [index, descriptor] of descriptors.entries()) {
+    try {
+      fstatSync(descriptor);
+    } catch (error) {
+      throw new Error(`inherited file descriptor ${index} is not live`, { cause: error });
+    }
+  }
+  return descriptors;
+}
 
 function terminate(child, signal, killProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return null;
@@ -23,6 +47,7 @@ export function runBoundedProcess({
   maxOutputBytes,
   signal,
   killProcess = process.kill,
+  inheritedFileDescriptors = [],
 }) {
   if (process.platform === "win32") {
     throw new Error("bounded process execution is disabled on Windows until job-object tree termination exists");
@@ -33,13 +58,14 @@ export function runBoundedProcess({
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes <= 0) {
     throw new Error("process output ceiling must be a positive integer");
   }
+  const inherited = validatedInheritedFileDescriptors(inheritedFileDescriptors);
   return new Promise((resolve, reject) => {
     const started = performance.now();
     const child = spawn(executable, args, {
       cwd,
       env: environment,
       detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", ...inherited],
     });
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
