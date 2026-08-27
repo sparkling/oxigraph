@@ -3,6 +3,8 @@ use crate::model::vocab::rdf;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BlankNode, Triple};
 use crate::model::{GraphName, NamedOrBlankNode, OxString, Quad, Term};
+#[cfg(test)]
+use crate::storage::TransactionOutcomeFaultPoint;
 use crate::storage::binary_encoder::{
     QuadEncoding, TYPE_STAR_TRIPLE, WRITTEN_TERM_MAX_SIZE, decode_term, encode_term,
     encode_term_pair, encode_term_quad, encode_term_triple, write_gosp_quad, write_gpos_quad,
@@ -446,6 +448,35 @@ impl RocksDbStorage {
             ))
             .into()),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn arm_transaction_outcome_fault(
+        &self,
+        point: TransactionOutcomeFaultPoint,
+    ) -> Result<(), StorageError> {
+        self.db.arm_transaction_outcome_fault(point)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transaction_outcome_fault_events(
+        &self,
+    ) -> Result<Vec<TransactionOutcomeFaultPoint>, StorageError> {
+        self.db.transaction_outcome_fault_events()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn write_raw_transaction_outcome_record(
+        &self,
+        transaction_key: &[u8; 16],
+        record: &[u8],
+    ) -> Result<(), StorageError> {
+        self.db.insert(
+            &self.default_cf,
+            &transaction_outcome_key(transaction_key),
+            record,
+        )?;
+        self.db.flush()
     }
 
     pub fn flush(&self) -> Result<(), StorageError> {
