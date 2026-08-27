@@ -10,6 +10,7 @@ import {
   createG17NativeApplicationVerifierForTesting,
   verifyG17NativeApplicationEvidence,
 } from "../src/qualification/native-application-contract.mjs";
+import { loadG17Contract } from "../src/qualification/contract.mjs";
 import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
 import {
   createG17NativeApplicationFixture,
@@ -146,7 +147,20 @@ function verifierFixture({
   mutatePlatform,
 } = {}) {
   const calls = [];
+  const sealedContract = loadG17Contract();
   const identity = g17IdentityFixture();
+  identity.evaluator = {
+    commit: sealedContract.contract.evaluator.commit,
+    parent: sealedContract.contract.evaluator.parent,
+    tree: sealedContract.contract.evaluator.tree,
+    patchSha256: sealedContract.contract.evaluator.patchSha256,
+    blobSetSha256: canonicalSha256(
+      sealedContract.contract.evaluator.paths.map(
+        ({ path, blob, contentSha256 }) => ({ path, blob, contentSha256 }),
+      ),
+    ),
+  };
+  resealIdentity(identity);
   mutateIdentity?.(identity);
   const verifiedPlatform = platform(identity);
   mutatePlatform?.(verifiedPlatform);
@@ -262,12 +276,12 @@ function verifierFixture({
       return { ...base, sha256: canonicalSha256(base) };
     },
   };
-  const contractBytes = Buffer.from("sealed contract fixture\n", "utf8");
+  const contractBytes = Buffer.from(sealedContract.bytes);
   const input = {
     artifacts: artifacts(),
     identity,
     contractBytes,
-    contractSha256: sha256(contractBytes),
+    contractSha256: sealedContract.contractSha256,
     runId: "application-contract-fixture",
   };
   return {
@@ -357,6 +371,17 @@ test("production composite replays seven canonical artifacts without raw evidenc
   for (const forbidden of fixture.forbiddenProjectionText) {
     assert.equal(serialized.includes(forbidden), false, forbidden.slice(0, 120));
   }
+});
+
+test("production composite rejects an evaluator outside the reviewed contract", () => {
+  const fixture = createG17NativeApplicationFixture();
+  fixture.input.identity.evaluator.commit = "f".repeat(40);
+  resealIdentity(fixture.input.identity);
+
+  assert.throws(
+    () => verifyG17NativeApplicationEvidence(fixture.input),
+    /sealed evaluator differs from the reviewed contract/u,
+  );
 });
 
 test("production composite snapshots artifact accessors exactly once", () => {
@@ -540,6 +565,14 @@ test("seven-artifact composite derives tool anchors from both identity and platf
 test("seven-artifact composite rejects coherently rehashed malformed sealed identities", () => {
   for (const [label, mutateIdentity, pattern] of [
     [
+      "evaluator contract relation",
+      (identity) => {
+        identity.evaluator.commit = "f".repeat(40);
+        resealIdentity(identity);
+      },
+      /sealed evaluator differs from the reviewed contract/u,
+    ],
+    [
       "control-subject relation",
       (identity) => {
         identity.control.controlCommit = "f".repeat(40);
@@ -640,7 +673,7 @@ test("seven-artifact composite rejects coherently rehashed malformed sealed iden
     const fixture = verifierFixture({ mutateIdentity });
     const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
     assert.throws(() => verify(fixture.input), pattern, label);
-    assert.deepEqual(fixture.calls, ["platform/source-plan/controller"], label);
+    assert.deepEqual(fixture.calls, [], label);
   }
 });
 

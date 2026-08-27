@@ -907,6 +907,7 @@ function controllerNamespaces() {
 export function createG17NativeApplicationFixture({
   runId = "native-application-production-fixture",
 } = {}) {
+  const sealedContract = loadG17Contract();
   const lockBytes = Buffer.from([
     "version = 4",
     "",
@@ -922,6 +923,17 @@ export function createG17NativeApplicationFixture({
     cargoVersion: probeText("cargo-version").stdout.trimEnd(),
     rustcVersion: probeText("rust-version").stdout.trimEnd(),
   });
+  identity.evaluator = {
+    commit: sealedContract.contract.evaluator.commit,
+    parent: sealedContract.contract.evaluator.parent,
+    tree: sealedContract.contract.evaluator.tree,
+    patchSha256: sealedContract.contract.evaluator.patchSha256,
+    blobSetSha256: canonicalSha256(
+      sealedContract.contract.evaluator.paths.map(
+        ({ path, blob, contentSha256 }) => ({ path, blob, contentSha256 }),
+      ),
+    ),
+  };
   identity.subject.tree = gitObject("3");
   identity.cargoLock = {
     blob: gitBlobSha1(lockBytes),
@@ -950,7 +962,6 @@ export function createG17NativeApplicationFixture({
   };
   const workspace = workspaceOwner(workspaceBinding, lockBytes);
   const policy = createG17NativeIsolationPolicyArtifact();
-  const sealedContract = loadG17Contract();
   const configuration = createG17NativeSessionConfiguration({
     runId,
     contractBytes: sealedContract.bytes,

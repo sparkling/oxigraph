@@ -51,29 +51,16 @@ import {
   createG17Run,
 } from "../src/qualification/storage.mjs";
 import { verifySealedG17Run } from "../src/qualification/verifier.mjs";
+import {
+  verifyG17NativeApplicationEvidence,
+} from "../src/qualification/native-application-contract.mjs";
+import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
+import {
+  createG17NativeApplicationFixture,
+} from "./support/g17-native-application-fixture.mjs";
 
 function identity({ subjectCommit = "a".repeat(40), dependencies } = {}) {
-  const binding = {
-    schema: "oxigraph.g1.7-qualified-subject-identity/v1",
-    subject: {
-      commit: subjectCommit,
-      tree: "b".repeat(40),
-      trackedClean: true,
-    },
-    control: {
-      controlCommit: subjectCommit,
-      harnessSha256: "c".repeat(64),
-      ...(dependencies === undefined ? {} : { dependencies }),
-    },
-    evaluator: {
-      commit: "d".repeat(40),
-      blobSetSha256: "e".repeat(64),
-    },
-    cargoLock: { blob: "f".repeat(40), sha256: "1".repeat(64) },
-    toolchain: [],
-    host: { targetTriple: "x86_64-unknown-linux-gnu" },
-  };
-  return { ...binding, identitySha256: canonicalSha256(binding) };
+  return g17IdentityFixture({ subjectCommit, dependencies });
 }
 
 function sha256(bytes) {
@@ -348,6 +335,34 @@ async function agenticOwnerEvidence(subjectCommit = "a".repeat(40)) {
   };
 }
 
+async function compatibilityOwnerEvidence(runId) {
+  const nativeFixture = createG17NativeApplicationFixture({ runId });
+  const subjectIdentity = nativeFixture.input.identity;
+  const agentic = await agenticOwnerEvidence(subjectIdentity.subject.commit);
+  const nativeProjection = verifyG17NativeApplicationEvidence(nativeFixture.input);
+  const projection = {
+    schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+    status: "PASS",
+    agenticQe: agentic.agenticQe,
+    native: nativeProjection,
+    applicationReceipts: [],
+  };
+  return {
+    ...agentic,
+    identity: subjectIdentity,
+    native: {
+      projection: nativeProjection,
+      artifacts: nativeFixture.input.artifacts,
+    },
+    projection,
+    artifacts: [
+      ...agentic.dependencyArtifacts,
+      { name: "agentic-oracle.json", bytes: agentic.oracleBytes },
+      { name: "agentic-receipt.json", bytes: agentic.receiptBytes },
+      ...nativeFixture.input.artifacts,
+    ],
+  };
+}
 function missing(status, reason) {
   return {
     status,
@@ -759,6 +774,34 @@ test("G1.7 run writes artifacts first, receipt last, and the pure verifier reope
   );
 });
 
+test("G1.7 run rejects an oversized envelope before creating a partial run", async (t) => {
+  const { runsRoot } = await fixture(t);
+  const runId = "run-envelope-overflow";
+  const times = [
+    new Date("2026-08-26T18:00:00.000Z"),
+    new Date("2026-08-26T18:00:01.000Z"),
+  ];
+  await assert.rejects(
+    runG17Qualification({
+      runId,
+      runsRoot,
+      contractLoader: () => loadG17Contract(),
+      identityProvider: async () => identity(),
+      semanticProvider: async () => missing("MISSING", "missing"),
+      compatibilityProvider: async () => ({
+        ...missing("MISSING", "missing"),
+        artifacts: Array.from({ length: 61 }, (_, index) => ({
+          name: `overflow-${String(index).padStart(3, "0")}.bin`,
+          bytes: Buffer.from([index]),
+        })),
+      }),
+      clock: () => times.shift(),
+    }),
+    /artifact inventory size|sealed envelope exceeds/u,
+  );
+  assert.deepEqual(await readdir(runsRoot), []);
+});
+
 test("sealed verifier imports no live identity, evidence, process, Git, or Router modules", async () => {
   const source = await readFile(
     new URL("../src/qualification/verifier.mjs", import.meta.url),
@@ -821,29 +864,27 @@ test("sealed verifier rejects a hash-consistent compatibility PASS without copie
   );
 });
 
-test("sealed verifier replays a synthetic 11-command/66-test Agentic owner-contract fixture", async (t) => {
+test("sealed verifier replays synthetic Agentic and native owner-contract fixtures", async (t) => {
   const { runsRoot } = await fixture(t);
-  const owner = await agenticOwnerEvidence();
+  const runId = "run-valid-zero-artifact-owner";
+  const owner = await compatibilityOwnerEvidence(runId);
+  const subjectIdentity = owner.identity;
   const times = [
     new Date("2026-08-26T20:00:00.000Z"),
     new Date("2026-08-26T20:00:01.000Z"),
   ];
   const result = await runG17Qualification({
-    runId: "run-valid-zero-artifact-owner",
+    runId,
     runsRoot,
     contractLoader: () => loadG17Contract(),
-    identityProvider: async () => identity(),
+    identityProvider: async () => subjectIdentity,
     semanticProvider: async () => missing("MISSING", "missing"),
     compatibilityProvider: async () => ({
       status: "PASS",
       sha256: canonicalSha256(owner.projection),
       reasons: [],
       projection: owner.projection,
-      artifacts: [
-        ...owner.dependencyArtifacts,
-        { name: "agentic-oracle.json", bytes: owner.oracleBytes },
-        { name: "agentic-receipt.json", bytes: owner.receiptBytes },
-      ],
+      artifacts: owner.artifacts,
     }),
     clock: () => times.shift(),
   });
@@ -856,32 +897,31 @@ test("sealed verifier replays a synthetic 11-command/66-test Agentic owner-contr
   assert.equal(verified.qualificationEligible, false);
   assert.deepEqual(verified.evidenceAssurance, {
     semantic: "NOT_APPLICABLE",
-    compatibility: "AGENTIC_OWNER_CONTRACT_REPLAYED",
+    compatibility: "COMPATIBILITY_OWNER_CONTRACT_REPLAYED",
   });
   assert.equal(owner.agenticQe.archiveFileCount, 0);
   assert.equal(owner.agenticQe.commandCount, 11);
   assert.equal(owner.agenticQe.passedTests, 66);
+  assert.equal(owner.native.projection.totalPassedTests, 23);
 });
 
 test("sealed verifier keeps an unversioned legacy PASS replayable but never qualification-eligible", async (t) => {
   const { runsRoot } = await fixture(t);
-  const owner = await agenticOwnerEvidence();
+  const currentRunId = "run-current-v3-for-legacy";
+  const owner = await compatibilityOwnerEvidence(currentRunId);
+  const subjectIdentity = owner.identity;
   const current = await runG17Qualification({
-    runId: "run-current-v2-for-legacy",
+    runId: currentRunId,
     runsRoot,
     contractLoader: () => loadG17Contract(),
-    identityProvider: async () => identity(),
+    identityProvider: async () => subjectIdentity,
     semanticProvider: async () => missing("MISSING", "missing"),
     compatibilityProvider: async () => ({
       status: "PASS",
       sha256: canonicalSha256(owner.projection),
       reasons: [],
       projection: owner.projection,
-      artifacts: [
-        ...owner.dependencyArtifacts,
-        { name: "agentic-oracle.json", bytes: owner.oracleBytes },
-        { name: "agentic-receipt.json", bytes: owner.receiptBytes },
-      ],
+      artifacts: owner.artifacts,
     }),
     clock: (() => {
       const times = [
@@ -920,6 +960,11 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
   for (const name of retainedNames) {
     bytesByName.set(name, await readFile(join(current.runPath, name)));
   }
+  const legacyContractBytes = await readFile(
+    new URL("./fixtures/g17-qualification-contract-v1.json", import.meta.url),
+  );
+  const legacyContract = JSON.parse(legacyContractBytes);
+  bytesByName.set("contract.json", legacyContractBytes);
   const observations = JSON.parse(
     await readFile(join(current.runPath, "observations.json")),
   );
@@ -944,6 +989,14 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
   const legacyReceipt = resealG17Receipt({
     ...structuredClone(current.receipt),
     run: { ...current.receipt.run, id: legacyRunId },
+    contract: {
+      id: legacyContract.id,
+      sha256: sha256(legacyContractBytes),
+      suiteHash: legacyContract.benchmark.suite.taskHash,
+      referenceDecision: legacyContract.referenceDecision.status,
+      budgetDecision: legacyContract.budgetDecision.status,
+      noiseDecision: legacyContract.noiseDecision.status,
+    },
     evidence: {
       semantic: current.receipt.evidence.semantic,
       compatibility: legacyCompatibility,
@@ -979,7 +1032,7 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
   });
 });
 
-test("adding a v2 schema to legacy Agentic evidence does not manufacture missing owner bytes", async (t) => {
+test("adding a v3 schema to legacy Agentic evidence does not manufacture native owner bytes", async (t) => {
   const { runsRoot } = await fixture(t);
   const owner = await agenticOwnerEvidence();
   const projection = structuredClone(owner.projection);
@@ -1010,13 +1063,17 @@ test("adding a v2 schema to legacy Agentic evidence does not manufacture missing
   });
   await assert.rejects(
     verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
-    /copied Agentic-QE evidence is invalid/u,
+    /compatibility PASS seven-artifact native evidence is incomplete|copied Agentic-QE evidence is invalid/u,
   );
 });
 
 test("sealed verifier rejects copied compatibility evidence that violates the pure Agentic receipt contract", async (t) => {
   const { runsRoot } = await fixture(t);
   const loaded = loadG17Contract();
+  const runId = "run-invalid-owner-evidence";
+  const nativeFixture = createG17NativeApplicationFixture({ runId });
+  const subjectIdentity = nativeFixture.input.identity;
+  const native = verifyG17NativeApplicationEvidence(nativeFixture.input);
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status: "PASS",
@@ -1037,7 +1094,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
       archiveContentHash: "7".repeat(64),
       archiveFileCount: 0,
     },
-    native: [],
+    native,
     applicationReceipts: [],
   };
   const times = [
@@ -1045,10 +1102,10 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
     new Date("2026-08-26T18:00:01.000Z"),
   ];
   const result = await runG17Qualification({
-    runId: "run-invalid-owner-evidence",
+    runId,
     runsRoot,
     contractLoader: () => loaded,
-    identityProvider: async () => identity(),
+    identityProvider: async () => subjectIdentity,
     semanticProvider: async () => missing("MISSING", "missing"),
     compatibilityProvider: async () => ({
       status: "PASS",
@@ -1058,6 +1115,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
       artifacts: [
         { name: "agentic-receipt.json", bytes: Buffer.from("{}\n") },
         { name: "agentic-oracle.json", bytes: Buffer.from("{}\n") },
+        ...nativeFixture.input.artifacts,
       ],
     }),
     clock: () => times.shift(),
@@ -1066,6 +1124,68 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
     verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
     /copied Agentic-QE evidence is invalid/u,
   );
+});
+
+test("sealed verifier rejects rehashed native raw-output and derived-projection tampering", async (t) => {
+  const { runsRoot } = await fixture(t);
+  const loaded = loadG17Contract();
+  for (const [runId, mutate] of [
+    [
+      "run-native-output-tamper",
+      (owner) => {
+        const sessionArtifact = owner.artifacts.find(
+          ({ name }) => name === "native-session.json",
+        );
+        const nativeDocument = JSON.parse(sessionArtifact.bytes);
+        const substituted = Buffer.from(
+          "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n" +
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n",
+        );
+        nativeDocument.commands[1].stdoutBase64 = substituted.toString("base64");
+        nativeDocument.commands[1].stdoutSha256 = sha256(substituted);
+        const mutatedBytes = canonicalBytes(nativeDocument);
+        owner.artifacts = owner.artifacts.map((artifact) =>
+          artifact.name === sessionArtifact.name
+            ? { ...artifact, bytes: mutatedBytes }
+            : artifact,
+        );
+      },
+    ],
+    [
+      "run-native-projection-tamper",
+      (owner) => {
+        owner.projection = structuredClone(owner.projection);
+        owner.projection.native.lanes[0].observedPassedTests = 19;
+      },
+    ],
+  ]) {
+    const owner = await compatibilityOwnerEvidence(runId);
+    const subjectIdentity = owner.identity;
+    mutate(owner);
+    const times = [
+      new Date("2026-08-26T20:00:00.000Z"),
+      new Date("2026-08-26T20:00:01.000Z"),
+    ];
+    const result = await runG17Qualification({
+      runId,
+      runsRoot,
+      contractLoader: () => loaded,
+      identityProvider: async () => subjectIdentity,
+      semanticProvider: async () => missing("MISSING", "missing"),
+      compatibilityProvider: async () => ({
+        status: "PASS",
+        sha256: canonicalSha256(owner.projection),
+        reasons: [],
+        projection: owner.projection,
+        artifacts: owner.artifacts,
+      }),
+      clock: () => times.shift(),
+    });
+    await assert.rejects(
+      verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
+      /copied native compatibility evidence is invalid/u,
+    );
+  }
 });
 
 test("sealed verifier rejects copied semantic evidence that violates the pure MetaHarness receipt contract", async (t) => {

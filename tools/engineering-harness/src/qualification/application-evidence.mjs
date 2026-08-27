@@ -29,13 +29,13 @@ import {
   validateSemanticEvidencePair,
 } from "../../../metaharness/evidence.mjs";
 import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
-import { cargoTestInventory } from "../../../agentic-qe/execution-provenance.mjs";
 import { execute } from "../../../agentic-qe/process-runner.mjs";
 import { canonicalSha256 } from "../routing/features.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
 } from "./evidence-contract.mjs";
+import { runG17NativeApplication } from "./native-application.mjs";
 import { repositoryRoot } from "../paths.mjs";
 
 const MAX_EVIDENCE_BYTES = 64 * 1024 * 1024;
@@ -323,83 +323,25 @@ export async function inspectG17AgenticEvidence({
   }
 }
 
-function nativeLaneProjection(lane, status, result, inventoryResult) {
-  return Object.freeze({
-    id: lane.id,
-    status,
-    argv: lane.argv,
-    expectedPassedTests: lane.expectedPassedTests,
-    observedPassedTests: result?.observedPassedTests ?? 0,
-    inventoriedTests: inventoryResult?.observedTests ?? 0,
-    exitCode: result?.code ?? null,
-    signal: result?.signal ?? null,
-    spawnFailed: result?.spawnError !== null && result?.spawnError !== undefined,
-    timedOut: result?.timedOut ?? false,
-    durationMs: result?.durationMs ?? 0,
-    output: result?.output ?? null,
-    inventoryOutput: inventoryResult?.output ?? null,
-  });
-}
-
 export async function runG17NativeCompatibility({
   contract,
+  contractBytes,
+  contractSha256,
+  identity,
+  runId,
   repoRoot = repositoryRoot,
-  inventory = cargoTestInventory,
-  executeCommand = execute,
+  signal,
 }) {
-  const lanes = [];
-  for (const lane of contract.compatibility.native) {
-    let inventoryResult;
-    try {
-      inventoryResult = await inventory(lane.id, lane.argv.slice(1), {
-        expectedPassedTests: lane.expectedPassedTests,
-        timeoutMs: lane.timeoutMs,
-      });
-    } catch {
-      lanes.push(nativeLaneProjection(lane, "MISSING", null, null));
-      continue;
-    }
-    const result = await executeCommand(lane.argv[0], lane.argv.slice(1), {
-      cwd: repoRoot,
-      quiet: true,
-      announce: false,
-      timeoutMs: lane.timeoutMs,
-    });
-    const infrastructureFailure = result.timedOut || result.spawnError !== null;
-    const passed =
-      !infrastructureFailure &&
-      result.code === 0 &&
-      inventoryResult.observedTests === lane.expectedPassedTests &&
-      result.observedPassedTests === lane.expectedPassedTests;
-    lanes.push(
-      nativeLaneProjection(
-        lane,
-        passed ? "PASS" : infrastructureFailure ? "MISSING" : "FAIL",
-        result,
-        inventoryResult,
-      ),
-    );
-  }
-  const status = lanes.some((lane) => lane.status === "FAIL")
-    ? "FAIL"
-    : lanes.some((lane) => lane.status === "MISSING")
-      ? "MISSING"
-      : "PASS";
-  const projection = Object.freeze({
-    status,
-    lanes: Object.freeze(lanes),
-  });
-  return Object.freeze({
-    ...projection,
-    sha256: canonicalSha256(projection),
-    reasons: Object.freeze(
-      lanes
-        .filter((lane) => lane.status !== "PASS")
-        .map((lane) => `native-${lane.id}-${lane.status.toLowerCase()}`),
-    ),
+  return runG17NativeApplication({
+    contract,
+    contractBytes,
+    contractSha256,
+    identity,
+    runId,
+    repoRoot,
+    signal,
   });
 }
-
 function missingSemantic(reasons) {
   return Object.freeze({
     status: "MISSING",
@@ -500,18 +442,22 @@ export async function collectG17CompatibilityEvidence(options) {
     inspectG17AgenticEvidence(options),
     runG17NativeCompatibility(options),
   ]);
+  return combineG17CompatibilityEvidence({ agenticQe, native });
+}
+
+export function combineG17CompatibilityEvidence({ agenticQe, native }) {
   const status = native.status === "FAIL"
     ? "FAIL"
     : agenticQe.status === "PASS" && native.status === "PASS"
       ? "PASS"
-      : agenticQe.status === "STALE"
+      : agenticQe.status === "STALE" || native.status === "STALE"
         ? "STALE"
         : "MISSING";
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status,
     agenticQe: agenticQe.projection,
-    native: native.lanes,
+    native: native.projection,
     applicationReceipts: [],
   };
   return Object.freeze({
@@ -519,6 +465,6 @@ export async function collectG17CompatibilityEvidence(options) {
     sha256: canonicalSha256(projection),
     reasons: Object.freeze([...agenticQe.reasons, ...native.reasons]),
     projection: Object.freeze(projection),
-    artifacts: agenticQe.artifacts,
+    artifacts: Object.freeze([...agenticQe.artifacts, ...native.artifacts]),
   });
 }

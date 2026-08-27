@@ -44,6 +44,8 @@ export const G17_NATIVE_APPLICATION_ARTIFACT_NAMES = Object.freeze([
 
 const REPLAY_BOUNDARY = "sealed-seven-artifact-pure-replay/v1";
 const IDENTITY_SCHEMA = "oxigraph.g1.7-qualified-subject-identity/v1";
+const CURRENT_CONTRACT_SHA256 =
+  "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
 const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
 const SAFE_RUN_ID = /^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$/u;
@@ -326,8 +328,65 @@ function streamBytes(stream, label) {
   return bytes;
 }
 
-function deriveWorkspaceExpected(identity, platform) {
-  const tools = validateIdentity(identity);
+function reviewedEvaluator(contractBytes, contractSha256) {
+  if (
+    contractSha256 !== CURRENT_CONTRACT_SHA256 ||
+    sha256(contractBytes) !== CURRENT_CONTRACT_SHA256
+  ) {
+    fail("contract bytes are not the reviewed v3 byte identity");
+  }
+  let contract;
+  try {
+    contract = JSON.parse(utf8.decode(contractBytes));
+  } catch (error) {
+    fail(`contract bytes are invalid JSON or UTF-8: ${error.message}`);
+  }
+  const evaluator = contract?.evaluator;
+  exactKeys(
+    evaluator,
+    ["commit", "parent", "tree", "paths", "patchSha256"],
+    "reviewed evaluator",
+  );
+  if (
+    !GIT_OBJECT.test(evaluator.commit ?? "") ||
+    !GIT_OBJECT.test(evaluator.parent ?? "") ||
+    !GIT_OBJECT.test(evaluator.tree ?? "") ||
+    !DIGEST.test(evaluator.patchSha256 ?? "") ||
+    !Array.isArray(evaluator.paths) ||
+    evaluator.paths.length < 1 ||
+    evaluator.paths.length > 64
+  ) {
+    fail("reviewed evaluator binding is invalid");
+  }
+  const paths = evaluator.paths.map((entry, index) => {
+    exactKeys(
+      entry,
+      ["path", "changeStatus", "blob", "contentSha256"],
+      `reviewed evaluator path ${index}`,
+    );
+    if (
+      !["A", "M"].includes(entry.changeStatus) ||
+      !GIT_OBJECT.test(entry.blob ?? "") ||
+      !DIGEST.test(entry.contentSha256 ?? "")
+    ) {
+      fail(`reviewed evaluator path ${index} binding is invalid`);
+    }
+    return {
+      path: boundedString(entry.path, `reviewed evaluator path ${index}`, 4_096),
+      blob: entry.blob,
+      contentSha256: entry.contentSha256,
+    };
+  });
+  return Object.freeze({
+    commit: evaluator.commit,
+    parent: evaluator.parent,
+    tree: evaluator.tree,
+    patchSha256: evaluator.patchSha256,
+    blobSetSha256: canonicalSha256(paths),
+  });
+}
+
+function deriveWorkspaceExpected(identity, tools, platform) {
   if (
     platform.subjectIdentitySha256 !== identity.identitySha256 ||
     !DIGEST.test(platform.manifestSha256 ?? "") ||
@@ -482,6 +541,11 @@ function verifyApplication(input, dependencies) {
     fail("run or sealed contract binding is invalid");
   }
   const identity = canonicalClone(suppliedIdentity, "sealed identity");
+  const tools = validateIdentity(identity);
+  const evaluator = reviewedEvaluator(contractBytes, contractSha256);
+  if (!isDeepStrictEqual(identity.evaluator, evaluator)) {
+    fail("sealed evaluator differs from the reviewed contract");
+  }
   const inventory = artifactInventory(suppliedArtifacts);
   const [platformArtifact, sourcePlanArtifact, controllerArtifact,
     workspaceArtifact, policyArtifact, sessionArtifact, instanceArtifact] = inventory;
@@ -491,7 +555,11 @@ function verifyApplication(input, dependencies) {
     sourcePlanBytes: sourcePlanArtifact.bytes,
     controllerBytes: controllerArtifact.bytes,
   });
-  const workspaceExpected = deriveWorkspaceExpected(identity, platformReplay.platform);
+  const workspaceExpected = deriveWorkspaceExpected(
+    identity,
+    tools,
+    platformReplay.platform,
+  );
   currentWorkspaceOwner(workspaceArtifact.bytes);
   const workspaceReplay = dependencies.verifyWorkspaceOwnerArtifact({
     bytes: workspaceArtifact.bytes,

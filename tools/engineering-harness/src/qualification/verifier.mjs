@@ -3,7 +3,11 @@ import { isDeepStrictEqual } from "node:util";
 
 import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
-import { validateG17Contract } from "./contract.mjs";
+import {
+  G17_CONTRACT_GENERATION,
+  decodeSealedG17Contract,
+  g17ContractCompatibilityGeneration,
+} from "./contract.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
@@ -12,8 +16,12 @@ import {
 import { verifyG17Receipt } from "./receipt.mjs";
 import {
   verifySealedAgenticEvidence,
+  verifySealedNativeCompatibilityEvidence,
   verifySealedSemanticEvidence,
 } from "./sealed-evidence.mjs";
+import {
+  G17_NATIVE_APPLICATION_ARTIFACT_NAMES,
+} from "./native-application-contract.mjs";
 import {
   g17RunsRoot,
   openSealedG17Run,
@@ -72,6 +80,20 @@ function requireArtifact(bytesByName, name, message) {
 }
 
 function verifyEvidenceArtifactInventory(receipt, bytesByName) {
+  const currentCompatibility =
+    receipt.evidence.compatibility.projection?.schema ===
+    G17_COMPATIBILITY_EVIDENCE_SCHEMA;
+  const projectedNativeOwner =
+    receipt.evidence.compatibility.projection?.native?.ownerArtifact;
+  const workspaceOwnerName = G17_NATIVE_APPLICATION_ARTIFACT_NAMES[3];
+  const hasNativeOwner = bytesByName.has(workspaceOwnerName);
+  if (
+    currentCompatibility &&
+    (projectedNativeOwner !== null && projectedNativeOwner !== undefined) !==
+    hasNativeOwner
+  ) {
+    fail("native compatibility owner artifact projection is asymmetric");
+  }
   if (receipt.evidence.compatibility.status === "PASS") {
     requireArtifact(
       bytesByName,
@@ -93,6 +115,18 @@ function verifyEvidenceArtifactInventory(receipt, bytesByName) {
         `agentic-archive-${String(index).padStart(4, "0")}.bin`,
         "compatibility PASS artifacts are incomplete",
       );
+    }
+    if (currentCompatibility) {
+      for (const name of G17_NATIVE_APPLICATION_ARTIFACT_NAMES) {
+        requireArtifact(
+          bytesByName,
+          name,
+          "compatibility PASS seven-artifact native evidence is incomplete",
+        );
+      }
+      if (bytesByName.has("native-compatibility-owner.json")) {
+        fail("compatibility PASS contains a legacy native owner artifact");
+      }
     }
   }
 
@@ -130,6 +164,16 @@ export async function verifySealedG17Run({
   const run = await openSealedG17Run({ runId, runsRoot });
   const receiptBytes = await run.read("receipt.json");
   const { receipt } = verifyG17Receipt(receiptBytes);
+  if (
+    receipt.artifacts.length + 1 > 64 ||
+    receipt.artifacts.reduce(
+      (sum, artifact) => sum + artifact.bytes,
+      receiptBytes.length,
+    ) >
+      64 * 1024 * 1024
+  ) {
+    fail("sealed envelope exceeds its file or byte ceiling");
+  }
   const expectedEntries = [
     ...receipt.artifacts.map(({ name }) => name),
     "receipt.json",
@@ -148,7 +192,11 @@ export async function verifySealedG17Run({
   }
   verifyEvidenceArtifactInventory(receipt, bytesByName);
   const contractBytes = bytesByName.get("contract.json");
-  const contract = validateG17Contract(JSON.parse(contractBytes));
+  const decodedContract = decodeSealedG17Contract({
+    bytes: contractBytes,
+    receiptSha256: receipt.contract.sha256,
+  });
+  const { contract, generation: contractGeneration } = decodedContract;
   if (
     sha256(contractBytes) !== receipt.contract.sha256 ||
     contract.id !== receipt.contract.id ||
@@ -173,7 +221,15 @@ export async function verifySealedG17Run({
       G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     ),
   });
-  if (evidenceSchemaState.compatibility === "CURRENT_SCHEMA_UNREPLAYED") {
+  const generationState = g17ContractCompatibilityGeneration({
+    contractGeneration,
+    compatibilityStatus: receipt.evidence.compatibility.status,
+    compatibilitySchemaState: evidenceSchemaState.compatibility,
+  });
+  if (
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V3 &&
+    evidenceSchemaState.compatibility === "CURRENT_SCHEMA_UNREPLAYED"
+  ) {
     try {
       verifySealedAgenticEvidence({
         contract,
@@ -184,6 +240,18 @@ export async function verifySealedG17Run({
       });
     } catch {
       fail("copied Agentic-QE evidence is invalid");
+    }
+    try {
+      verifySealedNativeCompatibilityEvidence({
+        contractBytes,
+        contractSha256: receipt.contract.sha256,
+        g17Receipt: receipt,
+        identity,
+        compatibility: receipt.evidence.compatibility,
+        bytesByName,
+      });
+    } catch {
+      fail("copied native compatibility evidence is invalid");
     }
   }
   if (evidenceSchemaState.semantic === "CURRENT_SCHEMA_UNREPLAYED") {
@@ -222,9 +290,9 @@ export async function verifySealedG17Run({
   ) {
     fail("sealed artifact manifest differs from the receipt");
   }
-  const legacyReplayOnly = Object.values(evidenceSchemaState).includes(
-    "LEGACY_REPLAY_ONLY",
-  );
+  const legacyReplayOnly =
+    generationState.legacyReplayOnly ||
+    Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
   const evidenceAssurance = Object.freeze(
     Object.fromEntries(
       Object.entries(evidenceSchemaState).map(([lane, schemaState]) => [
@@ -232,16 +300,14 @@ export async function verifySealedG17Run({
         schemaState === "CURRENT_SCHEMA_UNREPLAYED"
           ? lane === "semantic"
             ? "METAHARNESS_OWNER_CONTRACT_REPLAYED"
-            : "AGENTIC_OWNER_CONTRACT_REPLAYED"
+            : "COMPATIBILITY_OWNER_CONTRACT_REPLAYED"
           : schemaState,
       ]),
     ),
   );
-  // Compatibility PASS currently replays the copied Agentic-QE owner contract,
-  // but not the native Cargo lane. Keep promotion eligibility closed until a
-  // full compatibility owner contract is independently replayable.
   const qualificationEligible =
     !legacyReplayOnly &&
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V3 &&
     receipt.final.verdict === "ACCEPT" &&
     evidenceAssurance.semantic ===
       "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&
@@ -254,6 +320,7 @@ export async function verifySealedG17Run({
       : "SEALED_RUN_VERIFIED",
     qualificationEligible,
     evidenceAssurance,
+    contractGeneration,
     runId: receipt.run.id,
     receiptSha256: receipt.receiptSha256,
     contentHash: receipt.contentHash,

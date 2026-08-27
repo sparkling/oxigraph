@@ -15,6 +15,10 @@ import {
 } from "../../../agentic-qe/profile-definitions.mjs";
 import { validateSemanticEvidencePair } from "../../../metaharness/receipt-contract.mjs";
 import { G17_SEMANTIC_EVIDENCE_SCHEMA } from "./evidence-contract.mjs";
+import {
+  G17_NATIVE_APPLICATION_ARTIFACT_NAMES,
+  verifyG17NativeApplicationEvidence,
+} from "./native-application-contract.mjs";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -185,6 +189,34 @@ export function verifySealedAgenticEvidence({
     throw new Error("copied Agentic-QE projection drifted");
   }
   return Object.freeze(projection);
+}
+
+export function verifySealedNativeCompatibilityEvidence({
+  contractBytes,
+  contractSha256,
+  g17Receipt,
+  identity,
+  compatibility,
+  bytesByName,
+}) {
+  const artifacts = G17_NATIVE_APPLICATION_ARTIFACT_NAMES.map((name) => {
+    const bytes = bytesByName.get(name);
+    if (!Buffer.isBuffer(bytes)) {
+      throw new Error(`copied native application artifact ${name} is missing`);
+    }
+    return { name, bytes };
+  });
+  const projection = verifyG17NativeApplicationEvidence({
+    artifacts,
+    runId: g17Receipt.run.id,
+    contractBytes,
+    contractSha256,
+    identity,
+  });
+  if (!isDeepStrictEqual(projection, compatibility.projection?.native)) {
+    throw new Error("copied native compatibility projection drifted");
+  }
+  return projection;
 }
 
 export function verifySealedSemanticEvidence({

@@ -5,6 +5,7 @@ import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import { classifyG17Qualification } from "./classification.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
   g17EvidenceSchemaState,
 } from "./evidence-contract.mjs";
@@ -176,6 +177,13 @@ function validateEvidence(
     semantic: G17_SEMANTIC_EVIDENCE_SCHEMA,
     compatibility: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   };
+  const supportedSchemas = {
+    semantic: new Set([G17_SEMANTIC_EVIDENCE_SCHEMA]),
+    compatibility: new Set([
+      G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+      ...G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS,
+    ]),
+  };
   for (const label of ["semantic", "compatibility"]) {
     const entry = evidence[label];
     exactKeys(
@@ -214,7 +222,7 @@ function validateEvidence(
     }
     if (
       entry.projection?.schema !== undefined &&
-      entry.projection.schema !== currentSchemas[label]
+      !supportedSchemas[label].has(entry.projection.schema)
     ) {
       fail(`${label} evidence projection schema is unsupported`);
     }
@@ -223,7 +231,7 @@ function validateEvidence(
       entry.status === "PASS" &&
       entry.projection.schema !== currentSchemas[label]
     ) {
-      fail(`${label} PASS evidence requires its current v2 projection schema`);
+      fail(`${label} PASS evidence requires its current projection schema`);
     }
     if (entry.status !== "PASS" && entry.reasons.length === 0) {
       fail(`${label} non-PASS evidence requires a reason`);
@@ -317,7 +325,9 @@ function validateFinal(final, receipt) {
 }
 
 function validateArtifacts(artifacts) {
-  if (!Array.isArray(artifacts) || artifacts.length < 1 || artifacts.length > 64) {
+  // The sealed directory ceiling is 64 total files and receipt.json is written
+  // separately, leaving at most 63 receipt-listed artifacts.
+  if (!Array.isArray(artifacts) || artifacts.length < 1 || artifacts.length > 63) {
     fail("artifact inventory size is invalid");
   }
   const names = new Set();

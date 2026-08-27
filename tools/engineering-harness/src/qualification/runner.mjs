@@ -153,7 +153,10 @@ export async function runG17Qualification({
     semanticProvider({ contract, identity, repoRoot }),
     compatibilityProvider({
       contract,
+      contractBytes: Buffer.from(loaded.bytes),
+      contractSha256: loaded.contractSha256,
       identity,
+      runId,
       repoRoot,
       evidenceRepositoryRoot,
       maximumGeneratedAtMs: started.getTime(),
@@ -192,23 +195,20 @@ export async function runG17Qualification({
     ...semanticEvidence.artifacts,
     ...compatibilityEvidence.artifacts,
   ]);
-
-  const run = await createG17Run({ runId, runsRoot });
-  const artifactRecords = [];
-  for (const artifact of initialArtifacts) {
-    await run.write(artifact.name, artifact.bytes);
-    artifactRecords.push(artifactRecord(artifact.name, artifact.bytes));
-  }
+  const initialArtifactRecords = initialArtifacts.map((artifact) =>
+    artifactRecord(artifact.name, artifact.bytes),
+  );
   const manifest = Object.freeze({
     schema: "oxigraph.g1.7-qualification-artifact-manifest/v1",
     runId,
-    artifacts: Object.freeze([...artifactRecords]),
+    artifacts: Object.freeze([...initialArtifactRecords]),
   });
   const manifestBytes = canonicalBytes(manifest);
-  await run.write("manifest.json", manifestBytes);
-  artifactRecords.push(artifactRecord("manifest.json", manifestBytes));
-  artifactRecords.sort((left, right) =>
-    comparePortablePaths(left.name, right.name),
+  const artifactRecords = Object.freeze(
+    [
+      ...initialArtifactRecords,
+      artifactRecord("manifest.json", manifestBytes),
+    ].sort((left, right) => comparePortablePaths(left.name, right.name)),
   );
 
   const receipt = createG17Receipt({
@@ -224,6 +224,24 @@ export async function runG17Qualification({
     final,
     artifacts: artifactRecords,
   });
-  await run.seal(g17ReceiptBytes(receipt));
+  const receiptBytes = g17ReceiptBytes(receipt);
+  const totalFiles = artifactRecords.length + 1;
+  const totalBytes = artifactRecords.reduce(
+    (sum, artifact) => sum + artifact.bytes,
+    receiptBytes.length,
+  );
+  if (
+    totalFiles > contract.artifactPolicy.maxFiles ||
+    totalBytes > contract.artifactPolicy.maxBytes
+  ) {
+    throw new Error("G1.7 qualification sealed envelope exceeds its contract");
+  }
+
+  const run = await createG17Run({ runId, runsRoot });
+  for (const artifact of initialArtifacts) {
+    await run.write(artifact.name, artifact.bytes);
+  }
+  await run.write("manifest.json", manifestBytes);
+  await run.seal(receiptBytes);
   return Object.freeze({ receipt, runPath: run.path });
 }

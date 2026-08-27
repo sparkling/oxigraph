@@ -4,6 +4,7 @@ import test from "node:test";
 import { canonicalSha256 } from "../src/routing/features.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+  G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
 } from "../src/qualification/evidence-contract.mjs";
 import {
@@ -112,6 +113,38 @@ function acceptingDraft() {
   return value;
 }
 
+function resealReceipt(receipt) {
+  const value = structuredClone(receipt);
+  value.contentHash = canonicalSha256({
+    schema: value.schema,
+    contract: value.contract,
+    identity: value.identity,
+    evidence: value.evidence,
+    benchmark: value.benchmark,
+    authority: value.authority,
+    final: value.final,
+    artifacts: value.artifacts,
+  });
+  value.executionHash = canonicalSha256({
+    contentHash: value.contentHash,
+    run: value.run,
+  });
+  value.receiptSha256 = canonicalSha256({
+    schema: value.schema,
+    run: value.run,
+    contract: value.contract,
+    identity: value.identity,
+    evidence: value.evidence,
+    benchmark: value.benchmark,
+    authority: value.authority,
+    final: value.final,
+    artifacts: value.artifacts,
+    contentHash: value.contentHash,
+    executionHash: value.executionHash,
+  });
+  return value;
+}
+
 test("G1.7 receipt is canonical, hash-bound, and permanently non-authoritative", () => {
   const receipt = createG17Receipt(draft());
   assert.deepEqual(receipt.authority, {
@@ -155,7 +188,26 @@ test("structural verification marks current PASS evidence as unreplayed", () => 
   assert.equal("evidenceAssurance" in verification, false);
 });
 
-test("G1.7 receipt creation requires each PASS projection's exact v2 schema", () => {
+test("structural verification preserves explicit v2 compatibility PASS as legacy replay-only", () => {
+  const receipt = structuredClone(createG17Receipt(acceptingDraft()));
+  receipt.evidence.compatibility.projection.schema =
+    G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS[0];
+  receipt.evidence.compatibility.sha256 = canonicalSha256(
+    receipt.evidence.compatibility.projection,
+  );
+  const legacy = resealReceipt(receipt);
+  const verification = verifyG17Receipt(g17ReceiptBytes(legacy));
+  assert.equal(verification.structurallyValid, true);
+  assert.equal(verification.ok, false);
+  assert.equal(verification.verificationStatus, "LEGACY_REPLAY_ONLY");
+  assert.equal(verification.qualificationEligible, false);
+  assert.deepEqual(verification.evidenceSchemaState, {
+    semantic: "CURRENT_SCHEMA_UNREPLAYED",
+    compatibility: "LEGACY_REPLAY_ONLY",
+  });
+});
+
+test("G1.7 receipt creation requires each PASS projection's current schema", () => {
   assert.doesNotThrow(() => createG17Receipt(acceptingDraft()));
 
   for (const lane of ["semantic", "compatibility"]) {
@@ -166,7 +218,7 @@ test("G1.7 receipt creation requires each PASS projection's exact v2 schema", ()
     );
     assert.throws(
       () => createG17Receipt(absent),
-      /PASS evidence requires its current v2 projection schema/u,
+      /PASS evidence requires its current projection schema/u,
     );
 
     for (const schema of [
