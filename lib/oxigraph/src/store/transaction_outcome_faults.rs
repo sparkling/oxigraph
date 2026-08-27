@@ -1,8 +1,8 @@
 //! Evaluator for transaction-outcome storage-call fault safety.
 
 use super::{
-    OutcomeAwareTransactionalDataset, StorageError, Store, TransactionCommitError,
-    TransactionKey, TransactionOutcome, TransactionRequest, TransactionStartError,
+    OutcomeAwareTransactionalDataset, StorageError, Store, TransactionCommitError, TransactionKey,
+    TransactionOutcome, TransactionRequest, TransactionStartError,
 };
 use crate::model::{GraphName, NamedNode, Quad};
 use crate::storage::TransactionOutcomeFaultPoint;
