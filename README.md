@@ -100,10 +100,18 @@ in `b2ed9119` plus formatting follow-up `5a704914` and accepted by its frozen
 remain live, rollback/drop release the permit, and queued cancellation or
 timeout occurs before snapshot creation without publication. This does not
 claim cancellation after transaction start. Recovery analysis made the
-remaining ADR-0018 product boundary explicit as G1.4a: the built-in `Store`
-must implement one `CommitAttempted` transition, typed terminal outcomes, and
-transaction-key lookup that survives RocksDB reopen before G1.7 can qualify
-the transaction profile. G1.4a is in progress and no completion claim follows.
+remaining ADR-0018 product boundary explicit as G1.4a. Product commit
+`2f518e04` now implements the built-in `Store` keyed path: memory provides a
+process-local outcome oracle without claiming durability, while read-write
+RocksDB reserves a stable transaction key, records exactly one synchronously
+written `CommitAttempted` transition, atomically publishes RDF changes with the
+`Committed` marker, and supports terminal lookup without replay. The accepted
+tests separately cover lookup after an orderly read-only reopen and
+lost-acknowledgement recovery after a post-commit process abort through a
+read-write reopen; they do not yet prove the combined read-only-after-abort
+path. The frozen seven-stage verifier accepted exact patch `3a196063...` as
+candidate tree `390bb43a...` for public/service/compatibility/independent/
+regression counts 7/9/20/3/2. This closes G1.4a, not G1.7 or promotion.
 G1.5's unified egress profile is
 implemented in `e452bad1` plus lifecycle hardening `3f4cdfd7` and accepted by
 its frozen 12/8/13 evaluator split. Built-in `SERVICE`, `LOAD`, and nested
@@ -132,11 +140,10 @@ and CLI-TLS-gated server disclosure
 (`3635ef690d75d10d8d5b4d7b316b7c6d487d7f6e9a8b47055a0c86630e387f5d`).
 The disclosed profile is a deterministic configured-and-compiled capability
 snapshot, not a remote-health or current-admission probe. ADR-0019 is therefore
-Implemented. ADR-0018 remains Proposed because the built-in `Store` still lacks
-the decision's explicit single-`CommitAttempted`/typed terminal-outcome
-lifecycle and durable lost-acknowledgement lookup now tracked as G1.4a, and
-because the G1.7 compatibility, performance, and current-evidence promotion
-gate remains open.
+Implemented. ADR-0018 remains Proposed because, although G1.4a has now closed
+the built-in `Store` single-`CommitAttempted`/typed terminal-outcome and
+source-backed durable lookup boundary, the G1.7 compatibility, fault-path,
+performance, and current-evidence promotion gate remains open.
 The verifier artifacts are local-only evidence and grant no
 semantic-qualification or promotion authority.
 
@@ -148,6 +155,11 @@ accept registered task IDs only; direct contract-path selection and malformed
 or unregistered identities fail before runtime I/O. The committed control
 passes 180/180 harness tests and a `runner-implemented` doctor while remaining
 local-only, unregistered as MCP, and without promotion authority.
+Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
+G1.4a. The current fail-closed registry therefore contains eight tasks and 30
+commands; its full suite passes 337/337 runnable tests with two expected
+host-gated skips, and the doctor retains the same native-only, local-only,
+non-promoting boundary.
 
 Follow-on harness commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate

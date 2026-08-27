@@ -52,12 +52,14 @@ controls are implemented in commits `4a15caa0` and `afe30c7d`; both remain
 local-only engineering controls and grant no semantic-qualification or
 promotion authority. ADR-0017 now also defines and tests a dedicated local
 G1.7 qualification scaffold whose structural and sealed replay states remain
-non-promoting. Recovery analysis added G1.4a as the explicit outstanding
-ADR-0018 built-in Store terminal-outcome/durable-lookup prerequisite. Its
+non-promoting. Recovery analysis added G1.4a as the explicit ADR-0018 built-in
+Store terminal-outcome/durable-lookup prerequisite; product commit `2f518e04`
+and its frozen 7/9/20/3/2 direct acceptance now close that product slice. Its
 compatibility verifier now conjunctively replays the copied
 Agentic-QE contract and bounded native owner bytes, but the still-unselected
 reference, absent budget/noise decisions, unrun benchmark, missing current
-clean-subject evidence, and human decision keep G1.7 open.
+clean-subject and phase-fault evidence, and human decision keep G1.7 and
+ADR-0018 open.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

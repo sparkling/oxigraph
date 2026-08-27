@@ -5,13 +5,17 @@
 - Updated: 2026-08-27
 - Deciders: Oxigraph parity programme
 - Implementation status: G1.1-G1.4 core capability, oracle, and writer-gate
-  mechanics are implemented and source-bound. The additive typed-outcome
-  vocabulary exists, but the built-in `Store` does not yet implement the
-  decision's single-`CommitAttempted`/typed terminal-outcome lifecycle or
-  durable lost-acknowledgement lookup. G1.4a now owns that explicit product
-  slice and is in progress. The dedicated G1.7 qualification-control
-  scaffold, including conjunctive Agentic-QE/native owner replay, is
-  implemented, while the reviewed reference and budgets, benchmark/noise
+  mechanics are implemented and source-bound. G1.4a is implemented in
+  `2f518e04`: all built-in `Store` backends now expose an additive
+  caller-keyed terminal lifecycle. Read-write RocksDB configures a synchronous
+  `CommitAttempted` write, atomic RDF-plus-`Committed` publication, successful
+  explicit-rollback proof, best-effort pre-attempt drop marking, and lookup
+  without replay. Accepted tests prove orderly read-only reopen and
+  post-commit process-abort recovery separately; phase-injected and power-loss
+  behavior remain unproved. Memory exposes a process-local oracle without
+  advertising durability. The dedicated G1.7 qualification-control scaffold,
+  including conjunctive Agentic-QE/native owner replay, is implemented, while
+  fault-path evidence, the reviewed reference and budgets, benchmark/noise
   evidence, current clean-subject owner evidence, and promotion decision remain
   outstanding
 - **Depends on**:
@@ -171,6 +175,53 @@ two independent concurrent-history tests, and two atomic-update regressions in
 liveness, rollback/drop release, queued cancellation, and zero-timeout
 admission without partial publication.
 
+G1.4a is implemented by product commit `2f518e04`. It adds the distinct
+`OutcomeAwareTransactionalDataset`/`KeyedTransaction` path without changing
+the legacy transaction signatures. Key reservation happens only after
+requirements and writer admission succeed. Memory retains terminal state only
+for the process lifetime and keeps `OutcomeLookup::Unsupported`; read-write
+RocksDB advertises `DurableByTransactionKey`, while a read-only reopen may
+resolve existing keys without advertising write capability. RocksDB stores a
+versioned record under a reserved default-column-family prefix and configures
+the `Staging`, exactly-one `CommitAttempted`, and final RDF-plus-`Committed`
+writes as synchronous. Missing, `Staging`, and `CommitAttempted` resolve
+indeterminate. A successful explicit rollback proves `RolledBack`; ordinary
+drop only attempts that marker while still staging and leaves lookup
+indeterminate if the best-effort write fails. Unknown record encodings fail as
+corruption in the implementation, and effects are never replayed to discover
+the outcome. Phase-specific write failures, power loss, and malformed-record
+handling are source/configuration-backed behavior pending G1.7 executable
+evidence.
+
+Frozen contract
+`fa8d1028cb3e1c27c2f1771e77451a08ddc84ce6a2c7c673c2435deda574a6fd`
+reconstructed exact patch
+`3a19606349d057c8090c8a92d336761c554ae32d011d9759948b602a54ca7d54`
+as candidate commit `de43f6e2e361095d61741f4aaafebb611e91a474`, tree
+`390bb43a5a3157f873204c63c10355026aab5681`, and retained protected manifest
+`54162db0dd0f4dfebb78cade7d136daa16d403f3e520a1b295860a99ea56999c`.
+The network-isolated, read-only verifier returned `ACCEPT` after
+format/build/public-7/service-9/compatibility-20/independent-3/regression-2 in
+395.556 seconds. Its 122,732-byte session artifact has SHA-256
+`9c3ee4481fcc777124cad7bc6d051cdb095de1fe93987c52ef80243735ecc240`.
+The preceding paired native application run remains an authenticated
+`INCONCLUSIVE` attempt because neither implementation lane produced an
+admissible candidate; it is not rewritten as success. The exact resulting
+product patch was separately reconstructed and accepted by the frozen direct
+verifier above. That accepted evidence covers normal ledger transitions and a
+separate post-commit process abort; it does not claim phase-injected or
+power-loss proof, malformed-record execution, or read-only lookup after that
+abort.
+
+Ledger I/O occurs only on the explicit keyed path. The current implementation
+still adds unmeasured optional-state/branch and write-option allocation costs to
+legacy transaction objects/store initialization; G1.7 must measure them before
+any zero-overhead claim. Keyed callers should use the inherent or
+`OutcomeAwareWritableDataset` commit path for a typed indeterminate error;
+generic `WritableDataset::commit` retains its legacy raw error surface, so such
+callers must retain the key and use lookup. G1.7 must also add executable
+malformed-record and phase-specific storage-failure evidence before promotion.
+
 G1.5b composes that admission control with SPARQL Update. Product commits
 `280872dc` and `9b84bed6` carry the evaluator's exact cancellation token from
 validation through built-in Store admission, mutation, and the final
@@ -198,11 +249,12 @@ and returned `ACCEPT` for format/build, five public, fifteen independent, and
 twenty-one regression tests. Its 118,202-byte session artifact has SHA-256
 `94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
 
-ADR-0018 remains Proposed until G1.4a closes the built-in `Store`
-single-`CommitAttempted`, typed terminal-outcome, and durable-lookup boundary
-and G1.7 closes the compatibility, performance, and current-evidence
-qualification boundary. G1.5c completion alone does not grant promotion
-authority or add savepoints to caller-owned transactions.
+ADR-0018 remains Proposed even though G1.4a has closed the built-in `Store`
+single-`CommitAttempted`, typed terminal-outcome, and durable-lookup product
+boundary. G1.7 must still close fault-path, compatibility, performance, and
+current-evidence qualification. G1.4a does not grant promotion authority, add
+semantic commit receipts/outbox delivery, or add savepoints to caller-owned
+transactions.
 The current G1.7 scaffold structurally verifies semantic v2 and compatibility
 v3 projections and sealed-replays copied MetaHarness, Agentic-QE, and native
 owner contracts. The native owner binds exact test IDs and bounded complete

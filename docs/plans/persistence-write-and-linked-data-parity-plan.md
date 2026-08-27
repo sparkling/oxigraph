@@ -1,8 +1,8 @@
 # Persistence writes and linked-data-store parity plan
 
-- Status: active plan; write seam and source-bound G1.3-G1.6 slices complete;
-  explicit G1.4a Store terminal outcomes/lookup and the G1.7 qualification
-  remain open
+- Status: active plan; write seam and source-bound G1.3-G1.6 slices complete,
+  including G1.4a Store terminal outcomes/lookup; G1.7 qualification remains
+  open
 - Date: 2026-08-24
 - Updated: 2026-08-27
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
@@ -44,8 +44,11 @@ configured-and-compiled SPARQL capabilities from the same evaluator's
 effective handlers, egress policy, and transport. They are not network-health
 or current-admission probes. The earlier conservative reconciliation in
 `7dc190d3` remains part of the lineage rather than the final claim model.
-G1.4a now records the remaining ADR-0018 built-in Store lifecycle and durable
-transaction-key lookup as an evaluator-separated product slice before G1.7.
+G1.4a is now implemented in `2f518e04`: its evaluator-separated seven-stage
+verifier accepted the built-in Store lifecycle and durable transaction-key
+lookup with exact 7/9/20/3/2 counted stages. G1.7 still owns fault-path and
+performance qualification, reviewed budgets/reference, current owner evidence,
+and the separate human promotion decision.
 Namespace metadata, durable change delivery, transaction-time SHACL
 validation, operational observability, statistics and bounded join planning,
 full-text and spatial indexes, and federation planning follow in that
@@ -150,11 +153,11 @@ Evidence grade A applies to this section.
 |---|---|---|---|---|---|
 | G01 | Pluggable transactional write plane | Implemented in `1da47285`; production adapter proof pending | Dataset/transaction APIs, but not the same Rust extension need | SAIL is the storage decoupling point | Keep the narrow Rust traits; P0 conformance |
 | G02 | Isolation and conflict contract | Dimensioned requirements/capabilities are implemented; memory and RocksDB advertise a serialized-writer baseline proven by lost-update, write-skew, and 1/4/16-writer tests | TDB2 documents serializable transactions and one active writer | Multiple requested levels and compatible-level discovery; documented MemoryStore/NativeStore SAILs use optimistic conflict failure, without implying every third-party store does | Retain serialization until G1.7 measurement justifies a separate OCC/TransactionDB hypothesis |
-| G03 | Transaction lifecycle and uncertain commit | Typed rejected/conflicted/cancelled/indeterminate outcomes exist in the extension contract; built-in `Store` does not claim durable outcome lookup, prepare, savepoints, or active-state inspection | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Implement durable lookup with G2.3a; savepoints remain later scope |
+| G03 | Transaction lifecycle and uncertain commit | G1.4a adds a caller-keyed built-in `Store` path with typed committed/proven-absent/indeterminate outcomes and durable RocksDB lookup after reopen; memory deliberately does not claim durability; prepare, savepoints, and active-state inspection remain absent | Explicit transaction lifecycle | `begin`, `isActive`, `prepare`, `commit`, `rollback`, unknown state | Preserve the minimal lookup; G2.3a adds receipts/cursors and savepoints remain later scope |
 | G04 | Empty named-graph topology | Strong explicit contract across model, store, I/O, protocol, bindings | Narrow observed divergence in the pinned Jena harness | Context APIs; behavior depends on store/operation | Preserve Oxigraph contract; no change |
 | G05 | Prefix/namespace metadata | Parser prefixes are transient; store has no registry | Prefix mappings and a Fuseki prefix service | Transactional namespace operations | P1 store metadata capability |
 | G06 | Durable change delivery | None | RDF Patch and patch-log ecosystem | Connection/store listeners; notifications | P1 ordered durable feed; RDF Patch adapter optional |
-| G07 | Commit receipt/idempotency | No durable commit ID; commit error can be ambiguous | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
+| G07 | Commit receipt/idempotency | G1.4a can resolve a caller-supplied key as committed, proven rolled back, or indeterminate without replay, but it has no semantic commit receipt, cursor, retention policy, or outbox | Transaction/log internals, not an Oxigraph-compatible receipt | Explicit unknown-transaction-state error | P1 receipt and cursor, no silent replay |
 | G08 | SHACL on write | Snapshot validation API; not a commit gate | SHACL Core/SPARQL and Fuseki validation endpoint | ShaclSail validates during commit | P1 pre-commit participant over staged view |
 | G09 | Outbound `SERVICE`/`LOAD` policy | G1.5 implements one deny-by-default policy for `SERVICE`, `LOAD`, and nested retrieval with typed policy failures, origin/IP allow controls, encoded/decoded byte ceilings, time/connection budgets, and remote-read cancellation | SERVICE disable and endpoint-specific timeout/client controls | HTTP client/federation controls | ADR-0019 implemented; retain one fail-closed egress boundary |
 | G10 | Update-wide cancellation | G1.5b proves one token across validation, built-in writer admission, owned mutation, and the final pre-commit rollback boundary; G1.5c carries that exact control through negotiated custom-backend and `Store` admission; caller-owned rollback remains explicitly separate | Update timeouts and query abort controls | Query/FedX timeouts and circuit breakers | Preserve the accepted negotiated binding; do not claim update-scoped rollback for a borrowed transaction without savepoints |
