@@ -12,9 +12,13 @@ import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 export const G17_NATIVE_SESSION_CONFIGURATION_SCHEMA =
   "oxigraph.g1.7-native-session-configuration/v4";
 export const G17_NATIVE_SESSION_RESULT_SCHEMA =
-  "oxigraph.g1.7-native-session-result/v4";
+  "oxigraph.g1.7-native-session-result/v5";
 export const G17_NATIVE_SESSION_ISOLATION_SCHEMA =
-  "oxigraph.g1.7-native-isolation-observation/v3";
+  "oxigraph.g1.7-native-isolation-observation/v4";
+export const G17_NATIVE_SESSION_PROJECTION_SCHEMA =
+  "oxigraph.g1.7-native-session-projection/v2";
+export const G17_NATIVE_COMMAND_LAUNCH_ATTESTATION_SCHEMA =
+  "oxigraph.g1.7-native-command-launch-attestation/v2";
 export const G17_NATIVE_SESSION_ARTIFACT_NAME = "native-session.json";
 export const G17_NATIVE_SESSION_MAX_BYTES = 16 * 1024 * 1024;
 
@@ -455,57 +459,7 @@ function assertZeroCommandAuthority(status, label) {
   }
 }
 
-function decodeMountPath(value, label) {
-  if (!value.startsWith("/")) fail(`${label} is not absolute`);
-  const decoded = value.replace(/\\(040|011|012|134)/gu, (_, octal) =>
-    String.fromCharCode(Number.parseInt(octal, 8)));
-  if (decoded.includes("\\")) fail(`${label} contains an unsupported escape`);
-  return decoded;
-}
-
-function parseMountinfo(text, label) {
-  const mounts = [];
-  const destinations = new Set();
-  for (const line of text.trimEnd().split("\n")) {
-    const fields = line.split(" ");
-    const separator = fields.indexOf("-");
-    const device = /^(0|[1-9][0-9]*):(0|[1-9][0-9]*)$/u.exec(fields[2] ?? "");
-    if (
-      separator < 6 ||
-      fields.length < separator + 4 ||
-      !/^[1-9][0-9]*$/u.test(fields[0] ?? "") ||
-      !/^(?:0|[1-9][0-9]*)$/u.test(fields[1] ?? "") ||
-      device === null
-    ) {
-      fail(`${label} has an invalid mount row`);
-    }
-    const destination = decodeMountPath(fields[4], `${label} destination`);
-    if (destinations.has(destination)) {
-      fail(`${label} repeats mount destination ${destination}`);
-    }
-    destinations.add(destination);
-    const major = BigInt(device[1]);
-    const minor = BigInt(device[2]);
-    const encodedDevice =
-      ((major & 0xfffn) << 8n) |
-      (minor & 0xffn) |
-      ((major & ~0xfffn) << 32n) |
-      ((minor & ~0xffn) << 12n);
-    mounts.push({
-      id: fields[0],
-      parent: fields[1],
-      device: encodedDevice.toString(),
-      root: decodeMountPath(fields[3], `${label} root`),
-      destination,
-      options: new Set(fields[5].split(",")),
-      filesystem: fields[separator + 1],
-      source: fields[separator + 2],
-      superOptions: new Set(fields.slice(separator + 3).join(" ").split(",")),
-    });
-  }
-  if (mounts.length < 10 || mounts.length > 512) {
-    fail(`${label} mount inventory is not bounded`);
-  }
+function validateNormalizedMounts(value, label) {
   const requiredReadOnly = [
     "/",
     "/dev",
@@ -518,18 +472,63 @@ function parseMountinfo(text, label) {
     "/result/session.json",
   ];
   const requiredReadWrite = ["/proc", "/state", "/state/home", "/state/tmp", "/state/target"];
+  if (!Array.isArray(value) || value.length < 14 || value.length > 512) {
+    fail(`${label} mount inventory is not bounded`);
+  }
+  const mounts = value.map((mount, index) => {
+    exactKeys(
+      mount,
+      [
+        "mountId",
+        "parentMountId",
+        "device",
+        "destination",
+        "access",
+        "filesystem",
+        "sourceRole",
+        "sourceSubpath",
+      ],
+      `${label} mount ${index}`,
+    );
+    if (
+      !/^[1-9][0-9]*$/u.test(mount.mountId ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/u.test(mount.parentMountId ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/u.test(mount.device ?? "") ||
+      typeof mount.destination !== "string" ||
+      !mount.destination.startsWith("/") ||
+      mount.destination.includes("\\") ||
+      !["ro", "rw"].includes(mount.access) ||
+      !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u.test(mount.filesystem ?? "") ||
+      typeof mount.sourceRole !== "string" ||
+      (mount.sourceSubpath !== null &&
+        (typeof mount.sourceSubpath !== "string" ||
+          !mount.sourceSubpath.startsWith("/")))
+    ) {
+      fail(`${label} mount ${index} is malformed`);
+    }
+    return mount;
+  });
+  const sorted = [...mounts].sort((left, right) =>
+    left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0);
+  if (
+    !isDeepStrictEqual(mounts, sorted) ||
+    new Set(mounts.map(({ mountId }) => mountId)).size !== mounts.length ||
+    new Set(mounts.map(({ destination }) => destination)).size !== mounts.length
+  ) {
+    fail(`${label} mount inventory is not uniquely and canonically ordered`);
+  }
   const uniqueMount = (destination) => {
     const matches = mounts.filter((mount) => mount.destination === destination);
     if (matches.length !== 1) fail(`${label} does not contain one ${destination} mount`);
     return matches[0];
   };
   for (const destination of requiredReadOnly) {
-    if (!uniqueMount(destination).options.has("ro")) {
+    if (uniqueMount(destination).access !== "ro") {
       fail(`${label} ${destination} mount is not read-only`);
     }
   }
   for (const destination of requiredReadWrite) {
-    if (!uniqueMount(destination).options.has("rw")) {
+    if (uniqueMount(destination).access !== "rw") {
       fail(`${label} ${destination} mount is not read-write`);
     }
   }
@@ -571,19 +570,48 @@ function parseMountinfo(text, label) {
   if (mounts.some(({ destination }) => !allowedDestinations.has(destination))) {
     fail(`${label} contains an unreviewed mount destination`);
   }
-  for (const forbidden of [
-    "/usr",
-    "/bin",
-    "/lib",
-    "/lib64",
-    "/etc/ld.so.cache",
-    "/etc/alternatives",
-  ]) {
-    if (mounts.some(({ destination }) => destination === forbidden)) {
-      fail(`${label} contains ambient system-root authority`);
+  const roles = new Map([
+    ["/", "platform"],
+    ["/proc", "proc"],
+    ["/control/cgroup2", "cgroup2"],
+    ["/cargo-home", "cargo-home"],
+    ["/toolchain", "toolchain"],
+    ["/workspace", "workspace"],
+    ["/runner/contained-session-worker.mjs", "worker"],
+    ["/runner/seccomp-launcher.py", "launcher"],
+    ["/result/session.json", "result"],
+  ]);
+  for (const mount of mounts) {
+    const expectedRole = mount.destination === "/state" ||
+        mount.destination.startsWith("/state/")
+      ? "state"
+      : mount.destination === "/dev" || mount.destination.startsWith("/dev/")
+        ? "device"
+        : roles.get(mount.destination);
+    const expectedSubpath = new Map([
+      ["/state", "/"],
+      ["/state/home", "/home"],
+      ["/state/target", "/target"],
+      ["/state/tmp", "/tmp"],
+    ]).get(mount.destination) ?? null;
+    if (mount.sourceRole !== expectedRole || mount.sourceSubpath !== expectedSubpath) {
+      fail(`${label} ${mount.destination} source role or subpath drifted`);
     }
   }
   const state = uniqueMount("/state");
+  const root = uniqueMount("/");
+  const device = uniqueMount("/dev");
+  for (const mount of mounts) {
+    if (mount.destination === "/") continue;
+    const expectedParent = mount.destination.startsWith("/dev/")
+      ? device.mountId
+      : mount.destination.startsWith("/state/")
+        ? state.mountId
+        : root.mountId;
+    if (mount.parentMountId !== expectedParent) {
+      fail(`${label} ${mount.destination} mount ancestry drifted`);
+    }
+  }
   const anchors = [
     ["/state/home", "/home"],
     ["/state/target", "/target"],
@@ -591,22 +619,21 @@ function parseMountinfo(text, label) {
   ].map(([destination, expectedRoot]) => {
     const mount = uniqueMount(destination);
     if (
-      mount.parent !== state.id ||
+      mount.parentMountId !== state.mountId ||
       mount.device !== state.device ||
-      mount.root !== expectedRoot ||
+      mount.sourceSubpath !== expectedRoot ||
       mount.filesystem !== "tmpfs" ||
-      mount.source !== state.source ||
-      !isDeepStrictEqual(mount.superOptions, state.superOptions)
+      mount.sourceRole !== "state"
     ) {
       fail(`${label} ${destination} is not one bind of the state tmpfs`);
     }
     return mount;
   });
   if (
-    state.root !== "/" ||
+    state.sourceSubpath !== "/" ||
     state.filesystem !== "tmpfs" ||
-    state.source !== "tmpfs" ||
-    anchors.some((mount) => !mount.options.has("rw"))
+    state.sourceRole !== "state" ||
+    anchors.some((mount) => mount.access !== "rw")
   ) {
     fail(`${label} state tmpfs topology drifted`);
   }
@@ -646,12 +673,12 @@ function validateNetwork(devices, ipv4, ipv6, addresses, label) {
   }
 }
 
-function parseCgroup(text, label) {
-  const lines = text.trimEnd().split("\n");
-  if (lines.length !== 1 || !/^0::\/[A-Za-z0-9_.@:/\\-]+$/u.test(lines[0])) {
-    fail(`${label} is not one cgroup-v2 membership`);
+function validateSemanticCgroup(value, label) {
+  exactKeys(value, ["hierarchy", "membershipSha256"], label);
+  if (value.hierarchy !== "v2" || !DIGEST.test(value.membershipSha256 ?? "")) {
+    fail(`${label} is not one cgroup-v2 membership identity`);
   }
-  return lines[0].slice(3);
+  return value;
 }
 
 function exactUnsignedText(value, expected, label) {
@@ -684,12 +711,12 @@ function validateRawIsolationProcess(record, label, requested) {
       "gidMapBase64",
       "namespaces",
       "statusBase64",
-      "mountinfoBase64",
+      "mounts",
       "networkDevicesBase64",
       "ipv4RoutesBase64",
       "ipv6RoutesBase64",
       "ipv6AddressesBase64",
-      "cgroupBase64",
+      "cgroup",
       "limitsBase64",
       "cgroupFiles",
     ],
@@ -699,7 +726,6 @@ function validateRawIsolationProcess(record, label, requested) {
     uidMap: boundedRawText(record.uidMapBase64, `${label} uid map`, 4_096),
     gidMap: boundedRawText(record.gidMapBase64, `${label} gid map`, 4_096),
     status: boundedRawText(record.statusBase64, `${label} status`, 65_536),
-    mountinfo: boundedRawText(record.mountinfoBase64, `${label} mountinfo`, 1_048_576),
     networkDevices: boundedRawText(
       record.networkDevicesBase64,
       `${label} network devices`,
@@ -712,7 +738,6 @@ function validateRawIsolationProcess(record, label, requested) {
       `${label} IPv6 addresses`,
       65_536,
     ),
-    cgroup: boundedRawText(record.cgroupBase64, `${label} cgroup`, 65_536),
     limits: boundedRawText(record.limitsBase64, `${label} limits`, 65_536),
   };
   exactKeys(
@@ -757,7 +782,7 @@ function validateRawIsolationProcess(record, label, requested) {
   parseSingleIdMap(raw.gidMap, `${label} gid map`);
   validateNamespaces(record.namespaces, `${label} namespaces`);
   const status = parseStatus(raw.status, `${label} status`);
-  const mounts = parseMountinfo(raw.mountinfo, `${label} mountinfo`);
+  const mounts = validateNormalizedMounts(record.mounts, `${label} mounts`);
   validateNetwork(
     raw.networkDevices,
     raw.ipv4Routes,
@@ -765,7 +790,7 @@ function validateRawIsolationProcess(record, label, requested) {
     raw.ipv6Addresses,
     label,
   );
-  const cgroupPath = parseCgroup(raw.cgroup, `${label} cgroup`);
+  const cgroup = validateSemanticCgroup(record.cgroup, `${label} cgroup`);
   validateLimitsText(raw.limits, requested, `${label} limits`);
   exactUnsignedText(cgroupFiles.memoryMax, requested.residentBytes, `${label} memory.max`);
   exactUnsignedText(
@@ -790,7 +815,7 @@ function validateRawIsolationProcess(record, label, requested) {
     raw,
     status,
     cgroupFiles,
-    cgroupPath,
+    cgroup,
     namespaces: record.namespaces,
     mounts,
   };
@@ -858,7 +883,7 @@ function validateStateObservation(value, requested, mounts, label) {
       decimalString(anchor.inode, `${label} anchor ${name} inode`) < 1n ||
       decimalString(anchor.mountId, `${label} anchor ${name} mount`) < 1n ||
       mount === undefined ||
-      anchor.mountId !== mount.id ||
+      anchor.mountId !== mount.mountId ||
       anchor.device !== mount.device ||
       anchor.owner !== "0" ||
       anchor.group !== "0" ||
@@ -917,12 +942,10 @@ function verifyIsolationObservations(value, requested, stateBytes) {
   for (const key of [
     "uidMap",
     "gidMap",
-    "mountinfo",
     "networkDevices",
     "ipv4Routes",
     "ipv6Routes",
     "ipv6Addresses",
-    "cgroup",
     "limits",
   ]) {
     if (before.raw[key] !== after.raw[key]) {
@@ -931,7 +954,8 @@ function verifyIsolationObservations(value, requested, stateBytes) {
   }
   if (
     !isDeepStrictEqual(value.beforeCommands.namespaces, value.afterCommands.namespaces) ||
-    before.cgroupPath !== after.cgroupPath ||
+    !isDeepStrictEqual(before.mounts, after.mounts) ||
+    !isDeepStrictEqual(before.cgroup, after.cgroup) ||
     before.cgroupFiles.memoryMax !== after.cgroupFiles.memoryMax ||
     before.cgroupFiles.memorySwapMax !== after.cgroupFiles.memorySwapMax ||
     before.cgroupFiles.tasksMax !== after.cgroupFiles.tasksMax ||
@@ -1018,7 +1042,8 @@ function verifyIsolationObservations(value, requested, stateBytes) {
     rlimitsMatch: true,
     stateTmpfsAndAnchorsMatch: true,
     finalQuiescence: true,
-    cgroupPath: before.cgroupPath,
+    normalizedMountTopologyObserved: true,
+    cgroupMembershipMatched: true,
     innerNamespaces: cloneCanonical(
       value.beforeCommands.namespaces,
       "inner namespace identities",
@@ -1094,7 +1119,7 @@ function validateLaunchAttestation({
       "name",
       "status",
       "limits",
-      "cgroupMembership",
+      "cgroup",
       "cmdline",
       "environ",
       "namespaces",
@@ -1105,7 +1130,7 @@ function validateLaunchAttestation({
     "command launch attestation",
   );
   if (
-    value.schema !== "oxigraph.g1.7-native-command-launch-attestation/v1" ||
+    value.schema !== G17_NATIVE_COMMAND_LAUNCH_ATTESTATION_SCHEMA ||
     value.name !== expected.name ||
     value.parentDeathSignal !== 9 ||
     !isDeepStrictEqual(value.namespaces, worker.namespaces)
@@ -1164,15 +1189,11 @@ function validateLaunchAttestation({
     rawByteRecord(value.limits, `command ${expected.name} limits`, 16_384),
     `command ${expected.name} limits`,
   );
-  const cgroupText = fatalText(
-    rawByteRecord(
-      value.cgroupMembership,
-      `command ${expected.name} cgroup membership`,
-      4_096,
-    ),
-    `command ${expected.name} cgroup membership`,
+  const cgroup = validateSemanticCgroup(
+    value.cgroup,
+    `command ${expected.name} cgroup`,
   );
-  if (limitsText !== worker.raw.limits || cgroupText !== worker.raw.cgroup) {
+  if (limitsText !== worker.raw.limits || !isDeepStrictEqual(cgroup, worker.cgroup)) {
     fail(`command ${expected.name} limits or cgroup membership differs from worker`);
   }
   const status = parseStatus(statusText, `command ${expected.name} status`);
@@ -1364,12 +1385,11 @@ function verifySessionValue({
     [
       "schema",
       "configuration",
-      "status",
-      "stage",
+      "outcome",
+      "reason",
       "commands",
       "stateBytes",
       "durationMs",
-      "error",
       "finalDescendantsObserved",
       "isolation",
     ],
@@ -1378,7 +1398,7 @@ function verifySessionValue({
   if (
     value.schema !== G17_NATIVE_SESSION_RESULT_SCHEMA ||
     !isDeepStrictEqual(value.configuration, expectedConfiguration) ||
-    !["completed", "incomplete", "error"].includes(value.status) ||
+    !["pass", "fail", "incomplete", "error"].includes(value.outcome) ||
     !Array.isArray(value.commands) ||
     value.commands.length > expectedConfiguration.commands.length ||
     !Number.isSafeInteger(value.durationMs) ||
@@ -1396,34 +1416,45 @@ function verifySessionValue({
   ) {
     fail("session artifact state usage is invalid");
   }
+  if (value.reason !== null) {
+    exactKeys(value.reason, ["code", "command"], "session reason");
+  }
+  const commandReasonCodes = new Set([
+    "command-exit-nonzero",
+    "command-signal",
+    "command-timeout",
+    "command-timeout-unreaped",
+    "command-output-limit",
+    "command-output-limit-unreaped",
+    "command-live-descendants",
+  ]);
+  const errorReasonCodes = new Set(["infrastructure", "result-too-large"]);
   if (
-    (value.status === "completed" &&
-      (value.stage !== "complete" ||
-        value.commands.length !== expectedConfiguration.commands.length ||
-        value.stateBytes === null ||
-        value.error !== null ||
-        value.finalDescendantsObserved !== 0 ||
-        value.isolation === null)) ||
-    (value.status === "incomplete" &&
-      (value.stage !== "containment" ||
-        value.commands.length < 1 ||
-        value.stateBytes === null ||
-        typeof value.error !== "string" ||
-        !value.error.startsWith("live-descendants:") ||
-        !Number.isSafeInteger(value.finalDescendantsObserved) ||
-        value.finalDescendantsObserved < 0 ||
-        value.isolation === null)) ||
-    (value.status === "error" &&
-      (value.stage !== "infrastructure" ||
-        value.commands.length !== 0 ||
-        value.stateBytes !== null ||
-        typeof value.error !== "string" ||
-        value.error.length < 1 ||
-        value.error.length > 4_096 ||
-        value.finalDescendantsObserved !== null ||
-        value.isolation !== null))
+    value.reason !== null &&
+    (!commandReasonCodes.has(value.reason.code) &&
+      !errorReasonCodes.has(value.reason.code) &&
+      value.reason.code !== "final-live-descendants")
   ) {
-    fail("session artifact status and evidence are contradictory");
+    fail("session reason code is not reviewed");
+  }
+  const nonErrorEvidence =
+    value.commands.length >= 1 &&
+    value.stateBytes !== null &&
+    Number.isSafeInteger(value.finalDescendantsObserved) &&
+    value.finalDescendantsObserved >= 0 &&
+    value.isolation !== null;
+  if (
+    (value.outcome === "error" &&
+      (value.commands.length !== 0 ||
+        value.stateBytes !== null ||
+        value.finalDescendantsObserved !== null ||
+        value.isolation !== null ||
+        value.reason === null ||
+        !errorReasonCodes.has(value.reason.code) ||
+        value.reason.command !== null)) ||
+    (value.outcome !== "error" && !nonErrorEvidence)
+  ) {
+    fail("session outcome and evidence are contradictory");
   }
   const isolationReplay =
     value.isolation === null
@@ -1447,35 +1478,50 @@ function verifySessionValue({
   ) {
     fail("session duration is shorter than its sequential command durations");
   }
-  if (value.status === "completed") {
-    if (
-      decoded.some(
-        ({ value: record }) =>
-          record.disposition !== "completed" ||
-          record.exitCode !== 0 ||
-          record.signal !== null ||
-          record.terminationErrors.length !== 0 ||
-          record.descendantsObserved !== 0,
-      )
-    ) {
-      fail("completed session contains a failed or uncontained command");
+  const classifyCommand = (record) => {
+    if (record.descendantsObserved > 0) {
+      return { outcome: "incomplete", code: "command-live-descendants" };
     }
-  } else if (value.status === "incomplete") {
-    const commandContainment = value.error !== "live-descendants:final";
-    const last = decoded.at(-1)?.value;
-    if (
-      (commandContainment &&
-        (value.finalDescendantsObserved !== 0 ||
-          value.error !== `live-descendants:${last?.name}` ||
-          last?.descendantsObserved < 1 ||
-          decoded.slice(0, -1).some(({ value: record }) => record.descendantsObserved !== 0))) ||
-      (!commandContainment &&
-        (decoded.length !== expectedConfiguration.commands.length ||
-          value.finalDescendantsObserved < 1 ||
-          decoded.some(({ value: record }) => record.descendantsObserved !== 0)))
-    ) {
-      fail("incomplete session containment evidence is contradictory");
+    if (record.disposition !== "completed") {
+      return { outcome: "incomplete", code: `command-${record.disposition}` };
     }
+    if (record.signal !== null) return { outcome: "fail", code: "command-signal" };
+    if (record.exitCode !== 0) return { outcome: "fail", code: "command-exit-nonzero" };
+    return null;
+  };
+  const commandClassifications = decoded.map(({ value: record }) => classifyCommand(record));
+  const firstTerminal = commandClassifications.findIndex((item) => item !== null);
+  if (
+    value.outcome !== "error" &&
+    ((firstTerminal < 0 && decoded.length !== expectedConfiguration.commands.length) ||
+      (firstTerminal >= 0 && firstTerminal !== decoded.length - 1))
+  ) {
+    fail("session command prefix did not stop at its first non-success");
+  }
+  const terminal = firstTerminal < 0 ? null : commandClassifications[firstTerminal];
+  const last = decoded.at(-1)?.value;
+  const expectedCommandReason = terminal === null
+    ? null
+    : { code: terminal.code, command: last.name };
+  const finalContainment =
+    value.reason?.code === "final-live-descendants" &&
+    value.reason.command === null;
+  if (
+    (value.outcome === "pass" &&
+      (value.reason !== null || terminal !== null || value.finalDescendantsObserved !== 0)) ||
+    (value.outcome === "fail" &&
+      (terminal?.outcome !== "fail" ||
+        !isDeepStrictEqual(value.reason, expectedCommandReason) ||
+        value.finalDescendantsObserved !== 0)) ||
+    (value.outcome === "incomplete" &&
+      (finalContainment
+        ? (value.finalDescendantsObserved < 1 || terminal?.outcome === "incomplete")
+        : (terminal?.outcome !== "incomplete" ||
+          !isDeepStrictEqual(value.reason, expectedCommandReason) ||
+          value.finalDescendantsObserved !== 0))) ||
+    (value.outcome !== "incomplete" && finalContainment)
+  ) {
+    fail("session typed outcome or reason contradicts command evidence");
   }
   const reviewed = decodeReviewedContract({ contractBytes, contractSha256 });
   const effectiveIsolation =
@@ -1493,7 +1539,7 @@ function verifySessionValue({
         });
   const lanes = [];
   let totalPassedTests = 0;
-  if (value.status === "completed") {
+  if (value.outcome === "pass") {
     for (const [laneIndex, lane] of reviewed.compatibility.native.entries()) {
       const inventory = decoded[laneIndex * 2];
       const execution = decoded[laneIndex * 2 + 1];
@@ -1524,13 +1570,8 @@ function verifySessionValue({
     }
   }
   return deepFreeze({
-    schema: "oxigraph.g1.7-native-session-projection/v1",
-    status:
-      value.status === "completed"
-        ? "PASS"
-        : value.status === "incomplete"
-          ? "INCOMPLETE"
-          : "ERROR",
+    schema: G17_NATIVE_SESSION_PROJECTION_SCHEMA,
+    status: value.outcome.toUpperCase(),
     runId: expectedConfiguration.runId,
     bindings: cloneCanonical(expectedConfiguration.bindings, "session bindings"),
     artifact: {
@@ -1543,7 +1584,7 @@ function verifySessionValue({
     totalPassedTests,
     stateBytes: value.stateBytes,
     durationMs: value.durationMs,
-    error: value.error,
+    reason: cloneCanonical(value.reason, "session reason"),
     finalDescendantsObserved: value.finalDescendantsObserved,
     effectiveIsolation,
   });

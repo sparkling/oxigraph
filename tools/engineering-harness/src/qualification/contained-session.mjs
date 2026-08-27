@@ -34,6 +34,25 @@ const safeEnvironmentName = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const minimumDiskBytes = 33_554_432;
 const maximumDiskBytes = 137_438_953_472;
 const maximumPinnedFileBytes = 16 * 1024 * 1024;
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+const SIGNALS = new Set([
+  "SIGABRT",
+  "SIGALRM",
+  "SIGBUS",
+  "SIGFPE",
+  "SIGHUP",
+  "SIGILL",
+  "SIGINT",
+  "SIGKILL",
+  "SIGPIPE",
+  "SIGQUIT",
+  "SIGSEGV",
+  "SIGSYS",
+  "SIGTERM",
+  "SIGTRAP",
+  "SIGXCPU",
+  "SIGXFSZ",
+]);
 const childFileDescriptors = Object.freeze({
   platform: "3",
   cgroup: "4",
@@ -280,6 +299,14 @@ function strictBase64(value, label) {
   return bytes;
 }
 
+function fatalUtf8(bytes, label) {
+  try {
+    return utf8.decode(bytes);
+  } catch (error) {
+    throw new Error(`invalid ${label} UTF-8 in qualification result`, { cause: error });
+  }
+}
+
 function sameArgv(left, right) {
   return (
     Array.isArray(left) &&
@@ -288,27 +315,27 @@ function sameArgv(left, right) {
   );
 }
 
-function normalizeSession(raw, commands, maxDiskBytes) {
+function normalizeSession(raw, commands, maxDiskBytes, maxTotalWallMs) {
   exactKeys(
     raw,
     [
       "schema",
-      "status",
-      "stage",
+      "outcome",
+      "reason",
       "commands",
       "stateBytes",
       "durationMs",
-      "error",
       "finalDescendantsObserved",
     ],
     "qualification result",
   );
   if (
     raw.schema !== resultSchema ||
-    !["completed", "incomplete", "error"].includes(raw.status) ||
+    !["pass", "fail", "incomplete", "error"].includes(raw.outcome) ||
     !Array.isArray(raw.commands) ||
     !Number.isSafeInteger(raw.durationMs) ||
     raw.durationMs < 0 ||
+    raw.durationMs > maxTotalWallMs ||
     raw.commands.length > commands.length
   ) {
     throw new Error("invalid qualification-session result schema");
@@ -320,29 +347,22 @@ function normalizeSession(raw, commands, maxDiskBytes) {
     throw new Error("qualification reported invalid aggregate state usage");
   }
   if (
-    (raw.status === "completed" &&
-      (raw.stage !== "complete" ||
-        raw.commands.length !== commands.length ||
-        raw.stateBytes === null ||
-        raw.error !== null ||
-        raw.finalDescendantsObserved !== 0)) ||
-    (raw.status === "incomplete" &&
-      (raw.stage !== "containment" ||
-        raw.commands.length < 1 ||
-        raw.stateBytes === null ||
-        typeof raw.error !== "string" ||
-        !raw.error.startsWith("live-descendants:") ||
-        !Number.isSafeInteger(raw.finalDescendantsObserved) ||
-        raw.finalDescendantsObserved < 0)) ||
-    (raw.status === "error" &&
-      (raw.stage !== "infrastructure" ||
-        raw.commands.length !== 0 ||
+    (raw.outcome === "error" &&
+      (raw.commands.length !== 0 ||
         raw.stateBytes !== null ||
-        typeof raw.error !== "string" ||
-        raw.error.length < 1 ||
-        raw.finalDescendantsObserved !== null))
+        raw.finalDescendantsObserved !== null ||
+        raw.reason?.command !== null ||
+        !["infrastructure", "result-too-large"].includes(raw.reason?.code))) ||
+    (raw.outcome !== "error" &&
+      (raw.commands.length < 1 ||
+        raw.stateBytes === null ||
+        !Number.isSafeInteger(raw.finalDescendantsObserved) ||
+        raw.finalDescendantsObserved < 0))
   ) {
     throw new Error("invalid qualification-session result schema");
+  }
+  if (raw.reason !== null) {
+    exactKeys(raw.reason, ["code", "command"], "qualification result reason");
   }
   const normalizedCommands = raw.commands.map((record, index) => {
     const expected = commands[index];
@@ -370,8 +390,9 @@ function normalizeSession(raw, commands, maxDiskBytes) {
       record.name !== expected.name ||
       !sameArgv(record.logicalArgv, expected.argv) ||
       !["completed", "timeout", "timeout-unreaped", "output-limit", "output-limit-unreaped"].includes(record.disposition) ||
-      !Number.isInteger(record.durationMs) ||
+      !Number.isSafeInteger(record.durationMs) ||
       record.durationMs < 0 ||
+      record.durationMs > expected.timeoutMs ||
       !Number.isSafeInteger(record.descendantsObserved) ||
       record.descendantsObserved < 0 ||
       !Array.isArray(record.terminationErrors) ||
@@ -384,7 +405,7 @@ function normalizeSession(raw, commands, maxDiskBytes) {
       (Number.isInteger(record.exitCode) && record.exitCode >= 0);
     const signalValid =
       record.signal === null ||
-      (typeof record.signal === "string" && record.signal.length > 0);
+      (typeof record.signal === "string" && SIGNALS.has(record.signal));
     if (
       !exitCodeValid ||
       !signalValid ||
@@ -420,8 +441,8 @@ function normalizeSession(raw, commands, maxDiskBytes) {
       signal: record.signal,
       disposition: record.disposition,
       durationMs: record.durationMs,
-      stdout: stdout.toString("utf8"),
-      stderr: stderr.toString("utf8"),
+      stdout: fatalUtf8(stdout, `${expected.name} stdout`),
+      stderr: fatalUtf8(stderr, `${expected.name} stderr`),
       stdoutBytes: stdout,
       stderrBytes: stderr,
       stdoutSha256: record.stdoutSha256,
@@ -437,38 +458,62 @@ function normalizeSession(raw, commands, maxDiskBytes) {
       descendantsObserved: record.descendantsObserved,
     });
   });
-  if (raw.status === "completed") {
-    if (normalizedCommands.some(({ descendantsObserved }) => descendantsObserved !== 0)) {
-      throw new Error("invalid qualification-session completed descendant state");
+  if (
+    normalizedCommands.reduce((total, command) => total + command.durationMs, 0) >
+    raw.durationMs + normalizedCommands.length
+  ) {
+    throw new Error("qualification duration is shorter than its sequential commands");
+  }
+  const classify = (record) => {
+    if (record.descendantsObserved > 0) {
+      return { outcome: "incomplete", code: "command-live-descendants" };
     }
-  } else if (raw.status === "incomplete") {
-    const commandContainment = raw.error !== "live-descendants:final";
-    if (commandContainment) {
-      const last = normalizedCommands.at(-1);
-      if (
-        raw.finalDescendantsObserved !== 0 ||
-        raw.error !== `live-descendants:${last.name}` ||
-        last.descendantsObserved < 1 ||
-        normalizedCommands.slice(0, -1).some(({ descendantsObserved }) => descendantsObserved !== 0)
-      ) {
-        throw new Error("invalid qualification-session command containment state");
-      }
-    } else if (
-      normalizedCommands.length !== commands.length ||
-      raw.finalDescendantsObserved < 1 ||
-      normalizedCommands.some(({ descendantsObserved }) => descendantsObserved !== 0)
-    ) {
-      throw new Error("invalid qualification-session final containment state");
+    if (record.disposition !== "completed") {
+      return { outcome: "incomplete", code: `command-${record.disposition}` };
     }
+    if (record.signal !== null) return { outcome: "fail", code: "command-signal" };
+    if (record.exitCode !== 0) return { outcome: "fail", code: "command-exit-nonzero" };
+    return null;
+  };
+  const classifications = normalizedCommands.map(classify);
+  const firstTerminal = classifications.findIndex((item) => item !== null);
+  if (
+    raw.outcome !== "error" &&
+    ((firstTerminal < 0 && normalizedCommands.length !== commands.length) ||
+      (firstTerminal >= 0 && firstTerminal !== normalizedCommands.length - 1))
+  ) {
+    throw new Error("qualification commands continued or stopped before their terminal state");
+  }
+  const terminal = firstTerminal < 0 ? null : classifications[firstTerminal];
+  const expectedReason = terminal === null
+    ? null
+    : { code: terminal.code, command: normalizedCommands.at(-1).name };
+  const finalContainment =
+    raw.reason?.code === "final-live-descendants" && raw.reason.command === null;
+  if (
+    (raw.outcome === "pass" &&
+      (raw.reason !== null || terminal !== null || raw.finalDescendantsObserved !== 0)) ||
+    (raw.outcome === "fail" &&
+      (terminal?.outcome !== "fail" ||
+        !isDeepStrictEqual(raw.reason, expectedReason) ||
+        raw.finalDescendantsObserved !== 0)) ||
+    (raw.outcome === "incomplete" &&
+      (finalContainment
+        ? (raw.finalDescendantsObserved < 1 || terminal?.outcome === "incomplete")
+        : (terminal?.outcome !== "incomplete" ||
+          !isDeepStrictEqual(raw.reason, expectedReason) ||
+          raw.finalDescendantsObserved !== 0))) ||
+    (raw.outcome !== "incomplete" && finalContainment)
+  ) {
+    throw new Error("qualification typed outcome contradicts command evidence");
   }
   return Object.freeze({
     schema: resultSchema,
-    status: raw.status,
-    stage: raw.stage,
+    outcome: raw.outcome,
+    reason: raw.reason === null ? null : Object.freeze({ ...raw.reason }),
     commands: Object.freeze(normalizedCommands),
     stateBytes: raw.stateBytes,
     durationMs: raw.durationMs,
-    error: raw.error,
     finalDescendantsObserved: raw.finalDescendantsObserved,
   });
 }
@@ -1143,16 +1188,16 @@ async function runQualificationSandboxSessionWithRunner(options, processRunner) 
     const session = normalizeSession(
       {
         schema: raw.schema,
-        status: raw.status,
-        stage: raw.stage,
+        outcome: raw.outcome,
+        reason: raw.reason,
         commands: raw.commands,
         stateBytes: raw.stateBytes,
         durationMs: raw.durationMs,
-        error: raw.error,
         finalDescendantsObserved: raw.finalDescendantsObserved,
       },
       logicalCommands,
       maxDiskBytes,
+      maxTotalWallMs,
     );
     const storedBytes = Buffer.from(serialized);
     report = Object.freeze({
@@ -1209,4 +1254,13 @@ export function createQualificationSandboxSessionForTesting(processRunner) {
     throw new Error("qualification whole-session test runner is required");
   }
   return (options) => runQualificationSandboxSessionWithRunner(options, processRunner);
+}
+
+export function normalizeG17NativeSessionForTesting({
+  raw,
+  commands,
+  maxDiskBytes,
+  maxTotalWallMs,
+}) {
+  return normalizeSession(raw, commands, maxDiskBytes, maxTotalWallMs);
 }

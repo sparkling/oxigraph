@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   symlink,
   truncate,
@@ -74,6 +75,23 @@ test("production platform acquires and probes the current host projection", {
     assert.equal(
       sha256(platform.controllerAttestation.bytes),
       platform.controllerAttestation.sha256,
+    );
+    const controller = JSON.parse(platform.controllerAttestation.bytes);
+    assert.equal(
+      Buffer.from(
+        controller.tools.find(({ id }) => id === "contained-session-worker")
+          .version.base64,
+        "base64",
+      ).toString("utf8"),
+      "contained-session-worker/v5\n",
+    );
+    assert.equal(
+      Buffer.from(
+        controller.tools.find(({ id }) => id === "seccomp-launcher")
+          .version.base64,
+        "base64",
+      ).toString("utf8"),
+      "seccomp-launcher/v3\n",
     );
     assert.equal(sha256(platform.artifact.bytes), platform.artifact.sha256);
     assert.equal(platform.closure.linkerScripts.records.length >= 2, true);
@@ -394,6 +412,57 @@ test("platform acquisition materializes, attests, reverifies, and destroys gener
     await assert.rejects(destroyG17NativePlatform(destroyedPlatform), /not live/u);
   } finally {
     if (platform !== undefined) await destroyG17NativePlatform(platform);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("platform teardown rejects root substitution and preserves retry authority", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-platform-substitution-"));
+  let platform;
+  let heldRoot;
+  let replacementRoot;
+  try {
+    const options = await fixture(root);
+    const acquire = createG17NativePlatformAcquirerForTesting({
+      temporaryParent: root,
+      ...options,
+    });
+    platform = await acquire({ runId: "root-substitution" });
+    heldRoot = `${platform.root}-held`;
+    replacementRoot = `${platform.root}-replacement`;
+    await rename(platform.root, heldRoot);
+    await mkdir(platform.root, { mode: 0o755 });
+    const sentinel = join(platform.root, "sentinel");
+    await writeFile(sentinel, "do not delete\n");
+
+    await assert.rejects(
+      destroyG17NativePlatform(platform),
+      (error) =>
+        error instanceof G17NativePlatformFault &&
+        error.classification === "FAIL" &&
+        error.phase === "cleanup",
+    );
+    assert.equal(await readFile(sentinel, "utf8"), "do not delete\n");
+    assert.equal((await lstat(heldRoot)).isDirectory(), true);
+
+    await rename(platform.root, replacementRoot);
+    await rename(heldRoot, platform.root);
+    heldRoot = undefined;
+    await destroyG17NativePlatform(platform);
+    platform = undefined;
+    assert.equal(await readFile(join(replacementRoot, "sentinel"), "utf8"), "do not delete\n");
+
+    const source = await readFile(
+      new URL("../src/qualification/native-platform.mjs", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /rm\([^\n]*recursive|makeWritable/u);
+  } finally {
+    if (platform !== undefined && heldRoot !== undefined) {
+      await rm(platform.root, { recursive: true, force: true });
+      await rename(heldRoot, platform.root).catch(() => {});
+      await destroyG17NativePlatform(platform).catch(() => {});
+    }
     await rm(root, { recursive: true, force: true });
   }
 });

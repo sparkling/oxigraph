@@ -67,28 +67,63 @@ function commandStatus(pid) {
   ].join("\n");
 }
 
-function mountinfo() {
-  const mounts = [
-    ["/", "ro", "tmpfs", "platform"],
-    ["/dev", "ro", "devtmpfs", "dev"],
-    ["/proc", "rw", "proc", "proc"],
-    ["/toolchain", "ro", "tmpfs", "toolchain"],
-    ["/workspace", "ro", "tmpfs", "workspace"],
-    ["/cargo-home", "ro", "tmpfs", "cargo-home"],
-    ["/control/cgroup2", "ro", "cgroup2", "cgroup2"],
-    ["/state", "rw", "tmpfs", "tmpfs", "/", "0:1", "0"],
-    ["/state/home", "rw", "tmpfs", "tmpfs", "/home", "0:1", "8"],
-    ["/state/target", "rw", "tmpfs", "tmpfs", "/target", "0:1", "8"],
-    ["/state/tmp", "rw", "tmpfs", "tmpfs", "/tmp", "0:1", "8"],
-    ["/runner/contained-session-worker.mjs", "ro", "tmpfs", "worker"],
-    ["/runner/seccomp-launcher.py", "ro", "tmpfs", "launcher"],
-    ["/result/session.json", "ro", "tmpfs", "result"],
-  ];
-  return `${mounts.map((mount, index) => {
-    const [destination, mode, filesystem, source, root = "/", device = `0:${index + 1}`, parent = "0"] = mount;
-    return `${index + 1} ${parent} ${device} ${root} ${destination} ${mode} - ${filesystem} ${source} ${mode}`;
-  }
-  ).join("\n")}\n`;
+function normalizedMounts() {
+  return [
+    ["1", "0", "1", "/", "ro", "tmpfs", "platform", null],
+    ["2", "1", "2", "/dev", "ro", "devtmpfs", "device", null],
+    ["15", "2", "15", "/dev/pts", "rw", "devpts", "device", null],
+    ["3", "1", "3", "/proc", "rw", "proc", "proc", null],
+    ["4", "1", "4", "/toolchain", "ro", "tmpfs", "toolchain", null],
+    ["5", "1", "5", "/workspace", "ro", "tmpfs", "workspace", null],
+    ["6", "1", "6", "/cargo-home", "ro", "tmpfs", "cargo-home", null],
+    ["7", "1", "7", "/control/cgroup2", "ro", "cgroup2", "cgroup2", null],
+    ["8", "1", "100", "/state", "rw", "tmpfs", "state", "/"],
+    ["9", "8", "100", "/state/home", "rw", "tmpfs", "state", "/home"],
+    ["10", "8", "100", "/state/target", "rw", "tmpfs", "state", "/target"],
+    ["11", "8", "100", "/state/tmp", "rw", "tmpfs", "state", "/tmp"],
+    [
+      "12",
+      "1",
+      "12",
+      "/runner/contained-session-worker.mjs",
+      "ro",
+      "tmpfs",
+      "worker",
+      null,
+    ],
+    [
+      "13",
+      "1",
+      "13",
+      "/runner/seccomp-launcher.py",
+      "ro",
+      "tmpfs",
+      "launcher",
+      null,
+    ],
+    ["14", "1", "14", "/result/session.json", "ro", "tmpfs", "result", null],
+  ]
+    .map(([
+      mountId,
+      parentMountId,
+      device,
+      destination,
+      access,
+      filesystem,
+      sourceRole,
+      sourceSubpath,
+    ]) => ({
+      mountId,
+      parentMountId,
+      device,
+      destination,
+      access,
+      filesystem,
+      sourceRole,
+      sourceSubpath,
+    }))
+    .sort(({ destination: left }, { destination: right }) =>
+      left < right ? -1 : left > right ? 1 : 0);
 }
 
 function limits(configuration) {
@@ -102,12 +137,13 @@ function limits(configuration) {
 }
 
 function workerObservation(configuration, tasksCurrent = 2) {
+  const cgroupMembership = Buffer.from("0::/user.slice/g17.scope\n", "utf8");
   return {
     uidMapBase64: rawText("         0       1000          1\n"),
     gidMapBase64: rawText("         0       1000          1\n"),
     namespaces: namespaces(),
     statusBase64: rawText(workerStatus()),
-    mountinfoBase64: rawText(mountinfo()),
+    mounts: normalizedMounts(),
     networkDevicesBase64: rawText(
       "Inter-|   Receive                                                |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n    lo: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
     ),
@@ -120,7 +156,10 @@ function workerObservation(configuration, tasksCurrent = 2) {
     ipv6AddressesBase64: rawText(
       "00000000000000000000000000000001 01 80 10 80       lo\n",
     ),
-    cgroupBase64: rawText("0::/user.slice/g17.scope\n"),
+    cgroup: {
+      hierarchy: "v2",
+      membershipSha256: sha256(cgroupMembership),
+    },
     limitsBase64: rawText(limits(configuration)),
     cgroupFiles: {
       memoryMaxBase64: rawText(`${configuration.requestedLimits.residentBytes}\n`),
@@ -143,7 +182,7 @@ function stateObservation(configuration, stateBytes) {
   ].map(([name, path, inode, mountId]) => ({
     name,
     path,
-    device: "1",
+    device: "100",
     group: "0",
     inode,
     mode: String(0o40700),
@@ -166,7 +205,7 @@ function stateObservation(configuration, stateBytes) {
 
 export function syntheticG17Isolation(configuration, stateBytes = 4_096) {
   return {
-    schema: "oxigraph.g1.7-native-isolation-observation/v3",
+    schema: "oxigraph.g1.7-native-isolation-observation/v4",
     beforeCommands: workerObservation(configuration),
     afterCommands: workerObservation(configuration),
     stateBefore: stateObservation(configuration, stateBytes),
@@ -197,11 +236,16 @@ export function syntheticG17LaunchAttestation(configuration, command, index) {
     .map(([key, value]) => `${key}=${value}\0`)
     .join("");
   const value = {
-    schema: "oxigraph.g1.7-native-command-launch-attestation/v1",
+    schema: "oxigraph.g1.7-native-command-launch-attestation/v2",
     name: command.name,
     status: rawBytes(Buffer.from(commandStatus(pid), "utf8")),
     limits: rawBytes(Buffer.from(limits(configuration), "utf8")),
-    cgroupMembership: rawBytes(Buffer.from("0::/user.slice/g17.scope\n", "utf8")),
+    cgroup: {
+      hierarchy: "v2",
+      membershipSha256: sha256(
+        Buffer.from("0::/user.slice/g17.scope\n", "utf8"),
+      ),
+    },
     cmdline: rawBytes(Buffer.from(`${argv.join("\0")}\0`, "utf8")),
     environ: rawBytes(Buffer.from(environ, "utf8")),
     namespaces: namespaces(),

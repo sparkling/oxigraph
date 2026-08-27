@@ -27,7 +27,11 @@ import {
   qualificationSandboxEnvironment,
   qualificationSandboxSessionArguments,
   createQualificationSandboxSessionForTesting,
+  normalizeG17NativeSessionForTesting,
 } from "../src/qualification/contained-session.mjs";
+import {
+  createG17NativeSessionWorkerForTesting,
+} from "../src/qualification/contained-session-worker.mjs";
 import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   createG17NativeSessionConfiguration,
@@ -112,6 +116,7 @@ function commandPlan() {
 function syntheticCommandRecord(command, overrides = {}) {
   const stdout = Buffer.from("", "utf8");
   const stderr = Buffer.from("", "utf8");
+  const launchAttestation = Buffer.from("{}\n", "utf8");
   return {
     name: command.name,
     logicalArgv: command.argv,
@@ -123,8 +128,45 @@ function syntheticCommandRecord(command, overrides = {}) {
     stderrBase64: stderr.toString("base64"),
     stdoutSha256: sha256(stdout),
     stderrSha256: sha256(stderr),
+    launchAttestationBase64: launchAttestation.toString("base64"),
+    launchAttestationSha256: sha256(launchAttestation),
     terminationErrors: [],
     descendantsObserved: 0,
+    ...overrides,
+  };
+}
+
+function workerMountinfo() {
+  return [
+    "1 0 0:1 / / ro - tmpfs platform rw",
+    "2 1 0:2 / /dev ro - devtmpfs devtmpfs rw",
+    "15 2 0:15 / /dev/pts rw - devpts devpts rw",
+    "3 1 0:3 / /proc rw - proc proc rw",
+    "4 1 0:4 / /toolchain ro - tmpfs toolchain rw",
+    "5 1 0:5 / /workspace ro - tmpfs workspace rw",
+    "6 1 0:6 / /cargo-home ro - tmpfs cargo-home rw",
+    "7 1 0:7 / /control/cgroup2 ro - cgroup2 cgroup2 rw",
+    "8 1 0:100 / /state rw - tmpfs tmpfs rw,size=33554432",
+    "9 8 0:100 /home /state/home rw - tmpfs tmpfs rw,size=33554432",
+    "10 8 0:100 /target /state/target rw - tmpfs tmpfs rw,size=33554432",
+    "11 8 0:100 /tmp /state/tmp rw - tmpfs tmpfs rw,size=33554432",
+    "12 1 0:12 / /runner/contained-session-worker.mjs ro - tmpfs worker rw",
+    "13 1 0:13 / /runner/seccomp-launcher.py ro - tmpfs launcher rw",
+    "14 1 0:14 / /result/session.json ro - tmpfs result rw",
+    "",
+  ].join("\n");
+}
+
+function workerOutcome(overrides = {}) {
+  return {
+    exitCode: 0,
+    signal: null,
+    disposition: "completed",
+    durationMs: 5,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    attestation: Buffer.from("{}\n", "utf8"),
+    terminationErrors: Object.freeze([]),
     ...overrides,
   };
 }
@@ -250,11 +292,11 @@ async function runSyntheticSession(root, raw, options = {}) {
     });
     const result = {
       ...raw,
-      schema: "oxigraph.g1.7-native-session-result/v4",
+      schema: "oxigraph.g1.7-native-session-result/v5",
       configuration,
       commands,
       isolation:
-        raw.status === "error"
+        raw.outcome === "error"
           ? null
           : syntheticG17Isolation(configuration, raw.stateBytes ?? 4_096),
     };
@@ -290,6 +332,138 @@ async function runSyntheticSession(root, raw, options = {}) {
     platformDirectory,
   });
 }
+
+test("production worker normalizes only the reviewed mount ancestry", () => {
+  const worker = createG17NativeSessionWorkerForTesting({
+    now: () => 0,
+    assertStateAnchors: () => {},
+    runCargoCommand: async () => workerOutcome(),
+    quiesceUntrustedProcesses: async () => 0,
+  });
+  const mounts = worker.normalizeMountinfo(workerMountinfo());
+  assert.equal(mounts.find(({ destination }) => destination === "/workspace").parentMountId, "1");
+  assert.equal(mounts.find(({ destination }) => destination === "/dev/pts").parentMountId, "2");
+  assert.equal(mounts.find(({ destination }) => destination === "/state/tmp").parentMountId, "8");
+  assert.equal(Object.hasOwn(mounts[0], "privateRoot"), false);
+
+  for (const drifted of [
+    workerMountinfo().replace(
+      "5 1 0:5 / /workspace",
+      "5 99 0:5 / /workspace",
+    ),
+    workerMountinfo().replace(
+      "15 2 0:15 / /dev/pts",
+      "15 1 0:15 / /dev/pts",
+    ),
+    workerMountinfo().replace(
+      "10 8 0:100 /target /state/target",
+      "10 1 0:100 /target /state/target",
+    ),
+  ]) {
+    assert.throws(() => worker.normalizeMountinfo(drifted), /mount ancestry drifted/u);
+  }
+});
+
+test("production worker stops at the first terminal command and bounds oversize evidence", async () => {
+  const commands = commandPlan().slice(0, 3);
+  const observedCommands = [];
+  const outcomes = [workerOutcome(), workerOutcome({ exitCode: 7 }), workerOutcome()];
+  let anchorChecks = 0;
+  const worker = createG17NativeSessionWorkerForTesting({
+    now: () => 0,
+    assertStateAnchors: () => { anchorChecks += 1; },
+    runCargoCommand: async (request) => {
+      observedCommands.push(request);
+      return outcomes[observedCommands.length - 1];
+    },
+    quiesceUntrustedProcesses: async () => 0,
+  });
+  const execution = await worker.executeSession({
+    commands,
+    environment: Object.freeze({}),
+    requestedLimits: Object.freeze({ totalWallMs: 10_000 }),
+  });
+  assert.equal(observedCommands.length, 2);
+  assert.equal(anchorChecks, 4);
+  assert.ok(observedCommands.every(({ timeoutMs }) => timeoutMs === 9_250));
+  assert.equal(execution.outcome, "fail");
+  assert.deepEqual(execution.reason, {
+    code: "command-exit-nonzero",
+    command: commands[1].name,
+  });
+  assert.equal(execution.commands.length, 2);
+
+  const serialized = worker.serializedResult({
+    schema: "oxigraph.g1.7-native-session-result/v5",
+    configuration: { runId: "bounded-worker-test" },
+    outcome: "pass",
+    reason: null,
+    commands: [{ stdoutBase64: "x".repeat(4_096) }],
+    stateBytes: 0,
+    durationMs: 9,
+    finalDescendantsObserved: 0,
+    isolation: {},
+  }, 512);
+  assert.ok(serialized.length <= 512);
+  assert.equal(serialized.at(-1), 0x0a);
+  assert.deepEqual(JSON.parse(serialized), {
+    commands: [],
+    configuration: { runId: "bounded-worker-test" },
+    durationMs: 9,
+    finalDescendantsObserved: null,
+    isolation: null,
+    outcome: "error",
+    reason: { code: "result-too-large", command: null },
+    schema: "oxigraph.g1.7-native-session-result/v5",
+    stateBytes: null,
+  });
+});
+
+test("qualification result normalizer independently rejects signal, UTF-8, and duration lies", () => {
+  const commands = commandPlan();
+  const raw = {
+    schema: "oxigraph.g1.7-native-session-result/v5",
+    outcome: "fail",
+    reason: { code: "command-exit-nonzero", command: commands[0].name },
+    commands: [syntheticCommandRecord(commands[0], { exitCode: 7 })],
+    stateBytes: 4_096,
+    durationMs: 5,
+    finalDescendantsObserved: 0,
+  };
+  const normalize = (value, maxTotalWallMs = 7_200_000) =>
+    normalizeG17NativeSessionForTesting({
+      raw: value,
+      commands,
+      maxDiskBytes: 256 * mebibyte,
+      maxTotalWallMs,
+    });
+  assert.equal(normalize(raw).outcome, "fail");
+
+  const invalidSignal = structuredClone(raw);
+  invalidSignal.commands[0].exitCode = null;
+  invalidSignal.commands[0].signal = "SIGFAKE";
+  invalidSignal.reason.code = "command-signal";
+  assert.throws(() => normalize(invalidSignal), /impossible qualification command result/u);
+
+  const commandOverrun = structuredClone(raw);
+  commandOverrun.commands[0].durationMs = commands[0].timeoutMs + 1;
+  commandOverrun.durationMs = commandOverrun.commands[0].durationMs;
+  assert.throws(() => normalize(commandOverrun), /invalid qualification command result/u);
+
+  const totalOverrun = structuredClone(raw);
+  totalOverrun.durationMs = 7_200_001;
+  assert.throws(() => normalize(totalOverrun), /invalid qualification-session result schema/u);
+
+  const impossibleAggregate = structuredClone(raw);
+  impossibleAggregate.durationMs = 0;
+  assert.throws(() => normalize(impossibleAggregate), /shorter than its sequential commands/u);
+
+  const invalidUtf8 = structuredClone(raw);
+  const invalidBytes = Buffer.from([0xff]);
+  invalidUtf8.commands[0].stdoutBase64 = invalidBytes.toString("base64");
+  invalidUtf8.commands[0].stdoutSha256 = sha256(invalidBytes);
+  assert.throws(() => normalize(invalidUtf8), /invalid .* stdout UTF-8/u);
+});
 
 test("qualification sandbox uses only the exact descriptor transport", () => {
   const environment = qualificationSandboxEnvironment(sessionPlatformBinding(), 2);
@@ -358,21 +532,23 @@ test("qualification result accepts exact final-descendant containment evidence",
   try {
     const commands = commandPlan();
     const report = await runSyntheticSession(root, {
-      schema: "oxigraph.g1.7-native-session-result/v4",
-      status: "incomplete",
-      stage: "containment",
+      schema: "oxigraph.g1.7-native-session-result/v5",
+      outcome: "incomplete",
+      reason: { code: "final-live-descendants", command: null },
       commands: commands.map((command) => syntheticCommandRecord(command)),
       stateBytes: 4_096,
       durationMs: 30,
-      error: "live-descendants:final",
       finalDescendantsObserved: 1,
     }, {
       onRequest(request) {
         inheritedFileDescriptors.push(...request.inheritedFileDescriptors);
       },
     });
-    assert.equal(report.session.status, "incomplete");
-    assert.equal(report.session.error, "live-descendants:final");
+    assert.equal(report.session.outcome, "incomplete");
+    assert.deepEqual(report.session.reason, {
+      code: "final-live-descendants",
+      command: null,
+    });
     assert.equal(report.session.finalDescendantsObserved, 1);
     assert.ok(report.session.commands.every(({ descendantsObserved }) => descendantsObserved === 0));
     assert.equal(report.artifact.name, "native-session.json");
@@ -408,40 +584,37 @@ test("qualification result rejects impossible completed and infrastructure state
     [
       "null-state",
       {
-        schema: "oxigraph.g1.7-native-session-result/v4",
-        status: "completed",
-        stage: "complete",
+        schema: "oxigraph.g1.7-native-session-result/v5",
+        outcome: "pass",
+        reason: null,
         commands: commands.map((command) => syntheticCommandRecord(command)),
         stateBytes: null,
         durationMs: 20,
-        error: null,
         finalDescendantsObserved: 0,
       },
     ],
     [
       "completed-descendant",
       {
-        schema: "oxigraph.g1.7-native-session-result/v4",
-        status: "completed",
-        stage: "complete",
+        schema: "oxigraph.g1.7-native-session-result/v5",
+        outcome: "pass",
+        reason: null,
         commands: commands.map((command, index) =>
           syntheticCommandRecord(command, { descendantsObserved: index === 1 ? 1 : 0 })),
         stateBytes: 4_096,
         durationMs: 20,
-        error: null,
         finalDescendantsObserved: 0,
       },
     ],
     [
       "error-with-commands",
       {
-        schema: "oxigraph.g1.7-native-session-result/v4",
-        status: "error",
-        stage: "infrastructure",
+        schema: "oxigraph.g1.7-native-session-result/v5",
+        outcome: "error",
+        reason: { code: "infrastructure", command: null },
         commands: [syntheticCommandRecord(commands[0])],
         stateBytes: null,
         durationMs: 20,
-        error: "synthetic infrastructure fault",
         finalDescendantsObserved: null,
       },
     ],
@@ -461,13 +634,12 @@ test("qualification result rejects impossible completed and infrastructure state
 test("qualification session closes every owned descriptor on runner and replay failures", async () => {
   const commands = commandPlan();
   const completed = {
-    schema: "oxigraph.g1.7-native-session-result/v4",
-    status: "completed",
-    stage: "complete",
+    schema: "oxigraph.g1.7-native-session-result/v5",
+    outcome: "pass",
+    reason: null,
     commands: commands.map((command) => syntheticCommandRecord(command)),
     stateBytes: 4_096,
     durationMs: 20,
-    error: null,
     finalDescendantsObserved: 0,
   };
   for (const [name, raw, options, pattern] of [
@@ -532,13 +704,12 @@ test("qualification session closes every owned descriptor on runner and replay f
 test("qualification session rejects symlinked and wrong-type sources without descriptor leaks", async () => {
   const commands = commandPlan();
   const raw = {
-    schema: "oxigraph.g1.7-native-session-result/v4",
-    status: "completed",
-    stage: "complete",
+    schema: "oxigraph.g1.7-native-session-result/v5",
+    outcome: "pass",
+    reason: null,
     commands: commands.map((command) => syntheticCommandRecord(command)),
     stateBytes: 4_096,
     durationMs: 20,
-    error: null,
     finalDescendantsObserved: 0,
   };
   for (const [name, prepare, pattern] of [

@@ -7,6 +7,9 @@ import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   G17_NATIVE_SESSION_ARTIFACT_NAME,
   G17_NATIVE_SESSION_CONFIGURATION_SCHEMA,
+  G17_NATIVE_SESSION_ISOLATION_SCHEMA,
+  G17_NATIVE_SESSION_PROJECTION_SCHEMA,
+  G17_NATIVE_SESSION_RESULT_SCHEMA,
   createG17NativeSessionArtifactForTesting,
   createG17NativeSessionConfiguration,
   g17NativeSessionCommands,
@@ -73,8 +76,8 @@ function configuration() {
 
 function completedSession(configuration, contract) {
   return {
-    status: "completed",
-    stage: "complete",
+    outcome: "pass",
+    reason: null,
     commands: configuration.commands.map((command, index) => {
       const lane = contract.compatibility.native[Math.floor(index / 2)];
       return index % 2 === 0
@@ -93,7 +96,6 @@ function completedSession(configuration, contract) {
     }),
     stateBytes: 4_096,
     durationMs: 30,
-    error: null,
     finalDescendantsObserved: 0,
     isolation: syntheticG17Isolation(configuration),
   };
@@ -248,8 +250,24 @@ test("native session artifact independently replays all six raw Cargo records", 
     contractSha256: sealedContract.contractSha256,
   });
   assert.equal(created.artifact.name, G17_NATIVE_SESSION_ARTIFACT_NAME);
+  assert.equal(JSON.parse(created.artifact.bytes).schema, G17_NATIVE_SESSION_RESULT_SCHEMA);
+  assert.equal(
+    JSON.parse(created.artifact.bytes).isolation.schema,
+    G17_NATIVE_SESSION_ISOLATION_SCHEMA,
+  );
+  assert.equal(created.projection.schema, G17_NATIVE_SESSION_PROJECTION_SCHEMA);
   assert.equal(created.projection.status, "PASS");
+  assert.equal(created.projection.reason, null);
   assert.equal(created.projection.totalPassedTests, 23);
+  assert.equal(
+    created.projection.effectiveIsolation.normalizedMountTopologyObserved,
+    true,
+  );
+  assert.equal(created.projection.effectiveIsolation.cgroupMembershipMatched, true);
+  assert.equal(
+    Object.hasOwn(created.projection.effectiveIsolation, "cgroupPath"),
+    false,
+  );
   assert.deepEqual(
     created.projection.lanes.map(({ id, observedPassedTests }) => ({
       id,
@@ -282,6 +300,17 @@ test("native session artifact independently replays all six raw Cargo records", 
     }),
     created.projection,
   );
+
+  const serialized = created.artifact.bytes.toString("utf8");
+  for (const forbidden of [
+    "mountinfoBase64",
+    "cgroupBase64",
+    "cgroupMembership",
+    "/user.slice/g17.scope",
+    "/proc/self/fd/",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden);
+  }
 });
 
 test("native session replay rejects canonical rehashing of command and binding lies", () => {
@@ -341,27 +370,147 @@ test("native session replay rejects coherently rehashed isolation and launch lie
   });
   for (const mutate of [
     (value) => {
-      const text = Buffer.from(
-        value.isolation.afterCommands.mountinfoBase64,
-        "base64",
-      ).toString("utf8");
-      value.isolation.afterCommands.mountinfoBase64 = Buffer.from(
-        text.replace("/workspace ro", "/workspace rw"),
-        "utf8",
-      ).toString("base64");
+      value.isolation.afterCommands.mounts.find(
+        ({ destination }) => destination === "/workspace",
+      ).access = "rw";
     },
     (value) => {
       for (const observation of [
         value.isolation.beforeCommands,
         value.isolation.afterCommands,
       ]) {
-        const mountinfo = Buffer.from(observation.mountinfoBase64, "base64")
-          .toString("utf8");
-        observation.mountinfoBase64 = Buffer.from(
-          `${mountinfo}99 8 8:1 / /state/escape rw - ext4 host rw\n`,
-          "utf8",
-        ).toString("base64");
+        observation.mounts.push({
+          mountId: "99",
+          parentMountId: "8",
+          device: "1",
+          destination: "/state/escape",
+          access: "rw",
+          filesystem: "tmpfs",
+          sourceRole: "state",
+          sourceSubpath: "/escape",
+        });
+        observation.mounts.sort((left, right) =>
+          left.destination < right.destination
+            ? -1
+            : left.destination > right.destination
+              ? 1
+              : 0);
       }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.push({ ...observation.mounts[0], mountId: "99" });
+      }
+    },
+    (value) => {
+      value.isolation.beforeCommands.mounts.reverse();
+      value.isolation.afterCommands.mounts.reverse();
+    },
+    (value) => {
+      value.isolation.beforeCommands.mounts[0].mountId = "01";
+      value.isolation.afterCommands.mounts[0].mountId = "01";
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/workspace",
+        ).sourceRole = "platform";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/toolchain",
+        ).sourceSubpath = "/host/toolchain";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/state/home",
+        ).sourceSubpath = "/host/home";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/state/target",
+        ).parentMountId = "0";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/workspace",
+        ).parentMountId = "99";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/dev/pts",
+        ).parentMountId = "1";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/state/tmp",
+        ).device = "99";
+      }
+    },
+    (value) => {
+      for (const observation of [
+        value.isolation.beforeCommands,
+        value.isolation.afterCommands,
+      ]) {
+        observation.mounts.find(
+          ({ destination }) => destination === "/workspace",
+        ).filesystem = "/host/ext4";
+      }
+    },
+    (value) => {
+      value.isolation.beforeCommands.mounts[0].root = "/host/root";
+      value.isolation.afterCommands.mounts[0].root = "/host/root";
+    },
+    (value) => {
+      value.isolation.beforeCommands.mountinfoBase64 = "";
+      value.isolation.afterCommands.mountinfoBase64 = "";
+    },
+    (value) => {
+      value.isolation.afterCommands.cgroup.membershipSha256 = digest("d");
+    },
+    (value) => {
+      value.isolation.beforeCommands.cgroup.membershipSha256 = "not-a-digest";
+      value.isolation.afterCommands.cgroup.membershipSha256 = "not-a-digest";
+    },
+    (value) => {
+      value.isolation.beforeCommands.cgroup.hierarchy = "v1";
+      value.isolation.afterCommands.cgroup.hierarchy = "v1";
     },
     (value) => {
       value.isolation.afterCommands.cgroupFiles.memoryMaxBase64 = Buffer.from(
@@ -420,6 +569,14 @@ test("native session replay rejects coherently rehashed isolation and launch lie
     (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
       attestation.namespaces.network = "net:[999]";
     }),
+    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
+      attestation.cgroup.membershipSha256 = digest("e");
+    }),
+    (value) => rewriteLaunchAttestation(value, 0, (attestation) => {
+      attestation.cgroupMembership = rawRecord(
+        Buffer.from("0::/host/leak.scope\n", "utf8"),
+      );
+    }),
   ]) {
     const value = JSON.parse(created.artifact.bytes);
     mutate(value);
@@ -435,26 +592,139 @@ test("native session replay rejects coherently rehashed isolation and launch lie
   }
 });
 
-test("native session replay preserves an honest infrastructure null", () => {
+test("native session replay maps typed command outcomes without promotion", () => {
+  const { sealedContract, value: expectedConfiguration } = configuration();
+  const expected = expectedConfiguration.commands[0];
+  for (const scenario of [
+    {
+      outcome: "fail",
+      status: "FAIL",
+      reason: { code: "command-exit-nonzero", command: expected.name },
+      command: { exitCode: 1 },
+    },
+    {
+      outcome: "fail",
+      status: "FAIL",
+      reason: { code: "command-signal", command: expected.name },
+      command: { exitCode: null, signal: "SIGTERM" },
+    },
+    ...[
+      "timeout",
+      "timeout-unreaped",
+      "output-limit",
+      "output-limit-unreaped",
+    ].map((disposition) => ({
+      outcome: "incomplete",
+      status: "INCOMPLETE",
+      reason: { code: `command-${disposition}`, command: expected.name },
+      command: { disposition, exitCode: null, signal: null },
+    })),
+  ]) {
+    const command = syntheticG17CommandRecord(
+      expectedConfiguration,
+      expected,
+      0,
+      "",
+      "",
+      scenario.command,
+    );
+    const created = createG17NativeSessionArtifactForTesting({
+      configuration: expectedConfiguration,
+      session: {
+        outcome: scenario.outcome,
+        reason: scenario.reason,
+        commands: [command],
+        stateBytes: 4_096,
+        durationMs: 5,
+        finalDescendantsObserved: 0,
+        isolation: syntheticG17Isolation(expectedConfiguration),
+      },
+      contractBytes: sealedContract.bytes,
+      contractSha256: sealedContract.contractSha256,
+    });
+    assert.equal(created.projection.status, scenario.status);
+    assert.deepEqual(created.projection.reason, scenario.reason);
+    assert.equal(created.projection.commandsObserved, 1);
+    assert.equal(created.projection.totalPassedTests, 0);
+    assert.deepEqual(created.projection.lanes, []);
+    assert.notEqual(created.projection.effectiveIsolation, null);
+  }
+});
+
+test("native session replay rejects contradictory typed outcome reasons", () => {
   const { sealedContract, value: expectedConfiguration } = configuration();
   const created = createG17NativeSessionArtifactForTesting({
     configuration: expectedConfiguration,
-    session: {
-      status: "error",
-      stage: "infrastructure",
-      commands: [],
-      stateBytes: null,
-      durationMs: 1,
-      error: "generated platform unavailable",
-      finalDescendantsObserved: null,
-      isolation: null,
-    },
+    session: completedSession(expectedConfiguration, sealedContract.contract),
     contractBytes: sealedContract.bytes,
     contractSha256: sealedContract.contractSha256,
   });
-  assert.equal(created.projection.status, "ERROR");
-  assert.equal(created.projection.effectiveIsolation, null);
-  assert.deepEqual(created.projection.lanes, []);
+  for (const mutate of [
+    (value) => {
+      value.outcome = "fail";
+      value.reason = {
+        code: "command-exit-nonzero",
+        command: value.commands.at(-1).name,
+      };
+    },
+    (value) => {
+      value.outcome = "incomplete";
+      value.reason = {
+        code: "command-timeout",
+        command: value.commands.at(-1).name,
+      };
+    },
+    (value) => {
+      value.reason = { code: "infrastructure", command: null };
+    },
+    (value) => {
+      value.reason = { code: "command-signal", command: "/host/private" };
+    },
+    (value) => {
+      value.reason = { code: "invented-reason", command: null };
+    },
+    (value) => {
+      value.status = "completed";
+      value.stage = "complete";
+      value.error = null;
+    },
+  ]) {
+    const value = JSON.parse(created.artifact.bytes);
+    mutate(value);
+    assert.throws(
+      () => verifyG17NativeSessionArtifact({
+        bytes: Buffer.from(`${canonicalJson(value)}\n`, "utf8"),
+        expectedConfiguration,
+        contractBytes: sealedContract.bytes,
+        contractSha256: sealedContract.contractSha256,
+      }),
+      /G1\.7 native session contract/u,
+    );
+  }
+});
+
+test("native session replay preserves honest typed error nulls", () => {
+  const { sealedContract, value: expectedConfiguration } = configuration();
+  for (const code of ["infrastructure", "result-too-large"]) {
+    const created = createG17NativeSessionArtifactForTesting({
+      configuration: expectedConfiguration,
+      session: {
+        outcome: "error",
+        reason: { code, command: null },
+        commands: [],
+        stateBytes: null,
+        durationMs: 1,
+        finalDescendantsObserved: null,
+        isolation: null,
+      },
+      contractBytes: sealedContract.bytes,
+      contractSha256: sealedContract.contractSha256,
+    });
+    assert.equal(created.projection.status, "ERROR");
+    assert.deepEqual(created.projection.reason, { code, command: null });
+    assert.equal(created.projection.effectiveIsolation, null);
+    assert.deepEqual(created.projection.lanes, []);
+  }
 });
 
 test("native session replay preserves an honest contained-null outcome without promoting it", () => {
@@ -472,12 +742,14 @@ test("native session replay preserves an honest contained-null outcome without p
   const created = createG17NativeSessionArtifactForTesting({
     configuration: expectedConfiguration,
     session: {
-      status: "incomplete",
-      stage: "containment",
+      outcome: "incomplete",
+      reason: {
+        code: "command-live-descendants",
+        command: "execution:transaction-compatibility",
+      },
       commands: [first, contained],
       stateBytes: 4_096,
       durationMs: 10,
-      error: "live-descendants:execution:transaction-compatibility",
       finalDescendantsObserved: 0,
       isolation: syntheticG17Isolation(expectedConfiguration),
     },
@@ -488,4 +760,8 @@ test("native session replay preserves an honest contained-null outcome without p
   assert.equal(created.projection.totalPassedTests, 0);
   assert.deepEqual(created.projection.lanes, []);
   assert.equal(created.projection.commandsObserved, 2);
+  assert.deepEqual(created.projection.reason, {
+    code: "command-live-descendants",
+    command: "execution:transaction-compatibility",
+  });
 });

@@ -13,6 +13,7 @@ import {
   G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
   G17_NATIVE_CONTROLLER_SCHEMA,
   G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME,
+  G17_NATIVE_ISOLATION_INSTANCE_SCHEMA,
   G17_NATIVE_ISOLATION_POLICY_ARTIFACT_NAME,
   G17_NATIVE_PLATFORM_ARTIFACT_NAME,
   G17_NATIVE_PLATFORM_REQUIRED_ROLES,
@@ -497,13 +498,13 @@ function platformBundleFixture() {
     {
       id: "contained-session-worker",
       executableSha256: worker.sha256,
-      version: stream("contained-session-worker/v4\n"),
+      version: stream("contained-session-worker/v5\n"),
       dependencyClosureSha256: worker.sha256,
     },
     {
       id: "seccomp-launcher",
       executableSha256: launcher.sha256,
-      version: stream("seccomp-launcher/v2\n"),
+      version: stream("seccomp-launcher/v3\n"),
       dependencyClosureSha256: launcher.sha256,
     },
   ];
@@ -575,12 +576,11 @@ function instanceInput(policy, platform, controllerBytes) {
   const session = createG17NativeSessionArtifactForTesting({
     configuration,
     session: {
-      status: "completed",
-      stage: "complete",
+      outcome: "pass",
+      reason: null,
       commands,
       stateBytes: 4_096,
       durationMs: 30,
-      error: null,
       finalDescendantsObserved: 0,
       isolation: syntheticG17Isolation(configuration),
     },
@@ -646,6 +646,19 @@ test("platform closure, isolation policy, and instance artifacts round-trip cano
   );
   const instance = createG17NativeIsolationInstanceArtifact(instanceFixture);
   assert.equal(instance.artifact.name, G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME);
+  assert.equal(
+    G17_NATIVE_ISOLATION_INSTANCE_SCHEMA,
+    "oxigraph.g1.7-linux-native-isolation-instance/v5",
+  );
+  assert.equal(instance.instance.schema, G17_NATIVE_ISOLATION_INSTANCE_SCHEMA);
+  assert.equal(
+    instance.instance.effectiveObservations.normalizedMountTopologyObserved,
+    true,
+  );
+  assert.equal(
+    instance.instance.effectiveObservations.cgroupMembershipMatched,
+    true,
+  );
   assert.deepEqual(
     verifyG17NativeIsolationInstanceArtifact({
       bytes: instance.artifact.bytes,
@@ -685,6 +698,22 @@ test("platform bundle replays exact source-plan and controller artifacts", () =>
   assert.deepEqual(replayed.platform, fixture.platform.closure);
   assert.deepEqual(replayed.sourcePlan, fixture.sourcePlan);
   assert.deepEqual(replayed.controller, fixture.controller);
+  assert.equal(
+    Buffer.from(
+      replayed.controller.tools.find(({ id }) => id === "contained-session-worker")
+        .version.base64,
+      "base64",
+    ).toString("utf8"),
+    "contained-session-worker/v5\n",
+  );
+  assert.equal(
+    Buffer.from(
+      replayed.controller.tools.find(({ id }) => id === "seccomp-launcher")
+        .version.base64,
+      "base64",
+    ).toString("utf8"),
+    "seccomp-launcher/v3\n",
+  );
   assert.equal(
     replayed.sourcePlanProjectionSha256,
     sha256(fixture.sourcePlanBytes.subarray(0, -1)),
@@ -730,6 +759,20 @@ test("platform bundle rejects semantically rehashed source and controller drift"
       const tool = controller.tools.find(({ id }) => id === "contained-session-worker");
       tool.executableSha256 = "a".repeat(64);
       tool.dependencyClosureSha256 = tool.executableSha256;
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      const tool = controller.tools.find(({ id }) => id === "contained-session-worker");
+      tool.version = stream("contained-session-worker/v4\n");
+      reseal(controller);
+      return reboundBundle(fixture, fixture.sourcePlan, controller);
+    },
+    () => {
+      const controller = structuredClone(fixture.controller);
+      const tool = controller.tools.find(({ id }) => id === "seccomp-launcher");
+      tool.version = stream("seccomp-launcher/v2\n");
       reseal(controller);
       return reboundBundle(fixture, fixture.sourcePlan, controller);
     },
@@ -1054,6 +1097,14 @@ test("isolation replay rejects drifted bindings, controller observations, and de
     },
     (value) => { value.effectiveObservations.memoryMaxBytes -= 1; },
     (value) => { value.effectiveObservations.finalDescendantsObserved = 1; },
+    (value) => {
+      value.effectiveObservations.normalizedMountTopologyObserved = false;
+      reseal(value);
+    },
+    (value) => {
+      value.effectiveObservations.cgroupMembershipMatched = false;
+      reseal(value);
+    },
     (value) => { value.controllerNamespaces.before.user = "user:[105]"; },
     (value) => { value.sessionArtifact.sha256 = "1".repeat(64); },
   ];

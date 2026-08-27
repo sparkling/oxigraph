@@ -29,7 +29,7 @@ export const G17_NATIVE_CONTROLLER_SCHEMA =
 export const G17_NATIVE_ISOLATION_POLICY_SCHEMA =
   "oxigraph.g1.7-linux-native-isolation-policy/v4";
 export const G17_NATIVE_ISOLATION_INSTANCE_SCHEMA =
-  "oxigraph.g1.7-linux-native-isolation-instance/v4";
+  "oxigraph.g1.7-linux-native-isolation-instance/v5";
 
 const PROFILE = "linux-x86_64-gnu-bundled-rocksdb/v1";
 const DIGEST = /^[0-9a-f]{64}$/u;
@@ -2097,8 +2097,8 @@ function validateController(value, platform) {
   }
 
   for (const [id, path, version] of [
-    ["contained-session-worker", "runner/contained-session-worker.mjs", "contained-session-worker/v4\n"],
-    ["seccomp-launcher", "runner/seccomp-launcher.py", "seccomp-launcher/v2\n"],
+    ["contained-session-worker", "runner/contained-session-worker.mjs", "contained-session-worker/v5\n"],
+    ["seccomp-launcher", "runner/seccomp-launcher.py", "seccomp-launcher/v3\n"],
   ]) {
     const tool = value.tools.find((candidate) => candidate.id === id);
     const entry = platform.entries.find(
@@ -2371,6 +2371,8 @@ function expectedEffectiveObservations(session) {
     "rlimitsMatch",
     "stateTmpfsAndAnchorsMatch",
     "finalQuiescence",
+    "normalizedMountTopologyObserved",
+    "cgroupMembershipMatched",
     "commandCapabilitiesDropped",
     "noNewPrivileges",
     "seccompFiltered",
@@ -2393,8 +2395,10 @@ function expectedEffectiveObservations(session) {
     seccompFiltered: true,
     deniedSyscallProbesObserved: true,
     mountAuthorityBounded: true,
+    normalizedMountTopologyObserved: true,
     loopbackRoutesOnly: true,
     cgroupV2: true,
+    cgroupMembershipMatched: true,
     memoryMaxBytes: requested.residentBytes,
     memorySwapMaxBytes: requested.memorySwapBytes,
     tasksMax: requested.tasksMax,

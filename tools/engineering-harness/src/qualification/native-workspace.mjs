@@ -1571,13 +1571,22 @@ async function createNativeWorkspaceWithOptions({
   let dependencyWorkspace;
   let workspace;
   try {
-    await chmod(root, 0o700);
     const rootMetadata = await lstat(root, { bigint: true });
-    rootIdentity = objectIdentity(rootMetadata);
     rootHandle = await open(
       root,
       constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
     );
+    const openedRoot = await rootHandle.stat({ bigint: true });
+    if (
+      rootMetadata.isSymbolicLink() ||
+      !rootMetadata.isDirectory() ||
+      !openedRoot.isDirectory() ||
+      !isDeepStrictEqual(objectIdentity(rootMetadata), objectIdentity(openedRoot))
+    ) {
+      workspaceFault("FAIL", "workspace", "native workspace root changed while pinned");
+    }
+    await rootHandle.chmod(0o700);
+    rootIdentity = objectIdentity(await rootHandle.stat({ bigint: true }));
     await workspaceRootMetadata(root, {
       parent,
       runId,
@@ -1917,8 +1926,52 @@ export async function destroyG17NativeWorkspace(workspace) {
       cleanupHelper: state.cleanupHelper,
     });
   } catch (error) {
-    state.phase = "cleanup-failed";
-    throw error;
+    const missing = await lstat(workspace.root).then(
+      () => false,
+      (observed) => {
+        if (observed?.code === "ENOENT") return true;
+        throw observed;
+      },
+    );
+    if (!missing) {
+      state.phase = "cleanup-failed";
+      throw error;
+    }
+    const [heldRoot, heldParent, namedParent, resolvedParent] = await Promise.all([
+      state.rootHandle.stat({ bigint: true }),
+      state.parentHandle.stat({ bigint: true }),
+      lstat(state.parent, { bigint: true }),
+      realpath(state.parent),
+    ]).catch(() => []);
+    if (
+      heldRoot === undefined ||
+      heldParent === undefined ||
+      namedParent === undefined ||
+      heldRoot.nlink !== 0n ||
+      resolvedParent !== state.parent ||
+      !isDeepStrictEqual(objectIdentity(heldRoot), state.rootIdentity) ||
+      !isDeepStrictEqual(objectIdentity(heldParent), state.parentIdentity) ||
+      !isDeepStrictEqual(objectIdentity(namedParent), state.parentIdentity)
+    ) {
+      state.phase = "cleanup-failed";
+      throw error;
+    }
+    const closures = await Promise.allSettled([
+      state.rootHandle.close(),
+      state.parentHandle.close(),
+    ]);
+    dependencyInternals.delete(workspace.dependencies);
+    sourceSnapshotInternals.delete(workspace.sourceSnapshot);
+    liveWorkspaces.delete(workspace);
+    const closeErrors = closures
+      .filter(({ status }) => status === "rejected")
+      .map(({ reason }) => reason);
+    workspaceFault(
+      "FAIL",
+      "cleanup",
+      "native workspace deletion completed without a confirmed helper receipt",
+      new AggregateError([error, ...closeErrors]),
+    );
   }
   const closures = await Promise.allSettled([
     state.rootHandle.close(),

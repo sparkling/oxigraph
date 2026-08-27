@@ -15,10 +15,13 @@ import {
   writeSync,
 } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 
 const configurationSchema = "oxigraph.g1.7-native-session-configuration/v4";
-const resultSchema = "oxigraph.g1.7-native-session-result/v4";
-const isolationSchema = "oxigraph.g1.7-native-isolation-observation/v3";
+const resultSchema = "oxigraph.g1.7-native-session-result/v5";
+const isolationSchema = "oxigraph.g1.7-native-isolation-observation/v4";
+const launchAttestationSchema =
+  "oxigraph.g1.7-native-command-launch-attestation/v2";
 const resultPath = "/result/session.json";
 const workspace = "/workspace";
 const targetRoot = "/state/target";
@@ -31,6 +34,7 @@ const safeLane = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u;
 const digest = /^[0-9a-f]{64}$/u;
 const maxConfigurationBytes = 1_048_576;
 const resultReserveMs = 750;
+const utf8 = new TextDecoder("utf-8", { fatal: true });
 const stateAnchorDefinitions = Object.freeze([
   Object.freeze({ name: "home", path: "/state/home" }),
   Object.freeze({ name: "target", path: "/state/target" }),
@@ -461,12 +465,16 @@ function sandboxedCommandArguments(name, argv) {
   ];
 }
 
-function boundedRawFileBase64(path, maximumBytes) {
+function boundedRawFile(path, maximumBytes) {
   const bytes = readFileSync(path);
   if (bytes.length < 1 || bytes.length > maximumBytes) {
     throw new Error(`qualification observation is outside its byte ceiling: ${path}`);
   }
-  return bytes.toString("base64");
+  return bytes;
+}
+
+function boundedRawFileBase64(path, maximumBytes) {
+  return boundedRawFile(path, maximumBytes).toString("base64");
 }
 
 function namespaceIdentities() {
@@ -480,19 +488,195 @@ function namespaceIdentities() {
   });
 }
 
-function currentCgroupRoot() {
-  const rows = readFileSync("/proc/self/cgroup", "utf8").trimEnd().split("\n");
-  if (rows.length !== 1 || !rows[0].startsWith("0::/")) {
+function currentCgroupObservation() {
+  const bytes = boundedRawFile("/proc/self/cgroup", 65_536);
+  const text = utf8.decode(bytes);
+  if (
+    !text.endsWith("\n") ||
+    text.slice(0, -1).includes("\n") ||
+    !/^0::\/[A-Za-z0-9_.@:/-]*\n$/u.test(text)
+  ) {
     throw new Error("qualification worker is not in one cgroup-v2 hierarchy");
   }
-  const relative = rows[0].slice(3);
+  const relative = text.slice(3, -1);
   if (
     !relative.startsWith("/") ||
+    relative.includes("//") ||
     relative.split("/").some((part) => part === "." || part === "..")
   ) {
     throw new Error("qualification cgroup path is unsafe");
   }
-  return `/control/cgroup2${relative}`;
+  return Object.freeze({
+    root: `/control/cgroup2${relative}`,
+    cgroup: Object.freeze({
+      hierarchy: "v2",
+      membershipSha256: sha256(bytes),
+    }),
+  });
+}
+
+function decodeMountPath(value) {
+  if (typeof value !== "string" || !value.startsWith("/")) {
+    throw new Error("qualification mount path is not absolute");
+  }
+  const decoded = value.replace(/\\(040|011|012|134)/gu, (_, octal) =>
+    String.fromCharCode(Number.parseInt(octal, 8)));
+  if (decoded.includes("\\") || decoded.includes("\0")) {
+    throw new Error("qualification mount path contains an unsupported escape");
+  }
+  return decoded;
+}
+
+function mountSourceBinding(destination) {
+  const exact = new Map([
+    ["/", ["platform", null]],
+    ["/proc", ["proc", null]],
+    ["/control/cgroup2", ["cgroup2", null]],
+    ["/cargo-home", ["cargo-home", null]],
+    ["/toolchain", ["toolchain", null]],
+    ["/workspace", ["workspace", null]],
+    ["/state", ["state", "/"]],
+    ["/state/home", ["state", "/home"]],
+    ["/state/target", ["state", "/target"]],
+    ["/state/tmp", ["state", "/tmp"]],
+    ["/runner/contained-session-worker.mjs", ["worker", null]],
+    ["/runner/seccomp-launcher.py", ["launcher", null]],
+    ["/result/session.json", ["result", null]],
+  ]);
+  if (destination === "/dev" || destination.startsWith("/dev/")) {
+    return ["device", null];
+  }
+  const binding = exact.get(destination);
+  if (binding === undefined) throw new Error("qualification mount destination is unreviewed");
+  return binding;
+}
+
+function normalizeMountTopologyText(text) {
+  if (typeof text !== "string" || text.length < 1) {
+    throw new Error("qualification mount topology is absent");
+  }
+  const raw = [];
+  const destinations = new Set();
+  const identifiers = new Set();
+  for (const line of text.trimEnd().split("\n")) {
+    const fields = line.split(" ");
+    const separator = fields.indexOf("-");
+    const device = /^(0|[1-9][0-9]*):(0|[1-9][0-9]*)$/u.exec(fields[2] ?? "");
+    if (
+      separator < 6 ||
+      fields.length < separator + 4 ||
+      !/^[1-9][0-9]*$/u.test(fields[0] ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/u.test(fields[1] ?? "") ||
+      device === null
+    ) {
+      throw new Error("qualification mount topology has an invalid row");
+    }
+    const destination = decodeMountPath(fields[4]);
+    if (destinations.has(destination) || identifiers.has(fields[0])) {
+      throw new Error("qualification mount topology is ambiguous");
+    }
+    destinations.add(destination);
+    identifiers.add(fields[0]);
+    const options = new Set(fields[5].split(","));
+    const access = options.has("ro") && !options.has("rw")
+      ? "ro"
+      : options.has("rw") && !options.has("ro")
+        ? "rw"
+        : null;
+    const filesystem = fields[separator + 1];
+    if (access === null || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u.test(filesystem)) {
+      throw new Error("qualification mount access or filesystem is invalid");
+    }
+    const major = BigInt(device[1]);
+    const minor = BigInt(device[2]);
+    const encodedDevice =
+      ((major & 0xfffn) << 8n) |
+      (minor & 0xffn) |
+      ((major & ~0xfffn) << 32n) |
+      ((minor & ~0xffn) << 12n);
+    const [sourceRole, sourceSubpath] = mountSourceBinding(destination);
+    raw.push({
+      mountId: fields[0],
+      parentMountId: fields[1],
+      device: encodedDevice.toString(),
+      destination,
+      access,
+      filesystem,
+      sourceRole,
+      sourceSubpath,
+      privateRoot: decodeMountPath(fields[3]),
+      privateSource: fields[separator + 2],
+      privateSuperOptions: fields.slice(separator + 3).join(" "),
+    });
+  }
+  const unique = (destination) => {
+    const matches = raw.filter((mount) => mount.destination === destination);
+    if (matches.length !== 1) throw new Error("qualification mount topology is incomplete");
+    return matches[0];
+  };
+  const requiredReadOnly = [
+    "/", "/dev", "/toolchain", "/workspace", "/cargo-home",
+    "/control/cgroup2", "/runner/contained-session-worker.mjs",
+    "/runner/seccomp-launcher.py", "/result/session.json",
+  ];
+  const requiredReadWrite = ["/proc", "/state", "/state/home", "/state/target", "/state/tmp"];
+  if (
+    requiredReadOnly.some((path) => unique(path).access !== "ro") ||
+    requiredReadWrite.some((path) => unique(path).access !== "rw") ||
+    unique("/proc").filesystem !== "proc" ||
+    unique("/control/cgroup2").filesystem !== "cgroup2"
+  ) {
+    throw new Error("qualification mount topology access drifted");
+  }
+  const state = unique("/state");
+  const root = unique("/");
+  const device = unique("/dev");
+  for (const mount of raw) {
+    if (mount.destination === "/") continue;
+    const expectedParent = mount.destination.startsWith("/dev/")
+      ? device.mountId
+      : mount.destination.startsWith("/state/")
+        ? state.mountId
+        : root.mountId;
+    if (mount.parentMountId !== expectedParent) {
+      throw new Error("qualification mount ancestry drifted");
+    }
+  }
+  for (const [destination, subpath] of [
+    ["/state/home", "/home"],
+    ["/state/target", "/target"],
+    ["/state/tmp", "/tmp"],
+  ]) {
+    const mount = unique(destination);
+    if (
+      mount.parentMountId !== state.mountId ||
+      mount.device !== state.device ||
+      mount.privateRoot !== subpath ||
+      mount.privateSource !== state.privateSource ||
+      mount.privateSuperOptions !== state.privateSuperOptions ||
+      mount.filesystem !== "tmpfs"
+    ) {
+      throw new Error("qualification state mount topology drifted");
+    }
+  }
+  if (
+    state.privateRoot !== "/" ||
+    state.privateSource !== "tmpfs" ||
+    state.filesystem !== "tmpfs"
+  ) {
+    throw new Error("qualification state tmpfs topology drifted");
+  }
+  return Object.freeze(raw
+    .map(({ privateRoot, privateSource, privateSuperOptions, ...mount }) =>
+      Object.freeze(mount))
+    .sort((left, right) =>
+      left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0));
+}
+
+function normalizedMountTopology() {
+  return normalizeMountTopologyText(
+    utf8.decode(boundedRawFile("/proc/self/mountinfo", 1_048_576)),
+  );
 }
 
 function cgroupFiles(root) {
@@ -506,20 +690,20 @@ function cgroupFiles(root) {
 }
 
 function captureWorkerIsolationObservation() {
-  const root = currentCgroupRoot();
+  const cgroup = currentCgroupObservation();
   return Object.freeze({
     uidMapBase64: boundedRawFileBase64("/proc/self/uid_map", 4_096),
     gidMapBase64: boundedRawFileBase64("/proc/self/gid_map", 4_096),
     namespaces: namespaceIdentities(),
     statusBase64: boundedRawFileBase64("/proc/self/status", 65_536),
-    mountinfoBase64: boundedRawFileBase64("/proc/self/mountinfo", 1_048_576),
+    mounts: normalizedMountTopology(),
     networkDevicesBase64: boundedRawFileBase64("/proc/net/dev", 16_384),
     ipv4RoutesBase64: boundedRawFileBase64("/proc/net/route", 262_144),
     ipv6RoutesBase64: boundedRawFileBase64("/proc/net/ipv6_route", 262_144),
     ipv6AddressesBase64: boundedRawFileBase64("/proc/net/if_inet6", 65_536),
-    cgroupBase64: boundedRawFileBase64("/proc/self/cgroup", 65_536),
+    cgroup: cgroup.cgroup,
     limitsBase64: boundedRawFileBase64("/proc/self/limits", 65_536),
-    cgroupFiles: cgroupFiles(root),
+    cgroupFiles: cgroupFiles(cgroup.root),
   });
 }
 
@@ -576,7 +760,7 @@ function runCargoCommand({ command, timeoutMs, environment }) {
         }
         const parsed = JSON.parse(attestation);
         if (
-          parsed?.schema !== "oxigraph.g1.7-native-command-launch-attestation/v1" ||
+          parsed?.schema !== launchAttestationSchema ||
           parsed.name !== command.name ||
           !attestation.equals(Buffer.from(`${canonicalValue(parsed)}\n`, "utf8"))
         ) {
@@ -715,42 +899,53 @@ function commandRecord(command, outcome, descendantsObserved) {
   });
 }
 
-async function executeSession(configuration, started, stateAnchors) {
+async function executeSession(configuration, started, stateAnchors, dependencies = {}) {
+  const now = dependencies.now ?? (() => performance.now());
+  const assertAnchors = dependencies.assertStateAnchors ?? assertStateAnchors;
+  const runCommand = dependencies.runCargoCommand ?? runCargoCommand;
+  const quiesce = dependencies.quiesceUntrustedProcesses ?? quiesceUntrustedProcesses;
   const commands = [];
   for (const command of configuration.commands) {
-    assertStateAnchors(stateAnchors);
-    const elapsed = performance.now() - started;
+    assertAnchors(stateAnchors);
+    const elapsed = now() - started;
     const remaining = Math.floor(
       configuration.requestedLimits.totalWallMs - elapsed - resultReserveMs,
     );
     if (remaining < 1_000) {
       throw new Error(`qualification timeout exhausted before ${command.name}`);
     }
-    const outcome = await runCargoCommand({
+    const outcome = await runCommand({
       command,
       timeoutMs: Math.min(command.timeoutMs, remaining),
       environment: configuration.environment,
     });
-    const descendantsObserved = await quiesceUntrustedProcesses();
-    assertStateAnchors(stateAnchors);
-    commands.push(commandRecord(command, outcome, descendantsObserved));
+    const descendantsObserved = await quiesce();
+    assertAnchors(stateAnchors);
+    const record = commandRecord(command, outcome, descendantsObserved);
+    commands.push(record);
+    let terminal = null;
     if (descendantsObserved > 0) {
+      terminal = { outcome: "incomplete", code: "command-live-descendants" };
+    } else if (outcome.disposition !== "completed") {
+      terminal = { outcome: "incomplete", code: `command-${outcome.disposition}` };
+    } else if (outcome.signal !== null) {
+      terminal = { outcome: "fail", code: "command-signal" };
+    } else if (outcome.exitCode !== 0) {
+      terminal = { outcome: "fail", code: "command-exit-nonzero" };
+    }
+    if (terminal !== null) {
       return Object.freeze({
-        stage: "containment",
+        outcome: terminal.outcome,
         commands: Object.freeze(commands),
-        error: `live-descendants:${command.name}`,
+        reason: Object.freeze({ code: terminal.code, command: command.name }),
       });
     }
   }
   return Object.freeze({
-    stage: "complete",
+    outcome: "pass",
     commands: Object.freeze(commands),
-    error: null,
+    reason: null,
   });
-}
-
-function boundedError(error) {
-  return `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`.slice(0, 4_096);
 }
 
 function serializedResult(result, ceiling) {
@@ -759,12 +954,11 @@ function serializedResult(result, ceiling) {
   const fallback = Buffer.from(`${canonicalValue({
     schema: resultSchema,
     configuration: result.configuration,
-    status: "error",
-    stage: "infrastructure",
+    outcome: "error",
+    reason: { code: "result-too-large", command: null },
     commands: [],
     stateBytes: null,
     durationMs: result.durationMs,
-    error: "qualification result exceeded its byte ceiling",
     finalDescendantsObserved: null,
     isolation: null,
   })}\n`, "utf8");
@@ -813,60 +1007,56 @@ async function main() {
     result = {
       schema: resultSchema,
       configuration,
-      status: execution.stage === "complete" ? "completed" : "incomplete",
-      stage: execution.stage,
+      outcome: execution.outcome,
+      reason: execution.reason,
       commands: execution.commands,
       stateBytes: aggregateStateBytes(),
       durationMs: Math.round(performance.now() - started),
-      error: execution.error,
-      finalDescendantsObserved: execution.stage === "complete" ? 0 : null,
+      finalDescendantsObserved: 0,
       isolation: null,
     };
   } catch (error) {
     result = {
       schema: resultSchema,
       configuration: configuration ?? null,
-      status: "error",
-      stage: "infrastructure",
+      outcome: "error",
+      reason: { code: "infrastructure", command: null },
       commands: [],
       stateBytes: null,
       durationMs: Math.round(performance.now() - started),
-      error: boundedError(error),
       finalDescendantsObserved: null,
       isolation: null,
     };
   }
   try {
     const finalObserved = await quiesceUntrustedProcesses();
-    if (result.status === "completed") {
+    if (["pass", "fail"].includes(result.outcome)) {
       result = {
         ...result,
         ...(finalObserved > 0
           ? {
-              status: "incomplete",
-              stage: "containment",
-              error: "live-descendants:final",
+              outcome: "incomplete",
+              reason: { code: "final-live-descendants", command: null },
             }
           : {}),
         finalDescendantsObserved: finalObserved,
       };
-    } else if (result.status === "incomplete" && finalObserved === 0) {
+    } else if (result.outcome === "incomplete" && finalObserved === 0) {
       result = { ...result, finalDescendantsObserved: 0 };
-    } else if (result.status === "incomplete") {
+    } else if (result.outcome === "incomplete") {
       result = {
         schema: resultSchema,
         configuration: configuration ?? null,
-        status: "error",
-        stage: "infrastructure",
+        outcome: "error",
+        reason: { code: "infrastructure", command: null },
         commands: [],
         stateBytes: null,
         durationMs: Math.round(performance.now() - started),
-        error: "qualification containment evidence is ambiguous",
         finalDescendantsObserved: null,
         isolation: null,
       };
     }
-    if (result.status !== "error") {
+    if (result.outcome !== "error") {
       assertStateAnchors(stateAnchors);
       result = {
         ...result,
@@ -882,12 +1072,11 @@ async function main() {
     result = {
       schema: resultSchema,
       configuration: configuration ?? null,
-      status: "error",
-      stage: "infrastructure",
+      outcome: "error",
+      reason: { code: "infrastructure", command: null },
       commands: [],
       stateBytes: null,
       durationMs: Math.round(performance.now() - started),
-      error: boundedError(error),
       finalDescendantsObserved: null,
       isolation: null,
     };
@@ -897,4 +1086,29 @@ async function main() {
   writeResult(serializedResult(result, ceiling));
 }
 
-await main();
+export function createG17NativeSessionWorkerForTesting(dependencies) {
+  exactKeys(
+    dependencies,
+    ["now", "assertStateAnchors", "runCargoCommand", "quiesceUntrustedProcesses"],
+    "qualification worker test dependencies",
+  );
+  if (Object.values(dependencies).some((dependency) => typeof dependency !== "function")) {
+    throw new Error("qualification worker test dependencies must be functions");
+  }
+  const frozenDependencies = Object.freeze({ ...dependencies });
+  return Object.freeze({
+    normalizeMountinfo(text) {
+      return normalizeMountTopologyText(text);
+    },
+    executeSession(configuration, started = 0, stateAnchors = Object.freeze([])) {
+      return executeSession(configuration, started, stateAnchors, frozenDependencies);
+    },
+    serializedResult(result, ceiling) {
+      return serializedResult(result, ceiling);
+    },
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}

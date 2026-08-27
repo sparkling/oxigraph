@@ -10,7 +10,7 @@ import {
   readdir,
   readlink,
   realpath,
-  rm,
+  rmdir,
   statfs,
   symlink,
 } from "node:fs/promises";
@@ -918,13 +918,13 @@ async function createProductionControllerAttestation(helper, signal) {
     {
       id: "contained-session-worker",
       executableSha256: sha256(workerBytes),
-      version: rawStream(Buffer.from("contained-session-worker/v4\n", "utf8")),
+      version: rawStream(Buffer.from("contained-session-worker/v5\n", "utf8")),
       dependencyClosureSha256: sha256(workerBytes),
     },
     {
       id: "seccomp-launcher",
       executableSha256: sha256(launcherBytes),
-      version: rawStream(Buffer.from("seccomp-launcher/v2\n", "utf8")),
+      version: rawStream(Buffer.from("seccomp-launcher/v3\n", "utf8")),
       dependencyClosureSha256: sha256(launcherBytes),
     },
   );
@@ -1903,48 +1903,405 @@ async function inspectElfGraph({
   return { nodes, edges };
 }
 
-async function safeRemoveGeneratedRoot({ root, parent, runId, rootIdentity }) {
+function generatedPlatformPrefix(runId, kind) {
+  return kind === "platform"
+    ? `oxigraph-g17-platform-${runId}-`
+    : `oxigraph-g17-platform-controller-${runId}-`;
+}
+
+function validateGeneratedPlatformPath(path, parent, runId, kind, phase) {
+  const prefix = generatedPlatformPrefix(runId, kind);
   if (
     !safeRunId.test(runId ?? "") ||
-    !isAbsolute(root) ||
+    !["platform", "controller"].includes(kind) ||
+    !isAbsolute(path) ||
     !isAbsolute(parent) ||
-    dirname(root) !== parent ||
-    !basename(root).startsWith(`oxigraph-g17-platform-${runId}-`)
+    dirname(path) !== parent ||
+    !basename(path).startsWith(prefix) ||
+    basename(path) === prefix
   ) {
-    platformFault("FAIL", "cleanup", "platform cleanup target is unsafe");
+    platformFault("FAIL", phase, `${kind} generated-directory target is unsafe`);
   }
-  const metadata = await lstat(root, { bigint: true }).catch((error) => {
-    if (error?.code === "ENOENT") return undefined;
-    platformFault("FAIL", "cleanup", "platform cleanup target cannot be inspected", error);
-  });
-  if (metadata === undefined) return;
+}
+
+async function pinPlatformParent(parent, phase = "preflight") {
+  let handle;
+  try {
+    const before = await lstat(parent, { bigint: true });
+    handle = await open(
+      parent,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const [held, after, resolved] = await Promise.all([
+      handle.stat({ bigint: true }),
+      lstat(parent, { bigint: true }),
+      realpath(parent),
+    ]);
+    const identity = objectIdentity(before);
+    if (
+      resolved !== parent ||
+      before.isSymbolicLink() ||
+      !before.isDirectory() ||
+      !held.isDirectory() ||
+      !after.isDirectory() ||
+      !isDeepStrictEqual(objectIdentity(held), identity) ||
+      !isDeepStrictEqual(objectIdentity(after), identity)
+    ) {
+      platformFault("FAIL", phase, "platform temporary parent changed while pinned");
+    }
+    return { handle, identity };
+  } catch (error) {
+    await handle?.close();
+    if (error instanceof G17NativePlatformFault) throw error;
+    platformFault("FAIL", phase, "platform temporary parent cannot be pinned", error);
+  }
+}
+
+async function pinGeneratedPlatformDirectory({
+  path,
+  parent,
+  parentHandle,
+  parentIdentity,
+  runId,
+  kind,
+}) {
+  validateGeneratedPlatformPath(path, parent, runId, kind, "materialize");
+  let handle;
+  try {
+    const before = await lstat(path, { bigint: true });
+    handle = await open(
+      path,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const [held, named, heldParent, namedParent, resolved, resolvedParent] =
+      await Promise.all([
+        handle.stat({ bigint: true }),
+        lstat(path, { bigint: true }),
+        parentHandle.stat({ bigint: true }),
+        lstat(parent, { bigint: true }),
+        realpath(path),
+        realpath(parent),
+      ]);
+    const identity = objectIdentity(before);
+    if (
+      resolved !== path ||
+      resolvedParent !== parent ||
+      before.isSymbolicLink() ||
+      !before.isDirectory() ||
+      !held.isDirectory() ||
+      !named.isDirectory() ||
+      !heldParent.isDirectory() ||
+      !namedParent.isDirectory() ||
+      !isDeepStrictEqual(objectIdentity(held), identity) ||
+      !isDeepStrictEqual(objectIdentity(named), identity) ||
+      !isDeepStrictEqual(objectIdentity(heldParent), parentIdentity) ||
+      !isDeepStrictEqual(objectIdentity(namedParent), parentIdentity)
+    ) {
+      platformFault("FAIL", "materialize", `${kind} generated directory changed while pinned`);
+    }
+    await handle.chmod(0o700);
+    const after = await handle.stat({ bigint: true });
+    if (
+      !after.isDirectory() ||
+      Number(after.mode & 0o7777n) !== 0o700 ||
+      !isDeepStrictEqual(objectIdentity(after), identity)
+    ) {
+      platformFault("FAIL", "materialize", `${kind} generated directory could not be sealed`);
+    }
+    return { path, handle, identity };
+  } catch (error) {
+    await handle?.close();
+    if (error instanceof G17NativePlatformFault) throw error;
+    platformFault("FAIL", "materialize", `${kind} generated directory cannot be pinned`, error);
+  }
+}
+
+async function verifyPinnedGeneratedPlatformDirectory(state, kind, phase) {
+  const path = kind === "platform" ? state.root : state.helperRoot;
+  const handle = kind === "platform" ? state.rootHandle : state.helperRootHandle;
+  const identity = kind === "platform" ? state.rootIdentity : state.helperRootIdentity;
+  validateGeneratedPlatformPath(path, state.parent, state.runId, kind, phase);
+  const [named, held, namedParent, heldParent, resolved, resolvedParent] =
+    await Promise.all([
+      lstat(path, { bigint: true }),
+      handle.stat({ bigint: true }),
+      lstat(state.parent, { bigint: true }),
+      state.parentHandle.stat({ bigint: true }),
+      realpath(path),
+      realpath(state.parent),
+    ]).catch((error) =>
+      platformFault("FAIL", phase, `${kind} generated-directory identity cannot be read`, error));
   if (
-    metadata.isSymbolicLink() ||
-    !metadata.isDirectory() ||
-    await realpath(root) !== root ||
-    (rootIdentity !== undefined &&
-      !isDeepStrictEqual(objectIdentity(metadata), rootIdentity))
+    resolved !== path ||
+    resolvedParent !== state.parent ||
+    named.isSymbolicLink() ||
+    !named.isDirectory() ||
+    !held.isDirectory() ||
+    !namedParent.isDirectory() ||
+    !heldParent.isDirectory() ||
+    !isDeepStrictEqual(objectIdentity(named), identity) ||
+    !isDeepStrictEqual(objectIdentity(held), identity) ||
+    !isDeepStrictEqual(objectIdentity(namedParent), state.parentIdentity) ||
+    !isDeepStrictEqual(objectIdentity(heldParent), state.parentIdentity) ||
+    Number(named.mode & 0o7777n) !== 0o700
   ) {
-    platformFault("FAIL", "cleanup", "platform cleanup target is not its generated directory");
+    platformFault("FAIL", phase, `${kind} generated-directory identity changed`);
   }
-  async function makeWritable(path) {
-    const observed = await lstat(path);
-    if (observed.isDirectory() && !observed.isSymbolicLink()) {
-      await chmod(path, 0o700);
-      for (const child of await readdir(path)) await makeWritable(join(path, child));
-    } else if (!observed.isSymbolicLink()) {
-      await chmod(path, 0o600);
+}
+
+async function isExactDetachedPlatformDirectory(state, kind) {
+  const path = kind === "platform" ? state.root : state.helperRoot;
+  const handle = kind === "platform" ? state.rootHandle : state.helperRootHandle;
+  const identity = kind === "platform" ? state.rootIdentity : state.helperRootIdentity;
+  const named = await lstat(path, { bigint: true }).catch((error) => {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (named !== undefined) return false;
+  const [held, heldParent, namedParent, resolvedParent] = await Promise.all([
+    handle.stat({ bigint: true }),
+    state.parentHandle.stat({ bigint: true }),
+    lstat(state.parent, { bigint: true }),
+    realpath(state.parent),
+  ]);
+  return (
+    held.isDirectory() &&
+    held.nlink === 0n &&
+    heldParent.isDirectory() &&
+    namedParent.isDirectory() &&
+    resolvedParent === state.parent &&
+    isDeepStrictEqual(objectIdentity(held), identity) &&
+    isDeepStrictEqual(objectIdentity(heldParent), state.parentIdentity) &&
+    isDeepStrictEqual(objectIdentity(namedParent), state.parentIdentity)
+  );
+}
+
+async function deletePinnedPlatformDirectory(state, kind) {
+  if (state.detached?.[kind] === true) {
+    if (!await isExactDetachedPlatformDirectory(state, kind)) {
+      platformFault("FAIL", "cleanup", `${kind} detached-directory state is contradictory`);
+    }
+    return undefined;
+  }
+  if (await isExactDetachedPlatformDirectory(state, kind)) {
+    platformFault(
+      "FAIL",
+      "cleanup",
+      `${kind} deletion completed without a confirmed helper receipt`,
+    );
+  }
+  await verifyPinnedGeneratedPlatformDirectory(state, kind, "cleanup");
+  const path = kind === "platform" ? state.root : state.helperRoot;
+  const rootHandle = kind === "platform" ? state.rootHandle : state.helperRootHandle;
+  const result = await deleteG17NativeNode({
+    helper: state.helper,
+    parentHandle: state.parentHandle,
+    rootHandle,
+    targetName: basename(path),
+    maxEntries: maximumEntries + 10_000,
+    maxDepth: 128,
+    timeoutMs: 120_000,
+    signal: undefined,
+  });
+  const remaining = await lstat(path).catch((error) => {
+    if (error?.code === "ENOENT") return undefined;
+    platformFault("FAIL", "cleanup", `${kind} cleanup result cannot be inspected`, error);
+  });
+  if (remaining !== undefined) {
+    platformFault("FAIL", "cleanup", `${kind} cleanup target remains present`);
+  }
+  if (!await isExactDetachedPlatformDirectory(state, kind)) {
+    platformFault("FAIL", "cleanup", `${kind} cleanup did not detach the pinned directory`);
+  }
+  state.detached[kind] = true;
+  return result;
+}
+
+async function removePinnedEmptyPlatformDirectory(state, kind) {
+  await verifyPinnedGeneratedPlatformDirectory(state, kind, "cleanup");
+  const path = kind === "platform" ? state.root : state.helperRoot;
+  await rmdir(path).catch((error) => {
+    platformFault(
+      "FAIL",
+      "cleanup",
+      `pinned empty ${kind} directory cannot be removed nonrecursively`,
+      error,
+    );
+  });
+  if (!await isExactDetachedPlatformDirectory(state, kind)) {
+    platformFault("FAIL", "cleanup", `pinned empty ${kind} directory did not detach`);
+  }
+  state.detached[kind] = true;
+}
+
+async function acquirePlatformCleanupAuthority({ parent, runId, signal }) {
+  const pinnedParent = await pinPlatformParent(parent);
+  let helperRoot;
+  let helperRootRecord;
+  let helper;
+  try {
+    helperRoot = await mkdtemp(
+      join(parent, generatedPlatformPrefix(runId, "controller")),
+    );
+    helperRootRecord = await pinGeneratedPlatformDirectory({
+      path: helperRoot,
+      parent,
+      parentHandle: pinnedParent.handle,
+      parentIdentity: pinnedParent.identity,
+      runId,
+      kind: "controller",
+    });
+    helper = await buildG17NativeSnapshotHelper({
+      outputDirectory: helperRoot,
+      signal,
+    });
+    const authority = {
+      parent,
+      parentHandle: pinnedParent.handle,
+      parentIdentity: pinnedParent.identity,
+      helperRoot,
+      helperRootHandle: helperRootRecord.handle,
+      helperRootIdentity: helperRootRecord.identity,
+      helper,
+    };
+    await verifyPinnedGeneratedPlatformDirectory(
+      { ...authority, runId },
+      "controller",
+      "materialize",
+    );
+    await verifyG17NativeSnapshotHelper(helper);
+    return authority;
+  } catch (error) {
+    const cleanupErrors = [];
+    if (helper !== undefined && helperRootRecord !== undefined) {
+      const cleanupState = {
+        parent,
+        parentHandle: pinnedParent.handle,
+        parentIdentity: pinnedParent.identity,
+        helperRoot,
+        helperRootHandle: helperRootRecord.handle,
+        helperRootIdentity: helperRootRecord.identity,
+        helper,
+        runId,
+        detached: { platform: false, controller: false },
+      };
+      try {
+        await deletePinnedPlatformDirectory(cleanupState, "controller");
+      } catch (caught) {
+        cleanupErrors.push(caught);
+      }
+      try {
+        await closeG17NativeSnapshotHelper(helper);
+      } catch (caught) {
+        cleanupErrors.push(caught);
+      }
+    } else if (helperRootRecord !== undefined) {
+      try {
+        await removePinnedEmptyPlatformDirectory({
+          parent,
+          parentHandle: pinnedParent.handle,
+          parentIdentity: pinnedParent.identity,
+          helperRoot,
+          helperRootHandle: helperRootRecord.handle,
+          helperRootIdentity: helperRootRecord.identity,
+          runId,
+          detached: { platform: false, controller: false },
+        }, "controller");
+      } catch (caught) {
+        cleanupErrors.push(caught);
+      }
+    } else if (helperRoot !== undefined) {
+      cleanupErrors.push(new G17NativePlatformFault(
+        "FAIL",
+        "cleanup",
+        "unidentified controller directory was left untouched",
+      ));
+    }
+    const closures = await Promise.allSettled([
+      helperRootRecord?.handle.close(),
+      pinnedParent.handle.close(),
+    ]);
+    cleanupErrors.push(
+      ...closures
+        .filter(({ status }) => status === "rejected")
+        .map(({ reason }) => reason),
+    );
+    if (cleanupErrors.length > 0) {
+      platformFault(
+        "FAIL",
+        "cleanup",
+        "platform cleanup authority failed before it became usable",
+        new AggregateError([error, ...cleanupErrors]),
+      );
+    }
+    if (error instanceof G17NativePlatformFault) throw error;
+    platformFault(
+      ["FAIL", "MISSING", "STALE"].includes(error?.classification)
+        ? error.classification
+        : "FAIL",
+      "materialize",
+      "platform cleanup authority could not be acquired",
+      error,
+    );
+  }
+}
+
+async function cleanFailedPlatformAcquisition({ state, root, originalError }) {
+  const cleanupErrors = [];
+  const receiptErrors = [];
+  if (state.rootHandle === undefined) {
+    if (root !== undefined) {
+      cleanupErrors.push(new G17NativePlatformFault(
+        "FAIL",
+        "cleanup",
+        "unidentified platform directory was left untouched",
+      ));
+    }
+  } else {
+    try {
+      await deletePinnedPlatformDirectory(state, "platform");
+    } catch (error) {
+      if (await isExactDetachedPlatformDirectory(state, "platform").catch(() => false)) {
+        state.detached.platform = true;
+        receiptErrors.push(error);
+      } else {
+        cleanupErrors.push(error);
+      }
     }
   }
-  await makeWritable(root);
-  if (rootIdentity !== undefined) {
-    const beforeRemove = await lstat(root, { bigint: true });
-    if (!isDeepStrictEqual(objectIdentity(beforeRemove), rootIdentity)) {
-      platformFault("FAIL", "cleanup", "platform cleanup target identity changed");
+  try {
+    await deletePinnedPlatformDirectory(state, "controller");
+  } catch (error) {
+    if (await isExactDetachedPlatformDirectory(state, "controller").catch(() => false)) {
+      state.detached.controller = true;
+      receiptErrors.push(error);
+    } else {
+      cleanupErrors.push(error);
     }
   }
-  await rm(root, { recursive: true, force: false }).catch((error) =>
-    platformFault("FAIL", "cleanup", "platform cleanup failed", error));
+  try {
+    await closeG17NativeSnapshotHelper(state.helper);
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+  const closures = await Promise.allSettled([
+    state.rootHandle?.close(),
+    state.helperRootHandle.close(),
+    state.parentHandle.close(),
+  ]);
+  cleanupErrors.push(
+    ...closures
+      .filter(({ status }) => status === "rejected")
+      .map(({ reason }) => reason),
+  );
+  if (cleanupErrors.length > 0 || receiptErrors.length > 0) {
+    platformFault(
+      "FAIL",
+      "cleanup",
+      "platform acquisition failed and exact cleanup did not complete",
+      new AggregateError([originalError, ...receiptErrors, ...cleanupErrors]),
+    );
+  }
 }
 
 async function createPlatformWithOptions({
@@ -1983,13 +2340,22 @@ async function createPlatformWithOptions({
   const sourceIdentities = await Promise.all(
     normalizedSources.map((source, index) => sourceRootIdentity(source.source, index)),
   );
-  const root = await mkdtemp(join(parent, `oxigraph-g17-platform-${runId}-`));
-  const rootIdentity = objectIdentity(await lstat(root, { bigint: true }));
-  await chmod(root, 0o700);
-  const toolchainDirectory = join(root, "toolchain");
-  const platformDirectory = join(root, "platform");
+  const authority = await acquirePlatformCleanupAuthority({ parent, runId, signal });
+  let root;
+  let rootRecord;
   let platform;
   try {
+    root = await mkdtemp(join(parent, generatedPlatformPrefix(runId, "platform")));
+    rootRecord = await pinGeneratedPlatformDirectory({
+      path: root,
+      parent,
+      parentHandle: authority.parentHandle,
+      parentIdentity: authority.parentIdentity,
+      runId,
+      kind: "platform",
+    });
+    const toolchainDirectory = join(root, "toolchain");
+    const platformDirectory = join(root, "platform");
     await Promise.all([
       mkdir(toolchainDirectory, { mode: 0o700 }),
       mkdir(platformDirectory, { mode: 0o700 }),
@@ -2128,18 +2494,31 @@ async function createPlatformWithOptions({
       artifact: created.artifact,
     });
     livePlatforms.set(platform, {
-      parent,
+      ...authority,
       runId,
-      rootIdentity,
+      root,
+      rootIdentity: rootRecord.identity,
+      rootHandle: rootRecord.handle,
+      detached: { platform: false, controller: false },
       phase: "live",
-      helper: null,
       production: false,
     });
     await verifyG17NativePlatform(platform, "after-preparation");
     return platform;
   } catch (error) {
     if (platform !== undefined) livePlatforms.delete(platform);
-    await safeRemoveGeneratedRoot({ root, parent, runId, rootIdentity });
+    await cleanFailedPlatformAcquisition({
+      state: {
+        ...authority,
+        runId,
+        root,
+        rootIdentity: rootRecord?.identity,
+        rootHandle: rootRecord?.handle,
+        detached: { platform: false, controller: false },
+      },
+      root,
+      originalError: error,
+    });
     if (error instanceof G17NativePlatformFault) throw error;
     platformFault("FAIL", "materialize", error.message, error);
   }
@@ -2192,28 +2571,39 @@ export async function acquireG17NativePlatform(input) {
       error,
     ));
   const plan = await discoverProductionSourcePlan(input.identity, input.signal);
-  const root = await mkdtemp(join(parent, `oxigraph-g17-platform-${input.runId}-`));
-  const rootIdentity = objectIdentity(await lstat(root, { bigint: true }));
-  await chmod(root, 0o700);
-  const controllerDirectory = join(root, "controller");
-  const platformDirectory = join(root, "platform");
-  const toolchainDirectory = join(root, "toolchain");
-  const probeStateDirectory = join(root, "probe-state");
-  let helper;
+  const authority = await acquirePlatformCleanupAuthority({
+    parent,
+    runId: input.runId,
+    signal: input.signal,
+  });
+  let root;
+  let rootRecord;
   let platform;
   try {
+    root = await mkdtemp(
+      join(parent, generatedPlatformPrefix(input.runId, "platform")),
+    );
+    rootRecord = await pinGeneratedPlatformDirectory({
+      path: root,
+      parent,
+      parentHandle: authority.parentHandle,
+      parentIdentity: authority.parentIdentity,
+      runId: input.runId,
+      kind: "platform",
+    });
+    const platformDirectory = join(root, "platform");
+    const toolchainDirectory = join(root, "toolchain");
+    const probeStateDirectory = join(root, "probe-state");
     await Promise.all([
-      mkdir(controllerDirectory, { mode: 0o700 }),
       mkdir(platformDirectory, { mode: 0o700 }),
       mkdir(join(probeStateDirectory, "home"), { recursive: true, mode: 0o700 }),
       mkdir(join(probeStateDirectory, "tmp"), { recursive: true, mode: 0o700 }),
     ]);
     await createProductionLayout(platformDirectory, plan);
-    helper = await buildG17NativeSnapshotHelper({
-      outputDirectory: controllerDirectory,
-      signal: input.signal,
-    });
-    const controller = await createProductionControllerAttestation(helper, input.signal);
+    const controller = await createProductionControllerAttestation(
+      authority.helper,
+      input.signal,
+    );
     const totals = {
       bytes: 0,
       entries: 0,
@@ -2223,7 +2613,7 @@ export async function acquireG17NativePlatform(input) {
     for (const item of plan.items) {
       input.signal?.throwIfAborted();
       await copyProductionItem({
-        helper,
+        helper: authority.helper,
         root,
         item,
         totals,
@@ -2231,7 +2621,7 @@ export async function acquireG17NativePlatform(input) {
       });
     }
     const context = {
-      helper,
+      helper: authority.helper,
       root,
       plan,
       totals,
@@ -2321,31 +2711,30 @@ export async function acquireG17NativePlatform(input) {
       controllerAttestation: controller.artifact,
     });
     livePlatforms.set(platform, {
-      parent,
+      ...authority,
       runId: input.runId,
-      rootIdentity,
+      root,
+      rootIdentity: rootRecord.identity,
+      rootHandle: rootRecord.handle,
+      detached: { platform: false, controller: false },
       phase: "live",
-      helper,
       production: true,
     });
     await verifyG17NativePlatform(platform, "after-preparation");
     return platform;
   } catch (error) {
     if (platform !== undefined) livePlatforms.delete(platform);
-    if (helper !== undefined) {
-      await closeG17NativeSnapshotHelper(helper).catch(() => {});
-    }
-    await safeRemoveGeneratedRoot({
+    await cleanFailedPlatformAcquisition({
+      state: {
+        ...authority,
+        runId: input.runId,
+        root,
+        rootIdentity: rootRecord?.identity,
+        rootHandle: rootRecord?.handle,
+        detached: { platform: false, controller: false },
+      },
       root,
-      parent,
-      runId: input.runId,
-      rootIdentity,
-    }).catch((cleanupError) => {
-      if (error instanceof G17NativePlatformFault) {
-        error.cleanupError = cleanupError.message;
-        return;
-      }
-      throw cleanupError;
+      originalError: error,
     });
     if (error instanceof G17NativePlatformFault) throw error;
     platformFault("FAIL", "materialize", error.message, error);
@@ -2354,6 +2743,8 @@ export async function acquireG17NativePlatform(input) {
 
 export async function verifyG17NativePlatform(platform, phase = "verify") {
   const state = livePlatforms.get(platform);
+  let acquired = false;
+  let succeeded = false;
   try {
     if (
       state === undefined ||
@@ -2363,8 +2754,11 @@ export async function verifyG17NativePlatform(platform, phase = "verify") {
       platformFault("FAIL", "verify", "platform verification target is not live");
     }
     state.phase = "verifying";
+    acquired = true;
+    await verifyPinnedGeneratedPlatformDirectory(state, "controller", phase);
+    await verifyPinnedGeneratedPlatformDirectory(state, "platform", phase);
+    await verifyG17NativeSnapshotHelper(state.helper);
     if (state.production) {
-      await verifyG17NativeSnapshotHelper(state.helper);
       const platformArtifact = verifyCanonicalArtifactRecord(platform.artifact, {
         name: G17_NATIVE_PLATFORM_ARTIFACT_NAME,
         maximumBytes: 64 * 1024 * 1024,
@@ -2420,6 +2814,8 @@ export async function verifyG17NativePlatform(platform, phase = "verify") {
     ) {
       platformFault("FAIL", phase, "generated platform root digest drifted");
     }
+    await verifyPinnedGeneratedPlatformDirectory(state, "platform", phase);
+    await verifyPinnedGeneratedPlatformDirectory(state, "controller", phase);
     const evidence = {
       schema: "oxigraph.g1.7-linux-native-platform-verification/v1",
       phase,
@@ -2429,12 +2825,15 @@ export async function verifyG17NativePlatform(platform, phase = "verify") {
       platformRootSha256,
       manifestSha256: platform.closure.manifestSha256,
     };
+    succeeded = true;
     return deepFreeze({ ...evidence, sha256: canonicalSha256(evidence) });
   } catch (error) {
     if (error instanceof G17NativePlatformFault) throw error;
     platformFault("FAIL", phase, error.message, error);
   } finally {
-    if (state?.phase === "verifying") state.phase = "live";
+    if (acquired && state?.phase === "verifying") {
+      state.phase = succeeded ? "live" : "invalid";
+    }
   }
 }
 
@@ -2453,9 +2852,10 @@ export async function deleteG17NativePlatformTree(platform, input) {
     "platform delete request",
   );
   const state = livePlatforms.get(platform);
-  if (state === undefined || state.phase !== "live" || state.helper === null) {
+  if (state === undefined || !["live", "invalid"].includes(state.phase)) {
     platformFault("FAIL", "cleanup", "platform delete authority is not live");
   }
+  const priorPhase = state.phase;
   state.phase = "deleting-external-tree";
   try {
     return await deleteG17NativeNode({
@@ -2469,28 +2869,68 @@ export async function deleteG17NativePlatformTree(platform, input) {
       livePlatforms.get(platform) === state &&
       state.phase === "deleting-external-tree"
     ) {
-      state.phase = "live";
+      state.phase = priorPhase;
     }
   }
 }
 
 export async function destroyG17NativePlatform(platform) {
   const state = livePlatforms.get(platform);
-  if (state === undefined || state.phase !== "live") {
-    platformFault("FAIL", "cleanup", "platform cleanup target is not live");
+  if (
+    state === undefined ||
+    !["live", "invalid", "cleanup-failed"].includes(state.phase)
+  ) {
+    platformFault("FAIL", "cleanup", "platform cleanup target is not live or retryable");
   }
   state.phase = "destroying";
+  const receiptErrors = [];
   try {
-    await safeRemoveGeneratedRoot({
-      root: platform.root,
-      parent: state.parent,
-      runId: state.runId,
-      rootIdentity: state.rootIdentity,
-    });
-    if (state.helper !== null) await closeG17NativeSnapshotHelper(state.helper);
+    try {
+      await deletePinnedPlatformDirectory(state, "platform");
+    } catch (error) {
+      if (await isExactDetachedPlatformDirectory(state, "platform").catch(() => false)) {
+        state.detached.platform = true;
+        receiptErrors.push(error);
+      } else {
+        state.phase = "cleanup-failed";
+        throw error;
+      }
+    }
+    try {
+      await deletePinnedPlatformDirectory(state, "controller");
+    } catch (error) {
+      if (await isExactDetachedPlatformDirectory(state, "controller").catch(() => false)) {
+        state.detached.controller = true;
+        receiptErrors.push(error);
+      } else {
+        state.phase = "cleanup-failed";
+        throw error;
+      }
+    }
+    const closeResults = await Promise.allSettled([
+      closeG17NativeSnapshotHelper(state.helper),
+      state.rootHandle.close(),
+      state.helperRootHandle.close(),
+      state.parentHandle.close(),
+    ]);
     livePlatforms.delete(platform);
+    const closeErrors = closeResults
+      .filter(({ status }) => status === "rejected")
+      .map(({ reason }) => reason);
+    if (receiptErrors.length > 0 || closeErrors.length > 0) {
+      platformFault(
+        "FAIL",
+        "cleanup",
+        receiptErrors.length > 0
+          ? "platform deletion completed without every confirmed helper receipt"
+          : "platform was deleted but its descriptor closure failed",
+        new AggregateError([...receiptErrors, ...closeErrors]),
+      );
+    }
   } catch (error) {
-    state.phase = "live";
+    if (livePlatforms.get(platform) === state && state.phase === "destroying") {
+      state.phase = "cleanup-failed";
+    }
     throw error;
   }
 }

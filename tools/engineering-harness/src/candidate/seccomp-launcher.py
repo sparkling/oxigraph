@@ -7,6 +7,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import sys
 
 
@@ -17,7 +18,7 @@ CLONE_NEWUSER = 0x10000000
 PR_SET_NO_NEW_PRIVS = 38
 PR_GET_PDEATHSIG = 2
 PR_SET_PDEATHSIG = 1
-ATTESTATION_SCHEMA = "oxigraph.g1.7-native-command-launch-attestation/v1"
+ATTESTATION_SCHEMA = "oxigraph.g1.7-native-command-launch-attestation/v2"
 DENIED_SYSCALLS = (
     "fsconfig",
     "fsmount",
@@ -210,6 +211,30 @@ def raw_bytes(path, ceiling):
     }
 
 
+def cgroup_identity():
+    with open("/proc/self/cgroup", "rb", buffering=0) as handle:
+        value = handle.read(4 * 1024 + 1)
+    try:
+        text = value.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise RuntimeError("command cgroup membership is not UTF-8") from error
+    if (
+        len(value) < 5
+        or len(value) > 4 * 1024
+        or text.count("\n") != 1
+        or not text.endswith("\n")
+        or re.fullmatch(r"0::/[A-Za-z0-9_.@:/-]*\n", text) is None
+    ):
+        raise RuntimeError("command is not in one cgroup-v2 hierarchy")
+    relative = text[3:-1]
+    if "//" in relative or any(part in (".", "..") for part in relative.split("/")):
+        raise RuntimeError("command cgroup membership is unsafe")
+    return {
+        "hierarchy": "v2",
+        "membershipSha256": hashlib.sha256(value).hexdigest(),
+    }
+
+
 def namespace_set():
     return {
         "ipc": os.readlink("/proc/self/ns/ipc"),
@@ -231,7 +256,7 @@ def write_attestation(fd, name, syscall_numbers):
         "name": name,
         "status": raw_bytes("/proc/self/status", 16 * 1024),
         "limits": raw_bytes("/proc/self/limits", 16 * 1024),
-        "cgroupMembership": raw_bytes("/proc/self/cgroup", 4 * 1024),
+        "cgroup": cgroup_identity(),
         "cmdline": raw_bytes("/proc/self/cmdline", 64 * 1024),
         "environ": raw_bytes("/proc/self/environ", 64 * 1024),
         "namespaces": namespace_set(),
