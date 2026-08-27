@@ -67,6 +67,7 @@ struct RwDbHandler {
     options: *mut rocksdb_options_t,
     read_options: *mut rocksdb_readoptions_t,
     write_options: *mut rocksdb_writeoptions_t,
+    sync_write_options: *mut rocksdb_writeoptions_t,
     flush_options: *mut rocksdb_flushoptions_t,
     env_options: *mut rocksdb_envoptions_t,
     ingest_external_file_options: *mut rocksdb_ingestexternalfileoptions_t,
@@ -159,6 +160,7 @@ impl Drop for RwDbHandler {
             }
             rocksdb_readoptions_destroy(self.read_options);
             rocksdb_writeoptions_destroy(self.write_options);
+            rocksdb_writeoptions_destroy(self.sync_write_options);
             rocksdb_flushoptions_destroy(self.flush_options);
             rocksdb_envoptions_destroy(self.env_options);
             rocksdb_ingestexternalfileoptions_destroy(self.ingest_external_file_options);
@@ -278,6 +280,13 @@ impl Db {
                 "rocksdb_writeoptions_create returned null"
             );
 
+            let sync_write_options = rocksdb_writeoptions_create();
+            assert!(
+                !sync_write_options.is_null(),
+                "rocksdb_writeoptions_create returned null"
+            );
+            rocksdb_writeoptions_set_sync(sync_write_options, 1);
+
             let flush_options = rocksdb_flushoptions_create();
             assert!(
                 !flush_options.is_null(),
@@ -308,6 +317,7 @@ impl Db {
                     options,
                     read_options,
                     write_options,
+                    sync_write_options,
                     flush_options,
                     env_options,
                     ingest_external_file_options,
@@ -565,6 +575,7 @@ impl Db {
             batch,
             snapshot,
             read_options,
+            keyed_outcome: None,
             _writer_permit: writer_permit,
         })
     }
@@ -594,6 +605,52 @@ impl Db {
             batch,
             snapshot,
             read_options,
+            keyed_outcome: None,
+            _writer_permit: writer_permit,
+        })
+    }
+
+    pub fn start_keyed_readable_transaction_with_control(
+        &self,
+        outcome_column_family: &ColumnFamily,
+        outcome_key: &[u8],
+        staging_value: &[u8],
+        rolled_back_value: &[u8],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<ReadableTransaction<'_>, StorageTransactionStartError> {
+        let DbKind::ReadWrite(db) = &self.inner else {
+            return Err(StorageError::Other(
+                "Transaction are only possible on read-write instances".into(),
+            )
+            .into());
+        };
+        let writer_permit = db.writer_gate.acquire_with_control(control, started_at)?;
+        if self.contains_key(outcome_column_family, outcome_key)? {
+            return Err(
+                StorageError::Other("transaction key has already been reserved".into()).into(),
+            );
+        }
+        put_sync(db, outcome_column_family, outcome_key, staging_value)?;
+        let (batch, read_options, snapshot) = unsafe {
+            let snapshot = rocksdb_create_snapshot(db.db);
+            let options = oxrocksdb_readoptions_create_copy(db.read_options);
+            rocksdb_readoptions_set_snapshot(options, snapshot);
+            let batch = rocksdb_writebatch_wi_create(0, 1);
+            (batch, options, snapshot)
+        };
+        assert!(!batch.is_null(), "rocksdb_writebatch_create returned null");
+        Ok(ReadableTransaction {
+            db,
+            batch,
+            snapshot,
+            read_options,
+            keyed_outcome: Some(KeyedTransactionOutcome {
+                column_family: outcome_column_family.clone(),
+                key: outcome_key.to_vec(),
+                rolled_back_value: rolled_back_value.to_vec(),
+                phase: KeyedTransactionOutcomePhase::Staging,
+            }),
             _writer_permit: writer_permit,
         })
     }
@@ -1097,7 +1154,22 @@ pub struct ReadableTransaction<'a> {
     batch: *mut rocksdb_writebatch_wi_t,
     snapshot: *const rocksdb_snapshot_t,
     read_options: *mut rocksdb_readoptions_t,
+    keyed_outcome: Option<KeyedTransactionOutcome>,
     _writer_permit: WriterPermit,
+}
+
+struct KeyedTransactionOutcome {
+    column_family: ColumnFamily,
+    key: Vec<u8>,
+    rolled_back_value: Vec<u8>,
+    phase: KeyedTransactionOutcomePhase,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum KeyedTransactionOutcomePhase {
+    Staging,
+    CommitAttempted,
+    Terminal,
 }
 
 unsafe impl Send for ReadableTransaction<'_> {}
@@ -1105,6 +1177,19 @@ unsafe impl Sync for ReadableTransaction<'_> {}
 
 impl Drop for ReadableTransaction<'_> {
     fn drop(&mut self) {
+        if let Some(outcome) = &mut self.keyed_outcome {
+            if outcome.phase == KeyedTransactionOutcomePhase::Staging
+                && put_sync(
+                    self.db,
+                    &outcome.column_family,
+                    &outcome.key,
+                    &outcome.rolled_back_value,
+                )
+                .is_ok()
+            {
+                outcome.phase = KeyedTransactionOutcomePhase::Terminal;
+            }
+        }
         unsafe {
             rocksdb_writebatch_wi_destroy(self.batch);
             rocksdb_readoptions_destroy(self.read_options);
@@ -1114,6 +1199,12 @@ impl Drop for ReadableTransaction<'_> {
 }
 
 impl ReadableTransaction<'_> {
+    fn keyed_outcome_mut(&mut self) -> Result<&mut KeyedTransactionOutcome, StorageError> {
+        self.keyed_outcome.as_mut().ok_or_else(|| {
+            StorageError::Other("keyed transaction outcome metadata is missing".into())
+        })
+    }
+
     pub fn reader(&self) -> Reader<'_> {
         Reader {
             inner: InnerReader::Transaction(TransactionReader {
@@ -1153,6 +1244,11 @@ impl ReadableTransaction<'_> {
     }
 
     pub fn commit(self) -> Result<(), StorageError> {
+        if self.keyed_outcome.is_some() {
+            return Err(StorageError::Other(
+                "a keyed transaction must use the outcome-aware commit path".into(),
+            ));
+        }
         unsafe {
             ffi_result!(rocksdb_write_writebatch_wi(
                 self.db.db,
@@ -1162,6 +1258,75 @@ impl ReadableTransaction<'_> {
         }
         Ok(())
     }
+
+    pub fn commit_keyed(
+        mut self,
+        commit_attempted_value: &[u8],
+        committed_value: &[u8],
+    ) -> Result<(), StorageError> {
+        let (column_family, key) = {
+            let outcome = self.keyed_outcome.as_ref().ok_or_else(|| {
+                StorageError::Other("an unkeyed transaction cannot use keyed commit".into())
+            })?;
+            if outcome.phase != KeyedTransactionOutcomePhase::Staging {
+                return Err(StorageError::Other(
+                    "a keyed transaction may attempt commit only once".into(),
+                ));
+            }
+            (outcome.column_family.clone(), outcome.key.clone())
+        };
+        put_sync(self.db, &column_family, &key, commit_attempted_value)?;
+        self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::CommitAttempted;
+        self.insert(&column_family, &key, committed_value);
+        unsafe {
+            ffi_result!(rocksdb_write_writebatch_wi(
+                self.db.db,
+                self.db.sync_write_options,
+                self.batch
+            ))?;
+        }
+        self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::Terminal;
+        Ok(())
+    }
+
+    pub fn rollback_keyed(mut self) -> Result<(), StorageError> {
+        let outcome = self.keyed_outcome.as_ref().ok_or_else(|| {
+            StorageError::Other("an unkeyed transaction cannot use keyed rollback".into())
+        })?;
+        if outcome.phase != KeyedTransactionOutcomePhase::Staging {
+            return Err(StorageError::Other(
+                "a transaction cannot roll back after commit was attempted".into(),
+            ));
+        }
+        put_sync(
+            self.db,
+            &outcome.column_family,
+            &outcome.key,
+            &outcome.rolled_back_value,
+        )?;
+        self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::Terminal;
+        Ok(())
+    }
+}
+
+fn put_sync(
+    db: &RwDbHandler,
+    column_family: &ColumnFamily,
+    key: &[u8],
+    value: &[u8],
+) -> Result<(), StorageError> {
+    unsafe {
+        ffi_result!(rocksdb_put_cf(
+            db.db,
+            db.sync_write_options,
+            column_family.0,
+            key.as_ptr().cast(),
+            key.len(),
+            value.as_ptr().cast(),
+            value.len(),
+        ))?;
+    }
+    Ok(())
 }
 
 pub struct PinnableSlice(NonNull<oxrocksdb_pinnable_handle_t>);

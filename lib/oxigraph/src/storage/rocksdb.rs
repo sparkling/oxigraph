@@ -3,8 +3,6 @@ use crate::model::vocab::rdf;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BlankNode, Triple};
 use crate::model::{GraphName, NamedOrBlankNode, OxString, Quad, Term};
-use crate::storage::StorageTransactionStartError;
-use crate::storage::TransactionStartControl;
 use crate::storage::binary_encoder::{
     QuadEncoding, TYPE_STAR_TRIPLE, WRITTEN_TERM_MAX_SIZE, decode_term, encode_term,
     encode_term_pair, encode_term_quad, encode_term_triple, write_gosp_quad, write_gpos_quad,
@@ -20,6 +18,9 @@ use crate::storage::rocksdb_wrapper::{
     Transaction,
 };
 use crate::storage::{DEFAULT_BULK_LOAD_BATCH_SIZE, map_thread_result};
+use crate::storage::{
+    StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
+};
 use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(feature = "rdf-12")]
 use siphasher::sip128::{Hasher128, SipHasher24};
@@ -30,6 +31,7 @@ use std::hash::BuildHasherDefault;
 #[cfg(feature = "rdf-12")]
 use std::hash::Hash;
 use std::mem::take;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::str::Utf8Error;
 use std::sync::{Arc, Mutex};
@@ -51,6 +53,13 @@ const DPOS_CF: &str = "dpos";
 const DOSP_CF: &str = "dosp";
 const GRAPHS_CF: &str = "graphs";
 const DEFAULT_CF: &str = "default";
+// Reserved default-CF key: versioned prefix followed by the caller's 16-byte key.
+// Record bytes are `[format version, state]`; unknown versions or states are corruption.
+const TRANSACTION_OUTCOME_KEY_PREFIX: &[u8] = b"\0oxigraph.transaction-outcome.v1\0";
+const TRANSACTION_OUTCOME_STAGING: &[u8] = &[1, 0];
+const TRANSACTION_OUTCOME_COMMIT_ATTEMPTED: &[u8] = &[1, 1];
+const TRANSACTION_OUTCOME_COMMITTED: &[u8] = &[1, 2];
+const TRANSACTION_OUTCOME_ROLLED_BACK: &[u8] = &[1, 3];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RocksDbStorageOptions {
@@ -393,6 +402,52 @@ impl RocksDbStorage {
         })
     }
 
+    pub fn start_keyed_readable_transaction_with_control(
+        &self,
+        transaction_key: &[u8; 16],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+        let outcome_key = transaction_outcome_key(transaction_key);
+        Ok(RocksDbStorageKeyedReadableTransaction {
+            inner: RocksDbStorageReadableTransaction {
+                buffer: Vec::new(),
+                transaction: self.db.start_keyed_readable_transaction_with_control(
+                    &self.default_cf,
+                    &outcome_key,
+                    TRANSACTION_OUTCOME_STAGING,
+                    TRANSACTION_OUTCOME_ROLLED_BACK,
+                    control,
+                    started_at,
+                )?,
+                storage: self,
+            },
+        })
+    }
+
+    pub fn lookup_transaction_outcome(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<StorageTransactionOutcome, StorageError> {
+        let Some(record) = self
+            .db
+            .get(&self.default_cf, &transaction_outcome_key(transaction_key))?
+        else {
+            return Ok(StorageTransactionOutcome::Indeterminate);
+        };
+        match record.as_ref() {
+            TRANSACTION_OUTCOME_STAGING | TRANSACTION_OUTCOME_COMMIT_ATTEMPTED => {
+                Ok(StorageTransactionOutcome::Indeterminate)
+            }
+            TRANSACTION_OUTCOME_COMMITTED => Ok(StorageTransactionOutcome::Committed),
+            TRANSACTION_OUTCOME_ROLLED_BACK => Ok(StorageTransactionOutcome::RolledBack),
+            value => Err(CorruptionError::msg(format!(
+                "invalid transaction outcome record: {value:?}"
+            ))
+            .into()),
+        }
+    }
+
     pub fn flush(&self) -> Result<(), StorageError> {
         self.db.flush()
     }
@@ -427,6 +482,13 @@ impl RocksDbStorage {
             atomic: true,
         }
     }
+}
+
+fn transaction_outcome_key(transaction_key: &[u8; 16]) -> Vec<u8> {
+    let mut key = Vec::with_capacity(TRANSACTION_OUTCOME_KEY_PREFIX.len() + transaction_key.len());
+    key.extend_from_slice(TRANSACTION_OUTCOME_KEY_PREFIX);
+    key.extend_from_slice(transaction_key);
+    key
 }
 
 #[must_use]
@@ -1148,6 +1210,38 @@ pub struct RocksDbStorageReadableTransaction<'a> {
     buffer: Vec<u8>,
     transaction: ReadableTransaction<'a>,
     storage: &'a RocksDbStorage,
+}
+
+#[must_use]
+pub struct RocksDbStorageKeyedReadableTransaction<'a> {
+    inner: RocksDbStorageReadableTransaction<'a>,
+}
+
+impl<'a> Deref for RocksDbStorageKeyedReadableTransaction<'a> {
+    type Target = RocksDbStorageReadableTransaction<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for RocksDbStorageKeyedReadableTransaction<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl RocksDbStorageKeyedReadableTransaction<'_> {
+    pub fn commit(self) -> Result<(), StorageError> {
+        self.inner.transaction.commit_keyed(
+            TRANSACTION_OUTCOME_COMMIT_ATTEMPTED,
+            TRANSACTION_OUTCOME_COMMITTED,
+        )
+    }
+
+    pub fn rollback(self) -> Result<(), StorageError> {
+        self.inner.transaction.rollback_keyed()
+    }
 }
 
 impl RocksDbStorageReadableTransaction<'_> {

@@ -291,7 +291,8 @@ use crate::storage::numeric_encoder::{Decoder, EncodedQuad, EncodedTerm};
 pub use crate::storage::{CorruptionError, LoaderError, SerializerError, StorageError};
 use crate::storage::{
     DEFAULT_BULK_LOAD_BATCH_SIZE, DecodingGraphIterator, DecodingQuadIterator, Storage,
-    StorageBulkLoader, StorageReadableTransaction, StorageReader, StorageTransactionStartError,
+    StorageBulkLoader, StorageKeyedReadableTransaction, StorageReadableTransaction, StorageReader,
+    StorageTransactionOutcome, StorageTransactionStartError,
 };
 #[cfg(not(target_family = "wasm"))]
 use std::cmp::max;
@@ -320,6 +321,35 @@ impl TransactionKey {
     pub const fn new(value: [u8; 16]) -> Self {
         Self(value)
     }
+
+    /// Returns the stable byte representation of this transaction key.
+    pub const fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+
+    /// Consumes this transaction key and returns its stable byte representation.
+    pub const fn into_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
+/// Proven reason why a transaction did not publish its effects.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransactionNonCommitReason {
+    Rejected,
+    Conflicted,
+    Cancelled,
+    RolledBack,
+}
+
+/// Terminal state resolved for a caller-supplied transaction key.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransactionOutcome {
+    Committed,
+    ProvenAbsent(TransactionNonCommitReason),
+    Indeterminate,
 }
 
 /// Failure while negotiating or opening a transaction.
@@ -417,6 +447,46 @@ pub trait OutcomeAwareWritableDataset: WritableDataset {
     fn commit_with_outcome(self) -> Result<(), TransactionCommitError<Self::Error>>;
 
     fn rollback_with_outcome(self) -> Result<(), TransactionRollbackError<Self::Error>>;
+}
+
+/// Extension for transactional datasets that accept caller-supplied transaction keys.
+///
+/// The keyed transaction type is distinct from the legacy transaction type so existing callers
+/// are not required to manufacture recovery keys. Implementations must reserve the key only after
+/// capability negotiation succeeds and must never replay effects to resolve an outcome.
+pub trait OutcomeAwareTransactionalDataset: NegotiatedTransactionalDataset {
+    /// A keyed write transaction borrowing this dataset.
+    type KeyedTransaction<'a>: OutcomeAwareWritableDataset<Error = Self::Error>
+    where
+        Self: 'a;
+
+    /// Negotiates and opens a transaction identified by `transaction_key`.
+    fn start_transaction_with_key(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+    ) -> Result<NegotiatedTransaction<Self::KeyedTransaction<'_>>, TransactionStartError<Self::Error>>
+    {
+        self.start_transaction_with_key_and_control(
+            request,
+            transaction_key,
+            TransactionStartControl::new(),
+        )
+    }
+
+    /// Negotiates and opens a keyed transaction with bounded, cancellable admission.
+    fn start_transaction_with_key_and_control(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Self::KeyedTransaction<'_>>, TransactionStartError<Self::Error>>;
+
+    /// Resolves the last provable state of `transaction_key` without replaying its effects.
+    fn lookup_transaction_outcome(
+        &self,
+        transaction_key: &TransactionKey,
+    ) -> Result<TransactionOutcome, Self::Error>;
 }
 
 /// A transaction paired with the exact profile negotiated before it was opened.
@@ -619,9 +689,10 @@ impl From<StoreOptions> for StorageOptions {
 impl Store {
     /// New in-memory [`Store`] without RocksDB.
     pub fn new() -> Result<Self, StorageError> {
+        let storage = Storage::new()?;
         Ok(Self {
-            storage: Storage::new()?,
-            transaction_capabilities: read_write_transaction_capabilities(),
+            transaction_capabilities: read_write_transaction_capabilities(&storage),
+            storage,
         })
     }
 
@@ -632,9 +703,10 @@ impl Store {
     /// use [`Store::open_read_only`].
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let storage = Storage::open(path.as_ref())?;
         Ok(Self {
-            storage: Storage::open(path.as_ref())?,
-            transaction_capabilities: read_write_transaction_capabilities(),
+            transaction_capabilities: read_write_transaction_capabilities(&storage),
+            storage,
         })
     }
 
@@ -650,9 +722,10 @@ impl Store {
         path: impl AsRef<Path>,
         options: StoreOptions,
     ) -> Result<Self, StorageError> {
+        let storage = Storage::open_with_options(path.as_ref(), options.into())?;
         Ok(Self {
-            storage: Storage::open_with_options(path.as_ref(), options.into())?,
-            transaction_capabilities: read_write_transaction_capabilities(),
+            transaction_capabilities: read_write_transaction_capabilities(&storage),
+            storage,
         })
     }
 
@@ -1365,13 +1438,18 @@ impl Store {
     }
 }
 
-fn read_write_transaction_capabilities() -> TransactionCapabilities {
-    TransactionCapabilities::none()
+fn read_write_transaction_capabilities(storage: &Storage) -> TransactionCapabilities {
+    let capabilities = TransactionCapabilities::none()
         .with_atomic_publication()
         .with_read_your_writes()
         .with_writer_isolation(WriterIsolation::Serialized)
         .with_conflict_behavior(ConflictBehavior::PreventedByWriterSerialization)
-        .with_rollback(RollbackGuarantee::ExplicitOrDropBeforeCommit)
+        .with_rollback(RollbackGuarantee::ExplicitOrDropBeforeCommit);
+    if storage.supports_durable_transaction_outcomes() {
+        capabilities.with_outcome_lookup(OutcomeLookup::DurableByTransactionKey)
+    } else {
+        capabilities
+    }
 }
 
 impl fmt::Display for Store {
@@ -1785,6 +1863,177 @@ impl<'a> Transaction<'a> {
     }
 }
 
+/// A caller-keyed transaction whose terminal outcome can be resolved without replay.
+///
+/// This type is returned only by [`OutcomeAwareTransactionalDataset`]. The legacy
+/// [`Transaction`] API remains unkeyed and source-compatible.
+#[must_use]
+pub struct KeyedTransaction<'a> {
+    inner: StorageKeyedReadableTransaction<'a>,
+    transaction_key: TransactionKey,
+}
+
+#[expect(
+    clippy::same_name_method,
+    reason = "the keyed persistence trait deliberately mirrors the established Transaction API"
+)]
+impl KeyedTransaction<'_> {
+    /// Returns the caller-supplied key identifying this transaction attempt.
+    pub const fn transaction_key(&self) -> &TransactionKey {
+        &self.transaction_key
+    }
+
+    /// Retrieves quads with a filter on each quad component.
+    pub fn quads_for_pattern(
+        &self,
+        subject: Option<&NamedOrBlankNode>,
+        predicate: Option<&NamedNode>,
+        object: Option<&Term>,
+        graph_name: Option<&GraphName>,
+    ) -> QuadIter<'_> {
+        let reader = self.inner.reader();
+        QuadIter {
+            iter: reader.quads_for_pattern(
+                subject.map(EncodedTerm::from).as_ref(),
+                predicate.map(EncodedTerm::from).as_ref(),
+                object.map(EncodedTerm::from).as_ref(),
+                graph_name.map(EncodedTerm::from).as_ref(),
+            ),
+            reader,
+        }
+    }
+
+    /// Returns all quads visible to this transaction.
+    pub fn iter(&self) -> QuadIter<'_> {
+        self.quads_for_pattern(None, None, None, None)
+    }
+
+    /// Returns whether this transaction contains `quad`.
+    pub fn contains(&self, quad: &Quad) -> Result<bool, StorageError> {
+        self.inner.reader().contains(&EncodedQuad::from(quad))
+    }
+
+    /// Returns the number of quads visible to this transaction.
+    pub fn len(&self) -> Result<usize, StorageError> {
+        self.inner.reader().len()
+    }
+
+    /// Returns whether this transaction contains no quads.
+    pub fn is_empty(&self) -> Result<bool, StorageError> {
+        self.inner.reader().is_empty()
+    }
+
+    /// Loads an RDF document into this transaction.
+    pub fn load_from_reader(
+        &mut self,
+        parser: impl Into<RdfParser>,
+        reader: impl Read,
+    ) -> Result<(), LoaderError> {
+        let dataset = parser
+            .into()
+            .rename_blank_nodes()
+            .for_reader(reader)
+            .collect_dataset()?;
+        for graph_name in dataset.named_graphs() {
+            self.insert_named_graph(graph_name);
+        }
+        for quad in &dataset {
+            self.insert(quad);
+        }
+        Ok(())
+    }
+
+    /// Loads an RDF document into this transaction.
+    pub fn load_from_slice(
+        &mut self,
+        parser: impl Into<RdfParser>,
+        slice: &(impl AsRef<[u8]> + ?Sized),
+    ) -> Result<(), LoaderError> {
+        let dataset = parser
+            .into()
+            .rename_blank_nodes()
+            .for_slice(slice)
+            .collect_dataset()
+            .map_err(RdfParseError::Syntax)?;
+        for graph_name in dataset.named_graphs() {
+            self.insert_named_graph(graph_name);
+        }
+        for quad in &dataset {
+            self.insert(quad);
+        }
+        Ok(())
+    }
+
+    /// Adds a quad to this transaction.
+    pub fn insert(&mut self, quad: Quad) {
+        self.inner.insert(quad);
+    }
+
+    /// Adds a set of quads to this transaction.
+    pub fn extend(&mut self, quads: impl IntoIterator<Item = Quad>) {
+        for quad in quads {
+            self.inner.insert(quad);
+        }
+    }
+
+    /// Removes a quad from this transaction.
+    pub fn remove(&mut self, quad: &Quad) {
+        self.inner.remove(quad);
+    }
+
+    /// Returns all named graphs visible to this transaction.
+    pub fn named_graphs(&self) -> GraphNameIter<'_> {
+        let reader = self.inner.reader();
+        GraphNameIter {
+            iter: reader.named_graphs(),
+            reader,
+        }
+    }
+
+    /// Returns whether this transaction contains `graph_name`.
+    pub fn contains_named_graph(
+        &self,
+        graph_name: &NamedOrBlankNode,
+    ) -> Result<bool, StorageError> {
+        self.inner
+            .reader()
+            .contains_named_graph(&EncodedTerm::from(graph_name))
+    }
+
+    /// Creates a named graph if it does not already exist.
+    pub fn insert_named_graph(&mut self, graph_name: impl Into<NamedOrBlankNode>) {
+        self.inner.insert_named_graph(graph_name.into());
+    }
+
+    /// Clears a graph while retaining named-graph presence.
+    pub fn clear_graph(&mut self, graph_name: &GraphName) -> Result<(), StorageError> {
+        self.inner.clear_graph(graph_name)
+    }
+
+    /// Removes a named graph and its quads.
+    pub fn remove_named_graph(
+        &mut self,
+        graph_name: &NamedOrBlankNode,
+    ) -> Result<(), StorageError> {
+        self.inner.remove_named_graph(graph_name)
+    }
+
+    /// Removes all quads and named-graph topology.
+    pub fn clear(&mut self) -> Result<(), StorageError> {
+        self.inner.clear()
+    }
+
+    /// Atomically publishes the RDF changes and committed outcome marker.
+    pub fn commit(self) -> Result<(), TransactionCommitError<StorageError>> {
+        OutcomeAwareWritableDataset::commit_with_outcome(self)
+    }
+
+    /// Discards the changes and records a proven rolled-back outcome.
+    pub fn rollback(self) -> Result<(), TransactionRollbackError<StorageError>> {
+        OutcomeAwareWritableDataset::rollback_with_outcome(self)
+    }
+}
+
 impl TransactionalDataset for Store {
     type Error = StorageError;
     type Transaction<'a> = Transaction<'a>;
@@ -1825,6 +2074,73 @@ impl NegotiatedTransactionalDataset for Store {
             transaction: Transaction { inner },
             effective,
         })
+    }
+}
+
+impl OutcomeAwareTransactionalDataset for Store {
+    type KeyedTransaction<'a> = KeyedTransaction<'a>;
+
+    fn start_transaction_with_key_and_control(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+        control: TransactionStartControl,
+    ) -> Result<NegotiatedTransaction<Self::KeyedTransaction<'_>>, TransactionStartError<Self::Error>>
+    {
+        let started_at = std::time::Instant::now();
+        let effective = self.transaction_capabilities();
+        let unmet = effective.unmet_requirements(request.requirements());
+        if !unmet.is_empty() {
+            return Err(TransactionStartError::RequirementsNotMet { unmet, effective });
+        }
+        let inner = self
+            .storage
+            .start_keyed_readable_transaction_with_control(
+                transaction_key.as_bytes(),
+                &control,
+                started_at,
+            )
+            .map_err(|error| match error {
+                StorageTransactionStartError::Cancelled => TransactionStartError::Cancelled,
+                StorageTransactionStartError::TimedOut => TransactionStartError::TimedOut,
+                StorageTransactionStartError::Backend(error) => {
+                    TransactionStartError::Backend(error)
+                }
+            })?;
+        Ok(NegotiatedTransaction {
+            transaction: KeyedTransaction {
+                inner,
+                transaction_key,
+            },
+            effective,
+        })
+    }
+
+    fn lookup_transaction_outcome(
+        &self,
+        transaction_key: &TransactionKey,
+    ) -> Result<TransactionOutcome, Self::Error> {
+        Ok(
+            match self
+                .storage
+                .lookup_transaction_outcome(transaction_key.as_bytes())?
+            {
+                StorageTransactionOutcome::Committed => TransactionOutcome::Committed,
+                StorageTransactionOutcome::Rejected => {
+                    TransactionOutcome::ProvenAbsent(TransactionNonCommitReason::Rejected)
+                }
+                StorageTransactionOutcome::Conflicted => {
+                    TransactionOutcome::ProvenAbsent(TransactionNonCommitReason::Conflicted)
+                }
+                StorageTransactionOutcome::Cancelled => {
+                    TransactionOutcome::ProvenAbsent(TransactionNonCommitReason::Cancelled)
+                }
+                StorageTransactionOutcome::RolledBack => {
+                    TransactionOutcome::ProvenAbsent(TransactionNonCommitReason::RolledBack)
+                }
+                StorageTransactionOutcome::Indeterminate => TransactionOutcome::Indeterminate,
+            },
+        )
     }
 }
 
@@ -1935,7 +2251,141 @@ impl WritableDataset for Transaction<'_> {
     }
 }
 
+impl WritableDataset for KeyedTransaction<'_> {
+    type Error = StorageError;
+    type Quads<'a>
+        = Box<dyn Iterator<Item = Result<Quad, StorageError>> + 'a>
+    where
+        Self: 'a;
+    type NamedGraphs<'a>
+        = GraphNameIter<'a>
+    where
+        Self: 'a;
+
+    fn quads_for_pattern<'a>(
+        &'a self,
+        subject: Option<&NamedOrBlankNode>,
+        predicate: Option<&NamedNode>,
+        object: Option<&Term>,
+        graph_name: Option<Option<&NamedOrBlankNode>>,
+    ) -> Self::Quads<'a> {
+        match graph_name {
+            Some(None) => Box::new(KeyedTransaction::quads_for_pattern(
+                self,
+                subject,
+                predicate,
+                object,
+                Some(&GraphName::DefaultGraph),
+            )),
+            Some(Some(graph_name)) => {
+                let graph_name = GraphName::from(graph_name.clone());
+                Box::new(KeyedTransaction::quads_for_pattern(
+                    self,
+                    subject,
+                    predicate,
+                    object,
+                    Some(&graph_name),
+                ))
+            }
+            None => Box::new(
+                KeyedTransaction::quads_for_pattern(self, subject, predicate, object, None).filter(
+                    |quad| match quad {
+                        Ok(quad) => !quad.graph_name.is_default_graph(),
+                        Err(_) => true,
+                    },
+                ),
+            ),
+        }
+    }
+
+    fn named_graphs(&self) -> Self::NamedGraphs<'_> {
+        KeyedTransaction::named_graphs(self)
+    }
+
+    fn contains_named_graph(&self, graph_name: &NamedOrBlankNode) -> Result<bool, Self::Error> {
+        KeyedTransaction::contains_named_graph(self, graph_name)
+    }
+
+    fn insert(&mut self, quad: Quad) -> Result<(), Self::Error> {
+        KeyedTransaction::insert(self, quad);
+        Ok(())
+    }
+
+    fn remove(&mut self, quad: &Quad) -> Result<(), Self::Error> {
+        KeyedTransaction::remove(self, quad);
+        Ok(())
+    }
+
+    fn insert_named_graph(&mut self, graph_name: NamedOrBlankNode) -> Result<(), Self::Error> {
+        KeyedTransaction::insert_named_graph(self, graph_name);
+        Ok(())
+    }
+
+    fn clear_graph(&mut self, graph_name: Option<&NamedOrBlankNode>) -> Result<(), Self::Error> {
+        let graph_name = graph_name.map_or(GraphName::DefaultGraph, |graph_name| {
+            GraphName::from(graph_name.clone())
+        });
+        KeyedTransaction::clear_graph(self, &graph_name)
+    }
+
+    fn clear_all_named_graphs(&mut self) -> Result<(), Self::Error> {
+        self.inner.clear_all_named_graphs()
+    }
+
+    fn clear_all_graphs(&mut self) -> Result<(), Self::Error> {
+        self.inner.clear_all_graphs()
+    }
+
+    fn remove_named_graph(&mut self, graph_name: &NamedOrBlankNode) -> Result<(), Self::Error> {
+        KeyedTransaction::remove_named_graph(self, graph_name)
+    }
+
+    fn remove_all_named_graphs(&mut self) -> Result<(), Self::Error> {
+        self.inner.remove_all_named_graphs()
+    }
+
+    fn clear(&mut self) -> Result<(), Self::Error> {
+        KeyedTransaction::clear(self)
+    }
+
+    fn commit(self) -> Result<(), Self::Error> {
+        self.inner.commit()
+    }
+
+    fn rollback(self) -> Result<(), Self::Error> {
+        self.inner.rollback()
+    }
+}
+
+impl OutcomeAwareWritableDataset for KeyedTransaction<'_> {
+    fn commit_with_outcome(self) -> Result<(), TransactionCommitError<Self::Error>> {
+        let transaction_key = self.transaction_key;
+        self.inner
+            .commit()
+            .map_err(|source| TransactionCommitError::Indeterminate {
+                transaction_key,
+                source,
+            })
+    }
+
+    fn rollback_with_outcome(self) -> Result<(), TransactionRollbackError<Self::Error>> {
+        self.inner
+            .rollback()
+            .map_err(TransactionRollbackError::Failed)
+    }
+}
+
 impl<'a> IntoIterator for &'a Transaction<'_> {
+    type Item = Result<Quad, StorageError>;
+    type IntoIter = QuadIter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a KeyedTransaction<'_> {
     type Item = Result<Quad, StorageError>;
     type IntoIter = QuadIter<'a>;
 

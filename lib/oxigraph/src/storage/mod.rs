@@ -8,8 +8,8 @@ use crate::storage::numeric_encoder::{EncodedQuad, EncodedTerm, StrHash, StrLook
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use crate::storage::rocksdb::{
     RocksDbChainedDecodingQuadIterator, RocksDbDecodingGraphIterator, RocksDbStorage,
-    RocksDbStorageBulkLoader, RocksDbStorageOptions, RocksDbStorageReadableTransaction,
-    RocksDbStorageReader, RocksDbStorageTransaction,
+    RocksDbStorageBulkLoader, RocksDbStorageKeyedReadableTransaction, RocksDbStorageOptions,
+    RocksDbStorageReadableTransaction, RocksDbStorageReader, RocksDbStorageTransaction,
 };
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::path::Path;
@@ -130,6 +130,20 @@ pub(crate) enum StorageTransactionStartError {
     Cancelled,
     TimedOut,
     Backend(StorageError),
+}
+
+#[expect(
+    dead_code,
+    reason = "reserved terminal reasons keep storage-to-public outcome mapping exhaustive"
+)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StorageTransactionOutcome {
+    Committed,
+    Rejected,
+    Conflicted,
+    Cancelled,
+    RolledBack,
+    Indeterminate,
 }
 
 impl From<TransactionStartControlError> for StorageTransactionStartError {
@@ -276,6 +290,56 @@ impl Storage {
                 ),
             },
         })
+    }
+
+    pub(crate) const fn supports_durable_transaction_outcomes(&self) -> bool {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(_) => true,
+            StorageKind::Memory(_) => false,
+        }
+    }
+
+    pub(crate) fn start_keyed_readable_transaction_with_control(
+        &self,
+        transaction_key: &[u8; 16],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<StorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+        Ok(StorageKeyedReadableTransaction {
+            kind: match &self.kind {
+                #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+                StorageKind::RocksDb(storage) => StorageKeyedReadableTransactionKind::RocksDb(
+                    storage.start_keyed_readable_transaction_with_control(
+                        transaction_key,
+                        control,
+                        started_at,
+                    )?,
+                ),
+                StorageKind::Memory(storage) => StorageKeyedReadableTransactionKind::Memory(
+                    storage.start_keyed_readable_transaction_with_control(
+                        transaction_key,
+                        control,
+                        started_at,
+                    )?,
+                ),
+            },
+        })
+    }
+
+    #[cfg_attr(
+        not(all(not(target_family = "wasm"), feature = "rocksdb")),
+        expect(clippy::unnecessary_wraps)
+    )]
+    pub(crate) fn lookup_transaction_outcome(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<StorageTransactionOutcome, StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(storage) => storage.lookup_transaction_outcome(transaction_key),
+            StorageKind::Memory(storage) => Ok(storage.lookup_transaction_outcome(transaction_key)),
+        }
     }
 
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -720,6 +784,166 @@ impl StorageReadableTransaction<'_> {
             StorageReadableTransactionKind::Memory(transaction) => {
                 transaction.commit();
                 Ok(())
+            }
+        }
+    }
+}
+
+#[must_use]
+pub(crate) struct StorageKeyedReadableTransaction<'a> {
+    kind: StorageKeyedReadableTransactionKind<'a>,
+}
+
+enum StorageKeyedReadableTransactionKind<'a> {
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    RocksDb(RocksDbStorageKeyedReadableTransaction<'a>),
+    Memory(MemoryStorageTransaction<'a>),
+}
+
+#[cfg_attr(
+    not(all(not(target_family = "wasm"), feature = "rocksdb")),
+    expect(clippy::unnecessary_wraps)
+)]
+impl StorageKeyedReadableTransaction<'_> {
+    pub fn reader(&self) -> StorageReader<'_> {
+        StorageReader {
+            kind: match &self.kind {
+                #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+                StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                    StorageReaderKind::RocksDb(transaction.reader())
+                }
+                StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                    StorageReaderKind::Memory(transaction.reader())
+                }
+            },
+        }
+    }
+
+    pub fn insert(&mut self, quad: Quad) {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.insert(quad),
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.insert(quad);
+            }
+        }
+    }
+
+    pub fn insert_named_graph(&mut self, graph_name: NamedOrBlankNode) {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.insert_named_graph(graph_name)
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.insert_named_graph(graph_name);
+            }
+        }
+    }
+
+    pub fn remove(&mut self, quad: &Quad) {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.remove(quad),
+            StorageKeyedReadableTransactionKind::Memory(transaction) => transaction.remove(quad),
+        }
+    }
+
+    pub fn clear_graph(&mut self, graph_name: &GraphName) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.clear_graph(graph_name)
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.clear_graph(graph_name);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn clear_all_named_graphs(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.clear_all_named_graphs()
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.clear_all_named_graphs();
+                Ok(())
+            }
+        }
+    }
+
+    pub fn clear_all_graphs(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.clear_all_graphs()
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.clear_all_graphs();
+                Ok(())
+            }
+        }
+    }
+
+    pub fn remove_named_graph(
+        &mut self,
+        graph_name: &NamedOrBlankNode,
+    ) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.remove_named_graph(graph_name)
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.remove_named_graph(graph_name);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn remove_all_named_graphs(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.remove_all_named_graphs()
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.remove_all_named_graphs();
+                Ok(())
+            }
+        }
+    }
+
+    pub fn clear(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.clear(),
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.clear();
+                Ok(())
+            }
+        }
+    }
+
+    pub fn commit(self) -> Result<(), StorageError> {
+        match self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.commit(),
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.commit_with_outcome()
+            }
+        }
+    }
+
+    pub fn rollback(self) -> Result<(), StorageError> {
+        match self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.rollback(),
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.rollback_with_outcome()
             }
         }
     }

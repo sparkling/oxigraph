@@ -4,7 +4,10 @@ pub use crate::storage::error::StorageError;
 use crate::storage::numeric_encoder::{
     Decoder, EncodedQuad, EncodedTerm, StrHash, StrHashHasher, StrLookup, insert_term,
 };
-use crate::storage::{TransactionStartControl, TransactionStartControlError};
+use crate::storage::{
+    StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
+    TransactionStartControlError,
+};
 use dashmap::iter::Iter;
 use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
@@ -25,6 +28,7 @@ use std::time::Instant;
 pub struct MemoryStorage {
     content: Arc<Content>,
     id2str: Arc<DashMap<StrHash, OxString, BuildHasherDefault<StrHashHasher>>>,
+    transaction_outcomes: Arc<DashMap<[u8; 16], MemoryTransactionOutcomeState>>,
     version_counter: Arc<AtomicUsize>,
     transaction_counter: Arc<AtomicUsize>,
     transaction_lock: Arc<Lock>,
@@ -57,6 +61,7 @@ impl MemoryStorage {
                 graphs: DashMap::default(),
             }),
             id2str: Arc::new(DashMap::default()),
+            transaction_outcomes: Arc::new(DashMap::default()),
             version_counter: Arc::new(AtomicUsize::new(0)),
             transaction_counter: Arc::new(AtomicUsize::new(usize::MAX >> 1)),
             transaction_lock: Arc::new(Lock::new()),
@@ -88,9 +93,59 @@ impl MemoryStorage {
         Ok(self.start_transaction_with_guard(transaction_guard))
     }
 
+    pub fn start_keyed_readable_transaction_with_control(
+        &self,
+        transaction_key: &[u8; 16],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<MemoryStorageTransaction<'_>, StorageTransactionStartError> {
+        // Reserve only after admission succeeds. This keeps a rejected or timed-out request from
+        // consuming a key that never owned the writer gate.
+        let transaction_guard = self
+            .transaction_lock
+            .lock_with_control(control, started_at)?;
+        match self.transaction_outcomes.entry(*transaction_key) {
+            Entry::Occupied(_) => {
+                return Err(StorageError::Other(
+                    "transaction key has already been reserved".into(),
+                )
+                .into());
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(MemoryTransactionOutcomeState::Staging);
+            }
+        }
+        Ok(self.start_transaction_with_guard_and_key(transaction_guard, Some(*transaction_key)))
+    }
+
+    pub fn lookup_transaction_outcome(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> StorageTransactionOutcome {
+        self.transaction_outcomes.get(transaction_key).map_or(
+            StorageTransactionOutcome::Indeterminate,
+            |state| match *state {
+                MemoryTransactionOutcomeState::Committed => StorageTransactionOutcome::Committed,
+                MemoryTransactionOutcomeState::RolledBack => StorageTransactionOutcome::RolledBack,
+                MemoryTransactionOutcomeState::Staging
+                | MemoryTransactionOutcomeState::CommitAttempted => {
+                    StorageTransactionOutcome::Indeterminate
+                }
+            },
+        )
+    }
+
     fn start_transaction_with_guard<'a>(
         &'a self,
         transaction_guard: LockGuard<'a>,
+    ) -> MemoryStorageTransaction<'a> {
+        self.start_transaction_with_guard_and_key(transaction_guard, None)
+    }
+
+    fn start_transaction_with_guard_and_key<'a>(
+        &'a self,
+        transaction_guard: LockGuard<'a>,
+        transaction_key: Option<[u8; 16]>,
     ) -> MemoryStorageTransaction<'a> {
         let transaction_id = self.transaction_counter.fetch_add(1, Ordering::Acquire);
         let snapshot_id = self.version_counter.load(Ordering::Relaxed);
@@ -99,8 +154,9 @@ impl MemoryStorage {
             log: Vec::new(),
             transaction_id,
             snapshot_id,
+            transaction_key,
             _transaction_guard: transaction_guard,
-            committed: false,
+            completed: false,
         }
     }
 
@@ -111,6 +167,14 @@ impl MemoryStorage {
             hooks: Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MemoryTransactionOutcomeState {
+    Staging,
+    CommitAttempted,
+    Committed,
+    RolledBack,
 }
 
 #[derive(Clone)]
@@ -439,11 +503,56 @@ pub struct MemoryStorageTransaction<'a> {
     log: Vec<LogEntry>,
     transaction_id: usize,
     snapshot_id: usize,
-    committed: bool,
+    transaction_key: Option<[u8; 16]>,
+    completed: bool,
     _transaction_guard: LockGuard<'a>,
 }
 
 impl MemoryStorageTransaction<'_> {
+    fn transition_outcome(
+        &self,
+        expected: MemoryTransactionOutcomeState,
+        next: MemoryTransactionOutcomeState,
+    ) -> Result<(), StorageError> {
+        let Some(transaction_key) = self.transaction_key else {
+            return Ok(());
+        };
+        let Some(mut state) = self.storage.transaction_outcomes.get_mut(&transaction_key) else {
+            return Err(CorruptionError::msg(
+                "a keyed memory transaction lost its outcome reservation",
+            )
+            .into());
+        };
+        if *state != expected {
+            return Err(CorruptionError::msg(
+                "a keyed memory transaction outcome attempted an invalid transition",
+            )
+            .into());
+        }
+        *state = next;
+        Ok(())
+    }
+
+    fn transition_to_rolled_back(&self) -> Result<(), StorageError> {
+        let Some(transaction_key) = self.transaction_key else {
+            return Ok(());
+        };
+        let Some(mut state) = self.storage.transaction_outcomes.get_mut(&transaction_key) else {
+            return Err(CorruptionError::msg(
+                "a keyed memory transaction lost its outcome reservation",
+            )
+            .into());
+        };
+        if *state != MemoryTransactionOutcomeState::Staging {
+            return Err(CorruptionError::msg(
+                "a keyed memory transaction may roll back only before commit is attempted",
+            )
+            .into());
+        }
+        *state = MemoryTransactionOutcomeState::RolledBack;
+        Ok(())
+    }
+
     pub fn reader(&self) -> MemoryStorageReader<'_> {
         MemoryStorageReader {
             storage: self.storage.clone(),
@@ -697,7 +806,7 @@ impl MemoryStorageTransaction<'_> {
         self.do_remove_graphs();
     }
 
-    pub fn commit(mut self) {
+    fn publish(&mut self) {
         let new_version_id = self.snapshot_id + 1;
         for operation in take(&mut self.log) {
             match operation {
@@ -719,29 +828,61 @@ impl MemoryStorageTransaction<'_> {
         self.storage
             .version_counter
             .store(new_version_id, Ordering::Release);
-        self.committed = true;
+        self.completed = true;
+    }
+
+    fn rollback_changes(&mut self) {
+        for operation in take(&mut self.log) {
+            match operation {
+                LogEntry::QuadNode(node) => {
+                    node.range
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .rollback_transaction(self.transaction_id);
+                }
+                LogEntry::Graph(graph_name) => {
+                    if let Some(mut entry) = self.storage.content.graphs.get_mut(&graph_name) {
+                        entry.value_mut().rollback_transaction(self.transaction_id)
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn commit(mut self) {
+        self.publish();
+    }
+
+    pub fn commit_with_outcome(mut self) -> Result<(), StorageError> {
+        self.transition_outcome(
+            MemoryTransactionOutcomeState::Staging,
+            MemoryTransactionOutcomeState::CommitAttempted,
+        )?;
+        self.publish();
+        self.transition_outcome(
+            MemoryTransactionOutcomeState::CommitAttempted,
+            MemoryTransactionOutcomeState::Committed,
+        )
+    }
+
+    pub fn rollback_with_outcome(mut self) -> Result<(), StorageError> {
+        self.rollback_changes();
+        let result = self.transition_to_rolled_back();
+        self.completed = true;
+        result
     }
 }
 
 impl Drop for MemoryStorageTransaction<'_> {
     fn drop(&mut self) {
         // We roll back
-        if !self.committed {
-            for operation in take(&mut self.log) {
-                match operation {
-                    LogEntry::QuadNode(node) => {
-                        node.range
-                            .lock()
-                            .unwrap()
-                            .rollback_transaction(self.transaction_id);
-                    }
-                    LogEntry::Graph(graph_name) => {
-                        if let Some(mut entry) = self.storage.content.graphs.get_mut(&graph_name) {
-                            entry.value_mut().rollback_transaction(self.transaction_id)
-                        }
-                    }
-                }
-            }
+        if !self.completed {
+            self.rollback_changes();
+            // Drop cannot report an invariant failure. Leaving the reservation missing or
+            // nonterminal makes lookup fail closed as Indeterminate; an existing terminal state
+            // is never overwritten.
+            drop(self.transition_to_rolled_back());
+            self.completed = true;
             // TODO: garbage collection
         }
     }
