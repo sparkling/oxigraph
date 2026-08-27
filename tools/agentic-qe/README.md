@@ -60,11 +60,11 @@ these are checked as a subset of the complete recorded inventory and are never
 treated as an exact inventory.
 
 At this checkpoint the adapter contract passes 40/40 under schema v5. The
-144/129 CLI and 45-test `persistence-write` inventories remain source-bound,
-but the last `persistence-write` receipt is schema v4 and is historical and
-invalid under this contract. Freshness is `schema-v5-replay-required`; no
-current scoped or aggregate Agentic receipt is claimed until clean schema-v5
-runs are independently reopened.
+144/129 CLI and 45-test `persistence-write` inventories remain source-bound.
+A schema-v5 scoped receipt is accepted only after a separate evaluator reopens
+its immutable publication and matches the current implementation manifest; the
+exact accepted subject identities live in the conformance ledger. No scoped
+receipt alone establishes aggregate Agentic or MetaHarness qualification.
 
 Profile commands execute sequentially in their reviewed order and stop at the
 first failure. Schema-v5 receipts are positive evidence only: a failure aborts
