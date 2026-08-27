@@ -6,6 +6,7 @@ import {
   parseG17CliArgs,
 } from "../src/qualification/cli.mjs";
 import {
+  G17QualificationDecisionGateError,
   preflightG17Qualification,
   runG17Qualification,
 } from "../src/qualification/runner.mjs";
@@ -39,6 +40,11 @@ async function main(args) {
 }
 
 main(process.argv.slice(2)).catch((error) => {
+  if (error instanceof G17QualificationDecisionGateError) {
+    print(error.result);
+    applyVerdictExit(error.result.final.verdict);
+    return;
+  }
   process.stderr.write(`G1.7 qualification: ${error.message}\n`);
   process.exitCode = 2;
 });

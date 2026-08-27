@@ -484,14 +484,15 @@ function validateDescriptor(descriptor, expected, label) {
   }
 }
 
-function loadDecision({ root, descriptor, expected, validate, label }) {
+function decodeDecision({ bytes, descriptor, expected, validate, label }) {
   validateDescriptor(descriptor, expected, label);
-  const resolvedRoot = resolve(root);
-  const path = resolve(resolvedRoot, descriptor.path);
-  if (!path.startsWith(`${resolvedRoot}${sep}`)) {
-    fail(`${label} path escapes the harness root`);
+  if (
+    !Buffer.isBuffer(bytes) ||
+    bytes.length < 1 ||
+    bytes.length > descriptor.maxBytes
+  ) {
+    fail(`${label} copied bytes are not a bounded Buffer`);
   }
-  const bytes = stableRead(path, descriptor.maxBytes);
   if (sha256(bytes) !== descriptor.sha256) {
     fail(`${label} raw hash does not verify`);
   }
@@ -513,10 +514,76 @@ function loadDecision({ root, descriptor, expected, validate, label }) {
   ) {
     fail(`${label} descriptor does not bind the decoded decision`);
   }
-  return Object.freeze({
+  return {
     decision,
     byteLength: bytes.length,
     rawSha256: descriptor.sha256,
+  };
+}
+
+function loadDecision({ root, descriptor, expected, validate, label }) {
+  validateDescriptor(descriptor, expected, label);
+  const resolvedRoot = resolve(root);
+  const path = resolve(resolvedRoot, descriptor.path);
+  if (!path.startsWith(`${resolvedRoot}${sep}`)) {
+    fail(`${label} path escapes the harness root`);
+  }
+  const bytes = stableRead(path, descriptor.maxBytes);
+  return {
+    ...decodeDecision({ bytes, descriptor, expected, validate, label }),
+    bytes,
+  };
+}
+
+function decisionSpecifications(contract) {
+  return [
+    {
+      key: "reference",
+      descriptor: contract?.referenceDecision,
+      expected: EXPECTED_DESCRIPTORS.reference,
+      validate: validateG17ReferenceDecision,
+      label: "reference decision",
+    },
+    {
+      key: "performance",
+      descriptor: contract?.budgetDecision,
+      expected: EXPECTED_DESCRIPTORS.performance,
+      validate: validateG17PerformanceDecision,
+      label: "performance budget decision",
+    },
+    {
+      key: "noise",
+      descriptor: contract?.noiseDecision,
+      expected: EXPECTED_DESCRIPTORS.noise,
+      validate: validateG17NoiseDecision,
+      label: "noise budget decision",
+    },
+  ];
+}
+
+function decisionSetResult(contract, loaded) {
+  const decisionSetSha256 = g17DecisionSetSha256({
+    reference: contract.referenceDecision,
+    performance: contract.budgetDecision,
+    noise: contract.noiseDecision,
+  });
+  if (decisionSetSha256 !== contract.decisionSetSha256) {
+    fail("decision-set hash does not verify");
+  }
+  return deepFreeze({
+    reference: loaded.reference.decision,
+    performance: loaded.performance.decision,
+    noise: loaded.noise.decision,
+    artifacts: Object.fromEntries(
+      Object.entries(loaded).map(([key, artifact]) => [
+        key,
+        {
+          byteLength: artifact.byteLength,
+          rawSha256: artifact.rawSha256,
+        },
+      ]),
+    ),
+    decisionSetSha256,
   });
 }
 
@@ -540,42 +607,61 @@ export function g17DecisionSetSha256({ reference, performance, noise }) {
 
 export function loadG17DecisionSet({ contract, root = harnessRoot } = {}) {
   try {
-    const reference = loadDecision({
-      root,
-      descriptor: contract?.referenceDecision,
-      expected: EXPECTED_DESCRIPTORS.reference,
-      validate: validateG17ReferenceDecision,
-      label: "reference decision",
-    });
-    const performance = loadDecision({
-      root,
-      descriptor: contract?.budgetDecision,
-      expected: EXPECTED_DESCRIPTORS.performance,
-      validate: validateG17PerformanceDecision,
-      label: "performance budget decision",
-    });
-    const noise = loadDecision({
-      root,
-      descriptor: contract?.noiseDecision,
-      expected: EXPECTED_DESCRIPTORS.noise,
-      validate: validateG17NoiseDecision,
-      label: "noise budget decision",
-    });
-    const decisionSetSha256 = g17DecisionSetSha256({
-      reference: contract.referenceDecision,
-      performance: contract.budgetDecision,
-      noise: contract.noiseDecision,
-    });
-    if (decisionSetSha256 !== contract.decisionSetSha256) {
-      fail("decision-set hash does not verify");
+    const loaded = Object.fromEntries(
+      decisionSpecifications(contract).map((specification) => [
+        specification.key,
+        loadDecision({ root, ...specification }),
+      ]),
+    );
+    return decisionSetResult(contract, loaded);
+  } catch (error) {
+    if (error.message.startsWith("G1.7 decision contract:")) throw error;
+    fail(error.message);
+  }
+}
+
+export function g17DecisionArtifactsForSealing({
+  contract,
+  root = harnessRoot,
+} = {}) {
+  try {
+    const specifications = decisionSpecifications(contract);
+    const loaded = Object.fromEntries(
+      specifications.map((specification) => [
+        specification.key,
+        loadDecision({ root, ...specification }),
+      ]),
+    );
+    decisionSetResult(contract, loaded);
+    return Object.freeze(
+      specifications.map(({ key, descriptor }) =>
+        Object.freeze({
+          name: descriptor.sealedName,
+          bytes: Buffer.from(loaded[key].bytes),
+        }),
+      ),
+    );
+  } catch (error) {
+    if (error.message.startsWith("G1.7 decision contract:")) throw error;
+    fail(error.message);
+  }
+}
+
+export function decodeSealedG17DecisionSet({ contract, bytesByName } = {}) {
+  try {
+    if (bytesByName === null || typeof bytesByName?.get !== "function") {
+      fail("sealed decision artifact map is invalid");
     }
-    return deepFreeze({
-      reference: reference.decision,
-      performance: performance.decision,
-      noise: noise.decision,
-      artifacts: { reference, performance, noise },
-      decisionSetSha256,
-    });
+    const loaded = Object.fromEntries(
+      decisionSpecifications(contract).map((specification) => {
+        const bytes = bytesByName.get(specification.descriptor?.sealedName);
+        return [
+          specification.key,
+          decodeDecision({ bytes, ...specification }),
+        ];
+      }),
+    );
+    return decisionSetResult(contract, loaded);
   } catch (error) {
     if (error.message.startsWith("G1.7 decision contract:")) throw error;
     fail(error.message);

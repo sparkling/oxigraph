@@ -33,22 +33,32 @@ import {
   protectedInputs,
 } from "../../metaharness/policy-contract.mjs";
 import { MUTATION_RECEIPT_SCHEMA_VERSION } from "../../mutation/schema.mjs";
+import { classifyG17Qualification } from "../src/qualification/classification.mjs";
 import { loadG17Contract } from "../src/qualification/contract.mjs";
+import {
+  g17DecisionArtifactsForSealing,
+  loadG17DecisionSet,
+  validateG17DecisionSetBinding,
+} from "../src/qualification/decision-contract.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
 } from "../src/qualification/evidence-contract.mjs";
 import {
+  G17QualificationDecisionGateError,
+  assertG17ExecutionOwnerAvailable,
   preflightG17Qualification,
   runG17Qualification,
 } from "../src/qualification/runner.mjs";
 import {
+  createG17Receipt,
   g17ReceiptBytes,
   verifyG17Receipt,
 } from "../src/qualification/receipt.mjs";
 import { createG17Run } from "../src/qualification/storage.mjs";
 import { verifySealedG17Run } from "../src/qualification/verifier.mjs";
 import { verifyG17NativeApplicationEvidence } from "../src/qualification/native-application-contract.mjs";
+import { g17ReceiptIdentity } from "../src/qualification/identity.mjs";
 import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
 import { createG17NativeApplicationFixture } from "./support/g17-native-application-fixture.mjs";
 
@@ -717,6 +727,123 @@ async function fixture(t) {
   return { root, runsRoot };
 }
 
+async function sealCurrentG17Fixture({
+  runId,
+  runsRoot,
+  contractLoader = loadG17Contract,
+  identityProvider = async () => identity(),
+  semanticProvider = async () => missing("MISSING", "missing"),
+  compatibilityProvider = async () => missing("MISSING", "missing"),
+  benchmarkInput,
+  artifactTransform = (artifacts) => artifacts,
+  clock = (() => {
+    const times = [
+      new Date("2026-08-26T18:00:00.000Z"),
+      new Date("2026-08-26T18:00:01.000Z"),
+    ];
+    return () => times.shift();
+  })(),
+}) {
+  const started = clock();
+  const loaded = contractLoader();
+  const decisions = validateG17DecisionSetBinding({
+    contract: loaded.contract,
+    decisions: loadG17DecisionSet({ contract: loaded.contract }),
+    startedAt: started.toISOString(),
+  });
+  const subjectIdentity = await identityProvider({ contract: loaded.contract });
+  const semanticEvidence = await semanticProvider({
+    contract: loaded.contract,
+    identity: subjectIdentity,
+  });
+  const compatibilityEvidence = await compatibilityProvider({
+    contract: loaded.contract,
+    identity: subjectIdentity,
+  });
+  const semantic = {
+    status: semanticEvidence.status,
+    sha256: semanticEvidence.sha256,
+    reasons: [...semanticEvidence.reasons],
+    projection: semanticEvidence.projection,
+  };
+  const compatibility = {
+    status: compatibilityEvidence.status,
+    sha256: compatibilityEvidence.sha256,
+    reasons: [...compatibilityEvidence.reasons],
+    projection: compatibilityEvidence.projection,
+  };
+  const benchmark = benchmarkInput ?? {
+    status: "NOT_RUN",
+    sampleCount: 0,
+    samplesSha256: null,
+    summarySha256: null,
+    budgetBreaches: [],
+  };
+  const final = classifyG17Qualification({
+    semantic,
+    compatibility,
+    benchmark,
+    referenceDecision: decisions.reference,
+    budgetDecision: decisions.performance,
+    noiseDecision: decisions.noise,
+  });
+  const observations = {
+    schema: "oxigraph.g1.7-qualification-observations/v1",
+    identity: subjectIdentity,
+    semantic,
+    compatibility,
+    benchmark,
+  };
+  const artifacts = artifactTransform([
+    { name: "contract.json", bytes: Buffer.from(loaded.bytes) },
+    ...g17DecisionArtifactsForSealing({ contract: loaded.contract }),
+    { name: "identity.json", bytes: canonicalBytes(subjectIdentity) },
+    { name: "observations.json", bytes: canonicalBytes(observations) },
+    ...semanticEvidence.artifacts,
+    ...compatibilityEvidence.artifacts,
+  ]).sort((left, right) => comparePortablePaths(left.name, right.name));
+  const manifestArtifacts = artifacts.map(({ name, bytes }) =>
+    artifactRecord(name, bytes),
+  );
+  const manifest = {
+    schema: "oxigraph.g1.7-qualification-artifact-manifest/v1",
+    runId,
+    artifacts: manifestArtifacts,
+  };
+  const manifestBytes = canonicalBytes(manifest);
+  const receiptArtifacts = [
+    ...manifestArtifacts,
+    artifactRecord("manifest.json", manifestBytes),
+  ].sort((left, right) => comparePortablePaths(left.name, right.name));
+  const receipt = createG17Receipt({
+    run: {
+      id: runId,
+      startedAt: started.toISOString(),
+      finishedAt: clock().toISOString(),
+    },
+    contract: {
+      id: loaded.contract.id,
+      sha256: loaded.contractSha256,
+      suiteHash: loaded.contract.benchmark.suite.taskHash,
+      referenceDecision: decisions.reference.status,
+      budgetDecision: decisions.performance.status,
+      noiseDecision: decisions.noise.status,
+    },
+    identity: g17ReceiptIdentity(subjectIdentity),
+    evidence: { semantic, compatibility },
+    benchmark,
+    final,
+    artifacts: receiptArtifacts,
+  });
+  const run = await createG17Run({ runId, runsRoot });
+  for (const artifact of artifacts) {
+    await run.write(artifact.name, artifact.bytes);
+  }
+  await run.write("manifest.json", manifestBytes);
+  await run.seal(g17ReceiptBytes(receipt));
+  return { receipt, runPath: run.path };
+}
+
 test("sealed evidence replay imports only pure receipt-contract modules", async () => {
   const agenticContract = await readFile(
     new URL("../../agentic-qe/receipt-contract.mjs", import.meta.url),
@@ -848,9 +975,9 @@ test("G1.7 preflight reports honest inconclusive decisions without side effects"
   });
   assert.equal(result.schema, "oxigraph.g1.7-qualification-preflight/v1");
   assert.equal(result.final.verdict, "INCONCLUSIVE");
-  assert.ok(result.final.reasons.includes("reference-unselected"));
-  assert.ok(result.final.reasons.includes("performance-budget-absent"));
-  assert.ok(result.final.reasons.includes("noise-budget-absent"));
+  assert.ok(result.final.reasons.includes("reference-proposed"));
+  assert.ok(result.final.reasons.includes("performance-budget-proposed"));
+  assert.ok(result.final.reasons.includes("noise-budget-proposed"));
   assert.deepEqual(result.authority, {
     localOnly: true,
     promotionAuthority: false,
@@ -859,7 +986,7 @@ test("G1.7 preflight reports honest inconclusive decisions without side effects"
   });
 });
 
-test("G1.7 run writes artifacts first, receipt last, and the pure verifier reopens the sealed envelope", async (t) => {
+test("G1.7 run rejects proposed decisions before identity or evidence execution", async (t) => {
   const { root, runsRoot } = await fixture(t);
   const routerHistory = join(root, "router-history.jsonl");
   await import("node:fs/promises").then(({ writeFile }) =>
@@ -867,58 +994,40 @@ test("G1.7 run writes artifacts first, receipt last, and the pure verifier reope
   );
   const beforeHistory = await readFile(routerHistory);
   const loaded = loadG17Contract();
-  const times = [
-    new Date("2026-08-26T18:00:00.000Z"),
-    new Date("2026-08-26T18:00:01.000Z"),
-  ];
-  const result = await runG17Qualification({
-    runId: "run-00000001",
-    runsRoot,
-    contractLoader: () => loaded,
-    identityProvider: async () => identity(),
-    semanticProvider: async () =>
-      missing("MISSING", "independent-verification-absent"),
-    compatibilityProvider: async () =>
-      missing("STALE", "agentic-evidence-stale"),
-    clock: () => times.shift(),
-  });
-  assert.equal(result.receipt.final.verdict, "INCONCLUSIVE");
-  assert.equal(result.receipt.benchmark.status, "NOT_RUN");
-  assert.deepEqual(await readFile(routerHistory), beforeHistory);
-
-  const verification = await verifySealedG17Run({
-    runId: result.receipt.run.id,
-    runsRoot,
-  });
-  assert.equal(verification.ok, true);
-  assert.equal(verification.verificationStatus, "SEALED_RUN_VERIFIED");
-  assert.equal(verification.qualificationEligible, false);
-  assert.deepEqual(verification.evidenceAssurance, {
-    semantic: "NOT_APPLICABLE",
-    compatibility: "NOT_APPLICABLE",
-  });
-  assert.equal(verification.receiptSha256, result.receipt.receiptSha256);
-  assert.equal(verification.verdict, "INCONCLUSIVE");
+  const calls = [];
   await assert.rejects(
     runG17Qualification({
       runId: "run-00000001",
       runsRoot,
       contractLoader: () => loaded,
-      identityProvider: async () => identity(),
-      semanticProvider: async () => missing("MISSING", "missing"),
-      compatibilityProvider: async () => missing("MISSING", "missing"),
+      identityProvider: async () => calls.push("identity"),
+      semanticProvider: async () => calls.push("semantic"),
+      compatibilityProvider: async () => calls.push("compatibility"),
+      clock: () => new Date("2026-08-26T18:00:00.000Z"),
     }),
-    /already exists/u,
+    (error) => {
+      assert.ok(error instanceof G17QualificationDecisionGateError);
+      assert.equal(error.code, "G17_DECISIONS_UNAPPROVED");
+      assert.equal(error.result.final.verdict, "INCONCLUSIVE");
+      assert.deepEqual(error.result.final.reasons, [
+        "reference-proposed",
+        "performance-budget-proposed",
+        "noise-budget-proposed",
+        "semantic-not-run",
+        "compatibility-not-run",
+        "benchmark-not-run",
+      ]);
+      return true;
+    },
   );
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await readdir(runsRoot), []);
+  assert.deepEqual(await readFile(routerHistory), beforeHistory);
 });
 
-test("G1.7 run rejects an oversized envelope before creating a partial run", async (t) => {
+test("G1.7 decision gate dominates oversized provider output without creating a run", async (t) => {
   const { runsRoot } = await fixture(t);
   const runId = "run-envelope-overflow";
-  const times = [
-    new Date("2026-08-26T18:00:00.000Z"),
-    new Date("2026-08-26T18:00:01.000Z"),
-  ];
   await assert.rejects(
     runG17Qualification({
       runId,
@@ -933,11 +1042,22 @@ test("G1.7 run rejects an oversized envelope before creating a partial run", asy
           bytes: Buffer.from([index]),
         })),
       }),
-      clock: () => times.shift(),
+      clock: () => new Date("2026-08-26T18:00:00.000Z"),
     }),
-    /artifact inventory size|sealed envelope exceeds/u,
+    /decisions are proposed/u,
   );
   assert.deepEqual(await readdir(runsRoot), []);
+});
+
+test("G1.7 approved execution owner remains mechanically unavailable", () => {
+  assert.throws(
+    () => assertG17ExecutionOwnerAvailable(),
+    (error) => {
+      assert.equal(error.code, "G17_EXECUTION_OWNER_UNIMPLEMENTED");
+      assert.match(error.message, /attested build and sample owner/u);
+      return true;
+    },
+  );
 });
 
 test("sealed verifier imports no live identity, evidence, process, Git, or Router modules", async () => {
@@ -982,7 +1102,7 @@ test("sealed verifier rejects a hash-consistent compatibility PASS without copie
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-vacuous-pass",
     runsRoot,
     contractLoader: () => loaded,
@@ -1003,6 +1123,75 @@ test("sealed verifier rejects a hash-consistent compatibility PASS without copie
   );
 });
 
+test("sealed verifier rejects missing or rehashed decision bytes before owner evidence", async (t) => {
+  const { runsRoot } = await fixture(t);
+  for (const [runId, artifactTransform, pattern] of [
+    [
+      "run-missing-reference-decision",
+      (artifacts) =>
+        artifacts.filter(({ name }) => name !== "reference-decision.json"),
+      /current contract decision artifacts are incomplete/u,
+    ],
+    [
+      "run-rehashed-reference-decision",
+      (artifacts) =>
+        artifacts.map((artifact) =>
+          artifact.name === "reference-decision.json"
+            ? { ...artifact, bytes: Buffer.from("{}\n", "utf8") }
+            : artifact,
+        ),
+      /reference decision raw hash does not verify/u,
+    ],
+  ]) {
+    const result = await sealCurrentG17Fixture({
+      runId,
+      runsRoot,
+      artifactTransform,
+      compatibilityProvider: async () => ({
+        status: "PASS",
+        sha256: canonicalSha256({
+          schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+          status: "PASS",
+        }),
+        reasons: [],
+        projection: {
+          schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
+          status: "PASS",
+        },
+        artifacts: [],
+      }),
+    });
+    await assert.rejects(
+      verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
+      pattern,
+    );
+  }
+});
+
+test("sealed verifier refuses executed benchmark claims without a replay owner", async (t) => {
+  const { runsRoot } = await fixture(t);
+  const result = await sealCurrentG17Fixture({
+    runId: "run-unreplayed-benchmark",
+    runsRoot,
+    benchmarkInput: {
+      status: "PASS",
+      sampleCount: 1,
+      samplesSha256: "a".repeat(64),
+      summarySha256: "b".repeat(64),
+      budgetBreaches: [],
+    },
+    artifactTransform: (artifacts) => [
+      ...artifacts,
+      { name: "benchmark-samples.json", bytes: Buffer.from("{}\n") },
+      { name: "benchmark-summary.json", bytes: Buffer.from("{}\n") },
+    ],
+  });
+  await assert.rejects(
+    verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
+    /executed benchmark replay owner is unavailable/u,
+  );
+});
+
 test("sealed verifier replays synthetic Agentic and native owner-contract fixtures", async (t) => {
   const { runsRoot } = await fixture(t);
   const runId = "run-valid-zero-artifact-owner";
@@ -1012,7 +1201,7 @@ test("sealed verifier replays synthetic Agentic and native owner-contract fixtur
     new Date("2026-08-26T20:00:00.000Z"),
     new Date("2026-08-26T20:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId,
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1049,7 +1238,7 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
   const currentRunId = "run-current-v3-for-legacy";
   const owner = await compatibilityOwnerEvidence(currentRunId);
   const subjectIdentity = owner.identity;
-  const current = await runG17Qualification({
+  const current = await sealCurrentG17Fixture({
     runId: currentRunId,
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1087,12 +1276,18 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
   const dependencyNames = new Set(
     Object.values(agenticDependencyEvidenceNames),
   );
+  const decisionNames = new Set([
+    "reference-decision.json",
+    "performance-budget-decision.json",
+    "noise-budget-decision.json",
+  ]);
   const retainedNames = current.receipt.artifacts
     .map(({ name }) => name)
     .filter(
       (name) =>
         name !== "manifest.json" &&
         name !== "observations.json" &&
+        !decisionNames.has(name) &&
         !dependencyNames.has(name),
     );
   const bytesByName = new Map();
@@ -1140,6 +1335,14 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
       semantic: current.receipt.evidence.semantic,
       compatibility: legacyCompatibility,
     },
+    final: classifyG17Qualification({
+      semantic: current.receipt.evidence.semantic,
+      compatibility: legacyCompatibility,
+      benchmark: current.receipt.benchmark,
+      referenceDecision: legacyContract.referenceDecision,
+      budgetDecision: legacyContract.budgetDecision,
+      noiseDecision: legacyContract.noiseDecision,
+    }),
     artifacts: receiptArtifacts,
   });
   const legacyReceiptBytes = g17ReceiptBytes(legacyReceipt);
@@ -1176,7 +1379,7 @@ test("adding a v3 schema to legacy Agentic evidence does not manufacture native 
   const owner = await agenticOwnerEvidence();
   const projection = structuredClone(owner.projection);
   delete projection.agenticQe.dependencyContentHash;
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-schema-only-upgrade",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1241,7 +1444,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId,
     runsRoot,
     contractLoader: () => loaded,
@@ -1307,7 +1510,7 @@ test("sealed verifier rejects rehashed native raw-output and derived-projection 
       new Date("2026-08-26T20:00:00.000Z"),
       new Date("2026-08-26T20:00:01.000Z"),
     ];
-    const result = await runG17Qualification({
+    const result = await sealCurrentG17Fixture({
       runId,
       runsRoot,
       contractLoader: () => loaded,
@@ -1352,7 +1555,7 @@ test("sealed verifier rejects copied semantic evidence that violates the pure Me
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-invalid-semantic-evidence",
     runsRoot,
     contractLoader: () => loaded,
@@ -1383,7 +1586,7 @@ test("sealed verifier replays a synthetic MetaHarness owner-contract fixture", a
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-valid-semantic-owner",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1415,7 +1618,7 @@ test("sealed verifier rejects a rehashed synthetic summary outside the frozen Me
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-rehashed-synthetic-summary",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1444,7 +1647,7 @@ test("sealed verifier rejects rehashed Darwin search parameters outside the froz
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-rehashed-darwin-policy",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1472,7 +1675,7 @@ test("sealed verifier rejects a rehashed protected snapshot algorithm", async (t
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-rehashed-snapshot-algorithm",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1499,7 +1702,7 @@ test("sealed verifier rejects verification rederived from itself instead of qual
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-self-derived-verification",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1526,7 +1729,7 @@ test("sealed verifier rejects MetaHarness evidence completed after G1.7 acquisit
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-late-semantic-evidence",
     runsRoot,
     contractLoader: () => loadG17Contract(),
@@ -1553,7 +1756,7 @@ test("sealed verifier rejects a Darwin dependency outside the official registry"
     new Date("2026-08-26T18:00:00.000Z"),
     new Date("2026-08-26T18:00:01.000Z"),
   ];
-  const result = await runG17Qualification({
+  const result = await sealCurrentG17Fixture({
     runId: "run-untrusted-darwin-registry",
     runsRoot,
     contractLoader: () => loadG17Contract(),

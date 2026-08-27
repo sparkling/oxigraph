@@ -8,6 +8,7 @@ import {
   realpathSync,
 } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { harnessRoot } from "../paths.mjs";
@@ -257,6 +258,10 @@ export async function loadG17DarwinFunctions(options) {
     import(pathToFileURL(join(packageRoot, "dist", "bench", "stats.js"))),
     import(pathToFileURL(join(packageRoot, "dist", "security", "stats.js"))),
   ]);
+  const postImportVerification = verifyG17DarwinRuntime(options);
+  if (!isDeepStrictEqual(postImportVerification, verification)) {
+    fail("Darwin runtime changed across verified module import");
+  }
   if (
     typeof benchSuite.hashTasks !== "function" ||
     typeof benchSuite.verifySuite !== "function" ||
@@ -266,7 +271,7 @@ export async function loadG17DarwinFunctions(options) {
     fail("verified Darwin modules do not expose the required functions");
   }
   return Object.freeze({
-    verification,
+    verification: postImportVerification,
     hashTasks: benchSuite.hashTasks,
     verifySuite: benchSuite.verifySuite,
     unpairedBootstrapDelta: benchStats.bootstrapDelta,

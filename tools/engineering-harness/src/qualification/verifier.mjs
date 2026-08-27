@@ -13,6 +13,10 @@ import {
   G17_SEMANTIC_EVIDENCE_SCHEMA,
   g17EvidenceSchemaState,
 } from "./evidence-contract.mjs";
+import {
+  decodeSealedG17DecisionSet,
+  validateG17DecisionSetBinding,
+} from "./decision-contract.mjs";
 import { verifyG17Receipt } from "./receipt.mjs";
 import {
   verifySealedAgenticEvidence,
@@ -190,22 +194,57 @@ export async function verifySealedG17Run({
     }
     bytesByName.set(artifact.name, bytes);
   }
-  verifyEvidenceArtifactInventory(receipt, bytesByName);
   const contractBytes = bytesByName.get("contract.json");
   const decodedContract = decodeSealedG17Contract({
     bytes: contractBytes,
     receiptSha256: receipt.contract.sha256,
   });
   const { contract, generation: contractGeneration } = decodedContract;
+  let decisionBinding = null;
+  if (contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4) {
+    for (const descriptor of [
+      contract.referenceDecision,
+      contract.budgetDecision,
+      contract.noiseDecision,
+    ]) {
+      requireArtifact(
+        bytesByName,
+        descriptor.sealedName,
+        "current contract decision artifacts are incomplete",
+      );
+    }
+    const decisions = decodeSealedG17DecisionSet({ contract, bytesByName });
+    decisionBinding = validateG17DecisionSetBinding({
+      contract,
+      decisions,
+      startedAt: receipt.run.startedAt,
+    });
+  }
+  const projectedDecisions =
+    decisionBinding === null
+      ? {
+          reference: contract.referenceDecision.status,
+          performance: contract.budgetDecision.status,
+          noise: contract.noiseDecision.status,
+        }
+      : {
+          reference: decisionBinding.reference.status,
+          performance: decisionBinding.performance.status,
+          noise: decisionBinding.noise.status,
+        };
   if (
     sha256(contractBytes) !== receipt.contract.sha256 ||
     contract.id !== receipt.contract.id ||
     contract.benchmark.suite.taskHash !== receipt.contract.suiteHash ||
-    contract.referenceDecision.status !== receipt.contract.referenceDecision ||
-    contract.budgetDecision.status !== receipt.contract.budgetDecision ||
-    contract.noiseDecision.status !== receipt.contract.noiseDecision
+    projectedDecisions.reference !== receipt.contract.referenceDecision ||
+    projectedDecisions.performance !== receipt.contract.budgetDecision ||
+    projectedDecisions.noise !== receipt.contract.noiseDecision
   ) {
     fail("sealed contract projection differs from the receipt");
+  }
+  verifyEvidenceArtifactInventory(receipt, bytesByName);
+  if (["PASS", "FAIL", "NOISY"].includes(receipt.benchmark.status)) {
+    fail("executed benchmark replay owner is unavailable");
   }
   const identity = parseCanonical(bytesByName.get("identity.json"), "identity");
   if (!isDeepStrictEqual(sealedIdentityProjection(identity), receipt.identity)) {
@@ -221,13 +260,20 @@ export async function verifySealedG17Run({
       G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     ),
   });
-  const generationState = g17ContractCompatibilityGeneration({
-    contractGeneration,
-    compatibilityStatus: receipt.evidence.compatibility.status,
-    compatibilitySchemaState: evidenceSchemaState.compatibility,
-  });
+  const generationState =
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4
+      ? g17ContractCompatibilityGeneration({
+          contractGeneration,
+          compatibilityStatus: receipt.evidence.compatibility.status,
+          compatibilitySchemaState: evidenceSchemaState.compatibility,
+        })
+      : Object.freeze({
+          currentContract: false,
+          currentCompatibility: false,
+          legacyReplayOnly: true,
+        });
   if (
-    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V3 &&
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4 &&
     evidenceSchemaState.compatibility === "CURRENT_SCHEMA_UNREPLAYED"
   ) {
     try {
@@ -254,7 +300,10 @@ export async function verifySealedG17Run({
       fail("copied native compatibility evidence is invalid");
     }
   }
-  if (evidenceSchemaState.semantic === "CURRENT_SCHEMA_UNREPLAYED") {
+  if (
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4 &&
+    evidenceSchemaState.semantic === "CURRENT_SCHEMA_UNREPLAYED"
+  ) {
     try {
       verifySealedSemanticEvidence({
         g17Receipt: receipt,
@@ -297,17 +346,22 @@ export async function verifySealedG17Run({
     Object.fromEntries(
       Object.entries(evidenceSchemaState).map(([lane, schemaState]) => [
         lane,
-        schemaState === "CURRENT_SCHEMA_UNREPLAYED"
-          ? lane === "semantic"
-            ? "METAHARNESS_OWNER_CONTRACT_REPLAYED"
-            : "COMPATIBILITY_OWNER_CONTRACT_REPLAYED"
-          : schemaState,
+        schemaState === "NOT_APPLICABLE"
+          ? schemaState
+          : contractGeneration !== G17_CONTRACT_GENERATION.CURRENT_V4
+            ? "LEGACY_REPLAY_ONLY"
+            : schemaState === "CURRENT_SCHEMA_UNREPLAYED"
+              ? lane === "semantic"
+                ? "METAHARNESS_OWNER_CONTRACT_REPLAYED"
+                : "COMPATIBILITY_OWNER_CONTRACT_REPLAYED"
+              : schemaState,
       ]),
     ),
   );
   const qualificationEligible =
     !legacyReplayOnly &&
-    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V3 &&
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4 &&
+    decisionBinding?.approved === true &&
     receipt.final.verdict === "ACCEPT" &&
     evidenceAssurance.semantic ===
       "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&
@@ -320,6 +374,7 @@ export async function verifySealedG17Run({
       : "SEALED_RUN_VERIFIED",
     qualificationEligible,
     evidenceAssurance,
+    decisionAuthority: decisionBinding?.authority ?? "LEGACY_REPLAY_ONLY",
     contractGeneration,
     runId: receipt.run.id,
     receiptSha256: receipt.receiptSha256,
