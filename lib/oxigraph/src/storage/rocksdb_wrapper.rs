@@ -1367,6 +1367,7 @@ impl ReadableTransaction<'_> {
             }
             (outcome.column_family.clone(), outcome.key.clone())
         };
+        self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::CommitAttempted;
         put_sync(
             self.db,
             &column_family,
@@ -1377,7 +1378,6 @@ impl ReadableTransaction<'_> {
             #[cfg(test)]
             TransactionOutcomeFaultPoint::CommitAttemptedAfter,
         )?;
-        self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::CommitAttempted;
         self.insert(&column_family, &key, committed_value);
         #[cfg(test)]
         self.db.visit_transaction_outcome_fault_point(
