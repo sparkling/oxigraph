@@ -146,6 +146,19 @@ pub(crate) enum StorageTransactionOutcome {
     Indeterminate,
 }
 
+#[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransactionOutcomeFaultPoint {
+    StagingBefore,
+    StagingAfter,
+    CommitAttemptedBefore,
+    CommitAttemptedAfter,
+    FinalBatchBefore,
+    FinalBatchAfter,
+    RolledBackBefore,
+    RolledBackAfter,
+}
+
 impl From<TransactionStartControlError> for StorageTransactionStartError {
     fn from(error: TransactionStartControlError) -> Self {
         match error {
@@ -339,6 +352,59 @@ impl Storage {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKind::RocksDb(storage) => storage.lookup_transaction_outcome(transaction_key),
             StorageKind::Memory(storage) => Ok(storage.lookup_transaction_outcome(transaction_key)),
+        }
+    }
+
+    #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
+    #[expect(
+        dead_code,
+        reason = "the evaluator-separated transaction-outcome fault suite consumes this test seam"
+    )]
+    pub(crate) fn arm_transaction_outcome_fault(
+        &self,
+        point: TransactionOutcomeFaultPoint,
+    ) -> Result<(), StorageError> {
+        match &self.kind {
+            StorageKind::RocksDb(storage) => storage.arm_transaction_outcome_fault(point),
+            StorageKind::Memory(_) => Err(StorageError::Other(
+                "transaction-outcome fault control requires a RocksDB store".into(),
+            )),
+        }
+    }
+
+    #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
+    #[expect(
+        dead_code,
+        reason = "the evaluator-separated transaction-outcome fault suite consumes this test seam"
+    )]
+    pub(crate) fn transaction_outcome_fault_events(
+        &self,
+    ) -> Result<Vec<TransactionOutcomeFaultPoint>, StorageError> {
+        match &self.kind {
+            StorageKind::RocksDb(storage) => storage.transaction_outcome_fault_events(),
+            StorageKind::Memory(_) => Err(StorageError::Other(
+                "transaction-outcome fault control requires a RocksDB store".into(),
+            )),
+        }
+    }
+
+    #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
+    #[expect(
+        dead_code,
+        reason = "the evaluator-separated malformed-outcome suite consumes this test seam"
+    )]
+    pub(crate) fn write_raw_transaction_outcome_record(
+        &self,
+        transaction_key: &[u8; 16],
+        record: &[u8],
+    ) -> Result<(), StorageError> {
+        match &self.kind {
+            StorageKind::RocksDb(storage) => {
+                storage.write_raw_transaction_outcome_record(transaction_key, record)
+            }
+            StorageKind::Memory(_) => Err(StorageError::Other(
+                "raw transaction-outcome records require a RocksDB store".into(),
+            )),
         }
     }
 

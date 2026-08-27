@@ -8,6 +8,8 @@
 )]
 
 use crate::storage::StorageTransactionStartError;
+#[cfg(test)]
+use crate::storage::TransactionOutcomeFaultPoint;
 use crate::storage::TransactionStartControl;
 use crate::storage::error::{CorruptionError, StorageError};
 use oxrocksdb_sys::*;
@@ -78,6 +80,53 @@ struct RwDbHandler {
     cf_handles: Vec<*mut rocksdb_column_family_handle_t>,
     cf_options: Vec<*mut rocksdb_options_t>,
     path: PathBuf,
+    #[cfg(test)]
+    transaction_outcome_fault_control: Mutex<TransactionOutcomeFaultControl>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct TransactionOutcomeFaultControl {
+    plan: Option<TransactionOutcomeFaultPoint>,
+    events: Vec<TransactionOutcomeFaultPoint>,
+}
+
+#[cfg(test)]
+impl RwDbHandler {
+    fn arm_transaction_outcome_fault(&self, point: TransactionOutcomeFaultPoint) {
+        let mut control = self
+            .transaction_outcome_fault_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        control.plan = Some(point);
+        control.events.clear();
+    }
+
+    fn transaction_outcome_fault_events(&self) -> Vec<TransactionOutcomeFaultPoint> {
+        self.transaction_outcome_fault_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .events
+            .clone()
+    }
+
+    fn visit_transaction_outcome_fault_point(
+        &self,
+        point: TransactionOutcomeFaultPoint,
+    ) -> Result<(), StorageError> {
+        let mut control = self
+            .transaction_outcome_fault_control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        control.events.push(point);
+        if control.plan == Some(point) {
+            control.plan = None;
+            return Err(StorageError::Other(
+                format!("injected transaction-outcome fault at {point:?}").into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 unsafe impl Send for RwDbHandler {}
@@ -331,6 +380,10 @@ impl Db {
                     cf_handles,
                     cf_options,
                     path: path.into(),
+                    #[cfg(test)]
+                    transaction_outcome_fault_control: Mutex::new(
+                        TransactionOutcomeFaultControl::default(),
+                    ),
                 })),
             })
         }
@@ -498,6 +551,32 @@ impl Db {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn arm_transaction_outcome_fault(
+        &self,
+        point: TransactionOutcomeFaultPoint,
+    ) -> Result<(), StorageError> {
+        let DbKind::ReadWrite(db) = &self.inner else {
+            return Err(StorageError::Other(
+                "transaction-outcome fault control requires a read-write database".into(),
+            ));
+        };
+        db.arm_transaction_outcome_fault(point);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transaction_outcome_fault_events(
+        &self,
+    ) -> Result<Vec<TransactionOutcomeFaultPoint>, StorageError> {
+        let DbKind::ReadWrite(db) = &self.inner else {
+            return Err(StorageError::Other(
+                "transaction-outcome fault control requires a read-write database".into(),
+            ));
+        };
+        Ok(db.transaction_outcome_fault_events())
+    }
+
     pub fn column_family(&self, name: &'static str) -> Result<ColumnFamily, StorageError> {
         let (column_family_names, cf_handles) = match &self.inner {
             DbKind::ReadOnly(db) => (&db.column_family_names, &db.cf_handles),
@@ -631,7 +710,16 @@ impl Db {
                 StorageError::Other("transaction key has already been reserved".into()).into(),
             );
         }
-        put_sync(db, outcome_column_family, outcome_key, staging_value)?;
+        put_sync(
+            db,
+            outcome_column_family,
+            outcome_key,
+            staging_value,
+            #[cfg(test)]
+            TransactionOutcomeFaultPoint::StagingBefore,
+            #[cfg(test)]
+            TransactionOutcomeFaultPoint::StagingAfter,
+        )?;
         let (batch, read_options, snapshot) = unsafe {
             let snapshot = rocksdb_create_snapshot(db.db);
             let options = oxrocksdb_readoptions_create_copy(db.read_options);
@@ -1184,6 +1272,10 @@ impl Drop for ReadableTransaction<'_> {
                     &outcome.column_family,
                     &outcome.key,
                     &outcome.rolled_back_value,
+                    #[cfg(test)]
+                    TransactionOutcomeFaultPoint::RolledBackBefore,
+                    #[cfg(test)]
+                    TransactionOutcomeFaultPoint::RolledBackAfter,
                 )
                 .is_ok()
             {
@@ -1275,9 +1367,22 @@ impl ReadableTransaction<'_> {
             }
             (outcome.column_family.clone(), outcome.key.clone())
         };
-        put_sync(self.db, &column_family, &key, commit_attempted_value)?;
+        put_sync(
+            self.db,
+            &column_family,
+            &key,
+            commit_attempted_value,
+            #[cfg(test)]
+            TransactionOutcomeFaultPoint::CommitAttemptedBefore,
+            #[cfg(test)]
+            TransactionOutcomeFaultPoint::CommitAttemptedAfter,
+        )?;
         self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::CommitAttempted;
         self.insert(&column_family, &key, committed_value);
+        #[cfg(test)]
+        self.db.visit_transaction_outcome_fault_point(
+            TransactionOutcomeFaultPoint::FinalBatchBefore,
+        )?;
         unsafe {
             ffi_result!(rocksdb_write_writebatch_wi(
                 self.db.db,
@@ -1285,6 +1390,9 @@ impl ReadableTransaction<'_> {
                 self.batch
             ))?;
         }
+        #[cfg(test)]
+        self.db
+            .visit_transaction_outcome_fault_point(TransactionOutcomeFaultPoint::FinalBatchAfter)?;
         self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::Terminal;
         Ok(())
     }
@@ -1303,6 +1411,10 @@ impl ReadableTransaction<'_> {
             &outcome.column_family,
             &outcome.key,
             &outcome.rolled_back_value,
+            #[cfg(test)]
+            TransactionOutcomeFaultPoint::RolledBackBefore,
+            #[cfg(test)]
+            TransactionOutcomeFaultPoint::RolledBackAfter,
         )?;
         self.keyed_outcome_mut()?.phase = KeyedTransactionOutcomePhase::Terminal;
         Ok(())
@@ -1314,7 +1426,11 @@ fn put_sync(
     column_family: &ColumnFamily,
     key: &[u8],
     value: &[u8],
+    #[cfg(test)] before: TransactionOutcomeFaultPoint,
+    #[cfg(test)] after: TransactionOutcomeFaultPoint,
 ) -> Result<(), StorageError> {
+    #[cfg(test)]
+    db.visit_transaction_outcome_fault_point(before)?;
     unsafe {
         ffi_result!(rocksdb_put_cf(
             db.db,
@@ -1326,6 +1442,8 @@ fn put_sync(
             value.len(),
         ))?;
     }
+    #[cfg(test)]
+    db.visit_transaction_outcome_fault_point(after)?;
     Ok(())
 }
 
