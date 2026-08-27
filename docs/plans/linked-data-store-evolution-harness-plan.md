@@ -33,8 +33,10 @@ owned-update cancellation profile are also source-bound. G1.5c negotiated
 backend admission is accepted by its frozen 5/15/21 evaluator split. G1.6
 runtime-derived service claims are implemented and accepted by their frozen
 seven-stage 4/17/1/1/12 evaluator split.
-G0.1-G0.7 retain their historical task closures, but the schema-v5 Agentic-QE
-contract change reopens current Agentic receipt and protected-claim freshness.
+G1.4a now makes the remaining built-in Store terminal-outcome and durable
+lookup boundary explicit before G1.7. G0.1-G0.7 retain their historical task
+closures, and scoped schema-v5 Agentic receipts are sealed for subject
+`5a93890f`; no aggregate receipt follows.
 Full MetaHarness semantic qualification, its independent verification, and
 G1.7 compatibility/performance promotion remain open.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
@@ -232,7 +234,7 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G0.4-G0.5 Agentic-QE evidence | [ADR-0005](../adr/0005-agentic-qe-integration.md) | Accepted |
 | G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
 | G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted qualification policy; implemented engineering control |
-| G1.1-G1.4 transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed |
+| G1.1-G1.4a transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Proposed; G1.4a Store terminal-outcome slice in progress |
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
 | G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control and egress decision; ADR-0018 remains Proposed and promotion remains open |
 | G2.1-G2.3c metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
@@ -275,11 +277,12 @@ automatically by Dream Machine or Darwin.
 | G1.2 Concurrent history oracle | G1.1 | M | Lost-update/write-skew schedules expose current behavior; zero silent anomalies across the frozen stress budget |
 | G1.3 Typed request/capability/error extensions | G1.1-G1.2 | L | Effective guarantee returned; unmet minimum rejected; conflict and indeterminate outcomes typed |
 | G1.4 RocksDB writer serialization | G1.2-G1.3 | M | Bounded/cancellable gate acquired before snapshot and held through commit/rollback/drop; advertised guarantee passes the 1/4/16-writer oracle while readers remain concurrent |
+| G1.4a Built-in Store terminal outcomes and lookup | G1.4 | L | One `CommitAttempted` transition; typed terminal outcomes; transaction-key reservation and committed/proven-absent/indeterminate lookup; RocksDB reopen resolves lost acknowledgements without replay; legacy minimal traits remain source-compatible |
 | G1.5 Unified remote egress | G1.3 | L | Loopback SSRF/redirect/size/timeout fixtures and remote update rollback pass |
 | G1.5b Owned-update cancellation | G1.5 | M | Built-in admission, validation, mutation loops, and the final pre-commit checkpoint return typed cancellation and roll back owned state |
 | G1.5c Negotiated backend admission | G1.5b | M | An additive negotiated binding carries the exact token and request through custom and Store admission without breaking the minimal write trait |
 | G1.6 Runtime-derived service claims | G1.3, G1.5, G1.5b, G1.5c | M | Complete: seven ordered verifier stages accepted exact public/service/compatibility/independent/regression counts 4/17/1/1/12, and three product controls rejected |
-| G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6 | M | Existing semantics and current evidence green; approved write/read budgets met |
+| G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6, G1.4a | M | Existing semantics and current evidence green; separately selected immutable reference and pre-approved performance/noise budgets; sealed benchmark meets the approved write/read limits; human promotion remains separate |
 
 `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` are harness-maintenance
 controls, not new product G tasks. The registry control follows G1.6 and is
@@ -323,6 +326,12 @@ Execution record through 2026-08-27:
   ADR-0018 remains Proposed because the built-in `Store`
   single-`CommitAttempted`/typed terminal-outcome and durable-lookup boundary
   plus G1.7 remain open.
+- G1.4a makes that remaining product boundary executable rather than leaving it
+  only in ADR prose. Task `task-1787855156849-ya7t6b` is in progress and must
+  land a separate red evaluator, frozen contract, harness-verified product
+  change, durable RocksDB reopen proof, and compatibility regressions before
+  replacement G1.7 task `task-1787855177955-8o69ui` may start. ADR-0020 later
+  extends this minimal outcome ledger with commit receipts and outbox state.
 - G1.5's unified-egress profile is implemented in product commits `e452bad1`
   and `3f4cdfd7`. Frozen contract
   `e77e11a02e55e995583f0bab118878a42c490b562e0826c6b1611db096c6dfec`
@@ -496,6 +505,7 @@ task.
 | G1.2 | `lib/oxigraph/tests/transaction_concurrency.rs` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test update_atomicity` |
 | G1.3 | `lib/oxigraph/tests/transaction_capabilities.rs` | `cargo test --locked -p oxigraph --test transaction_capabilities` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` |
 | G1.4 | `lib/oxigraph/tests/rocksdb_writer_serialization.rs` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
+| G1.4a | `lib/oxigraph/tests/transaction_outcomes.rs` | `cargo test --locked -p oxigraph --test transaction_outcomes` | `cargo test --locked -p oxigraph --test transaction_compatibility` | `cargo test --locked -p oxigraph --test update_atomicity` |
 | G1.5 | `lib/oxigraph/tests/sparql_egress_policy.rs` | `cargo test --locked -p oxigraph --test sparql_egress_policy` | `cargo test --locked -p oxigraph --test sparql_update_load_http` | `cargo test --locked -p oxigraph --test sparql_service_http` |
 | G1.5b | `lib/oxigraph/tests/sparql_update_cancellation.rs` | `cargo test --locked -p oxigraph --test sparql_update_cancellation` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` |
 | G1.5c | `lib/oxigraph/tests/sparql_negotiated_update.rs` | `cargo test --locked -p oxigraph --test sparql_negotiated_update` | `cargo test --locked -p oxigraph --test transaction_capabilities --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_update_cancellation --test sparql_egress_policy --test transactional_dataset` |
@@ -510,6 +520,7 @@ criteria. G1.6 has seven ordered stages: format, build, public, service,
 compatibility, independent, and regression; its five counted stages require
 exactly 4/17/1/1/12 passing results.
 The G1.1-G1.6 evaluator files and G1.2-G1.6 task contracts are implemented.
+G1.4a is the next evaluator-separated product task and is not yet complete.
 The exact ordered registry for G1.2-G1.6 is implemented. Compatibility path
 constants are aliases of derived registry paths, while named wrappers delegate
 to the same generic task-ID API rather than registering a second path. Direct
@@ -850,12 +861,15 @@ original G2.3 and G2.4 rows remain pending roll-ups; they complete only after
 their child rows and are not independent implementation leaves. The current
 audit pointers needed for the expanded and corrected control edges are:
 
-On 2026-08-27 G3.0 raised the current total to 40 stable executable
-identifiers. It owns the shared derived-index lifecycle between G2.3c/G2.5-G2.7
-and the G3.3/G3.4 providers. Support and roll-up rows remain outside that count.
+On 2026-08-27 G3.0 raised the total to 40 stable executable identifiers. The
+recovery audit then raised it to 41 by adding G1.4a as the explicit built-in
+Store terminal-outcome prerequisite of G1.7. G3.0 owns the shared derived-index
+lifecycle between G2.3c/G2.5-G2.7 and the G3.3/G3.4 providers. Support and
+roll-up rows remain outside that count.
 
 | Plan IDs | Ruflo task rows |
 |---|---|
+| G1.4a / replacement G1.7 | `task-1787855156849-ya7t6b` / `task-1787855177955-8o69ui` |
 | G1.5c / G1.6 / `HARNESS-REGISTRY` / `HARNESS-REJECTION-EVIDENCE` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787740750614-4bv1fw` / `task-1787603736400-274ola` |
 | G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
 | G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
@@ -866,11 +880,12 @@ and the G3.3/G3.4 providers. Support and roll-up rows remain outside that count.
 | G4.6 / G4.7 / G4.8 | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53` |
 
 The original exact map remains at
-`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v4 maps remain
-historical audit records. The current v5 map is stored and exactly read back
+`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v5 maps remain
+historical audit records. The current v6 map is stored and exactly read back
 through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-27-v5`. It preserves all 40 stable
-plan identifiers, records G3.0 and the six replacement rows, and includes the
+`task-plans/linked-data-store-g0-g4-2026-08-27-v6`. It preserves all 41 stable
+plan identifiers, records G1.4a, replacement G1.7, G3.0, and the earlier
+replacement rows, and includes the
 non-product `HARNESS-REGISTRY`, rejection-evidence, and
 `AGENTIC-SCHEMA-V5-REFRESH` controls. Superseded pending rows are cancelled but
 retained as runtime history.

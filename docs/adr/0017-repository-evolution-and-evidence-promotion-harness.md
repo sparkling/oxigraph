@@ -233,9 +233,10 @@ freezes mutable and blocked paths, Cargo features and targets, one public, one
 independent, and one impacted-regression command, resource ceilings, and
 application success criteria. G1.1 is green oracle infrastructure rather than
 a product repair task. The first discriminating candidate is G1.2: baseline
-`3edfb86a` plus evaluator-only commit `eaf7161c`. Continue through G1.3-G1.7 in
-dependency order. Do not infer engineering-runtime readiness merely from those
-evaluator commits.
+`3edfb86a` plus evaluator-only commit `eaf7161c`. Continue through G1.3-G1.4,
+the explicit G1.4a Store terminal-outcome slice, and G1.5-G1.7 in dependency
+order. Do not infer engineering-runtime readiness merely from those evaluator
+commits.
 
 Darwin/GEPA may evolve engineering policy around frozen native models only
 after at least five discriminating training tasks and five sealed holdouts
@@ -319,13 +320,16 @@ ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
 ADR-0020 through ADR-0033 are fifteen Proposed living plans, not implementation
 claims.
 
-The linked execution plan contains 40 stable executable G-identifiers. The
+The linked execution plan contains 41 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
 2026-08-24; the 2026-08-25 expansion added G1.5b-G1.5c, explicit G2.3a-G2.3c
 and G2.4a-G2.4b leaves, and G4.1-G4.8. On 2026-08-27 G3.0 was added as the
 shared rebuildable derived-index lifecycle owned jointly by ADR-0022 and
 ADR-0024; G3.3 and G3.4 now own only their text and spatial providers.
-`HARNESS-REGISTRY` and `AGENTIC-SCHEMA-V5-REFRESH` are named harness/evidence
+The 2026-08-27 recovery audit then added G1.4a to make ADR-0018's previously
+prose-only built-in Store terminal-outcome and durable-lookup blocker an
+executable prerequisite of G1.7. `HARNESS-REGISTRY` and
+`AGENTIC-SCHEMA-V5-REFRESH` are named harness/evidence
 controls, not product G-identifiers. `HARNESS-REGISTRY` sits between G1.6 and
 the G2.1 evaluator freeze.
 It is implemented by commit
@@ -344,10 +348,13 @@ does not expose a dependency or description-edit argument. Superseded pending
 rows are therefore cancelled and replaced while retained as history. The
 committed G-identifiers and GOAP tables remain the portable authority; Ruflo
 task IDs are repository-local audit pointers only and never prove product
-behavior. The current 40-entry adjacency map was stored and exactly read back
+behavior. The current 41-entry adjacency map was stored and exactly read back
 through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-27-v5`; it supersedes, rather than
-rewrites, the historical v4 map.
+`task-plans/linked-data-store-g0-g4-2026-08-27-v6`; it supersedes, rather than
+rewrites, the historical v5 map. G1.4a uses task
+`task-1787855156849-ya7t6b`; replacement G1.7 task
+`task-1787855177955-8o69ui` includes that dependency, while the earlier G1.7
+row remains cancelled history.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an

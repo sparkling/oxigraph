@@ -8,7 +8,8 @@
   mechanics are implemented and source-bound. The additive typed-outcome
   vocabulary exists, but the built-in `Store` does not yet implement the
   decision's single-`CommitAttempted`/typed terminal-outcome lifecycle or
-  durable lost-acknowledgement lookup. The dedicated G1.7 qualification-control
+  durable lost-acknowledgement lookup. G1.4a now owns that explicit product
+  slice and is in progress. The dedicated G1.7 qualification-control
   scaffold, including conjunctive Agentic-QE/native owner replay, is
   implemented, while the reviewed reference and budgets, benchmark/noise
   evidence, current clean-subject owner evidence, and promotion decision remain
@@ -68,9 +69,11 @@ remain unchanged; the gate does not silently promote non-atomic bulk loading
 to one transaction.
 
 G1.1 supplies a shrinking reference state machine, G1.2 a concurrent-history
-oracle, G1.3 the typed requests/capabilities/outcomes, and G1.4 the RocksDB
-writer gate. No implementation may advertise a guarantee until that backend
-passes the shared oracle for the exact capability value.
+oracle, G1.3 the typed requests/capabilities/outcomes, G1.4 the RocksDB writer
+gate, and G1.4a the built-in Store terminal lifecycle and minimal durable
+transaction-key lookup needed before ADR-0020 adds receipts and outbox state.
+No implementation may advertise a guarantee until that backend passes the
+shared oracle for the exact capability value.
 
 ## Acceptance boundary
 
@@ -195,11 +198,11 @@ and returned `ACCEPT` for format/build, five public, fifteen independent, and
 twenty-one regression tests. Its 118,202-byte session artifact has SHA-256
 `94461758757f1d4402713f6bed115e1bbd318d1fc35b02c7ea2c3b27a2b3f23b`.
 
-ADR-0018 remains Proposed until the built-in `Store` closes the
+ADR-0018 remains Proposed until G1.4a closes the built-in `Store`
 single-`CommitAttempted`, typed terminal-outcome, and durable-lookup boundary
-and G1.7 closes the compatibility, performance, and current-evidence promotion
-boundary. G1.5c completion alone does not grant promotion authority or add
-savepoints to caller-owned transactions.
+and G1.7 closes the compatibility, performance, and current-evidence
+qualification boundary. G1.5c completion alone does not grant promotion
+authority or add savepoints to caller-owned transactions.
 The current G1.7 scaffold structurally verifies semantic v2 and compatibility
 v3 projections and sealed-replays copied MetaHarness, Agentic-QE, and native
 owner contracts. The native owner binds exact test IDs and bounded complete
@@ -208,5 +211,6 @@ with Agentic-QE may report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. That closes
 the replay-control gap but does not qualify the product: reference and
 budget/noise decisions are absent, the benchmark is not run, and current
 clean-subject owner evidence is not yet sealed. The transaction identifiers
-are G1.1-G1.5c; G1.7 is the joint compatibility/performance promotion gate in the
-[linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
+are G1.1-G1.5c plus G1.4a; G1.7 is the joint compatibility/performance
+promotion gate in the [linked-data-store evolution
+plan](../plans/linked-data-store-evolution-harness-plan.md).

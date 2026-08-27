@@ -1,7 +1,8 @@
 # Persistence writes and linked-data-store parity plan
 
-- Status: active plan; write seam and G1.3-G1.6 P0 slices complete; the G1.7
-  qualification-control scaffold is implemented while P0.5 remains open
+- Status: active plan; write seam and source-bound G1.3-G1.6 slices complete;
+  explicit G1.4a Store terminal outcomes/lookup and the G1.7 qualification
+  remain open
 - Date: 2026-08-24
 - Updated: 2026-08-27
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
@@ -43,6 +44,8 @@ configured-and-compiled SPARQL capabilities from the same evaluator's
 effective handlers, egress policy, and transport. They are not network-health
 or current-admission probes. The earlier conservative reconciliation in
 `7dc190d3` remains part of the lineage rather than the final claim model.
+G1.4a now records the remaining ADR-0018 built-in Store lifecycle and durable
+transaction-key lookup as an evaluator-separated product slice before G1.7.
 Namespace metadata, durable change delivery, transaction-time SHACL
 validation, operational observability, statistics and bounded join planning,
 full-text and spatial indexes, and federation planning follow in that

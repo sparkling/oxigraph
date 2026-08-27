@@ -99,7 +99,12 @@ in `b2ed9119` plus formatting follow-up `5a704914` and accepted by its frozen
 6/2/2 evaluator split: 1/4/16 writers serialize without lost commits, readers
 remain live, rollback/drop release the permit, and queued cancellation or
 timeout occurs before snapshot creation without publication. This does not
-claim cancellation after transaction start. G1.5's unified egress profile is
+claim cancellation after transaction start. Recovery analysis made the
+remaining ADR-0018 product boundary explicit as G1.4a: the built-in `Store`
+must implement one `CommitAttempted` transition, typed terminal outcomes, and
+transaction-key lookup that survives RocksDB reopen before G1.7 can qualify
+the transaction profile. G1.4a is in progress and no completion claim follows.
+G1.5's unified egress profile is
 implemented in `e452bad1` plus lifecycle hardening `3f4cdfd7` and accepted by
 its frozen 12/8/13 evaluator split. Built-in `SERVICE`, `LOAD`, and nested
 document retrieval now share a deny-by-default policy with typed failures,
@@ -129,8 +134,9 @@ The disclosed profile is a deterministic configured-and-compiled capability
 snapshot, not a remote-health or current-admission probe. ADR-0019 is therefore
 Implemented. ADR-0018 remains Proposed because the built-in `Store` still lacks
 the decision's explicit single-`CommitAttempted`/typed terminal-outcome
-lifecycle and durable lost-acknowledgement lookup, and because the G1.7
-compatibility, performance, and current-evidence promotion gate remains open.
+lifecycle and durable lost-acknowledgement lookup now tracked as G1.4a, and
+because the G1.7 compatibility, performance, and current-evidence promotion
+gate remains open.
 The verifier artifacts are local-only evidence and grant no
 semantic-qualification or promotion authority.
 
