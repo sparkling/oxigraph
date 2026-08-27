@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { canonicalSha256 } from "../src/routing/features.mjs";
+import { G17_LEGACY_V3_CONTRACT_SHA256 } from "../src/qualification/contract.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS,
@@ -188,6 +189,20 @@ test("structural verification marks current PASS evidence as unreplayed", () => 
   assert.equal("evidenceAssurance" in verification, false);
 });
 
+test("structural verification keeps v3 contract PASS replay-only", () => {
+  const legacy = acceptingDraft();
+  legacy.contract.sha256 = G17_LEGACY_V3_CONTRACT_SHA256;
+  const receipt = createG17Receipt(legacy);
+  const verification = verifyG17Receipt(g17ReceiptBytes(receipt));
+  assert.equal(verification.ok, false);
+  assert.equal(verification.verificationStatus, "LEGACY_REPLAY_ONLY");
+  assert.equal(verification.qualificationEligible, false);
+  assert.deepEqual(verification.evidenceSchemaState, {
+    semantic: "CURRENT_SCHEMA_UNREPLAYED",
+    compatibility: "CURRENT_SCHEMA_UNREPLAYED",
+  });
+});
+
 test("structural verification preserves explicit v2 compatibility PASS as legacy replay-only", () => {
   const receipt = structuredClone(createG17Receipt(acceptingDraft()));
   receipt.evidence.compatibility.projection.schema =
@@ -307,4 +322,47 @@ test("G1.7 receipt creation rejects vacuous PASS evidence and benchmark claims",
     () => createG17Receipt(invalid),
     /PASS evidence requires a hash-bound projection|executed benchmark/u,
   );
+});
+
+test("G1.7 receipt preserves proposed decision status without authority", () => {
+  const proposed = draft();
+  proposed.contract.referenceDecision = "PROPOSED";
+  proposed.contract.budgetDecision = "PROPOSED";
+  proposed.contract.noiseDecision = "PROPOSED";
+  proposed.final = {
+    verdict: "INCONCLUSIVE",
+    reasons: [
+      "reference-proposed",
+      "performance-budget-proposed",
+      "noise-budget-proposed",
+      "semantic-missing",
+      "compatibility-missing",
+      "benchmark-not-run",
+    ],
+  };
+  const receipt = createG17Receipt(proposed);
+  assert.equal(verifyG17Receipt(g17ReceiptBytes(receipt)).ok, true);
+  assert.equal(receipt.authority.promotionAuthority, false);
+});
+
+test("G1.7 receipt permits budget breaches only on FAIL", () => {
+  for (const benchmarkStatus of [
+    "NOT_RUN",
+    "MISSING",
+    "INCONCLUSIVE",
+    "NOISY",
+  ]) {
+    const invalid = draft();
+    invalid.benchmark.status = benchmarkStatus;
+    invalid.benchmark.budgetBreaches = ["on-store-memory"];
+    if (benchmarkStatus === "NOISY") {
+      invalid.benchmark.sampleCount = 1;
+      invalid.benchmark.samplesSha256 = "a".repeat(64);
+      invalid.benchmark.summarySha256 = "b".repeat(64);
+    }
+    assert.throws(
+      () => createG17Receipt(invalid),
+      /only a failing benchmark may contain budget breaches/u,
+    );
+  }
 });

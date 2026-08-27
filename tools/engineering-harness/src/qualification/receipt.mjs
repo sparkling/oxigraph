@@ -4,6 +4,10 @@ import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import { classifyG17Qualification } from "./classification.mjs";
 import {
+  G17_LEGACY_V1_CONTRACT_SHA256,
+  G17_LEGACY_V3_CONTRACT_SHA256,
+} from "./contract-identity.mjs";
+import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
@@ -23,6 +27,7 @@ const EVIDENCE_STATES = new Set([
   "MISSING",
   "STALE",
   "NOISY",
+  "INCONCLUSIVE",
   "NOT_RUN",
 ]);
 const VERDICTS = new Set(["ACCEPT", "REJECT", "INCONCLUSIVE"]);
@@ -143,13 +148,17 @@ function validateContractProjection(contract) {
   if (!DIGEST.test(contract.sha256) || !DIGEST.test(contract.suiteHash)) {
     fail("contract digest is malformed");
   }
-  if (!["SELECTED", "UNSELECTED"].includes(contract.referenceDecision)) {
+  if (
+    !["SELECTED", "UNSELECTED", "PROPOSED"].includes(
+      contract.referenceDecision,
+    )
+  ) {
     fail("reference decision is invalid");
   }
-  if (!["APPROVED", "ABSENT"].includes(contract.budgetDecision)) {
+  if (!["APPROVED", "ABSENT", "PROPOSED"].includes(contract.budgetDecision)) {
     fail("performance budget decision is invalid");
   }
-  if (!["APPROVED", "ABSENT"].includes(contract.noiseDecision)) {
+  if (!["APPROVED", "ABSENT", "PROPOSED"].includes(contract.noiseDecision)) {
     fail("noise budget decision is invalid");
   }
 }
@@ -294,8 +303,8 @@ function validateBenchmark(benchmark) {
   ) {
     fail("unexecuted benchmark contains execution evidence");
   }
-  if (benchmark.status === "PASS" && benchmark.budgetBreaches.length !== 0) {
-    fail("passing benchmark contains budget breaches");
+  if (benchmark.status !== "FAIL" && benchmark.budgetBreaches.length !== 0) {
+    fail("only a failing benchmark may contain budget breaches");
   }
 }
 
@@ -462,9 +471,12 @@ export function verifyG17Receipt(input) {
         G17_COMPATIBILITY_EVIDENCE_SCHEMA,
       ),
     });
-    const legacyReplayOnly = Object.values(evidenceSchemaState).includes(
-      "LEGACY_REPLAY_ONLY",
-    );
+    const legacyReplayOnly =
+      [
+        G17_LEGACY_V1_CONTRACT_SHA256,
+        G17_LEGACY_V3_CONTRACT_SHA256,
+      ].includes(verified.contract.sha256) ||
+      Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
     return Object.freeze({
       ok: !legacyReplayOnly,
       structurallyValid: true,

@@ -19,6 +19,8 @@ import {
   G17_NEGATIVE_CONTROL_SIGNATURE_SCHEMA,
   G17_PRODUCT_IDENTITIES,
   assertG17DecisionApprovalsBefore,
+  decodeSealedG17DecisionSet,
+  g17DecisionArtifactsForSealing,
   g17DecisionSetSha256,
   loadG17DecisionSet,
   validateG17NoiseDecision,
@@ -295,4 +297,50 @@ test("decision files bind canonical self-hash and raw LF bytes", async () => {
     assert.equal(sha256(bytes), descriptor.sha256);
     assert.equal(contentHash, descriptor.contentHash);
   }
+});
+
+test("sealed decision copies replay exactly and reject missing or mutated bytes", () => {
+  const { contract } = loadG17Contract();
+  const artifacts = g17DecisionArtifactsForSealing({ contract });
+  assert.deepEqual(
+    artifacts.map(({ name }) => name),
+    [
+      "reference-decision.json",
+      "performance-budget-decision.json",
+      "noise-budget-decision.json",
+    ],
+  );
+  const bytesByName = new Map(
+    artifacts.map(({ name, bytes }) => [name, Buffer.from(bytes)]),
+  );
+  const replayed = decodeSealedG17DecisionSet({ contract, bytesByName });
+  assert.equal(replayed.decisionSetSha256, contract.decisionSetSha256);
+  assert.deepEqual(
+    [replayed.reference, replayed.performance, replayed.noise].map(
+      ({ status }) => status,
+    ),
+    ["PROPOSED", "PROPOSED", "PROPOSED"],
+  );
+
+  const missing = new Map(bytesByName);
+  missing.delete("noise-budget-decision.json");
+  assert.throws(
+    () => decodeSealedG17DecisionSet({ contract, bytesByName: missing }),
+    /noise budget decision copied bytes are not a bounded Buffer/u,
+  );
+
+  const mutated = new Map(bytesByName);
+  const reference = Buffer.from(mutated.get("reference-decision.json"));
+  reference[0] ^= 1;
+  mutated.set("reference-decision.json", reference);
+  assert.throws(
+    () => decodeSealedG17DecisionSet({ contract, bytesByName: mutated }),
+    /reference decision raw hash does not verify/u,
+  );
+
+  artifacts[0].bytes[0] ^= 1;
+  assert.equal(
+    g17DecisionArtifactsForSealing({ contract })[0].bytes[0],
+    Buffer.from("{", "utf8")[0],
+  );
 });
