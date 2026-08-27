@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync } from "node:fs";
+import { constants, fstatSync, lstatSync } from "node:fs";
 import {
   chmod,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   readlink,
+  realpath,
   rename,
   rmdir,
   rm,
@@ -20,8 +22,11 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
+  G17_NATIVE_WORKSPACE_OWNER_ARTIFACT_NAME,
+  G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES,
   createG17NativeWorkspace,
   createG17NativeWorkspaceForTesting,
+  deriveG17NativeWorkspaceBindingForTesting,
   destroyG17NativeWorkspace,
   g17NativeWorkspaceProjection,
   g17NativeWorkspaceOwnerEvidence,
@@ -29,14 +34,53 @@ import {
   productionG17RequiredGitlinks,
   verifyG17NativeWorkspace,
 } from "../src/qualification/native-workspace.mjs";
+import { runBoundedProcess } from "../src/native/process.mjs";
 import {
   buildG17NativeSnapshotHelper,
   closeG17NativeSnapshotHelper,
 } from "../src/qualification/native-snapshot.mjs";
 import { repositoryRoot } from "../src/paths.mjs";
+import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function stream(text) {
+  const bytes = Buffer.from(text, "utf8");
+  return {
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    base64: bytes.toString("base64"),
+  };
+}
+
+function fixtureWorkspaceBinding(identity) {
+  return {
+    schema: "oxigraph.g1.7-native-workspace-binding/v1",
+    subjectIdentitySha256: sha256(Buffer.from(
+      `${identity.subject.commit}\0${identity.subject.tree}\0${identity.cargoLock.sha256}`,
+      "utf8",
+    )),
+    subjectCommit: identity.subject.commit,
+    subjectTree: identity.subject.tree,
+    cargoLockBlob: identity.cargoLock.blob,
+    cargoLockSha256: identity.cargoLock.sha256,
+    platformManifestSha256: "c".repeat(64),
+    toolchainRootSha256: "d".repeat(64),
+    toolchain: {
+      cargo: {
+        logicalPath: "/toolchain/bin/cargo",
+        executableSha256: sha256(Buffer.from("fixture cargo\n", "utf8")),
+        versionSha256: sha256(Buffer.from("fixture cargo version", "utf8")),
+      },
+      rustc: {
+        logicalPath: "/toolchain/bin/rustc",
+        executableSha256: sha256(Buffer.from("fixture rustc\n", "utf8")),
+        versionSha256: sha256(Buffer.from("fixture rustc version", "utf8")),
+      },
+    },
+  };
 }
 
 function git(root, args, options = {}) {
@@ -198,15 +242,17 @@ async function createDependencyFixture(root, { lockVersion = 4 } = {}) {
     writeFile(join(toolchain, "rustc"), "fixture rustc\n"),
   ]);
   await Promise.all([chmod(cargoProgram, 0o700), chmod(join(toolchain, "rustc"), 0o700)]);
+  const identity = {
+    subject: { commit, tree },
+    cargoLock: { blob: cargoLockBlob, sha256: sha256(cargoLockBytes) },
+  };
   return {
     archiveBytes: archiveBytes.length,
     archiveSha256,
+    binding: fixtureWorkspaceBinding(identity),
     cargoHome,
     cargoProgram,
-    identity: {
-      subject: { commit, tree },
-      cargoLock: { blob: cargoLockBlob, sha256: sha256(cargoLockBytes) },
-    },
+    identity,
     repository,
   };
 }
@@ -219,6 +265,149 @@ async function buildCleanupHelper(root) {
     signal: undefined,
   });
 }
+
+function platformClosureForIdentity(identity) {
+  const cargo = identity.toolchain.find(({ program }) => program === "cargo");
+  const rustc = identity.toolchain.find(({ program }) => program === "rustc");
+  return {
+    subjectIdentitySha256: identity.identitySha256,
+    manifestSha256: "c".repeat(64),
+    toolchainRootSha256: "d".repeat(64),
+    roles: {
+      cargo: {
+        root: "toolchain",
+        path: "bin/cargo",
+        kind: "file",
+        sha256: cargo.toolchainExecutableSha256,
+      },
+      rustc: {
+        root: "toolchain",
+        path: "bin/rustc",
+        kind: "file",
+        sha256: rustc.toolchainExecutableSha256,
+      },
+    },
+    probes: [
+      {
+        id: "rust-version",
+        program: "/toolchain/bin/rustc",
+        stdout: stream(`${rustc.versionStdout}\n`),
+        stderr: stream(""),
+      },
+      {
+        id: "cargo-version",
+        program: "/toolchain/bin/cargo",
+        stdout: stream(`${cargo.versionStdout}\n`),
+        stderr: stream(""),
+      },
+    ],
+  };
+}
+
+test("production workspace binding exactly joins identity, platform roles, and probes", () => {
+  const identity = g17IdentityFixture();
+  const platformClosure = platformClosureForIdentity(identity);
+  const binding = deriveG17NativeWorkspaceBindingForTesting({
+    identity,
+    platformClosure,
+  });
+
+  assert.equal(binding.schema, "oxigraph.g1.7-native-workspace-binding/v1");
+  assert.equal(binding.subjectIdentitySha256, identity.identitySha256);
+  assert.equal(binding.subjectCommit, identity.subject.commit);
+  assert.equal(binding.subjectTree, identity.subject.tree);
+  assert.equal(binding.cargoLockBlob, identity.cargoLock.blob);
+  assert.equal(binding.cargoLockSha256, identity.cargoLock.sha256);
+  assert.equal(binding.platformManifestSha256, platformClosure.manifestSha256);
+  assert.equal(binding.toolchainRootSha256, platformClosure.toolchainRootSha256);
+  assert.deepEqual(
+    Object.keys(binding.toolchain),
+    ["cargo", "rustc"],
+  );
+  assert.equal(
+    binding.toolchain.cargo.executableSha256,
+    identity.toolchain[0].toolchainExecutableSha256,
+  );
+  assert.equal(
+    binding.toolchain.rustc.executableSha256,
+    identity.toolchain[1].toolchainExecutableSha256,
+  );
+  assert.equal(Object.isFrozen(binding), true);
+  assert.equal(Object.isFrozen(binding.toolchain.cargo), true);
+  assert.equal(G17_NATIVE_WORKSPACE_OWNER_ARTIFACT_NAME, "native-workspace-owner.json");
+  assert.equal(G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES, 32 * 1024 * 1024);
+
+  const wrongIdentity = structuredClone(identity);
+  wrongIdentity.identitySha256 = "e".repeat(64);
+  assert.throws(
+    () => deriveG17NativeWorkspaceBindingForTesting({
+      identity: wrongIdentity,
+      platformClosure,
+    }),
+    /sealed qualification identity is invalid/u,
+  );
+
+  const wrongRole = structuredClone(platformClosure);
+  wrongRole.roles.cargo.sha256 = "e".repeat(64);
+  assert.throws(
+    () => deriveG17NativeWorkspaceBindingForTesting({
+      identity,
+      platformClosure: wrongRole,
+    }),
+    /Cargo role differs from identity/iu,
+  );
+
+  const wrongProbe = structuredClone(platformClosure);
+  wrongProbe.probes.find(({ id }) => id === "rust-version").stdout =
+    stream("rustc coherent substitution\n");
+  assert.throws(
+    () => deriveG17NativeWorkspaceBindingForTesting({
+      identity,
+      platformClosure: wrongProbe,
+    }),
+    /rustc version differs from identity/u,
+  );
+});
+
+test(
+  "linked rustc descriptor preserves its full toolchain runtime layout",
+  { skip: process.platform !== "linux" },
+  async () => {
+    const rustcPath = await realpath(execFileSync("rustup", ["which", "rustc"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim());
+    const descriptor = await open(
+      rustcPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    try {
+      const outcome = await runBoundedProcess({
+        executable: "/proc/self/fd/3",
+        args: ["-vV"],
+        cwd: "/",
+        environment: {
+          HOME: "/nonexistent",
+          LANG: "C.UTF-8",
+          LC_ALL: "C.UTF-8",
+          PATH: "/usr/bin:/bin",
+        },
+        timeoutMs: 30_000,
+        maxOutputBytes: 64 * 1024,
+        signal: undefined,
+        inheritedFileDescriptors: [descriptor.fd],
+      });
+      assert.equal(outcome.disposition, "completed");
+      assert.equal(outcome.exitCode, 0);
+      assert.equal(outcome.signal, null);
+      assert.equal(outcome.stderr, "");
+      assert.match(outcome.stdout, /^rustc [^\n]+$/mu);
+      assert.match(outcome.stdout, /^host: x86_64-unknown-linux-gnu$/mu);
+    } finally {
+      await descriptor.close();
+    }
+  },
+);
 
 test("source snapshot materializes the exact commit and ignores dirty or untracked authority", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-source-snapshot-"));
@@ -305,7 +494,27 @@ test("private workspace derives and verifies an exact offline vendor closure", {
     const calls = [];
     const processRunner = async (request) => {
       calls.push(request);
-      assert.equal(request.executable, fixture.cargoProgram);
+      assert.equal(request.executable, "/proc/self/fd/3");
+      assert.equal(request.environment.RUSTC, "/proc/self/fd/4");
+      assert.equal(
+        request.environment.PATH,
+        `${dirname(fixture.cargoProgram)}:/usr/bin:/bin`,
+      );
+      assert.equal(request.inheritedFileDescriptors.length, 2);
+      assert.equal(new Set(request.inheritedFileDescriptors).size, 2);
+      for (const descriptor of request.inheritedFileDescriptors) {
+        const metadata = fstatSync(descriptor, { bigint: true });
+        assert.equal(metadata.nlink, 0n);
+        assert.equal(metadata.mode & 0o777n, 0o500n);
+      }
+      assert.equal(
+        await readFile(`/proc/self/fd/${request.inheritedFileDescriptors[0]}`, "utf8"),
+        "fixture cargo\n",
+      );
+      assert.equal(
+        await readFile(`/proc/self/fd/${request.inheritedFileDescriptors[1]}`, "utf8"),
+        "fixture rustc\n",
+      );
       assert.equal(request.cwd.startsWith(root), true);
       assert.equal(request.environment.CARGO_NET_OFFLINE, "true");
       assert.equal(request.environment.GIT_CONFIG_GLOBAL, "/dev/null");
@@ -335,6 +544,19 @@ test("private workspace derives and verifies an exact offline vendor closure", {
             package: fixture.archiveSha256,
           })}\n`,
         );
+        const rustcProgram = join(dirname(fixture.cargoProgram), "rustc");
+        const cargoIdentity = lstatSync(fixture.cargoProgram, { bigint: true });
+        const rustcIdentity = lstatSync(rustcProgram, { bigint: true });
+        await Promise.all([
+          writeFile(fixture.cargoProgram, "in-place substituted cargo\n"),
+          writeFile(rustcProgram, "in-place substituted rustc\n"),
+        ]);
+        const cargoAfter = lstatSync(fixture.cargoProgram, { bigint: true });
+        const rustcAfter = lstatSync(rustcProgram, { bigint: true });
+        assert.equal(cargoAfter.dev, cargoIdentity.dev);
+        assert.equal(cargoAfter.ino, cargoIdentity.ino);
+        assert.equal(rustcAfter.dev, rustcIdentity.dev);
+        assert.equal(rustcAfter.ino, rustcIdentity.ino);
         return Object.freeze({
           disposition: "completed",
           exitCode: 0,
@@ -387,9 +609,12 @@ test("private workspace derives and verifies an exact offline vendor closure", {
       repoRoot: fixture.repository,
       identity: fixture.identity,
       cargoProgram: fixture.cargoProgram,
+      binding: fixture.binding,
     });
 
-    assert.equal(workspace.schema, "oxigraph.g1.7-native-workspace/v1");
+    assert.equal(workspace.schema, "oxigraph.g1.7-native-workspace/v2");
+    assert.deepEqual(workspace.binding, fixture.binding);
+    assert.equal(Object.isFrozen(workspace.binding), true);
     assert.equal(workspace.dependencies.packageCount, 1);
     assert.equal(workspace.dependencies.archives.count, 1);
     assert.equal(workspace.dependencies.archives.bytes, fixture.archiveBytes);
@@ -420,6 +645,10 @@ test("private workspace derives and verifies an exact offline vendor closure", {
     assert.match(workspace.dependencies.vendorCommand.environmentSha256, /^[0-9a-f]{64}$/u);
     assert.equal(JSON.stringify(workspace.dependencies).includes(root), false);
     assert.equal(calls.length, 2);
+    assert.deepEqual(
+      calls[0].inheritedFileDescriptors,
+      calls[1].inheritedFileDescriptors,
+    );
     assert.equal(calls[0].args[0], "vendor");
     assert.equal(calls[0].args.at(-1), workspace.vendorDirectory);
     assert.equal(calls[1].args[0], "metadata");
@@ -434,9 +663,16 @@ test("private workspace derives and verifies an exact offline vendor closure", {
     assert.match(finalConfig, /target-dir = "\/state\/target"/u);
     assert.equal(finalConfig.includes(fixture.cargoHome), false);
     const afterNative = await verifyG17NativeWorkspace(workspace, "after-native");
+    assert.equal(
+      afterNative.schema,
+      "oxigraph.g1.7-native-workspace-verification/v2",
+    );
+    assert.match(afterNative.bindingSha256, /^[0-9a-f]{64}$/u);
     assert.equal(afterNative.source.beforeSha256, afterNative.source.afterSha256);
     assert.equal(afterNative.vendor.beforeSha256, afterNative.vendor.afterSha256);
     const projection = g17NativeWorkspaceProjection(workspace);
+    assert.equal(projection.schema, "oxigraph.g1.7-native-workspace/v2");
+    assert.deepEqual(projection.binding, fixture.binding);
     assert.equal(projection.dependencies.packageCount, 1);
     assert.equal(Object.hasOwn(projection, "root"), false);
     assert.throws(
@@ -526,6 +762,7 @@ test("acquisition cleanup failure dominates and deletes neither substituted tree
         repoRoot: fixture.repository,
         identity: fixture.identity,
         cargoProgram: fixture.cargoProgram,
+        binding: fixture.binding,
       }),
       (error) =>
         error?.classification === "FAIL" &&
@@ -573,6 +810,7 @@ test("workspace constructors reject surplus authority before acquisition", () =>
       repoRoot: "/repository",
       identity: {},
       cargoProgram: "/toolchain/bin/cargo",
+      binding: {},
       production: true,
     }),
     /test workspace acquisition input fields are not exact/u,
@@ -597,6 +835,7 @@ test("private workspace rejects a non-v4 committed lock and removes its generate
         repoRoot: fixture.repository,
         identity: fixture.identity,
         cargoProgram: fixture.cargoProgram,
+        binding: fixture.binding,
       }),
       (error) =>
         error?.phase === "cache" &&
@@ -634,6 +873,7 @@ test("private workspace rejects a symlinked Cargo cache ancestor", async () => {
         repoRoot: fixture.repository,
         identity: fixture.identity,
         cargoProgram: fixture.cargoProgram,
+        binding: fixture.binding,
       }),
       (error) =>
         error?.phase === "cache" &&

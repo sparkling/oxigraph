@@ -22,14 +22,36 @@ import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { runGit, createGitHome } from "../candidate/git.mjs";
 import { runBoundedProcess } from "../native/process.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
-import { deleteG17NativePlatformTree } from "./native-platform.mjs";
+import { verifyG17QualificationIdentity } from "./identity.mjs";
+import {
+  deleteG17NativePlatformTree,
+  verifyG17NativePlatform,
+} from "./native-platform.mjs";
 import { deleteG17NativeNode } from "./native-snapshot.mjs";
+import {
+  G17_NATIVE_WORKSPACE_BINDING_SCHEMA,
+  G17_NATIVE_WORKSPACE_OWNER_ARTIFACT_NAME,
+  G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES,
+  G17_NATIVE_WORKSPACE_OWNER_SCHEMA,
+  G17_NATIVE_WORKSPACE_PROJECTION_SCHEMA,
+  G17_NATIVE_WORKSPACE_REQUIRED_GITLINKS,
+  G17_NATIVE_WORKSPACE_VERIFICATION_SCHEMA,
+} from "./native-workspace-contract.mjs";
+
+export {
+  G17_NATIVE_WORKSPACE_OWNER_ARTIFACT_NAME,
+  G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES,
+} from "./native-workspace-contract.mjs";
 
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
+const DIGEST = /^[0-9a-f]{64}$/u;
 const sourceSnapshotSchema = "oxigraph.g1.7-source-snapshot/v1";
 const sourceManifestSchema = "oxigraph.g1.7-source-filesystem/v1";
 const sourceObjectClosureSchema = "oxigraph.g1.7-source-object-closure/v1";
-const workspaceSchema = "oxigraph.g1.7-native-workspace/v1";
+const workspaceSchema = G17_NATIVE_WORKSPACE_PROJECTION_SCHEMA;
+const workspaceBindingSchema = G17_NATIVE_WORKSPACE_BINDING_SCHEMA;
+const workspaceVerificationSchema = G17_NATIVE_WORKSPACE_VERIFICATION_SCHEMA;
+const workspaceOwnerSchema = G17_NATIVE_WORKSPACE_OWNER_SCHEMA;
 const dependencySchema = "oxigraph.g1.7-private-cargo-dependencies/v1";
 const vendorManifestSchema = "oxigraph.g1.7-vendor-filesystem/v1";
 const vendorChecksumSchema = "oxigraph.g1.7-vendor-checksum-set/v1";
@@ -62,22 +84,13 @@ const maximumVendorBytes = 2 * 1024 * 1024 * 1024;
 const cargoPreparationTimeoutMs = 300_000;
 const cargoVendorOutputBytes = 1024 * 1024;
 const cargoMetadataOutputBytes = 16 * 1024 * 1024;
+const pinnedCargoChildPath = "/proc/self/fd/3";
+const pinnedRustcChildPath = "/proc/self/fd/4";
 const sourceSnapshotInternals = new WeakMap();
 const dependencyInternals = new WeakMap();
 const liveWorkspaces = new WeakMap();
 
-const productionRequiredGitlinks = Object.freeze([
-  Object.freeze({
-    path: "oxrocksdb-sys/lz4",
-    commit: "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
-    tree: "1ff35e0f086e3b431ea0efd001eb5c6254561953",
-  }),
-  Object.freeze({
-    path: "oxrocksdb-sys/rocksdb",
-    commit: "3b446089141659fad25328c5ea3e7ed283df46e4",
-    tree: "36afaac5df4b9666e3c7ca5e32e094edd6fedfac",
-  }),
-]);
+const productionRequiredGitlinks = G17_NATIVE_WORKSPACE_REQUIRED_GITLINKS;
 
 export class G17NativeWorkspaceFault extends Error {
   constructor(classification, phase, reason, cause) {
@@ -158,6 +171,212 @@ function plainObject(value) {
     !Array.isArray(value) &&
     [Object.prototype, null].includes(Object.getPrototypeOf(value))
   );
+}
+
+function exactFields(value, expected, label, phase = "toolchain") {
+  if (
+    !plainObject(value) ||
+    !isDeepStrictEqual(Object.keys(value).sort(), [...expected].sort())
+  ) {
+    workspaceFault("FAIL", phase, `${label} fields are not exact`);
+  }
+}
+
+function digest(value, label, phase = "toolchain") {
+  if (!DIGEST.test(value ?? "")) {
+    workspaceFault("FAIL", phase, `${label} is not a SHA-256 digest`);
+  }
+  return value;
+}
+
+function canonicalClone(value, label, phase = "toolchain") {
+  try {
+    return JSON.parse(canonicalJson(value));
+  } catch (error) {
+    workspaceFault("FAIL", phase, `${label} is not canonical JSON data`, error);
+  }
+}
+
+function validateWorkspaceBinding(value, identity) {
+  const binding = canonicalClone(value, "native workspace binding");
+  exactFields(
+    binding,
+    [
+      "schema",
+      "subjectIdentitySha256",
+      "subjectCommit",
+      "subjectTree",
+      "cargoLockBlob",
+      "cargoLockSha256",
+      "platformManifestSha256",
+      "toolchainRootSha256",
+      "toolchain",
+    ],
+    "native workspace binding",
+  );
+  if (
+    binding.schema !== workspaceBindingSchema ||
+    !GIT_OBJECT.test(binding.subjectCommit ?? "") ||
+    !GIT_OBJECT.test(binding.subjectTree ?? "") ||
+    !GIT_OBJECT.test(binding.cargoLockBlob ?? "")
+  ) {
+    workspaceFault("FAIL", "toolchain", "native workspace subject binding is malformed");
+  }
+  for (const [key, label] of [
+    ["subjectIdentitySha256", "subject identity"],
+    ["cargoLockSha256", "Cargo.lock"],
+    ["platformManifestSha256", "platform manifest"],
+    ["toolchainRootSha256", "toolchain root"],
+  ]) {
+    digest(binding[key], `native workspace ${label}`);
+  }
+  exactFields(binding.toolchain, ["cargo", "rustc"], "native workspace toolchain");
+  for (const [program, logicalPath] of [
+    ["cargo", "/toolchain/bin/cargo"],
+    ["rustc", "/toolchain/bin/rustc"],
+  ]) {
+    const tool = binding.toolchain[program];
+    exactFields(
+      tool,
+      ["logicalPath", "executableSha256", "versionSha256"],
+      `native workspace ${program} binding`,
+    );
+    if (tool.logicalPath !== logicalPath) {
+      workspaceFault(
+        "FAIL",
+        "toolchain",
+        `native workspace ${program} logical path drifted`,
+      );
+    }
+    digest(tool.executableSha256, `native workspace ${program} executable`);
+    digest(tool.versionSha256, `native workspace ${program} version`);
+  }
+  if (
+    binding.subjectCommit !== identity?.subject?.commit ||
+    binding.subjectTree !== identity?.subject?.tree ||
+    binding.cargoLockBlob !== identity?.cargoLock?.blob ||
+    binding.cargoLockSha256 !== identity?.cargoLock?.sha256 ||
+    (identity?.identitySha256 !== undefined &&
+      binding.subjectIdentitySha256 !== identity.identitySha256)
+  ) {
+    workspaceFault("STALE", "toolchain", "native workspace binding differs from identity");
+  }
+  return deepFreeze(binding);
+}
+
+function decodedProbeStream(value, label) {
+  exactFields(value, ["bytes", "sha256", "base64"], label);
+  if (
+    !Number.isSafeInteger(value.bytes) ||
+    value.bytes < 0 ||
+    value.bytes > 64 * 1024 ||
+    !DIGEST.test(value.sha256 ?? "") ||
+    typeof value.base64 !== "string" ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
+      value.base64,
+    )
+  ) {
+    workspaceFault("FAIL", "toolchain", `${label} is not a bounded canonical stream`);
+  }
+  const bytes = Buffer.from(value.base64, "base64");
+  if (
+    bytes.toString("base64") !== value.base64 ||
+    bytes.length !== value.bytes ||
+    sha256(bytes) !== value.sha256
+  ) {
+    workspaceFault("FAIL", "toolchain", `${label} bytes differ from their binding`);
+  }
+  return bytes;
+}
+
+function productionWorkspaceAuthority(identity, platformClosure) {
+  let verifiedIdentity;
+  try {
+    verifiedIdentity = verifyG17QualificationIdentity(identity);
+  } catch (error) {
+    workspaceFault("FAIL", "toolchain", "sealed qualification identity is invalid", error);
+  }
+  if (!plainObject(platformClosure)) {
+    workspaceFault("FAIL", "toolchain", "verified native platform closure is absent");
+  }
+  if (
+    platformClosure.subjectIdentitySha256 !== verifiedIdentity.identitySha256 ||
+    !DIGEST.test(platformClosure.manifestSha256 ?? "") ||
+    !DIGEST.test(platformClosure.toolchainRootSha256 ?? "")
+  ) {
+    workspaceFault("STALE", "toolchain", "native platform generation differs from identity");
+  }
+  const tools = Object.fromEntries(
+    verifiedIdentity.toolchain.map((tool) => [tool.program, tool]),
+  );
+  const toolchain = {};
+  for (const [program, probeId, logicalPath] of [
+    ["cargo", "cargo-version", "/toolchain/bin/cargo"],
+    ["rustc", "rust-version", "/toolchain/bin/rustc"],
+  ]) {
+    const tool = tools[program];
+    const role = platformClosure.roles?.[program];
+    if (
+      role?.root !== "toolchain" ||
+      role.path !== `bin/${program}` ||
+      role.kind !== "file" ||
+      role.sha256 !== tool.toolchainExecutableSha256
+    ) {
+      workspaceFault(
+        "STALE",
+        "toolchain",
+        `native platform ${program} role differs from identity`,
+      );
+    }
+    const probes = (platformClosure.probes ?? []).filter(({ id }) => id === probeId);
+    if (probes.length !== 1 || probes[0].program !== logicalPath) {
+      workspaceFault(
+        "STALE",
+        "toolchain",
+        `native platform ${program} version probe is not exact`,
+      );
+    }
+    const stdout = decodedProbeStream(
+      probes[0].stdout,
+      `native platform ${program} version stdout`,
+    );
+    const stderr = decodedProbeStream(
+      probes[0].stderr,
+      `native platform ${program} version stderr`,
+    );
+    const expectedStdout = Buffer.from(`${tool.versionStdout}\n`, "utf8");
+    if (!stdout.equals(expectedStdout) || stderr.length !== 0) {
+      workspaceFault(
+        "STALE",
+        "toolchain",
+        `native platform ${program} version differs from identity`,
+      );
+    }
+    toolchain[program] = {
+      logicalPath,
+      executableSha256: tool.toolchainExecutableSha256,
+      versionSha256: sha256(Buffer.from(tool.versionStdout, "utf8")),
+    };
+  }
+  const binding = validateWorkspaceBinding({
+    schema: workspaceBindingSchema,
+    subjectIdentitySha256: verifiedIdentity.identitySha256,
+    subjectCommit: verifiedIdentity.subject.commit,
+    subjectTree: verifiedIdentity.subject.tree,
+    cargoLockBlob: verifiedIdentity.cargoLock.blob,
+    cargoLockSha256: verifiedIdentity.cargoLock.sha256,
+    platformManifestSha256: platformClosure.manifestSha256,
+    toolchainRootSha256: platformClosure.toolchainRootSha256,
+    toolchain,
+  }, verifiedIdentity);
+  return deepFreeze({ identity: verifiedIdentity, binding });
+}
+
+export function deriveG17NativeWorkspaceBindingForTesting({
+  identity,
+  platformClosure,
+}) {
+  return productionWorkspaceAuthority(identity, platformClosure).binding;
 }
 
 function boundedCanonicalProjection(value, maximumBytes, label, phase = "verify") {
@@ -290,6 +509,257 @@ async function boundedRegularBytes(
   }
 }
 
+async function readExecutableSnapshotSource(path, label, expectedSha256) {
+  let descriptor;
+  try {
+    descriptor = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const [namedBefore, heldBefore] = await Promise.all([
+      lstat(path, { bigint: true }),
+      descriptor.stat({ bigint: true }),
+    ]);
+    if (
+      namedBefore.isSymbolicLink() ||
+      !namedBefore.isFile() ||
+      !heldBefore.isFile() ||
+      namedBefore.size < 1n ||
+      namedBefore.size > 256n * 1024n * 1024n ||
+      (namedBefore.mode & 0o111n) === 0n ||
+      !isDeepStrictEqual(objectIdentity(namedBefore), objectIdentity(heldBefore))
+    ) {
+      workspaceFault("FAIL", "toolchain", `${label} cannot be descriptor-pinned`);
+    }
+    const bytes = await descriptor.readFile();
+    const [namedAfter, heldAfter] = await Promise.all([
+      lstat(path, { bigint: true }),
+      descriptor.stat({ bigint: true }),
+    ]);
+    if (
+      !isDeepStrictEqual(objectIdentity(namedAfter), objectIdentity(namedBefore)) ||
+      !isDeepStrictEqual(objectIdentity(heldAfter), objectIdentity(heldBefore)) ||
+      namedAfter.size !== namedBefore.size ||
+      heldAfter.size !== heldBefore.size ||
+      namedAfter.mtimeNs !== namedBefore.mtimeNs ||
+      heldAfter.mtimeNs !== heldBefore.mtimeNs ||
+      bytes.length !== Number(heldBefore.size) ||
+      sha256(bytes) !== expectedSha256
+    ) {
+      workspaceFault("STALE", "toolchain", `${label} changed while it was pinned`);
+    }
+    return bytes;
+  } catch (error) {
+    if (error instanceof G17NativeWorkspaceFault) throw error;
+    workspaceFault("MISSING", "toolchain", `${label} cannot be snapshotted`, error);
+  } finally {
+    await descriptor?.close().catch(() => {});
+  }
+}
+
+async function descriptorBytes(descriptor, bytes, label) {
+  const value = Buffer.allocUnsafe(bytes);
+  let offset = 0;
+  while (offset < value.length) {
+    const { bytesRead } = await descriptor.read(
+      value,
+      offset,
+      value.length - offset,
+      offset,
+    );
+    if (bytesRead < 1) {
+      workspaceFault("FAIL", "toolchain", `${label} ended during its bounded read`);
+    }
+    offset += bytesRead;
+  }
+  return value;
+}
+
+function executableSnapshotMetadata(metadata) {
+  return Object.freeze({
+    identity: objectIdentity(metadata),
+    links: metadata.nlink,
+    mode: metadata.mode,
+    modifiedNs: metadata.mtimeNs,
+    changedNs: metadata.ctimeNs,
+  });
+}
+
+function exactExecutableSnapshotMetadata(metadata, expected) {
+  return (
+    metadata.nlink === expected.links &&
+    metadata.mode === expected.mode &&
+    metadata.mtimeNs === expected.modifiedNs &&
+    metadata.ctimeNs === expected.changedNs &&
+    isDeepStrictEqual(objectIdentity(metadata), expected.identity)
+  );
+}
+
+async function verifyExecutableSnapshot(snapshot, phase) {
+  const before = await snapshot.descriptor.stat({ bigint: true }).catch((error) =>
+    workspaceFault("FAIL", "toolchain", `${snapshot.label} cannot be restated`, error));
+  if (
+    !before.isFile() ||
+    before.size !== BigInt(snapshot.bytes) ||
+    !exactExecutableSnapshotMetadata(before, snapshot.metadata) ||
+    (snapshot.kind === "anonymous" &&
+      (before.nlink !== 0n || (before.mode & 0o777n) !== 0o500n)) ||
+    (snapshot.kind === "linked-platform" &&
+      (before.nlink !== 1n || (before.mode & 0o222n) !== 0n)) ||
+    !["anonymous", "linked-platform"].includes(snapshot.kind)
+  ) {
+    workspaceFault(
+      "FAIL",
+      "toolchain",
+      `${snapshot.label} lost its read-only execution binding ${phase}`,
+    );
+  }
+  let namedBefore;
+  if (snapshot.kind === "linked-platform") {
+    namedBefore = await lstat(snapshot.path, { bigint: true }).catch((error) =>
+      workspaceFault("FAIL", "toolchain", `${snapshot.label} path is unavailable`, error));
+    if (
+      namedBefore.isSymbolicLink() ||
+      !namedBefore.isFile() ||
+      !exactExecutableSnapshotMetadata(namedBefore, snapshot.metadata)
+    ) {
+      workspaceFault(
+        "FAIL",
+        "toolchain",
+        `${snapshot.label} path differs from its pinned platform file ${phase}`,
+      );
+    }
+  }
+  const bytes = await descriptorBytes(snapshot.descriptor, snapshot.bytes, snapshot.label);
+  const after = await snapshot.descriptor.stat({ bigint: true }).catch((error) =>
+    workspaceFault("FAIL", "toolchain", `${snapshot.label} cannot be restated`, error));
+  const namedAfter = snapshot.kind === "linked-platform"
+    ? await lstat(snapshot.path, { bigint: true }).catch((error) =>
+      workspaceFault("FAIL", "toolchain", `${snapshot.label} path is unavailable`, error))
+    : undefined;
+  if (
+    after.size !== before.size ||
+    !exactExecutableSnapshotMetadata(after, snapshot.metadata) ||
+    (namedBefore !== undefined &&
+      (!exactExecutableSnapshotMetadata(namedAfter, snapshot.metadata) ||
+        namedAfter.isSymbolicLink() ||
+        !namedAfter.isFile())) ||
+    sha256(bytes) !== snapshot.sha256
+  ) {
+    workspaceFault(
+      "STALE",
+      "toolchain",
+      `${snapshot.label} changed ${phase}`,
+    );
+  }
+}
+
+async function verifyToolSnapshots(snapshots, phase) {
+  if (
+    !Array.isArray(snapshots) ||
+    snapshots.length !== 2 ||
+    snapshots[0].label !== "private Cargo executable" ||
+    snapshots[1].label !== "private rustc executable"
+  ) {
+    workspaceFault("FAIL", "toolchain", "private tool snapshots are not exact");
+  }
+  await Promise.all(
+    snapshots.map((snapshot) => verifyExecutableSnapshot(snapshot, phase)),
+  );
+}
+
+async function pinLinkedPlatformExecutable(path, label, expectedSha256) {
+  let descriptor;
+  try {
+    descriptor = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const [named, held] = await Promise.all([
+      lstat(path, { bigint: true }),
+      descriptor.stat({ bigint: true }),
+    ]);
+    if (
+      named.isSymbolicLink() ||
+      !named.isFile() ||
+      !held.isFile() ||
+      held.nlink !== 1n ||
+      held.size < 1n ||
+      held.size > 256n * 1024n * 1024n ||
+      (held.mode & 0o111n) === 0n ||
+      (held.mode & 0o222n) !== 0n ||
+      !isDeepStrictEqual(objectIdentity(named), objectIdentity(held))
+    ) {
+      workspaceFault("FAIL", "toolchain", `${label} is not a frozen platform file`);
+    }
+    const snapshot = Object.freeze({
+      bytes: Number(held.size),
+      descriptor,
+      kind: "linked-platform",
+      label,
+      metadata: executableSnapshotMetadata(held),
+      path,
+      sha256: expectedSha256,
+    });
+    await verifyExecutableSnapshot(snapshot, "after platform pinning");
+    return snapshot;
+  } catch (error) {
+    await descriptor?.close().catch(() => {});
+    if (error instanceof G17NativeWorkspaceFault) throw error;
+    workspaceFault("FAIL", "toolchain", `${label} platform pin failed`, error);
+  }
+}
+
+async function createPrivateExecutableSnapshot({
+  source,
+  destination,
+  label,
+  expectedSha256,
+}) {
+  const bytes = await readExecutableSnapshotSource(source, label, expectedSha256);
+  let writer;
+  let descriptor;
+  try {
+    writer = await open(
+      destination,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o500,
+    );
+    await writer.writeFile(bytes);
+    await writer.sync();
+    await writer.chmod(0o500);
+    await writer.close();
+    writer = undefined;
+    descriptor = await open(destination, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const linked = await descriptor.stat({ bigint: true });
+    if (
+      !linked.isFile() ||
+      linked.nlink !== 1n ||
+      linked.size !== BigInt(bytes.length) ||
+      (linked.mode & 0o777n) !== 0o500n
+    ) {
+      workspaceFault("FAIL", "toolchain", `${label} private copy is not exact`);
+    }
+    await rm(destination);
+    const anonymous = await descriptor.stat({ bigint: true });
+    const snapshot = Object.freeze({
+      bytes: bytes.length,
+      descriptor,
+      kind: "anonymous",
+      label,
+      metadata: executableSnapshotMetadata(anonymous),
+      sha256: expectedSha256,
+    });
+    await verifyExecutableSnapshot(snapshot, "after creation");
+    return snapshot;
+  } catch (error) {
+    await Promise.allSettled([
+      writer?.close(),
+      descriptor?.close(),
+      rm(destination),
+    ]);
+    if (error instanceof G17NativeWorkspaceFault) throw error;
+    workspaceFault("FAIL", "toolchain", `${label} private copy failed`, error);
+  }
+}
+
 async function writeExclusiveBytes(path, bytes, label) {
   let descriptor;
   try {
@@ -355,6 +825,16 @@ function processEvidence(
   maxOutputBytes,
   logicalPaths,
 ) {
+  if (
+    executable !== pinnedCargoChildPath ||
+    environment.RUSTC !== pinnedRustcChildPath
+  ) {
+    workspaceFault(
+      "FAIL",
+      "toolchain",
+      "Cargo preparation did not use its descriptor-pinned toolchain",
+    );
+  }
   const mappings = [
     { host: logicalPaths.vendorDirectory, logical: "/cargo-home/vendor" },
     { host: logicalPaths.bootstrapCargoHome, logical: "/control/bootstrap-cargo-home" },
@@ -362,8 +842,18 @@ function processEvidence(
     { host: logicalPaths.sourceDirectory, logical: "/workspace" },
     { host: logicalPaths.targetDirectory, logical: "/state/target" },
     { host: logicalPaths.homeDirectory, logical: "/home" },
-    { host: dirname(executable), logical: "/toolchain/bin" },
+    { host: logicalPaths.toolchainBinDirectory, logical: "/toolchain/bin" },
   ].sort((left, right) => right.host.length - left.host.length);
+  if (
+    environment.PATH !==
+      `${logicalPaths.toolchainBinDirectory}:/usr/bin:/bin`
+  ) {
+    workspaceFault(
+      "FAIL",
+      "toolchain",
+      "Cargo preparation PATH differs from the verified toolchain closure",
+    );
+  }
   const argv = args.map((argument, index) =>
     isAbsolute(argument)
       ? logicalWorkspacePath(argument, mappings, `Cargo argv ${index}`)
@@ -868,12 +1358,12 @@ async function requireAbsent(path, label, phase = "cache") {
 }
 
 function cargoPreparationEnvironment({
-  cargoProgram,
+  rustcProgram,
+  toolchainBinDirectory,
   cargoHomeDirectory,
   homeDirectory,
   temporaryDirectory,
 }) {
-  const toolchainBin = dirname(cargoProgram);
   return Object.freeze({
     CARGO_HOME: cargoHomeDirectory,
     CARGO_NET_OFFLINE: "true",
@@ -886,8 +1376,8 @@ function cargoPreparationEnvironment({
     LANG: "C.UTF-8",
     LC_ALL: "C.UTF-8",
     NO_COLOR: "1",
-    PATH: `${toolchainBin}:/usr/bin:/bin`,
-    RUSTC: join(toolchainBin, "rustc"),
+    PATH: `${toolchainBinDirectory}:/usr/bin:/bin`,
+    RUSTC: rustcProgram,
     SOURCE_DATE_EPOCH: "946684800",
     TEMP: temporaryDirectory,
     TERM: "dumb",
@@ -907,8 +1397,31 @@ async function runPrivateCargo({
   signal,
   phase,
   logicalPaths,
+  inheritedFileDescriptors,
+  toolSnapshots,
 }) {
+  if (
+    !Array.isArray(inheritedFileDescriptors) ||
+    inheritedFileDescriptors.length !== 2 ||
+    inheritedFileDescriptors.some(
+      (descriptor) => !Number.isInteger(descriptor) || descriptor < 3,
+    ) ||
+    new Set(inheritedFileDescriptors).size !== 2
+  ) {
+    workspaceFault("FAIL", "toolchain", "Cargo tool descriptors are not exact");
+  }
+  if (
+    !Array.isArray(toolSnapshots) ||
+    toolSnapshots.length !== 2 ||
+    toolSnapshots.some(
+      (snapshot, index) => snapshot.descriptor.fd !== inheritedFileDescriptors[index],
+    )
+  ) {
+    workspaceFault("FAIL", "toolchain", "Cargo tool snapshots differ from their descriptors");
+  }
+  await verifyToolSnapshots(toolSnapshots, `before Cargo ${phase}`);
   let outcome;
+  let processError;
   try {
     outcome = await processRunner({
       executable: cargoProgram,
@@ -918,9 +1431,25 @@ async function runPrivateCargo({
       timeoutMs,
       maxOutputBytes,
       signal,
+      inheritedFileDescriptors,
     });
   } catch (error) {
-    workspaceFault("MISSING", phase, `Cargo ${phase} could not be spawned`, error);
+    processError = error;
+  }
+  try {
+    await verifyToolSnapshots(toolSnapshots, `after Cargo ${phase}`);
+  } catch (error) {
+    workspaceFault(
+      "FAIL",
+      "toolchain",
+      `private tool snapshot changed during Cargo ${phase}`,
+      processError === undefined
+        ? error
+        : new AggregateError([processError, error]),
+    );
+  }
+  if (processError !== undefined) {
+    workspaceFault("MISSING", phase, `Cargo ${phase} could not be spawned`, processError);
   }
   requireCompletedCargo(outcome, phase);
   return Object.freeze({
@@ -1049,6 +1578,10 @@ async function createPrivateCargoDependencies({
   root,
   sourceSnapshot,
   cargoProgram,
+  rustcProgram,
+  toolchainBinDirectory,
+  inheritedFileDescriptors,
+  toolSnapshots,
   sourceCargoHome,
   processRunner,
   signal,
@@ -1067,6 +1600,7 @@ async function createPrivateCargoDependencies({
     sourceDirectory,
     targetDirectory,
     temporaryDirectory,
+    toolchainBinDirectory,
     vendorDirectory,
   });
   await Promise.all([
@@ -1109,7 +1643,8 @@ async function createPrivateCargoDependencies({
     vendorDirectory,
   ]);
   const vendorEnvironment = cargoPreparationEnvironment({
-    cargoProgram,
+    rustcProgram,
+    toolchainBinDirectory,
     cargoHomeDirectory: bootstrapCargoHome,
     homeDirectory,
     temporaryDirectory,
@@ -1125,6 +1660,8 @@ async function createPrivateCargoDependencies({
     signal,
     phase: "vendor",
     logicalPaths,
+    inheritedFileDescriptors,
+    toolSnapshots,
   });
   const vendorBefore = await verifyVendorTree(vendorDirectory, bootstrap.packages);
 
@@ -1155,6 +1692,8 @@ async function createPrivateCargoDependencies({
     signal,
     phase: "metadata",
     logicalPaths,
+    inheritedFileDescriptors,
+    toolSnapshots,
   });
   const metadata = await validateMetadata({
     stdout: metadataRun.outcome.stdout,
@@ -1490,6 +2029,7 @@ async function createNativeWorkspaceWithOptions({
   production,
   platform,
   cleanupHelper,
+  binding,
   signal,
 }) {
   if (!safeRunId.test(runId ?? "") || typeof production !== "boolean") {
@@ -1507,29 +2047,104 @@ async function createNativeWorkspaceWithOptions({
   ) {
     workspaceFault("FAIL", "workspace", "native workspace cleanup authority is invalid");
   }
+  let workspaceBinding;
+  let qualificationIdentity = identity;
+  if (production) {
+    try {
+      await verifyG17NativePlatform(platform, "verify");
+    } catch (error) {
+      workspaceFault(
+        "FAIL",
+        "toolchain",
+        "native platform could not be verified before workspace acquisition",
+        error,
+      );
+    }
+    const authority = productionWorkspaceAuthority(identity, platform.closure);
+    qualificationIdentity = authority.identity;
+    workspaceBinding = authority.binding;
+  } else {
+    workspaceBinding = validateWorkspaceBinding(binding, identity);
+  }
   const parent = await requireRealDirectory(
     temporaryParent,
     "temporary workspace parent",
     "MISSING",
     "workspace",
   );
-  const requestedCargo = sealedCargoProgram(identity, cargoProgram, enforceToolIdentity);
+  const requestedCargo = sealedCargoProgram(
+    qualificationIdentity,
+    cargoProgram,
+    enforceToolIdentity,
+  );
   const resolvedCargo = await realpath(requestedCargo).catch((error) =>
     workspaceFault("MISSING", "toolchain", "sealed Cargo program is unavailable", error));
+  const resolvedRustc = await realpath(join(dirname(resolvedCargo), "rustc")).catch(
+    (error) =>
+      workspaceFault("MISSING", "toolchain", "sealed rustc program is unavailable", error),
+  );
   if (enforceToolIdentity) {
-    const cargo = identity.toolchain.find(({ program }) => program === "cargo");
-    const bytes = await boundedRegularBytes(
-      resolvedCargo,
-      "sealed Cargo program",
-      256 * 1024 * 1024,
-      1,
-      "toolchain",
-    );
+    const cargo = qualificationIdentity.toolchain.find(({ program }) => program === "cargo");
+    const rustc = qualificationIdentity.toolchain.find(({ program }) => program === "rustc");
     if (
       resolvedCargo !== cargo.toolchainPath ||
-      sha256(bytes) !== cargo.toolchainExecutableSha256
+      resolvedRustc !== rustc.toolchainPath ||
+      dirname(resolvedRustc) !== dirname(resolvedCargo)
     ) {
-      workspaceFault("STALE", "toolchain", "sealed Cargo program changed before acquisition");
+      workspaceFault(
+        "STALE",
+        "toolchain",
+        "sealed Rust toolchain paths differ before workspace acquisition",
+      );
+    }
+  }
+  let executionCargo = resolvedCargo;
+  let executionRustc = resolvedRustc;
+  if (production) {
+    const expectedToolchainDirectory = join(platform.root, "toolchain");
+    const resolvedToolchainDirectory = await realpath(platform.toolchainDirectory).catch(
+      (error) => workspaceFault(
+        "MISSING",
+        "toolchain",
+        "verified platform toolchain directory is unavailable",
+        error,
+      ),
+    );
+    if (
+      platform.toolchainDirectory !== expectedToolchainDirectory ||
+      resolvedToolchainDirectory !== expectedToolchainDirectory
+    ) {
+      workspaceFault(
+        "FAIL",
+        "toolchain",
+        "verified platform toolchain directory is not exact",
+      );
+    }
+    executionCargo = await realpath(join(expectedToolchainDirectory, "bin", "cargo")).catch(
+      (error) => workspaceFault(
+        "MISSING",
+        "toolchain",
+        "verified platform Cargo copy is unavailable",
+        error,
+      ),
+    );
+    executionRustc = await realpath(join(expectedToolchainDirectory, "bin", "rustc")).catch(
+      (error) => workspaceFault(
+        "MISSING",
+        "toolchain",
+        "verified platform rustc copy is unavailable",
+        error,
+      ),
+    );
+    if (
+      executionCargo !== join(expectedToolchainDirectory, "bin", "cargo") ||
+      executionRustc !== join(expectedToolchainDirectory, "bin", "rustc")
+    ) {
+      workspaceFault(
+        "FAIL",
+        "toolchain",
+        "verified platform Rust tool paths are not exact regular paths",
+      );
     }
   }
   let parentHandle;
@@ -1570,6 +2185,7 @@ async function createNativeWorkspaceWithOptions({
   let sourceSnapshot;
   let dependencyWorkspace;
   let workspace;
+  let pinnedToolSnapshots = [];
   try {
     const rootMetadata = await lstat(root, { bigint: true });
     rootHandle = await open(
@@ -1595,24 +2211,92 @@ async function createNativeWorkspaceWithOptions({
       rootHandle,
       parentHandle,
     }, "workspace");
+    if (production) {
+      pinnedToolSnapshots.push(await pinLinkedPlatformExecutable(
+        executionCargo,
+        "private Cargo executable",
+        workspaceBinding.toolchain.cargo.executableSha256,
+      ));
+      pinnedToolSnapshots.push(await pinLinkedPlatformExecutable(
+        executionRustc,
+        "private rustc executable",
+        workspaceBinding.toolchain.rustc.executableSha256,
+      ));
+    } else {
+      const privateToolDirectory = join(root, "private-tool-snapshots");
+      await mkdir(privateToolDirectory, { mode: 0o700 });
+      pinnedToolSnapshots.push(await createPrivateExecutableSnapshot({
+        source: executionCargo,
+        destination: join(privateToolDirectory, "cargo"),
+        label: "private Cargo executable",
+        expectedSha256: workspaceBinding.toolchain.cargo.executableSha256,
+      }));
+      pinnedToolSnapshots.push(await createPrivateExecutableSnapshot({
+        source: executionRustc,
+        destination: join(privateToolDirectory, "rustc"),
+        label: "private rustc executable",
+        expectedSha256: workspaceBinding.toolchain.rustc.executableSha256,
+      }));
+      await rmdir(privateToolDirectory).catch((error) => workspaceFault(
+        "FAIL",
+        "toolchain",
+        "private tool snapshot directory did not become empty",
+        error,
+      ));
+    }
+    await verifyToolSnapshots(pinnedToolSnapshots, "before source acquisition");
     sourceSnapshot = await materializeSourceSnapshot({
       repoRoot,
-      identity,
+      identity: {
+        subject: {
+          commit: workspaceBinding.subjectCommit,
+          tree: workspaceBinding.subjectTree,
+        },
+        cargoLock: {
+          blob: workspaceBinding.cargoLockBlob,
+          sha256: workspaceBinding.cargoLockSha256,
+        },
+      },
       destinationRoot: root,
       requiredGitlinks,
     });
     dependencyWorkspace = await createPrivateCargoDependencies({
       root,
       sourceSnapshot,
-      cargoProgram: resolvedCargo,
+      cargoProgram: pinnedCargoChildPath,
+      rustcProgram: pinnedRustcChildPath,
+      toolchainBinDirectory: dirname(executionCargo),
+      inheritedFileDescriptors: pinnedToolSnapshots.map(
+        ({ descriptor }) => descriptor.fd,
+      ),
+      toolSnapshots: pinnedToolSnapshots,
       sourceCargoHome,
       processRunner,
       signal,
     });
+    const closingToolSnapshots = pinnedToolSnapshots;
+    const toolClosures = await Promise.allSettled(
+      closingToolSnapshots.map(({ descriptor }) => descriptor.close()),
+    );
+    pinnedToolSnapshots = closingToolSnapshots.filter(
+      (_descriptor, index) => toolClosures[index].status === "rejected",
+    );
+    const toolCloseErrors = toolClosures
+      .filter(({ status }) => status === "rejected")
+      .map(({ reason }) => reason);
+    if (toolCloseErrors.length > 0) {
+      workspaceFault(
+        "FAIL",
+        "toolchain",
+        "descriptor-pinned Rust toolchain could not be closed after preparation",
+        new AggregateError(toolCloseErrors),
+      );
+    }
     await verifySourceSnapshot(sourceSnapshot, "verify");
     workspace = deepFreeze({
       schema: workspaceSchema,
       policy: workspacePolicy,
+      binding: workspaceBinding,
       runId,
       root,
       sourceDirectory: sourceSnapshot.sourceDirectory,
@@ -1667,6 +2351,7 @@ async function createNativeWorkspaceWithOptions({
     const closures = await Promise.allSettled([
       rootHandle?.close(),
       parentHandle?.close(),
+      ...pinnedToolSnapshots.map(({ descriptor }) => descriptor.close()),
     ]);
     cleanupErrors.push(
       ...closures
@@ -1744,8 +2429,9 @@ export async function verifyG17NativeWorkspace(workspace, phase = "verify") {
     );
     await workspaceRootMetadata(workspace.root, state, phase);
     const workspaceEvidence = {
-      schema: "oxigraph.g1.7-native-workspace-verification/v1",
+      schema: workspaceVerificationSchema,
       phase,
+      bindingSha256: canonicalSha256(workspace.binding),
       source,
       vendor: {
         packageCount: vendor.packageCount,
@@ -1782,6 +2468,7 @@ export function g17NativeWorkspaceProjection(workspace) {
   const projection = {
     schema: workspace.schema,
     policy: workspace.policy,
+    binding: workspace.binding,
     source: {
       policy: workspace.sourceSnapshot.policy,
       commit: workspace.sourceSnapshot.commit,
@@ -1821,8 +2508,23 @@ export function g17NativeWorkspaceOwnerEvidence(workspace, verification) {
   }
   if (
     verification !== state.afterNativeVerification ||
-    verification?.schema !== "oxigraph.g1.7-native-workspace-verification/v1" ||
+    verification?.schema !== workspaceVerificationSchema ||
     verification.phase !== "after-native" ||
+    verification.bindingSha256 !== canonicalSha256(workspace.binding) ||
+    workspace.sourceSnapshot.commit !== workspace.binding.subjectCommit ||
+    workspace.sourceSnapshot.tree !== workspace.binding.subjectTree ||
+    workspace.sourceSnapshot.cargoLock.blob !== workspace.binding.cargoLockBlob ||
+    workspace.sourceSnapshot.cargoLock.sha256 !== workspace.binding.cargoLockSha256 ||
+    workspace.dependencies.cargoLock.blob !== workspace.binding.cargoLockBlob ||
+    workspace.dependencies.cargoLock.sha256 !== workspace.binding.cargoLockSha256 ||
+    workspace.dependencies.vendorCommand.program !==
+      workspace.binding.toolchain.cargo.logicalPath ||
+    workspace.dependencies.metadataCommand.program !==
+      workspace.binding.toolchain.cargo.logicalPath ||
+    workspace.dependencies.vendorCommand.environment?.RUSTC !==
+      workspace.binding.toolchain.rustc.logicalPath ||
+    workspace.dependencies.metadataCommand.environment?.RUSTC !==
+      workspace.binding.toolchain.rustc.logicalPath ||
     verification.source?.beforeSha256 !== workspace.sourceSnapshot.beforeSha256 ||
     verification.source?.afterSha256 !== workspace.sourceSnapshot.afterSha256 ||
     verification.vendor?.beforeSha256 !== workspace.dependencies.vendor.beforeSha256 ||
@@ -1859,18 +2561,41 @@ export function g17NativeWorkspaceOwnerEvidence(workspace, verification) {
     afterSha256: workspace.sourceSnapshot.afterSha256,
   };
   const owner = {
-    schema: "oxigraph.g1.7-native-workspace-owner/v1",
+    schema: workspaceOwnerSchema,
     policy: workspace.policy,
+    binding: workspace.binding,
     source,
     dependencies: workspace.dependencies,
     verification,
     projection,
   };
   const sealed = deepFreeze({ ...owner, sha256: canonicalSha256(owner) });
-  if (canonicalJson(sealed).includes(workspace.root)) {
+  const storedBytes = Buffer.from(`${canonicalJson(sealed)}\n`, "utf8");
+  if (storedBytes.includes(Buffer.from(workspace.root, "utf8"))) {
     workspaceFault("FAIL", "verify", "native workspace owner exposes its host path");
   }
+  if (
+    storedBytes.length < 1 ||
+    storedBytes.length > G17_NATIVE_WORKSPACE_OWNER_MAX_BYTES
+  ) {
+    workspaceFault("FAIL", "verify", "native workspace owner exceeds its byte ceiling");
+  }
   return sealed;
+}
+
+export function g17NativeWorkspaceOwnerArtifact(workspace, verification) {
+  const owner = g17NativeWorkspaceOwnerEvidence(workspace, verification);
+  const storedBytes = Buffer.from(`${canonicalJson(owner)}\n`, "utf8");
+  return Object.freeze({
+    owner,
+    artifact: Object.freeze({
+      name: G17_NATIVE_WORKSPACE_OWNER_ARTIFACT_NAME,
+      get bytes() {
+        return Buffer.from(storedBytes);
+      },
+      sha256: sha256(storedBytes),
+    }),
+  });
 }
 
 export function g17NativeWorkspaceEnvironment(toolchain, workspace) {
@@ -2038,7 +2763,7 @@ export function createG17NativeWorkspaceForTesting(input) {
   return (options) => {
     exactInput(
       options,
-      ["runId", "repoRoot", "identity", "cargoProgram"],
+      ["runId", "repoRoot", "identity", "cargoProgram", "binding"],
       ["signal"],
       "test workspace acquisition input",
     );
