@@ -10,10 +10,12 @@
   task registry, generated command registry, and bounded candidate-rejection
   receipts are implemented and directly tested. A dual-provider G1.2
   application run is accepted, and G1.3-G1.6, including G1.4a-G1.4b, have
-  direct source-bound candidate acceptances. G1.7 qualification contract v4,
-  proposed decision validation, legacy replay, and pre-execution gates are
+  direct source-bound candidate acceptances. G1.7 qualification contract v5,
+  proposed two-phase authorization/final-decision validation, exact G1.4b
+  prerequisite replay, Darwin-free legacy replay, and pre-execution gates are
   implemented and fail closed. Production control/build/sample owner emission,
-  a current sealed receipt, qualification, and promotion are not implemented.
+  canonical control-receipt replay, a current sealed qualification receipt,
+  qualification, and promotion are not implemented.
   The existing `tools/metaharness` semantic qualifier remains separate;
   unattended Dream Machine execution remains deferred behind the activation
   gates in this ADR
@@ -31,16 +33,24 @@
   invocation, non-trainable reconstruction/applicability rejection records,
   and byte-exact replay-only handling for v1-v5. The outer G1.7 qualification
   receipt remains v1. Commits `4e3eef61`, `a1d426bb`, `87a5efc5`, `a6e229df`,
-  and `f1cb6680` integrate exact contract v4, proposed-decision gating, strict
-  current-v4 receipt semantics, and v1/v3 structural replay-only compatibility.
-  All current decisions are unapproved; `run` exits 4 before work and the
-  approved-fixture path stops at `G17_EXECUTION_OWNER_UNIMPLEMENTED`. Pure
+  and `f1cb6680` integrate v4's exact historical contract, proposed-decision
+  gating, strict
+  then-current v4 receipt semantics, and v1/v3 structural replay-only
+  compatibility as historical provenance.
+  Commits `f357a1b4`, `509a6611`, `7b1eab5d`, `8ca3804b`, and `0257587e`
+  then make v1/v3/v4 replay Darwin-free, bind the exact G1.4b prerequisite, and
+  implement and harden contract v5's two-phase protocol. The current exact
+  contract SHA-256 is
+  `155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70`.
+  Control authorization and the final decision set remain proposed/unapproved;
+  `run` exits 4 before work, creates no G1.7 run, and no current binding can
+  authorize qualification until a canonical control receipt is replayed. Pure
   verifier fixtures do not establish production owner emission
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
   producing the current exact nine-task/33-command surface. The current package
-  suite contains 366 tests: 364 pass, none fail, and two intentional host-gated
+  suite contains 391 tests: 389 pass, none fail, and two intentional host-gated
   tests are skipped; doctor evidence remains native-only, local-only, and
   non-promoting
 - **Related**:
@@ -286,35 +296,41 @@ or a synthetic Darwin run does not satisfy this definition.
 ### G1.7 qualification-control boundary
 
 The outer G1.7 qualification receipt remains
-`oxigraph.g1.7-qualification-receipt/v1`. Exact qualification contract v4 is
-`dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0`,
-and its decision set is
-`9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc`.
-Reference, performance, and noise are all `PROPOSED`/`UNAPPROVED`.
+`oxigraph.g1.7-qualification-receipt/v1`. Exact qualification contract v5 is
+`155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70`.
+Its proposed control-authorization artifact has raw/content SHA-256 values
+`b9ee0f7615a885cda10157d1a6fdeebe4dc8175b267e6b25cd2c5bc636603515`
+and `5cb0f48f232784e7b6d0206b5ddbf72c7cd89d78f1924930a85ddba1cdf298b4`;
+the proposed final decision set has raw/content SHA-256 values
+`2fd16b9ef0228fc054efb80a6f338fafeb6a289f1371b20f774e7c6f10ea0bce`
+and `ba49181b0c19ccc065f51510837a035aa64cccb746e089ac13d68a39c1d89898`.
+They are `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`.
 `g1.7:run` exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before identity,
-application evidence, build, runtime-directory creation, or sampling. Even an
-approved test fixture reaches `G17_EXECUTION_OWNER_UNIMPLEMENTED`; sealed
-verification deliberately rejects any executed current-v4 benchmark until the
-production raw build/sample owner can be replayed. The current 366-test suite
-passes 364, fails none, and skips two intentional live-host cases. Those pure
-fixtures verify contracts, not real owner emission, performance, or
+application evidence, build, runtime-directory creation, or sampling and
+creates no G1.7 run. Final binding deliberately reports
+`qualificationExecutionAuthorized: false` until canonical control-receipt
+replay and the execution owners exist. The current 391-test suite passes 389,
+fails none, and skips two intentional live-host cases. Those pure fixtures
+verify contracts, not real owner emission, controls, performance, or
 qualification.
 
-Contract v1/v3 receipts remain `LEGACY_REPLAY_ONLY` and can never qualify. The
-accepted G1.4b receipt is not yet present in the current compatibility
-projection. Its exact bytes must be copied, hash-bound, and pure-replayed; its
-claim remains limited to simulated storage-call branches. Historical identity
-replay also eagerly loads the current Darwin package, so durable offline legacy
-replay remains an explicit hardening task.
+Contract v1/v3/v4 replay is Darwin-free, `LEGACY_REPLAY_ONLY`, and can never
+qualify. The accepted G1.4b receipt is copied, hash-bound, and pure-replayed at
+the current prerequisite boundary. Its compatibility projection and binding
+SHA-256 values are
+`d57eb7cb753d905e8951131c0bbcac188afb00e6ba893f572a994eeb5d20de87`
+and `5a4f57211ab6bce138a4a5facc78092559e8f371f836687d1fc539e9129d08e5`.
+Its claim remains limited to simulated storage-call pre/post-write faults, not
+crash, power-loss, or fsync durability, and it cannot replace the control
+receipt.
 
-The current approval flow is circular: a selected reference requires an
-observed negative-control signature, all three decisions must be approved
-together, and proposed decisions prohibit the control run that would produce
-that signature. Replace it with two strictly ordered human phases. Phase A
-authorizes only permanently non-promoting negative and independently built A/A
-noise controls and seals their complete raw owner receipt. Phase B binds that
-receipt and observed signature into one atomic final decision set before any
-subject/reference sample is produced. A later `ACCEPT` means only
+Contract v5 implements the replacement for the circular v4 approval flow as
+two strictly ordered human phases. Phase A may authorize only permanently
+non-promoting negative and independently built A/A noise controls and requires
+their complete raw owner receipt to be sealed and replayed. Phase B must bind
+that receipt, its observed signature, and the exact G1.4b prerequisite into one
+atomic final decision set before any subject/reference sample is produced. No
+human approval or control execution has occurred. A later `ACCEPT` means only
 `QUALIFIED_AWAITING_HUMAN_PROMOTION`; no schema or command grants product
 promotion or publication authority.
 
@@ -388,10 +404,15 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-35%; its two superseded rows remain cancelled history. Evidence checkpoints
+45%; its two superseded rows remain cancelled history. Support tasks for the
+G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
+protocol are complete; the control owner, final human decision, and benchmark
+owner remain open. Evidence checkpoints
 are stored under `programme-evidence/g14a-store-terminal-outcomes-2f518e04`,
 `programme-evidence/g14b-harness-qualified-2026-08-28`, and
-`programme-evidence/g17-v4-fail-closed-core-f1cb6680-2026-08-28`.
+`programme-evidence/g17-v4-fail-closed-core-f1cb6680-2026-08-28`, with the
+current protocol proof at
+`programme-evidence/g17-v5-control-protocol-main-0257587e-2026-08-28`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
@@ -577,13 +598,17 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   previous-product, union-only, and CLI-TLS-gated-server controls all returned
   `REJECT`. These are verifier-session and control artifacts, not application
   receipts; and
-- G1.7 v4 fail-closed integration commits `4e3eef61`, `a1d426bb`,
-  `87a5efc5`, `a6e229df`, and `f1cb6680`. Exact contract and decision-set
-  SHA-256 values are `dd97f4a2...` and `9a76ace5...`. The package suite reports
-  366 total, 364 passing, zero failing, and two intentional host-gated skips.
-  The CLI exits 4 before work for the proposed decisions, and the approved test
-  path stops at the unimplemented owner. This is protocol and negative-gate
-  evidence only: it contains no benchmark or performance result.
+- G1.7 v4 fail-closed core commits `4e3eef61`, `a1d426bb`, `87a5efc5`,
+  `a6e229df`, and `f1cb6680`, followed by Darwin-free legacy replay
+  `f357a1b4`, exact G1.4b prerequisite binding `509a6611`/`7b1eab5d`, and
+  audited v5 protocol commits `8ca3804b`/`0257587e`. Exact current contract,
+  proposed control-authorization, and proposed final-decision raw SHA-256
+  values are `155c364b...`, `b9ee0f76...`, and `2fd16b9e...`. The package suite
+  reports 391 total, 389 passing, zero failing, and two intentional host-gated
+  skips. The CLI exits 4 before work at `CONTROL_AUTH_PROPOSED` and writes no
+  G1.7 run. This is protocol and negative-gate evidence only: it contains no
+  human approval, control receipt, benchmark, performance result, qualification,
+  or promotion.
 
 ## Decision boundary
 

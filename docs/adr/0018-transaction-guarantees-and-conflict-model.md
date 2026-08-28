@@ -18,12 +18,13 @@
   storage-call failures now prove that local `CommitAttempted` state advances
   before the marker call, conservative lookup remains indeterminate, and drop
   cannot falsely prove rollback after a commit attempt. That evidence does not
-  simulate crash, power loss, or fsync. G1.7 contract v4 and pure verifier
-  contracts are implemented and fail closed, but production control,
-  build/sample owner emission and a current owner receipt are not implemented.
-  The reviewed control authorization, final reference/budgets, benchmark/noise
-  evidence, current clean-subject owner evidence, qualification, and promotion
-  decision remain outstanding
+  simulate crash, power loss, or fsync. G1.7 contract v5, proposed two-phase
+  control/final-decision validation, exact G1.4b prerequisite binding, and pure
+  Darwin-free v1/v3/v4 replay are implemented and fail closed, but production
+  control/build/sample owner emission, canonical control-receipt replay, and a
+  current qualification receipt are not implemented. Human control approval,
+  final reference/budgets, benchmark/noise evidence, current clean-subject
+  owner evidence, qualification, and promotion remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
@@ -247,9 +248,10 @@ legacy transaction objects/store initialization; G1.7 must measure them before
 any zero-overhead claim. Keyed callers should use the inherent or
 `OutcomeAwareWritableDataset` commit path for a typed indeterminate error;
 generic `WritableDataset::commit` retains its legacy raw error surface, so such
-callers must retain the key and use lookup. G1.7 must copy and replay the
-accepted G1.4b receipt inside the current qualification envelope before it may
-consume this lower-level fault evidence.
+callers must retain the key and use lookup. G1.7 now copies, exact-replays, and
+hash-binds the accepted G1.4b receipt at its current prerequisite boundary.
+That binding may consume this lower-level fault evidence but is not an approved
+final envelope and grants no qualification or promotion authority.
 
 G1.5b composes that admission control with SPARQL Update. Product commits
 `280872dc` and `9b84bed6` carry the evaluator's exact cancellation token from
@@ -284,25 +286,26 @@ boundaries. G1.7 must still close compatibility, performance, current-evidence
 qualification, and the separate human decision. Neither slice grants promotion
 authority, adds semantic commit receipts/outbox delivery, or adds savepoints to
 caller-owned transactions.
-The current G1.7 contract v4 is
-`dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0`;
-its decision set is `9a76ace5...`, with reference, performance, and noise all
-`PROPOSED`/`UNAPPROVED`. The CLI exits 4 before identity, evidence, build, or
-sampling, and even an approved fixture stops at
-`G17_EXECUTION_OWNER_UNIMPLEMENTED`. Pure owner-contract tests therefore prove
-only replay behavior over synthetic fixtures, not production owner emission.
-Legacy v1/v3 receipts remain structural replay-only.
+The current G1.7 contract v5 is
+`155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70`.
+Its control authorization and final decision set remain
+`CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`. The CLI exits 4 before
+identity, evidence, build, or sampling and writes no G1.7 run. A final binding
+keeps qualification execution false until the canonical control receipt is
+replayed. Pure owner-contract tests therefore prove only replay behavior over
+synthetic fixtures, not production owner emission. Legacy v1/v3/v4 receipts
+now replay through a Darwin-free structural boundary and remain legacy-only.
 
-The approval lifecycle is also circular: the selected reference requires an
-observed negative-control signature, but proposed decisions forbid the control
-run that would generate it. G1.7 must first implement a permanently
-non-promoting human control authorization and sealed negative/A/A control
-receipt, then bind that receipt into one final human decision set before any
-subject/reference samples. The accepted G1.4b receipt is still absent from the
-current projection, no benchmark or performance result exists, and current
-clean-subject owner evidence is not sealed. ADR-0018 therefore remains
-Proposed. The transaction identifiers are G1.1-G1.5c plus G1.4a-G1.4b; G1.7
-is the joint compatibility/performance qualification gate in the
+Contract v5 implements the non-circular two-phase protocol: a permanently
+non-promoting human control authorization must precede sealed negative/A/A
+control execution, and one final human decision set must bind that receipt,
+its observed signature, and the exact G1.4b prerequisite before any
+subject/reference samples. The G1.4b receipt is now copied, hash-bound, and
+pure-replayed at that prerequisite boundary, but no human approval, control
+receipt, benchmark, performance result, or current clean-subject owner evidence
+exists. ADR-0018 therefore remains Proposed. The transaction identifiers are
+G1.1-G1.5c plus G1.4a-G1.4b; G1.7 is the joint compatibility/performance
+qualification gate in the
 [linked-data-store evolution
 plan](../plans/linked-data-store-evolution-harness-plan.md), with product
 promotion retained as a later human decision.
