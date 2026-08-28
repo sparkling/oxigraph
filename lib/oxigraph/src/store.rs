@@ -32,9 +32,13 @@
 //! };
 //! # Result::<_, Box<dyn std::error::Error>>::Ok(())
 //! ```
+mod namespace;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
+pub use namespace::{
+    Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
+};
 pub use transactional::{TransactionalDataset, WritableDataset};
 
 /// Isolation provided between concurrent writers.
@@ -743,6 +747,37 @@ impl Store {
     /// Returns the effective transaction guarantees of this store instance.
     pub fn transaction_capabilities(&self) -> TransactionCapabilities {
         self.transaction_capabilities.clone()
+    }
+
+    /// Returns the store-global namespace mappings in exact prefix-byte order.
+    pub fn namespaces(&self) -> NamespaceIter {
+        NamespaceIter::from_result(self.storage.snapshot().namespaces())
+    }
+
+    /// Returns the namespace mapping associated with `prefix`.
+    pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
+        self.storage.snapshot().namespace(prefix)
+    }
+
+    /// Creates or overwrites a store-global namespace mapping atomically.
+    pub fn set_namespace(&self, namespace: Namespace) -> Result<(), StorageError> {
+        let mut transaction = self.storage.start_transaction()?;
+        transaction.set_namespace(namespace)?;
+        transaction.commit()
+    }
+
+    /// Removes a store-global namespace mapping atomically.
+    pub fn remove_namespace(&self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        let mut transaction = self.storage.start_transaction()?;
+        transaction.remove_namespace(prefix)?;
+        transaction.commit()
+    }
+
+    /// Removes every store-global namespace mapping atomically.
+    pub fn clear_namespaces(&self) -> Result<(), StorageError> {
+        let mut transaction = self.storage.start_transaction()?;
+        transaction.clear_namespaces()?;
+        transaction.commit()
     }
 
     /// Retrieves quads with a filter on each quad component
@@ -1553,6 +1588,31 @@ impl<'a> Transaction<'a> {
         self.inner.reader().is_empty()
     }
 
+    /// Returns namespace mappings visible to this transaction.
+    pub fn namespaces(&self) -> NamespaceIter {
+        NamespaceIter::from_result(self.inner.reader().namespaces())
+    }
+
+    /// Returns the namespace mapping visible for `prefix`.
+    pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
+        self.inner.reader().namespace(prefix)
+    }
+
+    /// Creates or overwrites a namespace mapping in this transaction.
+    pub fn set_namespace(&mut self, namespace: Namespace) -> Result<(), StorageError> {
+        self.inner.set_namespace(namespace)
+    }
+
+    /// Removes a namespace mapping in this transaction.
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        self.inner.remove_namespace(prefix)
+    }
+
+    /// Removes all namespace mappings in this transaction.
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        self.inner.clear_namespaces()
+    }
+
     /// Loads an RDF file into the store.
     ///
     /// This function is atomic, quite slow and memory hungry. To get much better performances, you might want to use the [`bulk_loader`](Store::bulk_loader).
@@ -1921,6 +1981,31 @@ impl KeyedTransaction<'_> {
     /// Returns whether this transaction contains no quads.
     pub fn is_empty(&self) -> Result<bool, StorageError> {
         self.inner.reader().is_empty()
+    }
+
+    /// Returns namespace mappings visible to this transaction.
+    pub fn namespaces(&self) -> NamespaceIter {
+        NamespaceIter::from_result(self.inner.reader().namespaces())
+    }
+
+    /// Returns the namespace mapping visible for `prefix`.
+    pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
+        self.inner.reader().namespace(prefix)
+    }
+
+    /// Creates or overwrites a namespace mapping in this transaction.
+    pub fn set_namespace(&mut self, namespace: Namespace) -> Result<(), StorageError> {
+        self.inner.set_namespace(namespace)
+    }
+
+    /// Removes a namespace mapping in this transaction.
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        self.inner.remove_namespace(prefix)
+    }
+
+    /// Removes all namespace mappings in this transaction.
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        self.inner.clear_namespaces()
     }
 
     /// Loads an RDF document into this transaction.
@@ -2357,6 +2442,60 @@ impl WritableDataset for KeyedTransaction<'_> {
     }
 }
 
+impl WritableNamespaceRegistry for Transaction<'_> {
+    type Namespaces<'a>
+        = NamespaceIter
+    where
+        Self: 'a;
+
+    fn namespaces(&self) -> Self::Namespaces<'_> {
+        Transaction::namespaces(self)
+    }
+
+    fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, Self::Error> {
+        Transaction::namespace(self, prefix)
+    }
+
+    fn set_namespace(&mut self, namespace: Namespace) -> Result<(), Self::Error> {
+        Transaction::set_namespace(self, namespace)
+    }
+
+    fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), Self::Error> {
+        Transaction::remove_namespace(self, prefix)
+    }
+
+    fn clear_namespaces(&mut self) -> Result<(), Self::Error> {
+        Transaction::clear_namespaces(self)
+    }
+}
+
+impl WritableNamespaceRegistry for KeyedTransaction<'_> {
+    type Namespaces<'a>
+        = NamespaceIter
+    where
+        Self: 'a;
+
+    fn namespaces(&self) -> Self::Namespaces<'_> {
+        KeyedTransaction::namespaces(self)
+    }
+
+    fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, Self::Error> {
+        KeyedTransaction::namespace(self, prefix)
+    }
+
+    fn set_namespace(&mut self, namespace: Namespace) -> Result<(), Self::Error> {
+        KeyedTransaction::set_namespace(self, namespace)
+    }
+
+    fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), Self::Error> {
+        KeyedTransaction::remove_namespace(self, prefix)
+    }
+
+    fn clear_namespaces(&mut self) -> Result<(), Self::Error> {
+        KeyedTransaction::clear_namespaces(self)
+    }
+}
+
 impl OutcomeAwareWritableDataset for KeyedTransaction<'_> {
     fn commit_with_outcome(self) -> Result<(), TransactionCommitError<Self::Error>> {
         let transaction_key = self.transaction_key;
@@ -2429,6 +2568,36 @@ impl Iterator for GraphNameIter<'_> {
                 .next()?
                 .and_then(|graph_name| self.reader.decode_named_or_blank_node(&graph_name)),
         )
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+/// An iterator returning store-global namespace mappings in prefix-byte order.
+#[must_use]
+pub struct NamespaceIter {
+    iter: std::vec::IntoIter<Result<Namespace, StorageError>>,
+}
+
+impl NamespaceIter {
+    fn from_result(result: Result<Vec<Namespace>, StorageError>) -> Self {
+        let values = match result {
+            Ok(namespaces) => namespaces.into_iter().map(Ok).collect(),
+            Err(error) => vec![Err(error)],
+        };
+        Self {
+            iter: values.into_iter(),
+        }
+    }
+}
+
+impl Iterator for NamespaceIter {
+    type Item = Result<Namespace, StorageError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

@@ -1,4 +1,4 @@
-use crate::model::{GraphName, NamedOrBlankNode, OxString, Quad, Term};
+use crate::model::{GraphName, NamedNode, NamedOrBlankNode, OxString, Quad, Term};
 use crate::storage::CorruptionError;
 pub use crate::storage::error::StorageError;
 use crate::storage::numeric_encoder::{
@@ -8,10 +8,11 @@ use crate::storage::{
     StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
     TransactionStartControlError,
 };
+use crate::store::{Namespace, NamespacePrefix};
 use dashmap::iter::Iter;
 use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
-use rustc_hash::FxHasher;
+use rustc_hash::{FxHashSet, FxHasher};
 use std::borrow::Borrow;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::marker::PhantomData;
@@ -46,6 +47,13 @@ struct Content {
     last_quad_by_graph_name:
         DashMap<EncodedTerm, (Weak<QuadListNode>, u64), BuildHasherDefault<FxHasher>>,
     graphs: DashMap<EncodedTerm, VersionRange>,
+    namespaces: DashMap<NamespaceMapping, VersionRange>,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct NamespaceMapping {
+    prefix: NamespacePrefix,
+    iri: NamedNode,
 }
 
 impl MemoryStorage {
@@ -59,6 +67,7 @@ impl MemoryStorage {
                 last_quad_by_object: DashMap::default(),
                 last_quad_by_graph_name: DashMap::default(),
                 graphs: DashMap::default(),
+                namespaces: DashMap::default(),
             }),
             id2str: Arc::new(DashMap::default()),
             transaction_outcomes: Arc::new(DashMap::default()),
@@ -306,6 +315,40 @@ impl<'a> MemoryStorageReader<'a> {
             .is_some_and(|range| self.is_in_range(&range))
     }
 
+    pub fn namespaces(&self) -> Result<Vec<Namespace>, StorageError> {
+        let mut namespaces = Vec::<Namespace>::new();
+        let mut prefixes = FxHashSet::default();
+        for entry in &self.storage.content.namespaces {
+            if !self.is_in_range(entry.value()) {
+                continue;
+            }
+            if !prefixes.insert(entry.key().prefix.clone()) {
+                return Err(CorruptionError::msg(
+                    "multiple namespace mappings are visible for one prefix",
+                )
+                .into());
+            }
+            namespaces.push(Namespace::new(
+                entry.key().prefix.clone(),
+                entry.key().iri.clone(),
+            ));
+        }
+        namespaces.sort_unstable_by(|left, right| {
+            left.prefix()
+                .as_str()
+                .as_bytes()
+                .cmp(right.prefix().as_str().as_bytes())
+        });
+        Ok(namespaces)
+    }
+
+    pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
+        Ok(self
+            .namespaces()?
+            .into_iter()
+            .find(|namespace| namespace.prefix() == prefix))
+    }
+
     pub fn contains_str(&self, key: &StrHash) -> bool {
         self.storage.id2str.contains_key(key)
     }
@@ -313,6 +356,7 @@ impl<'a> MemoryStorageReader<'a> {
     /// Validate that all the storage invariants held in the data
     #[expect(clippy::unwrap_in_result)]
     pub fn validate(&self) -> Result<(), StorageError> {
+        self.namespaces()?;
         // All used named graphs are in graph set
         let expected_quad_len = self.storage.content.quad_set.len() as u64;
 
@@ -559,6 +603,56 @@ impl MemoryStorageTransaction<'_> {
             snapshot_id: self.transaction_id,
             _lifetime: PhantomData,
         }
+    }
+
+    pub fn set_namespace(&mut self, namespace: Namespace) -> Result<(), StorageError> {
+        if let Some(current) = self.reader().namespace(namespace.prefix())? {
+            if current == namespace {
+                return Ok(());
+            }
+            self.remove_namespace_mapping(current);
+        }
+        let (prefix, iri) = namespace.into_parts();
+        let mapping = NamespaceMapping { prefix, iri };
+        let added = match self.storage.content.namespaces.entry(mapping.clone()) {
+            Entry::Occupied(mut entry) => entry.get_mut().add(self.transaction_id),
+            Entry::Vacant(entry) => {
+                entry.insert(VersionRange::Start(self.transaction_id));
+                true
+            }
+        };
+        if added {
+            self.log.push(LogEntry::Namespace(mapping));
+        }
+        Ok(())
+    }
+
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        if let Some(namespace) = self.reader().namespace(prefix)? {
+            self.remove_namespace_mapping(namespace);
+        }
+        Ok(())
+    }
+
+    fn remove_namespace_mapping(&mut self, namespace: Namespace) {
+        let (prefix, iri) = namespace.into_parts();
+        let mapping = NamespaceMapping { prefix, iri };
+        let removed = self
+            .storage
+            .content
+            .namespaces
+            .get_mut(&mapping)
+            .is_some_and(|mut entry| entry.value_mut().remove(self.transaction_id));
+        if removed {
+            self.log.push(LogEntry::Namespace(mapping));
+        }
+    }
+
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        for namespace in self.reader().namespaces()? {
+            self.remove_namespace_mapping(namespace);
+        }
+        Ok(())
     }
 
     pub fn insert(&mut self, quad: Quad) {
@@ -823,6 +917,13 @@ impl MemoryStorageTransaction<'_> {
                             .upgrade_transaction(self.transaction_id, new_version_id)
                     }
                 }
+                LogEntry::Namespace(mapping) => {
+                    if let Some(mut entry) = self.storage.content.namespaces.get_mut(&mapping) {
+                        entry
+                            .value_mut()
+                            .upgrade_transaction(self.transaction_id, new_version_id)
+                    }
+                }
             }
         }
         self.storage
@@ -842,6 +943,11 @@ impl MemoryStorageTransaction<'_> {
                 }
                 LogEntry::Graph(graph_name) => {
                     if let Some(mut entry) = self.storage.content.graphs.get_mut(&graph_name) {
+                        entry.value_mut().rollback_transaction(self.transaction_id)
+                    }
+                }
+                LogEntry::Namespace(mapping) => {
+                    if let Some(mut entry) = self.storage.content.namespaces.get_mut(&mapping) {
                         entry.value_mut().rollback_transaction(self.transaction_id)
                     }
                 }
@@ -1007,6 +1113,7 @@ impl MemoryStorageBulkLoader<'_> {
 enum LogEntry {
     QuadNode(Arc<QuadListNode>),
     Graph(EncodedTerm),
+    Namespace(NamespaceMapping),
 }
 
 struct QuadListNode {

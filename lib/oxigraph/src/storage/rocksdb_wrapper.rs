@@ -1570,6 +1570,17 @@ impl Iter<'_> {
             None
         }
     }
+
+    pub fn value(&self) -> Option<&[u8]> {
+        if self.is_valid() {
+            unsafe {
+                let value = rocksdb_iter_value_slice(self.inner);
+                Some(slice::from_raw_parts(value.data.cast(), value.size))
+            }
+        } else {
+            None
+        }
+    }
 }
 
 pub struct SstFileWriter {

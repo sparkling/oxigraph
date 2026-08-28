@@ -11,6 +11,7 @@ use crate::storage::rocksdb::{
     RocksDbStorageBulkLoader, RocksDbStorageKeyedReadableTransaction, RocksDbStorageOptions,
     RocksDbStorageReadableTransaction, RocksDbStorageReader, RocksDbStorageTransaction,
 };
+use crate::store::{Namespace, NamespacePrefix};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -532,6 +533,22 @@ impl<'a> StorageReader<'a> {
         }
     }
 
+    pub fn namespaces(&self) -> Result<Vec<Namespace>, StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReaderKind::RocksDb(reader) => reader.namespaces(),
+            StorageReaderKind::Memory(reader) => reader.namespaces(),
+        }
+    }
+
+    pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReaderKind::RocksDb(reader) => reader.namespace(prefix),
+            StorageReaderKind::Memory(reader) => reader.namespace(prefix),
+        }
+    }
+
     pub fn contains_str(&self, key: &StrHash) -> Result<bool, StorageError> {
         match &self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -641,6 +658,39 @@ impl StorageTransaction<'_> {
             StorageTransactionKind::Memory(transaction) => {
                 transaction.insert_named_graph(graph_name);
             }
+        }
+    }
+
+    pub fn set_namespace(&mut self, namespace: Namespace) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageTransactionKind::RocksDb(transaction) => {
+                transaction.set_namespace(namespace);
+                Ok(())
+            }
+            StorageTransactionKind::Memory(transaction) => transaction.set_namespace(namespace),
+        }
+    }
+
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageTransactionKind::RocksDb(transaction) => {
+                transaction.remove_namespace(prefix);
+                Ok(())
+            }
+            StorageTransactionKind::Memory(transaction) => transaction.remove_namespace(prefix),
+        }
+    }
+
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageTransactionKind::RocksDb(transaction) => {
+                transaction.clear_namespaces();
+                Ok(())
+            }
+            StorageTransactionKind::Memory(transaction) => transaction.clear_namespaces(),
         }
     }
 
@@ -755,6 +805,40 @@ impl StorageReadableTransaction<'_> {
             StorageReadableTransactionKind::Memory(transaction) => {
                 transaction.insert_named_graph(graph_name);
             }
+        }
+    }
+
+    pub fn set_namespace(&mut self, namespace: Namespace) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReadableTransactionKind::RocksDb(transaction) => {
+                transaction.set_namespace(namespace);
+                Ok(())
+            }
+            StorageReadableTransactionKind::Memory(transaction) => {
+                transaction.set_namespace(namespace)
+            }
+        }
+    }
+
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReadableTransactionKind::RocksDb(transaction) => {
+                transaction.remove_namespace(prefix);
+                Ok(())
+            }
+            StorageReadableTransactionKind::Memory(transaction) => {
+                transaction.remove_namespace(prefix)
+            }
+        }
+    }
+
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReadableTransactionKind::RocksDb(transaction) => transaction.clear_namespaces(),
+            StorageReadableTransactionKind::Memory(transaction) => transaction.clear_namespaces(),
         }
     }
 
@@ -903,6 +987,44 @@ impl StorageKeyedReadableTransaction<'_> {
             }
             StorageKeyedReadableTransactionKind::Memory(transaction) => {
                 transaction.insert_named_graph(graph_name);
+            }
+        }
+    }
+
+    pub fn set_namespace(&mut self, namespace: Namespace) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.set_namespace(namespace);
+                Ok(())
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.set_namespace(namespace)
+            }
+        }
+    }
+
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.remove_namespace(prefix);
+                Ok(())
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.remove_namespace(prefix)
+            }
+        }
+    }
+
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        match &mut self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.clear_namespaces()
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.clear_namespaces()
             }
         }
     }

@@ -2,7 +2,7 @@
 use crate::model::vocab::rdf;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BlankNode, Triple};
-use crate::model::{GraphName, NamedOrBlankNode, OxString, Quad, Term};
+use crate::model::{GraphName, NamedNode, NamedOrBlankNode, OxString, Quad, Term};
 #[cfg(test)]
 use crate::storage::TransactionOutcomeFaultPoint;
 use crate::storage::binary_encoder::{
@@ -23,6 +23,7 @@ use crate::storage::{DEFAULT_BULK_LOAD_BATCH_SIZE, map_thread_result};
 use crate::storage::{
     StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
 };
+use crate::store::{Namespace, NamespacePrefix};
 use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(feature = "rdf-12")]
 use siphasher::sip128::{Hasher128, SipHasher24};
@@ -62,6 +63,12 @@ const TRANSACTION_OUTCOME_STAGING: &[u8] = &[1, 0];
 const TRANSACTION_OUTCOME_COMMIT_ATTEMPTED: &[u8] = &[1, 1];
 const TRANSACTION_OUTCOME_COMMITTED: &[u8] = &[1, 2];
 const TRANSACTION_OUTCOME_ROLLED_BACK: &[u8] = &[1, 3];
+const NAMESPACE_KEY_PREFIX: &[u8] = b"\0oxigraph.namespace.";
+const NAMESPACE_SCHEMA_KEY: &[u8] = b"\0oxigraph.namespace.schema\0";
+const NAMESPACE_MAPPING_KEY_PREFIX: &[u8] = b"\0oxigraph.namespace.mapping.v1\0";
+const NAMESPACE_MAPPING_KEY_UPPER_BOUND: &[u8] = b"\0oxigraph.namespace.mapping.v1\x01";
+const NAMESPACE_SCHEMA_V1: &[u8] = &[1];
+const NAMESPACE_RECORD_VERSION: u8 = 1;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RocksDbStorageOptions {
@@ -204,6 +211,7 @@ impl RocksDbStorage {
             db,
         };
         this.migrate()?;
+        this.snapshot().namespaces()?;
         Ok(this)
     }
 
@@ -522,6 +530,20 @@ fn transaction_outcome_key(transaction_key: &[u8; 16]) -> Vec<u8> {
     key
 }
 
+fn namespace_mapping_key(prefix: &NamespacePrefix) -> Vec<u8> {
+    let mut key = Vec::with_capacity(NAMESPACE_MAPPING_KEY_PREFIX.len() + prefix.as_str().len());
+    key.extend_from_slice(NAMESPACE_MAPPING_KEY_PREFIX);
+    key.extend_from_slice(prefix.as_str().as_bytes());
+    key
+}
+
+fn namespace_mapping_value(iri: &NamedNode) -> Vec<u8> {
+    let mut value = Vec::with_capacity(1 + iri.as_str().len());
+    value.push(NAMESPACE_RECORD_VERSION);
+    value.extend_from_slice(iri.as_str().as_bytes());
+    value
+}
+
 #[must_use]
 pub struct RocksDbStorageReader<'a> {
     reader: Reader<'a>,
@@ -793,6 +815,103 @@ impl<'a> RocksDbStorageReader<'a> {
             .contains_key(&self.storage.graphs_cf, &encode_term(graph_name))
     }
 
+    pub fn namespaces(&self) -> Result<Vec<Namespace>, StorageError> {
+        let schema_present = match self
+            .reader
+            .get(&self.storage.default_cf, NAMESPACE_SCHEMA_KEY)?
+        {
+            Some(value) if value.as_ref() == NAMESPACE_SCHEMA_V1 => true,
+            Some(value) => {
+                return Err(CorruptionError::msg(format!(
+                    "invalid namespace schema record: {:?}",
+                    value.as_ref()
+                ))
+                .into());
+            }
+            None => false,
+        };
+
+        let mut namespaces = Vec::new();
+        let mut prefixes = FxHashSet::default();
+        let mut iter = self
+            .reader
+            .scan_prefix(&self.storage.default_cf, NAMESPACE_KEY_PREFIX);
+        while iter.is_valid() {
+            let key = iter
+                .key()
+                .ok_or_else(|| CorruptionError::msg("namespace iterator lost its key"))?
+                .to_vec();
+            let value = iter
+                .value()
+                .ok_or_else(|| CorruptionError::msg("namespace iterator lost its value"))?
+                .to_vec();
+            if key == NAMESPACE_SCHEMA_KEY {
+                if value != NAMESPACE_SCHEMA_V1 {
+                    return Err(CorruptionError::msg(format!(
+                        "invalid namespace schema record: {value:?}"
+                    ))
+                    .into());
+                }
+            } else if let Some(prefix_bytes) = key.strip_prefix(NAMESPACE_MAPPING_KEY_PREFIX) {
+                if !schema_present {
+                    return Err(CorruptionError::msg(
+                        "namespace mapping record exists without a schema marker",
+                    )
+                    .into());
+                }
+                let prefix = NamespacePrefix::new(
+                    str::from_utf8(prefix_bytes)
+                        .map_err(CorruptionError::new)?
+                        .to_owned(),
+                )
+                .map_err(CorruptionError::new)?;
+                if !prefixes.insert(prefix.clone()) {
+                    return Err(CorruptionError::msg(
+                        "multiple namespace mappings are visible for one prefix",
+                    )
+                    .into());
+                }
+                let Some((&version, iri_bytes)) = value.split_first() else {
+                    return Err(CorruptionError::msg("empty namespace mapping record").into());
+                };
+                if version != NAMESPACE_RECORD_VERSION {
+                    return Err(CorruptionError::msg(format!(
+                        "unknown namespace mapping record version {version}"
+                    ))
+                    .into());
+                }
+                let iri = NamedNode::new(
+                    str::from_utf8(iri_bytes)
+                        .map_err(CorruptionError::new)?
+                        .to_owned(),
+                )
+                .map_err(CorruptionError::new)?;
+                namespaces.push(Namespace::new(prefix, iri));
+            } else {
+                return Err(CorruptionError::msg(format!(
+                    "unknown reserved namespace record key: {key:?}"
+                ))
+                .into());
+            }
+            iter.next();
+        }
+        iter.status()?;
+        namespaces.sort_unstable_by(|left, right| {
+            left.prefix()
+                .as_str()
+                .as_bytes()
+                .cmp(right.prefix().as_str().as_bytes())
+        });
+        Ok(namespaces)
+    }
+
+    pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
+        Ok(self
+            .namespaces()?
+            .into_iter()
+            .find(|namespace| namespace.prefix() == prefix))
+    }
+
     fn spog_quads(&self, prefix: &[u8]) -> RocksDbDecodingQuadIterator<'a> {
         self.inner_quads(&self.storage.spog_cf, prefix, QuadEncoding::Spog)
     }
@@ -848,6 +967,7 @@ impl<'a> RocksDbStorageReader<'a> {
 
     /// Validate that all the storage invariants held in the data
     pub fn validate(&self) -> Result<(), StorageError> {
+        self.namespaces()?;
         // triples
         let dspo_size = self.dspo_quads(&[]).count();
         if dspo_size != self.dpos_quads(&[]).count() || dspo_size != self.dosp_quads(&[]).count() {
@@ -1125,6 +1245,33 @@ impl RocksDbStorageTransaction<'_> {
         self.insert_term(graph_name.into(), &encoded_graph_name);
     }
 
+    pub fn set_namespace(&mut self, namespace: Namespace) {
+        let (prefix, iri) = namespace.into_parts();
+        self.transaction.insert(
+            &self.storage.default_cf,
+            NAMESPACE_SCHEMA_KEY,
+            NAMESPACE_SCHEMA_V1,
+        );
+        self.transaction.insert(
+            &self.storage.default_cf,
+            &namespace_mapping_key(&prefix),
+            &namespace_mapping_value(&iri),
+        );
+    }
+
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) {
+        self.transaction
+            .remove(&self.storage.default_cf, &namespace_mapping_key(prefix));
+    }
+
+    pub fn clear_namespaces(&mut self) {
+        self.transaction.remove_range(
+            &self.storage.default_cf,
+            NAMESPACE_MAPPING_KEY_PREFIX,
+            NAMESPACE_MAPPING_KEY_UPPER_BOUND,
+        );
+    }
+
     fn insert_term(&mut self, term: Term, encoded: &EncodedTerm) {
         insert_term(term, encoded, &mut |key, value| {
             self.insert_str(key, &value)
@@ -1354,6 +1501,49 @@ impl RocksDbStorageReadableTransaction<'_> {
         self.transaction
             .insert_empty(&self.storage.graphs_cf, &self.buffer);
         self.insert_term(graph_name.into(), &encoded_graph_name)
+    }
+
+    pub fn set_namespace(&mut self, namespace: Namespace) {
+        let (prefix, iri) = namespace.into_parts();
+        self.transaction.insert(
+            &self.storage.default_cf,
+            NAMESPACE_SCHEMA_KEY,
+            NAMESPACE_SCHEMA_V1,
+        );
+        self.transaction.insert(
+            &self.storage.default_cf,
+            &namespace_mapping_key(&prefix),
+            &namespace_mapping_value(&iri),
+        );
+    }
+
+    pub fn remove_namespace(&mut self, prefix: &NamespacePrefix) {
+        self.transaction
+            .remove(&self.storage.default_cf, &namespace_mapping_key(prefix));
+    }
+
+    pub fn clear_namespaces(&mut self) -> Result<(), StorageError> {
+        let keys = {
+            let reader = self.reader();
+            let mut iter = reader
+                .reader
+                .scan_prefix(&self.storage.default_cf, NAMESPACE_MAPPING_KEY_PREFIX);
+            let mut keys = Vec::new();
+            while iter.is_valid() {
+                keys.push(
+                    iter.key()
+                        .ok_or_else(|| CorruptionError::msg("namespace iterator lost its key"))?
+                        .to_vec(),
+                );
+                iter.next();
+            }
+            iter.status()?;
+            keys
+        };
+        for key in keys {
+            self.transaction.remove(&self.storage.default_cf, &key);
+        }
+        Ok(())
     }
 
     fn insert_term(&mut self, term: Term, encoded: &EncodedTerm) {
