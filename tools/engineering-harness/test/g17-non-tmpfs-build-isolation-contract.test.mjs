@@ -21,6 +21,9 @@ import {
   G17_NATIVE_ISOLATION_POLICY_SCHEMA,
   createG17NativeIsolationPolicyArtifact,
 } from "../src/qualification/native-platform-contract.mjs";
+import {
+  G17_BENCHMARK_EXECUTION_PLAN,
+} from "../src/qualification/benchmark-execution-plan.mjs";
 
 const CONTRACT_ERROR = /G1\.7 non-tmpfs build isolation contract/u;
 
@@ -90,6 +93,42 @@ test("non-tmpfs build isolation policy freezes the exact dormant owner boundary"
   assert.equal(policy.workspace.target.heldDescriptorRequired, true);
   assert.equal(policy.workspace.target.emptyAtBuildStartRequired, true);
   assert.equal(policy.workspace.target.nonTmpfsRequired, true);
+  assert.deepEqual(policy.workspace.namespace, {
+    mechanism: "bind-mount-from-held-descriptor/v1",
+    heldParent: {
+      childFd: 3,
+      role: "workspaceRoot",
+      logicalPath: "/proc/self/fd/3",
+    },
+    mounts: [
+      {
+        role: "source",
+        heldFd: 4,
+        heldLogicalPath: "/proc/self/fd/4",
+        parentFd: 3,
+        parentLeafName: "source",
+        beneathHeldParentRequired: true,
+        sameObjectAsHeldDescriptorRequired: true,
+        destination: G17_BENCHMARK_EXECUTION_PLAN.build.workingDirectory,
+        mountOptions: ["bind", "nodev", "noexec", "nosuid", "ro"],
+        readOnly: true,
+      },
+      {
+        role: "target",
+        heldFd: 5,
+        heldLogicalPath: "/proc/self/fd/5",
+        parentFd: 3,
+        parentLeafName: "target",
+        beneathHeldParentRequired: true,
+        sameObjectAsHeldDescriptorRequired: true,
+        destination: G17_BENCHMARK_EXECUTION_PLAN.build.targetDirectory,
+        mountOptions: ["bind", "nodev", "nosuid", "rw"],
+        readOnly: false,
+      },
+    ],
+    exactMountOrderRequired: true,
+    alternateSourceOrTargetMappingsForbidden: true,
+  });
 
   assert.deepEqual(
     policy.process.stdio.inheritedFileDescriptors,
@@ -192,6 +231,46 @@ test("canonical verifier rejects every drifted isolation, ownership, and reap in
     }],
     ["target ancestry", (value) => {
       value.workspace.target.heldWorkspaceParentRequired = false;
+    }],
+    ["namespace mechanism", (value) => {
+      value.workspace.namespace.mechanism = "path-bind-mount";
+    }],
+    ["namespace parent", (value) => {
+      value.workspace.namespace.heldParent.childFd = 4;
+    }],
+    ["source namespace fd", (value) => {
+      value.workspace.namespace.mounts[0].heldFd = 5;
+    }],
+    ["source namespace ancestry", (value) => {
+      value.workspace.namespace.mounts[0].parentFd = 4;
+    }],
+    ["source namespace destination", (value) => {
+      value.workspace.namespace.mounts[0].destination = "/workspace/other";
+    }],
+    ["source namespace flags", (value) => {
+      value.workspace.namespace.mounts[0].mountOptions.pop();
+    }],
+    ["target namespace fd", (value) => {
+      value.workspace.namespace.mounts[1].heldFd = 4;
+    }],
+    ["target namespace ancestry", (value) => {
+      value.workspace.namespace.mounts[1].beneathHeldParentRequired = false;
+    }],
+    ["target namespace destination", (value) => {
+      value.workspace.namespace.mounts[1].destination = "/state/other";
+    }],
+    ["target namespace flags", (value) => {
+      value.workspace.namespace.mounts[1].mountOptions.reverse();
+    }],
+    ["alternate namespace mapping", (value) => {
+      value.workspace.namespace.mounts.push({
+        ...structuredClone(value.workspace.namespace.mounts[0]),
+        destination: "/alternate/source",
+      });
+    }],
+    ["alternate namespace permission", (value) => {
+      value.workspace.namespace.alternateSourceOrTargetMappingsForbidden =
+        false;
     }],
     ["fd value", (value) => {
       value.process.stdio.inheritedFileDescriptors[1].childFd = 6;
