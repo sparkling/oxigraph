@@ -355,6 +355,17 @@ pass `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, a
 `transactional_dataset` 3/3. [ADR-0020](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
 remains Proposed because G2.2-G2.3c are not implemented.
 
+[ADR-0034](./docs/adr/0034-first-class-exact-new-file-admission.md) separately
+gates G2.2's candidate-created semantic-change module. Commits `78b2cf99`
+through `65fb0e7a` preserve schema-v1 evidence while adding the exact v2
+path/tree/contract/reconstruction/context/schema/assembly controls. Commit
+`54a056e0` adds a reviewed but unregistered exact-byte native worker with
+retained-descriptor provider/schema/Git verification and original-process-
+group cleanup; its focused matrix passes 112/112. The opaque verifier-v2
+lifecycle, cgroup containment, application receipt v7/replay,
+evaluator/profile/CLI registration, and G2.2 remain open, so no new product
+module or promotion authority is admitted by this checkpoint.
+
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
 ```toml
@@ -447,10 +458,12 @@ The ADRs explain the principal boundaries:
   indexes, explicit federation, service identity, workload governance, safe
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
-  research into ADR-0018 and ADR-0020 through ADR-0033; ADR-0019 records the
-  implemented egress, cancellation, and service-claim slice. Fifteen decisions
+  research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
+  implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete.
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's
+  partially implemented harness controls remain unregistered until their full
+  v2 acceptance gate closes.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

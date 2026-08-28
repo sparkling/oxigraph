@@ -21,6 +21,27 @@ the native invocation can be labelled `ACCEPT`; applicability to the frozen
 evaluator remains the sealed reconstruction stage's authority. Same-host retry,
 circuit-breaking, and cancellation remain unchanged.
 
+[ADR-0034](../../docs/adr/0034-first-class-exact-new-file-admission.md) is now
+partially implemented but deliberately unregistered. Commits `78b2cf99`
+through `65fb0e7a` preserve every schema-v1 byte while adding the exact v2 path,
+tree, contract, reconstruction, task-context, schema, patch-assembly, and
+worker-output primitives. Commit `54a056e0` adds exact stdin capture and the
+native worker-v2 boundary: provider, Codex schema, and Git bytes execute through
+retained read-only descriptors whose bigint identity, timestamps, ownership,
+mode, link count, size, and SHA-256 are verified before and after execution.
+Direct-child reap and original-process-group quiescence are required before a
+root or the sole runner admission can be released. The focused v1/v2 matrix
+passes 112/112 and two independent audits returned GO for this partial scope.
+
+This checkpoint is not a registered task profile or production containment
+owner. A descendant can escape a POSIX process group, numeric process-group
+reuse is not identity-bearing, and pre/post verification detects but cannot
+prevent transient executable mutation. The cgroup/native supervisor, opaque v2
+candidate and verifier lifecycle, application receipt v7/replay, evaluator
+reconstruction, profile/CLI dispatch, and G2.2 remain mandatory later gates.
+Schema v1 is still the only executable registry surface; no candidate-created
+product module is admitted yet.
+
 Current activation boundary:
 
 - `doctor` verifies the local installation and dependency bindings;

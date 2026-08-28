@@ -50,8 +50,11 @@ programme tasks and promotion evidence are not implemented merely because the
 architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
 and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
 implemented. ADR-0034 separately gates exact new-file admission before G2.2
-may add a semantic-change module. Sixteen decisions in this range remain
-Proposed.
+may add a semantic-change module. Its task is 80% in progress: commit
+`54a056e0` closes the reviewed, unregistered native-worker slice after 112/112
+focused controls, but verifier-v2, cgroup containment, application receipt
+v7/replay, evaluator/profile/CLI registration, and G2.2 remain open. Sixteen
+decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
@@ -123,6 +126,14 @@ the rewritten plane. Focused regressions pass
 `transactional_dataset` 3/3. ADR-0020 remains Proposed because normalized
 effects, durable receipts/outcome resolution, the authoritative outbox, and its
 retention/governance slices G2.2-G2.3c are not implemented.
+
+ADR-0034 commits `78b2cf99` through `65fb0e7a` preserve schema-v1 bytes while
+adding exact v2 paths, trees, contracts, reconstruction, context, schema,
+assembly, and worker-output controls. Commit `54a056e0` adds exact stdin,
+retained-descriptor provider/schema/Git verification, original-process-group
+quiescence, and unsafe-root retention. Two independent audits returned GO only
+for that partial, unregistered infrastructure. It grants no product,
+qualification, or promotion authority and cannot admit G2.2's new module.
 
 Audited two-parent merge `e9d2db1b` records upstream `ec68e3dd` as an ancestor
 while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,

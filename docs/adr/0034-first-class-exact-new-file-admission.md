@@ -3,9 +3,17 @@
 - **Status**: Proposed
 - **Date**: 2026-08-28
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; schema-v1 engineering contracts still
-  forbid file creation, and G2.2 may not admit a new product module until this
-  decision's v2 gate passes
+- Implementation status: partially implemented and deliberately unregistered.
+  Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 byte compatibility and
+  add the v2 path, tree, contract, reconstruction, worker-context, schema,
+  assembly, and output-validation primitives. Commit `54a056e0` adds the exact-
+  byte native runner/worker boundary, retained-descriptor verification, bounded
+  Git parsing, and fail-closed original-process-group cleanup. The opaque v2
+  candidate lifecycle and verifier, application receipt v7/replay, evaluator
+  reconstruction, profile/CLI registration, and cgroup-backed production
+  containment are not implemented. Schema-v1 remains the only registered task
+  contract, and G2.2 may not admit a new product module until the complete v2
+  gate passes
 - Programme task: `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
@@ -289,12 +297,47 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. The current assumptions are
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 80%.
+The committed implementation sequence is:
+
+- `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
+- `767d774e`, `189a2c4b`, and `91c3126f` add exact v2 path, Git-tree, and
+  contract controls;
+- `75e178a4`, `5c9f499a`, `605a4a06`, `671fb3bd`, and `65fb0e7a` add
+  deterministic reconstruction, schema, sealed task context, exact patch
+  assembly, and worker-output validation; and
+- `54a056e0` adds the unregistered native worker-v2. It copies exact stdin,
+  binds provider/schema/Git execution to retained read-only descriptors,
+  compares bigint `dev`, `ino`, `nlink`, `size`, mode, ownership, `mtimeNs`,
+  `ctimeNs`, and SHA-256 before and after execution, and retains unsafe roots
+  until the direct child is reaped and its original process group is absent.
+
+The focused v1/v2 matrix passes 112/112. Two independent read-only audits
+returned GO for this partial, unregistered boundary; repeated lifecycle stress
+also passed, and the Ruflo deep scan reported no findings. The committed-
+identity control passes 2/2. The full suite reaches only the deliberate G1.7
+sealed-subject freshness failure caused by already-recorded product changes;
+that failure is not relabelled green.
+
+This checkpoint detects same-inode mutation, including mutate-then-restore,
+before accepting worker output. It does not prevent transient altered bytes
+from executing, prove immutability on weak/coarse-timestamp filesystems, or
+contain descendants that escape the original process group with `setsid` or
+`setpgid`; numeric process-group reuse is also not an identity-bearing cleanup
+proof. Those limitations keep the worker unregistered until the cgroup/native
+supervisor owner and the rest of this ADR's acceptance gate exist.
+
+The next implementation boundary migrates every v2 Git operation to the exact-
+byte process API, binds raw contract bytes and submodules inside an opaque
+candidate lifecycle, and adds one-shot `verifyCandidateV2`/safe disposal. It is
+followed by application receipt v7/replay, evaluator reconstruction, profile
+and CLI dispatch, and the frozen G2.2 profile. The current assumptions remain
 visible in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),
 [`paths.mjs`](../../tools/engineering-harness/src/policy/paths.mjs),
 [`reconstruct.mjs`](../../tools/engineering-harness/src/candidate/reconstruct.mjs),
-and [`task-context.mjs`](../../tools/engineering-harness/src/runtime/task-context.mjs).
-The [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md)
+and [`task-context.mjs`](../../tools/engineering-harness/src/runtime/task-context.mjs),
+while the new boundary is implemented separately in the corresponding `*-v2`
+modules. The [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md)
 places this task before G2.2. Until its acceptance boundary is implemented,
-schema v1 remains the only executable engineering contract and file creation
+schema v1 remains the only registered engineering contract and file creation
 remains forbidden.

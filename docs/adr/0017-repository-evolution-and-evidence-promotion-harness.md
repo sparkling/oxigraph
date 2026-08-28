@@ -191,6 +191,16 @@
   three intentional host-gated tests skip. This is not a helper/request
   regression or current-HEAD qualification; doctor evidence remains
   native-only, local-only, and non-promoting
+- ADR-0034 exact-create update: commits `78b2cf99` through `65fb0e7a` freeze
+  schema-v1 compatibility and add the v2 path, tree, contract,
+  reconstruction, worker-context, schema, patch-assembly, and output controls.
+  Commit `54a056e0` adds an unregistered exact-byte native worker with retained-
+  descriptor provider/schema/Git identity checks, original-process-group
+  quiescence, unsafe-root retention, and bounded no-retry failure behavior. Its
+  112/112 focused matrix and two independent GO reviews establish only this
+  partial infrastructure. Escaped-descendant cgroup containment, the opaque v2
+  candidate/verifier lifecycle, receipt v7/replay, evaluator reconstruction,
+  registry/CLI activation, and G2.2 remain open; ADR-0034 stays Proposed
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -212,7 +222,8 @@
   [ADR-0030 — Leased remote HTTP transactions](0030-leased-remote-http-transactions.md),
   [ADR-0031 — Multi-repository lifecycle](0031-multi-repository-lifecycle.md),
   [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md),
-  [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)
+  [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md),
+  [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
 
 ## Context
 
@@ -512,10 +523,16 @@ G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
-ADR-0020 through ADR-0033 are fifteen Proposed living plans. G1.4a and G1.4b
+ADR-0020 through ADR-0034 are sixteen Proposed living plans. G1.4a and G1.4b
 are completed product slices under Proposed ADR-0018, and G2.1 is implemented
 in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.
+
+ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
+created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
+80% after unregistered worker commit `54a056e0`; exact candidate verification,
+receipt v7/replay, profile/CLI registration, cgroup containment, and G2.2
+remain open. ADR-0034 adds no product G-identifier.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
