@@ -2,9 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-25
+- Updated: 2026-08-28
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G2.1-G2.3c
+- Implementation status: not implemented. The additive G2.1 namespace contract
+  and storage-schema boundary are specified for evaluator freeze; G2.2-G2.3c
+  remain planned
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - **Related**:
@@ -33,7 +35,14 @@ changing RDF dataset comparison semantics.
 Introduce a separate commit-governance capability with three staged slices:
 
 1. A transactional namespace registry commits and rolls back with RDF changes
-   but is excluded from RDF dataset equality.
+   but is excluded from RDF dataset equality. G2.1 is a separate additive
+   capability: it must not add required methods to the minimal `WritableDataset`
+   or `TransactionalDataset` traits from ADR-0016. It exposes validated
+   `NamespacePrefix` and `Namespace` values plus a
+   `WritableNamespaceRegistry: WritableDataset` extension, with matching
+   inherent APIs on `Store`, `Transaction`, and `KeyedTransaction`. Generic
+   persistence planes opt in by implementing the extension on their transaction
+   type; G2.1 does not add a second transaction opener.
 2. A normalized net semantic change set records quad additions/removals, named
    graph create/clear/drop, and namespace effects as distinct operations.
    Large clear/drop operations may use bounded summary records rather than
@@ -69,12 +78,68 @@ integrity, cursor retention, and schema compatibility. That observation is an
 input to ADR-0022 readiness; it is not itself a complete operational-readiness
 or service-health claim.
 
+### G2.1 namespace semantics and durable encoding
+
+The registry is store-global. The empty prefix denotes the default namespace;
+every other prefix must satisfy the exact Turtle/SPARQL `PN_PREFIX` grammar,
+including Unicode and excluding a trailing `.`. Prefix bytes are preserved as
+UTF-8 without Unicode normalization. IRIs use the existing validated
+`NamedNode` type.
+
+Each prefix maps to at most one IRI. Setting a prefix overwrites its prior
+mapping, setting an identical mapping is idempotent, and multiple prefixes may
+map to the same IRI. Removal and clear are no-ops when nothing matches.
+Iteration is deterministic ascending order over the exact prefix bytes, with
+the empty prefix first. RDF clear never clears namespaces; namespace clear
+never changes quads or named-graph topology.
+
+Parser and loader prefix declarations remain transient unless the caller
+explicitly writes them. The registry is not implicitly injected into SPARQL
+parsing or dumps. Existing serializer prefix configuration is the explicit
+opt-in boundary, and a serializer may reject a namespace that its format cannot
+represent. This avoids turning metadata persistence into hidden parse or output
+behavior.
+
+Memory stores namespace mutations in the same MVCC version/log boundary as RDF
+and topology, so namespace-only commits advance that boundary and snapshots,
+rollback, and read-your-writes remain coherent. A side map outside MVCC is
+forbidden.
+
+RocksDB stores locally versioned records in the existing default column family:
+
+- `\0oxigraph.namespace.schema\0` has value byte `[1]`; and
+- `\0oxigraph.namespace.mapping.v1\0` plus the raw prefix UTF-8 has value
+  `[1]` plus the IRI UTF-8.
+
+G2.1 adds neither a column family nor a global storage-version bump. Absence of
+the schema marker means a legacy store with an empty registry, preserving the
+existing exact-column-family read-only open. Unknown schema or record versions,
+invalid UTF-8, invalid prefixes or IRIs, duplicate visible prefixes, and mapping
+records without the marker are corruption and must fail closed rather than be
+skipped. A future choice to add a column family or bump the global version
+reopens ADR-0028's migration evaluator; it is not part of G2.1.
+
 ## Acceptance boundary
 
 This ADR may move to Implemented only when G2.1-G2.3c prove:
 
 - namespace and RDF mutations commit and roll back together while dataset
   equality ignores namespace metadata;
+- the same namespace evaluator passes for memory, RocksDB, and a test-only
+  rewritten persistence plane without changing the two minimal write traits;
+- default and Unicode prefixes, invalid grammar, deterministic iteration,
+  overwrite, duplicate-IRI mappings, idempotent remove/clear, read-your-writes,
+  isolation, explicit rollback, and dropped-transaction rollback behave
+  identically;
+- namespace-only mutation preserves reconstructed RDF dataset equality and
+  named-graph topology, RDF clear preserves namespaces, and namespace clear
+  preserves RDF and topology;
+- parser/load declarations, SPARQL parsing, and dumps do not persist or consume
+  registry prefixes implicitly;
+- RocksDB legacy open, reopen, and read-only behavior pass, while malformed or
+  unknown namespace records fail as corruption;
+- a keyed mixed RDF/namespace commit publishes atomically with its terminal
+  outcome, and rollback publishes neither part;
 - graph lifecycle and namespace effects survive normalization distinctly;
 - injected lost responses resolve after reopen without replay;
 - proven absence is backed by a durable key reservation or tombstone within
@@ -107,3 +172,9 @@ The current write and topology boundaries are in
 [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs) and
 [`store.rs`](../../lib/oxigraph/src/store.rs). G2.1-G2.3c own delivery in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
+G2.1 begins by freezing the public-only
+`lib/oxigraph/tests/transactional_namespaces.rs` evaluator before product work.
+The first product candidate is limited to the new namespace API plus
+`store.rs`, `storage/mod.rs`, `storage/memory.rs`, `storage/rocksdb.rs`, and
+`storage/rocksdb_wrapper.rs`. Parser, serializer, SPARQL, CLI, bindings, Cargo,
+documentation, and G1.7 files are outside that candidate.

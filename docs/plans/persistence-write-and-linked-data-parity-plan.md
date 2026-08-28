@@ -559,17 +559,37 @@ Acceptance:
 
 Dependencies: P0.2.
 
-- Add a separate store metadata capability for prefix-to-IRI mappings.
-- Make namespace changes transactional when mixed with RDF writes.
-- Define scope, persistence, iteration ordering, import/export behavior, and
-  whether parsing prefixes are persisted only by explicit request.
+- Add `NamespacePrefix`, `Namespace`, and a separate
+  `WritableNamespaceRegistry: WritableDataset` capability for prefix-to-IRI
+  mappings. Keep `WritableDataset` and `TransactionalDataset` byte-identical;
+  generic persistence planes opt in on their transaction type without a second
+  transaction opener.
+- Use the empty default prefix or exact Turtle/SPARQL `PN_PREFIX` grammar,
+  preserving UTF-8 without Unicode normalization. Store one IRI per prefix,
+  permit duplicate IRIs, and iterate in exact ascending prefix order.
+- Make namespace changes transactional when mixed with RDF writes. Memory uses
+  the existing MVCC log/version boundary, not a side map. RocksDB uses locally
+  versioned reserved records in the existing default column family, with no new
+  column family or global storage-version bump; legacy marker absence is an
+  empty registry and malformed or unknown records are corruption.
+- Keep RDF clear and namespace clear independent. Parser/load prefixes remain
+  transient unless explicitly stored, and registry prefixes are not injected
+  implicitly into SPARQL parsing or dumps. Serializer prefix configuration is
+  explicit opt-in.
 
 Acceptance:
 
-- Namespace mutations commit and roll back with RDF changes.
-- Prefix metadata never changes RDF dataset equality or graph topology.
-- Turtle/RDF/XML serializers can opt into the registry without making output
-  nondeterministic.
+- A frozen public evaluator passes unchanged against memory, RocksDB, and a
+  test-only rewritten persistence plane for mixed and namespace-only commit,
+  read-your-writes, isolation, explicit/drop rollback, overwrite, remove,
+  clear, ordering, default/Unicode/invalid prefixes, and keyed outcomes.
+- Prefix metadata never changes reconstructed RDF dataset equality or graph
+  topology; RDF clear preserves prefixes and namespace clear preserves RDF.
+- Parser/load declarations, SPARQL parsing, and dumps have no implicit registry
+  effects. Serializers can opt in deterministically and may reject mappings a
+  format cannot represent.
+- RocksDB legacy open, reopen, read-only open, and corrupt/unknown record cases
+  fail or succeed exactly as ADR-0020 specifies.
 
 #### P1.2 Staged change sets, commit receipts, and durable feed — XL
 
