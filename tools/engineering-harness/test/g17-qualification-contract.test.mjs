@@ -23,6 +23,7 @@ import {
   G17_CURRENT_CONTRACT_SHA256,
   G17_LEGACY_V1_CONTRACT_SHA256,
   G17_LEGACY_V3_CONTRACT_SHA256,
+  G17_LEGACY_V4_CONTRACT_SHA256,
   decodeSealedG17Contract,
   g17ContractCompatibilityGeneration,
   g17ContractPath,
@@ -38,6 +39,10 @@ const legacyV1ContractUrl = new URL(
 );
 const legacyV3ContractUrl = new URL(
   "fixtures/g17-qualification-contract-v3.json",
+  import.meta.url,
+);
+const legacyV4ContractUrl = new URL(
+  "fixtures/g17-qualification-contract-v4.json",
   import.meta.url,
 );
 
@@ -62,13 +67,13 @@ const CASE_IDS = [
   "writers-16-rocksdb",
 ];
 
-test("G1.7 v4 freezes paired Darwin and exact decision descriptors", () => {
+test("G1.7 v5 freezes paired Darwin and exact two-phase descriptors", () => {
   const loaded = loadG17Contract();
-  assert.equal(loaded.generation, G17_CONTRACT_GENERATION.CURRENT_V4);
+  assert.equal(loaded.generation, G17_CONTRACT_GENERATION.CURRENT_V5);
   assert.equal(loaded.contractSha256, G17_CURRENT_CONTRACT_SHA256);
   assert.equal(
     loaded.contract.schema,
-    "oxigraph.g1.7-qualification-contract/v4",
+    "oxigraph.g1.7-qualification-contract/v5",
   );
   assert.deepEqual(
     loaded.contract.benchmark.suite.tasks.map(({ id }) => id),
@@ -80,7 +85,7 @@ test("G1.7 v4 freezes paired Darwin and exact decision descriptors", () => {
   );
   assert.equal(
     loaded.contract.benchmark.protocol.qualificationSampleSchema,
-    "oxigraph.g1.7-qualification-sample/v2",
+    "oxigraph.g1.7-qualification-sample/v3",
   );
   assert.deepEqual(loaded.contract.benchmark.build, {
     argv: [
@@ -131,9 +136,8 @@ test("G1.7 v4 freezes paired Darwin and exact decision descriptors", () => {
   });
   assert.deepEqual(
     [
-      loaded.contract.referenceDecision,
-      loaded.contract.budgetDecision,
-      loaded.contract.noiseDecision,
+      loaded.contract.controlAuthorizationDecision,
+      loaded.contract.finalDecisionSet,
     ].map(({ id, maxBytes, sha256: raw, contentHash }) => ({
       id,
       maxBytes,
@@ -142,30 +146,23 @@ test("G1.7 v4 freezes paired Darwin and exact decision descriptors", () => {
     })),
     [
       {
-        id: "reference",
-        maxBytes: 32_768,
-        raw: "45fbb9b98f9dabc7742c254a4b5b3bafc0f25174713445965332176df7af3a84",
+        id: "control-authorization",
+        maxBytes: 131_072,
+        raw: "b9ee0f7615a885cda10157d1a6fdeebe4dc8175b267e6b25cd2c5bc636603515",
         contentHash:
-          "0a3f5e4f1ff40ead49f809cc124f54ce58bf5e3c4ca74114e0c565c33c0ea367",
+          "5cb0f48f232784e7b6d0206b5ddbf72c7cd89d78f1924930a85ddba1cdf298b4",
       },
       {
-        id: "performance-budget",
-        maxBytes: 32_768,
-        raw: "b38ae4b929dcf9e5da701808c726ada68a8c8188b7f3700f2fc47d4de6727d12",
+        id: "final-decision-set",
+        maxBytes: 131_072,
+        raw: "2fd16b9ef0228fc054efb80a6f338fafeb6a289f1371b20f774e7c6f10ea0bce",
         contentHash:
-          "3184f0603d1a74f66161d097f995f572bf9592c3b90f316f6969ec1b499a5e98",
-      },
-      {
-        id: "noise-budget",
-        maxBytes: 32_768,
-        raw: "72666540abf5196bb65bfeab2eac1b6ae8b0f4ab25621f5eadf998e054deeb01",
-        contentHash:
-          "3cf2243f1febc0e86322b1fec21bd67bcf6ba2e66ff4d97cb58783921202cb06",
+          "ba49181b0c19ccc065f51510837a035aa64cccb746e089ac13d68a39c1d89898",
       },
     ],
   );
   assert.equal(
-    loaded.contract.decisionSetSha256,
+    loaded.contract.legacyV4DecisionSet.decisionSetSha256,
     "9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc",
   );
   assert.equal(Object.isFrozen(loaded.contract), true);
@@ -232,7 +229,7 @@ test("G1.7 verifies Darwin version, lock integrity, and module-chain bytes", asy
   }
 });
 
-test("sealed contract dispatch preserves v1 and v3 as byte-exact replay only", async () => {
+test("sealed contract dispatch preserves v1, v3, and v4 as byte-exact replay only", async () => {
   const fixtures = [
     {
       url: legacyV1ContractUrl,
@@ -249,6 +246,14 @@ test("sealed contract dispatch preserves v1 and v3 as byte-exact replay only", a
       blob: "8b50a003b4c9bb0da1e732fce52e6d440aad72a9",
       schema: "oxigraph.g1.7-qualification-contract/v3",
       generation: G17_CONTRACT_GENERATION.LEGACY_V3,
+    },
+    {
+      url: legacyV4ContractUrl,
+      bytes: 9_408,
+      digest: G17_LEGACY_V4_CONTRACT_SHA256,
+      blob: "4caac4c9666175cf6fff630794ee7adc142c1734",
+      schema: "oxigraph.g1.7-qualification-contract/v4",
+      generation: G17_CONTRACT_GENERATION.LEGACY_V4,
     },
   ];
   for (const expected of fixtures) {
@@ -278,6 +283,7 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
   for (const generation of [
     G17_CONTRACT_GENERATION.LEGACY_V1,
     G17_CONTRACT_GENERATION.LEGACY_V3,
+    G17_CONTRACT_GENERATION.LEGACY_V4,
   ]) {
     assert.deepEqual(
       g17ContractCompatibilityGeneration({
@@ -294,7 +300,7 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
   }
   assert.deepEqual(
     g17ContractCompatibilityGeneration({
-      contractGeneration: G17_CONTRACT_GENERATION.CURRENT_V4,
+      contractGeneration: G17_CONTRACT_GENERATION.CURRENT_V5,
       compatibilityStatus: "PASS",
       compatibilitySchemaState: "CURRENT_SCHEMA_UNREPLAYED",
     }),
@@ -307,7 +313,8 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
   for (const [contractGeneration, compatibilitySchemaState] of [
     [G17_CONTRACT_GENERATION.LEGACY_V1, "CURRENT_SCHEMA_UNREPLAYED"],
     [G17_CONTRACT_GENERATION.LEGACY_V3, "CURRENT_SCHEMA_UNREPLAYED"],
-    [G17_CONTRACT_GENERATION.CURRENT_V4, "LEGACY_REPLAY_ONLY"],
+    [G17_CONTRACT_GENERATION.LEGACY_V4, "CURRENT_SCHEMA_UNREPLAYED"],
+    [G17_CONTRACT_GENERATION.CURRENT_V5, "LEGACY_REPLAY_ONLY"],
   ]) {
     assert.throws(
       () =>
@@ -321,17 +328,17 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
   }
 });
 
-test("G1.7 v4 rejects decision, suite, evaluator, and statistics drift", async () => {
+test("G1.7 v5 rejects protocol, suite, evaluator, and statistics drift", async () => {
   const pristine = JSON.parse(await readFile(g17ContractPath, "utf8"));
   for (const mutate of [
     (contract) => {
       contract.benchmark.suite.tasks[0].operations += 1;
     },
     (contract) => {
-      contract.referenceDecision.sha256 = "a".repeat(64);
+      contract.controlAuthorizationDecision.sha256 = "a".repeat(64);
     },
     (contract) => {
-      contract.decisionSetSha256 = "b".repeat(64);
+      contract.legacyV4DecisionSet.decisionSetSha256 = "b".repeat(64);
     },
     (contract) => {
       contract.evaluator.parent = contract.evaluator.commit;

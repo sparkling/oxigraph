@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   createG17NativeSessionArtifactForTesting,
   createG17NativeSessionConfiguration,
@@ -34,6 +33,7 @@ import {
   syntheticG17CommandRecord,
   syntheticG17Isolation,
 } from "./support/g17-native-session-fixture.mjs";
+import { loadG17LegacyV4Contract } from "./support/g17-legacy-v4-contract-fixture.mjs";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -81,7 +81,10 @@ function probeText(id) {
         stderr: "",
       };
     case "rustfmt-version":
-      return { stdout: "rustfmt 1.8.0-stable (fixture 2026-08-01)\n", stderr: "" };
+      return {
+        stdout: "rustfmt 1.8.0-stable (fixture 2026-08-01)\n",
+        stderr: "",
+      };
     case "rust-target-libdir":
       return {
         stdout: "/toolchain/lib/rustlib/x86_64-unknown-linux-gnu/lib\n",
@@ -167,21 +170,25 @@ function bindDirectoryDigests(entries) {
   }
   const directories = entries
     .filter(({ kind }) => kind === "directory")
-    .sort((left, right) => right.path.split("/").length - left.path.split("/").length);
+    .sort(
+      (left, right) =>
+        right.path.split("/").length - left.path.split("/").length,
+    );
   for (const entry of directories) {
     entry.sha256 = canonicalSha256({
       schema: "oxigraph.g1.7-platform-directory/v2",
       root: entry.root,
       path: entry.path,
-      children: (childrenByDirectory.get(`${entry.root}:${entry.path}`) ?? [])
-        .map(({ path, kind, mode, bytes, sha256: digest, target }) => ({
-          path,
-          kind,
-          mode,
-          bytes,
-          sha256: digest,
-          target,
-        })),
+      children: (
+        childrenByDirectory.get(`${entry.root}:${entry.path}`) ?? []
+      ).map(({ path, kind, mode, bytes, sha256: digest, target }) => ({
+        path,
+        kind,
+        mode,
+        bytes,
+        sha256: digest,
+        target,
+      })),
     });
   }
 }
@@ -211,9 +218,10 @@ function platformInput() {
       kind: role.kind,
       mode: 365,
       bytes: role.kind === "directory" ? 0 : index + 1,
-      sha256: role.kind === "directory"
-        ? null
-        : sha256(Buffer.from(`${role.id}:${index}`, "utf8")),
+      sha256:
+        role.kind === "directory"
+          ? null
+          : sha256(Buffer.from(`${role.id}:${index}`, "utf8")),
       target: null,
     });
   }
@@ -291,9 +299,10 @@ function platformInput() {
       elfClass: 64,
       elfData: "little",
       elfMachine: 62,
-      interpreter: path.startsWith("bin/") || path.startsWith("usr/bin/")
-        ? "platform:lib64/ld-linux-x86-64.so.2"
-        : null,
+      interpreter:
+        path.startsWith("bin/") || path.startsWith("usr/bin/")
+          ? "platform:lib64/ld-linux-x86-64.so.2"
+          : null,
       soname: null,
       needed: [],
       rpath: [],
@@ -329,7 +338,12 @@ const sourcePlanSeedFixture = Object.freeze([
   ["rust-rustc", "toolchain", "bin/rustc", []],
   ["rust-rustfmt", "toolchain", "bin/rustfmt", []],
   ["rust-libraries", "toolchain", "lib", []],
-  ["c-headers", "platform", "usr/include", ["x86_64-linux-gnu/mpi", "x86_64-linux-gnu/openmpi"]],
+  [
+    "c-headers",
+    "platform",
+    "usr/include",
+    ["x86_64-linux-gnu/mpi", "x86_64-linux-gnu/openmpi"],
+  ],
   ["gcc-libraries", "platform", "usr/lib/gcc/x86_64-linux-gnu/13", []],
   ["gcc-libexec", "platform", "usr/libexec/gcc/x86_64-linux-gnu/13", []],
   ["clang-headers", "platform", "usr/lib/llvm-18/lib/clang/18/include", []],
@@ -347,7 +361,12 @@ const sourcePlanSeedFixture = Object.freeze([
   ["mount", "platform", "usr/bin/mount", []],
   ["true", "platform", "usr/bin/true", []],
   ["os-release", "platform", "usr/lib/os-release", []],
-  ["contained-session-worker", "platform", "runner/contained-session-worker.mjs", []],
+  [
+    "contained-session-worker",
+    "platform",
+    "runner/contained-session-worker.mjs",
+    [],
+  ],
   ["seccomp-launcher", "platform", "runner/seccomp-launcher.py", []],
 ]);
 
@@ -382,13 +401,15 @@ function addBundleEntries(input) {
 }
 
 function controllerClosure(id) {
-  const records = [{
-    path: `/usr/bin/${id}`,
-    bytes: id.length,
-    sha256: sha256(Buffer.from(`${id}:executable`, "utf8")),
-    soname: null,
-    needed: [],
-  }];
+  const records = [
+    {
+      path: `/usr/bin/${id}`,
+      bytes: id.length,
+      sha256: sha256(Buffer.from(`${id}:executable`, "utf8")),
+      soname: null,
+      needed: [],
+    },
+  ];
   return { records, sha256: canonicalSha256(records) };
 }
 
@@ -430,7 +451,10 @@ function platformBundleFixture() {
   const sourcePlanBytes = canonicalBytes(sourcePlan);
 
   const closures = Object.fromEntries(
-    ["systemd-run", "prlimit", "bwrap"].map((id) => [id, controllerClosure(id)]),
+    ["systemd-run", "prlimit", "bwrap"].map((id) => [
+      id,
+      controllerClosure(id),
+    ]),
   );
   const snapshotHelper = reseal({
     schema: "oxigraph.g1.7-native-snapshot-helper/v2",
@@ -474,10 +498,12 @@ function platformBundleFixture() {
     sha256: "0".repeat(64),
   });
   const worker = input.entries.find(
-    ({ root, path }) => root === "platform" && path === "runner/contained-session-worker.mjs",
+    ({ root, path }) =>
+      root === "platform" && path === "runner/contained-session-worker.mjs",
   );
   const launcher = input.entries.find(
-    ({ root, path }) => root === "platform" && path === "runner/seccomp-launcher.py",
+    ({ root, path }) =>
+      root === "platform" && path === "runner/seccomp-launcher.py",
   );
   const tools = [
     ...["systemd-run", "prlimit", "bwrap"].map((id) => ({
@@ -544,7 +570,7 @@ function reboundBundle(fixture, sourcePlan, controller) {
 
 function instanceInput(policy, platform, controllerBytes) {
   const workspaceProjectionSha256 = "9".repeat(64);
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   const reviewed = sealedContract.contract.compatibility.nativeSession;
   const configuration = createG17NativeSessionConfiguration({
     runId: "platform-contract-fixture",
@@ -563,7 +589,8 @@ function instanceInput(policy, platform, controllerBytes) {
     },
   });
   const commands = configuration.commands.map((command, index) => {
-    const lane = sealedContract.contract.compatibility.native[Math.floor(index / 2)];
+    const lane =
+      sealedContract.contract.compatibility.native[Math.floor(index / 2)];
     return syntheticG17CommandRecord(
       configuration,
       command,
@@ -645,7 +672,10 @@ test("platform closure, isolation policy, and instance artifacts round-trip cano
     bundle.controllerBytes,
   );
   const instance = createG17NativeIsolationInstanceArtifact(instanceFixture);
-  assert.equal(instance.artifact.name, G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME);
+  assert.equal(
+    instance.artifact.name,
+    G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME,
+  );
   assert.equal(
     G17_NATIVE_ISOLATION_INSTANCE_SCHEMA,
     "oxigraph.g1.7-linux-native-isolation-instance/v5",
@@ -700,8 +730,9 @@ test("platform bundle replays exact source-plan and controller artifacts", () =>
   assert.deepEqual(replayed.controller, fixture.controller);
   assert.equal(
     Buffer.from(
-      replayed.controller.tools.find(({ id }) => id === "contained-session-worker")
-        .version.base64,
+      replayed.controller.tools.find(
+        ({ id }) => id === "contained-session-worker",
+      ).version.base64,
       "base64",
     ).toString("utf8"),
     "contained-session-worker/v5\n",
@@ -718,8 +749,14 @@ test("platform bundle replays exact source-plan and controller artifacts", () =>
     replayed.sourcePlanProjectionSha256,
     sha256(fixture.sourcePlanBytes.subarray(0, -1)),
   );
-  assert.equal(fixture.platform.artifact.name, G17_NATIVE_PLATFORM_ARTIFACT_NAME);
-  assert.equal(G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME, "linux-native-source-plan.json");
+  assert.equal(
+    fixture.platform.artifact.name,
+    G17_NATIVE_PLATFORM_ARTIFACT_NAME,
+  );
+  assert.equal(
+    G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME,
+    "linux-native-source-plan.json",
+  );
   assert.equal(
     G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
     "linux-native-controller-closure.json",
@@ -756,7 +793,9 @@ test("platform bundle rejects semantically rehashed source and controller drift"
     },
     () => {
       const controller = structuredClone(fixture.controller);
-      const tool = controller.tools.find(({ id }) => id === "contained-session-worker");
+      const tool = controller.tools.find(
+        ({ id }) => id === "contained-session-worker",
+      );
       tool.executableSha256 = "a".repeat(64);
       tool.dependencyClosureSha256 = tool.executableSha256;
       reseal(controller);
@@ -764,7 +803,9 @@ test("platform bundle rejects semantically rehashed source and controller drift"
     },
     () => {
       const controller = structuredClone(fixture.controller);
-      const tool = controller.tools.find(({ id }) => id === "contained-session-worker");
+      const tool = controller.tools.find(
+        ({ id }) => id === "contained-session-worker",
+      );
       tool.version = stream("contained-session-worker/v4\n");
       reseal(controller);
       return reboundBundle(fixture, fixture.sourcePlan, controller);
@@ -780,7 +821,9 @@ test("platform bundle rejects semantically rehashed source and controller drift"
       const controller = structuredClone(fixture.controller);
       controller.snapshotHelper.compiler.executableSha256 = "b".repeat(64);
       reseal(controller.snapshotHelper);
-      const tool = controller.tools.find(({ id }) => id === "native-snapshot-helper");
+      const tool = controller.tools.find(
+        ({ id }) => id === "native-snapshot-helper",
+      );
       tool.dependencyClosureSha256 = canonicalSha256({
         source: controller.snapshotHelper.source,
         compiler: controller.snapshotHelper.compiler,
@@ -790,11 +833,14 @@ test("platform bundle rejects semantically rehashed source and controller drift"
     },
     () => {
       const controller = structuredClone(fixture.controller);
-      controller.snapshotHelper.compiler.path = "/usr/bin/x86_64-linux-gnu-gcc-14";
+      controller.snapshotHelper.compiler.path =
+        "/usr/bin/x86_64-linux-gnu-gcc-14";
       controller.snapshotHelper.compile.argv[0] =
         controller.snapshotHelper.compiler.path;
       reseal(controller.snapshotHelper);
-      const tool = controller.tools.find(({ id }) => id === "native-snapshot-helper");
+      const tool = controller.tools.find(
+        ({ id }) => id === "native-snapshot-helper",
+      );
       tool.dependencyClosureSha256 = canonicalSha256({
         source: controller.snapshotHelper.source,
         compiler: controller.snapshotHelper.compiler,
@@ -818,7 +864,8 @@ test("platform bundle rejects semantically rehashed source and controller drift"
     },
     () => {
       const controller = structuredClone(fixture.controller);
-      controller.snapshotHelper.executable.identity.mode = String(0x1_0000_8140);
+      controller.snapshotHelper.executable.identity.mode =
+        String(0x1_0000_8140);
       reseal(controller.snapshotHelper);
       reseal(controller);
       return reboundBundle(fixture, fixture.sourcePlan, controller);
@@ -847,7 +894,8 @@ test("platform bundle rejects semantically rehashed source and controller drift"
     },
     () => {
       const controller = structuredClone(fixture.controller);
-      controller.tools[0].version.base64 = Buffer.from("changed\n").toString("base64");
+      controller.tools[0].version.base64 =
+        Buffer.from("changed\n").toString("base64");
       reseal(controller);
       return reboundBundle(fixture, fixture.sourcePlan, controller);
     },
@@ -863,15 +911,22 @@ test("platform bundle rejects semantically rehashed source and controller drift"
 test("platform bundle rejects noncanonical artifact framing", () => {
   const fixture = platformBundleFixture();
   for (const [sourcePlanBytes, controllerBytes] of [
-    [Buffer.from(JSON.stringify(fixture.sourcePlan), "utf8"), fixture.controllerBytes],
-    [fixture.sourcePlanBytes, Buffer.from(JSON.stringify(fixture.controller), "utf8")],
+    [
+      Buffer.from(JSON.stringify(fixture.sourcePlan), "utf8"),
+      fixture.controllerBytes,
+    ],
+    [
+      fixture.sourcePlanBytes,
+      Buffer.from(JSON.stringify(fixture.controller), "utf8"),
+    ],
   ]) {
     assert.throws(
-      () => verifyG17NativePlatformBundle({
-        platformBytes: fixture.platform.artifact.bytes,
-        sourcePlanBytes,
-        controllerBytes,
-      }),
+      () =>
+        verifyG17NativePlatformBundle({
+          platformBytes: fixture.platform.artifact.bytes,
+          sourcePlanBytes,
+          controllerBytes,
+        }),
       /G1\.7 native platform contract/u,
     );
   }
@@ -880,12 +935,25 @@ test("platform bundle rejects noncanonical artifact framing", () => {
 test("platform replay rejects role, entry, probe, graph, and derived-digest tampering", () => {
   const { artifact } = createG17NativePlatformClosureArtifact(platformInput());
   const mutations = [
-    (value) => { value.entries[0].sha256 = "0".repeat(64); },
-    (value) => { delete value.roles.cargo; },
-    (value) => { value.roles.cargo.resolvedPath = "../escape"; },
-    (value) => { value.probes[0].stdout.base64 = Buffer.from("changed\n").toString("base64"); },
-    (value) => { value.elfGraph.nodes[0].sha256 = "1".repeat(64); },
-    (value) => { value.platformRootSha256 = "2".repeat(64); },
+    (value) => {
+      value.entries[0].sha256 = "0".repeat(64);
+    },
+    (value) => {
+      delete value.roles.cargo;
+    },
+    (value) => {
+      value.roles.cargo.resolvedPath = "../escape";
+    },
+    (value) => {
+      value.probes[0].stdout.base64 =
+        Buffer.from("changed\n").toString("base64");
+    },
+    (value) => {
+      value.elfGraph.nodes[0].sha256 = "1".repeat(64);
+    },
+    (value) => {
+      value.platformRootSha256 = "2".repeat(64);
+    },
   ];
   for (const mutate of mutations) {
     const value = JSON.parse(artifact.bytes);
@@ -900,18 +968,31 @@ test("platform replay rejects role, entry, probe, graph, and derived-digest tamp
 test("platform replay re-executes exact probe recipes and cross-version checks", () => {
   const { artifact } = createG17NativePlatformClosureArtifact(platformInput());
   const mutations = [
-    (value) => { value.probes[0].program = "/toolchain/bin/cargo"; },
-    (value) => { value.probes[0].argv = [value.probes[0].program, "--version"]; },
-    (value) => { value.probes[0].cwd = "/state"; },
-    (value) => { value.probes[0].environment.PATH = "/usr/bin"; },
-    (value) => { value.probes[11].stdin = stream("different input\n"); },
+    (value) => {
+      value.probes[0].program = "/toolchain/bin/cargo";
+    },
+    (value) => {
+      value.probes[0].argv = [value.probes[0].program, "--version"];
+    },
+    (value) => {
+      value.probes[0].cwd = "/state";
+    },
+    (value) => {
+      value.probes[0].environment.PATH = "/usr/bin";
+    },
+    (value) => {
+      value.probes[11].stdin = stream("different input\n");
+    },
     (value) => {
       value.probes[0].parsed.facts.release = "1.95.0";
       value.probes[0].parsedSha256 = canonicalSha256(value.probes[0].parsed);
     },
     (value) => {
       const probe = value.probes.find(({ id }) => id === "rust-version");
-      const changed = probeText("rust-version").stdout.replaceAll("1.96.0", "1.95.0");
+      const changed = probeText("rust-version").stdout.replaceAll(
+        "1.96.0",
+        "1.95.0",
+      );
       probe.stdout = stream(changed);
       probe.parsed = replayG17NativePlatformProbe({
         id: probe.id,
@@ -1004,7 +1085,8 @@ test("platform paths model only the mounted namespace and real directory ancestr
   });
   loaderRole.resolvedPath = loaderEntry.path;
   const loaderNode = mergedUsr.elfGraph.nodes.find(
-    ({ root, path }) => root === "platform" && path === "lib64/ld-linux-x86-64.so.2",
+    ({ root, path }) =>
+      root === "platform" && path === "lib64/ld-linux-x86-64.so.2",
   );
   loaderNode.path = loaderEntry.path;
   for (const node of mergedUsr.elfGraph.nodes) {
@@ -1020,8 +1102,8 @@ test("platform paths model only the mounted namespace and real directory ancestr
   );
   bindDirectoryDigests(mergedUsr.entries);
   assert.equal(
-    createG17NativePlatformClosureArtifact(mergedUsr).closure.roles.dynamicLoader
-      .resolvedPath,
+    createG17NativePlatformClosureArtifact(mergedUsr).closure.roles
+      .dynamicLoader.resolvedPath,
     "usr/lib64/ld-linux-x86-64.so.2",
   );
 
@@ -1042,7 +1124,9 @@ test("platform paths model only the mounted namespace and real directory ancestr
         target: null,
       });
       input.entries.sort((left, right) =>
-        `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+        `${left.root}\0${left.path}`.localeCompare(
+          `${right.root}\0${right.path}`,
+        ),
       );
     },
     (input) => {
@@ -1068,7 +1152,9 @@ test("platform paths model only the mounted namespace and real directory ancestr
         target: "/etc/passwd",
       });
       input.entries.sort((left, right) =>
-        `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+        `${left.root}\0${left.path}`.localeCompare(
+          `${right.root}\0${right.path}`,
+        ),
       );
       bindDirectoryDigests(input.entries);
     },
@@ -1086,17 +1172,27 @@ test("isolation replay rejects drifted bindings, controller observations, and de
   const bundle = platformBundleFixture();
   const { platform } = bundle;
   const policy = createG17NativeIsolationPolicyArtifact();
-  const fixture = instanceInput(policy.policy, platform.closure, bundle.controllerBytes);
+  const fixture = instanceInput(
+    policy.policy,
+    platform.closure,
+    bundle.controllerBytes,
+  );
   const created = createG17NativeIsolationInstanceArtifact(fixture);
   const mutations = [
-    (value) => { value.policySha256 = "0".repeat(64); },
+    (value) => {
+      value.policySha256 = "0".repeat(64);
+    },
     (value) => {
       value.controllerTools[0].executableSha256 = "1".repeat(64);
       value.controllerToolsSha256 = canonicalSha256(value.controllerTools);
       reseal(value);
     },
-    (value) => { value.effectiveObservations.memoryMaxBytes -= 1; },
-    (value) => { value.effectiveObservations.finalDescendantsObserved = 1; },
+    (value) => {
+      value.effectiveObservations.memoryMaxBytes -= 1;
+    },
+    (value) => {
+      value.effectiveObservations.finalDescendantsObserved = 1;
+    },
     (value) => {
       value.effectiveObservations.normalizedMountTopologyObserved = false;
       reseal(value);
@@ -1105,23 +1201,28 @@ test("isolation replay rejects drifted bindings, controller observations, and de
       value.effectiveObservations.cgroupMembershipMatched = false;
       reseal(value);
     },
-    (value) => { value.controllerNamespaces.before.user = "user:[105]"; },
-    (value) => { value.sessionArtifact.sha256 = "1".repeat(64); },
+    (value) => {
+      value.controllerNamespaces.before.user = "user:[105]";
+    },
+    (value) => {
+      value.sessionArtifact.sha256 = "1".repeat(64);
+    },
   ];
   for (const mutate of mutations) {
     const value = JSON.parse(created.artifact.bytes);
     mutate(value);
     assert.throws(
-      () => verifyG17NativeIsolationInstanceArtifact({
-        bytes: canonicalBytes(value),
-        policy: policy.policy,
-        platform: platform.closure,
-        controllerBytes: bundle.controllerBytes,
-        workspaceProjectionSha256: "9".repeat(64),
-        sessionBytes: fixture.sessionBytes,
-        contractBytes: fixture.contractBytes,
-        contractSha256: fixture.contractSha256,
-      }),
+      () =>
+        verifyG17NativeIsolationInstanceArtifact({
+          bytes: canonicalBytes(value),
+          policy: policy.policy,
+          platform: platform.closure,
+          controllerBytes: bundle.controllerBytes,
+          workspaceProjectionSha256: "9".repeat(64),
+          sessionBytes: fixture.sessionBytes,
+          contractBytes: fixture.contractBytes,
+          contractSha256: fixture.contractSha256,
+        }),
       /G1\.7 native platform contract/u,
     );
   }
@@ -1131,22 +1232,27 @@ test("isolation replay consumes the supplied sealed session bytes", () => {
   const bundle = platformBundleFixture();
   const { platform } = bundle;
   const policy = createG17NativeIsolationPolicyArtifact();
-  const fixture = instanceInput(policy.policy, platform.closure, bundle.controllerBytes);
+  const fixture = instanceInput(
+    policy.policy,
+    platform.closure,
+    bundle.controllerBytes,
+  );
   const created = createG17NativeIsolationInstanceArtifact(fixture);
   const mutatedSession = JSON.parse(fixture.sessionBytes);
   mutatedSession.stateBytes += 1;
 
   assert.throws(
-    () => verifyG17NativeIsolationInstanceArtifact({
-      bytes: created.artifact.bytes,
-      policy: policy.policy,
-      platform: platform.closure,
-      controllerBytes: bundle.controllerBytes,
-      workspaceProjectionSha256: "9".repeat(64),
-      sessionBytes: canonicalBytes(mutatedSession),
-      contractBytes: fixture.contractBytes,
-      contractSha256: fixture.contractSha256,
-    }),
+    () =>
+      verifyG17NativeIsolationInstanceArtifact({
+        bytes: created.artifact.bytes,
+        policy: policy.policy,
+        platform: platform.closure,
+        controllerBytes: bundle.controllerBytes,
+        workspaceProjectionSha256: "9".repeat(64),
+        sessionBytes: canonicalBytes(mutatedSession),
+        contractBytes: fixture.contractBytes,
+        contractSha256: fixture.contractSha256,
+      }),
     /G1\.7 native platform contract:/u,
   );
 });
@@ -1160,7 +1266,10 @@ test("isolation replay prefixes malformed verification inputs", () => {
 
 test("platform contract replay is process- and filesystem-free", async () => {
   const source = await readFile(
-    new URL("../src/qualification/native-platform-contract.mjs", import.meta.url),
+    new URL(
+      "../src/qualification/native-platform-contract.mjs",
+      import.meta.url,
+    ),
     "utf8",
   );
   assert.doesNotMatch(

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 import { canonicalJson, canonicalSha256 } from "../../src/routing/features.mjs";
-import { loadG17Contract } from "../../src/qualification/contract.mjs";
 import {
   G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
   G17_NATIVE_CONTROLLER_SCHEMA,
@@ -36,6 +35,7 @@ import {
   syntheticG17CommandRecord,
   syntheticG17Isolation,
 } from "./g17-native-session-fixture.mjs";
+import { loadG17LegacyV4Contract } from "./g17-legacy-v4-contract-fixture.mjs";
 
 const digest = (character) => character.repeat(64);
 const gitObject = (character) => character.repeat(40);
@@ -100,7 +100,10 @@ function probeText(id) {
         stderr: "",
       };
     case "rustfmt-version":
-      return { stdout: "rustfmt 1.8.0-stable (fixture 2026-08-01)\n", stderr: "" };
+      return {
+        stdout: "rustfmt 1.8.0-stable (fixture 2026-08-01)\n",
+        stderr: "",
+      };
     case "rust-target-libdir":
       return {
         stdout: "/toolchain/lib/rustlib/x86_64-unknown-linux-gnu/lib\n",
@@ -186,20 +189,24 @@ function bindDirectoryDigests(entries) {
   }
   for (const entry of entries
     .filter(({ kind }) => kind === "directory")
-    .sort((left, right) => right.path.split("/").length - left.path.split("/").length)) {
+    .sort(
+      (left, right) =>
+        right.path.split("/").length - left.path.split("/").length,
+    )) {
     entry.sha256 = canonicalSha256({
       schema: "oxigraph.g1.7-platform-directory/v2",
       root: entry.root,
       path: entry.path,
-      children: (childrenByDirectory.get(`${entry.root}:${entry.path}`) ?? [])
-        .map(({ path, kind, mode, bytes, sha256: hash, target }) => ({
-          path,
-          kind,
-          mode,
-          bytes,
-          sha256: hash,
-          target,
-        })),
+      children: (
+        childrenByDirectory.get(`${entry.root}:${entry.path}`) ?? []
+      ).map(({ path, kind, mode, bytes, sha256: hash, target }) => ({
+        path,
+        kind,
+        mode,
+        bytes,
+        sha256: hash,
+        target,
+      })),
     });
   }
 }
@@ -229,9 +236,10 @@ function platformInput(subjectIdentitySha256) {
       kind: role.kind,
       mode: 365,
       bytes: role.kind === "directory" ? 0 : index + 1,
-      sha256: role.kind === "directory"
-        ? null
-        : sha256(Buffer.from(`${role.id}:${index}`, "utf8")),
+      sha256:
+        role.kind === "directory"
+          ? null
+          : sha256(Buffer.from(`${role.id}:${index}`, "utf8")),
       target: null,
     });
   }
@@ -246,20 +254,24 @@ function platformInput(subjectIdentitySha256) {
     target: null,
   });
   entries.sort((left, right) =>
-    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`));
+    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+  );
   bindDirectoryDigests(entries);
   const roles = Object.fromEntries(
     G17_NATIVE_PLATFORM_REQUIRED_ROLES.map((role) => {
       const entry = entries.find(
         ({ root, path }) => root === role.root && path === role.fixturePath,
       );
-      return [role.id, {
-        root: role.root,
-        path: role.fixturePath,
-        kind: role.kind,
-        resolvedPath: role.fixturePath,
-        sha256: entry.sha256,
-      }];
+      return [
+        role.id,
+        {
+          root: role.root,
+          path: role.fixturePath,
+          kind: role.kind,
+          resolvedPath: role.fixturePath,
+          sha256: entry.sha256,
+        },
+      ];
     }),
   );
   const probes = g17NativePlatformProbeRecipes(roles).map((recipe) => {
@@ -305,9 +317,10 @@ function platformInput(subjectIdentitySha256) {
       elfClass: 64,
       elfData: "little",
       elfMachine: 62,
-      interpreter: path.startsWith("bin/") || path.startsWith("usr/bin/")
-        ? "platform:lib64/ld-linux-x86-64.so.2"
-        : null,
+      interpreter:
+        path.startsWith("bin/") || path.startsWith("usr/bin/")
+          ? "platform:lib64/ld-linux-x86-64.so.2"
+          : null,
       soname: null,
       needed: [],
       rpath: [],
@@ -343,7 +356,12 @@ const sourcePlanSeeds = Object.freeze([
   ["rust-rustc", "toolchain", "bin/rustc", []],
   ["rust-rustfmt", "toolchain", "bin/rustfmt", []],
   ["rust-libraries", "toolchain", "lib", []],
-  ["c-headers", "platform", "usr/include", ["x86_64-linux-gnu/mpi", "x86_64-linux-gnu/openmpi"]],
+  [
+    "c-headers",
+    "platform",
+    "usr/include",
+    ["x86_64-linux-gnu/mpi", "x86_64-linux-gnu/openmpi"],
+  ],
   ["gcc-libraries", "platform", "usr/lib/gcc/x86_64-linux-gnu/13", []],
   ["gcc-libexec", "platform", "usr/libexec/gcc/x86_64-linux-gnu/13", []],
   ["clang-headers", "platform", "usr/lib/llvm-18/lib/clang/18/include", []],
@@ -361,7 +379,12 @@ const sourcePlanSeeds = Object.freeze([
   ["mount", "platform", "usr/bin/mount", []],
   ["true", "platform", "usr/bin/true", []],
   ["os-release", "platform", "usr/lib/os-release", []],
-  ["contained-session-worker", "platform", "runner/contained-session-worker.mjs", []],
+  [
+    "contained-session-worker",
+    "platform",
+    "runner/contained-session-worker.mjs",
+    [],
+  ],
   ["seccomp-launcher", "platform", "runner/seccomp-launcher.py", []],
 ]);
 
@@ -389,26 +412,30 @@ function addBundleEntries(input) {
     });
   }
   input.entries.sort((left, right) =>
-    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`));
+    `${left.root}\0${left.path}`.localeCompare(`${right.root}\0${right.path}`),
+  );
   bindDirectoryDigests(input.entries);
 }
 
 function controllerClosure(id) {
-  const records = [{
-    path: `/usr/bin/${id}`,
-    bytes: id.length,
-    sha256: sha256(Buffer.from(`${id}:executable`, "utf8")),
-    soname: null,
-    needed: [],
-  }];
+  const records = [
+    {
+      path: `/usr/bin/${id}`,
+      bytes: id.length,
+      sha256: sha256(Buffer.from(`${id}:executable`, "utf8")),
+      soname: null,
+      needed: [],
+    },
+  ];
   return { records, sha256: canonicalSha256(records) };
 }
 
 function platformBundle(identity) {
   const input = platformInput(identity.identitySha256);
   for (const program of ["cargo", "rustc"]) {
-    identity.toolchain.find((tool) => tool.program === program)
-      .toolchainExecutableSha256 = input.roles[program].sha256;
+    identity.toolchain.find(
+      (tool) => tool.program === program,
+    ).toolchainExecutableSha256 = input.roles[program].sha256;
   }
   resealIdentity(identity);
   input.subjectIdentitySha256 = identity.identitySha256;
@@ -419,7 +446,11 @@ function platformBundle(identity) {
     schema: G17_NATIVE_SOURCE_PLAN_SCHEMA,
     subjectIdentitySha256: input.subjectIdentitySha256,
     target: sourceTarget,
-    generations: { gccMajor: "13", llvmMajor: "18", pythonVersion: "python3.12" },
+    generations: {
+      gccMajor: "13",
+      llvmMajor: "18",
+      pythonVersion: "python3.12",
+    },
     seeds: sourcePlanSeeds.map(([id, root, destination, excludes]) => ({
       id,
       root,
@@ -443,7 +474,10 @@ function platformBundle(identity) {
   };
   const sourcePlanBytes = canonicalBytes(sourcePlan);
   const closures = Object.fromEntries(
-    ["systemd-run", "prlimit", "bwrap"].map((id) => [id, controllerClosure(id)]),
+    ["systemd-run", "prlimit", "bwrap"].map((id) => [
+      id,
+      controllerClosure(id),
+    ]),
   );
   const snapshotHelper = reseal({
     schema: "oxigraph.g1.7-native-snapshot-helper/v2",
@@ -487,10 +521,12 @@ function platformBundle(identity) {
     sha256: digest("0"),
   });
   const worker = input.entries.find(
-    ({ root, path }) => root === "platform" && path === "runner/contained-session-worker.mjs",
+    ({ root, path }) =>
+      root === "platform" && path === "runner/contained-session-worker.mjs",
   );
   const launcher = input.entries.find(
-    ({ root, path }) => root === "platform" && path === "runner/seccomp-launcher.py",
+    ({ root, path }) =>
+      root === "platform" && path === "runner/seccomp-launcher.py",
   );
   const tools = [
     ...["systemd-run", "prlimit", "bwrap"].map((id) => ({
@@ -536,7 +572,8 @@ function platformBundle(identity) {
 }
 
 function resealIdentity(identity) {
-  const { harnessSha256: ignoredHarnessSha256, ...controlBinding } = identity.control;
+  const { harnessSha256: ignoredHarnessSha256, ...controlBinding } =
+    identity.control;
   identity.control.harnessSha256 = canonicalSha256({
     schema: "oxigraph.committed-harness-identity/v1",
     ...controlBinding,
@@ -547,20 +584,25 @@ function resealIdentity(identity) {
 }
 
 function finalCargoConfigSha256() {
-  return sha256(Buffer.from([
-    "[build]",
-    'target-dir = "/state/target"',
-    "",
-    "[net]",
-    "offline = true",
-    "",
-    "[source.crates-io]",
-    'replace-with = "g17-vendored-sources"',
-    "",
-    "[source.g17-vendored-sources]",
-    'directory = "/cargo-home/vendor"',
-    "",
-  ].join("\n"), "utf8"));
+  return sha256(
+    Buffer.from(
+      [
+        "[build]",
+        'target-dir = "/state/target"',
+        "",
+        "[net]",
+        "offline = true",
+        "",
+        "[source.crates-io]",
+        'replace-with = "g17-vendored-sources"',
+        "",
+        "[source.g17-vendored-sources]",
+        'directory = "/cargo-home/vendor"',
+        "",
+      ].join("\n"),
+      "utf8",
+    ),
+  );
 }
 
 const cargoEnvironment = Object.freeze({
@@ -659,14 +701,16 @@ function workspaceOwner(binding, lockBytes) {
         manifestSha256: digest(index === 0 ? "d" : "e"),
       }),
     ),
-    excludedGitlinks: G17_NATIVE_WORKSPACE_EXCLUDED_GITLINKS.map(
-      (item) => ({ ...item }),
-    ),
-    symlinks: [{
-      path: "lib-alias",
-      target: symlinkTarget,
-      gitBlob: gitBlobSha1(Buffer.from(symlinkTarget, "utf8")),
-    }],
+    excludedGitlinks: G17_NATIVE_WORKSPACE_EXCLUDED_GITLINKS.map((item) => ({
+      ...item,
+    })),
+    symlinks: [
+      {
+        path: "lib-alias",
+        target: symlinkTarget,
+        gitBlob: gitBlobSha1(Buffer.from(symlinkTarget, "utf8")),
+      },
+    ],
     objectClosureSha256: "",
     entryCount: 12,
     totalBytes: lockBytes.length + 1_024,
@@ -683,32 +727,38 @@ function workspaceOwner(binding, lockBytes) {
     excludedGitlinks: source.excludedGitlinks,
     symlinks: source.symlinks,
   });
-  const packages = [{
-    name: "demo",
-    version: "1.2.3",
-    source: "registry+https://github.com/rust-lang/crates.io-index",
-    checksum: digest("a"),
-  }];
-  const archiveRecords = [{
-    name: "demo",
-    version: "1.2.3",
-    source: packages[0].source,
-    lockChecksum: packages[0].checksum,
-    archiveName: "demo-1.2.3.crate",
-    bytes: 512,
-    sha256: packages[0].checksum,
-  }];
+  const packages = [
+    {
+      name: "demo",
+      version: "1.2.3",
+      source: "registry+https://github.com/rust-lang/crates.io-index",
+      checksum: digest("a"),
+    },
+  ];
+  const archiveRecords = [
+    {
+      name: "demo",
+      version: "1.2.3",
+      source: packages[0].source,
+      lockChecksum: packages[0].checksum,
+      archiveName: "demo-1.2.3.crate",
+      bytes: 512,
+      sha256: packages[0].checksum,
+    },
+  ];
   const archiveProjection = {
     schema: "oxigraph.g1.7-registry-archive-set/v1",
     cargoLockSha256: binding.cargoLockSha256,
     records: archiveRecords,
   };
-  const sparseRecords = [{
-    crate: "demo",
-    path: "de/mo/demo",
-    bytes: 128,
-    sha256: digest("b"),
-  }];
+  const sparseRecords = [
+    {
+      crate: "demo",
+      path: "de/mo/demo",
+      bytes: 128,
+      sha256: digest("b"),
+    },
+  ];
   const sparseConfigSha256 = digest("c");
   const sparseProjection = {
     schema: "oxigraph.g1.7-sparse-bootstrap-set/v1",
@@ -716,12 +766,14 @@ function workspaceOwner(binding, lockBytes) {
     configSha256: sparseConfigSha256,
     records: sparseRecords,
   };
-  const vendorPackages = [{
-    name: "demo",
-    version: "1.2.3",
-    packageChecksum: packages[0].checksum,
-    files: [{ path: "src/lib.rs", sha256: digest("d") }],
-  }];
+  const vendorPackages = [
+    {
+      name: "demo",
+      version: "1.2.3",
+      packageChecksum: packages[0].checksum,
+      files: [{ path: "src/lib.rs", sha256: digest("d") }],
+    },
+  ];
   const vendorChecksumProjection = {
     schema: "oxigraph.g1.7-vendor-checksum-set/v1",
     cargoLockSha256: binding.cargoLockSha256,
@@ -790,25 +842,32 @@ function workspaceOwner(binding, lockBytes) {
       packages: vendorPackages,
       sha256: canonicalBound(vendorChecksumProjection).sha256,
     },
-    vendorCommand: processEvidence([
-      "vendor",
-      "--locked",
-      "--offline",
-      "--versioned-dirs",
-      "--color=never",
-      "--manifest-path",
-      "/workspace/Cargo.toml",
-      "/cargo-home/vendor",
-    ], 1024 * 1024),
-    metadataCommand: processEvidence([
-      "metadata",
-      "--locked",
-      "--offline",
-      "--format-version",
-      "1",
-      "--manifest-path",
-      "/workspace/Cargo.toml",
-    ], 16 * 1024 * 1024, Buffer.from("{}\n", "utf8")),
+    vendorCommand: processEvidence(
+      [
+        "vendor",
+        "--locked",
+        "--offline",
+        "--versioned-dirs",
+        "--color=never",
+        "--manifest-path",
+        "/workspace/Cargo.toml",
+        "/cargo-home/vendor",
+      ],
+      1024 * 1024,
+    ),
+    metadataCommand: processEvidence(
+      [
+        "metadata",
+        "--locked",
+        "--offline",
+        "--format-version",
+        "1",
+        "--manifest-path",
+        "/workspace/Cargo.toml",
+      ],
+      16 * 1024 * 1024,
+      Buffer.from("{}\n", "utf8"),
+    ),
     metadata: {
       ...metadataProjection,
       ...canonicalBound(metadataProjection),
@@ -866,7 +925,9 @@ function workspaceOwner(binding, lockBytes) {
     sha256: "",
   };
   owner.sha256 = canonicalSha256(
-    Object.fromEntries(Object.entries(owner).filter(([key]) => key !== "sha256")),
+    Object.fromEntries(
+      Object.entries(owner).filter(([key]) => key !== "sha256"),
+    ),
   );
   return { owner, bytes: canonicalBytes(owner), projection: owner.projection };
 }
@@ -907,17 +968,20 @@ function controllerNamespaces() {
 export function createG17NativeApplicationFixture({
   runId = "native-application-production-fixture",
 } = {}) {
-  const sealedContract = loadG17Contract();
-  const lockBytes = Buffer.from([
-    "version = 4",
-    "",
-    "[[package]]",
-    'name = "demo"',
-    'version = "1.2.3"',
-    'source = "registry+https://github.com/rust-lang/crates.io-index"',
-    `checksum = "${digest("a")}"`,
-    "",
-  ].join("\n"), "utf8");
+  const sealedContract = loadG17LegacyV4Contract();
+  const lockBytes = Buffer.from(
+    [
+      "version = 4",
+      "",
+      "[[package]]",
+      'name = "demo"',
+      'version = "1.2.3"',
+      'source = "registry+https://github.com/rust-lang/crates.io-index"',
+      `checksum = "${digest("a")}"`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   const identity = g17IdentityFixture({
     subjectCommit: gitObject("2"),
     cargoVersion: probeText("cargo-version").stdout.trimEnd(),
@@ -951,14 +1015,21 @@ export function createG17NativeApplicationFixture({
     cargoLockSha256: identity.cargoLock.sha256,
     platformManifestSha256: platform.manifestSha256,
     toolchainRootSha256: platform.toolchainRootSha256,
-    toolchain: Object.fromEntries(["cargo", "rustc"].map((program) => {
-      const tool = identity.toolchain.find((candidate) => candidate.program === program);
-      return [program, {
-        logicalPath: `/toolchain/bin/${program}`,
-        executableSha256: tool.toolchainExecutableSha256,
-        versionSha256: sha256(Buffer.from(tool.versionStdout, "utf8")),
-      }];
-    })),
+    toolchain: Object.fromEntries(
+      ["cargo", "rustc"].map((program) => {
+        const tool = identity.toolchain.find(
+          (candidate) => candidate.program === program,
+        );
+        return [
+          program,
+          {
+            logicalPath: `/toolchain/bin/${program}`,
+            executableSha256: tool.toolchainExecutableSha256,
+            versionSha256: sha256(Buffer.from(tool.versionStdout, "utf8")),
+          },
+        ];
+      }),
+    ),
   };
   const workspace = workspaceOwner(workspaceBinding, lockBytes);
   const policy = createG17NativeIsolationPolicyArtifact();
@@ -973,16 +1044,31 @@ export function createG17NativeApplicationFixture({
   });
   const rawCommandEvidence = [];
   const commands = configuration.commands.map((command, index) => {
-    const lane = sealedContract.contract.compatibility.native[Math.floor(index / 2)];
-    const stdout = index % 2 === 0
-      ? `${lane.expectedTestIds.map((id) => `${id}: test`).join("\n")}\n`
-      : `test result: ok. ${lane.expectedPassedTests} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n`;
-    const stderr = index === 0 ? "fixture-raw-stderr-marker: diagnostic only\n" : "";
-    rawCommandEvidence.push(stdout, Buffer.from(stdout, "utf8").toString("base64"));
+    const lane =
+      sealedContract.contract.compatibility.native[Math.floor(index / 2)];
+    const stdout =
+      index % 2 === 0
+        ? `${lane.expectedTestIds.map((id) => `${id}: test`).join("\n")}\n`
+        : `test result: ok. ${lane.expectedPassedTests} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n`;
+    const stderr =
+      index === 0 ? "fixture-raw-stderr-marker: diagnostic only\n" : "";
+    rawCommandEvidence.push(
+      stdout,
+      Buffer.from(stdout, "utf8").toString("base64"),
+    );
     if (stderr.length > 0) {
-      rawCommandEvidence.push(stderr, Buffer.from(stderr, "utf8").toString("base64"));
+      rawCommandEvidence.push(
+        stderr,
+        Buffer.from(stderr, "utf8").toString("base64"),
+      );
     }
-    return syntheticG17CommandRecord(configuration, command, index, stdout, stderr);
+    return syntheticG17CommandRecord(
+      configuration,
+      command,
+      index,
+      stdout,
+      stderr,
+    );
   });
   const session = createG17NativeSessionArtifactForTesting({
     configuration,
@@ -1012,13 +1098,31 @@ export function createG17NativeApplicationFixture({
   return {
     input: {
       artifacts: [
-        { name: G17_NATIVE_PLATFORM_ARTIFACT_NAME, bytes: bundle.platform.artifact.bytes },
-        { name: G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME, bytes: bundle.sourcePlanBytes },
-        { name: G17_NATIVE_CONTROLLER_ARTIFACT_NAME, bytes: bundle.controllerBytes },
+        {
+          name: G17_NATIVE_PLATFORM_ARTIFACT_NAME,
+          bytes: bundle.platform.artifact.bytes,
+        },
+        {
+          name: G17_NATIVE_SOURCE_PLAN_ARTIFACT_NAME,
+          bytes: bundle.sourcePlanBytes,
+        },
+        {
+          name: G17_NATIVE_CONTROLLER_ARTIFACT_NAME,
+          bytes: bundle.controllerBytes,
+        },
         { name: G17_NATIVE_WORKSPACE_ARTIFACT_NAME, bytes: workspace.bytes },
-        { name: G17_NATIVE_ISOLATION_POLICY_ARTIFACT_NAME, bytes: policy.artifact.bytes },
-        { name: G17_NATIVE_SESSION_ARTIFACT_NAME, bytes: session.artifact.bytes },
-        { name: G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME, bytes: instance.artifact.bytes },
+        {
+          name: G17_NATIVE_ISOLATION_POLICY_ARTIFACT_NAME,
+          bytes: policy.artifact.bytes,
+        },
+        {
+          name: G17_NATIVE_SESSION_ARTIFACT_NAME,
+          bytes: session.artifact.bytes,
+        },
+        {
+          name: G17_NATIVE_ISOLATION_INSTANCE_ARTIFACT_NAME,
+          bytes: instance.artifact.bytes,
+        },
       ],
       identity,
       contractBytes: Buffer.from(sealedContract.bytes),

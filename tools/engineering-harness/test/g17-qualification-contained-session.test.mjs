@@ -29,10 +29,7 @@ import {
   createQualificationSandboxSessionForTesting,
   normalizeG17NativeSessionForTesting,
 } from "../src/qualification/contained-session.mjs";
-import {
-  createG17NativeSessionWorkerForTesting,
-} from "../src/qualification/contained-session-worker.mjs";
-import { loadG17Contract } from "../src/qualification/contract.mjs";
+import { createG17NativeSessionWorkerForTesting } from "../src/qualification/contained-session-worker.mjs";
 import {
   createG17NativeSessionConfiguration,
   g17NativeSessionCommands,
@@ -44,6 +41,7 @@ import {
   syntheticG17Isolation,
   syntheticG17LaunchAttestation,
 } from "./support/g17-native-session-fixture.mjs";
+import { loadG17LegacyV4Contract } from "./support/g17-legacy-v4-contract-fixture.mjs";
 
 const mebibyte = 1024 * 1024;
 
@@ -84,7 +82,8 @@ function descriptorsReferencing(root) {
   for (const name of readdirSync("/proc/self/fd")) {
     try {
       const target = readlinkSync(`/proc/self/fd/${name}`);
-      if (target === root || target.startsWith(`${root}/`)) references.push(Number(name));
+      if (target === root || target.startsWith(`${root}/`))
+        references.push(Number(name));
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
@@ -106,7 +105,7 @@ function descriptorsStartingWith(prefix) {
 }
 
 function commandPlan() {
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   return g17NativeSessionCommands({
     contractBytes: sealedContract.bytes,
     contractSha256: sealedContract.contractSha256,
@@ -200,7 +199,10 @@ async function runSyntheticSession(root, raw, options = {}) {
   await Promise.all([
     chmod(cargoExecutable, 0o500),
     chmod(join(toolchainDirectory, "bin", "rustc"), 0o500),
-    chmod(join(platformDirectory, "runner", "contained-session-worker.mjs"), 0o400),
+    chmod(
+      join(platformDirectory, "runner", "contained-session-worker.mjs"),
+      0o400,
+    ),
     chmod(join(platformDirectory, "runner", "seccomp-launcher.py"), 0o400),
   ]);
   await options.prepare?.({
@@ -209,7 +211,7 @@ async function runSyntheticSession(root, raw, options = {}) {
     toolchainDirectory,
     platformDirectory,
   });
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   const platform = sessionPlatformBinding();
   const policy = {
     schema: "oxigraph.g1.7-linux-native-isolation-policy/v4",
@@ -233,91 +235,104 @@ async function runSyntheticSession(root, raw, options = {}) {
     workspaceProjectionSha256: "c".repeat(64),
     requestedLimits,
   });
-  const runSession = createQualificationSandboxSessionForTesting(async (request) => {
-    assert.equal(request.inheritedFileDescriptors.length, 8);
-    assert.equal(
-      new Set(request.inheritedFileDescriptors).size,
-      request.inheritedFileDescriptors.length,
-    );
-    for (const descriptor of request.inheritedFileDescriptors) {
-      assert.doesNotThrow(() => fstatSync(descriptor));
-    }
-    const [
-      platformDescriptor,
-      cgroupDescriptor,
-      cargoHomeDescriptor,
-      toolchainDescriptor,
-      workspaceDescriptor,
-      workerDescriptor,
-      launcherDescriptor,
-      outputDescriptor,
-    ] = request.inheritedFileDescriptors;
-    assert.equal(
-      readFileSync(`/proc/self/fd/${platformDescriptor}/runner/contained-session-worker.mjs`, "utf8"),
-      "synthetic contained-session worker\n",
-    );
-    assert.equal(fstatSync(cgroupDescriptor).isDirectory(), true);
-    assert.equal(
-      readFileSync(`/proc/self/fd/${cargoHomeDescriptor}/descriptor-slot`, "utf8"),
-      "cargo-home\n",
-    );
-    assert.equal(
-      readFileSync(`/proc/self/fd/${toolchainDescriptor}/bin/cargo`, "utf8"),
-      "synthetic Cargo\n",
-    );
-    assert.equal(
-      readFileSync(`/proc/self/fd/${workspaceDescriptor}/descriptor-slot`, "utf8"),
-      "workspace\n",
-    );
-    assert.equal(
-      readFileSync(`/proc/self/fd/${workerDescriptor}`, "utf8"),
-      "synthetic contained-session worker\n",
-    );
-    assert.equal(
-      readFileSync(`/proc/self/fd/${launcherDescriptor}`, "utf8"),
-      "synthetic seccomp launcher\n",
-    );
-    assert.equal(fstatSync(outputDescriptor).isFile(), true);
-    const commands = (raw.commands ?? []).map((record, index) => {
-      const attestation = syntheticG17LaunchAttestation(
-        configuration,
-        configuration.commands[index],
-        index,
+  const runSession = createQualificationSandboxSessionForTesting(
+    async (request) => {
+      assert.equal(request.inheritedFileDescriptors.length, 8);
+      assert.equal(
+        new Set(request.inheritedFileDescriptors).size,
+        request.inheritedFileDescriptors.length,
       );
-      return {
-        ...record,
-        launchAttestationBase64: attestation.toString("base64"),
-        launchAttestationSha256: sha256(attestation),
+      for (const descriptor of request.inheritedFileDescriptors) {
+        assert.doesNotThrow(() => fstatSync(descriptor));
+      }
+      const [
+        platformDescriptor,
+        cgroupDescriptor,
+        cargoHomeDescriptor,
+        toolchainDescriptor,
+        workspaceDescriptor,
+        workerDescriptor,
+        launcherDescriptor,
+        outputDescriptor,
+      ] = request.inheritedFileDescriptors;
+      assert.equal(
+        readFileSync(
+          `/proc/self/fd/${platformDescriptor}/runner/contained-session-worker.mjs`,
+          "utf8",
+        ),
+        "synthetic contained-session worker\n",
+      );
+      assert.equal(fstatSync(cgroupDescriptor).isDirectory(), true);
+      assert.equal(
+        readFileSync(
+          `/proc/self/fd/${cargoHomeDescriptor}/descriptor-slot`,
+          "utf8",
+        ),
+        "cargo-home\n",
+      );
+      assert.equal(
+        readFileSync(`/proc/self/fd/${toolchainDescriptor}/bin/cargo`, "utf8"),
+        "synthetic Cargo\n",
+      );
+      assert.equal(
+        readFileSync(
+          `/proc/self/fd/${workspaceDescriptor}/descriptor-slot`,
+          "utf8",
+        ),
+        "workspace\n",
+      );
+      assert.equal(
+        readFileSync(`/proc/self/fd/${workerDescriptor}`, "utf8"),
+        "synthetic contained-session worker\n",
+      );
+      assert.equal(
+        readFileSync(`/proc/self/fd/${launcherDescriptor}`, "utf8"),
+        "synthetic seccomp launcher\n",
+      );
+      assert.equal(fstatSync(outputDescriptor).isFile(), true);
+      const commands = (raw.commands ?? []).map((record, index) => {
+        const attestation = syntheticG17LaunchAttestation(
+          configuration,
+          configuration.commands[index],
+          index,
+        );
+        return {
+          ...record,
+          launchAttestationBase64: attestation.toString("base64"),
+          launchAttestationSha256: sha256(attestation),
+        };
+      });
+      const result = {
+        ...raw,
+        schema: "oxigraph.g1.7-native-session-result/v5",
+        configuration,
+        commands,
+        isolation:
+          raw.outcome === "error"
+            ? null
+            : syntheticG17Isolation(configuration, raw.stateBytes ?? 4_096),
       };
-    });
-    const result = {
-      ...raw,
-      schema: "oxigraph.g1.7-native-session-result/v5",
-      configuration,
-      commands,
-      isolation:
-        raw.outcome === "error"
-          ? null
-          : syntheticG17Isolation(configuration, raw.stateBytes ?? 4_096),
-    };
-    const serialized = Buffer.from(`${canonicalJson(result)}\n`, "utf8");
-    ftruncateSync(outputDescriptor, 0);
-    assert.equal(
-      writeSync(outputDescriptor, serialized, 0, serialized.length, null),
-      serialized.length,
-    );
-    await options.onRequest?.(request, serialized);
-    if (options.runnerError !== undefined) throw options.runnerError;
-    return Object.freeze(options.outcome ?? {
-      disposition: "completed",
-      exitCode: 0,
-      signal: null,
-      durationMs: 10,
-      stdout: "",
-      stderr: "",
-      terminationErrors: Object.freeze([]),
-    });
-  });
+      const serialized = Buffer.from(`${canonicalJson(result)}\n`, "utf8");
+      ftruncateSync(outputDescriptor, 0);
+      assert.equal(
+        writeSync(outputDescriptor, serialized, 0, serialized.length, null),
+        serialized.length,
+      );
+      await options.onRequest?.(request, serialized);
+      if (options.runnerError !== undefined) throw options.runnerError;
+      return Object.freeze(
+        options.outcome ?? {
+          disposition: "completed",
+          exitCode: 0,
+          signal: null,
+          durationMs: 10,
+          stdout: "",
+          stderr: "",
+          terminationErrors: Object.freeze([]),
+        },
+      );
+    },
+  );
   return runSession({
     runId: "g17-contained-synthetic",
     contractBytes: sealedContract.bytes,
@@ -341,37 +356,51 @@ test("production worker normalizes only the reviewed mount ancestry", () => {
     quiesceUntrustedProcesses: async () => 0,
   });
   const mounts = worker.normalizeMountinfo(workerMountinfo());
-  assert.equal(mounts.find(({ destination }) => destination === "/workspace").parentMountId, "1");
-  assert.equal(mounts.find(({ destination }) => destination === "/dev/pts").parentMountId, "2");
-  assert.equal(mounts.find(({ destination }) => destination === "/state/tmp").parentMountId, "8");
+  assert.equal(
+    mounts.find(({ destination }) => destination === "/workspace")
+      .parentMountId,
+    "1",
+  );
+  assert.equal(
+    mounts.find(({ destination }) => destination === "/dev/pts").parentMountId,
+    "2",
+  );
+  assert.equal(
+    mounts.find(({ destination }) => destination === "/state/tmp")
+      .parentMountId,
+    "8",
+  );
   assert.equal(Object.hasOwn(mounts[0], "privateRoot"), false);
 
   for (const drifted of [
-    workerMountinfo().replace(
-      "5 1 0:5 / /workspace",
-      "5 99 0:5 / /workspace",
-    ),
-    workerMountinfo().replace(
-      "15 2 0:15 / /dev/pts",
-      "15 1 0:15 / /dev/pts",
-    ),
+    workerMountinfo().replace("5 1 0:5 / /workspace", "5 99 0:5 / /workspace"),
+    workerMountinfo().replace("15 2 0:15 / /dev/pts", "15 1 0:15 / /dev/pts"),
     workerMountinfo().replace(
       "10 8 0:100 /target /state/target",
       "10 1 0:100 /target /state/target",
     ),
   ]) {
-    assert.throws(() => worker.normalizeMountinfo(drifted), /mount ancestry drifted/u);
+    assert.throws(
+      () => worker.normalizeMountinfo(drifted),
+      /mount ancestry drifted/u,
+    );
   }
 });
 
 test("production worker stops at the first terminal command and bounds oversize evidence", async () => {
   const commands = commandPlan().slice(0, 3);
   const observedCommands = [];
-  const outcomes = [workerOutcome(), workerOutcome({ exitCode: 7 }), workerOutcome()];
+  const outcomes = [
+    workerOutcome(),
+    workerOutcome({ exitCode: 7 }),
+    workerOutcome(),
+  ];
   let anchorChecks = 0;
   const worker = createG17NativeSessionWorkerForTesting({
     now: () => 0,
-    assertStateAnchors: () => { anchorChecks += 1; },
+    assertStateAnchors: () => {
+      anchorChecks += 1;
+    },
     runCargoCommand: async (request) => {
       observedCommands.push(request);
       return outcomes[observedCommands.length - 1];
@@ -393,17 +422,20 @@ test("production worker stops at the first terminal command and bounds oversize 
   });
   assert.equal(execution.commands.length, 2);
 
-  const serialized = worker.serializedResult({
-    schema: "oxigraph.g1.7-native-session-result/v5",
-    configuration: { runId: "bounded-worker-test" },
-    outcome: "pass",
-    reason: null,
-    commands: [{ stdoutBase64: "x".repeat(4_096) }],
-    stateBytes: 0,
-    durationMs: 9,
-    finalDescendantsObserved: 0,
-    isolation: {},
-  }, 512);
+  const serialized = worker.serializedResult(
+    {
+      schema: "oxigraph.g1.7-native-session-result/v5",
+      configuration: { runId: "bounded-worker-test" },
+      outcome: "pass",
+      reason: null,
+      commands: [{ stdoutBase64: "x".repeat(4_096) }],
+      stateBytes: 0,
+      durationMs: 9,
+      finalDescendantsObserved: 0,
+      isolation: {},
+    },
+    512,
+  );
   assert.ok(serialized.length <= 512);
   assert.equal(serialized.at(-1), 0x0a);
   assert.deepEqual(JSON.parse(serialized), {
@@ -443,20 +475,32 @@ test("qualification result normalizer independently rejects signal, UTF-8, and d
   invalidSignal.commands[0].exitCode = null;
   invalidSignal.commands[0].signal = "SIGFAKE";
   invalidSignal.reason.code = "command-signal";
-  assert.throws(() => normalize(invalidSignal), /impossible qualification command result/u);
+  assert.throws(
+    () => normalize(invalidSignal),
+    /impossible qualification command result/u,
+  );
 
   const commandOverrun = structuredClone(raw);
   commandOverrun.commands[0].durationMs = commands[0].timeoutMs + 1;
   commandOverrun.durationMs = commandOverrun.commands[0].durationMs;
-  assert.throws(() => normalize(commandOverrun), /invalid qualification command result/u);
+  assert.throws(
+    () => normalize(commandOverrun),
+    /invalid qualification command result/u,
+  );
 
   const totalOverrun = structuredClone(raw);
   totalOverrun.durationMs = 7_200_001;
-  assert.throws(() => normalize(totalOverrun), /invalid qualification-session result schema/u);
+  assert.throws(
+    () => normalize(totalOverrun),
+    /invalid qualification-session result schema/u,
+  );
 
   const impossibleAggregate = structuredClone(raw);
   impossibleAggregate.durationMs = 0;
-  assert.throws(() => normalize(impossibleAggregate), /shorter than its sequential commands/u);
+  assert.throws(
+    () => normalize(impossibleAggregate),
+    /shorter than its sequential commands/u,
+  );
 
   const invalidUtf8 = structuredClone(raw);
   const invalidBytes = Buffer.from([0xff]);
@@ -466,7 +510,10 @@ test("qualification result normalizer independently rejects signal, UTF-8, and d
 });
 
 test("qualification sandbox uses only the exact descriptor transport", () => {
-  const environment = qualificationSandboxEnvironment(sessionPlatformBinding(), 2);
+  const environment = qualificationSandboxEnvironment(
+    sessionPlatformBinding(),
+    2,
+  );
   const args = qualificationSandboxSessionArguments({
     maxDiskBytes: 256 * mebibyte,
     environment,
@@ -484,16 +531,18 @@ test("qualification sandbox uses only the exact descriptor transport", () => {
   for (const [operation, descriptor, destination] of expectedBinds) {
     const destinationIndex = args.indexOf(destination);
     assert.ok(destinationIndex > 1, `${destination} was not mounted`);
-    assert.deepEqual(
-      args.slice(destinationIndex - 2, destinationIndex + 1),
-      [operation, descriptor, destination],
-    );
+    assert.deepEqual(args.slice(destinationIndex - 2, destinationIndex + 1), [
+      operation,
+      descriptor,
+      destination,
+    ]);
   }
   assert.deepEqual(
     args.flatMap((value, index) =>
       ["--ro-bind-fd", "--bind-fd"].includes(value)
         ? [args.slice(index, index + 3)]
-        : []),
+        : [],
+    ),
     expectedBinds,
   );
   assert.ok(args.includes("--unshare-net"));
@@ -516,41 +565,52 @@ test("qualification sandbox uses only the exact descriptor transport", () => {
   assert.equal(environment.LIBCLANG_PATH, "/usr/lib/llvm-18/lib");
   assert.equal(environment.PATH, "/toolchain/bin:/usr/bin");
   assert.throws(
-    () => qualificationSandboxSessionArguments({
-      maxDiskBytes: 256 * mebibyte,
-      environment,
-      sourceDirectory: "/must-not-be-admitted",
-    }),
+    () =>
+      qualificationSandboxSessionArguments({
+        maxDiskBytes: 256 * mebibyte,
+        environment,
+        sourceDirectory: "/must-not-be-admitted",
+      }),
     /fields are not exact/u,
   );
 });
 
 test("qualification result accepts exact final-descendant containment evidence", async () => {
-  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-contained-final-result-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "oxigraph-g17-contained-final-result-"),
+  );
   const inheritedFileDescriptors = [];
   const cgroupDescriptorsBefore = descriptorsReferencing("/sys/fs/cgroup");
   try {
     const commands = commandPlan();
-    const report = await runSyntheticSession(root, {
-      schema: "oxigraph.g1.7-native-session-result/v5",
-      outcome: "incomplete",
-      reason: { code: "final-live-descendants", command: null },
-      commands: commands.map((command) => syntheticCommandRecord(command)),
-      stateBytes: 4_096,
-      durationMs: 30,
-      finalDescendantsObserved: 1,
-    }, {
-      onRequest(request) {
-        inheritedFileDescriptors.push(...request.inheritedFileDescriptors);
+    const report = await runSyntheticSession(
+      root,
+      {
+        schema: "oxigraph.g1.7-native-session-result/v5",
+        outcome: "incomplete",
+        reason: { code: "final-live-descendants", command: null },
+        commands: commands.map((command) => syntheticCommandRecord(command)),
+        stateBytes: 4_096,
+        durationMs: 30,
+        finalDescendantsObserved: 1,
       },
-    });
+      {
+        onRequest(request) {
+          inheritedFileDescriptors.push(...request.inheritedFileDescriptors);
+        },
+      },
+    );
     assert.equal(report.session.outcome, "incomplete");
     assert.deepEqual(report.session.reason, {
       code: "final-live-descendants",
       command: null,
     });
     assert.equal(report.session.finalDescendantsObserved, 1);
-    assert.ok(report.session.commands.every(({ descendantsObserved }) => descendantsObserved === 0));
+    assert.ok(
+      report.session.commands.every(
+        ({ descendantsObserved }) => descendantsObserved === 0,
+      ),
+    );
     assert.equal(report.artifact.name, "native-session.json");
     assert.equal(report.projection.status, "INCOMPLETE");
     const originalDigest = report.artifact.sha256;
@@ -600,7 +660,10 @@ test("qualification result rejects impossible completed and infrastructure state
         outcome: "pass",
         reason: null,
         commands: commands.map((command, index) =>
-          syntheticCommandRecord(command, { descendantsObserved: index === 1 ? 1 : 0 })),
+          syntheticCommandRecord(command, {
+            descendantsObserved: index === 1 ? 1 : 0,
+          }),
+        ),
         stateBytes: 4_096,
         durationMs: 20,
         finalDescendantsObserved: 0,
@@ -619,7 +682,9 @@ test("qualification result rejects impossible completed and infrastructure state
       },
     ],
   ]) {
-    const root = await mkdtemp(join(tmpdir(), `oxigraph-g17-contained-${name}-`));
+    const root = await mkdtemp(
+      join(tmpdir(), `oxigraph-g17-contained-${name}-`),
+    );
     try {
       await assert.rejects(
         runSyntheticSession(root, raw),
@@ -672,7 +737,9 @@ test("qualification session closes every owned descriptor on runner and replay f
       /native session contract/u,
     ],
   ]) {
-    const root = await mkdtemp(join(tmpdir(), `oxigraph-g17-contained-close-${name}-`));
+    const root = await mkdtemp(
+      join(tmpdir(), `oxigraph-g17-contained-close-${name}-`),
+    );
     const inheritedFileDescriptors = [];
     const cgroupDescriptorsBefore = descriptorsReferencing("/sys/fs/cgroup");
     try {
@@ -729,7 +796,10 @@ test("qualification session rejects symlinked and wrong-type sources without des
       async ({ platformDirectory }) => {
         const runner = join(platformDirectory, "runner");
         await rm(join(runner, "seccomp-launcher.py"));
-        await symlink("contained-session-worker.mjs", join(runner, "seccomp-launcher.py"));
+        await symlink(
+          "contained-session-worker.mjs",
+          join(runner, "seccomp-launcher.py"),
+        );
       },
       /seccomp launcher could not be pinned/u,
     ],
@@ -743,7 +813,9 @@ test("qualification session rejects symlinked and wrong-type sources without des
       /Cargo executable could not be pinned/u,
     ],
   ]) {
-    const root = await mkdtemp(join(tmpdir(), `oxigraph-g17-contained-source-${name}-`));
+    const root = await mkdtemp(
+      join(tmpdir(), `oxigraph-g17-contained-source-${name}-`),
+    );
     let processInvoked = false;
     const cgroupDescriptorsBefore = descriptorsReferencing("/sys/fs/cgroup");
     try {
@@ -777,7 +849,8 @@ test(
   {
     timeout: 30_000,
     skip:
-      process.platform !== "linux" || process.env.OXIGRAPH_G17_LIVE_FD_TRANSPORT !== "1"
+      process.platform !== "linux" ||
+      process.env.OXIGRAPH_G17_LIVE_FD_TRANSPORT !== "1"
         ? "set OXIGRAPH_G17_LIVE_FD_TRANSPORT=1 on the reviewed Linux host"
         : false,
   },
@@ -785,7 +858,8 @@ test(
     const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-fd-transport-"));
     const platform = join(root, "platform");
     const sourceRoots = Array.from({ length: 4 }, (_, index) =>
-      join(root, `source-${index}`));
+      join(root, `source-${index}`),
+    );
     const worker = join(root, "worker");
     const launcher = join(root, "launcher");
     const output = join(root, "session.json");
@@ -794,7 +868,10 @@ test(
       await Promise.all([
         mkdir(join(platform, "bin"), { recursive: true, mode: 0o700 }),
         mkdir(join(platform, "proc"), { recursive: true, mode: 0o700 }),
-        mkdir(join(platform, "control", "cgroup2"), { recursive: true, mode: 0o700 }),
+        mkdir(join(platform, "control", "cgroup2"), {
+          recursive: true,
+          mode: 0o700,
+        }),
         mkdir(join(platform, "cargo-home"), { recursive: true, mode: 0o700 }),
         mkdir(join(platform, "toolchain"), { recursive: true, mode: 0o700 }),
         mkdir(join(platform, "workspace"), { recursive: true, mode: 0o700 }),
@@ -804,8 +881,14 @@ test(
       ]);
       await Promise.all([
         copyFile("/usr/bin/busybox", join(platform, "bin", "busybox")),
-        writeFile(join(platform, "runner", "worker"), "platform worker placeholder\n"),
-        writeFile(join(platform, "runner", "launcher"), "platform launcher placeholder\n"),
+        writeFile(
+          join(platform, "runner", "worker"),
+          "platform worker placeholder\n",
+        ),
+        writeFile(
+          join(platform, "runner", "launcher"),
+          "platform launcher placeholder\n",
+        ),
         writeFile(join(platform, "result", "session.json"), ""),
         writeFile(worker, "worker descriptor\n"),
         writeFile(launcher, "launcher descriptor\n"),

@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   G17_NATIVE_SESSION_ARTIFACT_NAME,
   G17_NATIVE_SESSION_CONFIGURATION_SCHEMA,
@@ -21,6 +20,7 @@ import {
   syntheticG17CommandRecord,
   syntheticG17Isolation,
 } from "./support/g17-native-session-fixture.mjs";
+import { loadG17LegacyV4Contract } from "./support/g17-legacy-v4-contract-fixture.mjs";
 
 const digest = (character) => character.repeat(64);
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -56,7 +56,7 @@ function requestedLimits(contract) {
 }
 
 function configuration() {
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   return {
     sealedContract,
     value: createG17NativeSessionConfiguration({
@@ -121,7 +121,7 @@ function rewriteLaunchAttestation(value, index, mutate) {
 }
 
 test("native session configuration is derived exactly from contract v4 and platform v4", () => {
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   const platform = platformBinding();
   const policy = {
     schema: "oxigraph.g1.7-linux-native-isolation-policy/v4",
@@ -213,7 +213,7 @@ test("native session configuration is derived exactly from contract v4 and platf
 });
 
 test("native session configuration rejects drift from the reviewed contract", () => {
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   const platform = platformBinding();
   const policy = {
     schema: "oxigraph.g1.7-linux-native-isolation-policy/v4",

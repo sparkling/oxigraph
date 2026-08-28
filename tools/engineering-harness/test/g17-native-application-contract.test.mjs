@@ -10,11 +10,9 @@ import {
   createG17NativeApplicationVerifierForTesting,
   verifyG17NativeApplicationEvidence,
 } from "../src/qualification/native-application-contract.mjs";
-import { loadG17Contract } from "../src/qualification/contract.mjs";
 import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
-import {
-  createG17NativeApplicationFixture,
-} from "./support/g17-native-application-fixture.mjs";
+import { loadG17LegacyV4Contract } from "./support/g17-legacy-v4-contract-fixture.mjs";
+import { createG17NativeApplicationFixture } from "./support/g17-native-application-fixture.mjs";
 
 const digest = (character) => character.repeat(64);
 
@@ -36,7 +34,8 @@ function canonicalBytes(value) {
 }
 
 function resealIdentity(identity) {
-  const { harnessSha256: ignoredHarnessSha256, ...controlBinding } = identity.control;
+  const { harnessSha256: ignoredHarnessSha256, ...controlBinding } =
+    identity.control;
   identity.control.harnessSha256 = canonicalSha256({
     schema: "oxigraph.committed-harness-identity/v1",
     ...controlBinding,
@@ -49,22 +48,23 @@ function resealIdentity(identity) {
 function artifacts() {
   return G17_NATIVE_APPLICATION_ARTIFACT_NAMES.map((name) => ({
     name,
-    bytes: name === "native-workspace-owner.json"
-      ? canonicalBytes({ schema: "oxigraph.g1.7-native-workspace-owner/v2" })
-      : name === "native-session.json"
-        ? canonicalBytes({
-            configuration: {
-              requestedLimits: {
-                totalWallMs: 3_600_000,
-                residentBytes: 4_294_967_296,
-                diskBytes: 8_589_934_592,
-                cargoBuildJobs: 2,
-                tasksMax: 256,
-                memorySwapBytes: 0,
+    bytes:
+      name === "native-workspace-owner.json"
+        ? canonicalBytes({ schema: "oxigraph.g1.7-native-workspace-owner/v2" })
+        : name === "native-session.json"
+          ? canonicalBytes({
+              configuration: {
+                requestedLimits: {
+                  totalWallMs: 3_600_000,
+                  residentBytes: 4_294_967_296,
+                  diskBytes: 8_589_934_592,
+                  cargoBuildJobs: 2,
+                  tasksMax: 256,
+                  memorySwapBytes: 0,
+                },
               },
-            },
-          })
-        : Buffer.from(`${name}\n`, "utf8"),
+            })
+          : Buffer.from(`${name}\n`, "utf8"),
   }));
 }
 
@@ -147,7 +147,7 @@ function verifierFixture({
   mutatePlatform,
 } = {}) {
   const calls = [];
-  const sealedContract = loadG17Contract();
+  const sealedContract = loadG17LegacyV4Contract();
   const identity = g17IdentityFixture();
   identity.evaluator = {
     commit: sealedContract.contract.evaluator.commit,
@@ -299,7 +299,9 @@ function verifierFixture({
 
 test("seven-artifact composite derives one frozen current compatibility projection", () => {
   const fixture = verifierFixture();
-  const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
+  const verify = createG17NativeApplicationVerifierForTesting(
+    fixture.dependencies,
+  );
   const projection = verify(fixture.input);
 
   assert.deepEqual(fixture.calls, [
@@ -311,23 +313,42 @@ test("seven-artifact composite derives one frozen current compatibility projecti
     "instance",
   ]);
   assert.equal(projection.schema, G17_NATIVE_COMPATIBILITY_PROJECTION_SCHEMA);
-  assert.equal(projection.schema, "oxigraph.g1.7-native-compatibility-projection/v2");
+  assert.equal(
+    projection.schema,
+    "oxigraph.g1.7-native-compatibility-projection/v2",
+  );
   assert.equal(projection.status, "PASS");
   assert.deepEqual(
     projection.artifacts.map(({ name }) => name),
     G17_NATIVE_APPLICATION_ARTIFACT_NAMES,
   );
-  assert.ok(projection.artifacts.every(({ bytes, sha256: hash }) =>
-    Number.isSafeInteger(bytes) && /^[0-9a-f]{64}$/u.test(hash)));
+  assert.ok(
+    projection.artifacts.every(
+      ({ bytes, sha256: hash }) =>
+        Number.isSafeInteger(bytes) && /^[0-9a-f]{64}$/u.test(hash),
+    ),
+  );
   assert.deepEqual(projection.ownerArtifact, projection.artifacts[3]);
-  assert.equal(projection.workspace.schema, "oxigraph.g1.7-native-workspace/v2");
+  assert.equal(
+    projection.workspace.schema,
+    "oxigraph.g1.7-native-workspace/v2",
+  );
   assert.deepEqual(projection.lanes, projection.session.lanes);
-  assert.equal(projection.totalPassedTests, projection.session.totalPassedTests);
+  assert.equal(
+    projection.totalPassedTests,
+    projection.session.totalPassedTests,
+  );
   assert.equal(projection.session.status, "PASS");
-  assert.equal(projection.isolation.schema, "oxigraph.g1.7-linux-native-isolation-instance/v5");
+  assert.equal(
+    projection.isolation.schema,
+    "oxigraph.g1.7-linux-native-isolation-instance/v5",
+  );
   assert.equal(Object.isFrozen(projection), true);
   assert.equal(Object.isFrozen(projection.artifacts), true);
-  assert.equal(Object.isFrozen(projection.workspace.binding.toolchain.cargo), true);
+  assert.equal(
+    Object.isFrozen(projection.workspace.binding.toolchain.cargo),
+    true,
+  );
   assert.doesNotMatch(
     canonicalJson(projection),
     /\/opt\/rust|versionStdout|stdoutBase64|stderrBase64|launchAttestationBase64/u,
@@ -361,7 +382,10 @@ test("production composite replays seven canonical artifacts without raw evidenc
   );
   assert.deepEqual(projection.ownerArtifact, projection.artifacts[3]);
   assert.equal(projection.session.commandsObserved, 6);
-  assert.equal(projection.isolation.effectiveObservations.normalizedMountTopologyObserved, true);
+  assert.equal(
+    projection.isolation.effectiveObservations.normalizedMountTopologyObserved,
+    true,
+  );
   assert.equal(Object.isFrozen(projection), true);
   assert.doesNotMatch(
     serialized,
@@ -369,7 +393,11 @@ test("production composite replays seven canonical artifacts without raw evidenc
   );
   assert.doesNotMatch(serialized, /(?:cargo|rustc) 1\.96\.0/u);
   for (const forbidden of fixture.forbiddenProjectionText) {
-    assert.equal(serialized.includes(forbidden), false, forbidden.slice(0, 120));
+    assert.equal(
+      serialized.includes(forbidden),
+      false,
+      forbidden.slice(0, 120),
+    );
   }
 });
 
@@ -389,13 +417,18 @@ test("production composite snapshots artifact accessors exactly once", () => {
   const platformArtifact = fixture.input.artifacts[0];
   const suppliedBytes = platformArtifact.bytes;
   const replayedBytes = Buffer.from(suppliedBytes);
-  const substitutedBytes = Buffer.from("different-unverified-platform-artifact\n", "utf8");
+  const substitutedBytes = Buffer.from(
+    "different-unverified-platform-artifact\n",
+    "utf8",
+  );
   let nameReads = 0;
   let byteReads = 0;
   fixture.input.artifacts[0] = {
     get name() {
       nameReads += 1;
-      return nameReads === 1 ? platformArtifact.name : "substituted-platform.json";
+      return nameReads === 1
+        ? platformArtifact.name
+        : "substituted-platform.json";
     },
     get bytes() {
       byteReads += 1;
@@ -497,21 +530,42 @@ test("production composite snapshots top-level and nested authority exactly once
   });
   assert.equal(projection.runId, runId);
   assert.equal(projection.contractSha256, contractSha256);
-  assert.equal(projection.subjectIdentitySha256, suppliedIdentity.identitySha256);
-  assert.equal(projection.artifacts.length, G17_NATIVE_APPLICATION_ARTIFACT_NAMES.length);
+  assert.equal(
+    projection.subjectIdentitySha256,
+    suppliedIdentity.identitySha256,
+  );
+  assert.equal(
+    projection.artifacts.length,
+    G17_NATIVE_APPLICATION_ARTIFACT_NAMES.length,
+  );
 });
 
 test("seven-artifact composite rejects missing, extra, reordered, and renamed inventory", () => {
   for (const mutate of [
-    (value) => { value.artifacts.pop(); },
-    (value) => { value.artifacts.push({ name: "extra.json", bytes: Buffer.from("extra") }); },
-    (value) => { [value.artifacts[0], value.artifacts[1]] = [value.artifacts[1], value.artifacts[0]]; },
-    (value) => { value.artifacts[3].name = "native-compatibility-owner.json"; },
-    (value) => { value.artifacts[0].sha256 = digest("f"); },
+    (value) => {
+      value.artifacts.pop();
+    },
+    (value) => {
+      value.artifacts.push({ name: "extra.json", bytes: Buffer.from("extra") });
+    },
+    (value) => {
+      [value.artifacts[0], value.artifacts[1]] = [
+        value.artifacts[1],
+        value.artifacts[0],
+      ];
+    },
+    (value) => {
+      value.artifacts[3].name = "native-compatibility-owner.json";
+    },
+    (value) => {
+      value.artifacts[0].sha256 = digest("f");
+    },
   ]) {
     const fixture = verifierFixture();
     mutate(fixture.input);
-    const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
+    const verify = createG17NativeApplicationVerifierForTesting(
+      fixture.dependencies,
+    );
     assert.throws(
       () => verify(fixture.input),
       /artifact|inventory|fields are not exact/u,
@@ -527,7 +581,9 @@ test("seven-artifact composite rejects v1 and legacy workspace-owner substitutio
   ]) {
     const fixture = verifierFixture();
     fixture.input.artifacts[3].bytes = canonicalBytes({ schema });
-    const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
+    const verify = createG17NativeApplicationVerifierForTesting(
+      fixture.dependencies,
+    );
     assert.throws(() => verify(fixture.input), /current v2 owner schema/u);
     assert.deepEqual(fixture.calls, ["platform/source-plan/controller"]);
   }
@@ -539,7 +595,9 @@ test("seven-artifact composite rejects workspace hash drift in session and insta
     { instanceWorkspaceSha256: digest("b") },
   ]) {
     const fixture = verifierFixture(options);
-    const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
+    const verify = createG17NativeApplicationVerifierForTesting(
+      fixture.dependencies,
+    );
     assert.throws(
       () => verify(fixture.input),
       /(?:native session replay|isolation instance replay)/u,
@@ -549,11 +607,17 @@ test("seven-artifact composite rejects workspace hash drift in session and insta
 
 test("seven-artifact composite derives tool anchors from both identity and platform", () => {
   for (const mutatePlatform of [
-    (value) => { value.roles.cargo.sha256 = digest("c"); },
-    (value) => { value.probes[1].stdout = stream("invented rustc version\n"); },
+    (value) => {
+      value.roles.cargo.sha256 = digest("c");
+    },
+    (value) => {
+      value.probes[1].stdout = stream("invented rustc version\n");
+    },
   ]) {
     const fixture = verifierFixture({ mutatePlatform });
-    const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
+    const verify = createG17NativeApplicationVerifierForTesting(
+      fixture.dependencies,
+    );
     assert.throws(
       () => verify(fixture.input),
       /verified platform (?:cargo role|rustc version)/u,
@@ -591,8 +655,10 @@ test("seven-artifact composite rejects coherently rehashed malformed sealed iden
     [
       "dependency ordering",
       (identity) => {
-        [identity.control.dependencies[0], identity.control.dependencies[1]] =
-          [identity.control.dependencies[1], identity.control.dependencies[0]];
+        [identity.control.dependencies[0], identity.control.dependencies[1]] = [
+          identity.control.dependencies[1],
+          identity.control.dependencies[0],
+        ];
         resealIdentity(identity);
       },
       /dependency .* binding is invalid/u,
@@ -671,7 +737,9 @@ test("seven-artifact composite rejects coherently rehashed malformed sealed iden
     ],
   ]) {
     const fixture = verifierFixture({ mutateIdentity });
-    const verify = createG17NativeApplicationVerifierForTesting(fixture.dependencies);
+    const verify = createG17NativeApplicationVerifierForTesting(
+      fixture.dependencies,
+    );
     assert.throws(() => verify(fixture.input), pattern, label);
     assert.deepEqual(fixture.calls, [], label);
   }
@@ -679,7 +747,10 @@ test("seven-artifact composite rejects coherently rehashed malformed sealed iden
 
 test("native application composite imports only pure replay contracts", async () => {
   const source = await readFile(
-    new URL("../src/qualification/native-application-contract.mjs", import.meta.url),
+    new URL(
+      "../src/qualification/native-application-contract.mjs",
+      import.meta.url,
+    ),
     "utf8",
   );
   for (const forbidden of [
@@ -701,7 +772,8 @@ test("native application composite imports only pure replay contracts", async ()
     source.indexOf("function artifactInventory"),
   );
   assert.equal(
-    [...workspaceAnchorDerivation.matchAll(/^\s*toolchainRootSha256:/gmu)].length,
+    [...workspaceAnchorDerivation.matchAll(/^\s*toolchainRootSha256:/gmu)]
+      .length,
     1,
   );
   assert.equal(typeof verifyG17NativeApplicationEvidence, "function");
