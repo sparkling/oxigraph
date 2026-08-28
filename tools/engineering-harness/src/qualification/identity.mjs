@@ -1,12 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  lstatSync,
-  readFileSync,
-  realpathSync,
-} from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { cpus, platform, release, totalmem, userInfo } from "node:os";
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { scrubbedChildEnvironment } from "../../../child-environment.mjs";
@@ -53,7 +57,9 @@ function git(root, args, { buffer = false } = {}) {
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
-    fail(`Git identity probe failed: ${error.stderr?.toString().trim() || error.message}`);
+    fail(
+      `Git identity probe failed: ${error.stderr?.toString().trim() || error.message}`,
+    );
   }
 }
 
@@ -65,7 +71,7 @@ function deepFreeze(value) {
   return value;
 }
 
-function verifyEvaluator(root, evaluator) {
+function verifyEvaluator(root, evaluator, subjectCommit) {
   if (
     evaluator === null ||
     typeof evaluator !== "object" ||
@@ -80,9 +86,14 @@ function verifyEvaluator(root, evaluator) {
   const commitType = git(root, ["cat-file", "-t", evaluator.commit]).trim();
   const parent = git(root, ["rev-parse", `${evaluator.commit}^`]).trim();
   const tree = git(root, ["rev-parse", `${evaluator.commit}^{tree}`]).trim();
-  if (commitType !== "commit" || parent !== evaluator.parent || tree !== evaluator.tree) {
+  if (
+    commitType !== "commit" ||
+    parent !== evaluator.parent ||
+    tree !== evaluator.tree
+  ) {
     fail("evaluator commit, parent, or tree does not match Git");
   }
+  git(root, ["merge-base", "--is-ancestor", evaluator.commit, subjectCommit]);
   const names = git(root, [
     "diff",
     "--name-status",
@@ -107,12 +118,13 @@ function verifyEvaluator(root, evaluator) {
     fail("evaluator changed-path inventory does not match Git");
   }
   for (const path of evaluator.paths) {
-    const blob = git(root, ["rev-parse", `${evaluator.commit}:${path.path}`]).trim();
-    const bytes = git(
-      root,
-      ["show", `${evaluator.commit}:${path.path}`],
-      { buffer: true },
-    );
+    const blob = git(root, [
+      "rev-parse",
+      `${evaluator.commit}:${path.path}`,
+    ]).trim();
+    const bytes = git(root, ["show", `${evaluator.commit}:${path.path}`], {
+      buffer: true,
+    });
     if (blob !== path.blob || sha256(bytes) !== path.contentSha256) {
       fail(`evaluator blob does not match Git: ${path.path}`);
     }
@@ -147,6 +159,84 @@ function verifyEvaluator(root, evaluator) {
   });
 }
 
+function verifySubject(root, subject, evaluator) {
+  const product = subject?.product;
+  const composition = subject?.evaluator?.composition;
+  if (
+    subject?.schema !== "oxigraph.g1.7-subject-binding/v1" ||
+    subject.evaluator?.commit !== evaluator?.commit ||
+    subject.evaluator?.state !== "PRESENT_AS_ANCESTOR" ||
+    product === null ||
+    typeof product !== "object" ||
+    !GIT_OBJECT.test(product.commit ?? "") ||
+    !GIT_OBJECT.test(product.tree ?? "") ||
+    !GIT_OBJECT.test(product.cargoLockBlob ?? "") ||
+    !DIGEST.test(product.cargoLockSha256 ?? "") ||
+    composition?.mode !== "ALREADY_PRESENT" ||
+    composition.baseManifestBlob !== composition.effectiveManifestBlob ||
+    composition.effectiveTree !== product.tree
+  ) {
+    fail("sealed subject contract is malformed");
+  }
+  const commitType = git(root, ["cat-file", "-t", product.commit]).trim();
+  const tree = git(root, ["rev-parse", `${product.commit}^{tree}`]).trim();
+  const lockBlob = git(root, [
+    "rev-parse",
+    `${product.commit}:Cargo.lock`,
+  ]).trim();
+  const lockBytes = git(root, ["show", `${product.commit}:Cargo.lock`], {
+    buffer: true,
+  });
+  if (
+    commitType !== "commit" ||
+    tree !== product.tree ||
+    lockBlob !== product.cargoLockBlob ||
+    sha256(lockBytes) !== product.cargoLockSha256
+  ) {
+    fail("sealed subject commit, tree, or Cargo.lock does not match Git");
+  }
+  for (const path of evaluator.paths) {
+    const blob = git(root, [
+      "rev-parse",
+      `${product.commit}:${path.path}`,
+    ]).trim();
+    if (blob !== path.blob) {
+      fail(`evaluator is not already present in sealed subject: ${path.path}`);
+    }
+  }
+  if (
+    composition.baseManifestBlob !== evaluator.paths[0].blob ||
+    composition.effectiveManifestSha256 !== evaluator.paths[0].contentSha256
+  ) {
+    fail("sealed subject evaluator composition does not match its manifest");
+  }
+  return Object.freeze({ ...product });
+}
+
+function verifyControlOnlyDelta(root, subjectCommit, controlCommit) {
+  git(root, ["merge-base", "--is-ancestor", subjectCommit, controlCommit]);
+  const paths = git(root, [
+    "diff",
+    "--name-only",
+    "--diff-filter=ACDMRTUXB",
+    subjectCommit,
+    controlCommit,
+    "--",
+  ])
+    .split("\n")
+    .filter(Boolean);
+  const invalid = paths.filter(
+    (path) =>
+      path !== "README.md" &&
+      !path.startsWith("docs/") &&
+      !path.startsWith("tools/engineering-harness/"),
+  );
+  if (invalid.length > 0) {
+    fail(`product paths changed after sealed subject: ${invalid.join(", ")}`);
+  }
+  return Object.freeze([...paths]);
+}
+
 function trustedToolRoots() {
   const home = realpathSync(userInfo().homedir);
   return [
@@ -176,7 +266,8 @@ function captureTool(program, qualificationRoot) {
     .split(/\r?\n/u, 1)[0];
   const path = realpathSync(located);
   const metadata = lstatSync(path);
-  const uid = typeof process.getuid === "function" ? process.getuid() : metadata.uid;
+  const uid =
+    typeof process.getuid === "function" ? process.getuid() : metadata.uid;
   if (
     !metadata.isFile() ||
     (metadata.mode & 0o022) !== 0 ||
@@ -222,14 +313,22 @@ function captureTool(program, qualificationRoot) {
   });
 }
 
-function cargoLockIdentity(root, subjectCommit) {
+function cargoLockIdentity(root, subjectCommit, expected) {
   const blob = git(root, ["rev-parse", `${subjectCommit}:Cargo.lock`]).trim();
   const committedBytes = git(root, ["show", `${subjectCommit}:Cargo.lock`], {
     buffer: true,
   });
   const workingBytes = readFileSync(join(root, "Cargo.lock"));
-  if (!workingBytes.equals(committedBytes)) fail("working Cargo.lock differs from subject");
-  return Object.freeze({ blob, sha256: sha256(committedBytes) });
+  if (!workingBytes.equals(committedBytes))
+    fail("working Cargo.lock differs from subject");
+  const identity = { blob, sha256: sha256(committedBytes) };
+  if (
+    identity.blob !== expected?.cargoLockBlob ||
+    identity.sha256 !== expected?.cargoLockSha256
+  ) {
+    fail("Cargo.lock differs from sealed subject contract");
+  }
+  return Object.freeze(identity);
 }
 
 export async function currentG17QualificationIdentity({
@@ -243,13 +342,11 @@ export async function currentG17QualificationIdentity({
       "--porcelain=v1",
       "--untracked-files=no",
     ]);
-    if (trackedStatus.length !== 0) fail(`subject tracked worktree is dirty:\n${trackedStatus}`);
-    const subjectCommit = git(root, ["rev-parse", "HEAD"]).trim();
-    const subjectTree = git(root, ["rev-parse", "HEAD^{tree}"]).trim();
+    if (trackedStatus.length !== 0)
+      fail(`subject tracked worktree is dirty:\n${trackedStatus}`);
     const committed = currentCommittedHarnessIdentity({ repoRoot: root });
-    if (committed.controlCommit !== subjectCommit) {
-      fail("harness control commit differs from subject commit");
-    }
+    const subject = verifySubject(root, contract?.subject, contract?.evaluator);
+    verifyControlOnlyDelta(root, subject.commit, committed.controlCommit);
     const control = {
       ...committed,
       harnessSha256: canonicalSha256({
@@ -257,11 +354,12 @@ export async function currentG17QualificationIdentity({
         ...committed,
       }),
     };
-    const evaluator = verifyEvaluator(root, contract?.evaluator);
-    const toolchain = [
-      captureTool("cargo", root),
-      captureTool("rustc", root),
-    ];
+    const evaluator = verifyEvaluator(
+      root,
+      contract?.evaluator,
+      subject.commit,
+    );
+    const toolchain = [captureTool("cargo", root), captureTool("rustc", root)];
     const rustcHost = /^host: ([a-z0-9_.-]+)$/mu.exec(
       toolchain.find(({ program }) => program === "rustc").versionStdout,
     )?.[1];
@@ -271,15 +369,15 @@ export async function currentG17QualificationIdentity({
       fail("host CPU identity is unavailable");
     }
     const binding = {
-      schema: "oxigraph.g1.7-qualified-subject-identity/v1",
+      schema: "oxigraph.g1.7-qualified-subject-identity/v2",
       subject: {
-        commit: subjectCommit,
-        tree: subjectTree,
+        commit: subject.commit,
+        tree: subject.tree,
         trackedClean: true,
       },
       control,
       evaluator,
-      cargoLock: cargoLockIdentity(root, subjectCommit),
+      cargoLock: cargoLockIdentity(root, subject.commit, subject),
       toolchain,
       host: {
         platform: platform(),
@@ -311,7 +409,10 @@ function plainObject(value) {
 }
 
 function exactKeys(value, expected, label) {
-  if (!plainObject(value) || !isDeepStrictEqual(Object.keys(value).sort(), [...expected].sort())) {
+  if (
+    !plainObject(value) ||
+    !isDeepStrictEqual(Object.keys(value).sort(), [...expected].sort())
+  ) {
     fail(`${label} fields are not exact`);
   }
 }
@@ -341,33 +442,48 @@ function validateQualifiedToolchain(toolchain) {
   if (
     !Array.isArray(toolchain) ||
     toolchain.length !== 2 ||
-    !isDeepStrictEqual(toolchain.map((tool) => tool?.program), ["cargo", "rustc"])
+    !isDeepStrictEqual(
+      toolchain.map((tool) => tool?.program),
+      ["cargo", "rustc"],
+    )
   ) {
     fail("qualified Rust toolchain inventory is not exact");
   }
-  return Object.fromEntries(toolchain.map((tool) => {
-    exactKeys(tool, qualifiedToolKeys, `qualified ${tool?.program ?? "unknown"} tool`);
-    for (const key of ["invokedPath", "path", "toolchainPath"]) {
-      const path = boundedString(tool[key], `qualified ${tool.program} ${key}`, 4096);
-      if (!isAbsolute(path) || resolve(path) !== path) {
-        fail(`qualified ${tool.program} ${key} is not a canonical absolute path`);
+  return Object.fromEntries(
+    toolchain.map((tool) => {
+      exactKeys(
+        tool,
+        qualifiedToolKeys,
+        `qualified ${tool?.program ?? "unknown"} tool`,
+      );
+      for (const key of ["invokedPath", "path", "toolchainPath"]) {
+        const path = boundedString(
+          tool[key],
+          `qualified ${tool.program} ${key}`,
+          4096,
+        );
+        if (!isAbsolute(path) || resolve(path) !== path) {
+          fail(
+            `qualified ${tool.program} ${key} is not a canonical absolute path`,
+          );
+        }
       }
-    }
-    if (
-      !DIGEST.test(tool.executableSha256) ||
-      !DIGEST.test(tool.toolchainExecutableSha256)
-    ) {
-      fail(`qualified ${tool.program} executable digest is invalid`);
-    }
-    const version = boundedString(
-      tool.versionStdout,
-      `qualified ${tool.program} version output`,
-    );
-    if (version.trim() !== version) {
-      fail(`qualified ${tool.program} version output is not canonical`);
-    }
-    return [tool.program, { ...tool }];
-  }));
+      if (
+        !DIGEST.test(tool.executableSha256) ||
+        !DIGEST.test(tool.toolchainExecutableSha256)
+      ) {
+        fail(`qualified ${tool.program} executable digest is invalid`);
+      }
+      const version = boundedString(
+        tool.versionStdout,
+        `qualified ${tool.program} version output`,
+      );
+      if (version.trim() !== version) {
+        fail(`qualified ${tool.program} version output is not canonical`);
+      }
+      return [tool.program, { ...tool }];
+    }),
+  );
 }
 
 export function verifyG17QualificationIdentity(identity) {
@@ -385,7 +501,11 @@ export function verifyG17QualificationIdentity(identity) {
     ],
     "qualified subject identity",
   );
-  exactKeys(identity.subject, ["commit", "tree", "trackedClean"], "qualified subject");
+  exactKeys(
+    identity.subject,
+    ["commit", "tree", "trackedClean"],
+    "qualified subject",
+  );
   exactKeys(
     identity.control,
     [
@@ -420,11 +540,10 @@ export function verifyG17QualificationIdentity(identity) {
     "qualified host",
   );
   if (
-    identity.schema !== "oxigraph.g1.7-qualified-subject-identity/v1" ||
+    identity.schema !== "oxigraph.g1.7-qualified-subject-identity/v2" ||
     !GIT_OBJECT.test(identity.subject.commit) ||
     !GIT_OBJECT.test(identity.subject.tree) ||
     identity.subject.trackedClean !== true ||
-    identity.control.controlCommit !== identity.subject.commit ||
     !GIT_OBJECT.test(identity.control.controlCommit) ||
     !GIT_OBJECT.test(identity.control.harnessTree) ||
     ![
@@ -456,7 +575,14 @@ export function verifyG17QualificationIdentity(identity) {
   for (const dependency of identity.control.dependencies) {
     exactKeys(
       dependency,
-      ["name", "policy", "version", "resolved", "integrity", "installedPackageJsonSha256"],
+      [
+        "name",
+        "policy",
+        "version",
+        "resolved",
+        "integrity",
+        "installedPackageJsonSha256",
+      ],
       `qualified dependency ${dependency?.name ?? "unknown"}`,
     );
     for (const key of ["name", "version", "resolved", "integrity"]) {
@@ -465,7 +591,8 @@ export function verifyG17QualificationIdentity(identity) {
     if (
       dependency.policy !== "latest" ||
       !DIGEST.test(dependency.installedPackageJsonSha256) ||
-      (previousDependencyName !== null && dependency.name <= previousDependencyName)
+      (previousDependencyName !== null &&
+        dependency.name <= previousDependencyName)
     ) {
       fail(`qualified dependency ${dependency.name} binding is malformed`);
     }
@@ -473,7 +600,8 @@ export function verifyG17QualificationIdentity(identity) {
   }
   const { harnessSha256: _harnessSha256, ...controlBinding } = identity.control;
   if (
-    identity.control.harnessSha256 !== canonicalSha256({
+    identity.control.harnessSha256 !==
+    canonicalSha256({
       schema: "oxigraph.committed-harness-identity/v1",
       ...controlBinding,
     })
@@ -481,7 +609,13 @@ export function verifyG17QualificationIdentity(identity) {
     fail("qualified control digest is invalid");
   }
   validateQualifiedToolchain(identity.toolchain);
-  for (const key of ["platform", "kernelRelease", "architecture", "targetTriple", "cpuModel"]) {
+  for (const key of [
+    "platform",
+    "kernelRelease",
+    "architecture",
+    "targetTriple",
+    "cpuModel",
+  ]) {
     boundedString(identity.host[key], `qualified host ${key}`, 4096);
   }
   if (
@@ -510,9 +644,10 @@ export function verifyG17QualificationIdentity(identity) {
 export function g17ReceiptIdentity(identity) {
   const verified = verifyG17QualificationIdentity(identity);
   return deepFreeze({
-    schema: "oxigraph.g1.7-qualification-identity/v1",
+    schema: "oxigraph.g1.7-qualification-identity/v2",
     subjectCommit: verified.subject.commit,
     subjectTree: verified.subject.tree,
+    controlCommit: verified.control.controlCommit,
     harnessSha256: verified.control.harnessSha256,
     evaluatorCommit: verified.evaluator.commit,
     evaluatorBlobSha256: verified.evaluator.blobSetSha256,
@@ -532,7 +667,9 @@ export async function verifyCurrentG17QualificationIdentity(
   const verified = verifyG17QualificationIdentity(identity);
   const current = await currentG17QualificationIdentity({ contract, repoRoot });
   if (!isDeepStrictEqual(verified, current)) {
-    fail("qualified subject identity differs from the current repository and host");
+    fail(
+      "qualified subject identity differs from the current repository and host",
+    );
   }
   return current;
 }

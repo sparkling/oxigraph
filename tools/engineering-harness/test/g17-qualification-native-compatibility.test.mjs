@@ -10,7 +10,7 @@ import {
   g17NativeInventoryArgv,
   verifyG17NativeCompatibilityEvidence,
 } from "../src/qualification/native-compatibility-contract.mjs";
-import { canonicalJson } from "../src/routing/features.mjs";
+import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
 import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
 import { loadG17LegacyV4Contract } from "./support/g17-legacy-v4-contract-fixture.mjs";
 
@@ -22,6 +22,17 @@ function identity() {
   return g17IdentityFixture({
     cargoVersion: "cargo 1.91.0\nrelease: 1.91.0",
   });
+}
+
+function resealIdentity(identity) {
+  const { harnessSha256: _harnessSha256, ...controlBinding } = identity.control;
+  identity.control.harnessSha256 = canonicalSha256({
+    schema: "oxigraph.committed-harness-identity/v1",
+    ...controlBinding,
+  });
+  const { identitySha256: _identitySha256, ...binding } = identity;
+  identity.identitySha256 = canonicalSha256(binding);
+  return identity;
 }
 
 function processResult(stdout, stderr = "") {
@@ -116,6 +127,14 @@ test("native owner evidence reparses bounded raw Cargo bytes and derives all pub
   const { contract, subjectIdentity, created } = fixture();
   assert.equal(created.artifact.name, G17_NATIVE_COMPATIBILITY_ARTIFACT_NAME);
   assert.equal(created.artifact.sha256, sha256(created.artifact.bytes));
+  assert.equal(
+    subjectIdentity.schema,
+    "oxigraph.g1.7-qualified-subject-identity/v2",
+  );
+  assert.notEqual(
+    subjectIdentity.subject.commit,
+    subjectIdentity.control.controlCommit,
+  );
   assert.equal(created.projection.status, "PASS");
   assert.equal(created.projection.totalPassedTests, 23);
   assert.deepEqual(
@@ -149,6 +168,9 @@ test("native owner evidence reparses bounded raw Cargo bytes and derives all pub
 test("native owner replay rejects rehashed subject, tool, lane, argv, timeout, and raw-output tampering", () => {
   const { contract, subjectIdentity, created } = fixture();
   const mutations = [
+    (owner) => {
+      owner.identity.identitySha256 = "9".repeat(64);
+    },
     (owner) => {
       owner.identity.subjectCommit = "9".repeat(40);
     },
@@ -206,6 +228,23 @@ test("native owner replay rejects rehashed subject, tool, lane, argv, timeout, a
       /G1\.7 native compatibility owner/u,
     );
   }
+});
+
+test("native owner replay cross-binds a distinct control commit through identity v2", () => {
+  const { contract, subjectIdentity, created } = fixture();
+  subjectIdentity.control.controlCommit = "f".repeat(40);
+  resealIdentity(subjectIdentity);
+
+  assert.throws(
+    () =>
+      verifyG17NativeCompatibilityEvidence({
+        runId: "run-native-owner-01",
+        contract,
+        identity: subjectIdentity,
+        bytes: created.artifact.bytes,
+      }),
+    /artifact subject differs from the sealed identity/u,
+  );
 });
 
 test("native owner replay rejects noncanonical bytes and is process-free", async () => {

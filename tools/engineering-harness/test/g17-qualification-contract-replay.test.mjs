@@ -83,6 +83,12 @@ test("historical contract replay is Darwin-free while current replay fails close
         "155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70",
       generation: "LEGACY_V5",
     },
+    {
+      fixture: "g17-qualification-contract-v6.json",
+      digest:
+        "22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0",
+      generation: "LEGACY_V6",
+    },
   ]) {
     const bytes = await readFile(
       join(harnessRoot, "test", "fixtures", expected.fixture),
@@ -138,7 +144,7 @@ test("current replay snapshots accessor input once and does not retain caller by
 
   assert.equal(byteReads, 1);
   assert.equal(digestReads, 1);
-  assert.equal(decoded.generation, "CURRENT_V6");
+  assert.equal(decoded.generation, "CURRENT_V7");
   assert.equal(decoded.contractSha256, currentSha256);
   assert.notStrictEqual(decoded.bytes, currentBytes);
   assert.equal(decoded.bytes[0], "{".codePointAt(0));

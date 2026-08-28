@@ -183,14 +183,22 @@ function authorizedFixture() {
   };
 }
 
-test("v6 archives v5 bytes and loads the proposed statistics protocol", async () => {
+test("v7 archives v5 and v6 bytes and loads the proposed statistics protocol", async () => {
   const loaded = loadG17Contract();
   const protocol = loadG17ControlProtocol({ contract: loaded.contract });
   assert.equal(
     loaded.contract.schema,
-    "oxigraph.g1.7-qualification-contract/v6",
+    "oxigraph.g1.7-qualification-contract/v7",
   );
-  assert.equal(loaded.generation, "CURRENT_V6");
+  assert.equal(loaded.generation, "CURRENT_V7");
+  assert.equal(
+    protocol.authorization.schema,
+    "oxigraph.g1.7-control-authorization/v3",
+  );
+  assert.equal(
+    protocol.finalDecisionSet.schema,
+    "oxigraph.g1.7-final-decision-set/v3",
+  );
   assert.equal(protocol.authorization.status, "CONTROL_AUTH_PROPOSED");
   assert.equal(protocol.finalDecisionSet.status, "PROPOSED");
   assert.equal(protocol.authorization.protocol.execution.controlRows, 392);
@@ -243,7 +251,38 @@ test("v6 archives v5 bytes and loads the proposed statistics protocol", async ()
     scorePrecisionDecimals: 12,
     decision: "lower95-strictly-positive",
   });
+  assert.deepEqual(protocol.authorization.protocol.products.currentSubject, {
+    cargoLockBlob: "763b2fedd24173c0b1d9f67e30fe3f971b4a2afd",
+    cargoLockSha256:
+      "587e4563371c9573d27732b1ed8d8b0c1392e0f12ceec6b38124fcb578dd5a75",
+    commit: "e9d2db1b7c4eb974b406136e667e09ba06e34b48",
+    tree: "fcc5bb75c469fbbf80f77bc330279d3a7c593bfe",
+  });
+  assert.deepEqual(
+    protocol.authorization.protocol.evaluatorOverlay.roleCompositions
+      .currentSubject,
+    {
+      baseManifestBlob: "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+      effectiveManifestBlob: "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+      effectiveManifestSha256:
+        "e83b4ab43124affe47706192de6af6ae462bf6d819f66e8caecf3897888bb868",
+      effectiveTree: "fcc5bb75c469fbbf80f77bc330279d3a7c593bfe",
+      mode: "ALREADY_PRESENT",
+    },
+  );
   for (const [name, expected] of [
+    [
+      "g17-qualification-contract-v6.json",
+      "22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0",
+    ],
+    [
+      "qualification/g1.7/v6/control-authorization.json",
+      "285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839",
+    ],
+    [
+      "qualification/g1.7/v6/final-decision-set.json",
+      "e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732",
+    ],
     [
       "g17-qualification-contract-v5.json",
       "155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70",

@@ -27,7 +27,11 @@ import {
   G17_QUALIFICATION_SAMPLE_V3_SCHEMA,
 } from "./control-protocol.mjs";
 import { G17_CONTROL_STATISTICS_CONTRACT } from "./control-statistics-contract.mjs";
-import { G17_LEGACY_V5_PROTOCOL_ARTIFACTS } from "./control-protocol-identity.mjs";
+import {
+  G17_LEGACY_V5_PROTOCOL_ARTIFACTS,
+  G17_LEGACY_V6_PROTOCOL_ARTIFACTS,
+} from "./control-protocol-identity.mjs";
+import { G17_CURRENT_SUBJECT_CONTRACT } from "./decision-contract.mjs";
 import {
   G17_CONTRACT_GENERATION,
   G17_CONTRACT_SCHEMA,
@@ -44,6 +48,7 @@ export {
   G17_LEGACY_V3_CONTRACT_SHA256,
   G17_LEGACY_V4_CONTRACT_SHA256,
   G17_LEGACY_V5_CONTRACT_SHA256,
+  G17_LEGACY_V6_CONTRACT_SHA256,
   g17ContractCompatibilityGeneration,
 } from "./contract-identity.mjs";
 
@@ -72,9 +77,9 @@ const EXPECTED_PROTOCOL_DESCRIPTORS = Object.freeze({
     path: "qualification/g1.7/decisions/control-authorization.json",
     sealedName: "control-authorization.json",
     schema: G17_CONTROL_AUTHORIZATION_SCHEMA,
-    sha256: "285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839",
+    sha256: "31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767",
     contentHash:
-      "5e223cf4e11540eadef1e725794e05af838e2d5d347b5959091e424d7140961a",
+      "d61434741577787729dde9c23725523b855fca208e5b891de2a73e8abe0c0bb2",
     maxBytes: 131_072,
   },
   finalDecisionSet: {
@@ -82,9 +87,9 @@ const EXPECTED_PROTOCOL_DESCRIPTORS = Object.freeze({
     path: "qualification/g1.7/decisions/final-decision-set.json",
     sealedName: "final-decision-set.json",
     schema: G17_FINAL_DECISION_SET_SCHEMA,
-    sha256: "e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732",
+    sha256: "b0def4f0a3efa845aed557305045a79c6c9c22a455f09719dfca0bf903d595e5",
     contentHash:
-      "7eb0dcfbc35d70dc6b1fcf5debf69bd083900d9e9356c1cef745fc29271345c5",
+      "bb4d92160e4d71089ec9d29dc0861ffccf0dbcaa46e87c53d4a49f996fe9ac72",
     maxBytes: 131_072,
   },
 });
@@ -109,6 +114,29 @@ const EXPECTED_LEGACY_V5_PROTOCOL = Object.freeze({
     sha256: G17_LEGACY_V5_PROTOCOL_ARTIFACTS.finalDecisionSet.rawSha256,
     contentHash: G17_LEGACY_V5_PROTOCOL_ARTIFACTS.finalDecisionSet.contentHash,
     bytes: G17_LEGACY_V5_PROTOCOL_ARTIFACTS.finalDecisionSet.bytes,
+  },
+});
+const EXPECTED_LEGACY_V6_PROTOCOL = Object.freeze({
+  contract: {
+    schema: "oxigraph.g1.7-qualification-contract/v6",
+    path: "test/fixtures/g17-qualification-contract-v6.json",
+    sha256: "22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0",
+    bytes: 17_907,
+  },
+  controlAuthorization: {
+    schema: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.controlAuthorization.schema,
+    path: "test/fixtures/qualification/g1.7/v6/control-authorization.json",
+    sha256: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.controlAuthorization.rawSha256,
+    contentHash:
+      G17_LEGACY_V6_PROTOCOL_ARTIFACTS.controlAuthorization.contentHash,
+    bytes: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.controlAuthorization.bytes,
+  },
+  finalDecisionSet: {
+    schema: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.finalDecisionSet.schema,
+    path: "test/fixtures/qualification/g1.7/v6/final-decision-set.json",
+    sha256: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.finalDecisionSet.rawSha256,
+    contentHash: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.finalDecisionSet.contentHash,
+    bytes: G17_LEGACY_V6_PROTOCOL_ARTIFACTS.finalDecisionSet.bytes,
   },
 });
 const EXPECTED_G14B_PREREQUISITE = Object.freeze({
@@ -284,9 +312,11 @@ function validateContract(value) {
       "decisions",
       "objective",
       "authority",
+      "subject",
       "evaluator",
       "legacyV4DecisionSet",
       "legacyV5Protocol",
+      "legacyV6Protocol",
       "controlAuthorizationDecision",
       "finalDecisionSet",
       "g14bPrerequisite",
@@ -296,7 +326,7 @@ function validateContract(value) {
     ],
     "contract",
   );
-  assertInvariant(value.schema === G17_CONTRACT_SCHEMA, "schema is not v6");
+  assertInvariant(value.schema === G17_CONTRACT_SCHEMA, "schema is not v7");
   assertInvariant(
     value.id === "g1.7-compatibility-performance-qualification" &&
       value.programme === "linked-data-store",
@@ -313,6 +343,10 @@ function validateContract(value) {
   assertInvariant(
     isDeepStrictEqual(value.authority, AUTHORITY),
     "authority drifted",
+  );
+  assertInvariant(
+    isDeepStrictEqual(value.subject, G17_CURRENT_SUBJECT_CONTRACT),
+    "subject binding drifted",
   );
   assertInvariant(
     isDeepStrictEqual(value.evaluator, EXPECTED_EVALUATOR),
@@ -332,6 +366,10 @@ function validateContract(value) {
   assertInvariant(
     isDeepStrictEqual(value.legacyV5Protocol, EXPECTED_LEGACY_V5_PROTOCOL),
     "legacy v5 protocol archive drifted",
+  );
+  assertInvariant(
+    isDeepStrictEqual(value.legacyV6Protocol, EXPECTED_LEGACY_V6_PROTOCOL),
+    "legacy v6 protocol archive drifted",
   );
   assertInvariant(
     isDeepStrictEqual(
@@ -398,7 +436,7 @@ function validateContract(value) {
         workspacePerProduct: true,
         targetDirectoryPerProduct: true,
         crossProductArtifactReuse: false,
-        evaluatorOverlayAppliedBeforeBuild: true,
+        evaluatorCompositionVerifiedBeforeBuild: true,
       },
       target: "transactional_write",
       targetDirectory: "/state/target",
@@ -513,7 +551,7 @@ export function validateG17Contract(value) {
 
 export function decodeSealedG17Contract({ bytes, receiptSha256 }) {
   const decoded = decodeG17ContractByteIdentity({ bytes, receiptSha256 });
-  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V6) {
+  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V7) {
     return decoded;
   }
   return Object.freeze({
@@ -576,7 +614,7 @@ export function loadG17Contract({ contractPath = g17ContractPath } = {}) {
     bytes,
     receiptSha256: sha256(bytes),
   });
-  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V6) {
+  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V7) {
     throw new Error(
       "G1.7 qualification contract: current path is not current generation",
     );

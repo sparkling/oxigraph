@@ -44,7 +44,7 @@ export const G17_NATIVE_APPLICATION_ARTIFACT_NAMES = Object.freeze([
 ]);
 
 const REPLAY_BOUNDARY = "sealed-seven-artifact-pure-replay/v1";
-const IDENTITY_SCHEMA = "oxigraph.g1.7-qualified-subject-identity/v1";
+const IDENTITY_SCHEMA = "oxigraph.g1.7-qualified-subject-identity/v2";
 const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
 const SAFE_RUN_ID = /^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$/u;
@@ -196,7 +196,6 @@ function validateIdentity(identity) {
     identity.subject.trackedClean !== true ||
     !GIT_OBJECT.test(identity.subject.commit ?? "") ||
     !GIT_OBJECT.test(identity.subject.tree ?? "") ||
-    identity.control.controlCommit !== identity.subject.commit ||
     !GIT_OBJECT.test(identity.control.controlCommit ?? "") ||
     !GIT_OBJECT.test(identity.control.harnessTree ?? "") ||
     ![

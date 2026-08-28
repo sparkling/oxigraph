@@ -22,6 +22,9 @@ import {
   G17_CONTROL_STATISTICS_CONTRACT,
 } from "./control-statistics-contract.mjs";
 import {
+  G17_CURRENT_EVALUATOR_OVERLAY,
+  G17_CURRENT_PRODUCT_IDENTITIES,
+  G17_CURRENT_SUBJECT_IDENTITY,
   G17_EVALUATOR_OVERLAY,
   G17_PRODUCT_IDENTITIES,
 } from "./decision-contract.mjs";
@@ -38,9 +41,9 @@ export {
 } from "./g14b-prerequisite-contract.mjs";
 
 export const G17_CONTROL_AUTHORIZATION_SCHEMA =
-  "oxigraph.g1.7-control-authorization/v2";
+  "oxigraph.g1.7-control-authorization/v3";
 export const G17_FINAL_DECISION_SET_SCHEMA =
-  "oxigraph.g1.7-final-decision-set/v2";
+  "oxigraph.g1.7-final-decision-set/v3";
 export const G17_NEGATIVE_CONTROL_SIGNATURE_V2_SCHEMA =
   "oxigraph.g1.7-negative-control-signature/v2";
 export const G17_CONTROL_RUN_RECEIPT_SCHEMA =
@@ -249,8 +252,8 @@ export const G17_CONTROL_AUTHORIZATION_PROTOCOL = deepFreeze({
     runtimeModuleSha256: G17_DARWIN_RUNTIME_MODULES,
   },
   controlStatistics: G17_CONTROL_STATISTICS_CONTRACT,
-  products: G17_PRODUCT_IDENTITIES,
-  evaluatorOverlay: G17_EVALUATOR_OVERLAY,
+  products: G17_CURRENT_PRODUCT_IDENTITIES,
+  evaluatorOverlay: G17_CURRENT_EVALUATOR_OVERLAY,
   execution: {
     controls: [
       {
@@ -380,6 +383,7 @@ export const G17_FINAL_DECISION_PROTOCOL = deepFreeze({
   qualification: {
     subjectRole: "currentSubject",
     referenceRole: "performanceReference",
+    subject: G17_CURRENT_SUBJECT_IDENTITY,
     sampleSchema: G17_QUALIFICATION_SAMPLE_V3_SCHEMA,
     schedules,
     warmupBlocks: 2,

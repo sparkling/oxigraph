@@ -26,6 +26,7 @@ import {
   G17_LEGACY_V3_CONTRACT_SHA256,
   G17_LEGACY_V4_CONTRACT_SHA256,
   G17_LEGACY_V5_CONTRACT_SHA256,
+  G17_LEGACY_V6_CONTRACT_SHA256,
   decodeSealedG17Contract,
   g17ContractCompatibilityGeneration,
   g17ContractPath,
@@ -51,6 +52,10 @@ const legacyV5ContractUrl = new URL(
   "fixtures/g17-qualification-contract-v5.json",
   import.meta.url,
 );
+const legacyV6ContractUrl = new URL(
+  "fixtures/g17-qualification-contract-v6.json",
+  import.meta.url,
+);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -73,14 +78,40 @@ const CASE_IDS = [
   "writers-16-rocksdb",
 ];
 
-test("G1.7 v6 freezes paired control statistics and exact descriptors", () => {
+test("G1.7 v7 freezes the resealed subject, archives, and exact descriptors", () => {
   const loaded = loadG17Contract();
-  assert.equal(loaded.generation, G17_CONTRACT_GENERATION.CURRENT_V6);
+  assert.equal(loaded.generation, G17_CONTRACT_GENERATION.CURRENT_V7);
   assert.equal(loaded.contractSha256, G17_CURRENT_CONTRACT_SHA256);
   assert.equal(
-    loaded.contract.schema,
-    "oxigraph.g1.7-qualification-contract/v6",
+    G17_CURRENT_CONTRACT_SHA256,
+    "42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80",
   );
+  assert.equal(
+    loaded.contract.schema,
+    "oxigraph.g1.7-qualification-contract/v7",
+  );
+  assert.deepEqual(loaded.contract.subject, {
+    evaluator: {
+      commit: "3aca932e4062f9b087adfa486fac936b5bbeaebb",
+      composition: {
+        baseManifestBlob: "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+        effectiveManifestBlob: "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+        effectiveManifestSha256:
+          "e83b4ab43124affe47706192de6af6ae462bf6d819f66e8caecf3897888bb868",
+        effectiveTree: "fcc5bb75c469fbbf80f77bc330279d3a7c593bfe",
+        mode: "ALREADY_PRESENT",
+      },
+      state: "PRESENT_AS_ANCESTOR",
+    },
+    product: {
+      cargoLockBlob: "763b2fedd24173c0b1d9f67e30fe3f971b4a2afd",
+      cargoLockSha256:
+        "587e4563371c9573d27732b1ed8d8b0c1392e0f12ceec6b38124fcb578dd5a75",
+      commit: "e9d2db1b7c4eb974b406136e667e09ba06e34b48",
+      tree: "fcc5bb75c469fbbf80f77bc330279d3a7c593bfe",
+    },
+    schema: "oxigraph.g1.7-subject-binding/v1",
+  });
   assert.deepEqual(
     loaded.contract.benchmark.suite.tasks.map(({ id }) => id),
     CASE_IDS,
@@ -112,7 +143,7 @@ test("G1.7 v6 freezes paired control statistics and exact descriptors", () => {
     buildOnceBeforeTiming: true,
     isolation: {
       crossProductArtifactReuse: false,
-      evaluatorOverlayAppliedBeforeBuild: true,
+      evaluatorCompositionVerifiedBeforeBuild: true,
       targetDirectoryPerProduct: true,
       workspacePerProduct: true,
     },
@@ -155,19 +186,46 @@ test("G1.7 v6 freezes paired control statistics and exact descriptors", () => {
       {
         id: "control-authorization",
         maxBytes: 131_072,
-        raw: "285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839",
+        raw: "31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767",
         contentHash:
-          "5e223cf4e11540eadef1e725794e05af838e2d5d347b5959091e424d7140961a",
+          "d61434741577787729dde9c23725523b855fca208e5b891de2a73e8abe0c0bb2",
       },
       {
         id: "final-decision-set",
         maxBytes: 131_072,
-        raw: "e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732",
+        raw: "b0def4f0a3efa845aed557305045a79c6c9c22a455f09719dfca0bf903d595e5",
         contentHash:
-          "7eb0dcfbc35d70dc6b1fcf5debf69bd083900d9e9356c1cef745fc29271345c5",
+          "bb4d92160e4d71089ec9d29dc0861ffccf0dbcaa46e87c53d4a49f996fe9ac72",
       },
     ],
   );
+  assert.deepEqual(loaded.contract.legacyV6Protocol, {
+    contract: {
+      bytes: 17_907,
+      path: "test/fixtures/g17-qualification-contract-v6.json",
+      schema: "oxigraph.g1.7-qualification-contract/v6",
+      sha256:
+        "22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0",
+    },
+    controlAuthorization: {
+      bytes: 10_768,
+      contentHash:
+        "5e223cf4e11540eadef1e725794e05af838e2d5d347b5959091e424d7140961a",
+      path: "test/fixtures/qualification/g1.7/v6/control-authorization.json",
+      schema: "oxigraph.g1.7-control-authorization/v2",
+      sha256:
+        "285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839",
+    },
+    finalDecisionSet: {
+      bytes: 5_686,
+      contentHash:
+        "7eb0dcfbc35d70dc6b1fcf5debf69bd083900d9e9356c1cef745fc29271345c5",
+      path: "test/fixtures/qualification/g1.7/v6/final-decision-set.json",
+      schema: "oxigraph.g1.7-final-decision-set/v2",
+      sha256:
+        "e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732",
+    },
+  });
   assert.equal(
     loaded.contract.legacyV4DecisionSet.decisionSetSha256,
     "9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc",
@@ -236,7 +294,7 @@ test("G1.7 verifies Darwin version, lock integrity, and module-chain bytes", asy
   }
 });
 
-test("sealed contract dispatch preserves v1, v3, v4, and v5 byte replay", async () => {
+test("sealed contract dispatch preserves v1, v3, v4, v5, and v6 byte replay", async () => {
   const fixtures = [
     {
       url: legacyV1ContractUrl,
@@ -270,6 +328,14 @@ test("sealed contract dispatch preserves v1, v3, v4, and v5 byte replay", async 
       schema: "oxigraph.g1.7-qualification-contract/v5",
       generation: G17_CONTRACT_GENERATION.LEGACY_V5,
     },
+    {
+      url: legacyV6ContractUrl,
+      bytes: 17_907,
+      digest: G17_LEGACY_V6_CONTRACT_SHA256,
+      blob: "995b126a8af04c883211cb8fb29d1191fc30ebc0",
+      schema: "oxigraph.g1.7-qualification-contract/v6",
+      generation: G17_CONTRACT_GENERATION.LEGACY_V6,
+    },
   ];
   for (const expected of fixtures) {
     const bytes = await readFile(expected.url);
@@ -300,6 +366,7 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
     G17_CONTRACT_GENERATION.LEGACY_V3,
     G17_CONTRACT_GENERATION.LEGACY_V4,
     G17_CONTRACT_GENERATION.LEGACY_V5,
+    G17_CONTRACT_GENERATION.LEGACY_V6,
   ]) {
     assert.deepEqual(
       g17ContractCompatibilityGeneration({
@@ -316,7 +383,7 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
   }
   assert.deepEqual(
     g17ContractCompatibilityGeneration({
-      contractGeneration: G17_CONTRACT_GENERATION.CURRENT_V6,
+      contractGeneration: G17_CONTRACT_GENERATION.CURRENT_V7,
       compatibilityStatus: "PASS",
       compatibilitySchemaState: "CURRENT_SCHEMA_UNREPLAYED",
     }),
@@ -331,7 +398,8 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
     [G17_CONTRACT_GENERATION.LEGACY_V3, "CURRENT_SCHEMA_UNREPLAYED"],
     [G17_CONTRACT_GENERATION.LEGACY_V4, "CURRENT_SCHEMA_UNREPLAYED"],
     [G17_CONTRACT_GENERATION.LEGACY_V5, "CURRENT_SCHEMA_UNREPLAYED"],
-    [G17_CONTRACT_GENERATION.CURRENT_V6, "LEGACY_REPLAY_ONLY"],
+    [G17_CONTRACT_GENERATION.LEGACY_V6, "CURRENT_SCHEMA_UNREPLAYED"],
+    [G17_CONTRACT_GENERATION.CURRENT_V7, "LEGACY_REPLAY_ONLY"],
   ]) {
     assert.throws(
       () =>
@@ -345,7 +413,7 @@ test("contract and compatibility generations cannot be mixed for PASS evidence",
   }
 });
 
-test("G1.7 v6 rejects protocol, suite, evaluator, and statistics drift", async () => {
+test("G1.7 v7 rejects protocol, subject, suite, evaluator, and statistics drift", async () => {
   const pristine = JSON.parse(await readFile(g17ContractPath, "utf8"));
   for (const mutate of [
     (contract) => {
@@ -359,6 +427,12 @@ test("G1.7 v6 rejects protocol, suite, evaluator, and statistics drift", async (
     },
     (contract) => {
       contract.legacyV5Protocol.contract.sha256 = "b".repeat(64);
+    },
+    (contract) => {
+      contract.legacyV6Protocol.contract.sha256 = "b".repeat(64);
+    },
+    (contract) => {
+      contract.subject.product.commit = "b".repeat(40);
     },
     (contract) => {
       contract.evaluator.parent = contract.evaluator.commit;

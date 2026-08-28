@@ -104,6 +104,55 @@ export const G17_EVALUATOR_OVERLAY = deepFreeze({
   },
 });
 
+export const G17_CURRENT_SUBJECT_IDENTITY = deepFreeze({
+  commit: "e9d2db1b7c4eb974b406136e667e09ba06e34b48",
+  tree: "fcc5bb75c469fbbf80f77bc330279d3a7c593bfe",
+  cargoLockBlob: "763b2fedd24173c0b1d9f67e30fe3f971b4a2afd",
+  cargoLockSha256:
+    "587e4563371c9573d27732b1ed8d8b0c1392e0f12ceec6b38124fcb578dd5a75",
+});
+
+export const G17_CURRENT_PRODUCT_IDENTITIES = deepFreeze({
+  ...G17_PRODUCT_IDENTITIES,
+  currentSubject: G17_CURRENT_SUBJECT_IDENTITY,
+});
+
+export const G17_CURRENT_EVALUATOR_OVERLAY = deepFreeze({
+  ...G17_EVALUATOR_OVERLAY,
+  roleCompositions: {
+    performanceReference: {
+      ...G17_EVALUATOR_OVERLAY.roleCompositions.performanceReference,
+      mode: "APPLY_PATCH",
+    },
+    noiseControl: {
+      ...G17_EVALUATOR_OVERLAY.roleCompositions.noiseControl,
+      mode: "EVALUATOR_COMMIT",
+    },
+    negativeControl: {
+      ...G17_EVALUATOR_OVERLAY.roleCompositions.negativeControl,
+      mode: "APPLY_PATCH",
+    },
+    currentSubject: {
+      baseManifestBlob: "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+      effectiveManifestBlob: "8b4a1d3f82829d0f2780b88904f8bd2149151020",
+      effectiveManifestSha256:
+        "e83b4ab43124affe47706192de6af6ae462bf6d819f66e8caecf3897888bb868",
+      effectiveTree: G17_CURRENT_SUBJECT_IDENTITY.tree,
+      mode: "ALREADY_PRESENT",
+    },
+  },
+});
+
+export const G17_CURRENT_SUBJECT_CONTRACT = deepFreeze({
+  schema: "oxigraph.g1.7-subject-binding/v1",
+  product: G17_CURRENT_SUBJECT_IDENTITY,
+  evaluator: {
+    commit: G17_EVALUATOR_OVERLAY.commit,
+    state: "PRESENT_AS_ANCESTOR",
+    composition: G17_CURRENT_EVALUATOR_OVERLAY.roleCompositions.currentSubject,
+  },
+});
+
 export const G17_CONTROL_PLAN = deepFreeze({
   negativeControl: {
     productRole: "negativeControl",

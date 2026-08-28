@@ -18,8 +18,7 @@ export const G17_NATIVE_COMPATIBILITY_PROJECTION_SCHEMA =
 const REPLAY_BOUNDARY =
   "sealed-bounded-raw-output-owner-replay-no-cargo-reexecution";
 const WORKSPACE_POLICY = "exclusive-temporary-home-and-target-v1";
-const CARGO_CACHE_POLICY =
-  "sanitized-symlinked-registry-lock-checksum-v1";
+const CARGO_CACHE_POLICY = "sanitized-symlinked-registry-lock-checksum-v1";
 const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OBJECT = /^[0-9a-f]{40}$/u;
 const SAFE_RUN_ID = /^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/u;
@@ -98,12 +97,7 @@ function uniqueTool(identity, program) {
     ],
     `${program} identity`,
   );
-  for (const key of [
-    "invokedPath",
-    "path",
-    "toolchainPath",
-    "versionStdout",
-  ]) {
+  for (const key of ["invokedPath", "path", "toolchainPath", "versionStdout"]) {
     nonemptyString(tool[key], `${program} identity ${key}`);
   }
   for (const key of ["executableSha256", "toolchainExecutableSha256"]) {
@@ -139,7 +133,7 @@ function toolProjection(tool) {
 
 function identityProjection(identity) {
   if (
-    identity?.schema !== "oxigraph.g1.7-qualified-subject-identity/v1" ||
+    identity?.schema !== "oxigraph.g1.7-qualified-subject-identity/v2" ||
     !DIGEST.test(identity.identitySha256 ?? "") ||
     !GIT_OBJECT.test(identity.subject?.commit ?? "") ||
     !GIT_OBJECT.test(identity.subject?.tree ?? "") ||
@@ -162,7 +156,8 @@ export function g17NativeInventoryArgv(reviewedArgv) {
   stringArray(reviewedArgv, "reviewed Cargo argv");
   if (reviewedArgv[0] !== "cargo") fail("reviewed native program is not Cargo");
   const separator = reviewedArgv.indexOf("--");
-  const cargoArgv = separator < 0 ? reviewedArgv : reviewedArgv.slice(0, separator);
+  const cargoArgv =
+    separator < 0 ? reviewedArgv : reviewedArgv.slice(0, separator);
   return [...cargoArgv, "--", "--list", "--format", "terse"];
 }
 
@@ -233,7 +228,8 @@ function strictBase64(value, label) {
     fail(`${label} is not canonical base64`);
   }
   const bytes = Buffer.from(value, "base64");
-  if (bytes.toString("base64") !== value) fail(`${label} is not canonical base64`);
+  if (bytes.toString("base64") !== value)
+    fail(`${label} is not canonical base64`);
   return bytes;
 }
 
@@ -263,7 +259,10 @@ function processRecord(observation, lane, expectedArgv, cargo, label) {
   ) {
     fail(`${label} command differs from the sealed tool and contract`);
   }
-  const captured = plainObject(result.capturedOutput, `${label} captured output`);
+  const captured = plainObject(
+    result.capturedOutput,
+    `${label} captured output`,
+  );
   if (captured.limitBytes !== lane.maxOutputBytes) {
     fail(`${label} capture ceiling differs from the contract`);
   }
@@ -408,7 +407,8 @@ export function replayG17NativeLaneOutputContract({
       observedPassedTests: summaries[0].passed,
     });
   } catch (error) {
-    if (error.message.startsWith("G1.7 native compatibility owner:")) throw error;
+    if (error.message.startsWith("G1.7 native compatibility owner:"))
+      throw error;
     fail(error.message);
   }
 }
@@ -421,12 +421,16 @@ function ownerFromObservations({
   observations,
 }) {
   if (!SAFE_RUN_ID.test(runId ?? "")) fail("run id is unsafe");
-  if (!Array.isArray(observations)) fail("native observations must be an array");
+  if (!Array.isArray(observations))
+    fail("native observations must be an array");
   const toolchain = uniqueToolchain(identity);
   const { cargo } = toolchain;
   const sealedWorkspace = workspaceProjection(workspace, runId);
   const reviewedLanes = contract?.compatibility?.native;
-  if (!Array.isArray(reviewedLanes) || observations.length !== reviewedLanes.length) {
+  if (
+    !Array.isArray(reviewedLanes) ||
+    observations.length !== reviewedLanes.length
+  ) {
     fail("native observation inventory differs from the contract");
   }
   const lanes = reviewedLanes.map((lane, index) => {
@@ -472,7 +476,11 @@ function ownerFromObservations({
 }
 
 function parseCanonicalOwner(bytes) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_OWNER_BYTES) {
+  if (
+    !Buffer.isBuffer(bytes) ||
+    bytes.length < 1 ||
+    bytes.length > MAX_OWNER_BYTES
+  ) {
     fail("artifact is not a bounded Buffer");
   }
   let owner;
@@ -575,10 +583,7 @@ function verifyOwner({ runId, contract, identity, owner, bytes }) {
     const execution = validateProcess(
       laneEvidence.execution,
       lane,
-      g17NativeExecutionArgv(
-        lane.argv,
-        workspace.targetDirectory,
-      ).slice(1),
+      g17NativeExecutionArgv(lane.argv, workspace.targetDirectory).slice(1),
       cargo,
       `${lane.id} execution`,
     );
@@ -618,8 +623,7 @@ function verifyOwner({ runId, contract, identity, owner, bytes }) {
         stdoutSha256: laneEvidence.inventory.stdout.sha256,
         stderrSha256: laneEvidence.inventory.stderr.sha256,
       },
-      inventoryScanLimitExceeded:
-        laneEvidence.inventory.scanLimitExceeded,
+      inventoryScanLimitExceeded: laneEvidence.inventory.scanLimitExceeded,
     };
   });
   return Object.freeze({
@@ -662,7 +666,8 @@ export function createG17NativeCompatibilityEvidence(options) {
       projection,
     });
   } catch (error) {
-    if (error.message.startsWith("G1.7 native compatibility owner:")) throw error;
+    if (error.message.startsWith("G1.7 native compatibility owner:"))
+      throw error;
     fail(error.message);
   }
 }
@@ -677,7 +682,8 @@ export function verifyG17NativeCompatibilityEvidence({
     const owner = parseCanonicalOwner(bytes);
     return verifyOwner({ runId, contract, identity, owner, bytes });
   } catch (error) {
-    if (error.message.startsWith("G1.7 native compatibility owner:")) throw error;
+    if (error.message.startsWith("G1.7 native compatibility owner:"))
+      throw error;
     fail(error.message);
   }
 }

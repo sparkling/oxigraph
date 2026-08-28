@@ -23,6 +23,29 @@ export const G17_LEGACY_V5_PROTOCOL_ARTIFACTS = Object.freeze({
   }),
 });
 
+export const G17_LEGACY_V6_PROTOCOL_ARTIFACTS = Object.freeze({
+  controlAuthorization: Object.freeze({
+    schema: "oxigraph.g1.7-control-authorization/v2",
+    id: "control-authorization",
+    status: "CONTROL_AUTH_PROPOSED",
+    rawSha256:
+      "285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839",
+    contentHash:
+      "5e223cf4e11540eadef1e725794e05af838e2d5d347b5959091e424d7140961a",
+    bytes: 10_768,
+  }),
+  finalDecisionSet: Object.freeze({
+    schema: "oxigraph.g1.7-final-decision-set/v2",
+    id: "final-decision-set",
+    status: "PROPOSED",
+    rawSha256:
+      "e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732",
+    contentHash:
+      "7eb0dcfbc35d70dc6b1fcf5debf69bd083900d9e9356c1cef745fc29271345c5",
+    bytes: 5_686,
+  }),
+});
+
 function fail(message) {
   throw new Error(`G1.7 control protocol identity: ${message}`);
 }
@@ -118,8 +141,9 @@ function snapshotInput(input) {
   return { bytes, receiptSha256 };
 }
 
-export function decodeG17LegacyV5ProtocolArtifact(kind, input) {
-  const descriptor = G17_LEGACY_V5_PROTOCOL_ARTIFACTS[kind];
+function decodeLegacyProtocolArtifact(generation, descriptors, kind, input) {
+  const descriptor = descriptors[kind];
+  const version = generation.replace("LEGACY_", "").toLowerCase();
   if (descriptor === undefined) fail("artifact kind is unsupported");
   const { bytes, receiptSha256 } = snapshotInput(input);
   if (
@@ -128,7 +152,7 @@ export function decodeG17LegacyV5ProtocolArtifact(kind, input) {
     receiptSha256 !== descriptor.rawSha256 ||
     sha256(bytes) !== descriptor.rawSha256
   ) {
-    fail("artifact bytes do not match the reviewed v5 identity");
+    fail(`artifact bytes do not match the reviewed ${version} identity`);
   }
   let value;
   try {
@@ -149,15 +173,33 @@ export function decodeG17LegacyV5ProtocolArtifact(kind, input) {
       descriptor.contentHash
   ) {
     fail(
-      "artifact metadata or self-hash differs from the reviewed v5 identity",
+      `artifact metadata or self-hash differs from the reviewed ${version} identity`,
     );
   }
   return Object.freeze({
     kind,
-    generation: "LEGACY_V5",
+    generation,
     value: deepFreeze(value),
     byteLength: descriptor.bytes,
     rawSha256: descriptor.rawSha256,
     contentHash: descriptor.contentHash,
   });
+}
+
+export function decodeG17LegacyV5ProtocolArtifact(kind, input) {
+  return decodeLegacyProtocolArtifact(
+    "LEGACY_V5",
+    G17_LEGACY_V5_PROTOCOL_ARTIFACTS,
+    kind,
+    input,
+  );
+}
+
+export function decodeG17LegacyV6ProtocolArtifact(kind, input) {
+  return decodeLegacyProtocolArtifact(
+    "LEGACY_V6",
+    G17_LEGACY_V6_PROTOCOL_ARTIFACTS,
+    kind,
+    input,
+  );
 }

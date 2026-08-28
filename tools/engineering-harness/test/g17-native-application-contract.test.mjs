@@ -40,6 +40,10 @@ function resealIdentity(identity) {
     schema: "oxigraph.committed-harness-identity/v1",
     ...controlBinding,
   });
+  return resealIdentityHash(identity);
+}
+
+function resealIdentityHash(identity) {
   const { identitySha256: ignoredIdentitySha256, ...binding } = identity;
   identity.identitySha256 = canonicalSha256(binding);
   return identity;
@@ -318,6 +322,14 @@ test("seven-artifact composite derives one frozen current compatibility projecti
     "oxigraph.g1.7-native-compatibility-projection/v2",
   );
   assert.equal(projection.status, "PASS");
+  assert.equal(
+    fixture.input.identity.schema,
+    "oxigraph.g1.7-qualified-subject-identity/v2",
+  );
+  assert.notEqual(
+    fixture.input.identity.subject.commit,
+    fixture.input.identity.control.controlCommit,
+  );
   assert.deepEqual(
     projection.artifacts.map(({ name }) => name),
     G17_NATIVE_APPLICATION_ARTIFACT_NAMES,
@@ -359,6 +371,14 @@ test("seven-artifact composite derives one frozen current compatibility projecti
     executableSha256: cargo.toolchainExecutableSha256,
     versionSha256: sha256(Buffer.from(cargo.versionStdout, "utf8")),
   });
+  assert.equal(
+    fixture.observedWorkspaceExpected.subjectCommit,
+    fixture.input.identity.subject.commit,
+  );
+  assert.notEqual(
+    fixture.observedWorkspaceExpected.subjectCommit,
+    fixture.input.identity.control.controlCommit,
+  );
   assert.equal(
     fixture.observedWorkspaceExpected.platformManifestSha256,
     projection.platform.manifestSha256,
@@ -409,6 +429,21 @@ test("production composite rejects an evaluator outside the reviewed contract", 
   assert.throws(
     () => verifyG17NativeApplicationEvidence(fixture.input),
     /sealed evaluator differs from the reviewed contract/u,
+  );
+});
+
+test("production composite cross-binds a distinct control commit through the subject identity", () => {
+  const fixture = createG17NativeApplicationFixture();
+  assert.notEqual(
+    fixture.input.identity.subject.commit,
+    fixture.input.identity.control.controlCommit,
+  );
+  fixture.input.identity.control.controlCommit = "f".repeat(40);
+  resealIdentity(fixture.input.identity);
+
+  assert.throws(
+    () => verifyG17NativeApplicationEvidence(fixture.input),
+    /verified platform generation differs from the sealed identity/u,
   );
 });
 
@@ -637,12 +672,12 @@ test("seven-artifact composite rejects coherently rehashed malformed sealed iden
       /sealed evaluator differs from the reviewed contract/u,
     ],
     [
-      "control-subject relation",
+      "control digest binding",
       (identity) => {
         identity.control.controlCommit = "f".repeat(40);
-        resealIdentity(identity);
+        resealIdentityHash(identity);
       },
-      /subject, control, evaluator, or Cargo\.lock binding/u,
+      /sealed control digest does not replay/u,
     ],
     [
       "dependency policy",

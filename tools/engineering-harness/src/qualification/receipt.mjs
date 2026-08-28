@@ -9,6 +9,7 @@ import {
   G17_LEGACY_V3_CONTRACT_SHA256,
   G17_LEGACY_V4_CONTRACT_SHA256,
   G17_LEGACY_V5_CONTRACT_SHA256,
+  G17_LEGACY_V6_CONTRACT_SHA256,
 } from "./contract-identity.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
@@ -151,6 +152,7 @@ function validateContractProjection(contract) {
   const supportsDecisionProtocol = [
     G17_LEGACY_V4_CONTRACT_SHA256,
     G17_LEGACY_V5_CONTRACT_SHA256,
+    G17_LEGACY_V6_CONTRACT_SHA256,
     G17_CURRENT_CONTRACT_SHA256,
   ].includes(contract.sha256);
   if (
@@ -174,15 +176,43 @@ function validateContractProjection(contract) {
   return supportsDecisionProtocol;
 }
 
-function validateIdentity(identity) {
-  plainObject(identity, "identity");
+function validateIdentity(identity, { currentV7 }) {
+  exactKeys(
+    identity,
+    currentV7
+      ? [
+          "schema",
+          "subjectCommit",
+          "subjectTree",
+          "controlCommit",
+          "harnessSha256",
+          "evaluatorCommit",
+          "evaluatorBlobSha256",
+          "identitySha256",
+        ]
+      : [
+          "schema",
+          "subjectCommit",
+          "subjectTree",
+          "harnessSha256",
+          "evaluatorCommit",
+          "evaluatorBlobSha256",
+          "identitySha256",
+        ],
+    "identity",
+  );
   if (
-    identity.schema !== "oxigraph.g1.7-qualification-identity/v1" ||
+    identity.schema !==
+      (currentV7
+        ? "oxigraph.g1.7-qualification-identity/v2"
+        : "oxigraph.g1.7-qualification-identity/v1") ||
     !GIT_OBJECT.test(identity.subjectCommit ?? "") ||
     !GIT_OBJECT.test(identity.subjectTree ?? "") ||
+    (currentV7 && !GIT_OBJECT.test(identity.controlCommit ?? "")) ||
     !DIGEST.test(identity.harnessSha256 ?? "") ||
     !GIT_OBJECT.test(identity.evaluatorCommit ?? "") ||
-    !DIGEST.test(identity.evaluatorBlobSha256 ?? "")
+    !DIGEST.test(identity.evaluatorBlobSha256 ?? "") ||
+    !DIGEST.test(identity.identitySha256 ?? "")
   ) {
     fail("identity projection is invalid");
   }
@@ -431,7 +461,9 @@ function validateStructure(receipt, options) {
   if (receipt.schema !== G17_RECEIPT_SCHEMA) fail("schema is not v1");
   validateRun(receipt.run);
   const supportsDecisionProtocol = validateContractProjection(receipt.contract);
-  validateIdentity(receipt.identity);
+  validateIdentity(receipt.identity, {
+    currentV7: receipt.contract.sha256 === G17_CURRENT_CONTRACT_SHA256,
+  });
   validateEvidence(receipt.evidence, options);
   validateBenchmark(receipt.benchmark, {
     currentV4: supportsDecisionProtocol,
@@ -506,6 +538,7 @@ export function verifyG17Receipt(input) {
         G17_LEGACY_V3_CONTRACT_SHA256,
         G17_LEGACY_V4_CONTRACT_SHA256,
         G17_LEGACY_V5_CONTRACT_SHA256,
+        G17_LEGACY_V6_CONTRACT_SHA256,
       ].includes(verified.contract.sha256) ||
       Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
     return Object.freeze({

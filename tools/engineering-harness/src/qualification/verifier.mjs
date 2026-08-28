@@ -50,7 +50,7 @@ function parseCanonical(bytes, label) {
   return value;
 }
 
-function sealedIdentityProjection(identity) {
+function sealedIdentityProjection(identity, projectionSchema) {
   const binding = {
     schema: identity?.schema,
     subject: identity?.subject,
@@ -60,16 +60,31 @@ function sealedIdentityProjection(identity) {
     toolchain: identity?.toolchain,
     host: identity?.host,
   };
+  const currentV2 =
+    identity?.schema === "oxigraph.g1.7-qualified-subject-identity/v2";
+  const currentProjection =
+    projectionSchema === "oxigraph.g1.7-qualification-identity/v2";
   if (
-    identity?.schema !== "oxigraph.g1.7-qualified-subject-identity/v1" ||
+    ![
+      "oxigraph.g1.7-qualified-subject-identity/v1",
+      "oxigraph.g1.7-qualified-subject-identity/v2",
+    ].includes(identity?.schema) ||
+    ![
+      "oxigraph.g1.7-qualification-identity/v1",
+      "oxigraph.g1.7-qualification-identity/v2",
+    ].includes(projectionSchema) ||
+    (currentProjection && !currentV2) ||
     identity.identitySha256 !== canonicalSha256(binding)
   ) {
     fail("sealed subject identity hash is invalid");
   }
   return {
-    schema: "oxigraph.g1.7-qualification-identity/v1",
+    schema: projectionSchema,
     subjectCommit: identity.subject.commit,
     subjectTree: identity.subject.tree,
+    ...(currentProjection
+      ? { controlCommit: identity.control.controlCommit }
+      : {}),
     harnessSha256: identity.control.harnessSha256,
     evaluatorCommit: identity.evaluator.commit,
     evaluatorBlobSha256: identity.evaluator.blobSetSha256,
@@ -206,9 +221,12 @@ export async function verifySealedG17Run({
   const { contract, generation: contractGeneration } = decodedContract;
   const legacyV4 = contractGeneration === G17_CONTRACT_GENERATION.LEGACY_V4;
   const legacyV5 = contractGeneration === G17_CONTRACT_GENERATION.LEGACY_V5;
-  const currentV6 = contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V6;
-  if (legacyV5) {
-    fail("legacy v5 qualification receipt replay owner is unavailable");
+  const legacyV6 = contractGeneration === G17_CONTRACT_GENERATION.LEGACY_V6;
+  const currentV7 = contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V7;
+  if (legacyV5 || legacyV6) {
+    fail(
+      `${legacyV6 ? "legacy v6" : "legacy v5"} qualification receipt replay owner is unavailable`,
+    );
   }
   let decisionBinding = null;
   let controlProtocol = null;
@@ -230,7 +248,7 @@ export async function verifySealedG17Run({
       decisions,
       startedAt: receipt.run.startedAt,
     });
-  } else if (currentV6) {
+  } else if (currentV7) {
     controlProtocol = decodeSealedG17ControlProtocol({
       contract,
       bytesByName,
@@ -273,7 +291,7 @@ export async function verifySealedG17Run({
   ) {
     fail("sealed contract projection differs from the receipt");
   }
-  if (currentV6) {
+  if (currentV7) {
     if (
       controlProtocol.finalDecisionSet.status === "APPROVED" &&
       controlProtocol.authorization.status !== "CONTROL_AUTHORIZED"
@@ -289,7 +307,7 @@ export async function verifySealedG17Run({
         qualificationStartedAt: receipt.run.startedAt,
       });
     }
-    fail("current v6 qualification receipt owner is unavailable");
+    fail("current v7 qualification receipt owner is unavailable");
   }
   verifyEvidenceArtifactInventory(receipt, bytesByName);
   if (
@@ -300,7 +318,10 @@ export async function verifySealedG17Run({
   }
   const identity = parseCanonical(bytesByName.get("identity.json"), "identity");
   if (
-    !isDeepStrictEqual(sealedIdentityProjection(identity), receipt.identity)
+    !isDeepStrictEqual(
+      sealedIdentityProjection(identity, receipt.identity.schema),
+      receipt.identity,
+    )
   ) {
     fail("sealed identity projection differs from the receipt");
   }
@@ -406,7 +427,7 @@ export async function verifySealedG17Run({
         lane,
         schemaState === "NOT_APPLICABLE"
           ? schemaState
-          : contractGeneration !== G17_CONTRACT_GENERATION.CURRENT_V6
+          : contractGeneration !== G17_CONTRACT_GENERATION.CURRENT_V7
             ? "LEGACY_REPLAY_ONLY"
             : schemaState === "CURRENT_SCHEMA_UNREPLAYED"
               ? lane === "semantic"
@@ -418,7 +439,7 @@ export async function verifySealedG17Run({
   );
   const qualificationEligible =
     !legacyReplayOnly &&
-    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V6 &&
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V7 &&
     decisionBinding?.approved === true &&
     receipt.final.verdict === "ACCEPT" &&
     evidenceAssurance.semantic === "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&

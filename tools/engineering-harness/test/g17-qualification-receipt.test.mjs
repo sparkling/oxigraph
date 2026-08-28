@@ -5,6 +5,7 @@ import { canonicalSha256 } from "../src/routing/features.mjs";
 import {
   G17_CURRENT_CONTRACT_SHA256,
   G17_LEGACY_V3_CONTRACT_SHA256,
+  G17_LEGACY_V6_CONTRACT_SHA256,
 } from "../src/qualification/contract.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
@@ -39,6 +40,7 @@ function draft() {
       harnessSha256: "5".repeat(64),
       evaluatorCommit: "6".repeat(40),
       evaluatorBlobSha256: "7".repeat(64),
+      identitySha256: "0".repeat(64),
     },
     evidence: {
       semantic: {
@@ -87,6 +89,18 @@ function draft() {
   };
 }
 
+function useCurrentIdentity(value) {
+  value.identity.schema = "oxigraph.g1.7-qualification-identity/v2";
+  value.identity.controlCommit = "8".repeat(40);
+  return value;
+}
+
+function useLegacyIdentity(value) {
+  value.identity.schema = "oxigraph.g1.7-qualification-identity/v1";
+  delete value.identity.controlCommit;
+  return value;
+}
+
 function passEvidence(schema) {
   const projection = { schema, status: "PASS" };
   return {
@@ -98,7 +112,7 @@ function passEvidence(schema) {
 }
 
 function acceptingDraft() {
-  const value = draft();
+  const value = useCurrentIdentity(draft());
   value.contract.sha256 = G17_CURRENT_CONTRACT_SHA256;
   value.contract.referenceDecision = "SELECTED";
   value.contract.budgetDecision = "APPROVED";
@@ -194,7 +208,7 @@ test("structural verification marks current PASS evidence as unreplayed", () => 
 });
 
 test("structural verification keeps v3 contract PASS replay-only", () => {
-  const legacy = acceptingDraft();
+  const legacy = useLegacyIdentity(acceptingDraft());
   legacy.contract.sha256 = G17_LEGACY_V3_CONTRACT_SHA256;
   const receipt = createG17Receipt(legacy);
   const verification = verifyG17Receipt(g17ReceiptBytes(receipt));
@@ -205,6 +219,18 @@ test("structural verification keeps v3 contract PASS replay-only", () => {
     semantic: "CURRENT_SCHEMA_UNREPLAYED",
     compatibility: "CURRENT_SCHEMA_UNREPLAYED",
   });
+});
+
+test("structural verification keeps the archived v6 contract replay-only", () => {
+  const legacy = useLegacyIdentity(acceptingDraft());
+  legacy.contract.sha256 = G17_LEGACY_V6_CONTRACT_SHA256;
+  const verification = verifyG17Receipt(
+    g17ReceiptBytes(createG17Receipt(legacy)),
+  );
+  assert.equal(verification.ok, false);
+  assert.equal(verification.structurallyValid, true);
+  assert.equal(verification.verificationStatus, "LEGACY_REPLAY_ONLY");
+  assert.equal(verification.qualificationEligible, false);
 });
 
 test("structural verification preserves v2 and prior-current v3 compatibility PASS as replay-only", () => {
@@ -336,7 +362,7 @@ test("G1.7 receipt creation rejects vacuous PASS evidence and benchmark claims",
 });
 
 test("G1.7 receipt preserves proposed decision status without authority", () => {
-  const proposed = draft();
+  const proposed = useCurrentIdentity(draft());
   proposed.contract.sha256 = G17_CURRENT_CONTRACT_SHA256;
   proposed.contract.referenceDecision = "PROPOSED";
   proposed.contract.budgetDecision = "PROPOSED";
@@ -356,7 +382,7 @@ test("G1.7 receipt preserves proposed decision status without authority", () => 
   assert.equal(verifyG17Receipt(g17ReceiptBytes(receipt)).ok, true);
   assert.equal(receipt.authority.promotionAuthority, false);
 
-  const legacy = structuredClone(proposed);
+  const legacy = useLegacyIdentity(structuredClone(proposed));
   legacy.contract.sha256 = G17_LEGACY_V3_CONTRACT_SHA256;
   assert.throws(
     () => createG17Receipt(legacy),
@@ -371,7 +397,7 @@ test("current G1.7 receipt permits budget breaches only on strict FAIL", () => {
     "INCONCLUSIVE",
     "NOISY",
   ]) {
-    const invalid = draft();
+    const invalid = useCurrentIdentity(draft());
     invalid.contract.sha256 = G17_CURRENT_CONTRACT_SHA256;
     invalid.benchmark.status = benchmarkStatus;
     invalid.benchmark.budgetBreaches = ["on-store-memory"];
@@ -401,7 +427,7 @@ test("legacy receipt replays NOISY breaches and unknown duplicate FAIL breaches"
       ],
     ],
   ]) {
-    const legacy = acceptingDraft();
+    const legacy = useLegacyIdentity(acceptingDraft());
     legacy.contract.sha256 = G17_LEGACY_V3_CONTRACT_SHA256;
     legacy.benchmark = {
       status,

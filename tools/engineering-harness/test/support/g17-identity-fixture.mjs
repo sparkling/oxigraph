@@ -2,6 +2,14 @@ import { canonicalSha256 } from "../../src/routing/features.mjs";
 
 const digest = (character) => character.repeat(64);
 const objectId = (character) => character.repeat(40);
+const currentSubject = Object.freeze({
+  commit: "e9d2db1b7c4eb974b406136e667e09ba06e34b48",
+  tree: "fcc5bb75c469fbbf80f77bc330279d3a7c593bfe",
+  cargoLockBlob: "763b2fedd24173c0b1d9f67e30fe3f971b4a2afd",
+  cargoLockSha256:
+    "587e4563371c9573d27732b1ed8d8b0c1392e0f12ceec6b38124fcb578dd5a75",
+});
+const descendantControlCommit = "285e6e4b96980f060b450ba96393c13ea5e5c5dd";
 
 function defaultDependencies() {
   return [
@@ -21,13 +29,17 @@ function defaultDependencies() {
 }
 
 export function g17IdentityFixture({
-  subjectCommit = objectId("a"),
+  subjectCommit = currentSubject.commit,
+  subjectTree = currentSubject.tree,
+  controlCommit = descendantControlCommit,
+  cargoLockBlob = currentSubject.cargoLockBlob,
+  cargoLockSha256 = currentSubject.cargoLockSha256,
   dependencies = defaultDependencies(),
   cargoVersion = "cargo 1.91.0",
   rustcVersion = "rustc 1.91.0\nhost: x86_64-unknown-linux-gnu",
 } = {}) {
   const controlBinding = {
-    controlCommit: subjectCommit,
+    controlCommit,
     harnessTree: objectId("c"),
     harnessManifestSha256: digest("d"),
     manifestSha256: digest("e"),
@@ -36,10 +48,10 @@ export function g17IdentityFixture({
     dependencies: structuredClone(dependencies),
   };
   const binding = {
-    schema: "oxigraph.g1.7-qualified-subject-identity/v1",
+    schema: "oxigraph.g1.7-qualified-subject-identity/v2",
     subject: {
       commit: subjectCommit,
-      tree: objectId("b"),
+      tree: subjectTree,
       trackedClean: true,
     },
     control: {
@@ -56,7 +68,7 @@ export function g17IdentityFixture({
       patchSha256: digest("5"),
       blobSetSha256: digest("6"),
     },
-    cargoLock: { blob: objectId("7"), sha256: digest("8") },
+    cargoLock: { blob: cargoLockBlob, sha256: cargoLockSha256 },
     toolchain: [
       {
         program: "cargo",

@@ -79,6 +79,16 @@ function identity({ subjectCommit = "a".repeat(40), dependencies } = {}) {
   return g17IdentityFixture({ subjectCommit, dependencies });
 }
 
+function receiptIdentityForContract(subjectIdentity, generation) {
+  const current = g17ReceiptIdentity(subjectIdentity);
+  if (generation === "CURRENT_V7") return current;
+  const { controlCommit: ignored, ...legacy } = current;
+  return {
+    ...legacy,
+    schema: "oxigraph.g1.7-qualification-identity/v1",
+  };
+}
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -885,7 +895,7 @@ async function sealCurrentG17Fixture({
       budgetDecision: decisions.performance.status,
       noiseDecision: decisions.noise.status,
     },
-    identity: g17ReceiptIdentity(subjectIdentity),
+    identity: receiptIdentityForContract(subjectIdentity, loaded.generation),
     evidence: { semantic, compatibility },
     benchmark,
     final,
