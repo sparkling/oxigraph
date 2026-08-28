@@ -5806,7 +5806,7 @@ mod tests {
 
         // POST - existing graph
         let request = Request::builder()
-            .method(Method::PUT)
+            .method(Method::POST)
             .uri("http://localhost/store/person/1.ttl")
             .header(CONTENT_TYPE, "text/turtle; charset=utf-8")
             .body(())?;
@@ -5842,7 +5842,7 @@ mod tests {
 
         // POST - empty graph to existing graph
         let request = Request::builder()
-            .method(Method::PUT)
+            .method(Method::POST)
             .uri(location)
             .header(CONTENT_TYPE, "text/turtle; charset=utf-8")
             .body(())?;

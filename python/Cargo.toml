@@ -20,7 +20,7 @@ doc = false
 
 [features]
 default = ["geosparql", "rdf-12", "rdfs", "owl2-rl"]
-abi3 = ["pyo3/abi3-py38"]
+abi3 = ["pyo3/abi3-py39"]
 rocksdb-pkg-config = ["oxigraph/rocksdb-pkg-config"]
 geosparql = ["oxigraph/geosparql"]
 rdf-12 = ["oxigraph/rdf-12"]
@@ -28,9 +28,7 @@ rdfs = ["rdf-12", "oxigraph/rdfs"]
 owl2-rl = ["oxigraph/owl2-rl"]
 
 [dependencies]
-pyo3 = { workspace = true, features = [
-  "extension-module",
-] } # TODO: remove the feature in a few months
+pyo3.workspace = true
 
 [target.'cfg(any(target_family = "windows", target_os = "macos", target_os = "ios"))'.dependencies]
 oxigraph = { workspace = true, default-features = true, features = [

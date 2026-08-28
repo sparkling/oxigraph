@@ -299,6 +299,25 @@ fn graph_store_put_replacement_is_atomic() -> Result<()> {
         StatusCode::BAD_REQUEST,
     )?;
     assert!(server.get(default)?.1.contains("http://example.com/old"));
+
+    let triple = "<http://example.com/s> <http://example.com/p> <http://example.com/o> .";
+    server.status(
+        Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store?default")
+            .header(CONTENT_TYPE, "application/n-triples")
+            .body(triple)?,
+        StatusCode::NO_CONTENT,
+    )?;
+    server.status(
+        Request::builder()
+            .method(Method::PUT)
+            .uri("http://localhost/store?default")
+            .header(CONTENT_TYPE, "text/turtle")
+            .body("<http://example.com/s> <http://example.com/p> .")?,
+        StatusCode::BAD_REQUEST,
+    )?;
+    assert_eq!(server.get(default)?.1, format!("{triple}\n"));
     Ok(())
 }
 
