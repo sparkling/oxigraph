@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { loadG17Contract } from "../src/qualification/contract.mjs";
+import { G17_CONTROL_STATISTICS_CONTRACT } from "../src/qualification/control-statistics-contract.mjs";
 import {
   G17_CONTROL_AUTHORIZATION_PROTOCOL,
   G17_CONTROL_AUTHORIZATION_SCHEMA,
@@ -182,14 +183,14 @@ function authorizedFixture() {
   };
 }
 
-test("v5 freezes v4 bytes and loads a proposed two-phase protocol", async () => {
+test("v6 archives v5 bytes and loads the proposed statistics protocol", async () => {
   const loaded = loadG17Contract();
   const protocol = loadG17ControlProtocol({ contract: loaded.contract });
   assert.equal(
     loaded.contract.schema,
-    "oxigraph.g1.7-qualification-contract/v5",
+    "oxigraph.g1.7-qualification-contract/v6",
   );
-  assert.equal(loaded.generation, "CURRENT_V5");
+  assert.equal(loaded.generation, "CURRENT_V6");
   assert.equal(protocol.authorization.status, "CONTROL_AUTH_PROPOSED");
   assert.equal(protocol.finalDecisionSet.status, "PROPOSED");
   assert.equal(protocol.authorization.protocol.execution.controlRows, 392);
@@ -223,6 +224,10 @@ test("v5 freezes v4 bytes and loads a proposed two-phase protocol", async () => 
     protocol.authorization.protocol.thresholds.maximumMadBasisPoints,
     500,
   );
+  assert.deepEqual(
+    protocol.authorization.protocol.controlStatistics,
+    G17_CONTROL_STATISTICS_CONTRACT,
+  );
   assert.deepEqual(protocol.authorization.protocol.darwin.statistics, {
     package: "@metaharness/darwin",
     version: "0.9.3",
@@ -239,6 +244,18 @@ test("v5 freezes v4 bytes and loads a proposed two-phase protocol", async () => 
     decision: "lower95-strictly-positive",
   });
   for (const [name, expected] of [
+    [
+      "g17-qualification-contract-v5.json",
+      "155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70",
+    ],
+    [
+      "qualification/g1.7/v5/control-authorization.json",
+      "b9ee0f7615a885cda10157d1a6fdeebe4dc8175b267e6b25cd2c5bc636603515",
+    ],
+    [
+      "qualification/g1.7/v5/final-decision-set.json",
+      "2fd16b9ef0228fc054efb80a6f338fafeb6a289f1371b20f774e7c6f10ea0bce",
+    ],
     [
       "g17-qualification-contract-v4.json",
       "dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0",

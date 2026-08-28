@@ -18,6 +18,10 @@ import {
   G17_DARWIN_STATISTICS,
 } from "./benchmark-contract.mjs";
 import {
+  G17_CONTROL_SAMPLE_SCHEMA,
+  G17_CONTROL_STATISTICS_CONTRACT,
+} from "./control-statistics-contract.mjs";
+import {
   G17_EVALUATOR_OVERLAY,
   G17_PRODUCT_IDENTITIES,
 } from "./decision-contract.mjs";
@@ -34,9 +38,9 @@ export {
 } from "./g14b-prerequisite-contract.mjs";
 
 export const G17_CONTROL_AUTHORIZATION_SCHEMA =
-  "oxigraph.g1.7-control-authorization/v1";
+  "oxigraph.g1.7-control-authorization/v2";
 export const G17_FINAL_DECISION_SET_SCHEMA =
-  "oxigraph.g1.7-final-decision-set/v1";
+  "oxigraph.g1.7-final-decision-set/v2";
 export const G17_NEGATIVE_CONTROL_SIGNATURE_V2_SCHEMA =
   "oxigraph.g1.7-negative-control-signature/v2";
 export const G17_CONTROL_RUN_RECEIPT_SCHEMA =
@@ -49,8 +53,7 @@ export const G17_BENCHMARK_LAUNCH_ATTESTATION_SCHEMA =
   "oxigraph.g1.7-benchmark-launch-attestation/v1";
 export const G17_BENCHMARK_SESSION_OWNER_SCHEMA =
   "oxigraph.g1.7-benchmark-session-owner/v1";
-export const G17_QUALIFICATION_SAMPLE_V3_SCHEMA =
-  "oxigraph.g1.7-qualification-sample/v3";
+export const G17_QUALIFICATION_SAMPLE_V3_SCHEMA = G17_CONTROL_SAMPLE_SCHEMA;
 
 const DIGEST = /^[0-9a-f]{64}$/u;
 const SAFE_ID = /^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$/u;
@@ -245,6 +248,7 @@ export const G17_CONTROL_AUTHORIZATION_PROTOCOL = deepFreeze({
     statistics: G17_DARWIN_STATISTICS,
     runtimeModuleSha256: G17_DARWIN_RUNTIME_MODULES,
   },
+  controlStatistics: G17_CONTROL_STATISTICS_CONTRACT,
   products: G17_PRODUCT_IDENTITIES,
   evaluatorOverlay: G17_EVALUATOR_OVERLAY,
   execution: {

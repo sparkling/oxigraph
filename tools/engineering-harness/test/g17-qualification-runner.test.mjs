@@ -58,6 +58,7 @@ import {
 } from "../src/qualification/g14b-prerequisite.mjs";
 import {
   G17QualificationDecisionGateError,
+  assertG17ControlExecutionOwnerAvailable,
   assertG17ExecutionOwnerAvailable,
   preflightG17Qualification,
   runG17Qualification,
@@ -1104,7 +1105,15 @@ test("G1.7 decision gate dominates oversized provider output without creating a 
   assert.deepEqual(await readdir(runsRoot), []);
 });
 
-test("G1.7 approved execution owner remains mechanically unavailable", () => {
+test("G1.7 control and qualification execution owners remain mechanically unavailable", () => {
+  assert.throws(
+    () => assertG17ControlExecutionOwnerAvailable(),
+    (error) => {
+      assert.equal(error.code, "G17_CONTROL_EXECUTION_OWNER_UNIMPLEMENTED");
+      assert.match(error.message, /raw build and launch owner/u);
+      return true;
+    },
+  );
   assert.throws(
     () => assertG17ExecutionOwnerAvailable(),
     (error) => {

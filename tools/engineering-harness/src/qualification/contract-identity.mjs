@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { canonicalJson } from "../routing/features.mjs";
 
-export const G17_CONTRACT_SCHEMA = "oxigraph.g1.7-qualification-contract/v5";
+export const G17_CONTRACT_SCHEMA = "oxigraph.g1.7-qualification-contract/v6";
 export const G17_LEGACY_V1_CONTRACT_SHA256 =
   "e267e4d276a3d0b7997c2522d3f24ca7a32f669282c5f2ea332a752c3322c54c";
 export const G17_LEGACY_CONTRACT_SHA256 = G17_LEGACY_V1_CONTRACT_SHA256;
@@ -10,13 +10,16 @@ export const G17_LEGACY_V3_CONTRACT_SHA256 =
   "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278";
 export const G17_LEGACY_V4_CONTRACT_SHA256 =
   "dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0";
-export const G17_CURRENT_CONTRACT_SHA256 =
+export const G17_LEGACY_V5_CONTRACT_SHA256 =
   "155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70";
+export const G17_CURRENT_CONTRACT_SHA256 =
+  "22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0";
 export const G17_CONTRACT_GENERATION = Object.freeze({
   LEGACY_V1: "LEGACY_V1",
   LEGACY_V3: "LEGACY_V3",
   LEGACY_V4: "LEGACY_V4",
-  CURRENT_V5: "CURRENT_V5",
+  LEGACY_V5: "LEGACY_V5",
+  CURRENT_V6: "CURRENT_V6",
 });
 
 const DIGEST = /^[0-9a-f]{64}$/u;
@@ -44,8 +47,11 @@ function generationForSha256(contractSha256) {
   if (contractSha256 === G17_LEGACY_V4_CONTRACT_SHA256) {
     return G17_CONTRACT_GENERATION.LEGACY_V4;
   }
+  if (contractSha256 === G17_LEGACY_V5_CONTRACT_SHA256) {
+    return G17_CONTRACT_GENERATION.LEGACY_V5;
+  }
   if (contractSha256 === G17_CURRENT_CONTRACT_SHA256) {
-    return G17_CONTRACT_GENERATION.CURRENT_V5;
+    return G17_CONTRACT_GENERATION.CURRENT_V6;
   }
   throw new Error("copied contract has an unsupported byte identity");
 }
@@ -73,7 +79,7 @@ export function decodeG17ContractByteIdentity(input = {}) {
     } catch (error) {
       throw new Error(`copied contract is invalid JSON: ${error.message}`);
     }
-    if (generation === G17_CONTRACT_GENERATION.CURRENT_V5) {
+    if (generation === G17_CONTRACT_GENERATION.CURRENT_V6) {
       if (!bytes.equals(Buffer.from(`${canonicalJson(contract)}\n`, "utf8"))) {
         throw new Error(
           "current contract bytes are not canonical JSON plus one LF",
@@ -92,7 +98,9 @@ export function decodeG17ContractByteIdentity(input = {}) {
           ? "oxigraph.g1.7-qualification-contract/v1"
           : generation === G17_CONTRACT_GENERATION.LEGACY_V3
             ? "oxigraph.g1.7-qualification-contract/v3"
-            : "oxigraph.g1.7-qualification-contract/v4";
+            : generation === G17_CONTRACT_GENERATION.LEGACY_V4
+              ? "oxigraph.g1.7-qualification-contract/v4"
+              : "oxigraph.g1.7-qualification-contract/v5";
       if (
         contract?.schema !== expectedSchema ||
         contract.id !== "g1.7-compatibility-performance-qualification" ||
@@ -133,7 +141,7 @@ export function g17ContractCompatibilityGeneration({
       throw new Error("contract/evidence generation state is invalid");
     }
     const currentContract =
-      contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V5;
+      contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V6;
     const currentCompatibility =
       compatibilitySchemaState === "CURRENT_SCHEMA_UNREPLAYED";
     if (
@@ -216,8 +224,21 @@ export function decodeReviewedG17V5Contract({
   return decodeReviewedContract({
     contractBytes,
     contractSha256,
+    expectedSha256: G17_LEGACY_V5_CONTRACT_SHA256,
+    expectedSchema: "oxigraph.g1.7-qualification-contract/v5",
+    label: "v5",
+  });
+}
+
+export function decodeReviewedG17V6Contract({
+  contractBytes,
+  contractSha256,
+} = {}) {
+  return decodeReviewedContract({
+    contractBytes,
+    contractSha256,
     expectedSha256: G17_CURRENT_CONTRACT_SHA256,
     expectedSchema: G17_CONTRACT_SCHEMA,
-    label: "v5",
+    label: "v6",
   });
 }

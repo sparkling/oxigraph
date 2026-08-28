@@ -205,7 +205,11 @@ export async function verifySealedG17Run({
   });
   const { contract, generation: contractGeneration } = decodedContract;
   const legacyV4 = contractGeneration === G17_CONTRACT_GENERATION.LEGACY_V4;
-  const currentV5 = contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V5;
+  const legacyV5 = contractGeneration === G17_CONTRACT_GENERATION.LEGACY_V5;
+  const currentV6 = contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V6;
+  if (legacyV5) {
+    fail("legacy v5 qualification receipt replay owner is unavailable");
+  }
   let decisionBinding = null;
   let controlProtocol = null;
   if (legacyV4) {
@@ -226,7 +230,7 @@ export async function verifySealedG17Run({
       decisions,
       startedAt: receipt.run.startedAt,
     });
-  } else if (currentV5) {
+  } else if (currentV6) {
     controlProtocol = decodeSealedG17ControlProtocol({
       contract,
       bytesByName,
@@ -269,7 +273,7 @@ export async function verifySealedG17Run({
   ) {
     fail("sealed contract projection differs from the receipt");
   }
-  if (currentV5) {
+  if (currentV6) {
     if (
       controlProtocol.finalDecisionSet.status === "APPROVED" &&
       controlProtocol.authorization.status !== "CONTROL_AUTHORIZED"
@@ -285,7 +289,7 @@ export async function verifySealedG17Run({
         qualificationStartedAt: receipt.run.startedAt,
       });
     }
-    fail("current v5 qualification receipt owner is unavailable");
+    fail("current v6 qualification receipt owner is unavailable");
   }
   verifyEvidenceArtifactInventory(receipt, bytesByName);
   if (
@@ -402,7 +406,7 @@ export async function verifySealedG17Run({
         lane,
         schemaState === "NOT_APPLICABLE"
           ? schemaState
-          : contractGeneration !== G17_CONTRACT_GENERATION.CURRENT_V5
+          : contractGeneration !== G17_CONTRACT_GENERATION.CURRENT_V6
             ? "LEGACY_REPLAY_ONLY"
             : schemaState === "CURRENT_SCHEMA_UNREPLAYED"
               ? lane === "semantic"
@@ -414,7 +418,7 @@ export async function verifySealedG17Run({
   );
   const qualificationEligible =
     !legacyReplayOnly &&
-    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V5 &&
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V6 &&
     decisionBinding?.approved === true &&
     receipt.final.verdict === "ACCEPT" &&
     evidenceAssurance.semantic === "METAHARNESS_OWNER_CONTRACT_REPLAYED" &&

@@ -41,7 +41,9 @@ test("historical contract replay is Darwin-free while current replay fails close
     "src/qualification/contract-identity.mjs",
     "src/qualification/contract-replay.mjs",
     "src/qualification/contract.mjs",
+    "src/qualification/control-protocol-identity.mjs",
     "src/qualification/control-protocol.mjs",
+    "src/qualification/control-statistics-contract.mjs",
     "src/qualification/decision-contract.mjs",
     "src/qualification/g14b-prerequisite-contract.mjs",
   ];
@@ -74,6 +76,12 @@ test("historical contract replay is Darwin-free while current replay fails close
       digest:
         "dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0",
       generation: "LEGACY_V4",
+    },
+    {
+      fixture: "g17-qualification-contract-v5.json",
+      digest:
+        "155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70",
+      generation: "LEGACY_V5",
     },
   ]) {
     const bytes = await readFile(
@@ -130,7 +138,7 @@ test("current replay snapshots accessor input once and does not retain caller by
 
   assert.equal(byteReads, 1);
   assert.equal(digestReads, 1);
-  assert.equal(decoded.generation, "CURRENT_V5");
+  assert.equal(decoded.generation, "CURRENT_V6");
   assert.equal(decoded.contractSha256, currentSha256);
   assert.notStrictEqual(decoded.bytes, currentBytes);
   assert.equal(decoded.bytes[0], "{".codePointAt(0));

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -7,6 +8,7 @@ import {
   G17_DARWIN_PAIRED_BOOTSTRAP_BINDING,
 } from "../src/qualification/control-statistics-contract.mjs";
 import {
+  g17CanonicalSampleSetFrameBytes,
   g17ControlSampleSetBytes,
   g17ControlSampleSetSha256,
   replayG17DarwinBootstrapDelta,
@@ -17,6 +19,10 @@ import {
   g17ControlSampleSet,
   passingG17ControlSampleSets,
 } from "./support/g17-control-statistics-fixture.mjs";
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
 
 const { pairedBootstrapDelta, unpairedBootstrapDelta } =
   await loadG17DarwinFunctions();
@@ -71,6 +77,54 @@ test("canonical sample-set bytes preserve the exact ordered inventory and hash",
   );
   assert.equal(JSON.parse(bytes).rows[0].caseId, "on-store-memory");
   assert.equal(JSON.parse(bytes).rows.at(-1).caseId, "writers-16-rocksdb");
+});
+
+test("canonical sample-set framing matches the independent 512-byte oracle", () => {
+  const rows = [
+    {
+      caseId: "on-store-memory",
+      elapsedNs: 10_900,
+      implementation: "subject",
+    },
+    {
+      caseId: "on-store-memory",
+      elapsedNs: 10_000,
+      implementation: "reference",
+    },
+  ];
+  const frame = {
+    authorization: {
+      contentHash: "1".repeat(64),
+      rawSha256: "0".repeat(64),
+    },
+    controlId: "negative-control",
+    rows,
+    runId: "run-1",
+    schema: "oxigraph.g1.7-control-sample-set/v1",
+    suiteHash: "2".repeat(64),
+  };
+  const expectedPayload =
+    '{"authorization":{"contentHash":"1111111111111111111111111111111111111111111111111111111111111111","rawSha256":"0000000000000000000000000000000000000000000000000000000000000000"},"controlId":"negative-control","rows":[{"caseId":"on-store-memory","elapsedNs":10900,"implementation":"subject"},{"caseId":"on-store-memory","elapsedNs":10000,"implementation":"reference"}],"runId":"run-1","schema":"oxigraph.g1.7-control-sample-set/v1","suiteHash":"2222222222222222222222222222222222222222222222222222222222222222"}';
+  const bytes = g17CanonicalSampleSetFrameBytes(frame);
+  assert.equal(bytes.toString("utf8"), `${expectedPayload}\n`);
+  assert.equal(bytes.length, 512);
+  assert.equal(
+    sha256(bytes),
+    "0bc9c99a6f4ba58cd1f0e57f812c56b1e30dc1534681273200926b4d2a3c5c24",
+  );
+  assert.equal(
+    sha256(bytes.subarray(0, -1)),
+    "c0ca25133e1607e9e1ca22a7f7343ee746abc1b8ff7c28f1d2d747cc06ffff88",
+  );
+  assert.equal(
+    sha256(
+      g17CanonicalSampleSetFrameBytes({
+        ...frame,
+        rows: [...rows].reverse(),
+      }),
+    ),
+    "e167eec6afcaf2de38ca230820cf7333eca2ae71be9017ba46de0466cadc207a",
+  );
 });
 
 test("negative control detects a quiet ten-percent non-inferiority breach", () => {
@@ -164,11 +218,25 @@ test("lower95 zero is a strict failure", () => {
 });
 
 test("oracle seed vector binds case-index seed derivation exactly", () => {
-  const margins = [
-    0.146603474192, 0.125769387289, 0.105360515658, 0.085359848951,
-    0.065751377563, 0.046520015635, 0.027651531331, 0.009132483563,
-    -0.00904983552, -0.02690745292,
+  const reference = new Array(10).fill(100_000);
+  const subject = [
+    95_000, 97_000, 99_000, 101_000, 103_000, 105_000, 107_000, 109_000,
+    111_000, 113_000,
   ];
+  const margins = reference.map(
+    (value, index) =>
+      Math.round(
+        (Math.log(value) - Math.log(subject[index]) + Math.log1p(0.1)) * 1e12,
+      ) / 1e12,
+  );
+  assert.deepEqual(
+    margins,
+    [
+      0.146603474192, 0.125769387289, 0.105360515658, 0.085359848951,
+      0.065751377563, 0.046520015635, 0.027651531331, 0.009132483563,
+      -0.00904983552, -0.02690745292,
+    ],
+  );
   assert.deepEqual(
     replayG17DarwinBootstrapDelta(new Array(10).fill(0), margins, {
       samples: 5_000,
@@ -202,31 +270,51 @@ test("oracle seed vector binds case-index seed derivation exactly", () => {
 });
 
 test("paired analysis is not substituted with the unpaired estimator", () => {
-  const previous = [100_000, 1_000_000, 100_000, 1_000_000, 100_000, 1_000_000];
-  const next = previous.map((value) => value * 1.01);
-  const pairedMargins = previous.map(
+  const reference = [
+    100_000, 1_000_000, 125_000, 1_250_000, 150_000, 1_500_000, 175_000,
+    1_750_000, 200_000, 2_000_000,
+  ];
+  const subject = reference.map((value) => value * 1.09);
+  const pairedMargins = reference.map(
     (value, index) =>
-      Math.log(previous[index]) - Math.log(next[index]) + Math.log1p(0.05),
+      Math.round(
+        (Math.log(value) - Math.log(subject[index]) + Math.log1p(0.1)) * 1e12,
+      ) / 1e12,
   );
-  assert.equal(
+  assert.deepEqual(pairedMargins, new Array(10).fill(0.009132483563));
+  assert.deepEqual(
     replayG17DarwinBootstrapDelta(
-      new Array(previous.length).fill(0),
+      new Array(reference.length).fill(0),
       pairedMargins,
       {
         samples: 5_000,
         seed: 170_017,
         minDelta: 0,
       },
-    ).promote,
-    true,
+    ),
+    {
+      meanDelta: 0.009132,
+      lower95: 0.009132,
+      upper95: 0.009132,
+      promote: true,
+      samples: 5_000,
+      pValue: 0,
+    },
   );
-  assert.equal(
+  assert.deepEqual(
     unpairedBootstrapDelta(
-      previous.map((value) => -value),
-      next.map((value) => -value),
+      subject.map((value) => Math.log(value)),
+      reference.map((value) => Math.log(value) + Math.log1p(0.1)),
       { samples: 5_000, seed: 170_017, minDelta: 0 },
-    ).promote,
-    false,
+    ),
+    {
+      meanDelta: -0.017715,
+      lower95: -2.763456,
+      upper95: 2.781721,
+      promote: false,
+      samples: 5_000,
+      pValue: 0.456,
+    },
   );
 });
 
@@ -338,6 +426,25 @@ test("sample replay rejects missing, duplicate, reordered, and cross-paired rows
       () => summarizeG17ControlSampleSets(sets),
       /G1\.7 control statistics/u,
     );
+  }
+});
+
+test("sample replay rejects non-positive, unsafe elapsed values and unsafe counts", () => {
+  for (const [field, values] of [
+    ["elapsedNs", [0, -1, Number.MAX_SAFE_INTEGER + 1]],
+    ["operations", [0, Number.MAX_SAFE_INTEGER + 1]],
+    ["bytes", [0, Number.MAX_SAFE_INTEGER + 1]],
+    ["readerObservations", [-1, Number.MAX_SAFE_INTEGER + 1]],
+  ]) {
+    for (const value of values) {
+      const sets = passingG17ControlSampleSets();
+      sets.negativeControl.rows[0][field] = value;
+      assert.throws(
+        () => summarizeG17ControlSampleSets(sets),
+        /G1\.7 control statistics/u,
+        `${field}=${value}`,
+      );
+    }
   }
 });
 

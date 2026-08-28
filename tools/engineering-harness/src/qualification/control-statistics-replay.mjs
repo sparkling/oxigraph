@@ -389,9 +389,31 @@ export function validateG17ControlSampleSet(value, controlName) {
   );
 }
 
+export function g17CanonicalSampleSetFrameBytes(value) {
+  const sampleSet = snapshotJsonData(value, "canonical sample-set frame");
+  exactKeys(sampleSet, SAMPLE_SET_KEYS, "canonical sample-set frame");
+  exactKeys(
+    sampleSet.authorization,
+    ["rawSha256", "contentHash"],
+    "canonical sample-set frame authorization",
+  );
+  if (
+    sampleSet.schema !== G17_CONTROL_SAMPLE_SET_SCHEMA ||
+    !SAFE_ID.test(sampleSet.runId ?? "") ||
+    !SAFE_ID.test(sampleSet.controlId ?? "") ||
+    !DIGEST.test(sampleSet.suiteHash ?? "") ||
+    !DIGEST.test(sampleSet.authorization.rawSha256 ?? "") ||
+    !DIGEST.test(sampleSet.authorization.contentHash ?? "") ||
+    !Array.isArray(sampleSet.rows)
+  ) {
+    fail("canonical sample-set frame identity drifted");
+  }
+  return Buffer.from(`${canonicalJson(sampleSet)}\n`, "utf8");
+}
+
 export function g17ControlSampleSetBytes(value, controlName) {
   const validated = validateG17ControlSampleSet(value, controlName);
-  return Buffer.from(`${canonicalJson(validated)}\n`, "utf8");
+  return g17CanonicalSampleSetFrameBytes(validated);
 }
 
 export function g17ControlSampleSetSha256(value, controlName) {

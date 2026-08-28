@@ -8,6 +8,7 @@ import {
   G17_LEGACY_V1_CONTRACT_SHA256,
   G17_LEGACY_V3_CONTRACT_SHA256,
   G17_LEGACY_V4_CONTRACT_SHA256,
+  G17_LEGACY_V5_CONTRACT_SHA256,
 } from "./contract-identity.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
@@ -149,6 +150,7 @@ function validateContractProjection(contract) {
   }
   const supportsDecisionProtocol = [
     G17_LEGACY_V4_CONTRACT_SHA256,
+    G17_LEGACY_V5_CONTRACT_SHA256,
     G17_CURRENT_CONTRACT_SHA256,
   ].includes(contract.sha256);
   if (
@@ -503,6 +505,7 @@ export function verifyG17Receipt(input) {
         G17_LEGACY_V1_CONTRACT_SHA256,
         G17_LEGACY_V3_CONTRACT_SHA256,
         G17_LEGACY_V4_CONTRACT_SHA256,
+        G17_LEGACY_V5_CONTRACT_SHA256,
       ].includes(verified.contract.sha256) ||
       Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
     return Object.freeze({
