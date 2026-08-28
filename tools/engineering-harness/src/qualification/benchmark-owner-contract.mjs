@@ -1,12 +1,21 @@
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, types } from "node:util";
 
 import {
-  G17_BENCHMARK_CASES,
+  G17_BENCHMARK_BUILD_PLAN,
+  G17_BENCHMARK_CONTROL_PLAN,
+  G17_BENCHMARK_LEGACY_BUILD_ARGV,
+  G17_BENCHMARK_LEGACY_BUILD_ENVIRONMENT,
+  g17BenchmarkControlCoordinates,
+  g17BenchmarkLaunchArgv,
+} from "./benchmark-execution-plan.mjs";
+import {
   G17_CONTROL_SAMPLE_SET_SCHEMA,
   G17_CONTROL_STATISTICS_CONTRACT,
 } from "./control-statistics-contract.mjs";
 import { g17ControlSampleSetBytes } from "./control-statistics-replay.mjs";
+
+export { G17_BENCHMARK_BUILD_PLAN };
 
 // This module only replays already-captured bytes. It performs no I/O and
 // returns no execution, qualification, receipt, publication, or promotion
@@ -38,6 +47,20 @@ const MAX_OWNER_BYTES = 4 * 1024 * 1024;
 const MAX_BUILD_STREAM_BYTES = 64 * 1024 * 1024;
 const MAX_LAUNCH_STDOUT_BYTES = 64 * 1024;
 const MAX_SAMPLE_SET_BYTES = 8 * 1024 * 1024;
+const MAX_SNAPSHOT_DEPTH = 64;
+const MAX_SNAPSHOT_NODES = 100_000;
+const MAX_SNAPSHOT_ARRAY_LENGTH = 4_096;
+const MAX_SNAPSHOT_PROPERTIES = 4_097;
+const MAX_SNAPSHOT_STRING_BYTES = 16 * 1024 * 1024;
+const MAX_SNAPSHOT_SINGLE_STRING_BYTES = 1024 * 1024;
+const MAX_SNAPSHOT_FILES = 2_048;
+const MAX_SNAPSHOT_BUFFER_BYTES = 256 * 1024 * 1024;
+const MAX_CARGO_JSONL_ROWS = 4_096;
+const MAX_CARGO_JSONL_ROW_BYTES = 1024 * 1024;
+const MAX_CARGO_JSONL_ROW_NODES = 8_192;
+const MAX_CARGO_JSONL_ROW_STRING_BYTES = 1024 * 1024;
+const MAX_CARGO_JSONL_NODES = 100_000;
+const MAX_CARGO_JSONL_STRING_BYTES = 16 * 1024 * 1024;
 
 const OWNER_POLICY = Object.freeze({
   controlReceiptSchema: "oxigraph.g1.7-control-run-receipt/v1",
@@ -63,54 +86,6 @@ const OWNER_POLICY = Object.freeze({
   },
 });
 
-const BUILD_ARGV = Object.freeze([
-  "cargo",
-  "bench",
-  "--locked",
-  "--offline",
-  "-p",
-  "oxigraph",
-  "--bench",
-  "transactional_write",
-  "--no-run",
-  "--message-format",
-  "json-render-diagnostics",
-  "--target-dir",
-  "/state/target",
-]);
-const BUILD_ENVIRONMENT = Object.freeze({
-  CARGO_BUILD_JOBS: "4",
-  CARGO_INCREMENTAL: "0",
-});
-
-export const G17_BENCHMARK_BUILD_PLAN = deepFreeze([
-  { buildId: "negative-control", productRole: "negativeControl" },
-  {
-    buildId: "performance-reference",
-    productRole: "performanceReference",
-  },
-  { buildId: "noise-control-a", productRole: "noiseControl" },
-  { buildId: "noise-control-b", productRole: "noiseControl" },
-]);
-
-const CONTROL_PLAN = deepFreeze([
-  {
-    controlName: "negativeControl",
-    controlId: "negative-control",
-    subject: { buildId: "negative-control", productRole: "negativeControl" },
-    reference: {
-      buildId: "performance-reference",
-      productRole: "performanceReference",
-    },
-  },
-  {
-    controlName: "aaNoiseControl",
-    controlId: "a-a-noise-control",
-    subject: { buildId: "noise-control-a", productRole: "noiseControl" },
-    reference: { buildId: "noise-control-b", productRole: "noiseControl" },
-  },
-]);
-
 function fail(message) {
   throw new Error(`G1.7 benchmark owner contract: ${message}`);
 }
@@ -128,13 +103,60 @@ function deepFreeze(value) {
   return value;
 }
 
-function snapshotInput(value, label, ancestors = new WeakSet()) {
-  if (Buffer.isBuffer(value)) return Buffer.from(value);
+function snapshotInput(
+  value,
+  label,
+  ancestors = new WeakSet(),
+  depth = 0,
+  budget = {
+    nodes: 0,
+    stringBytes: 0,
+    files: 0,
+    bufferBytes: 0,
+    nodeLimit: MAX_SNAPSHOT_NODES,
+    stringLimit: MAX_SNAPSHOT_STRING_BYTES,
+  },
+) {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    types.isProxy(value)
+  ) {
+    fail(`${label} contains a Proxy`);
+  }
+  if (depth > MAX_SNAPSHOT_DEPTH) {
+    fail(`${label} exceeds the snapshot depth limit`);
+  }
+  budget.nodes += 1;
+  if (budget.nodes > budget.nodeLimit) {
+    fail(`${label} exceeds the snapshot node limit`);
+  }
+  if (Buffer.isBuffer(value)) {
+    budget.files += 1;
+    budget.bufferBytes += value.length;
+    if (
+      budget.files > MAX_SNAPSHOT_FILES ||
+      budget.bufferBytes > MAX_SNAPSHOT_BUFFER_BYTES
+    ) {
+      fail(`${label} exceeds the snapshot Buffer budget`);
+    }
+    return Buffer.from(value);
+  }
   if (
     value === null ||
-    typeof value === "string" ||
     typeof value === "boolean"
   ) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const bytes = Buffer.byteLength(value, "utf8");
+    budget.stringBytes += bytes;
+    if (
+      bytes > MAX_SNAPSHOT_SINGLE_STRING_BYTES ||
+      budget.stringBytes > budget.stringLimit
+    ) {
+      fail(`${label} exceeds the snapshot string budget`);
+    }
     return value;
   }
   if (typeof value === "number") {
@@ -154,22 +176,46 @@ function snapshotInput(value, label, ancestors = new WeakSet()) {
   }
   ancestors.add(value);
   try {
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    const keys = Reflect.ownKeys(descriptors);
+    let length;
+    if (array) {
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+      length = lengthDescriptor?.value;
+      if (
+        lengthDescriptor === undefined ||
+        "get" in lengthDescriptor ||
+        "set" in lengthDescriptor ||
+        !Number.isSafeInteger(length) ||
+        length < 0 ||
+        length > MAX_SNAPSHOT_ARRAY_LENGTH
+      ) {
+        fail(`${label} array length is invalid`);
+      }
+    }
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > MAX_SNAPSHOT_PROPERTIES) {
+      fail(`${label} exceeds the snapshot property limit`);
+    }
     if (keys.some((key) => typeof key !== "string")) {
       fail(`${label} contains symbol fields`);
     }
     for (const key of keys) {
-      const descriptor = descriptors[key];
+      const keyBytes = Buffer.byteLength(key, "utf8");
+      budget.stringBytes += keyBytes;
+      if (
+        keyBytes > MAX_SNAPSHOT_SINGLE_STRING_BYTES ||
+        budget.stringBytes > budget.stringLimit
+      ) {
+        fail(`${label} exceeds the snapshot key budget`);
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor === undefined) {
+        fail(`${label}.${key} disappeared during snapshot`);
+      }
       if ("get" in descriptor || "set" in descriptor) {
         fail(`${label} contains accessor fields`);
       }
     }
     if (array) {
-      const length = descriptors.length?.value;
-      if (!Number.isSafeInteger(length) || length < 0) {
-        fail(`${label} array length is invalid`);
-      }
       const expectedKeys = [
         ...Array.from({ length }, (_, index) => String(index)),
         "length",
@@ -179,18 +225,29 @@ function snapshotInput(value, label, ancestors = new WeakSet()) {
       }
       return Array.from({ length }, (_, index) =>
         snapshotInput(
-          descriptors[String(index)].value,
+          Object.getOwnPropertyDescriptor(value, String(index)).value,
           `${label}[${index}]`,
           ancestors,
+          depth + 1,
+          budget,
         ),
       );
     }
     const snapshot = {};
     for (const key of keys) {
-      const descriptor = descriptors[key];
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor === undefined || "get" in descriptor || "set" in descriptor) {
+        fail(`${label}.${key} changed during snapshot`);
+      }
       if (!descriptor.enumerable) fail(`${label}.${key} is not enumerable`);
       Object.defineProperty(snapshot, key, {
-        value: snapshotInput(descriptor.value, `${label}.${key}`, ancestors),
+        value: snapshotInput(
+          descriptor.value,
+          `${label}.${key}`,
+          ancestors,
+          depth + 1,
+          budget,
+        ),
         enumerable: true,
         writable: true,
         configurable: true,
@@ -479,8 +536,14 @@ function expectedEvaluator(authorization, productRole) {
   };
 }
 
-export function verifyG17BenchmarkWorkspaceOwner({ bytes, expected } = {}) {
-  const context = snapshotInput(expected, "workspace owner expectation");
+export function verifyG17BenchmarkWorkspaceOwner(input) {
+  const request = snapshotInput(input, "workspace owner verification input");
+  exactKeys(
+    request,
+    ["bytes", "expected"],
+    "workspace owner verification input",
+  );
+  const { bytes, expected: context } = request;
   const decoded = decodeCanonicalOwner(
     bytes,
     G17_BENCHMARK_WORKSPACE_OWNER_SCHEMA,
@@ -564,15 +627,58 @@ function streamDescriptor(value, bytes, label, maximumBytes) {
 }
 
 function parseCargoBuildOutput(bytes, executablePath) {
-  const text = utf8(bytes, "raw Cargo build stdout");
-  if (!text.endsWith("\n")) fail("raw Cargo build stdout must end in LF");
-  const lines = text.slice(0, -1).split("\n");
-  if (lines.length < 1 || lines.some((line) => line.length === 0)) {
+  if (bytes.length === 0 || bytes.at(-1) !== 0x0a) {
+    fail("raw Cargo build stdout must end in LF");
+  }
+  const rows = [];
+  let start = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] !== 0x0a) continue;
+    const rowBytes = index - start;
+    if (rowBytes < 1 || rowBytes > MAX_CARGO_JSONL_ROW_BYTES) {
+      fail("raw Cargo build stdout has an invalid JSONL row size");
+    }
+    rows.push([start, index]);
+    if (rows.length > MAX_CARGO_JSONL_ROWS) {
+      fail("raw Cargo build stdout exceeds the JSONL row ceiling");
+    }
+    start = index + 1;
+  }
+  if (start !== bytes.length || rows.length < 1) {
     fail("raw Cargo build stdout has an invalid JSONL inventory");
   }
-  const messages = lines.map((line, index) => {
+  let aggregateNodes = 0;
+  let aggregateStringBytes = 0;
+  const messages = rows.map(([rowStart, rowEnd], index) => {
     try {
-      return snapshotInput(JSON.parse(line), `Cargo JSONL line ${index}`);
+      const line = utf8(
+        bytes.subarray(rowStart, rowEnd),
+        `Cargo JSONL line ${index}`,
+      );
+      const budget = {
+        nodes: 0,
+        stringBytes: 0,
+        files: 0,
+        bufferBytes: 0,
+        nodeLimit: MAX_CARGO_JSONL_ROW_NODES,
+        stringLimit: MAX_CARGO_JSONL_ROW_STRING_BYTES,
+      };
+      const message = snapshotInput(
+        JSON.parse(line),
+        `Cargo JSONL line ${index}`,
+        new WeakSet(),
+        0,
+        budget,
+      );
+      aggregateNodes += budget.nodes;
+      aggregateStringBytes += budget.stringBytes;
+      if (
+        aggregateNodes > MAX_CARGO_JSONL_NODES ||
+        aggregateStringBytes > MAX_CARGO_JSONL_STRING_BYTES
+      ) {
+        fail("raw Cargo build stdout exceeds the aggregate JSONL budget");
+      }
+      return message;
     } catch (error) {
       if (error.message.startsWith("G1.7 benchmark owner contract:"))
         throw error;
@@ -593,16 +699,17 @@ function parseCargoBuildOutput(bytes, executablePath) {
       "raw Cargo build output does not select exactly one benchmark executable",
     );
   }
-  return messages.length;
+  return rows.length;
 }
 
-export function verifyG17BenchmarkBuildOwner({
-  bytes,
-  expected,
-  stdoutBytes,
-  stderrBytes,
-} = {}) {
-  const context = snapshotInput(expected, "build owner expectation");
+export function verifyG17BenchmarkBuildOwner(input) {
+  const request = snapshotInput(input, "build owner verification input");
+  exactKeys(
+    request,
+    ["bytes", "expected", "stdoutBytes", "stderrBytes"],
+    "build owner verification input",
+  );
+  const { bytes, expected: context, stdoutBytes, stderrBytes } = request;
   const decoded = decodeCanonicalOwner(
     bytes,
     G17_BENCHMARK_BUILD_OWNER_SCHEMA,
@@ -646,8 +753,11 @@ export function verifyG17BenchmarkBuildOwner({
     !isDeepStrictEqual(binding, context.authorization) ||
     owner.workspaceOwner.rawSha256 !== expectedWorkspace.rawSha256 ||
     owner.workspaceOwner.contentHash !== expectedWorkspace.contentHash ||
-    !isDeepStrictEqual(owner.command.argv, BUILD_ARGV) ||
-    !isDeepStrictEqual(owner.command.environment, BUILD_ENVIRONMENT) ||
+    !isDeepStrictEqual(owner.command.argv, G17_BENCHMARK_LEGACY_BUILD_ARGV) ||
+    !isDeepStrictEqual(
+      owner.command.environment,
+      G17_BENCHMARK_LEGACY_BUILD_ENVIRONMENT,
+    ) ||
     owner.command.ordinal !== 1 ||
     owner.result.exitCode !== 0 ||
     owner.result.signal !== null ||
@@ -695,73 +805,6 @@ export function verifyG17BenchmarkBuildOwner({
   });
 }
 
-function controlCoordinates(control) {
-  const rows = [];
-  const sampleContract = G17_CONTROL_STATISTICS_CONTRACT.sampleSet;
-  for (const [caseIndex, task] of G17_BENCHMARK_CASES.entries()) {
-    for (const [phase, blocks] of [
-      ["warmup", sampleContract.warmupBlocks],
-      ["measured", sampleContract.measuredBlocks],
-    ]) {
-      for (let block = 0; block < blocks; block += 1) {
-        const globalBlock =
-          (phase === "measured" ? sampleContract.warmupBlocks : 0) + block;
-        const schedule =
-          sampleContract.schedules[
-            globalBlock % sampleContract.schedules.length
-          ];
-        for (const [slot, arm] of schedule.entries()) {
-          const pair = Math.floor(slot / 2);
-          const build = control[arm];
-          const sequence = rows.length;
-          rows.push({
-            controlId: control.controlId,
-            sequence,
-            buildId: build.buildId,
-            productRole: build.productRole,
-            arm,
-            task,
-            databasePath:
-              task.backend === "rocksdb"
-                ? `/state/databases/${control.controlId}/${String(sequence).padStart(3, "0")}`
-                : null,
-            coordinate: {
-              caseId: task.id,
-              phase,
-              block,
-              pair,
-              slot,
-              repetition: globalBlock * schedule.length + slot,
-              seed:
-                sampleContract.executionSeed.base +
-                caseIndex * 100_000 +
-                globalBlock * 2 +
-                pair,
-            },
-          });
-        }
-      }
-    }
-  }
-  return rows;
-}
-
-function expectedLaunchArgv(executablePath, expected) {
-  const argv = [
-    executablePath,
-    "--case",
-    expected.task.id,
-    "--operations",
-    String(expected.task.operations),
-    "--seed",
-    String(expected.coordinate.seed),
-  ];
-  if (expected.databasePath !== null) {
-    argv.push("--database", expected.databasePath);
-  }
-  return argv;
-}
-
 function parseRawSample(bytes, expected) {
   const text = utf8(bytes, "raw benchmark stdout");
   if (!text.endsWith("\n") || text.slice(0, -1).includes("\n")) {
@@ -805,13 +848,70 @@ function parseRawSample(bytes, expected) {
   return value;
 }
 
-export function verifyG17BenchmarkLaunchAttestation({
-  bytes,
-  expected,
-  stdoutBytes,
-  stderrBytes,
-} = {}) {
-  const context = snapshotInput(expected, "launch attestation expectation");
+function reviewedLaunchExpectation(context) {
+  exactKeys(
+    context,
+    [
+      "controlRunId",
+      "authorization",
+      "controlId",
+      "sequence",
+      "buildId",
+      "productRole",
+      "arm",
+      "task",
+      "databasePath",
+      "coordinate",
+      "executable",
+    ],
+    "launch attestation expectation",
+  );
+  const control = G17_BENCHMARK_CONTROL_PLAN.find(
+    ({ controlId }) => controlId === context.controlId,
+  );
+  if (control === undefined) {
+    fail("launch expectation controlId is outside the reviewed plan");
+  }
+  const coordinates = g17BenchmarkControlCoordinates(control.controlName);
+  if (
+    !Number.isSafeInteger(context.sequence) ||
+    context.sequence < 0 ||
+    context.sequence >= coordinates.length
+  ) {
+    fail("launch expectation sequence is outside the reviewed plan");
+  }
+  const reviewed = coordinates[context.sequence];
+  const claimedCoordinate = {
+    controlId: context.controlId,
+    sequence: context.sequence,
+    buildId: context.buildId,
+    productRole: context.productRole,
+    arm: context.arm,
+    task: context.task,
+    databasePath: context.databasePath,
+    coordinate: context.coordinate,
+  };
+  if (!isDeepStrictEqual(claimedCoordinate, reviewed)) {
+    fail("launch expectation coordinate differs from the reviewed plan");
+  }
+  return { controlName: control.controlName, reviewed };
+}
+
+export function verifyG17BenchmarkLaunchAttestation(input) {
+  const request = snapshotInput(input, "launch verification input");
+  exactKeys(
+    request,
+    ["bytes", "expected", "stdoutBytes", "stderrBytes"],
+    "launch verification input",
+  );
+  const { bytes, expected: context, stdoutBytes, stderrBytes } = request;
+  const { controlName, reviewed } = reviewedLaunchExpectation(context);
+  const expected = {
+    controlRunId: context.controlRunId,
+    authorization: context.authorization,
+    executable: context.executable,
+    ...reviewed,
+  };
   const decoded = decodeCanonicalOwner(
     bytes,
     G17_BENCHMARK_LAUNCH_ATTESTATION_SCHEMA,
@@ -846,18 +946,22 @@ export function verifyG17BenchmarkLaunchAttestation({
   exactKeys(owner.executable, ["logicalPath", "sha256"], "launch executable");
   const binding = authorizationBinding(owner.authorization);
   if (
-    owner.controlRunId !== context.controlRunId ||
-    owner.controlId !== context.controlId ||
-    owner.sequence !== context.sequence ||
-    owner.buildId !== context.buildId ||
-    owner.productRole !== context.productRole ||
-    owner.arm !== context.arm ||
-    !isDeepStrictEqual(binding, context.authorization) ||
-    !isDeepStrictEqual(owner.coordinate, context.coordinate) ||
-    !isDeepStrictEqual(owner.executable, context.executable) ||
+    owner.controlRunId !== expected.controlRunId ||
+    owner.controlId !== expected.controlId ||
+    owner.sequence !== expected.sequence ||
+    owner.buildId !== expected.buildId ||
+    owner.productRole !== expected.productRole ||
+    owner.arm !== expected.arm ||
+    !isDeepStrictEqual(binding, expected.authorization) ||
+    !isDeepStrictEqual(owner.coordinate, expected.coordinate) ||
+    !isDeepStrictEqual(owner.executable, expected.executable) ||
     !isDeepStrictEqual(
       owner.command.argv,
-      expectedLaunchArgv(context.executable.logicalPath, context),
+      g17BenchmarkLaunchArgv(
+        expected.executable.logicalPath,
+        controlName,
+        expected.sequence,
+      ),
     ) ||
     owner.result.exitCode !== 0 ||
     owner.result.signal !== null ||
@@ -881,25 +985,25 @@ export function verifyG17BenchmarkLaunchAttestation({
   );
   if (stderr.length !== 0)
     fail("successful benchmark launch stderr is not empty");
-  const sample = parseRawSample(stdout, context);
+  const sample = parseRawSample(stdout, expected);
   const row = {
     schema: G17_CONTROL_STATISTICS_CONTRACT.sampleSet.rowSchema,
-    controlId: context.controlId,
-    caseId: context.coordinate.caseId,
-    phase: context.coordinate.phase,
-    block: context.coordinate.block,
-    pair: context.coordinate.pair,
-    slot: context.coordinate.slot,
-    repetition: context.coordinate.repetition,
-    seed: context.coordinate.seed,
-    arm: context.arm,
-    productRole: context.productRole,
-    buildId: context.buildId,
+    controlId: expected.controlId,
+    caseId: expected.coordinate.caseId,
+    phase: expected.coordinate.phase,
+    block: expected.coordinate.block,
+    pair: expected.coordinate.pair,
+    slot: expected.coordinate.slot,
+    repetition: expected.coordinate.repetition,
+    seed: expected.coordinate.seed,
+    arm: expected.arm,
+    productRole: expected.productRole,
+    buildId: expected.buildId,
     elapsedNs: sample.elapsedNs,
     operations: sample.operations,
     bytes: sample.bytes,
     readerObservations: sample.readerObservations,
-    executableSha256: context.executable.sha256,
+    executableSha256: expected.executable.sha256,
     rawSampleSha256: sha256(stdout),
   };
   return deepFreeze({
@@ -940,12 +1044,14 @@ function parseCanonicalSampleSet(bytesValue, controlName) {
   return { bytes, value, rawSha256: sha256(bytes) };
 }
 
-export function verifyG17BenchmarkSessionOwner({
-  bytes,
-  expected,
-  sampleSetBytes,
-} = {}) {
-  const context = snapshotInput(expected, "session owner expectation");
+export function verifyG17BenchmarkSessionOwner(input) {
+  const request = snapshotInput(input, "session owner verification input");
+  exactKeys(
+    request,
+    ["bytes", "expected", "sampleSetBytes"],
+    "session owner verification input",
+  );
+  const { bytes, expected: context, sampleSetBytes } = request;
   const decoded = decodeCanonicalOwner(
     bytes,
     G17_BENCHMARK_SESSION_OWNER_SCHEMA,
@@ -1047,12 +1153,24 @@ function exactArtifactRecord(value, expected, label) {
   return value;
 }
 
-export function verifyG17BenchmarkOwnerBundle({
-  authorization,
-  authorizationRawSha256,
-  controlRunId,
-  artifacts,
-} = {}) {
+export function verifyG17BenchmarkOwnerBundle(input) {
+  const request = snapshotInput(input, "benchmark owner verification input");
+  exactKeys(
+    request,
+    [
+      "authorization",
+      "authorizationRawSha256",
+      "controlRunId",
+      "artifacts",
+    ],
+    "benchmark owner verification input",
+  );
+  const {
+    authorization,
+    authorizationRawSha256,
+    controlRunId,
+    artifacts,
+  } = request;
   const runId = safeId(controlRunId, "controlRunId");
   const authorized = validateAuthorization({
     authorization,
@@ -1064,7 +1182,7 @@ export function verifyG17BenchmarkOwnerBundle({
     !Array.isArray(inventory.builds) ||
     inventory.builds.length !== G17_BENCHMARK_BUILD_PLAN.length ||
     !Array.isArray(inventory.controls) ||
-    inventory.controls.length !== CONTROL_PLAN.length
+    inventory.controls.length !== G17_BENCHMARK_CONTROL_PLAN.length
   ) {
     fail("benchmark owner build or control inventory cardinality drifted");
   }
@@ -1142,14 +1260,14 @@ export function verifyG17BenchmarkOwnerBundle({
       ["controlName", "sessionOwnerBytes", "sampleSetBytes", "launches"],
       `control artifact ${index}`,
     );
-    const plan = CONTROL_PLAN[index];
+    const plan = G17_BENCHMARK_CONTROL_PLAN[index];
     if (
       entry.controlName !== plan.controlName ||
       !Array.isArray(entry.launches)
     ) {
       fail("benchmark control plan order or launch inventory drifted");
     }
-    const coordinates = controlCoordinates(plan);
+    const coordinates = g17BenchmarkControlCoordinates(plan.controlName);
     if (entry.launches.length !== coordinates.length) {
       fail(`${plan.controlName} launch cardinality drifted`);
     }

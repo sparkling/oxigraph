@@ -16,12 +16,18 @@
   framing, paired control statistics, pre-execution gates, pure benchmark-owner
   replay, bounded canonical control-receipt candidate replay, and the physical
   write-once receipt-last control envelope with sealed current-state replay are
-  implemented and fail closed. Production control/build/sample owner emission,
-  a native containment mechanics adapter, sealed expected-envelope provenance,
-  a current control or qualification receipt, qualification, and promotion are
-  not implemented. The dormant containment owner and its narrow authorization
-  gate are implemented but cannot pass the current proposed decision or invoke
-  live mechanics.
+  implemented and fail closed. The authority-free execution plan and physical
+  product-source workspace primitive are also implemented: they materialize an
+  exact evaluator-composed tree behind held descriptors, pre-admit every root
+  and required-submodule object before the first private pack, bind a read-only
+  source and initially empty target, and retain all handles rather than unlink
+  after an unreaped Git outcome. Production build begin/finish deliberately
+  return `MISSING` until a physical owner can prove exact child close and reap.
+  Production build-process/control/sample owner emission, a native containment
+  mechanics adapter, sealed expected-envelope provenance, a current control or
+  qualification receipt, qualification, and promotion are not implemented. The
+  dormant source and containment owners cannot pass the current proposed
+  decision or invoke live mechanics.
   The existing `tools/metaharness` semantic qualifier remains separate;
   unattended Dream Machine execution remains deferred behind the activation
   gates in this ADR
@@ -81,6 +87,24 @@
   remain explicitly caller-supplied, unsealed, and non-authoritative;
   `binding` is null, final-decision eligibility and every authority are false,
   and no native syscall adapter or live containment evidence exists
+- G1.7 source-workspace update: the exact four-build execution plan and a
+  descriptor-anchored source materializer now bind the approved product commit,
+  evaluator overlay, effective tree, required Gitlinks, `Cargo.lock`, source
+  manifest, distinct source/target identities, and v1 authority-free projection.
+  Caller records and cancellation signals are captured without observing
+  accessors or unbounded own-key snapshots; signal listeners are installed only
+  for active acquisition and released on every terminal path. All root and
+  required-submodule objects pass one canonical 500,000-object/2.25-GiB global
+  admission before the first pack, apply, tree write, or checkout; binary patch
+  expansion is refused. Unreaped Git preserves base and temporary inherited
+  handles and forbids cleanup. Production build begin/finish are intentionally
+  unavailable until the later supervising owner supplies non-forgeable reap
+  proof; only a one-shot, workspace-bound non-production test proof can finish.
+  Focused source/native/candidate, execution-plan, and legacy-owner tests pass
+  68/68, and an independent read-only revision audit is clean. This establishes
+  no build,
+  launch, control, qualification, promotion, publication, provider, or Router
+  authority and makes no WORM, binary-patch, or hostile same-UID race claim
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents

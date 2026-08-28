@@ -1,8 +1,77 @@
 import { spawn } from "node:child_process";
 import { fstatSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { types as utilTypes } from "node:util";
 
 const maximumInheritedFileDescriptors = 32;
+const NativeAbortController = AbortController;
+const objectGetPrototypeOf = Object.getPrototypeOf;
+const nativeAbortSignalPrototype = AbortSignal.prototype;
+const nativeAbortedGetter = Object.getOwnPropertyDescriptor(
+  nativeAbortSignalPrototype,
+  "aborted",
+).get;
+const nativeAddEventListener = EventTarget.prototype.addEventListener;
+const nativeRemoveEventListener = EventTarget.prototype.removeEventListener;
+
+function capturedAbortSignal(value) {
+  if (value === undefined) {
+    return Object.freeze({ signal: undefined, release() {} });
+  }
+  if (value === null || typeof value !== "object" || utilTypes.isProxy(value)) {
+    throw new Error("process cancellation signal must be a genuine native AbortSignal");
+  }
+  let prototype;
+  try {
+    prototype = objectGetPrototypeOf(value);
+  } catch (error) {
+    throw new Error("process cancellation signal cannot be inspected safely", {
+      cause: error,
+    });
+  }
+  if (prototype !== nativeAbortSignalPrototype) {
+    throw new Error("process cancellation signal must be a native AbortSignal");
+  }
+  try {
+    nativeAbortedGetter.call(value);
+  } catch (error) {
+    throw new Error("process cancellation signal failed its native brand check", {
+      cause: error,
+    });
+  }
+  const controller = new NativeAbortController();
+  const propagate = () => controller.abort();
+  try {
+    // Subscribe first and then re-read to close the same abort race as the
+    // process-side listener. This all occurs before spawn.
+    nativeAddEventListener.call(value, "abort", propagate, { once: true });
+    if (nativeAbortedGetter.call(value)) controller.abort();
+  } catch (error) {
+    try {
+      nativeRemoveEventListener.call(value, "abort", propagate);
+    } catch {}
+    throw new Error("process cancellation signal could not be captured", {
+      cause: error,
+    });
+  }
+  let source = value;
+  let released = false;
+  return Object.freeze({
+    signal: controller.signal,
+    release() {
+      if (released) return;
+      released = true;
+      const captured = source;
+      source = undefined;
+      if (captured === undefined) return;
+      try {
+        if (nativeAbortedGetter.call(captured)) controller.abort();
+        nativeRemoveEventListener.call(captured, "abort", propagate);
+        if (nativeAbortedGetter.call(captured)) controller.abort();
+      } catch {}
+    },
+  });
+}
 
 function validatedInheritedFileDescriptors(value) {
   if (!Array.isArray(value) || value.length > maximumInheritedFileDescriptors) {
@@ -59,14 +128,22 @@ export function runBoundedProcess({
     throw new Error("process output ceiling must be a positive integer");
   }
   const inherited = validatedInheritedFileDescriptors(inheritedFileDescriptors);
+  const cancellation = capturedAbortSignal(signal);
+  const capturedSignal = cancellation.signal;
   return new Promise((resolve, reject) => {
     const started = performance.now();
-    const child = spawn(executable, args, {
-      cwd,
-      env: environment,
-      detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe", ...inherited],
-    });
+    let child;
+    try {
+      child = spawn(executable, args, {
+        cwd,
+        env: environment,
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "pipe", ...inherited],
+      });
+    } catch (error) {
+      cancellation.release();
+      throw error;
+    }
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
     let disposition = "completed";
@@ -91,7 +168,10 @@ export function runBoundedProcess({
       clearTimeout(timeout);
       clearTimeout(killTimer);
       clearTimeout(reapTimer);
-      signal?.removeEventListener("abort", abort);
+      if (capturedSignal !== undefined) {
+        nativeRemoveEventListener.call(capturedSignal, "abort", abort);
+      }
+      cancellation.release();
     };
 
     const stop = (reason) => {
@@ -144,8 +224,15 @@ export function runBoundedProcess({
       resolve(outcome(exitCode, exitSignal));
     });
     timeout = setTimeout(() => stop("timeout"), timeoutMs);
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
+    if (capturedSignal !== undefined) {
+      // Subscribe first, then re-read. An abort between these operations is
+      // either delivered by EventTarget or observed by the getter; `stop` is
+      // idempotent when both paths win the race.
+      nativeAddEventListener.call(capturedSignal, "abort", abort, {
+        once: true,
+      });
+      if (nativeAbortedGetter.call(capturedSignal)) abort();
+    }
     child.stdin.on("error", (error) => {
       if (error.code !== "EPIPE" && !settled) stop("stdin-error");
     });

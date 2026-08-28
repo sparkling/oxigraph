@@ -24,6 +24,7 @@ import {
   G17_CONTROL_AUTHORIZATION_PROTOCOL,
 } from "../src/qualification/control-protocol.mjs";
 import { g17ControlSampleSetBytes } from "../src/qualification/control-statistics-replay.mjs";
+import { g17BenchmarkControlCoordinates } from "../src/qualification/benchmark-execution-plan.mjs";
 import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
 import {
   EXPECTED_G17_BENCHMARK_BUILD_PLAN,
@@ -237,6 +238,58 @@ test("pure aggregate replays four isolated builds, two sessions, and 392 raw lau
   }
 });
 
+test("direct v1 launch replay preserves the exact HEAD expectation shape", () => {
+  const fixture = createG17BenchmarkOwnerFixture();
+  const control = fixture.artifacts.controls[0];
+  const launch = control.launches[0];
+  const coordinate = g17BenchmarkControlCoordinates(control.controlName)[0];
+  const build = fixture.builds.find(
+    ({ buildId }) => buildId === coordinate.buildId,
+  );
+  assert.notEqual(build, undefined);
+  const expected = {
+    controlRunId: fixture.controlRunId,
+    authorization: structuredClone(fixture.authorizationReference),
+    ...structuredClone(coordinate),
+    executable: structuredClone(build.buildOwnerValue.executable),
+  };
+  assert.deepEqual(Reflect.ownKeys(expected).sort(), [
+    "arm",
+    "authorization",
+    "buildId",
+    "controlId",
+    "controlRunId",
+    "coordinate",
+    "databasePath",
+    "executable",
+    "productRole",
+    "sequence",
+    "task",
+  ]);
+
+  const replay = verifyG17BenchmarkLaunchAttestation({
+    bytes: launch.attestationBytes,
+    expected,
+    stdoutBytes: launch.stdoutBytes,
+    stderrBytes: launch.stderrBytes,
+  });
+  assert.equal(replay.controlId, coordinate.controlId);
+  assert.equal(replay.sequence, coordinate.sequence);
+
+  const drifted = structuredClone(expected);
+  drifted.coordinate.seed += 1;
+  assert.throws(
+    () =>
+      verifyG17BenchmarkLaunchAttestation({
+        bytes: launch.attestationBytes,
+        expected: drifted,
+        stdoutBytes: launch.stdoutBytes,
+        stderrBytes: launch.stderrBytes,
+      }),
+    CONTRACT_ERROR,
+  );
+});
+
 test("owner replay rejects noncanonical bytes, unknown fields, and accessor-backed inventories", () => {
   for (const mutate of [
     (fixture) => {
@@ -309,6 +362,57 @@ test("owner replay rejects non-Buffers, invalid UTF-8, symbols, sparse inventori
   }
 });
 
+test("owner replay bounds hostile array lengths and nesting before allocation", () => {
+  const wide = createG17BenchmarkOwnerFixture();
+  wide.artifacts.unreviewed = new Array(100_000);
+  assert.throws(() => verifyFixture(wide), CONTRACT_ERROR);
+
+  const deep = createG17BenchmarkOwnerFixture();
+  let cursor = deep.artifacts;
+  for (let index = 0; index < 80; index += 1) {
+    cursor.unreviewed = {};
+    cursor = cursor.unreviewed;
+  }
+  assert.throws(() => verifyFixture(deep), CONTRACT_ERROR);
+});
+
+test("every exported owner verifier rejects top-level getters and Proxies before observation", () => {
+  const verifiers = [
+    verifyG17BenchmarkWorkspaceOwner,
+    verifyG17BenchmarkBuildOwner,
+    verifyG17BenchmarkLaunchAttestation,
+    verifyG17BenchmarkSessionOwner,
+    verifyG17BenchmarkOwnerBundle,
+  ];
+  for (const verify of verifiers) {
+    let getterReads = 0;
+    const accessor = {};
+    Object.defineProperty(accessor, "bytes", {
+      enumerable: true,
+      get() {
+        getterReads += 1;
+        return Buffer.alloc(0);
+      },
+    });
+    assert.throws(() => verify(accessor), CONTRACT_ERROR);
+    assert.equal(getterReads, 0);
+
+    let proxyReads = 0;
+    const proxied = new Proxy({}, {
+      get(target, key, receiver) {
+        proxyReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+      ownKeys(target) {
+        proxyReads += 1;
+        return Reflect.ownKeys(target);
+      },
+    });
+    assert.throws(() => verify(proxied), CONTRACT_ERROR);
+    assert.equal(proxyReads, 0);
+  }
+});
+
 test("owner replay rejects product substitution and coherent workspace reuse", () => {
   const substituted = createG17BenchmarkOwnerFixture();
   replaceWorkspaceOwner(substituted, 0, (workspace) => {
@@ -366,6 +470,46 @@ test("build replay rejects command drift, raw stream drift, and ambiguous execut
     };
   });
   assert.throws(() => verifyFixture(ambiguous), CONTRACT_ERROR);
+});
+
+test("Cargo JSONL pre-scan rejects tiny-line floods, oversized rows, and wide rows", () => {
+  const replaceStdout = (fixture, bytes) => {
+    replaceBuildOwner(fixture, 0, (owner, artifact) => {
+      artifact.buildStdoutBytes = bytes;
+      owner.result.stdout = {
+        bytes: bytes.length,
+        sha256: g17BenchmarkOwnerSha256(bytes),
+      };
+    });
+  };
+
+  const tinyLines = createG17BenchmarkOwnerFixture();
+  replaceStdout(tinyLines, Buffer.from("{}\n".repeat(4_097), "utf8"));
+  assert.throws(() => verifyFixture(tinyLines), CONTRACT_ERROR);
+
+  const oversized = createG17BenchmarkOwnerFixture();
+  replaceStdout(
+    oversized,
+    Buffer.from(
+      `${JSON.stringify({ padding: "x".repeat(1024 * 1024) })}\n`,
+      "utf8",
+    ),
+  );
+  assert.throws(() => verifyFixture(oversized), CONTRACT_ERROR);
+
+  const wide = createG17BenchmarkOwnerFixture();
+  replaceStdout(
+    wide,
+    Buffer.from(
+      `${JSON.stringify(
+        Object.fromEntries(
+          Array.from({ length: 5_000 }, (_, index) => [`k${index}`, false]),
+        ),
+      )}\n`,
+      "utf8",
+    ),
+  );
+  assert.throws(() => verifyFixture(wide), CONTRACT_ERROR);
 });
 
 test("launch replay derives rows from exact Rust stdout and rejects semantic raw-output drift", () => {

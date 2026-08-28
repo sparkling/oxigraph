@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import { open } from "node:fs/promises";
 import test from "node:test";
 import { scrubbedChildEnvironment } from "../../child-environment.mjs";
@@ -74,7 +75,84 @@ test("bounded process rejects malformed, duplicate, and closed inherited descrip
   );
 });
 
+test("bounded process rejects forged signals and ignores native-signal baggage", async () => {
+  const base = {
+    executable: process.execPath,
+    args: ["-e", "throw new Error('must not spawn')"],
+    cwd: process.cwd(),
+    environment,
+    timeoutMs: 1000,
+    maxOutputBytes: 1024,
+  };
+  let observations = 0;
+  const proxied = new Proxy(new AbortController().signal, {
+    get() {
+      observations += 1;
+      throw new Error("proxy getter must not run");
+    },
+  });
+  const ownGetter = new AbortController().signal;
+  Object.defineProperty(ownGetter, "aborted", {
+    configurable: true,
+    get() {
+      observations += 1;
+      throw new Error("own getter must not run");
+    },
+  });
+  Object.defineProperty(ownGetter, Symbol("ignored signal baggage"), {
+    get() {
+      observations += 1;
+      throw new Error("symbol getter must not run");
+    },
+  });
+  const prototypeGetter = new AbortController().signal;
+  Object.setPrototypeOf(
+    prototypeGetter,
+    Object.create(AbortSignal.prototype, {
+      aborted: {
+        configurable: true,
+        get() {
+          observations += 1;
+          throw new Error("prototype getter must not run");
+        },
+      },
+    }),
+  );
+  for (const signal of [
+    proxied,
+    prototypeGetter,
+    Object.create(AbortSignal.prototype),
+    { aborted: false },
+  ]) {
+    assert.throws(
+      () => runBoundedProcess({ ...base, signal }),
+      /native AbortSignal|native brand/u,
+    );
+  }
+  const accepted = await runBoundedProcess({
+    ...base,
+    args: ["-e", "process.stdout.write('accepted')"],
+    signal: ownGetter,
+  });
+  assert.equal(accepted.stdout, "accepted");
+  assert.equal(getEventListeners(ownGetter, "abort").length, 0);
+  assert.equal(observations, 0);
+});
+
 test("bounded process terminates cancelled and excessive-output groups", async () => {
+  const preController = new AbortController();
+  preController.abort();
+  const preCancelled = await runBoundedProcess({
+    executable: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    cwd: process.cwd(),
+    environment,
+    timeoutMs: 5000,
+    maxOutputBytes: 1024,
+    signal: preController.signal,
+  });
+  assert.equal(preCancelled.disposition, "cancelled");
+
   const controller = new AbortController();
   const cancelled = runBoundedProcess({
     executable: process.execPath,

@@ -31,10 +31,17 @@
   limits/quiescence, and cleanup, and rejects the exact current proposed
   authorization before mechanics. Its expected artifact bindings remain
   explicitly unsealed and non-authoritative, and no native syscall adapter is
-  implemented. Production build/control/sample owner emission and a current
-  control or qualification receipt are not implemented. Human control
-  approval, final reference/budgets, benchmark/noise evidence, current owner
-  evidence, qualification, and promotion remain outstanding
+  implemented. The exact four-build execution plan and physical product-source
+  workspace primitive are implemented and independently audited: they bind the
+  evaluator-composed source behind held descriptors, globally pre-admit root and
+  required-submodule object bytes before private writes, preserve handles on an
+  unreaped Git outcome, and expose only an authority-free v1 projection.
+  Production build begin/finish remain deliberately unavailable until the
+  supervising build owner can prove exact child close and reap. Production
+  build-process/control/sample owner emission and a current control or
+  qualification receipt are not implemented. Human control approval, final
+  reference/budgets, benchmark/noise evidence, current owner evidence,
+  qualification, and promotion remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
