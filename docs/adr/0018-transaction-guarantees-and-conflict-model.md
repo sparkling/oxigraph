@@ -18,14 +18,15 @@
   storage-call failures now prove that local `CommitAttempted` state advances
   before the marker call, conservative lookup remains indeterminate, and drop
   cannot falsely prove rollback after a commit attempt. That evidence does not
-  simulate crash, power loss, or fsync. G1.7 contract v6, proposed two-phase
-  control/final-decision validation, exact G1.4b prerequisite binding, pure
-  Darwin-free v1/v3/v4/v5 replay, and exact paired control statistics are
-  implemented and fail closed, but production
+  simulate crash, power loss, or fsync. G1.7 contract v7 binds the exact merged
+  product identity while preserving v6's proposed two-phase control/final-
+  decision validation and paired statistics. Exact G1.4b prerequisite binding
+  and pure Darwin-free v1/v3/v4/v5/v6 replay are implemented and fail closed,
+  but production
   control/build/sample owner emission, canonical control-receipt replay, and a
   current qualification receipt are not implemented. Human control approval,
-  final reference/budgets, benchmark/noise evidence, current clean-subject
-  owner evidence, qualification, and promotion remain outstanding
+  final reference/budgets, benchmark/noise evidence, current owner evidence,
+  qualification, and promotion remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
@@ -287,17 +288,18 @@ boundaries. G1.7 must still close compatibility, performance, current-evidence
 qualification, and the separate human decision. Neither slice grants promotion
 authority, adds semantic commit receipts/outbox delivery, or adds savepoints to
 caller-owned transactions.
-The current G1.7 contract v6 is
-`22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
+The current G1.7 contract v7 is
+`42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
 Its control authorization and final decision set remain
 `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`. The CLI exits 4 before
 identity, evidence, build, or sampling and writes no G1.7 run. A final binding
 keeps qualification execution false until the canonical control receipt is
 replayed. Pure owner-contract tests therefore prove only replay behavior over
-synthetic fixtures, not production owner emission. Legacy v1/v3/v4/v5 contract bytes
-now replay through a Darwin-free structural boundary and remain legacy-only.
+synthetic fixtures, not production owner emission. Legacy v1/v3/v4/v5/v6
+contract bytes replay through a Darwin-free structural boundary and remain
+legacy-only.
 
-Contract v6 preserves v5's non-circular two-phase protocol and now freezes
+Contract v7 preserves v6's non-circular two-phase protocol and frozen
 canonical authorization-bound sample framing, paired 10% negative-control
 non-inferiority, shared-seed two-direction 5% A/A equivalence, the inclusive
 5% MAD noise boundary, and mechanical control/aggregate verdict precedence. A
@@ -306,7 +308,7 @@ negative/A/A control execution, and one final human decision set must bind that
 receipt, its observed signature, and the exact G1.4b prerequisite before any
 subject/reference samples. The G1.4b receipt is now copied, hash-bound, and
 pure-replayed at that prerequisite boundary, but no human approval, control
-receipt, benchmark, performance result, or current clean-subject owner evidence
+receipt, benchmark, performance result, or current owner evidence
 exists. The statistics implementation is pure replay over synthetic fixtures,
 not a live control run. ADR-0018 therefore remains Proposed. The transaction identifiers are
 G1.1-G1.5c plus G1.4a-G1.4b; G1.7 is the joint compatibility/performance
