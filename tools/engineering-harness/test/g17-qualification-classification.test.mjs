@@ -159,3 +159,25 @@ test("unknown, duplicate, unsorted, and status-incompatible breaches fail closed
     );
   }
 });
+
+test("legacy classification preserves arbitrary ordered breach replay", () => {
+  assert.deepEqual(
+    classifyG17Qualification(
+      passing({
+        benchmark: {
+          status: "NOISY",
+          budgetBreaches: ["legacy-z", "legacy-z", "legacy-a"],
+        },
+      }),
+      { currentV4: false },
+    ),
+    {
+      verdict: "REJECT",
+      reasons: [
+        "performance-budget-breached:legacy-z",
+        "performance-budget-breached:legacy-z",
+        "performance-budget-breached:legacy-a",
+      ],
+    },
+  );
+});

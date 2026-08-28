@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { canonicalSha256 } from "../src/routing/features.mjs";
-import { G17_LEGACY_V3_CONTRACT_SHA256 } from "../src/qualification/contract.mjs";
+import {
+  G17_CURRENT_CONTRACT_SHA256,
+  G17_LEGACY_V3_CONTRACT_SHA256,
+} from "../src/qualification/contract.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS,
@@ -96,6 +99,7 @@ function passEvidence(schema) {
 
 function acceptingDraft() {
   const value = draft();
+  value.contract.sha256 = G17_CURRENT_CONTRACT_SHA256;
   value.contract.referenceDecision = "SELECTED";
   value.contract.budgetDecision = "APPROVED";
   value.contract.noiseDecision = "APPROVED";
@@ -332,6 +336,7 @@ test("G1.7 receipt creation rejects vacuous PASS evidence and benchmark claims",
 
 test("G1.7 receipt preserves proposed decision status without authority", () => {
   const proposed = draft();
+  proposed.contract.sha256 = G17_CURRENT_CONTRACT_SHA256;
   proposed.contract.referenceDecision = "PROPOSED";
   proposed.contract.budgetDecision = "PROPOSED";
   proposed.contract.noiseDecision = "PROPOSED";
@@ -349,9 +354,16 @@ test("G1.7 receipt preserves proposed decision status without authority", () => 
   const receipt = createG17Receipt(proposed);
   assert.equal(verifyG17Receipt(g17ReceiptBytes(receipt)).ok, true);
   assert.equal(receipt.authority.promotionAuthority, false);
+
+  const legacy = structuredClone(proposed);
+  legacy.contract.sha256 = G17_LEGACY_V3_CONTRACT_SHA256;
+  assert.throws(
+    () => createG17Receipt(legacy),
+    /reference decision is invalid/u,
+  );
 });
 
-test("G1.7 receipt permits budget breaches only on FAIL", () => {
+test("current G1.7 receipt permits budget breaches only on strict FAIL", () => {
   for (const benchmarkStatus of [
     "NOT_RUN",
     "MISSING",
@@ -359,6 +371,7 @@ test("G1.7 receipt permits budget breaches only on FAIL", () => {
     "NOISY",
   ]) {
     const invalid = draft();
+    invalid.contract.sha256 = G17_CURRENT_CONTRACT_SHA256;
     invalid.benchmark.status = benchmarkStatus;
     invalid.benchmark.budgetBreaches = ["on-store-memory"];
     if (benchmarkStatus === "NOISY") {
@@ -370,5 +383,36 @@ test("G1.7 receipt permits budget breaches only on FAIL", () => {
       () => createG17Receipt(invalid),
       /only a failing benchmark may contain budget breaches/u,
     );
+  }
+});
+
+test("legacy receipt replays NOISY breaches and unknown duplicate FAIL breaches", () => {
+  for (const [status, budgetBreaches, reasons] of [
+    ["NOISY", ["legacy-noise"], ["performance-budget-breached:legacy-noise"]],
+    [
+      "FAIL",
+      ["legacy-z", "legacy-z", "legacy-a"],
+      [
+        "benchmark-failed",
+        "performance-budget-breached:legacy-z",
+        "performance-budget-breached:legacy-z",
+        "performance-budget-breached:legacy-a",
+      ],
+    ],
+  ]) {
+    const legacy = acceptingDraft();
+    legacy.contract.sha256 = G17_LEGACY_V3_CONTRACT_SHA256;
+    legacy.benchmark = {
+      status,
+      sampleCount: 1,
+      samplesSha256: "a".repeat(64),
+      summarySha256: "b".repeat(64),
+      budgetBreaches,
+    };
+    legacy.final = { verdict: "REJECT", reasons };
+    const receipt = createG17Receipt(legacy);
+    const verified = verifyG17Receipt(g17ReceiptBytes(receipt));
+    assert.equal(verified.ok, false);
+    assert.equal(verified.verificationStatus, "LEGACY_REPLAY_ONLY");
   }
 });
