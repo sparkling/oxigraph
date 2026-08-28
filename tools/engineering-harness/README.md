@@ -100,23 +100,24 @@ Current activation boundary:
   counted-stage results 4/17/1/1/12. Five- and six-stage historical contracts
   and their existing application receipts remain replayable;
 - `g1.7:preflight`, `g1.7:run`, and `g1.7:verify` use a separate qualification
-  binary rather than the application-task registry. The runner writes copied
-  evidence artifacts before a canonical receipt and reopens the sealed run
-  through pure receipt-contract modules. Qualification contract v3 freezes the
-  exact native test IDs and per-process byte ceilings. Semantic projection v2
-  and compatibility projection v3 are the current PASS schemas; compatibility
-  v2 and unversioned PASS evidence remain `LEGACY_REPLAY_ONLY`. A successful
-  reopen reports `SEALED_RUN_VERIFIED`, which covers envelope integrity only.
-  Semantic replay is labelled for the MetaHarness owner contract.
-  Compatibility replay requires both the Agentic-QE owner contract and a
-  local-only native owner artifact containing bounded complete Cargo output.
-  The pure verifier reparses the exact inventory IDs and one successful
-  libtest summary per lane without re-executing Cargo, while the public
-  projection exposes only IDs, counts, durations, and digests. Only that
-  conjunction reports `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`; synthetic
-  fixtures and Agentic-only evidence remain ineligible, and the absent
-  reference, budget/noise, benchmark, and current clean-subject evidence keep
-  G1.7 inconclusive;
+  binary rather than the application-task registry. Exact qualification
+  contract v4 has SHA-256
+  `dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0`;
+  its decision set is
+  `9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc`.
+  Reference, performance, and noise are all `PROPOSED`/`UNAPPROVED`, so `run`
+  exits 4 before identity, copied evidence, build, runtime-directory creation,
+  or samples. An approved fixture still stops at
+  `G17_EXECUTION_OWNER_UNIMPLEMENTED`, and the verifier refuses executed
+  current-v4 evidence until the raw build/sample owner is implemented. Current
+  v1/v3 receipts remain structural `LEGACY_REPLAY_ONLY`; synthetic owner
+  fixtures test pure replay but are not production owner evidence. The accepted
+  G1.4b receipt remains unbound. No samples, benchmark result, current-v4
+  receipt, qualification, or promotion exists. The replacement lifecycle is a
+  two-phase human gate: authorize permanently non-promoting negative and A/A
+  controls, seal/replay them, then approve one final decision set binding that
+  control receipt before subject/reference qualification. Promotion remains a
+  later human-only action;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v6 adds an exact `candidateRejections` collection and
@@ -316,6 +317,13 @@ npm run g1.5c:preflight
 npm run g1.6:preflight
 npm run g1.7:preflight
 ```
+
+At the fail-closed v4 checkpoint, `npm test` reports 366 tests: 364 pass, none
+fail, and two intentional live-host tests are skipped. `npm run doctor` passes
+with 33 registered application commands and the latest-policy lock resolving
+AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.
+Those versions are lock evidence, not a promise that future `latest` tags will
+remain unchanged.
 
 The package is local-only. Presence of this directory is not an engineering
 readiness, product-correctness, semantic-qualification, or promotion claim.

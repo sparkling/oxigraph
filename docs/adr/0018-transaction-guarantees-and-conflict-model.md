@@ -18,10 +18,11 @@
   storage-call failures now prove that local `CommitAttempted` state advances
   before the marker call, conservative lookup remains indeterminate, and drop
   cannot falsely prove rollback after a commit attempt. That evidence does not
-  simulate crash, power loss, or fsync. The dedicated G1.7
-  qualification-control scaffold, including conjunctive Agentic-QE/native owner
-  replay, is implemented, while the reviewed reference and budgets,
-  benchmark/noise evidence, current clean-subject owner evidence, and promotion
+  simulate crash, power loss, or fsync. G1.7 contract v4 and pure verifier
+  contracts are implemented and fail closed, but production control,
+  build/sample owner emission and a current owner receipt are not implemented.
+  The reviewed control authorization, final reference/budgets, benchmark/noise
+  evidence, current clean-subject owner evidence, qualification, and promotion
   decision remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
@@ -283,15 +284,25 @@ boundaries. G1.7 must still close compatibility, performance, current-evidence
 qualification, and the separate human decision. Neither slice grants promotion
 authority, adds semantic commit receipts/outbox delivery, or adds savepoints to
 caller-owned transactions.
-The current G1.7 scaffold structurally verifies semantic v2 and compatibility
-v3 projections and sealed-replays copied MetaHarness, Agentic-QE, and native
-owner contracts. The native owner binds exact test IDs and bounded complete
-Cargo output and is reparsed without Cargo re-execution; only its conjunction
-with Agentic-QE may report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. That closes
-the replay-control gap but does not qualify the product: the G1.4b receipt is
-not yet bound into a current outer envelope, the three reference/performance/
-noise decisions are proposed and unapproved, the benchmark is not run, and
-current clean-subject owner evidence is not yet sealed. The transaction
-identifiers are G1.1-G1.5c plus G1.4a-G1.4b; G1.7 is the joint compatibility/performance
-promotion gate in the [linked-data-store evolution
-plan](../plans/linked-data-store-evolution-harness-plan.md).
+The current G1.7 contract v4 is
+`dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0`;
+its decision set is `9a76ace5...`, with reference, performance, and noise all
+`PROPOSED`/`UNAPPROVED`. The CLI exits 4 before identity, evidence, build, or
+sampling, and even an approved fixture stops at
+`G17_EXECUTION_OWNER_UNIMPLEMENTED`. Pure owner-contract tests therefore prove
+only replay behavior over synthetic fixtures, not production owner emission.
+Legacy v1/v3 receipts remain structural replay-only.
+
+The approval lifecycle is also circular: the selected reference requires an
+observed negative-control signature, but proposed decisions forbid the control
+run that would generate it. G1.7 must first implement a permanently
+non-promoting human control authorization and sealed negative/A/A control
+receipt, then bind that receipt into one final human decision set before any
+subject/reference samples. The accepted G1.4b receipt is still absent from the
+current projection, no benchmark or performance result exists, and current
+clean-subject owner evidence is not sealed. ADR-0018 therefore remains
+Proposed. The transaction identifiers are G1.1-G1.5c plus G1.4a-G1.4b; G1.7
+is the joint compatibility/performance qualification gate in the
+[linked-data-store evolution
+plan](../plans/linked-data-store-evolution-harness-plan.md), with product
+promotion retained as a later human decision.

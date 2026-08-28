@@ -9,13 +9,14 @@
   one-session sandbox, repair/review lifecycle, application receipts, canonical
   task registry, generated command registry, and bounded candidate-rejection
   receipts are implemented and directly tested. A dual-provider G1.2
-  application run is accepted, and G1.3-G1.6, including G1.4a-G1.4b, have direct
-  source-bound candidate acceptances. A dedicated artifact-first G1.7 runner, structural verifier,
-  sealed-inventory reopen and owner-contract replay, and fail-closed CLI are
-  implemented and directly tested, but do not close the G1.7 product gate. The
-  existing `tools/metaharness` semantic qualifier remains separate; unattended
-  Dream Machine execution remains deferred behind the activation gates in this
-  ADR
+  application run is accepted, and G1.3-G1.6, including G1.4a-G1.4b, have
+  direct source-bound candidate acceptances. G1.7 qualification contract v4,
+  proposed decision validation, legacy replay, and pre-execution gates are
+  implemented and fail closed. Production control/build/sample owner emission,
+  a current sealed receipt, qualification, and promotion are not implemented.
+  The existing `tools/metaharness` semantic qualifier remains separate;
+  unattended Dream Machine execution remains deferred behind the activation
+  gates in this ADR
 - Update note: implementation preserves human-only promotion and the
   committed G0-G4 task graph without treating Ruflo rows, installed packages,
   generic scores, or application receipts as semantic qualification. Native
@@ -29,19 +30,19 @@
   exact attempt-or-rejection accounting for every successful patch-producing
   invocation, non-trainable reconstruction/applicability rejection records,
   and byte-exact replay-only handling for v1-v5. The outer G1.7 qualification
-  receipt remains v1. Qualification contract v3 freezes exact native test IDs
-  and byte ceilings; newly minted semantic `PASS` projections use v2 and
-  compatibility `PASS` projections use v3. Structural verification proves
-  canonical serialization, hashes, and schema state only. Sealed verification
-  reopens the inventory and replays copied MetaHarness, Agentic-QE, and bounded
-  native-output owner contracts. Explicit compatibility v2 and unversioned
-  `PASS` evidence remain `LEGACY_REPLAY_ONLY`
+  receipt remains v1. Commits `4e3eef61`, `a1d426bb`, `87a5efc5`, `a6e229df`,
+  and `f1cb6680` integrate exact contract v4, proposed-decision gating, strict
+  current-v4 receipt semantics, and v1/v3 structural replay-only compatibility.
+  All current decisions are unapproved; `run` exits 4 before work and the
+  approved-fixture path stops at `G17_EXECUTION_OWNER_UNIMPLEMENTED`. Pure
+  verifier fixtures do not establish production owner emission
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
-  producing the current exact nine-task/33-command surface. Its full suite
-  passes 338/338 runnable tests with two expected host-gated skips; doctor
-  evidence remains native-only, local-only, and non-promoting
+  producing the current exact nine-task/33-command surface. The current package
+  suite contains 366 tests: 364 pass, none fail, and two intentional host-gated
+  tests are skipped; doctor evidence remains native-only, local-only, and
+  non-promoting
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -125,17 +126,17 @@ absorbed those engineering responsibilities.
 Adopt a thin, local-first evolution control plane. It coordinates existing
 authorities and may not replace them.
 
-| Component | Permitted role | Not an authority for |
-|---|---|---|
-| Ruflo swarm, tasks, goals, and AgentDB | Parallel research, dependency state, transient project memory, and anti-drift coordination | RDF semantics, promotion, or release claims |
-| RuvNet Brain | Source-grounded guidance for the rUv stack | Oxigraph behavior not established by local source/tests |
-| MetaHarness genome, score, and OIA | Advisory readiness, risk, and infrastructure analysis | Product correctness or current semantic qualification |
-| Existing `tools/metaharness` qualifier | ADR-0004 policy evolution against protected semantic evidence | Engineering implementation, repair, or product promotion |
-| `tools/engineering-harness` runtime | Route, build, repair, review, and receipt isolated G1-G3 candidates | Semantic truth, publication, or promotion |
-| Darwin | Bounded evolution of frozen harness-policy surfaces | Rust source, manifests, expected results, thresholds, or semantic answers |
-| Agentic-QE | Exact profile coordination and schema-v5 evidence-publication machinery | A simulated or JavaScript substitute for native Rust execution |
-| Dream Machine | Local version/config compilation, rotation vocabulary, three-verdict discipline, and a secondary ledger | Scheduling, provider routing, publication, promotion, or replacement receipts |
-| Native and differential runners | Pass/fail evidence for their exact named scopes | Claims broader than their reviewed inventories |
+| Component                              | Permitted role                                                                                          | Not an authority for                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Ruflo swarm, tasks, goals, and AgentDB | Parallel research, dependency state, transient project memory, and anti-drift coordination              | RDF semantics, promotion, or release claims                                   |
+| RuvNet Brain                           | Source-grounded guidance for the rUv stack                                                              | Oxigraph behavior not established by local source/tests                       |
+| MetaHarness genome, score, and OIA     | Advisory readiness, risk, and infrastructure analysis                                                   | Product correctness or current semantic qualification                         |
+| Existing `tools/metaharness` qualifier | ADR-0004 policy evolution against protected semantic evidence                                           | Engineering implementation, repair, or product promotion                      |
+| `tools/engineering-harness` runtime    | Route, build, repair, review, and receipt isolated G1-G3 candidates                                     | Semantic truth, publication, or promotion                                     |
+| Darwin                                 | Bounded evolution of frozen harness-policy surfaces                                                     | Rust source, manifests, expected results, thresholds, or semantic answers     |
+| Agentic-QE                             | Exact profile coordination and schema-v5 evidence-publication machinery                                 | A simulated or JavaScript substitute for native Rust execution                |
+| Dream Machine                          | Local version/config compilation, rotation vocabulary, three-verdict discipline, and a secondary ledger | Scheduling, provider routing, publication, promotion, or replacement receipts |
+| Native and differential runners        | Pass/fail evidence for their exact named scopes                                                         | Claims broader than their reviewed inventories                                |
 
 The execution rules are:
 
@@ -285,39 +286,47 @@ or a synthetic Darwin run does not satisfy this definition.
 ### G1.7 qualification-control boundary
 
 The outer G1.7 qualification receipt remains
-`oxigraph.g1.7-qualification-receipt/v1`. Newly minted semantic or
-compatibility `PASS` projections must carry semantic v2 or compatibility v3,
-respectively. Qualification contract v3 freezes each native lane's exact test
-IDs, command, timeout, and combined-output ceiling.
-Structural verification proves canonical serialization, hashes, and schema
-state only: a current structural `PASS` is `CURRENT_SCHEMA_UNREPLAYED` and is
-never qualification-eligible. Sealed verification reopens the sealed artifact
-inventory and replays the copied MetaHarness and Agentic-QE owner contracts.
-It also replays a local-only native owner artifact that binds the sealed
-subject and Cargo/rustc identities to exact commands, test inventories,
-timeouts, byte ceilings, and complete bounded stdout/stderr bytes. The pure
-verifier reparses those bytes and requires one successful libtest summary per
-lane without re-executing Cargo. The public projection retains only IDs,
-counts, durations, and digests. Explicit compatibility v2 and unversioned
-`PASS` evidence are `LEGACY_REPLAY_ONLY`.
+`oxigraph.g1.7-qualification-receipt/v1`. Exact qualification contract v4 is
+`dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0`,
+and its decision set is
+`9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc`.
+Reference, performance, and noise are all `PROPOSED`/`UNAPPROVED`.
+`g1.7:run` exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before identity,
+application evidence, build, runtime-directory creation, or sampling. Even an
+approved test fixture reaches `G17_EXECUTION_OWNER_UNIMPLEMENTED`; sealed
+verification deliberately rejects any executed current-v4 benchmark until the
+production raw build/sample owner can be replayed. The current 366-test suite
+passes 364, fails none, and skips two intentional live-host cases. Those pure
+fixtures verify contracts, not real owner emission, performance, or
+qualification.
 
-Compatibility assurance reaches `COMPATIBILITY_OWNER_CONTRACT_REPLAYED` only
-after both the Agentic-QE and native owner contracts replay. This closes the
-control-plane replay gap, not the product gate: reference selection remains
-`UNSELECTED`, the performance-budget and noise decisions remain `ABSENT`, the
-benchmark is `NOT_RUN`, and current clean-subject semantic and compatibility
-owner evidence must still be regenerated. G1.7 consequently remains
-`INCONCLUSIVE` and `qualificationEligible` remains false for current evidence.
+Contract v1/v3 receipts remain `LEGACY_REPLAY_ONLY` and can never qualify. The
+accepted G1.4b receipt is not yet present in the current compatibility
+projection. Its exact bytes must be copied, hash-bound, and pure-replayed; its
+claim remains limited to simulated storage-call branches. Historical identity
+replay also eagerly loads the current Darwin package, so durable offline legacy
+replay remains an explicit hardening task.
+
+The current approval flow is circular: a selected reference requires an
+observed negative-control signature, all three decisions must be approved
+together, and proposed decisions prohibit the control run that would produce
+that signature. Replace it with two strictly ordered human phases. Phase A
+authorizes only permanently non-promoting negative and independently built A/A
+noise controls and seals their complete raw owner receipt. Phase B binds that
+receipt and observed signature into one atomic final decision set before any
+subject/reference sample is produced. A later `ACCEPT` means only
+`QUALIFIED_AWAITING_HUMAN_PROMOTION`; no schema or command grants product
+promotion or publication authority.
 
 ## Programme decisions and task ownership
 
 The programme keeps three different records deliberately separate:
 
-| Record | Authority | Lifecycle |
-|---|---|---|
-| ADR | Architectural intent and accepted constraints | Proposed, Accepted, Implemented, Superseded |
-| Committed GOAP plan ID | Stable work identity, dependency, and exit gate | Updated with the repository |
-| Ruflo task row | Local execution status, priority, assignment, and analytics | Transient project runtime state |
+| Record                 | Authority                                                   | Lifecycle                                   |
+| ---------------------- | ----------------------------------------------------------- | ------------------------------------------- |
+| ADR                    | Architectural intent and accepted constraints               | Proposed, Accepted, Implemented, Superseded |
+| Committed GOAP plan ID | Stable work identity, dependency, and exit gate             | Updated with the repository                 |
+| Ruflo task row         | Local execution status, priority, assignment, and analytics | Transient project runtime state             |
 
 G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
@@ -370,14 +379,19 @@ committed G-identifiers and GOAP tables remain the portable authority; Ruflo
 task IDs are repository-local audit pointers only and never prove product
 behavior. The current 42-entry adjacency map and checkpoint were stored and
 exactly read back through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v8`; it supersedes, rather than
-rewrites, the historical v7 map. G1.4a task
+`task-plans/linked-data-store-g0-g4-2026-08-28-v9`; it supersedes, rather than
+rewrites, the historical v8 map. The 42 stable product identifiers are
+unchanged. V9 adds separate support rows for control authorization, control
+owner/replay, final-decision binding, benchmark owner/replay, G1.4b receipt
+binding, Darwin-free legacy dispatch, and this governance synchronization.
+Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
-`task-1787871483413-ki34q2` includes both dependencies and is in progress; its
-two superseded rows remain cancelled history. Evidence checkpoints are stored
-under `programme-evidence/g14a-store-terminal-outcomes-2f518e04` and
-`programme-evidence/g14b-harness-qualified-2026-08-28`.
+`task-1787871483413-ki34q2` includes both dependencies and is in progress at
+35%; its two superseded rows remain cancelled history. Evidence checkpoints
+are stored under `programme-evidence/g14a-store-terminal-outcomes-2f518e04`,
+`programme-evidence/g14b-harness-qualified-2026-08-28`, and
+`programme-evidence/g17-v4-fail-closed-core-f1cb6680-2026-08-28`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
@@ -525,8 +539,8 @@ Source-bound engineering evidence on 2026-08-25 through 2026-08-27 established:
   sealed owner-contract replay, and leaves synthetic, legacy, Agentic-only,
   and incomplete native compatibility evidence ineligible. From that clean
   committed subject, `node --test --test-concurrency=1
-  tools/agentic-qe/*.test.mjs tools/metaharness/*.test.mjs
-  tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
+tools/agentic-qe/*.test.mjs tools/metaharness/*.test.mjs
+tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   298/298 under Node 24.14.1 on Linux 6.8.0-137-generic x86_64. This is
   candidate-slice control evidence, not semantic qualification, benchmark
   evidence, or a promotion decision;
@@ -562,7 +576,14 @@ Source-bound engineering evidence on 2026-08-25 through 2026-08-27 established:
   `4ff0fdafa3b8584f81033a89000814320a952bbc384523cd72dd57150963458b`;
   previous-product, union-only, and CLI-TLS-gated-server controls all returned
   `REJECT`. These are verifier-session and control artifacts, not application
-  receipts.
+  receipts; and
+- G1.7 v4 fail-closed integration commits `4e3eef61`, `a1d426bb`,
+  `87a5efc5`, `a6e229df`, and `f1cb6680`. Exact contract and decision-set
+  SHA-256 values are `dd97f4a2...` and `9a76ace5...`. The package suite reports
+  366 total, 364 passing, zero failing, and two intentional host-gated skips.
+  The CLI exits 4 before work for the proposed decisions, and the approved test
+  path stops at the unimplemented owner. This is protocol and negative-gate
+  evidence only: it contains no benchmark or performance result.
 
 ## Decision boundary
 
@@ -570,8 +591,10 @@ This ADR implements the engineering architecture and authority boundary; it
 does not claim that Dream Machine is an approved unattended runner, full
 MetaHarness qualification is current, or an application-harness acceptance is
 safe to promote. The canonical registry and candidate-rejection evidence
-controls are closed. G2.1's evaluator freeze is now blocked by its own
-prerequisites rather than those two harness controls. ADR-0018 and ADR-0020
+controls are closed. G2.1's evaluator may be prepared only as explicitly
+non-promoting evaluator work; activation and candidate execution await an
+approved G1.7 baseline unless the programme owner records a narrower exception.
+ADR-0018 and ADR-0020
 through ADR-0033 remain
 Proposed until their product behavior and evidence exist. Each task still requires a
 red/evaluator-separated corpus, direct control-plane tests, continuously

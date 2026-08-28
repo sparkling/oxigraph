@@ -173,9 +173,9 @@ Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
 current fail-closed registry therefore contains nine tasks and 33 commands;
-its full suite passes 338/338 runnable tests with two expected host-gated
-skips, and the doctor retains the same native-only, local-only, non-promoting
-boundary.
+the current full package suite contains 366 tests: 364 pass, none fail, and two
+intentional host-gated tests are skipped. The doctor retains the same
+native-only, local-only, non-promoting boundary.
 
 Follow-on harness commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate
@@ -189,37 +189,37 @@ evidence is non-trainable, v1-v5 receipts remain byte-exact replay-only, and a
 candidate-disposal failure aborts receipt minting. The committed control passes
 194/194 harness tests and the same `runner-implemented`, local-only doctor.
 
-The dedicated G1.7 qualification path now uses qualification contract v3,
-semantic projection v2, compatibility projection v3, artifact-first sealed
-runs, canonical portable-path ordering, and pure copied-receipt replay.
-Structural receipt parsing reports current PASS projections as
-`CURRENT_SCHEMA_UNREPLAYED`; explicit compatibility v2 and unversioned PASS
-evidence remain `LEGACY_REPLAY_ONLY`. Only the sealed verifier may report
-scope-specific owner-contract replay, and `SEALED_RUN_VERIFIED` means that the
-sealed envelope was verified rather than that G1.7 qualified.
+The dedicated G1.7 qualification path is now fail-closed at qualification
+contract v4, SHA-256
+`dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0`.
+Its exact decision set is
+`9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc`;
+the reference, performance, and noise artifacts are all
+`PROPOSED`/`UNAPPROVED`. `g1.7:run` therefore exits 4 as
+`DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before identity, evidence, build, runtime
+directory creation, or sampling. Even a synthetically approved set stops at
+`G17_EXECUTION_OWNER_UNIMPLEMENTED`, and the verifier rejects executed current
+v4 evidence until a production build/sample replay owner exists. There are no
+current G1.7 samples, benchmark results, sealed receipt, qualification, or
+promotion decision.
 
-Current compatibility replay conjunctively verifies the copied Agentic-QE
-owner contract and a local-only native owner artifact. The native artifact
-binds the sealed subject, Cargo and rustc identities, exact reviewed test IDs,
-commands, timeouts, byte ceilings, complete bounded stdout/stderr bytes, and
-one successful libtest summary per lane. The pure verifier reparses those
-sealed bytes without re-executing Cargo; its public projection retains only
-IDs, counts, durations, and digests. Only that conjunction may report
-`COMPATIBILITY_OWNER_CONTRACT_REPLAYED`. Positive unit fixtures remain
-synthetic contract fixtures: they do not establish real owner-process
-emission, subject-file correspondence, benchmark acceptance, or promotion.
-The accepted G1.4b receipt must still be copied and replayed inside a current
-qualification envelope. A genuinely approved reference decision plus separate
-performance- and noise-budget decisions, current clean-subject semantic and
-compatibility evidence, and the real benchmark remain open, so G1.7 remains
-`INCONCLUSIVE` and qualification eligibility is withheld. No samples may be
-minted from the current proposed/unapproved policy bytes.
-Historical committed control subject
-`d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passed 298/298 serialized
-JavaScript contract/control tests under Node 24.14.1 on Linux x86_64; that
-historical result and the follow-on replay controls are candidate-slice
-evidence, not semantic qualification, benchmark evidence, or a promotion
-decision.
+The existing owner-contract tests prove pure verifier behavior over synthetic
+fixtures; they do not prove current owner-process emission. Contract v1/v3
+receipts remain structural replay-only and never qualification-eligible. The
+accepted G1.4b receipt
+`d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
+is still absent from the current compatibility projection and must be copied,
+hash-bound, and replayed from its exact bytes. Historical replay also retains
+an eager dependency on the current Darwin package; separating that legacy
+identity path is an open hardening task.
+
+The approval lifecycle now requires two explicit human phases. Phase A may
+authorize only permanently non-promoting negative and independently built A/A
+noise controls, whose complete raw owner receipt is sealed and replayed. Phase
+B may then bind that receipt and its observed signature into one atomic final
+reference/performance/noise decision before subject/reference qualification.
+Human product promotion remains a later, separate action. Neither execution
+owner exists yet, so current files are not ready for direct approval.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -253,10 +253,11 @@ G0.7's earlier reconciliation remains historical after the schema-v5 contract
 change and these protected-document edits; root `README.md` remains part of the
 MetaHarness protected snapshot. Full MetaHarness semantic qualification, its
 independent verification, and the separate G1.7 compatibility/performance
-promotion gate remain open. The clean-subject `5a93890f` preflight was
-`INCONCLUSIVE` because the reference, performance/noise budgets, semantic and
-compatibility owner evidence, and benchmark remain absent, so the umbrella
-claim is still withheld. A dirty working-tree rerun exits before classification.
+promotion gate remain open. At current head `f1cb6680`, contract-v4 execution
+is `INCONCLUSIVE`: its three decisions are proposed, all semantic,
+compatibility, and benchmark stages are `NOT_RUN`, and the production owner is
+unimplemented. The umbrella claim is still withheld. A dirty working-tree
+rerun exits before classification.
 
 ### Published documentation and evidence
 
@@ -331,17 +332,18 @@ It is split into multiple parts:
   [![Latest Version](https://img.shields.io/crates/v/oxigraph-cli.svg)](https://crates.io/crates/oxigraph-cli)
 
 Also, some parts of Oxigraph are available as standalone Rust crates to be reused in other Rust projects:
-* [`oxrdf`](./lib/oxrdf), datastructures encoding RDF basic concepts (the [`oxigraph::model`](crate::model) module).
-* [`oxrdfio`](./lib/oxrdfio), a unified parser and serializer API for RDF formats (the [`oxigraph::io`](crate::io) module). It itself relies on:
-  * [`oxttl`](./lib/oxttl), N-Triple, N-Quad, Turtle, TriG and N3 parsing and serialization.
-  * [`oxrdfxml`](./lib/oxrdfxml), RDF/XML parsing and serialization.
-  * [`oxjsonld`](./lib/oxjsonld), JSON-LD RDF serialization/deserialization algorithms.
-* [`spareval`](./lib/spareval), a SPARQL evaluator.
-* [`spargebra`](./lib/spargebra), a SPARQL parser.
-* [`sparesults`](./lib/sparesults), parsers and serializers for SPARQL result formats.
-* [`sparopt`](./lib/sparopt), a SPARQL optimizer.
-* [`oxsdatatypes`](./lib/oxsdatatypes), an implementation of some XML Schema datatypes.
-* [`spargeo`](./lib/spargeo), a partial implementation of [GeoSPARQL](https://docs.ogc.org/is/22-047r1/22-047r1.html).
+
+- [`oxrdf`](./lib/oxrdf), datastructures encoding RDF basic concepts (the [`oxigraph::model`](crate::model) module).
+- [`oxrdfio`](./lib/oxrdfio), a unified parser and serializer API for RDF formats (the [`oxigraph::io`](crate::io) module). It itself relies on:
+  - [`oxttl`](./lib/oxttl), N-Triple, N-Quad, Turtle, TriG and N3 parsing and serialization.
+  - [`oxrdfxml`](./lib/oxrdfxml), RDF/XML parsing and serialization.
+  - [`oxjsonld`](./lib/oxjsonld), JSON-LD RDF serialization/deserialization algorithms.
+- [`spareval`](./lib/spareval), a SPARQL evaluator.
+- [`spargebra`](./lib/spargebra), a SPARQL parser.
+- [`sparesults`](./lib/sparesults), parsers and serializers for SPARQL result formats.
+- [`sparopt`](./lib/sparopt), a SPARQL optimizer.
+- [`oxsdatatypes`](./lib/oxsdatatypes), an implementation of some XML Schema datatypes.
+- [`spargeo`](./lib/spargeo), a partial implementation of [GeoSPARQL](https://docs.ogc.org/is/22-047r1/22-047r1.html).
 
 The library layers in Oxigraph. The elements above depend on the elements below:
 ![Oxigraph libraries architecture diagram](./docs/arch-diagram.svg)
@@ -354,7 +356,6 @@ Feel free to use [GitHub discussions](https://github.com/oxigraph/oxigraph/discu
 [Bug reports](https://github.com/oxigraph/oxigraph/issues) are also very welcome.
 
 If you need advanced support or are willing to pay to get some extra features, feel free to reach out to [Tpt](https://github.com/Tpt/).
-
 
 ## License
 
@@ -375,15 +376,14 @@ When cloning this codebase, clone the submodules using
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Oxigraph by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
-
 ## Sponsors
 
-* [Zazuko](https://zazuko.com/), a knowledge graph consulting company.
-* [RelationLabs](https://relationlabs.ai/) that is building [Relation-Graph](https://github.com/relationlabs/Relation-Graph), a SPARQL database module for the [Substrate blockchain platform](https://substrate.io/) based on Oxigraph.
-* [Field 33](https://field33.com) that was building [an ontology management platform](https://plow.pm/).
-* [Magnus Bakken](https://github.com/magbak) who is building [Data Treehouse](https://www.data-treehouse.com/), a time-series + RDF datalake platform, and [chrontext](https://github.com/magbak/chrontext), a SPARQL query endpoint on top of joint RDF and time series databases.
-* [DeciSym.AI](https://www.decisym.ai/) a cybersecurity consulting company providing RDF-based software.
-* [ACE IoT Solutions](https://aceiotsolutions.com/), a building IOT platform.
-* [Albin Larsson](https://byabbe.se/) who is building [GovDirectory](https://www.govdirectory.org/), a directory of public agencies based on Wikidata.
+- [Zazuko](https://zazuko.com/), a knowledge graph consulting company.
+- [RelationLabs](https://relationlabs.ai/) that is building [Relation-Graph](https://github.com/relationlabs/Relation-Graph), a SPARQL database module for the [Substrate blockchain platform](https://substrate.io/) based on Oxigraph.
+- [Field 33](https://field33.com) that was building [an ontology management platform](https://plow.pm/).
+- [Magnus Bakken](https://github.com/magbak) who is building [Data Treehouse](https://www.data-treehouse.com/), a time-series + RDF datalake platform, and [chrontext](https://github.com/magbak/chrontext), a SPARQL query endpoint on top of joint RDF and time series databases.
+- [DeciSym.AI](https://www.decisym.ai/) a cybersecurity consulting company providing RDF-based software.
+- [ACE IoT Solutions](https://aceiotsolutions.com/), a building IOT platform.
+- [Albin Larsson](https://byabbe.se/) who is building [GovDirectory](https://www.govdirectory.org/), a directory of public agencies based on Wikidata.
 
 And [others](https://github.com/sponsors/Tpt). Many thanks to them!

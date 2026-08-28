@@ -7,7 +7,7 @@
 - Upstream baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Observed fork source before this documentation slice:
-  `70db135d500d95af30e6d9c921432517c77d28de`
+  `f1cb6680454e78fdb256d990bebbf3f736fe1261`
 - Semantic Builder handover reviewed against:
   `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
@@ -35,16 +35,21 @@ runtime-derived service claims are implemented and accepted by their frozen
 seven-stage 4/17/1/1/12 evaluator split. G1.4a is implemented in `2f518e04`:
 its frozen seven-stage verifier accepted exact patch `3a196063...` as candidate
 tree `390bb43a...` for counts 7/9/20/3/2, closing the built-in Store
-  terminal-outcome and durable-lookup boundary before G1.7. G1.4b product
-  commit `590a3229` then closes the evaluator-separated simulated storage-call
-  fault gate: exact red 6/2 became green 8/8 while the 7/7 outcome and 20/20
-  compatibility controls stayed green; receipt `d4a54f90...` and its exact
-  replay both returned `ACCEPT`. That result does not claim crash, power-loss,
-  or fsync durability. G0.1-G0.7 retain their historical task closures, and
-  scoped schema-v5 Agentic receipts are sealed for subject
+terminal-outcome and durable-lookup boundary before G1.7. G1.4b product
+commit `590a3229` then closes the evaluator-separated simulated storage-call
+fault gate: exact red 6/2 became green 8/8 while the 7/7 outcome and 20/20
+compatibility controls stayed green; receipt `d4a54f90...` and its exact
+replay both returned `ACCEPT`. That result does not claim crash, power-loss,
+or fsync durability. G0.1-G0.7 retain their historical task closures, and
+scoped schema-v5 Agentic receipts are sealed for subject
 `5a93890f`; no aggregate receipt follows.
-Full MetaHarness semantic qualification, its independent verification, and
-G1.7 compatibility/performance promotion remain open.
+G1.7 contract v4 is integrated through `f1cb6680`; all exact decisions remain
+proposed/unapproved and `run` exits 4 before identity, evidence, build, or
+sampling. The approved-fixture path also stops at the unimplemented production
+owner. A two-phase human control authorization and sealed negative/A/A receipt
+must precede the final decision set and subject/reference qualification. Full
+MetaHarness semantic qualification, its independent verification, G1.7
+qualification, and separate human promotion remain open.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
@@ -68,22 +73,22 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 
 ## Current truth, completed prerequisites, and blockers
 
-| Surface | Current evidence | Disposition |
-|---|---|---|
-| Backend-neutral write seam | Implemented and verified in `1da47285` | Preserve the minimal GAT traits; add optional capabilities through extension traits |
-| Memory writers | Serialized by the storage transaction lock | Use as the first serial reference behavior |
-| RocksDB writers | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis |
-| Built-in remote egress, owned updates, and service claims | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary; G1.5c's 5/15/21 profile carries the exact request/token through negotiated custom and `Store` admission; G1.6's seven-stage 4/17/1/1/12 profile derives deterministic service claims from effective handlers, egress policy, and compiled transport | Advertise only those proven configured-and-compiled profiles; do not present capability disclosure as remote health or current admission |
-| Jena differential | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for subject `182972ec...` and receipt `7209da6a...` | Scoped task complete and reconciled by G0.7; later protected-source drift reopens it, and promotion remains separate under G1.7 |
-| Jena runner lock | G0.2 restored the reviewed `runner/Cargo.lock` strategy in `46ef17fc`, so the pinned runner executes with `--locked` from a clean checkout | Scoped task complete; retain the lock as protected evidence |
-| Agentic-QE CLI inventory | G0.4-G0.5 in `253a2b34` established the profile; current source binds 144/144 default, 129/129 no-default, and 45/45 `persistence-write` inventories; at tracked-clean subject `5a93890f`, independently reopened schema-v5 runs pass adapter 40/40, persistence 45/45, and G1 66/66 | Scoped authority only; the receipt dirty bit reflects protected untracked runtime paths, the 47-command aggregate profile is unrun, and native commands remain authoritative |
-| Pinned source checkouts | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD |
-| Mutation receipt | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification |
-| MetaHarness | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate |
-| Engineering MetaHarness | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered nine-task registry, and its exact generated 33-command registry are implemented; G1.2-G1.6, including G1.4a-G1.4b, have source-bound accepted candidates | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact |
-| G1.7 qualification control | Outer receipt v1, qualification contract v3, semantic projection v2, and compatibility projection v3; structural verification reports current PASS as `CURRENT_SCHEMA_UNREPLAYED`, while sealed verification replays copied MetaHarness, Agentic-QE, and bounded native owner contracts | Conjunctive Agentic/native replay can report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`; G1.4b phase-fault evidence is accepted but not yet copied into a current outer envelope. The three reference/performance/noise decisions remain unapproved, the benchmark is unrun, current clean-subject owner evidence is absent, and this scaffold is neither benchmark evidence nor promotion |
-| Generic MetaHarness read layer | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code |
-| Dream Machine | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication |
+| Surface                                                   | Current evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Disposition                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend-neutral write seam                                | Implemented and verified in `1da47285`                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Preserve the minimal GAT traits; add optional capabilities through extension traits                                                                                                                                                                                                                                                     |
+| Memory writers                                            | Serialized by the storage transaction lock                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Use as the first serial reference behavior                                                                                                                                                                                                                                                                                              |
+| RocksDB writers                                           | G1.2 freezes the formerly red lost-update/write-skew baseline; G1.4 now proves a per-instance gate acquired before snapshot creation, held through terminal state, and bounded while queued                                                                                                                                                                                                                                                                                                                   | Advertise only the proven serialized-writer profile; evaluate OCC/TransactionDB only if G1.7 measurements justify a separate hypothesis                                                                                                                                                                                                 |
+| Built-in remote egress, owned updates, and service claims | G1.5's frozen 12/8/13 evaluator proves one deny-by-default policy across `SERVICE`, `LOAD`, and nested document retrieval; G1.5b's 6/6/12 profile proves typed cancellation across built-in admission, local mutation, and the owned pre-commit boundary; G1.5c's 5/15/21 profile carries the exact request/token through negotiated custom and `Store` admission; G1.6's seven-stage 4/17/1/1/12 profile derives deterministic service claims from effective handlers, egress policy, and compiled transport | Advertise only those proven configured-and-compiled profiles; do not present capability disclosure as remote health or current admission                                                                                                                                                                                                |
+| Jena differential                                         | G0.3 refreshed the reviewed protected profile in `22a8033e`; two complete 76-scenario/198-assertion runs produced byte-identical artifacts for subject `182972ec...` and receipt `7209da6a...`                                                                                                                                                                                                                                                                                                                | Scoped task complete and reconciled by G0.7; later protected-source drift reopens it, and promotion remains separate under G1.7                                                                                                                                                                                                         |
+| Jena runner lock                                          | G0.2 restored the reviewed `runner/Cargo.lock` strategy in `46ef17fc`, so the pinned runner executes with `--locked` from a clean checkout                                                                                                                                                                                                                                                                                                                                                                    | Scoped task complete; retain the lock as protected evidence                                                                                                                                                                                                                                                                             |
+| Agentic-QE CLI inventory                                  | G0.4-G0.5 in `253a2b34` established the profile; current source binds 144/144 default, 129/129 no-default, and 45/45 `persistence-write` inventories; at tracked-clean subject `5a93890f`, independently reopened schema-v5 runs pass adapter 40/40, persistence 45/45, and G1 66/66                                                                                                                                                                                                                          | Scoped authority only; the receipt dirty bit reflects protected untracked runtime paths, the 47-command aggregate profile is unrun, and native commands remain authoritative                                                                                                                                                            |
+| Pinned source checkouts                                   | G0.1 initialized and verified the RDF Canon, JSON-LD API, JSON-LD Streaming, and N3 registered revisions                                                                                                                                                                                                                                                                                                                                                                                                      | Scoped task complete; every fresh verifier must still initialize those exact registrations rather than substitute parent HEAD                                                                                                                                                                                                           |
+| Mutation receipt                                          | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts                                                                                                                                                                                                                                                                                                       | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification                                                                                                                                                                                                                                         |
+| MetaHarness                                               | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims                                                                                                                                                                                                                                                                                                                                                                                                                         | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate                                                                                                                                                                    |
+| Engineering MetaHarness                                   | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered nine-task registry, and its exact generated 33-command registry are implemented; G1.2-G1.6, including G1.4a-G1.4b, have source-bound accepted candidates                                                                                                                                                                                                  | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact                                                                                                            |
+| G1.7 qualification control                                | Outer receipt v1 and exact contract v4 `dd97f4a2...`; decision set `9a76ace5...` is wholly proposed/unapproved. Pure fixtures cover strict current-v4 and legacy v1/v3 replay-only behavior                                                                                                                                                                                                                                                                                                                   | `run` exits 4 before work; an approved fixture stops at `G17_EXECUTION_OWNER_UNIMPLEMENTED`. G1.4b is unbound, no current owner receipt or benchmark exists, and the circular approval flow must be replaced by control authorization → sealed negative/A/A receipt → final decision binding → qualification → separate human promotion |
+| Generic MetaHarness read layer                            | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean                                                                                                                                                                                                                                                                                                                                                                                                                               | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code                                                                                                                                                                                                                          |
+| Dream Machine                                             | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed                                                                                                                                                                                                                                                                                                                                                                                                                      | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication                                                                                                                                                                                           |
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture). No OVA-named component was found in Dream
@@ -111,16 +116,16 @@ outside the programme until a further named decision admits them.
 
 ## Repository fit
 
-| Tool or practice | Use now | Activation boundary |
-|---|---|---|
-| Ruflo hierarchical-mesh swarm | Three independent research/review lanes, persistent task dependencies, anti-drift state | Task completion is not semantic evidence |
-| Ruflo goals and memory | GOAP state, exact research findings, replayable decisions | Repository facts stay repository-local; active-WAL retrieval failures do not block delivery |
-| Brain | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims | Local source/tests remain authoritative for Oxigraph |
-| MetaHarness genome/score/OIA | Readiness and risk diagnostics | Generic identity and scores are advisory |
-| Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles | Synthetic mode never upgrades to semantic proof; do not make it a worker host |
-| `tools/engineering-harness` | Native-worker routing, isolated builds/repairs, focused evaluation, candidate artifacts, and canonical task/command registration | Implemented for G1.2-G1.6: generic APIs are task-ID-only and CLI slugs resolve through the same registry; accepted product candidates are current through G1.6; still no semantic or promotion authority |
-| Darwin | Deterministic, bounded policy mutation after a product slice exists | `--confirm` requires operator review; never mutate product or oracle inputs |
-| Dream Machine | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled |
+| Tool or practice                     | Use now                                                                                                                          | Activation boundary                                                                                                                                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ruflo hierarchical-mesh swarm        | Three independent research/review lanes, persistent task dependencies, anti-drift state                                          | Task completion is not semantic evidence                                                                                                                                                                 |
+| Ruflo goals and memory               | GOAP state, exact research findings, replayable decisions                                                                        | Repository facts stay repository-local; active-WAL retrieval failures do not block delivery                                                                                                              |
+| Brain                                | Source-ground Darwin, Ruflo, OIA, and Dream Machine claims                                                                       | Local source/tests remain authoritative for Oxigraph                                                                                                                                                     |
+| MetaHarness genome/score/OIA         | Readiness and risk diagnostics                                                                                                   | Generic identity and scores are advisory                                                                                                                                                                 |
+| Existing `tools/metaharness` adapter | Policy-only qualification against immutable local oracles                                                                        | Synthetic mode never upgrades to semantic proof; do not make it a worker host                                                                                                                            |
+| `tools/engineering-harness`          | Native-worker routing, isolated builds/repairs, focused evaluation, candidate artifacts, and canonical task/command registration | Implemented for G1.2-G1.6: generic APIs are task-ID-only and CLI slugs resolve through the same registry; accepted product candidates are current through G1.6; still no semantic or promotion authority |
+| Darwin                               | Deterministic, bounded policy mutation after a product slice exists                                                              | `--confirm` requires operator review; never mutate product or oracle inputs                                                                                                                              |
+| Dream Machine                        | Version/help, stdout-only config inspection, deterministic compile in temporary storage, ledger validation vocabulary            | ADR-0017 prerequisites 1-7 must be current and gate 8 must authorize the exact run before a runner/config is committed or scheduled                                                                      |
 
 Dream Machine's published CLI makes no provider call and needs no model key;
 `/schedule` only emits workflow JSON and defaults to a Claude model. It is the
@@ -134,18 +139,18 @@ compiler/config support.
 
 ## DDD bounded contexts
 
-| Context | Owns | Must not own |
-|---|---|---|
-| Dataset query | `QueryableDataset`, snapshots, algebra reads | Mutation, commit, or operational policy |
-| Transactional mutation | `TransactionalDataset`, `WritableDataset`, graph topology, transaction states | Bulk-loader batching, backup, or secondary-index implementation |
-| Bulk ingest | Large files, batching, per-file/cross-file atomicity | Interactive transaction guarantees it cannot meet |
-| Commit governance | Capability negotiation, writer gate/conflicts, change-set orchestration, receipt, outbox | Validation policy/semantics, query planning, or index-specific types |
-| Egress and cancellation | `SERVICE`, `LOAD`, JSON-LD fetch policy, deadlines, byte budgets, typed failures | Commit replay or authorization decisions |
-| Semantic validation | Validation policy and a pinned SHACL profile over the staged view | Network access, writer-gate ownership, or independent commit |
-| Derived state | Statistics, text, and spatial providers, cursors, rebuilds | Primary truth; every optimization retains an exact fallback |
-| Federation | Endpoint catalog, source selection, bound joins, per-endpoint budgets | Egress-policy bypass or remote correctness assumptions |
-| Operations | Metrics, readiness, backup, restore, compaction, recovery receipts | RDF/query/user payloads in default telemetry |
-| Evidence and evolution | Frozen evaluators, receipts, policy variants, human promotion | Product semantics or autonomous publication |
+| Context                 | Owns                                                                                     | Must not own                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Dataset query           | `QueryableDataset`, snapshots, algebra reads                                             | Mutation, commit, or operational policy                              |
+| Transactional mutation  | `TransactionalDataset`, `WritableDataset`, graph topology, transaction states            | Bulk-loader batching, backup, or secondary-index implementation      |
+| Bulk ingest             | Large files, batching, per-file/cross-file atomicity                                     | Interactive transaction guarantees it cannot meet                    |
+| Commit governance       | Capability negotiation, writer gate/conflicts, change-set orchestration, receipt, outbox | Validation policy/semantics, query planning, or index-specific types |
+| Egress and cancellation | `SERVICE`, `LOAD`, JSON-LD fetch policy, deadlines, byte budgets, typed failures         | Commit replay or authorization decisions                             |
+| Semantic validation     | Validation policy and a pinned SHACL profile over the staged view                        | Network access, writer-gate ownership, or independent commit         |
+| Derived state           | Statistics, text, and spatial providers, cursors, rebuilds                               | Primary truth; every optimization retains an exact fallback          |
+| Federation              | Endpoint catalog, source selection, bound joins, per-endpoint budgets                    | Egress-policy bypass or remote correctness assumptions               |
+| Operations              | Metrics, readiness, backup, restore, compaction, recovery receipts                       | RDF/query/user payloads in default telemetry                         |
+| Evidence and evolution  | Frozen evaluators, receipts, policy variants, human promotion                            | Product semantics or autonomous publication                          |
 
 Evidence repair and concurrency truth start in parallel. Evidence repair blocks
 promotion and full qualification, not local state-model or concurrency-test
@@ -233,63 +238,63 @@ operation that has not proven idempotency.
 ADRs record architecture; the stable G-identifiers record executable work.
 Proposed ADRs do not become implemented merely because their task rows exist.
 
-| Plan work | Owning decision | Decision status |
-|---|---|---|
-| G0.1 source registration | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Implemented programme control |
-| G0.2-G0.3 Jena evidence | [ADR-0012](../adr/0012-immutable-broad-jena-harness.md) | Accepted |
-| G0.4-G0.5 Agentic-QE evidence | [ADR-0005](../adr/0005-agentic-qe-integration.md) | Accepted |
-| G0.6 mutation evidence | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md) | Accepted |
-| G0.7 evidence freeze/promotion | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md) | Accepted qualification policy; implemented engineering control |
-| G1.1-G1.4b transaction truth | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) | Product slices complete through G1.4b; ADR remains Proposed until G1.7 |
-| G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented |
-| G1.7 promotion | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Implemented control and egress decision; ADR-0018 remains Proposed and promotion remains open |
-| G2.1-G2.3c metadata/receipts/outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed |
-| G2.4a-G2.4b transaction-time SHACL | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md) | Proposed |
-| G2.5-G2.7 readiness/recovery | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md) | Proposed |
-| G3.1-G3.2 statistics/planning | [ADR-0023](../adr/0023-statistics-and-bounded-join-planning.md) | Proposed |
-| G3.0 shared lifecycle plus G3.3-G3.4 derived-index providers | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md), [ADR-0024](../adr/0024-rebuildable-derived-indexes.md) | Proposed |
-| G3.5 explicit federation | [ADR-0025](../adr/0025-explicit-service-federation.md) | Proposed |
-| G4.1 service identity/authorization | [ADR-0026](../adr/0026-service-identity-and-authorization.md) | Proposed |
-| G4.2 workload/resource governance | [ADR-0027](../adr/0027-workload-admission-and-operator-resources.md) | Proposed |
-| G4.3 storage schema upgrades | [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md) | Proposed |
-| G4.4 RDF4J REST interoperability | [ADR-0029](../adr/0029-rdf4j-rest-interoperability.md) | Proposed |
-| G4.5 leased remote HTTP transactions | [ADR-0030](../adr/0030-leased-remote-http-transactions.md) | Proposed |
-| G4.6 multi-repository lifecycle | [ADR-0031](../adr/0031-multi-repository-lifecycle.md) | Proposed |
-| G4.7 incremental entailment | [ADR-0032](../adr/0032-incremental-entailment-projections.md) | Proposed |
-| G4.8 analytical/WCOJ research | [ADR-0033](../adr/0033-analytical-wcoj-execution.md) | Proposed |
+| Plan work                                                    | Owning decision                                                                                                                                                                                                                 | Decision status                                                                                                                                            |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G0.1 source registration                                     | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md)                                                                                                                                                  | Implemented programme control                                                                                                                              |
+| G0.2-G0.3 Jena evidence                                      | [ADR-0012](../adr/0012-immutable-broad-jena-harness.md)                                                                                                                                                                         | Accepted                                                                                                                                                   |
+| G0.4-G0.5 Agentic-QE evidence                                | [ADR-0005](../adr/0005-agentic-qe-integration.md)                                                                                                                                                                               | Accepted                                                                                                                                                   |
+| G0.6 mutation evidence                                       | [ADR-0013](../adr/0013-mutation-competence-and-provenance.md)                                                                                                                                                                   | Accepted                                                                                                                                                   |
+| G0.7 evidence freeze/promotion                               | [ADR-0004](../adr/0004-metaharness-darwin-qualification.md), [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md)                                                                                     | Accepted qualification policy; implemented engineering control                                                                                             |
+| G1.1-G1.4b transaction truth                                 | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Product slices complete through G1.4b; ADR remains Proposed until G1.7                                                                                     |
+| G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                |
+| G1.7 qualification and promotion                             | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Fail-closed v4 protocol gate implemented; production owner, two-phase approvals, qualification, and human promotion remain open; ADR-0018 remains Proposed |
+| G2.1-G2.3c metadata/receipts/outbox                          | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | Proposed                                                                                                                                                   |
+| G2.4a-G2.4b transaction-time SHACL                           | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                   |
+| G2.5-G2.7 readiness/recovery                                 | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                   |
+| G3.1-G3.2 statistics/planning                                | [ADR-0023](../adr/0023-statistics-and-bounded-join-planning.md)                                                                                                                                                                 | Proposed                                                                                                                                                   |
+| G3.0 shared lifecycle plus G3.3-G3.4 derived-index providers | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md), [ADR-0024](../adr/0024-rebuildable-derived-indexes.md)                                                                                                    | Proposed                                                                                                                                                   |
+| G3.5 explicit federation                                     | [ADR-0025](../adr/0025-explicit-service-federation.md)                                                                                                                                                                          | Proposed                                                                                                                                                   |
+| G4.1 service identity/authorization                          | [ADR-0026](../adr/0026-service-identity-and-authorization.md)                                                                                                                                                                   | Proposed                                                                                                                                                   |
+| G4.2 workload/resource governance                            | [ADR-0027](../adr/0027-workload-admission-and-operator-resources.md)                                                                                                                                                            | Proposed                                                                                                                                                   |
+| G4.3 storage schema upgrades                                 | [ADR-0028](../adr/0028-safe-storage-schema-upgrades.md)                                                                                                                                                                         | Proposed                                                                                                                                                   |
+| G4.4 RDF4J REST interoperability                             | [ADR-0029](../adr/0029-rdf4j-rest-interoperability.md)                                                                                                                                                                          | Proposed                                                                                                                                                   |
+| G4.5 leased remote HTTP transactions                         | [ADR-0030](../adr/0030-leased-remote-http-transactions.md)                                                                                                                                                                      | Proposed                                                                                                                                                   |
+| G4.6 multi-repository lifecycle                              | [ADR-0031](../adr/0031-multi-repository-lifecycle.md)                                                                                                                                                                           | Proposed                                                                                                                                                   |
+| G4.7 incremental entailment                                  | [ADR-0032](../adr/0032-incremental-entailment-projections.md)                                                                                                                                                                   | Proposed                                                                                                                                                   |
+| G4.8 analytical/WCOJ research                                | [ADR-0033](../adr/0033-analytical-wcoj-execution.md)                                                                                                                                                                            | Proposed                                                                                                                                                   |
 
 ### G0 — repair and freeze evidence
 
 Run three independent lanes, then integrate sequentially:
 
-| Task | State | Owner lane | Depends on | Exit gate |
-|---|---|---|---|---|
-| G0.1 Initialize registered source submodules | Complete | Evidence | none | Source verifier saw exact registered checkout heads rather than the parent repository |
-| G0.2 Restore Jena runner lock reproducibility | Complete (`46ef17fc`) | Evidence | none | Clean checkout executes the pinned `--locked` runner |
-| G0.3 Review current Jena subject and refresh profile lock | Complete (`22a8033e`) | Evidence | G0.2 | Lock diff reviewed; two complete byte-identical 76/198 runs |
-| G0.4 Reconcile Agentic-QE exact CLI counts/IDs | Complete (`253a2b34`) | Evidence | none | 144 default and 129 no-default inventories deliberately accepted |
-| G0.5 Add `persistence-write` evidence profile | Complete (`253a2b34`; inventory refreshed in the current tranche) | Conformance | none | 45 exact executed IDs cover transactional dataset, update atomicity, topology, service claims, and failure injection; the separately owned ignored compatibility canary remains in G1.6 |
-| G0.6 Verify and regenerate OxDatalog mutation receipt | Complete (run `731e6467-2cab-4260-8d15-b34e4ebc8ed6`) | Evidence | none | Mutation tests pass; registry-latest `cargo-mutants` 27.1.0 was acquired without a top-level version constraint; 358 = 278 caught + 80 unviable with zero missed/timeouts; immutable and latest receipt bytes both have SHA-256 `fc0ec6db...` and reopen against input `9898ef56...` |
-| G0.7 Reconcile and freeze protected evidence documents | Complete (2026-08-26 checkpoint) | ADR/claims | G0.1-G0.6 | Ledger, root README, ADRs, plans, research, and the visual report distinguish historical, current-scoped, aggregate-qualified, and promoted evidence; README is now a protected MetaHarness input |
+| Task                                                      | State                                                             | Owner lane  | Depends on | Exit gate                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------- | ----------------------------------------------------------------- | ----------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G0.1 Initialize registered source submodules              | Complete                                                          | Evidence    | none       | Source verifier saw exact registered checkout heads rather than the parent repository                                                                                                                                                                                                |
+| G0.2 Restore Jena runner lock reproducibility             | Complete (`46ef17fc`)                                             | Evidence    | none       | Clean checkout executes the pinned `--locked` runner                                                                                                                                                                                                                                 |
+| G0.3 Review current Jena subject and refresh profile lock | Complete (`22a8033e`)                                             | Evidence    | G0.2       | Lock diff reviewed; two complete byte-identical 76/198 runs                                                                                                                                                                                                                          |
+| G0.4 Reconcile Agentic-QE exact CLI counts/IDs            | Complete (`253a2b34`)                                             | Evidence    | none       | 144 default and 129 no-default inventories deliberately accepted                                                                                                                                                                                                                     |
+| G0.5 Add `persistence-write` evidence profile             | Complete (`253a2b34`; inventory refreshed in the current tranche) | Conformance | none       | 45 exact executed IDs cover transactional dataset, update atomicity, topology, service claims, and failure injection; the separately owned ignored compatibility canary remains in G1.6                                                                                              |
+| G0.6 Verify and regenerate OxDatalog mutation receipt     | Complete (run `731e6467-2cab-4260-8d15-b34e4ebc8ed6`)             | Evidence    | none       | Mutation tests pass; registry-latest `cargo-mutants` 27.1.0 was acquired without a top-level version constraint; 358 = 278 caught + 80 unviable with zero missed/timeouts; immutable and latest receipt bytes both have SHA-256 `fc0ec6db...` and reopen against input `9898ef56...` |
+| G0.7 Reconcile and freeze protected evidence documents    | Complete (2026-08-26 checkpoint)                                  | ADR/claims  | G0.1-G0.6  | Ledger, root README, ADRs, plans, research, and the visual report distinguish historical, current-scoped, aggregate-qualified, and promoted evidence; README is now a protected MetaHarness input                                                                                    |
 
 No lock, expected count, manifest, threshold, or receipt is refreshed
 automatically by Dream Machine or Darwin.
 
 ### G1 — make P0 transaction claims true
 
-| Task | Depends on | Size | Exit gate |
-|---|---|---:|---|
-| G1.1 State-machine reference model | none; run beside G0 | L | At least 10,000 shrinking traces/backend in CI; every failure has a seed |
-| G1.2 Concurrent history oracle | G1.1 | M | Lost-update/write-skew schedules expose current behavior; zero silent anomalies across the frozen stress budget |
-| G1.3 Typed request/capability/error extensions | G1.1-G1.2 | L | Effective guarantee returned; unmet minimum rejected; conflict and indeterminate outcomes typed |
-| G1.4 RocksDB writer serialization | G1.2-G1.3 | M | Bounded/cancellable gate acquired before snapshot and held through commit/rollback/drop; advertised guarantee passes the 1/4/16-writer oracle while readers remain concurrent |
-| G1.4a Built-in Store terminal outcomes and lookup | G1.4 | L | One `CommitAttempted` transition; typed terminal outcomes; transaction-key reservation and committed/proven-absent/indeterminate lookup; RocksDB reopen resolves lost acknowledgements without replay; legacy minimal traits remain source-compatible |
-| G1.4b Outcome phase-fault safety | G1.4a | S | Evaluator-separated pre/post storage-call faults cannot produce a false rollback proof after commit attempt; malformed records are corruption; durable Staging/CommitAttempted remain indeterminate; crash/power-loss/fsync stay explicit non-claims |
-| G1.5 Unified remote egress | G1.3 | L | Loopback SSRF/redirect/size/timeout fixtures and remote update rollback pass |
-| G1.5b Owned-update cancellation | G1.5 | M | Built-in admission, validation, mutation loops, and the final pre-commit checkpoint return typed cancellation and roll back owned state |
-| G1.5c Negotiated backend admission | G1.5b | M | An additive negotiated binding carries the exact token and request through custom and Store admission without breaking the minimal write trait |
-| G1.6 Runtime-derived service claims | G1.3, G1.5, G1.5b, G1.5c | M | Complete: seven ordered verifier stages accepted exact public/service/compatibility/independent/regression counts 4/17/1/1/12, and three product controls rejected |
-| G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6, G1.4a-G1.4b | M | G1.4b receipt copied/replayed; existing semantics and current evidence green; exact immutable reference plus genuinely pre-approved reference/performance/noise decision bytes; sealed paired benchmark meets the approved write/read limits; human promotion remains separate |
+| Task                                              | Depends on                        | Size | Exit gate                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------- | --------------------------------- | ---: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1.1 State-machine reference model                | none; run beside G0               |    L | At least 10,000 shrinking traces/backend in CI; every failure has a seed                                                                                                                                                                                                                |
+| G1.2 Concurrent history oracle                    | G1.1                              |    M | Lost-update/write-skew schedules expose current behavior; zero silent anomalies across the frozen stress budget                                                                                                                                                                         |
+| G1.3 Typed request/capability/error extensions    | G1.1-G1.2                         |    L | Effective guarantee returned; unmet minimum rejected; conflict and indeterminate outcomes typed                                                                                                                                                                                         |
+| G1.4 RocksDB writer serialization                 | G1.2-G1.3                         |    M | Bounded/cancellable gate acquired before snapshot and held through commit/rollback/drop; advertised guarantee passes the 1/4/16-writer oracle while readers remain concurrent                                                                                                           |
+| G1.4a Built-in Store terminal outcomes and lookup | G1.4                              |    L | One `CommitAttempted` transition; typed terminal outcomes; transaction-key reservation and committed/proven-absent/indeterminate lookup; RocksDB reopen resolves lost acknowledgements without replay; legacy minimal traits remain source-compatible                                   |
+| G1.4b Outcome phase-fault safety                  | G1.4a                             |    S | Evaluator-separated pre/post storage-call faults cannot produce a false rollback proof after commit attempt; malformed records are corruption; durable Staging/CommitAttempted remain indeterminate; crash/power-loss/fsync stay explicit non-claims                                    |
+| G1.5 Unified remote egress                        | G1.3                              |    L | Loopback SSRF/redirect/size/timeout fixtures and remote update rollback pass                                                                                                                                                                                                            |
+| G1.5b Owned-update cancellation                   | G1.5                              |    M | Built-in admission, validation, mutation loops, and the final pre-commit checkpoint return typed cancellation and roll back owned state                                                                                                                                                 |
+| G1.5c Negotiated backend admission                | G1.5b                             |    M | An additive negotiated binding carries the exact token and request through custom and Store admission without breaking the minimal write trait                                                                                                                                          |
+| G1.6 Runtime-derived service claims               | G1.3, G1.5, G1.5b, G1.5c          |    M | Complete: seven ordered verifier stages accepted exact public/service/compatibility/independent/regression counts 4/17/1/1/12, and three product controls rejected                                                                                                                      |
+| G1.7 Compatibility/performance and promotion gate | G0.1-G0.7, G1.1-G1.6, G1.4a-G1.4b |    M | Exact G1.4b receipt copied/replayed; human-authorized negative/A/A controls sealed and replayed; one final decision set binds that receipt before subject sampling; current semantic/compatibility owners and paired benchmark replay clean; `ACCEPT` awaits a separate human promotion |
 
 `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` are harness-maintenance
 controls, not new product G tasks. The registry control follows G1.6 and is
@@ -361,11 +366,14 @@ Execution record through 2026-08-28:
   and exact replay both returned `ACCEPT`. Direct post-application evidence is
   8/8 fault, 7/7 outcome, and 20/20 compatibility tests. Task
   `task-1787869201628-bwe6b0` is complete. Corrected G1.7 task
-  `task-1787871483413-ki34q2` is in progress; it must bind this receipt, obtain
-  genuine pre-result approval for the exact reference/performance/noise bytes,
-  regenerate current owner evidence, run and replay the paired benchmark, and
-  preserve a separate human decision. The G1.4b result covers injected
-  storage-call branches, not crash, power-loss, or fsync durability.
+  `task-1787871483413-ki34q2` is in progress at 35%. Contract v4 gating and
+  repaired legacy replay are integrated, but the current direct-approval flow
+  is circular. It must bind this receipt, implement and obtain human approval
+  for a permanently non-promoting control authorization, seal/replay negative
+  and A/A controls, bind that control receipt into the final human decision
+  set, regenerate current owner evidence, run and replay the paired benchmark,
+  and preserve a separate human promotion decision. The G1.4b result covers
+  injected storage-call branches, not crash, power-loss, or fsync durability.
 - G1.5's unified-egress profile is implemented in product commits `e452bad1`
   and `3f4cdfd7`. Frozen contract
   `e77e11a02e55e995583f0bab118878a42c490b562e0826c6b1611db096c6dfec`
@@ -457,6 +465,7 @@ Execution record through 2026-08-28:
   `promotionAuthority: false`; they are not application receipts and grant no
   semantic-qualification or promotion authority. ADR-0019 is Implemented;
   ADR-0018 and G1.7 remain open.
+
 - `HARNESS-REGISTRY` is complete in commit
   `4a15caa07df37d884e7c74d4b69c0505ce3de6e1`. The registry derives canonical
   `tasks/g1/<slug>/contract.json` paths for exactly G1.2, G1.3, G1.4, G1.5,
@@ -502,24 +511,26 @@ Execution record through 2026-08-28:
   reopened schema-v5 adapter, persistence, and G1 receipts now cover 40, 45,
   and 66 tests for that tracked-clean subject. Their broad dirty flag is caused
   only by protected untracked Ruflo/runtime paths; no aggregate receipt follows.
-- The dedicated G1.7 qualification-control candidate now separates structural
-  receipt verification from sealed owner-contract replay. Qualification
-  contract v3 freezes exact native IDs and output ceilings; semantic projection
-  v2 and compatibility projection v3 are current, while explicit compatibility
-  v2 and unversioned `PASS` remain `LEGACY_REPLAY_ONLY`. Compatibility assurance
-  requires both the copied Agentic-QE owner contract and a bounded native owner
-  artifact whose exact Cargo output is reparsed without Cargo re-execution.
-  That conjunction can report `COMPATIBILITY_OWNER_CONTRACT_REPLAYED`, but
-  reference selection is `UNSELECTED`, budget/noise decisions are `ABSENT`, the
-  benchmark is `NOT_RUN`, and current clean-subject owner evidence is absent,
-  so G1.7 remains `INCONCLUSIVE`. A real preflight at `5a93890f` confirms the
-  six reasons `reference-unselected`, `performance-budget-absent`,
-  `noise-budget-absent`, `semantic-missing`, `compatibility-missing`, and
-  `benchmark-not-run`. Historical committed control subject
-  `d03f70d3d4efa9643b5df06f1be99ab5f0fd9ab8` passed 298/298 serialized
-  JavaScript contract/control tests under Node 24.14.1 on Linux
-  6.8.0-137-generic x86_64. This proves the candidate control slice only; it is
-  not semantic qualification, benchmark evidence, or promotion.
+- The dedicated G1.7 qualification control is now exact contract v4
+  `dd97f4a2...`, decision set `9a76ace5...`. Reference, performance, and noise
+  are all `PROPOSED`/`UNAPPROVED`. A current `g1.7:run` exits 4 with
+  `reference-proposed`, `performance-budget-proposed`,
+  `noise-budget-proposed`, `semantic-not-run`, `compatibility-not-run`, and
+  `benchmark-not-run`, before identity, evidence, build, runtime-directory
+  creation, or samples. An approved fixture reaches
+  `G17_EXECUTION_OWNER_UNIMPLEMENTED`; the verifier rejects executed current-v4
+  evidence until raw owner replay exists. Legacy v1/v3 receipts are structural
+  replay-only, and their current Darwin package dependency remains an open
+  hardening item. The full package suite contains 366 tests: 364 pass, none
+  fail, and two intentional host-gated cases are skipped. This is fail-closed
+  control evidence, not semantic qualification, benchmark evidence, a
+  performance result, or promotion.
+- The v4 approval lifecycle must be split. Human Phase A authorizes only
+  permanently non-promoting negative and independently built A/A controls and
+  seals their raw owner receipt. Human Phase B binds that receipt and observed
+  signature into one final reference/performance/noise decision before any
+  subject/reference sample. `ACCEPT` remains
+  `QUALIFIED_AWAITING_HUMAN_PROMOTION`; no automated promotion command exists.
 
 Use writer serialization first. Evaluate RocksDB `TransactionDB` or optimistic
 conflicts only as a later frozen hypothesis if serialization creates a measured
@@ -533,19 +544,19 @@ not registered with the engineering harness until its product baseline is
 genuinely red under a separate evaluator-only commit; G1.2 is the first such
 task.
 
-| Task | Evaluator path | Public command | Independent command | Impacted-regression command |
-|---|---|---|---|---|
-| G1.1 | `lib/oxigraph/tests/transaction_state_model.rs` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` | `cargo test --locked -p oxigraph --test update_atomicity` |
-| G1.2 | `lib/oxigraph/tests/transaction_concurrency.rs` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test update_atomicity` |
-| G1.3 | `lib/oxigraph/tests/transaction_capabilities.rs` | `cargo test --locked -p oxigraph --test transaction_capabilities` | `cargo test --locked -p oxigraph --test transaction_state_model` | `cargo test --locked -p oxigraph --test transactional_dataset` |
-| G1.4 | `lib/oxigraph/tests/rocksdb_writer_serialization.rs` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
-| G1.4a | `lib/oxigraph/tests/transaction_outcomes.rs` | `cargo test --locked -p oxigraph --test transaction_outcomes` | `cargo test --locked -p oxigraph --test transaction_compatibility` | `cargo test --locked -p oxigraph --test update_atomicity` |
-| G1.4b | `lib/oxigraph/src/store/transaction_outcome_faults.rs` | `cargo test --locked -p oxigraph --lib store::transaction_outcome_faults::` | `cargo test --locked -p oxigraph --test transaction_outcomes` | `cargo test --locked -p oxigraph --test transaction_compatibility` |
-| G1.5 | `lib/oxigraph/tests/sparql_egress_policy.rs` | `cargo test --locked -p oxigraph --test sparql_egress_policy` | `cargo test --locked -p oxigraph --test sparql_update_load_http` | `cargo test --locked -p oxigraph --test sparql_service_http` |
-| G1.5b | `lib/oxigraph/tests/sparql_update_cancellation.rs` | `cargo test --locked -p oxigraph --test sparql_update_cancellation` | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` |
-| G1.5c | `lib/oxigraph/tests/sparql_negotiated_update.rs` | `cargo test --locked -p oxigraph --test sparql_negotiated_update` | `cargo test --locked -p oxigraph --test transaction_capabilities --test rocksdb_writer_serialization` | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_update_cancellation --test sparql_egress_policy --test transactional_dataset` |
-| G1.6 | `lib/oxigraph/tests/sparql_effective_capabilities.rs` plus protected `cli/src/service_description/tests.rs` | `cargo test --locked -p oxigraph --features http-client-native-tls,rdf-12 --test sparql_effective_capabilities` (`public=4`) | Separate bounded feature-active CLI service, dependency-qualified compatibility-canary, and RDF 1.2 version stages (`service=17`, `compatibility=1`, `independent=1`) | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` (`regression=12`) |
-| G1.7 | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest | `cargo bench --locked -p oxigraph --bench transactional_write` | `cargo test --locked -p oxigraph --test transaction_concurrency` | `cargo test --locked -p oxigraph --test update_atomicity` |
+| Task  | Evaluator path                                                                                              | Public command                                                                                                                 | Independent command                                                                                                                                                   | Impacted-regression command                                                                                                                                |
+| ----- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1.1  | `lib/oxigraph/tests/transaction_state_model.rs`                                                             | `cargo test --locked -p oxigraph --test transaction_state_model`                                                               | `cargo test --locked -p oxigraph --test transactional_dataset`                                                                                                        | `cargo test --locked -p oxigraph --test update_atomicity`                                                                                                  |
+| G1.2  | `lib/oxigraph/tests/transaction_concurrency.rs`                                                             | `cargo test --locked -p oxigraph --test transaction_concurrency`                                                               | `cargo test --locked -p oxigraph --test transaction_state_model`                                                                                                      | `cargo test --locked -p oxigraph --test update_atomicity`                                                                                                  |
+| G1.3  | `lib/oxigraph/tests/transaction_capabilities.rs`                                                            | `cargo test --locked -p oxigraph --test transaction_capabilities`                                                              | `cargo test --locked -p oxigraph --test transaction_state_model`                                                                                                      | `cargo test --locked -p oxigraph --test transactional_dataset`                                                                                             |
+| G1.4  | `lib/oxigraph/tests/rocksdb_writer_serialization.rs`                                                        | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization`                                                          | `cargo test --locked -p oxigraph --test transaction_concurrency`                                                                                                      | `cargo test --locked -p oxigraph --test update_atomicity`                                                                                                  |
+| G1.4a | `lib/oxigraph/tests/transaction_outcomes.rs`                                                                | `cargo test --locked -p oxigraph --test transaction_outcomes`                                                                  | `cargo test --locked -p oxigraph --test transaction_compatibility`                                                                                                    | `cargo test --locked -p oxigraph --test update_atomicity`                                                                                                  |
+| G1.4b | `lib/oxigraph/src/store/transaction_outcome_faults.rs`                                                      | `cargo test --locked -p oxigraph --lib store::transaction_outcome_faults::`                                                    | `cargo test --locked -p oxigraph --test transaction_outcomes`                                                                                                         | `cargo test --locked -p oxigraph --test transaction_compatibility`                                                                                         |
+| G1.5  | `lib/oxigraph/tests/sparql_egress_policy.rs`                                                                | `cargo test --locked -p oxigraph --test sparql_egress_policy`                                                                  | `cargo test --locked -p oxigraph --test sparql_update_load_http`                                                                                                      | `cargo test --locked -p oxigraph --test sparql_service_http`                                                                                               |
+| G1.5b | `lib/oxigraph/tests/sparql_update_cancellation.rs`                                                          | `cargo test --locked -p oxigraph --test sparql_update_cancellation`                                                            | `cargo test --locked -p oxigraph --test rocksdb_writer_serialization`                                                                                                 | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy`                                                                |
+| G1.5c | `lib/oxigraph/tests/sparql_negotiated_update.rs`                                                            | `cargo test --locked -p oxigraph --test sparql_negotiated_update`                                                              | `cargo test --locked -p oxigraph --test transaction_capabilities --test rocksdb_writer_serialization`                                                                 | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_update_cancellation --test sparql_egress_policy --test transactional_dataset` |
+| G1.6  | `lib/oxigraph/tests/sparql_effective_capabilities.rs` plus protected `cli/src/service_description/tests.rs` | `cargo test --locked -p oxigraph --features http-client-native-tls,rdf-12 --test sparql_effective_capabilities` (`public=4`)   | Separate bounded feature-active CLI service, dependency-qualified compatibility-canary, and RDF 1.2 version stages (`service=17`, `compatibility=1`, `independent=1`) | `cargo test --locked -p oxigraph --features http-client,rdf-12 --test sparql_egress_policy` (`regression=12`)                                              |
+| G1.7  | `lib/oxigraph/benches/transactional_write.rs` plus the G1 regression manifest                               | Frozen target: `cargo bench --locked -p oxigraph --bench transactional_write`; the attested execution owner is not implemented | Frozen qualification control                                                                                                                                          | Frozen qualification regression control                                                                                                                    |
 
 Engineering task contracts live below
 `tools/engineering-harness/tasks/g1/<slug>/contract.json` and bind the
@@ -600,18 +611,18 @@ synthetic Darwin runs are prerequisites or diagnostics, not completion.
 
 ### G2 — govern durable commits
 
-| Task | Depends on | Size | Exit gate |
-|---|---|---:|---|
-| G2.1 Transactional namespace registry | G1.3-G1.4; evaluator freeze after `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` | M | Namespace changes commit/rollback with data without affecting dataset equality |
-| G2.2 Normalized semantic change set | G1.1, G2.1 | L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously |
-| G2.3a Durable outcomes and atomic receipts | G1.3-G1.4, G2.2 | L | Durable key reservation, commit ID, primary state, and receipt commit atomically; lost-response/reopen lookup proves committed, durably absent, or indeterminate without replay |
-| G2.3b Authoritative transaction outbox | G2.3a | L | Receipt and ordered semantic events share the primary commit; at-least-once replay and deduplication have no crash gaps |
-| G2.3c Outbox retention, leases, and governance health | G2.3b | L | Expiry, slow consumers, backpressure, compaction, backup interaction, and minimal governance-health fixtures fail closed without unbounded work |
-| G2.4a Full staged-view SHACL commit gate | G1.4, G2.3c | L | Concurrent-invalid outcomes cannot both commit over the complete selected graph contents/topology |
-| G2.4b SHACL failure and receipt closure | G2.4a | M | Cancellation, timeout, limit, processor failure, mutable shapes, and bounded receipt evidence reject atomically |
-| G2.5 Metrics, readiness, circuit breakers | G2.3c | M | Bounded-label metrics and storage/outbox/cancellation health pass; one canonical zero-or-more contributor inventory accepts empty state and rejects unknown, duplicate, missing-required, or cursor-invalid contributors |
-| G2.6 Backup receipt and creation | G2.3c, G2.5 | M | Completed receipt binds store/schema/commit/sequence, authoritative outbox, canonical contributor inventory, files, and checksums; interrupted or incoherent contributions fail closed |
-| G2.7 Restore verification and drills | G2.6 | M | Fresh-directory restore validates topology/namespaces/outbox and every declared contributor, rejects identity/cursor drift, and records baselined RPO/RTO |
+| Task                                                  | Depends on                                                                            | Size | Exit gate                                                                                                                                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------- | ---: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G2.1 Transactional namespace registry                 | G1.3-G1.4; evaluator freeze after `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE` |    M | Namespace changes commit/rollback with data without affecting dataset equality                                                                                                                                           |
+| G2.2 Normalized semantic change set                   | G1.1, G2.1                                                                            |    L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously                                                                                                         |
+| G2.3a Durable outcomes and atomic receipts            | G1.3-G1.4, G2.2                                                                       |    L | Durable key reservation, commit ID, primary state, and receipt commit atomically; lost-response/reopen lookup proves committed, durably absent, or indeterminate without replay                                          |
+| G2.3b Authoritative transaction outbox                | G2.3a                                                                                 |    L | Receipt and ordered semantic events share the primary commit; at-least-once replay and deduplication have no crash gaps                                                                                                  |
+| G2.3c Outbox retention, leases, and governance health | G2.3b                                                                                 |    L | Expiry, slow consumers, backpressure, compaction, backup interaction, and minimal governance-health fixtures fail closed without unbounded work                                                                          |
+| G2.4a Full staged-view SHACL commit gate              | G1.4, G2.3c                                                                           |    L | Concurrent-invalid outcomes cannot both commit over the complete selected graph contents/topology                                                                                                                        |
+| G2.4b SHACL failure and receipt closure               | G2.4a                                                                                 |    M | Cancellation, timeout, limit, processor failure, mutable shapes, and bounded receipt evidence reject atomically                                                                                                          |
+| G2.5 Metrics, readiness, circuit breakers             | G2.3c                                                                                 |    M | Bounded-label metrics and storage/outbox/cancellation health pass; one canonical zero-or-more contributor inventory accepts empty state and rejects unknown, duplicate, missing-required, or cursor-invalid contributors |
+| G2.6 Backup receipt and creation                      | G2.3c, G2.5                                                                           |    M | Completed receipt binds store/schema/commit/sequence, authoritative outbox, canonical contributor inventory, files, and checksums; interrupted or incoherent contributions fail closed                                   |
+| G2.7 Restore verification and drills                  | G2.6                                                                                  |    M | Fresh-directory restore validates topology/namespaces/outbox and every declared contributor, rejects identity/cursor drift, and records baselined RPO/RTO                                                                |
 
 The native feed is authoritative and at-least-once. Consumers deduplicate by
 `(commit_id, event_index)`. Its records carry schema version and checksum; its
@@ -639,14 +650,14 @@ incremental validation is only a later differential optimization.
 
 ### G3 — optimize after correctness
 
-| Task | Depends on | Size | Exit gate |
-|---|---|---:|---|
-| G3.0 Shared rebuildable derived-index lifecycle | G2.3c, G2.5-G2.7 | XL | Versioned provider/schema identity, source/applied commits, checksummed crash-safe generations, bounded rebuild/delta, atomic activation, cancellation/resource ceilings, lag/readiness, backup contribution, restore reconciliation, and fake-provider crash/conformance matrix |
-| G3.1 Statistics provider and feedback | G2.3c, G2.5-G2.7 | XL | Exact graph/predicate counts, bounded sketches/top-K, freshness commit, estimated/actual rows and q-error |
-| G3.2 Bounded join planning | G3.1 | L | Dynamic programming for small BGPs and greedy fallback improve the frozen corpus without semantic change |
-| G3.3 Text provider | G3.0 | XL | Tantivy candidate verification plus provider-specific strict/eventual equivalence and resource receipts pass on the shared lifecycle |
-| G3.4 Spatial provider | G3.0 | L/XL | Per-CRS envelope candidates refine through exact `spargeo` and pass provider-specific equivalence/resource receipts on the shared lifecycle |
-| G3.5 Federation planner | G1.5, G3.1-G3.2 for embedded/research; additionally G1.6 for advertisement; additionally G4.1-G4.2 for server exposure or promotion | XL | Catalog/source selection/bound joins obey per-endpoint budgets and `SERVICE SILENT` semantics |
+| Task                                            | Depends on                                                                                                                          | Size | Exit gate                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G3.0 Shared rebuildable derived-index lifecycle | G2.3c, G2.5-G2.7                                                                                                                    |   XL | Versioned provider/schema identity, source/applied commits, checksummed crash-safe generations, bounded rebuild/delta, atomic activation, cancellation/resource ceilings, lag/readiness, backup contribution, restore reconciliation, and fake-provider crash/conformance matrix |
+| G3.1 Statistics provider and feedback           | G2.3c, G2.5-G2.7                                                                                                                    |   XL | Exact graph/predicate counts, bounded sketches/top-K, freshness commit, estimated/actual rows and q-error                                                                                                                                                                        |
+| G3.2 Bounded join planning                      | G3.1                                                                                                                                |    L | Dynamic programming for small BGPs and greedy fallback improve the frozen corpus without semantic change                                                                                                                                                                         |
+| G3.3 Text provider                              | G3.0                                                                                                                                |   XL | Tantivy candidate verification plus provider-specific strict/eventual equivalence and resource receipts pass on the shared lifecycle                                                                                                                                             |
+| G3.4 Spatial provider                           | G3.0                                                                                                                                | L/XL | Per-CRS envelope candidates refine through exact `spargeo` and pass provider-specific equivalence/resource receipts on the shared lifecycle                                                                                                                                      |
+| G3.5 Federation planner                         | G1.5, G3.1-G3.2 for embedded/research; additionally G1.6 for advertisement; additionally G4.1-G4.2 for server exposure or promotion |   XL | Catalog/source selection/bound joins obey per-endpoint budgets and `SERVICE SILENT` semantics                                                                                                                                                                                    |
 
 The current optimizer's fixed large cardinalities and constant join-key
 selectivity make statistics the highest-leverage performance seam after P0.
@@ -678,16 +689,16 @@ These tasks are independently promotable only after their stated dependencies
 and frozen evaluators close. A protocol or comparison implementation never
 widens core RDF semantics implicitly.
 
-| Task | Depends on | Size | Exit gate |
-|---|---|---:|---|
-| G4.1 Service identity and authorization | G1.5-G1.6 | XL | Principal propagation plus coarse endpoint/whole-operation and direct Graph Store authorization fail closed without leaking protected data |
-| G4.2 Workload admission and operator resources | G1.4-G1.5; G4.1 for principal quotas | XL | Queue, deadline, memory/row/byte/concurrency budgets, cancellation, fairness, and bounded telemetry survive overload without weakening transaction or egress guarantees |
-| G4.3 Safe storage schema upgrades | G2.7 | L | Version discovery, preflight, backup receipt, resumable shadow copy, source-preserving cutover, crash matrix, and old/new binary compatibility fail closed |
-| G4.4 RDF4J REST interoperability | G2.3c, G4.1-G4.2, G4.5 | XL | A versioned endpoint profile passes an exact RDF4J client/HTTP corpus for statements, namespaces, query/update, contexts, transactions, errors, and content negotiation |
-| G4.5 Leased remote HTTP transactions | G2.3a, G4.1-G4.2 | XL | Opaque leases, expiry, idempotent terminal operations, disconnect/crash cleanup, and bounded ownership prevent orphaned writers and ambiguous replay |
-| G4.6 Multi-repository lifecycle | G2.7, G4.1-G4.3 | XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration |
-| G4.7 Incremental entailment projections | G2.3c, G2.7 | XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed |
-| G4.8 Analytical and WCOJ research path | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback |
+| Task                                           | Depends on                             |        Size | Exit gate                                                                                                                                                               |
+| ---------------------------------------------- | -------------------------------------- | ----------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G4.1 Service identity and authorization        | G1.5-G1.6                              |          XL | Principal propagation plus coarse endpoint/whole-operation and direct Graph Store authorization fail closed without leaking protected data                              |
+| G4.2 Workload admission and operator resources | G1.4-G1.5; G4.1 for principal quotas   |          XL | Queue, deadline, memory/row/byte/concurrency budgets, cancellation, fairness, and bounded telemetry survive overload without weakening transaction or egress guarantees |
+| G4.3 Safe storage schema upgrades              | G2.7                                   |           L | Version discovery, preflight, backup receipt, resumable shadow copy, source-preserving cutover, crash matrix, and old/new binary compatibility fail closed              |
+| G4.4 RDF4J REST interoperability               | G2.3c, G4.1-G4.2, G4.5                 |          XL | A versioned endpoint profile passes an exact RDF4J client/HTTP corpus for statements, namespaces, query/update, contexts, transactions, errors, and content negotiation |
+| G4.5 Leased remote HTTP transactions           | G2.3a, G4.1-G4.2                       |          XL | Opaque leases, expiry, idempotent terminal operations, disconnect/crash cleanup, and bounded ownership prevent orphaned writers and ambiguous replay                    |
+| G4.6 Multi-repository lifecycle                | G2.7, G4.1-G4.3                        |          XL | Create/open/close/delete/backup/restore operations are authorized, resource-isolated, receipt-bound, and safe under concurrent administration                           |
+| G4.7 Incremental entailment projections        | G2.3c, G2.7                            |          XL | Insert/delete/clear/drop truth maintenance differentially matches full recomputation; unsupported recursion/deletion shapes rebuild or fail typed                       |
+| G4.8 Analytical and WCOJ research path         | G3.2; G4.2 for server/`Auto` promotion | Research/XL | A separate optional executor beats frozen cyclic workloads within resource ceilings while matching the ordinary evaluator exactly and preserving its fallback           |
 
 ## Evaluator DAG
 
@@ -836,19 +847,19 @@ is rejected.
 
 ## Risks and controls
 
-| Risk | Control |
-|---|---|
-| Stable snapshot is mislabeled snapshot isolation | Concurrent serialization oracle plus dimensioned capabilities |
-| Writer lock hides an unacceptable bottleneck | Baseline first; only then evaluate OCC/TransactionDB as a separate ADR/hypothesis |
-| Evidence lock is self-approved | Dedicated reviewed refresh; Dream/Darwin cannot edit it |
-| Exact test inventory drifts | Required counts and IDs fail closed; add a narrow persistence profile |
-| Harness optimizes its own score | Product artifact first, immutable evaluators, independent critic, proportionality cap |
+| Risk                                                 | Control                                                                                                    |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Stable snapshot is mislabeled snapshot isolation     | Concurrent serialization oracle plus dimensioned capabilities                                              |
+| Writer lock hides an unacceptable bottleneck         | Baseline first; only then evaluate OCC/TransactionDB as a separate ADR/hypothesis                          |
+| Evidence lock is self-approved                       | Dedicated reviewed refresh; Dream/Darwin cannot edit it                                                    |
+| Exact test inventory drifts                          | Required counts and IDs fail closed; add a narrow persistence profile                                      |
+| Harness optimizes its own score                      | Product artifact first, immutable evaluators, independent critic, proportionality cap                      |
 | Prompt or config injects shell/publication authority | Dream activation blocked until literal argv, protected paths, local-only, and provider policy are enforced |
-| Outbox duplicates or skips | Atomic receipt/outbox, at-least-once cursor, idempotent consumer key, crash matrix |
-| Incremental SHACL misses an affected node | Full staged-view oracle first; fall back on shape change; continuous sampled differential |
-| Derived index changes semantics | Exact primary verification, explicit lag, rebuild, correctness fallback |
-| Planner overfits one benchmark | Multiple structural workloads, per-query regressions, q-error and resource telemetry |
-| Volatile Ruflo state is mistaken for product config | Keep runtime state untracked; commit only reviewed plans, ADRs, and future thin adapters |
+| Outbox duplicates or skips                           | Atomic receipt/outbox, at-least-once cursor, idempotent consumer key, crash matrix                         |
+| Incremental SHACL misses an affected node            | Full staged-view oracle first; fall back on shape change; continuous sampled differential                  |
+| Derived index changes semantics                      | Exact primary verification, explicit lag, rebuild, correctness fallback                                    |
+| Planner overfits one benchmark                       | Multiple structural workloads, per-query regressions, q-error and resource telemetry                       |
+| Volatile Ruflo state is mistaken for product config  | Keep runtime state untracked; commit only reviewed plans, ADRs, and future thin adapters                   |
 
 ## Ruflo and research ledger
 
@@ -856,16 +867,19 @@ The design was coordinated by Ruflo swarm
 `swarm-1787600160271-7e42i2`, topology `hierarchical-mesh`, three specialized
 research lanes, human-only promotion, and no OpenRouter provider route.
 
-| Track | Ruflo task | Result |
-|---|---|---|
-| Dream Machine source/install/fit | `task-1787600167777-nwxrh1` | 0.1.1 local CLI useful; unattended routine blocked |
-| Repository harness and ADR drift | `task-1787600167739-xfkq2y` | Jena lock, runner lock, Agentic counts, mutation freshness, and evidence prose require repair |
-| SOTA RDF storage/optimization | `task-1787600167815-d5ki1t` | Correctness first; serialize writers, then receipts/SHACL/ops/statistics/indexes/federation |
-| Dream installation proof | `task-1787600167854-42vvou` | User-scoped 0.1.1, deterministic compile, no schedule/publication/provider execution |
-| MetaHarness assessment | `task-1787600167962-6qk4jb` | Non-authoritative local observation: genome ready, score 71, point-in-time OIA clean/generic, Darwin dry-run, synthetic PASS |
-| G1.7 portable ordering/replay audit | `task-1787778499571-d8wwyk` | Read-only review clean; focused ordering and replay suite 51/51 |
-| G1.7 schema/assurance-boundary audit | `task-1787778501119-1krv3k` | Read-only review clean; focused structural/sealed/CLI suite 35/35 |
-| G1.7 claims/documentation audit | `task-1787780431763-1cqm80` | Read-only review completed for the earlier v1/v2 boundary; the follow-on contract-v2/compatibility-v3 native-owner wording is reconciled in this slice |
+| Track                                      | Ruflo task                                                                                                            | Result                                                                                                                                                 |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dream Machine source/install/fit           | `task-1787600167777-nwxrh1`                                                                                           | 0.1.1 local CLI useful; unattended routine blocked                                                                                                     |
+| Repository harness and ADR drift           | `task-1787600167739-xfkq2y`                                                                                           | Jena lock, runner lock, Agentic counts, mutation freshness, and evidence prose require repair                                                          |
+| SOTA RDF storage/optimization              | `task-1787600167815-d5ki1t`                                                                                           | Correctness first; serialize writers, then receipts/SHACL/ops/statistics/indexes/federation                                                            |
+| Dream installation proof                   | `task-1787600167854-42vvou`                                                                                           | User-scoped 0.1.1, deterministic compile, no schedule/publication/provider execution                                                                   |
+| MetaHarness assessment                     | `task-1787600167962-6qk4jb`                                                                                           | Non-authoritative local observation: genome ready, score 71, point-in-time OIA clean/generic, Darwin dry-run, synthetic PASS                           |
+| G1.7 portable ordering/replay audit        | `task-1787778499571-d8wwyk`                                                                                           | Read-only review clean; focused ordering and replay suite 51/51                                                                                        |
+| G1.7 schema/assurance-boundary audit       | `task-1787778501119-1krv3k`                                                                                           | Read-only review clean; focused structural/sealed/CLI suite 35/35                                                                                      |
+| G1.7 claims/documentation audit            | `task-1787780431763-1cqm80`                                                                                           | Read-only review completed for the earlier v1/v2 boundary; the follow-on contract-v2/compatibility-v3 native-owner wording is reconciled in this slice |
+| G1.7 v4 core / integration / legacy repair | `task-1787869267480-t4j9c8` / `task-1787872420656-oeaphy` / `task-1787874829121-tag4ud`                               | Complete: exact v4 policy/statistics, pre-execution live gate, and repaired v1/v3 replay; no samples or promotion authority                            |
+| G1.7 two-phase owner programme             | `task-1787875911749-oh5io9` / `task-1787875912935-c2bi69` / `task-1787875914136-aw7onh` / `task-1787875915280-otfrw9` | Pending: control authorization, sealed control owner, final-decision binding, and qualification benchmark owner                                        |
+| G1.7 prerequisite / legacy / governance    | `task-1787875916428-3vb8m7` / `task-1787875917561-6s54e3` / `task-1787875918734-1sjl6c`                               | G1.4b receipt binding and Darwin-free legacy dispatch pending; v9 governance synchronization in progress                                               |
 
 The three G1.7 reviews ran under reviewer swarm
 `swarm-1787778496656-aq8q1c`. They are adversarial control review, not product
@@ -903,28 +917,29 @@ lifecycle between G2.3c/G2.5-G2.7 and the G3.3/G3.4 providers. Support and
 roll-up rows remain outside that count. G1.4b raised the total to 42 on
 2026-08-28 by making the outcome phase-fault prerequisite executable.
 
-| Plan IDs | Ruflo task rows |
-|---|---|
-| G1.4a / G1.4b / corrected replacement G1.7 | `task-1787855156849-ya7t6b` / `task-1787869201628-bwe6b0` / `task-1787871483413-ki34q2` |
+| Plan IDs                                                                | Ruflo task rows                                                                                                                                     |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1.4a / G1.4b / corrected replacement G1.7                              | `task-1787855156849-ya7t6b` / `task-1787869201628-bwe6b0` / `task-1787871483413-ki34q2`                                                             |
 | G1.5c / G1.6 / `HARNESS-REGISTRY` / `HARNESS-REJECTION-EVIDENCE` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787740750614-4bv1fw` / `task-1787603736400-274ola` |
-| G2.3a / G2.3b / G2.3c | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1` |
-| G2.4a / G2.4b | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24` |
-| G2.5 / G2.6 / G2.7 / G3.0 | `task-1787851231441-1gdfzd` / `task-1787851232211-6fiarr` / `task-1787851233022-antw51` / `task-1787851230690-xr6ls9` |
-| G3.3 / G3.4 / G3.5 | `task-1787851233862-4l1tii` / `task-1787851234657-p0yfbo` / `task-1787851235446-7vlbgt` |
-| G4.1 / G4.2 / G4.3 | `task-1787670631989-m5vxqk` / `task-1787728711461-3isex6` / `task-1787670632284-k0cti5` |
-| G4.4 / G4.5 | `task-1787670632568-gk92vo` / `task-1787670632421-dkucm8` |
-| G4.6 / G4.7 / G4.8 | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53` |
+| G2.3a / G2.3b / G2.3c                                                   | `task-1787670631130-9jlo3h` / `task-1787670631321-dewzgm` / `task-1787670631517-qjoyw1`                                                             |
+| G2.4a / G2.4b                                                           | `task-1787670631682-97ibi4` / `task-1787670631837-w5ac24`                                                                                           |
+| G2.5 / G2.6 / G2.7 / G3.0                                               | `task-1787851231441-1gdfzd` / `task-1787851232211-6fiarr` / `task-1787851233022-antw51` / `task-1787851230690-xr6ls9`                               |
+| G3.3 / G3.4 / G3.5                                                      | `task-1787851233862-4l1tii` / `task-1787851234657-p0yfbo` / `task-1787851235446-7vlbgt`                                                             |
+| G4.1 / G4.2 / G4.3                                                      | `task-1787670631989-m5vxqk` / `task-1787728711461-3isex6` / `task-1787670632284-k0cti5`                                                             |
+| G4.4 / G4.5                                                             | `task-1787670632568-gk92vo` / `task-1787670632421-dkucm8`                                                                                           |
+| G4.6 / G4.7 / G4.8                                                      | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53`                                                             |
 
 The original exact map remains at
 `task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v7 maps remain
-historical audit records. The current v8 map is stored and exactly read back
+historical audit records. The current v9 map is stored and exactly read back
 through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v8`. It preserves all 42 stable
+`task-plans/linked-data-store-g0-g4-2026-08-28-v9`. It preserves all 42 stable
 plan identifiers, records G1.4a-G1.4b, corrected replacement G1.7, G3.0, and
 the earlier replacement rows, and includes the
 non-product `HARNESS-REGISTRY`, rejection-evidence, and
-`AGENTIC-SCHEMA-V5-REFRESH` controls. Superseded pending rows are cancelled but
-retained as runtime history.
+`AGENTIC-SCHEMA-V5-REFRESH` controls. It additionally records the seven G1.7
+two-phase owner/governance support rows without changing the stable count.
+Superseded pending rows are cancelled but retained as runtime history.
 
 The Brain-grounded implementation source
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts` shows that the current
@@ -934,7 +949,7 @@ exposes no dependency argument. Rows were therefore created sequentially and
 dependencies are encoded as `depends:<plan-id>` tags and in each description.
 Those task IDs and descriptions are audit pointers; cancelled and superseded
 historical rows remain part of runtime history and can be stale. Stable
-G-identifiers, this committed GOAP graph, and the exactly read-back v7 Ruflo
+G-identifiers, this committed GOAP graph, and the exactly read-back v9 Ruflo
 task map remain authoritative. Ruflo's separate
 domain task entity models dependencies, but this plan does not claim that the
 current MCP task surface enforces them.
@@ -943,14 +958,14 @@ current MCP task surface enforces them.
 
 This plan scores **98/100** against the programme rubric:
 
-| Dimension | Score | Evidence |
-|---|---:|---|
-| Source and implementation grounding | 20/20 | Local transaction/optimizer/harness source, live Dream source/npm, Brain implementation sources, official comparison docs |
-| Scope and architecture | 20/20 | P0-P3 planned work, explicit G4 decisions, ten DDD contexts |
-| Dependency and parallelization clarity | 15/15 | G0-G4 graph, three lanes, sequential publication gates |
-| Verifiable acceptance | 19/20 | Exact inventories, model/concurrency/crash/security/performance gates; thresholds await baseline freeze |
-| Security and promotion control | 15/15 | Native providers, local-only, protected oracles, isolated worktrees, human promotion |
-| Operational realism | 9/10 | Current drift and degraded modes explicit; production replacement adapter and recovery baseline remain open |
+| Dimension                              | Score | Evidence                                                                                                                  |
+| -------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------- |
+| Source and implementation grounding    | 20/20 | Local transaction/optimizer/harness source, live Dream source/npm, Brain implementation sources, official comparison docs |
+| Scope and architecture                 | 20/20 | P0-P3 planned work, explicit G4 decisions, ten DDD contexts                                                               |
+| Dependency and parallelization clarity | 15/15 | G0-G4 graph, three lanes, sequential publication gates                                                                    |
+| Verifiable acceptance                  | 19/20 | Exact inventories, model/concurrency/crash/security/performance gates; thresholds await baseline freeze                   |
+| Security and promotion control         | 15/15 | Native providers, local-only, protected oracles, isolated worktrees, human promotion                                      |
+| Operational realism                    |  9/10 | Current drift and degraded modes explicit; production replacement adapter and recovery baseline remain open               |
 
 The withheld points are real open evidence, not documentation debt. No
 candidate is promotable until G0 closes and its affected native receipts are
