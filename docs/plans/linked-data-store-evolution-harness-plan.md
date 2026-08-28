@@ -953,10 +953,10 @@ roll-up rows remain outside that count. G1.4b raised the total to 42 on
 | G4.6 / G4.7 / G4.8                                                      | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53`                                                             |
 
 The original exact map remains at
-`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v11 maps remain
-historical audit records. The current v12 map is stored and exactly read back
+`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v12 maps remain
+historical audit records. The current v13 map is stored and exactly read back
 through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v12`. It preserves all 42 stable
+`task-plans/linked-data-store-g0-g4-2026-08-28-v13`. It preserves all 42 stable
 plan identifiers, records G1.4a-G1.4b, corrected replacement G1.7, G3.0, and
 the earlier replacement rows, and includes the
 non-product `HARNESS-REGISTRY`, rejection-evidence, and
@@ -974,7 +974,7 @@ sequentially and dependencies are encoded as `depends:<plan-id>` tags and in
 each description.
 Those task IDs and descriptions are audit pointers; cancelled and superseded
 historical rows remain part of runtime history and can be stale. Stable
-G-identifiers, this committed GOAP graph, and the exactly read-back v12 Ruflo
+G-identifiers, this committed GOAP graph, and the exactly read-back v13 Ruflo
 task map remain authoritative. Ruflo's separate
 domain task entity models dependencies, but this plan does not claim that the
 current MCP task surface enforces them.

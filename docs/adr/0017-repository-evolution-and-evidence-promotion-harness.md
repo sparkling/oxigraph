@@ -426,9 +426,9 @@ committed G-identifiers and GOAP tables remain the portable authority; Ruflo
 task IDs are repository-local audit pointers only and never prove product
 behavior. The current 42-entry adjacency map and checkpoint were stored and
 exactly read back through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v12`; it supersedes, rather than
-rewrites, the historical v11 map. The 42 stable product identifiers are
-unchanged. V12 retains separate support rows for control authorization,
+`task-plans/linked-data-store-g0-g4-2026-08-28-v13`; it supersedes, rather than
+rewrites, the historical v12 map. The 42 stable product identifiers are
+unchanged. V13 retains separate support rows for control authorization,
 control owner/replay, final-decision binding, benchmark owner/replay, G1.4b
 receipt binding, Darwin-free legacy dispatch, the v6 statistics contract,
 completed upstream `ec68e3dd` reconciliation, post-merge G1.7 resealing, and
@@ -456,7 +456,8 @@ v6 proof at
 `programme-evidence/g17-v6-statistics-protocol-main-799307fb-2026-08-28`, the
 merge proof at
 `programme-evidence/upstream-ec68e3dd-merged-e9d2db1b-2026-08-28`, and the
-current v7 source checkpoint at `d1e18c6e`.
+current v7 source/documentation checkpoint at
+`programme-evidence/g17-v7-subject-reseal-main-4451b8eb-2026-08-28`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
