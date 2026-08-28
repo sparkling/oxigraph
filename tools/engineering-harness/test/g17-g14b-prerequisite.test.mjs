@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
 
@@ -18,6 +20,8 @@ import {
   loadG17G14bPrerequisite,
   replayG17G14bPrerequisite,
 } from "../src/qualification/g14b-prerequisite.mjs";
+
+const executeFile = promisify(execFile);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -190,6 +194,37 @@ test("stable reader copies the exact source and refuses symlink or stale input",
     projection: null,
     artifacts: [],
   });
+});
+
+test("stable reader rejects a FIFO without blocking", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX FIFO semantics are unavailable on Windows");
+    return;
+  }
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g14b-fifo-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fifoPath = join(root, "receipt.fifo");
+  await executeFile("/usr/bin/mkfifo", [fifoPath]);
+  const moduleUrl = new URL(
+    "../src/qualification/g14b-prerequisite.mjs",
+    import.meta.url,
+  ).href;
+  const script = `
+    const { loadG17G14bPrerequisite } = await import(${JSON.stringify(moduleUrl)});
+    try {
+      loadG17G14bPrerequisite({ receiptPath: ${JSON.stringify(fifoPath)} });
+      throw new Error("FIFO unexpectedly accepted");
+    } catch (error) {
+      if (!error.message.includes("exact bounded regular file")) throw error;
+      process.stdout.write("FIFO_REJECTED\\n");
+    }
+  `;
+  const { stdout } = await executeFile(
+    process.execPath,
+    ["--input-type=module", "--eval", script],
+    { timeout: 1_000, killSignal: "SIGKILL" },
+  );
+  assert.equal(stdout, "FIFO_REJECTED\n");
 });
 
 test("prerequisite source imports replay only and no Router or admission authority", async () => {

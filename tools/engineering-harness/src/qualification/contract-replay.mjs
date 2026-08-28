@@ -27,5 +27,8 @@ export async function decodeSealedG17ContractForReplay(input) {
       "G1.7 qualification contract: current protocol runtime validation failed: current contract decoder is unavailable",
     );
   }
-  return current.decodeSealedG17Contract(input);
+  return current.decodeSealedG17Contract({
+    bytes: identified.bytes,
+    receiptSha256: identified.contractSha256,
+  });
 }

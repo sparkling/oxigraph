@@ -93,6 +93,42 @@ test("historical contract replay is Darwin-free while current replay fails close
   );
 });
 
+test("current replay snapshots accessor input once and does not retain caller bytes", async () => {
+  const currentBytes = await readFile(
+    join(harnessRoot, "qualification", "g1.7", "contract.json"),
+  );
+  const legacyBytes = await readFile(
+    join(harnessRoot, "test", "fixtures", "g17-qualification-contract-v1.json"),
+  );
+  const currentSha256 = sha256(currentBytes);
+  let byteReads = 0;
+  let digestReads = 0;
+  const decoded = await (
+    await import("../src/qualification/contract-replay.mjs")
+  ).decodeSealedG17ContractForReplay({
+    get bytes() {
+      byteReads += 1;
+      return byteReads === 1 ? currentBytes : legacyBytes;
+    },
+    get receiptSha256() {
+      digestReads += 1;
+      if (digestReads === 1) {
+        currentBytes.fill(0);
+        return currentSha256;
+      }
+      return sha256(legacyBytes);
+    },
+  });
+
+  assert.equal(byteReads, 1);
+  assert.equal(digestReads, 1);
+  assert.equal(decoded.generation, "CURRENT_V4");
+  assert.equal(decoded.contractSha256, currentSha256);
+  assert.notStrictEqual(decoded.bytes, currentBytes);
+  assert.equal(decoded.bytes[0], "{".codePointAt(0));
+  assert.equal(currentBytes[0], 0);
+});
+
 test("sealed verifier import bypasses Darwin while current replay resolves it fail-closed", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-loader-"));
   t.after(() => rm(root, { recursive: true, force: true }));
