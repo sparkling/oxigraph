@@ -27,8 +27,7 @@ export const G17_NON_TMPFS_BUILD_ISOLATION_V2_POLICY_SCHEMA =
   "oxigraph.g1.7-non-tmpfs-build-isolation-policy/v2";
 export const G17_NON_TMPFS_BUILD_ISOLATION_V2_POLICY_ARTIFACT_NAME =
   "non-tmpfs-build-isolation-policy-v2.json";
-export const G17_NON_TMPFS_BUILD_ISOLATION_V2_POLICY_MAX_BYTES =
-  1024 * 1024;
+export const G17_NON_TMPFS_BUILD_ISOLATION_V2_POLICY_MAX_BYTES = 1024 * 1024;
 export const G17_NON_TMPFS_BUILD_ISOLATION_V2_ARGV_MAX_BYTES = 1024 * 1024;
 export const G17_NON_TMPFS_BUILD_ISOLATION_V2_ARGC_MAX = 4_096;
 export const G17_NON_TMPFS_BUILD_ISOLATION_V2_TIMEOUT_MS = 300_000;
@@ -207,7 +206,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 0,
     role: "stdinNull",
     kind: "character-device",
-    access: "read-only",
+    descriptorAccess: "read-only",
     logicalPath: "/dev/null",
     presentInHelperImage: true,
     presentInCargoImage: true,
@@ -219,7 +218,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 1,
     role: "cargoStdout",
     kind: "pipe-writer",
-    access: "write-only",
+    descriptorAccess: "write-only",
     logicalPath: null,
     presentInHelperImage: true,
     presentInCargoImage: true,
@@ -231,7 +230,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 2,
     role: "cargoStderr",
     kind: "pipe-writer",
-    access: "write-only",
+    descriptorAccess: "write-only",
     logicalPath: null,
     presentInHelperImage: true,
     presentInCargoImage: true,
@@ -243,7 +242,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 3,
     role: "workspaceRoot",
     kind: "directory",
-    access: "read-only",
+    descriptorAccess: "read-only",
     logicalPath: "/proc/self/fd/3",
     presentInHelperImage: true,
     presentInCargoImage: true,
@@ -255,7 +254,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 4,
     role: "source",
     kind: "directory",
-    access: "read-only",
+    descriptorAccess: "read-only",
     logicalPath: "/proc/self/fd/4",
     presentInHelperImage: true,
     presentInCargoImage: true,
@@ -267,7 +266,9 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 5,
     role: "target",
     kind: "directory",
-    access: "read-write",
+    // Linux directory file descriptions are held read-only. Target mutation is
+    // governed independently by the writable bind mount frozen below.
+    descriptorAccess: "read-only",
     logicalPath: "/proc/self/fd/5",
     presentInHelperImage: true,
     presentInCargoImage: true,
@@ -279,7 +280,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 6,
     role: "cargoExecutable",
     kind: "regular-file",
-    access: "read-only",
+    descriptorAccess: "read-only",
     logicalPath: "/proc/self/fd/6",
     presentInHelperImage: true,
     presentInCargoImage: false,
@@ -291,7 +292,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 7,
     role: "execStatusWriter",
     kind: "pipe-writer",
-    access: "write-only",
+    descriptorAccess: "write-only",
     logicalPath: null,
     presentInHelperImage: true,
     presentInCargoImage: false,
@@ -303,7 +304,7 @@ const CHILD_FILE_DESCRIPTORS = [
     childFd: 8,
     role: "helperSelfExecutable",
     kind: "regular-file",
-    access: "read-only",
+    descriptorAccess: "read-only",
     logicalPath: "/proc/self/fd/8",
     presentInHelperImage: true,
     presentInCargoImage: false,
@@ -317,7 +318,7 @@ const PARENT_ONLY_FILE_DESCRIPTORS = [
   {
     role: "execStatusReader",
     kind: "pipe-reader",
-    access: "read-only",
+    descriptorCapabilities: "read-only",
     fixedFd: null,
     entersHelperImage: false,
     entersCargoImage: false,
@@ -325,7 +326,9 @@ const PARENT_ONLY_FILE_DESCRIPTORS = [
   {
     role: "cgroupDirectory",
     kind: "directory",
-    access: "read-write",
+    // The directory reference itself is not O_RDWR. The containment owner
+    // opens the governed cgroup control files relative to this held directory.
+    descriptorCapabilities: "held-directory-openat-read-write-children",
     fixedFd: null,
     entersHelperImage: false,
     entersCargoImage: false,
@@ -333,7 +336,7 @@ const PARENT_ONLY_FILE_DESCRIPTORS = [
   {
     role: "directChildPidfd",
     kind: "pidfd",
-    access: "poll-signal-waitid",
+    descriptorCapabilities: "poll-signal-waitid",
     fixedFd: null,
     entersHelperImage: false,
     entersCargoImage: false,
@@ -399,8 +402,7 @@ export const G17_NON_TMPFS_BUILD_ISOLATION_V2_LIMITS = deepFreeze(
   snapshotOwnData(
     {
       timeoutMilliseconds: G17_NON_TMPFS_BUILD_ISOLATION_V2_TIMEOUT_MS,
-      combinedOutputMaximumBytes:
-        G17_NON_TMPFS_BUILD_RAW_STREAM_MAX_BYTES,
+      combinedOutputMaximumBytes: G17_NON_TMPFS_BUILD_RAW_STREAM_MAX_BYTES,
       argcMaximum: G17_NON_TMPFS_BUILD_ISOLATION_V2_ARGC_MAX,
       aggregateArgvUtf8MaximumBytes:
         G17_NON_TMPFS_BUILD_ISOLATION_V2_ARGV_MAX_BYTES,
@@ -408,11 +410,9 @@ export const G17_NON_TMPFS_BUILD_ISOLATION_V2_LIMITS = deepFreeze(
         G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_MAX_BYTES,
       statusProtocolMaximumFrames:
         G17_CARGO_EXECVEAT_STATUS_PROTOCOL_MAX_FRAMES,
-      statusProtocolTimeoutMilliseconds:
-        G17_CARGO_EXECVEAT_STATUS_TIMEOUT_MS,
+      statusProtocolTimeoutMilliseconds: G17_CARGO_EXECVEAT_STATUS_TIMEOUT_MS,
       termGraceMilliseconds: G17_NON_TMPFS_BUILD_TERM_GRACE_MS,
-      closeReapTimeoutMilliseconds:
-        G17_NON_TMPFS_BUILD_CLOSE_REAP_TIMEOUT_MS,
+      closeReapTimeoutMilliseconds: G17_NON_TMPFS_BUILD_CLOSE_REAP_TIMEOUT_MS,
     },
     "frozen v2 limits",
   ),
@@ -472,13 +472,7 @@ const STATUS_PROTOCOL_REQUIREMENTS_BASE = deepFreeze(
       writerFd: 7,
       readerRole: "execStatusReader",
       framing: "canonical-json-one-object-per-lf-frame",
-      frameFields: [
-        "schema",
-        "type",
-        "stage",
-        "errno",
-        "reservedExitCode",
-      ],
+      frameFields: ["schema", "type", "stage", "errno", "reservedExitCode"],
       maximumBytes: G17_CARGO_EXECVEAT_STATUS_PROTOCOL_MAX_BYTES,
       maximumFrames: G17_CARGO_EXECVEAT_STATUS_PROTOCOL_MAX_FRAMES,
       timeoutMilliseconds: G17_CARGO_EXECVEAT_STATUS_TIMEOUT_MS,
@@ -530,8 +524,7 @@ export const G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS =
   );
 
 export const G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS_SHA256 =
-  G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS
-    .requirementsSha256;
+  G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS.requirementsSha256;
 
 const POLICY_BASE = deepFreeze(
   snapshotOwnData(
@@ -554,8 +547,7 @@ const POLICY_BASE = deepFreeze(
         },
       },
       workspace: {
-        identityObservation:
-          "openat2-held-fd-fstat-fstatfs-statx-mnt-id/v1",
+        identityObservation: "openat2-held-fd-fstat-fstatfs-statx-mnt-id/v1",
         ancestryResolution: "openat2-resolve-beneath-no-symlinks/v1",
         descriptorsHeldUntilTerminalReapOrRetention: true,
         namespace: {
@@ -609,8 +601,7 @@ const POLICY_BASE = deepFreeze(
           bindingRequirements: {
             fileDescriptorMapSha256:
               G17_NON_TMPFS_BUILD_ISOLATION_V2_FILE_DESCRIPTORS_SHA256,
-            statusProtocolSchema:
-              G17_CARGO_EXECVEAT_STATUS_PROTOCOL_SCHEMA,
+            statusProtocolSchema: G17_CARGO_EXECVEAT_STATUS_PROTOCOL_SCHEMA,
             statusProtocolRequirementsSha256:
               G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS_SHA256,
             exactRequestBindingRequired: true,
@@ -664,7 +655,7 @@ const POLICY_BASE = deepFreeze(
         },
         entryValidation: {
           exactDescriptorMapRequired: true,
-          descriptorKindsAndAccessRequired: true,
+          descriptorKindsAndOpenDescriptionAccessRequired: true,
           descriptorAliasRulesRequired: true,
           helperDescriptorAttestationMatchRequired: true,
           cargoDescriptorRequestBindingMatchRequired: true,
@@ -867,7 +858,9 @@ function copyBoundedBuffer(value) {
   try {
     length = typedArrayLengthGetter.call(value);
   } catch (error) {
-    fail(`policy artifact length cannot be read intrinsically: ${error.message}`);
+    fail(
+      `policy artifact length cannot be read intrinsically: ${error.message}`,
+    );
   }
   if (
     !Number.isSafeInteger(length) ||
@@ -931,7 +924,12 @@ function artifactEnvelope(bytes) {
 export function createG17NonTmpfsBuildIsolationV2PolicyArtifact() {
   const policy = expectedPolicy();
   const artifact = artifactEnvelope(canonicalPolicyBytes(policy));
-  return Object.freeze(nullRecord([["policy", policy], ["artifact", artifact]]));
+  return Object.freeze(
+    nullRecord([
+      ["policy", policy],
+      ["artifact", artifact],
+    ]),
+  );
 }
 
 export function verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(bytes) {
@@ -943,9 +941,7 @@ export function verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(bytes) {
     return deepFreeze(policy);
   } catch (error) {
     if (
-      error?.message?.startsWith(
-        "G1.7 non-tmpfs build isolation v2 contract:",
-      )
+      error?.message?.startsWith("G1.7 non-tmpfs build isolation v2 contract:")
     ) {
       throw error;
     }

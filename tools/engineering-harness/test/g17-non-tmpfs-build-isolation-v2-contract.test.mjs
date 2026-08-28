@@ -108,11 +108,14 @@ test("isolation policy v2 is a canonical dormant successor artifact", () => {
   );
   assert.equal(policy.environment.tmpfsState, false);
   assert.equal(policy.environment.ramfsState, false);
-  assert.equal(policy.sha256, canonicalSha256(
-    Object.fromEntries(
-      Object.entries(policy).filter(([key]) => key !== "sha256"),
+  assert.equal(
+    policy.sha256,
+    canonicalSha256(
+      Object.fromEntries(
+        Object.entries(policy).filter(([key]) => key !== "sha256"),
+      ),
     ),
-  ));
+  );
   assert.deepEqual(
     verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(artifact.bytes),
     policy,
@@ -124,37 +127,41 @@ test("isolation policy v2 is a canonical dormant successor artifact", () => {
 
   const first = artifact.bytes;
   first.fill(0);
-  assert.notDeepEqual(first, artifact.bytes, "artifact bytes are defensive copies");
+  assert.notDeepEqual(
+    first,
+    artifact.bytes,
+    "artifact bytes are defensive copies",
+  );
 });
 
 test("v2 freezes the exact helper and Cargo descriptor images", () => {
   const policy = createG17NonTmpfsBuildIsolationV2PolicyArtifact().policy;
   const descriptors = policy.fileDescriptors;
 
-  assert.deepEqual(descriptors, G17_NON_TMPFS_BUILD_ISOLATION_V2_FILE_DESCRIPTORS);
   assert.deepEqual(
-    plainJson(descriptors.exactChildDescriptorRange),
-    {
-      first: 0,
-      last: 8,
-      descriptorsAtOrAbove: 9,
-      dispositionAtHelperEntry: "close-range-fail-closed",
-      closeRange: {
-        syscall: "close_range",
-        first: 9,
-        last: "UINT_MAX",
-        flags: 0,
-        fallbackLoopForbidden: true,
-        failureDisposition: "fail-before-ready",
-      },
-    },
+    descriptors,
+    G17_NON_TMPFS_BUILD_ISOLATION_V2_FILE_DESCRIPTORS,
   );
+  assert.deepEqual(plainJson(descriptors.exactChildDescriptorRange), {
+    first: 0,
+    last: 8,
+    descriptorsAtOrAbove: 9,
+    dispositionAtHelperEntry: "close-range-fail-closed",
+    closeRange: {
+      syscall: "close_range",
+      first: 9,
+      last: "UINT_MAX",
+      flags: 0,
+      fallbackLoopForbidden: true,
+      failureDisposition: "fail-before-ready",
+    },
+  });
   assert.deepEqual(
     descriptors.childFileDescriptors.map((entry) => [
       entry.childFd,
       entry.role,
       entry.kind,
-      entry.access,
+      entry.descriptorAccess,
       entry.logicalPath,
       entry.presentInHelperImage,
       entry.presentInCargoImage,
@@ -163,16 +170,131 @@ test("v2 freezes the exact helper and Cargo descriptor images", () => {
       entry.lifecycle,
     ]),
     [
-      [0, "stdinNull", "character-device", "read-only", "/dev/null", true, true, false, false, "retained-through-cargo-image"],
-      [1, "cargoStdout", "pipe-writer", "write-only", null, true, true, false, false, "retained-through-cargo-image"],
-      [2, "cargoStderr", "pipe-writer", "write-only", null, true, true, false, false, "retained-through-cargo-image"],
-      [3, "workspaceRoot", "directory", "read-only", "/proc/self/fd/3", true, true, false, false, "retained-through-cargo-image"],
-      [4, "source", "directory", "read-only", "/proc/self/fd/4", true, true, false, false, "retained-through-cargo-image"],
-      [5, "target", "directory", "read-write", "/proc/self/fd/5", true, true, false, false, "retained-through-cargo-image"],
-      [6, "cargoExecutable", "regular-file", "read-only", "/proc/self/fd/6", true, false, false, true, "helper-private-close-on-cargo-image-transition"],
-      [7, "execStatusWriter", "pipe-writer", "write-only", null, true, false, false, true, "helper-private-close-on-cargo-image-transition"],
-      [8, "helperSelfExecutable", "regular-file", "read-only", "/proc/self/fd/8", true, false, false, true, "helper-private-close-on-cargo-image-transition"],
+      [
+        0,
+        "stdinNull",
+        "character-device",
+        "read-only",
+        "/dev/null",
+        true,
+        true,
+        false,
+        false,
+        "retained-through-cargo-image",
+      ],
+      [
+        1,
+        "cargoStdout",
+        "pipe-writer",
+        "write-only",
+        null,
+        true,
+        true,
+        false,
+        false,
+        "retained-through-cargo-image",
+      ],
+      [
+        2,
+        "cargoStderr",
+        "pipe-writer",
+        "write-only",
+        null,
+        true,
+        true,
+        false,
+        false,
+        "retained-through-cargo-image",
+      ],
+      [
+        3,
+        "workspaceRoot",
+        "directory",
+        "read-only",
+        "/proc/self/fd/3",
+        true,
+        true,
+        false,
+        false,
+        "retained-through-cargo-image",
+      ],
+      [
+        4,
+        "source",
+        "directory",
+        "read-only",
+        "/proc/self/fd/4",
+        true,
+        true,
+        false,
+        false,
+        "retained-through-cargo-image",
+      ],
+      [
+        5,
+        "target",
+        "directory",
+        "read-only",
+        "/proc/self/fd/5",
+        true,
+        true,
+        false,
+        false,
+        "retained-through-cargo-image",
+      ],
+      [
+        6,
+        "cargoExecutable",
+        "regular-file",
+        "read-only",
+        "/proc/self/fd/6",
+        true,
+        false,
+        false,
+        true,
+        "helper-private-close-on-cargo-image-transition",
+      ],
+      [
+        7,
+        "execStatusWriter",
+        "pipe-writer",
+        "write-only",
+        null,
+        true,
+        false,
+        false,
+        true,
+        "helper-private-close-on-cargo-image-transition",
+      ],
+      [
+        8,
+        "helperSelfExecutable",
+        "regular-file",
+        "read-only",
+        "/proc/self/fd/8",
+        true,
+        false,
+        false,
+        true,
+        "helper-private-close-on-cargo-image-transition",
+      ],
     ],
+  );
+  assert.equal(
+    descriptors.childFileDescriptors.find(({ childFd }) => childFd === 5)
+      .descriptorAccess,
+    "read-only",
+  );
+  assert.deepEqual(
+    plainJson(
+      policy.workspace.namespace.mounts.find(({ role }) => role === "target"),
+    ).mountOptions,
+    ["bind", "nodev", "nosuid", "rw"],
+  );
+  assert.equal(
+    policy.workspace.namespace.mounts.find(({ role }) => role === "target")
+      .readOnly,
+    false,
   );
   assert.deepEqual(plainJson(descriptors.imageMaps), {
     standardFileDescriptors: [0, 1, 2],
@@ -186,7 +308,7 @@ test("v2 freezes the exact helper and Cargo descriptor images", () => {
     {
       role: "execStatusReader",
       kind: "pipe-reader",
-      access: "read-only",
+      descriptorCapabilities: "read-only",
       fixedFd: null,
       entersHelperImage: false,
       entersCargoImage: false,
@@ -194,7 +316,7 @@ test("v2 freezes the exact helper and Cargo descriptor images", () => {
     {
       role: "cgroupDirectory",
       kind: "directory",
-      access: "read-write",
+      descriptorCapabilities: "held-directory-openat-read-write-children",
       fixedFd: null,
       entersHelperImage: false,
       entersCargoImage: false,
@@ -202,7 +324,7 @@ test("v2 freezes the exact helper and Cargo descriptor images", () => {
     {
       role: "directChildPidfd",
       kind: "pidfd",
-      access: "poll-signal-waitid",
+      descriptorCapabilities: "poll-signal-waitid",
       fixedFd: null,
       entersHelperImage: false,
       entersCargoImage: false,
@@ -244,15 +366,19 @@ test("v2 makes the helper-private CLOEXEC transition exact and read back", () =>
   assert.equal(
     policy.fileDescriptors.childFileDescriptors
       .filter(({ childFd }) => childFd >= 6)
-      .every(({ cloexecImmediatelyBeforeCargoExecveat }) =>
-        cloexecImmediatelyBeforeCargoExecveat),
+      .every(
+        ({ cloexecImmediatelyBeforeCargoExecveat }) =>
+          cloexecImmediatelyBeforeCargoExecveat,
+      ),
     true,
   );
   assert.equal(
     policy.fileDescriptors.childFileDescriptors
       .filter(({ childFd }) => childFd <= 5)
-      .every(({ cloexecImmediatelyBeforeCargoExecveat }) =>
-        !cloexecImmediatelyBeforeCargoExecveat),
+      .every(
+        ({ cloexecImmediatelyBeforeCargoExecveat }) =>
+          !cloexecImmediatelyBeforeCargoExecveat,
+      ),
     true,
   );
 });
@@ -279,19 +405,16 @@ test("v2 requires an attested helper and READY to EOF Cargo transition", () => {
     "/usr/bin/x86_64-linux-gnu-gcc-13",
   );
   assert.equal(policy.helper.attestation.compiler.major, "13");
-  assert.deepEqual(
-    plainJson(policy.helper.attestation.bindingRequirements),
-    {
-      fileDescriptorMapSha256:
-        G17_NON_TMPFS_BUILD_ISOLATION_V2_FILE_DESCRIPTORS_SHA256,
-      statusProtocolSchema: G17_CARGO_EXECVEAT_STATUS_PROTOCOL_SCHEMA,
-      statusProtocolRequirementsSha256:
-        G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS_SHA256,
-      exactRequestBindingRequired: true,
-      exactHelperSourceBindingRequired: true,
-      exactHelperExecutableBindingRequired: true,
-    },
-  );
+  assert.deepEqual(plainJson(policy.helper.attestation.bindingRequirements), {
+    fileDescriptorMapSha256:
+      G17_NON_TMPFS_BUILD_ISOLATION_V2_FILE_DESCRIPTORS_SHA256,
+    statusProtocolSchema: G17_CARGO_EXECVEAT_STATUS_PROTOCOL_SCHEMA,
+    statusProtocolRequirementsSha256:
+      G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS_SHA256,
+    exactRequestBindingRequired: true,
+    exactHelperSourceBindingRequired: true,
+    exactHelperExecutableBindingRequired: true,
+  });
   assert.deepEqual(plainJson(policy.helper.attestation.compileArgv), [
     "/usr/bin/x86_64-linux-gnu-gcc-13",
     "-std=c17",
@@ -371,8 +494,9 @@ test("v2 requires an attested helper and READY to EOF Cargo transition", () => {
     G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_PROTOCOL_REQUIREMENTS_SHA256,
   );
   assert.deepEqual(
-    Object.keys(policy.helper.statusErrorStageMapping)
-      .filter((key) => key !== "unmappedFailureForbidden"),
+    Object.keys(policy.helper.statusErrorStageMapping).filter(
+      (key) => key !== "unmappedFailureForbidden",
+    ),
     [
       "preflight",
       "cargo-fd",
@@ -382,7 +506,10 @@ test("v2 requires an attested helper and READY to EOF Cargo transition", () => {
       "execveat",
     ],
   );
-  assert.equal(policy.helper.statusErrorStageMapping.unmappedFailureForbidden, true);
+  assert.equal(
+    policy.helper.statusErrorStageMapping.unmappedFailureForbidden,
+    true,
+  );
 
   assert.deepEqual(plainJson(policy.cargoTransition), {
     mechanism: "execveat-held-fd-empty-path/v1",
@@ -417,7 +544,10 @@ test("v2 retains the exact byte, argv, timeout, TERM, and reap ceilings", () => 
     G17_BENCHMARK_EXECUTION_REQUEST_ARGV_MAX_BYTES,
   );
   assert.equal(G17_NON_TMPFS_BUILD_ISOLATION_V2_STATUS_MAX_BYTES, 4_096);
-  assert.deepEqual(policy.supervision.limits, G17_NON_TMPFS_BUILD_ISOLATION_V2_LIMITS);
+  assert.deepEqual(
+    policy.supervision.limits,
+    G17_NON_TMPFS_BUILD_ISOLATION_V2_LIMITS,
+  );
   assert.deepEqual(plainJson(policy.supervision.limits), {
     timeoutMilliseconds: 300_000,
     combinedOutputMaximumBytes: 64 * 1024 * 1024,
@@ -536,28 +666,49 @@ test("v2 is exhaustively authority-free and makes no physical observation", () =
 
   assert.deepEqual(Object.keys(policy.authority).sort(), authorityKeys);
   assert.deepEqual(Object.keys(policy.nonclaims).sort(), nonclaimKeys);
-  assert.deepEqual(policy.authority, G17_NON_TMPFS_BUILD_ISOLATION_V2_AUTHORITY);
-  assert.deepEqual(policy.nonclaims, G17_NON_TMPFS_BUILD_ISOLATION_V2_NONCLAIMS);
-  assert.equal(Object.values(policy.authority).every((value) => value === false), true);
-  assert.equal(Object.values(policy.nonclaims).every((value) => value === false), true);
-  assert.equal(Object.values(policy.implementation).every((value) => value === false), true);
+  assert.deepEqual(
+    policy.authority,
+    G17_NON_TMPFS_BUILD_ISOLATION_V2_AUTHORITY,
+  );
+  assert.deepEqual(
+    policy.nonclaims,
+    G17_NON_TMPFS_BUILD_ISOLATION_V2_NONCLAIMS,
+  );
+  assert.equal(
+    Object.values(policy.authority).every((value) => value === false),
+    true,
+  );
+  assert.equal(
+    Object.values(policy.nonclaims).every((value) => value === false),
+    true,
+  );
+  assert.equal(
+    Object.values(policy.implementation).every((value) => value === false),
+    true,
+  );
   assert.equal(policy.finalDecisionEligible, false);
   assert.equal(policy.binding, null);
 
   for (const key of authorityKeys) {
     assert.throws(
-      () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-        mutatedBytes((value) => { value.authority[key] = true; }),
-      ),
+      () =>
+        verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+          mutatedBytes((value) => {
+            value.authority[key] = true;
+          }),
+        ),
       CONTRACT_ERROR,
       `authority ${key}`,
     );
   }
   for (const key of nonclaimKeys) {
     assert.throws(
-      () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-        mutatedBytes((value) => { value.nonclaims[key] = true; }),
-      ),
+      () =>
+        verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+          mutatedBytes((value) => {
+            value.nonclaims[key] = true;
+          }),
+        ),
       CONTRACT_ERROR,
       `nonclaim ${key}`,
     );
@@ -566,56 +717,273 @@ test("v2 is exhaustively authority-free and makes no physical observation", () =
 
 test("v2 rejects resealed drift in every successor boundary", () => {
   const mutations = [
-    ["schema", (value) => { value.schema = `${value.schema}-drift`; }],
-    ["status", (value) => { value.status = "IMPLEMENTED"; }],
-    ["environment", (value) => { value.environment.tmpfsState = true; }],
-    ["source mount", (value) => { value.workspace.namespace.mounts[0].heldFd = 5; }],
-    ["target mount", (value) => { value.workspace.namespace.mounts[1].readOnly = true; }],
-    ["fd range", (value) => { value.fileDescriptors.exactChildDescriptorRange.last = 9; }],
-    ["close range", (value) => { value.fileDescriptors.exactChildDescriptorRange.closeRange.first = 10; }],
-    ["fd number", (value) => { value.fileDescriptors.childFileDescriptors[6].childFd = 9; }],
-    ["fd role", (value) => { value.fileDescriptors.childFileDescriptors[7].role = "other"; }],
-    ["fd kind", (value) => { value.fileDescriptors.childFileDescriptors[8].kind = "directory"; }],
-    ["fd access", (value) => { value.fileDescriptors.childFileDescriptors[6].access = "read-write"; }],
-    ["helper map", (value) => { value.fileDescriptors.imageMaps.helperImageFileDescriptors.pop(); }],
-    ["Cargo map", (value) => { value.fileDescriptors.imageMaps.cargoImageInheritedFileDescriptors.push(6); }],
-    ["private map", (value) => { value.fileDescriptors.imageMaps.launcherPrivateFileDescriptors.reverse(); }],
-    ["parent-only fixed fd", (value) => { value.fileDescriptors.parentOnlyFileDescriptors[0].fixedFd = 9; }],
-    ["alias", (value) => { value.fileDescriptors.aliasing.childOpenFileDescriptionsPairwiseDistinctRequired = false; }],
-    ["helper language", (value) => { value.helper.implementation = "javascript"; }],
-    ["helper compiler", (value) => { value.helper.attestation.compiler.major = "14"; }],
-    ["helper recipe", (value) => { value.helper.attestation.compileArgv[2] = "-O0"; }],
-    ["helper descriptor", (value) => { value.helper.initialLaunch.heldHelperDescriptor = 6; }],
-    ["helper attestation", (value) => { value.helper.initialLaunch.physicalEvidenceRequiredBeforeAnyLaunchClaim = false; }],
-    ["helper status stage", (value) => { value.helper.statusErrorStageMapping.execveat = []; }],
-    ["CLOEXEC apply", (value) => { value.descriptorTransition.apply.setFdCloexec = [6, 7]; }],
-    ["CLOEXEC readback", (value) => { value.descriptorTransition.reread.expectedFdCloexecTrue = [6, 8]; }],
-    ["terminal order", (value) => { value.descriptorTransition.exactTerminalOrder.reverse(); }],
-    ["status writer", (value) => { value.statusProtocol.writerFd = 6; }],
-    ["status ready", (value) => { value.statusProtocol.readyFrame.type = "ready"; }],
-    ["status success", (value) => { value.statusProtocol.acceptedSequences.push("READY->EXIT"); }],
-    ["status ceiling", (value) => { value.statusProtocol.maximumBytes += 1; }],
-    ["status hash", (value) => { value.statusProtocol.requirementsSha256 = "0".repeat(64); }],
-    ["Cargo fd", (value) => { value.cargoTransition.executableFd = 8; }],
-    ["Cargo path", (value) => { value.cargoTransition.pathArgument = "/proc/self/fd/6"; }],
-    ["Cargo fallback", (value) => { value.cargoTransition.procFdPathnameFallbackForbidden = false; }],
-    ["output ceiling", (value) => { value.supervision.limits.combinedOutputMaximumBytes -= 1; }],
-    ["argv ceiling", (value) => { value.supervision.limits.aggregateArgvUtf8MaximumBytes -= 1; }],
-    ["timeout", (value) => { value.supervision.limits.timeoutMilliseconds += 1; }],
-    ["TERM grace", (value) => { value.supervision.termination.graceMilliseconds += 1; }],
-    ["reap", (value) => { value.supervision.closeAndReap.directChildWaitidReapRequired = false; }],
-    ["containment", (value) => { value.containment.initialPlacement.workerPlacedBeforeUserCodeRunnableRequired = false; }],
-    ["implementation", (value) => { value.implementation.nativeHelperImplemented = true; }],
-    ["decision", (value) => { value.finalDecisionEligible = true; }],
-    ["binding", (value) => { value.binding = {}; }],
-    ["extra field", (value) => { value.unreviewed = true; }],
+    [
+      "schema",
+      (value) => {
+        value.schema = `${value.schema}-drift`;
+      },
+    ],
+    [
+      "status",
+      (value) => {
+        value.status = "IMPLEMENTED";
+      },
+    ],
+    [
+      "environment",
+      (value) => {
+        value.environment.tmpfsState = true;
+      },
+    ],
+    [
+      "source mount",
+      (value) => {
+        value.workspace.namespace.mounts[0].heldFd = 5;
+      },
+    ],
+    [
+      "target mount",
+      (value) => {
+        value.workspace.namespace.mounts[1].readOnly = true;
+      },
+    ],
+    [
+      "fd range",
+      (value) => {
+        value.fileDescriptors.exactChildDescriptorRange.last = 9;
+      },
+    ],
+    [
+      "close range",
+      (value) => {
+        value.fileDescriptors.exactChildDescriptorRange.closeRange.first = 10;
+      },
+    ],
+    [
+      "fd number",
+      (value) => {
+        value.fileDescriptors.childFileDescriptors[6].childFd = 9;
+      },
+    ],
+    [
+      "fd role",
+      (value) => {
+        value.fileDescriptors.childFileDescriptors[7].role = "other";
+      },
+    ],
+    [
+      "fd kind",
+      (value) => {
+        value.fileDescriptors.childFileDescriptors[8].kind = "directory";
+      },
+    ],
+    [
+      "fd access",
+      (value) => {
+        value.fileDescriptors.childFileDescriptors[6].descriptorAccess =
+          "read-write";
+      },
+    ],
+    [
+      "helper map",
+      (value) => {
+        value.fileDescriptors.imageMaps.helperImageFileDescriptors.pop();
+      },
+    ],
+    [
+      "Cargo map",
+      (value) => {
+        value.fileDescriptors.imageMaps.cargoImageInheritedFileDescriptors.push(
+          6,
+        );
+      },
+    ],
+    [
+      "private map",
+      (value) => {
+        value.fileDescriptors.imageMaps.launcherPrivateFileDescriptors.reverse();
+      },
+    ],
+    [
+      "parent-only fixed fd",
+      (value) => {
+        value.fileDescriptors.parentOnlyFileDescriptors[0].fixedFd = 9;
+      },
+    ],
+    [
+      "alias",
+      (value) => {
+        value.fileDescriptors.aliasing.childOpenFileDescriptionsPairwiseDistinctRequired = false;
+      },
+    ],
+    [
+      "helper language",
+      (value) => {
+        value.helper.implementation = "javascript";
+      },
+    ],
+    [
+      "helper compiler",
+      (value) => {
+        value.helper.attestation.compiler.major = "14";
+      },
+    ],
+    [
+      "helper recipe",
+      (value) => {
+        value.helper.attestation.compileArgv[2] = "-O0";
+      },
+    ],
+    [
+      "helper descriptor",
+      (value) => {
+        value.helper.initialLaunch.heldHelperDescriptor = 6;
+      },
+    ],
+    [
+      "helper attestation",
+      (value) => {
+        value.helper.initialLaunch.physicalEvidenceRequiredBeforeAnyLaunchClaim = false;
+      },
+    ],
+    [
+      "helper status stage",
+      (value) => {
+        value.helper.statusErrorStageMapping.execveat = [];
+      },
+    ],
+    [
+      "CLOEXEC apply",
+      (value) => {
+        value.descriptorTransition.apply.setFdCloexec = [6, 7];
+      },
+    ],
+    [
+      "CLOEXEC readback",
+      (value) => {
+        value.descriptorTransition.reread.expectedFdCloexecTrue = [6, 8];
+      },
+    ],
+    [
+      "terminal order",
+      (value) => {
+        value.descriptorTransition.exactTerminalOrder.reverse();
+      },
+    ],
+    [
+      "status writer",
+      (value) => {
+        value.statusProtocol.writerFd = 6;
+      },
+    ],
+    [
+      "status ready",
+      (value) => {
+        value.statusProtocol.readyFrame.type = "ready";
+      },
+    ],
+    [
+      "status success",
+      (value) => {
+        value.statusProtocol.acceptedSequences.push("READY->EXIT");
+      },
+    ],
+    [
+      "status ceiling",
+      (value) => {
+        value.statusProtocol.maximumBytes += 1;
+      },
+    ],
+    [
+      "status hash",
+      (value) => {
+        value.statusProtocol.requirementsSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "Cargo fd",
+      (value) => {
+        value.cargoTransition.executableFd = 8;
+      },
+    ],
+    [
+      "Cargo path",
+      (value) => {
+        value.cargoTransition.pathArgument = "/proc/self/fd/6";
+      },
+    ],
+    [
+      "Cargo fallback",
+      (value) => {
+        value.cargoTransition.procFdPathnameFallbackForbidden = false;
+      },
+    ],
+    [
+      "output ceiling",
+      (value) => {
+        value.supervision.limits.combinedOutputMaximumBytes -= 1;
+      },
+    ],
+    [
+      "argv ceiling",
+      (value) => {
+        value.supervision.limits.aggregateArgvUtf8MaximumBytes -= 1;
+      },
+    ],
+    [
+      "timeout",
+      (value) => {
+        value.supervision.limits.timeoutMilliseconds += 1;
+      },
+    ],
+    [
+      "TERM grace",
+      (value) => {
+        value.supervision.termination.graceMilliseconds += 1;
+      },
+    ],
+    [
+      "reap",
+      (value) => {
+        value.supervision.closeAndReap.directChildWaitidReapRequired = false;
+      },
+    ],
+    [
+      "containment",
+      (value) => {
+        value.containment.initialPlacement.workerPlacedBeforeUserCodeRunnableRequired = false;
+      },
+    ],
+    [
+      "implementation",
+      (value) => {
+        value.implementation.nativeHelperImplemented = true;
+      },
+    ],
+    [
+      "decision",
+      (value) => {
+        value.finalDecisionEligible = true;
+      },
+    ],
+    [
+      "binding",
+      (value) => {
+        value.binding = {};
+      },
+    ],
+    [
+      "extra field",
+      (value) => {
+        value.unreviewed = true;
+      },
+    ],
   ];
 
   for (const [label, mutate] of mutations) {
     assert.throws(
-      () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-        mutatedBytes(mutate),
-      ),
+      () =>
+        verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(mutatedBytes(mutate)),
       CONTRACT_ERROR,
       label,
     );
@@ -635,15 +1003,14 @@ test("v2 verifier rejects ambiguous, noncanonical, and hostile byte inputs", () 
     CONTRACT_ERROR,
   );
   assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      Buffer.alloc(G17_NON_TMPFS_BUILD_ISOLATION_V2_POLICY_MAX_BYTES + 1),
-    ),
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+        Buffer.alloc(G17_NON_TMPFS_BUILD_ISOLATION_V2_POLICY_MAX_BYTES + 1),
+      ),
     CONTRACT_ERROR,
   );
   assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      new Proxy(bytes, {}),
-    ),
+    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(new Proxy(bytes, {})),
     CONTRACT_ERROR,
   );
 
@@ -667,42 +1034,48 @@ test("v2 verifier rejects ambiguous, noncanonical, and hostile byte inputs", () 
   );
 
   assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      bytes.subarray(0, -1),
-    ),
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(bytes.subarray(0, -1)),
     CONTRACT_ERROR,
   );
   assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      Buffer.concat([bytes, Buffer.from("\n", "utf8")]),
-    ),
-    CONTRACT_ERROR,
-  );
-  assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      Buffer.from(` ${bytes.toString("utf8")}`, "utf8"),
-    ),
-    CONTRACT_ERROR,
-  );
-  assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      Buffer.from([0xff, 0x0a]),
-    ),
-    CONTRACT_ERROR,
-  );
-  assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      Buffer.from(
-        '{"schema":"oxigraph.g1.7-non-tmpfs-build-isolation-policy/v2","schema":"oxigraph.g1.7-non-tmpfs-build-isolation-policy/v2"}\n',
-        "utf8",
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+        Buffer.concat([bytes, Buffer.from("\n", "utf8")]),
       ),
-    ),
     CONTRACT_ERROR,
   );
   assert.throws(
-    () => verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
-      mutatedBytes((value) => { value.status = "PHYSICAL"; }),
-    ),
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+        Buffer.from(` ${bytes.toString("utf8")}`, "utf8"),
+      ),
+    CONTRACT_ERROR,
+  );
+  assert.throws(
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+        Buffer.from([0xff, 0x0a]),
+      ),
+    CONTRACT_ERROR,
+  );
+  assert.throws(
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+        Buffer.from(
+          '{"schema":"oxigraph.g1.7-non-tmpfs-build-isolation-policy/v2","schema":"oxigraph.g1.7-non-tmpfs-build-isolation-policy/v2"}\n',
+          "utf8",
+        ),
+      ),
+    CONTRACT_ERROR,
+  );
+  assert.throws(
+    () =>
+      verifyG17NonTmpfsBuildIsolationV2PolicyArtifact(
+        mutatedBytes((value) => {
+          value.status = "PHYSICAL";
+        }),
+      ),
     CONTRACT_ERROR,
   );
 });
