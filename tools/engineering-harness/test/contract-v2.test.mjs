@@ -22,9 +22,11 @@ import {
 } from "../src/candidate/tree-v2.mjs";
 import { createGitHome, runGit, runGitBytes } from "../src/candidate/git.mjs";
 import {
+  parseTaskContractBytesV2,
   validateTaskContractV2,
   verifyTaskContractRepositoryV2,
 } from "../src/contract-v2.mjs";
+import { encodeSandboxSessionConfigurationV2 } from "../src/candidate/sandbox-session-v2.mjs";
 import {
   isTaskV2Failure,
   TaskV2Failure,
@@ -92,6 +94,40 @@ function changed(contract, mutate) {
   const clone = structuredClone(contract);
   mutate(clone);
   return clone;
+}
+
+function contractWithDenseSessionConfiguration(contract, featurePairCount) {
+  return changed(contract, (value) => {
+    const testRoles = [
+      "public",
+      ...Array.from({ length: 13 }, (_, index) => `role-${index}`),
+    ];
+    value.verificationSequence = ["format", "build", ...testRoles];
+    value.commands = {
+      format: { argv: ["cargo", "fmt", "--check"], timeoutMs: 120_000 },
+      build: {
+        argv: ["cargo", "test", "--no-run", "--test", "public"],
+        timeoutMs: 120_000,
+      },
+    };
+    for (const role of testRoles) {
+      value.commands[role] = {
+        argv: ["cargo", "test", "--test", "public"],
+        timeoutMs: 120_000,
+      };
+    }
+    for (const role of value.verificationSequence.slice(1)) {
+      for (let index = 0; index < featurePairCount; index += 1) {
+        value.commands[role].argv.push(
+          "--features",
+          `${role}-${index}-`.padEnd(4096, "x"),
+        );
+      }
+    }
+    value.success = Object.fromEntries(
+      testRoles.map((role) => [`${role}Passed`, 1]),
+    );
+  });
 }
 
 function assertDeepFrozen(value, seen = new Set()) {
@@ -359,7 +395,10 @@ async function createFixture(
     verificationSequence: ["format", "build", "public"],
     commands: {
       format: { argv: ["cargo", "fmt", "--check"], timeoutMs: 120_000 },
-      build: { argv: ["cargo", "test", "--no-run"], timeoutMs: 120_000 },
+      build: {
+        argv: ["cargo", "test", "--no-run", "--test", "public"],
+        timeoutMs: 120_000,
+      },
       public: {
         argv: ["cargo", "test", "--test", "public"],
         timeoutMs: 120_000,
@@ -429,7 +468,6 @@ test("strict v2 schema and repository verification accept exact A and M fixtures
 });
 
 test("raw v2 contract parsing owns exact bytes and binds raw and canonical identities", async (t) => {
-  const { parseTaskContractBytesV2 } = await import("../src/contract-v2.mjs");
   const { contract } = await createFixture(t);
   const raw = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`, "utf8");
   const expectedRawSha256 = sha256(raw);
@@ -464,7 +502,6 @@ test("raw v2 contract parsing owns exact bytes and binds raw and canonical ident
 });
 
 test("raw v2 contract parsing rejects hostile byte containers, malformed text, and overflow", async () => {
-  const { parseTaskContractBytesV2 } = await import("../src/contract-v2.mjs");
   const shared = new Uint8Array(new SharedArrayBuffer(8));
   for (const invalid of [
     "{}",
@@ -480,6 +517,37 @@ test("raw v2 contract parsing rejects hostile byte containers, malformed text, a
       failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
     );
   }
+});
+
+test("contract acceptance proves the projected v2 session configuration fits its shared ceiling", async (t) => {
+  const { contract } = await createFixture(t);
+  const accepted = contractWithDenseSessionConfiguration(contract, 60);
+  const raw = Buffer.from(`${canonicalJson(accepted)}\n`, "utf8");
+  assert.equal(raw.length > 3 * 1024 * 1024, true);
+  assert.equal(raw.length <= 4 * 1024 * 1024, true);
+
+  const parsed = parseTaskContractBytesV2(raw);
+  const configurationBytes = encodeSandboxSessionConfigurationV2({
+    contractSha256: parsed.contractSha256,
+    verificationSequence: parsed.contract.verificationSequence,
+    commands: parsed.contract.commands,
+    ceilings: {
+      maxBuildOutputBytes: parsed.contract.ceilings.maxBuildOutputBytes,
+      maxTestOutputBytesPerCommand:
+        parsed.contract.ceilings.maxTestOutputBytesPerCommand,
+      maxTotalVerifierWallMs: parsed.contract.ceilings.maxTotalVerifierWallMs,
+      maxVerifierDiskBytes: parsed.contract.ceilings.maxVerifierDiskBytes,
+      cargoBuildJobs: parsed.contract.ceilings.cargoBuildJobs,
+    },
+  });
+  assert.equal(configurationBytes.length > 3 * 1024 * 1024, true);
+  assert.equal(configurationBytes.length <= 4 * 1024 * 1024, true);
+
+  const overflow = contractWithDenseSessionConfiguration(contract, 68);
+  assert.throws(
+    () => validateTaskContractV2(overflow),
+    failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+  );
 });
 
 test("repository verification binds each initialized submodule commit and tree", async (t) => {
@@ -587,6 +655,42 @@ test("v2 command, expected-pass, and resource ceilings match downstream bounds",
 
   const invalid = [
     changed(contract, (value) => {
+      value.commands.build.argv = ["cargo", "test", "--no-run"];
+    }),
+    changed(contract, (value) => {
+      value.commands.build.argv = [
+        "cargo",
+        "test",
+        "--no-run",
+        "--test=public",
+      ];
+    }),
+    changed(contract, (value) => {
+      value.commands.build.argv.push("--release");
+    }),
+    changed(contract, (value) => {
+      value.commands.build.argv.push("--target-dir", "/tmp/elsewhere");
+    }),
+    changed(contract, (value) => {
+      value.commands.build.argv.push(
+        "--test",
+        "public-extra",
+        "--test",
+        "public_extra",
+      );
+    }),
+    changed(contract, (value) => {
+      value.commands.build.argv = [
+        "cargo",
+        "test",
+        "--no-run",
+        "--test",
+        "public",
+        "--test",
+        "public",
+      ];
+    }),
+    changed(contract, (value) => {
       value.commands.public.argv = ["cargo"];
     }),
     changed(contract, (value) => {
@@ -594,6 +698,21 @@ test("v2 command, expected-pass, and resource ceilings match downstream bounds",
     }),
     changed(contract, (value) => {
       value.commands.public.argv.push("x".repeat(4097));
+    }),
+    changed(contract, (value) => {
+      value.commands.public.argv.push("unpaired-\ud800-surrogate");
+    }),
+    changed(contract, (value) => {
+      value.commands.public.argv.push("control-\u0001-byte");
+    }),
+    changed(contract, (value) => {
+      value.objective = `${value.objective}\ud800`;
+    }),
+    changed(contract, (value) => {
+      value.routing.providers[0].model = "gpt-5.6-\ud800";
+    }),
+    changed(contract, (value) => {
+      value.initialRed.requiredSubstrings.push("\ud800");
     }),
     changed(contract, (value) => {
       value.commands.public.timeoutMs = 999;

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { types as utilTypes } from "node:util";
 
 import { parseTaskContractBytesV2 } from "../contract-v2.mjs";
+import { canonicalJson } from "../routing/features.mjs";
 import {
   validateCandidatePatchV2,
   validateTaskV2Path,
@@ -22,6 +23,14 @@ import {
   treeEntriesAtAsciiFold,
   treeEntryAtPath,
 } from "./tree-v2.mjs";
+import {
+  isSandboxSessionV2Fault,
+  isTrustedSandboxSessionV2Report,
+  runSandboxVerificationSessionV2,
+  sandboxSessionV2ContainmentReadiness,
+} from "./sandbox-session-v2.mjs";
+import { createSubmoduleV2MaterializerForTrustedController } from "./submodules-v2.mjs";
+import { classifyTrustedCandidateVerificationV2 } from "./verifier-v2-core.mjs";
 
 const temporaryPrefix = "oxigraph-candidate-v2-";
 const cloneOutputBytes = 8 * 1024 * 1024;
@@ -40,16 +49,77 @@ const commitIdentity = Object.freeze({
   GIT_COMMITTER_NAME: "Oxigraph Engineering Harness",
 });
 const oidPattern = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const nativeAbortSignalPrototype = AbortSignal.prototype;
+const nativeAbortedGetter = Object.getOwnPropertyDescriptor(
+  nativeAbortSignalPrototype,
+  "aborted",
+).get;
+const lifecycleTestSeams = new WeakMap();
 
-function createReconstructionController(gitBytesRunner) {
-  if (typeof gitBytesRunner !== "function") {
-    throw new TypeError("v2 reconstruction requires a fixed Git-byte runner");
+function fixedFunction(value, label) {
+  if (typeof value !== "function" || utilTypes.isProxy(value)) {
+    throw new TypeError(`${label} must be a fixed function capability`);
   }
-  return {
+  return value;
+}
+
+function createMaterializer(materializerFactory, controller) {
+  const value = materializerFactory(
+    Object.freeze({
+      claimCandidate: (candidate) =>
+        claimCandidateSubmodules(candidate, controller),
+    }),
+  );
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype ||
+    !Object.isFrozen(value)
+  ) {
+    throw new TypeError(
+      "v2 submodule materializer must be an exact frozen record",
+    );
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (
+    Reflect.ownKeys(descriptors).length !== 1 ||
+    descriptors.materialize === undefined ||
+    !("value" in descriptors.materialize) ||
+    descriptors.materialize.enumerable !== true
+  ) {
+    throw new TypeError(
+      "v2 submodule materializer must expose only materialize",
+    );
+  }
+  fixedFunction(descriptors.materialize.value, "v2 materialize");
+  return value;
+}
+
+function createReconstructionController(
+  gitBytesRunner,
+  sessionRunner = runSandboxVerificationSessionV2,
+  containmentPreflight = sandboxSessionV2ContainmentReadiness,
+  materializerFactory = createSubmoduleV2MaterializerForTrustedController,
+) {
+  fixedFunction(gitBytesRunner, "v2 Git-byte runner");
+  fixedFunction(sessionRunner, "v2 session runner");
+  fixedFunction(containmentPreflight, "v2 containment preflight");
+  fixedFunction(materializerFactory, "v2 submodule materializer factory");
+  const controller = {
     gitBytesRunner,
+    sessionRunner,
+    containmentPreflight,
     handles: new WeakMap(),
     quarantinedRoots: new Set(),
+    quarantinedHandles: new Set(),
   };
+  controller.submoduleMaterializer = createMaterializer(
+    materializerFactory,
+    controller,
+  );
+  return controller;
 }
 
 const productionController = createReconstructionController(runGitBytes);
@@ -58,30 +128,110 @@ function gitFailureCleanupSafe(error) {
   if (!(error instanceof GitBytesProcessFault)) return false;
   const outcome = error.outcome;
   if (
-    outcome?.noChild === true &&
-    outcome.spawned === false &&
-    outcome.reaped === false &&
-    outcome.directChildCleanupSafe === true &&
-    outcome.processGroupQuiescent === true
+    outcome === null ||
+    typeof outcome !== "object" ||
+    utilTypes.isProxy(outcome) ||
+    Array.isArray(outcome) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(outcome))
   ) {
-    return true;
+    return false;
   }
+  const keys = [
+    "disposition",
+    "firstTerminalReason",
+    "spawned",
+    "noChild",
+    "exitCode",
+    "signal",
+    "closeCode",
+    "closeSignal",
+    "statusAgreement",
+    "reaped",
+    "directChildCleanupSafe",
+    "processGroupQuiescent",
+    "exitObserved",
+    "closeObserved",
+    "stdoutEof",
+    "stderrEof",
+    "stdinComplete",
+    "captureComplete",
+    "outputTruncated",
+    "terminationErrors",
+    "processErrors",
+  ];
+  let proof;
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(outcome);
+    if (
+      keys.some(
+        (key) =>
+          descriptors[key] === undefined || !("value" in descriptors[key]),
+      )
+    ) {
+      return false;
+    }
+    proof = Object.fromEntries(
+      keys.map((key) => [key, descriptors[key].value]),
+    );
+  } catch {
+    return false;
+  }
+  if (
+    !Array.isArray(proof.terminationErrors) ||
+    !Array.isArray(proof.processErrors) ||
+    proof.terminationErrors.length !== 0 ||
+    proof.outputTruncated !== false
+  ) {
+    return false;
+  }
+  if (proof.noChild === true) {
+    const reasonIsCoherent =
+      proof.firstTerminalReason === proof.disposition &&
+      ((proof.disposition === "cancelled" &&
+        proof.processErrors.length === 0) ||
+        (proof.disposition === "spawn-error" &&
+          proof.processErrors.length > 0));
+    return (
+      reasonIsCoherent &&
+      proof.spawned === false &&
+      proof.exitCode === null &&
+      proof.signal === null &&
+      proof.closeCode === null &&
+      proof.closeSignal === null &&
+      proof.statusAgreement === false &&
+      proof.reaped === false &&
+      proof.directChildCleanupSafe === true &&
+      proof.processGroupQuiescent === true &&
+      proof.exitObserved === false &&
+      proof.closeObserved === false &&
+      proof.stdoutEof === false &&
+      proof.stderrEof === false &&
+      typeof proof.stdinComplete === "boolean" &&
+      proof.captureComplete === false
+    );
+  }
+  const statusIsCoherent =
+    proof.exitCode === proof.closeCode &&
+    proof.signal === proof.closeSignal &&
+    ((Number.isInteger(proof.exitCode) && proof.signal === null) ||
+      (proof.exitCode === null &&
+        typeof proof.signal === "string" &&
+        proof.signal.length > 0));
   return (
-    outcome?.noChild === false &&
-    outcome.spawned === true &&
-    outcome.captureComplete === true &&
-    outcome.reaped === true &&
-    outcome.statusAgreement === true &&
-    outcome.directChildCleanupSafe === true &&
-    outcome.processGroupQuiescent === true &&
-    outcome.exitObserved === true &&
-    outcome.closeObserved === true &&
-    outcome.stdoutEof === true &&
-    outcome.stderrEof === true &&
-    outcome.stdinComplete === true &&
-    outcome.outputTruncated === false &&
-    Array.isArray(outcome.processErrors) &&
-    outcome.processErrors.length === 0
+    proof.noChild === false &&
+    proof.spawned === true &&
+    proof.captureComplete === true &&
+    proof.reaped === true &&
+    proof.statusAgreement === true &&
+    proof.directChildCleanupSafe === true &&
+    proof.processGroupQuiescent === true &&
+    proof.exitObserved === true &&
+    proof.closeObserved === true &&
+    proof.stdoutEof === true &&
+    proof.stderrEof === true &&
+    proof.stdinComplete === true &&
+    proof.processErrors.length === 0 &&
+    statusIsCoherent
   );
 }
 
@@ -92,6 +242,73 @@ async function runCandidateGit(controller, attempt, input) {
     if (!gitFailureCleanupSafe(error)) attempt.cleanupSafe = false;
     throw error;
   }
+}
+
+function exactDigest(value) {
+  return typeof value === "string" && /^[0-9a-f]{64}$/u.test(value);
+}
+
+function quarantineCandidate(controller, handle, detailSha256) {
+  handle.cleanupSafe = false;
+  handle.state = "quarantined";
+  handle.quarantineDetailSha256 = exactDigest(detailSha256)
+    ? detailSha256
+    : sha256(Buffer.from("candidate v2 quarantined", "utf8"));
+  controller.quarantinedRoots.add(handle.temporaryRoot);
+  controller.quarantinedHandles.add(handle);
+}
+
+function claimCandidateSubmodules(candidate, controller) {
+  const handle = controller.handles.get(candidate);
+  if (
+    handle === undefined ||
+    !["ready", "preflight-complete"].includes(handle.state) ||
+    handle.cleanupSafe !== true
+  ) {
+    fail("ERR_RECONSTRUCTION", "candidate v2 is not ready for submodules");
+  }
+  handle.state = "materializing-submodules";
+  let settled = false;
+  const settle = (expectedState, operation) => {
+    if (settled || handle.state !== expectedState) {
+      fail("ERR_INTERNAL_FAIL_CLOSED", "submodule lifecycle settled twice");
+    }
+    settled = true;
+    operation();
+  };
+  return Object.freeze({
+    sourceRoot: handle.sourceRoot,
+    temporaryRoot: handle.temporaryRoot,
+    workspace: handle.workspace,
+    gitHome: handle.gitHome,
+    submodules: handle.submodules,
+    complete(evidence) {
+      settle("materializing-submodules", () => {
+        if (!Array.isArray(evidence) || !Object.isFrozen(evidence)) {
+          fail("ERR_INTERNAL_FAIL_CLOSED", "submodule evidence is not frozen");
+        }
+        handle.submoduleEvidence = evidence;
+        handle.state = "submodules-ready";
+      });
+    },
+    failSafe(detailSha256) {
+      settle("materializing-submodules", () => {
+        if (!exactDigest(detailSha256)) {
+          fail(
+            "ERR_INTERNAL_FAIL_CLOSED",
+            "submodule failure digest is invalid",
+          );
+        }
+        handle.verificationDetailSha256 = detailSha256;
+        handle.state = "submodules-failed";
+      });
+    },
+    quarantine(detailSha256) {
+      settle("materializing-submodules", () => {
+        quarantineCandidate(controller, handle, detailSha256);
+      });
+    },
+  });
 }
 
 function fail(code, detail) {
@@ -896,6 +1113,9 @@ async function reconstructCandidateV2Once(rawInput, controller) {
       canonicalContractSha256: input.canonicalContractSha256,
       candidate: identity,
       submodules: contract.protectedInputs.submodules,
+      submoduleEvidence: null,
+      verificationResult: null,
+      verificationDetailSha256: null,
       cleanupSafe: attempt.cleanupSafe,
       quarantineDetailSha256: null,
     });
@@ -924,12 +1144,359 @@ export function reconstructCandidateV2(input) {
   );
 }
 
+function snapshotVerificationInput(value) {
+  const record = plainRecord(
+    value,
+    "v2 verification input",
+    "ERR_RECONSTRUCTION",
+  );
+  let descriptors;
+  try {
+    descriptors = Object.getOwnPropertyDescriptors(record);
+  } catch (error) {
+    fail("ERR_RECONSTRUCTION", error);
+  }
+  const keys = Reflect.ownKeys(descriptors);
+  const expected = Object.hasOwn(descriptors, "signal")
+    ? ["candidate", "signal"]
+    : ["candidate"];
+  if (
+    keys.length !== expected.length ||
+    keys.some((key) => typeof key !== "string" || !expected.includes(key)) ||
+    expected.some((key) => !keys.includes(key)) ||
+    keys.some((key) => {
+      const descriptor = descriptors[key];
+      return !("value" in descriptor) || descriptor.enumerable !== true;
+    })
+  ) {
+    fail("ERR_RECONSTRUCTION", "v2 verification input has unexpected keys");
+  }
+  const candidate = descriptors.candidate.value;
+  if (
+    candidate === null ||
+    typeof candidate !== "object" ||
+    utilTypes.isProxy(candidate)
+  ) {
+    fail("ERR_RECONSTRUCTION", "v2 candidate identity is not exact");
+  }
+  const signal = descriptors.signal?.value;
+  if (signal !== undefined) {
+    if (
+      signal === null ||
+      typeof signal !== "object" ||
+      utilTypes.isProxy(signal) ||
+      Object.getPrototypeOf(signal) !== nativeAbortSignalPrototype
+    ) {
+      fail("ERR_RECONSTRUCTION", "v2 cancellation signal is not native");
+    }
+    try {
+      nativeAbortedGetter.call(signal);
+    } catch (error) {
+      fail("ERR_RECONSTRUCTION", error);
+    }
+  }
+  return Object.freeze({ candidate, signal });
+}
+
+function snapshotContainmentReadiness(value) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype ||
+    !Object.isFrozen(value)
+  ) {
+    return undefined;
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  if (
+    keys.length !== 2 ||
+    !keys.includes("status") ||
+    !keys.includes("reason") ||
+    keys.some(
+      (key) =>
+        typeof key !== "string" ||
+        !("value" in descriptors[key]) ||
+        descriptors[key].enumerable !== true,
+    )
+  ) {
+    return undefined;
+  }
+  const status = descriptors.status.value;
+  const reason = descriptors.reason.value;
+  if (
+    !["verified", "unavailable", "unproved"].includes(status) ||
+    typeof reason !== "string" ||
+    reason.length < 1 ||
+    reason.length > 128 ||
+    /[\0\r\n]/u.test(reason)
+  ) {
+    return undefined;
+  }
+  return Object.freeze({ status, reason });
+}
+
+async function assertCandidateVerificationIdentity(controller, handle) {
+  const runGit = (input) => runCandidateGit(controller, handle, input);
+  const oidLength = handle.candidate.commit.length;
+  const commit = validatedCommandOid(
+    await typedOperation("ERR_RECONSTRUCTION", () =>
+      runGit({
+        args: ["rev-parse", "HEAD"],
+        cwd: handle.workspace,
+        home: handle.gitHome,
+        maxOutputBytes: commitOutputBytes,
+      }),
+    ),
+    "verification candidate commit",
+    oidLength,
+  );
+  const tree = validatedCommandOid(
+    await typedOperation("ERR_RECONSTRUCTION", () =>
+      runGit({
+        args: ["rev-parse", "HEAD^{tree}"],
+        cwd: handle.workspace,
+        home: handle.gitHome,
+        maxOutputBytes: commitOutputBytes,
+      }),
+    ),
+    "verification candidate tree",
+    oidLength,
+  );
+  const indexTree = validatedCommandOid(
+    await typedOperation("ERR_RECONSTRUCTION", () =>
+      runGit({
+        args: ["write-tree"],
+        cwd: handle.workspace,
+        home: handle.gitHome,
+        maxOutputBytes: commitOutputBytes,
+      }),
+    ),
+    "verification candidate index tree",
+    oidLength,
+  );
+  const status = await typedOperation("ERR_RECONSTRUCTION", () =>
+    runGit({
+      args: [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--ignore-submodules=all",
+      ],
+      cwd: handle.workspace,
+      home: handle.gitHome,
+      maxOutputBytes: patchOutputBytes,
+    }),
+  );
+  if (
+    commit !== handle.candidate.commit ||
+    tree !== handle.candidate.tree ||
+    indexTree !== handle.candidate.tree ||
+    !Buffer.isBuffer(status) ||
+    status.length !== 0
+  ) {
+    fail("ERR_RECONSTRUCTION", "candidate verification identity drifted");
+  }
+}
+
+function frozenFailureVerificationResult(handle, reason, cleanupSafe) {
+  const projection = Object.freeze({
+    schema: "oxigraph.engineering-candidate-verification/v2",
+    verdict: "INCONCLUSIVE",
+    stage: "infrastructure",
+    reason,
+    candidate: handle.candidate,
+    session: Object.freeze({
+      configurationSha256: null,
+      resultSha256: null,
+      resultBytes: 0,
+      commandsCompleted: 0,
+      containment:
+        reason === "containment-unavailable" ? "unavailable" : "unproved",
+      cleanupSafe,
+      stateBytes: null,
+      workerFailure: null,
+    }),
+    commands: Object.freeze([]),
+    artifacts: Object.freeze([]),
+  });
+  return Object.freeze({
+    ...projection,
+    projectionSha256: sha256(Buffer.from(canonicalJson(projection), "utf8")),
+  });
+}
+
+function verificationFaultReason(error) {
+  if (isSandboxSessionV2Fault(error)) {
+    return [
+      "containment-unavailable",
+      "outer-process",
+      "protocol-or-inode",
+      "cleanup",
+    ].includes(error.reason)
+      ? error.reason
+      : "sandbox-infrastructure";
+  }
+  if (isTaskV2Failure(error) || error instanceof GitBytesProcessFault) {
+    return "candidate-identity-unproved";
+  }
+  return "internal-fail-closed";
+}
+
+async function verifyCandidateV2Once(rawInput, controller) {
+  const input = snapshotVerificationInput(rawInput);
+  const handle = controller.handles.get(input.candidate);
+  if (
+    handle === undefined ||
+    handle.state !== "ready" ||
+    handle.cleanupSafe !== true
+  ) {
+    fail("ERR_RECONSTRUCTION", "candidate v2 is unknown or already consumed");
+  }
+
+  // Claim the one allowed verification before any asynchronous work. A real
+  // containment owner may later return `verified`; until then this branch
+  // consumes the attempt and returns without Git, tar, systemd, bwrap, or
+  // candidate execution.
+  handle.state = "preflighting";
+  let readiness;
+  try {
+    readiness = snapshotContainmentReadiness(controller.containmentPreflight());
+  } catch {
+    readiness = undefined;
+  }
+  await Promise.resolve();
+  readiness ??= Object.freeze({ status: "unproved", reason: "invalid-proof" });
+  if (readiness.status !== "verified") {
+    handle.state = "verified";
+    const result = frozenFailureVerificationResult(
+      handle,
+      readiness.status === "unavailable"
+        ? "containment-unavailable"
+        : "containment-unproved",
+      true,
+    );
+    handle.verificationResult = result;
+    return result;
+  }
+  handle.state = "preflight-complete";
+
+  try {
+    await controller.submoduleMaterializer.materialize(input.candidate);
+  } catch (error) {
+    const reason = "submodule-materialization";
+    const cleanupSafe =
+      handle.state === "submodules-failed" && handle.cleanupSafe === true;
+    if (!cleanupSafe && handle.state !== "quarantined") {
+      quarantineCandidate(
+        controller,
+        handle,
+        sha256(Buffer.from(reason, "utf8")),
+      );
+    }
+    const result = frozenFailureVerificationResult(handle, reason, cleanupSafe);
+    handle.verificationResult = result;
+    return result;
+  }
+
+  if (handle.state !== "submodules-ready") {
+    quarantineCandidate(
+      controller,
+      handle,
+      sha256(Buffer.from("submodule lifecycle did not settle", "utf8")),
+    );
+    const result = frozenFailureVerificationResult(
+      handle,
+      "internal-fail-closed",
+      false,
+    );
+    handle.verificationResult = result;
+    return result;
+  }
+  handle.state = "verifying";
+  let trustedReport = false;
+  try {
+    await assertCandidateVerificationIdentity(controller, handle);
+    const report = await controller.sessionRunner({
+      workspace: handle.workspace,
+      contractSha256: handle.contractSha256,
+      verificationSequence: handle.contract.verificationSequence,
+      commands: handle.contract.commands,
+      ceilings: Object.freeze({
+        maxBuildOutputBytes: handle.contract.ceilings.maxBuildOutputBytes,
+        maxTestOutputBytesPerCommand:
+          handle.contract.ceilings.maxTestOutputBytesPerCommand,
+        maxTotalVerifierWallMs: handle.contract.ceilings.maxTotalVerifierWallMs,
+        maxResidentBytes: handle.contract.ceilings.maxResidentBytes,
+        maxVerifierDiskBytes: handle.contract.ceilings.maxVerifierDiskBytes,
+        cargoBuildJobs: handle.contract.ceilings.cargoBuildJobs,
+      }),
+      signal: input.signal,
+    });
+    if (!isTrustedSandboxSessionV2Report(report)) {
+      throw new Error("v2 session report has no production trust brand");
+    }
+    trustedReport = true;
+    await assertCandidateVerificationIdentity(controller, handle);
+    const result = classifyTrustedCandidateVerificationV2({
+      candidate: handle.candidate,
+      contract: handle.contract,
+      report,
+    });
+    if (report.cleanupSafe !== true || handle.cleanupSafe !== true) {
+      quarantineCandidate(
+        controller,
+        handle,
+        sha256(Buffer.from("v2 verification cleanup is unproved", "utf8")),
+      );
+    } else {
+      handle.state = "verified";
+    }
+    handle.verificationResult = result;
+    return result;
+  } catch (error) {
+    const safeFault =
+      isSandboxSessionV2Fault(error) && error.cleanupSafe === true;
+    const safeIdentityFailure =
+      handle.cleanupSafe === true &&
+      (isTaskV2Failure(error) || error instanceof GitBytesProcessFault);
+    const cleanupSafe = safeFault || safeIdentityFailure || trustedReport;
+    if (cleanupSafe && handle.cleanupSafe === true) {
+      handle.state = "verified";
+    } else {
+      quarantineCandidate(
+        controller,
+        handle,
+        sha256(
+          Buffer.from("v2 verification failed without cleanup proof", "utf8"),
+        ),
+      );
+    }
+    const result = frozenFailureVerificationResult(
+      handle,
+      verificationFaultReason(error),
+      cleanupSafe && handle.cleanupSafe === true,
+    );
+    handle.verificationResult = result;
+    return result;
+  }
+}
+
+export function verifyCandidateV2(input) {
+  return withTaskV2FailureBoundary(() =>
+    verifyCandidateV2Once(input, productionController),
+  );
+}
+
 function disposeCandidateV2WithController(candidate, controller) {
   return withTaskV2FailureBoundary(async () => {
     const handle = controller.handles.get(candidate);
     if (
       handle === undefined ||
-      !["ready", "verified"].includes(handle.state) ||
+      !["ready", "submodules-failed", "verified"].includes(handle.state) ||
       handle.cleanupSafe !== true
     ) {
       fail("ERR_RECONSTRUCTION", "candidate v2 handle is unknown or disposed");
@@ -939,12 +1506,11 @@ function disposeCandidateV2WithController(candidate, controller) {
       await removeTemporaryRoot(handle.temporaryRoot);
       handle.state = "disposed";
     } catch (error) {
-      handle.cleanupSafe = false;
-      handle.state = "quarantined";
-      handle.quarantineDetailSha256 = sha256(
-        Buffer.from("candidate disposal failed closed", "utf8"),
+      quarantineCandidate(
+        controller,
+        handle,
+        sha256(Buffer.from("candidate disposal failed closed", "utf8")),
       );
-      controller.quarantinedRoots.add(handle.temporaryRoot);
       throw error;
     }
   });
@@ -957,12 +1523,81 @@ export function disposeCandidateV2(candidate) {
 /** Explicitly test-only fixed Git-byte runner injection. */
 export function createCandidateV2ReconstructorForTesting(gitBytesRunner) {
   const controller = createReconstructionController(gitBytesRunner);
+  return candidateV2TestingFacade(controller);
+}
+
+function candidateV2TestingFacade(controller) {
   return Object.freeze({
     reconstructCandidateV2: (input) =>
       withTaskV2FailureBoundary(() =>
         reconstructCandidateV2Once(input, controller),
       ),
+    verifyCandidateV2: (input) =>
+      withTaskV2FailureBoundary(() => verifyCandidateV2Once(input, controller)),
     disposeCandidateV2: (candidate) =>
       disposeCandidateV2WithController(candidate, controller),
   });
+}
+
+export function createCandidateV2LifecycleTestSeam(value) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    throw new TypeError(
+      "v2 lifecycle test dependencies must be exact own data",
+    );
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const expected = [
+    "gitBytesRunner",
+    "sessionRunner",
+    "containmentPreflight",
+    "materializerFactory",
+  ];
+  const keys = Reflect.ownKeys(descriptors);
+  if (
+    keys.length !== expected.length ||
+    keys.some((key) => typeof key !== "string" || !expected.includes(key)) ||
+    expected.some((key) => !keys.includes(key)) ||
+    keys.some(
+      (key) =>
+        !("value" in descriptors[key]) || descriptors[key].enumerable !== true,
+    )
+  ) {
+    throw new TypeError(
+      "v2 lifecycle test dependencies must be exact own data",
+    );
+  }
+  const dependencies = Object.freeze(
+    Object.fromEntries(
+      expected.map((key) => [
+        key,
+        fixedFunction(descriptors[key].value, `v2 test ${key}`),
+      ]),
+    ),
+  );
+  const seam = Object.freeze(Object.create(null));
+  lifecycleTestSeams.set(seam, dependencies);
+  return seam;
+}
+
+export function createCandidateV2LifecycleHarnessForTesting(seam) {
+  const dependencies = lifecycleTestSeams.get(seam);
+  if (dependencies === undefined) {
+    throw new TypeError(
+      "v2 lifecycle injection requires the branded test seam",
+    );
+  }
+  return candidateV2TestingFacade(
+    createReconstructionController(
+      dependencies.gitBytesRunner,
+      dependencies.sessionRunner,
+      dependencies.containmentPreflight,
+      dependencies.materializerFactory,
+    ),
+  );
 }

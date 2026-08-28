@@ -176,7 +176,10 @@ function contract({
     verificationSequence: ["format", "build", "public"],
     commands: {
       format: { argv: ["cargo", "fmt", "--check"], timeoutMs: 120_000 },
-      build: { argv: ["cargo", "test", "--no-run"], timeoutMs: 1_800_000 },
+      build: {
+        argv: ["cargo", "test", "--no-run", "--test", "exact_create"],
+        timeoutMs: 1_800_000,
+      },
       public: { argv: ["cargo", "test"], timeoutMs: 120_000 },
     },
     ceilings: {

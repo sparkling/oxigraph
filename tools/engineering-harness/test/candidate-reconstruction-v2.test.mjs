@@ -1,21 +1,30 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  createCandidateV2LifecycleHarnessForTesting,
+  createCandidateV2LifecycleTestSeam,
   createCandidateV2ReconstructorForTesting,
   disposeCandidateV2,
   reconstructCandidateV2 as reconstructCandidateV2FromBytes,
 } from "../src/candidate/reconstruct-v2.mjs";
+import { verifyCandidateV2 } from "../src/candidate/verifier-v2.mjs";
 import {
   createGitHome,
+  GitBytesProcessFault,
   runGit,
   runGitBytes,
   runGitBytesWithProcessRunnerForTesting,
 } from "../src/candidate/git.mjs";
+import {
+  createSandboxVerificationSessionV2ForTesting,
+  runSandboxVerificationSessionV2,
+} from "../src/candidate/sandbox-session-v2.mjs";
+import { createSubmoduleV2MaterializerForTrustedController } from "../src/candidate/submodules-v2.mjs";
 import {
   loadTreeV2,
   projectTreeManifestV2,
@@ -24,6 +33,7 @@ import {
 } from "../src/candidate/tree-v2.mjs";
 import { gitBlobObjectIdV2 } from "../src/policy/paths-v2.mjs";
 import { TaskV2Failure } from "../src/policy/task-v2-failures.mjs";
+import { canonicalJson } from "../src/routing/features.mjs";
 
 const fixtureIdentity = Object.freeze({
   GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
@@ -36,6 +46,112 @@ const fixtureIdentity = Object.freeze({
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function exactSessionOutcome() {
+  return Object.freeze({
+    disposition: "completed",
+    firstTerminalReason: "completed",
+    syntheticTestOnly: false,
+    spawned: true,
+    noChild: false,
+    exitCode: 0,
+    signal: null,
+    closeCode: 0,
+    closeSignal: null,
+    statusAgreement: true,
+    reaped: true,
+    directChildCleanupSafe: true,
+    processGroupQuiescent: true,
+    exitObserved: true,
+    closeObserved: true,
+    stdoutEof: true,
+    stderrEof: true,
+    stdinComplete: true,
+    captureComplete: true,
+    outputTruncated: false,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    durationMs: 1,
+    terminationErrors: Object.freeze([]),
+    processErrors: Object.freeze([]),
+  });
+}
+
+function exactSessionCommand(role, stdout = Buffer.alloc(0), passed = null) {
+  return {
+    role,
+    disposition: "completed",
+    firstTerminalReason: "completed",
+    spawned: true,
+    noChild: false,
+    exitCode: 0,
+    signal: null,
+    closeCode: 0,
+    closeSignal: null,
+    statusAgreement: true,
+    reaped: true,
+    directChildCleanupSafe: true,
+    processGroupQuiescent: true,
+    exitObserved: true,
+    closeObserved: true,
+    stdoutEof: true,
+    stderrEof: true,
+    stdinComplete: true,
+    captureComplete: true,
+    outputTruncated: false,
+    terminationErrorCount: 0,
+    processErrorCount: 0,
+    observedPassed: passed,
+    stdoutBytes: stdout.length,
+    stdoutSha256: sha256(stdout),
+    stdoutBase64: stdout.toString("base64"),
+    stderrBytes: 0,
+    stderrSha256: sha256(Buffer.alloc(0)),
+    stderrBase64: "",
+  };
+}
+
+function exactSessionResult(configurationSha256) {
+  const publicOutput = Buffer.from(
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n",
+    "utf8",
+  );
+  return Buffer.from(
+    `${canonicalJson({
+      schemaVersion: 2,
+      configurationSha256,
+      status: "completed",
+      stage: "complete",
+      commandCount: 3,
+      commands: [
+        exactSessionCommand("format"),
+        exactSessionCommand("build"),
+        exactSessionCommand("public", publicOutput, 1),
+      ],
+      artifacts: [
+        {
+          name: "exact_create-0123456789abcdef",
+          sha256: "a".repeat(64),
+          bytes: 4096,
+          mode: 0o755,
+        },
+      ],
+      stateBytes: 8192,
+      failure: null,
+    })}\n`,
+    "utf8",
+  );
+}
+
+function resultFileFromSessionRequest(request) {
+  const index = request.args.indexOf("/result/session.json");
+  assert.notEqual(index, -1);
+  return request.args[index - 1];
+}
+
+function verifiedReadiness() {
+  return Object.freeze({ status: "verified", reason: "test-only-preflight" });
 }
 
 function exactContractBytes(contract, space = undefined) {
@@ -278,7 +394,10 @@ async function createFixture(
       verificationSequence: ["format", "build", "public"],
       commands: {
         format: { argv: ["cargo", "fmt", "--check"], timeoutMs: 120_000 },
-        build: { argv: ["cargo", "test", "--no-run"], timeoutMs: 1_800_000 },
+        build: {
+          argv: ["cargo", "test", "--no-run", "--test", "exact_create"],
+          timeoutMs: 1_800_000,
+        },
         public: { argv: ["cargo", "test"], timeoutMs: 120_000 },
       },
       initialRed: {
@@ -421,6 +540,29 @@ test("v2 reconstruction retains quarantined roots for unproved or contradictory 
       outputTruncated: false,
       processErrors: [],
     },
+    {
+      disposition: "spawn-error",
+      firstTerminalReason: "spawn-error",
+      exitCode: 0,
+      signal: null,
+      closeCode: 0,
+      closeSignal: null,
+      captureComplete: false,
+      noChild: true,
+      spawned: false,
+      reaped: false,
+      statusAgreement: true,
+      directChildCleanupSafe: true,
+      processGroupQuiescent: true,
+      exitObserved: true,
+      closeObserved: true,
+      stdoutEof: false,
+      stderrEof: false,
+      stdinComplete: false,
+      outputTruncated: false,
+      terminationErrors: [],
+      processErrors: [{ kind: "spawn", message: "synthetic failure" }],
+    },
   ];
 
   for (const unsafe of unsafeOutcomes) {
@@ -461,17 +603,34 @@ test("v2 reconstruction removes failed roots only after coherent Git cleanup pro
   const safeOutcomes = [
     {
       disposition: "spawn-error",
+      firstTerminalReason: "spawn-error",
       exitCode: null,
+      signal: null,
+      closeCode: null,
+      closeSignal: null,
       captureComplete: false,
       noChild: true,
       spawned: false,
       reaped: false,
+      statusAgreement: false,
       directChildCleanupSafe: true,
       processGroupQuiescent: true,
+      exitObserved: false,
+      closeObserved: false,
+      stdoutEof: false,
+      stderrEof: false,
+      stdinComplete: false,
+      outputTruncated: false,
+      terminationErrors: [],
+      processErrors: [{ kind: "spawn", message: "synthetic failure" }],
     },
     {
       disposition: "completed",
+      firstTerminalReason: "completed",
       exitCode: 1,
+      signal: null,
+      closeCode: 1,
+      closeSignal: null,
       captureComplete: true,
       noChild: false,
       spawned: true,
@@ -485,6 +644,7 @@ test("v2 reconstruction removes failed roots only after coherent Git cleanup pro
       stderrEof: true,
       stdinComplete: true,
       outputTruncated: false,
+      terminationErrors: [],
       processErrors: [],
     },
   ];
@@ -876,4 +1036,510 @@ test("v2 reconstruction rejects non-data and extra input authority before reposi
     ),
     v2Failure("ERR_RECONSTRUCTION"),
   );
+});
+
+test("v2 opaque verification is one-shot and fails closed before spawn without cgroup ownership", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const candidate = await reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contract,
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+
+  const verification = verifyCandidateV2({ candidate });
+  const duplicateVerification = assert.rejects(
+    verifyCandidateV2({ candidate }),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  const concurrentDisposal = assert.rejects(
+    disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  await Promise.all([duplicateVerification, concurrentDisposal]);
+
+  const result = await verification;
+  assert.equal(result.schema, "oxigraph.engineering-candidate-verification/v2");
+  assert.equal(result.verdict, "INCONCLUSIVE");
+  assert.equal(result.stage, "infrastructure");
+  assert.equal(result.reason, "containment-unavailable");
+  assert.strictEqual(result.candidate, candidate);
+  assert.equal(result.session.containment, "unavailable");
+  assert.equal(result.session.cleanupSafe, true);
+  assert.equal(result.commands.length, 0);
+  assert.equal(result.artifacts.length, 0);
+  assert.match(result.projectionSha256, /^[0-9a-f]{64}$/u);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(fixture.root, "u"));
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.session), true);
+
+  await assert.rejects(
+    verifyCandidateV2({ candidate }),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  await disposeCandidateV2(candidate);
+  await assert.rejects(
+    disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+});
+
+test("v2 containment preflight consumes verification without further Git work", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  let gitCalls = 0;
+  const harness = createCandidateV2ReconstructorForTesting((input) => {
+    gitCalls += 1;
+    return runGitBytes(input);
+  });
+  const candidate = await harness.reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contractBytes: exactContractBytes(contract),
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  const reconstructionCalls = gitCalls;
+  const result = await harness.verifyCandidateV2({ candidate });
+  assert.equal(result.reason, "containment-unavailable");
+  assert.equal(gitCalls, reconstructionCalls);
+  await assert.rejects(
+    harness.verifyCandidateV2({ candidate }),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  assert.equal(gitCalls, reconstructionCalls);
+  await harness.disposeCandidateV2(candidate);
+});
+
+test("v2 lifecycle seam rejects unbranded authority without invoking it", () => {
+  let calls = 0;
+  const dependencies = Object.freeze({
+    gitBytesRunner() {
+      calls += 1;
+    },
+    sessionRunner() {
+      calls += 1;
+    },
+    containmentPreflight() {
+      calls += 1;
+    },
+    materializerFactory() {
+      calls += 1;
+    },
+  });
+  const seam = createCandidateV2LifecycleTestSeam(dependencies);
+  for (const invalid of [
+    Object.freeze(Object.create(null)),
+    structuredClone(seam),
+    new Proxy(seam, {}),
+  ]) {
+    assert.throws(
+      () => createCandidateV2LifecycleHarnessForTesting(invalid),
+      /branded test seam/u,
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test("v2 verified preflight exercises materialization and one branded session while active disposal rejects", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  let sessionCalls = 0;
+  let materializerCalls = 0;
+  let releaseSession;
+  let sessionEntered;
+  const entered = new Promise((resolve) => {
+    sessionEntered = resolve;
+  });
+  const release = new Promise((resolve) => {
+    releaseSession = resolve;
+  });
+  const structural = createSandboxVerificationSessionV2ForTesting(
+    async (request) => {
+      await writeFile(
+        resultFileFromSessionRequest(request),
+        exactSessionResult(sha256(request.stdin)),
+      );
+      return exactSessionOutcome();
+    },
+  );
+  const seam = createCandidateV2LifecycleTestSeam(
+    Object.freeze({
+      gitBytesRunner: runGitBytes,
+      sessionRunner: async (input) => {
+        sessionCalls += 1;
+        sessionEntered();
+        await release;
+        return structural.runSandboxVerificationSessionV2(input);
+      },
+      containmentPreflight: verifiedReadiness,
+      materializerFactory: (input) => {
+        const materializer =
+          createSubmoduleV2MaterializerForTrustedController(input);
+        return Object.freeze({
+          async materialize(candidate) {
+            materializerCalls += 1;
+            return materializer.materialize(candidate);
+          },
+        });
+      },
+    }),
+  );
+  const harness = createCandidateV2LifecycleHarnessForTesting(seam);
+  const candidate = await harness.reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contractBytes: exactContractBytes(contract),
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  const verification = harness.verifyCandidateV2({ candidate });
+  await entered;
+  await assert.rejects(
+    harness.disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  await assert.rejects(
+    harness.verifyCandidateV2({ candidate }),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  releaseSession();
+  const result = await verification;
+  assert.equal(result.verdict, "INCONCLUSIVE");
+  assert.equal(result.reason, "containment-unproved");
+  assert.equal(materializerCalls, 1);
+  assert.equal(sessionCalls, 1);
+  await harness.disposeCandidateV2(candidate);
+});
+
+test("v2 pending materialization blocks disposal and settles through one safe session fault", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  let materializationEntered;
+  let releaseMaterialization;
+  const entered = new Promise((resolve) => {
+    materializationEntered = resolve;
+  });
+  const release = new Promise((resolve) => {
+    releaseMaterialization = resolve;
+  });
+  let sessionCalls = 0;
+  const seam = createCandidateV2LifecycleTestSeam(
+    Object.freeze({
+      gitBytesRunner: runGitBytes,
+      sessionRunner: async (input) => {
+        sessionCalls += 1;
+        return runSandboxVerificationSessionV2(input);
+      },
+      containmentPreflight: verifiedReadiness,
+      materializerFactory: ({ claimCandidate }) =>
+        Object.freeze({
+          async materialize(candidate) {
+            const claim = claimCandidate(candidate);
+            materializationEntered();
+            await release;
+            claim.complete(Object.freeze([]));
+            return Object.freeze([]);
+          },
+        }),
+    }),
+  );
+  const harness = createCandidateV2LifecycleHarnessForTesting(seam);
+  const candidate = await harness.reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contractBytes: exactContractBytes(contract),
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  const verification = harness.verifyCandidateV2({ candidate });
+  await entered;
+  await assert.rejects(
+    harness.disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  releaseMaterialization();
+  const result = await verification;
+  assert.equal(result.reason, "containment-unavailable");
+  assert.equal(sessionCalls, 1);
+  await harness.disposeCandidateV2(candidate);
+});
+
+test("v2 materialization settlement distinguishes safe disposal from quarantine", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  for (const unsafe of [false, true]) {
+    let retainedRoot;
+    const seam = createCandidateV2LifecycleTestSeam(
+      Object.freeze({
+        gitBytesRunner: runGitBytes,
+        sessionRunner: runSandboxVerificationSessionV2,
+        containmentPreflight: verifiedReadiness,
+        materializerFactory: ({ claimCandidate }) =>
+          Object.freeze({
+            async materialize(candidate) {
+              const claim = claimCandidate(candidate);
+              retainedRoot = claim.temporaryRoot;
+              if (unsafe) claim.quarantine("b".repeat(64));
+              else claim.failSafe("c".repeat(64));
+              throw new Error("synthetic materialization failure");
+            },
+          }),
+      }),
+    );
+    const harness = createCandidateV2LifecycleHarnessForTesting(seam);
+    const candidate = await harness.reconstructCandidateV2({
+      repositoryRoot: fixture.repo,
+      contractBytes: exactContractBytes(contract),
+      patch: creationSection("src/created.txt", "created\n", "sha1"),
+    });
+    const result = await harness.verifyCandidateV2({ candidate });
+    assert.equal(result.reason, "submodule-materialization");
+    assert.equal(result.session.cleanupSafe, !unsafe);
+    if (unsafe) {
+      await assert.rejects(
+        harness.disposeCandidateV2(candidate),
+        v2Failure("ERR_RECONSTRUCTION"),
+      );
+      await access(retainedRoot);
+      t.after(() => rm(retainedRoot, { recursive: true, force: true }));
+    } else {
+      await harness.disposeCandidateV2(candidate);
+      await assert.rejects(access(retainedRoot), { code: "ENOENT" });
+    }
+  }
+});
+
+test("v2 unsafe sandbox fault quarantines the candidate and retains its authority", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  let retainedRoot;
+  const structural = createSandboxVerificationSessionV2ForTesting(async () => {
+    throw new Error("runner outcome is unknown");
+  });
+  const seam = createCandidateV2LifecycleTestSeam(
+    Object.freeze({
+      gitBytesRunner: runGitBytes,
+      sessionRunner: structural.runSandboxVerificationSessionV2,
+      containmentPreflight: verifiedReadiness,
+      materializerFactory: ({ claimCandidate }) =>
+        createSubmoduleV2MaterializerForTrustedController({
+          claimCandidate(candidate) {
+            const claim = claimCandidate(candidate);
+            retainedRoot = claim.temporaryRoot;
+            return claim;
+          },
+        }),
+    }),
+  );
+  const harness = createCandidateV2LifecycleHarnessForTesting(seam);
+  const candidate = await harness.reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contractBytes: exactContractBytes(contract),
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  const result = await harness.verifyCandidateV2({ candidate });
+  assert.equal(result.reason, "protocol-or-inode");
+  assert.equal(result.session.cleanupSafe, false);
+  await assert.rejects(
+    harness.disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  await access(retainedRoot);
+  t.after(() => rm(retainedRoot, { recursive: true, force: true }));
+});
+
+test("v2 post-report Git cleanup uncertainty quarantines the candidate", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  let retainedRoot;
+  let reportProduced = false;
+  const unsafeGitOutcome = Object.freeze({
+    ...exactSessionOutcome(),
+    disposition: "timeout-unreaped",
+    firstTerminalReason: "timeout",
+    exitCode: null,
+    closeCode: null,
+    statusAgreement: false,
+    reaped: false,
+    directChildCleanupSafe: false,
+    processGroupQuiescent: false,
+    exitObserved: false,
+    closeObserved: false,
+    stdoutEof: false,
+    stderrEof: false,
+    stdinComplete: false,
+    captureComplete: false,
+  });
+  const structural = createSandboxVerificationSessionV2ForTesting(
+    async (request) => {
+      await writeFile(
+        resultFileFromSessionRequest(request),
+        exactSessionResult(sha256(request.stdin)),
+      );
+      reportProduced = true;
+      return exactSessionOutcome();
+    },
+  );
+  const seam = createCandidateV2LifecycleTestSeam(
+    Object.freeze({
+      gitBytesRunner: (input) => {
+        if (!reportProduced) return runGitBytes(input);
+        throw new GitBytesProcessFault(input.args, unsafeGitOutcome);
+      },
+      sessionRunner: structural.runSandboxVerificationSessionV2,
+      containmentPreflight: verifiedReadiness,
+      materializerFactory: ({ claimCandidate }) =>
+        createSubmoduleV2MaterializerForTrustedController({
+          claimCandidate(candidate) {
+            const claim = claimCandidate(candidate);
+            retainedRoot = claim.temporaryRoot;
+            return claim;
+          },
+        }),
+    }),
+  );
+  const harness = createCandidateV2LifecycleHarnessForTesting(seam);
+  const candidate = await harness.reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contractBytes: exactContractBytes(contract),
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  const result = await harness.verifyCandidateV2({ candidate });
+  assert.equal(result.reason, "candidate-identity-unproved");
+  assert.equal(result.session.cleanupSafe, false);
+  await assert.rejects(
+    harness.disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  await access(retainedRoot);
+  t.after(() => rm(retainedRoot, { recursive: true, force: true }));
+});
+
+test("v2 disposal failure becomes a retained quarantine state", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  let retainedRoot;
+  const structural = createSandboxVerificationSessionV2ForTesting(
+    async (request) => {
+      await writeFile(
+        resultFileFromSessionRequest(request),
+        exactSessionResult(sha256(request.stdin)),
+      );
+      return exactSessionOutcome();
+    },
+  );
+  const seam = createCandidateV2LifecycleTestSeam(
+    Object.freeze({
+      gitBytesRunner: runGitBytes,
+      sessionRunner: structural.runSandboxVerificationSessionV2,
+      containmentPreflight: verifiedReadiness,
+      materializerFactory: ({ claimCandidate }) =>
+        createSubmoduleV2MaterializerForTrustedController({
+          claimCandidate(candidate) {
+            const claim = claimCandidate(candidate);
+            retainedRoot = claim.temporaryRoot;
+            return claim;
+          },
+        }),
+    }),
+  );
+  const harness = createCandidateV2LifecycleHarnessForTesting(seam);
+  const candidate = await harness.reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contractBytes: exactContractBytes(contract),
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  const result = await harness.verifyCandidateV2({ candidate });
+  assert.equal(result.reason, "containment-unproved");
+
+  await chmod(retainedRoot, 0);
+  t.after(async () => {
+    await chmod(retainedRoot, 0o700).catch(() => {});
+    await rm(retainedRoot, { recursive: true, force: true });
+  });
+  await assert.rejects(
+    harness.disposeCandidateV2(candidate),
+    v2Failure("ERR_INTERNAL_FAIL_CLOSED"),
+  );
+  await chmod(retainedRoot, 0o700);
+  await access(retainedRoot);
+  await assert.rejects(
+    harness.disposeCandidateV2(candidate),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+});
+
+test("v2 verification rejects foreign authority before consuming a valid candidate", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const candidate = await reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contract,
+    patch: creationSection("src/created.txt", "created\n", "sha1"),
+  });
+  try {
+    await assert.rejects(
+      verifyCandidateV2({ candidate: { ...candidate } }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    await assert.rejects(
+      verifyCandidateV2({ candidate: new Proxy(candidate, {}) }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    await assert.rejects(
+      verifyCandidateV2({ candidate, workspace: fixture.repo }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    let getterCalls = 0;
+    const accessor = {};
+    Object.defineProperty(accessor, "candidate", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return candidate;
+      },
+    });
+    await assert.rejects(
+      verifyCandidateV2(accessor),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    assert.equal(getterCalls, 0);
+
+    const controller = new AbortController();
+    controller.abort();
+    const result = await verifyCandidateV2({
+      candidate,
+      signal: controller.signal,
+    });
+    assert.equal(result.verdict, "INCONCLUSIVE");
+    assert.equal(result.reason, "containment-unavailable");
+    await assert.rejects(
+      verifyCandidateV2({ candidate }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+  } finally {
+    await disposeCandidateV2(candidate);
+  }
 });

@@ -16,6 +16,11 @@ import {
   MAX_LOGICAL_ARGV_ITEMS,
   MAX_TASK_ARG_BYTES,
 } from "./policy/evidence-limits.mjs";
+import { exactCargoBuildArtifactStemsV2 } from "./policy/build-command-v2.mjs";
+import {
+  V2_COMMAND_ARGV_BYTES_CEILING,
+  V2_SESSION_CONFIGURATION_BYTES_CEILING,
+} from "./policy/session-v2-limits.mjs";
 import { validateTaskV2Path, validateTaskV2Scope } from "./policy/paths-v2.mjs";
 import {
   isTaskV2Failure,
@@ -100,7 +105,7 @@ const MAX_SUBMODULES = 64;
 const MAX_COMMANDS = 16;
 const MAX_TEXT_LIST = 256;
 const COMMIT_OUTPUT_CEILING = 1024 * 1024;
-const CONTRACT_BYTES_CEILING = 4 * 1024 * 1024;
+const CONTRACT_BYTES_CEILING = V2_SESSION_CONFIGURATION_BYTES_CEILING;
 const PATCH_OUTPUT_CEILING = 256 * 1024;
 const WORKER_OUTPUT_CEILING = 1024 * 1024;
 const COMMAND_OUTPUT_FLOOR = 1024;
@@ -222,7 +227,8 @@ function boundedString(value, label, { minimum = 1, maximum = 4096 } = {}) {
     value.length < minimum ||
     value.length > maximum ||
     value.includes("\0") ||
-    value.includes("\r")
+    value.includes("\r") ||
+    !isUnicodeScalarString(value)
   ) {
     fail("ERR_CONTRACT_SCHEMA_OR_KEYS", `${label} must be bounded text`);
   }
@@ -347,9 +353,10 @@ function validateRouting(routing) {
     if (
       provider.provider !== expectedProvider ||
       provider.transport !== "native" ||
-      typeof provider.model !== "string" ||
-      provider.model.length === 0 ||
-      provider.model.length > 128 ||
+      boundedString(provider.model, `routing.providers[${index}].model`, {
+        maximum: 128,
+      }) !== provider.model ||
+      provider.model.includes("\n") ||
       /openrouter/iu.test(provider.model)
     ) {
       fail(
@@ -594,6 +601,20 @@ function validateProtectedInputs(inputs, scope, objectFormat) {
   return Object.freeze({ baselines, presentCount, submodules });
 }
 
+function isUnicodeScalarString(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function validateCommands(sequence, commands, maxTotalVerifierWallMs) {
   const roles = denseArray(sequence, "verificationSequence", MAX_COMMANDS);
   if (
@@ -631,9 +652,8 @@ function validateCommands(sequence, commands, maxTotalVerifierWallMs) {
       if (
         typeof argument !== "string" ||
         argument.length === 0 ||
-        argument.includes("\0") ||
-        argument.includes("\r") ||
-        argument.includes("\n") ||
+        !isUnicodeScalarString(argument) ||
+        /[\u0000-\u001f\u007f]/u.test(argument) ||
         Buffer.byteLength(argument, "utf8") > MAX_TASK_ARG_BYTES
       ) {
         fail(
@@ -643,7 +663,7 @@ function validateCommands(sequence, commands, maxTotalVerifierWallMs) {
       }
       aggregateBytes += Buffer.byteLength(argument, "utf8");
     }
-    if (aggregateBytes > 1024 * 1024) {
+    if (aggregateBytes > V2_COMMAND_ARGV_BYTES_CEILING) {
       fail("ERR_CONTRACT_SCHEMA_OR_KEYS", `commands.${role}.argv is too large`);
     }
     safeInteger(
@@ -652,6 +672,15 @@ function validateCommands(sequence, commands, maxTotalVerifierWallMs) {
       VERIFIER_WALL_FLOOR_MS,
       maxTotalVerifierWallMs,
     );
+    if (
+      role === "build" &&
+      exactCargoBuildArtifactStemsV2(argv) === undefined
+    ) {
+      fail(
+        "ERR_CONTRACT_SCHEMA_OR_KEYS",
+        "commands.build must bind unique exact no-run artifact targets",
+      );
+    }
   }
   return roles;
 }
@@ -709,6 +738,30 @@ function validateSessionResultCeiling(ceilings, roleCount) {
     fail(
       "ERR_CONTRACT_SCHEMA_OR_KEYS",
       "verifier session result exceeds the native process ceiling",
+    );
+  }
+}
+
+function validateSessionConfigurationProjection(contract, roles) {
+  const projection = {
+    schemaVersion: 2,
+    contractSha256: "0".repeat(64),
+    verificationSequence: roles,
+    commands: contract.commands,
+    ceilings: {
+      maxBuildOutputBytes: contract.ceilings.maxBuildOutputBytes,
+      maxTestOutputBytesPerCommand:
+        contract.ceilings.maxTestOutputBytesPerCommand,
+      maxTotalVerifierWallMs: contract.ceilings.maxTotalVerifierWallMs,
+      maxVerifierDiskBytes: contract.ceilings.maxVerifierDiskBytes,
+      cargoBuildJobs: contract.ceilings.cargoBuildJobs,
+    },
+  };
+  const bytes = Buffer.byteLength(`${canonicalJson(projection)}\n`, "utf8");
+  if (bytes > V2_SESSION_CONFIGURATION_BYTES_CEILING) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      "projected verifier session configuration exceeds its byte ceiling",
     );
   }
 }
@@ -862,6 +915,7 @@ function validateTaskContractV2Internal(contract) {
     contract.commands,
     contract.ceilings.maxTotalVerifierWallMs,
   );
+  validateSessionConfigurationProjection(contract, roles);
   validateSessionResultCeiling(contract.ceilings, roles.length);
   validateInitialRed(contract.initialRed, roles);
   validateSuccess(contract.success, roles);
