@@ -75,8 +75,9 @@
   false. Pure and physical fixtures do not establish production control owner
   emission, crash/power-loss/filesystem-flush durability, historical
   receipt-last order from replay, or same-UID tamper resistance
-- G1.7 containment-owner update: the authority-free containment contract now
-  freezes the one reviewed host locator at
+- G1.7 containment-owner update: commit `f04b9bc7` implements the dormant,
+  authority-free containment contract. It freezes the one reviewed host
+  locator at
   `/var/lib/oxigraph-engineering-harness/locks/g1.7-phase-a.lock`, binds held
   root-to-lock ancestry, distinct controller/holder/worker/contender process
   identities, complete cgroup identity, requested limits, quiescence, and
@@ -88,8 +89,9 @@
   remain explicitly caller-supplied, unsealed, and non-authoritative;
   `binding` is null, final-decision eligibility and every authority are false,
   and no native syscall adapter or live containment evidence exists
-- G1.7 source-workspace update: the exact four-build execution plan and a
-  descriptor-anchored source materializer now bind the approved product commit,
+- G1.7 source-workspace update: commit `a457f46c` implements the exact four-
+  build execution plan and a descriptor-anchored source materializer that bind
+  the approved product commit,
   evaluator overlay, effective tree, required Gitlinks, `Cargo.lock`, source
   manifest, distinct source/target identities, and v1 authority-free projection.
   Caller records and cancellation signals are captured without observing
@@ -106,8 +108,9 @@
   no build, launch, control, qualification, promotion, publication, provider,
   or Router authority and makes no WORM, binary-patch, or hostile same-UID race
   claim
-- G1.7 build-evidence replay update: two pure, capability-free contracts now
-  replay the exact Cargo request and frozen environment recipe, source and
+- G1.7 build-evidence replay update: commit `c5687dac` implements two pure,
+  capability-free contracts that replay the exact Cargo request and frozen
+  environment recipe, source and
   logical-owner bindings, platform identities, raw process streams, executable
   bytes, and ELF identity for all four product builds. Executable replay pins
   the exact held `target/release/deps` directory chain, rejects ancestor alias,
@@ -136,7 +139,7 @@
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
   producing the current exact nine-task/33-command surface. The current package
-  suite contains 469 tests: 466 pass, none fail, and three intentional host-gated
+  suite contains 556 tests: 553 pass, none fail, and three intentional host-gated
   tests are skipped; doctor evidence remains native-only, local-only, and
   non-promoting
 - **Related**:
@@ -411,7 +414,7 @@ all authority flags false. Final binding continues to report
 the approved final decision, and the execution owners exist. Commit `fbbb692b`
 implements exact three-file physical sealing and replay; seal emits no binding,
 while replayed PASS can expose only a prospective binding with all authority
-false. The current 469-test suite passes 466, fails none, and skips three
+false. The current 556-test suite passes 553, fails none, and skips three
 intentional host-gated cases. Those fixtures verify contracts and current
 archive mechanics, not live owner emission, durability, controls, performance,
 or qualification.
@@ -517,7 +520,9 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-60%; its two superseded rows remain cancelled history. Support tasks for the
+65%; its two superseded rows remain cancelled history. Workspace/build-owner
+task `task-1787902127894-7n7vk3` is in progress at 75%, and containment task
+`task-1787902138074-0w648x` is in progress at 80%. Support tasks for the
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
@@ -737,10 +742,12 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   and versioning commits `20477225`/`799307fb`, merged-product identity reseal
   commit `d1e18c6e`, and pure benchmark-owner/control-receipt-candidate replay
   commits `d3af2e17`/`45121da9`, followed by physical envelope commit
-  `fbbb692b`. Exact current v7 contract, proposed
+  `fbbb692b`, dormant containment commit `f04b9bc7`, source-workspace commit
+  `a457f46c`, and pure build-product replay commit `c5687dac`. Exact current v7
+  contract, proposed
   control-authorization, and proposed final-decision raw SHA-256 values are
   `42ed3867...`, `31b8fce5...`, and `b0def4f0...`; the v6 bytes remain exact
-  replay-only fixtures. The package suite reports 469 total, 466 passing, zero
+  replay-only fixtures. The package suite reports 556 total, 553 passing, zero
   failing, and three intentional host-gated skips. The CLI exits 4 before work
   at `CONTROL_AUTH_PROPOSED` and writes no
   G1.7 run. The pure candidate replay is not a physically owned or sealed

@@ -182,7 +182,7 @@ Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
 current fail-closed registry therefore contains nine tasks and 33 commands;
-the current full package suite contains 469 tests: 466 pass, none fail, and three
+the current full package suite contains 556 tests: 553 pass, none fail, and three
 intentional host-gated tests are skipped. The doctor retains the same
 native-only, local-only, non-promoting boundary.
 
@@ -223,6 +223,20 @@ every authority flag remains false. This proves current archive state and the
 observed owner sequence, not historical receipt-last order from replay, crash or
 power-loss durability, filesystem flush durability, or same-UID tamper
 resistance.
+Commit `f04b9bc7` adds the dormant authority-free non-tmpfs containment owner:
+it freezes the global lock locator, held ancestry, distinct controller/holder/
+worker/contender identities, cgroup-v2 limits and quiescence, and bounded
+cleanup, but the proposed authorization fails before mechanics and no native
+syscall adapter exists. Commit `a457f46c` adds the exact four-build execution
+plan and descriptor-anchored product-source workspace. It globally admits the
+root and required-submodule object closure before private Git writes, preserves
+every handle on unreaped Git, and deliberately leaves production build
+begin/finish unavailable until a supervising owner can supply non-forgeable
+child-close/reap proof. Commit `c5687dac` adds pure build-process and four-
+product evidence replay over the frozen Cargo request/environment, complete
+held source/tool/output ancestry, raw streams, executable bytes, and ELF
+identity. Those projections remain binding-null, final-decision-ineligible,
+and authority-free; they are capture replay, not physical build execution.
 The exact control-authorization artifact is
 `31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`;
 the exact final-decision-set artifact is
@@ -243,10 +257,13 @@ qualified identity v2 separates that immutable product from the later committed
 harness/control commit and rejects product-path drift. Ruflo reseal task
 `task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
 Current Ruflo task map
-`task-plans/linked-data-store-g0-g4-2026-08-28-v15` records corrected G1.7 at
-60%: pure receipt-candidate task `task-1787892615000-rdwz7q` is complete in
+`task-plans/linked-data-store-g0-g4-2026-08-28-v15` records its historical
+corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 65%: pure
+receipt-candidate task `task-1787892615000-rdwz7q` is complete in
 `45121da9`, and physical-envelope task `task-1787896401667-xookiy` is complete
-in `fbbb692b` with all authority false.
+in `fbbb692b` with all authority false. Workspace/build-owner task
+`task-1787902127894-7n7vk3` is 75%, and containment task
+`task-1787902138074-0w648x` is 80%; both remain in progress.
 The archived v6 protocol/statistics bytes retain their exact historical identity
 and grant no Phase-A, provider, control, sample, benchmark, qualification, or
 promotion authority.

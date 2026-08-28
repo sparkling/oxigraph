@@ -126,7 +126,19 @@ Current activation boundary:
   non-inferiority, shared-seed two-direction 5% A/A equivalence, the inclusive
   5% MAD noise boundary, and mechanical FAIL/INCONCLUSIVE/PASS precedence. Its
   pure replay is differential-tested against the exact installed Darwin 0.9.3
-  source modules; it is not a live control run or receipt;
+  source modules. Commit `f04b9bc7` adds a dormant, authority-free containment
+  owner that rejects the current proposed authorization before mechanics;
+  there is no native syscall adapter. Commit `a457f46c` adds the exact four-
+  build execution plan and descriptor-anchored product-source workspace with
+  global pre-write Git-object admission and unreaped-handle retention.
+  Production build begin/finish deliberately return `MISSING` until a physical
+  supervising owner can issue non-forgeable child-close/reap proof. Commit
+  `c5687dac` adds capability-free build-process and four-product replay over the
+  frozen Cargo request/environment, held source/tool/output ancestry, raw
+  streams, executable bytes, and ELF identity. It returns `binding: null`,
+  `finalDecisionEligible: false`, and all authority false. These are contract,
+  source, containment, and capture-replay mechanics, not a live control run,
+  physical build owner, or receipt;
 - upstream merge `e9d2db1b` is exact-tree audited and is now the v7 product
   subject. Commit `d1e18c6e` binds its exact tree and `Cargo.lock`, records the
   evaluator as already present, separates the later control commit through
@@ -332,8 +344,8 @@ npm run g1.6:preflight
 npm run g1.7:preflight
 ```
 
-At the fail-closed v7 checkpoint, `npm test` reports 415 tests: 413 pass, none
-fail, and two intentional live-host tests are skipped. `npm run doctor` passes
+At the fail-closed v7 checkpoint, `npm test` reports 556 tests: 553 pass, none
+fail, and three intentional live-host tests are skipped. `npm run doctor` passes
 with 33 registered application commands and the latest-policy lock resolving
 AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.
 Those versions are lock evidence, not a promise that future `latest` tags will

@@ -24,6 +24,12 @@
   `45121da9e9441978b6233dfcc3431a760005bb72`
 - G1.7 physical control-envelope checkpoint:
   `fbbb692bbdf92a2dc7c748de2a15995debdadc1b`
+- G1.7 dormant containment checkpoint:
+  `f04b9bc7`
+- G1.7 source-workspace checkpoint:
+  `a457f46c`
+- G1.7 build/product evidence-replay checkpoint:
+  `c5687dac`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
   [ADR-0018 and ADR-0020 through ADR-0033](../adr/README.md)
@@ -81,11 +87,19 @@ only replayed PASS can yield a prospective binding, and all authority remains
 false. This proves the observed owner sequence and current archive state, not a
 live control owner, replay reconstruction of historical receipt-last order,
 crash/power-loss/filesystem-flush durability, same-UID tamper resistance, or
-approval. G1.7 still owns generic workspace/build/containment and live
-permanently non-promoting control owners, human Phase A approval, sealed live
-negative/A/A controls, the human Phase B final decision, current owner evidence,
-performance qualification, and the separate human promotion decision. No live
-current control receipt, live benchmark result, or performance result exists.
+approval. Commit `f04b9bc7` adds the dormant containment contract/owner without
+invoking a native containment capability. Commit `a457f46c` adds the exact
+execution plan and source-workspace materializer, including bounded Git object
+admission and fail-closed process/handle semantics. Commit `c5687dac` adds pure
+Cargo process and build-product evidence replay. It proves the supplied capture
+claims and held-object relationships, not independently observed Cargo
+execution or artifact provenance; binding stays null and all authority remains
+false. G1.7 still owns the physical supervising build owner and reap issuer, a
+native containment adapter, live permanently non-promoting control owners,
+human Phase A approval, sealed live negative/A/A controls, the human Phase B
+final decision, current owner evidence, performance qualification, and the
+separate human promotion decision. No live current control receipt, live
+benchmark result, or performance result exists.
 Namespace metadata, durable change delivery, transaction-time SHACL
 validation, operational observability, statistics and bounded join planning,
 full-text and spatial indexes, and federation planning follow in that
@@ -334,7 +348,7 @@ The unfinished work is split by architectural ownership:
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P0.1-P0.2 conformance, guarantees, conflicts    | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                |
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                             |
-| P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, and physical envelope/current-state replay are implemented. Human authorization, live owners and controls, final approval, benchmark, qualification, and human promotion remain open |
+| P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, and pure build/product claim replay are implemented. The physical supervising build owner/reap issuer, native containment adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | Proposed                                                                                                                                                                                                                                                                                                                                                |
 | P1.3 transaction-time SHACL                     | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                |
 | P1.4a-P1.4c readiness, backup, restore          | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                |
@@ -492,8 +506,15 @@ derive a prospective final-decision binding, and every authority flag remains
 false. It proves the observed owner sequence and current archive state, not a
 live owner, replay reconstruction of historical receipt-last order,
 crash/power-loss/filesystem-flush durability, or same-UID tamper resistance.
+Commit `f04b9bc7` adds dormant containment, `a457f46c` adds the exact execution
+plan and source-workspace materializer, and `c5687dac` adds pure Cargo/build
+product evidence replay. None supplies live execution or promotion authority.
 Ruflo map v15 records completed pure task `task-1787892615000-rdwz7q`, completed
-physical task `task-1787896401667-xookiy`, and corrected G1.7 progress at 60%.
+physical task `task-1787896401667-xookiy`, and its historical corrected G1.7
+checkpoint at 60%. The current overarching G1.7 task
+`task-1787871483413-ki34q2` is in progress at 65%; supporting workspace/build
+task `task-1787902127894-7n7vk3` is at 75%, and containment task
+`task-1787902138074-0w648x` is at 80%.
 Legacy v1/v3/v4/v5/v6 replay is Darwin-free and `LEGACY_REPLAY_ONLY`.
 
 The accepted G1.4b receipt is copied byte-for-byte, hash-bound, and pure-replayed

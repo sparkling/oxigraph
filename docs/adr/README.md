@@ -68,6 +68,16 @@ returns no binding; only replayed PASS can yield a prospective binding, and all
 authority remains false. The physical result explicitly does not claim crash,
 power-loss, filesystem-flush durability, replay proof of historical
 receipt-last order, or same-UID tamper resistance.
+Commit `f04b9bc7` adds the dormant authority-free containment owner while
+rejecting the current proposed authorization before mechanics. Commit
+`a457f46c` adds the exact four-build plan and descriptor-anchored source
+workspace with global pre-write Git-object admission and unreaped-handle
+retention. Commit `c5687dac` adds pure build-process/four-product capture replay
+with exact held source/tool/output ancestry, raw streams, executable bytes, and
+ELF identity. Production build begin/finish, native containment mechanics, and
+live build/control/sample owners remain unavailable. The source projection is
+authority-free; the containment/build/product replay projections are also
+binding-null and final-decision-ineligible.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
 built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
@@ -86,13 +96,16 @@ while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
 workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
 reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7;
-the full current harness suite passes 466/0/3. Neither that pure identity nor
+the full current harness suite passes 553/0/3. Neither that pure identity nor
 the physical archive capability creates a live control, benchmark,
 qualification, promotion, publication, or push authority.
 Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v15` preserves the 42
-stable product tasks and records corrected G1.7 at 60%. Pure candidate task
+stable product tasks and its historical corrected-G1.7 checkpoint at 60%.
+The current G1.7 row is 65%. Pure candidate task
 `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
-`task-1787896401667-xookiy` is complete in `fbbb692b`.
+`task-1787896401667-xookiy` is complete in `fbbb692b`. Workspace/build-owner
+task `task-1787902127894-7n7vk3` remains in progress at 75%, and containment
+task `task-1787902138074-0w648x` remains in progress at 80%.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

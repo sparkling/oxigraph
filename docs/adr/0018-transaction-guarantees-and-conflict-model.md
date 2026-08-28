@@ -26,19 +26,20 @@
   are also implemented. Commit `fbbb692b` adds the separate physical write-once
   receipt-last control envelope and exact current-state sealed replay while
   granting no authority and exposing only a prospective binding from replayed
-  PASS. The dormant non-tmpfs containment owner now freezes the global lock
+  PASS. Dormant containment commit `f04b9bc7` freezes the global lock
   locator, replays held ancestry, four distinct process identities, cgroup
   limits/quiescence, and cleanup, and rejects the exact current proposed
   authorization before mechanics. Its expected artifact bindings remain
   explicitly unsealed and non-authoritative, and no native syscall adapter is
-  implemented. The exact four-build execution plan and physical product-source
-  workspace primitive are implemented and independently audited: they bind the
+  implemented. Source-workspace commit `a457f46c` implements and independently
+  audits the exact four-build execution plan and physical product-source
+  workspace primitive: they bind the
   evaluator-composed source behind held descriptors, globally pre-admit root and
   required-submodule object bytes before private writes, preserve handles on an
   unreaped Git outcome, and expose only an authority-free v1 projection.
   Production build begin/finish remain deliberately unavailable until the
-  supervising build owner can prove exact child close and reap. Pure
-  build-process and four-product evidence replay now bind the frozen Cargo
+  supervising build owner can prove exact child close and reap. Pure replay
+  commit `c5687dac` now binds the frozen Cargo
   request/environment, source and logical owners, platform identities, raw
   streams, the held target-output ancestry, executable bytes, and ELF identities
   while returning null binding, false final-decision eligibility, and no
