@@ -29,6 +29,7 @@ import {
   isTaskV2Failure,
   TaskV2Failure,
 } from "../src/policy/task-v2-failures.mjs";
+import { canonicalJson } from "../src/routing/features.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -91,6 +92,13 @@ function changed(contract, mutate) {
   const clone = structuredClone(contract);
   mutate(clone);
   return clone;
+}
+
+function assertDeepFrozen(value, seen = new Set()) {
+  if (value === null || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  assert.equal(Object.isFrozen(value), true);
+  for (const child of Object.values(value)) assertDeepFrozen(child, seen);
 }
 
 async function createFixture(
@@ -358,7 +366,7 @@ async function createFixture(
       },
     },
     ceilings: {
-      maxPatchBytes: 1024 * 1024,
+      maxPatchBytes: 256 * 1024,
       maxChangedFiles: 2,
       maxChangedLines: 128,
       maxWorkerOutputBytes: 1024 * 1024,
@@ -416,6 +424,60 @@ test("strict v2 schema and repository verification accept exact A and M fixtures
     assert.equal(
       verified.baselineManifest.protectedEntries,
       verified.baselineManifest.entries - 1,
+    );
+  }
+});
+
+test("raw v2 contract parsing owns exact bytes and binds raw and canonical identities", async (t) => {
+  const { parseTaskContractBytesV2 } = await import("../src/contract-v2.mjs");
+  const { contract } = await createFixture(t);
+  const raw = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`, "utf8");
+  const expectedRawSha256 = sha256(raw);
+  const expectedCanonicalSha256 = sha256(
+    Buffer.from(canonicalJson(contract), "utf8"),
+  );
+  const parsed = parseTaskContractBytesV2(raw);
+
+  raw.fill(0);
+  assert.deepEqual(Reflect.ownKeys(parsed), [
+    "contract",
+    "contractSha256",
+    "canonicalContractSha256",
+  ]);
+  assert.equal(parsed.contractSha256, expectedRawSha256);
+  assert.equal(parsed.canonicalContractSha256, expectedCanonicalSha256);
+  assert.notEqual(parsed.contractSha256, parsed.canonicalContractSha256);
+  assert.deepEqual(parsed.contract, contract);
+  assert.notEqual(parsed.contract, contract);
+  assert.equal(Object.isFrozen(parsed), true);
+  assertDeepFrozen(parsed.contract);
+
+  const boundaryText = Buffer.from(JSON.stringify(contract), "utf8");
+  const boundary = Buffer.concat([
+    boundaryText,
+    Buffer.alloc(4 * 1024 * 1024 - boundaryText.length, 0x20),
+  ]);
+  assert.equal(
+    parseTaskContractBytesV2(boundary).contractSha256,
+    sha256(boundary),
+  );
+});
+
+test("raw v2 contract parsing rejects hostile byte containers, malformed text, and overflow", async () => {
+  const { parseTaskContractBytesV2 } = await import("../src/contract-v2.mjs");
+  const shared = new Uint8Array(new SharedArrayBuffer(8));
+  for (const invalid of [
+    "{}",
+    Buffer.alloc(0),
+    Buffer.from([0xc3, 0x28]),
+    Buffer.from([0xef, 0xbb, 0xbf, 0x7b, 0x7d]),
+    Buffer.from("{} trailing", "utf8"),
+    Buffer.alloc(4 * 1024 * 1024 + 1, 0x20),
+    shared,
+  ]) {
+    assert.throws(
+      () => parseTaskContractBytesV2(invalid),
+      failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
     );
   }
 });
@@ -485,6 +547,98 @@ test("v2 schema has exact keys, derived creation authority, ordered baselines, a
       ),
     failureCode("ERR_PATH_INVALID"),
   );
+});
+
+test("v2 command, expected-pass, and resource ceilings match downstream bounds", async (t) => {
+  const { contract } = await createFixture(t);
+  const maximum = changed(contract, (value) => {
+    value.commands.public.argv.push("x".repeat(4096));
+    for (const command of Object.values(value.commands)) {
+      command.timeoutMs = 7_200_000;
+    }
+    Object.assign(value.ceilings, {
+      maxPatchBytes: 262_144,
+      maxChangedFiles: 32,
+      maxChangedLines: 4096,
+      maxWorkerOutputBytes: 1_048_576,
+      maxBuildOutputBytes: 66_584_576,
+      maxTestOutputBytesPerCommand: 66_584_576,
+      maxTotalVerifierWallMs: 7_200_000,
+      maxResidentBytes: 68_719_476_736,
+      maxVerifierDiskBytes: 137_438_953_472,
+      cargoBuildJobs: 16,
+      maxRepairCycles: 2,
+      maxCritiqueRounds: 1,
+    });
+  });
+  assert.equal(validateTaskContractV2(maximum), maximum);
+  for (const perCommandMaximum of [
+    changed(contract, (value) => {
+      value.ceilings.maxBuildOutputBytes = 67_108_864;
+      value.ceilings.maxTestOutputBytesPerCommand = 1024;
+    }),
+    changed(contract, (value) => {
+      value.ceilings.maxBuildOutputBytes = 1024;
+      value.ceilings.maxTestOutputBytesPerCommand = 67_108_864;
+    }),
+  ]) {
+    assert.equal(validateTaskContractV2(perCommandMaximum), perCommandMaximum);
+  }
+
+  const invalid = [
+    changed(contract, (value) => {
+      value.commands.public.argv = ["cargo"];
+    }),
+    changed(contract, (value) => {
+      value.commands.public.argv = ["rustc", "--version"];
+    }),
+    changed(contract, (value) => {
+      value.commands.public.argv.push("x".repeat(4097));
+    }),
+    changed(contract, (value) => {
+      value.commands.public.timeoutMs = 999;
+    }),
+    changed(contract, (value) => {
+      value.commands.public.timeoutMs =
+        value.ceilings.maxTotalVerifierWallMs + 1;
+    }),
+    changed(contract, (value) => {
+      value.success.publicPassed = 0;
+    }),
+    changed(contract, (value) => {
+      value.ceilings.maxBuildOutputBytes = 66_584_576;
+      value.ceilings.maxTestOutputBytesPerCommand = 66_584_577;
+    }),
+    ...[
+      ["maxPatchBytes", 262_145],
+      ["maxChangedFiles", 33],
+      ["maxChangedLines", 4097],
+      ["maxWorkerOutputBytes", 1_048_577],
+      ["maxBuildOutputBytes", 1023],
+      ["maxBuildOutputBytes", 67_108_865],
+      ["maxTestOutputBytesPerCommand", 1023],
+      ["maxTestOutputBytesPerCommand", 67_108_865],
+      ["maxTotalVerifierWallMs", 999],
+      ["maxTotalVerifierWallMs", 7_200_001],
+      ["maxResidentBytes", 268_435_455],
+      ["maxResidentBytes", 68_719_476_737],
+      ["maxVerifierDiskBytes", 33_554_431],
+      ["maxVerifierDiskBytes", 137_438_953_473],
+      ["cargoBuildJobs", 17],
+      ["maxRepairCycles", 3],
+      ["maxCritiqueRounds", 2],
+    ].map(([name, ceiling]) =>
+      changed(contract, (value) => {
+        value.ceilings[name] = ceiling;
+      }),
+    ),
+  ];
+  for (const value of invalid) {
+    assert.throws(
+      () => validateTaskContractV2(value),
+      failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+    );
+  }
 });
 
 test("schema inspection rejects hidden, symbolic, and accessor array authority without invoking getters", async (t) => {

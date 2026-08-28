@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, types as utilTypes } from "node:util";
 
 import {
   asciiFoldPathBytes,
@@ -12,12 +12,17 @@ import {
   treeEntryAtPath,
 } from "./candidate/tree-v2.mjs";
 import { runGitBytes } from "./candidate/git.mjs";
+import {
+  MAX_LOGICAL_ARGV_ITEMS,
+  MAX_TASK_ARG_BYTES,
+} from "./policy/evidence-limits.mjs";
 import { validateTaskV2Path, validateTaskV2Scope } from "./policy/paths-v2.mjs";
 import {
   isTaskV2Failure,
   taskV2Failure,
   withTaskV2FailureBoundary,
 } from "./policy/task-v2-failures.mjs";
+import { canonicalJson } from "./routing/features.mjs";
 
 const TOP_LEVEL_KEYS = Object.freeze([
   "schemaVersion",
@@ -93,10 +98,38 @@ const COMMAND_ROLE = /^[a-z][a-z0-9-]{0,63}$/u;
 const MAX_SCOPE_PATHS = 32;
 const MAX_SUBMODULES = 64;
 const MAX_COMMANDS = 16;
-const MAX_COMMAND_ARGUMENTS = 256;
 const MAX_TEXT_LIST = 256;
 const COMMIT_OUTPUT_CEILING = 1024 * 1024;
-const PATCH_OUTPUT_CEILING = 256 * 1024 * 1024;
+const CONTRACT_BYTES_CEILING = 4 * 1024 * 1024;
+const PATCH_OUTPUT_CEILING = 256 * 1024;
+const WORKER_OUTPUT_CEILING = 1024 * 1024;
+const COMMAND_OUTPUT_FLOOR = 1024;
+const COMMAND_OUTPUT_CEILING = 64 * 1024 * 1024;
+const SESSION_RESULT_ENVELOPE_BYTES = 2 * 1024 * 1024;
+const NATIVE_RESULT_CEILING = 256 * 1024 * 1024;
+const VERIFIER_WALL_FLOOR_MS = 1000;
+const VERIFIER_WALL_CEILING_MS = 7_200_000;
+const RESIDENT_BYTES_FLOOR = 256 * 1024 * 1024;
+const RESIDENT_BYTES_CEILING = 64 * 1024 * 1024 * 1024;
+const VERIFIER_DISK_BYTES_FLOOR = 32 * 1024 * 1024;
+const VERIFIER_DISK_BYTES_CEILING = 128 * 1024 * 1024 * 1024;
+const MAX_CARGO_BUILD_JOBS = 16;
+const MAX_REPAIR_CYCLES = 2;
+const MAX_CRITIQUE_ROUNDS = 1;
+const UTF8 = new TextDecoder("utf-8", { fatal: true });
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const nativeTypedArrayBufferGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "buffer",
+).get;
+const nativeTypedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteLength",
+).get;
+const nativeTypedArrayByteOffsetGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteOffset",
+).get;
 
 function fail(code, detail) {
   throw taskV2Failure(code, detail);
@@ -196,8 +229,13 @@ function boundedString(value, label, { minimum = 1, maximum = 4096 } = {}) {
   return value;
 }
 
-function safeInteger(value, label, minimum = 0) {
-  if (!Number.isSafeInteger(value) || value < minimum) {
+function safeInteger(
+  value,
+  label,
+  minimum = 0,
+  maximum = Number.MAX_SAFE_INTEGER,
+) {
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
     fail(
       "ERR_CONTRACT_SCHEMA_OR_KEYS",
       `${label} must be a bounded safe integer`,
@@ -556,7 +594,7 @@ function validateProtectedInputs(inputs, scope, objectFormat) {
   return Object.freeze({ baselines, presentCount, submodules });
 }
 
-function validateCommands(sequence, commands) {
+function validateCommands(sequence, commands, maxTotalVerifierWallMs) {
   const roles = denseArray(sequence, "verificationSequence", MAX_COMMANDS);
   if (
     roles.length < 3 ||
@@ -580,12 +618,12 @@ function validateCommands(sequence, commands) {
     const argv = denseArray(
       command.argv,
       `commands.${role}.argv`,
-      MAX_COMMAND_ARGUMENTS,
+      MAX_LOGICAL_ARGV_ITEMS,
     );
-    if (argv.length === 0) {
+    if (argv.length < 2 || argv[0] !== "cargo") {
       fail(
         "ERR_CONTRACT_SCHEMA_OR_KEYS",
-        `commands.${role}.argv must not be empty`,
+        `commands.${role}.argv must be a literal Cargo invocation`,
       );
     }
     let aggregateBytes = 0;
@@ -595,7 +633,8 @@ function validateCommands(sequence, commands) {
         argument.length === 0 ||
         argument.includes("\0") ||
         argument.includes("\r") ||
-        argument.includes("\n")
+        argument.includes("\n") ||
+        Buffer.byteLength(argument, "utf8") > MAX_TASK_ARG_BYTES
       ) {
         fail(
           "ERR_CONTRACT_SCHEMA_OR_KEYS",
@@ -607,19 +646,45 @@ function validateCommands(sequence, commands) {
     if (aggregateBytes > 1024 * 1024) {
       fail("ERR_CONTRACT_SCHEMA_OR_KEYS", `commands.${role}.argv is too large`);
     }
-    safeInteger(command.timeoutMs, `commands.${role}.timeoutMs`, 1);
+    safeInteger(
+      command.timeoutMs,
+      `commands.${role}.timeoutMs`,
+      VERIFIER_WALL_FLOOR_MS,
+      maxTotalVerifierWallMs,
+    );
   }
   return roles;
 }
 
 function validateCeilings(ceilings, createCount) {
   exactRecord(ceilings, CEILING_KEYS, "ceilings");
-  for (const name of CEILING_KEYS) {
-    if (name === "networkDuringVerification") continue;
-    const minimum = ["maxRepairCycles", "maxCritiqueRounds"].includes(name)
-      ? 0
-      : 1;
-    safeInteger(ceilings[name], `ceilings.${name}`, minimum);
+  for (const [name, minimum, maximum] of [
+    ["maxPatchBytes", 1, PATCH_OUTPUT_CEILING],
+    ["maxChangedFiles", 1, MAX_SCOPE_PATHS],
+    ["maxChangedLines", 1, 4096],
+    ["maxWorkerOutputBytes", 1, WORKER_OUTPUT_CEILING],
+    ["maxBuildOutputBytes", COMMAND_OUTPUT_FLOOR, COMMAND_OUTPUT_CEILING],
+    [
+      "maxTestOutputBytesPerCommand",
+      COMMAND_OUTPUT_FLOOR,
+      COMMAND_OUTPUT_CEILING,
+    ],
+    [
+      "maxTotalVerifierWallMs",
+      VERIFIER_WALL_FLOOR_MS,
+      VERIFIER_WALL_CEILING_MS,
+    ],
+    ["maxResidentBytes", RESIDENT_BYTES_FLOOR, RESIDENT_BYTES_CEILING],
+    [
+      "maxVerifierDiskBytes",
+      VERIFIER_DISK_BYTES_FLOOR,
+      VERIFIER_DISK_BYTES_CEILING,
+    ],
+    ["cargoBuildJobs", 1, MAX_CARGO_BUILD_JOBS],
+    ["maxRepairCycles", 0, MAX_REPAIR_CYCLES],
+    ["maxCritiqueRounds", 0, MAX_CRITIQUE_ROUNDS],
+  ]) {
+    safeInteger(ceilings[name], `ceilings.${name}`, minimum, maximum);
   }
   if (ceilings.networkDuringVerification !== false) {
     fail(
@@ -633,10 +698,17 @@ function validateCeilings(ceilings, createCount) {
       "maxChangedFiles cannot admit createExact",
     );
   }
-  if (ceilings.maxPatchBytes > PATCH_OUTPUT_CEILING) {
+}
+
+function validateSessionResultCeiling(ceilings, roleCount) {
+  const capturedBytes =
+    ceilings.maxBuildOutputBytes +
+    (roleCount - 1) * ceilings.maxTestOutputBytesPerCommand;
+  const encodedBytes = Math.ceil(capturedBytes / 3) * 4;
+  if (encodedBytes + SESSION_RESULT_ENVELOPE_BYTES > NATIVE_RESULT_CEILING) {
     fail(
       "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      "maxPatchBytes exceeds the native ceiling",
+      "verifier session result exceeds the native process ceiling",
     );
   }
 }
@@ -695,7 +767,9 @@ function validateSuccess(success, roles) {
     .filter((role) => !["format", "build"].includes(role))
     .map((role) => `${role}Passed`);
   exactRecord(success, expectedKeys, "success");
-  for (const key of expectedKeys) safeInteger(success[key], `success.${key}`);
+  for (const key of expectedKeys) {
+    safeInteger(success[key], `success.${key}`, 1);
+  }
 }
 
 function validateTaskContractV2Internal(contract) {
@@ -782,11 +856,13 @@ function validateTaskContractV2Internal(contract) {
     scope,
     objectFormat,
   );
+  validateCeilings(contract.ceilings, scope.createExact.length);
   const roles = validateCommands(
     contract.verificationSequence,
     contract.commands,
+    contract.ceilings.maxTotalVerifierWallMs,
   );
-  validateCeilings(contract.ceilings, scope.createExact.length);
+  validateSessionResultCeiling(contract.ceilings, roles.length);
   validateInitialRed(contract.initialRed, roles);
   validateSuccess(contract.success, roles);
   return Object.freeze({ contract, objectFormat, scope, protectedInputs });
@@ -794,6 +870,88 @@ function validateTaskContractV2Internal(contract) {
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function copiedContractBytes(value) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    !utilTypes.isUint8Array(value)
+  ) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      "contract bytes must be private raw bytes",
+    );
+  }
+  let buffer;
+  let byteLength;
+  let byteOffset;
+  try {
+    buffer = nativeTypedArrayBufferGetter.call(value);
+    byteLength = nativeTypedArrayByteLengthGetter.call(value);
+    byteOffset = nativeTypedArrayByteOffsetGetter.call(value);
+  } catch (error) {
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+  if (
+    utilTypes.isSharedArrayBuffer(buffer) ||
+    !Number.isSafeInteger(byteLength) ||
+    byteLength < 1 ||
+    byteLength > CONTRACT_BYTES_CEILING ||
+    !Number.isSafeInteger(byteOffset) ||
+    byteOffset < 0
+  ) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      "contract bytes exceed their fixed byte ceiling",
+    );
+  }
+  try {
+    return Buffer.from(new Uint8Array(buffer, byteOffset, byteLength));
+  } catch (error) {
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+}
+
+function deepFreeze(value, seen = new Set()) {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return value;
+  }
+  seen.add(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+  return Object.freeze(value);
+}
+
+function parseTaskContractBytesV2Internal(value) {
+  const bytes = copiedContractBytes(value);
+  let text;
+  try {
+    text = UTF8.decode(bytes);
+  } catch (error) {
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+  if (text.includes("\0") || !Buffer.from(text, "utf8").equals(bytes)) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      "contract bytes must be exact NUL-free UTF-8",
+    );
+  }
+  let contract;
+  try {
+    contract = JSON.parse(text);
+  } catch (error) {
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+  validateTaskContractV2Internal(contract);
+  deepFreeze(contract);
+  return Object.freeze({
+    contract,
+    contractSha256: digest(bytes),
+    canonicalContractSha256: digest(
+      Buffer.from(canonicalJson(contract), "utf8"),
+    ),
+  });
 }
 
 async function runTaskGit(reason, input) {
@@ -1332,6 +1490,12 @@ export function validateTaskContractV2(contract) {
     validateTaskContractV2Internal(contract);
     return contract;
   });
+}
+
+export function parseTaskContractBytesV2(value) {
+  return withTaskV2FailureBoundary(() =>
+    parseTaskContractBytesV2Internal(value),
+  );
 }
 
 export function verifyTaskContractRepositoryV2(contract, options) {
