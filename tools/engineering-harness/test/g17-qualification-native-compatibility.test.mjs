@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   G17_NATIVE_COMPATIBILITY_ARTIFACT_NAME,
   createG17NativeCompatibilityEvidence,
@@ -13,6 +12,7 @@ import {
 } from "../src/qualification/native-compatibility-contract.mjs";
 import { canonicalJson } from "../src/routing/features.mjs";
 import { g17IdentityFixture } from "./support/g17-identity-fixture.mjs";
+import { loadG17LegacyV4Contract } from "./support/g17-legacy-v4-contract-fixture.mjs";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -51,7 +51,9 @@ function processResult(stdout, stderr = "") {
 }
 
 function observations(contract, subjectIdentity, workspace) {
-  const cargo = subjectIdentity.toolchain.find(({ program }) => program === "cargo");
+  const cargo = subjectIdentity.toolchain.find(
+    ({ program }) => program === "cargo",
+  );
   return contract.compatibility.native.map((lane) => ({
     id: lane.id,
     inventory: {
@@ -66,10 +68,9 @@ function observations(contract, subjectIdentity, workspace) {
     },
     execution: {
       program: cargo.toolchainPath,
-      args: g17NativeExecutionArgv(
-        lane.argv,
-        workspace.targetDirectory,
-      ).slice(1),
+      args: g17NativeExecutionArgv(lane.argv, workspace.targetDirectory).slice(
+        1,
+      ),
       result: {
         ...processResult(
           [
@@ -86,7 +87,7 @@ function observations(contract, subjectIdentity, workspace) {
 }
 
 function fixture() {
-  const { contract } = loadG17Contract();
+  const { contract } = loadG17LegacyV4Contract();
   const subjectIdentity = identity();
   const workspace = {
     policy: "exclusive-temporary-home-and-target-v1",
@@ -114,10 +115,7 @@ function canonicalBytes(value) {
 test("native owner evidence reparses bounded raw Cargo bytes and derives all public claims", () => {
   const { contract, subjectIdentity, created } = fixture();
   assert.equal(created.artifact.name, G17_NATIVE_COMPATIBILITY_ARTIFACT_NAME);
-  assert.equal(
-    created.artifact.sha256,
-    sha256(created.artifact.bytes),
-  );
+  assert.equal(created.artifact.sha256, sha256(created.artifact.bytes));
   assert.equal(created.projection.status, "PASS");
   assert.equal(created.projection.totalPassedTests, 23);
   assert.deepEqual(
@@ -170,8 +168,7 @@ test("native owner replay rejects rehashed subject, tool, lane, argv, timeout, a
       owner.lanes[0].timeoutMs += 1;
     },
     (owner) => {
-      owner.lanes[0].execution.durationMs =
-        owner.lanes[0].timeoutMs + 1;
+      owner.lanes[0].execution.durationMs = owner.lanes[0].timeoutMs + 1;
     },
     (owner) => {
       owner.lanes[0].inventory.stdout.base64 = Buffer.from(
@@ -187,7 +184,10 @@ test("native owner replay rejects rehashed subject, tool, lane, argv, timeout, a
         "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n" +
           "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n",
       ).toString("base64");
-      const bytes = Buffer.from(owner.lanes[0].execution.stdout.base64, "base64");
+      const bytes = Buffer.from(
+        owner.lanes[0].execution.stdout.base64,
+        "base64",
+      );
       owner.lanes[0].execution.stdout.bytes = bytes.length;
       owner.lanes[0].execution.stdout.sha256 = sha256(bytes);
     },

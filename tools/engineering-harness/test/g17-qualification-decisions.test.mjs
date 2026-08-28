@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   mkdtemp,
   mkdir,
@@ -11,9 +12,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
-import { loadG17Contract } from "../src/qualification/contract.mjs";
 import {
   G17_EVALUATOR_OVERLAY,
   G17_NEGATIVE_CONTROL_SIGNATURE_SCHEMA,
@@ -32,9 +33,21 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+const legacyRoot = fileURLToPath(new URL("fixtures", import.meta.url));
+const legacyContract = Object.freeze(
+  JSON.parse(
+    readFileSync(
+      new URL("fixtures/g17-qualification-contract-v4.json", import.meta.url),
+    ),
+  ),
+);
+
+function loadLegacyDecisions() {
+  return loadG17DecisionSet({ contract: legacyContract, root: legacyRoot });
+}
+
 test("G1.7 loads three canonical proposed decisions with distinct product roles", () => {
-  const { contract } = loadG17Contract();
-  const decisions = loadG17DecisionSet({ contract });
+  const decisions = loadLegacyDecisions();
   assert.equal(
     decisions.decisionSetSha256,
     "9a76ace507534b00cb5587e340e89ae24d6a8174b1bc257d532e694185a61efc",
@@ -101,7 +114,7 @@ test("G1.7 loads three canonical proposed decisions with distinct product roles"
 });
 
 test("a future exact selected decision is representable and approval time is strict", () => {
-  const current = loadG17DecisionSet({ contract: loadG17Contract().contract });
+  const current = loadLegacyDecisions();
   const reference = structuredClone(current.reference);
   reference.status = "SELECTED";
   reference.controlPlan.negativeControl.expectedSignature = {
@@ -151,7 +164,7 @@ test("a future exact selected decision is representable and approval time is str
     );
   }
 
-  const contract = structuredClone(loadG17Contract().contract);
+  const contract = structuredClone(legacyContract);
   contract.referenceDecision.contentHash = reference.contentHash;
   contract.referenceDecision.sha256 = sha256(
     Buffer.from(`${canonicalJson(reference)}\n`, "utf8"),
@@ -163,9 +176,7 @@ test("a future exact selected decision is representable and approval time is str
 });
 
 test("decision validators reject evaluator-as-product and fabricated approval", () => {
-  const decisions = loadG17DecisionSet({
-    contract: loadG17Contract().contract,
-  });
+  const decisions = loadLegacyDecisions();
   const wrongProduct = structuredClone(decisions.reference);
   wrongProduct.products.performanceReference.commit =
     G17_EVALUATOR_OVERLAY.commit;
@@ -214,7 +225,7 @@ test("decision validators reject evaluator-as-product and fabricated approval", 
 });
 
 test("decision loader rejects noncanonical bytes and caller-rewritten descriptors", async (t) => {
-  const sourceContract = loadG17Contract().contract;
+  const sourceContract = legacyContract;
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-decisions-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const target = join(root, "qualification", "g1.7", "decisions");
@@ -226,7 +237,10 @@ test("decision loader rejects noncanonical bytes and caller-rewritten descriptor
     ["noise-budget", sourceContract.noiseDecision],
   ]) {
     const bytes = await readFile(
-      new URL(`../qualification/g1.7/decisions/${name}.json`, import.meta.url),
+      new URL(
+        `fixtures/qualification/g1.7/decisions/${name}.json`,
+        import.meta.url,
+      ),
     );
     artifacts[name] = bytes;
     await writeFile(join(target, `${name}.json`), bytes);
@@ -255,19 +269,22 @@ test("decision loader rejects noncanonical bytes and caller-rewritten descriptor
 });
 
 test("decision loader uses no-follow stable reads", async (t) => {
-  const sourceContract = loadG17Contract().contract;
+  const sourceContract = legacyContract;
   const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-decisions-link-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const target = join(root, "qualification", "g1.7", "decisions");
   await mkdir(target, { recursive: true });
   for (const name of ["performance-budget", "noise-budget"]) {
     const bytes = await readFile(
-      new URL(`../qualification/g1.7/decisions/${name}.json`, import.meta.url),
+      new URL(
+        `fixtures/qualification/g1.7/decisions/${name}.json`,
+        import.meta.url,
+      ),
     );
     await writeFile(join(target, `${name}.json`), bytes);
   }
   const referencePath = new URL(
-    "../qualification/g1.7/decisions/reference.json",
+    "fixtures/qualification/g1.7/decisions/reference.json",
     import.meta.url,
   );
   await symlink(referencePath, join(target, "reference.json"));
@@ -278,14 +295,14 @@ test("decision loader uses no-follow stable reads", async (t) => {
 });
 
 test("decision files bind canonical self-hash and raw LF bytes", async () => {
-  const { contract } = loadG17Contract();
+  const contract = legacyContract;
   for (const descriptor of [
     contract.referenceDecision,
     contract.budgetDecision,
     contract.noiseDecision,
   ]) {
     const bytes = await readFile(
-      new URL(`../${descriptor.path}`, import.meta.url),
+      new URL(`fixtures/${descriptor.path}`, import.meta.url),
     );
     const value = JSON.parse(bytes);
     const { contentHash, ...unsigned } = value;
@@ -300,8 +317,11 @@ test("decision files bind canonical self-hash and raw LF bytes", async () => {
 });
 
 test("sealed decision copies replay exactly and reject missing or mutated bytes", () => {
-  const { contract } = loadG17Contract();
-  const artifacts = g17DecisionArtifactsForSealing({ contract });
+  const contract = legacyContract;
+  const artifacts = g17DecisionArtifactsForSealing({
+    contract,
+    root: legacyRoot,
+  });
   assert.deepEqual(
     artifacts.map(({ name }) => name),
     [
@@ -340,7 +360,7 @@ test("sealed decision copies replay exactly and reject missing or mutated bytes"
 
   artifacts[0].bytes[0] ^= 1;
   assert.equal(
-    g17DecisionArtifactsForSealing({ contract })[0].bytes[0],
+    g17DecisionArtifactsForSealing({ contract, root: legacyRoot })[0].bytes[0],
     Buffer.from("{", "utf8")[0],
   );
 });

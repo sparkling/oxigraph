@@ -7,6 +7,7 @@ import {
   G17_CURRENT_CONTRACT_SHA256,
   G17_LEGACY_V1_CONTRACT_SHA256,
   G17_LEGACY_V3_CONTRACT_SHA256,
+  G17_LEGACY_V4_CONTRACT_SHA256,
 } from "./contract-identity.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
@@ -146,17 +147,20 @@ function validateContractProjection(contract) {
   if (!DIGEST.test(contract.sha256) || !DIGEST.test(contract.suiteHash)) {
     fail("contract digest is malformed");
   }
-  const currentV4 = contract.sha256 === G17_CURRENT_CONTRACT_SHA256;
+  const supportsDecisionProtocol = [
+    G17_LEGACY_V4_CONTRACT_SHA256,
+    G17_CURRENT_CONTRACT_SHA256,
+  ].includes(contract.sha256);
   if (
     !(
-      currentV4
+      supportsDecisionProtocol
         ? ["SELECTED", "UNSELECTED", "PROPOSED"]
         : ["SELECTED", "UNSELECTED"]
     ).includes(contract.referenceDecision)
   ) {
     fail("reference decision is invalid");
   }
-  const budgetDecisionStates = currentV4
+  const budgetDecisionStates = supportsDecisionProtocol
     ? ["APPROVED", "ABSENT", "PROPOSED"]
     : ["APPROVED", "ABSENT"];
   if (!budgetDecisionStates.includes(contract.budgetDecision)) {
@@ -165,7 +169,7 @@ function validateContractProjection(contract) {
   if (!budgetDecisionStates.includes(contract.noiseDecision)) {
     fail("noise budget decision is invalid");
   }
-  return currentV4;
+  return supportsDecisionProtocol;
 }
 
 function validateIdentity(identity) {
@@ -424,13 +428,17 @@ function validateStructure(receipt, options) {
   exactKeys(receipt, RECEIPT_KEYS, "receipt");
   if (receipt.schema !== G17_RECEIPT_SCHEMA) fail("schema is not v1");
   validateRun(receipt.run);
-  const currentV4 = validateContractProjection(receipt.contract);
+  const supportsDecisionProtocol = validateContractProjection(receipt.contract);
   validateIdentity(receipt.identity);
   validateEvidence(receipt.evidence, options);
-  validateBenchmark(receipt.benchmark, { currentV4 });
+  validateBenchmark(receipt.benchmark, {
+    currentV4: supportsDecisionProtocol,
+  });
   if (!isDeepStrictEqual(receipt.authority, AUTHORITY))
     fail("authority drifted");
-  validateFinal(receipt.final, receipt, { currentV4 });
+  validateFinal(receipt.final, receipt, {
+    currentV4: supportsDecisionProtocol,
+  });
   validateArtifacts(receipt.artifacts);
   if (
     receipt.contentHash !== canonicalSha256(contentProjection(receipt)) ||
@@ -491,9 +499,12 @@ export function verifyG17Receipt(input) {
       ),
     });
     const legacyReplayOnly =
-      [G17_LEGACY_V1_CONTRACT_SHA256, G17_LEGACY_V3_CONTRACT_SHA256].includes(
-        verified.contract.sha256,
-      ) || Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
+      [
+        G17_LEGACY_V1_CONTRACT_SHA256,
+        G17_LEGACY_V3_CONTRACT_SHA256,
+        G17_LEGACY_V4_CONTRACT_SHA256,
+      ].includes(verified.contract.sha256) ||
+      Object.values(evidenceSchemaState).includes("LEGACY_REPLAY_ONLY");
     return Object.freeze({
       ok: !legacyReplayOnly,
       structurallyValid: true,

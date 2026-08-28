@@ -74,7 +74,7 @@ test("dedicated G1.7 run CLI reports the proposed-decision gate with exit 4", as
       assert.equal(error.code, 4);
       assert.equal(error.stderr, "");
       const result = JSON.parse(error.stdout);
-      assert.equal(result.schema, "oxigraph.g1.7-qualification-run-gate/v1");
+      assert.equal(result.schema, "oxigraph.g1.7-qualification-run-gate/v2");
       assert.equal(result.decisionAuthority, "DIAGNOSTIC_ONLY");
       assert.equal(result.final.verdict, "INCONCLUSIVE");
       assert.deepEqual(result.final.reasons.slice(0, 3), [

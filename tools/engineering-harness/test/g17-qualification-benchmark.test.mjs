@@ -10,17 +10,23 @@ import {
   summarizeG17Samples,
   verifyG17BenchmarkSuite,
 } from "../src/qualification/benchmark.mjs";
-import { loadG17Contract } from "../src/qualification/contract.mjs";
 import { loadG17DecisionSet } from "../src/qualification/decision-contract.mjs";
 import { g17BenchmarkSamples } from "./support/g17-benchmark-fixture.mjs";
+import {
+  g17LegacyV4DecisionRoot,
+  loadG17LegacyV4Contract,
+} from "./support/g17-legacy-v4-contract-fixture.mjs";
 
 const { unpairedBootstrapDelta } = await loadG17DarwinFunctions();
 
 function fixture() {
-  const loaded = loadG17Contract();
+  const loaded = loadG17LegacyV4Contract();
   return {
     contract: loaded.contract,
-    decisions: loadG17DecisionSet({ contract: loaded.contract }),
+    decisions: loadG17DecisionSet({
+      contract: loaded.contract,
+      root: g17LegacyV4DecisionRoot,
+    }),
   };
 }
 

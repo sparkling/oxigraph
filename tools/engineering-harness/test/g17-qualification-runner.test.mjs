@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chmod, mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
+import { fileURLToPath } from "node:url";
 
 import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
 import {
@@ -35,7 +37,11 @@ import {
 } from "../../metaharness/policy-contract.mjs";
 import { MUTATION_RECEIPT_SCHEMA_VERSION } from "../../mutation/schema.mjs";
 import { classifyG17Qualification } from "../src/qualification/classification.mjs";
-import { loadG17Contract } from "../src/qualification/contract.mjs";
+import {
+  G17_LEGACY_V4_CONTRACT_SHA256,
+  decodeSealedG17Contract,
+  loadG17Contract,
+} from "../src/qualification/contract.mjs";
 import {
   g17DecisionArtifactsForSealing,
   loadG17DecisionSet,
@@ -74,6 +80,19 @@ function identity({ subjectCommit = "a".repeat(40), dependencies } = {}) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+const legacyDecisionRoot = fileURLToPath(new URL("fixtures", import.meta.url));
+const legacyV4ContractBytes = readFileSync(
+  new URL("fixtures/g17-qualification-contract-v4.json", import.meta.url),
+);
+const legacyV4Contract = decodeSealedG17Contract({
+  bytes: legacyV4ContractBytes,
+  receiptSha256: G17_LEGACY_V4_CONTRACT_SHA256,
+});
+
+function loadLegacyV4Contract() {
+  return legacyV4Contract;
 }
 
 function canonicalBytes(value) {
@@ -760,7 +779,7 @@ async function fixture(t) {
 async function sealCurrentG17Fixture({
   runId,
   runsRoot,
-  contractLoader = loadG17Contract,
+  contractLoader = loadLegacyV4Contract,
   identityProvider = async () => identity(),
   semanticProvider = async () => missing("MISSING", "missing"),
   compatibilityProvider = async () => missing("MISSING", "missing"),
@@ -778,7 +797,10 @@ async function sealCurrentG17Fixture({
   const loaded = contractLoader();
   const decisions = validateG17DecisionSetBinding({
     contract: loaded.contract,
-    decisions: loadG17DecisionSet({ contract: loaded.contract }),
+    decisions: loadG17DecisionSet({
+      contract: loaded.contract,
+      root: legacyDecisionRoot,
+    }),
     startedAt: started.toISOString(),
   });
   const subjectIdentity = await identityProvider({ contract: loaded.contract });
@@ -826,7 +848,10 @@ async function sealCurrentG17Fixture({
   };
   const artifacts = artifactTransform([
     { name: "contract.json", bytes: Buffer.from(loaded.bytes) },
-    ...g17DecisionArtifactsForSealing({ contract: loaded.contract }),
+    ...g17DecisionArtifactsForSealing({
+      contract: loaded.contract,
+      root: legacyDecisionRoot,
+    }),
     { name: "identity.json", bytes: canonicalBytes(subjectIdentity) },
     { name: "observations.json", bytes: canonicalBytes(observations) },
     ...semanticEvidence.artifacts,
@@ -1103,7 +1128,7 @@ test("sealed verifier imports no live identity, evidence, process, Git, or Route
 
 test("sealed verifier rejects a hash-consistent compatibility PASS without copied Agentic receipt and oracle bytes", async (t) => {
   const { runsRoot } = await fixture(t);
-  const loaded = loadG17Contract();
+  const loaded = loadLegacyV4Contract();
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status: "PASS",
@@ -1234,7 +1259,7 @@ test("sealed verifier replays synthetic Agentic and native owner-contract fixtur
   const result = await sealCurrentG17Fixture({
     runId,
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () => subjectIdentity,
     semanticProvider: async () => missing("MISSING", "missing"),
     compatibilityProvider: async () => ({
@@ -1250,12 +1275,12 @@ test("sealed verifier replays synthetic Agentic and native owner-contract fixtur
     runId: result.receipt.run.id,
     runsRoot,
   });
-  assert.equal(verified.ok, true);
-  assert.equal(verified.verificationStatus, "SEALED_RUN_VERIFIED");
+  assert.equal(verified.ok, false);
+  assert.equal(verified.verificationStatus, "LEGACY_REPLAY_ONLY");
   assert.equal(verified.qualificationEligible, false);
   assert.deepEqual(verified.evidenceAssurance, {
     semantic: "NOT_APPLICABLE",
-    compatibility: "COMPATIBILITY_OWNER_CONTRACT_REPLAYED",
+    compatibility: "LEGACY_REPLAY_ONLY",
   });
   assert.equal(owner.agenticQe.archiveFileCount, 0);
   assert.equal(owner.agenticQe.commandCount, 11);
@@ -1326,7 +1351,7 @@ test("sealed verifier keeps executed unversioned legacy evidence replay-only", a
   const current = await sealCurrentG17Fixture({
     runId: currentRunId,
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () => subjectIdentity,
     semanticProvider: async () => missing("MISSING", "missing"),
     compatibilityProvider: async () => ({
@@ -1483,7 +1508,7 @@ test("adding the current schema and G1.4b prerequisite to legacy Agentic evidenc
   const result = await sealCurrentG17Fixture({
     runId: "run-schema-only-upgrade",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () => identity(),
     semanticProvider: async () => missing("MISSING", "missing"),
     compatibilityProvider: async () => ({
@@ -1513,7 +1538,7 @@ test("adding the current schema and G1.4b prerequisite to legacy Agentic evidenc
 
 test("sealed verifier rejects copied compatibility evidence that violates the pure Agentic receipt contract", async (t) => {
   const { runsRoot } = await fixture(t);
-  const loaded = loadG17Contract();
+  const loaded = loadLegacyV4Contract();
   const runId = "run-invalid-owner-evidence";
   const nativeFixture = createG17NativeApplicationFixture({ runId });
   const subjectIdentity = nativeFixture.input.identity;
@@ -1575,7 +1600,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
 
 test("sealed verifier rejects rehashed native raw-output and derived-projection tampering", async (t) => {
   const { runsRoot } = await fixture(t);
-  const loaded = loadG17Contract();
+  const loaded = loadLegacyV4Contract();
   for (const [runId, mutate] of [
     [
       "run-native-output-tamper",
@@ -1638,7 +1663,7 @@ test("sealed verifier rejects rehashed native raw-output and derived-projection 
 
 test("sealed verifier rejects copied semantic evidence that violates the pure MetaHarness receipt contract", async (t) => {
   const { runsRoot } = await fixture(t);
-  const loaded = loadG17Contract();
+  const loaded = loadLegacyV4Contract();
   const projection = {
     schema: G17_SEMANTIC_EVIDENCE_SCHEMA,
     status: "PASS",
@@ -1693,7 +1718,7 @@ test("sealed verifier replays a synthetic MetaHarness owner-contract fixture", a
   const result = await sealCurrentG17Fixture({
     runId: "run-valid-semantic-owner",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),
@@ -1704,11 +1729,11 @@ test("sealed verifier replays a synthetic MetaHarness owner-contract fixture", a
     runId: result.receipt.run.id,
     runsRoot,
   });
-  assert.equal(verified.ok, true);
-  assert.equal(verified.verificationStatus, "SEALED_RUN_VERIFIED");
+  assert.equal(verified.ok, false);
+  assert.equal(verified.verificationStatus, "LEGACY_REPLAY_ONLY");
   assert.equal(verified.qualificationEligible, false);
   assert.deepEqual(verified.evidenceAssurance, {
-    semantic: "METAHARNESS_OWNER_CONTRACT_REPLAYED",
+    semantic: "LEGACY_REPLAY_ONLY",
     compatibility: "NOT_APPLICABLE",
   });
 });
@@ -1725,7 +1750,7 @@ test("sealed verifier rejects a rehashed synthetic summary outside the frozen Me
   const result = await sealCurrentG17Fixture({
     runId: "run-rehashed-synthetic-summary",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),
@@ -1754,7 +1779,7 @@ test("sealed verifier rejects rehashed Darwin search parameters outside the froz
   const result = await sealCurrentG17Fixture({
     runId: "run-rehashed-darwin-policy",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),
@@ -1782,7 +1807,7 @@ test("sealed verifier rejects a rehashed protected snapshot algorithm", async (t
   const result = await sealCurrentG17Fixture({
     runId: "run-rehashed-snapshot-algorithm",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),
@@ -1809,7 +1834,7 @@ test("sealed verifier rejects verification rederived from itself instead of qual
   const result = await sealCurrentG17Fixture({
     runId: "run-self-derived-verification",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),
@@ -1836,7 +1861,7 @@ test("sealed verifier rejects MetaHarness evidence completed after G1.7 acquisit
   const result = await sealCurrentG17Fixture({
     runId: "run-late-semantic-evidence",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),
@@ -1863,7 +1888,7 @@ test("sealed verifier rejects a Darwin dependency outside the official registry"
   const result = await sealCurrentG17Fixture({
     runId: "run-untrusted-darwin-registry",
     runsRoot,
-    contractLoader: () => loadG17Contract(),
+    contractLoader: loadLegacyV4Contract,
     identityProvider: async () =>
       identity({ dependencies: [owner.dependency] }),
     semanticProvider: semanticProvider(owner),

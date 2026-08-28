@@ -2,9 +2,10 @@ import { repositoryRoot } from "../paths.mjs";
 import { classifyG17Qualification } from "./classification.mjs";
 import { loadG17Contract } from "./contract.mjs";
 import {
-  loadG17DecisionSet,
-  validateG17DecisionSetBinding,
-} from "./decision-contract.mjs";
+  loadG17ControlProtocol,
+  validateG17ControlExecutionBinding,
+  validateG17QualificationOwnerGate,
+} from "./control-protocol.mjs";
 import {
   currentG17QualificationIdentity,
   g17ReceiptIdentity,
@@ -25,8 +26,20 @@ function instant(clock) {
   return observed;
 }
 
-function contractProjection(loaded, decisions) {
+function legacyDecisionProjection(protocol) {
+  const approved =
+    protocol.authorization.status === "CONTROL_AUTHORIZED" &&
+    protocol.finalDecisionSet.status === "APPROVED";
+  return Object.freeze({
+    reference: Object.freeze({ status: approved ? "SELECTED" : "PROPOSED" }),
+    performance: Object.freeze({ status: approved ? "APPROVED" : "PROPOSED" }),
+    noise: Object.freeze({ status: approved ? "APPROVED" : "PROPOSED" }),
+  });
+}
+
+function contractProjection(loaded, protocol) {
   const { contract } = loaded;
+  const decisions = legacyDecisionProjection(protocol);
   return Object.freeze({
     id: contract.id,
     sha256: loaded.contractSha256,
@@ -34,6 +47,8 @@ function contractProjection(loaded, decisions) {
     referenceDecision: decisions.reference.status,
     budgetDecision: decisions.performance.status,
     noiseDecision: decisions.noise.status,
+    controlAuthorization: protocol.authorization.status,
+    finalDecisionSet: protocol.finalDecisionSet.status,
   });
 }
 
@@ -63,13 +78,18 @@ function classifyCurrent(
   });
 }
 
-function blockedRunResult(loaded, decisionBinding) {
+function blockedRunResult(loaded, protocol) {
   const benchmark = notRunBenchmark();
+  const decisions = legacyDecisionProjection(protocol);
   return Object.freeze({
-    schema: "oxigraph.g1.7-qualification-run-gate/v1",
-    contract: contractProjection(loaded, decisionBinding),
-    decisionAuthority: decisionBinding.authority,
-    final: classifyCurrent(decisionBinding, "NOT_RUN", "NOT_RUN", benchmark),
+    schema: "oxigraph.g1.7-qualification-run-gate/v2",
+    contract: contractProjection(loaded, protocol),
+    decisionAuthority: "DIAGNOSTIC_ONLY",
+    phase:
+      protocol.authorization.status === "CONTROL_AUTH_PROPOSED"
+        ? "CONTROL_AUTH_PROPOSED"
+        : "CONTROL_AUTHORIZED",
+    final: classifyCurrent(decisions, "NOT_RUN", "NOT_RUN", benchmark),
     authority: AUTHORITY,
   });
 }
@@ -82,6 +102,25 @@ export class G17QualificationDecisionGateError extends Error {
     this.name = "G17QualificationDecisionGateError";
     this.code = "G17_DECISIONS_UNAPPROVED";
     this.result = result;
+  }
+}
+
+export class G17ControlAuthorizationGateError extends Error {
+  constructor(result) {
+    super("G1.7 controls require a prior human control authorization");
+    this.name = "G17ControlAuthorizationGateError";
+    this.code = "G17_CONTROL_AUTHORIZATION_UNAPPROVED";
+    this.result = result;
+  }
+}
+
+export class G17ControlExecutionUnavailableError extends Error {
+  constructor() {
+    super(
+      "G1.7 authorized controls require a separately reviewed raw build and launch owner",
+    );
+    this.name = "G17ControlExecutionUnavailableError";
+    this.code = "G17_CONTROL_EXECUTION_OWNER_UNIMPLEMENTED";
   }
 }
 
@@ -99,21 +138,21 @@ export function assertG17ExecutionOwnerAvailable() {
   throw new G17QualificationExecutionUnavailableError();
 }
 
+export function assertG17ControlExecutionOwnerAvailable() {
+  throw new G17ControlExecutionUnavailableError();
+}
+
 export async function preflightG17Qualification({
   contractLoader = loadG17Contract,
-  decisionLoader = loadG17DecisionSet,
+  protocolLoader = loadG17ControlProtocol,
   identityProvider = currentG17QualificationIdentity,
   repoRoot = repositoryRoot,
   clock = () => new Date(),
 } = {}) {
-  const observedAt = instant(clock);
+  instant(clock);
   const loaded = contractLoader();
-  const decisions = decisionLoader({ contract: loaded.contract });
-  const decisionBinding = validateG17DecisionSetBinding({
-    contract: loaded.contract,
-    decisions,
-    startedAt: observedAt.toISOString(),
-  });
+  const protocol = protocolLoader({ contract: loaded.contract });
+  const decisions = legacyDecisionProjection(protocol);
   const identity = await identityProvider({
     contract: loaded.contract,
     repoRoot,
@@ -121,31 +160,56 @@ export async function preflightG17Qualification({
   const benchmark = notRunBenchmark();
   return Object.freeze({
     schema: "oxigraph.g1.7-qualification-preflight/v1",
-    contract: contractProjection(loaded, decisionBinding),
+    contract: contractProjection(loaded, protocol),
     identity: g17ReceiptIdentity(identity),
-    final: classifyCurrent(decisionBinding, "MISSING", "MISSING", benchmark),
+    final: classifyCurrent(decisions, "MISSING", "MISSING", benchmark),
     authority: AUTHORITY,
   });
 }
 
 export async function runG17Qualification({
   contractLoader = loadG17Contract,
-  decisionLoader = loadG17DecisionSet,
+  protocolLoader = loadG17ControlProtocol,
   clock = () => new Date(),
 } = {}) {
   const started = instant(clock);
   const loaded = contractLoader();
   const { contract } = loaded;
-  const decisions = decisionLoader({ contract });
-  const decisionBinding = validateG17DecisionSetBinding({
-    contract,
-    decisions,
-    startedAt: started.toISOString(),
-  });
-  if (!decisionBinding.approved) {
+  const protocol = protocolLoader({ contract });
+  if (
+    protocol.authorization.status !== "CONTROL_AUTHORIZED" ||
+    protocol.finalDecisionSet.status !== "APPROVED"
+  ) {
     throw new G17QualificationDecisionGateError(
-      blockedRunResult(loaded, decisionBinding),
+      blockedRunResult(loaded, protocol),
     );
   }
+  validateG17QualificationOwnerGate({
+    authorization: protocol.authorization,
+    authorizationRawSha256: protocol.artifacts.authorization.rawSha256,
+    finalDecisionSet: protocol.finalDecisionSet,
+    qualificationStartedAt: started.toISOString(),
+  });
   assertG17ExecutionOwnerAvailable();
+}
+
+export async function runG17Controls({
+  contractLoader = loadG17Contract,
+  protocolLoader = loadG17ControlProtocol,
+  clock = () => new Date(),
+} = {}) {
+  const started = instant(clock);
+  const loaded = contractLoader();
+  const protocol = protocolLoader({ contract: loaded.contract });
+  if (protocol.authorization.status !== "CONTROL_AUTHORIZED") {
+    throw new G17ControlAuthorizationGateError(
+      blockedRunResult(loaded, protocol),
+    );
+  }
+  validateG17ControlExecutionBinding({
+    authorization: protocol.authorization,
+    authorizationRawSha256: protocol.artifacts.authorization.rawSha256,
+    controlStartedAt: started.toISOString(),
+  });
+  assertG17ControlExecutionOwnerAvailable();
 }

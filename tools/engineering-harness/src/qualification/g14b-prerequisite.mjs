@@ -10,13 +10,17 @@ import { isDeepStrictEqual } from "node:util";
 
 import { replayApplicationReceipt } from "../receipts/application.mjs";
 import { canonicalSha256 } from "../routing/features.mjs";
+import {
+  G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  G17_G14B_PREREQUISITE_BINDING_SCHEMA,
+  G17_G14B_PREREQUISITE_SCHEMA,
+} from "./g14b-prerequisite-contract.mjs";
 
-export const G17_G14B_PREREQUISITE_SCHEMA =
-  "oxigraph.g1.7-g1.4b-prerequisite/v1";
-export const G17_G14B_PREREQUISITE_BINDING_SCHEMA =
-  "oxigraph.g1.7-g1.4b-prerequisite-binding/v1";
-export const G17_G14B_PREREQUISITE_ARTIFACT_NAME =
-  "g14b-application-receipt.json";
+export {
+  G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  G17_G14B_PREREQUISITE_BINDING_SCHEMA,
+  G17_G14B_PREREQUISITE_SCHEMA,
+} from "./g14b-prerequisite-contract.mjs";
 
 export const G17_G14B_APPLICATION_RECEIPT_BYTES = 95_990;
 export const G17_G14B_APPLICATION_RECEIPT_RAW_SHA256 =

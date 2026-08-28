@@ -122,7 +122,7 @@ test("current replay snapshots accessor input once and does not retain caller by
 
   assert.equal(byteReads, 1);
   assert.equal(digestReads, 1);
-  assert.equal(decoded.generation, "CURRENT_V4");
+  assert.equal(decoded.generation, "CURRENT_V5");
   assert.equal(decoded.contractSha256, currentSha256);
   assert.notStrictEqual(decoded.bytes, currentBytes);
   assert.equal(decoded.bytes[0], "{".codePointAt(0));
