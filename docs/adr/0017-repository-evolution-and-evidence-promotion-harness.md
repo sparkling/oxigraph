@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-28
+- Updated: 2026-08-29
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -197,10 +197,14 @@
   Commit `54a056e0` adds an unregistered exact-byte native worker with retained-
   descriptor provider/schema/Git identity checks, original-process-group
   quiescence, unsafe-root retention, and bounded no-retry failure behavior. Its
-  112/112 focused matrix and two independent GO reviews establish only this
-  partial infrastructure. Escaped-descendant cgroup containment, the opaque v2
-  candidate/verifier lifecycle, receipt v7/replay, evaluator reconstruction,
-  registry/CLI activation, and G2.2 remain open; ADR-0034 stays Proposed
+  112/112 focused matrix and two independent GO reviews establish only that
+  partial infrastructure. Commit `11e72201` adds the opaque one-shot candidate
+  and verifier lifecycle, exact submodule claims, structural host/worker wire,
+  typed classification, shared ceilings, and strict cleanup quarantine; the
+  related non-G1.7 regression matrix passes 128/128. Escaped-descendant cgroup
+  containment and retained-FD executable-closure binding, receipt v7/replay,
+  evaluator reconstruction, registry/CLI activation, and G2.2 remain open;
+  ADR-0034 stays Proposed and unregistered
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -530,9 +534,10 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-80% after unregistered worker commit `54a056e0`; exact candidate verification,
-receipt v7/replay, profile/CLI registration, cgroup containment, and G2.2
-remain open. ADR-0034 adds no product G-identifier.
+85% after unregistered opaque-verifier commit `11e72201`; production cgroup and
+retained-FD closure proof, receipt v7/replay, evaluator reconstruction,
+profile/CLI registration, the complete acceptance gate, and G2.2 remain open.
+ADR-0034 adds no product G-identifier.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on

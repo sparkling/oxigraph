@@ -31,16 +31,24 @@ retained read-only descriptors whose bigint identity, timestamps, ownership,
 mode, link count, size, and SHA-256 are verified before and after execution.
 Direct-child reap and original-process-group quiescence are required before a
 root or the sole runner admission can be released. The focused v1/v2 matrix
-passes 112/112 and two independent audits returned GO for this partial scope.
+passes 112/112 and two independent audits returned GO for that partial scope.
+Commits `faae3d28`, `5b980c08`, and `d07cfdfa` move v2 reconstruction onto
+exact Git bytes, bind the raw task contract, and seal the opaque candidate.
+Commit `11e72201` adds exact submodule materialization, the structural sandbox
+host/worker protocol, one-shot verification/disposal, typed classification,
+shared byte/build policy, and strict cleanup quarantine. Its related non-G1.7
+regression matrix passes 128/128.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
 reuse is not identity-bearing, and pre/post verification detects but cannot
-prevent transient executable mutation. The cgroup/native supervisor, opaque v2
-candidate and verifier lifecycle, application receipt v7/replay, evaluator
-reconstruction, profile/CLI dispatch, and G2.2 remain mandatory later gates.
-Schema v1 is still the only executable registry surface; no candidate-created
-product module is admitted yet.
+prevent transient executable mutation. The opaque lifecycle is now structural,
+but production remains fixed unavailable because its observed ESM/launcher
+hashes are still read-then-path-bound rather than retained-FD-bound through
+execution. The cgroup owner and that executable-closure proof, application
+receipt v7/replay, evaluator reconstruction, profile/CLI dispatch, and G2.2
+remain mandatory later gates. Schema v1 is still the only executable registry
+surface; no candidate-created product module is admitted yet.
 
 Current activation boundary:
 

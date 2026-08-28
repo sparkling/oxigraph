@@ -361,10 +361,14 @@ through `65fb0e7a` preserve schema-v1 evidence while adding the exact v2
 path/tree/contract/reconstruction/context/schema/assembly controls. Commit
 `54a056e0` adds a reviewed but unregistered exact-byte native worker with
 retained-descriptor provider/schema/Git verification and original-process-
-group cleanup; its focused matrix passes 112/112. The opaque verifier-v2
-lifecycle, cgroup containment, application receipt v7/replay,
-evaluator/profile/CLI registration, and G2.2 remain open, so no new product
-module or promotion authority is admitted by this checkpoint.
+group cleanup. Commit `11e72201` adds the still-unregistered opaque candidate
+lifecycle, exact submodule materialization, structural sandbox protocol,
+one-shot verifier/disposal, typed classification, and strict cleanup quarantine;
+the related non-G1.7 matrix passes 128/128. Production remains fixed
+unavailable until the cgroup owner and retained-FD executable-closure proof
+exist. Application receipt v7/replay, evaluator/profile/CLI registration, the
+complete ADR-0034 gate, and G2.2 remain open, so no new product module or
+promotion authority is admitted by this checkpoint.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -461,9 +465,9 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's
-  partially implemented harness controls remain unregistered until their full
-  v2 acceptance gate closes.
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 85%
+  in-progress harness controls remain unregistered until their full v2
+  acceptance gate closes.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear
