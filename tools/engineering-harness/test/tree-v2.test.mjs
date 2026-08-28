@@ -16,6 +16,7 @@ import {
   diffTreesV2,
   gitObjectOid,
   loadTreeV2,
+  loadedProductionTreeV2ObjectIdentity,
   parseRawDiffTreeBytes,
   parseTreeBytes,
   pathBytesToHex,
@@ -87,6 +88,10 @@ test("tree parser preserves raw non-UTF8, tab, and newline paths without key col
     treeRecord({ object: oid("a"), path: "case.rs" }),
   ]);
   const tree = parseTreeBytes(output);
+  assert.throws(
+    () => loadedProductionTreeV2ObjectIdentity(tree),
+    fault("ERR_INTERNAL_FAIL_CLOSED"),
+  );
 
   assert.equal(tree.schema, "oxigraph.git-tree-map/v2");
   assert.equal(tree.objectFormat, "sha1");
@@ -553,6 +558,7 @@ test("live Git tree, blob, and diff primitives preserve raw path bytes", async (
   ).trim();
 
   const loaded = await loadTreeV2({ workspace, home, tree: oldTree });
+  assert.equal(loadedProductionTreeV2ObjectIdentity(loaded), oldTree);
   assert.deepEqual(treeEntryAtPath(loaded, invalidName).path, invalidName);
   assert.deepEqual(treeEntryAtPath(loaded, tabName).path, tabName);
   assert.deepEqual(treeEntryAtPath(loaded, newlineName).path, newlineName);

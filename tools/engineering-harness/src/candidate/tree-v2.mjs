@@ -11,6 +11,7 @@ const objectTypeOutputBytes = 64;
 const maximumTreeRecords = 1_000_000;
 const nul = Buffer.from([0]);
 const treeInternals = new WeakMap();
+const productionTreeObjectIdentities = new WeakMap();
 
 const typeByMode = new Map([
   ["040000", "tree"],
@@ -695,7 +696,7 @@ export function parseRawDiffTreeBytes(bytesInput, options = {}) {
   return createDiffMap(changes, objectFormat);
 }
 
-function createTreeV2Primitives(gitBytesRunner) {
+function createTreeV2Primitives(gitBytesRunner, loadedTreeSink) {
   if (typeof gitBytesRunner !== "function") {
     throw new TypeError("Git byte runner must be a function");
   }
@@ -755,10 +756,12 @@ function createTreeV2Primitives(gitBytesRunner) {
         signal,
       }),
     );
-    return parseTreeBytes(output, {
+    const parsed = parseTreeBytes(output, {
       expectedObjectFormat: identity.format,
       maxBytes: ceiling,
     });
+    if (loadedTreeSink !== undefined) loadedTreeSink(parsed, identity.oid);
+    return parsed;
   }
 
   async function readBlobByOid({
@@ -871,7 +874,21 @@ function createTreeV2Primitives(gitBytesRunner) {
   return Object.freeze({ loadTreeV2, readBlobByOid, diffTreesV2 });
 }
 
-const productionPrimitives = createTreeV2Primitives(runGitBytes);
+const productionPrimitives = createTreeV2Primitives(
+  runGitBytes,
+  (tree, objectId) => productionTreeObjectIdentities.set(tree, objectId),
+);
+
+export function loadedProductionTreeV2ObjectIdentity(tree) {
+  const objectId = productionTreeObjectIdentities.get(tree);
+  if (objectId === undefined) {
+    fail(
+      "ERR_INTERNAL_FAIL_CLOSED",
+      "tree identity requires a production-loaded v2 tree map",
+    );
+  }
+  return objectId;
+}
 
 export function loadTreeV2(input) {
   return runTypedGitOperation("ERR_INTERNAL_FAIL_CLOSED", () =>
