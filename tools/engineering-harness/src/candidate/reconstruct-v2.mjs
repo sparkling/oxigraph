@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { types as utilTypes } from "node:util";
 
-import { validateTaskContractV2 } from "../contract-v2.mjs";
+import { parseTaskContractBytesV2 } from "../contract-v2.mjs";
 import {
   validateCandidatePatchV2,
   validateTaskV2Path,
@@ -14,12 +15,10 @@ import {
   taskV2Failure,
   withTaskV2FailureBoundary,
 } from "../policy/task-v2-failures.mjs";
-import { createGitHome, runGit, runGitBytes } from "./git.mjs";
+import { createGitHome, GitBytesProcessFault, runGitBytes } from "./git.mjs";
 import {
-  diffTreesV2,
-  loadTreeV2,
+  createTreeV2PrimitivesForTrustedRunner,
   projectTreeManifestV2,
-  readBlobByOid,
   treeEntriesAtAsciiFold,
   treeEntryAtPath,
 } from "./tree-v2.mjs";
@@ -28,7 +27,10 @@ const temporaryPrefix = "oxigraph-candidate-v2-";
 const cloneOutputBytes = 8 * 1024 * 1024;
 const patchOutputBytes = 8 * 1024 * 1024;
 const commitOutputBytes = 4 * 1024;
-const commitMessage = "Oxigraph engineering-harness v2 candidate\n";
+const commitMessage = Buffer.from(
+  "Oxigraph engineering-harness v2 candidate\n",
+  "utf8",
+);
 const commitIdentity = Object.freeze({
   GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
   GIT_AUTHOR_EMAIL: "harness@localhost",
@@ -37,9 +39,60 @@ const commitIdentity = Object.freeze({
   GIT_COMMITTER_EMAIL: "harness@localhost",
   GIT_COMMITTER_NAME: "Oxigraph Engineering Harness",
 });
-const reconstructionHandles = new WeakMap();
 const oidPattern = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
-const sha256Pattern = /^[0-9a-f]{64}$/u;
+
+function createReconstructionController(gitBytesRunner) {
+  if (typeof gitBytesRunner !== "function") {
+    throw new TypeError("v2 reconstruction requires a fixed Git-byte runner");
+  }
+  return {
+    gitBytesRunner,
+    handles: new WeakMap(),
+    quarantinedRoots: new Set(),
+  };
+}
+
+const productionController = createReconstructionController(runGitBytes);
+
+function gitFailureCleanupSafe(error) {
+  if (!(error instanceof GitBytesProcessFault)) return false;
+  const outcome = error.outcome;
+  if (
+    outcome?.noChild === true &&
+    outcome.spawned === false &&
+    outcome.reaped === false &&
+    outcome.directChildCleanupSafe === true &&
+    outcome.processGroupQuiescent === true
+  ) {
+    return true;
+  }
+  return (
+    outcome?.noChild === false &&
+    outcome.spawned === true &&
+    outcome.captureComplete === true &&
+    outcome.reaped === true &&
+    outcome.statusAgreement === true &&
+    outcome.directChildCleanupSafe === true &&
+    outcome.processGroupQuiescent === true &&
+    outcome.exitObserved === true &&
+    outcome.closeObserved === true &&
+    outcome.stdoutEof === true &&
+    outcome.stderrEof === true &&
+    outcome.stdinComplete === true &&
+    outcome.outputTruncated === false &&
+    Array.isArray(outcome.processErrors) &&
+    outcome.processErrors.length === 0
+  );
+}
+
+async function runCandidateGit(controller, attempt, input) {
+  try {
+    return await controller.gitBytesRunner(input);
+  } catch (error) {
+    if (!gitFailureCleanupSafe(error)) attempt.cleanupSafe = false;
+    throw error;
+  }
+}
 
 function fail(code, detail) {
   throw taskV2Failure(code, detail);
@@ -50,6 +103,7 @@ function plainRecord(value, label, code = "ERR_CONTRACT_SCHEMA_OR_KEYS") {
     if (
       value === null ||
       typeof value !== "object" ||
+      utilTypes.isProxy(value) ||
       Array.isArray(value) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(value))
     ) {
@@ -85,384 +139,11 @@ function exactRecord(value, label, keys, code = "ERR_CONTRACT_SCHEMA_OR_KEYS") {
   return record;
 }
 
-function exactArray(
-  value,
-  label,
-  code = "ERR_CONTRACT_SCHEMA_OR_KEYS",
-  maximum = 1024,
-) {
-  let descriptors;
-  try {
-    if (
-      !Array.isArray(value) ||
-      Object.getPrototypeOf(value) !== Array.prototype
-    ) {
-      fail(code, `${label} must be a plain array`);
-    }
-    descriptors = Object.getOwnPropertyDescriptors(value);
-  } catch (error) {
-    if (isTaskV2Failure(error)) throw error;
-    fail(code, error);
-  }
-  const lengthDescriptor = descriptors.length;
-  const length = lengthDescriptor?.value;
-  if (!Number.isSafeInteger(length) || length < 0 || length > maximum) {
-    fail(code, `${label} exceeds its array ceiling`);
-  }
-  const expectedKeys = new Set([
-    "length",
-    ...Array.from({ length }, (_, index) => String(index)),
-  ]);
-  const actualKeys = Reflect.ownKeys(descriptors);
-  if (
-    actualKeys.some((key) => typeof key !== "string") ||
-    actualKeys.length !== expectedKeys.size ||
-    actualKeys.some((key) => !expectedKeys.has(key))
-  ) {
-    fail(code, `${label} must be dense and have no extra properties`);
-  }
-  const result = [];
-  for (let index = 0; index < length; index += 1) {
-    const descriptor = descriptors[String(index)];
-    if (
-      descriptor === undefined ||
-      !("value" in descriptor) ||
-      descriptor.enumerable !== true
-    ) {
-      fail(code, `${label}[${index}] must be an enumerable data property`);
-    }
-    result.push(descriptor.value);
-  }
-  return result;
-}
-
-function snapshotPolicyPaths(value, label) {
-  const paths = exactArray(value ?? [], label);
-  if (paths.length > 32) {
-    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", `${label} exceeds its path ceiling`);
-  }
-  return Object.freeze(
-    paths.map((path, index) => validateTaskV2Path(path, `${label}[${index}]`)),
-  );
-}
-
-function validatedOid(value, label, expectedLength) {
-  if (
-    typeof value !== "string" ||
-    !oidPattern.test(value) ||
-    /^0+$/u.test(value) ||
-    (expectedLength !== undefined && value.length !== expectedLength)
-  ) {
-    fail(
-      "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      `${label} must be a full non-zero object identifier`,
-    );
-  }
-  return value;
-}
-
-function validatedSha256(value, label) {
-  if (typeof value !== "string" || !sha256Pattern.test(value)) {
-    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", `${label} must be a SHA-256 digest`);
-  }
-  return value;
-}
-
-function validatedCount(value, label) {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    fail(
-      "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      `${label} must be a non-negative safe integer`,
-    );
-  }
-  return value;
-}
-
-function snapshotManifest(value, label) {
-  const record = exactRecord(value, label, [
-    "entries",
-    "fullSha256",
-    "protectedEntries",
-    "protectedSha256",
-  ]);
-  return Object.freeze({
-    entries: validatedCount(record.entries, `${label}.entries`),
-    fullSha256: validatedSha256(record.fullSha256, `${label}.fullSha256`),
-    protectedEntries: validatedCount(
-      record.protectedEntries,
-      `${label}.protectedEntries`,
-    ),
-    protectedSha256: validatedSha256(
-      record.protectedSha256,
-      `${label}.protectedSha256`,
-    ),
-  });
-}
-
-function snapshotPhase(value, label, state, oidLength) {
-  if (state === "absent") {
-    const phase = exactRecord(value, label, ["state"]);
-    if (phase.state !== "absent") {
-      fail(
-        "ERR_CONTRACT_SCHEMA_OR_KEYS",
-        `${label} must bind the absent state`,
-      );
-    }
-    return Object.freeze({ state: "absent" });
-  }
-
-  const phase = exactRecord(value, label, [
-    "state",
-    "mode",
-    "type",
-    "objectId",
-    "contentSha256",
-  ]);
-  if (
-    phase.state !== "present" ||
-    phase.mode !== "100644" ||
-    phase.type !== "blob"
-  ) {
-    fail(
-      "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      `${label} must bind a present 100644 blob`,
-    );
-  }
-  return Object.freeze({
-    state: "present",
-    mode: "100644",
-    type: "blob",
-    objectId: validatedOid(phase.objectId, `${label}.objectId`, oidLength),
-    contentSha256: validatedSha256(
-      phase.contentSha256,
-      `${label}.contentSha256`,
-    ),
-  });
-}
-
-function snapshotMutableBaselines(value, scope, oidLength) {
-  const records = exactArray(value, "protectedInputs.mutableBaselines");
-  if (records.length !== scope.mutableExact.length) {
-    fail(
-      "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      "mutableBaselines must bind every mutableExact path once",
-    );
-  }
-  const createPaths = new Set(scope.createExact);
-  return Object.freeze(
-    records.map((value, index) => {
-      const label = `protectedInputs.mutableBaselines[${index}]`;
-      const record = exactRecord(value, label, [
-        "path",
-        "state",
-        "baseline",
-        "evaluator",
-      ]);
-      if (record.path !== scope.mutableExact[index]) {
-        fail(
-          "ERR_CONTRACT_SCHEMA_OR_KEYS",
-          "mutableBaselines paths must equal mutableExact in order",
-        );
-      }
-      const expectedState = createPaths.has(record.path) ? "absent" : "present";
-      if (record.state !== expectedState) {
-        fail(
-          "ERR_CONTRACT_SCHEMA_OR_KEYS",
-          `${label}.state disagrees with createExact`,
-        );
-      }
-      const baseline = snapshotPhase(
-        record.baseline,
-        `${label}.baseline`,
-        expectedState,
-        oidLength,
-      );
-      const evaluator = snapshotPhase(
-        record.evaluator,
-        `${label}.evaluator`,
-        expectedState,
-        oidLength,
-      );
-      if (
-        expectedState === "present" &&
-        (baseline.objectId !== evaluator.objectId ||
-          baseline.contentSha256 !== evaluator.contentSha256)
-      ) {
-        fail(
-          "ERR_CONTRACT_SCHEMA_OR_KEYS",
-          `${label} changes a present mutable baseline in the evaluator`,
-        );
-      }
-      return Object.freeze({
-        path: record.path,
-        state: expectedState,
-        baseline,
-        evaluator,
-      });
-    }),
-  );
-}
-
-function snapshotContract(value) {
-  validateTaskContractV2(value);
-  const contract = exactRecord(value, "v2 contract", [
-    "schemaVersion",
-    "id",
-    "programme",
-    "decision",
-    "objective",
-    "localOnly",
-    "promotionAuthority",
-    "routing",
-    "baseline",
-    "evaluator",
-    "protectedInputs",
-    "scope",
-    "verificationSequence",
-    "commands",
-    "ceilings",
-    "initialRed",
-    "success",
-  ]);
-  if (contract.schemaVersion !== 2) {
-    fail(
-      "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      "candidate reconstruction requires schemaVersion 2",
-    );
-  }
-
-  const baselineRecord = exactRecord(contract.baseline, "baseline", [
-    "commit",
-    "tree",
-  ]);
-  const baselineTree = validatedOid(baselineRecord.tree, "baseline.tree");
-  const oidLength = baselineTree.length;
-  const baseline = Object.freeze({
-    commit: validatedOid(baselineRecord.commit, "baseline.commit", oidLength),
-    tree: baselineTree,
-  });
-
-  const evaluatorRecord = exactRecord(contract.evaluator, "evaluator", [
-    "commit",
-    "parent",
-    "tree",
-    "path",
-    "changeStatus",
-    "blob",
-    "contentSha256",
-    "patchSha256",
-  ]);
-  const evaluator = Object.freeze({
-    commit: validatedOid(evaluatorRecord.commit, "evaluator.commit", oidLength),
-    tree: validatedOid(evaluatorRecord.tree, "evaluator.tree", oidLength),
-    patchSha256: validatedSha256(
-      evaluatorRecord.patchSha256,
-      "evaluator.patchSha256",
-    ),
-  });
-
-  const scopeRecord = exactRecord(contract.scope, "scope", [
-    "mutableExact",
-    "createExact",
-    "mutablePrefixes",
-    "blockedExact",
-    "blockedPrefixes",
-    "allowCreate",
-    "allowDelete",
-    "allowRename",
-    "allowModeChange",
-    "allowSymlink",
-    "allowSubmoduleChange",
-  ]);
-  const blockedExact = snapshotPolicyPaths(
-    scopeRecord.blockedExact,
-    "scope.blockedExact",
-  );
-  const blockedPrefixes = snapshotPolicyPaths(
-    scopeRecord.blockedPrefixes,
-    "scope.blockedPrefixes",
-  );
-  const scopeInput = {
-    mutableExact: scopeRecord.mutableExact,
-    createExact: scopeRecord.createExact,
-    mutablePrefixes: scopeRecord.mutablePrefixes,
-    blockedExact,
-    blockedPrefixes,
-  };
-  scopeInput.allowCreate = scopeRecord.allowCreate;
-  const scope = validateTaskV2Scope({ scope: scopeInput });
-  const frozenScope = Object.freeze({
-    mutableExact: scope.mutableExact,
-    createExact: scope.createExact,
-    mutablePrefixes: scope.mutablePrefixes,
-    blockedExact,
-    blockedPrefixes,
-    allowCreate: scope.allowCreate,
-  });
-
-  const protectedInputsRecord = exactRecord(
-    contract.protectedInputs,
-    "protectedInputs",
-    [
-      "manifestAlgorithm",
-      "mutableBaselines",
-      "baselineManifest",
-      "evaluatorManifest",
-      "submodules",
-    ],
-  );
-  const protectedInputs = Object.freeze({
-    mutableBaselines: snapshotMutableBaselines(
-      protectedInputsRecord.mutableBaselines,
-      frozenScope,
-      oidLength,
-    ),
-    baselineManifest: snapshotManifest(
-      protectedInputsRecord.baselineManifest,
-      "protectedInputs.baselineManifest",
-    ),
-    evaluatorManifest: snapshotManifest(
-      protectedInputsRecord.evaluatorManifest,
-      "protectedInputs.evaluatorManifest",
-    ),
-  });
-
-  const ceilingRecord = exactRecord(contract.ceilings, "ceilings", [
-    "maxPatchBytes",
-    "maxChangedFiles",
-    "maxChangedLines",
-    "maxWorkerOutputBytes",
-    "maxBuildOutputBytes",
-    "maxTestOutputBytesPerCommand",
-    "maxTotalVerifierWallMs",
-    "maxResidentBytes",
-    "maxVerifierDiskBytes",
-    "cargoBuildJobs",
-    "maxRepairCycles",
-    "maxCritiqueRounds",
-    "networkDuringVerification",
-  ]);
-  const ceilings = Object.freeze({
-    maxPatchBytes: ceilingRecord.maxPatchBytes,
-    maxChangedFiles: ceilingRecord.maxChangedFiles,
-    maxChangedLines: ceilingRecord.maxChangedLines,
-  });
-
-  return Object.freeze({
-    schemaVersion: 2,
-    baseline,
-    evaluator,
-    scope: frozenScope,
-    protectedInputs,
-    ceilings,
-  });
-}
-
 function snapshotInput(value) {
   const input = exactRecord(
     value,
     "v2 reconstruction input",
-    ["repositoryRoot", "contract", "patch"],
+    ["repositoryRoot", "contractBytes", "patch"],
     "ERR_RECONSTRUCTION",
   );
   if (
@@ -472,11 +153,14 @@ function snapshotInput(value) {
   ) {
     fail("ERR_RECONSTRUCTION", "repositoryRoot must be a non-empty path");
   }
-  const contract = snapshotContract(input.contract);
+  const parsedContract = parseTaskContractBytesV2(input.contractBytes);
+  const { contract } = parsedContract;
   const patchProjection = validateCandidatePatchV2(input.patch, contract);
   return Object.freeze({
     repositoryRoot: input.repositoryRoot,
     contract,
+    contractSha256: parsedContract.contractSha256,
+    canonicalContractSha256: parsedContract.canonicalContractSha256,
     patch: input.patch,
     patchProjection,
     patchSha256: sha256(input.patch),
@@ -497,9 +181,14 @@ async function typedOperation(code, operation) {
 }
 
 function validatedCommandOid(value, label, oidLength) {
-  const oid = value.trim();
+  if (!Buffer.isBuffer(value)) {
+    fail("ERR_RECONSTRUCTION", `${label} is not exact Git output bytes`);
+  }
+  const match = /^([0-9a-f]+)\n$/u.exec(value.toString("ascii"));
+  const oid = match?.[1];
   if (
-    value !== `${oid}\n` ||
+    oid === undefined ||
+    !value.equals(Buffer.from(`${oid}\n`, "ascii")) ||
     !oidPattern.test(oid) ||
     /^0+$/u.test(oid) ||
     oid.length !== oidLength
@@ -518,7 +207,7 @@ async function requireOwnerOnly(temporaryRoot) {
   }
 }
 
-async function requireClean(workspace, gitHome) {
+async function requireClean(runGit, workspace, gitHome) {
   const status = await typedOperation("ERR_RECONSTRUCTION", () =>
     runGit({
       args: ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
@@ -533,26 +222,42 @@ async function requireClean(workspace, gitHome) {
 }
 
 function parseCommitHeader(output, label, oidLength) {
-  const headerEnd = output.indexOf("\n\n");
+  if (!Buffer.isBuffer(output)) {
+    fail("ERR_RECONSTRUCTION", `${label} is not exact commit bytes`);
+  }
+  const headerEnd = output.indexOf(Buffer.from("\n\n", "ascii"));
   if (headerEnd < 0) {
     fail("ERR_RECONSTRUCTION", `${label} has malformed commit bytes`);
   }
-  const header = output.slice(0, headerEnd).split("\n");
-  const treeLine = header[0];
-  const treeMatch = /^tree ([0-9a-f]+)$/u.exec(treeLine);
+  const header = [];
+  const headerBytes = output.subarray(0, headerEnd);
+  let start = 0;
+  while (start <= headerBytes.length) {
+    const end = headerBytes.indexOf(0x0a, start);
+    if (end === -1) {
+      header.push(Buffer.from(headerBytes.subarray(start)));
+      break;
+    }
+    header.push(Buffer.from(headerBytes.subarray(start, end)));
+    start = end + 1;
+  }
+  const treeMatch = /^tree ([0-9a-f]+)$/u.exec(header[0]?.toString("ascii"));
   if (treeMatch === null) {
     fail("ERR_RECONSTRUCTION", `${label} has no exact tree header`);
   }
+  if (!header[0].equals(Buffer.from(`tree ${treeMatch[1]}`, "ascii"))) {
+    fail("ERR_RECONSTRUCTION", `${label} has a non-exact tree header`);
+  }
   const tree = validatedCommandOid(
-    `${treeMatch[1]}\n`,
+    Buffer.from(`${treeMatch[1]}\n`, "ascii"),
     `${label} tree header`,
     oidLength,
   );
   const parents = header
-    .filter((line) => line.startsWith("parent "))
+    .filter((line) => line.subarray(0, 7).equals(Buffer.from("parent ")))
     .map((line) =>
       validatedCommandOid(
-        `${line.slice("parent ".length)}\n`,
+        Buffer.concat([line.subarray(7), Buffer.from("\n")]),
         `${label} parent header`,
         oidLength,
       ),
@@ -560,7 +265,14 @@ function parseCommitHeader(output, label, oidLength) {
   return Object.freeze({ tree, parents: Object.freeze(parents) });
 }
 
-async function readCommitHeader({ workspace, gitHome, oid, label, oidLength }) {
+async function readCommitHeader({
+  runGit,
+  workspace,
+  gitHome,
+  oid,
+  label,
+  oidLength,
+}) {
   const output = await typedOperation("ERR_RECONSTRUCTION", () =>
     runGit({
       args: ["cat-file", "commit", oid],
@@ -632,12 +344,19 @@ function requireRegularBlob(tree, path, missingCode) {
   return entry;
 }
 
-async function requireBoundPhase({ workspace, gitHome, tree, path, expected }) {
+async function requireBoundPhase({
+  primitives,
+  workspace,
+  gitHome,
+  tree,
+  path,
+  expected,
+}) {
   const entry = requireRegularBlob(tree, path, "ERR_BASELINE_STATE");
   if (entry.oid !== expected.objectId) {
     fail("ERR_BASELINE_STATE", `mutable baseline object changed: ${path}`);
   }
-  const content = await readBlobByOid({
+  const content = await primitives.readBlobByOid({
     workspace,
     home: gitHome,
     oid: expected.objectId,
@@ -649,6 +368,7 @@ async function requireBoundPhase({ workspace, gitHome, tree, path, expected }) {
 }
 
 async function requireMutableBaselines({
+  primitives,
   workspace,
   gitHome,
   baselineTree,
@@ -662,6 +382,7 @@ async function requireMutableBaselines({
       continue;
     }
     const baselineEntry = await requireBoundPhase({
+      primitives,
       workspace,
       gitHome,
       tree: baselineTree,
@@ -669,6 +390,7 @@ async function requireMutableBaselines({
       expected: binding.baseline,
     });
     const evaluatorEntry = await requireBoundPhase({
+      primitives,
       workspace,
       gitHome,
       tree: evaluatorTree,
@@ -757,6 +479,7 @@ function requireExactStatuses(diff, patchProjection, scope) {
 }
 
 async function requireCandidateTree({
+  primitives,
   workspace,
   gitHome,
   candidateTree,
@@ -779,7 +502,7 @@ async function requireCandidateTree({
     ) {
       fail("ERR_RECONSTRUCTION", "created blob identity does not match patch");
     }
-    const content = await readBlobByOid({
+    const content = await primitives.readBlobByOid({
       workspace,
       home: gitHome,
       oid: entry.oid,
@@ -805,6 +528,8 @@ function frozenCreatedBlobs(createdBlobs) {
 }
 
 function frozenIdentity({
+  contractSha256,
+  evaluatorPatchSha256,
   patchSha256,
   commit,
   tree,
@@ -815,6 +540,8 @@ function frozenIdentity({
 }) {
   return Object.freeze({
     schemaVersion: 2,
+    contractSha256,
+    evaluatorPatchSha256,
     patchSha256,
     commit,
     tree,
@@ -849,7 +576,7 @@ async function removeTemporaryRoot(root) {
   );
 }
 
-async function prepareWorkspace(input) {
+async function prepareWorkspace(input, attempt, runGit) {
   const source = await typedOperation("ERR_RECONSTRUCTION", () =>
     realpath(input.repositoryRoot),
   );
@@ -860,65 +587,64 @@ async function prepareWorkspace(input) {
     );
   }
 
-  let temporaryRoot;
-  try {
-    temporaryRoot = await typedOperation("ERR_RECONSTRUCTION", () =>
-      mkdtemp(join(tmpdir(), temporaryPrefix)),
-    );
-    await requireOwnerOnly(temporaryRoot);
-    const workspace = join(temporaryRoot, "repo");
-    const gitHome = await typedOperation("ERR_RECONSTRUCTION", () =>
-      createGitHome(temporaryRoot),
-    );
+  const temporaryRoot = await typedOperation("ERR_RECONSTRUCTION", () =>
+    mkdtemp(join(tmpdir(), temporaryPrefix)),
+  );
+  attempt.temporaryRoot = temporaryRoot;
+  await requireOwnerOnly(temporaryRoot);
+  const workspace = join(temporaryRoot, "repo");
+  const gitHome = await typedOperation("ERR_RECONSTRUCTION", () =>
+    createGitHome(temporaryRoot),
+  );
+  await typedOperation("ERR_RECONSTRUCTION", () =>
+    runGit({
+      args: [
+        "clone",
+        "--local",
+        "--no-hardlinks",
+        "--no-checkout",
+        "--config",
+        "core.hooksPath=/dev/null",
+        "--",
+        source,
+        workspace,
+      ],
+      cwd: temporaryRoot,
+      home: gitHome,
+      timeoutMs: 300_000,
+      maxOutputBytes: cloneOutputBytes,
+    }),
+  );
+  for (const [name, value] of [
+    ["core.hooksPath", "/dev/null"],
+    ["core.autocrlf", "false"],
+    ["credential.helper", ""],
+    ["protocol.file.allow", "never"],
+  ]) {
     await typedOperation("ERR_RECONSTRUCTION", () =>
       runGit({
-        args: [
-          "clone",
-          "--local",
-          "--no-hardlinks",
-          "--no-checkout",
-          "--config",
-          "core.hooksPath=/dev/null",
-          "--",
-          source,
-          workspace,
-        ],
-        cwd: temporaryRoot,
+        args: ["config", "--local", name, value],
+        cwd: workspace,
         home: gitHome,
-        timeoutMs: 300_000,
-        maxOutputBytes: cloneOutputBytes,
       }),
     );
-    for (const [name, value] of [
-      ["core.hooksPath", "/dev/null"],
-      ["core.autocrlf", "false"],
-      ["credential.helper", ""],
-      ["protocol.file.allow", "never"],
-    ]) {
-      await typedOperation("ERR_RECONSTRUCTION", () =>
-        runGit({
-          args: ["config", "--local", name, value],
-          cwd: workspace,
-          home: gitHome,
-        }),
-      );
-    }
-    return Object.freeze({ temporaryRoot, workspace, gitHome });
-  } catch (error) {
-    if (temporaryRoot !== undefined) await removeTemporaryRoot(temporaryRoot);
-    throw error;
   }
+  return Object.freeze({ source, temporaryRoot, workspace, gitHome });
 }
 
-async function reconstructCandidateV2Once(rawInput) {
+async function reconstructCandidateV2Once(rawInput, controller) {
   const input = snapshotInput(rawInput);
   const { contract } = input;
-  const prepared = await prepareWorkspace(input);
-  const { temporaryRoot, workspace, gitHome } = prepared;
+  const attempt = { cleanupSafe: true, temporaryRoot: undefined };
+  const runGit = (gitInput) => runCandidateGit(controller, attempt, gitInput);
+  const primitives = createTreeV2PrimitivesForTrustedRunner(runGit);
 
   try {
+    const prepared = await prepareWorkspace(input, attempt, runGit);
+    const { source, temporaryRoot, workspace, gitHome } = prepared;
     const oidLength = contract.baseline.tree.length;
     const baselineCommit = await readCommitHeader({
+      runGit,
       workspace,
       gitHome,
       oid: contract.baseline.commit,
@@ -926,6 +652,7 @@ async function reconstructCandidateV2Once(rawInput) {
       oidLength,
     });
     const evaluatorCommit = await readCommitHeader({
+      runGit,
       workspace,
       gitHome,
       oid: contract.evaluator.commit,
@@ -944,7 +671,7 @@ async function reconstructCandidateV2Once(rawInput) {
       );
     }
 
-    const baselineTree = await loadTreeV2({
+    const baselineTree = await primitives.loadTreeV2({
       workspace,
       home: gitHome,
       tree: contract.baseline.tree,
@@ -967,10 +694,10 @@ async function reconstructCandidateV2Once(rawInput) {
     if (checkedOutBaseline !== contract.baseline.tree) {
       fail("ERR_RECONSTRUCTION", "checked-out baseline tree changed");
     }
-    await requireClean(workspace, gitHome);
+    await requireClean(runGit, workspace, gitHome);
 
     const evaluatorPatch = await typedOperation("ERR_RECONSTRUCTION", () =>
-      runGitBytes({
+      runGit({
         args: [
           "diff",
           "--binary",
@@ -1008,13 +735,14 @@ async function reconstructCandidateV2Once(rawInput) {
     if (reconstructedEvaluatorTree !== contract.evaluator.tree) {
       fail("ERR_RECONSTRUCTION", "frozen evaluator tree did not reconstruct");
     }
-    const evaluatorTree = await loadTreeV2({
+    const evaluatorTree = await primitives.loadTreeV2({
       workspace,
       home: gitHome,
       tree: contract.evaluator.tree,
     });
 
     await requireMutableBaselines({
+      primitives,
       workspace,
       gitHome,
       baselineTree,
@@ -1052,7 +780,7 @@ async function reconstructCandidateV2Once(rawInput) {
         args: ["apply", "--index", "--whitespace=error", "-"],
         cwd: workspace,
         home: gitHome,
-        stdin: input.patch,
+        stdin: Buffer.from(input.patch, "utf8"),
         maxOutputBytes: patchOutputBytes,
       }),
     );
@@ -1063,7 +791,7 @@ async function reconstructCandidateV2Once(rawInput) {
       "candidate tree",
       oidLength,
     );
-    const rawDiff = await diffTreesV2({
+    const rawDiff = await primitives.diffTreesV2({
       workspace,
       home: gitHome,
       oldTree: contract.evaluator.tree,
@@ -1074,12 +802,13 @@ async function reconstructCandidateV2Once(rawInput) {
       input.patchProjection,
       contract.scope,
     );
-    const candidateTree = await loadTreeV2({
+    const candidateTree = await primitives.loadTreeV2({
       workspace,
       home: gitHome,
       tree: candidateTreeOid,
     });
     await requireCandidateTree({
+      primitives,
       workspace,
       gitHome,
       candidateTree,
@@ -1121,6 +850,7 @@ async function reconstructCandidateV2Once(rawInput) {
       oidLength,
     );
     const candidateCommitHeader = await readCommitHeader({
+      runGit,
       workspace,
       gitHome,
       oid: candidateCommit,
@@ -1142,9 +872,11 @@ async function reconstructCandidateV2Once(rawInput) {
         maxOutputBytes: patchOutputBytes,
       }),
     );
-    await requireClean(workspace, gitHome);
+    await requireClean(runGit, workspace, gitHome);
 
     const identity = frozenIdentity({
+      contractSha256: input.contractSha256,
+      evaluatorPatchSha256: contract.evaluator.patchSha256,
       patchSha256: input.patchSha256,
       commit: candidateCommit,
       tree: candidateTreeOid,
@@ -1153,28 +885,84 @@ async function reconstructCandidateV2Once(rawInput) {
       fullManifest: candidateFull,
       protectedManifest: candidateProtected,
     });
-    reconstructionHandles.set(identity, {
+    controller.handles.set(identity, {
+      state: "ready",
+      sourceRoot: source,
       temporaryRoot,
-      disposed: false,
+      workspace,
+      gitHome,
+      contract,
+      contractSha256: input.contractSha256,
+      canonicalContractSha256: input.canonicalContractSha256,
+      candidate: identity,
+      submodules: contract.protectedInputs.submodules,
+      cleanupSafe: attempt.cleanupSafe,
+      quarantineDetailSha256: null,
     });
     return identity;
   } catch (error) {
-    await removeTemporaryRoot(temporaryRoot);
+    const root = attempt.temporaryRoot;
+    if (root !== undefined) {
+      if (!attempt.cleanupSafe) {
+        controller.quarantinedRoots.add(root);
+      } else {
+        try {
+          await removeTemporaryRoot(root);
+        } catch (cleanupError) {
+          controller.quarantinedRoots.add(root);
+          throw cleanupError;
+        }
+      }
+    }
     throw error;
   }
 }
 
 export function reconstructCandidateV2(input) {
-  return withTaskV2FailureBoundary(() => reconstructCandidateV2Once(input));
+  return withTaskV2FailureBoundary(() =>
+    reconstructCandidateV2Once(input, productionController),
+  );
+}
+
+function disposeCandidateV2WithController(candidate, controller) {
+  return withTaskV2FailureBoundary(async () => {
+    const handle = controller.handles.get(candidate);
+    if (
+      handle === undefined ||
+      !["ready", "verified"].includes(handle.state) ||
+      handle.cleanupSafe !== true
+    ) {
+      fail("ERR_RECONSTRUCTION", "candidate v2 handle is unknown or disposed");
+    }
+    handle.state = "disposing";
+    try {
+      await removeTemporaryRoot(handle.temporaryRoot);
+      handle.state = "disposed";
+    } catch (error) {
+      handle.cleanupSafe = false;
+      handle.state = "quarantined";
+      handle.quarantineDetailSha256 = sha256(
+        Buffer.from("candidate disposal failed closed", "utf8"),
+      );
+      controller.quarantinedRoots.add(handle.temporaryRoot);
+      throw error;
+    }
+  });
 }
 
 export function disposeCandidateV2(candidate) {
-  return withTaskV2FailureBoundary(async () => {
-    const handle = reconstructionHandles.get(candidate);
-    if (handle === undefined || handle.disposed) {
-      fail("ERR_RECONSTRUCTION", "candidate v2 handle is unknown or disposed");
-    }
-    handle.disposed = true;
-    await removeTemporaryRoot(handle.temporaryRoot);
+  return disposeCandidateV2WithController(candidate, productionController);
+}
+
+/** Explicitly test-only fixed Git-byte runner injection. */
+export function createCandidateV2ReconstructorForTesting(gitBytesRunner) {
+  const controller = createReconstructionController(gitBytesRunner);
+  return Object.freeze({
+    reconstructCandidateV2: (input) =>
+      withTaskV2FailureBoundary(() =>
+        reconstructCandidateV2Once(input, controller),
+      ),
+    disposeCandidateV2: (candidate) =>
+      disposeCandidateV2WithController(candidate, controller),
   });
 }

@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  createCandidateV2ReconstructorForTesting,
   disposeCandidateV2,
-  reconstructCandidateV2,
+  reconstructCandidateV2 as reconstructCandidateV2FromBytes,
 } from "../src/candidate/reconstruct-v2.mjs";
-import { createGitHome, runGit, runGitBytes } from "../src/candidate/git.mjs";
+import {
+  createGitHome,
+  runGit,
+  runGitBytes,
+  runGitBytesWithProcessRunnerForTesting,
+} from "../src/candidate/git.mjs";
 import {
   loadTreeV2,
   projectTreeManifestV2,
@@ -30,6 +36,18 @@ const fixtureIdentity = Object.freeze({
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function exactContractBytes(contract, space = undefined) {
+  return Buffer.from(JSON.stringify(contract, null, space), "utf8");
+}
+
+function reconstructCandidateV2({ repositoryRoot, contract, patch }) {
+  return reconstructCandidateV2FromBytes({
+    repositoryRoot,
+    contractBytes: exactContractBytes(contract),
+    patch,
+  });
 }
 
 function v2Failure(code) {
@@ -318,6 +336,184 @@ function modificationSection(path, before, after) {
   ].join("\n");
 }
 
+test("v2 reconstruction derives authority only from exact contract bytes", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const contractBytes = exactContractBytes(contract, 2);
+  const expectedContractSha256 = sha256(contractBytes);
+  const patch = creationSection("src/created.txt", "created\n", "sha1");
+  const reconstruction = reconstructCandidateV2FromBytes({
+    repositoryRoot: fixture.repo,
+    contractBytes,
+    patch,
+  });
+  contractBytes.fill(0);
+  const candidate = await reconstruction;
+  try {
+    assert.equal(candidate.contractSha256, expectedContractSha256);
+    assert.equal(
+      candidate.evaluatorPatchSha256,
+      contract.evaluator.patchSha256,
+    );
+    assert.equal(Object.hasOwn(candidate, "contract"), false);
+    assert.equal(Object.hasOwn(candidate, "contractBytes"), false);
+    assert.equal(Object.hasOwn(candidate, "repositoryRoot"), false);
+  } finally {
+    await disposeCandidateV2(candidate);
+  }
+
+  await assert.rejects(
+    reconstructCandidateV2FromBytes({
+      repositoryRoot: "/definitely/not/a/repository",
+      contract,
+      patch,
+    }),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+});
+
+test("v2 reconstruction retains quarantined roots for unproved or contradictory Git cleanup", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const patch = creationSection("src/created.txt", "created\n", "sha1");
+  const unsafeOutcomes = [
+    {
+      disposition: "timeout-unreaped",
+      exitCode: null,
+      captureComplete: false,
+      noChild: false,
+      spawned: true,
+      reaped: false,
+      directChildCleanupSafe: false,
+      processGroupQuiescent: false,
+    },
+    {
+      disposition: "spawn-error",
+      exitCode: null,
+      captureComplete: false,
+      noChild: true,
+      spawned: true,
+      reaped: false,
+      directChildCleanupSafe: true,
+      processGroupQuiescent: true,
+    },
+    {
+      disposition: "timeout-unreaped",
+      exitCode: null,
+      captureComplete: true,
+      noChild: false,
+      spawned: true,
+      reaped: false,
+      statusAgreement: true,
+      directChildCleanupSafe: true,
+      processGroupQuiescent: true,
+      exitObserved: true,
+      closeObserved: true,
+      stdoutEof: true,
+      stderrEof: true,
+      stdinComplete: true,
+      outputTruncated: false,
+      processErrors: [],
+    },
+  ];
+
+  for (const unsafe of unsafeOutcomes) {
+    const unsafeOutcome = Object.freeze({
+      ...unsafe,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.alloc(0),
+    });
+    let retainedRoot;
+    const controller = createCandidateV2ReconstructorForTesting((input) =>
+      runGitBytesWithProcessRunnerForTesting(input, async (request) => {
+        retainedRoot = request.cwd;
+        return unsafeOutcome;
+      }),
+    );
+
+    await assert.rejects(
+      controller.reconstructCandidateV2({
+        repositoryRoot: fixture.repo,
+        contractBytes: exactContractBytes(contract),
+        patch,
+      }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    assert.equal(typeof retainedRoot, "string");
+    await access(retainedRoot);
+    t.after(() => rm(retainedRoot, { recursive: true, force: true }));
+  }
+});
+
+test("v2 reconstruction removes failed roots only after coherent Git cleanup proof", async (t) => {
+  const fixture = await createFixture(t);
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const patch = creationSection("src/created.txt", "created\n", "sha1");
+  const safeOutcomes = [
+    {
+      disposition: "spawn-error",
+      exitCode: null,
+      captureComplete: false,
+      noChild: true,
+      spawned: false,
+      reaped: false,
+      directChildCleanupSafe: true,
+      processGroupQuiescent: true,
+    },
+    {
+      disposition: "completed",
+      exitCode: 1,
+      captureComplete: true,
+      noChild: false,
+      spawned: true,
+      reaped: true,
+      statusAgreement: true,
+      directChildCleanupSafe: true,
+      processGroupQuiescent: true,
+      exitObserved: true,
+      closeObserved: true,
+      stdoutEof: true,
+      stderrEof: true,
+      stdinComplete: true,
+      outputTruncated: false,
+      processErrors: [],
+    },
+  ];
+
+  for (const safe of safeOutcomes) {
+    const safeOutcome = Object.freeze({
+      ...safe,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.alloc(0),
+    });
+    let removedRoot;
+    const controller = createCandidateV2ReconstructorForTesting((input) =>
+      runGitBytesWithProcessRunnerForTesting(input, async (request) => {
+        removedRoot = request.cwd;
+        return safeOutcome;
+      }),
+    );
+    await assert.rejects(
+      controller.reconstructCandidateV2({
+        repositoryRoot: fixture.repo,
+        contractBytes: exactContractBytes(contract),
+        patch,
+      }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    await assert.rejects(access(removedRoot), { code: "ENOENT" });
+  }
+});
+
 test("v2 create-only reconstruction freezes the exact public identity", async (t) => {
   const fixture = await createFixture(t);
   const contract = await fixture.contractFor({
@@ -335,6 +531,8 @@ test("v2 create-only reconstruction freezes the exact public identity", async (t
   try {
     assert.deepEqual(Object.keys(candidate), [
       "schemaVersion",
+      "contractSha256",
+      "evaluatorPatchSha256",
       "patchSha256",
       "commit",
       "tree",
@@ -344,6 +542,8 @@ test("v2 create-only reconstruction freezes the exact public identity", async (t
     ]);
     assert.deepEqual(candidate, {
       schemaVersion: 2,
+      contractSha256: sha256(exactContractBytes(contract)),
+      evaluatorPatchSha256: contract.evaluator.patchSha256,
       patchSha256: sha256(patch),
       commit: candidate.commit,
       tree: candidate.tree,
@@ -373,6 +573,14 @@ test("v2 create-only reconstruction freezes the exact public identity", async (t
     assert.equal(Object.isFrozen(candidate.manifests), true);
     assert.equal(Object.hasOwn(candidate, "workspace"), false);
     assert.equal(Object.hasOwn(candidate, "temporaryRoot"), false);
+    await assert.rejects(
+      disposeCandidateV2({ ...candidate }),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
+    await assert.rejects(
+      disposeCandidateV2(new Proxy(candidate, {})),
+      v2Failure("ERR_RECONSTRUCTION"),
+    );
   } finally {
     await disposeCandidateV2(candidate);
   }
@@ -618,73 +826,54 @@ test("v2 reconstruction rejects portable folded collisions before creation", asy
   );
 });
 
-test("v2 reconstruction rejects hidden keys and accessors before repository access", async (t) => {
+test("v2 reconstruction rejects non-data and extra input authority before repository access", async (t) => {
   const fixture = await createFixture(t);
-  const original = await fixture.contractFor({
+  const contract = await fixture.contractFor({
     mutableExact: ["src/created.txt"],
     createExact: ["src/created.txt"],
   });
+  const contractBytes = exactContractBytes(contract);
   const patch = creationSection("src/created.txt", "created\n", "sha1");
 
-  const symbolContract = structuredClone(original);
-  symbolContract[Symbol("hidden")] = true;
-  await assert.rejects(
-    reconstructCandidateV2({
-      repositoryRoot: "/definitely/not/a/repository",
-      contract: symbolContract,
-      patch,
-    }),
-    v2Failure("ERR_CONTRACT_SCHEMA_OR_KEYS"),
-  );
-
-  const hiddenPhase = structuredClone(original);
-  Object.defineProperty(
-    hiddenPhase.protectedInputs.mutableBaselines[0].baseline,
-    "hidden",
-    { value: true },
-  );
-  await assert.rejects(
-    reconstructCandidateV2({
-      repositoryRoot: "/definitely/not/a/repository",
-      contract: hiddenPhase,
-      patch,
-    }),
-    v2Failure("ERR_CONTRACT_SCHEMA_OR_KEYS"),
-  );
-
   let getterCalls = 0;
-  const accessorArray = structuredClone(original);
-  const mutableBaseline = accessorArray.protectedInputs.mutableBaselines[0];
-  Object.defineProperty(accessorArray.protectedInputs, "mutableBaselines", {
-    value: [],
-    enumerable: true,
-  });
-  Object.defineProperty(accessorArray.protectedInputs.mutableBaselines, "0", {
+  const accessorInput = {
+    repositoryRoot: "/definitely/not/a/repository",
+    patch,
+  };
+  Object.defineProperty(accessorInput, "contractBytes", {
     enumerable: true,
     get() {
       getterCalls += 1;
-      return mutableBaseline;
+      return contractBytes;
     },
   });
-  accessorArray.protectedInputs.mutableBaselines.length = 1;
   await assert.rejects(
-    reconstructCandidateV2({
-      repositoryRoot: "/definitely/not/a/repository",
-      contract: accessorArray,
-      patch,
-    }),
-    v2Failure("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+    reconstructCandidateV2FromBytes(accessorInput),
+    v2Failure("ERR_RECONSTRUCTION"),
   );
   assert.equal(getterCalls, 0);
 
   const hiddenInput = {
     repositoryRoot: fixture.repo,
-    contract: original,
+    contractBytes,
     patch,
   };
   hiddenInput[Symbol("hidden")] = true;
   await assert.rejects(
-    reconstructCandidateV2(hiddenInput),
+    reconstructCandidateV2FromBytes(hiddenInput),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+  await assert.rejects(
+    reconstructCandidateV2FromBytes(
+      new Proxy(
+        {
+          repositoryRoot: fixture.repo,
+          contractBytes,
+          patch,
+        },
+        {},
+      ),
+    ),
     v2Failure("ERR_RECONSTRUCTION"),
   );
 });

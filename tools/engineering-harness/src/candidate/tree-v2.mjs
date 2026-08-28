@@ -879,6 +879,13 @@ const productionPrimitives = createTreeV2Primitives(
   (tree, objectId) => productionTreeObjectIdentities.set(tree, objectId),
 );
 
+// Production owners may bind a stricter, fixed Git-byte runner so they can
+// retain lifecycle-local cleanup evidence. Task inputs never select this
+// runner; caller-provided process or Git authority remains forbidden.
+export function createTreeV2PrimitivesForTrustedRunner(gitBytesRunner) {
+  return createTreeV2Primitives(gitBytesRunner);
+}
+
 export function loadedProductionTreeV2ObjectIdentity(tree) {
   const objectId = productionTreeObjectIdentities.get(tree);
   if (objectId === undefined) {
