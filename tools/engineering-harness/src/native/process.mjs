@@ -8,10 +8,12 @@ const maximumByteProcessArguments = 4_096;
 const maximumByteProcessArgumentBytes = 1024 * 1024;
 const maximumByteProcessEnvironmentEntries = 4_096;
 const maximumByteProcessEnvironmentBytes = 1024 * 1024;
+const maximumByteProcessInputBytes = 4 * 1024 * 1024;
 const maximumByteProcessOutputBytes = 256 * 1024 * 1024;
 const maximumByteProcessTimeoutMs = 7_200_000;
 const byteProcessTerminationGraceMs = 250;
 const byteProcessReapDeadlineMs = 2_000;
+const byteProcessGroupPollMs = 10;
 const NativeAbortController = AbortController;
 const arrayPrototype = Array.prototype;
 const objectPrototype = Object.prototype;
@@ -26,10 +28,26 @@ const nativeAbortedGetter = Object.getOwnPropertyDescriptor(
 const nativeAddEventListener = EventTarget.prototype.addEventListener;
 const nativeRemoveEventListener = EventTarget.prototype.removeEventListener;
 const nativeProcessKill = process.kill.bind(process);
-// This single strong root bounds both active capture and unreaped retention.
-// A later run is rejected until the owned direct child reaches genuine
-// close/status/EOF observations (or native spawn proves there was no child).
-// No completion token or lifecycle authority is exposed to callers.
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const nativeTypedArrayBufferGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "buffer",
+).get;
+const nativeTypedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteLength",
+).get;
+const nativeTypedArrayByteOffsetGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteOffset",
+).get;
+// This single strong root bounds active capture and retained direct-process-
+// group cleanup. A later run is rejected until the direct child has genuine
+// close/status/EOF observations and its original process group is absent (or
+// native spawn proves there was no child). This is deliberately not a cgroup
+// or workspace-containment proof: a production owner must still contain
+// descendants that escape the original process group. No completion token or
+// lifecycle authority is exposed to callers.
 let activeOrRetainedByteProcess;
 
 function capturedAbortSignal(value) {
@@ -37,7 +55,9 @@ function capturedAbortSignal(value) {
     return Object.freeze({ signal: undefined, release() {} });
   }
   if (value === null || typeof value !== "object" || utilTypes.isProxy(value)) {
-    throw new Error("process cancellation signal must be a genuine native AbortSignal");
+    throw new Error(
+      "process cancellation signal must be a genuine native AbortSignal",
+    );
   }
   let prototype;
   try {
@@ -53,9 +73,12 @@ function capturedAbortSignal(value) {
   try {
     nativeAbortedGetter.call(value);
   } catch (error) {
-    throw new Error("process cancellation signal failed its native brand check", {
-      cause: error,
-    });
+    throw new Error(
+      "process cancellation signal failed its native brand check",
+      {
+        cause: error,
+      },
+    );
   }
   const controller = new NativeAbortController();
   const propagate = () => controller.abort();
@@ -97,16 +120,22 @@ function validatedInheritedFileDescriptors(value) {
   }
   const descriptors = [...value];
   if (
-    descriptors.some((descriptor) => !Number.isInteger(descriptor) || descriptor < 0) ||
+    descriptors.some(
+      (descriptor) => !Number.isInteger(descriptor) || descriptor < 0,
+    ) ||
     new Set(descriptors).size !== descriptors.length
   ) {
-    throw new Error("inherited file descriptors must be unique non-negative integers");
+    throw new Error(
+      "inherited file descriptors must be unique non-negative integers",
+    );
   }
   for (const [index, descriptor] of descriptors.entries()) {
     try {
       fstatSync(descriptor);
     } catch (error) {
-      throw new Error(`inherited file descriptor ${index} is not live`, { cause: error });
+      throw new Error(`inherited file descriptor ${index} is not live`, {
+        cause: error,
+      });
     }
   }
   return descriptors;
@@ -186,7 +215,10 @@ function capturedDenseArray(value, label, maximumLength, validate) {
     "length",
     ...Array.from({ length }, (_, index) => String(index)),
   ]);
-  if (keys.length !== expectedKeys.size || keys.some((key) => !expectedKeys.has(key))) {
+  if (
+    keys.length !== expectedKeys.size ||
+    keys.some((key) => !expectedKeys.has(key))
+  ) {
     throw new Error(`${label} must be a plain dense array`);
   }
   const captured = [];
@@ -240,7 +272,9 @@ function capturedByteProcessEnvironment(value) {
       typeof entry !== "string" ||
       entry.includes("\0")
     ) {
-      throw new Error(`process environment property ${key} is not a safe string entry`);
+      throw new Error(
+        `process environment property ${key} is not a safe string entry`,
+      );
     }
     totalBytes += Buffer.byteLength(key) + Buffer.byteLength(entry);
     if (totalBytes > maximumByteProcessEnvironmentBytes) {
@@ -249,6 +283,43 @@ function capturedByteProcessEnvironment(value) {
     environment[key] = entry;
   }
   return Object.freeze(environment);
+}
+
+function capturedByteProcessStdin(value) {
+  if (value === undefined) return Buffer.alloc(0);
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    !utilTypes.isUint8Array(value)
+  ) {
+    throw new Error("process stdin must be bounded private bytes");
+  }
+  let buffer;
+  let byteLength;
+  let byteOffset;
+  try {
+    buffer = nativeTypedArrayBufferGetter.call(value);
+    byteLength = nativeTypedArrayByteLengthGetter.call(value);
+    byteOffset = nativeTypedArrayByteOffsetGetter.call(value);
+  } catch {
+    throw new Error("process stdin must be bounded private bytes");
+  }
+  if (
+    utilTypes.isSharedArrayBuffer(buffer) ||
+    !Number.isSafeInteger(byteLength) ||
+    byteLength < 0 ||
+    byteLength > maximumByteProcessInputBytes ||
+    !Number.isSafeInteger(byteOffset) ||
+    byteOffset < 0
+  ) {
+    throw new Error("process stdin must be bounded private bytes");
+  }
+  try {
+    return Buffer.from(new Uint8Array(buffer, byteOffset, byteLength));
+  } catch {
+    throw new Error("process stdin must be bounded private bytes");
+  }
 }
 
 function capturedByteProcessInput(input) {
@@ -260,6 +331,7 @@ function capturedByteProcessInput(input) {
     "timeoutMs",
     "maxOutputBytes",
     "signal",
+    "stdin",
     "inheritedFileDescriptors",
   ]);
   const captured = ownDataRecord(input, {
@@ -288,7 +360,9 @@ function capturedByteProcessInput(input) {
     captured.cwd.length > 4_096 ||
     captured.cwd.includes("\0")
   ) {
-    throw new Error("process working directory must be a bounded non-empty string");
+    throw new Error(
+      "process working directory must be a bounded non-empty string",
+    );
   }
   if (
     !Number.isInteger(captured.timeoutMs) ||
@@ -302,7 +376,9 @@ function capturedByteProcessInput(input) {
     captured.maxOutputBytes <= 0 ||
     captured.maxOutputBytes > maximumByteProcessOutputBytes
   ) {
-    throw new Error("process output ceiling must be a bounded positive integer");
+    throw new Error(
+      "process output ceiling must be a bounded positive integer",
+    );
   }
   let aggregateArgumentBytes = 0;
   const args = capturedDenseArray(
@@ -311,15 +387,21 @@ function capturedByteProcessInput(input) {
     maximumByteProcessArguments,
     (argument, index) => {
       if (typeof argument !== "string" || argument.includes("\0")) {
-        throw new Error(`process argument ${index} is not a bounded safe string`);
+        throw new Error(
+          `process argument ${index} is not a bounded safe string`,
+        );
       }
       const argumentBytes = Buffer.byteLength(argument, "utf8");
       if (argumentBytes > maximumByteProcessArgumentBytes) {
-        throw new Error(`process argument ${index} is not a bounded safe string`);
+        throw new Error(
+          `process argument ${index} is not a bounded safe string`,
+        );
       }
       aggregateArgumentBytes += argumentBytes;
       if (aggregateArgumentBytes > maximumByteProcessArgumentBytes) {
-        throw new Error("process arguments exceed their aggregate UTF-8 byte ceiling");
+        throw new Error(
+          "process arguments exceed their aggregate UTF-8 byte ceiling",
+        );
       }
     },
   );
@@ -335,7 +417,9 @@ function capturedByteProcessInput(input) {
       }
     },
   );
-  if (new Set(inheritedFileDescriptors).size !== inheritedFileDescriptors.length) {
+  if (
+    new Set(inheritedFileDescriptors).size !== inheritedFileDescriptors.length
+  ) {
     throw new Error(
       "inherited file descriptors must be unique non-negative integers",
     );
@@ -356,6 +440,7 @@ function capturedByteProcessInput(input) {
     environment: capturedByteProcessEnvironment(captured.environment),
     timeoutMs: captured.timeoutMs,
     maxOutputBytes: captured.maxOutputBytes,
+    stdin: capturedByteProcessStdin(captured.stdin),
     signal: captured.signal,
     inheritedFileDescriptors,
   });
@@ -396,26 +481,23 @@ function sealByteProcessCapture(state) {
 
 function byteProcessStatus(state) {
   const noChild =
-    !state.spawned &&
-    (state.child === undefined || state.spawnErrorObserved);
+    !state.spawned && (state.child === undefined || state.spawnErrorObserved);
   const statusAgreement =
     state.exitObserved &&
     state.closeObserved &&
     state.exitCode === state.closeCode &&
     state.exitSignal === state.closeSignal;
   const reaped =
-    state.spawned &&
-    statusAgreement &&
-    state.stdoutEof &&
-    state.stderrEof;
+    state.spawned && statusAgreement && state.stdoutEof && state.stderrEof;
   const directChildCleanupSafe =
-    noChild ||
-    (state.spawned && state.closeObserved && state.exitObserved);
+    noChild || (state.spawned && state.closeObserved && state.exitObserved);
+  const processGroupQuiescent = noChild || state.processGroupQuiescent === true;
   return Object.freeze({
     noChild,
     statusAgreement,
     reaped,
     directChildCleanupSafe,
+    processGroupQuiescent,
   });
 }
 
@@ -429,6 +511,8 @@ function byteProcessOutcome(state, disposition) {
   const captureComplete =
     status.reaped &&
     status.statusAgreement &&
+    status.processGroupQuiescent &&
+    state.stdinFinished &&
     processErrors.length === 0 &&
     !state.outputTruncated;
   return Object.freeze({
@@ -444,10 +528,12 @@ function byteProcessOutcome(state, disposition) {
     statusAgreement: status.statusAgreement,
     reaped: status.reaped,
     directChildCleanupSafe: status.directChildCleanupSafe,
+    processGroupQuiescent: status.processGroupQuiescent,
     exitObserved: state.exitObserved,
     closeObserved: state.closeObserved,
     stdoutEof: state.stdoutEof,
     stderrEof: state.stderrEof,
+    stdinComplete: state.stdinFinished,
     captureComplete,
     outputTruncated: state.outputTruncated,
     get stdout() {
@@ -479,6 +565,7 @@ export function deriveBoundedProcessByteStatusForTesting(input) {
       "closeSignal",
       "stdoutEof",
       "stderrEof",
+      "processGroupQuiescent",
     ]),
     required: [
       "spawned",
@@ -491,6 +578,7 @@ export function deriveBoundedProcessByteStatusForTesting(input) {
       "closeSignal",
       "stdoutEof",
       "stderrEof",
+      "processGroupQuiescent",
     ],
     label: "synthetic test-only byte process status input",
   });
@@ -501,17 +589,19 @@ export function deriveBoundedProcessByteStatusForTesting(input) {
     "closeObserved",
     "stdoutEof",
     "stderrEof",
+    "processGroupQuiescent",
   ]) {
     if (typeof captured[key] !== "boolean") {
-      throw new Error(`synthetic test-only byte process status ${key} must be boolean`);
+      throw new Error(
+        `synthetic test-only byte process status ${key} must be boolean`,
+      );
     }
   }
   for (const key of ["exitCode", "closeCode"]) {
-    if (
-      captured[key] !== null &&
-      !Number.isInteger(captured[key])
-    ) {
-      throw new Error(`synthetic test-only byte process status ${key} is invalid`);
+    if (captured[key] !== null && !Number.isInteger(captured[key])) {
+      throw new Error(
+        `synthetic test-only byte process status ${key} is invalid`,
+      );
     }
   }
   for (const key of ["exitSignal", "closeSignal"]) {
@@ -519,7 +609,9 @@ export function deriveBoundedProcessByteStatusForTesting(input) {
       captured[key] !== null &&
       (typeof captured[key] !== "string" || captured[key].length === 0)
     ) {
-      throw new Error(`synthetic test-only byte process status ${key} is invalid`);
+      throw new Error(
+        `synthetic test-only byte process status ${key} is invalid`,
+      );
     }
   }
   return Object.freeze({
@@ -550,12 +642,45 @@ function terminateByteProcess(state, signal) {
   }
 }
 
+function observeByteProcessGroupQuiescence(state) {
+  if (state.processGroupQuiescent) return true;
+  if (state.child === undefined || !state.spawned) return false;
+  if (!Number.isInteger(state.child.pid) || state.child.pid <= 0) {
+    if (!state.processGroupProbeErrorObserved) {
+      state.processGroupProbeErrorObserved = true;
+      state.terminationErrors.push({
+        signal: "0",
+        error: "child process has no positive process-group id",
+      });
+    }
+    return false;
+  }
+  try {
+    nativeProcessKill(-state.child.pid, 0);
+    return false;
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      state.processGroupQuiescent = true;
+      return true;
+    }
+    if (!state.processGroupProbeErrorObserved) {
+      state.processGroupProbeErrorObserved = true;
+      state.terminationErrors.push({
+        signal: "0",
+        error: `${error?.code ?? error?.name ?? "Error"}: ${error?.message ?? "process-group probe failed"}`,
+      });
+    }
+    return false;
+  }
+}
+
 /**
  * Runs one native process with a shared raw-output byte ceiling.
  *
- * The returned value is an authority-free diagnostic, not a child-reap proof or
- * a workspace/containment completion capability. In particular, callers cannot
- * inject a process runner, kill implementation, clock, or observed outcome.
+ * The returned value is an authority-free diagnostic with sealed direct-child
+ * reap, exact-input, and byte-capture observations. It is not a broader
+ * workspace/containment completion capability. Callers cannot inject a process
+ * runner, kill implementation, clock, or observed outcome.
  */
 export function runBoundedProcessBytes(input) {
   if (process.platform === "win32") {
@@ -585,6 +710,9 @@ export function runBoundedProcessBytes(input) {
           closeObserved: false,
           stdoutEof: false,
           stderrEof: false,
+          processGroupQuiescent: true,
+          stdinFinished: request.stdin.length === 0,
+          stdinTerminal: true,
           terminalReason: "cancelled",
           spawnErrorObserved: false,
           outputTruncated: false,
@@ -623,6 +751,11 @@ export function runBoundedProcessBytes(input) {
       closeObserved: false,
       stdoutEof: false,
       stderrEof: false,
+      processGroupQuiescent: false,
+      processGroupProbeErrorObserved: false,
+      stdinFinished: request.stdin.length === 0,
+      stdinTerminal: request.stdin.length === 0,
+      stdinFailureObserved: false,
       spawnErrorObserved: false,
       outputTruncated: false,
       stdoutChunks: [],
@@ -637,6 +770,7 @@ export function runBoundedProcessBytes(input) {
       timeout: undefined,
       killTimer: undefined,
       reapTimer: undefined,
+      groupPollTimer: undefined,
       promiseSettled: false,
       cancellation,
       capturedSignal,
@@ -656,10 +790,22 @@ export function runBoundedProcessBytes(input) {
       clearTimeout(state.killTimer);
       clearTimeout(state.reapTimer);
     };
+    const clearGroupPoll = () => {
+      clearTimeout(state.groupPollTimer);
+      state.groupPollTimer = undefined;
+    };
     const releaseAdmission = () => {
       if (activeOrRetainedByteProcess === state) {
         activeOrRetainedByteProcess = undefined;
       }
+    };
+    const scheduleGroupPoll = () => {
+      if (state.groupPollTimer !== undefined) return;
+      state.groupPollTimer = setTimeout(() => {
+        state.groupPollTimer = undefined;
+        observeTerminalProgress();
+      }, byteProcessGroupPollMs);
+      if (state.promiseSettled) state.groupPollTimer.unref();
     };
     const settle = (unreapedDeadline = false) => {
       if (state.promiseSettled) return;
@@ -669,8 +815,13 @@ export function runBoundedProcessBytes(input) {
       const reason = state.terminalReason ?? "completed";
       if (state.terminalReason === undefined) state.terminalReason = reason;
       const status = byteProcessStatus(state);
-      const retain = !status.noChild && !status.reaped;
-      if (!retain) releaseAdmission();
+      const retain =
+        !status.noChild && (!status.reaped || !status.processGroupQuiescent);
+      if (retain) scheduleGroupPoll();
+      else {
+        clearGroupPoll();
+        releaseAdmission();
+      }
       state.resolve(
         byteProcessOutcome(
           state,
@@ -683,15 +834,29 @@ export function runBoundedProcessBytes(input) {
       if (state.promiseSettled) {
         // Late native observations may release only this low-level strong root.
         // They never mutate the already-sealed outcome or create success proof.
-        if (status.noChild || status.reaped) releaseAdmission();
+        if (
+          status.noChild ||
+          (status.reaped && observeByteProcessGroupQuiescence(state))
+        ) {
+          clearGroupPoll();
+          releaseAdmission();
+        } else {
+          scheduleGroupPoll();
+        }
         return;
       }
       if (
         state.closeObserved &&
+        state.stdinTerminal &&
         (status.noChild ||
           (state.exitObserved && state.stdoutEof && state.stderrEof))
       ) {
-        settle();
+        if (status.noChild || observeByteProcessGroupQuiescence(state)) {
+          settle();
+        } else {
+          stop(state.terminalReason ?? "descendant-retained");
+          scheduleGroupPoll();
+        }
       }
     };
     const stop = (reason) => {
@@ -731,7 +896,7 @@ export function runBoundedProcessBytes(input) {
         env: request.environment,
         detached: true,
         stdio: [
-          "ignore",
+          request.stdin.length === 0 ? "ignore" : "pipe",
           "pipe",
           "pipe",
           ...request.inheritedFileDescriptors,
@@ -764,6 +929,53 @@ export function runBoundedProcessBytes(input) {
     state.child.once("spawn", () => {
       state.spawned = true;
     });
+    if (request.stdin.length > 0) {
+      if (state.child.stdin === null || state.child.stdin === undefined) {
+        state.stdinTerminal = true;
+        state.stdinFailureObserved = true;
+        state.processErrors.push(
+          diagnosticError(new Error("stdin pipe is unavailable")),
+        );
+        stop("stdin-unavailable");
+      } else {
+        state.child.stdin.once("finish", () => {
+          state.stdinFinished = true;
+          state.stdinTerminal = true;
+          observeTerminalProgress();
+        });
+        state.child.stdin.on("error", (error) => {
+          if (!state.stdinFailureObserved) {
+            state.stdinFailureObserved = true;
+            state.processErrors.push(diagnosticError(error));
+          }
+          state.stdinTerminal = true;
+          stop("stdin-error");
+          observeTerminalProgress();
+        });
+        state.child.stdin.once("close", () => {
+          if (!state.stdinFinished && !state.stdinFailureObserved) {
+            state.stdinFailureObserved = true;
+            state.processErrors.push(
+              diagnosticError(new Error("stdin closed before completion")),
+            );
+            stop("stdin-close");
+          }
+          state.stdinTerminal = true;
+          observeTerminalProgress();
+        });
+        try {
+          state.child.stdin.end(request.stdin);
+        } catch (error) {
+          if (!state.stdinFailureObserved) {
+            state.stdinFailureObserved = true;
+            state.processErrors.push(diagnosticError(error));
+          }
+          state.stdinTerminal = true;
+          stop("stdin-error");
+          observeTerminalProgress();
+        }
+      }
+    }
     state.child.once("error", (error) => {
       state.spawnErrorObserved = !state.spawned;
       state.processErrors.push(diagnosticError(error));
@@ -783,7 +995,9 @@ export function runBoundedProcessBytes(input) {
     });
     state.timeout = setTimeout(() => stop("timeout"), request.timeoutMs);
     if (capturedSignal !== undefined) {
-      nativeAddEventListener.call(capturedSignal, "abort", abort, { once: true });
+      nativeAddEventListener.call(capturedSignal, "abort", abort, {
+        once: true,
+      });
       state.abortSubscribed = true;
       if (nativeAbortedGetter.call(capturedSignal)) abort();
     }
@@ -815,7 +1029,9 @@ export function runBoundedProcess({
   inheritedFileDescriptors = [],
 }) {
   if (process.platform === "win32") {
-    throw new Error("bounded process execution is disabled on Windows until job-object tree termination exists");
+    throw new Error(
+      "bounded process execution is disabled on Windows until job-object tree termination exists",
+    );
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
     throw new Error("process timeout must be a positive integer");
@@ -874,7 +1090,8 @@ export function runBoundedProcess({
       if (disposition !== "completed") return;
       disposition = reason;
       const termError = terminate(child, "SIGTERM", killProcess);
-      if (termError !== null) terminationErrors.push({ signal: "SIGTERM", error: termError });
+      if (termError !== null)
+        terminationErrors.push({ signal: "SIGTERM", error: termError });
       killTimer = setTimeout(() => {
         const killError = terminate(child, "SIGKILL", killProcess);
         if (killError !== null) {

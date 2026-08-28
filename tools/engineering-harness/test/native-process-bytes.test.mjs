@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
+import { open } from "node:fs/promises";
 import test from "node:test";
 
 import { scrubbedChildEnvironment } from "../../child-environment.mjs";
@@ -38,6 +39,7 @@ test("raw bounded process preserves arbitrary stdout and stderr bytes", async ()
   assert.equal(outcome.disposition, "completed");
   assert.equal(outcome.firstTerminalReason, "completed");
   assert.equal(outcome.reaped, true);
+  assert.equal(outcome.processGroupQuiescent, true);
   assert.equal(outcome.directChildCleanupSafe, true);
   assert.equal(outcome.exitObserved, true);
   assert.equal(outcome.closeObserved, true);
@@ -49,6 +51,43 @@ test("raw bounded process preserves arbitrary stdout and stderr bytes", async ()
   assert.deepEqual(outcome.stderr, expectedStderr);
 });
 
+test("raw bounded process writes a synchronous defensive copy of exact stdin bytes", async () => {
+  const stdin = Buffer.from([0x00, 0xff, 0x41, 0x0a]);
+  const running = runBoundedProcessBytes(
+    request({
+      args: [
+        "-e",
+        "const chunks=[];process.stdin.on('data',(chunk)=>chunks.push(chunk));" +
+          "process.stdin.on('end',()=>process.stdout.write(Buffer.concat(chunks)));",
+      ],
+      stdin,
+    }),
+  );
+  stdin.fill(0);
+  const outcome = await running;
+
+  assert.equal(outcome.disposition, "completed");
+  assert.equal(outcome.stdinComplete, true);
+  assert.equal(outcome.captureComplete, true);
+  assert.deepEqual(outcome.stdout, Buffer.from([0x00, 0xff, 0x41, 0x0a]));
+});
+
+test("raw bounded process rejects success when the child closes stdin early", async () => {
+  const outcome = await runBoundedProcessBytes(
+    request({
+      args: ["-e", "process.stdin.destroy();process.exit(0)"],
+      stdin: Buffer.alloc(4 * 1024 * 1024, 0x61),
+      timeoutMs: 2_000,
+      maxOutputBytes: 1_024,
+    }),
+  );
+
+  assert.notEqual(outcome.captureComplete, true);
+  assert.equal(outcome.stdinComplete, false);
+  assert.ok(outcome.processErrors.length >= 1);
+  assert.notEqual(outcome.disposition, "completed");
+});
+
 test("raw bounded process returns defensive copies of captured bytes", async () => {
   const outcome = await runBoundedProcessBytes(
     request({ args: ["-e", "process.stdout.write(Buffer.from([1,2,3]))"] }),
@@ -58,6 +97,23 @@ test("raw bounded process returns defensive copies of captured bytes", async () 
   first.fill(0);
   assert.deepEqual(outcome.stdout, Buffer.from([1, 2, 3]));
   assert.notStrictEqual(outcome.stdout, outcome.stdout);
+});
+
+test("raw bounded process executes the exact inherited descriptor", async () => {
+  const executable = await open(process.execPath, "r");
+  try {
+    const outcome = await runBoundedProcessBytes(
+      request({
+        executable: "/proc/self/fd/3",
+        args: ["-e", "process.stdout.write('fd-bound')"],
+        inheritedFileDescriptors: [executable.fd],
+      }),
+    );
+    assert.equal(outcome.captureComplete, true);
+    assert.equal(outcome.stdout.toString("utf8"), "fd-bound");
+  } finally {
+    await executable.close();
+  }
 });
 
 test("raw bounded process admits the exact shared output ceiling", async () => {
@@ -157,7 +213,10 @@ test("raw bounded process observes cancellation before and after spawn", async (
   const controller = new AbortController();
   const running = runBoundedProcessBytes(
     request({
-      args: ["-e", "process.stdout.write('started'); setInterval(() => {}, 1000)"],
+      args: [
+        "-e",
+        "process.stdout.write('started'); setInterval(() => {}, 1000)",
+      ],
       timeoutMs: 5_000,
       signal: controller.signal,
     }),
@@ -217,7 +276,10 @@ test("raw bounded process waits for inherited stdout EOF before settling", async
 test("raw bounded process preserves timeout as the first terminal reason", async () => {
   const outcome = await runBoundedProcessBytes(
     request({
-      args: ["-e", "process.stdout.write('started'); setInterval(() => {}, 1000)"],
+      args: [
+        "-e",
+        "process.stdout.write('started'); setInterval(() => {}, 1000)",
+      ],
       timeoutMs: 40,
     }),
   );
@@ -250,6 +312,30 @@ test("raw bounded process signals descendants holding pipes after leader exit", 
   assert.equal(outcome.stderrEof, true);
   assert.equal(outcome.reaped, true);
   assert.match(outcome.stdout.toString("utf8"), /descendant-ready/u);
+});
+
+test("raw bounded process terminates ignored-stdio descendants before releasing admission", async () => {
+  const descendant =
+    "process.on('SIGTERM',()=>{});setInterval(() => {}, 1000);";
+  const leader =
+    "const {spawn}=require('node:child_process');" +
+    `const child=spawn(process.execPath,['-e',${JSON.stringify(descendant)}],` +
+    "{stdio:'ignore'});process.stdout.write(String(child.pid));child.unref();" +
+    "setTimeout(()=>process.exit(0),100);";
+  const outcome = await runBoundedProcessBytes(
+    request({ args: ["-e", leader], timeoutMs: 2_000 }),
+  );
+
+  assert.equal(outcome.firstTerminalReason, "descendant-retained");
+  assert.equal(outcome.disposition, "descendant-retained");
+  assert.equal(outcome.reaped, true);
+  assert.equal(outcome.processGroupQuiescent, true);
+  assert.equal(outcome.captureComplete, true);
+  assert.ok(outcome.durationMs >= 250);
+  assert.equal(
+    (await runBoundedProcessBytes(request())).disposition,
+    "completed",
+  );
 });
 
 test("raw bounded process keeps the first reason when timeout and abort race", async () => {
@@ -293,7 +379,10 @@ test("raw bounded process rejects overlapping active runs and releases after clo
   assert.equal(overlap, undefined);
   assert.equal(overlapError?.code, "ERR_BOUNDED_BYTE_PROCESS_BUSY");
   assert.equal(firstOutcome.firstTerminalReason, "cancelled");
-  assert.equal((await runBoundedProcessBytes(request())).disposition, "completed");
+  assert.equal(
+    (await runBoundedProcessBytes(request())).disposition,
+    "completed",
+  );
 });
 
 test("raw bounded process retains its sole admission slot until late close", async () => {
@@ -344,6 +433,7 @@ test("test-only status driver rejects exit and close disagreement", () => {
     closeSignal: null,
     stdoutEof: true,
     stderrEof: true,
+    processGroupQuiescent: true,
   });
 
   assert.equal(status.syntheticTestOnly, true);
@@ -364,6 +454,7 @@ test("test-only status driver distinguishes no child from a reap", () => {
     closeSignal: null,
     stdoutEof: false,
     stderrEof: false,
+    processGroupQuiescent: true,
   });
 
   assert.equal(status.noChild, true);
@@ -390,10 +481,7 @@ test("raw bounded process rejects proxies and accessors without observing them",
     /environment must be a plain own-data record/u,
   );
   assert.throws(
-    () =>
-      runBoundedProcessBytes(
-        request({ inheritedFileDescriptors: proxy }),
-      ),
+    () => runBoundedProcessBytes(request({ inheritedFileDescriptors: proxy })),
     /inherited file descriptors must be a plain dense array/u,
   );
 
@@ -414,9 +502,7 @@ test("raw bounded process rejects proxies and accessors without observing them",
   });
   assert.throws(
     () =>
-      runBoundedProcessBytes(
-        request({ environment: environmentWithGetter }),
-      ),
+      runBoundedProcessBytes(request({ environment: environmentWithGetter })),
     /environment property EXPLOSIVE must be data/u,
   );
 
@@ -426,6 +512,38 @@ test("raw bounded process rejects proxies and accessors without observing them",
   assert.throws(
     () => runBoundedProcessBytes(request({ signal: proxiedSignal })),
     /genuine native AbortSignal/u,
+  );
+  assert.throws(
+    () => runBoundedProcessBytes(request({ stdin: proxy })),
+    /stdin must be bounded private bytes/u,
+  );
+  assert.throws(
+    () =>
+      runBoundedProcessBytes(
+        request({ stdin: Buffer.alloc(4 * 1024 * 1024 + 1) }),
+      ),
+    /stdin must be bounded private bytes/u,
+  );
+  assert.throws(
+    () =>
+      runBoundedProcessBytes(
+        request({ stdin: new Uint8Array(new SharedArrayBuffer(1)) }),
+      ),
+    /stdin must be bounded private bytes/u,
+  );
+  const bytesWithGetters = Buffer.from([1, 2, 3]);
+  for (const name of ["buffer", "byteLength", "byteOffset"]) {
+    Object.defineProperty(bytesWithGetters, name, {
+      configurable: true,
+      get: explosive,
+    });
+  }
+  const preAborted = new AbortController();
+  preAborted.abort();
+  assert.doesNotThrow(() =>
+    runBoundedProcessBytes(
+      request({ stdin: bytesWithGetters, signal: preAborted.signal }),
+    ),
   );
   assert.equal(observations, 0);
 });
