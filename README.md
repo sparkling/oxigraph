@@ -181,10 +181,13 @@ local-only, unregistered as MCP, and without promotion authority.
 Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
-current fail-closed registry therefore contains nine tasks and 33 commands;
-the current full package suite contains 624 tests: 621 pass, none fail, and three
-intentional host-gated tests are skipped. The doctor retains the same
-native-only, local-only, non-promoting boundary.
+current fail-closed registry therefore contains nine tasks and 33 commands.
+After G2.1, the full package suite contains 667 tests: 663 pass, one fails, and
+three intentional host-gated tests are skipped. The sole failure is the
+deliberate sealed-subject freshness gate detecting the newly committed G2.1
+product paths; it is not a helper/request regression or current-HEAD
+qualification. The doctor retains the same native-only, local-only,
+non-promoting boundary.
 
 Follow-on harness commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate
@@ -257,12 +260,23 @@ identity. Commit `3f8951e3` hardens its byte and identifier inputs against
 accessor, proxy, and prototype substitution. Because request v1 permanently
 binds isolation policy v1, it is explicitly ineligible for physical launch and
 cannot later be reinterpreted as eligible. Commit `8b2c6366` adds replay-only
-process-evidence v3 over the acyclic request-to-containment hash graph, raw
-Cargo JSONL and cgroup terminal observations, and the held target ELF. It
-remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with physical execution, binding,
-and every authority flag false. A successor isolation/request contract, an
-attested native `execveat` Cargo launcher with a bounded status protocol, a
-private co-located issuer, and containment v2 are still required.
+process-evidence v3 over that request, the acyclic request-to-containment hash
+graph, raw Cargo JSONL and cgroup terminal observations, and the held target
+ELF. It remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with physical execution,
+binding, and every authority flag false; request v1 and process v3 are
+legacy-incompatible with the successor path. Policy v2 (`ef869cf4`, corrected
+in `466d2d78`) and execution request v2
+`75a076938ac6c4ecc72c295f56d09e5c0f8e8787` now freeze a structurally
+compatible graph, but request v2 remains
+`POLICY_V2_BOUND_PRIVATE_ISSUER_REQUIRED`/`STRUCTURAL_POLICY_ONLY`, with
+`physicalLaunchEligible: false`, `binding: null`, and every authority flag
+false. Commit `c113a88f321ade44e7d913f5da87a8184ea56148` adds the exact-attested
+dormant native `execveat` Cargo helper and bounded status protocol. Its tests
+compile but never execute the helper; the attestation remains
+`DORMANT_ATTESTATION_ONLY`, has no exact runtime request/argv/environment
+binding, and creates neither a physical issuer nor live authority. A private
+co-located issuer, containment-v2 native adapter, production
+control/sample/qualification owners, and live evidence are still required.
 The exact control-authorization artifact is
 `31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`;
 the exact final-decision-set artifact is
@@ -284,12 +298,12 @@ harness/control commit and rejects product-path drift. Ruflo reseal task
 `task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
 Current Ruflo task map
 `task-plans/linked-data-store-g0-g4-2026-08-28-v15` records its historical
-corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 69%: pure
+corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 73%: pure
 receipt-candidate task `task-1787892615000-rdwz7q` is complete in
 `45121da9`, and physical-envelope task `task-1787896401667-xookiy` is complete
 in `fbbb692b` with all authority false. Workspace/build-owner task
-`task-1787902127894-7n7vk3` is 86%, and containment task
-`task-1787902138074-0w648x` is 88%; both remain in progress.
+`task-1787902127894-7n7vk3` is 92%, and containment task
+`task-1787902138074-0w648x` is 89%; both remain in progress.
 The archived v6 protocol/statistics bytes retain their exact historical identity
 and grant no Phase-A, provider, control, sample, benchmark, qualification, or
 promotion authority.
@@ -326,6 +340,20 @@ remains a later, separate action. The physical control-envelope/sealed-archive
 replay is implemented, but the live control and qualification execution owners
 are still absent. The proposed files, pure candidate replay, and prospective
 physical binding capability therefore grant no approval or execution authority.
+
+Commit `be08cf3bbcb836ec46df2b864d31e80f5b837b52` implements G2.1's additive
+transactional namespace registry across memory, RocksDB, and the test-only
+rewritten persistence plane. Prefix validation follows exact `PN_PREFIX`
+semantics, including empty/default and Unicode prefixes without normalization;
+iteration uses raw UTF-8 order, duplicate IRIs are allowed, and RDF and
+namespace clear remain independent. Namespace writes share transaction,
+rollback, snapshot, and keyed-outcome boundaries with RDF writes, while parser,
+SPARQL, and dump integration stays explicit. The default-feature evaluator
+passes 13/13 across memory, RocksDB, and the rewritten plane; the no-default
+evaluator passes 8/8 across memory and the rewritten plane. Focused regressions
+pass `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
+`transactional_dataset` 3/3. [ADR-0020](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
+remains Proposed because G2.2-G2.3c are not implemented.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -421,7 +449,8 @@ The ADRs explain the principal boundaries:
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
   research into ADR-0018 and ADR-0020 through ADR-0033; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Fifteen decisions
-  remain Proposed living plans, not claims of implemented behavior.
+  remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
+  support but remains Proposed until G2.2-G2.3c are complete.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

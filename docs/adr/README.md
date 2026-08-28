@@ -27,7 +27,7 @@ mapping.
 | [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)   | Implemented | Keep engineering work separate from semantic qualification, rebuild patched candidates before focused evaluation, and retain human-only promotion  |
 | [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)                       | Proposed    | Negotiate dimensioned guarantees and prove a serialized-writer RocksDB baseline before stronger isolation claims                                   |
 | [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)           | Implemented | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from effective evaluator capabilities                           |
-| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed    | Commit namespaces, semantic effects, durable outcome receipts, and an ordered outbox atomically                                                    |
+| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed    | G2.1 transactionally commits namespaces; normalized effects, durable receipts, and the ordered outbox remain planned                               |
 | [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md)                                       | Proposed    | Validate the complete resulting staged view under the same isolation gate as commit                                                                |
 | [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)                     | Proposed    | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore                                                    |
 | [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)                                 | Proposed    | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback                                                   |
@@ -45,8 +45,9 @@ mapping.
 ADR-0018 and ADR-0020 through ADR-0033 are living implementation decisions for
 outstanding work. Their Proposed status is deliberate: the corresponding
 G1-G4 tasks and promotion evidence are not implemented merely because the
-architecture is recorded. ADR-0019 alone has closed its bounded G1.5-G1.6
-implementation profile; fifteen decisions in this range remain Proposed.
+architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
+and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
+implemented. Fifteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
@@ -80,12 +81,22 @@ authority-free; the containment/build/product replay projections are also
 binding-null and final-decision-ineligible. Commits `13afa94d` and `3f8951e3`
 freeze and harden canonical execution-request v1 bytes; because those bytes
 bind isolation policy v1, they are permanently launch-ineligible. Commit
-`8b2c6366` adds exact-linked, replay-only process-evidence v3 over the request,
-containment, raw Cargo JSONL, cgroup terminal observations, and held target ELF.
-It remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with `binding: false` and no
-authority.
-The successor policy/request, attested native `execveat` helper and bounded
-status protocol, private issuer, and containment v2 remain open.
+`8b2c6366` adds exact-linked, replay-only process-evidence v3 over that request,
+containment, raw Cargo JSONL, cgroup terminal observations, and the held target
+ELF. It remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with `binding: false` and
+no authority; request v1 and process v3 are legacy-incompatible with the
+successor path. Policy v2 (`ef869cf4`, corrected in `466d2d78`) and execution
+request v2 (`75a076938ac6c4ecc72c295f56d09e5c0f8e8787`) now freeze a
+structurally compatible policy/request graph. Request v2 remains
+`POLICY_V2_BOUND_PRIVATE_ISSUER_REQUIRED` and `STRUCTURAL_POLICY_ONLY`, with
+`physicalLaunchEligible: false`, `binding: null`, and every authority flag
+false. Commit `c113a88f321ade44e7d913f5da87a8184ea56148` adds an exact-attested
+dormant native `execveat` helper and bounded status protocol. Its tests compile
+but never execute the helper; it remains `DORMANT_ATTESTATION_ONLY`, lacks an
+exact runtime request/argv/environment binding, and grants no physical issuer
+or live authority. The private co-located issuer, native containment-v2
+adapter, production control/sample/qualification owners, and live evidence
+remain open.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
 built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
@@ -99,27 +110,41 @@ benchmark. No current production G1.7 samples, physically sealed control or
 qualification receipt, live benchmark result, qualification, or promotion
 exists, so G1.7 and ADR-0018 remain open.
 
+G2.1 product commit `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
+implements the additive transactional namespace registry for memory, RocksDB,
+and the rewritten persistence plane. Its default-feature evaluator passes 13/13
+across all three planes; its no-default evaluator passes 8/8 across memory and
+the rewritten plane. Focused regressions pass
+`store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
+`transactional_dataset` 3/3. ADR-0020 remains Proposed because normalized
+effects, durable receipts/outcome resolution, the authoritative outbox, and its
+retention/governance slices G2.2-G2.3c are not implemented.
+
 Audited two-parent merge `e9d2db1b` records upstream `ec68e3dd` as an ancestor
 while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
 workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
-reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7;
-the full current harness suite passes 621/0/3. The later authority-free G1.7
+reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7.
+After G2.1, the full harness suite reports 667 total: 663 pass, one deliberate
+sealed-subject freshness gate fails after detecting the newly committed G2.1
+product paths, and three host-gated tests skip. This is neither a helper/request
+regression nor green current-HEAD qualification. The later authority-free G1.7
 mechanics now include replay-only build owner v2 (`3688ccda`), the frozen exact
 non-tmpfs mount-namespace mapping policy (`da41d7e0`), bounded destructive
 cleanup (`3b289522`), the POSIX raw-byte process supervisor (`c5050e9c`),
-execution-request v1 (`13afa94d`/`3f8951e3`), and replay-only process-evidence
-v3 (`8b2c6366`).
+legacy-incompatible execution-request v1 (`13afa94d`/`3f8951e3`) and replay-only
+process-evidence v3 (`8b2c6366`), policy/request v2 (`ef869cf4`/`466d2d78` and
+`75a07693`), and the compile-only dormant helper attestation (`c113a88f`).
 Neither that pure identity nor
 the physical archive capability creates a live control, benchmark,
 qualification, promotion, publication, or push authority.
 Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v15` preserves the 42
 stable product tasks and its historical corrected-G1.7 checkpoint at 60%.
-The current G1.7 row is 69%. Pure candidate task
+The current G1.7 row is 73%. Pure candidate task
 `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
 `task-1787896401667-xookiy` is complete in `fbbb692b`. Workspace/build-owner
-task `task-1787902127894-7n7vk3` remains in progress at 86%, and containment
-task `task-1787902138074-0w648x` remains in progress at 88%.
+task `task-1787902127894-7n7vk3` remains in progress at 92%, and containment
+task `task-1787902138074-0w648x` remains in progress at 89%.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

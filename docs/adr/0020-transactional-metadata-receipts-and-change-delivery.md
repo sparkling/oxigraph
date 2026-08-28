@@ -4,9 +4,8 @@
 - **Date**: 2026-08-24
 - Updated: 2026-08-28
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented. The additive G2.1 namespace contract
-  and storage-schema boundary are specified for evaluator freeze; G2.2-G2.3c
-  remain planned
+- Implementation status: G2.1 is implemented in `be08cf3b`. G2.2-G2.3c remain
+  planned, so this ADR remains Proposed
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - **Related**:
@@ -20,11 +19,12 @@
 
 ## Context
 
-The store has no transactional namespace registry, durable commit identity,
-normalized semantic change set, or ordered change feed. A commit error can be
-ambiguous, and downstream validators, indexers, or subscribers have no native
-atomic hand-off from primary state. Quad-only events also lose the distinction
-between graph creation, clear, drop, and namespace changes.
+G2.1 now provides a transactional namespace registry. The store still has no
+normalized semantic change set, commit-governance identity and receipt, or
+ordered change feed. A commit error can be ambiguous, and downstream
+validators, indexers, or subscribers have no native atomic hand-off from
+primary state. Quad-only events also lose the distinction between graph
+creation, clear, drop, and namespace changes.
 
 These concerns belong to commit governance, not to the minimal mutation trait
 or dataset equality. Namespace metadata must remain transactional without
@@ -121,6 +121,18 @@ reopens ADR-0028's migration evaluator; it is not part of G2.1.
 
 ## Acceptance boundary
 
+G2.1 is implemented by commit `be08cf3bbcb836ec46df2b864d31e80f5b837b52`.
+The default-feature evaluator passes 13/13 across memory, RocksDB, and the
+test-only rewritten persistence plane; the `--no-default-features` evaluator
+passes 8/8 across memory and the rewritten plane. The focused regression suites
+pass `store` 26/26,
+`transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
+`transactional_dataset` 3/3; the no-default-feature library check also passes.
+The evaluator includes Store-level RocksDB
+set/remove/range-clear and reopen coverage. The pre-existing minimal transaction
+trait file remains byte-identical at SHA-256
+`ae84a63b060400845cd965828cb314a2ac9fc7da3d30655a1a7603af6c924e55`.
+
 This ADR may move to Implemented only when G2.1-G2.3c prove:
 
 - namespace and RDF mutations commit and roll back together while dataset
@@ -172,9 +184,12 @@ The current write and topology boundaries are in
 [`transactional.rs`](../../lib/oxigraph/src/store/transactional.rs) and
 [`store.rs`](../../lib/oxigraph/src/store.rs). G2.1-G2.3c own delivery in the
 [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md).
-G2.1 begins by freezing the public-only
-`lib/oxigraph/tests/transactional_namespaces.rs` evaluator before product work.
-The first product candidate is limited to the new namespace API plus
-`store.rs`, `storage/mod.rs`, `storage/memory.rs`, `storage/rocksdb.rs`, and
-`storage/rocksdb_wrapper.rs`. Parser, serializer, SPARQL, CLI, bindings, Cargo,
-documentation, and G1.7 files are outside that candidate.
+Commit `be08cf3b` implemented G2.1 in the public-only
+`lib/oxigraph/tests/transactional_namespaces.rs` evaluator and exactly six
+product paths: the new `store/namespace.rs` API plus `store.rs`,
+`storage/mod.rs`, `storage/memory.rs`, `storage/rocksdb.rs`, and
+`storage/rocksdb_wrapper.rs`. Parser, serializer, SPARQL, CLI, bindings, and
+Cargo integration remain intentionally outside G2.1. G2.2-G2.3c still own
+normalized effects, durable receipts and outcome resolution, the authoritative
+outbox, retention/leases, and governance health; their absence keeps this ADR
+Proposed.

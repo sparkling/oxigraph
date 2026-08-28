@@ -24,14 +24,15 @@
   source and initially empty target, and retains all handles rather than unlink
   after an unreaped Git outcome. Production build begin/finish deliberately
   return `MISSING` until a physical owner can prove exact child close and reap.
-  Canonical execution-request v1 and replay-only process-evidence v3 are now
-  frozen and adversarially tested, but v1 permanently binds an incompatible
-  isolation policy and v3 remains non-binding and authority-free. A successor
-  isolation/request contract, attested native `execveat` Cargo helper and
-  bounded status protocol, private build-process/control/sample owner emission,
-  containment v2/native mechanics, sealed expected-envelope provenance, a
-  current control or qualification receipt, qualification, and promotion are
-  not implemented. The
+  Canonical execution-request v1 and replay-only process-evidence v3 are frozen
+  and adversarially tested, but v1 permanently binds an incompatible isolation
+  policy and v3 remains non-binding and authority-free. Policy v2 and execution
+  request v2 now freeze the successor structural contract, and an exact-attested
+  dormant native `execveat` helper freezes the bounded status mechanics; none is
+  physically launch eligible or authoritative. Private
+  build-process/control/sample owner emission, containment-v2 native mechanics,
+  sealed expected-envelope provenance, a current control or qualification
+  receipt, qualification, and promotion are not implemented. The
   dormant source and containment owners cannot pass the current proposed
   decision or invoke live mechanics.
   The existing `tools/metaharness` semantic qualifier remains separate;
@@ -163,12 +164,15 @@
   cgroup terminal observations, and a stable held executable target ELF. Its
   projection is `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with `binding: false`,
   physical execution false, and every authority false. Focused request/process
-  tests pass 28/28. These pieces remain prerequisites only: no successor
-  isolation/request contract, attested native `execveat` Cargo helper and
-  bounded READY/error/EOF status protocol, private co-located issuer,
-  containment v2/native adapter, build-owner v3, product-owner v4, live build,
-  or authority exists. The successor policy must retain the 64-MiB combined output
-  ceiling while adding exact Cargo/helper/status descriptors and provenance
+  tests pass 28/28. Request v1 and process v3 remain legacy-incompatible with
+  the successor path. Commits `ef869cf4`/`466d2d78` freeze and correct policy
+  v2; `75a07693` freezes request v2 as
+  `POLICY_V2_BOUND_PRIVATE_ISSUER_REQUIRED`/`STRUCTURAL_POLICY_ONLY`; and
+  `c113a88f` attests a dormant helper and bounded status protocol whose tests
+  compile but never execute it. These pieces remain physically ineligible,
+  binding-null, and authority-free: no private co-located issuer,
+  containment-v2 native adapter, build-owner v3, product-owner v4, live build,
+  or authority exists
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
@@ -181,10 +185,12 @@
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
-  producing the current exact nine-task/33-command surface. The current package
-  suite contains 624 tests: 621 pass, none fail, and three intentional host-gated
-  tests are skipped; doctor evidence remains native-only, local-only, and
-  non-promoting
+  producing the current exact nine-task/33-command surface. After G2.1, the
+  package suite contains 667 tests: 663 pass, the deliberate sealed-subject
+  freshness gate is the sole failure after detecting G2.1 product paths, and
+  three intentional host-gated tests skip. This is not a helper/request
+  regression or current-HEAD qualification; doctor evidence remains
+  native-only, local-only, and non-promoting
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -457,10 +463,11 @@ all authority flags false. Final binding continues to report
 the approved final decision, and the execution owners exist. Commit `fbbb692b`
 implements exact three-file physical sealing and replay; seal emits no binding,
 while replayed PASS can expose only a prospective binding with all authority
-false. The current 624-test suite passes 621, fails none, and skips three
-intentional host-gated cases. Those fixtures verify contracts and current
-archive mechanics, not live owner emission, durability, controls, performance,
-or qualification.
+false. After G2.1, the current 667-test suite passes 663, fails only the
+deliberate sealed-subject freshness gate that detects the new product paths,
+and skips three intentional host-gated cases. Those fixtures verify contracts
+and current archive mechanics, not live owner emission, current-HEAD
+qualification, durability, controls, or performance.
 
 Contract v1/v3/v4/v5/v6 replay is Darwin-free, `LEGACY_REPLAY_ONLY`, and can
 never qualify. V5 and v6 exact contracts, proposed authorizations, and proposed
@@ -505,9 +512,10 @@ G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
-ADR-0020 through ADR-0033 are fifteen Proposed living plans, not implementation
-claims. G1.4a and G1.4b are completed product slices under Proposed ADR-0018;
-ADR status still depends on G1.7 qualification.
+ADR-0020 through ADR-0033 are fifteen Proposed living plans. G1.4a and G1.4b
+are completed product slices under Proposed ADR-0018, and G2.1 is implemented
+in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
+closed by those bounded slices.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
@@ -563,9 +571,9 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-69%; its two superseded rows remain cancelled history. Workspace/build-owner
-task `task-1787902127894-7n7vk3` is in progress at 86%, and containment task
-`task-1787902138074-0w648x` is in progress at 88%. Support tasks for the
+73%; its two superseded rows remain cancelled history. Workspace/build-owner
+task `task-1787902127894-7n7vk3` is in progress at 92%, and containment task
+`task-1787902138074-0w648x` is in progress at 89%. Support tasks for the
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
@@ -790,13 +798,16 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   owner v2 commit `3688ccda`, non-tmpfs policy/mapping commits
   `008ab939`/`da41d7e0`, containment-retention and bounded-cleanup commits
   `5d054857`/`a9f9afc2`/`f482bec0`/`3b289522`, raw-process supervisor commit
-  `c5050e9c`, execution-request-v1 commits `13afa94d`/`3f8951e3`, and
-  replay-only process-evidence-v3 commit `8b2c6366`. Exact current v7
+  `c5050e9c`, execution-request-v1 commits `13afa94d`/`3f8951e3`, replay-only
+  process-evidence-v3 commit `8b2c6366`, structural policy-v2 commits
+  `ef869cf4`/`466d2d78`, request-v2 commit `75a07693`, and dormant helper
+  attestation commit `c113a88f`. Exact current v7
   contract, proposed
   control-authorization, and proposed final-decision raw SHA-256 values are
   `42ed3867...`, `31b8fce5...`, and `b0def4f0...`; the v6 bytes remain exact
-  replay-only fixtures. The package suite reports 624 total, 621 passing, zero
-  failing, and three intentional host-gated skips. The CLI exits 4 before work
+  replay-only fixtures. After G2.1, the package suite reports 667 total, 663
+  passing, one deliberate sealed-subject freshness failure, and three
+  intentional host-gated skips. The CLI exits 4 before work
   at `CONTROL_AUTH_PROPOSED` and writes no
   G1.7 run. The pure candidate replay is not a physically owned or sealed
   control receipt and grants no binding or execution authority. The physical
@@ -816,11 +827,16 @@ This ADR implements the engineering architecture and authority boundary; it
 does not claim that Dream Machine is an approved unattended runner, full
 MetaHarness qualification is current, or an application-harness acceptance is
 safe to promote. The canonical registry and candidate-rejection evidence
-controls are closed. G2.1's evaluator may be prepared only as explicitly
-non-promoting evaluator work; activation and candidate execution await an
-approved G1.7 baseline unless the programme owner records a narrower exception.
-ADR-0018 and ADR-0020
-through ADR-0033 remain
+controls are closed. The programme owner's explicit 2026-08-28 instruction to
+continue the ADR programme with the harness records the narrow exception under
+which G2.1 evaluator and product work proceeded to commit `be08cf3b` despite the
+stale, unapproved G1.7 baseline. This exception authorizes only local,
+non-promoting G2 implementation and evaluator work. It does not accept or
+approve ADR-0018, authorize live G1.7 controls or results, make qualification
+current, or grant qualification, publication, push, or promotion authority.
+Later G2 slices may use the same local non-promoting boundary while that
+programme instruction remains in force; each still requires its own frozen
+evaluator and direct evidence. ADR-0018 and ADR-0020 through ADR-0033 remain
 Proposed until their product behavior and evidence exist. Each task still requires a
 red/evaluator-separated corpus, direct control-plane tests, continuously
 current prerequisites,
