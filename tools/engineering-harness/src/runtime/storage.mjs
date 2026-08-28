@@ -4,8 +4,9 @@ import { link, lstat, mkdir, open, realpath, rm, unlink } from "node:fs/promises
 import { basename, dirname, join, relative, sep } from "node:path";
 import { harnessRoot } from "../paths.mjs";
 import { ignoredByGit } from "./control-identity.mjs";
+import { runtimeRoot } from "./root-policy.mjs";
 
-export const runtimeRoot = join(harnessRoot, ".runtime");
+export { runtimeRoot };
 
 function contained(parent, candidate) {
   const child = relative(parent, candidate);
