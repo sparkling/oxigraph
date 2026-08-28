@@ -146,7 +146,16 @@ test("compatibility PASS requires and copies the exactly replayed G1.4b prerequi
     projection: Object.freeze({ status: "PASS" }),
     artifacts: Object.freeze([]),
   });
-  const g14bPrerequisite = await acceptedG14b();
+  const accepted = await acceptedG14b();
+  const g14bPrerequisite = {
+    ...accepted,
+    reasons: [],
+    projection: structuredClone(accepted.projection),
+    artifacts: accepted.artifacts.map(({ name, bytes }) => ({
+      name,
+      bytes: Buffer.from(bytes),
+    })),
+  };
   const result = combineG17CompatibilityEvidence({
     agenticQe: pass,
     native: pass,
@@ -160,10 +169,28 @@ test("compatibility PASS requires and copies the exactly replayed G1.4b prerequi
     result.artifacts.at(-1).name,
     G17_G14B_PREREQUISITE_ARTIFACT_NAME,
   );
+  assert.notStrictEqual(result.artifacts.at(-1), g14bPrerequisite.artifacts[0]);
+  assert.notStrictEqual(
+    result.artifacts.at(-1).bytes,
+    g14bPrerequisite.artifacts[0].bytes,
+  );
+  const copiedArtifactSha256 = sha256(result.artifacts.at(-1).bytes);
+  g14bPrerequisite.artifacts[0].bytes.fill(0);
+  g14bPrerequisite.projection.binding.claim.crashDurability = true;
+  assert.equal(sha256(result.artifacts.at(-1).bytes), copiedArtifactSha256);
+  assert.equal(
+    result.projection.applicationReceipts[0].binding.claim.crashDurability,
+    false,
+  );
+  assert.doesNotThrow(() =>
+    replayG17G14bPrerequisite({
+      receiptBytes: result.artifacts.at(-1).bytes,
+    }),
+  );
 
   const fabricated = {
-    ...g14bPrerequisite,
-    projection: structuredClone(g14bPrerequisite.projection),
+    ...accepted,
+    projection: structuredClone(accepted.projection),
   };
   fabricated.projection.binding.claim.crashDurability = true;
   assert.throws(
@@ -174,6 +201,90 @@ test("compatibility PASS requires and copies the exactly replayed G1.4b prerequi
         g14bPrerequisite: fabricated,
       }),
     /prerequisite PASS projection drifted/u,
+  );
+});
+
+test("compatibility snapshots accessor-backed G1.4b evidence exactly once", async () => {
+  const pass = Object.freeze({
+    status: "PASS",
+    sha256: "0".repeat(64),
+    reasons: Object.freeze([]),
+    projection: Object.freeze({ status: "PASS" }),
+    artifacts: Object.freeze([]),
+  });
+  const accepted = await acceptedG14b();
+  const acceptedBytes = Buffer.from(accepted.artifacts[0].bytes);
+  const reads = {
+    status: 0,
+    artifacts: 0,
+    artifact: 0,
+    name: 0,
+    bytes: 0,
+    projection: 0,
+    sha256: 0,
+    reasons: 0,
+  };
+  const artifact = {
+    get name() {
+      reads.name += 1;
+      return G17_G14B_PREREQUISITE_ARTIFACT_NAME;
+    },
+    get bytes() {
+      reads.bytes += 1;
+      return reads.bytes === 1
+        ? acceptedBytes
+        : Buffer.alloc(acceptedBytes.length);
+    },
+  };
+  const artifacts = new Proxy([artifact], {
+    get(target, property, receiver) {
+      if (property === "0") reads.artifact += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const evidence = {
+    get status() {
+      reads.status += 1;
+      return "PASS";
+    },
+    get artifacts() {
+      reads.artifacts += 1;
+      return artifacts;
+    },
+    get projection() {
+      reads.projection += 1;
+      acceptedBytes.fill(0);
+      return structuredClone(accepted.projection);
+    },
+    get sha256() {
+      reads.sha256 += 1;
+      return accepted.sha256;
+    },
+    get reasons() {
+      reads.reasons += 1;
+      return [];
+    },
+  };
+
+  const result = combineG17CompatibilityEvidence({
+    agenticQe: pass,
+    native: pass,
+    g14bPrerequisite: evidence,
+  });
+  assert.equal(result.status, "PASS");
+  assert.deepEqual(reads, {
+    status: 1,
+    artifacts: 1,
+    artifact: 1,
+    name: 1,
+    bytes: 1,
+    projection: 1,
+    sha256: 1,
+    reasons: 1,
+  });
+  assert.equal(
+    sha256(result.artifacts.at(-1).bytes),
+    sha256(accepted.artifacts[0].bytes),
   );
 });
 test("application evidence module has no Router, admission, or replay authority imports", async () => {

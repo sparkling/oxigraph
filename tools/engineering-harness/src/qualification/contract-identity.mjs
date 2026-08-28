@@ -44,15 +44,18 @@ function generationForSha256(contractSha256) {
   throw new Error("copied contract has an unsupported byte identity");
 }
 
-export function decodeG17ContractByteIdentity({ bytes, receiptSha256 } = {}) {
+export function decodeG17ContractByteIdentity(input = {}) {
   try {
+    const suppliedBytes = input?.bytes;
     if (
-      !Buffer.isBuffer(bytes) ||
-      bytes.length < 1 ||
-      bytes.length > MAX_CONTRACT_BYTES
+      !Buffer.isBuffer(suppliedBytes) ||
+      suppliedBytes.length < 1 ||
+      suppliedBytes.length > MAX_CONTRACT_BYTES
     ) {
       throw new Error("copied bytes are not a bounded Buffer");
     }
+    const bytes = Buffer.from(suppliedBytes);
+    const receiptSha256 = input?.receiptSha256;
     const contractSha256 = sha256(bytes);
     if (!DIGEST.test(receiptSha256 ?? "") || receiptSha256 !== contractSha256) {
       throw new Error("copied bytes differ from the receipt digest");

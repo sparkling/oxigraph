@@ -176,12 +176,24 @@ export function g17G14bPrerequisiteProjectionSha256(value) {
 }
 
 function stableReadExact(path) {
-  if (!Number.isInteger(constants.O_NOFOLLOW)) {
-    fail("O_NOFOLLOW is unavailable");
+  if (
+    !Number.isInteger(constants.O_NOFOLLOW) ||
+    !Number.isInteger(constants.O_NONBLOCK)
+  ) {
+    fail("O_NOFOLLOW or O_NONBLOCK is unavailable");
   }
+  const closeOnExec = Number.isInteger(constants.O_CLOEXEC)
+    ? constants.O_CLOEXEC
+    : 0;
   let descriptor;
   try {
-    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    descriptor = openSync(
+      path,
+      constants.O_RDONLY |
+        constants.O_NOFOLLOW |
+        constants.O_NONBLOCK |
+        closeOnExec,
+    );
     const before = fstatSync(descriptor, { bigint: true });
     if (
       !before.isFile() ||

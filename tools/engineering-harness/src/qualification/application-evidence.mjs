@@ -498,26 +498,48 @@ export async function collectG17CompatibilityEvidence(options) {
 }
 
 function replayAcceptedG14bPrerequisite(evidence) {
-  if (evidence?.status !== "PASS") return evidence;
+  const status = evidence?.status;
+  if (status !== "PASS") return evidence;
+  const artifacts = evidence?.artifacts;
+  if (!Array.isArray(artifacts) || artifacts.length !== 1) {
+    throw new Error("G1.7 G1.4b prerequisite PASS artifact is incomplete");
+  }
+  const artifact = artifacts[0];
+  const artifactName = artifact?.name;
+  const suppliedReceiptBytes = artifact?.bytes;
   if (
-    !Array.isArray(evidence.artifacts) ||
-    evidence.artifacts.length !== 1 ||
-    evidence.artifacts[0]?.name !== G17_G14B_PREREQUISITE_ARTIFACT_NAME ||
-    !Buffer.isBuffer(evidence.artifacts[0]?.bytes)
+    artifactName !== G17_G14B_PREREQUISITE_ARTIFACT_NAME ||
+    !Buffer.isBuffer(suppliedReceiptBytes)
   ) {
     throw new Error("G1.7 G1.4b prerequisite PASS artifact is incomplete");
   }
+  const receiptBytes = Buffer.from(suppliedReceiptBytes);
+  const evidenceProjection = evidence?.projection;
+  const evidenceSha256 = evidence?.sha256;
+  const evidenceReasons = evidence?.reasons;
   const projection = replayG17G14bPrerequisite({
-    receiptBytes: evidence.artifacts[0].bytes,
+    receiptBytes,
   });
   if (
-    !isDeepStrictEqual(projection, evidence.projection) ||
-    evidence.sha256 !== g17G14bPrerequisiteProjectionSha256(projection) ||
-    evidence.reasons?.length !== 0
+    !isDeepStrictEqual(projection, evidenceProjection) ||
+    evidenceSha256 !== g17G14bPrerequisiteProjectionSha256(projection) ||
+    !Array.isArray(evidenceReasons) ||
+    evidenceReasons.length !== 0
   ) {
     throw new Error("G1.7 G1.4b prerequisite PASS projection drifted");
   }
-  return evidence;
+  return Object.freeze({
+    status: "PASS",
+    sha256: g17G14bPrerequisiteProjectionSha256(projection),
+    reasons: Object.freeze([]),
+    projection,
+    artifacts: Object.freeze([
+      Object.freeze({
+        name: G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+        bytes: receiptBytes,
+      }),
+    ]),
+  });
 }
 
 export function combineG17CompatibilityEvidence({
