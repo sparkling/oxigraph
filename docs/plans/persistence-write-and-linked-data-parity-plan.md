@@ -7,9 +7,11 @@
 - Date: 2026-08-24
 - Updated: 2026-08-28
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
-- Upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
-- Fetched upstream head pending audited merge: `ec68e3ddb2e73470ae5940c44709e041762afa41`
-- Upstream merge: `a2415a4e`
+- Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
+- Current audited upstream head: `ec68e3ddb2e73470ae5940c44709e041762afa41`
+- Current audited upstream merge/tree: `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
+  `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
+- Historical first upstream merge: `a2415a4e`
 - Transactional write implementation: `1da47285`
 - Deterministic upstream test correction: `f9033c2b`
 - Conservative service-description reconciliation: `7dc190d3`
@@ -26,9 +28,11 @@
 
 ## Outcome
 
-The clone is current with upstream through the baseline above. All 32 upstream
-commits after the fork point are ancestors of the current branch; there is no
-remaining upstream commit to cherry-pick or merge at this baseline.
+The clone is current with upstream through `ec68e3dd`, the authoritative remote
+`main` head observed during this slice. The four commits after the previous
+`8dcfb6b6` baseline are ancestors through audited two-parent merge `e9d2db1b`,
+whose ordered parents are `b295ea80...` and `ec68e3dd...`; there is no remaining
+upstream commit to cherry-pick or merge at this observed head.
 
 The missing persistence-plane capability was narrower than “Oxigraph cannot
 write.” Concrete writes already existed through `Store`, transactions, SPARQL
@@ -91,14 +95,17 @@ hierarchies, storage layouts, configuration grammars, or every server feature.
 
 The merged upstream changes fall into these groups:
 
-| Group           | Incorporated changes                                                                                                                              | Local disposition                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| HTTP and CLI    | Repeated query arguments, content-negotiation specificity, truthful load failures, `--fail-on-named-graphs`                                       | Incorporated; fork protocol and graph-topology behavior retained        |
-| Public API      | `Slice` field names, `QueryExpression`, `QueryDatasetSpecification`, documented substitution, `DocumentLoader`, custom scalar/aggregate functions | Incorporated and compiled across the workspace                          |
-| RDF and results | RDF/XML invalid-QName rejection, XML result boundary whitespace, result fixture relocation                                                        | Incorporated; fork's RDF/XML writer and RDF version boundaries retained |
-| Evaluation      | Operator construction split, lazy error propagation, CONSTRUCT/MINUS fixes, reduced work after errors, join/order allocations                     | Incorporated; fork SERVICE SILENT and entailment adapters retained      |
-| Optimization    | Literal equality, EXISTS/cartesian/union rewrites, recursive join optimization                                                                    | Incorporated with upstream regression fixtures                          |
-| CI/dependencies | Actions, Python, CodSpeed, and workflow updates                                                                                                   | Incorporated where compatible with the fork workflows                   |
+| Group                 | Incorporated changes                                                                                                                              | Local disposition                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| HTTP and CLI          | Repeated query arguments, content-negotiation specificity, truthful load failures, `--fail-on-named-graphs`                                       | Incorporated; fork protocol and graph-topology behavior retained                                                |
+| Public API            | `Slice` field names, `QueryExpression`, `QueryDatasetSpecification`, documented substitution, `DocumentLoader`, custom scalar/aggregate functions | Incorporated and compiled across the workspace                                                                  |
+| RDF and results       | RDF/XML invalid-QName rejection, XML result boundary whitespace, result fixture relocation                                                        | Incorporated; fork's RDF/XML writer and RDF version boundaries retained                                         |
+| Evaluation            | Operator construction split, lazy error propagation, CONSTRUCT/MINUS fixes, reduced work after errors, join/order allocations                     | Incorporated; fork SERVICE SILENT and entailment adapters retained                                              |
+| Optimization          | Literal equality, EXISTS/cartesian/union rewrites, recursive join optimization                                                                    | Incorporated with upstream regression fixtures                                                                  |
+| CI/dependencies       | Actions, Python, CodSpeed, and workflow updates                                                                                                   | Incorporated where compatible with the fork workflows                                                           |
+| Follow-up Graph Store | Atomic `PUT` replacement and selected-missing `POST` creation/status changes from `f9911902`/`ec68e3dd`                                           | Exact default rollback vector adopted; modular atomic handler and ADR-0014 selected-missing `POST=404` retained |
+| Follow-up XML         | quick-xml 0.42 API migration for RDF/XML and SPARQL XML Results                                                                                   | Adopted with strict RDF namespace-extension and results namespace/version/duplicate/state validation retained   |
+| Follow-up Python/CI   | Python >=3.9, abi3-py39, 3.14 artifact builders, PyPI-compatible wheels, and workflow changes                                                     | Adopted with `rdfs`/`owl2-rl` defaults and every fork QA job retained                                           |
 
 No upstream commit in the audited range changed `lib/oxigraph/src/storage` or
 introduced a public write adapter. The new write interface is therefore a fork
@@ -343,14 +350,15 @@ complete ADR-0018 or the G1.7 compatibility/performance promotion gate.
 
 ### Slice 0 — upstream and write seam (complete)
 
-| Task                                      | Dependency | Size | Acceptance                                                                       |
-| ----------------------------------------- | ---------- | ---: | -------------------------------------------------------------------------------- |
-| D0.1 Merge upstream through `8dcfb6b6`    | none       |    L | Git ancestry contains all 32 commits; affected baseline suites pass              |
-| D0.2 Add transactional dataset traits     | D0.1       |    M | External fake backend compiles; graph topology and read-your-writes are explicit |
-| D0.3 Bind generic SPARQL Update           | D0.2       |    M | Whole request commits atomically or rolls back; custom errors survive            |
-| D0.4 Preserve built-in performance path   | D0.3       |    S | Concrete `Store` write-only path remains; legacy update suite passes             |
-| D0.5 Stabilize unordered upstream test    | D0.1       |    S | Query states `ORDER BY`; CLI is 144/144                                          |
-| D0.6 Reconcile service-description claims | D0.1       |    S | Default and RDF 1.2 builds advertise only receipted SPARQL 1.0/1.1 capabilities  |
+| Task                                      | Dependency | Size | Acceptance                                                                                                                                     |
+| ----------------------------------------- | ---------- | ---: | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| D0.1 Merge upstream through `8dcfb6b6`    | none       |    L | Git ancestry contains all 32 commits; affected baseline suites pass                                                                            |
+| D0.2 Add transactional dataset traits     | D0.1       |    M | External fake backend compiles; graph topology and read-your-writes are explicit                                                               |
+| D0.3 Bind generic SPARQL Update           | D0.2       |    M | Whole request commits atomically or rolls back; custom errors survive                                                                          |
+| D0.4 Preserve built-in performance path   | D0.3       |    S | Concrete `Store` write-only path remains; legacy update suite passes                                                                           |
+| D0.5 Stabilize unordered upstream test    | D0.1       |    S | Query states `ORDER BY`; CLI is 144/144                                                                                                        |
+| D0.6 Reconcile service-description claims | D0.1       |    S | Default and RDF 1.2 builds advertise only receipted SPARQL 1.0/1.1 capabilities                                                                |
+| D0.7 Audit merge through `ec68e3dd`       | D0.1       |    L | Merge `e9d2db1b` is a two-parent ancestor; Rust, Python, workflow, and 409/0/2 harness evidence passes while ADR-0014 divergence remains bound |
 
 ### P0 — make the write contract trustworthy
 

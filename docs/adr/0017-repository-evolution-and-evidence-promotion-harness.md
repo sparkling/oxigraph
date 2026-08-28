@@ -49,6 +49,16 @@
   `run` exits 4 before work, creates no G1.7 run, and no current binding can
   authorize qualification until a canonical control receipt is replayed. Pure
   verifier fixtures do not establish production owner emission
+- Upstream synchronization checkpoint: audited merge
+  `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
+  `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
+  `b295ea80...`/`ec68e3dd...`. Its exact-tree audit passes the 411-test harness
+  at 409/0/2, CLI 152/152, XML 120/120 and 89/89, the 47-test fork lane, Python
+  222/222, actionlint, doctor, and a PyPI-compatible cp39-abi3 wheel build. It
+  grants no G1.7 or publication authority. Because it changes the current
+  tracked subject and lockfile, a separate pure reseal is required before
+  Phase A; the committed v6 bytes remain exact protocol fixtures rather than a
+  merged-product approval
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
@@ -411,12 +421,13 @@ committed G-identifiers and GOAP tables remain the portable authority; Ruflo
 task IDs are repository-local audit pointers only and never prove product
 behavior. The current 42-entry adjacency map and checkpoint were stored and
 exactly read back through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v11`; it supersedes, rather than
-rewrites, the historical v10 map. The 42 stable product identifiers are
-unchanged. V11 retains separate support rows for control authorization,
+`task-plans/linked-data-store-g0-g4-2026-08-28-v12`; it supersedes, rather than
+rewrites, the historical v11 map. The 42 stable product identifiers are
+unchanged. V12 retains separate support rows for control authorization,
 control owner/replay, final-decision binding, benchmark owner/replay, G1.4b
 receipt binding, Darwin-free legacy dispatch, the v6 statistics contract,
-upstream `ec68e3dd` reconciliation, and this governance synchronization.
+completed upstream `ec68e3dd` reconciliation, post-merge G1.7 resealing, and
+this governance synchronization.
 Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
@@ -425,16 +436,20 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
-governance task `task-1787885074292-neafw8` records this synchronization. The
-control owner, final human decision, benchmark owner, and audited upstream
-merge remain open. Evidence checkpoints
+governance task `task-1787885074292-neafw8` records the pre-merge v6
+synchronization. Upstream task `task-1787883108007-gik9bz` is complete at
+audited merge `e9d2db1b`; reseal task `task-1787888366495-gzxbhe` is pending.
+The control owner, final human decision, and benchmark owner remain open.
+Evidence checkpoints
 are stored under `programme-evidence/g14a-store-terminal-outcomes-2f518e04`,
 `programme-evidence/g14b-harness-qualified-2026-08-28`, and
 `programme-evidence/g17-v4-fail-closed-core-f1cb6680-2026-08-28`, with the
 current protocol proof at
 `programme-evidence/g17-v5-control-protocol-main-0257587e-2026-08-28` and the
 v6 proof at
-`programme-evidence/g17-v6-statistics-protocol-main-799307fb-2026-08-28`.
+`programme-evidence/g17-v6-statistics-protocol-main-799307fb-2026-08-28`, with
+the merge proof at
+`programme-evidence/upstream-ec68e3dd-merged-e9d2db1b-2026-08-28`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
@@ -632,6 +647,10 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   G1.7 run. This is protocol and negative-gate evidence only: it contains no
   human approval, control receipt, benchmark, performance result, qualification,
   or promotion.
+- audited upstream merge `e9d2db1b` with exact-tree Rust, Python, workflow, and
+  409/0/2 harness evidence. It retains ADR-0014's selected-missing `POST=404`
+  divergence and changes the current subject/lock identity, so it requires a
+  new pure reseal before Phase A and supplies no live qualification evidence.
 
 ## Decision boundary
 

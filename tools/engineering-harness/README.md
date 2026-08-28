@@ -127,6 +127,12 @@ Current activation boundary:
   5% MAD noise boundary, and mechanical FAIL/INCONCLUSIVE/PASS precedence. Its
   pure replay is differential-tested against the exact installed Darwin 0.9.3
   source modules; it is not a live control run or receipt;
+- upstream merge `e9d2db1b` is exact-tree audited and leaves this package at
+  409 passing, zero failing, and two intentional live-host skips. It changes
+  the current product and `Cargo.lock` identities, so task
+  `task-1787888366495-gzxbhe` must pure-reseal the G1.7 subject and proposed
+  authorization before Phase A. Existing v6 bytes remain protocol fixtures and
+  grant no execution authority;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v6 adds an exact `candidateRejections` collection and

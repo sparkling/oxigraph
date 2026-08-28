@@ -26,6 +26,15 @@ capability or as blanket W3C-family conformance.
 
 Published extension documentation: <https://sparkling.github.io/oxigraph/>.
 
+The current upstream synchronization checkpoint is merge commit
+`e9d2db1b7c4eb974b406136e667e09ba06e34b48` (tree
+`fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`), whose ordered parents are fork
+checkpoint `b295ea80...` and upstream `ec68e3dd...`. It adopts upstream's
+atomic Graph Store `PUT` regression, quick-xml 0.42, and Python 3.9/abi3-py39
+support changes while retaining the fork's stricter XML validation and QA
+lanes. ADR-0014 deliberately keeps `POST` to a selected missing named graph at
+`404 Not Found`; selector-less `POST` creation remains supported.
+
 ## Upstream Oxigraph
 
 Oxigraph is both a graph database and a [RDF](https://www.w3.org/TR/rdf11-primer/) and [SPARQL](https://www.w3.org/TR/sparql11-overview/) toolkit.
@@ -208,6 +217,13 @@ canonical control receipt is available and replayed. There are no current G1.7
 samples, control receipt, benchmark results, sealed qualification receipt,
 qualification, or promotion decision.
 
+The audited upstream merge `e9d2db1b...` changes the current tracked subject
+and `Cargo.lock` identity. The exact v6 protocol/statistics bytes above remain
+valid pure and historical fixtures, but they are not a Phase-A-ready identity
+for the merged product. Ruflo task `task-1787888366495-gzxbhe` must reseal the
+subject, lockfile, evaluator compositions, and proposed authorization through
+the pure replay boundary before any human control authorization is requested.
+
 Contract v6 freezes canonical authorization-bound sample-set bytes and their
 ordered SHA-256 identity, paired 10% log non-inferiority for the negative
 control, two one-sided paired 5% A/A equivalence directions with one shared
@@ -269,9 +285,10 @@ G0.7's earlier reconciliation remains historical after the schema-v5 contract
 change and these protected-document edits; root `README.md` remains part of the
 MetaHarness protected snapshot. Full MetaHarness semantic qualification, its
 independent verification, and the separate G1.7 compatibility/performance
-promotion gate remain open. At pre-documentation head `799307fb`, contract-v6
-execution is `INCONCLUSIVE`: control authorization and the final decision set
-are proposed/unapproved, all semantic, compatibility, and benchmark stages are
+promotion gate remain open. At upstream-merged pre-documentation head
+`e9d2db1b`, contract-v6 execution remains `INCONCLUSIVE`: control authorization
+and the final decision set are proposed/unapproved, the merged subject has not
+been pure-resealed, all semantic, compatibility, and benchmark stages are
 `NOT_RUN`, canonical control-receipt replay and production execution owners are
 absent, and `run` exits 4 before identity or tracked-tree inspection. The
 umbrella claim is still withheld.

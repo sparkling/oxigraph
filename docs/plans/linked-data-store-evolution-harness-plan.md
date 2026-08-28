@@ -4,12 +4,15 @@
 - Date: 2026-08-24
 - Updated: 2026-08-28
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
-- Upstream baseline: `oxigraph/oxigraph`
+- Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
-- Fetched upstream head pending a separate audited merge:
+- Audited upstream head:
   `ec68e3ddb2e73470ae5940c44709e041762afa41`
+- Audited two-parent upstream merge/tree:
+  `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
+  `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
 - Observed fork source before this documentation slice:
-  `799307fb8b7ac7f359068c59e552ab7147363981`
+  `e9d2db1b7c4eb974b406136e667e09ba06e34b48`
 - Semantic Builder handover reviewed against:
   `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
@@ -56,6 +59,11 @@ control/qualification execution owners are absent. Human Phase A approval and se
 controls must precede Phase B's final decision set and subject/reference
 qualification. Full MetaHarness semantic qualification, its independent
 verification, G1.7 qualification, and separate human promotion remain open.
+Audited upstream merge `e9d2db1b` leaves those protocol fixtures exact but
+changes the current subject and lockfile identity. Pure reseal task
+`task-1787888366495-gzxbhe` is therefore a new pre-Phase-A gate; it authorizes
+no provider, control, sample, benchmark, qualification, promotion, or
+publication execution.
 Darwin may improve frozen harness policy only. Dream Machine 0.1.1 is
 installed and locally exercised, but it is not configured, scheduled, or
 authorized to publish because its current config cannot enforce this
@@ -891,8 +899,9 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | G1.7 claims/documentation audit            | `task-1787780431763-1cqm80`                                                                                                                         | Read-only review completed for the earlier v1/v2 boundary; the follow-on contract-v2/compatibility-v3 native-owner wording is reconciled in this slice |
 | G1.7 v4 core / integration / legacy repair | `task-1787869267480-t4j9c8` / `task-1787872420656-oeaphy` / `task-1787874829121-tag4ud`                                                             | Complete historical v4 policy/statistics and live gate; subsequent dispatch preserves Darwin-free v1/v3/v4 replay; no samples or promotion authority   |
 | G1.7 two-phase owner programme             | `task-1787875911749-oh5io9` / `task-1787875912935-c2bi69` / `task-1787875914136-aw7onh` / `task-1787875915280-otfrw9`                               | V6 protocol/statistics implementation complete; human approvals, sealed control owner/receipt/replay, final approval, and qualification owner remain   |
-| G1.7 prerequisite / legacy / governance    | `task-1787875916428-3vb8m7` / `task-1787875917561-6s54e3` / `task-1787875918734-1sjl6c` / `task-1787882542649-y8dttl` / `task-1787885074292-neafw8` | Exact G1.4b binding, Darwin-free legacy dispatch, v6 statistics, and v11 governance synchronization complete at the pure-contract boundary             |
-| Upstream `ec68e3dd` reconciliation         | `task-1787883108007-gik9bz`                                                                                                                         | Read-only high-risk audit complete; isolated merge, manual conflict resolution, source/harness/Python proof, and baseline update remain                |
+| G1.7 prerequisite / legacy / governance    | `task-1787875916428-3vb8m7` / `task-1787875917561-6s54e3` / `task-1787875918734-1sjl6c` / `task-1787882542649-y8dttl` / `task-1787885074292-neafw8` | Exact G1.4b binding, Darwin-free legacy dispatch, v6 statistics, and pre-merge v11 governance synchronization complete at the pure-contract boundary   |
+| Upstream `ec68e3dd` reconciliation         | `task-1787883108007-gik9bz`                                                                                                                         | Complete at audited merge `e9d2db1b`; exact-tree Rust/Python/workflow/harness audit passes; ADR-0014 selected-missing `POST=404` retained              |
+| G1.7 post-upstream pure reseal             | `task-1787888366495-gzxbhe`                                                                                                                         | Pending; reseal subject/lock/evaluator/proposed-authorization identities before Phase A, with no live execution authority                              |
 
 The three G1.7 reviews ran under reviewer swarm
 `swarm-1787778496656-aq8q1c`. They are adversarial control review, not product
@@ -943,16 +952,17 @@ roll-up rows remain outside that count. G1.4b raised the total to 42 on
 | G4.6 / G4.7 / G4.8                                                      | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53`                                                             |
 
 The original exact map remains at
-`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v10 maps remain
-historical audit records. The current v11 map is stored and exactly read back
+`task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v11 maps remain
+historical audit records. The current v12 map is stored and exactly read back
 through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v11`. It preserves all 42 stable
+`task-plans/linked-data-store-g0-g4-2026-08-28-v12`. It preserves all 42 stable
 plan identifiers, records G1.4a-G1.4b, corrected replacement G1.7, G3.0, and
 the earlier replacement rows, and includes the
 non-product `HARNESS-REGISTRY`, rejection-evidence, and
 `AGENTIC-SCHEMA-V5-REFRESH` controls. It additionally records the G1.7
-two-phase owner/governance, v6 statistics, upstream merge, and v11 governance
-support rows without changing the stable count.
+two-phase owner/governance, v6 statistics, completed upstream merge, pending
+post-merge pure reseal, and governance support rows without changing the stable
+count.
 Superseded pending rows are cancelled but retained as runtime history.
 
 The source-grounded current native `task_create` schema persists descriptions,
@@ -963,7 +973,7 @@ sequentially and dependencies are encoded as `depends:<plan-id>` tags and in
 each description.
 Those task IDs and descriptions are audit pointers; cancelled and superseded
 historical rows remain part of runtime history and can be stale. Stable
-G-identifiers, this committed GOAP graph, and the exactly read-back v11 Ruflo
+G-identifiers, this committed GOAP graph, and the exactly read-back v12 Ruflo
 task map remain authoritative. Ruflo's separate
 domain task entity models dependencies, but this plan does not claim that the
 current MCP task surface enforces them.

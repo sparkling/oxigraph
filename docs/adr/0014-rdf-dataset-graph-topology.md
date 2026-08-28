@@ -2,12 +2,14 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-27
-- Updated: 2026-08-24
+- Updated: 2026-08-28
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
 - Update note: the public transactional write seam now requires independent
   persistence planes to preserve empty named-graph topology and graph lifecycle.
+  Audited upstream merge `e9d2db1b` retains this ADR's selected-graph `POST`
+  lifecycle rather than adopting upstream `ec68e3dd` creation semantics.
 - **Related**:
   [ADR-0006 — W3C-first RDF, SPARQL, and SHACL 1.2 parity](0006-w3c-first-12-parity.md),
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
@@ -156,7 +158,9 @@ existence from the store registry, not from whether a quad can be read.
   is not found.
 - `PUT` replaces the selected graph and creates or retains its graph slot even
   when the valid RDF graph payload contains no triples.
-- `POST` merges into an existing selected graph. For selector-less Graph Store
+- `POST` merges into an existing selected graph and returns `404 Not Found`
+  without allocating graph membership when that selected named graph is
+  missing. This is an intentional fork contract. For selector-less Graph Store
   requests, Oxigraph applies
   [Graph Store Protocol §5.5 HTTP POST](https://www.w3.org/TR/sparql12-graph-store-protocol/#http-post)
   by returning `204 No Content` and allocating nothing for a zero-length
@@ -167,6 +171,12 @@ existence from the store registry, not from whether a quad can be read.
 - `DELETE` removes selected named-graph membership and its quads.
 - Mutations are transactional by default, including graph allocation and RDF
   parsing, so a failed request cannot leak an empty graph.
+
+Upstream commit `ec68e3dd` instead creates a missing selected graph on `POST`.
+The audited two-parent merge `e9d2db1b` records that ancestry but deliberately
+rejects that hunk. Focused handler and wire tests bind missing-selected `POST`
+to `404`, existing-selected `POST` to `204 No Content`, and selector-less
+creation independently.
 
 The selector-less dataset `GET`, `HEAD`, `PUT`, and `DELETE` routes are
 documented Oxigraph extensions rather than Graph Store Protocol conformance
@@ -222,16 +232,16 @@ preservation is its chosen W3C-grounded contract.
 
 ## Evidence
 
-| Surface | Implementation and focused evidence |
-|---|---|
-| Model | [Dataset implementation](../../lib/oxrdf/src/dataset.rs) and [topology tests](../../lib/oxrdf/tests/dataset_topology.rs) |
-| TriG and JSON-LD | [TriG implementation](../../lib/oxttl/src/trig.rs), [JSON-LD parser tests](../../lib/oxjsonld/tests), and [format-neutral topology tests](../../lib/oxrdfio/tests) |
+| Surface               | Implementation and focused evidence                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model                 | [Dataset implementation](../../lib/oxrdf/src/dataset.rs) and [topology tests](../../lib/oxrdf/tests/dataset_topology.rs)                                                                                                                                                                                                                                                                                                             |
+| TriG and JSON-LD      | [TriG implementation](../../lib/oxttl/src/trig.rs), [JSON-LD parser tests](../../lib/oxjsonld/tests), and [format-neutral topology tests](../../lib/oxrdfio/tests)                                                                                                                                                                                                                                                                   |
 | Store and persistence | [Store implementation](../../lib/oxigraph/src/store.rs), [transactional write traits](../../lib/oxigraph/src/store/transactional.rs), [memory backend](../../lib/oxigraph/src/storage/memory.rs), [RocksDB backend](../../lib/oxigraph/src/storage/rocksdb.rs), [store topology tests](../../lib/oxigraph/tests/dataset_topology.rs), and [replacement-backend transaction tests](../../lib/oxigraph/tests/transactional_dataset.rs) |
-| Reasoning | [Reasoning adapter](../../lib/oxigraph/src/reasoning.rs) and [reasoning tests](../../lib/oxigraph/tests/reasoning.rs) |
-| SPARQL `LOAD` | [Update implementation](../../lib/oxigraph/src/sparql/update.rs) and [`LOAD` HTTP tests](../../lib/oxigraph/tests/sparql_update_load_http.rs) |
-| Graph Store | [HTTP handler](../../cli/src/graph_store.rs), [representation layer](../../cli/src/graph_store/representation.rs), [general HTTP tests](../../cli/src/graph_store_http_tests.rs), and [disk-backed read-only regression](../../cli/src/graph_store_read_only_tests.rs) |
-| Python | [Dataset and I/O topology tests](../../python/tests/test_dataset_topology.py) |
-| JavaScript | [Store topology tests](../../js/test/store.test.ts) |
+| Reasoning             | [Reasoning adapter](../../lib/oxigraph/src/reasoning.rs) and [reasoning tests](../../lib/oxigraph/tests/reasoning.rs)                                                                                                                                                                                                                                                                                                                |
+| SPARQL `LOAD`         | [Update implementation](../../lib/oxigraph/src/sparql/update.rs) and [`LOAD` HTTP tests](../../lib/oxigraph/tests/sparql_update_load_http.rs)                                                                                                                                                                                                                                                                                        |
+| Graph Store           | [HTTP handler](../../cli/src/graph_store.rs), [representation layer](../../cli/src/graph_store/representation.rs), [general HTTP tests](../../cli/src/graph_store_http_tests.rs), and [disk-backed read-only regression](../../cli/src/graph_store_read_only_tests.rs)                                                                                                                                                               |
+| Python                | [Dataset and I/O topology tests](../../python/tests/test_dataset_topology.py)                                                                                                                                                                                                                                                                                                                                                        |
+| JavaScript            | [Store topology tests](../../js/test/store.test.ts)                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## Consequences
 

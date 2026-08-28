@@ -70,6 +70,14 @@ sealed negative/A/A receipt must precede the final reference/performance/noise
 decision and subject benchmark. No current receipt, samples, benchmark result,
 qualification, or promotion exists, so G1.7 and ADR-0018 remain open.
 
+Audited two-parent merge `e9d2db1b` records upstream `ec68e3dd` as an ancestor
+while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
+strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
+workflow, and 409/0/2 engineering-harness evidence passes. The merge changes
+the current tracked subject and `Cargo.lock`, so the v6 protocol fixtures must
+be pure-resealed before Phase A; it creates no control, benchmark,
+qualification, promotion, publication, or push authority.
+
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);
 its entries distinguish historical sealed-subject evidence from current-HEAD
