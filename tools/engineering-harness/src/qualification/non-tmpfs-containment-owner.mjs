@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 
 import {
@@ -52,6 +53,7 @@ const MAX_ARRAY_LENGTH = 4_096;
 const MAX_OBJECT_PROPERTIES = 4_097;
 const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const MAX_STRING_BYTES = 16 * 1024 * 1024;
+const FAILURE_CLEANUP_TIMEOUT_MS = 2_000;
 const liveCapabilities = new WeakMap();
 // Deliberately strong: if a worker promise never returned, or descendant
 // quiescence could not be established, releasing the session or deleting its
@@ -553,6 +555,32 @@ function throwIfAborted(signal) {
   }
 }
 
+function awaitOperationOrAbort(operation, signal) {
+  if (signal === undefined) return Promise.resolve(operation);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (action, value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      action(value);
+    };
+    const abort = () => {
+      const reason =
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("containment owner operation was cancelled");
+      finish(reject, reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    Promise.resolve(operation).then(
+      (value) => finish(resolve, value),
+      (error) => finish(reject, error),
+    );
+  });
+}
+
 function issueCapability({ expected, mechanics, signal, clock, authorization }) {
   const capability = Object.freeze({
     schema: G17_NON_TMPFS_CONTAINMENT_OWNER_CAPABILITY_SCHEMA,
@@ -944,7 +972,33 @@ function encodeEvidence(evidence, expected) {
 
 async function attemptCleanup(state, action, errors) {
   try {
-    await action();
+    if (state.failureCleanupDeadline === undefined) {
+      state.failureCleanupDeadline =
+        performance.now() + FAILURE_CLEANUP_TIMEOUT_MS;
+    }
+    const remaining = Math.max(
+      1,
+      Math.ceil(state.failureCleanupDeadline - performance.now()),
+    );
+    let timeout;
+    try {
+      await Promise.race([
+        Promise.resolve().then(action),
+        new Promise((_, reject) => {
+          timeout = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "containment failure cleanup exceeded its bounded deadline",
+                ),
+              ),
+            remaining,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (error) {
     errors.push(error);
   }
@@ -954,6 +1008,10 @@ async function failureCleanup(state) {
   const errors = [];
   const { mechanics, signal } = state;
   if (state.session !== undefined && state.workerStarted && !state.workerFinished) {
+    // Establish the recovery root before invoking any helper that may itself
+    // ignore cancellation or never settle.
+    state.retainedUnsafe = true;
+    preservedUnsafeContainmentSessions.add(state);
     await attemptCleanup(
       state,
       () => mechanics.cancelWorker({ session: state.session, signal: undefined }),
@@ -980,8 +1038,6 @@ async function failureCleanup(state) {
         errors,
       );
     }
-    state.retainedUnsafe = true;
-    preservedUnsafeContainmentSessions.add(state);
     errors.push(
       new Error(
         "worker direct close/reap is unproved; containment session retained without cleanup",
@@ -995,15 +1051,26 @@ async function failureCleanup(state) {
     state.preparationAttempted &&
     !state.quiesced
   ) {
-    try {
-      normalizeQuiescence(
-        await mechanics.quiesce({ session: state.session, signal: undefined }),
-      );
+    // Quiescence is the only fact that can make destructive failure cleanup
+    // safe after a returned worker. Retain provisionally before probing it.
+    state.retainedUnsafe = true;
+    preservedUnsafeContainmentSessions.add(state);
+    const priorErrorCount = errors.length;
+    let quiescence;
+    await attemptCleanup(
+      state,
+      async () => {
+        quiescence = normalizeQuiescence(
+          await mechanics.quiesce({ session: state.session, signal: undefined }),
+        );
+      },
+      errors,
+    );
+    if (errors.length === priorErrorCount && quiescence !== undefined) {
       state.quiesced = true;
-    } catch (error) {
-      errors.push(error);
-      state.retainedUnsafe = true;
-      preservedUnsafeContainmentSessions.add(state);
+      state.retainedUnsafe = false;
+      preservedUnsafeContainmentSessions.delete(state);
+    } else {
       errors.push(
         new Error(
           "cgroup quiescence is unproved; containment session retained without cleanup",
@@ -1085,6 +1152,7 @@ async function executeOwner(capability, captured) {
     releaseAttempted: false,
     closeAttempted: false,
     retainedUnsafe: false,
+    failureCleanupDeadline: undefined,
     deadlineTimer: undefined,
   };
   let primary;
@@ -1272,40 +1340,49 @@ async function executeOwner(capability, captured) {
     let workerBeforeAt;
     let workerAfterAt;
     state.workerStarted = true;
-    const workerOutcome = await mechanics.runWorker({
-      session: state.session,
-      expected,
-      cgroupPath,
-      signal: operationSignal,
-      observeBefore: async (facts) => {
-        if (workerBefore !== undefined || workerAfter !== undefined) {
-          fault("worker", "worker-before observation was duplicated or reordered");
-        }
-        workerBeforeAt = instant(clock, "worker-before");
-        workerBefore = buildObservation(
-          facts,
-          "worker-before",
-          workerBeforeAt.text,
-          leaseId,
-          expected,
-        );
-        withinWall(acquiredAt, workerBeforeAt, expected.limits.totalWallMs);
-      },
-      observeAfter: async (facts) => {
-        if (workerBefore === undefined || workerAfter !== undefined) {
-          fault("worker", "worker-after observation was missing or reordered");
-        }
-        workerAfterAt = instant(clock, "worker-after");
-        workerAfter = buildObservation(
-          facts,
-          "worker-after",
-          workerAfterAt.text,
-          leaseId,
-          expected,
-        );
-        withinWall(acquiredAt, workerAfterAt, expected.limits.totalWallMs);
-      },
-    });
+    // Retain before the call: a mechanics implementation may ignore its
+    // AbortSignal and never settle. The deadline race lets the owner return a
+    // typed failure while the underlying operation remains rooted for future
+    // native recovery.
+    state.retainedUnsafe = true;
+    preservedUnsafeContainmentSessions.add(state);
+    const workerOutcome = await awaitOperationOrAbort(
+      mechanics.runWorker({
+        session: state.session,
+        expected,
+        cgroupPath,
+        signal: operationSignal,
+        observeBefore: async (facts) => {
+          if (workerBefore !== undefined || workerAfter !== undefined) {
+            fault("worker", "worker-before observation was duplicated or reordered");
+          }
+          workerBeforeAt = instant(clock, "worker-before");
+          workerBefore = buildObservation(
+            facts,
+            "worker-before",
+            workerBeforeAt.text,
+            leaseId,
+            expected,
+          );
+          withinWall(acquiredAt, workerBeforeAt, expected.limits.totalWallMs);
+        },
+        observeAfter: async (facts) => {
+          if (workerBefore === undefined || workerAfter !== undefined) {
+            fault("worker", "worker-after observation was missing or reordered");
+          }
+          workerAfterAt = instant(clock, "worker-after");
+          workerAfter = buildObservation(
+            facts,
+            "worker-after",
+            workerAfterAt.text,
+            leaseId,
+            expected,
+          );
+          withinWall(acquiredAt, workerAfterAt, expected.limits.totalWallMs);
+        },
+      }),
+      operationSignal,
+    );
     const workerExit = normalizeWorkerExit(workerOutcome);
     // This flag means more than a resolved mechanics promise: the exact
     // observation above proves spawn, exit, close/reap, both stream EOFs,
@@ -1330,12 +1407,17 @@ async function executeOwner(capability, captured) {
     withinWall(acquiredAt, controllerAfterAt, expected.limits.totalWallMs);
 
     const quiescenceFacts = normalizeQuiescence(
-      await mechanics.quiesce({
-        session: state.session,
-        signal: operationSignal,
-      }),
+      await awaitOperationOrAbort(
+        mechanics.quiesce({
+          session: state.session,
+          signal: operationSignal,
+        }),
+        operationSignal,
+      ),
     );
     state.quiesced = true;
+    state.retainedUnsafe = false;
+    preservedUnsafeContainmentSessions.delete(state);
     const quiescedAt = instant(clock, "quiescence");
     withinWall(acquiredAt, quiescedAt, expected.limits.totalWallMs);
     throwIfAborted(operationSignal);

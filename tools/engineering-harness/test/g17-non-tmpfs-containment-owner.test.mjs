@@ -256,6 +256,81 @@ test("the live wall deadline aborts a cooperative hung worker before cleanup", a
   assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
 });
 
+test("the live wall deadline retains a worker that ignores cancellation", async () => {
+  const base = g17ContainmentOwnerExpected();
+  const expected = g17ContainmentOwnerExpected({
+    limits: { ...base.limits, totalWallMs: 1_000 },
+  });
+  const fake = createG17ContainmentFakeMechanics({ expected });
+  fake.mechanics.runWorker = async () => {
+    fake.log.push("runWorker:noncooperative");
+    return new Promise(() => {});
+  };
+  const { capability } = await testCapability({ expected, fake });
+  const started = performance.now();
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return (
+        error instanceof G17NonTmpfsContainmentOwnerFault &&
+        error.phase === "timeout"
+      );
+    },
+  );
+  assert.ok(performance.now() - started < 2_500);
+  assert.deepEqual(fake.log.slice(-3), [
+    "runWorker:noncooperative",
+    "cancelWorker",
+    "quiesce",
+  ]);
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
+});
+
+test("noncooperative failure cleanup is itself bounded after retention", async () => {
+  const expected = g17ContainmentOwnerExpected();
+  const fake = createG17ContainmentFakeMechanics({
+    expected,
+    failAt: "runWorker",
+  });
+  fake.mechanics.cancelWorker = async () => {
+    fake.log.push("cancelWorker:noncooperative");
+    return new Promise(() => {});
+  };
+  fake.mechanics.quiesce = async () => {
+    fake.log.push("quiesce:noncooperative");
+    return new Promise(() => {});
+  };
+  const { capability } = await testCapability({ expected, fake });
+  const started = performance.now();
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return /synthetic runWorker failure/u.test(error.message);
+    },
+  );
+  assert.ok(performance.now() - started < 3_000);
+  assert.deepEqual(fake.log.slice(-2), [
+    "cancelWorker:noncooperative",
+    "quiesce:noncooperative",
+  ]);
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(
+    observed.cleanupErrors.join("\n"),
+    /bounded deadline[\s\S]*retained without cleanup/u,
+  );
+});
+
 test("worker failure retains the session when direct close/reap is unproved", async () => {
   const expected = g17ContainmentOwnerExpected();
   const fake = createG17ContainmentFakeMechanics({ expected, failAt: "runWorker" });
@@ -539,6 +614,7 @@ test("the recursive static and dynamic owner import closure is narrow", async ()
   assert.deepEqual([...closure.builtins].sort(), [
     "node:crypto",
     "node:fs/promises",
+    "node:perf_hooks",
     "node:util",
   ]);
   const source = [...closure.sources.values()].join("\n");
