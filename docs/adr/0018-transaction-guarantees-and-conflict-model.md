@@ -23,8 +23,10 @@
   decision validation and paired statistics. Exact G1.4b prerequisite binding
   and pure Darwin-free v1/v3/v4/v5/v6 replay are implemented and fail closed.
   Pure benchmark-owner and bounded canonical control-receipt candidate replay
-  are also implemented, but production control/build/sample owner emission,
-  the physical write-once control envelope and its sealed replay, and a current
+  are also implemented. Commit `fbbb692b` adds the separate physical write-once
+  receipt-last control envelope and exact current-state sealed replay while
+  granting no authority and exposing only a prospective binding from replayed
+  PASS. Production control/build/sample owner emission and a current control or
   qualification receipt are not implemented. Human control approval, final
   reference/budgets, benchmark/noise evidence, current owner evidence,
   qualification, and promotion remain outstanding
@@ -299,8 +301,12 @@ identity, evidence, build, or sampling and writes no G1.7 run. Pure commits
 control-receipt candidate. That result is deliberately `CANDIDATE_REPLAYED`,
 with `binding: null`, `finalDecisionEligible: false`, and all authority flags
 false. A final binding keeps qualification execution false until the candidate
-has passed physical sealed-envelope replay. These tests prove replay behavior
-over synthetic fixtures, not production owner emission or filesystem sealing.
+has been emitted by a live owner, physically sealed and replayed, and bound by
+the approved final decision. Commit `fbbb692b` proves exact three-file archive
+creation and current-state replay over synthetic fixtures; seal emits no
+binding, and all authority remains false. It does not prove live owner emission,
+historical receipt-last order from replay, crash/power-loss/filesystem-flush
+durability, or same-UID tamper resistance.
 Legacy v1/v3/v4/v5/v6 contract bytes replay through a Darwin-free structural
 boundary and remain legacy-only.
 
@@ -314,8 +320,8 @@ receipt, its observed signature, and the exact G1.4b prerequisite before any
 subject/reference samples. The G1.4b receipt is now copied, hash-bound, and
 pure-replayed at that prerequisite boundary, but no human approval, physically
 sealed control receipt, live benchmark, performance result, or current owner
-evidence exists. The statistics and candidate-receipt implementations are pure
-replay over synthetic fixtures, not a live control run. ADR-0018 therefore
+evidence exists. The statistics, candidate-receipt, and physical archive
+implementations use synthetic fixtures, not a live control run. ADR-0018 therefore
 remains Proposed. The transaction identifiers are
 G1.1-G1.5c plus G1.4a-G1.4b; G1.7 is the joint compatibility/performance
 qualification gate in the

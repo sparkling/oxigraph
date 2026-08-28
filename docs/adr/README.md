@@ -62,7 +62,12 @@ commits `d3af2e17` and `45121da9` replay four isolated builds, two serialized
 sessions, 392 exact launches, recomputed Darwin statistics, and a bounded
 canonical control-receipt candidate. The replay is intentionally
 `CANDIDATE_REPLAYED`, with no final binding or execution authority; it is not
-current production owner emission or physical envelope sealing.
+current production owner emission. Commit `fbbb692b` separately implements the
+exact write-once, receipt-last physical envelope and current-state replay. Seal
+returns no binding; only replayed PASS can yield a prospective binding, and all
+authority remains false. The physical result explicitly does not claim crash,
+power-loss, filesystem-flush durability, replay proof of historical
+receipt-last order, or same-UID tamper resistance.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
 built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
@@ -81,13 +86,13 @@ while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
 workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
 reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7;
-the full current harness suite passes 444/0/2. That pure identity and candidate
-replay control creates no live control, benchmark, qualification, promotion,
-publication, or push authority.
-Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v14` preserves the 42
-stable product tasks and records corrected G1.7 at 55%. Pure candidate task
+the full current harness suite passes 466/0/3. Neither that pure identity nor
+the physical archive capability creates a live control, benchmark,
+qualification, promotion, publication, or push authority.
+Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v15` preserves the 42
+stable product tasks and records corrected G1.7 at 60%. Pure candidate task
 `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
-`task-1787896401667-xookiy` remains pending.
+`task-1787896401667-xookiy` is complete in `fbbb692b`.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);
