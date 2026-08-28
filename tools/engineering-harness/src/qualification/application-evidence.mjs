@@ -32,6 +32,12 @@ import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
 } from "./evidence-contract.mjs";
+import {
+  G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  g17G14bPrerequisiteProjectionSha256,
+  inspectG17G14bPrerequisite,
+  replayG17G14bPrerequisite,
+} from "./g14b-prerequisite.mjs";
 import { runG17NativeApplication } from "./native-application.mjs";
 import { repositoryRoot } from "../paths.mjs";
 
@@ -477,20 +483,59 @@ export async function inspectG17SemanticEvidence({
 }
 
 export async function collectG17CompatibilityEvidence(options) {
-  const [agenticQe, native] = await Promise.all([
+  const [agenticQe, native, g14bPrerequisite] = await Promise.all([
     inspectG17AgenticEvidence(options),
     runG17NativeCompatibility(options),
+    inspectG17G14bPrerequisite({
+      receiptPath: options.g14bApplicationReceiptPath,
+    }),
   ]);
-  return combineG17CompatibilityEvidence({ agenticQe, native });
+  return combineG17CompatibilityEvidence({
+    agenticQe,
+    native,
+    g14bPrerequisite,
+  });
 }
 
-export function combineG17CompatibilityEvidence({ agenticQe, native }) {
+function replayAcceptedG14bPrerequisite(evidence) {
+  if (evidence?.status !== "PASS") return evidence;
+  if (
+    !Array.isArray(evidence.artifacts) ||
+    evidence.artifacts.length !== 1 ||
+    evidence.artifacts[0]?.name !== G17_G14B_PREREQUISITE_ARTIFACT_NAME ||
+    !Buffer.isBuffer(evidence.artifacts[0]?.bytes)
+  ) {
+    throw new Error("G1.7 G1.4b prerequisite PASS artifact is incomplete");
+  }
+  const projection = replayG17G14bPrerequisite({
+    receiptBytes: evidence.artifacts[0].bytes,
+  });
+  if (
+    !isDeepStrictEqual(projection, evidence.projection) ||
+    evidence.sha256 !== g17G14bPrerequisiteProjectionSha256(projection) ||
+    evidence.reasons?.length !== 0
+  ) {
+    throw new Error("G1.7 G1.4b prerequisite PASS projection drifted");
+  }
+  return evidence;
+}
+
+export function combineG17CompatibilityEvidence({
+  agenticQe,
+  native,
+  g14bPrerequisite = inspectG17G14bPrerequisite(),
+}) {
+  const acceptedG14b = replayAcceptedG14bPrerequisite(g14bPrerequisite);
   const status =
     native.status === "FAIL"
       ? "FAIL"
-      : agenticQe.status === "PASS" && native.status === "PASS"
+      : agenticQe.status === "PASS" &&
+          native.status === "PASS" &&
+          acceptedG14b.status === "PASS"
         ? "PASS"
-        : agenticQe.status === "STALE" || native.status === "STALE"
+        : agenticQe.status === "STALE" ||
+            native.status === "STALE" ||
+            acceptedG14b.status === "STALE"
           ? "STALE"
           : "MISSING";
   const projection = {
@@ -498,13 +543,24 @@ export function combineG17CompatibilityEvidence({ agenticQe, native }) {
     status,
     agenticQe: agenticQe.projection,
     native: native.projection,
-    applicationReceipts: [],
+    applicationReceipts:
+      acceptedG14b.status === "PASS"
+        ? Object.freeze([acceptedG14b.projection])
+        : Object.freeze([]),
   };
   return Object.freeze({
     status,
     sha256: canonicalSha256(projection),
-    reasons: Object.freeze([...agenticQe.reasons, ...native.reasons]),
+    reasons: Object.freeze([
+      ...agenticQe.reasons,
+      ...native.reasons,
+      ...acceptedG14b.reasons,
+    ]),
     projection: Object.freeze(projection),
-    artifacts: Object.freeze([...agenticQe.artifacts, ...native.artifacts]),
+    artifacts: Object.freeze([
+      ...agenticQe.artifacts,
+      ...native.artifacts,
+      ...acceptedG14b.artifacts,
+    ]),
   });
 }
