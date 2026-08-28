@@ -77,7 +77,15 @@ with exact held source/tool/output ancestry, raw streams, executable bytes, and
 ELF identity. Production build begin/finish, native containment mechanics, and
 live build/control/sample owners remain unavailable. The source projection is
 authority-free; the containment/build/product replay projections are also
-binding-null and final-decision-ineligible.
+binding-null and final-decision-ineligible. Commits `13afa94d` and `3f8951e3`
+freeze and harden canonical execution-request v1 bytes; because those bytes
+bind isolation policy v1, they are permanently launch-ineligible. Commit
+`8b2c6366` adds exact-linked, replay-only process-evidence v3 over the request,
+containment, raw Cargo JSONL, cgroup terminal observations, and held target ELF.
+It remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with `binding: false` and no
+authority.
+The successor policy/request, attested native `execveat` helper and bounded
+status protocol, private issuer, and containment v2 remain open.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
 built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
@@ -96,19 +104,21 @@ while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
 workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
 reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7;
-the full current harness suite passes 593/0/3. The later authority-free G1.7
+the full current harness suite passes 621/0/3. The later authority-free G1.7
 mechanics now include replay-only build owner v2 (`3688ccda`), the frozen exact
 non-tmpfs mount-namespace mapping policy (`da41d7e0`), bounded destructive
-cleanup (`3b289522`), and the POSIX raw-byte process supervisor (`c5050e9c`).
+cleanup (`3b289522`), the POSIX raw-byte process supervisor (`c5050e9c`),
+execution-request v1 (`13afa94d`/`3f8951e3`), and replay-only process-evidence
+v3 (`8b2c6366`).
 Neither that pure identity nor
 the physical archive capability creates a live control, benchmark,
 qualification, promotion, publication, or push authority.
 Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v15` preserves the 42
 stable product tasks and its historical corrected-G1.7 checkpoint at 60%.
-The current G1.7 row is 67%. Pure candidate task
+The current G1.7 row is 69%. Pure candidate task
 `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
 `task-1787896401667-xookiy` is complete in `fbbb692b`. Workspace/build-owner
-task `task-1787902127894-7n7vk3` remains in progress at 82%, and containment
+task `task-1787902127894-7n7vk3` remains in progress at 86%, and containment
 task `task-1787902138074-0w648x` remains in progress at 88%.
 
 The authoritative claim and freshness state is

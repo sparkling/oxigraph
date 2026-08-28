@@ -331,6 +331,15 @@ creation and current-state replay over synthetic fixtures; seal emits no
 binding, and all authority remains false. It does not prove live owner emission,
 historical receipt-last order from replay, crash/power-loss/filesystem-flush
 durability, or same-UID tamper resistance.
+Authority-free commits `13afa94d` and `3f8951e3` freeze and harden canonical
+execution-request v1 bytes, but that request permanently binds isolation policy
+v1 and is explicitly ineligible for physical launch. Commit `8b2c6366` adds
+replay-only process-evidence v3 over exact request, containment, Cargo JSONL,
+cgroup terminal-state, and held-target-ELF inputs. Its result remains
+`SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with physical execution, binding, and all
+authority false. It cannot replace the still-missing successor isolation and
+request contract, attested native `execveat` Cargo launcher, bounded helper
+status protocol, private co-located issuer, or containment v2.
 Legacy v1/v3/v4/v5/v6 contract bytes replay through a Darwin-free structural
 boundary and remain legacy-only.
 

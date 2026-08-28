@@ -182,7 +182,7 @@ Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
 current fail-closed registry therefore contains nine tasks and 33 commands;
-the current full package suite contains 596 tests: 593 pass, none fail, and three
+the current full package suite contains 624 tests: 621 pass, none fail, and three
 intentional host-gated tests are skipped. The doctor retains the same
 native-only, local-only, non-promoting boundary.
 
@@ -250,8 +250,19 @@ lease release, and owner close under one bounded terminal sequence. Commit
 output ceiling, bounded argv, typed first-terminal reason, process-group
 TERM/KILL escalation, separate close/EOF/reap truth, and retained unreaped
 handles. It is a low-level prerequisite, not a physical build issuer. The
-co-located execution-request/process-evidence/build/product owner and native
-containment adapter remain unimplemented.
+co-located physical issuer and native containment adapter remain unimplemented.
+Commit `13afa94d` freezes canonical execution-request v1 bytes over the exact
+authorization, plan, policy, source, toolchain, ownership, and full Cargo argv
+identity. Commit `3f8951e3` hardens its byte and identifier inputs against
+accessor, proxy, and prototype substitution. Because request v1 permanently
+binds isolation policy v1, it is explicitly ineligible for physical launch and
+cannot later be reinterpreted as eligible. Commit `8b2c6366` adds replay-only
+process-evidence v3 over the acyclic request-to-containment hash graph, raw
+Cargo JSONL and cgroup terminal observations, and the held target ELF. It
+remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with physical execution, binding,
+and every authority flag false. A successor isolation/request contract, an
+attested native `execveat` Cargo launcher with a bounded status protocol, a
+private co-located issuer, and containment v2 are still required.
 The exact control-authorization artifact is
 `31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`;
 the exact final-decision-set artifact is
@@ -273,11 +284,11 @@ harness/control commit and rejects product-path drift. Ruflo reseal task
 `task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
 Current Ruflo task map
 `task-plans/linked-data-store-g0-g4-2026-08-28-v15` records its historical
-corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 67%: pure
+corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 69%: pure
 receipt-candidate task `task-1787892615000-rdwz7q` is complete in
 `45121da9`, and physical-envelope task `task-1787896401667-xookiy` is complete
 in `fbbb692b` with all authority false. Workspace/build-owner task
-`task-1787902127894-7n7vk3` is 82%, and containment task
+`task-1787902127894-7n7vk3` is 86%, and containment task
 `task-1787902138074-0w648x` is 88%; both remain in progress.
 The archived v6 protocol/statistics bytes retain their exact historical identity
 and grant no Phase-A, provider, control, sample, benchmark, qualification, or

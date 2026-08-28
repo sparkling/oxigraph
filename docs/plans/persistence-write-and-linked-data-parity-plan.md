@@ -28,8 +28,8 @@
   `f04b9bc7`
 - G1.7 source-workspace checkpoint:
   `a457f46c`
-- G1.7 current authority-free execution-mechanics checkpoint:
-  `c5050e9c`
+- G1.7 current authority-free request/process-evidence checkpoint:
+  `8b2c6366`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
   [ADR-0018 and ADR-0020 through ADR-0033](../adr/README.md)
@@ -101,8 +101,15 @@ native adapter; bounded containment retention and
 cleanup culminate in `3b289522`. Commit `c5050e9c` adds an authority-free
 POSIX raw-byte process supervisor with shared output/argv limits, typed first-terminal
 reason, process-group escalation, separate close/EOF/reap truth, and retained
-unreaped handles. G1.7 still owns the private co-located physical build issuer, a
-native containment adapter, live permanently non-promoting control owners,
+unreaped handles. Commits `13afa94d`/`3f8951e3` freeze and harden canonical
+execution-request v1, which is permanently launch-ineligible because it binds
+isolation policy v1. Commit `8b2c6366` adds exact-linked replay-only
+process-evidence v3 with raw Cargo JSONL, cgroup terminal observations, and a
+held target ELF; its disposition remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`
+and all authority is false. G1.7 still owns the successor isolation/request
+contract, attested native `execveat` helper and bounded status protocol, private
+co-located physical build issuer, containment v2/native adapter, live
+permanently non-promoting control owners,
 human Phase A approval, sealed live negative/A/A controls, the human Phase B
 final decision, current owner evidence, performance qualification, and the
 separate human promotion decision. No live current control receipt, live
@@ -355,7 +362,7 @@ The unfinished work is split by architectural ownership:
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P0.1-P0.2 conformance, guarantees, conflicts    | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                |
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                             |
-| P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, a frozen exact mount-namespace mapping policy, bounded cleanup, and raw process supervision are implemented. The private physical issuer, native containment adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
+| P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, frozen policy-v1 mapping, bounded cleanup, raw supervision, launch-ineligible request v1, and replay-only process v3 are implemented. The successor policy/request, attested native `execveat` helper/status protocol, private issuer, containment v2/native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | Proposed                                                                                                                                                                                                                                                                                                                                                |
 | P1.3 transaction-time SHACL                     | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                |
 | P1.4a-P1.4c readiness, backup, restore          | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                |
@@ -517,13 +524,15 @@ Commit `f04b9bc7` adds dormant containment, `a457f46c` adds the exact execution
 plan and source-workspace materializer, `c5687dac`/`3688ccda` add replay-only
 Cargo/build evidence, `da41d7e0` freezes the exact non-tmpfs mount-namespace
 path policy, `3b289522` bounds destructive cleanup, and `c5050e9c` adds raw process
-supervision. None supplies live G1.7 build/control execution provenance or
+supervision. Commits `13afa94d`/`3f8951e3` add the permanently launch-ineligible
+request-v1 boundary, and `8b2c6366` adds replay-only process-evidence v3. None
+supplies live G1.7 build/control execution provenance or
 promotion authority.
 Ruflo map v15 records completed pure task `task-1787892615000-rdwz7q`, completed
 physical task `task-1787896401667-xookiy`, and its historical corrected G1.7
 checkpoint at 60%. The current overarching G1.7 task
-`task-1787871483413-ki34q2` is in progress at 67%; supporting workspace/build
-task `task-1787902127894-7n7vk3` is at 82%, and containment task
+`task-1787871483413-ki34q2` is in progress at 69%; supporting workspace/build
+task `task-1787902127894-7n7vk3` is at 86%, and containment task
 `task-1787902138074-0w648x` is at 88%.
 Legacy v1/v3/v4/v5/v6 replay is Darwin-free and `LEGACY_REPLAY_ONLY`.
 

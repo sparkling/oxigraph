@@ -149,7 +149,18 @@ Current activation boundary:
   a shared output cap, bounded argv, typed first-terminal reason, process-group
   TERM/KILL escalation, distinct close/EOF/reap truth, and unreaped-handle
   retention. It is authority-free infrastructure; the private physical issuer
-  and native containment adapter remain absent;
+  and native containment adapter remain absent. Commit `13afa94d` freezes
+  canonical execution-request v1 bytes over exact authorization, plan, policy,
+  source, toolchain, owner, process-generation, and full Cargo argv identity;
+  `3f8951e3` rejects accessor-, proxy-, and prototype-substituted byte inputs.
+  Request v1 permanently binds isolation policy v1 and is therefore explicitly
+  launch-ineligible. Commit `8b2c6366` adds replay-only process-evidence v3,
+  exact-linked to the request and containment owner input and retaining raw
+  Cargo JSONL, raw cgroup terminal observations, and a held executable target
+  ELF. It remains `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with `binding: false` and
+  authority-free. A successor isolation/request contract, attested native
+  `execveat` helper and bounded READY/error/EOF protocol, private issuer, and
+  containment v2 remain absent;
 - upstream merge `e9d2db1b` is exact-tree audited and is now the v7 product
   subject. Commit `d1e18c6e` binds its exact tree and `Cargo.lock`, records the
   evaluator as already present, separates the later control commit through
@@ -355,7 +366,7 @@ npm run g1.6:preflight
 npm run g1.7:preflight
 ```
 
-At the fail-closed v7 checkpoint, `npm test` reports 596 tests: 593 pass, none
+At the fail-closed v7 checkpoint, `npm test` reports 624 tests: 621 pass, none
 fail, and three intentional live-host tests are skipped. `npm run doctor` passes
 with 33 registered application commands and the latest-policy lock resolving
 AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.

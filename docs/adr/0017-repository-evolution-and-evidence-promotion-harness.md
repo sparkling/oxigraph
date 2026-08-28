@@ -24,9 +24,14 @@
   source and initially empty target, and retains all handles rather than unlink
   after an unreaped Git outcome. Production build begin/finish deliberately
   return `MISSING` until a physical owner can prove exact child close and reap.
-  Physical build-process/control/sample owner emission, a native containment
-  mechanics adapter, sealed expected-envelope provenance, a current control or
-  qualification receipt, qualification, and promotion are not implemented. The
+  Canonical execution-request v1 and replay-only process-evidence v3 are now
+  frozen and adversarially tested, but v1 permanently binds an incompatible
+  isolation policy and v3 remains non-binding and authority-free. A successor
+  isolation/request contract, attested native `execveat` Cargo helper and
+  bounded status protocol, private build-process/control/sample owner emission,
+  containment v2/native mechanics, sealed expected-envelope provenance, a
+  current control or qualification receipt, qualification, and promotion are
+  not implemented. The
   dormant source and containment owners cannot pass the current proposed
   decision or invoke live mechanics.
   The existing `tools/metaharness` semantic qualifier remains separate;
@@ -147,11 +152,23 @@
   exit/close/EOF/status/reap truth, and retained unreaped handles. One
   module-global active-or-retained slot rejects overlap with
   `ERR_BOUNDED_BYTE_PROCESS_BUSY`. Focused raw and legacy process tests pass
-  24/24. These pieces are prerequisites only: no
-  private co-located physical issuer, execution-request v1, process-evidence
-  v3, build-owner v3, product-owner v4, native containment adapter, live build,
-  or authority exists. The frozen G1.7 policy will require a 64-MiB combined
-  output ceiling once the private issuer wires it
+  24/24. Commits `13afa94d` and `3f8951e3` then freeze and harden canonical
+  execution-request v1 bytes over the exact authorization, execution plan,
+  isolation policy, source, platform/toolchain, owner/process generation, and
+  complete Cargo argv including `argv0`. Accessor-, proxy-, prototype-, and
+  ambiguous byte inputs fail closed. Request v1 permanently binds isolation
+  policy v1, so it is explicitly launch-ineligible and cannot later be
+  reinterpreted as eligible. Commit `8b2c6366` adds replay-only process-evidence
+  v3 over an acyclic request-to-containment hash graph, raw Cargo JSONL and
+  cgroup terminal observations, and a stable held executable target ELF. Its
+  projection is `SUCCESSOR_PRIVATE_ISSUER_REQUIRED`, with `binding: false`,
+  physical execution false, and every authority false. Focused request/process
+  tests pass 28/28. These pieces remain prerequisites only: no successor
+  isolation/request contract, attested native `execveat` Cargo helper and
+  bounded READY/error/EOF status protocol, private co-located issuer,
+  containment v2/native adapter, build-owner v3, product-owner v4, live build,
+  or authority exists. The successor policy must retain the 64-MiB combined output
+  ceiling while adding exact Cargo/helper/status descriptors and provenance
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
@@ -165,7 +182,7 @@
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
   producing the current exact nine-task/33-command surface. The current package
-  suite contains 596 tests: 593 pass, none fail, and three intentional host-gated
+  suite contains 624 tests: 621 pass, none fail, and three intentional host-gated
   tests are skipped; doctor evidence remains native-only, local-only, and
   non-promoting
 - **Related**:
@@ -440,7 +457,7 @@ all authority flags false. Final binding continues to report
 the approved final decision, and the execution owners exist. Commit `fbbb692b`
 implements exact three-file physical sealing and replay; seal emits no binding,
 while replayed PASS can expose only a prospective binding with all authority
-false. The current 596-test suite passes 593, fails none, and skips three
+false. The current 624-test suite passes 621, fails none, and skips three
 intentional host-gated cases. Those fixtures verify contracts and current
 archive mechanics, not live owner emission, durability, controls, performance,
 or qualification.
@@ -546,8 +563,8 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-67%; its two superseded rows remain cancelled history. Workspace/build-owner
-task `task-1787902127894-7n7vk3` is in progress at 82%, and containment task
+69%; its two superseded rows remain cancelled history. Workspace/build-owner
+task `task-1787902127894-7n7vk3` is in progress at 86%, and containment task
 `task-1787902138074-0w648x` is in progress at 88%. Support tasks for the
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
@@ -772,12 +789,13 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   `a457f46c`, pure build-product replay commit `c5687dac`, replay-only build
   owner v2 commit `3688ccda`, non-tmpfs policy/mapping commits
   `008ab939`/`da41d7e0`, containment-retention and bounded-cleanup commits
-  `5d054857`/`a9f9afc2`/`f482bec0`/`3b289522`, and raw-process supervisor
-  commit `c5050e9c`. Exact current v7
+  `5d054857`/`a9f9afc2`/`f482bec0`/`3b289522`, raw-process supervisor commit
+  `c5050e9c`, execution-request-v1 commits `13afa94d`/`3f8951e3`, and
+  replay-only process-evidence-v3 commit `8b2c6366`. Exact current v7
   contract, proposed
   control-authorization, and proposed final-decision raw SHA-256 values are
   `42ed3867...`, `31b8fce5...`, and `b0def4f0...`; the v6 bytes remain exact
-  replay-only fixtures. The package suite reports 596 total, 593 passing, zero
+  replay-only fixtures. The package suite reports 624 total, 621 passing, zero
   failing, and three intentional host-gated skips. The CLI exits 4 before work
   at `CONTROL_AUTH_PROPOSED` and writes no
   G1.7 run. The pure candidate replay is not a physically owned or sealed
