@@ -324,24 +324,28 @@ function buildBinding(build) {
   };
 }
 
+function defaultElapsedNs({ controlName, arm, caseIndex, globalBlock, slot }) {
+  const uniqueOffset = caseIndex * 1_000 + globalBlock * 10 + slot;
+  if (controlName === "negativeControl") {
+    return (arm === "subject" ? 120_000 : 100_000) + uniqueOffset;
+  }
+  return 100_000 + uniqueOffset;
+}
+
 function controlOwner({
   controlName,
   controlRunId,
   authorization,
   buildsById,
+  elapsedNs,
 }) {
   const control = G17_CONTROL_STATISTICS_CONTRACT.controls[controlName];
   const sampleSet = g17ControlSampleSet({
     controlName,
     runId: controlRunId,
     authorization,
-    elapsedNs: ({ arm, caseIndex, globalBlock, slot }) => {
-      const uniqueOffset = caseIndex * 1_000 + globalBlock * 10 + slot;
-      if (controlName === "negativeControl") {
-        return (arm === "subject" ? 120_000 : 100_000) + uniqueOffset;
-      }
-      return 100_000 + uniqueOffset;
-    },
+    elapsedNs: ({ arm, caseIndex, globalBlock, slot }) =>
+      elapsedNs({ controlName, arm, caseIndex, globalBlock, slot }),
   });
   const launches = sampleSet.rows.map((row, sequence) => {
     const build = buildsById.get(row.buildId);
@@ -409,6 +413,7 @@ function controlOwner({
 
 export function createG17BenchmarkOwnerFixture({
   controlRunId = G17_BENCHMARK_OWNER_FIXTURE_RUN_ID,
+  elapsedNs = defaultElapsedNs,
 } = {}) {
   const { authorization, authorizationBytes, authorizationRawSha256 } =
     approvedAuthorization();
@@ -458,6 +463,7 @@ export function createG17BenchmarkOwnerFixture({
       controlRunId,
       authorization: authorizationReference,
       buildsById,
+      elapsedNs,
     }),
   );
   return {
