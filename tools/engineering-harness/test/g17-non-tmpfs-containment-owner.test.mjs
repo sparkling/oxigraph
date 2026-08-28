@@ -236,39 +236,78 @@ test("the live wall deadline aborts a cooperative hung worker before cleanup", a
   });
   const { capability } = await testCapability({ expected, fake });
   const started = performance.now();
+  let observed;
   await assert.rejects(
     runG17NonTmpfsContainmentOwner(capability),
-    (error) =>
-      error instanceof G17NonTmpfsContainmentOwnerFault &&
-      error.phase === "timeout",
+    (error) => {
+      observed = error;
+      return (
+        error instanceof G17NonTmpfsContainmentOwnerFault &&
+        error.phase === "timeout"
+      );
+    },
   );
   assert.ok(performance.now() - started < 2_500);
-  assert.deepEqual(fake.log.slice(-6), [
-    "cancelWorker",
-    "quiesce",
-    "cleanupState",
-    "cleanupCgroup",
-    "releaseLease",
-    "closeSession",
-  ]);
+  assert.deepEqual(fake.log.slice(-2), ["cancelWorker", "quiesce"]);
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
 });
 
-test("worker failure cancels and attempts quiescence, both cleanups, release, and close", async () => {
+test("worker failure retains the session when direct close/reap is unproved", async () => {
   const expected = g17ContainmentOwnerExpected();
   const fake = createG17ContainmentFakeMechanics({ expected, failAt: "runWorker" });
   const { capability } = await testCapability({ expected, fake });
+  let observed;
   await assert.rejects(
     runG17NonTmpfsContainmentOwner(capability),
-    /synthetic runWorker failure/u,
+    (error) => {
+      observed = error;
+      return /synthetic runWorker failure/u.test(error.message);
+    },
   );
-  assert.deepEqual(fake.log.slice(-6), [
-    "cancelWorker",
-    "quiesce",
-    "cleanupState",
-    "cleanupCgroup",
-    "releaseLease",
-    "closeSession",
-  ]);
+  assert.deepEqual(fake.log.slice(-2), ["cancelWorker", "quiesce"]);
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
+});
+
+test("failed quiescence retains a returned worker session without destructive cleanup", async () => {
+  const expected = g17ContainmentOwnerExpected();
+  const fake = createG17ContainmentFakeMechanics({
+    expected,
+    failAt: "observeController:controller-after",
+  });
+  const originalQuiesce = fake.mechanics.quiesce;
+  fake.mechanics.quiesce = async (input) => {
+    await originalQuiesce(input);
+    return {
+      cgroupPopulated: true,
+      pidsCurrent: 1,
+      processesRemaining: 1,
+    };
+  };
+  const { capability } = await testCapability({ expected, fake });
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return /synthetic observeController:controller-after failure/u.test(
+        error.message,
+      );
+    },
+  );
+  assert.equal(fake.log.at(-1), "quiesce");
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
 });
 
 test("state cleanup failure still attempts cgroup cleanup, lease release, and close", async () => {
@@ -288,7 +327,7 @@ test("state cleanup failure still attempts cgroup cleanup, lease release, and cl
   assert.equal(fake.log.includes("observePostCleanup"), false);
 });
 
-test("cancellation during the worker uses non-cancelled failure cleanup", async () => {
+test("cancellation during the worker retains unproved process state", async () => {
   const expected = g17ContainmentOwnerExpected();
   const abortController = new AbortController();
   const fake = createG17ContainmentFakeMechanics({ expected, abortController });
@@ -297,22 +336,25 @@ test("cancellation during the worker uses non-cancelled failure cleanup", async 
     fake,
     signal: abortController.signal,
   });
+  let observed;
   await assert.rejects(
     runG17NonTmpfsContainmentOwner(capability),
-    (error) =>
-      error instanceof G17NonTmpfsContainmentOwnerFault &&
-      error.phase === "cancel" &&
-      error.cause?.message === "synthetic worker cancellation",
+    (error) => {
+      observed = error;
+      return (
+        error instanceof G17NonTmpfsContainmentOwnerFault &&
+        error.phase === "cancel" &&
+        error.cause?.message === "synthetic worker cancellation"
+      );
+    },
   );
   assert.equal(abortController.signal.aborted, true);
-  assert.deepEqual(fake.log.slice(-6), [
-    "cancelWorker",
-    "quiesce",
-    "cleanupState",
-    "cleanupCgroup",
-    "releaseLease",
-    "closeSession",
-  ]);
+  assert.deepEqual(fake.log.slice(-2), ["cancelWorker", "quiesce"]);
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
 });
 
 test("test-only acquisition still requires an approved control binding", async () => {

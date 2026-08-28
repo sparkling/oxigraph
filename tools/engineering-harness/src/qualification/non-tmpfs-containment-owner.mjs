@@ -53,6 +53,12 @@ const MAX_OBJECT_PROPERTIES = 4_097;
 const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const MAX_STRING_BYTES = 16 * 1024 * 1024;
 const liveCapabilities = new WeakMap();
+// Deliberately strong: if a worker promise never returned, or descendant
+// quiescence could not be established, releasing the session or deleting its
+// state could race a still-live process that owns inherited descriptors. The
+// future native recovery owner may consume these states only after it observes
+// both direct-child close/reap and cgroup-v2 quiescence itself.
+const preservedUnsafeContainmentSessions = new Set();
 
 const AUTHORITY = Object.freeze({
   controlExecution: false,
@@ -927,16 +933,57 @@ async function failureCleanup(state) {
       errors,
     );
   }
+
+  // A cgroup can be empty while an exited direct child still awaits the
+  // owner's close/reap observation. If runWorker did not return, no current
+  // mechanics result proves that direct boundary, so cleanup must stop even
+  // when the best-effort quiescence probe happens to report zero descendants.
+  if (state.session !== undefined && state.workerStarted && !state.workerFinished) {
+    if (!state.quiesced) {
+      await attemptCleanup(
+        state,
+        async () => {
+          normalizeQuiescence(
+            await mechanics.quiesce({
+              session: state.session,
+              signal: undefined,
+            }),
+          );
+        },
+        errors,
+      );
+    }
+    state.retainedUnsafe = true;
+    preservedUnsafeContainmentSessions.add(state);
+    errors.push(
+      new Error(
+        "worker direct close/reap is unproved; containment session retained without cleanup",
+      ),
+    );
+    return errors;
+  }
+
   if (
     state.session !== undefined &&
     state.preparationAttempted &&
     !state.quiesced
   ) {
-    await attemptCleanup(
-      state,
-      () => mechanics.quiesce({ session: state.session, signal: undefined }),
-      errors,
-    );
+    try {
+      normalizeQuiescence(
+        await mechanics.quiesce({ session: state.session, signal: undefined }),
+      );
+      state.quiesced = true;
+    } catch (error) {
+      errors.push(error);
+      state.retainedUnsafe = true;
+      preservedUnsafeContainmentSessions.add(state);
+      errors.push(
+        new Error(
+          "cgroup quiescence is unproved; containment session retained without cleanup",
+        ),
+      );
+      return errors;
+    }
   }
   if (
     state.session !== undefined &&
@@ -1010,6 +1057,7 @@ async function executeOwner(capability, captured) {
     cgroupCleanupAttempted: false,
     releaseAttempted: false,
     closeAttempted: false,
+    retainedUnsafe: false,
     deadlineTimer: undefined,
   };
   let primary;
@@ -1453,7 +1501,12 @@ async function executeOwner(capability, captured) {
     fault("execute", primary?.message ?? String(primary), primary, cleanupErrors);
   } finally {
     clearTimeout(state.deadlineTimer);
-    captured.phase = primary === undefined ? "consumed" : "failed";
+    captured.phase =
+      primary === undefined
+        ? "consumed"
+        : state.retainedUnsafe
+          ? "failed-retained"
+          : "failed";
     liveCapabilities.delete(capability);
   }
 }
