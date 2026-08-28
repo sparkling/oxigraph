@@ -1363,7 +1363,7 @@ impl RocksDbStorageTransaction<'_> {
 
     pub fn clear_all_graphs(&mut self) {
         self.clear_default_graph();
-        self.remove_all_named_graphs();
+        self.clear_all_named_graphs();
     }
 
     pub fn remove_all_named_graphs(&mut self) {

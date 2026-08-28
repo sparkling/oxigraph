@@ -301,6 +301,26 @@ fn aggregate_clear_and_drop_targets_preserve_the_default_slot() -> Result<(), Bo
     Ok(())
 }
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+#[test]
+fn rocksdb_write_only_clear_all_preserves_named_graph_topology() -> Result<(), Box<dyn Error>> {
+    let directory = tempfile::tempdir()?;
+    let store = Store::open(directory.path())?;
+    store.insert(quad(S, P, OLD, GraphName::DefaultGraph))?;
+    store.insert(quad(S, P, NEW, named_graph(SOURCE)))?;
+    store.insert_named_graph(node(DESTINATION))?;
+
+    SparqlEvaluator::new()
+        .parse_update("CLEAR ALL")?
+        .on_store(&store)
+        .execute()?;
+
+    assert!(store.is_empty()?);
+    assert!(graph_exists(&store, SOURCE)?);
+    assert!(graph_exists(&store, DESTINATION)?);
+    Ok(())
+}
+
 #[test]
 fn empty_graph_shortcuts_create_the_destination() -> Result<(), Box<dyn Error>> {
     for operation in ["ADD", "COPY", "MOVE"] {
