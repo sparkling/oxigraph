@@ -392,7 +392,19 @@ export function createG17ContainmentFakeMechanics({
       await observeBefore(observationFacts(expected, "worker-before", cgroupPath));
       log.push("worker:after");
       await observeAfter(observationFacts(expected, "worker-after", cgroupPath));
-      return { disposition: "completed", exitCode: 0, signal: null };
+      return {
+        disposition: "completed",
+        spawned: true,
+        exitCode: 0,
+        signal: null,
+        exitObserved: true,
+        closeObserved: true,
+        stdoutEof: true,
+        stderrEof: true,
+        statusAgreement: true,
+        captureComplete: true,
+        outputTruncated: false,
+      };
     },
     async quiesce({ session: actual, signal }) {
       record("quiesce");

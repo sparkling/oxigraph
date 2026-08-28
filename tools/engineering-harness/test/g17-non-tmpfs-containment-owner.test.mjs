@@ -276,6 +276,34 @@ test("worker failure retains the session when direct close/reap is unproved", as
   assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
 });
 
+test("a resolved worker without exact close/reap proof is retained", async () => {
+  const expected = g17ContainmentOwnerExpected();
+  const fake = createG17ContainmentFakeMechanics({ expected });
+  const originalRunWorker = fake.mechanics.runWorker;
+  fake.mechanics.runWorker = async (input) => ({
+    ...(await originalRunWorker(input)),
+    closeObserved: false,
+    captureComplete: false,
+  });
+  const { capability } = await testCapability({ expected, fake });
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return /did not prove exact child close, reap, and capture/u.test(
+        error.message,
+      );
+    },
+  );
+  assert.deepEqual(fake.log.slice(-2), ["cancelWorker", "quiesce"]);
+  assert.equal(fake.log.includes("cleanupState"), false);
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
+});
+
 test("failed quiescence retains a returned worker session without destructive cleanup", async () => {
   const expected = g17ContainmentOwnerExpected();
   const fake = createG17ContainmentFakeMechanics({

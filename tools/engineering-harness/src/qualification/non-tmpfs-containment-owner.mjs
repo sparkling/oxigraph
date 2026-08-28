@@ -861,13 +861,40 @@ function inventoryBytes(entriesInput, capturedAt, expected, stateIdentity) {
 
 function normalizeWorkerExit(value) {
   const result = snapshotData(value, "worker exit");
-  exactKeys(result, ["disposition", "exitCode", "signal"], "worker exit");
+  exactKeys(
+    result,
+    [
+      "disposition",
+      "spawned",
+      "exitCode",
+      "signal",
+      "exitObserved",
+      "closeObserved",
+      "stdoutEof",
+      "stderrEof",
+      "statusAgreement",
+      "captureComplete",
+      "outputTruncated",
+    ],
+    "worker exit",
+  );
   if (
     result.disposition !== "completed" ||
+    result.spawned !== true ||
     result.exitCode !== 0 ||
-    result.signal !== null
+    result.signal !== null ||
+    result.exitObserved !== true ||
+    result.closeObserved !== true ||
+    result.stdoutEof !== true ||
+    result.stderrEof !== true ||
+    result.statusAgreement !== true ||
+    result.captureComplete !== true ||
+    result.outputTruncated !== false
   ) {
-    fault("worker", "contained worker did not complete successfully");
+    fault(
+      "worker",
+      "contained worker did not prove exact child close, reap, and capture",
+    );
   }
   return result;
 }
@@ -1279,8 +1306,11 @@ async function executeOwner(capability, captured) {
         withinWall(acquiredAt, workerAfterAt, expected.limits.totalWallMs);
       },
     });
-    state.workerFinished = true;
     const workerExit = normalizeWorkerExit(workerOutcome);
+    // This flag means more than a resolved mechanics promise: the exact
+    // observation above proves spawn, exit, close/reap, both stream EOFs,
+    // status agreement, and complete non-truncated capture.
+    state.workerFinished = true;
     if (workerBefore === undefined || workerAfter === undefined) {
       fault("worker", "worker did not emit the exact two observations");
     }
