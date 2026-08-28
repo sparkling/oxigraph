@@ -207,23 +207,24 @@ test("structural verification keeps v3 contract PASS replay-only", () => {
   });
 });
 
-test("structural verification preserves explicit v2 compatibility PASS as legacy replay-only", () => {
-  const receipt = structuredClone(createG17Receipt(acceptingDraft()));
-  receipt.evidence.compatibility.projection.schema =
-    G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS[0];
-  receipt.evidence.compatibility.sha256 = canonicalSha256(
-    receipt.evidence.compatibility.projection,
-  );
-  const legacy = resealReceipt(receipt);
-  const verification = verifyG17Receipt(g17ReceiptBytes(legacy));
-  assert.equal(verification.structurallyValid, true);
-  assert.equal(verification.ok, false);
-  assert.equal(verification.verificationStatus, "LEGACY_REPLAY_ONLY");
-  assert.equal(verification.qualificationEligible, false);
-  assert.deepEqual(verification.evidenceSchemaState, {
-    semantic: "CURRENT_SCHEMA_UNREPLAYED",
-    compatibility: "LEGACY_REPLAY_ONLY",
-  });
+test("structural verification preserves v2 and prior-current v3 compatibility PASS as replay-only", () => {
+  for (const schema of G17_LEGACY_COMPATIBILITY_EVIDENCE_SCHEMAS) {
+    const receipt = structuredClone(createG17Receipt(acceptingDraft()));
+    receipt.evidence.compatibility.projection.schema = schema;
+    receipt.evidence.compatibility.sha256 = canonicalSha256(
+      receipt.evidence.compatibility.projection,
+    );
+    const legacy = resealReceipt(receipt);
+    const verification = verifyG17Receipt(g17ReceiptBytes(legacy));
+    assert.equal(verification.structurallyValid, true);
+    assert.equal(verification.ok, false);
+    assert.equal(verification.verificationStatus, "LEGACY_REPLAY_ONLY");
+    assert.equal(verification.qualificationEligible, false);
+    assert.deepEqual(verification.evidenceSchemaState, {
+      semantic: "CURRENT_SCHEMA_UNREPLAYED",
+      compatibility: "LEGACY_REPLAY_ONLY",
+    });
+  }
 });
 
 test("G1.7 receipt creation requires each PASS projection's current schema", () => {

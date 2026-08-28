@@ -4,6 +4,7 @@ import { chmod, mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 
 import { canonicalJson, canonicalSha256 } from "../src/routing/features.mjs";
 import {
@@ -45,6 +46,11 @@ import {
   G17_SEMANTIC_EVIDENCE_SCHEMA,
 } from "../src/qualification/evidence-contract.mjs";
 import {
+  G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  g17G14bPrerequisiteProjectionSha256,
+  replayG17G14bPrerequisite,
+} from "../src/qualification/g14b-prerequisite.mjs";
+import {
   G17QualificationDecisionGateError,
   assertG17ExecutionOwnerAvailable,
   preflightG17Qualification,
@@ -72,6 +78,28 @@ function sha256(bytes) {
 
 function canonicalBytes(value) {
   return Buffer.from(`${canonicalJson(value)}\n`, "utf8");
+}
+
+async function g14bPrerequisiteEvidence() {
+  const encoded = await readFile(
+    new URL(
+      "fixtures/g14b-accepted-application-receipt-v6.json.gz.b64",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const bytes = gunzipSync(
+    Buffer.from(encoded.replaceAll(/\s/gu, ""), "base64"),
+  );
+  const projection = replayG17G14bPrerequisite({ receiptBytes: bytes });
+  return {
+    projection,
+    projectionSha256: g17G14bPrerequisiteProjectionSha256(projection),
+    artifact: {
+      name: G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+      bytes,
+    },
+  };
 }
 
 function artifactRecord(name, bytes) {
@@ -436,12 +464,13 @@ async function compatibilityOwnerEvidence(runId) {
   const nativeProjection = verifyG17NativeApplicationEvidence(
     nativeFixture.input,
   );
+  const g14b = await g14bPrerequisiteEvidence();
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status: "PASS",
     agenticQe: agentic.agenticQe,
     native: nativeProjection,
-    applicationReceipts: [],
+    applicationReceipts: [g14b.projection],
   };
   return {
     ...agentic,
@@ -455,6 +484,7 @@ async function compatibilityOwnerEvidence(runId) {
       ...agentic.dependencyArtifacts,
       { name: "agentic-oracle.json", bytes: agentic.oracleBytes },
       { name: "agentic-receipt.json", bytes: agentic.receiptBytes },
+      g14b.artifact,
       ...nativeFixture.input.artifacts,
     ],
   };
@@ -1233,6 +1263,61 @@ test("sealed verifier replays synthetic Agentic and native owner-contract fixtur
   assert.equal(owner.native.projection.totalPassedTests, 23);
 });
 
+test("sealed verifier rejects copied G1.4b receipt or claim tampering after outer rehash", async (t) => {
+  const { runsRoot } = await fixture(t);
+  for (const [runId, mutate] of [
+    [
+      "run-g14b-byte-tamper",
+      (owner) => {
+        owner.artifacts = owner.artifacts.map((artifact) =>
+          artifact.name === G17_G14B_PREREQUISITE_ARTIFACT_NAME
+            ? {
+                ...artifact,
+                bytes: Buffer.concat([
+                  artifact.bytes,
+                  Buffer.from("\n", "utf8"),
+                ]),
+              }
+            : artifact,
+        );
+      },
+    ],
+    [
+      "run-g14b-claim-tamper",
+      (owner) => {
+        owner.projection = structuredClone(owner.projection);
+        owner.projection.applicationReceipts[0].binding.claim.crashDurability = true;
+      },
+    ],
+  ]) {
+    const owner = await compatibilityOwnerEvidence(runId);
+    mutate(owner);
+    const times = [
+      new Date("2026-08-26T20:00:00.000Z"),
+      new Date("2026-08-26T20:00:01.000Z"),
+    ];
+    const result = await sealCurrentG17Fixture({
+      runId,
+      runsRoot,
+      contractLoader: () => loadG17Contract(),
+      identityProvider: async () => owner.identity,
+      semanticProvider: async () => missing("MISSING", "missing"),
+      compatibilityProvider: async () => ({
+        status: "PASS",
+        sha256: canonicalSha256(owner.projection),
+        reasons: [],
+        projection: owner.projection,
+        artifacts: owner.artifacts,
+      }),
+      clock: () => times.shift(),
+    });
+    await assert.rejects(
+      verifySealedG17Run({ runId: result.receipt.run.id, runsRoot }),
+      /copied G1\.4b prerequisite evidence is invalid/u,
+    );
+  }
+});
+
 test("sealed verifier keeps executed unversioned legacy evidence replay-only", async (t) => {
   const { runsRoot } = await fixture(t);
   const currentRunId = "run-current-v3-for-legacy";
@@ -1388,11 +1473,13 @@ test("sealed verifier keeps executed unversioned legacy evidence replay-only", a
   });
 });
 
-test("adding a v3 schema to legacy Agentic evidence does not manufacture native owner bytes", async (t) => {
+test("adding the current schema and G1.4b prerequisite to legacy Agentic evidence does not manufacture native owner bytes", async (t) => {
   const { runsRoot } = await fixture(t);
   const owner = await agenticOwnerEvidence();
+  const g14b = await g14bPrerequisiteEvidence();
   const projection = structuredClone(owner.projection);
   delete projection.agenticQe.dependencyContentHash;
+  projection.applicationReceipts = [g14b.projection];
   const result = await sealCurrentG17Fixture({
     runId: "run-schema-only-upgrade",
     runsRoot,
@@ -1407,6 +1494,7 @@ test("adding a v3 schema to legacy Agentic evidence does not manufacture native 
       artifacts: [
         { name: "agentic-oracle.json", bytes: owner.oracleBytes },
         { name: "agentic-receipt.json", bytes: owner.receiptBytes },
+        g14b.artifact,
       ],
     }),
     clock: (() => {
@@ -1430,6 +1518,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
   const nativeFixture = createG17NativeApplicationFixture({ runId });
   const subjectIdentity = nativeFixture.input.identity;
   const native = verifyG17NativeApplicationEvidence(nativeFixture.input);
+  const g14b = await g14bPrerequisiteEvidence();
   const projection = {
     schema: G17_COMPATIBILITY_EVIDENCE_SCHEMA,
     status: "PASS",
@@ -1452,7 +1541,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
       archiveFileCount: 0,
     },
     native,
-    applicationReceipts: [],
+    applicationReceipts: [g14b.projection],
   };
   const times = [
     new Date("2026-08-26T18:00:00.000Z"),
@@ -1472,6 +1561,7 @@ test("sealed verifier rejects copied compatibility evidence that violates the pu
       artifacts: [
         { name: "agentic-receipt.json", bytes: Buffer.from("{}\n") },
         { name: "agentic-oracle.json", bytes: Buffer.from("{}\n") },
+        g14b.artifact,
         ...nativeFixture.input.artifacts,
       ],
     }),

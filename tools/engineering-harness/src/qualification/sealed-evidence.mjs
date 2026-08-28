@@ -17,6 +17,10 @@ import {
 import { validateSemanticEvidencePair } from "../../../metaharness/receipt-contract.mjs";
 import { G17_SEMANTIC_EVIDENCE_SCHEMA } from "./evidence-contract.mjs";
 import {
+  G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  replayG17G14bPrerequisite,
+} from "./g14b-prerequisite.mjs";
+import {
   G17_NATIVE_APPLICATION_ARTIFACT_NAMES,
   verifyG17NativeApplicationEvidence,
 } from "./native-application-contract.mjs";
@@ -189,12 +193,30 @@ export function verifySealedAgenticEvidence({
   if (
     projection.commandCount !== reviewed.expectedCommands ||
     projection.passedTests !== reviewed.expectedPassedTests ||
-    !isDeepStrictEqual(projection, compatibility.projection?.agenticQe) ||
-    !isDeepStrictEqual(compatibility.projection?.applicationReceipts, [])
+    !isDeepStrictEqual(projection, compatibility.projection?.agenticQe)
   ) {
     throw new Error("copied Agentic-QE projection drifted");
   }
   return Object.freeze(projection);
+}
+
+export function verifySealedG14bPrerequisiteEvidence({
+  compatibility,
+  bytesByName,
+}) {
+  const receiptBytes = bytesByName.get(G17_G14B_PREREQUISITE_ARTIFACT_NAME);
+  if (!Buffer.isBuffer(receiptBytes)) {
+    throw new Error("copied G1.4b application receipt is missing");
+  }
+  const projection = replayG17G14bPrerequisite({ receiptBytes });
+  if (
+    !isDeepStrictEqual(compatibility.projection?.applicationReceipts, [
+      projection,
+    ])
+  ) {
+    throw new Error("copied G1.4b prerequisite projection drifted");
+  }
+  return projection;
 }
 
 export function verifySealedNativeCompatibilityEvidence({

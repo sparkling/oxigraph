@@ -4,9 +4,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 
 import { loadG17Contract } from "../src/qualification/contract.mjs";
 import { G17_COMPATIBILITY_EVIDENCE_SCHEMA } from "../src/qualification/evidence-contract.mjs";
+import {
+  G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  g17G14bPrerequisiteProjectionSha256,
+  replayG17G14bPrerequisite,
+} from "../src/qualification/g14b-prerequisite.mjs";
 import {
   combineG17CompatibilityEvidence,
   g17AgenticProfileContract,
@@ -16,6 +22,32 @@ import {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function acceptedG14b() {
+  const encoded = await readFile(
+    new URL(
+      "fixtures/g14b-accepted-application-receipt-v6.json.gz.b64",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const bytes = gunzipSync(
+    Buffer.from(encoded.replaceAll(/\s/gu, ""), "base64"),
+  );
+  const projection = replayG17G14bPrerequisite({ receiptBytes: bytes });
+  return Object.freeze({
+    status: "PASS",
+    sha256: g17G14bPrerequisiteProjectionSha256(projection),
+    reasons: Object.freeze([]),
+    projection,
+    artifacts: Object.freeze([
+      Object.freeze({
+        name: G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+        bytes,
+      }),
+    ]),
+  });
 }
 
 test("G1.7 contract matches the checked-in 11-command/66-test Agentic profile definition", () => {
@@ -98,7 +130,51 @@ test("compatibility combiner always emits the explicit current outer schema", ()
   assert.equal(result.status, "MISSING");
   assert.equal(result.projection.schema, G17_COMPATIBILITY_EVIDENCE_SCHEMA);
   assert.equal(result.projection.status, "MISSING");
-  assert.deepEqual(result.reasons, ["fixture-missing", "fixture-missing"]);
+  assert.deepEqual(result.projection.applicationReceipts, []);
+  assert.deepEqual(result.reasons, [
+    "fixture-missing",
+    "fixture-missing",
+    "g1.4b-application-receipt-absent",
+  ]);
+});
+
+test("compatibility PASS requires and copies the exactly replayed G1.4b prerequisite", async () => {
+  const pass = Object.freeze({
+    status: "PASS",
+    sha256: "0".repeat(64),
+    reasons: Object.freeze([]),
+    projection: Object.freeze({ status: "PASS" }),
+    artifacts: Object.freeze([]),
+  });
+  const g14bPrerequisite = await acceptedG14b();
+  const result = combineG17CompatibilityEvidence({
+    agenticQe: pass,
+    native: pass,
+    g14bPrerequisite,
+  });
+  assert.equal(result.status, "PASS");
+  assert.deepEqual(result.projection.applicationReceipts, [
+    g14bPrerequisite.projection,
+  ]);
+  assert.equal(
+    result.artifacts.at(-1).name,
+    G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+  );
+
+  const fabricated = {
+    ...g14bPrerequisite,
+    projection: structuredClone(g14bPrerequisite.projection),
+  };
+  fabricated.projection.binding.claim.crashDurability = true;
+  assert.throws(
+    () =>
+      combineG17CompatibilityEvidence({
+        agenticQe: pass,
+        native: pass,
+        g14bPrerequisite: fabricated,
+      }),
+    /prerequisite PASS projection drifted/u,
+  );
 });
 test("application evidence module has no Router, admission, or replay authority imports", async () => {
   const source = await readFile(

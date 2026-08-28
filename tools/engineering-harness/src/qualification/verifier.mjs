@@ -20,10 +20,12 @@ import {
 import { verifyG17Receipt } from "./receipt.mjs";
 import {
   verifySealedAgenticEvidence,
+  verifySealedG14bPrerequisiteEvidence,
   verifySealedNativeCompatibilityEvidence,
   verifySealedSemanticEvidence,
 } from "./sealed-evidence.mjs";
 import { G17_NATIVE_APPLICATION_ARTIFACT_NAMES } from "./native-application-contract.mjs";
+import { G17_G14B_PREREQUISITE_ARTIFACT_NAME } from "./g14b-prerequisite.mjs";
 import { g17RunsRoot, openSealedG17Run } from "./storage.mjs";
 
 function fail(message) {
@@ -117,6 +119,11 @@ function verifyEvidenceArtifactInventory(receipt, bytesByName) {
       );
     }
     if (currentCompatibility) {
+      requireArtifact(
+        bytesByName,
+        G17_G14B_PREREQUISITE_ARTIFACT_NAME,
+        "compatibility PASS G1.4b prerequisite evidence is incomplete",
+      );
       for (const name of G17_NATIVE_APPLICATION_ARTIFACT_NAMES) {
         requireArtifact(
           bytesByName,
@@ -299,6 +306,14 @@ export async function verifySealedG17Run({
       });
     } catch {
       fail("copied native compatibility evidence is invalid");
+    }
+    try {
+      verifySealedG14bPrerequisiteEvidence({
+        compatibility: receipt.evidence.compatibility,
+        bytesByName,
+      });
+    } catch {
+      fail("copied G1.4b prerequisite evidence is invalid");
     }
   }
   if (
