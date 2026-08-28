@@ -41,7 +41,9 @@ test("historical contract replay is Darwin-free while current replay fails close
     "src/qualification/contract-identity.mjs",
     "src/qualification/contract-replay.mjs",
     "src/qualification/contract.mjs",
+    "src/qualification/control-protocol.mjs",
     "src/qualification/decision-contract.mjs",
+    "src/qualification/g14b-prerequisite-contract.mjs",
   ];
   for (const modulePath of modulePaths) {
     const target = join(isolatedHarness, modulePath);
@@ -66,6 +68,12 @@ test("historical contract replay is Darwin-free while current replay fails close
       digest:
         "de547f5bc4a484f83da1b3d9167c4969766189455a22f9dcf542b471a8b77278",
       generation: "LEGACY_V3",
+    },
+    {
+      fixture: "g17-qualification-contract-v4.json",
+      digest:
+        "dd97f4a25b9555c1b711d697cdf636d1949690138fd3a78eb2f02a8b7a9b24f0",
+      generation: "LEGACY_V4",
     },
   ]) {
     const bytes = await readFile(

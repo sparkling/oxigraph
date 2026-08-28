@@ -86,6 +86,84 @@ function deepFreeze(value) {
   return value;
 }
 
+function snapshotProtocolData(value, label, ancestors = new WeakSet()) {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) fail(`${label} contains a non-finite number`);
+    return value;
+  }
+  if (typeof value !== "object" || ArrayBuffer.isView(value)) {
+    fail(`${label} contains non-JSON data`);
+  }
+  if (ancestors.has(value)) fail(`${label} contains a cycle`);
+  const array = Array.isArray(value);
+  if (
+    Object.getPrototypeOf(value) !==
+    (array ? Array.prototype : Object.prototype)
+  ) {
+    fail(`${label} must contain only ordinary JSON objects and arrays`);
+  }
+  ancestors.add(value);
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.some((key) => typeof key !== "string")) {
+      fail(`${label} contains symbol fields`);
+    }
+    for (const key of keys) {
+      const descriptor = descriptors[key];
+      if ("get" in descriptor || "set" in descriptor) {
+        fail(`${label} contains accessor fields`);
+      }
+    }
+    if (array) {
+      const length = descriptors.length?.value;
+      if (!Number.isSafeInteger(length) || length < 0) {
+        fail(`${label} array length is invalid`);
+      }
+      const expectedKeys = [
+        ...Array.from({ length }, (_, index) => String(index)),
+        "length",
+      ];
+      if (!isDeepStrictEqual([...keys].sort(), expectedKeys.sort())) {
+        fail(`${label} arrays must be dense and field-free`);
+      }
+      return Array.from({ length }, (_, index) =>
+        snapshotProtocolData(
+          descriptors[String(index)].value,
+          `${label}[${index}]`,
+          ancestors,
+        ),
+      );
+    }
+    const snapshot = {};
+    for (const key of keys) {
+      if (!descriptors[key].enumerable) {
+        fail(`${label}.${key} is not enumerable`);
+      }
+      Object.defineProperty(snapshot, key, {
+        value: snapshotProtocolData(
+          descriptors[key].value,
+          `${label}.${key}`,
+          ancestors,
+        ),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return snapshot;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 function fail(message) {
   throw new Error(`G1.7 control protocol: ${message}`);
 }
@@ -333,29 +411,31 @@ export const G17_FINAL_DECISION_PROTOCOL = deepFreeze({
 });
 
 export function validateG17ControlAuthorization(value) {
-  exactKeys(value, CONTROL_AUTHORIZATION_KEYS, "control authorization");
+  const candidate = snapshotProtocolData(value, "control authorization");
+  exactKeys(candidate, CONTROL_AUTHORIZATION_KEYS, "control authorization");
   if (
-    value.schema !== G17_CONTROL_AUTHORIZATION_SCHEMA ||
-    value.id !== "control-authorization" ||
+    candidate.schema !== G17_CONTROL_AUTHORIZATION_SCHEMA ||
+    candidate.id !== "control-authorization" ||
     !new Set(["CONTROL_AUTH_PROPOSED", "CONTROL_AUTHORIZED"]).has(
-      value.status,
+      candidate.status,
     ) ||
-    !isDeepStrictEqual(value.protocol, G17_CONTROL_AUTHORIZATION_PROTOCOL)
+    !isDeepStrictEqual(candidate.protocol, G17_CONTROL_AUTHORIZATION_PROTOCOL)
   ) {
     fail("control authorization identity or frozen policy drifted");
   }
-  const approved = value.status === "CONTROL_AUTHORIZED";
-  validateApproval(value.approval, {
+  const approved = candidate.status === "CONTROL_AUTHORIZED";
+  validateApproval(candidate.approval, {
     approved,
     label: "control authorization",
   });
-  validateSelfHash(value, "control authorization");
-  return deepFreeze(value);
+  validateSelfHash(candidate, "control authorization");
+  return deepFreeze(candidate);
 }
 
 export function validateG17NegativeControlSignature(value) {
+  const candidate = snapshotProtocolData(value, "negative-control signature");
   exactKeys(
-    value,
+    candidate,
     [
       "schema",
       "suiteHash",
@@ -368,32 +448,32 @@ export function validateG17NegativeControlSignature(value) {
     ],
     "negative-control signature",
   );
-  const indexes = Array.isArray(value.budgetBreaches)
-    ? value.budgetBreaches.map((caseId) =>
+  const indexes = Array.isArray(candidate.budgetBreaches)
+    ? candidate.budgetBreaches.map((caseId) =>
         G17_BENCHMARK_CASE_IDS.indexOf(caseId),
       )
     : [];
   if (
-    value.schema !== G17_NEGATIVE_CONTROL_SIGNATURE_V2_SCHEMA ||
-    value.suiteHash !== G17_BENCHMARK_SUITE_HASH ||
-    value.status !== "FAIL" ||
+    candidate.schema !== G17_NEGATIVE_CONTROL_SIGNATURE_V2_SCHEMA ||
+    candidate.suiteHash !== G17_BENCHMARK_SUITE_HASH ||
+    candidate.status !== "FAIL" ||
     indexes.length < 1 ||
     indexes.some((index) => index < 0) ||
     new Set(indexes).size !== indexes.length ||
     indexes.some(
       (index, position) => position > 0 && index <= indexes[position - 1],
     ) ||
-    !SAFE_ID.test(value.controlRunId ?? "")
+    !SAFE_ID.test(candidate.controlRunId ?? "")
   ) {
     fail("negative-control signature is invalid");
   }
-  digest(value.sampleSetSha256, "negative-control sampleSetSha256");
+  digest(candidate.sampleSetSha256, "negative-control sampleSetSha256");
   digest(
-    value.authorizationContentHash,
+    candidate.authorizationContentHash,
     "negative-control authorizationContentHash",
   );
-  validateSelfHash(value, "negative-control signature");
-  return deepFreeze(value);
+  validateSelfHash(candidate, "negative-control signature");
+  return deepFreeze(candidate);
 }
 
 function validateControlAuthorizationBinding(binding) {
@@ -478,31 +558,35 @@ function validateG14bBinding(binding) {
 }
 
 export function validateG17FinalDecisionSet(value) {
-  exactKeys(value, FINAL_DECISION_KEYS, "final decision set");
+  const candidate = snapshotProtocolData(value, "final decision set");
+  exactKeys(candidate, FINAL_DECISION_KEYS, "final decision set");
   if (
-    value.schema !== G17_FINAL_DECISION_SET_SCHEMA ||
-    value.id !== "final-decision-set" ||
-    !new Set(["PROPOSED", "APPROVED"]).has(value.status) ||
-    !isDeepStrictEqual(value.protocol, G17_FINAL_DECISION_PROTOCOL)
+    candidate.schema !== G17_FINAL_DECISION_SET_SCHEMA ||
+    candidate.id !== "final-decision-set" ||
+    !new Set(["PROPOSED", "APPROVED"]).has(candidate.status) ||
+    !isDeepStrictEqual(candidate.protocol, G17_FINAL_DECISION_PROTOCOL)
   ) {
     fail("final decision identity or pre-control policy drifted");
   }
-  validateControlAuthorizationBinding(value.controlAuthorization);
-  const approved = value.status === "APPROVED";
-  validateApproval(value.approval, { approved, label: "final decision set" });
+  validateControlAuthorizationBinding(candidate.controlAuthorization);
+  const approved = candidate.status === "APPROVED";
+  validateApproval(candidate.approval, {
+    approved,
+    label: "final decision set",
+  });
   if (approved) {
-    validateControlReceiptBinding(value.controlReceipt);
-    validateG17NegativeControlSignature(value.negativeControlSignature);
-    validateG14bBinding(value.g14bPrerequisite);
+    validateControlReceiptBinding(candidate.controlReceipt);
+    validateG17NegativeControlSignature(candidate.negativeControlSignature);
+    validateG14bBinding(candidate.g14bPrerequisite);
   } else if (
-    value.controlReceipt !== null ||
-    value.negativeControlSignature !== null ||
-    value.g14bPrerequisite !== null
+    candidate.controlReceipt !== null ||
+    candidate.negativeControlSignature !== null ||
+    candidate.g14bPrerequisite !== null
   ) {
     fail("proposed final decision contains post-control evidence");
   }
-  validateSelfHash(value, "final decision set");
-  return deepFreeze(value);
+  validateSelfHash(candidate, "final decision set");
+  return deepFreeze(candidate);
 }
 
 export function validateG17ControlExecutionBinding({
@@ -644,14 +728,18 @@ export function validateG17FinalDecisionBinding({
 } = {}) {
   const ownerGate = validateG17QualificationOwnerGate(options);
   const validatedFinal = ownerGate.finalDecisionSet;
+  const prerequisite = snapshotProtocolData(
+    g14bPrerequisiteProjection,
+    "G1.4b prerequisite projection",
+  );
   if (
-    g14bPrerequisiteProjection === null ||
-    typeof g14bPrerequisiteProjection !== "object" ||
-    g14bPrerequisiteProjection.schema !== G17_G14B_PREREQUISITE_SCHEMA ||
-    g14bPrerequisiteProjection.status !== "PASS" ||
-    g14bPrerequisiteProjection.bindingSha256 !==
+    prerequisite === null ||
+    typeof prerequisite !== "object" ||
+    prerequisite.schema !== G17_G14B_PREREQUISITE_SCHEMA ||
+    prerequisite.status !== "PASS" ||
+    prerequisite.bindingSha256 !==
       validatedFinal.g14bPrerequisite.bindingSha256 ||
-    canonicalSha256(g14bPrerequisiteProjection) !==
+    canonicalSha256(prerequisite) !==
       validatedFinal.g14bPrerequisite.projectionSha256
   ) {
     fail("final decision does not bind the replayed G1.4b prerequisite");
@@ -661,7 +749,9 @@ export function validateG17FinalDecisionBinding({
     finalDecisionSet: validatedFinal,
     ownerGatePassed: true,
     executionOwnerAvailable: false,
-    qualificationExecutionAuthorized: true,
+    g14bPrerequisiteBound: true,
+    controlReceiptReplayAvailable: false,
+    qualificationExecutionAuthorized: false,
   });
 }
 
@@ -670,11 +760,24 @@ function sha256(bytes) {
 }
 
 function stableRead(path, maximumBytes, label) {
-  if (!Number.isInteger(constants.O_NOFOLLOW))
-    fail("O_NOFOLLOW is unavailable");
+  if (
+    !Number.isInteger(constants.O_NOFOLLOW) ||
+    !Number.isInteger(constants.O_NONBLOCK)
+  ) {
+    fail("O_NOFOLLOW or O_NONBLOCK is unavailable");
+  }
   let descriptor;
   try {
-    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const closeOnExec = Number.isInteger(constants.O_CLOEXEC)
+      ? constants.O_CLOEXEC
+      : 0;
+    descriptor = openSync(
+      path,
+      constants.O_RDONLY |
+        constants.O_NOFOLLOW |
+        constants.O_NONBLOCK |
+        closeOnExec,
+    );
     const before = fstatSync(descriptor, { bigint: true });
     if (
       !before.isFile() ||
@@ -700,54 +803,63 @@ function stableRead(path, maximumBytes, label) {
 }
 
 function decodeProtocolArtifact({ bytes, descriptor, validate, label }) {
-  exactKeys(
+  const copiedBytes = Buffer.isBuffer(bytes) ? Buffer.from(bytes) : bytes;
+  const copiedDescriptor = snapshotProtocolData(
     descriptor,
+    `${label} descriptor`,
+  );
+  exactKeys(
+    copiedDescriptor,
     ["id", "path", "sealedName", "schema", "sha256", "contentHash", "maxBytes"],
     `${label} descriptor`,
   );
   if (
-    !Buffer.isBuffer(bytes) ||
-    bytes.length < 1 ||
-    bytes.length > descriptor.maxBytes ||
-    bytes.length > MAX_PROTOCOL_BYTES ||
-    sha256(bytes) !== descriptor.sha256
+    !Buffer.isBuffer(copiedBytes) ||
+    copiedBytes.length < 1 ||
+    copiedBytes.length > copiedDescriptor.maxBytes ||
+    copiedBytes.length > MAX_PROTOCOL_BYTES ||
+    sha256(copiedBytes) !== copiedDescriptor.sha256
   ) {
     fail(`${label} copied bytes do not match their descriptor`);
   }
   let value;
   try {
-    value = JSON.parse(bytes);
+    value = JSON.parse(copiedBytes);
   } catch (error) {
     fail(`${label} is invalid JSON: ${error.message}`);
   }
-  if (!bytes.equals(Buffer.from(`${canonicalJson(value)}\n`, "utf8"))) {
+  if (!copiedBytes.equals(Buffer.from(`${canonicalJson(value)}\n`, "utf8"))) {
     fail(`${label} bytes are not canonical JSON plus one LF`);
   }
   const validated = validate(value);
   if (
-    validated.id !== descriptor.id ||
-    validated.schema !== descriptor.schema ||
-    validated.contentHash !== descriptor.contentHash
+    validated.id !== copiedDescriptor.id ||
+    validated.schema !== copiedDescriptor.schema ||
+    validated.contentHash !== copiedDescriptor.contentHash
   ) {
     fail(`${label} descriptor does not bind the decoded artifact`);
   }
   return deepFreeze({
     value: validated,
-    bytes: Buffer.from(bytes),
-    rawSha256: descriptor.sha256,
-    byteLength: bytes.length,
+    bytes: copiedBytes,
+    rawSha256: copiedDescriptor.sha256,
+    byteLength: copiedBytes.length,
   });
 }
 
 function loadProtocolArtifact({ root, descriptor, validate, label }) {
+  const copiedDescriptor = snapshotProtocolData(
+    descriptor,
+    `${label} descriptor`,
+  );
   const resolvedRoot = resolve(root);
-  const path = resolve(resolvedRoot, descriptor?.path ?? "");
+  const path = resolve(resolvedRoot, copiedDescriptor?.path ?? "");
   if (!path.startsWith(`${resolvedRoot}${sep}`)) {
     fail(`${label} path escapes the harness root`);
   }
   return decodeProtocolArtifact({
-    bytes: stableRead(path, descriptor.maxBytes, label),
-    descriptor,
+    bytes: stableRead(path, copiedDescriptor.maxBytes, label),
+    descriptor: copiedDescriptor,
     validate,
     label,
   });

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import { loadG17Contract } from "../src/qualification/contract.mjs";
@@ -34,6 +38,7 @@ const CONTROL_COMPLETED_AT = "2026-08-28T00:02:00.000Z";
 const FINAL_APPROVED_AT = "2026-08-28T00:03:00.000Z";
 const QUALIFICATION_STARTED_AT = "2026-08-28T00:04:00.000Z";
 const CONTROL_RUN_ID = "g17-control-20260828";
+const executeFile = promisify(execFile);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -350,7 +355,53 @@ test("authorized controls remain control-only and require strict prior approval"
   }
 });
 
-test("atomic final decision binds the sealed control and replayed G1.4b prerequisite", () => {
+test("protocol gates reject accessor-backed authorization and final decisions", () => {
+  const control = authorizedFixture();
+  let controlStatusReads = 0;
+  Object.defineProperty(control.authorization, "status", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      controlStatusReads += 1;
+      return controlStatusReads === 1
+        ? "CONTROL_AUTH_PROPOSED"
+        : "CONTROL_AUTHORIZED";
+    },
+  });
+  assert.throws(
+    () =>
+      validateG17ControlExecutionBinding({
+        authorization: control.authorization,
+        authorizationRawSha256: control.authorizationRawSha256,
+        controlStartedAt: CONTROL_STARTED_AT,
+      }),
+    /contains accessor fields/u,
+  );
+  assert.equal(controlStatusReads, 0);
+
+  const final = authorizedFixture();
+  let finalStatusReads = 0;
+  Object.defineProperty(final.finalDecisionSet, "status", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      finalStatusReads += 1;
+      return finalStatusReads === 1 ? "PROPOSED" : "APPROVED";
+    },
+  });
+  assert.throws(
+    () =>
+      validateG17FinalDecisionBinding({
+        ...final,
+        qualificationStartedAt: QUALIFICATION_STARTED_AT,
+        g14bPrerequisiteProjection: final.prerequisite,
+      }),
+    /contains accessor fields/u,
+  );
+  assert.equal(finalStatusReads, 0);
+});
+
+test("final binding remains non-authoritative until control receipt replay exists", () => {
   const fixture = authorizedFixture();
   const binding = validateG17FinalDecisionBinding({
     ...fixture,
@@ -361,9 +412,66 @@ test("atomic final decision binds the sealed control and replayed G1.4b prerequi
   assert.equal(binding.controlRunId, CONTROL_RUN_ID);
   assert.equal(binding.ownerGatePassed, true);
   assert.equal(binding.executionOwnerAvailable, false);
-  assert.equal(binding.qualificationExecutionAuthorized, true);
+  assert.equal(binding.g14bPrerequisiteBound, true);
+  assert.equal(binding.controlReceiptReplayAvailable, false);
+  assert.equal(binding.qualificationExecutionAuthorized, false);
   assert.equal(binding.promotionAuthority, false);
   assert.equal(binding.publicationAuthority, false);
+});
+
+test("contract and protocol readers reject FIFOs without blocking", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX FIFO semantics are unavailable on Windows");
+    return;
+  }
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-g17-protocol-fifo-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const contractFifo = join(root, "contract.fifo");
+  const authorizationFifo = join(
+    root,
+    "qualification",
+    "g1.7",
+    "decisions",
+    "control-authorization.json",
+  );
+  await mkdir(join(root, "qualification", "g1.7", "decisions"), {
+    recursive: true,
+  });
+  await executeFile("/usr/bin/mkfifo", [contractFifo]);
+  await executeFile("/usr/bin/mkfifo", [authorizationFifo]);
+  const contractModule = new URL(
+    "../src/qualification/contract.mjs",
+    import.meta.url,
+  ).href;
+  const protocolModule = new URL(
+    "../src/qualification/control-protocol.mjs",
+    import.meta.url,
+  ).href;
+  const script = `
+    const { loadG17Contract } = await import(${JSON.stringify(contractModule)});
+    const { loadG17ControlProtocol } = await import(${JSON.stringify(protocolModule)});
+    try {
+      loadG17Contract({ contractPath: ${JSON.stringify(contractFifo)} });
+      throw new Error("contract FIFO unexpectedly accepted");
+    } catch (error) {
+      if (!error.message.includes("bounded regular file")) throw error;
+      process.stdout.write("CONTRACT_FIFO_REJECTED\\n");
+    }
+    const loaded = loadG17Contract();
+    try {
+      loadG17ControlProtocol({ contract: loaded.contract, root: ${JSON.stringify(root)} });
+      throw new Error("protocol FIFO unexpectedly accepted");
+    } catch (error) {
+      if (!error.message.includes("bounded regular file")) throw error;
+      process.stdout.write("PROTOCOL_FIFO_REJECTED\\n");
+    }
+  `;
+  const { stdout } = await executeFile(
+    process.execPath,
+    ["--input-type=module", "--eval", script],
+    { timeout: 1_000, killSignal: "SIGKILL" },
+  );
+  assert.equal(stdout, "CONTRACT_FIFO_REJECTED\nPROTOCOL_FIFO_REJECTED\n");
 });
 
 test("timestamp equality fails at every phase boundary", () => {

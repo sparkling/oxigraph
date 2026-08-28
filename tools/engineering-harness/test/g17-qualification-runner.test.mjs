@@ -1324,7 +1324,7 @@ test("sealed verifier rejects copied G1.4b receipt or claim tampering after oute
     const result = await sealCurrentG17Fixture({
       runId,
       runsRoot,
-      contractLoader: () => loadG17Contract(),
+      contractLoader: loadLegacyV4Contract,
       identityProvider: async () => owner.identity,
       semanticProvider: async () => missing("MISSING", "missing"),
       compatibilityProvider: async () => ({

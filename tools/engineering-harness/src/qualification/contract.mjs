@@ -491,14 +491,25 @@ export function decodeSealedG17Contract({ bytes, receiptSha256 }) {
 }
 
 function stableReadContract(contractPath) {
-  if (!Number.isInteger(constants.O_NOFOLLOW)) {
-    throw new Error("G1.7 qualification contract: O_NOFOLLOW is unavailable");
+  if (
+    !Number.isInteger(constants.O_NOFOLLOW) ||
+    !Number.isInteger(constants.O_NONBLOCK)
+  ) {
+    throw new Error(
+      "G1.7 qualification contract: O_NOFOLLOW or O_NONBLOCK is unavailable",
+    );
   }
   let descriptor;
   try {
+    const closeOnExec = Number.isInteger(constants.O_CLOEXEC)
+      ? constants.O_CLOEXEC
+      : 0;
     descriptor = openSync(
       contractPath,
-      constants.O_RDONLY | constants.O_NOFOLLOW,
+      constants.O_RDONLY |
+        constants.O_NOFOLLOW |
+        constants.O_NONBLOCK |
+        closeOnExec,
     );
     const before = fstatSync(descriptor, { bigint: true });
     if (
