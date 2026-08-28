@@ -10,7 +10,6 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { harnessRoot } from "../paths.mjs";
-import { canonicalJson } from "../routing/features.mjs";
 import {
   G17_BENCHMARK_CASES,
   G17_BENCHMARK_SUITE_HASH,
@@ -29,8 +28,7 @@ import {
   G17_CONTRACT_GENERATION,
   G17_CONTRACT_SCHEMA,
   G17_CURRENT_CONTRACT_SHA256,
-  G17_LEGACY_V1_CONTRACT_SHA256,
-  G17_LEGACY_V3_CONTRACT_SHA256,
+  decodeG17ContractByteIdentity,
 } from "./contract-identity.mjs";
 
 export {
@@ -40,6 +38,7 @@ export {
   G17_LEGACY_CONTRACT_SHA256,
   G17_LEGACY_V1_CONTRACT_SHA256,
   G17_LEGACY_V3_CONTRACT_SHA256,
+  g17ContractCompatibilityGeneration,
 } from "./contract-identity.mjs";
 
 const { hashTasks: darwinHashTasks, verifySuite: darwinVerifySuite } =
@@ -478,109 +477,14 @@ export function validateG17Contract(value) {
 }
 
 export function decodeSealedG17Contract({ bytes, receiptSha256 }) {
-  try {
-    if (
-      !Buffer.isBuffer(bytes) ||
-      bytes.length < 1 ||
-      bytes.length > MAX_CONTRACT_BYTES
-    ) {
-      throw new Error("copied bytes are not a bounded Buffer");
-    }
-    const contractSha256 = sha256(bytes);
-    if (!DIGEST.test(receiptSha256 ?? "") || receiptSha256 !== contractSha256) {
-      throw new Error("copied bytes differ from the receipt digest");
-    }
-    let generation;
-    if (contractSha256 === G17_LEGACY_V1_CONTRACT_SHA256) {
-      generation = G17_CONTRACT_GENERATION.LEGACY_V1;
-    } else if (contractSha256 === G17_LEGACY_V3_CONTRACT_SHA256) {
-      generation = G17_CONTRACT_GENERATION.LEGACY_V3;
-    } else if (contractSha256 === G17_CURRENT_CONTRACT_SHA256) {
-      generation = G17_CONTRACT_GENERATION.CURRENT_V4;
-    } else {
-      throw new Error("copied contract has an unsupported byte identity");
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(bytes);
-    } catch (error) {
-      throw new Error(`copied contract is invalid JSON: ${error.message}`);
-    }
-    const contract =
-      generation === G17_CONTRACT_GENERATION.CURRENT_V4
-        ? (() => {
-            if (
-              !bytes.equals(Buffer.from(`${canonicalJson(parsed)}\n`, "utf8"))
-            ) {
-              throw new Error(
-                "current contract bytes are not canonical JSON plus one LF",
-              );
-            }
-            return validateG17Contract(parsed);
-          })()
-        : (() => {
-            const expectedSchema =
-              generation === G17_CONTRACT_GENERATION.LEGACY_V1
-                ? "oxigraph.g1.7-qualification-contract/v1"
-                : "oxigraph.g1.7-qualification-contract/v3";
-            if (
-              parsed?.schema !== expectedSchema ||
-              parsed.id !== "g1.7-compatibility-performance-qualification" ||
-              parsed.programme !== "linked-data-store"
-            ) {
-              throw new Error(
-                "legacy byte identity has impossible parsed metadata",
-              );
-            }
-            return deepFreeze(parsed);
-          })();
-    return Object.freeze({ contract, bytes, contractSha256, generation });
-  } catch (error) {
-    if (error.message.startsWith("G1.7 qualification contract:")) throw error;
-    throw new Error(`G1.7 qualification contract: ${error.message}`);
+  const decoded = decodeG17ContractByteIdentity({ bytes, receiptSha256 });
+  if (decoded.generation !== G17_CONTRACT_GENERATION.CURRENT_V4) {
+    return decoded;
   }
-}
-
-export function g17ContractCompatibilityGeneration({
-  contractGeneration,
-  compatibilityStatus,
-  compatibilitySchemaState,
-}) {
-  try {
-    if (
-      !Object.values(G17_CONTRACT_GENERATION).includes(contractGeneration) ||
-      !["PASS", "FAIL", "MISSING", "STALE", "NOT_RUN"].includes(
-        compatibilityStatus,
-      ) ||
-      ![
-        "CURRENT_SCHEMA_UNREPLAYED",
-        "LEGACY_REPLAY_ONLY",
-        "NOT_APPLICABLE",
-      ].includes(compatibilitySchemaState)
-    ) {
-      throw new Error("contract/evidence generation state is invalid");
-    }
-    const currentContract =
-      contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4;
-    const currentCompatibility =
-      compatibilitySchemaState === "CURRENT_SCHEMA_UNREPLAYED";
-    if (
-      compatibilityStatus === "PASS" &&
-      currentContract !== currentCompatibility
-    ) {
-      throw new Error(
-        "contract and compatibility evidence generations are mixed",
-      );
-    }
-    return Object.freeze({
-      currentContract,
-      currentCompatibility,
-      legacyReplayOnly:
-        !currentContract || compatibilitySchemaState === "LEGACY_REPLAY_ONLY",
-    });
-  } catch (error) {
-    throw new Error(`G1.7 qualification contract: ${error.message}`);
-  }
+  return Object.freeze({
+    ...decoded,
+    contract: validateG17Contract(decoded.contract),
+  });
 }
 
 function stableReadContract(contractPath) {

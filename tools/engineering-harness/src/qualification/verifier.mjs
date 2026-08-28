@@ -5,9 +5,9 @@ import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import {
   G17_CONTRACT_GENERATION,
-  decodeSealedG17Contract,
   g17ContractCompatibilityGeneration,
-} from "./contract.mjs";
+} from "./contract-identity.mjs";
+import { decodeSealedG17ContractForReplay } from "./contract-replay.mjs";
 import {
   G17_COMPATIBILITY_EVIDENCE_SCHEMA,
   G17_SEMANTIC_EVIDENCE_SCHEMA,
@@ -191,7 +191,7 @@ export async function verifySealedG17Run({
     bytesByName.set(artifact.name, bytes);
   }
   const contractBytes = bytesByName.get("contract.json");
-  const decodedContract = decodeSealedG17Contract({
+  const decodedContract = await decodeSealedG17ContractForReplay({
     bytes: contractBytes,
     receiptSha256: receipt.contract.sha256,
   });
