@@ -12,7 +12,7 @@
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
 - Current engineering control checkpoint:
-  `c5687dac`
+  `c5050e9c`
 - Semantic Builder handover reviewed against:
   `e1097e482476030f012da538151fd967614fb619`
 - Product plan:
@@ -77,7 +77,16 @@ capture claims. Those replays return
 `CARGO_INVOCATION_ENVIRONMENT_AND_CAPTURE_CLAIMS_REPLAYED` and
 `BUILD_EVIDENCE_AND_CAPTURE_CLAIMS_REPLAYED`; they are not independently
 observed process execution or artifact provenance, their binding remains null,
-and every authority flag remains false. A physical supervising build owner,
+and every authority flag remains false. Build-owner v2 commit `3688ccda`
+remains deterministic replay only. Commits `008ab939`/`da41d7e0` freeze the
+non-tmpfs isolation contract and exact source/target mount-namespace mapping
+policy without executing a native adapter;
+`5d054857`/`a9f9afc2`/`f482bec0`/`3b289522` retain unsafe state and bound the
+whole destructive cleanup/release/close sequence. Commit `c5050e9c` adds the
+authority-free POSIX raw-byte process supervisor with shared output and argv limits,
+typed first-terminal reason, group escalation, separate close/EOF/reap truth,
+and retained unreaped handles. These are prerequisites rather than physical
+provenance. A private co-located physical build issuer,
 native containment adapter, control/sample/qualification execution owners, and
 live evidence remain absent. Human Phase A approval and sealed negative/A/A
 controls must precede Phase B's final decision set and subject/reference
@@ -125,7 +134,7 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | Mutation receipt                                          | G0.6 immutable run `731e6467-2cab-4260-8d15-b34e4ebc8ed6` binds the current generic OxDatalog D0-D2 snapshot under `cargo-mutants` 27.1.0: 358 generated, 278 caught, 80 unviable, zero missed/timeouts                                                                                                                                                                                                                                                                                                                                            | Scoped task complete; this is not persistence-write mutation coverage or umbrella qualification                                                                                                                                                                                                                                              |
 | MetaHarness                                               | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate                                                                                                                                                                         |
 | Engineering MetaHarness                                   | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered nine-task registry, and its exact generated 33-command registry are implemented; G1.2-G1.6, including G1.4a-G1.4b, have source-bound accepted candidates                                                                                                                                                                                                                                       | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact                                                                                                                 |
-| G1.7 qualification control                                | Outer receipt v1 and exact contract v7 `42ed3867...`; control authorization `31b8fce5...` and final decision set `b0def4f0...` are proposed/unapproved. Implemented contracts and fixtures cover strict current-v7, exact v5/v6 archives, Darwin-free legacy v1/v3/v4/v5/v6 replay, authorization-bound sample bytes, paired control statistics, exact G1.4b projection/binding `d57eb7cb...`/`5a4f5721...`, the exact merged-product identity, pure benchmark-owner replay, bounded canonical receipt-candidate replay, `fbbb692b`'s physical archive replay, `f04b9bc7`'s dormant containment boundary, `a457f46c`'s exact execution plan/source workspace, and `c5687dac`'s pure build/product evidence replay | `run` exits 4 before work and writes no G1.7 run. Candidate replay is non-eligible and binding-null; physical replay can expose only a non-authoritative prospective binding. The build/product replays prove claims and held-object relationships, not an independently observed Cargo execution. A physical supervising build owner, native containment adapter, production control/sample/qualification owners, both human approvals, live controls and samples, benchmark, qualification, and separate human promotion remain absent |
+| G1.7 qualification control                                | Outer receipt v1 and exact contract v7 `42ed3867...`; control authorization `31b8fce5...` and final decision set `b0def4f0...` are proposed/unapproved. Implemented contracts and fixtures cover strict current-v7, exact v5/v6 archives, Darwin-free legacy v1/v3/v4/v5/v6 replay, authorization-bound sample bytes, paired control statistics, exact G1.4b projection/binding `d57eb7cb...`/`5a4f5721...`, the exact merged-product identity, pure benchmark-owner replay, bounded canonical receipt-candidate replay, `fbbb692b`'s physical archive replay, `f04b9bc7`'s dormant containment boundary, `a457f46c`'s exact execution plan/source workspace, `c5687dac`/`3688ccda`'s replay-only build evidence, `008ab939`/`da41d7e0`'s exact non-tmpfs policy/mapping, bounded containment recovery through `3b289522`, and `c5050e9c`'s POSIX raw-byte process supervisor | `run` exits 4 before work and writes no G1.7 run. Candidate replay is non-eligible and binding-null; physical replay can expose only a non-authoritative prospective binding. The build/product projections do not independently observe execution; the raw supervisor observes native process lifecycle but cannot mint physical G1.7 provenance. A private co-located physical build issuer, native containment adapter, production control/sample/qualification owners, both human approvals, live controls and samples, benchmark, qualification, and separate human promotion remain absent |
 | Generic MetaHarness read layer                            | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code                                                                                                                                                                                                                               |
 | Dream Machine                                             | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication                                                                                                                                                                                                |
 
@@ -406,7 +415,7 @@ Execution record through 2026-08-28:
   8/8 fault, 7/7 outcome, and 20/20 compatibility tests. Task
   `task-1787869201628-bwe6b0` is complete. Ruflo map v15 records the historical
   corrected G1.7 checkpoint at 60%; the current
-  `task-1787871483413-ki34q2` row is in progress at 65%. Contract v7's
+  `task-1787871483413-ki34q2` row is in progress at 67%. Contract v7's
   merged-product identity and v6's two-phase protocol and exact paired control
   statistics are implemented and audited, v1/v3/v4/v5/v6 legacy replay is
   Darwin-free, and the exact G1.4b receipt is
@@ -416,10 +425,12 @@ Execution record through 2026-08-28:
   dedicated physical envelope and sealed archive replay are complete in
   `fbbb692b`. Dormant containment is complete in `f04b9bc7`; the exact
   execution plan and source-workspace materializer are complete in `a457f46c`;
-  and pure build/product evidence replay is complete in `c5687dac`. Supporting
-  workspace/build-owner task `task-1787902127894-7n7vk3` is in progress at 75%,
-  and containment task `task-1787902138074-0w648x` is in progress at 80%. The
-  remaining sequence begins with the physical supervising build owner, native
+  pure build/product evidence replay is complete in `c5687dac`/`3688ccda`,
+  mount-namespace mapping policy in `da41d7e0`, bounded cleanup in `3b289522`,
+  and the raw supervisor in `c5050e9c`. Supporting workspace/build-owner task
+  `task-1787902127894-7n7vk3` is in progress at 82%, and containment task
+  `task-1787902138074-0w648x` is in progress at 88%. The remaining sequence
+  begins with the private co-located physical supervising build issuer, native
   containment adapter, and live control owners,
   genuine human Phase A control approval, sealed and replayed negative/A/A
   controls, human Phase B's final decision binding, regenerated current owner
@@ -580,9 +591,13 @@ Execution record through 2026-08-28:
   returns no binding, while replayed PASS may expose only a prospective binding
   with all authority false. Dormant containment is complete in `f04b9bc7`, the
   exact execution plan and source-workspace materializer in `a457f46c`, and pure
-  build/product evidence replay in `c5687dac`. Those additions confer no live
-  capability or authority. The full package suite contains 556 tests: 553 pass,
-  none fail, and three intentional host-gated cases are skipped. This is
+  build/product evidence replay in `c5687dac`/`3688ccda`, the exact
+  mount-namespace mapping policy in `da41d7e0`, bounded destructive cleanup in
+  `3b289522`, and the raw process supervisor in `c5050e9c`. Those additions
+  confer no live G1.7
+  build/control capability or authority. The full package suite contains 596
+  tests: 593 pass, none fail, and three intentional host-gated cases are
+  skipped. This is
   fail-closed protocol, candidate-receipt, physical archive-mechanics,
   source-workspace, and claim-replay evidence, not independently observed Cargo
   execution, human approval, a live current control receipt, a final approved
@@ -943,14 +958,14 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | G1.7 schema/assurance-boundary audit       | `task-1787778501119-1krv3k`                                                                                                                         | Read-only review clean; focused structural/sealed/CLI suite 35/35                                                                                                                                 |
 | G1.7 claims/documentation audit            | `task-1787780431763-1cqm80`                                                                                                                         | Read-only review completed for the earlier v1/v2 boundary; the follow-on contract-v2/compatibility-v3 native-owner wording is reconciled in this slice                                            |
 | G1.7 v4 core / integration / legacy repair | `task-1787869267480-t4j9c8` / `task-1787872420656-oeaphy` / `task-1787874829121-tag4ud`                                                             | Complete historical v4 policy/statistics and live gate; subsequent dispatch preserves Darwin-free v1/v3/v4 replay; no samples or promotion authority                                              |
-| G1.7 two-phase owner programme             | `task-1787875911749-oh5io9` / `task-1787875912935-c2bi69` / `task-1787875914136-aw7onh` / `task-1787875915280-otfrw9`                               | V6 protocol/statistics, physical archive mechanics, dormant containment, exact source-workspace construction, and pure build/product claim replay complete; the physical supervising build owner, native containment adapter, live control owner, human approvals, live receipt, final approval, and qualification owner remain |
+| G1.7 two-phase owner programme             | `task-1787875911749-oh5io9` / `task-1787875912935-c2bi69` / `task-1787875914136-aw7onh` / `task-1787875915280-otfrw9`                               | V6 protocol/statistics, physical archive mechanics, dormant containment, exact source-workspace construction, replay-only build evidence, a frozen exact mount-namespace mapping policy, bounded cleanup, and the raw supervisor are complete; the private physical issuer, native containment adapter, live control owner, human approvals, live receipt, final approval, and qualification owner remain |
 | G1.7 prerequisite / legacy / governance    | `task-1787875916428-3vb8m7` / `task-1787875917561-6s54e3` / `task-1787875918734-1sjl6c` / `task-1787882542649-y8dttl` / `task-1787885074292-neafw8` | Exact G1.4b binding, Darwin-free legacy dispatch, v6 statistics, and pre-merge v11 governance synchronization complete at the pure-contract boundary                                              |
 | Upstream `ec68e3dd` reconciliation         | `task-1787883108007-gik9bz`                                                                                                                         | Complete at audited merge `e9d2db1b`; exact-tree Rust/Python/workflow/harness audit passes; ADR-0014 selected-missing `POST=404` retained                                                         |
 | G1.7 post-upstream pure reseal             | `task-1787888366495-gzxbhe`                                                                                                                         | Complete in `d1e18c6e`; exact subject/lock/evaluator/proposed-authorization identities are sealed at the pure boundary, with no live execution authority                                          |
-| G1.7 pure owner/receipt-candidate replay   | `task-1787892615000-rdwz7q`                                                                                                                         | Complete in `45121da9`; focused 45/45 and current full 553/0/3 pass; result is candidate-only, non-eligible, binding-null, and non-authoritative                                                  |
+| G1.7 pure owner/receipt-candidate replay   | `task-1787892615000-rdwz7q`                                                                                                                         | Complete in `45121da9`; focused 45/45 and current full 593/0/3 pass; result is candidate-only, non-eligible, binding-null, and non-authoritative                                                  |
 | G1.7 physical control envelope             | `task-1787896401667-xookiy`                                                                                                                         | Complete in `fbbb692b`: exact write-once/receipt-last/mode/nlink/inventory/current-state replay; only replayed PASS may yield a prospective binding, with all authority false                     |
-| G1.7 source workspace/build owner          | `task-1787902127894-7n7vk3`                                                                                                                         | In progress at 75%: `a457f46c` adds the exact execution plan and source materializer; `c5687dac` adds pure Cargo/build-product claim replay; the physical supervising owner and reap issuer remain absent |
-| G1.7 containment owner                     | `task-1787902138074-0w648x`                                                                                                                         | In progress at 80%: `f04b9bc7` adds the dormant contract/owner and reviewed host locator; the native syscall adapter and live containment evidence remain absent                                |
+| G1.7 source workspace/build owner          | `task-1787902127894-7n7vk3`                                                                                                                         | In progress at 82%: `a457f46c` adds the exact execution plan/materializer; `c5687dac`/`3688ccda` add replay-only build claims; `da41d7e0` freezes the mount-namespace path policy; `c5050e9c` adds the raw supervisor. The private physical issuer remains absent |
+| G1.7 containment owner                     | `task-1787902138074-0w648x`                                                                                                                         | In progress at 88%: `f04b9bc7` adds the dormant contract/owner and reviewed host locator; recovery through `3b289522` is bounded and retains unsafe state. The native syscall adapter and live containment evidence remain absent |
 
 The three G1.7 reviews ran under reviewer swarm
 `swarm-1787778496656-aq8q1c`. They are adversarial control review, not product

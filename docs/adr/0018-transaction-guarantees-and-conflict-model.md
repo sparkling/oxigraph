@@ -43,7 +43,13 @@
   request/environment, source and logical owners, platform identities, raw
   streams, the held target-output ancestry, executable bytes, and ELF identities
   while returning null binding, false final-decision eligibility, and no
-  authority. Physical
+  authority. Replay-only build-owner v2 (`3688ccda`), the frozen exact
+  non-tmpfs mount-namespace mapping policy (`da41d7e0`), bounded destructive
+  containment cleanup (`3b289522`), and an authority-free POSIX raw-byte process supervisor
+  (`c5050e9c`) are also implemented. The supervisor separates
+  exit/close/EOF/status/reap truth, applies one shared output bound, escalates
+  against the process group, and retains unreaped handles; it does not issue
+  physical provenance. Physical
   build-process/control/sample owner emission and a current control or
   qualification receipt are not implemented. Human control approval, final
   reference/budgets, benchmark/noise evidence, current owner evidence,

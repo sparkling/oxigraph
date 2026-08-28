@@ -138,7 +138,18 @@ Current activation boundary:
   streams, executable bytes, and ELF identity. It returns `binding: null`,
   `finalDecisionEligible: false`, and all authority false. These are contract,
   source, containment, and capture-replay mechanics, not a live control run,
-  physical build owner, or receipt;
+  physical build owner, or receipt. Commit `3688ccda` adds a stricter v2
+  build-owner projection but keeps it explicitly replay-only. Commits
+  `008ab939`/`da41d7e0` freeze the non-tmpfs policy and exact FD-relative
+  `/workspace/source` read-only plus `/state/target` writable mapping policy;
+  they do not execute a mount adapter.
+  Commits `5d054857`/`a9f9afc2`/`f482bec0`/`3b289522` retain unsafe
+  containment state and bound the complete destructive cleanup, lease-release,
+  and close sequence. Commit `c5050e9c` adds a POSIX raw-byte process supervisor with
+  a shared output cap, bounded argv, typed first-terminal reason, process-group
+  TERM/KILL escalation, distinct close/EOF/reap truth, and unreaped-handle
+  retention. It is authority-free infrastructure; the private physical issuer
+  and native containment adapter remain absent;
 - upstream merge `e9d2db1b` is exact-tree audited and is now the v7 product
   subject. Commit `d1e18c6e` binds its exact tree and `Cargo.lock`, records the
   evaluator as already present, separates the later control commit through
@@ -344,7 +355,7 @@ npm run g1.6:preflight
 npm run g1.7:preflight
 ```
 
-At the fail-closed v7 checkpoint, `npm test` reports 556 tests: 553 pass, none
+At the fail-closed v7 checkpoint, `npm test` reports 596 tests: 593 pass, none
 fail, and three intentional live-host tests are skipped. `npm run doctor` passes
 with 33 registered application commands and the latest-policy lock resolving
 AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.

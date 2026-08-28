@@ -126,6 +126,32 @@
   child evidence. It emits no build, launch, control, qualification, promotion,
   publication, provider, or Router authority and cannot replace the missing
   physical supervising build owner
+- G1.7 isolation, cleanup, and raw-supervisor update: build-owner v2 commit
+  `3688ccda` is a stricter deterministic projection but remains replay-only; it
+  cannot convert caller-supplied capture labels or outcome records into
+  physical provenance. Commits `008ab939` and `da41d7e0` freeze the non-tmpfs
+  isolation contract and exact descriptor-relative mapping of read-only
+  `/workspace/source` from held source FD 4 and writable `/state/target` from
+  held target FD 5, with both beneath held workspace parent FD 3. The policy
+  rejects aliases, alternate mappings, and missing mount restrictions; it does
+  not execute them without the still-missing native adapter.
+  Commits `5d054857`, `a9f9afc2`, `f482bec0`, and `3b289522` retain unsafe
+  containment state and place all destructive cleanup helpers, lease release,
+  and close under bounded terminal deadlines. Any helper timeout or rejection
+  stops the remaining destructive sequence and retains the session plus every
+  still-owned lease or helper handle; lease release must settle before close.
+  Commit `c5050e9c` adds an
+  authority-free POSIX raw-byte process supervisor with exact own-data inputs, one
+  caller-supplied shared output ceiling, a 1-MiB aggregate argv ceiling, native abort
+  capture, typed first-terminal reason, group TERM/KILL escalation, distinct
+  exit/close/EOF/status/reap truth, and retained unreaped handles. One
+  module-global active-or-retained slot rejects overlap with
+  `ERR_BOUNDED_BYTE_PROCESS_BUSY`. Focused raw and legacy process tests pass
+  24/24. These pieces are prerequisites only: no
+  private co-located physical issuer, execution-request v1, process-evidence
+  v3, build-owner v3, product-owner v4, native containment adapter, live build,
+  or authority exists. The frozen G1.7 policy will require a 64-MiB combined
+  output ceiling once the private issuer wires it
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
@@ -139,7 +165,7 @@
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
   producing the current exact nine-task/33-command surface. The current package
-  suite contains 556 tests: 553 pass, none fail, and three intentional host-gated
+  suite contains 596 tests: 593 pass, none fail, and three intentional host-gated
   tests are skipped; doctor evidence remains native-only, local-only, and
   non-promoting
 - **Related**:
@@ -414,7 +440,7 @@ all authority flags false. Final binding continues to report
 the approved final decision, and the execution owners exist. Commit `fbbb692b`
 implements exact three-file physical sealing and replay; seal emits no binding,
 while replayed PASS can expose only a prospective binding with all authority
-false. The current 556-test suite passes 553, fails none, and skips three
+false. The current 596-test suite passes 593, fails none, and skips three
 intentional host-gated cases. Those fixtures verify contracts and current
 archive mechanics, not live owner emission, durability, controls, performance,
 or qualification.
@@ -520,9 +546,9 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-65%; its two superseded rows remain cancelled history. Workspace/build-owner
-task `task-1787902127894-7n7vk3` is in progress at 75%, and containment task
-`task-1787902138074-0w648x` is in progress at 80%. Support tasks for the
+67%; its two superseded rows remain cancelled history. Workspace/build-owner
+task `task-1787902127894-7n7vk3` is in progress at 82%, and containment task
+`task-1787902138074-0w648x` is in progress at 88%. Support tasks for the
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
@@ -743,11 +769,15 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   commit `d1e18c6e`, and pure benchmark-owner/control-receipt-candidate replay
   commits `d3af2e17`/`45121da9`, followed by physical envelope commit
   `fbbb692b`, dormant containment commit `f04b9bc7`, source-workspace commit
-  `a457f46c`, and pure build-product replay commit `c5687dac`. Exact current v7
+  `a457f46c`, pure build-product replay commit `c5687dac`, replay-only build
+  owner v2 commit `3688ccda`, non-tmpfs policy/mapping commits
+  `008ab939`/`da41d7e0`, containment-retention and bounded-cleanup commits
+  `5d054857`/`a9f9afc2`/`f482bec0`/`3b289522`, and raw-process supervisor
+  commit `c5050e9c`. Exact current v7
   contract, proposed
   control-authorization, and proposed final-decision raw SHA-256 values are
   `42ed3867...`, `31b8fce5...`, and `b0def4f0...`; the v6 bytes remain exact
-  replay-only fixtures. The package suite reports 556 total, 553 passing, zero
+  replay-only fixtures. The package suite reports 596 total, 593 passing, zero
   failing, and three intentional host-gated skips. The CLI exits 4 before work
   at `CONTROL_AUTH_PROPOSED` and writes no
   G1.7 run. The pure candidate replay is not a physically owned or sealed
