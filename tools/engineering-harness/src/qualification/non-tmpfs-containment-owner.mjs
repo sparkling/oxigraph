@@ -970,6 +970,20 @@ function encodeEvidence(evidence, expected) {
   });
 }
 
+function trackOwnedOperation(state, action) {
+  const operation = Promise.resolve().then(action);
+  state.pendingOperations.add(operation);
+  void operation.then(
+    () => state.pendingOperations.delete(operation),
+    () => state.pendingOperations.delete(operation),
+  );
+  return operation;
+}
+
+function awaitOwnedOperationOrAbort(state, action, signal) {
+  return awaitOperationOrAbort(trackOwnedOperation(state, action), signal);
+}
+
 async function attemptCleanup(state, action, errors) {
   try {
     if (state.failureCleanupDeadline === undefined) {
@@ -980,10 +994,11 @@ async function attemptCleanup(state, action, errors) {
       1,
       Math.ceil(state.failureCleanupDeadline - performance.now()),
     );
+    const operation = trackOwnedOperation(state, action);
     let timeout;
     try {
       await Promise.race([
-        Promise.resolve().then(action),
+        operation,
         new Promise((_, reject) => {
           timeout = setTimeout(
             () =>
@@ -999,9 +1014,21 @@ async function attemptCleanup(state, action, errors) {
     } finally {
       clearTimeout(timeout);
     }
+    return true;
   } catch (error) {
     errors.push(error);
+    return false;
   }
+}
+
+function retainFailedCleanup(state, errors, reason) {
+  state.retainedUnsafe = true;
+  preservedUnsafeContainmentSessions.add(state);
+  errors.push(
+    new Error(
+      `${reason}; containment session retained without later cleanup, release, or close`,
+    ),
+  );
 }
 
 async function failureCleanup(state) {
@@ -1055,9 +1082,8 @@ async function failureCleanup(state) {
     // safe after a returned worker. Retain provisionally before probing it.
     state.retainedUnsafe = true;
     preservedUnsafeContainmentSessions.add(state);
-    const priorErrorCount = errors.length;
     let quiescence;
-    await attemptCleanup(
+    const quiescenceSettled = await attemptCleanup(
       state,
       async () => {
         quiescence = normalizeQuiescence(
@@ -1066,7 +1092,7 @@ async function failureCleanup(state) {
       },
       errors,
     );
-    if (errors.length === priorErrorCount && quiescence !== undefined) {
+    if (quiescenceSettled && quiescence !== undefined) {
       state.quiesced = true;
       state.retainedUnsafe = false;
       preservedUnsafeContainmentSessions.delete(state);
@@ -1079,17 +1105,56 @@ async function failureCleanup(state) {
       return errors;
     }
   }
+
+  if (state.session !== undefined) {
+    // Keep every remaining session/lease handle rooted until the exact
+    // destructive sequence and close have each settled successfully.
+    state.retainedUnsafe = true;
+    preservedUnsafeContainmentSessions.add(state);
+  }
+
+  if (state.stateCleanupAttempted && !state.stateCleanupCompleted) {
+    retainFailedCleanup(
+      state,
+      errors,
+      "state cleanup did not complete successfully",
+    );
+    return errors;
+  }
   if (
     state.session !== undefined &&
     state.preparationAttempted &&
     !state.stateCleanupAttempted
   ) {
     state.stateCleanupAttempted = true;
-    await attemptCleanup(
+    if (
+      !(await attemptCleanup(
+        state,
+        () =>
+          mechanics.cleanupState({
+            session: state.session,
+            signal: undefined,
+          }),
+        errors,
+      ))
+    ) {
+      retainFailedCleanup(
+        state,
+        errors,
+        "state cleanup did not complete successfully",
+      );
+      return errors;
+    }
+    state.stateCleanupCompleted = true;
+  }
+
+  if (state.cgroupCleanupAttempted && !state.cgroupCleanupCompleted) {
+    retainFailedCleanup(
       state,
-      () => mechanics.cleanupState({ session: state.session, signal: undefined }),
       errors,
+      "cgroup cleanup did not complete successfully",
     );
+    return errors;
   }
   if (
     state.session !== undefined &&
@@ -1097,28 +1162,99 @@ async function failureCleanup(state) {
     !state.cgroupCleanupAttempted
   ) {
     state.cgroupCleanupAttempted = true;
-    await attemptCleanup(
+    if (
+      !(await attemptCleanup(
+        state,
+        () =>
+          mechanics.cleanupCgroup({
+            session: state.session,
+            signal: undefined,
+          }),
+        errors,
+      ))
+    ) {
+      retainFailedCleanup(
+        state,
+        errors,
+        "cgroup cleanup did not complete successfully",
+      );
+      return errors;
+    }
+    state.cgroupCleanupCompleted = true;
+  }
+
+  if (state.postCleanupAttempted && !state.postCleanupCompleted) {
+    retainFailedCleanup(
       state,
-      () => mechanics.cleanupCgroup({ session: state.session, signal: undefined }),
       errors,
+      "post-cleanup observation did not complete successfully",
     );
+    return errors;
+  }
+
+  if (state.releaseAttempted && !state.releaseCompleted) {
+    retainFailedCleanup(
+      state,
+      errors,
+      "lease release did not complete successfully",
+    );
+    return errors;
   }
   if (state.session !== undefined && state.leaseAcquired && !state.releaseAttempted) {
     state.releaseAttempted = true;
-    await attemptCleanup(
+    if (
+      !(await attemptCleanup(
+        state,
+        () =>
+          mechanics.releaseLease({
+            session: state.session,
+            signal: undefined,
+          }),
+        errors,
+      ))
+    ) {
+      retainFailedCleanup(
+        state,
+        errors,
+        "lease release did not complete successfully",
+      );
+      return errors;
+    }
+    state.releaseCompleted = true;
+  }
+
+  if (state.closeAttempted && !state.closeCompleted) {
+    retainFailedCleanup(
       state,
-      () => mechanics.releaseLease({ session: state.session, signal: undefined }),
       errors,
+      "session close did not complete successfully",
     );
+    return errors;
   }
   if (state.session !== undefined && !state.closeAttempted) {
     state.closeAttempted = true;
-    await attemptCleanup(
-      state,
-      () => mechanics.closeSession({ session: state.session, signal: undefined }),
-      errors,
-    );
+    if (
+      !(await attemptCleanup(
+        state,
+        () =>
+          mechanics.closeSession({
+            session: state.session,
+            signal: undefined,
+          }),
+        errors,
+      ))
+    ) {
+      retainFailedCleanup(
+        state,
+        errors,
+        "session close did not complete successfully",
+      );
+      return errors;
+    }
+    state.closeCompleted = true;
   }
+  state.retainedUnsafe = false;
+  preservedUnsafeContainmentSessions.delete(state);
   return errors;
 }
 
@@ -1148,11 +1284,18 @@ async function executeOwner(capability, captured) {
     workerFinished: false,
     quiesced: false,
     stateCleanupAttempted: false,
+    stateCleanupCompleted: false,
     cgroupCleanupAttempted: false,
+    cgroupCleanupCompleted: false,
+    postCleanupAttempted: false,
+    postCleanupCompleted: false,
     releaseAttempted: false,
+    releaseCompleted: false,
     closeAttempted: false,
+    closeCompleted: false,
     retainedUnsafe: false,
     failureCleanupDeadline: undefined,
+    pendingOperations: new Set(),
     deadlineTimer: undefined,
   };
   let primary;
@@ -1436,30 +1579,63 @@ async function executeOwner(capability, captured) {
       controllerAfter.held.state,
     );
 
+    // From the first destructive operation through close, retain the session
+    // and every in-flight helper promise. Each wait is bounded by the live
+    // session deadline, but the underlying operation is never mistaken for
+    // settled merely because that wait timed out.
+    state.retainedUnsafe = true;
+    preservedUnsafeContainmentSessions.add(state);
     state.stateCleanupAttempted = true;
-    await mechanics.cleanupState({ session: state.session, signal: undefined });
-    state.cgroupCleanupAttempted = true;
-    await mechanics.cleanupCgroup({ session: state.session, signal: undefined });
-    const postCleanup = normalizePostCleanup(
-      await mechanics.observePostCleanup({
-        session: state.session,
-        signal: undefined,
-      }),
+    await awaitOwnedOperationOrAbort(
+      state,
+      () => mechanics.cleanupState({ session: state.session, signal: undefined }),
+      operationSignal,
     );
+    state.stateCleanupCompleted = true;
+    state.cgroupCleanupAttempted = true;
+    await awaitOwnedOperationOrAbort(
+      state,
+      () => mechanics.cleanupCgroup({ session: state.session, signal: undefined }),
+      operationSignal,
+    );
+    state.cgroupCleanupCompleted = true;
+    state.postCleanupAttempted = true;
+    const postCleanup = normalizePostCleanup(
+      await awaitOwnedOperationOrAbort(
+        state,
+        () => mechanics.observePostCleanup({
+          session: state.session,
+          signal: undefined,
+        }),
+        operationSignal,
+      ),
+    );
+    state.postCleanupCompleted = true;
     const cleanupAt = instant(clock, "cleanup completion");
     withinWall(acquiredAt, cleanupAt, expected.limits.totalWallMs);
     throwIfAborted(operationSignal);
 
     state.releaseAttempted = true;
-    await mechanics.releaseLease({ session: state.session, signal: undefined });
+    await awaitOwnedOperationOrAbort(
+      state,
+      () => mechanics.releaseLease({ session: state.session, signal: undefined }),
+      operationSignal,
+    );
+    state.releaseCompleted = true;
     const releasedAt = instant(clock, "lease release");
     withinWall(acquiredAt, releasedAt, expected.limits.totalWallMs);
     throwIfAborted(operationSignal);
+    state.closeAttempted = true;
+    await awaitOwnedOperationOrAbort(
+      state,
+      () => mechanics.closeSession({ session: state.session, signal: undefined }),
+      operationSignal,
+    );
+    state.closeCompleted = true;
+    state.retainedUnsafe = false;
+    preservedUnsafeContainmentSessions.delete(state);
     clearTimeout(state.deadlineTimer);
     state.deadlineTimer = undefined;
-
-    state.closeAttempted = true;
-    await mechanics.closeSession({ session: state.session, signal: undefined });
 
     const lockObject = acquisition.lockObject;
     return encodeEvidence({

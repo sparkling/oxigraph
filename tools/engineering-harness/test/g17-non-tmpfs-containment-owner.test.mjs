@@ -38,6 +38,16 @@ async function testCapability({
   return { capability, expected, fake };
 }
 
+function fastContainmentClock() {
+  const origin = Date.UTC(2026, 7, 28, 12, 0, 0);
+  let offset = 0;
+  return () => {
+    const value = new Date(origin + offset);
+    offset += 10;
+    return value;
+  };
+}
+
 test("the current proposed control decision cannot acquire live containment mechanics", async () => {
   const expected = g17ContainmentOwnerExpected();
   const fake = createG17ContainmentFakeMechanics({ expected });
@@ -413,21 +423,184 @@ test("failed quiescence retains a returned worker session without destructive cl
   assert.match(observed.cleanupErrors.at(-1), /retained without cleanup/u);
 });
 
-test("state cleanup failure still attempts cgroup cleanup, lease release, and close", async () => {
+test("state cleanup rejection retains the session before later destructive steps", async () => {
   const expected = g17ContainmentOwnerExpected();
   const fake = createG17ContainmentFakeMechanics({ expected, failAt: "cleanupState" });
   const { capability } = await testCapability({ expected, fake });
+  let observed;
   await assert.rejects(
     runG17NonTmpfsContainmentOwner(capability),
-    /synthetic cleanupState failure/u,
+    (error) => {
+      observed = error;
+      return /synthetic cleanupState failure/u.test(error.message);
+    },
   );
-  assert.deepEqual(fake.log.slice(-4), [
-    "cleanupState",
-    "cleanupCgroup",
-    "releaseLease",
-    "closeSession",
-  ]);
+  assert.equal(fake.log.at(-1), "cleanupState");
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
   assert.equal(fake.log.includes("observePostCleanup"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without later cleanup/u);
+});
+
+test("permanently pending state cleanup retains lease and session handles", async () => {
+  const base = g17ContainmentOwnerExpected();
+  const expected = g17ContainmentOwnerExpected({
+    limits: { ...base.limits, totalWallMs: 1_000 },
+  });
+  const fake = createG17ContainmentFakeMechanics({ expected });
+  fake.mechanics.cleanupState = async () => {
+    fake.log.push("cleanupState:noncooperative");
+    return new Promise(() => {});
+  };
+  const { capability } = await testCapability({
+    expected,
+    fake,
+    clock: fastContainmentClock(),
+  });
+  const started = performance.now();
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return (
+        error instanceof G17NonTmpfsContainmentOwnerFault &&
+        error.phase === "timeout"
+      );
+    },
+  );
+  assert.ok(performance.now() - started < 2_500);
+  assert.equal(fake.log.at(-1), "cleanupState:noncooperative");
+  assert.equal(fake.log.includes("cleanupCgroup"), false);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(
+    observed.cleanupErrors.join("\n"),
+    /state cleanup[\s\S]*retained without later cleanup/u,
+  );
+});
+
+test("permanently pending cgroup cleanup retains lease and session handles", async () => {
+  const base = g17ContainmentOwnerExpected();
+  const expected = g17ContainmentOwnerExpected({
+    limits: { ...base.limits, totalWallMs: 1_000 },
+  });
+  const fake = createG17ContainmentFakeMechanics({ expected });
+  fake.mechanics.cleanupCgroup = async () => {
+    fake.log.push("cleanupCgroup:noncooperative");
+    return new Promise(() => {});
+  };
+  const { capability } = await testCapability({
+    expected,
+    fake,
+    clock: fastContainmentClock(),
+  });
+  const started = performance.now();
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return (
+        error instanceof G17NonTmpfsContainmentOwnerFault &&
+        error.phase === "timeout"
+      );
+    },
+  );
+  assert.ok(performance.now() - started < 2_500);
+  assert.deepEqual(fake.log.slice(-2), [
+    "cleanupState",
+    "cleanupCgroup:noncooperative",
+  ]);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(
+    observed.cleanupErrors.join("\n"),
+    /cgroup cleanup[\s\S]*retained without later cleanup/u,
+  );
+});
+
+test("normal post-cleanup, release, and close hangs stop the exact lifecycle", async (t) => {
+  for (const fixture of [
+    {
+      method: "observePostCleanup",
+      marker: "observePostCleanup:noncooperative",
+      forbidden: ["releaseLease", "closeSession"],
+    },
+    {
+      method: "releaseLease",
+      marker: "releaseLease:noncooperative",
+      forbidden: ["closeSession"],
+    },
+    {
+      method: "closeSession",
+      marker: "closeSession:noncooperative",
+      forbidden: [],
+    },
+  ]) {
+    await t.test(fixture.method, async () => {
+      const base = g17ContainmentOwnerExpected();
+      const expected = g17ContainmentOwnerExpected({
+        limits: { ...base.limits, totalWallMs: 1_000 },
+      });
+      const fake = createG17ContainmentFakeMechanics({ expected });
+      fake.mechanics[fixture.method] = async () => {
+        fake.log.push(fixture.marker);
+        return new Promise(() => {});
+      };
+      const { capability } = await testCapability({
+        expected,
+        fake,
+        clock: fastContainmentClock(),
+      });
+      const started = performance.now();
+      let observed;
+      await assert.rejects(
+        runG17NonTmpfsContainmentOwner(capability),
+        (error) => {
+          observed = error;
+          return (
+            error instanceof G17NonTmpfsContainmentOwnerFault &&
+            error.phase === "timeout"
+          );
+        },
+      );
+      assert.ok(performance.now() - started < 2_500);
+      assert.equal(fake.log.at(-1), fixture.marker);
+      for (const method of fixture.forbidden) {
+        assert.equal(fake.log.includes(method), false, method);
+      }
+      assert.match(observed.cleanupErrors.at(-1), /retained without later cleanup/u);
+      if (fixture.method === "closeSession") {
+        assert.ok(
+          fake.log.indexOf("releaseLease") < fake.log.indexOf(fixture.marker),
+          "lease release must settle before session close begins",
+        );
+      }
+    });
+  }
+});
+
+test("cgroup cleanup rejection prevents lease release and session close", async () => {
+  const expected = g17ContainmentOwnerExpected();
+  const fake = createG17ContainmentFakeMechanics({
+    expected,
+    failAt: "cleanupCgroup",
+  });
+  const { capability } = await testCapability({ expected, fake });
+  let observed;
+  await assert.rejects(
+    runG17NonTmpfsContainmentOwner(capability),
+    (error) => {
+      observed = error;
+      return /synthetic cleanupCgroup failure/u.test(error.message);
+    },
+  );
+  assert.deepEqual(fake.log.slice(-2), ["cleanupState", "cleanupCgroup"]);
+  assert.equal(fake.log.includes("releaseLease"), false);
+  assert.equal(fake.log.includes("closeSession"), false);
+  assert.match(observed.cleanupErrors.at(-1), /retained without later cleanup/u);
 });
 
 test("cancellation during the worker retains unproved process state", async () => {
