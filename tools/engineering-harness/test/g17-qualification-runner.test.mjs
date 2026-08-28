@@ -1233,7 +1233,7 @@ test("sealed verifier replays synthetic Agentic and native owner-contract fixtur
   assert.equal(owner.native.projection.totalPassedTests, 23);
 });
 
-test("sealed verifier keeps an unversioned legacy PASS replayable but never qualification-eligible", async (t) => {
+test("sealed verifier keeps executed unversioned legacy evidence replay-only", async (t) => {
   const { runsRoot } = await fixture(t);
   const currentRunId = "run-current-v3-for-legacy";
   const owner = await compatibilityOwnerEvidence(currentRunId);
@@ -1299,10 +1299,20 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
   );
   const legacyContract = JSON.parse(legacyContractBytes);
   bytesByName.set("contract.json", legacyContractBytes);
+  const legacyBenchmark = {
+    status: "NOISY",
+    sampleCount: 1,
+    samplesSha256: "a".repeat(64),
+    summarySha256: "b".repeat(64),
+    budgetBreaches: ["legacy-noise"],
+  };
+  bytesByName.set("benchmark-samples.json", Buffer.from("{}\n", "utf8"));
+  bytesByName.set("benchmark-summary.json", Buffer.from("{}\n", "utf8"));
   const observations = JSON.parse(
     await readFile(join(current.runPath, "observations.json")),
   );
   observations.compatibility = legacyCompatibility;
+  observations.benchmark = legacyBenchmark;
   bytesByName.set("observations.json", canonicalBytes(observations));
 
   const manifestArtifacts = [...bytesByName]
@@ -1335,14 +1345,18 @@ test("sealed verifier keeps an unversioned legacy PASS replayable but never qual
       semantic: current.receipt.evidence.semantic,
       compatibility: legacyCompatibility,
     },
-    final: classifyG17Qualification({
-      semantic: current.receipt.evidence.semantic,
-      compatibility: legacyCompatibility,
-      benchmark: current.receipt.benchmark,
-      referenceDecision: legacyContract.referenceDecision,
-      budgetDecision: legacyContract.budgetDecision,
-      noiseDecision: legacyContract.noiseDecision,
-    }),
+    benchmark: legacyBenchmark,
+    final: classifyG17Qualification(
+      {
+        semantic: current.receipt.evidence.semantic,
+        compatibility: legacyCompatibility,
+        benchmark: legacyBenchmark,
+        referenceDecision: legacyContract.referenceDecision,
+        budgetDecision: legacyContract.budgetDecision,
+        noiseDecision: legacyContract.noiseDecision,
+      },
+      { currentV4: false },
+    ),
     artifacts: receiptArtifacts,
   });
   const legacyReceiptBytes = g17ReceiptBytes(legacyReceipt);

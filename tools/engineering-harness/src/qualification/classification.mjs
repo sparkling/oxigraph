@@ -30,32 +30,40 @@ function reasonFor(label, observed) {
   return `${label}-${observed.toLowerCase().replace("_", "-")}`;
 }
 
-export function classifyG17Qualification({
-  semantic,
-  compatibility,
-  benchmark,
-  referenceDecision,
-  budgetDecision,
-  noiseDecision,
-}) {
+export function classifyG17Qualification(
+  {
+    semantic,
+    compatibility,
+    benchmark,
+    referenceDecision,
+    budgetDecision,
+    noiseDecision,
+  },
+  { currentV4 = true } = {},
+) {
   const semanticStatus = status(semantic, "semantic");
   const compatibilityStatus = status(compatibility, "compatibility");
   const benchmarkStatus = status(benchmark, "benchmark");
-  const referenceStatus = decision(referenceDecision, "reference", [
-    "SELECTED",
-    "UNSELECTED",
-    "PROPOSED",
-  ]);
-  const budgetStatus = decision(budgetDecision, "performance budget", [
-    "APPROVED",
-    "ABSENT",
-    "PROPOSED",
-  ]);
-  const noiseStatus = decision(noiseDecision, "noise budget", [
-    "APPROVED",
-    "ABSENT",
-    "PROPOSED",
-  ]);
+  const referenceStatus = decision(
+    referenceDecision,
+    "reference",
+    currentV4
+      ? ["SELECTED", "UNSELECTED", "PROPOSED"]
+      : ["SELECTED", "UNSELECTED"],
+  );
+  const budgetDecisionStates = currentV4
+    ? ["APPROVED", "ABSENT", "PROPOSED"]
+    : ["APPROVED", "ABSENT"];
+  const budgetStatus = decision(
+    budgetDecision,
+    "performance budget",
+    budgetDecisionStates,
+  );
+  const noiseStatus = decision(
+    noiseDecision,
+    "noise budget",
+    budgetDecisionStates,
+  );
   if (!Array.isArray(benchmark?.budgetBreaches)) {
     throw new Error("benchmark budgetBreaches must be an array");
   }
@@ -66,23 +74,29 @@ export function classifyG17Qualification({
   ) {
     throw new Error("benchmark budgetBreaches must contain non-empty case ids");
   }
-  const observedIndexes = benchmark.budgetBreaches.map((caseId) =>
-    G17_BENCHMARK_CASE_IDS.indexOf(caseId),
-  );
+  const observedIndexes = currentV4
+    ? benchmark.budgetBreaches.map((caseId) =>
+        G17_BENCHMARK_CASE_IDS.indexOf(caseId),
+      )
+    : [];
   if (
-    observedIndexes.some((index) => index < 0) ||
-    new Set(benchmark.budgetBreaches).size !==
-      benchmark.budgetBreaches.length ||
-    observedIndexes.some(
-      (index, position) =>
-        position > 0 && index <= observedIndexes[position - 1],
-    )
+    currentV4 &&
+    (observedIndexes.some((index) => index < 0) ||
+      new Set(benchmark.budgetBreaches).size !==
+        benchmark.budgetBreaches.length ||
+      observedIndexes.some(
+        (index, position) =>
+          position > 0 && index <= observedIndexes[position - 1],
+      ))
   ) {
     throw new Error(
       "benchmark budgetBreaches must be known, unique, and in suite order",
     );
   }
-  if (benchmarkStatus !== "FAIL" && benchmark.budgetBreaches.length > 0) {
+  if (
+    (currentV4 ? benchmarkStatus !== "FAIL" : benchmarkStatus === "PASS") &&
+    benchmark.budgetBreaches.length > 0
+  ) {
     throw new Error(
       `${benchmarkStatus} benchmark cannot report performance budget breaches`,
     );

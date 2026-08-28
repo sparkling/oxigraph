@@ -4,6 +4,7 @@ import { comparePortablePaths } from "../../../metaharness/policy-contract.mjs";
 import { canonicalJson, canonicalSha256 } from "../routing/features.mjs";
 import { classifyG17Qualification } from "./classification.mjs";
 import {
+  G17_CURRENT_CONTRACT_SHA256,
   G17_LEGACY_V1_CONTRACT_SHA256,
   G17_LEGACY_V3_CONTRACT_SHA256,
 } from "./contract-identity.mjs";
@@ -145,17 +146,26 @@ function validateContractProjection(contract) {
   if (!DIGEST.test(contract.sha256) || !DIGEST.test(contract.suiteHash)) {
     fail("contract digest is malformed");
   }
+  const currentV4 = contract.sha256 === G17_CURRENT_CONTRACT_SHA256;
   if (
-    !["SELECTED", "UNSELECTED", "PROPOSED"].includes(contract.referenceDecision)
+    !(
+      currentV4
+        ? ["SELECTED", "UNSELECTED", "PROPOSED"]
+        : ["SELECTED", "UNSELECTED"]
+    ).includes(contract.referenceDecision)
   ) {
     fail("reference decision is invalid");
   }
-  if (!["APPROVED", "ABSENT", "PROPOSED"].includes(contract.budgetDecision)) {
+  const budgetDecisionStates = currentV4
+    ? ["APPROVED", "ABSENT", "PROPOSED"]
+    : ["APPROVED", "ABSENT"];
+  if (!budgetDecisionStates.includes(contract.budgetDecision)) {
     fail("performance budget decision is invalid");
   }
-  if (!["APPROVED", "ABSENT", "PROPOSED"].includes(contract.noiseDecision)) {
+  if (!budgetDecisionStates.includes(contract.noiseDecision)) {
     fail("noise budget decision is invalid");
   }
+  return currentV4;
 }
 
 function validateIdentity(identity) {
@@ -244,7 +254,7 @@ function validateEvidence(
   }
 }
 
-function validateBenchmark(benchmark) {
+function validateBenchmark(benchmark, { currentV4 }) {
   exactKeys(
     benchmark,
     [
@@ -302,12 +312,15 @@ function validateBenchmark(benchmark) {
   ) {
     fail("unexecuted benchmark contains execution evidence");
   }
-  if (benchmark.status !== "FAIL" && benchmark.budgetBreaches.length !== 0) {
+  if (
+    (currentV4 ? benchmark.status !== "FAIL" : benchmark.status === "PASS") &&
+    benchmark.budgetBreaches.length !== 0
+  ) {
     fail("only a failing benchmark may contain budget breaches");
   }
 }
 
-function validateFinal(final, receipt) {
+function validateFinal(final, receipt, { currentV4 }) {
   exactKeys(final, ["verdict", "reasons"], "final classification");
   if (!VERDICTS.has(final.verdict)) fail("final verdict is invalid");
   if (
@@ -318,17 +331,20 @@ function validateFinal(final, receipt) {
   ) {
     fail("final reasons are invalid");
   }
-  const classified = classifyG17Qualification({
-    semantic: { status: receipt.evidence.semantic.status },
-    compatibility: { status: receipt.evidence.compatibility.status },
-    benchmark: {
-      status: receipt.benchmark.status,
-      budgetBreaches: receipt.benchmark.budgetBreaches,
+  const classified = classifyG17Qualification(
+    {
+      semantic: { status: receipt.evidence.semantic.status },
+      compatibility: { status: receipt.evidence.compatibility.status },
+      benchmark: {
+        status: receipt.benchmark.status,
+        budgetBreaches: receipt.benchmark.budgetBreaches,
+      },
+      referenceDecision: { status: receipt.contract.referenceDecision },
+      budgetDecision: { status: receipt.contract.budgetDecision },
+      noiseDecision: { status: receipt.contract.noiseDecision },
     },
-    referenceDecision: { status: receipt.contract.referenceDecision },
-    budgetDecision: { status: receipt.contract.budgetDecision },
-    noiseDecision: { status: receipt.contract.noiseDecision },
-  });
+    { currentV4 },
+  );
   if (!isDeepStrictEqual(final, classified)) {
     fail("classification does not match sealed evidence");
   }
@@ -408,13 +424,13 @@ function validateStructure(receipt, options) {
   exactKeys(receipt, RECEIPT_KEYS, "receipt");
   if (receipt.schema !== G17_RECEIPT_SCHEMA) fail("schema is not v1");
   validateRun(receipt.run);
-  validateContractProjection(receipt.contract);
+  const currentV4 = validateContractProjection(receipt.contract);
   validateIdentity(receipt.identity);
   validateEvidence(receipt.evidence, options);
-  validateBenchmark(receipt.benchmark);
+  validateBenchmark(receipt.benchmark, { currentV4 });
   if (!isDeepStrictEqual(receipt.authority, AUTHORITY))
     fail("authority drifted");
-  validateFinal(receipt.final, receipt);
+  validateFinal(receipt.final, receipt, { currentV4 });
   validateArtifacts(receipt.artifacts);
   if (
     receipt.contentHash !== canonicalSha256(contentProjection(receipt)) ||

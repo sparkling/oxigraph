@@ -239,7 +239,10 @@ export async function verifySealedG17Run({
     fail("sealed contract projection differs from the receipt");
   }
   verifyEvidenceArtifactInventory(receipt, bytesByName);
-  if (["PASS", "FAIL", "NOISY"].includes(receipt.benchmark.status)) {
+  if (
+    contractGeneration === G17_CONTRACT_GENERATION.CURRENT_V4 &&
+    ["PASS", "FAIL", "NOISY"].includes(receipt.benchmark.status)
+  ) {
     fail("executed benchmark replay owner is unavailable");
   }
   const identity = parseCanonical(bytesByName.get("identity.json"), "identity");
