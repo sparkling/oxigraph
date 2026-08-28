@@ -26,10 +26,15 @@
   are also implemented. Commit `fbbb692b` adds the separate physical write-once
   receipt-last control envelope and exact current-state sealed replay while
   granting no authority and exposing only a prospective binding from replayed
-  PASS. Production control/build/sample owner emission and a current control or
-  qualification receipt are not implemented. Human control approval, final
-  reference/budgets, benchmark/noise evidence, current owner evidence,
-  qualification, and promotion remain outstanding
+  PASS. The dormant non-tmpfs containment owner now freezes the global lock
+  locator, replays held ancestry, four distinct process identities, cgroup
+  limits/quiescence, and cleanup, and rejects the exact current proposed
+  authorization before mechanics. Its expected artifact bindings remain
+  explicitly unsealed and non-authoritative, and no native syscall adapter is
+  implemented. Production build/control/sample owner emission and a current
+  control or qualification receipt are not implemented. Human control
+  approval, final reference/budgets, benchmark/noise evidence, current owner
+  evidence, qualification, and promotion remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:

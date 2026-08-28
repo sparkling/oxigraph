@@ -17,8 +17,11 @@
   replay, bounded canonical control-receipt candidate replay, and the physical
   write-once receipt-last control envelope with sealed current-state replay are
   implemented and fail closed. Production control/build/sample owner emission,
+  a native containment mechanics adapter, sealed expected-envelope provenance,
   a current control or qualification receipt, qualification, and promotion are
-  not implemented.
+  not implemented. The dormant containment owner and its narrow authorization
+  gate are implemented but cannot pass the current proposed decision or invoke
+  live mechanics.
   The existing `tools/metaharness` semantic qualifier remains separate;
   unattended Dream Machine execution remains deferred behind the activation
   gates in this ADR
@@ -65,6 +68,19 @@
   false. Pure and physical fixtures do not establish production control owner
   emission, crash/power-loss/filesystem-flush durability, historical
   receipt-last order from replay, or same-UID tamper resistance
+- G1.7 containment-owner update: the authority-free containment contract now
+  freezes the one reviewed host locator at
+  `/var/lib/oxigraph-engineering-harness/locks/g1.7-phase-a.lock`, binds held
+  root-to-lock ancestry, distinct controller/holder/worker/contender process
+  identities, complete cgroup identity, requested limits, quiescence, and
+  bounded cleanup, and rejects coherent private-lock substitution. A narrow
+  authorization gate replays the exact 11,426-byte current v3 authorization
+  artifact (raw SHA-256 `31b8fce5...`) without importing the benchmark or
+  Darwin graph and rejects `CONTROL_AUTH_PROPOSED` before mechanics. Focused
+  replay and dormant-owner tests pass 27/27. The four expected artifact hashes
+  remain explicitly caller-supplied, unsealed, and non-authoritative;
+  `binding` is null, final-decision eligibility and every authority are false,
+  and no native syscall adapter or live containment evidence exists
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
