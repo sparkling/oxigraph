@@ -44,8 +44,53 @@ test("native invocations are explicit, read-only, ephemeral, and provider-local"
       assert.doesNotMatch(JSON.stringify(invocation.args), /openrouter/i);
       assert.ok(invocation.executable.startsWith("/"));
       assert.match(invocation.attestation.sha256, /^[0-9a-f]{64}$/);
-      assert.ok(!Object.keys(invocation.environment).some((name) => /token|secret|api_?key/i.test(name)));
+      assert.ok(
+        !Object.keys(invocation.environment).some((name) =>
+          /token|secret|api_?key/i.test(name),
+        ),
+      );
     }
+  } finally {
+    rmSync(executionRoot, { recursive: true, force: true });
+  }
+});
+
+test("native schema-v2 invocations select only the frozen structured-creation schema", () => {
+  const executionRoot = mkdtempSync(join(tmpdir(), "oxigraph-provider-test-"));
+  try {
+    const codex = codexInvocation({
+      executionRoot,
+      model: "gpt-5.6-sol",
+      prompt: "inspect",
+      workerSchemaVersion: 2,
+    });
+    const claude = claudeInvocation({
+      executionRoot,
+      model: "opus",
+      prompt: "inspect",
+      workerSchemaVersion: 2,
+    });
+    assert.equal(validateProviderInvocation(codex), true);
+    assert.equal(validateProviderInvocation(claude), true);
+    assert.match(
+      codex.args[codex.args.indexOf("--output-schema") + 1],
+      /worker-output-v2\.schema\.json$/u,
+    );
+    const schema = JSON.parse(
+      claude.args[claude.args.indexOf("--json-schema") + 1],
+    );
+    assert.equal(Object.hasOwn(schema, "$schema"), false);
+    assert.deepEqual(schema.required, [
+      "summary",
+      "patch",
+      "creations",
+      "findings",
+      "verdict",
+    ]);
+    assert.deepEqual(schema.properties.creations.items.required, [
+      "path",
+      "content",
+    ]);
   } finally {
     rmSync(executionRoot, { recursive: true, force: true });
   }
@@ -76,6 +121,16 @@ test("provider policy rejects cross-provider and authority injection", () => {
           executable: "/tmp/codex",
         }),
       /attested native executable/,
+    );
+    assert.throws(
+      () =>
+        codexInvocation({
+          executionRoot,
+          model: "gpt-test",
+          prompt: "inspect",
+          workerSchemaVersion: 3,
+        }),
+      /unsupported worker output schema version/u,
     );
     assert.throws(
       () =>

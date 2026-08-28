@@ -3,10 +3,15 @@ import { nativeChildEnvironment } from "./environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
 import { claudeWorkerOutputSchema } from "./worker-schema.mjs";
 
-export function claudeInvocation({ executionRoot, model, prompt }) {
+export function claudeInvocation({
+  executionRoot,
+  model,
+  prompt,
+  workerSchemaVersion = 1,
+}) {
   const environment = nativeChildEnvironment();
   const attestation = resolveNativeExecutable("claude");
-  const schema = claudeWorkerOutputSchema();
+  const schema = claudeWorkerOutputSchema(workerSchemaVersion);
   const args = [
     "--print",
     "--safe-mode",

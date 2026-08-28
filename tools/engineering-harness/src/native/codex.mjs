@@ -1,13 +1,18 @@
 import { join } from "node:path";
-import { harnessRoot } from "../paths.mjs";
 import {
   CODEX_DISABLED_FEATURES,
   validateProviderInvocation,
 } from "../policy/providers.mjs";
 import { nativeChildEnvironment } from "./environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
+import { workerOutputSchemaPathForVersion } from "./worker-schema.mjs";
 
-export function codexInvocation({ executionRoot, model, prompt }) {
+export function codexInvocation({
+  executionRoot,
+  model,
+  prompt,
+  workerSchemaVersion = 1,
+}) {
   const environment = nativeChildEnvironment();
   const attestation = resolveNativeExecutable("codex");
   const args = [
@@ -25,7 +30,7 @@ export function codexInvocation({ executionRoot, model, prompt }) {
     "--color",
     "never",
     "--output-schema",
-    join(harnessRoot, "schemas/worker-output.schema.json"),
+    workerOutputSchemaPathForVersion(workerSchemaVersion),
     "--output-last-message",
     join(executionRoot, "last-message.json"),
     "--cd",

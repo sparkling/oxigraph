@@ -2,9 +2,13 @@ import { blockedChildEnvironmentName } from "../../../child-environment.mjs";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
-import { harnessRoot, isContained } from "../paths.mjs";
+import { isContained } from "../paths.mjs";
 import { nativeChildEnvironment } from "../native/environment.mjs";
-import { claudeWorkerOutputSchema } from "../native/worker-schema.mjs";
+import {
+  claudeWorkerOutputSchema,
+  workerOutputSchemaPath,
+  workerOutputV2SchemaPath,
+} from "../native/worker-schema.mjs";
 
 export const PROVIDERS = Object.freeze(["codex", "claude"]);
 export const FORBIDDEN_ARGUMENTS = Object.freeze([
@@ -47,28 +51,41 @@ function assertSequence(actual, expected, provider) {
     actual.length !== expected.length ||
     actual.some((value, index) => value !== expected[index])
   ) {
-    throw new Error(`${provider} invocation does not match the canonical argument shape`);
+    throw new Error(
+      `${provider} invocation does not match the canonical argument shape`,
+    );
   }
 }
 
 function validateModel(model, provider) {
-  if (typeof model !== "string" || model.length === 0 || model.startsWith("-")) {
+  if (
+    typeof model !== "string" ||
+    model.length === 0 ||
+    model.startsWith("-")
+  ) {
     throw new Error(`${provider} invocation must select an explicit model`);
   }
-  if (/openrouter/i.test(model)) throw new Error("OpenRouter transport is prohibited");
+  if (/openrouter/i.test(model))
+    throw new Error("OpenRouter transport is prohibited");
 }
 
 function validateExecutionRoot(root) {
-  if (!isAbsolute(root)) throw new Error("native execution root must be absolute");
+  if (!isAbsolute(root))
+    throw new Error("native execution root must be absolute");
   const canonical = realpathSync(root);
   const temporaryRoot = realpathSync(tmpdir());
   if (!isContained(temporaryRoot, canonical) || canonical === temporaryRoot) {
-    throw new Error("native execution root must be a private temporary directory");
+    throw new Error(
+      "native execution root must be a private temporary directory",
+    );
   }
   const stat = statSync(canonical);
-  const uid = typeof process.getuid === "function" ? process.getuid() : stat.uid;
+  const uid =
+    typeof process.getuid === "function" ? process.getuid() : stat.uid;
   if (!stat.isDirectory() || stat.uid !== uid || (stat.mode & 0o077) !== 0) {
-    throw new Error("native execution root must be a private owner-only directory");
+    throw new Error(
+      "native execution root must be a private owner-only directory",
+    );
   }
   return canonical;
 }
@@ -90,9 +107,14 @@ export function validateProviderInvocation({
     !isAbsolute(executable) ||
     !/^[0-9a-f]{64}$/.test(attestation.sha256 ?? "")
   ) {
-    throw new Error(`${provider} invocation must use an attested native executable`);
+    throw new Error(
+      `${provider} invocation must use an attested native executable`,
+    );
   }
-  if (!Array.isArray(args) || args.some((argument) => typeof argument !== "string")) {
+  if (
+    !Array.isArray(args) ||
+    args.some((argument) => typeof argument !== "string")
+  ) {
     throw new Error(`${provider} invocation arguments must be strings`);
   }
   if (environment === null || typeof environment !== "object") {
@@ -103,23 +125,42 @@ export function validateProviderInvocation({
     throw new Error("OpenRouter transport is prohibited");
   }
   for (const forbidden of FORBIDDEN_ARGUMENTS) {
-    if (args.some((argument) => argument === forbidden || argument.startsWith(`${forbidden}=`))) {
-      throw new Error(`${provider} invocation contains prohibited argument ${forbidden}`);
+    if (
+      args.some(
+        (argument) =>
+          argument === forbidden || argument.startsWith(`${forbidden}=`),
+      )
+    ) {
+      throw new Error(
+        `${provider} invocation contains prohibited argument ${forbidden}`,
+      );
     }
   }
   const executionRoot = validateExecutionRoot(cwd);
   for (const name of Object.keys(environment)) {
     if (blockedChildEnvironmentName(name)) {
-      throw new Error(`${provider} child environment retains prohibited authority: ${name}`);
+      throw new Error(
+        `${provider} child environment retains prohibited authority: ${name}`,
+      );
     }
   }
-  if (JSON.stringify(environment) !== JSON.stringify(nativeChildEnvironment())) {
-    throw new Error(`${provider} child environment is not the canonical minimal environment`);
+  if (
+    JSON.stringify(environment) !== JSON.stringify(nativeChildEnvironment())
+  ) {
+    throw new Error(
+      `${provider} child environment is not the canonical minimal environment`,
+    );
   }
   if (provider === "codex") {
     const model = args[8 + CODEX_DISABLED_FEATURES.length * 2];
     validateModel(model, provider);
-    const schemaPath = join(harnessRoot, "schemas/worker-output.schema.json");
+    const suppliedSchemaPath = args[args.indexOf("--output-schema") + 1];
+    if (
+      suppliedSchemaPath !== workerOutputSchemaPath &&
+      suppliedSchemaPath !== workerOutputV2SchemaPath
+    ) {
+      throw new Error("codex invocation selected an unsupported output schema");
+    }
     const outputPath = join(executionRoot, "last-message.json");
     assertSequence(
       args,
@@ -138,7 +179,7 @@ export function validateProviderInvocation({
         "--color",
         "never",
         "--output-schema",
-        schemaPath,
+        suppliedSchemaPath,
         "--output-last-message",
         outputPath,
         "--cd",
@@ -151,7 +192,16 @@ export function validateProviderInvocation({
   } else {
     const model = args[11];
     validateModel(model, provider);
-    const schema = claudeWorkerOutputSchema();
+    const suppliedSchema = args[args.indexOf("--json-schema") + 1];
+    const supportedSchemas = [
+      claudeWorkerOutputSchema(1),
+      claudeWorkerOutputSchema(2),
+    ];
+    if (!supportedSchemas.includes(suppliedSchema)) {
+      throw new Error(
+        "claude invocation selected an unsupported output schema",
+      );
+    }
     assertSequence(
       args,
       [
@@ -170,7 +220,7 @@ export function validateProviderInvocation({
         "--output-format",
         "json",
         "--json-schema",
-        schema,
+        suppliedSchema,
         "--no-chrome",
         "--disable-slash-commands",
       ],
