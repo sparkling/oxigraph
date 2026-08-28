@@ -16,14 +16,15 @@
   framing, paired control statistics, pre-execution gates, pure benchmark-owner
   replay, bounded canonical control-receipt candidate replay, and the physical
   write-once receipt-last control envelope with sealed current-state replay are
-  implemented and fail closed. The authority-free execution plan and physical
-  product-source workspace primitive are also implemented: they materialize an
-  exact evaluator-composed tree behind held descriptors, pre-admit every root
-  and required-submodule object before the first private pack, bind a read-only
-  source and initially empty target, and retain all handles rather than unlink
+  implemented and fail closed. The authority-free execution plan, physical
+  product-source workspace primitive, and pure build-process/product-evidence
+  replay are also implemented. The source primitive materializes an exact
+  evaluator-composed tree behind held descriptors, pre-admits every root
+  and required-submodule object before the first private pack, binds a read-only
+  source and initially empty target, and retains all handles rather than unlink
   after an unreaped Git outcome. Production build begin/finish deliberately
   return `MISSING` until a physical owner can prove exact child close and reap.
-  Production build-process/control/sample owner emission, a native containment
+  Physical build-process/control/sample owner emission, a native containment
   mechanics adapter, sealed expected-envelope provenance, a current control or
   qualification receipt, qualification, and promotion are not implemented. The
   dormant source and containment owners cannot pass the current proposed
@@ -102,9 +103,26 @@
   proof; only a one-shot, workspace-bound non-production test proof can finish.
   Focused source/native/candidate, execution-plan, and legacy-owner tests pass
   68/68, and an independent read-only revision audit is clean. This establishes
-  no build,
-  launch, control, qualification, promotion, publication, provider, or Router
-  authority and makes no WORM, binary-patch, or hostile same-UID race claim
+  no build, launch, control, qualification, promotion, publication, provider,
+  or Router authority and makes no WORM, binary-patch, or hostile same-UID race
+  claim
+- G1.7 build-evidence replay update: two pure, capability-free contracts now
+  replay the exact Cargo request and frozen environment recipe, source and
+  logical-owner bindings, platform identities, raw process streams, executable
+  bytes, and ELF identity for all four product builds. Executable replay pins
+  the exact held `target/release/deps` directory chain, rejects ancestor alias,
+  owner, filesystem, and parent drift, requires a single-link output file, and
+  bounds POSIX modes before type-bit evaluation. The product projection
+  returns `BUILD_EVIDENCE_AND_CAPTURE_CLAIMS_REPLAYED`; each process projection
+  returns `CARGO_INVOCATION_ENVIRONMENT_AND_CAPTURE_CLAIMS_REPLAYED`. Both keep
+  `binding: null`, `finalDecisionEligible: false`, and every authority flag
+  false. Focused process/product replay tests pass 23/23. The replay explicitly
+  does not claim independently observed Cargo execution, held-file execution,
+  verified Cargo configuration or vendor contents, verified private-directory
+  provenance/mode/ownership/ancestry, Cargo-selected `rustc`, or direct `rustc`
+  child evidence. It emits no build, launch, control, qualification, promotion,
+  publication, provider, or Router authority and cannot replace the missing
+  physical supervising build owner
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents

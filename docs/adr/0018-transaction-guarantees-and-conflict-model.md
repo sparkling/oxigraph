@@ -37,7 +37,12 @@
   required-submodule object bytes before private writes, preserve handles on an
   unreaped Git outcome, and expose only an authority-free v1 projection.
   Production build begin/finish remain deliberately unavailable until the
-  supervising build owner can prove exact child close and reap. Production
+  supervising build owner can prove exact child close and reap. Pure
+  build-process and four-product evidence replay now bind the frozen Cargo
+  request/environment, source and logical owners, platform identities, raw
+  streams, the held target-output ancestry, executable bytes, and ELF identities
+  while returning null binding, false final-decision eligibility, and no
+  authority. Physical
   build-process/control/sample owner emission and a current control or
   qualification receipt are not implemented. Human control approval, final
   reference/budgets, benchmark/noise evidence, current owner evidence,
