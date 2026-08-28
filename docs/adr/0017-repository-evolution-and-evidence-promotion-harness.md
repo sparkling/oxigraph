@@ -10,7 +10,7 @@
   task registry, generated command registry, and bounded candidate-rejection
   receipts are implemented and directly tested. A dual-provider G1.2
   application run is accepted, and G1.3-G1.6, including G1.4a-G1.4b, have
-  direct source-bound candidate acceptances. G1.7 qualification contract v6,
+  direct source-bound candidate acceptances. G1.7 qualification contract v7,
   proposed two-phase authorization/final-decision validation, exact G1.4b
   prerequisite replay, Darwin-free legacy replay, authorization-bound sample
   framing, paired control statistics, and pre-execution gates are implemented
@@ -42,9 +42,12 @@
   then make v1/v3/v4 replay Darwin-free, bind the exact G1.4b prerequisite, and
   implement and harden contract v5's two-phase protocol. Commits `20477225`
   and `799307fb` archive exact v5 bytes, freeze the missing sample/statistical/
-  verdict semantics, and version the current protocol as v6. The current exact
-  contract SHA-256 is
-  `22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
+  verdict semantics, and version the statistical protocol as v6. Commit
+  `d1e18c6e` archives the exact v6 contract/authorization/final bytes, binds
+  merged product `e9d2db1b...` separately from the later control commit through
+  qualified identity v2, and versions the current protocol as v7. The current
+  exact contract SHA-256 is
+  `42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
   Control authorization and the final decision set remain proposed/unapproved;
   `run` exits 4 before work, creates no G1.7 run, and no current binding can
   authorize qualification until a canonical control receipt is replayed. Pure
@@ -55,15 +58,14 @@
   `b295ea80...`/`ec68e3dd...`. Its exact-tree audit passes the 411-test harness
   at 409/0/2, CLI 152/152, XML 120/120 and 89/89, the 47-test fork lane, Python
   222/222, actionlint, doctor, and a PyPI-compatible cp39-abi3 wheel build. It
-  grants no G1.7 or publication authority. Because it changes the current
-  tracked subject and lockfile, a separate pure reseal is required before
-  Phase A; the committed v6 bytes remain exact protocol fixtures rather than a
-  merged-product approval
+  grants no G1.7 or publication authority. The separate pure reseal is complete
+  in `d1e18c6e`; committed v6 bytes remain exact historical fixtures, and the
+  v7 binding is a merged-product identity control rather than approval
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
   producing the current exact nine-task/33-command surface. The current package
-  suite contains 411 tests: 409 pass, none fail, and two intentional host-gated
+  suite contains 415 tests: 413 pass, none fail, and two intentional host-gated
   tests are skipped; doctor evidence remains native-only, local-only, and
   non-promoting
 - **Related**:
@@ -293,7 +295,7 @@ implemented and directly tested:
 - candidate receipts bind the baseline, evaluator commit, admitted patch,
   rebuilt outputs, literal commands, runtime identities, exits, and relevant
   digests, with adversarial receipt and replay tests;
-- current v6 candidate-rejection records bind the exact candidate execution,
+- current application-receipt-v6 candidate-rejection records bind the exact candidate execution,
   successful patch-producing invocation and patch digest to a typed
   reconstruction/applicability failure and bounded canonical-detail digest.
   They are non-trainable, the detail digest is tamper-evident rather than a
@@ -309,32 +311,35 @@ or a synthetic Darwin run does not satisfy this definition.
 ### G1.7 qualification-control boundary
 
 The outer G1.7 qualification receipt remains
-`oxigraph.g1.7-qualification-receipt/v1`. Exact qualification contract v6 is
-`22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
+`oxigraph.g1.7-qualification-receipt/v1`. Exact qualification contract v7 is
+`42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
 Its proposed control-authorization artifact has raw/content SHA-256 values
-`285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839`
-and `5e223cf4e11540eadef1e725794e05af838e2d5d347b5959091e424d7140961a`;
+`31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`
+and `d61434741577787729dde9c23725523b855fca208e5b891de2a73e8abe0c0bb2`;
 the proposed final decision set has raw/content SHA-256 values
-`e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732`
-and `7eb0dcfbc35d70dc6b1fcf5debf69bd083900d9e9356c1cef745fc29271345c5`.
-The archived v5 contract raw SHA-256 remains `155c364b...`; its proposed
-authorization and final-decision raw SHA-256 values remain `b9ee0f76...` and
-`2fd16b9e...`. They are byte-exact historical identities, not aliases for v6.
+`b0def4f0a3efa845aed557305045a79c6c9c22a455f09719dfca0bf903d595e5`
+and `bb4d92160e4d71089ec9d29dc0861ffccf0dbcaa46e87c53d4a49f996fe9ac72`.
+The archived v6 contract raw SHA-256 remains `22cec755...`; its proposed
+authorization and final-decision raw SHA-256 values remain `285c86fd...` and
+`e2884b73...`. The archived v5 contract raw SHA-256 remains `155c364b...`;
+its proposed authorization and final-decision raw SHA-256 values remain
+`b9ee0f76...` and `2fd16b9e...`. They are byte-exact historical identities,
+not aliases for v7.
 The current artifacts are `CONTROL_AUTH_PROPOSED` and
 `PROPOSED`/`UNAPPROVED`.
 `g1.7:run` exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before identity,
 application evidence, build, runtime-directory creation, or sampling and
 creates no G1.7 run. Final binding deliberately reports
 `qualificationExecutionAuthorized: false` until canonical control-receipt
-replay and the execution owners exist. The current 411-test suite passes 409,
+replay and the execution owners exist. The current 415-test suite passes 413,
 fails none, and skips two intentional live-host cases. Those pure fixtures
 verify contracts, not real owner emission, controls, performance, or
 qualification.
 
-Contract v1/v3/v4/v5 replay is Darwin-free, `LEGACY_REPLAY_ONLY`, and can never
-qualify. V5's exact contract, proposed authorization, and proposed final
-decision bytes are archived with raw/content hashes and byte lengths; they are
-not silently relabelled current. The accepted G1.4b receipt is copied,
+Contract v1/v3/v4/v5/v6 replay is Darwin-free, `LEGACY_REPLAY_ONLY`, and can
+never qualify. V5 and v6 exact contracts, proposed authorizations, and proposed
+final-decision bytes are archived with raw/content hashes and byte lengths;
+they are not silently relabelled current. The accepted G1.4b receipt is copied,
 hash-bound, and pure-replayed at the current prerequisite boundary. Its
 compatibility projection and binding
 SHA-256 values are
@@ -344,8 +349,8 @@ Its claim remains limited to simulated storage-call pre/post-write faults, not
 crash, power-loss, or fsync durability, and it cannot replace the control
 receipt.
 
-Contract v6 retains v5's replacement for the circular v4 approval flow as two
-strictly ordered human phases. It additionally freezes canonical
+Contract v7 preserves v6's replacement for the circular v4 approval flow as
+two strictly ordered human phases. It retains the frozen canonical
 authorization-bound sample-set framing and order, paired 10% log
 non-inferiority for the negative control, two shared-seed one-sided 5% A/A
 equivalence directions, the inclusive 5% MAD noise boundary, and mechanical
@@ -438,18 +443,20 @@ protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
 governance task `task-1787885074292-neafw8` records the pre-merge v6
 synchronization. Upstream task `task-1787883108007-gik9bz` is complete at
-audited merge `e9d2db1b`; reseal task `task-1787888366495-gzxbhe` is pending.
+audited merge `e9d2db1b`; reseal task `task-1787888366495-gzxbhe` is complete
+at the pure, non-executing v7 boundary in `d1e18c6e`.
 The control owner, final human decision, and benchmark owner remain open.
 Evidence checkpoints
 are stored under `programme-evidence/g14a-store-terminal-outcomes-2f518e04`,
 `programme-evidence/g14b-harness-qualified-2026-08-28`, and
 `programme-evidence/g17-v4-fail-closed-core-f1cb6680-2026-08-28`, with the
-current protocol proof at
+historical v5 protocol proof at
 `programme-evidence/g17-v5-control-protocol-main-0257587e-2026-08-28` and the
 v6 proof at
-`programme-evidence/g17-v6-statistics-protocol-main-799307fb-2026-08-28`, with
-the merge proof at
-`programme-evidence/upstream-ec68e3dd-merged-e9d2db1b-2026-08-28`.
+`programme-evidence/g17-v6-statistics-protocol-main-799307fb-2026-08-28`, the
+merge proof at
+`programme-evidence/upstream-ec68e3dd-merged-e9d2db1b-2026-08-28`, and the
+current v7 source checkpoint at `d1e18c6e`.
 
 The installed source-backed infrastructure audit is **OIA** (Open
 Infrastructure Architecture, layers L1-L9). Its point-in-time result is an
@@ -639,18 +646,21 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   `a6e229df`, and `f1cb6680`, followed by Darwin-free legacy replay
   `f357a1b4`, exact G1.4b prerequisite binding `509a6611`/`7b1eab5d`, and
   audited v5 protocol commits `8ca3804b`/`0257587e`, followed by v6 statistics
-  and versioning commits `20477225`/`799307fb`. Exact current contract,
-  proposed control-authorization, and proposed final-decision raw SHA-256
-  values are `22cec755...`, `285c86fd...`, and `e2884b73...`. The package suite
-  reports 411 total, 409 passing, zero failing, and two intentional host-gated
-  skips. The CLI exits 4 before work at `CONTROL_AUTH_PROPOSED` and writes no
+  and versioning commits `20477225`/`799307fb`, then merged-product identity
+  reseal commit `d1e18c6e`. Exact current v7 contract, proposed
+  control-authorization, and proposed final-decision raw SHA-256 values are
+  `42ed3867...`, `31b8fce5...`, and `b0def4f0...`; the v6 bytes remain exact
+  replay-only fixtures. The package suite reports 415 total, 413 passing, zero
+  failing, and two intentional host-gated skips. The CLI exits 4 before work
+  at `CONTROL_AUTH_PROPOSED` and writes no
   G1.7 run. This is protocol and negative-gate evidence only: it contains no
   human approval, control receipt, benchmark, performance result, qualification,
   or promotion.
 - audited upstream merge `e9d2db1b` with exact-tree Rust, Python, workflow, and
   409/0/2 harness evidence. It retains ADR-0014's selected-missing `POST=404`
-  divergence and changes the current subject/lock identity, so it requires a
-  new pure reseal before Phase A and supplies no live qualification evidence.
+  divergence. Commit `d1e18c6e` reseals that exact product/tree/lock identity
+  as current v7 without running Phase A or supplying live qualification
+  evidence.
 
 ## Decision boundary
 

@@ -51,12 +51,13 @@ ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
 engineering controls and grant no semantic-qualification or promotion
-authority. G1.7 contract v6 and its fail-closed runner/verifier gates are
-implemented through `799307fb`: the control authorization and final decision
+authority. G1.7 contract v7 and its fail-closed runner/verifier gates are
+implemented through `d1e18c6e`: the control authorization and final decision
 remain proposed/unapproved, `run` exits before work, and the approved-fixture
-path has no production execution owner. V6 freezes exact authorization-bound
+path has no production execution owner. V7 preserves v6's exact authorization-bound
 sample framing, paired negative/A/A statistics, noise boundaries, and verdict
-precedence; pure fixture replay is not current owner emission, and v1/v3/v4/v5
+precedence while binding exact merged product `e9d2db1b`; pure fixture replay is
+not current owner emission, and v1/v3/v4/v5/v6
 contracts remain structural replay-only.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
@@ -67,16 +68,18 @@ crash, power-loss, and fsync durability remain explicit non-claims. That
 receipt is exact-bound as a prerequisite but is not a G1.7 control receipt. A
 two-phase human control authorization and
 sealed negative/A/A receipt must precede the final reference/performance/noise
-decision and subject benchmark. No current receipt, samples, benchmark result,
-qualification, or promotion exists, so G1.7 and ADR-0018 remain open.
+decision and subject benchmark. No current G1.7 control or qualification
+receipt, samples, benchmark result, qualification, or promotion exists, so
+G1.7 and ADR-0018 remain open.
 
 Audited two-parent merge `e9d2db1b` records upstream `ec68e3dd` as an ancestor
 while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
-workflow, and 409/0/2 engineering-harness evidence passes. The merge changes
-the current tracked subject and `Cargo.lock`, so the v6 protocol fixtures must
-be pure-resealed before Phase A; it creates no control, benchmark,
-qualification, promotion, publication, or push authority.
+workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
+reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7;
+the full current harness suite passes 413/0/2. That pure identity control
+creates no control, benchmark, qualification, promotion, publication, or push
+authority.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

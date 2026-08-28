@@ -101,38 +101,37 @@ Current activation boundary:
   and their existing application receipts remain replayable;
 - `g1.7:preflight`, `g1.7:run`, and `g1.7:verify` use a separate qualification
   binary rather than the application-task registry. Exact qualification
-  contract v6 has SHA-256
-  `22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
+  contract v7 has SHA-256
+  `42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
   Its exact proposed control authorization and final decision set have raw
-  SHA-256 values `285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839`
-  and `e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732`.
+  SHA-256 values `31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`
+  and `b0def4f0a3efa845aed557305045a79c6c9c22a455f09719dfca0bf903d595e5`.
   They remain `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`, so `run`
   exits 4 before identity, copied evidence, build, runtime-directory creation,
   or samples and writes no G1.7 run. A final binding remains non-authoritative
-  until canonical control-receipt replay exists. Current v1/v3/v4/v5 contract
-  bytes use Darwin-free pure `LEGACY_REPLAY_ONLY` dispatch; v5's proposed
+  until canonical control-receipt replay exists. Contract v1/v3/v4/v5/v6 bytes
+  use Darwin-free pure `LEGACY_REPLAY_ONLY` dispatch; v5 and v6 proposed
   protocol artifacts are separately frozen by exact byte identity. Synthetic
   owner fixtures test replay but are not production owner evidence. The
   accepted G1.4b receipt is
   exact-bound at the prerequisite boundary, with projection `d57eb7cb...` and
   binding `5a4f5721...`, but it cannot replace the control receipt or execution
-  owners. No controls, samples, benchmark result, current-v6 receipt,
+  owners. No controls, samples, benchmark result, current-v7 receipt,
   qualification, or promotion exists. The implemented lifecycle is a two-phase
   human gate: authorize permanently non-promoting negative and A/A controls,
   seal/replay them, then approve one final decision set binding that control
   receipt and the G1.4b prerequisite before subject/reference qualification.
-  Promotion remains a later human-only action. V6 additionally freezes exact
+  Promotion remains a later human-only action. V7 preserves v6's exact frozen
   authorization-bound sample-set framing/order, paired 10% negative-control
   non-inferiority, shared-seed two-direction 5% A/A equivalence, the inclusive
   5% MAD noise boundary, and mechanical FAIL/INCONCLUSIVE/PASS precedence. Its
   pure replay is differential-tested against the exact installed Darwin 0.9.3
   source modules; it is not a live control run or receipt;
-- upstream merge `e9d2db1b` is exact-tree audited and leaves this package at
-  409 passing, zero failing, and two intentional live-host skips. It changes
-  the current product and `Cargo.lock` identities, so task
-  `task-1787888366495-gzxbhe` must pure-reseal the G1.7 subject and proposed
-  authorization before Phase A. Existing v6 bytes remain protocol fixtures and
-  grant no execution authority;
+- upstream merge `e9d2db1b` is exact-tree audited and is now the v7 product
+  subject. Commit `d1e18c6e` binds its exact tree and `Cargo.lock`, records the
+  evaluator as already present, separates the later control commit through
+  qualified identity v2, and archives v6 byte-for-byte. Reseal task
+  `task-1787888366495-gzxbhe` is complete, but grants no execution authority;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v6 adds an exact `candidateRejections` collection and
@@ -333,7 +332,7 @@ npm run g1.6:preflight
 npm run g1.7:preflight
 ```
 
-At the fail-closed v6 checkpoint, `npm test` reports 411 tests: 409 pass, none
+At the fail-closed v7 checkpoint, `npm test` reports 415 tests: 413 pass, none
 fail, and two intentional live-host tests are skipped. `npm run doctor` passes
 with 33 registered application commands and the latest-policy lock resolving
 AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.

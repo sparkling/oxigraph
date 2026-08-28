@@ -182,7 +182,7 @@ Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
 current fail-closed registry therefore contains nine tasks and 33 commands;
-the current full package suite contains 411 tests: 409 pass, none fail, and two
+the current full package suite contains 415 tests: 413 pass, none fail, and two
 intentional host-gated tests are skipped. The doctor retains the same
 native-only, local-only, non-promoting boundary.
 
@@ -199,16 +199,18 @@ candidate-disposal failure aborts receipt minting. The committed control passes
 194/194 harness tests and the same `runner-implemented`, local-only doctor.
 
 The dedicated G1.7 qualification path is now fail-closed at qualification
-contract v6, SHA-256
-`22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
+contract v7, SHA-256
+`42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
 Commits `8ca3804b` and `0257587e` implement and harden the two-phase protocol;
 commits `20477225` and `799307fb` freeze its exact control statistics and
-version the current protocol. Contract v5 and its proposed authorization/final
-artifacts remain exact replay-only fixtures rather than current authority.
+version the statistical protocol as v6. Commit `d1e18c6e` then archives those
+exact v6 bytes and reseals the merged product as current v7. Contracts v5 and
+v6 and their proposed authorization/final artifacts remain exact replay-only
+fixtures rather than current authority.
 The exact control-authorization artifact is
-`285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839`;
+`31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`;
 the exact final-decision-set artifact is
-`e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732`.
+`b0def4f0a3efa845aed557305045a79c6c9c22a455f09719dfca0bf903d595e5`.
 They remain `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`, respectively.
 `g1.7:run` therefore exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before
 identity, evidence, build, runtime-directory creation, or sampling and creates
@@ -217,15 +219,18 @@ canonical control receipt is available and replayed. There are no current G1.7
 samples, control receipt, benchmark results, sealed qualification receipt,
 qualification, or promotion decision.
 
-The audited upstream merge `e9d2db1b...` changes the current tracked subject
-and `Cargo.lock` identity. The exact v6 protocol/statistics bytes above remain
-valid pure and historical fixtures, but they are not a Phase-A-ready identity
-for the merged product. Ruflo task `task-1787888366495-gzxbhe` must reseal the
-subject, lockfile, evaluator compositions, and proposed authorization through
-the pure replay boundary before any human control authorization is requested.
+The audited upstream merge `e9d2db1b...` is now the exact v7 product subject:
+tree `fcc5bb75...`, `Cargo.lock` blob `763b2fed...`, and lock SHA-256
+`587e4563...`. Its evaluator is already present as ancestor `3aca932e...`;
+qualified identity v2 separates that immutable product from the later committed
+harness/control commit and rejects product-path drift. Ruflo reseal task
+`task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
+The archived v6 protocol/statistics bytes retain their exact historical identity
+and grant no Phase-A, provider, control, sample, benchmark, qualification, or
+promotion authority.
 
-Contract v6 freezes canonical authorization-bound sample-set bytes and their
-ordered SHA-256 identity, paired 10% log non-inferiority for the negative
+Contract v7 preserves v6's frozen canonical authorization-bound sample-set
+bytes and their ordered SHA-256 identity, paired 10% log non-inferiority for the negative
 control, two one-sided paired 5% A/A equivalence directions with one shared
 per-case Darwin seed, an inclusive 5% MAD noise boundary, and mechanical
 per-control and aggregate verdict precedence. The pure attributed replay is
@@ -234,7 +239,7 @@ a statistics contract, not a live measurement or receipt.
 
 The existing owner-contract tests prove pure verifier behavior over synthetic
 fixtures; they do not prove current owner-process emission. Contract
-v1/v3/v4/v5 bytes replay through a Darwin-free pure boundary and remain
+v1/v3/v4/v5/v6 bytes replay through a Darwin-free pure boundary and remain
 legacy-only, never qualification-eligible. The accepted G1.4b receipt
 `d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
 is copied, hash-bound, and pure-replayed at the current prerequisite boundary.
@@ -285,10 +290,10 @@ G0.7's earlier reconciliation remains historical after the schema-v5 contract
 change and these protected-document edits; root `README.md` remains part of the
 MetaHarness protected snapshot. Full MetaHarness semantic qualification, its
 independent verification, and the separate G1.7 compatibility/performance
-promotion gate remain open. At upstream-merged pre-documentation head
-`e9d2db1b`, contract-v6 execution remains `INCONCLUSIVE`: control authorization
-and the final decision set are proposed/unapproved, the merged subject has not
-been pure-resealed, all semantic, compatibility, and benchmark stages are
+promotion gate remain open. At the current v7 control checkpoint, the pinned
+product subject is `e9d2db1b` and execution remains `INCONCLUSIVE`: the merged
+subject is pure-resealed, but control authorization and the final decision set are still
+proposed/unapproved, all semantic, compatibility, and benchmark stages are
 `NOT_RUN`, canonical control-receipt replay and production execution owners are
 absent, and `run` exits 4 before identity or tracked-tree inspection. The
 umbrella claim is still withheld.
