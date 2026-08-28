@@ -62,7 +62,16 @@ const objectPrototype = Object.prototype;
 const arrayPrototype = Array.prototype;
 const objectGetPrototypeOf = Object.getPrototypeOf;
 const objectGetOwnPropertyDescriptors = Object.getOwnPropertyDescriptors;
+const objectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 const reflectOwnKeys = Reflect.ownKeys;
+const bufferPrototype = Buffer.prototype;
+const bufferAllocUnsafe = Buffer.allocUnsafe.bind(Buffer);
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const typedArrayLengthGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "length",
+).get;
+const typedArraySet = Uint8Array.prototype.set;
 
 function fail(message) {
   throw new Error(`G1.7 benchmark execution request contract: ${message}`);
@@ -224,7 +233,9 @@ function digest(value, label) {
 }
 
 function safeId(value, label) {
-  if (!SAFE_ID.test(value ?? "")) fail(`${label} is not a safe identifier`);
+  if (typeof value !== "string" || !SAFE_ID.test(value)) {
+    fail(`${label} is not a safe identifier`);
+  }
   return value;
 }
 
@@ -703,19 +714,46 @@ function verificationInput(input) {
       fail(`verification input ${key} is not an enumerable own data field`);
     }
   }
-  const bytes = descriptors.bytes.value;
-  if (
-    !Buffer.isBuffer(bytes) ||
-    types.isProxy(bytes) ||
-    bytes.length < 2 ||
-    bytes.length > G17_BENCHMARK_EXECUTION_REQUEST_MAX_BYTES
-  ) {
-    fail("request artifact is not a bounded Buffer");
-  }
   return {
-    bytes: Buffer.from(bytes),
+    bytes: copyBoundedBuffer(
+      descriptors.bytes.value,
+      G17_BENCHMARK_EXECUTION_REQUEST_MAX_BYTES,
+      "request artifact",
+      false,
+    ),
     expected: descriptors.expected.value,
   };
+}
+
+function copyBoundedBuffer(value, maximum, label, allowEmpty = true) {
+  if (
+    !Buffer.isBuffer(value) ||
+    types.isProxy(value) ||
+    objectGetPrototypeOf(value) !== bufferPrototype ||
+    objectGetOwnPropertyDescriptor(value, "length") !== undefined
+  ) {
+    fail(`${label} must be an exact non-Proxy Buffer`);
+  }
+  let length;
+  try {
+    length = typedArrayLengthGetter.call(value);
+  } catch (error) {
+    fail(`${label} length cannot be read intrinsically: ${error.message}`);
+  }
+  if (
+    !Number.isSafeInteger(length) ||
+    length > maximum ||
+    (!allowEmpty && length === 0)
+  ) {
+    fail(`${label} is outside its byte bound`);
+  }
+  try {
+    const copied = bufferAllocUnsafe(length);
+    typedArraySet.call(copied, value);
+    return copied;
+  } catch (error) {
+    fail(`${label} cannot be copied intrinsically: ${error.message}`);
+  }
 }
 
 function decodeCanonicalRequest(bytes) {

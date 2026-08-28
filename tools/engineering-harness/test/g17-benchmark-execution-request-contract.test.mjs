@@ -403,6 +403,10 @@ test("request input rejects invalid run, generation, ordinal, and platform ident
       value.controlRunId = "unsafe run";
     },
     (value) => {
+      value.controlRunId = 1;
+      value.source.controlRunId = 1;
+    },
+    (value) => {
       value.ownership.ownerGeneration = "g17-owner-1";
     },
     (value) => {
@@ -713,4 +717,23 @@ test("verification envelope itself requires exact own enumerable data", () => {
       }),
     CONTRACT_ERROR,
   );
+
+  const lengthAccessor = created.artifact.bytes;
+  let lengthReads = 0;
+  Object.defineProperty(lengthAccessor, "length", {
+    configurable: true,
+    get() {
+      lengthReads += 1;
+      return created.artifact.bytes.length;
+    },
+  });
+  assert.throws(
+    () =>
+      verifyG17BenchmarkExecutionRequestArtifact({
+        bytes: lengthAccessor,
+        expected,
+      }),
+    CONTRACT_ERROR,
+  );
+  assert.equal(lengthReads, 0);
 });
