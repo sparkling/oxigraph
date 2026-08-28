@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  assembleCandidatePatchV2,
   asciiFoldPathV2,
   gitBlobObjectIdV2,
   validateCandidatePatchV2,
@@ -480,6 +481,242 @@ test("v2 patch ceilings terminate with the dedicated ceiling reason", () => {
           allowCreate: false,
           ceilings: { maxChangedFiles: 1 },
         }),
+      ),
+    failureCode("ERR_PATCH_CEILING"),
+  );
+});
+
+test("v2 assembly emits canonical create-only SHA-1 and SHA-256 patches", () => {
+  assert.equal(assembleCandidatePatchV2.length, 3);
+  const content = "alpha\nGrüße\n";
+  for (const objectFormat of ["sha1", "sha256"]) {
+    const creation = Object.assign(Object.create(null), {
+      path: CREATED,
+      content,
+    });
+    const currentContract = contract({ objectFormat });
+    const assembled = assembleCandidatePatchV2(currentContract, null, [
+      creation,
+    ]);
+    const expectedPatch = createdSection(
+      CREATED,
+      ["alpha", "Grüße"],
+      objectFormat,
+    );
+
+    assert.equal(assembled.patch, expectedPatch);
+    assert.deepEqual(
+      assembled.projection,
+      validateCandidatePatchV2(expectedPatch, currentContract),
+    );
+    assert.equal(
+      assembled.projection.createdBlobs[0].objectId,
+      gitBlobObjectIdV2(content, objectFormat),
+    );
+    assert.deepEqual(Object.keys(assembled), ["patch", "projection"]);
+    assert.equal(Object.isFrozen(assembled), true);
+    assert.equal(Object.isFrozen(assembled.projection), true);
+  }
+});
+
+test("v2 assembly preserves every raw modification byte before creations", () => {
+  const rawModification = modifiedSection()
+    .replace(
+      `--- a/${EXISTING}\n+++ b/${EXISTING}`,
+      `--- a/${EXISTING}\nindex abcdef1..abcdef2\n+++ b/${EXISTING}`,
+    )
+    .replace(
+      "-old\n+changed\n",
+      "-old\n\\ No newline at end of file\n+changed\n",
+    );
+  const content = "first\n\n+already-prefixed\n";
+  const expectedCreation = createdSection(CREATED, [
+    "first",
+    "",
+    "+already-prefixed",
+  ]);
+  const assembled = assembleCandidatePatchV2(contract(), rawModification, [
+    { path: CREATED, content },
+  ]);
+
+  assert.equal(assembled.patch, `${rawModification}${expectedCreation}`);
+  assert.equal(
+    assembled.patch.slice(0, rawModification.length),
+    rawModification,
+  );
+  assert.deepEqual(assembled.projection.paths, [EXISTING, CREATED]);
+  assert.deepEqual(assembled.projection.pathStatuses, [
+    { path: EXISTING, status: "M" },
+    { path: CREATED, status: "A" },
+  ]);
+});
+
+test("v2 assembly requires exact createExact count, paths, and order", () => {
+  const first = "lib/oxigraph/src/new_a.rs";
+  const second = "lib/oxigraph/src/new_b.rs";
+  const orderedContract = contract({
+    mutableExact: [first, second],
+    createExact: [first, second],
+  });
+  const creation = (path) => ({ path, content: `${path}\n` });
+
+  for (const creations of [[], [creation(first)]]) {
+    assert.throws(
+      () => assembleCandidatePatchV2(orderedContract, null, creations),
+      failureCode("ERR_CANDIDATE_STATUS"),
+    );
+  }
+  for (const creations of [
+    [creation(second), creation(first)],
+    [creation(first), creation("lib/oxigraph/src/new_c.rs")],
+  ]) {
+    assert.throws(
+      () => assembleCandidatePatchV2(orderedContract, null, creations),
+      failureCode("ERR_CANDIDATE_STATUS"),
+    );
+  }
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(orderedContract, null, [
+        creation(first),
+        creation("../escape"),
+      ]),
+    failureCode("ERR_PATH_INVALID"),
+  );
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(
+        orderedContract,
+        null,
+        Array.from({ length: 33 }, () => creation(first)),
+      ),
+    failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+  );
+});
+
+test("v2 assembly rejects noncanonical creation content", () => {
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(contract(), "", [
+        { path: CREATED, content: "created\n" },
+      ]),
+    failureCode("ERR_PATCH_CANONICAL"),
+  );
+  for (const content of [
+    "",
+    "missing terminal LF",
+    "NUL\0byte\n",
+    "CRLF\r\n",
+    "unpaired surrogate \ud800\n",
+    Buffer.from("bytes\n"),
+  ]) {
+    assert.throws(
+      () =>
+        assembleCandidatePatchV2(contract(), null, [
+          { path: CREATED, content },
+        ]),
+      failureCode("ERR_PATCH_CANONICAL"),
+    );
+  }
+});
+
+test("v2 assembly rejects hidden, symbolic, sparse, and fieldful inputs", () => {
+  const valid = { path: CREATED, content: "created\n" };
+  const hiddenRecord = { ...valid };
+  Object.defineProperty(hiddenRecord, "hidden", { value: true });
+  const symbolicRecord = { ...valid, [Symbol("hidden")]: true };
+  const hiddenArray = [{ ...valid }];
+  Object.defineProperty(hiddenArray, "hidden", { value: true });
+  const symbolicArray = [{ ...valid }];
+  symbolicArray[Symbol("hidden")] = true;
+  const sparseArray = new Array(1);
+
+  for (const creations of [
+    [hiddenRecord],
+    [symbolicRecord],
+    hiddenArray,
+    symbolicArray,
+    sparseArray,
+  ]) {
+    assert.throws(
+      () => assembleCandidatePatchV2(contract(), null, creations),
+      failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+    );
+  }
+});
+
+test("v2 assembly rejects creation accessors without invoking getters", () => {
+  let getterCalls = 0;
+  const recordAccessor = { content: "created\n" };
+  Object.defineProperty(recordAccessor, "path", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return CREATED;
+    },
+  });
+  const arrayAccessor = [];
+  Object.defineProperty(arrayAccessor, "0", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return { path: CREATED, content: "created\n" };
+    },
+  });
+
+  for (const creations of [[recordAccessor], arrayAccessor]) {
+    assert.throws(
+      () => assembleCandidatePatchV2(contract(), null, creations),
+      failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+    );
+    assert.equal(getterCalls, 0);
+  }
+});
+
+test("v2 assembly enforces existing byte, file, and line ceilings", () => {
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(
+        contract({ ceilings: { maxPatchBytes: 200 } }),
+        null,
+        [{ path: CREATED, content: "x\n" }],
+      ),
+    failureCode("ERR_PATCH_CEILING"),
+  );
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(
+        contract({ ceilings: { maxChangedLines: 1 } }),
+        null,
+        [{ path: CREATED, content: "one\ntwo\n" }],
+      ),
+    failureCode("ERR_PATCH_CEILING"),
+  );
+
+  const first = "lib/oxigraph/src/new_a.rs";
+  const second = "lib/oxigraph/src/new_b.rs";
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(
+        contract({
+          mutableExact: [first, second],
+          createExact: [first, second],
+          ceilings: { maxChangedFiles: 1 },
+        }),
+        null,
+        [
+          { path: first, content: "first\n" },
+          { path: second, content: "second\n" },
+        ],
+      ),
+    failureCode("ERR_PATCH_CEILING"),
+  );
+  assert.throws(
+    () =>
+      assembleCandidatePatchV2(
+        contract({ ceilings: { maxChangedLines: 2 } }),
+        modifiedSection(),
+        [{ path: CREATED, content: "created\n" }],
       ),
     failureCode("ERR_PATCH_CEILING"),
   );

@@ -329,6 +329,100 @@ function contractObjectFormat(contract, options) {
   return baselineTree.length === 40 ? "sha1" : "sha256";
 }
 
+function exactOwnDataArray(value, label, maximum = MAX_SCOPE_PATHS) {
+  let descriptors;
+  try {
+    if (
+      !Array.isArray(value) ||
+      Object.getPrototypeOf(value) !== Array.prototype
+    ) {
+      fail(
+        "ERR_CONTRACT_SCHEMA_OR_KEYS",
+        `${label} must be a bounded plain dense array`,
+      );
+    }
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch (error) {
+    if (isTaskV2Failure(error)) throw error;
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+
+  const length = descriptors.length?.value;
+  if (!Number.isSafeInteger(length) || length < 0 || length > maximum) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      `${label} must be a bounded plain dense array`,
+    );
+  }
+  const expectedKeys = new Set([
+    "length",
+    ...Array.from({ length }, (_, index) => String(index)),
+  ]);
+  const actualKeys = Reflect.ownKeys(descriptors);
+  if (
+    actualKeys.some((key) => typeof key !== "string") ||
+    actualKeys.length !== expectedKeys.size ||
+    actualKeys.some((key) => !expectedKeys.has(key))
+  ) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      `${label} must be a bounded plain dense array`,
+    );
+  }
+
+  const captured = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true
+    ) {
+      fail(
+        "ERR_CONTRACT_SCHEMA_OR_KEYS",
+        `${label}[${index}] must be an enumerable own data property`,
+      );
+    }
+    captured.push(descriptor.value);
+  }
+  return captured;
+}
+
+function exactOwnDataRecord(value, label, expectedKeys) {
+  let descriptors;
+  try {
+    if (!plainObject(value)) {
+      fail(
+        "ERR_CONTRACT_SCHEMA_OR_KEYS",
+        `${label} must be a plain own-data record`,
+      );
+    }
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch (error) {
+    if (isTaskV2Failure(error)) throw error;
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+
+  const actualKeys = Reflect.ownKeys(descriptors);
+  if (
+    actualKeys.some((key) => typeof key !== "string") ||
+    actualKeys.length !== expectedKeys.length ||
+    expectedKeys.some((key) => !actualKeys.includes(key)) ||
+    actualKeys.some(
+      (key) =>
+        !("value" in descriptors[key]) || descriptors[key].enumerable !== true,
+    )
+  ) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      `${label} keys must be exact enumerable own data properties`,
+    );
+  }
+  return Object.fromEntries(
+    expectedKeys.map((key) => [key, descriptors[key].value]),
+  );
+}
+
 function ceiling(contract, name, fallback, maximum) {
   const value = contract?.ceilings?.[name] ?? fallback;
   if (!Number.isInteger(value) || value < 1 || value > maximum) {
@@ -698,6 +792,148 @@ export function validateCandidatePatchV2(patch, contract, options = undefined) {
     createdBlobs: Object.freeze(createdBlobs),
     changedLines,
   });
+}
+
+function canonicalCreationSectionV2({
+  path,
+  content,
+  objectFormat,
+  maxPatchBytes,
+  maxChangedLines,
+}) {
+  if (typeof content !== "string") {
+    fail("ERR_PATCH_CANONICAL", `created content for ${path} is not a string`);
+  }
+  if (content.length === 0) {
+    fail("ERR_PATCH_CANONICAL", `created content for ${path} is empty`);
+  }
+  if (content.length > maxPatchBytes) {
+    fail("ERR_PATCH_CEILING", `created content for ${path} is too large`);
+  }
+  if (
+    content.includes("\0") ||
+    content.includes("\r") ||
+    !content.endsWith("\n")
+  ) {
+    fail(
+      "ERR_PATCH_CANONICAL",
+      `created content for ${path} must be NUL/CR-free and terminal-LF-terminated`,
+    );
+  }
+
+  const bytes = exactUtf8Bytes(content, `created content for ${path}`);
+  if (bytes.length > maxPatchBytes) {
+    fail("ERR_PATCH_CEILING", `created content for ${path} is too large`);
+  }
+  let lineCount = 0;
+  for (const byte of bytes) {
+    if (byte === 0x0a) lineCount += 1;
+  }
+  if (lineCount > maxChangedLines) {
+    fail(
+      "ERR_PATCH_CEILING",
+      `created content for ${path} exceeds the changed-line ceiling`,
+    );
+  }
+
+  const width = objectFormat === "sha1" ? 40 : 64;
+  const objectId = gitBlobObjectIdV2(bytes, objectFormat);
+  const payload = `+${content.slice(0, -1).replaceAll("\n", "\n+")}\n`;
+  const section =
+    `diff --git a/${path} b/${path}\n` +
+    "new file mode 100644\n" +
+    `index ${"0".repeat(width)}..${objectId}\n` +
+    "--- /dev/null\n" +
+    `+++ b/${path}\n` +
+    `@@ -0,0 +1,${lineCount} @@\n` +
+    payload;
+  return Object.freeze({ section, lineCount });
+}
+
+export function assembleCandidatePatchV2(
+  contract,
+  modificationsPatch,
+  creations,
+) {
+  if (modificationsPatch !== null && typeof modificationsPatch !== "string") {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      "v2 modifications patch must be a raw string or null",
+    );
+  }
+  if (modificationsPatch === "") {
+    fail(
+      "ERR_PATCH_CANONICAL",
+      "v2 modifications patch must use null when no fragment exists",
+    );
+  }
+
+  const scope = validateTaskV2Scope(contract);
+  const objectFormat = contractObjectFormat(contract);
+  const maxPatchBytes = ceiling(
+    contract,
+    "maxPatchBytes",
+    DEFAULT_MAX_PATCH_BYTES,
+    DEFAULT_MAX_PATCH_BYTES,
+  );
+  const maxChangedFiles = ceiling(
+    contract,
+    "maxChangedFiles",
+    DEFAULT_MAX_CHANGED_FILES,
+    MAX_SCOPE_PATHS,
+  );
+  const maxChangedLines = ceiling(
+    contract,
+    "maxChangedLines",
+    DEFAULT_MAX_CHANGED_LINES,
+    DEFAULT_MAX_CHANGED_LINES,
+  );
+  if (
+    modificationsPatch !== null &&
+    modificationsPatch.length > maxPatchBytes
+  ) {
+    fail("ERR_PATCH_CEILING", "v2 modifications patch is too large");
+  }
+
+  const creationValues = exactOwnDataArray(creations, "creations");
+  if (creationValues.length !== scope.createExact.length) {
+    fail(
+      "ERR_CANDIDATE_STATUS",
+      "creations must exactly cover scope.createExact",
+    );
+  }
+  if (creationValues.length > maxChangedFiles) {
+    fail("ERR_PATCH_CEILING", "creations exceed the changed-file ceiling");
+  }
+  const capturedCreations = creationValues.map((value, index) =>
+    exactOwnDataRecord(value, `creations[${index}]`, ["path", "content"]),
+  );
+
+  const creationSections = [];
+  let creationLines = 0;
+  for (let index = 0; index < capturedCreations.length; index += 1) {
+    const { path, content } = capturedCreations[index];
+    validateTaskV2Path(path, `creations[${index}].path`);
+    if (path !== scope.createExact[index]) {
+      fail(
+        "ERR_CANDIDATE_STATUS",
+        "creations must follow scope.createExact exactly",
+      );
+    }
+    const creation = canonicalCreationSectionV2({
+      path,
+      content,
+      objectFormat,
+      maxPatchBytes,
+      maxChangedLines: maxChangedLines - creationLines,
+    });
+    creationLines += creation.lineCount;
+    creationSections.push(creation.section);
+  }
+
+  const patch = `${modificationsPatch ?? ""}${creationSections.join("")}`;
+  const projection = validateCandidatePatchV2(patch, contract);
+  return Object.freeze({ patch, projection });
 }
 
 export const validateV2Path = validateTaskV2Path;
