@@ -2,8 +2,17 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual, types } from "node:util";
 
 import {
+  G17_BENCHMARK_BUILD_ARGV,
+  G17_BENCHMARK_BUILD_ENVIRONMENT,
+  G17_BENCHMARK_BUILD_ENVIRONMENT_SHA256,
   G17_BENCHMARK_BUILD_PLAN,
+  G17_BENCHMARK_BUILD_PROGRAM,
   G17_BENCHMARK_CONTROL_PLAN,
+  G17_BENCHMARK_ENVIRONMENT_RECIPE_SCHEMA,
+  G17_BENCHMARK_ENVIRONMENT_RECIPE_SHA256,
+  G17_BENCHMARK_EXECUTION_PLAN,
+  G17_BENCHMARK_EXECUTION_PLAN_SCHEMA,
+  G17_BENCHMARK_EXECUTION_PLAN_SHA256,
   G17_BENCHMARK_LEGACY_BUILD_ARGV,
   G17_BENCHMARK_LEGACY_BUILD_ENVIRONMENT,
   g17BenchmarkControlCoordinates,
@@ -26,6 +35,8 @@ export const G17_BENCHMARK_WORKSPACE_OWNER_SCHEMA =
   "oxigraph.g1.7-benchmark-workspace-owner/v1";
 export const G17_BENCHMARK_BUILD_OWNER_SCHEMA =
   "oxigraph.g1.7-benchmark-build-owner/v1";
+export const G17_BENCHMARK_BUILD_OWNER_V2_SCHEMA =
+  "oxigraph.g1.7-benchmark-build-owner/v2";
 export const G17_BENCHMARK_LAUNCH_ATTESTATION_SCHEMA =
   "oxigraph.g1.7-benchmark-launch-attestation/v1";
 export const G17_BENCHMARK_SESSION_OWNER_SCHEMA =
@@ -37,6 +48,21 @@ export const G17_BENCHMARK_OWNER_CONTROL_PROTOCOL_SHA256 =
 
 const G17_CONTROL_AUTHORIZATION_SCHEMA =
   "oxigraph.g1.7-control-authorization/v3";
+const G17_BENCHMARK_BUILD_OWNER_V2_AUTHORITY = deepFreeze({
+  buildExecutionAuthority: false,
+  launchExecutionAuthority: false,
+  controlExecutionAuthority: false,
+  qualificationExecutionAuthority: false,
+  receiptAuthority: false,
+  promotionAuthority: false,
+  publicationAuthority: false,
+  routerQualityAuthority: false,
+  providerExecutionAuthority: false,
+});
+const G17_BENCHMARK_BUILD_OWNER_V2_CAPTURE_MODES = Object.freeze([
+  "physical-supervisor",
+  "synthetic-test-only",
+]);
 const RAW_SAMPLE_SCHEMA = "oxigraph.transactional-write-sample/v1";
 const DIGEST = /^[0-9a-f]{64}$/u;
 const GIT_OID = /^[0-9a-f]{40}$/u;
@@ -802,6 +828,328 @@ export function verifyG17BenchmarkBuildOwner(input) {
     executable: owner.executable,
     cargoMessageCount,
     rawBytes: stdout.length + stderr.length,
+  });
+}
+
+export function verifyG17BenchmarkBuildOwnerV2(input) {
+  const request = snapshotInput(
+    input,
+    "build owner v2 verification input",
+  );
+  exactKeys(
+    request,
+    [
+      "bytes",
+      "expected",
+      "stdoutBytes",
+      "stderrBytes",
+      "executableBytes",
+    ],
+    "build owner v2 verification input",
+  );
+  const {
+    bytes,
+    expected: context,
+    stdoutBytes,
+    stderrBytes,
+    executableBytes,
+  } = request;
+  exactKeys(
+    context,
+    [
+      "controlRunId",
+      "authorization",
+      "buildId",
+      "productRole",
+      "workspaceOwner",
+      "captureMode",
+      "executable",
+    ],
+    "expected build owner v2 context",
+  );
+  safeId(context.controlRunId, "expected build owner v2 controlRunId");
+  const expectedAuthorization = authorizationBinding(
+    context.authorization,
+    "expected build owner v2 authorization binding",
+  );
+  const expectedWorkspaceOwner = authorizationBinding(
+    context.workspaceOwner,
+    "expected build owner v2 workspace owner binding",
+  );
+  if (
+    !G17_BENCHMARK_BUILD_OWNER_V2_CAPTURE_MODES.includes(context.captureMode)
+  ) {
+    fail("expected build owner v2 captureMode is not explicitly supported");
+  }
+  exactKeys(
+    context.executable,
+    ["logicalPath", "bytes", "sha256"],
+    "expected build owner v2 executable",
+  );
+  const expectedExecutable = {
+    logicalPath: context.executable.logicalPath,
+    bytes: positiveInteger(
+      context.executable.bytes,
+      "expected build owner v2 executable bytes",
+    ),
+    sha256: digest(
+      context.executable.sha256,
+      "expected build owner v2 executable sha256",
+    ),
+  };
+  if (!EXECUTABLE_PATH.test(expectedExecutable.logicalPath ?? "")) {
+    fail("expected build owner v2 executable logical path drifted");
+  }
+
+  const decoded = decodeCanonicalOwner(
+    bytes,
+    G17_BENCHMARK_BUILD_OWNER_V2_SCHEMA,
+    "build owner v2",
+  );
+  const owner = decoded.value;
+  exactKeys(
+    owner,
+    [
+      "schema",
+      "controlRunId",
+      "authorization",
+      "executionPlan",
+      "buildId",
+      "productRole",
+      "workspaceOwner",
+      "command",
+      "supervision",
+      "result",
+      "executable",
+      "authority",
+      "binding",
+      "finalDecisionEligible",
+      "contentHash",
+    ],
+    "build owner v2",
+  );
+  exactKeys(
+    owner.executionPlan,
+    ["schema", "sha256", "environmentRecipe"],
+    "build owner v2 execution plan binding",
+  );
+  exactKeys(
+    owner.executionPlan.environmentRecipe,
+    ["schema", "sha256"],
+    "build owner v2 environment recipe binding",
+  );
+  exactKeys(
+    owner.workspaceOwner,
+    ["rawSha256", "contentHash"],
+    "build owner v2 workspace owner binding",
+  );
+  exactKeys(
+    owner.command,
+    [
+      "program",
+      "argv",
+      "environment",
+      "environmentSha256",
+      "cwd",
+      "targetDirectory",
+      "ordinal",
+    ],
+    "build owner v2 command",
+  );
+  exactKeys(
+    owner.command.environment,
+    Object.keys(G17_BENCHMARK_BUILD_ENVIRONMENT),
+    "build owner v2 environment",
+  );
+  exactKeys(
+    owner.supervision,
+    [
+      "processGeneration",
+      "captureMode",
+      "spawned",
+      "disposition",
+      "reaped",
+      "exit",
+      "close",
+      "stdoutEofObserved",
+      "stderrEofObserved",
+      "captureComplete",
+      "outputTruncated",
+      "statusAgreement",
+    ],
+    "build owner v2 supervision",
+  );
+  exactKeys(
+    owner.supervision.exit,
+    ["observed", "exitCode", "signal"],
+    "build owner v2 exit observation",
+  );
+  exactKeys(
+    owner.supervision.close,
+    ["observed", "exitCode", "signal"],
+    "build owner v2 close observation",
+  );
+  exactKeys(
+    owner.result,
+    ["exitCode", "signal", "timedOut", "stdout", "stderr"],
+    "build owner v2 result",
+  );
+  exactKeys(
+    owner.executable,
+    ["logicalPath", "bytes", "sha256"],
+    "build owner v2 executable",
+  );
+
+  const planIndex = G17_BENCHMARK_BUILD_PLAN.findIndex(
+    ({ buildId, productRole }) =>
+      owner.buildId === buildId && owner.productRole === productRole,
+  );
+  if (planIndex < 0) {
+    fail("build owner v2 identity is not an exact build-plan entry");
+  }
+  const ordinal = planIndex + 1;
+  const authorization = authorizationBinding(
+    owner.authorization,
+    "build owner v2 authorization binding",
+  );
+  const workspaceOwner = authorizationBinding(
+    owner.workspaceOwner,
+    "build owner v2 workspace owner binding",
+  );
+  if (
+    owner.controlRunId !== context.controlRunId ||
+    owner.buildId !== context.buildId ||
+    owner.productRole !== context.productRole ||
+    !isDeepStrictEqual(authorization, expectedAuthorization) ||
+    !isDeepStrictEqual(workspaceOwner, expectedWorkspaceOwner) ||
+    !isDeepStrictEqual(owner.executionPlan, {
+      schema: G17_BENCHMARK_EXECUTION_PLAN_SCHEMA,
+      sha256: G17_BENCHMARK_EXECUTION_PLAN_SHA256,
+      environmentRecipe: {
+        schema: G17_BENCHMARK_ENVIRONMENT_RECIPE_SCHEMA,
+        sha256: G17_BENCHMARK_ENVIRONMENT_RECIPE_SHA256,
+      },
+    }) ||
+    owner.command.program !== G17_BENCHMARK_BUILD_PROGRAM ||
+    !isDeepStrictEqual(owner.command.argv, G17_BENCHMARK_BUILD_ARGV) ||
+    !isDeepStrictEqual(
+      owner.command.environment,
+      G17_BENCHMARK_BUILD_ENVIRONMENT,
+    ) ||
+    owner.command.environmentSha256 !==
+      G17_BENCHMARK_BUILD_ENVIRONMENT_SHA256 ||
+    owner.command.environmentSha256 !==
+      canonicalSha256(owner.command.environment) ||
+    owner.command.cwd !== G17_BENCHMARK_EXECUTION_PLAN.build.workingDirectory ||
+    owner.command.targetDirectory !==
+      G17_BENCHMARK_EXECUTION_PLAN.build.targetDirectory ||
+    owner.command.ordinal !== ordinal
+  ) {
+    fail("build owner v2 identity, plan, command, or workspace drifted");
+  }
+
+  safeId(
+    owner.supervision.processGeneration,
+    "build owner v2 processGeneration",
+  );
+  if (
+    !G17_BENCHMARK_BUILD_OWNER_V2_CAPTURE_MODES.includes(
+      owner.supervision.captureMode,
+    ) ||
+    owner.supervision.captureMode !== context.captureMode ||
+    owner.supervision.spawned !== true ||
+    owner.supervision.disposition !== "completed" ||
+    owner.supervision.reaped !== true ||
+    owner.supervision.exit.observed !== true ||
+    owner.supervision.close.observed !== true ||
+    owner.supervision.stdoutEofObserved !== true ||
+    owner.supervision.stderrEofObserved !== true ||
+    owner.supervision.captureComplete !== true ||
+    owner.supervision.outputTruncated !== false ||
+    owner.supervision.statusAgreement !== true ||
+    !isDeepStrictEqual(owner.supervision.exit, {
+      observed: true,
+      exitCode: owner.result.exitCode,
+      signal: owner.result.signal,
+    }) ||
+    !isDeepStrictEqual(owner.supervision.close, {
+      observed: true,
+      exitCode: owner.result.exitCode,
+      signal: owner.result.signal,
+    }) ||
+    owner.result.exitCode !== 0 ||
+    owner.result.signal !== null ||
+    owner.result.timedOut !== false
+  ) {
+    fail("build owner v2 supervision or successful outcome drifted");
+  }
+
+  const stdout = streamDescriptor(
+    owner.result.stdout,
+    stdoutBytes,
+    "build owner v2 raw Cargo stdout",
+    MAX_BUILD_STREAM_BYTES,
+  );
+  const stderr = streamDescriptor(
+    owner.result.stderr,
+    stderrBytes,
+    "build owner v2 raw Cargo stderr",
+    MAX_BUILD_STREAM_BYTES,
+  );
+  const cargoMessageCount = parseCargoBuildOutput(
+    stdout,
+    owner.executable.logicalPath,
+  );
+  const executable = boundedBytes(
+    executableBytes,
+    MAX_BUILD_STREAM_BYTES,
+    "build owner v2 raw executable",
+    { allowEmpty: false },
+  );
+  if (
+    !EXECUTABLE_PATH.test(owner.executable.logicalPath ?? "") ||
+    positiveInteger(
+      owner.executable.bytes,
+      "build owner v2 executable bytes",
+    ) !==
+      executable.length ||
+    digest(owner.executable.sha256, "build owner v2 executable sha256") !==
+      sha256(executable) ||
+    !isDeepStrictEqual(owner.executable, expectedExecutable)
+  ) {
+    fail("build owner v2 executable does not bind the exact raw bytes");
+  }
+  if (
+    !isDeepStrictEqual(
+      owner.authority,
+      G17_BENCHMARK_BUILD_OWNER_V2_AUTHORITY,
+    ) ||
+    owner.binding !== null ||
+    owner.finalDecisionEligible !== false
+  ) {
+    fail("build owner v2 overclaims authority, binding, or eligibility");
+  }
+
+  return deepFreeze({
+    schema: owner.schema,
+    status: "SUPERVISION_OBSERVATIONS_REPLAYED",
+    finalDecisionEligible: false,
+    binding: null,
+    rawSha256: decoded.rawSha256,
+    contentHash: owner.contentHash,
+    controlRunId: owner.controlRunId,
+    authorization,
+    executionPlan: owner.executionPlan,
+    buildId: owner.buildId,
+    productRole: owner.productRole,
+    workspaceOwner,
+    command: owner.command,
+    supervision: owner.supervision,
+    result: owner.result,
+    executable: owner.executable,
+    cargoMessageCount,
+    rawBytes: stdout.length + stderr.length,
+    authority: G17_BENCHMARK_BUILD_OWNER_V2_AUTHORITY,
   });
 }
 
