@@ -37,8 +37,10 @@
 - G2.1 transactional namespace checkpoint:
   `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
 - Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
+- Exact new-file admission decision:
+  [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)
 - Outstanding capability decisions:
-  [ADR-0018 and ADR-0020 through ADR-0033](../adr/README.md)
+  [ADR-0018 and ADR-0020 through ADR-0034](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
@@ -134,7 +136,10 @@ regression nor green current-HEAD qualification.
 G2.1 namespace metadata is implemented in `be08cf3b`; durable change delivery,
 transaction-time SHACL validation, operational observability, statistics and
 bounded join planning, full-text and spatial indexes, and federation planning
-follow in that dependency order.
+follow in that dependency order. Before G2.2 admits a new semantic-change
+module, `HARNESS-CREATE-EXACT` task `task-1787935934614-ibmjn1` must implement
+the schema-v2 exact new-file gate in ADR-0034. The harness gate is not G2.2
+product progress, and ADR-0020 remains Proposed.
 
 ## Evidence policy
 
@@ -380,6 +385,7 @@ The unfinished work is split by architectural ownership:
 | P0.1-P0.2 conformance, guarantees, conflicts    | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, bounded cleanup, raw supervision, legacy-incompatible request v1/process v3, structural policy/request v2, and a compile-only dormant attested helper are implemented. The private issuer, containment-v2 native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
+| P1.2 exact new-module harness admission         | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md), related to [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                      | Proposed; `task-1787935934614-ibmjn1` must implement exact schema-v2 creation before G2.2 may admit a new semantic-change module                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | P1.1/G2.1 implemented in `be08cf3b`; P1.2/G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | P1.3 transaction-time SHACL                     | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P1.4a-P1.4c readiness, backup, restore          | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -633,10 +639,17 @@ Acceptance:
 
 #### P1.2 Staged change sets, commit receipts, and durable feed — XL
 
-Dependencies: P0.1 and P0.2.
+Dependencies: P0.1 and P0.2. Before a new product module is admitted, implement
+the [ADR-0034 exact new-file harness gate](../adr/0034-first-class-exact-new-file-admission.md)
+under Ruflo task `task-1787935934614-ibmjn1`; the existing-file algebra design
+may be refined in parallel, but no new module enters a frozen candidate before
+that gate passes.
 
 - Record normalized quad, graph-topology, and namespace changes in the
   transaction.
+- Put the semantic-change algebra in a focused module after exact creation is
+  available; no product file, empty or otherwise, may be pre-created and
+  `store.rs` may not be expanded to bypass the gate.
 - Define a storage-issued opaque commit ID and a durable receipt that
   distinguishes committed, rejected, and indeterminate outcomes.
 - Commit the transaction key, commit ID, receipt, primary changes, and a
@@ -853,6 +866,10 @@ distributed transactions, clustering, or automatic cross-node failover.
 None is necessary to accept ADR-0016 or to call the core an embeddable linked
 data store.
 
+[ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)
+is a separate engineering-harness prerequisite, not a P3 product feature. It
+gates a new G2.2 module and grants no linked-data-store capability by itself.
+
 ## SPARC execution framing
 
 Each unfinished task uses the same evidence cycle:
@@ -913,13 +930,16 @@ failed. CI should run vendored and system-library lanes separately.
 The research was split into three evidence tracks and persisted in the
 repository's Ruflo memory:
 
-| Track                       | Ruflo task                  | Memory key                                       |
-| --------------------------- | --------------------------- | ------------------------------------------------ |
-| Upstream/write architecture | `task-1787593372180-0hjfvi` | `research/oxigraph-2026-08-24-r1-upstream-write` |
-| Apache Jena comparison      | `task-1787593372163-lmmndv` | `research/oxigraph-2026-08-24-r2-jena-gap`       |
-| Eclipse RDF4J comparison    | `task-1787593372137-3j8kyo` | `research/oxigraph-2026-08-24-r3-rdf4j-gap`      |
+| Track                           | Ruflo task                  | Evidence pointer                                                                                       |
+| ------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Upstream/write architecture     | `task-1787593372180-0hjfvi` | `research/oxigraph-2026-08-24-r1-upstream-write`                                                       |
+| Apache Jena comparison          | `task-1787593372163-lmmndv` | `research/oxigraph-2026-08-24-r2-jena-gap`                                                             |
+| Eclipse RDF4J comparison        | `task-1787593372137-3j8kyo` | `research/oxigraph-2026-08-24-r3-rdf4j-gap`                                                            |
+| Exact new-file admission / G2.2 | `task-1787935934614-ibmjn1` | [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md) |
 
-Exact recall from all three entries succeeded. Ruflo's higher-level
+Exact recall from the three research-memory entries succeeded. The fourth row
+is the active programme task map for the prerequisite gate; it is not a
+research-memory claim. Ruflo's higher-level
 `ContextSynthesizer` reported unavailable, so it was not used as evidence. The
 neural predictor had real embeddings but no stored patterns and returned no
 prediction; it did not influence prioritization. The synthesis above is the
@@ -939,7 +959,7 @@ The plan scores **98/100** against the programme rubric:
 | Source authority and currency   | 20/20 | Exact local commits plus current official Jena/RDF4J pages                                                                                           |
 | Implementation traceability     | 20/20 | Public API, tests, commits, and Ruflo memory keys named                                                                                              |
 | Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit                                                                                                     |
-| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0020 has an implemented G2.1 slice but remains Proposed with ADR-0018 and ADR-0021 through ADR-0033 for their open work |
+| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0020 has an implemented G2.1 slice but remains Proposed with ADR-0018 and ADR-0021 through ADR-0034 for their open work |
 | Verifiable acceptance criteria  | 14/15 | Negative, crash, concurrency, security, and performance gates; production adapter still pending                                                      |
 | Risk and security coverage      | 10/10 | Commit ambiguity, replay, egress, index drift, and leakage covered                                                                                   |
 | Scope discipline                |  9/10 | Core versus product choices separated; P3 decisions remain independently gated and unimplemented                                                     |
@@ -949,5 +969,5 @@ replacement adapter has not yet run the conformance kit, and the newly admitted
 P3 decisions do not yet have product receipts. ADR-0016 is Implemented for the
 public write seam and ADR-0019 is Implemented for egress, cancellation, and
 runtime-derived service claims. ADR-0020's G2.1 registry is implemented, while
-ADR-0018 and ADR-0020 through ADR-0033 remain Proposed for their outstanding
+ADR-0018 and ADR-0020 through ADR-0034 remain Proposed for their outstanding
 slices under this plan.

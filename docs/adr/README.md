@@ -41,13 +41,17 @@ mapping.
 | [ADR-0031 — Multi-repository lifecycle](0031-multi-repository-lifecycle.md)                                                     | Proposed    | Manage repositories through an authorized, journaled, resource-isolated, recoverable lifecycle                                                     |
 | [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md)                                     | Proposed    | Maintain optional rebuildable inferred views while keeping primary RDF authoritative and differential proof continuous                             |
 | [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)                                                       | Proposed    | Research a bounded opt-in analytical join operator without replacing ordinary SPARQL planning or semantics                                         |
+| [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)                                 | Proposed    | Admit candidate-created modules only through schema-v2 exact paths, absent baselines, literal Git objects, and deterministic receipts              |
 
-ADR-0018 and ADR-0020 through ADR-0033 are living implementation decisions for
+The index contains 34 decisions. ADR-0018 and ADR-0020 through ADR-0034 are
+living implementation decisions for
 outstanding work. Their Proposed status is deliberate: the corresponding
-G1-G4 tasks and promotion evidence are not implemented merely because the
+programme tasks and promotion evidence are not implemented merely because the
 architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
 and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
-implemented. Fifteen decisions in this range remain Proposed.
+implemented. ADR-0034 separately gates exact new-file admission before G2.2
+may add a semantic-change module. Sixteen decisions in this range remain
+Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
