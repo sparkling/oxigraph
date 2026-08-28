@@ -182,7 +182,7 @@ Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
 current fail-closed registry therefore contains nine tasks and 33 commands;
-the current full package suite contains 415 tests: 413 pass, none fail, and two
+the current full package suite contains 446 tests: 444 pass, none fail, and two
 intentional host-gated tests are skipped. The doctor retains the same
 native-only, local-only, non-promoting boundary.
 
@@ -207,6 +207,15 @@ version the statistical protocol as v6. Commit `d1e18c6e` then archives those
 exact v6 bytes and reseals the merged product as current v7. Contracts v5 and
 v6 and their proposed authorization/final artifacts remain exact replay-only
 fixtures rather than current authority.
+Pure commits `d3af2e17` and `45121da9` now replay four isolated builds, two
+serialized control sessions, and 392 exact launch records into deterministic
+Darwin statistics and a bounded canonical control-receipt candidate. Exact
+authorization bytes are hashed internally, and PASS, FAIL, and INCONCLUSIVE
+fixtures are covered. This layer is deliberately `CANDIDATE_REPLAYED`: it
+returns `binding: null`, `finalDecisionEligible: false`, and no execution,
+Router-quality, promotion, or publication authority. It does not prove
+filesystem ownership, write-once sealing, or receipt-last order; dedicated
+physical-envelope task `task-1787896401667-xookiy` remains open.
 The exact control-authorization artifact is
 `31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`;
 the exact final-decision-set artifact is
@@ -215,9 +224,9 @@ They remain `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`, respectively.
 `g1.7:run` therefore exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before
 identity, evidence, build, runtime-directory creation, or sampling and creates
 no G1.7 run artifact. A final binding cannot authorize qualification until a
-canonical control receipt is available and replayed. There are no current G1.7
-samples, control receipt, benchmark results, sealed qualification receipt,
-qualification, or promotion decision.
+physically sealed control receipt is available and replayed. There are no
+current production G1.7 samples, physically sealed control receipt, benchmark
+results, sealed qualification receipt, qualification, or promotion decision.
 
 The audited upstream merge `e9d2db1b...` is now the exact v7 product subject:
 tree `fcc5bb75...`, `Cargo.lock` blob `763b2fed...`, and lock SHA-256
@@ -225,6 +234,11 @@ tree `fcc5bb75...`, `Cargo.lock` blob `763b2fed...`, and lock SHA-256
 qualified identity v2 separates that immutable product from the later committed
 harness/control commit and rejects product-path drift. Ruflo reseal task
 `task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
+Current Ruflo task map
+`task-plans/linked-data-store-g0-g4-2026-08-28-v14` records corrected G1.7 at
+55%: pure receipt-candidate task `task-1787892615000-rdwz7q` is complete in
+`45121da9`, while physical-envelope task `task-1787896401667-xookiy` is
+pending.
 The archived v6 protocol/statistics bytes retain their exact historical identity
 and grant no Phase-A, provider, control, sample, benchmark, qualification, or
 promotion authority.
@@ -237,16 +251,18 @@ per-control and aggregate verdict precedence. The pure attributed replay is
 differential-tested against the exact installed Darwin 0.9.3 modules. This is
 a statistics contract, not a live measurement or receipt.
 
-The existing owner-contract tests prove pure verifier behavior over synthetic
-fixtures; they do not prove current owner-process emission. Contract
+The owner and receipt-candidate contract tests prove pure verifier behavior
+over synthetic fixtures; they do not prove current owner-process emission or
+physical envelope sealing. Contract
 v1/v3/v4/v5/v6 bytes replay through a Darwin-free pure boundary and remain
 legacy-only, never qualification-eligible. The accepted G1.4b receipt
 `d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
 is copied, hash-bound, and pure-replayed at the current prerequisite boundary.
 Its exact compatibility projection and binding are `d57eb7cb...` and
 `5a4f5721...`; the claim remains limited to simulated storage-call pre/post-write
-faults, not crash, power-loss, or fsync durability. This prerequisite does not
-substitute for the missing canonical control receipt or execution owners.
+faults, not crash, power-loss, or fsync durability. This prerequisite and the
+candidate replay do not substitute for the missing physically sealed control
+receipt or execution owners.
 
 The implemented approval protocol requires two explicit human phases. Phase A
 may authorize only permanently non-promoting negative and independently built
@@ -255,8 +271,9 @@ replayed. Phase B may then bind that receipt, the exact G1.4b prerequisite, and
 the observed signature into one atomic final reference/performance/noise
 decision before subject/reference qualification. Human product promotion
 remains a later, separate action. The live control and qualification execution
-owners and canonical control-receipt replay are still absent, so the proposed
-files grant no approval or execution authority.
+owners plus the dedicated physical control-envelope/sealed-archive replay are
+still absent, so the proposed files and pure candidate replay grant no approval
+or execution authority.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -294,9 +311,11 @@ promotion gate remain open. At the current v7 control checkpoint, the pinned
 product subject is `e9d2db1b` and execution remains `INCONCLUSIVE`: the merged
 subject is pure-resealed, but control authorization and the final decision set are still
 proposed/unapproved, all semantic, compatibility, and benchmark stages are
-`NOT_RUN`, canonical control-receipt replay and production execution owners are
-absent, and `run` exits 4 before identity or tracked-tree inspection. The
-umbrella claim is still withheld.
+`NOT_RUN`, and `run` exits 4 before identity or tracked-tree inspection. Pure
+candidate replay is complete in `45121da9` but remains
+`finalDecisionEligible: false` with `binding: null`; the physical sealed-envelope
+replay and production execution owners are absent. The umbrella claim is still
+withheld.
 
 ### Published documentation and evidence
 

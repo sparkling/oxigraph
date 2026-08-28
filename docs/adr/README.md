@@ -54,11 +54,15 @@ engineering controls and grant no semantic-qualification or promotion
 authority. G1.7 contract v7 and its fail-closed runner/verifier gates are
 implemented through `d1e18c6e`: the control authorization and final decision
 remain proposed/unapproved, `run` exits before work, and the approved-fixture
-path has no production execution owner. V7 preserves v6's exact authorization-bound
-sample framing, paired negative/A/A statistics, noise boundaries, and verdict
-precedence while binding exact merged product `e9d2db1b`; pure fixture replay is
-not current owner emission, and v1/v3/v4/v5/v6
-contracts remain structural replay-only.
+path has no production execution owner. V7 preserves v6's exact
+authorization-bound sample framing, paired negative/A/A statistics, noise
+boundaries, and verdict precedence while binding exact merged product
+`e9d2db1b`; v1/v3/v4/v5/v6 contracts remain structural replay-only. Pure
+commits `d3af2e17` and `45121da9` replay four isolated builds, two serialized
+sessions, 392 exact launches, recomputed Darwin statistics, and a bounded
+canonical control-receipt candidate. The replay is intentionally
+`CANDIDATE_REPLAYED`, with no final binding or execution authority; it is not
+current production owner emission or physical envelope sealing.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
 built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
@@ -66,20 +70,24 @@ built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
 malformed-ledger slice after exact replay and 8/8, 7/7, and 20/20 controls;
 crash, power-loss, and fsync durability remain explicit non-claims. That
 receipt is exact-bound as a prerequisite but is not a G1.7 control receipt. A
-two-phase human control authorization and
-sealed negative/A/A receipt must precede the final reference/performance/noise
-decision and subject benchmark. No current G1.7 control or qualification
-receipt, samples, benchmark result, qualification, or promotion exists, so
-G1.7 and ADR-0018 remain open.
+two-phase human control authorization and physically sealed negative/A/A
+receipt must precede the final reference/performance/noise decision and subject
+benchmark. No current production G1.7 samples, physically sealed control or
+qualification receipt, live benchmark result, qualification, or promotion
+exists, so G1.7 and ADR-0018 remain open.
 
 Audited two-parent merge `e9d2db1b` records upstream `ec68e3dd` as an ancestor
 while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
 workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
 reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7;
-the full current harness suite passes 413/0/2. That pure identity control
-creates no control, benchmark, qualification, promotion, publication, or push
-authority.
+the full current harness suite passes 444/0/2. That pure identity and candidate
+replay control creates no live control, benchmark, qualification, promotion,
+publication, or push authority.
+Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v14` preserves the 42
+stable product tasks and records corrected G1.7 at 55%. Pure candidate task
+`task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
+`task-1787896401667-xookiy` remains pending.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

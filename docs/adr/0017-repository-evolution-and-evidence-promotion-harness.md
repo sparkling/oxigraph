@@ -13,10 +13,12 @@
   direct source-bound candidate acceptances. G1.7 qualification contract v7,
   proposed two-phase authorization/final-decision validation, exact G1.4b
   prerequisite replay, Darwin-free legacy replay, authorization-bound sample
-  framing, paired control statistics, and pre-execution gates are implemented
-  and fail closed. Production control/build/sample owner emission, canonical
-  control-receipt replay, a current sealed qualification receipt,
-  qualification, and promotion are not implemented.
+  framing, paired control statistics, pre-execution gates, pure benchmark-owner
+  replay, and bounded canonical control-receipt candidate replay are
+  implemented and fail closed. Production control/build/sample owner emission,
+  the physical write-once control envelope and its sealed replay, a current
+  sealed qualification receipt, qualification, and promotion are not
+  implemented.
   The existing `tools/metaharness` semantic qualifier remains separate;
   unattended Dream Machine execution remains deferred behind the activation
   gates in this ADR
@@ -48,10 +50,15 @@
   qualified identity v2, and versions the current protocol as v7. The current
   exact contract SHA-256 is
   `42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
-  Control authorization and the final decision set remain proposed/unapproved;
-  `run` exits 4 before work, creates no G1.7 run, and no current binding can
-  authorize qualification until a canonical control receipt is replayed. Pure
-  verifier fixtures do not establish production owner emission
+  Commits `d3af2e17` and `45121da9` add pure replay of four isolated builds,
+  two serialized control sessions, 392 exact launch records, recomputed Darwin
+  statistics, and a bounded canonical control-receipt candidate. Control
+  authorization and the final decision set remain proposed/unapproved; `run`
+  exits 4 before work and creates no G1.7 run. Candidate replay deliberately
+  returns `binding: null` and `finalDecisionEligible: false`; no current binding
+  can authorize qualification until the candidate has been emitted and replayed
+  through the physical sealed-envelope owner. Pure verifier fixtures do not
+  establish production owner emission or filesystem sealing
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
@@ -65,7 +72,7 @@
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
   producing the current exact nine-task/33-command surface. The current package
-  suite contains 415 tests: 413 pass, none fail, and two intentional host-gated
+  suite contains 446 tests: 444 pass, none fail, and two intentional host-gated
   tests are skipped; doctor evidence remains native-only, local-only, and
   non-promoting
 - **Related**:
@@ -329,12 +336,18 @@ The current artifacts are `CONTROL_AUTH_PROPOSED` and
 `PROPOSED`/`UNAPPROVED`.
 `g1.7:run` exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before identity,
 application evidence, build, runtime-directory creation, or sampling and
-creates no G1.7 run. Final binding deliberately reports
-`qualificationExecutionAuthorized: false` until canonical control-receipt
-replay and the execution owners exist. The current 415-test suite passes 413,
+creates no G1.7 run. Pure commits `d3af2e17` and `45121da9` replay four isolated
+builds, two serialized sessions, and 392 exact launch records into recomputed
+Darwin statistics and a bounded canonical control-receipt candidate. PASS,
+FAIL, and INCONCLUSIVE paths are covered, exact authorization bytes are hashed
+inside the replay boundary, and the result is deliberately
+`CANDIDATE_REPLAYED` with `binding: null`, `finalDecisionEligible: false`, and
+all authority flags false. Final binding continues to report
+`qualificationExecutionAuthorized: false` until physical sealed-envelope
+replay and the execution owners exist. The current 446-test suite passes 444,
 fails none, and skips two intentional live-host cases. Those pure fixtures
-verify contracts, not real owner emission, controls, performance, or
-qualification.
+verify contracts, not real owner emission, filesystem ownership or write-once
+sealing, controls, performance, or qualification.
 
 Contract v1/v3/v4/v5/v6 replay is Darwin-free, `LEGACY_REPLAY_ONLY`, and can
 never qualify. V5 and v6 exact contracts, proposed authorizations, and proposed
@@ -426,9 +439,9 @@ committed G-identifiers and GOAP tables remain the portable authority; Ruflo
 task IDs are repository-local audit pointers only and never prove product
 behavior. The current 42-entry adjacency map and checkpoint were stored and
 exactly read back through the managed Ruflo interface at
-`task-plans/linked-data-store-g0-g4-2026-08-28-v13`; it supersedes, rather than
-rewrites, the historical v12 map. The 42 stable product identifiers are
-unchanged. V13 retains separate support rows for control authorization,
+`task-plans/linked-data-store-g0-g4-2026-08-28-v14`; it supersedes, rather than
+rewrites, the historical v13 map. The 42 stable product identifiers are
+unchanged. V14 retains separate support rows for control authorization,
 control owner/replay, final-decision binding, benchmark owner/replay, G1.4b
 receipt binding, Darwin-free legacy dispatch, the v6 statistics contract,
 completed upstream `ec68e3dd` reconciliation, post-merge G1.7 resealing, and
@@ -437,15 +450,19 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-45%; its two superseded rows remain cancelled history. Support tasks for the
+55%; its two superseded rows remain cancelled history. Support tasks for the
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
 governance task `task-1787885074292-neafw8` records the pre-merge v6
 synchronization. Upstream task `task-1787883108007-gik9bz` is complete at
 audited merge `e9d2db1b`; reseal task `task-1787888366495-gzxbhe` is complete
-at the pure, non-executing v7 boundary in `d1e18c6e`.
-The control owner, final human decision, and benchmark owner remain open.
+at the pure, non-executing v7 boundary in `d1e18c6e`. Pure receipt-candidate
+task `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope
+task `task-1787896401667-xookiy` remains pending and is the only layer allowed
+to derive a final-decision binding from those candidate bytes.
+The physical control owner, final human decision, and live benchmark owner
+remain open.
 Evidence checkpoints
 are stored under `programme-evidence/g14a-store-terminal-outcomes-2f518e04`,
 `programme-evidence/g14b-harness-qualified-2026-08-28`, and
@@ -647,15 +664,18 @@ tools/mutation/*.test.mjs tools/engineering-harness/test/*.test.mjs` passed
   `a6e229df`, and `f1cb6680`, followed by Darwin-free legacy replay
   `f357a1b4`, exact G1.4b prerequisite binding `509a6611`/`7b1eab5d`, and
   audited v5 protocol commits `8ca3804b`/`0257587e`, followed by v6 statistics
-  and versioning commits `20477225`/`799307fb`, then merged-product identity
-  reseal commit `d1e18c6e`. Exact current v7 contract, proposed
+  and versioning commits `20477225`/`799307fb`, merged-product identity reseal
+  commit `d1e18c6e`, and pure benchmark-owner/control-receipt-candidate replay
+  commits `d3af2e17`/`45121da9`. Exact current v7 contract, proposed
   control-authorization, and proposed final-decision raw SHA-256 values are
   `42ed3867...`, `31b8fce5...`, and `b0def4f0...`; the v6 bytes remain exact
-  replay-only fixtures. The package suite reports 415 total, 413 passing, zero
+  replay-only fixtures. The package suite reports 446 total, 444 passing, zero
   failing, and two intentional host-gated skips. The CLI exits 4 before work
   at `CONTROL_AUTH_PROPOSED` and writes no
-  G1.7 run. This is protocol and negative-gate evidence only: it contains no
-  human approval, control receipt, benchmark, performance result, qualification,
+  G1.7 run. The pure candidate replay is not a physically owned or sealed
+  control receipt and grants no binding or execution authority. This is
+  protocol and negative-gate evidence only: it contains no human approval,
+  physical control receipt, live benchmark, performance result, qualification,
   or promotion.
 - audited upstream merge `e9d2db1b` with exact-tree Rust, Python, workflow, and
   409/0/2 harness evidence. It retains ADR-0014's selected-missing `POST=404`

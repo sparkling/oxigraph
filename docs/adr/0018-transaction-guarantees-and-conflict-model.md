@@ -21,11 +21,12 @@
   simulate crash, power loss, or fsync. G1.7 contract v7 binds the exact merged
   product identity while preserving v6's proposed two-phase control/final-
   decision validation and paired statistics. Exact G1.4b prerequisite binding
-  and pure Darwin-free v1/v3/v4/v5/v6 replay are implemented and fail closed,
-  but production
-  control/build/sample owner emission, canonical control-receipt replay, and a
-  current qualification receipt are not implemented. Human control approval,
-  final reference/budgets, benchmark/noise evidence, current owner evidence,
+  and pure Darwin-free v1/v3/v4/v5/v6 replay are implemented and fail closed.
+  Pure benchmark-owner and bounded canonical control-receipt candidate replay
+  are also implemented, but production control/build/sample owner emission,
+  the physical write-once control envelope and its sealed replay, and a current
+  qualification receipt are not implemented. Human control approval, final
+  reference/budgets, benchmark/noise evidence, current owner evidence,
   qualification, and promotion remain outstanding
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
@@ -292,12 +293,16 @@ The current G1.7 contract v7 is
 `42ed386779934ff86cd3369eb56764d0d41bf1a0a2b989166fec33e73d268d80`.
 Its control authorization and final decision set remain
 `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`. The CLI exits 4 before
-identity, evidence, build, or sampling and writes no G1.7 run. A final binding
-keeps qualification execution false until the canonical control receipt is
-replayed. Pure owner-contract tests therefore prove only replay behavior over
-synthetic fixtures, not production owner emission. Legacy v1/v3/v4/v5/v6
-contract bytes replay through a Darwin-free structural boundary and remain
-legacy-only.
+identity, evidence, build, or sampling and writes no G1.7 run. Pure commits
+`d3af2e17` and `45121da9` replay four isolated builds, two serialized sessions,
+392 exact launches, recomputed Darwin statistics, and a bounded canonical
+control-receipt candidate. That result is deliberately `CANDIDATE_REPLAYED`,
+with `binding: null`, `finalDecisionEligible: false`, and all authority flags
+false. A final binding keeps qualification execution false until the candidate
+has passed physical sealed-envelope replay. These tests prove replay behavior
+over synthetic fixtures, not production owner emission or filesystem sealing.
+Legacy v1/v3/v4/v5/v6 contract bytes replay through a Darwin-free structural
+boundary and remain legacy-only.
 
 Contract v7 preserves v6's non-circular two-phase protocol and frozen
 canonical authorization-bound sample framing, paired 10% negative-control
@@ -307,10 +312,11 @@ permanently non-promoting human control authorization must precede sealed
 negative/A/A control execution, and one final human decision set must bind that
 receipt, its observed signature, and the exact G1.4b prerequisite before any
 subject/reference samples. The G1.4b receipt is now copied, hash-bound, and
-pure-replayed at that prerequisite boundary, but no human approval, control
-receipt, benchmark, performance result, or current owner evidence
-exists. The statistics implementation is pure replay over synthetic fixtures,
-not a live control run. ADR-0018 therefore remains Proposed. The transaction identifiers are
+pure-replayed at that prerequisite boundary, but no human approval, physically
+sealed control receipt, live benchmark, performance result, or current owner
+evidence exists. The statistics and candidate-receipt implementations are pure
+replay over synthetic fixtures, not a live control run. ADR-0018 therefore
+remains Proposed. The transaction identifiers are
 G1.1-G1.5c plus G1.4a-G1.4b; G1.7 is the joint compatibility/performance
 qualification gate in the
 [linked-data-store evolution
