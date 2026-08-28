@@ -51,18 +51,21 @@ ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
 engineering controls and grant no semantic-qualification or promotion
-authority. G1.7 contract v4 and its fail-closed runner/verifier gates are
-implemented through `f1cb6680`: all three decisions are
-`PROPOSED`/`UNAPPROVED`, `run` exits before work, and the approved-fixture path
-has no production execution owner. Pure fixture replay is not current owner
-emission, and v1/v3 receipts remain structural replay-only.
+authority. G1.7 contract v6 and its fail-closed runner/verifier gates are
+implemented through `799307fb`: the control authorization and final decision
+remain proposed/unapproved, `run` exits before work, and the approved-fixture
+path has no production execution owner. V6 freezes exact authorization-bound
+sample framing, paired negative/A/A statistics, noise boundaries, and verdict
+precedence; pure fixture replay is not current owner emission, and v1/v3/v4/v5
+contracts remain structural replay-only.
 
 G1.4a product commit `2f518e04` and its frozen 7/9/20/3/2 acceptance close the
 built-in Store outcome slice. G1.4b product commit `590a3229` and receipt
 `d4a54f90...` close only the evaluator-separated simulated storage-call and
 malformed-ledger slice after exact replay and 8/8, 7/7, and 20/20 controls;
 crash, power-loss, and fsync durability remain explicit non-claims. That
-receipt is still unbound in G1.7. A two-phase human control authorization and
+receipt is exact-bound as a prerequisite but is not a G1.7 control receipt. A
+two-phase human control authorization and
 sealed negative/A/A receipt must precede the final reference/performance/noise
 decision and subject benchmark. No current receipt, samples, benchmark result,
 qualification, or promotion exists, so G1.7 and ADR-0018 remain open.

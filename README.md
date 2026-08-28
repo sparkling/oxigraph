@@ -173,7 +173,7 @@ Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
 current fail-closed registry therefore contains nine tasks and 33 commands;
-the current full package suite contains 391 tests: 389 pass, none fail, and two
+the current full package suite contains 411 tests: 409 pass, none fail, and two
 intentional host-gated tests are skipped. The doctor retains the same
 native-only, local-only, non-promoting boundary.
 
@@ -190,13 +190,16 @@ candidate-disposal failure aborts receipt minting. The committed control passes
 194/194 harness tests and the same `runner-implemented`, local-only doctor.
 
 The dedicated G1.7 qualification path is now fail-closed at qualification
-contract v5, SHA-256
-`155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70`.
-Commits `8ca3804b` and `0257587e` implement and harden the two-phase protocol.
+contract v6, SHA-256
+`22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
+Commits `8ca3804b` and `0257587e` implement and harden the two-phase protocol;
+commits `20477225` and `799307fb` freeze its exact control statistics and
+version the current protocol. Contract v5 and its proposed authorization/final
+artifacts remain exact replay-only fixtures rather than current authority.
 The exact control-authorization artifact is
-`b9ee0f7615a885cda10157d1a6fdeebe4dc8175b267e6b25cd2c5bc636603515`;
+`285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839`;
 the exact final-decision-set artifact is
-`2fd16b9ef0228fc054efb80a6f338fafeb6a289f1371b20f774e7c6f10ea0bce`.
+`e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732`.
 They remain `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`, respectively.
 `g1.7:run` therefore exits 4 as `DIAGNOSTIC_ONLY`/`INCONCLUSIVE` before
 identity, evidence, build, runtime-directory creation, or sampling and creates
@@ -205,10 +208,18 @@ canonical control receipt is available and replayed. There are no current G1.7
 samples, control receipt, benchmark results, sealed qualification receipt,
 qualification, or promotion decision.
 
+Contract v6 freezes canonical authorization-bound sample-set bytes and their
+ordered SHA-256 identity, paired 10% log non-inferiority for the negative
+control, two one-sided paired 5% A/A equivalence directions with one shared
+per-case Darwin seed, an inclusive 5% MAD noise boundary, and mechanical
+per-control and aggregate verdict precedence. The pure attributed replay is
+differential-tested against the exact installed Darwin 0.9.3 modules. This is
+a statistics contract, not a live measurement or receipt.
+
 The existing owner-contract tests prove pure verifier behavior over synthetic
-fixtures; they do not prove current owner-process emission. Contract v1/v3/v4
-receipts now replay through a Darwin-free pure boundary and remain legacy-only,
-never qualification-eligible. The accepted G1.4b receipt
+fixtures; they do not prove current owner-process emission. Contract
+v1/v3/v4/v5 bytes replay through a Darwin-free pure boundary and remain
+legacy-only, never qualification-eligible. The accepted G1.4b receipt
 `d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad`
 is copied, hash-bound, and pure-replayed at the current prerequisite boundary.
 Its exact compatibility projection and binding are `d57eb7cb...` and
@@ -258,7 +269,7 @@ G0.7's earlier reconciliation remains historical after the schema-v5 contract
 change and these protected-document edits; root `README.md` remains part of the
 MetaHarness protected snapshot. Full MetaHarness semantic qualification, its
 independent verification, and the separate G1.7 compatibility/performance
-promotion gate remain open. At pre-documentation head `0257587e`, contract-v5
+promotion gate remain open. At pre-documentation head `799307fb`, contract-v6
 execution is `INCONCLUSIVE`: control authorization and the final decision set
 are proposed/unapproved, all semantic, compatibility, and benchmark stages are
 `NOT_RUN`, canonical control-receipt replay and production execution owners are

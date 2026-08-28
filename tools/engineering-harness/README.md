@@ -101,25 +101,32 @@ Current activation boundary:
   and their existing application receipts remain replayable;
 - `g1.7:preflight`, `g1.7:run`, and `g1.7:verify` use a separate qualification
   binary rather than the application-task registry. Exact qualification
-  contract v5 has SHA-256
-  `155c364b57412435ae1b65d7956b58fecee8c1251efeede736ead8deb6273d70`.
+  contract v6 has SHA-256
+  `22cec755d291e6fe15cb8de69b881538fbae857e9de9049a9eda2585635b1bf0`.
   Its exact proposed control authorization and final decision set have raw
-  SHA-256 values `b9ee0f7615a885cda10157d1a6fdeebe4dc8175b267e6b25cd2c5bc636603515`
-  and `2fd16b9ef0228fc054efb80a6f338fafeb6a289f1371b20f774e7c6f10ea0bce`.
+  SHA-256 values `285c86fd0ec6d3f00cb8bc48e30d0fe41e800f21ef03799d770b253a3a6ff839`
+  and `e2884b738c59232e9b4b3b750adbd419f338a0781aba70c6b3091672cb610732`.
   They remain `CONTROL_AUTH_PROPOSED` and `PROPOSED`/`UNAPPROVED`, so `run`
   exits 4 before identity, copied evidence, build, runtime-directory creation,
   or samples and writes no G1.7 run. A final binding remains non-authoritative
-  until canonical control-receipt replay exists. Current v1/v3/v4 receipts use
-  Darwin-free pure `LEGACY_REPLAY_ONLY` dispatch; synthetic owner fixtures test
-  replay but are not production owner evidence. The accepted G1.4b receipt is
+  until canonical control-receipt replay exists. Current v1/v3/v4/v5 contract
+  bytes use Darwin-free pure `LEGACY_REPLAY_ONLY` dispatch; v5's proposed
+  protocol artifacts are separately frozen by exact byte identity. Synthetic
+  owner fixtures test replay but are not production owner evidence. The
+  accepted G1.4b receipt is
   exact-bound at the prerequisite boundary, with projection `d57eb7cb...` and
   binding `5a4f5721...`, but it cannot replace the control receipt or execution
-  owners. No controls, samples, benchmark result, current-v5 receipt,
+  owners. No controls, samples, benchmark result, current-v6 receipt,
   qualification, or promotion exists. The implemented lifecycle is a two-phase
   human gate: authorize permanently non-promoting negative and A/A controls,
   seal/replay them, then approve one final decision set binding that control
   receipt and the G1.4b prerequisite before subject/reference qualification.
-  Promotion remains a later human-only action;
+  Promotion remains a later human-only action. V6 additionally freezes exact
+  authorization-bound sample-set framing/order, paired 10% negative-control
+  non-inferiority, shared-seed two-direction 5% A/A equivalence, the inclusive
+  5% MAD noise boundary, and mechanical FAIL/INCONCLUSIVE/PASS precedence. Its
+  pure replay is differential-tested against the exact installed Darwin 0.9.3
+  source modules; it is not a live control run or receipt;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
 - application receipt v6 adds an exact `candidateRejections` collection and
@@ -320,7 +327,7 @@ npm run g1.6:preflight
 npm run g1.7:preflight
 ```
 
-At the fail-closed v5 checkpoint, `npm test` reports 391 tests: 389 pass, none
+At the fail-closed v6 checkpoint, `npm test` reports 411 tests: 409 pass, none
 fail, and two intentional live-host tests are skipped. `npm run doctor` passes
 with 33 registered application commands and the latest-policy lock resolving
 AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.
