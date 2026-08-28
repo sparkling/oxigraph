@@ -7,7 +7,9 @@ import test from "node:test";
 
 import {
   createGitHome,
+  GitBytesProcessFault,
   runGit,
+  runGitBytes,
   runGitBytesWithProcessRunnerForTesting,
 } from "../src/candidate/git.mjs";
 import {
@@ -529,6 +531,128 @@ test("runGitBytes uses the byte supervisor contract without changing literal arg
   assert.equal(captured.timeoutMs, 123);
   assert.equal(captured.maxOutputBytes, 456);
   assert.equal(Object.hasOwn(captured, "stdin"), false);
+});
+
+test("runGitBytes copies exact raw stdin before asynchronous runner use", async () => {
+  const stdin = Buffer.from([0x00, 0xff, 0x41, 0x0a]);
+  const expected = Buffer.from(stdin);
+  let captured;
+  let release;
+  const running = runGitBytesWithProcessRunnerForTesting(
+    {
+      args: ["apply", "--numstat", "-"],
+      cwd: "/workspace",
+      home: "/git-home",
+      stdin,
+    },
+    async (request) => {
+      captured = request;
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return {
+        disposition: "completed",
+        exitCode: 0,
+        captureComplete: true,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.alloc(0),
+      };
+    },
+  );
+
+  assert.notStrictEqual(captured.stdin, stdin);
+  stdin.fill(0);
+  assert.deepEqual(captured.stdin, expected);
+  release();
+  assert.deepEqual(await running, Buffer.alloc(0));
+});
+
+test("runGitBytes rejects non-private stdin before invoking the runner", async () => {
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    return {
+      disposition: "completed",
+      exitCode: 0,
+      captureComplete: true,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.alloc(0),
+    };
+  };
+
+  for (const stdin of [
+    "not raw bytes",
+    new Proxy(Buffer.from([1]), {}),
+    new Uint8Array(new SharedArrayBuffer(1)),
+    Buffer.alloc(4 * 1024 * 1024 + 1),
+  ]) {
+    await assert.rejects(
+      runGitBytesWithProcessRunnerForTesting(
+        {
+          args: ["apply", "-"],
+          cwd: "/workspace",
+          home: "/git-home",
+          stdin,
+        },
+        runner,
+      ),
+      /Git byte stdin must be bounded private bytes/u,
+    );
+  }
+  assert.equal(runnerCalls, 0);
+});
+
+test("runGitBytes preserves failed process cleanup evidence with raw stdin", async () => {
+  const outcome = Object.freeze({
+    disposition: "timeout-unreaped",
+    exitCode: null,
+    captureComplete: false,
+    reaped: false,
+    processGroupQuiescent: false,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.from("bounded failure", "utf8"),
+  });
+  let captured;
+
+  await assert.rejects(
+    runGitBytesWithProcessRunnerForTesting(
+      {
+        args: ["apply", "-"],
+        cwd: "/workspace",
+        home: "/git-home",
+        stdin: Buffer.from([0xff, 0x00]),
+      },
+      async (request) => {
+        captured = request;
+        return outcome;
+      },
+    ),
+    (error) => {
+      assert.equal(error instanceof GitBytesProcessFault, true);
+      assert.strictEqual(error.outcome, outcome);
+      assert.equal(error.outcome.reaped, false);
+      assert.equal(error.outcome.processGroupQuiescent, false);
+      return true;
+    },
+  );
+  assert.deepEqual(captured.stdin, Buffer.from([0xff, 0x00]));
+});
+
+test("runGitBytes sends exact raw stdin to live Git", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-git-bytes-stdin-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = await createGitHome(root);
+  const stdin = Buffer.from([0x00, 0xff, 0x41, 0x0a]);
+
+  const stdout = await runGitBytes({
+    args: ["hash-object", "--stdin"],
+    cwd: root,
+    home,
+    stdin,
+    maxOutputBytes: 128,
+  });
+
+  assert.equal(stdout.toString("ascii").trim(), gitObjectOid(stdin));
 });
 
 test("live Git tree, blob, and diff primitives preserve raw path bytes", async (t) => {

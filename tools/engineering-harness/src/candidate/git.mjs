@@ -1,9 +1,24 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { types as utilTypes } from "node:util";
 import { runBoundedProcess } from "../native/process.mjs";
 import { runBoundedProcessBytes } from "../native/process.mjs";
 
 const gitExecutable = "/usr/bin/git";
+const maximumGitStdinBytes = 4 * 1024 * 1024;
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const nativeTypedArrayBufferGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "buffer",
+).get;
+const nativeTypedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteLength",
+).get;
+const nativeTypedArrayByteOffsetGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteOffset",
+).get;
 
 export class GitProcessFault extends Error {
   constructor(args, outcome) {
@@ -96,11 +111,49 @@ export function runGit(input) {
   return executeGit(input, runBoundedProcess);
 }
 
+function copyGitStdinBytes(value) {
+  if (value === undefined) return undefined;
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    !utilTypes.isUint8Array(value)
+  ) {
+    throw new TypeError("Git byte stdin must be bounded private bytes");
+  }
+  let buffer;
+  let byteLength;
+  let byteOffset;
+  try {
+    buffer = nativeTypedArrayBufferGetter.call(value);
+    byteLength = nativeTypedArrayByteLengthGetter.call(value);
+    byteOffset = nativeTypedArrayByteOffsetGetter.call(value);
+  } catch {
+    throw new TypeError("Git byte stdin must be bounded private bytes");
+  }
+  if (
+    utilTypes.isSharedArrayBuffer(buffer) ||
+    !Number.isSafeInteger(byteLength) ||
+    byteLength < 0 ||
+    byteLength > maximumGitStdinBytes ||
+    !Number.isSafeInteger(byteOffset) ||
+    byteOffset < 0
+  ) {
+    throw new TypeError("Git byte stdin must be bounded private bytes");
+  }
+  try {
+    return Buffer.from(new Uint8Array(buffer, byteOffset, byteLength));
+  } catch {
+    throw new TypeError("Git byte stdin must be bounded private bytes");
+  }
+}
+
 async function executeGitBytes(
   {
     args,
     cwd,
     home,
+    stdin,
     timeoutMs = 120_000,
     maxOutputBytes = 4_194_304,
     environmentOverrides,
@@ -109,7 +162,8 @@ async function executeGitBytes(
   },
   processRunner,
 ) {
-  const outcome = await processRunner({
+  const stdinBytes = copyGitStdinBytes(stdin);
+  const request = {
     executable: gitExecutable,
     args,
     cwd,
@@ -118,7 +172,9 @@ async function executeGitBytes(
     maxOutputBytes,
     inheritedFileDescriptors,
     signal,
-  });
+  };
+  if (stdinBytes !== undefined) request.stdin = stdinBytes;
+  const outcome = await processRunner(request);
   if (
     outcome.disposition !== "completed" ||
     outcome.exitCode !== 0 ||
