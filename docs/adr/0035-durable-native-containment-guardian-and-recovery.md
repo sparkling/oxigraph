@@ -345,9 +345,10 @@ The first implementation prerequisite for ready recovery is the additive pure
 `containment-guardian-lifetime-v1` contract. It is the sole owner of the in-
 process brands for a recovery-target projection, recovery-attempt anchor
 projection, recovery external head, and normal-close receipt projection.
-Recovery-v1 imports only its read-
-only selector/brand predicates; lifetime-v1 never imports recovery-v1. This
-one-way dependency prevents a circular module or requirements-hash seam.
+Recovery-v1 imports only its read-only requirements-digest constant and five
+brand assertion functions; it imports no lifetime selector or implementation
+helper. Lifetime-v1 never imports recovery-v1. This one-way dependency prevents
+a circular module or requirements-hash seam.
 
 The exact lifetime schemas are:
 
@@ -1681,7 +1682,10 @@ four-attempt branch combinations rather than assuming `4 × 19` is valid.
 
 Target, inventory, plan, attempt, anchored-empty, and replay results are exact,
 recursively frozen null-prototype values. A recovery record alone is a
-canonical single-LF JSONL copy-on-read artifact with exactly these ordered
+canonical single-LF JSONL copy-on-read artifact. Its wrapper is itself a frozen
+null-prototype object: `bytes` is an enumerable own getter that returns a fresh
+exact `Buffer` copy on every read, and every other public property is enumerable
+own data. It has exactly these ordered
 public properties: `bytes`, `name`, `rawSha256`, `semanticSha256`, `schema`,
 `sequence`, `recordType`, `priorState`, `nextState`,
 `previousRecordRawSha256`, `targetSha256`, `attempt`, `operation`, `evidence`,
@@ -1704,7 +1708,64 @@ origin, persistence, durability, or authority.
 
 The module exports the exact schemas, bounds, ordered vocabularies, immutable
 authority/nonclaim/physical-fact values, immutable requirements value and its
-canonical SHA-256, plus these functions and exact ordered inputs:
+canonical SHA-256 under exactly these required public value identifiers:
+
+```text
+CANDIDATE_CONTAINMENT_RECOVERY_TARGET_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_INVENTORY_OBSERVATION_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_ATTEMPT_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_ANCHORED_EMPTY_ATTEMPT_SCHEMA_V1
+CANDIDATE_CONTAINMENT_GUARDIAN_LIFETIME_RECOVERY_TARGET_PROJECTION_SCHEMA_V1
+CANDIDATE_CONTAINMENT_LIFETIME_RECOVERY_ATTEMPT_ANCHOR_PROJECTION_SCHEMA_V1
+CANDIDATE_CONTAINMENT_LIFETIME_NORMAL_CLOSE_RECEIPT_PROJECTION_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_PLAN_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_RECORD_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_REPLAY_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_EXTERNAL_HEAD_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SCHEMA_V1
+CANDIDATE_CONTAINMENT_RECOVERY_SEQUENCE_STARTS_AT_V1
+CANDIDATE_CONTAINMENT_RECOVERY_SEQUENCE_WIDTH_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_ATTEMPTS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_RECORDS_PER_ATTEMPT_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_RECORDS_ACROSS_ATTEMPTS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_CONTROL_VALUE_BYTES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_OPERATION_OR_EVIDENCE_BYTES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_RECORD_BYTES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_MAX_AGGREGATE_RECORD_BYTES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_GENESIS_RAW_SHA256_V1
+CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_REPLAY_ENTRY_KINDS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_EXTERNAL_HEAD_RESULTS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_ATTEMPT_DIRECTORY_STATES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_ATTEMPT_SOURCE_LOCATIONS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_REPLAY_STATUSES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITION_SELECTION_PRECEDENCE_V1
+CANDIDATE_CONTAINMENT_RECOVERY_UNRESOLVED_EFFECT_INTENT_STATES_V1
+CANDIDATE_CONTAINMENT_RECOVERY_AUTHORITY_V1
+CANDIDATE_CONTAINMENT_RECOVERY_NONCLAIMS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_PHYSICAL_FACTS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_V1
+CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1
+```
+
+The four lifetime-owned projection/head schema identifiers above repeat their
+exact literals as read-only recovery contract values; they do not transfer any
+brand or permit recovery-v1 to mint one. Recovery-v1 imports from lifetime-v1
+only `CANDIDATE_CONTAINMENT_GUARDIAN_LIFETIME_REQUIREMENTS_SHA256_V1` and the five
+read-only brand assertion functions. At module initialization it requires that
+constant to equal the ratified literal
+`764975dd915913db4c4e0fc7bee308f8cb830c5f972ac0b97355601e7ff1b773`; a
+different lifetime module digest rejects before recovery construction or replay.
+It imports no lifetime selector or implementation helper and does not re-export
+one.
+
+It also exports exactly these required public functions with their exact
+ordered inputs:
 
 ```text
 deriveCandidateContainmentRecoveryTargetProjectionV1({
@@ -1778,9 +1839,18 @@ verifyCandidateContainmentRecoveryRecordV1({name, bytes})
 replayCandidateContainmentRecoveryV1({
   target, entries,
   expectedStateRootIdentitySha256,
-  expectedExternalHead
+  expectedExternalHead,
+  currentLifetimeAnchorProjection,
+  currentLifetimeAttemptAnchorRawSha256,
+  currentLifetimeAnchorPredecessorExternalHead,
+  normalCloseDurabilityReceipt
 })
 ```
+
+Those 40 values and 13 functions are the complete 53-name required export
+inventory for recovery-v1. Implementation-private helpers remain unexported;
+harmless standard ESM module metadata that is not an implementation helper or
+additional public API is outside this inventory and is not prohibited.
 
 `generationManifest` is the exact verified v2 `{name, bytes}` artifact and
 `normalJournalBundles` is a dense ordered array of zero through 18 exact v2
@@ -1819,6 +1889,31 @@ same-origin assertion.
 `previousRecoveryReplay` is always an exact output of the replay function,
 including its zero-entry result; the planner derives ancestry and any inherited
 decision from that value and accepts no caller-provided summary substitute.
+Replay's two current-anchor inputs and its current-anchor predecessor-head input
+are either all null or all non-null. The predecessor head is the exact branded
+head privately associated with that unresolved lifetime anchor; it is distinct
+from `expectedExternalHead`, which independently anchors the recovery tail
+derived from the supplied entries. Before attempt creation both may be the same
+branded predecessor head. For structural replay of records or an anchored-empty
+descriptor under an unresolved current anchor, the predecessor head remains
+non-null for the atomic same-origin check while `expectedExternalHead` may be
+null because the lifetime ledger has not yet published that attempt's result.
+When a current anchor exists, a non-null `expectedExternalHead` is permitted only
+when it is the exact same object as
+`currentLifetimeAnchorPredecessorExternalHead` and the entries still derive that
+predecessor head; a byte-equal head selected from another replay rejects. Thus an
+unresolved anchor can never smuggle a separately selected post-attempt head.
+After the lifetime result is durable the anchor is historical, all three current-
+anchor inputs are null, and the result head may be supplied as
+`expectedExternalHead`. The normal-close receipt is independently null or the
+exact lifetime selector pair. Replay retains these boundary inputs only in
+module-private metadata after one atomic lifetime boundary-set assertion; they
+do not add serialized or public result fields. A current anchor excludes a
+close receipt; a close receipt requires no current anchor. The planner's current-
+anchor and close inputs must be the same retained objects from its supplied
+replay (including null), so it cannot combine a freshly reverified target with a
+replay created against an older lifetime replay or add a later anchor/receipt
+after recovery replay.
 `RECOVERY_PLAN_READY`, `CLOSE_MOVE_REQUIRED`,
 `CLOSED_LOCATION_OBSERVED`, and `RECOVERY_TERMINAL` require that replay to have
 `externalTailHeadMatched: true`. A structural replay with no external head is
@@ -1972,7 +2067,15 @@ certainty is replay-derived. It is null for anchor-required and every blocked,
 close, closed, or terminal result. `proposedActorKind` is null when no actor was
 proposed and may be one exact kind during phase-one planning, but it never
 appears as a consumed actor in the result. Phase two reobserves every actor-
-specific fact after the lifetime anchor exists. Expected and reported recovery-
+specific fact after the lifetime anchor exists. In phase one, where both
+current-anchor inputs are null, `proposedActorKind` may be null only for a path
+that completes before actor selection (blocked, close, closed, or terminal). A
+path that reaches `RECOVERY_ANCHOR_REQUIRED` requires one exact proposed kind;
+that kind becomes `requiredActorKind` only if the replay, boot, and actor-lineage
+rules admit it, otherwise the input rejects. In phase two, where both current-
+anchor inputs are non-null, `proposedActorKind` is exactly null and the consumed
+actor kind is derived only from the branded anchor; repeating or overriding it
+through the proposal field rejects. Expected and reported recovery-
 lifetime identities are equal non-null digests for a ready plan; a proposed
 mismatch produces the lifetime-rejected status. This prevents a planning-only
 state-18 close, anchor request, or pre-attempt rejection from appearing to
@@ -2302,9 +2405,13 @@ Before accepting the entry array, expected external head, a phase-two current
 anchor, or a normal-close receipt, recovery-v1 calls the lifetime module's
 composite boundary-set assertion with the target's retained selection, every
 historical anchor selection in ledger order, the optional current selection,
-and the optional head/close boundary. Thus individually valid values from two
-complete replay instances reject, and a current anchor cannot be paired with an
-external head other than its privately associated predecessor.
+the current anchor's separately supplied predecessor head when current is
+non-null (otherwise the optional expected external head), and the optional close
+boundary. It independently compares `expectedExternalHead`, when non-null, with
+the head derived from the recovery entries. Thus individually valid values from
+two complete replay instances reject, a current anchor cannot be paired with a
+predecessor other than its private association, and that predecessor cannot be
+misrepresented as an externally published post-attempt result.
 
 Every projection's expected state-root identity equals the replay input's one
 global state-root anchor. Current boot, delegated-root, and recovery-lifetime
