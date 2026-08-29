@@ -276,10 +276,14 @@ export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_IMPLEMENTATION_CHECKPOIN
         CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_IMPLEMENTATION_CHECKPOINT_SCHEMA_V4,
       ],
       ["pureProtocolImplemented", true],
-      ["nativeSupervisorSourceImplemented", false],
-      ["nativeAttestationImplemented", false],
+      ["nativeSupervisorSourceImplemented", true],
+      ["nativeAttestationImplemented", true],
       ["nativeExecutionFixtureImplemented", false],
       ["filesystemGuardianImplemented", false],
+      [
+        "bootstrapRequirementsAnchorSemantics",
+        "opaque-historical-identity-component-not-authority",
+      ],
       ["nativeObservation", null],
       ["binding", null],
       ["physicalEligibility", false],
@@ -467,6 +471,10 @@ function parseStart(bytesValue) {
     CANDIDATE_CONTAINMENT_LAUNCH_CAPSULE_MAX_BYTES_V2,
     fail,
   );
+  // generationIdentity.bootstrapRequirementsSha256 is intentionally an opaque
+  // historical predecessor component. Re-deriving the complete generation
+  // identity binds its exact bytes, but neither this parser nor the native
+  // successor equates it with a current READY requirement or authority grant.
   if (
     body.schema !==
       CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_START_SCHEMA_V4 ||

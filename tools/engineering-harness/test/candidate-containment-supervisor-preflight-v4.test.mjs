@@ -517,10 +517,12 @@ test("preflight v4 is a distinct additive family and neither verifier accepts bo
       schema:
         "oxigraph.candidate-containment-supervisor-preflight-implementation-checkpoint/v1",
       pureProtocolImplemented: true,
-      nativeSupervisorSourceImplemented: false,
-      nativeAttestationImplemented: false,
+      nativeSupervisorSourceImplemented: true,
+      nativeAttestationImplemented: true,
       nativeExecutionFixtureImplemented: false,
       filesystemGuardianImplemented: false,
+      bootstrapRequirementsAnchorSemantics:
+        "opaque-historical-identity-component-not-authority",
       nativeObservation: null,
       binding: null,
       physicalEligibility: false,
