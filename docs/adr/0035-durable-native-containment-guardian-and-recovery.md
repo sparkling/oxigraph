@@ -8,23 +8,24 @@
   `ab668ddd` adds local-only, authority-null journal construction and replay for
   the exact cancel-only transition graph. Commit `c2abb0df` adds the exact
   authority-null generation-manifest and journal-bundle v2 constructor,
-  verifier, and replay around unchanged journal-v1 bytes. Commit `040f3343` adds the separate
-  local Linux x86-64 execution-copy fixture for the attested executable
-  preflight, including structural descriptor observation, exact cancel-only
-  transcript checks, bounded fault handling, and test-root cleanup. It does not
-  write or recover a filesystem journal, run the stable native guardian, mutate
-  a delegated cgroup, prove pidfd/waitid reap, or bind the executable through
-  the ADR's race-free launch event, and it remains absent from runtime,
+  verifier, and replay around unchanged journal-v1 bytes. Commit `040f3343`
+  adds the separate local Linux x86-64 execution-copy fixture for the attested
+  executable preflight. Commit `2f901134` adds the exact authority-null
+  lifetime-v1 identity, record, replay, finite reducer, reservation, selector,
+  and same-origin brand boundary ratified here, together with frozen,
+  semantic-adversarial, and hostile-input evaluators. None of these slices
+  writes or recovers a filesystem journal, runs the stable native guardian,
+  mutates a delegated cgroup, proves pidfd/waitid reap, or binds the executable
+  through the ADR's race-free launch event; they remain absent from runtime,
   task-profile, and CLI registries. The next permitted slice is the
-  evaluator-owned lifetime-v1 red suite and authority-null pure module ratified
-  here. Only its exact branded outputs may unblock the recovery-v1 red suite and
-  pure module. The guardian-control contract must then close before any
-  filesystem-backed manager/guardian owner begins;
-  no existing slice may activate production containment, G1.7, G2.2,
+  evaluator-owned recovery-v1 red suite and authority-null pure module, consuming
+  only the branded lifetime-v1 boundaries. The guardian-control contract must
+  then close before any filesystem-backed manager/guardian owner begins; no
+  existing slice may activate production containment, G1.7, G2.2,
   qualification, promotion, or publication
-- Programme task: `task-1788002473147-nsat6x` (80% at journal-v2 checkpoint)
-- Contract-first successor task: `task-1788008900651-u20s3l` (50%; lifetime-v1
-  now precedes recovery-v1)
+- Programme task: `task-1788002473147-nsat6x` (84% at lifetime-v1 checkpoint)
+- Contract-first successor task: `task-1788008900651-u20s3l` (75%; lifetime-v1
+  implemented, recovery-v1 next)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
@@ -3255,14 +3256,53 @@ separate recovery-contract audits returned NO-GO for recovery-v1 code until the
 finite schema, inventory rules, external head anchor, attempt ceilings, and
 branch graph are ratified below.
 
+Commit `2f901134` implements the additive authority-null lifetime boundary in
+[`containment-guardian-lifetime-v1.mjs`](../../tools/engineering-harness/src/candidate/containment-guardian-lifetime-v1.mjs),
+with its frozen evaluator and two independent adversarial suites:
+
+- production independently constructs the exact frozen 29-row null-prototype
+  relationship matrix and derives SHA-256
+  `51433108d1ce01bb1492c01fd18140fe290782f4a54a31f7d2c80f8dae64d8ab`;
+  the 85-field requirements projection remains
+  `764975dd915913db4c4e0fc7bee308f8cb830c5f972ac0b97355601e7ff1b773`
+  and the public surface remains exactly 56 named exports;
+- identity creation, verification, record admission, and replay share one
+  fresh, role-distinct actor/epoch boundary; guardian and recovery process
+  phases are segment-bound and terminal-monotonic; configured reboot
+  supersession remains sticky; target genesis covers the configured historical
+  normal context and every intervening segment; and removal seals the exact
+  absence-and-close suffix;
+- prospective semantic reserve validation runs before final record
+  canonicalization, while replay checks exact record counts and intrinsic Buffer
+  lengths before allocation, parsing, base64 decoding, hashing, or sorting;
+  hostile Proxies and poisoned Buffer length accessors reject without invoking
+  their traps; and
+- the final source SHA-256 is
+  `f454ee962615e887c294f4aabade6a640ac1881fd3662842b75a3be8afb8f3e5`;
+  the frozen, semantic-adversarial, and security-adversarial evaluator SHA-256
+  values are respectively
+  `afbb8909a89850c4974e06ddb29d96ec300bb6cbe0797f8caab07ece44ddc697`,
+  `cb9c1cfc8afd91e05c12c7feceea639e3e4c3b3e96320931d3357ac6faed464c`,
+  and
+  `271bf1ac921d90c036b554a01474250ec9b16f505b340736b318c16fc6eb7d46`.
+
+The three lifetime suites pass 45/45 on both Node 24 and Node 20. The official
+ADR graph passes 1/1, the programme evidence suite passes 25/25, source-only
+programme verification passes, and two independent final exact-hash reviews
+return GO with no P0/P1 findings. The complete harness passes every behavioural
+and committed-control test on both runtimes; its sole fail-closed result is the
+deliberate G1.7 identity guard reporting product paths changed after the old
+sealed e9 subject. This checkpoint does not refresh that subject or convert its
+stale seal into qualification evidence.
+
 No live G1.7 control, provider, benchmark, qualification, promotion, or
 publication path ran for this checkpoint. The additive journal-bundle v2 and
-generation manifest now exist only as pure authority-null contracts. The
-lifetime/recovery-ledger v1 contracts, filesystem journal creation, sync and
-no-replace mechanics, stable native manager and guardian/reaper execution,
-recovery mutation, delegated-cgroup qualification, race-free exec/pidfd
-evidence, and the production native adapter remain unimplemented. Production
-readiness therefore remains exactly
+generation manifest and lifetime-v1 ledger now exist only as pure
+authority-null contracts. The recovery-v1 pure module, filesystem journal
+creation, sync and no-replace mechanics, stable native manager and
+guardian/reaper execution, recovery mutation, delegated-cgroup qualification,
+race-free exec/pidfd evidence, and the production native adapter remain
+unimplemented. Production readiness therefore remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 ## Acceptance boundary
