@@ -62,8 +62,14 @@ native mechanics. Commit `88b9d7e7` adds the separate successor FD-map v2,
 exact launch capsule, and authority-null interactive control reducer without
 registering or executing them. The expanded related matrix passes 237/237 on
 both current Node and Node 20, three independent reviews are GO for the dormant
-scope, and the task is 90% in progress. The guardian, interactive physical
-native adapter and full runtime-closure proof, application receipt v7/replay,
+scope. Commit `7191ddde` adds the next unregistered launch/bootstrap successor:
+exact FDs 18-25, positive held-stop exec proof, an in-band capsule, and a
+cancel-only pre-clone terminal path. Retained-file evidence is honestly limited
+to FDs 4-17, and all live control-descriptor, writer, cleanup, physical, and
+authority facts remain future requirements or null/false. The focused tests
+pass 11/11 and the expanded matrix passes 248/248 on current Node and Node 20;
+three fresh reviews are GO, and the task is 91% in progress. The guardian,
+interactive physical native adapter and full runtime-closure proof, application receipt v7/replay,
 evaluator/profile/CLI registration, the complete gate, and G2.2 remain open.
 Sixteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence

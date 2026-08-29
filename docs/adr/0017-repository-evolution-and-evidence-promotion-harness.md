@@ -226,7 +226,17 @@
   leaves physical outcomes null, and makes pre-commit cleanup guardian-owned.
   The expanded related matrix passes
   237/237 on both current Node and Node 20, and three independent reviews are
-  GO for this dormant boundary. These traces, attestations, and declarative
+  GO for this dormant boundary. Commit `7191ddde` adds the next additive,
+  unregistered launch/bootstrap successor. Exact FDs 18-25, a CLOEXEC child
+  outcome channel, held-stop `PTRACE_EVENT_EXEC` image proof, and complete
+  trace/remap/close/exec failure phases close the declarative launch race. The
+  capsule is then transferred in-band before `READY` through a cancel-only
+  bootstrap whose retained-file claim is limited to FDs 4-17. Live FDs 0-3,
+  guardian writer closure and cleanup, freshness, physical facts, binding, and
+  every authority remain future requirements, null, or false. The focused
+  successor tests pass 11/11 and the expanded related matrix passes 248/248 on
+  current Node and Node 20; three fresh independent reviews are GO for this
+  dormant boundary. These traces, attestations, and declarative
   contracts remain non-physical and cannot mint the production report brand.
   The guardian, interactive native adapter, and full path-executed runtime closure,
   receipt v7/replay, evaluator reconstruction, registry/CLI activation, and G2.2
@@ -560,7 +570,7 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-90% after unregistered launch/control contract commit `88b9d7e7`; the guardian,
+91% after unregistered launch/bootstrap contract commit `7191ddde`; the guardian,
 interactive native cgroup adapter and full runtime-closure proof, receipt v7/replay,
 evaluator reconstruction, profile/CLI registration, the complete acceptance
 gate, and G2.2 remain open. ADR-0034 adds no product G-identifier.

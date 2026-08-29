@@ -68,6 +68,19 @@ physical facts remain null; and pre-commit cgroup cleanup stays guardian-owned. 
 expanded related matrix now passes 237/237 on both the current Node runtime and
 Node 20, and three independent reviews returned GO for this narrow dormant
 scope.
+Commit `7191ddde` adds a separate launch-capsule v2 protocol and cancel-only
+bootstrap v2 protocol without registering either one. The capsule allocates
+scratch/output/outcome/pidfd descriptors 18-25, gives child trace and stop
+failures their own exact outcome phases, and requires a held
+`PTRACE_EVENT_EXEC` image-identity check plus zero-byte EOF before execution is
+reported. The bootstrap transfers the exact capsule bytes in-band between
+`START` and `READY`, then admits only `CANCEL`, `CANCELLED_BEFORE_CLONE`, and
+`SUPERVISOR_DONE`. Retained-file inventory is scoped to FDs 4-17; FDs 0-3,
+global status-writer ownership, guardian cleanup, freshness, physical facts,
+and final authority remain explicit future requirements or nonclaims. The two
+focused files pass 11/11 and the expanded related non-G1.7 matrix passes
+248/248 on both current Node and Node 20. Three independent adversarial and
+compatibility reviews returned GO for this dormant boundary.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group

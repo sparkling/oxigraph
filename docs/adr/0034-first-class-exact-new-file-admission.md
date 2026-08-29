@@ -31,7 +31,16 @@
   pure interactive START/READY/COMMIT/CANCEL reducer. The reducer re-executes
   supplied capsule bytes, keeps READY decision-null, binds later decision
   acknowledgements to exact decision bytes, keeps physical outcomes null, and
-  makes pre-commit cleanup guardian-owned.
+  makes pre-commit cleanup guardian-owned. Commit `7191ddde` adds an additive
+  launch-capsule v2 successor with exact FDs 18-25, a CLOEXEC exec-outcome
+  channel, positive held-stop `PTRACE_EVENT_EXEC` image proof, and complete
+  child/parent failure classifications. It also adds an in-band, cancel-only
+  `START`/`CAPSULE`/`READY`/`CANCEL`/terminal bootstrap. Retained-file claims
+  are scoped to FDs 4-17; live FDs 0-3, global sole-writer proof, guardian
+  cleanup, freshness, physical facts, and all authority remain unproved,
+  null, or false. The task is 91% in progress after 11/11 focused and 248/248
+  related non-G1.7 tests on both current Node and Node 20 plus three
+  independent GO reviews.
   Existing schema-v1 bytes remain untouched. Production containment remains
   fixed unavailable: the guardian, interactive native adapter, and full
   path-executed runtime-closure proof,
@@ -322,7 +331,7 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 90%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 91%.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -377,14 +386,24 @@ The committed implementation sequence is:
   commit cleanup. READY remains decision-null. Pure replay independently
   verifies the supplied capsule and preserves null physical, cleanup, binding,
   final-decision, and authority fields. It neither implements the declared
-  mechanics nor reinterprets any schema-v1 byte.
+  mechanics nor reinterprets any schema-v1 byte; and
+- `7191ddde` freezes the next unregistered launch and bootstrap boundary. The
+  launch successor assigns FDs 18-25, specifies exact 16-byte child trace,
+  stop, remap, close, and `execveat` failure records, and accepts execution only
+  after a held `PTRACE_EVENT_EXEC`, exact live image identity, and zero-byte
+  outcome EOF. The bootstrap transfers exact capsule bytes in-band before
+  `READY`, binds request/generation/guardian/requirements identity across every
+  frame, and accepts only pre-clone cancellation. Its retained-file inventory
+  is limited to FDs 4-17, while FDs 0-3, guardian status-writer closure,
+  freshness, cleanup, physical outcomes, binding, final decisions, and all
+  authority remain future requirements, null, or false.
 
-The focused launch/control tests pass 11/11. The expanded related v1/v2 plus
-application-receipt regression matrix passes 237/237 on both the current Node
+The focused launch/bootstrap tests pass 11/11. The expanded related v1/v2 plus
+application-receipt regression matrix passes 248/248 on both the current Node
 runtime and Node 20. Three independent adversarial/compatibility audits returned
-GO after capsule substitution, decision acknowledgement, descriptor allocation,
-executable-mode, pipe/pidfd lifecycle, output-bound, and cleanup-ownership
-blockers were corrected. Their GO is only for this narrow Proposed,
+GO after capsule substitution, exec-transition, trace-failure, descriptor
+scope, writer-scope, freshness, diagnostics-normalization, pipe/pidfd lifecycle,
+and cleanup-ownership blockers were corrected. Their GO is only for this narrow Proposed,
 unregistered, authority-null foundation; production activation remains NO-GO.
 The earlier focused protocol/attestation tests remain 16/16 and the committed-
 identity control remains 2/2.

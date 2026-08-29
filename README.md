@@ -389,6 +389,19 @@ pre-commit cgroup cleanup to the guardian. Existing schema-v1 bytes and
 production surfaces are untouched. The
 expanded related non-G1.7 matrix passes 237/237 on both the current Node runtime
 and Node 20; three independent reviews returned GO for this dormant scope.
+Commit `7191ddde` adds a second, still-unregistered successor boundary. Its
+launch capsule assigns exact descriptors 18-25, uses a CLOEXEC outcome pipe,
+and accepts successful execution only after `PTRACE_EVENT_EXEC`, a held-stop
+`/proc/<pid>/exe` identity match, and zero-byte EOF; child trace, stop, remap,
+close, and `execveat` failures have exact 16-byte phase records. The cancel-only
+bootstrap transports the capsule in-band before `READY`, binds every frame to
+the request, generation, guardian epoch/nonce, and requirements digest, then
+accepts only `CANCEL` through `CANCELLED_BEFORE_CLONE` and `SUPERVISOR_DONE`.
+Retained-file descriptor claims are explicitly limited to FDs 4-17; live
+control-descriptor identity, sole-writer ownership, cleanup, physical facts,
+binding, and authority remain null or false. Focused tests pass 11/11 and the
+expanded related matrix passes 248/248 on both the current Node runtime and
+Node 20; three fresh independent reviews returned GO for this dormant scope.
 This remains declarative, authority-null groundwork—not native remap mechanics,
 executed-supervisor identity, output evidence, physical containment, or the
 full runtime closure. Production stays fixed unavailable until the guardian,
@@ -493,7 +506,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 90%
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 91%
   in-progress harness controls remain unregistered until their full v2
   acceptance gate closes.
 
