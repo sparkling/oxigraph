@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -494,6 +501,72 @@ test("v2 cleanup proof rejects contradictory or incomplete native outcomes", () 
   }
 });
 
+test("v2 retained closure has a bounded static ESM request inventory", async () => {
+  const inventory = [
+    [
+      new URL(
+        "../src/candidate/sandbox-session-worker-v2.mjs",
+        import.meta.url,
+      ),
+      [
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:perf_hooks",
+        "node:url",
+        "node:util",
+        "../native/process.mjs",
+        "../policy/build-command-v2.mjs",
+        "../policy/evidence-limits.mjs",
+        "../policy/session-v2-limits.mjs",
+        "../policy/task-v2-failures.mjs",
+        "../routing/features.mjs",
+      ],
+    ],
+    [
+      new URL("../src/native/process.mjs", import.meta.url),
+      ["node:child_process", "node:fs", "node:perf_hooks", "node:util"],
+    ],
+    [new URL("../src/policy/build-command-v2.mjs", import.meta.url), []],
+    [new URL("../src/policy/evidence-limits.mjs", import.meta.url), []],
+    [new URL("../src/policy/session-v2-limits.mjs", import.meta.url), []],
+    [
+      new URL("../src/policy/task-v2-failures.mjs", import.meta.url),
+      ["node:crypto"],
+    ],
+    [new URL("../src/routing/features.mjs", import.meta.url), ["node:crypto"]],
+  ];
+  const retainedSources = new Set(inventory.map(([source]) => source.href));
+  for (const [source, expected] of inventory) {
+    const text = await readFile(source, "utf8");
+    assert.doesNotMatch(
+      text,
+      /\bimport(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))*\(/u,
+    );
+    assert.doesNotMatch(
+      text,
+      /\b(?:eval|Function|AsyncFunction|GeneratorFunction|createRequire|WebAssembly)\b|\bprocess\.getBuiltinModule\b|\b(?:compileFunction|runInNewContext|runInThisContext)\b/u,
+    );
+    const requests = [
+      ...text.matchAll(
+        /(?:^|\n)import(?:\s+[\s\S]*?\s+from)?\s+["']([^"']+)["'];/gu,
+      ),
+    ].map((match) => match[1]);
+    assert.deepEqual(requests, expected);
+    const importTokens = [...text.matchAll(/\bimport\b/gu)].length;
+    const importMetaTokens = [...text.matchAll(/\bimport\.meta\b/gu)].length;
+    assert.equal(
+      importTokens,
+      requests.length + importMetaTokens,
+      "every import token must be one inventoried static request or import.meta",
+    );
+    for (const specifier of expected.filter((value) => value.startsWith("."))) {
+      assert.equal(retainedSources.has(new URL(specifier, source).href), true);
+    }
+  }
+});
+
 function safeOuterOutcome() {
   return Object.freeze({
     disposition: "completed",
@@ -544,13 +617,86 @@ function resultFileFromRequest(request) {
   return request.args[index - 1];
 }
 
-test("v2 structural host pins result bytes and labels observed closure evidence unproved", async (t) => {
+test("v2 structural host binds exact private closure copies through retained descriptors", async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), "oxigraph-v2-host-fixture-"));
   t.after(() => rm(workspace, { recursive: true, force: true }));
   const requests = [];
+  const expectedClosure = [
+    [
+      new URL(
+        "../src/candidate/sandbox-session-worker-v2.mjs",
+        import.meta.url,
+      ),
+      "/runner/candidate/sandbox-session-worker-v2.mjs",
+    ],
+    [
+      new URL("../src/native/process.mjs", import.meta.url),
+      "/runner/native/process.mjs",
+    ],
+    [
+      new URL("../src/policy/build-command-v2.mjs", import.meta.url),
+      "/runner/policy/build-command-v2.mjs",
+    ],
+    [
+      new URL("../src/policy/evidence-limits.mjs", import.meta.url),
+      "/runner/policy/evidence-limits.mjs",
+    ],
+    [
+      new URL("../src/policy/session-v2-limits.mjs", import.meta.url),
+      "/runner/policy/session-v2-limits.mjs",
+    ],
+    [
+      new URL("../src/policy/task-v2-failures.mjs", import.meta.url),
+      "/runner/policy/task-v2-failures.mjs",
+    ],
+    [
+      new URL("../src/routing/features.mjs", import.meta.url),
+      "/runner/routing/features.mjs",
+    ],
+    [
+      new URL("../src/candidate/seccomp-launcher.py", import.meta.url),
+      "/runner/seccomp-launcher.py",
+    ],
+  ];
+  const expectedBytes = await Promise.all(
+    expectedClosure.map(([source]) => readFile(source)),
+  );
   const controller = createSandboxVerificationSessionV2ForTesting(
     async (request) => {
       requests.push(request);
+      assert.equal(request.inheritedFileDescriptors.length, 8);
+      assert.equal(new Set(request.inheritedFileDescriptors).size, 8);
+      const fdBindings = [];
+      for (let index = 0; index < request.args.length; index += 1) {
+        if (request.args[index] === "--ro-bind-fd") {
+          fdBindings.push({
+            childFd: request.args[index + 1],
+            destination: request.args[index + 2],
+          });
+        }
+      }
+      assert.deepEqual(
+        fdBindings.map(({ childFd }) => childFd),
+        ["3", "4", "5", "6", "7", "8", "9", "10"],
+      );
+      assert.deepEqual(
+        fdBindings.map(({ destination }) => destination),
+        expectedClosure.map(([, destination]) => destination),
+      );
+      assert.equal(
+        request.args.some(
+          (argument, index) =>
+            argument === "--ro-bind" &&
+            request.args[index + 2]?.startsWith("/runner"),
+        ),
+        false,
+      );
+      const retainedBytes = await Promise.all(
+        request.inheritedFileDescriptors.map((descriptor) =>
+          readFile(`/proc/self/fd/${descriptor}`),
+        ),
+      );
+      assert.deepEqual(retainedBytes, expectedBytes);
       await writeFile(
         resultFileFromRequest(request),
         resultBytes(digest(request.stdin)),
@@ -570,8 +716,20 @@ test("v2 structural host pins result bytes and labels observed closure evidence 
   assert.equal(report.invocation.containment, "unproved");
   assert.equal(
     report.invocation.executableClosureBinding,
-    "read-then-path-bind-unproved",
+    "partial-esm-launcher-retained-fd-v1",
   );
+  assert.equal(
+    report.invocation.runtimeExecutableClosureBinding,
+    "path-exec-unproved",
+  );
+  assert.equal(
+    report.invocation.esmClosureInventory,
+    "tested-static-request-inventory-v1",
+  );
+  assert.equal(report.invocation.dynamicCodeLoadingResistance, false);
+  assert.equal(report.invocation.execveat, false);
+  assert.equal(report.invocation.sameUidTamperResistance, false);
+  assert.equal(report.invocation.transientMutationPrevention, false);
   assert.match(report.invocation.observedWorkerSha256, /^[0-9a-f]{64}$/u);
   assert.match(
     report.invocation.observedWorkerClosureSha256,
@@ -582,11 +740,35 @@ test("v2 structural host pins result bytes and labels observed closure evidence 
     /^[0-9a-f]{64}$/u,
   );
   assert.match(report.invocation.argsSha256, /^[0-9a-f]{64}$/u);
+  const expectedWorkerClosure = expectedClosure
+    .slice(0, -1)
+    .map(([, destination], index) => ({
+      destination,
+      sha256: digest(expectedBytes[index]),
+    }));
+  assert.equal(
+    report.invocation.observedWorkerSha256,
+    digest(expectedBytes[0]),
+  );
+  assert.equal(
+    report.invocation.observedWorkerClosureSha256,
+    digest(Buffer.from(`${canonicalJson(expectedWorkerClosure)}\n`, "utf8")),
+  );
+  assert.equal(
+    report.invocation.observedSeccompLauncherSha256,
+    digest(expectedBytes.at(-1)),
+  );
   assert.doesNotMatch(
     JSON.stringify(report.invocation),
     new RegExp(workspace, "u"),
   );
   assert.equal(report.session.commands[2].observedPassed, 1);
+  for (const descriptor of requests[0].inheritedFileDescriptors) {
+    await assert.rejects(
+      readFile(`/proc/self/fd/${descriptor}`),
+      (error) => error.code === "ENOENT",
+    );
+  }
 });
 
 test("v2 structural host rejects pathname replacement after retaining the result inode", async (t) => {
@@ -614,14 +796,53 @@ test("v2 structural host rejects pathname replacement after retaining the result
   );
 });
 
+test("v2 structural host rejects retained-closure mutate then restore", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "oxigraph-v2-host-closure-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const controller = createSandboxVerificationSessionV2ForTesting(
+    async (request) => {
+      const closurePath = `/proc/self/fd/${request.inheritedFileDescriptors[0]}`;
+      const original = await readFile(closurePath);
+      const changed = Buffer.from(original);
+      changed[0] ^= 0x01;
+      await chmod(closurePath, 0o600);
+      await writeFile(closurePath, changed);
+      await writeFile(closurePath, original);
+      await chmod(closurePath, 0o400);
+      await writeFile(
+        resultFileFromRequest(request),
+        resultBytes(digest(request.stdin)),
+      );
+      return safeOuterOutcome();
+    },
+  );
+  await assert.rejects(
+    controller.runSandboxVerificationSessionV2(sessionInput(workspace)),
+    (error) => {
+      assert.equal(isSandboxSessionV2Fault(error), true);
+      assert.equal(error.reason, "protocol-or-inode");
+      assert.equal(error.cleanupSafe, true);
+      assert.equal(
+        error.invocation.executableClosureBinding,
+        "partial-esm-launcher-retained-fd-v1",
+      );
+      assert.equal(error.invocation.sameUidTamperResistance, false);
+      return true;
+    },
+  );
+});
+
 test("v2 structural host retains authority when the runner rejects or evidence access throws", async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), "oxigraph-v2-host-unknown-"));
   t.after(() => rm(workspace, { recursive: true, force: true }));
+  const retainedDescriptors = [];
   const controllers = [
-    createSandboxVerificationSessionV2ForTesting(async () => {
+    createSandboxVerificationSessionV2ForTesting(async (request) => {
+      retainedDescriptors.push([...request.inheritedFileDescriptors]);
       throw new Error("runner rejected without process proof");
     }),
-    createSandboxVerificationSessionV2ForTesting(async () => {
+    createSandboxVerificationSessionV2ForTesting(async (request) => {
+      retainedDescriptors.push([...request.inheritedFileDescriptors]);
       const outcome = { ...safeOuterOutcome() };
       Object.defineProperty(outcome, "noChild", {
         enumerable: true,
@@ -642,7 +863,90 @@ test("v2 structural host retains authority when the runner rejects or evidence a
         return true;
       },
     );
+    const descriptors = retainedDescriptors.at(-1);
+    assert.equal(descriptors.length, 8);
+    for (const descriptor of descriptors) {
+      assert.equal(
+        (await readFile(`/proc/self/fd/${descriptor}`)).length > 0,
+        true,
+      );
+    }
   }
+});
+
+test("v2 structural host quarantines a possibly-live closure handle after close uncertainty", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "oxigraph-v2-host-close-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  let failNextClose = false;
+  let closeFailed = false;
+  let retainedDescriptors;
+  const controller = createSandboxVerificationSessionV2ForTesting(
+    async (request) => {
+      retainedDescriptors = [...request.inheritedFileDescriptors];
+      await writeFile(
+        resultFileFromRequest(request),
+        resultBytes(digest(request.stdin)),
+      );
+      failNextClose = true;
+      return safeOuterOutcome();
+    },
+    async (handle) => {
+      if (failNextClose && !closeFailed) {
+        closeFailed = true;
+        throw new Error("injected retained closure close uncertainty");
+      }
+      await handle.close();
+    },
+  );
+  await assert.rejects(
+    controller.runSandboxVerificationSessionV2(sessionInput(workspace)),
+    (error) => {
+      assert.equal(isSandboxSessionV2Fault(error), true);
+      assert.equal(error.reason, "cleanup");
+      assert.equal(error.cleanupSafe, false);
+      return true;
+    },
+  );
+  assert.equal(closeFailed, true);
+  assert.equal(retainedDescriptors.length, 8);
+  assert.equal(
+    (await readFile(`/proc/self/fd/${retainedDescriptors[0]}`)).length > 0,
+    true,
+  );
+});
+
+test("v2 structural host retains pre-spawn materialization authority when close never settles", async (t) => {
+  const workspace = await mkdtemp(
+    join(tmpdir(), "oxigraph-v2-host-materialize-close-"),
+  );
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  let runnerCalled = false;
+  let retainedDescriptor;
+  const controller = createSandboxVerificationSessionV2ForTesting(
+    async () => {
+      runnerCalled = true;
+      throw new Error("process runner must remain unreachable");
+    },
+    async (handle) => {
+      retainedDescriptor ??= handle.fd;
+      throw new Error("injected pre-spawn close uncertainty");
+    },
+  );
+  await assert.rejects(
+    controller.runSandboxVerificationSessionV2(sessionInput(workspace)),
+    (error) => {
+      assert.equal(isSandboxSessionV2Fault(error), true);
+      assert.equal(error.reason, "cleanup");
+      assert.equal(error.cleanupSafe, false);
+      return true;
+    },
+  );
+  assert.equal(runnerCalled, false);
+  assert.equal(Number.isInteger(retainedDescriptor), true);
+  assert.equal(
+    (await readFile(`/proc/self/fd/${retainedDescriptor}`)).length > 0,
+    true,
+  );
 });
 
 test("v2 production session fails before spawn while cgroup ownership is unavailable", async (t) => {

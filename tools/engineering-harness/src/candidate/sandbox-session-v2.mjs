@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, realpathSync } from "node:fs";
 import {
   lstat,
+  mkdir,
   mkdtemp,
   open,
   readFile,
@@ -12,7 +13,7 @@ import {
 import { tmpdir, userInfo } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { types as utilTypes } from "node:util";
+import { isDeepStrictEqual, types as utilTypes } from "node:util";
 
 import { runBoundedProcessBytes } from "../native/process.mjs";
 import {
@@ -34,6 +35,8 @@ const maximumResultBytes = 256 * 1024 * 1024;
 const resultEnvelopeBytes = 2 * 1024 * 1024;
 const publicTailBytes = 16 * 1024;
 const maximumArtifacts = 256;
+const maximumClosureFileBytes = 16 * 1024 * 1024;
+const maximumClosureBytes = 64 * 1024 * 1024;
 const outputFloor = 1024;
 const outputCeiling = 64 * 1024 * 1024;
 const wallFloorMs = 1000;
@@ -94,6 +97,13 @@ const workerModuleSources = Object.freeze([
   Object.freeze({
     source: fileURLToPath(new URL("../routing/features.mjs", import.meta.url)),
     destination: "/runner/routing/features.mjs",
+  }),
+]);
+const executableClosureSources = Object.freeze([
+  ...workerModuleSources,
+  Object.freeze({
+    source: seccompLauncherSource,
+    destination: "/runner/seccomp-launcher.py",
   }),
 ]);
 const trustedFaults = new WeakSet();
@@ -1006,20 +1016,28 @@ function bindIfPresent(args, source, destination) {
   }
 }
 
-function structuralSandboxArguments({ workspace, outputFile, ceilings }) {
+function structuralSandboxArguments({
+  workspace,
+  outputFile,
+  ceilings,
+  executableClosure,
+}) {
   const home = userInfo().homedir;
   const cargo = join(home, ".cargo");
   const rustup = join(home, ".rustup");
-  for (const path of [
-    bwrapExecutable,
-    workspace,
-    outputFile,
-    seccompLauncherSource,
-    cargo,
-    rustup,
-    ...workerModuleSources.map(({ source }) => source),
-  ]) {
+  for (const path of [bwrapExecutable, workspace, outputFile, cargo, rustup]) {
     accessSync(path, constants.R_OK);
+  }
+  if (
+    !Array.isArray(executableClosure) ||
+    executableClosure.length !== executableClosureSources.length ||
+    executableClosure.some(
+      (record, index) =>
+        record?.destination !== executableClosureSources[index].destination ||
+        !Number.isInteger(record?.handle?.fd),
+    )
+  ) {
+    throw new Error("v2 executable closure transport is not exact");
   }
   const args = [
     "--die-with-parent",
@@ -1098,13 +1116,10 @@ function structuralSandboxArguments({ workspace, outputFile, ceilings }) {
     "--dir",
     "/runner/routing",
   );
-  for (const { source, destination } of workerModuleSources) {
-    args.push("--ro-bind", realpathSync(source), destination);
+  for (const [index, { destination }] of executableClosure.entries()) {
+    args.push("--ro-bind-fd", String(3 + index), destination);
   }
   args.push(
-    "--ro-bind",
-    realpathSync(seccompLauncherSource),
-    "/runner/seccomp-launcher.py",
     "--dir",
     "/result",
     "--bind",
@@ -1270,6 +1285,210 @@ function statIdentity(metadata) {
   });
 }
 
+function validateClosureFile(metadata, label) {
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    metadata.nlink !== 1n ||
+    (metadata.mode & 0o777n) !== 0o400n ||
+    metadata.size < 1n ||
+    metadata.size > BigInt(maximumClosureFileBytes) ||
+    (typeof process.getuid === "function" &&
+      metadata.uid !== BigInt(process.getuid()))
+  ) {
+    throw new Error(`${label} is not an exact private closure file`);
+  }
+}
+
+async function readExactHandleBytes(handle, size, label) {
+  if (
+    typeof size !== "bigint" ||
+    size < 1n ||
+    size > BigInt(maximumClosureFileBytes)
+  ) {
+    throw new Error(`${label} size is outside its bound`);
+  }
+  const length = Number(size);
+  const bytes = Buffer.allocUnsafe(length);
+  let offset = 0;
+  while (offset < length) {
+    const result = await handle.read(bytes, offset, length - offset, offset);
+    if (result.bytesRead < 1) {
+      throw new Error(`${label} ended before its retained size`);
+    }
+    offset += result.bytesRead;
+  }
+  const trailing = Buffer.allocUnsafe(1);
+  const result = await handle.read(trailing, 0, 1, length);
+  if (result.bytesRead !== 0) {
+    throw new Error(`${label} grew beyond its retained size`);
+  }
+  return bytes;
+}
+
+async function closeClosureHandles(state, selected = [...state.handles]) {
+  const errors = [];
+  for (const handle of selected) {
+    try {
+      await state.closeHandle(handle);
+      state.handles.delete(handle);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "v2 executable closure did not close");
+  }
+}
+
+async function materializeExecutableClosure(sessionRoot, state) {
+  const closureRoot = join(sessionRoot, "closure");
+  await mkdir(closureRoot, { mode: 0o700 });
+  let aggregateBytes = 0;
+  for (const [index, sourceRecord] of executableClosureSources.entries()) {
+    let sourceHandle;
+    let writer;
+    let retained;
+    const label = `v2 executable closure entry ${index}`;
+    try {
+      sourceHandle = await open(
+        sourceRecord.source,
+        constants.O_RDONLY | constants.O_NOFOLLOW,
+      );
+      state.handles.add(sourceHandle);
+      const [sourceBefore, sourceNamedBefore] = await Promise.all([
+        sourceHandle.stat({ bigint: true }),
+        lstat(sourceRecord.source, { bigint: true }),
+      ]);
+      if (
+        !sourceBefore.isFile() ||
+        sourceNamedBefore.isSymbolicLink() ||
+        sourceBefore.size < 1n ||
+        sourceBefore.size > BigInt(maximumClosureFileBytes) ||
+        !samePinnedInode(
+          statIdentity(sourceBefore),
+          statIdentity(sourceNamedBefore),
+        )
+      ) {
+        throw new Error(`${label} source is not a bounded regular file`);
+      }
+      aggregateBytes += Number(sourceBefore.size);
+      if (aggregateBytes > maximumClosureBytes) {
+        throw new Error("v2 executable closure exceeds its aggregate bound");
+      }
+      const bytes = await readExactHandleBytes(
+        sourceHandle,
+        sourceBefore.size,
+        `${label} source`,
+      );
+      const [sourceAfter, sourceNamedAfter] = await Promise.all([
+        sourceHandle.stat({ bigint: true }),
+        lstat(sourceRecord.source, { bigint: true }),
+      ]);
+      if (
+        !isDeepStrictEqual(
+          statIdentity(sourceAfter),
+          statIdentity(sourceBefore),
+        ) ||
+        !isDeepStrictEqual(
+          statIdentity(sourceNamedAfter),
+          statIdentity(sourceBefore),
+        )
+      ) {
+        throw new Error(`${label} source changed while it was copied`);
+      }
+      await closeClosureHandles(state, [sourceHandle]);
+      sourceHandle = undefined;
+
+      const path = join(closureRoot, `entry-${index}`);
+      writer = await open(
+        path,
+        constants.O_CREAT |
+          constants.O_EXCL |
+          constants.O_WRONLY |
+          constants.O_NOFOLLOW,
+        0o600,
+      );
+      state.handles.add(writer);
+      await writer.writeFile(bytes);
+      await writer.sync();
+      await writer.chmod(0o400);
+      await closeClosureHandles(state, [writer]);
+      writer = undefined;
+
+      retained = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      state.handles.add(retained);
+      const [opened, named] = await Promise.all([
+        retained.stat({ bigint: true }),
+        lstat(path, { bigint: true }),
+      ]);
+      validateClosureFile(opened, label);
+      validateClosureFile(named, label);
+      const identity = statIdentity(opened);
+      if (!isDeepStrictEqual(identity, statIdentity(named))) {
+        throw new Error(`${label} path does not name its retained inode`);
+      }
+      const retainedBytes = await readExactHandleBytes(
+        retained,
+        opened.size,
+        label,
+      );
+      if (!retainedBytes.equals(bytes)) {
+        throw new Error(
+          `${label} private bytes differ from the captured source`,
+        );
+      }
+      state.records.push(
+        Object.freeze({
+          destination: sourceRecord.destination,
+          handle: retained,
+          identity,
+          path,
+          bytes,
+          sha256: sha256(bytes),
+        }),
+      );
+      retained = undefined;
+    } finally {
+      await closeClosureHandles(
+        state,
+        [sourceHandle, writer, retained].filter(
+          (handle) => handle !== undefined,
+        ),
+      );
+    }
+  }
+  return state.records;
+}
+
+async function verifyExecutableClosure(records) {
+  if (records.length !== executableClosureSources.length) {
+    throw new Error("v2 executable closure inventory changed");
+  }
+  for (const [index, record] of records.entries()) {
+    const [opened, named] = await Promise.all([
+      record.handle.stat({ bigint: true }),
+      lstat(record.path, { bigint: true }),
+    ]);
+    validateClosureFile(opened, `v2 executable closure entry ${index}`);
+    validateClosureFile(named, `v2 executable closure entry ${index}`);
+    if (
+      !isDeepStrictEqual(statIdentity(opened), record.identity) ||
+      !isDeepStrictEqual(statIdentity(named), record.identity)
+    ) {
+      throw new Error(`v2 executable closure entry ${index} identity changed`);
+    }
+    const bytes = await readExactHandleBytes(
+      record.handle,
+      opened.size,
+      `v2 executable closure entry ${index}`,
+    );
+    if (sha256(bytes) !== record.sha256 || !bytes.equals(record.bytes)) {
+      throw new Error(`v2 executable closure entry ${index} bytes changed`);
+    }
+  }
+}
+
 function samePinnedInode(left, right) {
   return (
     left.device === right.device &&
@@ -1426,7 +1645,13 @@ function invocationEvidence({
   return Object.freeze({
     transport: "systemd-user-scope-bwrap-v2-structural",
     containment: "unproved",
-    executableClosureBinding: "read-then-path-bind-unproved",
+    executableClosureBinding: "partial-esm-launcher-retained-fd-v1",
+    runtimeExecutableClosureBinding: "path-exec-unproved",
+    esmClosureInventory: "tested-static-request-inventory-v1",
+    dynamicCodeLoadingResistance: false,
+    execveat: false,
+    sameUidTamperResistance: false,
+    transientMutationPrevention: false,
     argsNormalization: "candidate-and-session-roots-token-v1",
     argsSha256: sha256(canonicalBytes(normalizedArgs)),
     environmentSha256: sha256(canonicalBytes(environment)),
@@ -1441,7 +1666,7 @@ async function removeSafeSessionRoot(root) {
   await rm(root, { recursive: true, force: true });
 }
 
-async function runStructuralSession(inputValue, processRunner) {
+async function runStructuralSession(inputValue, processRunner, closeHandle) {
   const input = snapshotSessionInput(inputValue);
   const canonicalWorkspace = await realpath(input.workspace);
   const workspaceMetadata = await stat(canonicalWorkspace);
@@ -1453,6 +1678,8 @@ async function runStructuralSession(inputValue, processRunner) {
   );
   const outputFile = join(sessionRoot, "session.json");
   let descriptor;
+  const closureState = { records: [], handles: new Set(), closeHandle };
+  let executableClosure = closureState.records;
   let safeToRemove = true;
   let sessionCompleted = false;
   let invocation;
@@ -1468,14 +1695,16 @@ async function runStructuralSession(inputValue, processRunner) {
     );
     const before = await descriptor.stat({ bigint: true });
     assertInitialResultInode(before);
-    const [workerModuleBytes, launcherBytes] = await Promise.all([
-      Promise.all(workerModuleSources.map(({ source }) => readFile(source))),
-      readFile(seccompLauncherSource),
-    ]);
+    await materializeExecutableClosure(sessionRoot, closureState);
+    const workerModuleBytes = executableClosure
+      .slice(0, workerModuleSources.length)
+      .map(({ bytes }) => bytes);
+    const launcherBytes = executableClosure.at(-1).bytes;
     const sandboxArguments = structuralSandboxArguments({
       workspace: canonicalWorkspace,
       outputFile,
       ceilings: input.ceilings,
+      executableClosure,
     });
     const args = invocationArguments(sandboxArguments, input.ceilings);
     const environment = sessionEnvironment();
@@ -1501,10 +1730,13 @@ async function runStructuralSession(inputValue, processRunner) {
       maxOutputBytes: 65_536,
       signal: input.signal,
       stdin: input.configurationBytes,
-      inheritedFileDescriptors: [],
+      inheritedFileDescriptors: executableClosure.map(
+        ({ handle }) => handle.fd,
+      ),
     });
     safeToRemove = cleanupSafe(outcome);
     processRecord = processEvidence(outcome);
+    if (safeToRemove) await verifyExecutableClosure(executableClosure);
     if (
       !safeToRemove ||
       outcome.disposition !== "completed" ||
@@ -1571,16 +1803,28 @@ async function runStructuralSession(inputValue, processRunner) {
   } finally {
     if (!safeToRemove) {
       retainedSessionRoots.add(
-        Object.freeze({ root: sessionRoot, resultDescriptor: descriptor }),
+        Object.freeze({
+          root: sessionRoot,
+          resultDescriptor: descriptor,
+          executableClosure,
+          closureHandles: Object.freeze([...closureState.handles]),
+        }),
       );
     } else {
       try {
+        await closeClosureHandles(closureState);
+        executableClosure = [];
         await descriptor?.close();
         descriptor = undefined;
         await removeSafeSessionRoot(sessionRoot);
       } catch {
         retainedSessionRoots.add(
-          Object.freeze({ root: sessionRoot, resultDescriptor: descriptor }),
+          Object.freeze({
+            root: sessionRoot,
+            resultDescriptor: descriptor,
+            executableClosure,
+            closureHandles: Object.freeze([...closureState.handles]),
+          }),
         );
         throw new SandboxSessionV2Fault("cleanup", {
           cleanupSafe: false,
@@ -1639,12 +1883,18 @@ export async function runSandboxVerificationSessionV2(inputValue) {
 }
 
 /** Explicit test-only structural runner injection; production never calls it. */
-export function createSandboxVerificationSessionV2ForTesting(processRunner) {
+export function createSandboxVerificationSessionV2ForTesting(
+  processRunner,
+  closeHandle = (handle) => handle.close(),
+) {
   if (typeof processRunner !== "function" || utilTypes.isProxy(processRunner)) {
     throw new TypeError("v2 test session requires one fixed process runner");
   }
+  if (typeof closeHandle !== "function" || utilTypes.isProxy(closeHandle)) {
+    throw new TypeError("v2 test session requires one fixed handle closer");
+  }
   return Object.freeze({
     runSandboxVerificationSessionV2: (input) =>
-      runStructuralSession(input, processRunner),
+      runStructuralSession(input, processRunner, closeHandle),
   });
 }
