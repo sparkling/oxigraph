@@ -82,11 +82,25 @@ focused files pass 11/11 and the expanded related non-G1.7 matrix passes
 248/248 on both current Node and Node 20. Three independent adversarial and
 compatibility reviews returned GO for this dormant boundary.
 
+Commit `ab668ddd` adds the separate pure guardian-journal v1 contract without
+registering or executing it. It freezes the exact 18-state cancel-only graph,
+canonical projection and LF-bearing raw-record hashes, generation/birth-epoch/
+optional-head replay anchors, state-specific operation/evidence bindings,
+replay-only chain validation, distinct complete/prefix statuses, null physical
+and durability facts, and all-false authority. Its focused tests pass 14/14,
+the expanded related non-G1.7 matrix passes 262/262 on current Node and Node 20,
+the clean committed-code identity control passes 2/2 on both runtimes, and
+three independent contract, adversarial, and compatibility reviews returned GO
+for only this bounded pure scope.
+
 [ADR-0035](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,
-restart reconciliation, and executable cancel-only preflight architecture. No
-ADR-0035 runtime, task-profile, or CLI implementation is registered yet, and
-the decision does not change the fixed production-unavailable boundary.
+restart reconciliation, and executable cancel-only preflight architecture. Its
+pure journal construction/replay contract exists, but no ADR-0035 runtime,
+task-profile, or CLI implementation is registered. Filesystem persistence,
+native guardian/reaper and recovery mutation, delegated-cgroup evidence, and
+the executable `PREFLIGHT_READY` preflight remain unimplemented, so the decision
+does not change the fixed production-unavailable boundary.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
@@ -96,9 +110,10 @@ retained-FD-bound, but this is explicitly partial: `systemd-run`, `prlimit`,
 Bubblewrap, Node, Python, Cargo/Rust, loaders, libraries, and dynamic loading
 remain path/runtime TCB. The candidate-specific cgroup owner, pure supervisor
 protocol, compile-only supervisor attestation, and successor launch/control
-capsule are still not physical: the current owner trace is branded `simulated`,
-the skeleton implements no parser, status writer, or mechanics, and the new
-reducer validates only supplied bytes. None can satisfy the production report
+capsule, together with the pure guardian-journal contract, are still not
+physical: the current owner trace is branded `simulated`, the skeleton
+implements no parser, status writer, or mechanics, and the pure reducers
+validate only supplied bytes. None can satisfy the production report
 brand. Production remains fixed `unavailable` until the guardian and
 interactive native supervisor/adapter exist. Those mechanics and the full
 runtime-closure proof,

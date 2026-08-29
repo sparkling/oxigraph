@@ -69,12 +69,19 @@ cancel-only pre-clone terminal path. Retained-file evidence is honestly limited
 to FDs 4-17, and all live control-descriptor, writer, cleanup, physical, and
 authority facts remain future requirements or null/false. The focused tests
 pass 11/11 and the expanded matrix passes 248/248 on current Node and Node 20;
-three fresh reviews are GO, and the task is 91% in progress. The guardian,
-interactive physical native adapter and full runtime-closure proof, application receipt v7/replay,
-evaluator/profile/CLI registration, the complete gate, and G2.2 remain open.
-ADR-0035 now separates the stable guardian/reaper, write-once intent journal,
-restart reconciliation, and executable cancel-only preflight from ADR-0034's
-broader admission gate. Seventeen decisions in this range remain Proposed.
+three fresh reviews are GO for that dormant boundary. Commit `ab668ddd` adds
+ADR-0035's separate unregistered pure guardian-journal contract with exact
+cancel-only state, canonical semantic/raw hashes, replay anchors and bindings,
+null physical facts, and all-false authority. Its focused suite passes 14/14,
+the expanded related non-G1.7 matrix passes 262/262 on current Node and Node 20,
+the clean committed-code identity control passes 2/2 on both, and three
+independent reviews are GO for that bounded pure scope. The task is 92% in
+progress. The authority-null executable preflight, filesystem-backed guardian/
+reaper and recovery mutation, interactive physical native adapter and full
+runtime-closure proof, application receipt v7/replay, evaluator/profile/CLI
+registration, the complete gate, and G2.2 remain open. ADR-0035 separates those
+native concerns from ADR-0034's broader admission gate. Seventeen decisions in
+this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
@@ -178,11 +185,11 @@ the physical archive capability creates a live control, benchmark,
 qualification, promotion, publication, or push authority.
 Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v15` preserves the 42
 stable product tasks and its historical corrected-G1.7 checkpoint at 60%.
-The current G1.7 row is 73%. Pure candidate task
+The current G1.7 row is 74%. Pure candidate task
 `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
 `task-1787896401667-xookiy` is complete in `fbbb692b`. Workspace/build-owner
-task `task-1787902127894-7n7vk3` remains in progress at 92%, and containment
-task `task-1787902138074-0w648x` remains in progress at 89%.
+task `task-1787902127894-7n7vk3` remains in progress at 93%, and containment
+task `task-1787902138074-0w648x` remains in progress at 92%.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

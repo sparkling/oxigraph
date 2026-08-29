@@ -3,11 +3,15 @@
 - **Status**: Proposed
 - **Date**: 2026-08-29
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented and deliberately absent from runtime,
-  task-profile, and CLI registries. The first permitted implementation slice is
-  a local-only, cancel-only journal and executable supervisor preflight; it may
-  not activate production containment, G1.7, G2.2, qualification, promotion, or
-  publication
+- Implementation status: partially implemented only as an unregistered pure
+  contract. Commit `ab668ddd` adds local-only, authority-null journal
+  construction and replay for the exact cancel-only transition graph. It does
+  not write or recover a filesystem journal, run a native guardian, mutate a
+  delegated cgroup, or execute the supervisor preflight, and it is deliberately
+  absent from runtime, task-profile, and CLI registries. The next permitted
+  implementation slice is the authority-null executable supervisor preflight;
+  neither slice may activate production containment, G1.7, G2.2,
+  qualification, promotion, or publication
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
@@ -235,6 +239,41 @@ and power-cut behavior require an explicit isolated delegated host or VM and
 separate receipts. Those runs are not G1.7 and cannot activate production,
 application receipts, task/profile registration, qualification, promotion, or
 publication.
+
+### Current implementation checkpoint
+
+Commit `ab668ddd` implements only the pure journal boundary in
+[`containment-guardian-journal-v1.mjs`](../../tools/engineering-harness/src/candidate/containment-guardian-journal-v1.mjs)
+and its focused
+[`candidate-containment-guardian-journal-v1.test.mjs`](../../tools/engineering-harness/test/candidate-containment-guardian-journal-v1.test.mjs):
+
+- canonical semantic projections determine projection digests, while the final
+  LF participates only in each raw-record SHA-256 and its fixed-width
+  sequence-plus-digest filename;
+- replay requires the exact generation identity and birth guardian epoch,
+  optionally anchors the expected raw head, and binds each state-specific
+  operation and evidence projection to the state, sequence, identity, actor,
+  and predecessor;
+- standalone record verification reports `hashChainValidated: false`; only
+  supplied-chain replay may report a validated chain, and complete and prefix
+  inputs remain distinguished as `COMPLETE_RECORD_CHAIN_REPLAYED` and
+  `VALID_RECORD_PREFIX_REPLAYED`;
+- physical recovery, filesystem inventory, and durability facts remain null;
+  every application-receipt, publication, execution, containment,
+  qualification, promotion, and other authority is false, with explicit
+  nonclaims; and
+- the focused suite passes 14/14 and the explicit related non-G1.7 matrix
+  passes 262/262 on both the current Node runtime and Node 20. A clean
+  committed-code identity control passes 2/2 on both runtimes, and three
+  independent contract, adversarial, and compatibility reviews returned GO
+  for this bounded pure scope.
+
+No live G1.7 control, provider, benchmark, qualification, promotion, or
+publication path ran for this checkpoint. Filesystem creation, sync and
+no-replace mechanics, native guardian/reaper execution, recovery mutation,
+delegated-cgroup qualification, and executable `PREFLIGHT_READY` evidence all
+remain unimplemented. Production readiness therefore remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 ## Acceptance boundary
 

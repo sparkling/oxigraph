@@ -298,12 +298,12 @@ harness/control commit and rejects product-path drift. Ruflo reseal task
 `task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
 Current Ruflo task map
 `task-plans/linked-data-store-g0-g4-2026-08-28-v15` records its historical
-corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 73%: pure
+corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 74%: pure
 receipt-candidate task `task-1787892615000-rdwz7q` is complete in
 `45121da9`, and physical-envelope task `task-1787896401667-xookiy` is complete
 in `fbbb692b` with all authority false. Workspace/build-owner task
-`task-1787902127894-7n7vk3` is 92%, and containment task
-`task-1787902138074-0w648x` is 89%; both remain in progress.
+`task-1787902127894-7n7vk3` is 93%, and containment task
+`task-1787902138074-0w648x` is 92%; both remain in progress.
 The archived v6 protocol/statistics bytes retain their exact historical identity
 and grant no Phase-A, provider, control, sample, benchmark, qualification, or
 promotion authority.
@@ -402,11 +402,19 @@ control-descriptor identity, sole-writer ownership, cleanup, physical facts,
 binding, and authority remain null or false. Focused tests pass 11/11 and the
 expanded related matrix passes 248/248 on both the current Node runtime and
 Node 20; three fresh independent reviews returned GO for this dormant scope.
-This remains declarative, authority-null groundwork—not native remap mechanics,
-executed-supervisor identity, output evidence, physical containment, or the
-full runtime closure. Production stays fixed unavailable until the guardian,
-interactive native supervisor/adapter, and exact path-executed runtime closure
-exist.
+Commit `ab668ddd` adds ADR-0035's separate, still-unregistered pure guardian-
+journal contract. It freezes the exact 18-state cancel-only graph, canonical
+semantic and raw-record hashes, exact replay anchors and state-specific
+bindings, replay-only chain validation, conservative complete/prefix statuses,
+null physical facts, and all-false authority. Its focused tests pass 14/14, the
+expanded related non-G1.7 matrix passes 262/262 on both runtimes, a clean
+committed-code identity control passes 2/2 on both, and three independent
+reviews returned GO for only this pure scope. This remains declarative,
+authority-null groundwork—not filesystem durability, native guardian/reaper or
+recovery mutation, executable preflight, native remap mechanics, executed-
+supervisor identity, output evidence, physical containment, or the full runtime
+closure. Production stays fixed unavailable until those gates and the exact
+path-executed runtime closure exist.
 Application receipt v7/replay, evaluator/profile/CLI registration, the complete
 ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
 authority is admitted by this checkpoint.
@@ -416,8 +424,8 @@ separates the remaining stable guardian/reaper and crash-recovery design from
 the broader admission gate. It requires an intent-first write-once journal,
 keeps controller restart distinct from guardian death, and introduces only an
 authority-null executable cancel preflight before delegated-host qualification.
-It is Proposed and currently grants no production containment or execution
-authority.
+It is Proposed; only its pure journal construction/replay contract is
+implemented, and it grants no production containment or execution authority.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -514,10 +522,11 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0035; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Seventeen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 91%
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 92%
   in-progress harness controls remain unregistered until their full v2
-  acceptance gate closes. ADR-0035 separately governs the still-unimplemented
-  durable native guardian and recovery boundary.
+  acceptance gate closes. ADR-0035 separately governs the implemented pure
+  journal contract and the still-unimplemented durable native guardian,
+  recovery, and executable-preflight boundary.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

@@ -38,11 +38,18 @@
   `START`/`CAPSULE`/`READY`/`CANCEL`/terminal bootstrap. Retained-file claims
   are scoped to FDs 4-17; live FDs 0-3, global sole-writer proof, guardian
   cleanup, freshness, physical facts, and all authority remain unproved,
-  null, or false. The task is 91% in progress after 11/11 focused and 248/248
-  related non-G1.7 tests on both current Node and Node 20 plus three
-  independent GO reviews.
+  null, or false. That successor passes 11/11 focused tests and its then-current
+  related matrix passed 248/248 on both current Node and Node 20. Commit
+  `ab668ddd` adds ADR-0035's separate unregistered pure guardian-journal
+  contract: canonical write-once record bytes, raw hash chaining, exact replay
+  anchors and state-specific bindings, conservative prefix/complete replay,
+  null physical facts, and all-false authority. The task is 92% in progress
+  after the journal's 14/14 focused tests, the expanded 262/262 related
+  non-G1.7 matrix on both runtimes, a 2/2 clean committed-code identity control
+  on both runtimes, and three independent GO reviews for that pure scope.
   Existing schema-v1 bytes remain untouched. Production containment remains
-  fixed unavailable: the guardian, interactive native adapter, and full
+  fixed unavailable: the filesystem-backed native guardian/reaper, recovery
+  mutation, executable preflight, interactive native adapter, and full
   path-executed runtime-closure proof,
   application receipt v7/replay, evaluator reconstruction, profile/CLI
   registration, and the complete gate are not implemented. Schema-v1 remains
@@ -332,7 +339,7 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 91%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 92%.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -397,15 +404,23 @@ The committed implementation sequence is:
   frame, and accepts only pre-clone cancellation. Its retained-file inventory
   is limited to FDs 4-17, while FDs 0-3, guardian status-writer closure,
   freshness, cleanup, physical outcomes, binding, final decisions, and all
-  authority remain future requirements, null, or false.
+  authority remain future requirements, null, or false; and
+- `ab668ddd` freezes ADR-0035's additive pure guardian-journal contract without
+  registering it. The exact 18-state cancel-only graph uses canonical semantic
+  projection digests and LF-bearing raw record hashes, generation/birth-epoch/
+  optional-head replay anchors, state-specific operation/evidence bindings,
+  replay-only chain validation, distinct complete/prefix statuses, null
+  physical and durability facts, and all-false authority. It performs no
+  filesystem, guardian, recovery, cgroup, or executable-preflight mechanics.
 
-The focused launch/bootstrap tests pass 11/11. The expanded related v1/v2 plus
-application-receipt regression matrix passes 248/248 on both the current Node
-runtime and Node 20. Three independent adversarial/compatibility audits returned
-GO after capsule substitution, exec-transition, trace-failure, descriptor
-scope, writer-scope, freshness, diagnostics-normalization, pipe/pidfd lifecycle,
-and cleanup-ownership blockers were corrected. Their GO is only for this narrow Proposed,
-unregistered, authority-null foundation; production activation remains NO-GO.
+The focused launch/bootstrap tests pass 11/11, and the pure journal tests pass
+14/14. The expanded related v1/v2 plus application-receipt regression matrix
+passes 262/262 on both the current Node runtime and Node 20. The clean committed-
+code identity control passes 2/2 on both runtimes. Three independent contract,
+adversarial, and compatibility audits returned GO for the journal after replay-
+anchor, chain-status, binding, physical-fact, and nonclaim blockers were
+corrected. Their GO is only for this narrow Proposed, unregistered,
+authority-null foundation; production activation remains NO-GO.
 The earlier focused protocol/attestation tests remain 16/16 and the committed-
 identity control remains 2/2.
 No supervisor artifact was executed, and no live G1.7 control, provider,
@@ -427,8 +442,9 @@ The structural runner now labels the narrow payload proof
 `path-exec-unproved`. It makes no execveat, dynamic-loading, same-UID, or
 transient-mutation-prevention claim. The production API therefore remains fixed
 `unavailable` and performs no candidate Git, submodule, sandbox, ACCEPT, or
-REJECT work. The next implementation boundary is the native guardian/supervisor
-mechanics, same-inode executed-supervisor binding, kernel executable eligibility,
+REJECT work. The next implementation boundary is the authority-null executable
+`PREFLIGHT_READY` successor followed by the filesystem-backed native guardian/
+supervisor mechanics, same-inode executed-supervisor binding, kernel executable eligibility,
 exact output observation, delegated cgroup-parent ownership and crash recovery,
 followed by delegated-host physical tests and the full runtime closure.
 ADR-0035 owns the stable guardian/reaper, intent-first write-once journal,

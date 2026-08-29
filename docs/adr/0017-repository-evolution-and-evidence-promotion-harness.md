@@ -236,9 +236,18 @@
   every authority remain future requirements, null, or false. The focused
   successor tests pass 11/11 and the expanded related matrix passes 248/248 on
   current Node and Node 20; three fresh independent reviews are GO for this
-  dormant boundary. These traces, attestations, and declarative
-  contracts remain non-physical and cannot mint the production report brand.
-  The guardian, interactive native adapter, and full path-executed runtime closure,
+  dormant boundary. Commit `ab668ddd` adds the separate ADR-0035 pure guardian-
+  journal contract without runtime, task-profile, or CLI registration. It
+  freezes the exact 18-state cancel-only graph, canonical projection and raw
+  record hashes, generation/birth-epoch/head replay anchors, state-specific
+  bindings, replay-only chain validation, conservative complete/prefix status,
+  null physical facts, and all-false authority. Its focused suite passes 14/14,
+  the expanded related non-G1.7 matrix passes 262/262 on current Node and Node
+  20, the clean committed-code identity control passes 2/2 on both, and three
+  independent reviews are GO for only this pure scope. These traces,
+  attestations, and declarative contracts remain non-physical and cannot mint
+  the production report brand. The filesystem-backed guardian/reaper, recovery
+  mutation, executable preflight, interactive native adapter, and full path-executed runtime closure,
   receipt v7/replay, evaluator reconstruction, registry/CLI activation, and G2.2
   remain open; ADR-0034 stays Proposed and unregistered
 - **Related**:
@@ -563,17 +572,19 @@ G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
-ADR-0020 through ADR-0034 are sixteen Proposed living plans. G1.4a and G1.4b
+ADR-0020 through ADR-0035 are seventeen Proposed living plans. G1.4a and G1.4b
 are completed product slices under Proposed ADR-0018, and G2.1 is implemented
 in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-91% after unregistered launch/bootstrap contract commit `7191ddde`; the guardian,
-interactive native cgroup adapter and full runtime-closure proof, receipt v7/replay,
+92% after unregistered launch/bootstrap contract commit `7191ddde` and pure
+guardian-journal contract commit `ab668ddd`. The authority-null executable
+preflight, filesystem-backed guardian/reaper, recovery mutation, interactive
+native cgroup adapter and full runtime-closure proof, receipt v7/replay,
 evaluator reconstruction, profile/CLI registration, the complete acceptance
-gate, and G2.2 remain open. ADR-0034 adds no product G-identifier.
+gate, and G2.2 remain open. ADR-0034 and ADR-0035 add no product G-identifier.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
@@ -629,9 +640,9 @@ Those rows grant no aggregate or promotion authority. G1.4a task
 `task-1787855156849-ya7t6b` and G1.4b task
 `task-1787869201628-bwe6b0` are complete. Corrected G1.7 task
 `task-1787871483413-ki34q2` includes both dependencies and is in progress at
-73%; its two superseded rows remain cancelled history. Workspace/build-owner
-task `task-1787902127894-7n7vk3` is in progress at 92%, and containment task
-`task-1787902138074-0w648x` is in progress at 89%. Support tasks for the
+74%; its two superseded rows remain cancelled history. Workspace/build-owner
+task `task-1787902127894-7n7vk3` is in progress at 93%, and containment task
+`task-1787902138074-0w648x` is in progress at 92%. Support tasks for the
 G1.4b binding, Darwin-free legacy dispatch, and v5 control-authorization
 protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
