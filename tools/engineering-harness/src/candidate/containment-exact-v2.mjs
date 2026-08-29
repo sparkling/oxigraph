@@ -22,6 +22,7 @@ const bufferAllocUnsafe = Buffer.allocUnsafe.bind(Buffer);
 const bufferByteLength = Buffer.byteLength.bind(Buffer);
 const bufferFrom = Buffer.from.bind(Buffer);
 const bufferIsBuffer = Buffer.isBuffer.bind(Buffer);
+const utilTypesIsProxy = utilTypes.isProxy;
 const utilTypesIsSharedArrayBuffer = utilTypes.isSharedArrayBuffer;
 const typedArrayPrototype = objectGetPrototypeOf(Uint8Array.prototype);
 const typedArrayLengthGetter = objectGetOwnPropertyDescriptor(
@@ -77,8 +78,8 @@ export function exactRecord(value, expected, label, fail) {
   if (
     value === null ||
     typeof value !== "object" ||
-    arrayIsArray(value) ||
-    utilTypes.isProxy(value)
+    utilTypesIsProxy(value) ||
+    arrayIsArray(value)
   ) {
     fail(`${label} must be a plain own-data record`);
   }
@@ -116,7 +117,7 @@ export function exactDenseArray(value, label, maximum, fail) {
   if (
     value === null ||
     typeof value !== "object" ||
-    utilTypes.isProxy(value) ||
+    utilTypesIsProxy(value) ||
     !arrayIsArray(value) ||
     objectGetPrototypeOf(value) !== arrayPrototype
   ) {
@@ -229,9 +230,28 @@ export function copyBoundedBuffer(
   { minimumBytes = 0, maximumBytes },
   fail,
 ) {
+  const length = exactBufferByteLength(
+    value,
+    label,
+    { minimumBytes, maximumBytes },
+    fail,
+  );
+  const copied = bufferAllocUnsafe(length);
+  reflectApply(typedArraySet, copied, [value]);
+  return copied;
+}
+
+export function exactBufferByteLength(
+  value,
+  label,
+  { minimumBytes = 0, maximumBytes },
+  fail,
+) {
   if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypesIsProxy(value) ||
     !bufferIsBuffer(value) ||
-    utilTypes.isProxy(value) ||
     objectGetPrototypeOf(value) !== bufferPrototype ||
     objectGetOwnPropertyDescriptor(value, "length") !== undefined
   ) {
@@ -259,9 +279,7 @@ export function copyBoundedBuffer(
   if (utilTypesIsSharedArrayBuffer(backing)) {
     fail(`${label} may not use shared mutable backing`);
   }
-  const copied = bufferAllocUnsafe(length);
-  reflectApply(typedArraySet, copied, [value]);
-  return copied;
+  return length;
 }
 
 export function decodeCanonicalJsonLine(bytesValue, label, maximumBytes, fail) {
