@@ -41,7 +41,14 @@ regression matrix passed 128/128. Commit `f3a0c127` removes the later-path-bind
 race for the exact eight-file ESM/launcher payload: private 0400 copies are
 transported through ordered `--ro-bind-fd` mounts, verified before and after,
 closed on proven cleanup, and retained on uncertainty. The expanded related
-matrix passes 177/177.
+matrix passed 177/177. Commit `c2cdde16` adds the separate, dormant candidate
+containment-owner lifecycle contract and makes it the fixed readiness source.
+Its test-only owner binds one fresh exclusive generation to the exact request
+and fixed cgroup-v2 limits, models clone3 initial placement plus pidfd poll and
+waitid reap, kills and re-observes escaped descendants, parses bounded terminal
+cgroup evidence, proves post-removal absence, and permanently retains pending or
+late authority after a timeout or abort. The expanded related matrix passes
+201/201; the Node 20 compatibility floor passes 34/34.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
@@ -50,10 +57,14 @@ prevent transient executable mutation. The eight payload files are now
 retained-FD-bound, but this is explicitly partial: `systemd-run`, `prlimit`,
 Bubblewrap, Node, Python, Cargo/Rust, loaders, libraries, and dynamic loading
 remain path/runtime TCB. The candidate-specific cgroup owner and full runtime-
-closure proof, application receipt v7/replay, evaluator reconstruction,
-profile/CLI dispatch, and G2.2 remain mandatory later gates. Production stays
-fixed unavailable, schema v1 remains the only executable registry surface, and
-no candidate-created product module is admitted yet.
+closure proof are still not physical: the current owner trace is branded
+`simulated`, cannot satisfy the production report brand, and production remains
+fixed `unavailable` until the sealed native supervisor exists. That native
+adapter and full runtime-closure proof, application receipt v7/replay,
+evaluator reconstruction, profile/CLI dispatch, and G2.2 remain mandatory later
+gates. Production stays fixed unavailable, schema v1 remains the only
+executable registry surface, and no candidate-created product module is
+admitted yet.
 
 Current activation boundary:
 

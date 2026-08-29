@@ -204,10 +204,17 @@
   related non-G1.7 regression matrix passed 128/128. Commit `f3a0c127` adds
   ordered retained-FD binding and lifecycle proof for the eight-file
   ESM/launcher payload, with honest runtime/execveat/same-UID nonclaims; the
-  expanded matrix passes 177/177. Escaped-descendant cgroup containment and the
-  full path-executed runtime closure, receipt v7/replay, evaluator
-  reconstruction, registry/CLI activation, and G2.2 remain open; ADR-0034 stays
-  Proposed and unregistered
+  expanded matrix passed 177/177. Commit `c2cdde16` adds a candidate-specific,
+  qualification-independent containment-owner lifecycle contract covering
+  fresh exclusive generations, exact cgroup-v2 identity and raw limit
+  readbacks, clone3/pidfd claims, intrinsic cancellation, bounded operations,
+  late-authority retention, escaped-descendant kill/re-observation, direct-child
+  reap, terminal emptiness, post-removal absence, and no-retry retained
+  admission. The related matrix now passes 201/201 and its Node 20 floor passes
+  34/34. This trace remains simulated and cannot mint the production report
+  brand. The sealed native adapter and full path-executed runtime closure,
+  receipt v7/replay, evaluator reconstruction, registry/CLI activation, and G2.2
+  remain open; ADR-0034 stays Proposed and unregistered
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -537,10 +544,10 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-86% after unregistered partial payload-binding commit `f3a0c127`; production
-cgroup and full runtime-closure proof, receipt v7/replay, evaluator
-reconstruction, profile/CLI registration, the complete acceptance gate, and
-G2.2 remain open. ADR-0034 adds no product G-identifier.
+87% after unregistered lifecycle-contract commit `c2cdde16`; the physical
+native cgroup adapter and full runtime-closure proof, receipt v7/replay,
+evaluator reconstruction, profile/CLI registration, the complete acceptance
+gate, and G2.2 remain open. ADR-0034 adds no product G-identifier.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on

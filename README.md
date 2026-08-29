@@ -366,10 +366,16 @@ lifecycle, exact submodule materialization, structural sandbox protocol,
 one-shot verifier/disposal, typed classification, and strict cleanup quarantine;
 commit `f3a0c127` then private-copies the eight ESM/launcher payloads, binds
 those exact bytes through retained read-only descriptors, verifies them after
-the child, and retains possibly-live handles on uncertain cleanup. The related
-non-G1.7 matrix passes 177/177. This is a partial payload binding, not the full
-runtime closure: production remains fixed unavailable until the candidate-
-specific cgroup owner and exact path-executed runtime closure exist.
+the child, and retains possibly-live handles on uncertain cleanup. Commit
+`c2cdde16` adds the dormant candidate-specific containment-owner lifecycle
+contract: fresh exclusive generations, exact raw cgroup-v2 limit readback,
+clone3/pidfd placement claims, intrinsic cancellation, independent direct-child
+reap and terminal-emptiness latches, descendant kill/re-observation, bounded
+cleanup, post-removal absence, and permanent retention of late authority after
+timeout. The related non-G1.7 matrix passes 201/201 and the Node 20 floor passes
+34/34. This remains a simulated, non-authoritative contract—not physical
+containment or the full runtime closure. Production stays fixed unavailable
+until the sealed native adapter and exact path-executed runtime closure exist.
 Application receipt v7/replay, evaluator/profile/CLI registration, the complete
 ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
 authority is admitted by this checkpoint.
@@ -469,7 +475,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 86%
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 87%
   in-progress harness controls remain unregistered until their full v2
   acceptance gate closes.
 
