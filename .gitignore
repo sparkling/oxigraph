@@ -18,3 +18,12 @@ data/
 *.so
 *.pyc
 **.pyi
+
+# Local Ruflo, Codex, Brain, and AgentDB runtime state.
+.claude-flow/
+.claude/
+.ruvnet-brain/
+.swarm/
+agentdb.rvf*
+ruvector.db
+var/
