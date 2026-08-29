@@ -278,7 +278,7 @@ export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_IMPLEMENTATION_CHECKPOIN
       ["pureProtocolImplemented", true],
       ["nativeSupervisorSourceImplemented", true],
       ["nativeAttestationImplemented", true],
-      ["nativeExecutionFixtureImplemented", false],
+      ["nativeExecutionFixtureImplemented", true],
       ["filesystemGuardianImplemented", false],
       [
         "bootstrapRequirementsAnchorSemantics",

@@ -35,6 +35,7 @@ typedef unsigned long ox_usize;
 #define OX_O_RDONLY 0L
 #define OX_O_WRONLY 1L
 #define OX_O_RDWR 2L
+#define OX_O_PATH 010000000L
 #define OX_S_IFMT 0170000U
 #define OX_S_IFIFO 0010000U
 #define OX_S_IFDIR 0040000U
@@ -70,7 +71,7 @@ __attribute__((
     aligned(1)
 ))
 const char oxigraph_containment_supervisor_preflight_self_description[] =
-    "{\"allowedSyscalls\":[\"read\",\"write\",\"close\",\"fstat\",\"fcntl\",\"rt_sigaction\",\"close_range\",\"exit_group\"],\"artifact\":\"candidate-containment-supervisor-preflight-v1\",\"authority\":{\"applicationReceiptAuthority\":false,\"applicationResultAuthority\":false,\"containmentExecutionAuthority\":false,\"descriptorAuthority\":false,\"filesystemDurabilityAuthority\":false,\"finalDecisionAuthority\":false,\"guardianAuthority\":false,\"nativeObservationAuthority\":false,\"productionContainment\":false,\"promotionAuthority\":false,\"publicationAuthority\":false,\"qualificationAuthority\":false,\"reapAuthority\":false,\"runtimeRegistrationAuthority\":false,\"sandboxReportAuthority\":false,\"supervisorAuthority\":false},\"binding\":null,\"cancelOnlyTerminalWriterImplemented\":true,\"candidateExecutionImplemented\":false,\"canonicalCapsuleEnvelopeParserImplemented\":true,\"canonicalStartParserImplemented\":true,\"cgroupMechanicsImplemented\":false,\"cloneImplemented\":false,\"commandEofRequiredAfterCancel\":true,\"descriptorPreflightImplemented\":true,\"descriptorThreeSemantics\":\"opaque-read-only-directory-only\",\"descriptorsClosedBeforeReadyFrom\":18,\"entry\":\"oxigraph_supervisor_preflight_entry\",\"entryStackAlignmentImplemented\":true,\"failureDiagnosticBase64\":\"UFJFRkxJR0hUX0ZBSUwhCg==\",\"failureDiagnosticBytes\":16,\"physicalLaunchEligible\":false,\"requirementsSha256\":\"47e429123d0a74dbbd6d8d82f4b5d0c62d565674868f5424df0e2f46b717dbc4\",\"schema\":\"oxigraph.candidate-containment-supervisor-preflight-self-description/v1\",\"sha256Implemented\":true,\"statusEofRequiredAfterFinalStatus\":true,\"strictBase64DecoderImplemented\":true,\"supervisorDescriptorRangeEnd\":17,\"supervisorDescriptorRangeStart\":0,\"target\":\"linux-x86_64-freestanding-static\",\"trailingCommandBytesPermitted\":false}\n";
+    "{\"allowedSyscalls\":[\"read\",\"write\",\"close\",\"fstat\",\"fcntl\",\"rt_sigaction\",\"close_range\",\"exit_group\"],\"artifact\":\"candidate-containment-supervisor-preflight-v1\",\"authority\":{\"applicationReceiptAuthority\":false,\"applicationResultAuthority\":false,\"containmentExecutionAuthority\":false,\"descriptorAuthority\":false,\"filesystemDurabilityAuthority\":false,\"finalDecisionAuthority\":false,\"guardianAuthority\":false,\"nativeObservationAuthority\":false,\"productionContainment\":false,\"promotionAuthority\":false,\"publicationAuthority\":false,\"qualificationAuthority\":false,\"reapAuthority\":false,\"runtimeRegistrationAuthority\":false,\"sandboxReportAuthority\":false,\"supervisorAuthority\":false},\"binding\":null,\"cancelOnlyTerminalWriterImplemented\":true,\"candidateExecutionImplemented\":false,\"canonicalCapsuleEnvelopeParserImplemented\":true,\"canonicalStartParserImplemented\":true,\"cgroupMechanicsImplemented\":false,\"cloneImplemented\":false,\"commandEofRequiredAfterCancel\":true,\"descriptorPreflightImplemented\":true,\"descriptorThreeSemantics\":\"opaque-read-only-directory-only\",\"descriptorsClosedBeforeReadyFrom\":18,\"diagnosticSinkValidatedBeforeFailureWrite\":true,\"entry\":\"oxigraph_supervisor_preflight_entry\",\"entryStackAlignmentImplemented\":true,\"failureDiagnosticBase64\":\"UFJFRkxJR0hUX0ZBSUwhCg==\",\"failureDiagnosticBytes\":16,\"opathDescriptorsRejected\":true,\"physicalLaunchEligible\":false,\"requirementsSha256\":\"47e429123d0a74dbbd6d8d82f4b5d0c62d565674868f5424df0e2f46b717dbc4\",\"schema\":\"oxigraph.candidate-containment-supervisor-preflight-self-description/v1\",\"sha256Implemented\":true,\"statusEofRequiredAfterFinalStatus\":true,\"strictBase64DecoderImplemented\":true,\"supervisorDescriptorRangeEnd\":17,\"supervisorDescriptorRangeStart\":0,\"target\":\"linux-x86_64-freestanding-static\",\"trailingCommandBytesPermitted\":false}\n";
 
 struct ox_kernel_stat {
     ox_u64 device;
@@ -1015,17 +1016,50 @@ static int ox_write_all(const ox_u8 *bytes, ox_usize length) {
     return 1;
 }
 
+static int ox_failure_diagnostic_sink_safe(void) {
+    struct ox_kernel_stat status[3];
+    int descriptor;
+    int other;
+    for (descriptor = 0; descriptor <= 2; descriptor += 1) {
+        long flags = ox_fcntl_fd(descriptor, OX_F_GETFL);
+        long descriptor_flags = ox_fcntl_fd(descriptor, OX_F_GETFD);
+        long expected_access = descriptor == 0 ? OX_O_RDONLY : OX_O_WRONLY;
+        if (
+            flags < 0L || descriptor_flags != 0L ||
+            (flags & OX_O_PATH) != 0L ||
+            (flags & OX_O_ACCMODE) != expected_access ||
+            ox_fstat_fd(descriptor, &status[descriptor]) < 0L ||
+            (status[descriptor].mode & OX_S_IFMT) != OX_S_IFIFO
+        ) {
+            return 0;
+        }
+    }
+    for (descriptor = 0; descriptor <= 2; descriptor += 1) {
+        for (other = descriptor + 1; other <= 2; other += 1) {
+            if (
+                status[descriptor].device == status[other].device &&
+                status[descriptor].inode == status[other].inode
+            ) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 static void ox_fail(int status) {
     ox_usize written = 0UL;
-    while (written < sizeof(ox_failure_diagnostic)) {
-        long result = ox_write_fd(
-            2,
-            ox_failure_diagnostic + written,
-            sizeof(ox_failure_diagnostic) - written
-        );
-        if (result == -OX_EINTR) continue;
-        if (result <= 0L) break;
-        written += (ox_usize)result;
+    if (ox_failure_diagnostic_sink_safe()) {
+        while (written < sizeof(ox_failure_diagnostic)) {
+            long result = ox_write_fd(
+                2,
+                ox_failure_diagnostic + written,
+                sizeof(ox_failure_diagnostic) - written
+            );
+            if (result == -OX_EINTR) continue;
+            if (result <= 0L) break;
+            written += (ox_usize)result;
+        }
     }
     ox_exit(status);
 }
@@ -2027,6 +2061,7 @@ static int ox_descriptor_preflight(void) {
         long expected_access;
         if (
             flags < 0L || descriptor_flags != 0L ||
+            (flags & OX_O_PATH) != 0L ||
             ox_fstat_fd(descriptor, &status[descriptor]) < 0L
         ) {
             return 0;
@@ -2718,7 +2753,7 @@ void oxigraph_supervisor_preflight_main(void) {
     int read_result;
     int eof_result;
 
-    if (ox_ignore_sigpipe() != 0L) ox_fail(126);
+    if (ox_ignore_sigpipe() != 0L) ox_exit(126);
 
     read_result = ox_read_line(OX_START_MAX, &line_length);
     if (read_result < 0) ox_fail(126);

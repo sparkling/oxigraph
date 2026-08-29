@@ -330,7 +330,7 @@ test("reviewed preflight source, compiler recipe, self-description, and syscall 
     attestation.CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SELF_DESCRIPTION_JSONL_V4,
     "utf8",
   );
-  assert.equal(selfDescriptionBytes.length, 1_718);
+  assert.equal(selfDescriptionBytes.length, 1_799);
   assert.equal(
     sha256(selfDescriptionBytes),
     attestation.CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SELF_DESCRIPTION_SHA256_V4,
@@ -368,6 +368,7 @@ test("reviewed preflight source, compiler recipe, self-description, and syscall 
     cgroupMechanicsImplemented: false,
     cloneImplemented: false,
     commandEofRequiredAfterCancel: true,
+    diagnosticSinkValidatedBeforeFailureWrite: true,
     descriptorPreflightImplemented: true,
     descriptorThreeSemantics: "opaque-read-only-directory-only",
     descriptorsClosedBeforeReadyFrom: 18,
@@ -375,6 +376,7 @@ test("reviewed preflight source, compiler recipe, self-description, and syscall 
     entryStackAlignmentImplemented: true,
     failureDiagnosticBase64: "UFJFRkxJR0hUX0ZBSUwhCg==",
     failureDiagnosticBytes: 16,
+    opathDescriptorsRejected: true,
     physicalLaunchEligible: false,
     requirementsSha256:
       preflight.CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_REQUIREMENTS_SHA256_V4,
@@ -410,10 +412,12 @@ test("reviewed preflight source, compiler recipe, self-description, and syscall 
   );
   assert.equal([...source.matchAll(/\box_read_fd\(/gu)].length, 3);
   assert.equal([...source.matchAll(/\box_write_fd\(/gu)].length, 3);
-  assert.equal([...source.matchAll(/\box_fcntl_fd\(/gu)].length, 3);
+  assert.equal([...source.matchAll(/\box_fcntl_fd\(/gu)].length, 5);
   assert.match(source, /ox_read_fd\(0,/u);
   assert.match(source, /ox_write_fd\(1,/u);
   assert.match(source, /ox_write_fd\(\s*2,/u);
+  assert.match(source, /\(flags & OX_O_PATH\) != 0L/u);
+  assert.match(source, /ox_failure_diagnostic_sink_safe\(\)/u);
   assert.match(source, /ox_call3\(OX_SYS_close_range, 18L, 0xffffffffL, 0L\)/u);
   assert.doesNotMatch(source, /OX_F_DUPFD|OX_F_DUPFD_CLOEXEC/u);
   assert.doesNotMatch(source, /OPENROUTER|G1\.7|g1\.7/u);

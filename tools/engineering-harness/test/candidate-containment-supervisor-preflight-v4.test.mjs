@@ -519,7 +519,7 @@ test("preflight v4 is a distinct additive family and neither verifier accepts bo
       pureProtocolImplemented: true,
       nativeSupervisorSourceImplemented: true,
       nativeAttestationImplemented: true,
-      nativeExecutionFixtureImplemented: false,
+      nativeExecutionFixtureImplemented: true,
       filesystemGuardianImplemented: false,
       bootstrapRequirementsAnchorSemantics:
         "opaque-historical-identity-component-not-authority",

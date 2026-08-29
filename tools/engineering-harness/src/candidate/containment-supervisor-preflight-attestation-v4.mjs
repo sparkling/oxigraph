@@ -30,9 +30,9 @@ export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_ATTESTATION_MAX_BYTES_V4
   4 * 1024 * 1024;
 export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SOURCE_LOGICAL_NAME_V4 =
   "containment-supervisor-preflight-v4.c";
-export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SOURCE_BYTES_V4 = 85_575;
+export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SOURCE_BYTES_V4 = 86_913;
 export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SOURCE_SHA256_V4 =
-  "8a194daf57ab90aa7d73cfc8f75c4019cfae932075866fa5a4668f870ffbbb34";
+  "3d7adb007efb240a2ef3cf495b692d4675c9a04f948dd8e067d3c315a8a460f5";
 export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_COMPILER_PATH_V4 =
   "/usr/bin/x86_64-linux-gnu-gcc-13";
 
@@ -270,9 +270,9 @@ function occurrences(bytes, needle) {
 }
 
 export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SELF_DESCRIPTION_JSONL_V4 =
-  '{"allowedSyscalls":["read","write","close","fstat","fcntl","rt_sigaction","close_range","exit_group"],"artifact":"candidate-containment-supervisor-preflight-v1","authority":{"applicationReceiptAuthority":false,"applicationResultAuthority":false,"containmentExecutionAuthority":false,"descriptorAuthority":false,"filesystemDurabilityAuthority":false,"finalDecisionAuthority":false,"guardianAuthority":false,"nativeObservationAuthority":false,"productionContainment":false,"promotionAuthority":false,"publicationAuthority":false,"qualificationAuthority":false,"reapAuthority":false,"runtimeRegistrationAuthority":false,"sandboxReportAuthority":false,"supervisorAuthority":false},"binding":null,"cancelOnlyTerminalWriterImplemented":true,"candidateExecutionImplemented":false,"canonicalCapsuleEnvelopeParserImplemented":true,"canonicalStartParserImplemented":true,"cgroupMechanicsImplemented":false,"cloneImplemented":false,"commandEofRequiredAfterCancel":true,"descriptorPreflightImplemented":true,"descriptorThreeSemantics":"opaque-read-only-directory-only","descriptorsClosedBeforeReadyFrom":18,"entry":"oxigraph_supervisor_preflight_entry","entryStackAlignmentImplemented":true,"failureDiagnosticBase64":"UFJFRkxJR0hUX0ZBSUwhCg==","failureDiagnosticBytes":16,"physicalLaunchEligible":false,"requirementsSha256":"47e429123d0a74dbbd6d8d82f4b5d0c62d565674868f5424df0e2f46b717dbc4","schema":"oxigraph.candidate-containment-supervisor-preflight-self-description/v1","sha256Implemented":true,"statusEofRequiredAfterFinalStatus":true,"strictBase64DecoderImplemented":true,"supervisorDescriptorRangeEnd":17,"supervisorDescriptorRangeStart":0,"target":"linux-x86_64-freestanding-static","trailingCommandBytesPermitted":false}\n';
+  '{"allowedSyscalls":["read","write","close","fstat","fcntl","rt_sigaction","close_range","exit_group"],"artifact":"candidate-containment-supervisor-preflight-v1","authority":{"applicationReceiptAuthority":false,"applicationResultAuthority":false,"containmentExecutionAuthority":false,"descriptorAuthority":false,"filesystemDurabilityAuthority":false,"finalDecisionAuthority":false,"guardianAuthority":false,"nativeObservationAuthority":false,"productionContainment":false,"promotionAuthority":false,"publicationAuthority":false,"qualificationAuthority":false,"reapAuthority":false,"runtimeRegistrationAuthority":false,"sandboxReportAuthority":false,"supervisorAuthority":false},"binding":null,"cancelOnlyTerminalWriterImplemented":true,"candidateExecutionImplemented":false,"canonicalCapsuleEnvelopeParserImplemented":true,"canonicalStartParserImplemented":true,"cgroupMechanicsImplemented":false,"cloneImplemented":false,"commandEofRequiredAfterCancel":true,"descriptorPreflightImplemented":true,"descriptorThreeSemantics":"opaque-read-only-directory-only","descriptorsClosedBeforeReadyFrom":18,"diagnosticSinkValidatedBeforeFailureWrite":true,"entry":"oxigraph_supervisor_preflight_entry","entryStackAlignmentImplemented":true,"failureDiagnosticBase64":"UFJFRkxJR0hUX0ZBSUwhCg==","failureDiagnosticBytes":16,"opathDescriptorsRejected":true,"physicalLaunchEligible":false,"requirementsSha256":"47e429123d0a74dbbd6d8d82f4b5d0c62d565674868f5424df0e2f46b717dbc4","schema":"oxigraph.candidate-containment-supervisor-preflight-self-description/v1","sha256Implemented":true,"statusEofRequiredAfterFinalStatus":true,"strictBase64DecoderImplemented":true,"supervisorDescriptorRangeEnd":17,"supervisorDescriptorRangeStart":0,"target":"linux-x86_64-freestanding-static","trailingCommandBytesPermitted":false}\n';
 export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SELF_DESCRIPTION_SHA256_V4 =
-  "f90f02b1a05a8bdc6b49b136e4158690e5b321f09fcb8f554404418136a7bcab";
+  "3e6da2813ca478f657820ca7e12259d685524befc56ab06d1c087dc5396b802c";
 export const CANDIDATE_CONTAINMENT_SUPERVISOR_PREFLIGHT_SELF_DESCRIPTION_V4 =
   deepFreeze(
     JSON.parse(
