@@ -52,7 +52,8 @@
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
 - **Related**:
-  [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
+  [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
+  [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
 
 ## Context
 
@@ -430,6 +431,9 @@ REJECT work. The next implementation boundary is the native guardian/supervisor
 mechanics, same-inode executed-supervisor binding, kernel executable eligibility,
 exact output observation, delegated cgroup-parent ownership and crash recovery,
 followed by delegated-host physical tests and the full runtime closure.
+ADR-0035 owns the stable guardian/reaper, intent-first write-once journal,
+restart reconciliation, and executable cancel-only preflight decisions within
+that boundary; it does not relax this ADR's gate.
 Application receipt v7/replay, evaluator
 reconstruction, profile and CLI dispatch, and the frozen G2.2 profile follow.
 Schema-v1 compatibility remains visible

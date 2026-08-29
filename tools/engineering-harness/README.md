@@ -82,6 +82,12 @@ focused files pass 11/11 and the expanded related non-G1.7 matrix passes
 248/248 on both current Node and Node 20. Three independent adversarial and
 compatibility reviews returned GO for this dormant boundary.
 
+[ADR-0035](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
+now owns the Proposed stable guardian/reaper, intent-first write-once journal,
+restart reconciliation, and executable cancel-only preflight architecture. No
+ADR-0035 runtime, task-profile, or CLI implementation is registered yet, and
+the decision does not change the fixed production-unavailable boundary.
+
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
 reuse is not identity-bearing, and pre/post verification detects but cannot

@@ -411,6 +411,14 @@ Application receipt v7/replay, evaluator/profile/CLI registration, the complete
 ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
 authority is admitted by this checkpoint.
 
+[ADR-0035](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
+separates the remaining stable guardian/reaper and crash-recovery design from
+the broader admission gate. It requires an intent-first write-once journal,
+keeps controller restart distinct from guardian death, and introduces only an
+authority-null executable cancel preflight before delegated-host qualification.
+It is Proposed and currently grants no production containment or execution
+authority.
+
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
 ```toml
@@ -503,12 +511,13 @@ The ADRs explain the principal boundaries:
   indexes, explicit federation, service identity, workload governance, safe
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
-  research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
-  implemented egress, cancellation, and service-claim slice. Sixteen decisions
+  research into ADR-0018 and ADR-0020 through ADR-0035; ADR-0019 records the
+  implemented egress, cancellation, and service-claim slice. Seventeen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
   support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 91%
   in-progress harness controls remain unregistered until their full v2
-  acceptance gate closes.
+  acceptance gate closes. ADR-0035 separately governs the still-unimplemented
+  durable native guardian and recovery boundary.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

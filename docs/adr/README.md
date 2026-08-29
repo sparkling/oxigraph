@@ -42,8 +42,9 @@ mapping.
 | [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md)                                     | Proposed    | Maintain optional rebuildable inferred views while keeping primary RDF authoritative and differential proof continuous                             |
 | [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)                                                       | Proposed    | Research a bounded opt-in analytical join operator without replacing ordinary SPARQL planning or semantics                                         |
 | [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)                                 | Proposed    | Admit candidate-created modules only through schema-v2 exact paths, absent baselines, literal Git objects, and deterministic receipts              |
+| [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)   | Proposed    | Keep a stable native reaper, persist intent before effects, and recover delegated cgroups without inventing reap or commit authority               |
 
-The index contains 34 decisions. ADR-0018 and ADR-0020 through ADR-0034 are
+The index contains 35 decisions. ADR-0018 and ADR-0020 through ADR-0035 are
 living implementation decisions for
 outstanding work. Their Proposed status is deliberate: the corresponding
 programme tasks and promotion evidence are not implemented merely because the
@@ -71,7 +72,9 @@ pass 11/11 and the expanded matrix passes 248/248 on current Node and Node 20;
 three fresh reviews are GO, and the task is 91% in progress. The guardian,
 interactive physical native adapter and full runtime-closure proof, application receipt v7/replay,
 evaluator/profile/CLI registration, the complete gate, and G2.2 remain open.
-Sixteen decisions in this range remain Proposed.
+ADR-0035 now separates the stable guardian/reaper, write-once intent journal,
+restart reconciliation, and executable cancel-only preflight from ADR-0034's
+broader admission gate. Seventeen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
@@ -193,7 +196,7 @@ Source authority and revision metadata live in
 shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
-2026-08-28. Individual sealed results retain their original evidence dates.
+2026-08-29. Individual sealed results retain their original evidence dates.
 G0.1-G0.7 retain historical source-bound completion evidence: registered
 sources, the locked Jena runner, two byte-identical runs of the refreshed
 76/198 profile, the 144/129 Agentic-QE inventories, the then-34-test
