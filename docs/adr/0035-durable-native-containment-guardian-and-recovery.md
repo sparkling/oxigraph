@@ -645,8 +645,42 @@ both the current Node runtime and Node 20. After commit, that identity control
 passes 2/2 on both runtimes. Two fresh independent native-fixture and
 contract/security reviews returned GO for exactly this bounded checkpoint.
 
+Commit `c2abb0df` implements the additive authority-null persistence format in
+[`containment-guardian-journal-v2.mjs`](../../tools/engineering-harness/src/candidate/containment-guardian-journal-v2.mjs)
+and its focused
+[`candidate-containment-guardian-journal-v2.test.mjs`](../../tools/engineering-harness/test/candidate-containment-guardian-journal-v2.test.mjs):
+
+- the immutable generation manifest and each of the 18 exact v2 bundles bind
+  the unchanged inner-v1 bytes, canonical operation/evidence bytes, raw and
+  semantic digests, fixed-width sequence, dual predecessors, and repeated
+  generation identities;
+- standalone verification and supplied-chain replay remain distinct, every
+  operation/evidence payload stays opaque, and exact nonclaims deny origin,
+  parentage, actor continuity, boot identity, durability, effect, recovery,
+  containment, application-receipt, qualification, promotion, and publication
+  authority;
+- strict canonical framing, padded base64, size ceilings, immutable metadata,
+  copy-on-read bytes, complete and every-prefix replay, descriptor/manifest
+  tamper, fork, gap, substitution, inner/v2 predecessor drift, hostile object,
+  and mutable-buffer cases fail closed; and
+- requirements SHA-256 is
+  `95a4311224d8dfa5f481436e87da4b4d5f56a00d67278e7ed0e931476b584e26`;
+  source and focused-test SHA-256 values are respectively
+  `0fd3751914828519300cdcb3d327824ce78c5b95e5a9acd7211a376b548f0075`
+  and
+  `e1a6d3462f5dbe8f2bfe1227094bf26863c144e540cd9625911dd553ba58fe9b`.
+
+The unchanged-v1 plus v2 focused suite passes 25/25, the complete explicit
+non-G1.7 harness matrix passes 508/508, and the clean committed-code identity
+control passes 2/2 on both the current Node runtime and Node 20. Two independent
+contract and adversarial reviews returned GO for this bounded pure slice. Two
+separate recovery-contract audits returned NO-GO for recovery-v1 code until the
+finite schema, inventory rules, external head anchor, attempt ceilings, and
+branch graph are ratified below.
+
 No live G1.7 control, provider, benchmark, qualification, promotion, or
 publication path ran for this checkpoint. The additive journal-bundle v2 and
+generation manifest now exist only as pure authority-null contracts. The
 lifetime/recovery-ledger v1 contracts, filesystem journal creation, sync and
 no-replace mechanics, stable native manager and guardian/reaper execution,
 recovery mutation, delegated-cgroup qualification, race-free exec/pidfd
