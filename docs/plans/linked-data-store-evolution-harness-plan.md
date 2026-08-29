@@ -132,7 +132,7 @@ authority.
 [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md) now records the
 separate schema-v2 harness prerequisite for an exact candidate-created module.
 Ruflo task `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`) is in progress at
-87%. Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 compatibility and
+88%. Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 compatibility and
 add the exact v2 path/tree/contract/reconstruction/context/schema/assembly
 primitives. Commit `54a056e0` adds the deliberately unregistered native worker-
 v2, exact stdin, retained-descriptor provider/schema/Git verification, original-
@@ -147,13 +147,17 @@ retention for the eight-file ESM/launcher payload; that expanded matrix passes
 177/177. Commit `c2cdde16` then freezes a dormant candidate-specific cgroup-v2 /
 pidfd lifecycle contract: fixed limits, generation-exclusive admission, exact
 clone/reap/kill/quiescence/removal evidence, bounded mechanics, abort races, and
-permanent late-result retention. The related matrix now passes 201/201 and the
-Node 20 floor passes 34/34. This test-mechanics foundation is explicitly
-simulated and non-authoritative. The sealed physical native adapter and full
-path-executed runtime-closure proof, application receipt v7/replay, evaluator
-reconstruction, and profile/CLI registration remain open. Until all of them
-pass, G2.2 may refine its semantic algebra but may not admit a new product
-module through the harness. This checkpoint changes neither ADR-0020's status
+permanent late-result retention. Commit `23997c29` adds the strict canonical
+request/status replay, complete digest/FD-map bindings, and a compile-only
+freestanding static supervisor attestation. The skeleton is never executed and
+implements no parser, writer, or native mechanic; replay remains binding-null
+and authority-free. The related matrix now passes 210/210 and the Node 20 floor
+passes 50/50. This replay/attestation foundation is explicitly simulated,
+dormant, and non-authoritative. The interactive physical native adapter and
+full path-executed runtime-closure proof, application receipt v7/replay,
+evaluator reconstruction, and profile/CLI registration remain open. Until all
+of them pass, G2.2 may refine its semantic algebra but may not admit a new
+product module through the harness. This checkpoint changes neither ADR-0020's status
 nor the live G1.7 authority boundary.
 Audited upstream merge `e9d2db1b` is sealed as the exact product/tree/lock
 identity while v6 remains an exact historical fixture. Pure reseal task
@@ -363,7 +367,7 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G1.1-G1.4b transaction truth                                 | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Product slices complete through G1.4b; ADR remains Proposed until G1.7                                                                                                                                                                                                                                                                                                                      |
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                 |
 | G1.7 qualification and promotion                             | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Structural policy/request v2 and dormant compile-only helper attestation join the audited fail-closed v7 identity, replay, archive, containment, and build-evidence mechanics; no physical issuer, native containment-v2 adapter, production owner, human approval, live control, qualification, or promotion exists; ADR-0018 remains Proposed                                             |
-| `HARNESS-CREATE-EXACT` / G2.2 new-module admission           | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md), related to [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                      | Proposed and 87% in progress; dormant lifecycle-contract commit `c2cdde16` is simulated and non-authoritative, with 201/201 related non-G1.7 controls and a 34/34 Node 20 floor, while the sealed physical native adapter, full runtime-closure proof, receipt v7/replay, evaluator reconstruction, registry/CLI, and the complete gate remain mandatory before G2.2 may admit a new module |
+| `HARNESS-CREATE-EXACT` / G2.2 new-module admission           | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md), related to [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                      | Proposed, 88%: `23997c29` adds dormant canonical replay and a never-executed compile-only supervisor attestation; 210/210 related non-G1.7 controls and Node 20 50/50 pass. Replay stays binding-null and authority-free. The interactive native adapter, runtime-closure proof, receipt v7/replay, evaluator/profile/CLI, complete gate, and G2.2 remain open; schema v1 remains sole gate |
 | G2.1-G2.3c metadata/receipts/outbox                          | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | G2.1 implemented in `be08cf3b`; G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                                                                    |
 | G2.4a-G2.4b transaction-time SHACL                           | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                                                    |
 | G2.5-G2.7 readiness/recovery                                 | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -1043,7 +1047,7 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | G1.7 source workspace/build owner          | `task-1787902127894-7n7vk3`                                                                                                                         | In progress at 92%: earlier workspace/build replay and legacy request v1/process v3 are joined by structural policy v2 (`ef869cf4`/`466d2d78`), request v2 (`75a07693`), and dormant helper attestation (`c113a88f`). No physical private issuer or live authority exists                                                                                                                    |
 | G1.7 containment owner                     | `task-1787902138074-0w648x`                                                                                                                         | In progress at 89%: `f04b9bc7` adds the dormant contract/owner and reviewed host locator; recovery through `3b289522` is bounded and retains unsafe state. The native syscall adapter and live containment evidence remain absent                                                                                                                                                            |
 | G2.1 transactional namespace registry      | `task-1787603736400-274ola`                                                                                                                         | Product slice implemented in `be08cf3b`; 13/13 default tests pass across memory/RocksDB/rewritten and 8/8 no-default tests pass across memory/rewritten, while ADR-0020 remains Proposed for G2.2-G2.3c                                                                                                                                                                                      |
-| Exact new-file admission / G2.2 gate       | `task-1787935934614-ibmjn1`                                                                                                                         | In progress at 87%: commit `c2cdde16` freezes the Proposed, unregistered, simulated containment lifecycle after 201/201 related non-G1.7 controls and a 34/34 Node 20 floor; the sealed physical native adapter, full runtime-closure proof, receipt v7/replay, evaluator/profile/CLI registration, the complete gate, and G2.2 remain open, with no product progress or promotion authority |
+| Exact new-file admission / G2.2 gate       | `task-1787935934614-ibmjn1`                                                                                                                         | In progress at 88%: `23997c29` adds dormant canonical replay and never-executed compile-only supervisor attestation; 210/210 related non-G1.7 controls and Node 20 50/50 pass. Replay stays binding-null and authority-free. The interactive native adapter, runtime closure, receipt v7/replay, evaluator/profile/CLI, complete gate, and G2.2 stay open; no product or promotion authority |
 
 The three G1.7 reviews ran under reviewer swarm
 `swarm-1787778496656-aq8q1c`. They are adversarial control review, not product
@@ -1072,8 +1076,8 @@ changed canonical ADR-0017/ADR-0034 records, while the Brain-managed CLI filled
 the three exact ADR-0034 `depends-on`/`related` edge keys in the same live
 AgentDB database. Native readback reports 188 edges, including the expected
 ADR-0034 links to ADR-0017 and ADR-0020. Task
-`task-1787935934614-ibmjn1` was updated through Ruflo's native task API to 87%
-after commit `c2cdde16` and remains in progress; its exact checkpoint is stored
+`task-1787935934614-ibmjn1` was updated through Ruflo's native task API to 88%
+after commit `23997c29` and remains in progress; its exact checkpoint is stored
 at `goap-plans/oxigraph-harness-create-exact-2026-08-29-opaque-verifier-v2`.
 
 The initial ADR breakout used Ruflo swarm `swarm-1787603675053-t6b9y7` with

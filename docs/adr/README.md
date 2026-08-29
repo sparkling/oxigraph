@@ -56,10 +56,12 @@ focused controls, and `11e72201` adds the opaque structural verifier lifecycle
 with a 128/128 related non-G1.7 matrix. Commit `f3a0c127` adds the narrow
 eight-file retained-FD payload binding; the expanded matrix passes 177/177 and
 commit `c2cdde16` adds the dormant, non-authoritative cgroup-v2/pidfd lifecycle
-contract. The related matrix now passes 201/201, the Node 20 floor passes 34/34,
-and the task is 87% in progress. The sealed physical native adapter and full
-runtime-closure proof, application receipt v7/replay, evaluator/profile/CLI
-registration, the complete gate, and G2.2 remain open.
+contract. Commit `23997c29` adds its strict canonical request/status replay and
+compile-only static supervisor attestation without implementing or executing
+native mechanics. The related matrix now passes 210/210, the Node 20 floor
+passes 50/50, and the task is 88% in progress. The interactive physical native
+adapter and full runtime-closure proof, application receipt v7/replay,
+evaluator/profile/CLI registration, the complete gate, and G2.2 remain open.
 Sixteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current

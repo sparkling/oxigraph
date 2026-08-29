@@ -48,7 +48,16 @@ and fixed cgroup-v2 limits, models clone3 initial placement plus pidfd poll and
 waitid reap, kills and re-observes escaped descendants, parses bounded terminal
 cgroup evidence, proves post-removal absence, and permanently retains pending or
 late authority after a timeout or abort. The expanded related matrix passes
-201/201; the Node 20 compatibility floor passes 34/34.
+201/201; the Node 20 compatibility floor passes 34/34. Commit `23997c29` then
+adds an exact canonical request/status replay contract and a freestanding
+static Linux/x86-64 supervisor skeleton whose reviewed source defines only a
+fail-closed exit-125 entry. Compile-only tests build it twice without execution
+and attest the exact source, compiler, recipe, static ELF, embedded
+self-description, requirements, and FD map. Returned wire artifacts are
+copy-on-read, repeated
+outputs are labelled only as supplied-byte equality, and every execution,
+containment, receipt, qualification, and promotion authority remains false.
+The expanded related matrix now passes 210/210; the Node 20 floor passes 50/50.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
@@ -56,11 +65,13 @@ reuse is not identity-bearing, and pre/post verification detects but cannot
 prevent transient executable mutation. The eight payload files are now
 retained-FD-bound, but this is explicitly partial: `systemd-run`, `prlimit`,
 Bubblewrap, Node, Python, Cargo/Rust, loaders, libraries, and dynamic loading
-remain path/runtime TCB. The candidate-specific cgroup owner and full runtime-
-closure proof are still not physical: the current owner trace is branded
-`simulated`, cannot satisfy the production report brand, and production remains
-fixed `unavailable` until the sealed native supervisor exists. That native
-adapter and full runtime-closure proof, application receipt v7/replay,
+remain path/runtime TCB. The candidate-specific cgroup owner, pure supervisor
+protocol, and compile-only supervisor attestation are still not physical: the
+current owner trace is branded `simulated`, the skeleton implements no parser,
+status writer, or mechanics, and neither can satisfy the production report
+brand. Production remains fixed `unavailable` until the interactive native
+supervisor/adapter exists. Those mechanics and the full runtime-closure proof,
+application receipt v7/replay,
 evaluator reconstruction, profile/CLI dispatch, and G2.2 remain mandatory later
 gates. Production stays fixed unavailable, schema v1 remains the only
 executable registry surface, and no candidate-created product module is

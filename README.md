@@ -372,10 +372,17 @@ contract: fresh exclusive generations, exact raw cgroup-v2 limit readback,
 clone3/pidfd placement claims, intrinsic cancellation, independent direct-child
 reap and terminal-emptiness latches, descendant kill/re-observation, bounded
 cleanup, post-removal absence, and permanent retention of late authority after
-timeout. The related non-G1.7 matrix passes 201/201 and the Node 20 floor passes
-34/34. This remains a simulated, non-authoritative contract—not physical
+timeout. Commit `23997c29` adds a strict canonical request/status replay
+contract plus a compile-only, static Linux/x86-64 supervisor skeleton. Its
+attestation binds exact source, compiler, recipe, ELF, protocol, requirements,
+and FD-map evidence while retaining `binding: null`, returning wire bytes by
+defensive copy, and explicitly denying compiler-causality, execution,
+containment, and runtime-closure authority. The supervisor is never executed.
+The related non-G1.7 matrix passes 210/210 and the Node 20 floor passes 50/50.
+This remains a simulated replay and dormant attestation—not physical
 containment or the full runtime closure. Production stays fixed unavailable
-until the sealed native adapter and exact path-executed runtime closure exist.
+until the interactive native mechanics/adapter and exact path-executed runtime
+closure exist.
 Application receipt v7/replay, evaluator/profile/CLI registration, the complete
 ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
 authority is admitted by this checkpoint.
@@ -475,7 +482,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 87%
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 88%
   in-progress harness controls remain unregistered until their full v2
   acceptance gate closes.
 

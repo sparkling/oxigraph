@@ -211,8 +211,15 @@
   late-authority retention, escaped-descendant kill/re-observation, direct-child
   reap, terminal emptiness, post-removal absence, and no-retry retained
   admission. The related matrix now passes 201/201 and its Node 20 floor passes
-  34/34. This trace remains simulated and cannot mint the production report
-  brand. The sealed native adapter and full path-executed runtime closure,
+  34/34. Commit `23997c29` adds the separate canonical request/status replay
+  protocol and an exact compile-only freestanding supervisor attestation. The
+  static skeleton implements no request parser, status writer, or containment
+  mechanics and is never executed; replay remains binding-null and all
+  authority is false. Mutation-safe copy-on-read artifacts and honest supplied-
+  output equality resolve both independent audit blockers. The expanded matrix
+  passes 210/210 and its Node 20 floor passes 50/50. This trace and attestation
+  remain non-physical and cannot mint the production report brand. The
+  interactive native adapter and full path-executed runtime closure,
   receipt v7/replay, evaluator reconstruction, registry/CLI activation, and G2.2
   remain open; ADR-0034 stays Proposed and unregistered
 - **Related**:
@@ -544,7 +551,7 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-87% after unregistered lifecycle-contract commit `c2cdde16`; the physical
+88% after unregistered protocol/attestation commit `23997c29`; the interactive
 native cgroup adapter and full runtime-closure proof, receipt v7/replay,
 evaluator reconstruction, profile/CLI registration, the complete acceptance
 gate, and G2.2 remain open. ADR-0034 adds no product G-identifier.
