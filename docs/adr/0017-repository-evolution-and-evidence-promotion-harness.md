@@ -244,12 +244,23 @@
   null physical facts, and all-false authority. Its focused suite passes 14/14,
   the expanded related non-G1.7 matrix passes 262/262 on current Node and Node
   20, the clean committed-code identity control passes 2/2 on both, and three
-  independent reviews are GO for only this pure scope. These traces,
-  attestations, and declarative contracts remain non-physical and cannot mint
-  the production report brand. The filesystem-backed guardian/reaper, recovery
-  mutation, executable preflight, interactive native adapter, and full path-executed runtime closure,
-  receipt v7/replay, evaluator reconstruction, registry/CLI activation, and G2.2
-  remain open; ADR-0034 stays Proposed and unregistered
+  independent reviews are GO for only this pure scope. Commit `040f3343` then
+  adds the separate local Linux x86-64 execution-copy fixture for the attested
+  ADR-0035 preflight. It observes the held executable identity, exact child
+  FD0-19 inventory before preflight and FD0-17 at `PREFLIGHT_READY`, the exact
+  three-frame cancel-only status transcript, Node close/post-reap behavior, and
+  thirty returned fail-closed scenarios. The focused suite passes 47/47 and
+  the complete top-level non-G1.7 suite, excluding its separate committed-clean
+  identity control, passes 495/495 on current Node and Node 20; that identity
+  control passes 2/2 on both after commit. Two fresh independent reviews are GO
+  for this bounded, authority-null scope. These traces and attestations cannot
+  mint the production report brand: pidfd/waitid reap, filesystem-backed
+  guardian/reaper durability and recovery, delegated-cgroup evidence,
+  semantic retained-file validation, FD-6 execution binding, and every
+  physical/final authority remain absent, null, or false. The physical native
+  adapter and full path-executed runtime closure, receipt v7/replay, evaluator
+  reconstruction, registry/CLI activation, and G2.2 remain open; ADR-0034 stays
+  Proposed and unregistered
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -579,12 +590,15 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-92% after unregistered launch/bootstrap contract commit `7191ddde` and pure
-guardian-journal contract commit `ab668ddd`. The authority-null executable
-preflight, filesystem-backed guardian/reaper, recovery mutation, interactive
-native cgroup adapter and full runtime-closure proof, receipt v7/replay,
-evaluator reconstruction, profile/CLI registration, the complete acceptance
-gate, and G2.2 remain open. ADR-0034 and ADR-0035 add no product G-identifier.
+92% after unregistered launch/bootstrap contract commit `7191ddde`, pure
+guardian-journal contract commit `ab668ddd`, and the test-local authority-null
+preflight execution checkpoint `040f3343`. ADR-0035's separate Ruflo task
+`task-1788002473147-nsat6x` is 75% in progress. The filesystem-backed stable
+guardian/reaper, recovery mutation, race-free exec plus pidfd/waitid evidence,
+interactive physical cgroup adapter and full runtime-closure proof, receipt
+v7/replay, evaluator reconstruction, profile/CLI registration, the complete
+acceptance gate, and G2.2 remain open. ADR-0034 and ADR-0035 add no product
+G-identifier.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on

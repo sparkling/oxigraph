@@ -21,7 +21,7 @@ the native invocation can be labelled `ACCEPT`; applicability to the frozen
 evaluator remains the sealed reconstruction stage's authority. Same-host retry,
 circuit-breaking, and cancellation remain unchanged.
 
-[ADR-0034](../../docs/adr/0034-first-class-exact-new-file-admission.md) is now
+[ADR-0034 — First-class exact new-file admission](../../docs/adr/0034-first-class-exact-new-file-admission.md) is now
 partially implemented but deliberately unregistered. Commits `78b2cf99`
 through `65fb0e7a` preserve every schema-v1 byte while adding the exact v2 path,
 tree, contract, reconstruction, task-context, schema, patch-assembly, and
@@ -93,14 +93,31 @@ the clean committed-code identity control passes 2/2 on both runtimes, and
 three independent contract, adversarial, and compatibility reviews returned GO
 for only this bounded pure scope.
 
-[ADR-0035](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
+Commit `040f3343` adds the separate authority-null native preflight execution
+fixture. On local Linux x86-64 it compiles the exact attested source into an
+0500 execution copy, keeps a parent-held executable descriptor through READY,
+observes exact child FDs 0-19 before preflight and FDs 0-17 at
+`PREFLIGHT_READY`, and checks the exact three status frames, EOF, empty success
+diagnostics, exit 124, Node close/post-reap behavior, and private-root cleanup.
+Thirty returned descriptor, protocol, I/O, timeout, O_PATH, and diagnostic-sink
+fault scenarios plus a synthetic fourth-frame control fail closed. The focused
+suite passes 47/47 and the complete top-level non-G1.7 suite, excluding the
+separate committed-clean identity control, passes 495/495 on current Node and
+Node 20; the identity control passes 2/2 on both after commit. Two fresh
+independent reviews are GO for this bounded scope. The fixture deliberately
+does not claim pidfd/waitid reap, semantic retained-file validation, cgroup or
+guardian durability, FD-6 execution binding, production containment, G1.7,
+qualification, or promotion.
+
+[ADR-0035 — Durable native containment guardian and crash recovery](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,
 restart reconciliation, and executable cancel-only preflight architecture. Its
-pure journal construction/replay contract exists, but no ADR-0035 runtime,
-task-profile, or CLI implementation is registered. Filesystem persistence,
-native guardian/reaper and recovery mutation, delegated-cgroup evidence, and
-the executable `PREFLIGHT_READY` preflight remain unimplemented, so the decision
-does not change the fixed production-unavailable boundary.
+pure journal construction/replay contract and test-local executable preflight
+fixture exist, but no ADR-0035 runtime, task-profile, or CLI implementation is
+registered. Filesystem persistence, native guardian/reaper and recovery
+mutation, delegated-cgroup evidence, and the physical native adapter remain
+unimplemented, so the decision does not change the fixed
+production-unavailable boundary.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
@@ -110,10 +127,11 @@ retained-FD-bound, but this is explicitly partial: `systemd-run`, `prlimit`,
 Bubblewrap, Node, Python, Cargo/Rust, loaders, libraries, and dynamic loading
 remain path/runtime TCB. The candidate-specific cgroup owner, pure supervisor
 protocol, compile-only supervisor attestation, and successor launch/control
-capsule, together with the pure guardian-journal contract, are still not
-physical: the current owner trace is branded `simulated`, the skeleton
-implements no parser, status writer, or mechanics, and the pure reducers
-validate only supplied bytes. None can satisfy the production report
+capsule, together with the pure guardian-journal contract, still do not prove
+the physical production boundary: the current owner trace is branded
+`simulated`, and the local preflight execution does not implement the stable
+guardian, delegated cgroup lifecycle, semantic retained-file validation, or
+pidfd/waitid reap. None can satisfy the production report
 brand. Production remains fixed `unavailable` until the guardian and
 interactive native supervisor/adapter exist. Those mechanics and the full
 runtime-closure proof,

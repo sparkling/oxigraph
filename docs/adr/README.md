@@ -75,13 +75,21 @@ cancel-only state, canonical semantic/raw hashes, replay anchors and bindings,
 null physical facts, and all-false authority. Its focused suite passes 14/14,
 the expanded related non-G1.7 matrix passes 262/262 on current Node and Node 20,
 the clean committed-code identity control passes 2/2 on both, and three
-independent reviews are GO for that bounded pure scope. The task is 92% in
-progress. The authority-null executable preflight, filesystem-backed guardian/
-reaper and recovery mutation, interactive physical native adapter and full
+independent reviews are GO for that bounded pure scope. Commit `040f3343`
+adds the separate test-local Linux x86-64 preflight execution copy, held
+executable identity, exact FD0-19/FD0-17 observations, three-frame terminal
+transcript, and thirty returned fail-closed scenarios. Its focused suite
+passes 47/47 and the top-level non-G1.7 suite, excluding the separate
+committed-clean identity control, passes 495/495 on current Node and Node 20;
+the identity control passes 2/2 on both after commit, and two fresh reviews
+are GO. ADR-0035 task `task-1788002473147-nsat6x` is 75% in progress for this
+checkpoint; the broader exact-admission task remains 92%. Filesystem-backed
+guardian/reaper durability and recovery, delegated-cgroup evidence,
+pidfd/waitid and race-free exec binding, the physical native adapter and full
 runtime-closure proof, application receipt v7/replay, evaluator/profile/CLI
-registration, the complete gate, and G2.2 remain open. ADR-0035 separates those
-native concerns from ADR-0034's broader admission gate. Seventeen decisions in
-this range remain Proposed.
+registration, the complete gate, and G2.2 remain open. ADR-0035 separates
+those native concerns from ADR-0034's broader admission gate. Seventeen
+decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only

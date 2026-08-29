@@ -36,11 +36,13 @@
   `c113a88f321ade44e7d913f5da87a8184ea56148`
 - G2.1 transactional namespace checkpoint:
   `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
-- Architecture decision: [ADR-0016](../adr/0016-backend-neutral-transactional-writes.md)
+- ADR-0035 local executable-preflight checkpoint:
+  `040f33438693d3e3f64f8052a849b1c84caa58d8`
+- Architecture decision: [ADR-0016 — Backend-neutral transactional RDF writes](../adr/0016-backend-neutral-transactional-writes.md)
 - Exact new-file admission decision:
-  [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)
+  [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)
 - Durable containment guardian decision:
-  [ADR-0035](../adr/0035-durable-native-containment-guardian-and-recovery.md)
+  [ADR-0035 — Durable native containment guardian and crash recovery](../adr/0035-durable-native-containment-guardian-and-recovery.md)
 - Outstanding capability decisions:
   [ADR-0018 and ADR-0020 through ADR-0035](../adr/README.md)
 - Execution harness:
@@ -165,11 +167,19 @@ anchors and bindings, null physical facts, and all-false authority. Its focused
 suite passes 14/14, the expanded related non-G1.7 matrix passes 262/262 on
 current Node and Node 20, the clean committed-code identity control passes 2/2
 on both, and three independent reviews are GO for only this bounded pure scope.
-The Ruflo record is 92% in progress. The authority-null executable preflight,
-filesystem-backed native guardian/reaper and recovery mutation, the full
-runtime-closure proof, receipt v7/replay,
-evaluator/profile/CLI registration, and the complete gate remain open. The
-harness gate is not G2.2 product progress, and ADR-0020 remains Proposed.
+Commit `040f3343` adds the separate local Linux x86-64 execution-copy fixture
+for the attested preflight. It observes exact held-executable and FD0-19/FD0-17
+structure, the three cancel-only terminal frames, Node close/post-reap behavior,
+and thirty returned fail-closed scenarios. Focused tests pass 47/47 and all
+top-level non-G1.7 tests except the separate committed-clean identity control
+pass 495/495 on current Node and Node 20; that control passes 2/2 on both after
+commit, and two fresh reviews are GO. The broader Ruflo record remains 92%; the
+separate ADR-0035 native task is 75% in progress. Filesystem-backed native
+guardian/reaper durability and recovery, delegated-cgroup evidence, race-free
+exec plus pidfd/waitid binding, the physical adapter, full runtime-closure
+proof, receipt v7/replay, evaluator/profile/CLI registration, and the complete
+gate remain open. The harness gate is not G2.2 product progress, and ADR-0020
+remains Proposed.
 
 ## Evidence policy
 
@@ -415,7 +425,7 @@ The unfinished work is split by architectural ownership:
 | P0.1-P0.2 conformance, guarantees, conflicts    | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                               | Implemented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)         | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, bounded cleanup, raw supervision, legacy-incompatible request v1/process v3, structural policy/request v2, and a compile-only dormant attested helper are implemented. The private issuer, containment-v2 native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
-| P1.2 exact new-module harness admission         | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md), [ADR-0035](../adr/0035-durable-native-containment-guardian-and-recovery.md), related to [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed, 92%: `7191ddde` adds the dormant exact launch/bootstrap successor and `ab668ddd` adds the unregistered pure guardian-journal contract. The current journal suite passes 14/14, the related non-G1.7 matrix passes 262/262 on current Node and Node 20, and clean committed identity passes 2/2 on both. Executable preflight, filesystem-backed guardian/recovery, runtime closure, receipt v7, evaluator/profile/CLI, the complete gate, and G2.2 remain open                                                                                                                                                                                                    |
+| P1.2 exact new-module harness admission         | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md), [ADR-0035](../adr/0035-durable-native-containment-guardian-and-recovery.md), related to [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed, broader task 92% / ADR-0035 native task 75%: `7191ddde` adds the launch/bootstrap successor, `ab668ddd` adds the pure guardian journal, and `040f3343` adds the test-local preflight execution copy. Focused tests pass 47/47, top-level non-G1.7 tests excluding committed identity pass 495/495, and committed identity passes 2/2 on current Node and Node 20. Filesystem-backed guardian/recovery, race-free exec plus pidfd/waitid evidence, the physical adapter, runtime closure, receipt v7, evaluator/profile/CLI, the complete gate, and G2.2 remain open                                                                                               |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                          | P1.1/G2.1 implemented in `be08cf3b`; P1.2/G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | P1.3 transaction-time SHACL                     | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P1.4a-P1.4c readiness, backup, restore          | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -433,8 +443,8 @@ The unfinished work is split by architectural ownership:
 
 P3 now has named user outcomes and separate decisions. It remains outside the
 core write-interface acceptance boundary and is not silently absorbed into
-[ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md) through
-[ADR-0025](../adr/0025-explicit-service-federation.md).
+[ADR-0018 — Transaction guarantees and conflict model](../adr/0018-transaction-guarantees-and-conflict-model.md) through
+[ADR-0025 — Explicit SERVICE federation](../adr/0025-explicit-service-federation.md).
 
 ADR-0017's two post-G1.6 harness controls are now closed independently. Commit
 `4a15caa07df37d884e7c74d4b69c0505ce3de6e1` makes the canonical task and
@@ -589,7 +599,8 @@ physical task `task-1787896401667-xookiy`, and its historical corrected G1.7
 checkpoint at 60%. The current overarching G1.7 task
 `task-1787871483413-ki34q2` is in progress at 74%; supporting workspace/build
 task `task-1787902127894-7n7vk3` is at 93%, and containment task
-`task-1787902138074-0w648x` is at 92%.
+`task-1787902138074-0w648x` is at 92%. Separate ADR-0035 native task
+`task-1788002473147-nsat6x` is at 75% after its local preflight checkpoint.
 Legacy v1/v3/v4/v5/v6 replay is Darwin-free and `LEGACY_REPLAY_ONLY`.
 
 The accepted G1.4b receipt is copied byte-for-byte, hash-bound, and pure-replayed

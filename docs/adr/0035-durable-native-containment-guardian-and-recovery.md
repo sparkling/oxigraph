@@ -2,16 +2,21 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-29
+- Updated: 2026-08-29
 - Deciders: Oxigraph parity programme
-- Implementation status: partially implemented only as an unregistered pure
-  contract. Commit `ab668ddd` adds local-only, authority-null journal
-  construction and replay for the exact cancel-only transition graph. It does
-  not write or recover a filesystem journal, run a native guardian, mutate a
-  delegated cgroup, or execute the supervisor preflight, and it is deliberately
-  absent from runtime, task-profile, and CLI registries. The next permitted
-  implementation slice is the authority-null executable supervisor preflight;
-  neither slice may activate production containment, G1.7, G2.2,
-  qualification, promotion, or publication
+- Implementation status: partially implemented and still unregistered. Commit
+  `ab668ddd` adds local-only, authority-null journal construction and replay for
+  the exact cancel-only transition graph. Commit `040f3343` adds the separate
+  local Linux x86-64 execution-copy fixture for the attested executable
+  preflight, including structural descriptor observation, exact cancel-only
+  transcript checks, bounded fault handling, and test-root cleanup. It does not
+  write or recover a filesystem journal, run the stable native guardian, mutate
+  a delegated cgroup, prove pidfd/waitid reap, or bind the executable through
+  the ADR's race-free launch event, and it remains absent from runtime,
+  task-profile, and CLI registries. The next permitted slice is the
+  filesystem-backed guardian/recovery owner; no existing slice may activate
+  production containment, G1.7, G2.2, qualification, promotion, or publication
+- Programme task: `task-1788002473147-nsat6x` (75% at checkpoint `040f3343`)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
@@ -23,11 +28,14 @@
 ADR-0034 defines the exact task-contract v2 admission model and freezes its
 implemented primitives, but its complete unregistered gate and candidate
 containment path remain open and unavailable. The current containment owner is
-a simulated lifecycle contract, the reviewed native supervisor is a dormant
-compile-only artifact, and bootstrap v3 is a pure replay. None proves that the
-reviewed executable ran, that live descriptors or cgroup state matched a
-request, that the guardian durably chose a decision before sending it, or that
-cleanup survived controller failure.
+a simulated lifecycle contract, the predecessor native supervisor remains a
+dormant compile-only artifact, and bootstrap v3 is a pure replay. Commit
+`040f3343` separately proves only that an exact successor execution copy ran in
+a local cancel-only fixture and that its live descriptors had the required
+structural shape. Neither that fixture nor the predecessor proves semantic
+retained-file content, live cgroup state, the ADR's race-free exec event,
+pidfd/waitid reap authority, a durable guardian decision, or recovery after
+controller failure.
 
 The missing process boundary has two different lifetimes. A controller accepts
 work and may restart. A guardian is the supervisor's direct parent and must
@@ -242,7 +250,7 @@ publication.
 
 ### Current implementation checkpoint
 
-Commit `ab668ddd` implements only the pure journal boundary in
+Commit `ab668ddd` implements the pure journal boundary in
 [`containment-guardian-journal-v1.mjs`](../../tools/engineering-harness/src/candidate/containment-guardian-journal-v1.mjs)
 and its focused
 [`candidate-containment-guardian-journal-v1.test.mjs`](../../tools/engineering-harness/test/candidate-containment-guardian-journal-v1.test.mjs):
@@ -268,11 +276,52 @@ and its focused
   independent contract, adversarial, and compatibility reviews returned GO
   for this bounded pure scope.
 
+Commit `040f3343` implements the next authority-null, test-local executable
+preflight checkpoint in
+[`containment-supervisor-preflight-v4.c`](../../tools/engineering-harness/src/candidate/containment-supervisor-preflight-v4.c),
+its exact
+[`containment-supervisor-preflight-attestation-v4.mjs`](../../tools/engineering-harness/src/candidate/containment-supervisor-preflight-attestation-v4.mjs),
+and the native success, fault, and fixture tests:
+
+- the reviewed source is 86,913 bytes with SHA-256
+  `3d7adb007efb240a2ef3cf495b692d4675c9a04f948dd8e067d3c315a8a460f5`;
+  its 1,799-byte self-description has SHA-256
+  `3e6da2813ca478f657820ca7e12259d685524befc56ab06d1c087dc5396b802c`;
+  three exact builds each produced the same 32,544-byte execution copy with
+  SHA-256
+  `3839a44c93f3067cf3ab8e61fdebf2627d3928a66dd7192a8f296496cb1ba577`;
+- a separate parent-held descriptor is `fstat`-bound through `PREFLIGHT_READY`;
+  before capsule preflight the child exposes exactly FDs 0-19, with FD 18
+  matching that executable and FD 19 matching the private close-range sentinel;
+  at `PREFLIGHT_READY` exactly FDs 0-17 remain, with the required structural
+  kinds, access modes, and pairwise non-aliasing;
+- the live `/proc/<pid>/exe` metadata and independently read bytes match the
+  intended execution-copy identity, no child exists at READY, and the exact
+  `PREFLIGHT_READY` / `CANCELLED_WITHOUT_CLONE` / `SUPERVISOR_DONE` bytes,
+  status EOF, empty success diagnostics, and exit 124 are observed;
+- thirty returned descriptor, protocol, I/O, timeout, trailing-byte, O_PATH,
+  and diagnostic-sink fault scenarios fail with their exact classification,
+  await process and stream closure, and remove only their private roots; a
+  separate synthetic collector test rejects a fourth status frame; and
+- the replay deliberately leaves semantic capsule/content validation,
+  cgroup facts, FD-6 execution binding, cleanup outcome, direct-child
+  pidfd/waitid reap, physical eligibility, final eligibility, and every
+  authority null or false. Node's child `close` event plus post-reap `/proc`
+  identity check is test-local close/reap observation, not pidfd/waitid or
+  stable-guardian authority.
+
+The combined focused suite passes 47/47 and every top-level non-G1.7 harness
+test except the separate committed-clean identity control passes 495/495 on
+both the current Node runtime and Node 20. After commit, that identity control
+passes 2/2 on both runtimes. Two fresh independent native-fixture and
+contract/security reviews returned GO for exactly this bounded checkpoint.
+
 No live G1.7 control, provider, benchmark, qualification, promotion, or
-publication path ran for this checkpoint. Filesystem creation, sync and
-no-replace mechanics, native guardian/reaper execution, recovery mutation,
-delegated-cgroup qualification, and executable `PREFLIGHT_READY` evidence all
-remain unimplemented. Production readiness therefore remains exactly
+publication path ran for this checkpoint. Filesystem journal creation, sync and
+no-replace mechanics, stable native guardian/reaper execution, recovery
+mutation, delegated-cgroup qualification, race-free exec/pidfd evidence, and
+the production native adapter remain unimplemented. Production readiness
+therefore remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 ## Acceptance boundary
@@ -294,8 +343,8 @@ The implementation must prove:
   executed;
 - safe local execution proves only preflight framing, raw-capsule hash, FD
   structure, cancel-only terminal bytes, EOF, zero successful diagnostics,
-  exit, and direct-child reap, while semantic/cgroup/authority facts remain
-  null or false;
+  exit, and Node child close/post-reap observation—not pidfd/waitid—while
+  semantic/cgroup/authority facts remain null or false;
 - explicit delegated-host tests prove the exact physical cgroup lifecycle
   before any production readiness change; and
 - current and Node 20 focused plus full explicit non-G1.7 suites pass, followed

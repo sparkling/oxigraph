@@ -23,9 +23,9 @@
   delegation without importing qualification code or minting physical
   authority. Commit `23997c29` adds the unregistered canonical supervisor
   request/status replay and an exact compile-only freestanding static
-  supervisor attestation. The artifact implements no parser, writer, or
-  containment mechanic, is never executed, and remains binding-null and
-  authority-free. Commit `88b9d7e7` adds a separate successor FD-map v2,
+  supervisor attestation. That predecessor artifact implements no parser,
+  writer, or containment mechanic, is never executed, and remains binding-null
+  and authority-free. Commit `88b9d7e7` adds a separate successor FD-map v2,
   canonical argv/environment documents, an exact fourteen-file launch capsule,
   collision-safe-remap and bounded output/pidfd-lifecycle requirements, and a
   pure interactive START/READY/COMMIT/CANCEL reducer. The reducer re-executes
@@ -43,14 +43,20 @@
   `ab668ddd` adds ADR-0035's separate unregistered pure guardian-journal
   contract: canonical write-once record bytes, raw hash chaining, exact replay
   anchors and state-specific bindings, conservative prefix/complete replay,
-  null physical facts, and all-false authority. The task is 92% in progress
-  after the journal's 14/14 focused tests, the expanded 262/262 related
-  non-G1.7 matrix on both runtimes, a 2/2 clean committed-code identity control
-  on both runtimes, and three independent GO reviews for that pure scope.
-  Existing schema-v1 bytes remain untouched. Production containment remains
-  fixed unavailable: the filesystem-backed native guardian/reaper, recovery
-  mutation, executable preflight, interactive native adapter, and full
-  path-executed runtime-closure proof,
+  null physical facts, and all-false authority. Commit `040f3343` executes a
+  separate Linux x86-64 preflight successor only in a local test fixture. It
+  observes the held execution-copy identity, exact descriptor inventories,
+  cancel-only terminal transcript, bounded stream/process cleanup, and thirty
+  returned fail-closed scenarios without producing semantic capsule facts,
+  cgroup evidence, pidfd/waitid evidence, physical eligibility, or authority.
+  Its focused suite passes 47/47, the top-level non-G1.7 suite excluding the
+  separate committed-clean identity control passes 495/495, and that identity
+  control passes 2/2 on both current Node and Node 20. The broader exact-create
+  task remains 92% in progress; ADR-0035's separate native task is 75% in
+  progress. Existing schema-v1 bytes remain untouched. Production containment
+  remains fixed unavailable: the filesystem-backed native guardian/reaper,
+  recovery mutation, race-free exec and pidfd/waitid binding, interactive
+  native adapter, and full path-executed runtime-closure proof,
   application receipt v7/replay, evaluator reconstruction, profile/CLI
   registration, and the complete gate are not implemented. Schema-v1 remains
   the only registered task contract, and G2.2 may not admit a new product
@@ -411,19 +417,28 @@ The committed implementation sequence is:
   optional-head replay anchors, state-specific operation/evidence bindings,
   replay-only chain validation, distinct complete/prefix statuses, null
   physical and durability facts, and all-false authority. It performs no
-  filesystem, guardian, recovery, cgroup, or executable-preflight mechanics.
+  filesystem, guardian, recovery, cgroup, or executable-preflight mechanics;
+  and
+- `040f3343` executes only the separate ADR-0035 preflight successor in a
+  local Linux x86-64 test fixture. The exact execution copy, held executable
+  identity, child FD0-19 pre-preflight inventory, FD0-17 READY inventory,
+  three-frame cancel-only transcript, process/stream closure, and thirty
+  returned fail-closed scenarios are observed. Semantic retained-file
+  validation, cgroup facts, FD-6 execution binding, durable guardian state,
+  pidfd/waitid reap, physical/final eligibility, and every authority remain
+  null or false. The fixture is not registered as the physical adapter.
 
-The focused launch/bootstrap tests pass 11/11, and the pure journal tests pass
-14/14. The expanded related v1/v2 plus application-receipt regression matrix
-passes 262/262 on both the current Node runtime and Node 20. The clean committed-
-code identity control passes 2/2 on both runtimes. Three independent contract,
-adversarial, and compatibility audits returned GO for the journal after replay-
-anchor, chain-status, binding, physical-fact, and nonclaim blockers were
-corrected. Their GO is only for this narrow Proposed, unregistered,
-authority-null foundation; production activation remains NO-GO.
-The earlier focused protocol/attestation tests remain 16/16 and the committed-
-identity control remains 2/2.
-No supervisor artifact was executed, and no live G1.7 control, provider,
+The current preflight-focused suite passes 47/47 and the complete top-level
+non-G1.7 harness suite, excluding the separately run committed-clean identity
+control, passes 495/495 on both the current Node runtime and Node 20. The clean
+committed-code identity control passes 2/2 on both runtimes. Two fresh
+independent native-fixture and contract/security audits returned GO after the
+frame-bound, cleanup-deadline, held-executable, descriptor-inventory,
+post-reap, and fault-matrix gaps were closed. Their GO is only for this narrow
+Proposed, unregistered, authority-null checkpoint; production activation
+remains NO-GO.
+Only the new preflight execution copy was executed; the frozen predecessor
+artifact was not. No live G1.7 control, provider,
 benchmark, qualification, or promotion path was run for this checkpoint. The
 full suite's already-
 recorded deliberate G1.7 sealed-subject freshness failure is not relabelled
@@ -442,11 +457,10 @@ The structural runner now labels the narrow payload proof
 `path-exec-unproved`. It makes no execveat, dynamic-loading, same-UID, or
 transient-mutation-prevention claim. The production API therefore remains fixed
 `unavailable` and performs no candidate Git, submodule, sandbox, ACCEPT, or
-REJECT work. The next implementation boundary is the authority-null executable
-`PREFLIGHT_READY` successor followed by the filesystem-backed native guardian/
-supervisor mechanics, same-inode executed-supervisor binding, kernel executable eligibility,
-exact output observation, delegated cgroup-parent ownership and crash recovery,
-followed by delegated-host physical tests and the full runtime closure.
+REJECT work. The next implementation boundary is the filesystem-backed native
+guardian/recovery owner, including the race-free exec event, direct-child
+pidfd/waitid evidence, delegated cgroup-parent ownership, crash recovery, and
+the remaining output and runtime-closure proof.
 ADR-0035 owns the stable guardian/reaper, intent-first write-once journal,
 restart reconciliation, and executable cancel-only preflight decisions within
 that boundary; it does not relax this ADR's gate.

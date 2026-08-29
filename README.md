@@ -352,10 +352,10 @@ SPARQL, and dump integration stays explicit. The default-feature evaluator
 passes 13/13 across memory, RocksDB, and the rewritten plane; the no-default
 evaluator passes 8/8 across memory and the rewritten plane. Focused regressions
 pass `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
-`transactional_dataset` 3/3. [ADR-0020](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
+`transactional_dataset` 3/3. [ADR-0020 — Transactional metadata, receipts, and change delivery](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
 remains Proposed because G2.2-G2.3c are not implemented.
 
-[ADR-0034](./docs/adr/0034-first-class-exact-new-file-admission.md) separately
+[ADR-0034 — First-class exact new-file admission](./docs/adr/0034-first-class-exact-new-file-admission.md) separately
 gates G2.2's candidate-created semantic-change module. Commits `78b2cf99`
 through `65fb0e7a` preserve schema-v1 evidence while adding the exact v2
 path/tree/contract/reconstruction/context/schema/assembly controls. Commit
@@ -377,7 +377,8 @@ contract plus a compile-only, static Linux/x86-64 supervisor skeleton. Its
 attestation binds exact source, compiler, recipe, ELF, protocol, requirements,
 and FD-map evidence while retaining `binding: null`, returning wire bytes by
 defensive copy, and explicitly denying compiler-causality, execution,
-containment, and runtime-closure authority. The supervisor is never executed.
+containment, and runtime-closure authority. That predecessor supervisor is
+never executed.
 Commit `88b9d7e7` adds the separate successor FD-map v2, exact canonical argv
 and environment documents, a 14-file retained launch capsule, collision-safe
 child-remapping requirements, bounded stdout/stderr drain requirements, and the
@@ -409,23 +410,35 @@ bindings, replay-only chain validation, conservative complete/prefix statuses,
 null physical facts, and all-false authority. Its focused tests pass 14/14, the
 expanded related non-G1.7 matrix passes 262/262 on both runtimes, a clean
 committed-code identity control passes 2/2 on both, and three independent
-reviews returned GO for only this pure scope. This remains declarative,
-authority-null groundwork—not filesystem durability, native guardian/reaper or
-recovery mutation, executable preflight, native remap mechanics, executed-
-supervisor identity, output evidence, physical containment, or the full runtime
-closure. Production stays fixed unavailable until those gates and the exact
-path-executed runtime closure exist.
+reviews returned GO for only this pure scope. Commit `040f3343` adds the next
+separate, local-only Linux x86-64 checkpoint: an exact 0500 execution copy of
+the attested preflight is held by descriptor through `PREFLIGHT_READY`, child
+FDs 0-19 are observed before preflight and exactly FDs 0-17 at READY, and the
+exact cancel-only terminal bytes, EOF, empty success diagnostics, exit, and
+Node close/post-reap behavior are checked. Thirty returned fail-closed
+descriptor/protocol/I/O/timeout scenarios and a synthetic fourth-frame control
+close the bounded fixture matrix. The focused suite passes 47/47 and the
+complete top-level non-G1.7 suite, excluding the separate committed-clean
+identity control, passes 495/495 on both runtimes; the identity control passes
+2/2 on both after commit. Two fresh independent reviews returned GO for this
+bounded authority-null scope. This is not filesystem durability, a stable
+native guardian/reaper, recovery mutation, delegated-cgroup evidence,
+pidfd/waitid reap, semantic retained-file validation, FD-6 execution binding,
+physical containment, or the full runtime closure. Production stays fixed
+unavailable until those gates and the exact path-executed runtime closure
+exist.
 Application receipt v7/replay, evaluator/profile/CLI registration, the complete
 ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
 authority is admitted by this checkpoint.
 
-[ADR-0035](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
+[ADR-0035 — Durable native containment guardian and crash recovery](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 separates the remaining stable guardian/reaper and crash-recovery design from
 the broader admission gate. It requires an intent-first write-once journal,
 keeps controller restart distinct from guardian death, and introduces only an
 authority-null executable cancel preflight before delegated-host qualification.
-It is Proposed; only its pure journal construction/replay contract is
-implemented, and it grants no production containment or execution authority.
+It is Proposed; its pure journal contract and test-local executable preflight
+fixture are implemented, unregistered, and grant no production containment or
+execution authority.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
