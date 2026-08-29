@@ -25,8 +25,16 @@
   request/status replay and an exact compile-only freestanding static
   supervisor attestation. The artifact implements no parser, writer, or
   containment mechanic, is never executed, and remains binding-null and
-  authority-free. Production containment remains fixed unavailable: the
-  interactive native adapter and full path-executed runtime-closure proof,
+  authority-free. Commit `88b9d7e7` adds a separate successor FD-map v2,
+  canonical argv/environment documents, an exact fourteen-file launch capsule,
+  collision-safe-remap and bounded output/pidfd-lifecycle requirements, and a
+  pure interactive START/READY/COMMIT/CANCEL reducer. The reducer re-executes
+  supplied capsule bytes, keeps READY decision-null, binds later decision
+  acknowledgements to exact decision bytes, keeps physical outcomes null, and
+  makes pre-commit cleanup guardian-owned.
+  Existing schema-v1 bytes remain untouched. Production containment remains
+  fixed unavailable: the guardian, interactive native adapter, and full
+  path-executed runtime-closure proof,
   application receipt v7/replay, evaluator reconstruction, profile/CLI
   registration, and the complete gate are not implemented. Schema-v1 remains
   the only registered task contract, and G2.2 may not admit a new product
@@ -314,7 +322,7 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 88%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 90%.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -359,14 +367,27 @@ The committed implementation sequence is:
   status writer, native
   mechanic, compiler causality, runtime closure, or execution authority exists.
   Copy-on-read byte views prevent caller mutation from staling bound digests,
-  and replay records only equality of the two supplied executable byte strings.
+  and replay records only equality of the two supplied executable byte strings;
+  and
+- `88b9d7e7` freezes the separate successor FD-map v2 and exact launch/control
+  capsule. It binds canonical argv and environment bytes, fourteen exact file
+  identities, child-descriptor requirements for 0-11, dynamic scratch/output/
+  pidfd-descriptor requirements for 18-23, bounded concurrent output-drain
+  requirements, later decision-byte acknowledgements, and guardian-owned pre-
+  commit cleanup. READY remains decision-null. Pure replay independently
+  verifies the supplied capsule and preserves null physical, cleanup, binding,
+  final-decision, and authority fields. It neither implements the declared
+  mechanics nor reinterprets any schema-v1 byte.
 
-The focused protocol/attestation tests pass 16/16. The related v1/v2 plus
-application-receipt regression matrix passes 210/210; the Node 20 floor passes
-50/50. An independent adversarial audit first rejected mutable returned buffers
-and a determinism overclaim, then returned GO after both were corrected. Its GO
-is only for this narrow Proposed, unregistered replay/compile-only foundation;
-production activation remains NO-GO. The committed-identity control passes 2/2.
+The focused launch/control tests pass 11/11. The expanded related v1/v2 plus
+application-receipt regression matrix passes 237/237 on both the current Node
+runtime and Node 20. Three independent adversarial/compatibility audits returned
+GO after capsule substitution, decision acknowledgement, descriptor allocation,
+executable-mode, pipe/pidfd lifecycle, output-bound, and cleanup-ownership
+blockers were corrected. Their GO is only for this narrow Proposed,
+unregistered, authority-null foundation; production activation remains NO-GO.
+The earlier focused protocol/attestation tests remain 16/16 and the committed-
+identity control remains 2/2.
 No supervisor artifact was executed, and no live G1.7 control, provider,
 benchmark, qualification, or promotion path was run for this checkpoint. The
 full suite's already-
@@ -386,10 +407,11 @@ The structural runner now labels the narrow payload proof
 `path-exec-unproved`. It makes no execveat, dynamic-loading, same-UID, or
 transient-mutation-prevention claim. The production API therefore remains fixed
 `unavailable` and performs no candidate Git, submodule, sandbox, ACCEPT, or
-REJECT work. The next implementation boundary is the interactive
-START/COMMIT/CANCEL adapter, native request/status implementation, delegated
-cgroup-parent ownership and crash recovery, followed by delegated-host physical
-tests and the full runtime closure. Application receipt v7/replay, evaluator
+REJECT work. The next implementation boundary is the native guardian/supervisor
+mechanics, same-inode executed-supervisor binding, kernel executable eligibility,
+exact output observation, delegated cgroup-parent ownership and crash recovery,
+followed by delegated-host physical tests and the full runtime closure.
+Application receipt v7/replay, evaluator
 reconstruction, profile and CLI dispatch, and the frozen G2.2 profile follow.
 Schema-v1 compatibility remains visible
 in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),

@@ -217,9 +217,18 @@
   mechanics and is never executed; replay remains binding-null and all
   authority is false. Mutation-safe copy-on-read artifacts and honest supplied-
   output equality resolve both independent audit blockers. The expanded matrix
-  passes 210/210 and its Node 20 floor passes 50/50. This trace and attestation
-  remain non-physical and cannot mint the production report brand. The
-  interactive native adapter and full path-executed runtime closure,
+  passes 210/210 and its Node 20 floor passes 50/50. Commit `88b9d7e7` adds the
+  separate successor FD-map v2, exact canonical argv/environment and fourteen-
+  file launch capsule, collision-safe child-remap requirements, bounded output-
+  drain requirements, and exact scratch/pipe/pidfd lifecycle requirements, plus a pure interactive
+  START/READY/COMMIT/CANCEL reducer. It independently replays capsule bytes,
+  keeps READY decision-null, digest-binds later decision acknowledgements,
+  leaves physical outcomes null, and makes pre-commit cleanup guardian-owned.
+  The expanded related matrix passes
+  237/237 on both current Node and Node 20, and three independent reviews are
+  GO for this dormant boundary. These traces, attestations, and declarative
+  contracts remain non-physical and cannot mint the production report brand.
+  The guardian, interactive native adapter, and full path-executed runtime closure,
   receipt v7/replay, evaluator reconstruction, registry/CLI activation, and G2.2
   remain open; ADR-0034 stays Proposed and unregistered
 - **Related**:
@@ -551,8 +560,8 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-88% after unregistered protocol/attestation commit `23997c29`; the interactive
-native cgroup adapter and full runtime-closure proof, receipt v7/replay,
+90% after unregistered launch/control contract commit `88b9d7e7`; the guardian,
+interactive native cgroup adapter and full runtime-closure proof, receipt v7/replay,
 evaluator reconstruction, profile/CLI registration, the complete acceptance
 gate, and G2.2 remain open. ADR-0034 adds no product G-identifier.
 

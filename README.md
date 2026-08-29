@@ -378,11 +378,22 @@ attestation binds exact source, compiler, recipe, ELF, protocol, requirements,
 and FD-map evidence while retaining `binding: null`, returning wire bytes by
 defensive copy, and explicitly denying compiler-causality, execution,
 containment, and runtime-closure authority. The supervisor is never executed.
-The related non-G1.7 matrix passes 210/210 and the Node 20 floor passes 50/50.
-This remains a simulated replay and dormant attestation—not physical
-containment or the full runtime closure. Production stays fixed unavailable
-until the interactive native mechanics/adapter and exact path-executed runtime
-closure exist.
+Commit `88b9d7e7` adds the separate successor FD-map v2, exact canonical argv
+and environment documents, a 14-file retained launch capsule, collision-safe
+child-remapping requirements, bounded stdout/stderr drain requirements, and the
+exact scratch/pipe/pidfd lifecycle requirements for descriptors 18 through 23. It also freezes a
+pure START/READY/COMMIT/CANCEL reducer that independently replays the supplied
+capsule bytes, keeps READY decision-null, binds later decision acknowledgements
+to the exact COMMIT/CANCEL frame, keeps physical outcomes null, and delegates
+pre-commit cgroup cleanup to the guardian. Existing schema-v1 bytes and
+production surfaces are untouched. The
+expanded related non-G1.7 matrix passes 237/237 on both the current Node runtime
+and Node 20; three independent reviews returned GO for this dormant scope.
+This remains declarative, authority-null groundwork—not native remap mechanics,
+executed-supervisor identity, output evidence, physical containment, or the
+full runtime closure. Production stays fixed unavailable until the guardian,
+interactive native supervisor/adapter, and exact path-executed runtime closure
+exist.
 Application receipt v7/replay, evaluator/profile/CLI registration, the complete
 ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
 authority is admitted by this checkpoint.
@@ -482,7 +493,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 88%
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 90%
   in-progress harness controls remain unregistered until their full v2
   acceptance gate closes.
 

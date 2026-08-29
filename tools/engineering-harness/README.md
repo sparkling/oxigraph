@@ -57,7 +57,17 @@ self-description, requirements, and FD map. Returned wire artifacts are
 copy-on-read, repeated
 outputs are labelled only as supplied-byte equality, and every execution,
 containment, receipt, qualification, and promotion authority remains false.
-The expanded related matrix now passes 210/210; the Node 20 floor passes 50/50.
+Commit `88b9d7e7` adds a separate successor FD-map v2 and pure launch/control
+contract. Canonical argv/environment bytes, fourteen retained file identities,
+collision-safe-remap requirements, exact dynamic-descriptor requirements for
+18-23, bounded concurrent stdout/stderr-drain requirements, and child/pidfd
+closure requirements are digest-bound. START verification independently
+replays the exact capsule bytes; READY carries a null decision digest, while
+later decision acknowledgements bind the exact COMMIT/CANCEL digest; replayed
+physical facts remain null; and pre-commit cgroup cleanup stays guardian-owned. The
+expanded related matrix now passes 237/237 on both the current Node runtime and
+Node 20, and three independent reviews returned GO for this narrow dormant
+scope.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
@@ -66,11 +76,13 @@ prevent transient executable mutation. The eight payload files are now
 retained-FD-bound, but this is explicitly partial: `systemd-run`, `prlimit`,
 Bubblewrap, Node, Python, Cargo/Rust, loaders, libraries, and dynamic loading
 remain path/runtime TCB. The candidate-specific cgroup owner, pure supervisor
-protocol, and compile-only supervisor attestation are still not physical: the
-current owner trace is branded `simulated`, the skeleton implements no parser,
-status writer, or mechanics, and neither can satisfy the production report
-brand. Production remains fixed `unavailable` until the interactive native
-supervisor/adapter exists. Those mechanics and the full runtime-closure proof,
+protocol, compile-only supervisor attestation, and successor launch/control
+capsule are still not physical: the current owner trace is branded `simulated`,
+the skeleton implements no parser, status writer, or mechanics, and the new
+reducer validates only supplied bytes. None can satisfy the production report
+brand. Production remains fixed `unavailable` until the guardian and
+interactive native supervisor/adapter exist. Those mechanics and the full
+runtime-closure proof,
 application receipt v7/replay,
 evaluator reconstruction, profile/CLI dispatch, and G2.2 remain mandatory later
 gates. Production stays fixed unavailable, schema v1 remains the only

@@ -58,9 +58,12 @@ eight-file retained-FD payload binding; the expanded matrix passes 177/177 and
 commit `c2cdde16` adds the dormant, non-authoritative cgroup-v2/pidfd lifecycle
 contract. Commit `23997c29` adds its strict canonical request/status replay and
 compile-only static supervisor attestation without implementing or executing
-native mechanics. The related matrix now passes 210/210, the Node 20 floor
-passes 50/50, and the task is 88% in progress. The interactive physical native
-adapter and full runtime-closure proof, application receipt v7/replay,
+native mechanics. Commit `88b9d7e7` adds the separate successor FD-map v2,
+exact launch capsule, and authority-null interactive control reducer without
+registering or executing them. The expanded related matrix passes 237/237 on
+both current Node and Node 20, three independent reviews are GO for the dormant
+scope, and the task is 90% in progress. The guardian, interactive physical
+native adapter and full runtime-closure proof, application receipt v7/replay,
 evaluator/profile/CLI registration, the complete gate, and G2.2 remain open.
 Sixteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
