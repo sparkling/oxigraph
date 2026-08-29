@@ -268,17 +268,48 @@ byte-stable. They are the inner, normal cancel-only semantic chain: their
 operation and evidence fields bind reported projection digests and deliberately
 prove no physical operation, observation, origin, or durability.
 
-The first physical successor is an additive journal-bundle v2. Each canonical,
-bounded bundle embeds one exact unchanged journal-v1 record plus the exact
-canonical operation and evidence JSON-line bytes whose semantic SHA-256 values
-equal that record's reported projection digests. The bundle binds the raw
-SHA-256 and canonical semantic SHA-256 of all three artifacts, the generation,
-sequence, prior v2 bundle raw SHA-256, and the inner v1 record name and raw
-SHA-256. Verification rejects noncanonical bytes, digest substitution, a v1/v2
-sequence or generation mismatch, multiple successors, gaps, and any inner-v1
-record that does not independently verify. The v2 envelope does not reinterpret
-or modify v1, including the sequence-8 `DECISION_CANCEL_DURABLE` record required
-by executable preflight v4.
+The first additive persistence-format successor is journal-bundle v2. It is
+intended for later physical persistence, but its current pure implementation is
+authority-null. Each canonical, bounded bundle embeds one exact unchanged
+journal-v1 record plus the exact canonical operation and evidence JSON-line
+bytes whose semantic SHA-256 values equal that record's reported projection
+digests. The bundle binds the raw SHA-256 and canonical semantic SHA-256 of all
+three artifacts, the generation, sequence, prior v2 bundle raw SHA-256, and the
+inner v1 record name and raw SHA-256. Standalone bundle verification rejects
+noncanonical bytes, digest substitution, a v1/v2 sequence or generation
+mismatch, or any inner-v1 record that does not independently verify. Full replay
+additionally rejects multiple successors and gaps. The v2 envelope does not
+reinterpret or modify v1, including the sequence-8 `DECISION_CANCEL_DURABLE`
+record required by executable preflight v4.
+
+Journal-bundle v2 admits at most 18 bundles with the unchanged 16-digit
+sequence width and all-zero genesis raw SHA-256. An embedded v1 record and each
+operation/evidence artifact admit at most 16 KiB of canonical JSONL bytes; the
+complete canonical bundle admits at most 96 KiB. The bundle embeds those exact
+bytes as strict padded canonical RFC 4648 base64. Every artifact descriptor
+binds raw SHA-256 over the single-LF JSONL bytes and semantic SHA-256 over the
+canonical JSON value without that LF; the inner descriptor additionally binds
+the exact v1 filename. Bundle filenames remain
+`<16-digit-sequence>-<bundle-raw-sha256>.jsonl`.
+
+The bundle repeats and verifies the exact sequence, record type, prior/next
+state, generation, birth/actor epoch, boot, admission, control, and job
+identities from its embedded v1 record. Creation and replay call the unchanged
+v1 verifier/replayer. The v1 predecessor and v2 predecessor must advance
+together, and the operation/evidence semantic digests must equal the embedded
+record's reported projection digests. Operation and evidence payloads remain
+opaque bounded canonical JSON values in this slice: binding their exact bytes
+does not reinterpret them as a physical effect or observation. State-specific
+physical receipt schemas belong to the later native-owner contract.
+
+The admission guardian owns creation of one immutable `generation.jsonl`
+before the staging-to-active transition; recovery may verify but never replace
+it. Its exact generation-manifest v2 schema is bounded to 16 KiB and contains
+only the full unchanged-v1 generation identity, repeated generation/birth/boot/
+admission/control/job digests and exact cgroup names, plus the unchanged v1
+journal-requirements SHA-256. It contains no time, pathname, actor-liveness, or
+physical-effect claim. The pure manifest constructor/verifier remains
+authority-null; only the later physical guardian may persist its bytes.
 
 The held state root has exactly six owner-created directories named
 `lifetimes`, `staging`, `active`, `closed`, `recovered`, and `quarantined`; the
