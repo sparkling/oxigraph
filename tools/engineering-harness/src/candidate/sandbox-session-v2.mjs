@@ -26,6 +26,7 @@ import {
   V2_COMMAND_ARGV_BYTES_CEILING,
   V2_SESSION_CONFIGURATION_BYTES_CEILING,
 } from "../policy/session-v2-limits.mjs";
+import { candidateContainmentOwnerV2Readiness } from "./containment-owner-v2.mjs";
 
 const commandRolePattern = /^[a-z][a-z0-9-]{0,63}$/u;
 const digestPattern = /^[0-9a-f]{64}$/u;
@@ -109,10 +110,7 @@ const executableClosureSources = Object.freeze([
 const trustedFaults = new WeakSet();
 const trustedReports = new WeakSet();
 const retainedSessionRoots = new Set();
-const containmentReadiness = Object.freeze({
-  status: "unavailable",
-  reason: "co-located-cgroup-owner-unavailable",
-});
+const containmentReadiness = candidateContainmentOwnerV2Readiness();
 const commandRecordKeys = Object.freeze([
   "role",
   "disposition",
