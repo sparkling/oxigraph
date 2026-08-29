@@ -53,9 +53,11 @@ implemented. ADR-0034 separately gates exact new-file admission before G2.2
 may add a semantic-change module. Commit
 `54a056e0` closes the reviewed, unregistered native-worker slice after 112/112
 focused controls, and `11e72201` adds the opaque structural verifier lifecycle
-with a 128/128 related non-G1.7 matrix. The task is now 85% in progress, but
-production cgroup/retained-FD closure proof, application receipt v7/replay,
-evaluator/profile/CLI registration, the complete gate, and G2.2 remain open.
+with a 128/128 related non-G1.7 matrix. Commit `f3a0c127` adds the narrow
+eight-file retained-FD payload binding; the expanded matrix passes 177/177 and
+the task is now 86% in progress. Production cgroup/full runtime-closure proof,
+application receipt v7/replay, evaluator/profile/CLI registration, the complete
+gate, and G2.2 remain open.
 Sixteen decisions in this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current

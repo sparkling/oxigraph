@@ -201,10 +201,13 @@
   partial infrastructure. Commit `11e72201` adds the opaque one-shot candidate
   and verifier lifecycle, exact submodule claims, structural host/worker wire,
   typed classification, shared ceilings, and strict cleanup quarantine; the
-  related non-G1.7 regression matrix passes 128/128. Escaped-descendant cgroup
-  containment and retained-FD executable-closure binding, receipt v7/replay,
-  evaluator reconstruction, registry/CLI activation, and G2.2 remain open;
-  ADR-0034 stays Proposed and unregistered
+  related non-G1.7 regression matrix passed 128/128. Commit `f3a0c127` adds
+  ordered retained-FD binding and lifecycle proof for the eight-file
+  ESM/launcher payload, with honest runtime/execveat/same-UID nonclaims; the
+  expanded matrix passes 177/177. Escaped-descendant cgroup containment and the
+  full path-executed runtime closure, receipt v7/replay, evaluator
+  reconstruction, registry/CLI activation, and G2.2 remain open; ADR-0034 stays
+  Proposed and unregistered
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -534,10 +537,10 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-85% after unregistered opaque-verifier commit `11e72201`; production cgroup and
-retained-FD closure proof, receipt v7/replay, evaluator reconstruction,
-profile/CLI registration, the complete acceptance gate, and G2.2 remain open.
-ADR-0034 adds no product G-identifier.
+86% after unregistered partial payload-binding commit `f3a0c127`; production
+cgroup and full runtime-closure proof, receipt v7/replay, evaluator
+reconstruction, profile/CLI registration, the complete acceptance gate, and
+G2.2 remain open. ADR-0034 adds no product G-identifier.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on

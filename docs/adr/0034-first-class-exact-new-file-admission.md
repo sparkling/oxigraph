@@ -15,12 +15,15 @@
   `11e72201` adds the one-shot opaque candidate/verifier lifecycle, exact
   submodule materialization, structural sandbox host/worker protocol, typed
   verifier classification, coherent cleanup/quarantine proofs, shared
-  contract/session ceilings, and Cargo-normalized artifact binding. Production
-  containment remains fixed unavailable: the co-located cgroup owner and
-  retained-FD executable-closure proof, application receipt v7/replay,
-  evaluator reconstruction, profile/CLI registration, and the complete gate
-  are not implemented. Schema-v1 remains the only registered task contract,
-  and G2.2 may not admit a new product module until the complete v2 gate passes
+  contract/session ceilings, and Cargo-normalized artifact binding. Commit
+  `f3a0c127` exact-copies and retained-FD-binds the eight-file ESM/launcher
+  payload with explicit runtime, execveat, same-UID, and transient-mutation
+  nonclaims. Production containment remains fixed unavailable: the candidate-
+  specific cgroup owner and full path-executed runtime-closure proof,
+  application receipt v7/replay, evaluator reconstruction, profile/CLI
+  registration, and the complete gate are not implemented. Schema-v1 remains
+  the only registered task contract, and G2.2 may not admit a new product
+  module until the complete v2 gate passes
 - Programme task: `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
@@ -304,7 +307,7 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 85%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 86%.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -324,14 +327,19 @@ The committed implementation sequence is:
 - `11e72201` adds exact submodule claims, the structural host/worker wire,
   shared build/configuration policy, one-shot verification and disposal,
   module-branded reports, typed classification, and quarantine on incomplete
-  Git, process, session, or disposal cleanup proof.
+  Git, process, session, or disposal cleanup proof; and
+- `f3a0c127` private-copies the exact eight-file ESM/launcher payload, mounts it
+  through ordered retained read-only FDs, binds every destination to expected
+  bytes, verifies identity and bytes after the child, closes proven-safe
+  handles, and strongly retains possibly-live handles on cleanup uncertainty.
 
-The focused v1/v2 plus application-receipt regression matrix passes 128/128.
-Independent read-only audits returned GO for this Proposed, unregistered
-structural boundary and NO-GO for production activation. The committed-identity
-control passes 2/2. No live G1.7 control, provider, benchmark, qualification, or
-promotion path was run for this checkpoint. The full suite's already-recorded
-deliberate G1.7 sealed-subject freshness failure is not relabelled green.
+The focused v1/v2 plus application-receipt regression matrix passes 177/177.
+Independent read-only audits returned GO for this narrow Proposed,
+unregistered payload-binding boundary and NO-GO for production activation. The
+committed-identity control passes 2/2. No live G1.7 control, provider,
+benchmark, qualification, or promotion path was run for this checkpoint. The
+full suite's already-recorded deliberate G1.7 sealed-subject freshness failure
+is not relabelled green.
 
 This checkpoint detects same-inode mutation, including mutate-then-restore,
 before accepting worker output. It does not prevent transient altered bytes
@@ -341,15 +349,16 @@ contain descendants that escape the original process group with `setsid` or
 proof. Those limitations keep the worker unregistered until the cgroup/native
 supervisor owner and the rest of this ADR's acceptance gate exist.
 
-The structural runner deliberately labels its closure evidence
-`read-then-path-bind-unproved`: it hashes the observed ESM/launcher bytes but
-does not retain and bind those exact file descriptors through execution. The
-production API is therefore fixed `unavailable` and performs no candidate Git,
-submodule, sandbox, ACCEPT, or REJECT work. The next implementation boundary is
-the co-located cgroup owner with membership, resource, cancellation,
-terminal-empty, and retained-FD executable-closure proofs. It is followed by
-application receipt v7/replay, evaluator reconstruction, profile and CLI
-dispatch, and the frozen G2.2 profile. Schema-v1 compatibility remains visible
+The structural runner now labels the narrow payload proof
+`partial-esm-launcher-retained-fd-v1` and separately labels the runtime closure
+`path-exec-unproved`. It makes no execveat, dynamic-loading, same-UID, or
+transient-mutation-prevention claim. The production API therefore remains fixed
+`unavailable` and performs no candidate Git, submodule, sandbox, ACCEPT, or
+REJECT work. The next implementation boundary is the candidate-specific cgroup
+owner with initial membership, resource, cancellation, direct-child reap, and
+terminal-empty proofs, followed by the full runtime closure. Application
+receipt v7/replay, evaluator reconstruction, profile and CLI dispatch, and the
+frozen G2.2 profile follow. Schema-v1 compatibility remains visible
 in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),
 [`paths.mjs`](../../tools/engineering-harness/src/policy/paths.mjs),
 [`reconstruct.mjs`](../../tools/engineering-harness/src/candidate/reconstruct.mjs),

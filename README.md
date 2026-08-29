@@ -364,11 +364,15 @@ retained-descriptor provider/schema/Git verification and original-process-
 group cleanup. Commit `11e72201` adds the still-unregistered opaque candidate
 lifecycle, exact submodule materialization, structural sandbox protocol,
 one-shot verifier/disposal, typed classification, and strict cleanup quarantine;
-the related non-G1.7 matrix passes 128/128. Production remains fixed
-unavailable until the cgroup owner and retained-FD executable-closure proof
-exist. Application receipt v7/replay, evaluator/profile/CLI registration, the
-complete ADR-0034 gate, and G2.2 remain open, so no new product module or
-promotion authority is admitted by this checkpoint.
+commit `f3a0c127` then private-copies the eight ESM/launcher payloads, binds
+those exact bytes through retained read-only descriptors, verifies them after
+the child, and retains possibly-live handles on uncertain cleanup. The related
+non-G1.7 matrix passes 177/177. This is a partial payload binding, not the full
+runtime closure: production remains fixed unavailable until the candidate-
+specific cgroup owner and exact path-executed runtime closure exist.
+Application receipt v7/replay, evaluator/profile/CLI registration, the complete
+ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
+authority is admitted by this checkpoint.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -465,7 +469,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0034; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Sixteen decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 85%
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 86%
   in-progress harness controls remain unregistered until their full v2
   acceptance gate closes.
 

@@ -37,18 +37,23 @@ exact Git bytes, bind the raw task contract, and seal the opaque candidate.
 Commit `11e72201` adds exact submodule materialization, the structural sandbox
 host/worker protocol, one-shot verification/disposal, typed classification,
 shared byte/build policy, and strict cleanup quarantine. Its related non-G1.7
-regression matrix passes 128/128.
+regression matrix passed 128/128. Commit `f3a0c127` removes the later-path-bind
+race for the exact eight-file ESM/launcher payload: private 0400 copies are
+transported through ordered `--ro-bind-fd` mounts, verified before and after,
+closed on proven cleanup, and retained on uncertainty. The expanded related
+matrix passes 177/177.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
 reuse is not identity-bearing, and pre/post verification detects but cannot
-prevent transient executable mutation. The opaque lifecycle is now structural,
-but production remains fixed unavailable because its observed ESM/launcher
-hashes are still read-then-path-bound rather than retained-FD-bound through
-execution. The cgroup owner and that executable-closure proof, application
-receipt v7/replay, evaluator reconstruction, profile/CLI dispatch, and G2.2
-remain mandatory later gates. Schema v1 is still the only executable registry
-surface; no candidate-created product module is admitted yet.
+prevent transient executable mutation. The eight payload files are now
+retained-FD-bound, but this is explicitly partial: `systemd-run`, `prlimit`,
+Bubblewrap, Node, Python, Cargo/Rust, loaders, libraries, and dynamic loading
+remain path/runtime TCB. The candidate-specific cgroup owner and full runtime-
+closure proof, application receipt v7/replay, evaluator reconstruction,
+profile/CLI dispatch, and G2.2 remain mandatory later gates. Production stays
+fixed unavailable, schema v1 remains the only executable registry surface, and
+no candidate-created product module is admitted yet.
 
 Current activation boundary:
 
