@@ -40,6 +40,9 @@
     "@metaharness/router": "latest",
     "metaharness": "latest"
   },
+  "devDependencies": {
+    "acorn": "latest"
+  },
   "engines": {
     "node": ">=20"
   }

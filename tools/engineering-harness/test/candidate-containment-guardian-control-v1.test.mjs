@@ -27,6 +27,129 @@ const EXPECTED_RECOVERY_MAP_SHA256 =
   "620b125181725cff59b7d11d08f193250f9046d3aec4021016418d0ab42d4594";
 const EXPECTED_RIGHT_MAP_SHA256 =
   "082b09e65c5b58c92a909f27e3f9dd8b83e4833885e35846a31ace14c82744a2";
+const EXPECTED_ACORN = Object.freeze({
+  version: "8.18.0",
+  integrity:
+    "sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==",
+  license: "MIT",
+  packageJsonSha256:
+    "5c1ed7259579a7899b303f514b0194adcb9fe474fc7d136a84c6a45f10eefc84",
+  importEntrypoint: "./dist/acorn.mjs",
+  importEntrypointSha256:
+    "953573b8fdab71599749ea5f2b33d3e760c2116178f9423ee7458dbe39d59453",
+});
+const ACORN_PARSE_OPTIONS = Object.freeze({
+  ecmaVersion: 2022,
+  sourceType: "module",
+  allowAwaitOutsideFunction: false,
+  allowHashBang: false,
+  allowReturnOutsideFunction: false,
+  preserveParens: true,
+});
+const ACORN_PACKAGE_URL = new URL(
+  "../node_modules/acorn/package.json",
+  import.meta.url,
+);
+const ACORN_IMPORT_ENTRYPOINT_URL = new URL(
+  EXPECTED_ACORN.importEntrypoint,
+  ACORN_PACKAGE_URL,
+);
+
+function pinParserDependencyBeforeCandidateRead() {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  const lock = JSON.parse(
+    readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"),
+  );
+  const installedPackageBytes = readFileSync(ACORN_PACKAGE_URL);
+  const installed = JSON.parse(installedPackageBytes.toString("utf8"));
+  assert.deepEqual(manifest.devDependencies, { acorn: "latest" });
+  assert.deepEqual(lock.packages[""].devDependencies, manifest.devDependencies);
+  const locked = lock.packages["node_modules/acorn"];
+  assert.deepEqual(
+    {
+      version: locked?.version,
+      integrity: locked?.integrity,
+      license: locked?.license,
+    },
+    {
+      version: EXPECTED_ACORN.version,
+      integrity: EXPECTED_ACORN.integrity,
+      license: EXPECTED_ACORN.license,
+    },
+  );
+  assert.equal(Object.hasOwn(locked, "dependencies"), false);
+  assert.deepEqual(
+    { version: installed.version, license: installed.license },
+    { version: EXPECTED_ACORN.version, license: EXPECTED_ACORN.license },
+  );
+  assert.equal(
+    byteSha256(installedPackageBytes),
+    EXPECTED_ACORN.packageJsonSha256,
+  );
+  assert.equal(
+    installed.exports?.["."]?.[0]?.import,
+    EXPECTED_ACORN.importEntrypoint,
+  );
+  assert.equal(
+    byteSha256(readFileSync(ACORN_IMPORT_ENTRYPOINT_URL)),
+    EXPECTED_ACORN.importEntrypointSha256,
+  );
+  return Object.freeze({
+    completedBeforeCandidateRead: true,
+    policy: manifest.devDependencies.acorn,
+    ...EXPECTED_ACORN,
+  });
+}
+
+const SYNCHRONOUS_PARSER_AUDIT = pinParserDependencyBeforeCandidateRead();
+const acornModule = await import(ACORN_IMPORT_ENTRYPOINT_URL.href);
+assert.equal(acornModule.version, EXPECTED_ACORN.version);
+assert.equal(typeof acornModule.parse, "function");
+const parse = acornModule.parse;
+const PARSER_LOAD_AUDIT = Object.freeze({
+  completedAfterIdentityPin: true,
+  completedBeforeCandidateRead: true,
+  entrypoint: EXPECTED_ACORN.importEntrypoint,
+  version: acornModule.version,
+});
+
+function parseCandidateModuleAst(source) {
+  let program;
+  try {
+    program = parse(source, ACORN_PARSE_OPTIONS);
+  } catch (error) {
+    throw new Error(
+      `static gate: invalid ECMAScript module syntax: ${error.message}`,
+    );
+  }
+  assert.equal(program.type, "Program");
+  assert.equal(program.sourceType, "module");
+  const stack = [program];
+  let nodeCount = 0;
+  while (stack.length > 0) {
+    const node = stack.pop();
+    nodeCount += 1;
+    if (
+      node.type === "AwaitExpression" ||
+      (node.type === "ForOfStatement" && node.await === true)
+    ) {
+      throw new Error("static gate: await syntax forbidden");
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child !== null && typeof child?.type === "string")
+            stack.push(child);
+        }
+      } else if (value !== null && typeof value?.type === "string") {
+        stack.push(value);
+      }
+    }
+  }
+  return Object.freeze({ program, nodeCount });
+}
 
 const EXPECTED_EXPORTS = Object.freeze([
   "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS",
@@ -2029,6 +2152,7 @@ function assertModuleInitializationClosure(tokens) {
 }
 
 function auditCandidateSource(source) {
+  const parsed = parseCandidateModuleAst(source);
   const tokens = lexCandidateSource(source);
   assertBoundedSourceSubset(tokens);
   const imports = parseExactImports(tokens);
@@ -2051,6 +2175,7 @@ function auditCandidateSource(source) {
     scopeCount: identifierClosure.scopeCount,
     bindingCount: identifierClosure.bindingCount,
     moduleStoreCount,
+    astNodeCount: parsed.nodeCount,
   });
 }
 
@@ -2413,6 +2538,35 @@ function pinPredecessorSourcesBeforeCandidateRead() {
 
 const SYNCHRONOUS_PREDECESSOR_AUDIT =
   pinPredecessorSourcesBeforeCandidateRead();
+const PARENTHESIZED_CALLEE_AST =
+  parseCandidateModuleAst("(sha256)(bytes);").program;
+const STRICT_PARSER_CONTROLS = Object.freeze({
+  acceptedNodeCount: parseCandidateModuleAst(sourceSkeleton()).nodeCount,
+  preservedParenthesizedCallee:
+    PARENTHESIZED_CALLEE_AST.body[0].expression.callee.type,
+  rejected: Object.freeze(
+    [
+      Object.freeze({
+        name: "hashbang",
+        source: `#!/usr/bin/env node\n${sourceSkeleton()}`,
+      }),
+      Object.freeze({ name: "top-level return", source: "return null;" }),
+      Object.freeze({ name: "top-level await", source: "await null;" }),
+      Object.freeze({
+        name: "for-await",
+        source:
+          "async function consume(values) { for await (const value of values) {} }",
+      }),
+    ].map(({ name, source }) => {
+      assert.throws(
+        () => parseCandidateModuleAst(source),
+        /static gate:/u,
+        name,
+      );
+      return name;
+    }),
+  ),
+});
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 
 let candidate = null;
@@ -2622,6 +2776,28 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
 });
 
 test("rejects static-policy negative controls before any evaluation attempt", () => {
+  assert.deepEqual(SYNCHRONOUS_PARSER_AUDIT, {
+    completedBeforeCandidateRead: true,
+    policy: "latest",
+    ...EXPECTED_ACORN,
+  });
+  assert.deepEqual(PARSER_LOAD_AUDIT, {
+    completedAfterIdentityPin: true,
+    completedBeforeCandidateRead: true,
+    entrypoint: EXPECTED_ACORN.importEntrypoint,
+    version: EXPECTED_ACORN.version,
+  });
+  assert.equal(STRICT_PARSER_CONTROLS.acceptedNodeCount > 0, true);
+  assert.equal(
+    STRICT_PARSER_CONTROLS.preservedParenthesizedCallee,
+    "ParenthesizedExpression",
+  );
+  assert.deepEqual(STRICT_PARSER_CONTROLS.rejected, [
+    "hashbang",
+    "top-level return",
+    "top-level await",
+    "for-await",
+  ]);
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
     rejected: 69,
     namedRejected: [
