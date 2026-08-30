@@ -25,12 +25,22 @@
   has SHA-256
   `f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e`;
   registration reads none of the injected candidate, oracle, or fresh-loader
-  values and leaves both candidate-connected tests TODO. Import mode neither
-  reads candidate or fixture bytes nor registers standalone tests. It does
-  evaluate the existing exact-v2 predecessor and routing helper through the
-  adversarial lane's static import, so this checkpoint does not claim the
-  stronger pin-before-every-predecessor-evaluation ordering required before
-  main-lane registration. Commit `96e4b712` freezes six source-independent
+  values and leaves both candidate-connected tests TODO. Commit `1327b6b4`
+  removes the adversarial lane's static exact-v2 import. Direct entry hashes
+  the exact-v2 source to
+  `2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`
+  before its dynamic load attempt, while imported mode performs zero exact-v2,
+  candidate, or fixture byte reads and zero predecessor or candidate module
+  loads. Its direct-entry guard still performs filesystem metadata lookups, and
+  ordinary hash-then-import does not eliminate a concurrent filesystem TOCTOU
+  window. Commit `d71ed850` dynamically imports the adversarial module only
+  after the main lane's five-source predecessor audit, constructs the frozen
+  source-independent oracle, and registers the two candidate-connected TODOs
+  through deferred getters. Registration reads no injected value; the executed
+  TODO callbacks type-check candidate/oracle/fresh-loader exactly 2/2/1 times
+  without calling the inert fresh loader. Removing the two duplicate direct-lane
+  declarations leaves the exact direct/main/combined inventories at 10/15/25
+  tests. Commit `96e4b712` freezes six source-independent
   oracle-design inventories without materializing candidate-dependent values:
   20 whole transition/state designs
   (`251604392360b8024cbaf7d1e6ad48cdbddb5187d049aaeb5dbb50ce3f1d5acb`),
