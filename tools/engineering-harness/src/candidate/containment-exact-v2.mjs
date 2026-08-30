@@ -12,6 +12,7 @@ const objectFreeze = Object.freeze;
 const objectGetPrototypeOf = Object.getPrototypeOf;
 const objectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 const objectGetOwnPropertyDescriptors = Object.getOwnPropertyDescriptors;
+const objectHasOwn = Object.hasOwn;
 const objectIsFrozen = Object.isFrozen;
 const objectValues = Object.values;
 const arrayIsArray = Array.isArray;
@@ -22,6 +23,7 @@ const bufferAllocUnsafe = Buffer.allocUnsafe.bind(Buffer);
 const bufferByteLength = Buffer.byteLength.bind(Buffer);
 const bufferFrom = Buffer.from.bind(Buffer);
 const bufferIsBuffer = Buffer.isBuffer.bind(Buffer);
+const bufferToString = Buffer.prototype.toString;
 const utilTypesIsProxy = utilTypes.isProxy;
 const utilTypesIsSharedArrayBuffer = utilTypes.isSharedArrayBuffer;
 const typedArrayPrototype = objectGetPrototypeOf(Uint8Array.prototype);
@@ -34,7 +36,7 @@ const typedArrayBufferGetter = objectGetOwnPropertyDescriptor(
   "buffer",
 ).get;
 const typedArraySet = Uint8Array.prototype.set;
-const decoder = new TextDecoder("utf-8", { fatal: true });
+const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const decoderDecode = TextDecoder.prototype.decode;
 
 export function sha256(bytes) {
@@ -79,7 +81,8 @@ export function exactRecord(value, expected, label, fail) {
     value === null ||
     typeof value !== "object" ||
     utilTypesIsProxy(value) ||
-    arrayIsArray(value)
+    arrayIsArray(value) ||
+    !arrayIsArray(expected)
   ) {
     fail(`${label} must be a plain own-data record`);
   }
@@ -95,22 +98,38 @@ export function exactRecord(value, expected, label, fail) {
     fail(`${label} has a foreign prototype`);
   }
   const keys = reflectOwnKeys(descriptors);
-  if (
-    keys.some((key) => typeof key !== "string") ||
-    !isDeepStrictEqual([...keys].sort(), [...expected].sort()) ||
-    keys.some((key) => {
-      const descriptor = descriptors[key];
-      return !(
-        "value" in descriptor &&
-        descriptor.enumerable === true &&
-        descriptor.get === undefined &&
-        descriptor.set === undefined
-      );
-    })
-  ) {
+  if (keys.length !== expected.length) {
     fail(`${label} fields are not exact enumerable own data`);
   }
-  return nullRecord(expected.map((key) => [key, descriptors[key].value]));
+  const expectedKeys = objectCreate(null);
+  for (let index = 0; index < expected.length; index += 1) {
+    const key = expected[index];
+    if (typeof key !== "string" || objectHasOwn(expectedKeys, key)) {
+      fail(`${label} fields are not exact enumerable own data`);
+    }
+    expectedKeys[key] = true;
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (typeof key !== "string" || !objectHasOwn(expectedKeys, key)) {
+      fail(`${label} fields are not exact enumerable own data`);
+    }
+    const descriptor = descriptors[key];
+    if (
+      !objectHasOwn(descriptor, "value") ||
+      descriptor.enumerable !== true ||
+      descriptor.get !== undefined ||
+      descriptor.set !== undefined
+    ) {
+      fail(`${label} fields are not exact enumerable own data`);
+    }
+  }
+  const normalized = objectCreate(null);
+  for (let index = 0; index < expected.length; index += 1) {
+    const key = expected[index];
+    normalized[key] = descriptors[key].value;
+  }
+  return normalized;
 }
 
 export function exactDenseArray(value, label, maximum, fail) {
@@ -322,4 +341,39 @@ export function decodeCanonicalJsonLine(bytesValue, label, maximumBytes, fail) {
 
 export function canonicalJsonLine(value) {
   return bufferFrom(`${canonicalJson(value)}\n`, "utf8");
+}
+
+export function canonicalJsonBytes(value) {
+  return bufferFrom(canonicalJson(value), "utf8");
+}
+
+export function encodeCanonicalBase64(value, label, maximumBytes, fail) {
+  const copied = copyBoundedBuffer(
+    value,
+    label,
+    { minimumBytes: 2, maximumBytes },
+    fail,
+  );
+  return reflectApply(bufferToString, copied, ["base64"]);
+}
+
+export function decodeCanonicalBase64(value, label, maximumBytes, fail) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 4 * Math.ceil(maximumBytes / 3) ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
+      value,
+    )
+  ) {
+    fail(`${label} is not bounded canonical base64`);
+  }
+  const decoded = bufferFrom(value, "base64");
+  if (
+    reflectApply(bufferToString, decoded, ["base64"]) !== value ||
+    decoded.length > maximumBytes
+  ) {
+    fail(`${label} is not bounded canonical base64`);
+  }
+  return decoded;
 }
