@@ -56,10 +56,11 @@
   (`51fb17d1ff193dc37db2b16be60251c7bc745f479f0a8ee980ee24bc0caa0762`).
   Commits `d76e5e94`, `5cdde062`, `142869f3`, `6f1f5e70`, and
   formatting-only `07d99dea` add the independently reviewed ESTree and
-  provenance subset. It rejects 117 layered source-independent negatives: 69
-  parser and grammar foundation controls outside the final semantic quota plus
-  48 semantic controls assigned exactly once within that final quota. It
-  accepts five named synthetic positives. Of the 48 semantic controls, 46
+  provenance subset. At that checkpoint it rejected 117 layered
+  source-independent negatives: 69 parser and grammar foundation controls
+  outside the final semantic quota plus 48 semantic controls assigned exactly
+  once within that final quota, and accepted five named synthetic positives. Of
+  the 48 semantic controls, 46
   reach ESTree policy; the two earlier rejections are
   `requirements initializer semantic drift` and
   `shallow ambient freeze used as deep freeze`. Its 17 representative
@@ -105,21 +106,24 @@
   performs zero byte reads and exposes exactly three exports on all three
   runtimes.
 
-  Commits `957237a3` and `54b40874` freeze and then schema-harden the accepted
-  static-evidence manifest for this evaluator checkpoint. The recursively
-  frozen manifest contains exactly 69 foundation negatives, 48 semantic
-  negatives, and five positives. The 17 commit-mutation IDs are exactly the
-  `commitMutations` bucket and a subset of the 48 semantic IDs, never an
+  Commits `957237a3` and `54b40874` first froze and schema-hardened the accepted
+  static-evidence manifest. Integrated commit `358c19d0` (source commit
+  `87d727bd`) adds the reviewed private-lookup slice. The current recursively
+  frozen manifest contains exactly 69 foundation negatives, 60 semantic
+  negatives, and 11 positives. The 17 commit-mutation IDs are exactly the
+  `commitMutations` bucket and a subset of the 60 semantic IDs, never an
   additive count. Therefore current negative evidence is exactly
-  `117 = 69 + 48`; the remaining semantic quota is 282 negatives, six
-  positives, and 183 commit mutations, and the final all-layer negative total
-  remains exactly `399 = 69 + 330`.
+  `129 = 69 + 60`; against the semantic 330/11/200 targets, 270 negatives, zero
+  positives, and 183 commit mutations remain. The 183 remaining commit
+  mutations are part of, not additional to, the 270 remaining semantic
+  negatives. The final all-layer negative target remains exactly
+  `399 = 69 + 330`.
 
   The manifest schema is exactly
   `oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1`
   with SHA-256
   `eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
-  Every one of its 122 control entries has only `id`, `name`, `bucket`,
+  Every one of its 140 control entries has only `id`, `name`, `bucket`,
   `sourceSha256`, `astSha256`, `astNodeCount`, `expectedStage`, and
   `expectedError`. The literal evidence tables pin the full UTF-8 source hash,
   normalized AST hash and node count, exact rejection stage, and full canonical
@@ -127,21 +131,93 @@
   AST normalization recursively omits exactly `end`, `loc`, `range`, `raw`,
   `sourceFile`, and `start`, then sorts object keys.
   `FOUNDATION-N008` is the sole parse rejection with a null AST hash and node
-  count; all other entries carry literal AST and source pins. The six additional
+  count; all other entries carry literal AST and source pins. The six current
   aggregate identities are:
-
-  - ordered 122-control identity projection:
-    `af44b6f3f20713ffdc3d48cae4eff404b80a1e27ae07783c4a6315e7dd562df0`;
-  - ordered 48-control semantic projection:
-    `597e02c51e9bb92c7bbfebf5562fc82930d88a78cbdd99ec0fd7b1c6a211360f`;
+  - ordered 140-control identity projection:
+    `24e1fe89f7a3b6efa9967a56549f9809e47c171101e7547239fbadc5a66c0de7`;
+  - ordered 60-control semantic projection:
+    `a7af959d1a32a4a9dd545b6bc8211a5c304b37c932dd59d4efb0e2eeea9c7c69`;
   - semantic-bucket projection:
-    `2205bbbfb666fc3b0de1350e9760c932d5fdfcfbd8be7961c9c1d86f6b8ac82e`;
+    `a8ea7637037d2cc75a9297d1caa07fed868141065c0bae0449ec82aaaee04391`;
   - foundation ID/name projection:
     `3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`;
   - positive ID/name projection:
-    `7237029edd59dee361030e12d12d3214c38fa83512a2866f8c7ce8e0bfb7bc28`;
+    `f73112c110a5ced50c3f64fcd53da66e022f20abbaef83ddb5be69d32390f420`;
   - commit-ID projection:
     `cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c`.
+
+  `SEM-N013` was deliberately rewritten rather than silently rebaselined. Its
+  former unowned helper would now fail at the new owner policy before exercising
+  the intended private-read laundering rejection, so the control now performs
+  the same read in
+  `verifyCandidateContainmentGuardianStatusFrameV1` with its exact
+  `startupProjection` parameter and still rejects at `estree-policy` with
+  `static gate: ESTree deepFreeze argument provenance`. The source/AST/node pins
+  changed from
+  `b4bc0847cbbd9b7f908f1abcd38b754f657952ae064dc489cc4b2d0e336b8329` /
+  `20450c27418578ab4a84626011816d8be65662f565d91aefa7a0e6427ba9cfce` /
+  1,162 to
+  `cbc214639b03132d01081ac7c6acb6535a1b049ff7bb7e83989ee9d77d9d5364` /
+  `179b90dc7f86d6790e60e5ebc2308386a6982e37e576447821eedee195fbe331` /
+  1,156.
+
+  The lookup policy authorizes exactly these 11 ordered
+  function/store/key-parameter pairs:
+
+  | Function                                                          | Store             | Key parameter       |
+  | ----------------------------------------------------------------- | ----------------- | ------------------- |
+  | `initializeCandidateContainmentGuardianControlV1`                 | `startupMetadata` | `startupProjection` |
+  | `verifyCandidateContainmentGuardianStatusFrameV1`                 | `startupMetadata` | `startupProjection` |
+  | `createCandidateContainmentGuardianAdmissionInputV1`              | `stateMetadata`   | `currentState`      |
+  | `createCandidateContainmentGuardianCancelInputV1`                 | `stateMetadata`   | `currentState`      |
+  | `createCandidateContainmentGuardianRecoveryRequestInputV1`        | `stateMetadata`   | `currentState`      |
+  | `createCandidateContainmentGuardianControllerClosedInputV1`       | `stateMetadata`   | `currentState`      |
+  | `createCandidateContainmentGuardianDiagnosticFailureInputV1`      | `stateMetadata`   | `currentState`      |
+  | `createCandidateContainmentGuardianRecoveryControlHandoffInputV1` | `stateMetadata`   | `currentState`      |
+  | `createCandidateContainmentGuardianStatusEofInputV1`              | `stateMetadata`   | `currentState`      |
+  | `reduceCandidateContainmentGuardianControlV1`                     | `stateMetadata`   | `currentState`      |
+  | `reduceCandidateContainmentGuardianControlV1`                     | `inputMetadata`   | `brandedInput`      |
+
+  This is an exact 2/8/1 split across
+  `startupMetadata`/`stateMetadata`/`inputMetadata`. The sibling evidence
+  exercises one `has` and one `get` for each pair, giving 22 distinct observed
+  operations. Positive controls `POS-P006` through `POS-P011` contribute exactly
+  2/2/2/12/2/2 operations.
+  Lookup keys must be the named function parameter and resolve to that exact
+  parameter binding; a same-named local shadow, another parameter, a local
+  value, or a computed expression is not authorized. The exact result lattice
+  is `has` = `{kind: "immutable", freezable: true, tainted: false}` and `get` =
+  `{kind: "private-read", freezable: false, tainted: true}`.
+
+  A separate recursively frozen sibling receipt, rather than an extension of
+  the static-evidence manifest, has schema
+  `oxigraph.candidate-containment-guardian-control-private-lookup-evidence/v1`.
+  Its five full SHA-256 pins are:
+  - schema:
+    `5ca5d446d3357b0b43b6421e1cedae2b62f37f9e58135349c7a663ec48b42b47`;
+  - ordered methods `has`/`get`:
+    `f0afdaedcb5432d380f9d18e533963f7dcdcff465c7b7864b89e72d09d235a01`;
+  - ordered authorized-pair projection:
+    `562ce95945ad0e110eb9c01866a44c5202f37f2d4381a8ac8d68d7bded28b1e1`;
+  - ordered observed-operation projection:
+    `164ab5c6d611fa840804fb88d4e59035e897f9f72db97e8161ef52f92834ada7`;
+  - receipt without its two projection-hash fields:
+    `c86485d7298cd768a4ceb254274c6b331a9fb6981a5ae73cd6fb6328d90bbd6b`.
+
+  The exact semantic-bucket target/current/remaining counts are:
+
+  | Bucket                | Target | Current | Remaining |
+  | --------------------- | -----: | ------: | --------: |
+  | `protectedAliases`    |     12 |      12 |         0 |
+  | `indirectCalls`       |     12 |       1 |        11 |
+  | `reflectComputed`     |     12 |       1 |        11 |
+  | `bindingMemberWrites` |     14 |       4 |        10 |
+  | `untrustedSinks`      |     24 |       9 |        15 |
+  | `rawEscapes`          |     12 |       5 |         7 |
+  | `literalMisuse`       |     14 |       4 |        10 |
+  | `scopeJoins`          |     18 |       4 |        14 |
+  | `nestedRecursion`     |     12 |       3 |         9 |
+  | `commitMutations`     |    200 |      17 |       183 |
 
   Independent mutation review initially killed 14 of 15 manifest mutations and
   found that the schema-name mutation survived because the manifest was
@@ -149,27 +225,35 @@
   schema assertion plus the independent schema digest. The repaired exact
   artifact kills 15/15 probes. The accepted Ruflo evidence is stored under
   `programme-evidence/adr0036-static-manifest-54b40874-2026-08-30`.
+  Independent semantic, runtime, and real-mutation reviews of the private-lookup
+  slice then returned unanimous GO for only this bounded evaluator checkpoint;
+  the mutation review killed 12/12 real evaluator mutations.
+  The distinct accepted integrated Ruflo evidence key is
+  `programme-evidence/adr0036-private-lookup-358c19d0-2026-08-30`.
 
   The source hard stop remains exactly 506 bytes with SHA-256
   `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`.
   The new four-TODO tail is exactly 12,095 bytes with SHA-256
   `3f58dc980e85a6d725a6c147c7d1f95d37e200197f84c292feaed9f4a5cd270c`.
+  The integrated slice preserves import-only mode at zero byte reads and exactly
+  three exports on each runtime.
   Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 all produce the
   exact direct 10/9/0/1, main 15/8/1/6, and combined 25/17/1/7
   test/pass/fail/TODO matrices; the sole failure is the deliberate absent
   candidate. `npm audit` reports zero known vulnerabilities.
 
   This remains a partial source-hard-stopped foundation. The final semantic
-  quota still requires 282 negative controls, six positives, and 183 commit
-  mutations beyond the current 48/5/17. The 69 parser and grammar foundation
-  negatives are additional, so final all-layer evidence will contain 399
-  negatives rather than 330. Exact private-read-to-owner positive provenance,
-  successful-path reachability, complete receiver/alias and binding/member-
+  quota still requires 270 negative controls, including 183 commit mutations,
+  beyond the current 60/11/17. The 69 parser and grammar foundation negatives
+  are additional, so final all-layer evidence will contain 399 negatives rather
+  than 330. The static lookup slice does not fix global malformed-expression
+  diagnostic precedence or prove actual runtime `WeakMap` lookup behavior.
+  Successful-path reachability, complete receiver/alias and binding/member-
   write closure, computed-key and indirect-call closure, path-sensitive
-  normative key literals, candidate-connected acceptance matrices, the
-  production source module, runtime registration, and the physical owner
-  remain incomplete or absent. Production containment readiness remains
-  exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`
+  normative key literals, candidate-connected acceptance matrices, the absent
+  production source module, runtime registration, and the physical native owner
+  remain incomplete. Production containment readiness remains exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
