@@ -134,15 +134,18 @@ Commits `957237a3` and schema repair `54b40874` first froze the accepted static
 evidence manifest. Integrated commit `358c19d0` (source commit `87d727bd`)
 adds the private-lookup slice after independent semantic, runtime, and
 real-mutation reviews returned unanimous GO for only this bounded evaluator
-checkpoint. The current manifest records exactly 69 foundation negatives, 60
-semantic negatives, 11 positives, and 17 commit-mutation IDs that are a subset
-of the 60 semantic IDs. Current negative evidence is therefore exactly
-`129 = 69 + 60`. Against the semantic 330/11/200 targets, 270 negatives, zero
+checkpoint. Integrated commit `d971bfa4` closes `indirectCalls` and
+`reflectComputed` with `SEM-N061` through `SEM-N082`; integrated commit
+`86320201` closes `bindingMemberWrites` with `SEM-N083` through `SEM-N092`.
+The current manifest records exactly 69 foundation negatives, 92 semantic
+negatives, 11 positives, and 17 commit-mutation IDs that are a subset of the
+92 semantic IDs. Current negative evidence is therefore exactly
+`161 = 69 + 92`. Against the semantic 330/11/200 targets, 238 negatives, zero
 positives, and 183 commit mutations remain; those 183 are included within, not
-additional to, the 270 semantic negatives. The final all-layer negative target
+additional to, the 238 semantic negatives. The final all-layer negative target
 is exactly `399 = 69 + 330`.
 
-Every one of the 140 static-manifest entries has the exact fields `id`, `name`,
+Every one of the 172 static-manifest entries has the exact fields `id`, `name`,
 `bucket`, `sourceSha256`, `astSha256`, `astNodeCount`, `expectedStage`, and
 `expectedError`. The literal tables retain the full source and normalized-AST
 hashes, AST node counts, rejection stages, and complete canonical errors
@@ -156,9 +159,9 @@ has SHA-256
 `eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
 Its ordered-control, ordered-semantic, bucket, foundation-name, positive-name,
 and commit-ID projections have SHA-256 values respectively
-`24e1fe89f7a3b6efa9967a56549f9809e47c171101e7547239fbadc5a66c0de7`,
-`a7af959d1a32a4a9dd545b6bc8211a5c304b37c932dd59d4efb0e2eeea9c7c69`,
-`a8ea7637037d2cc75a9297d1caa07fed868141065c0bae0449ec82aaaee04391`,
+`c26680e91a1a1da495af7c2684d73cc21368a8041d5f2ec29bea94a56900ba7b`,
+`2571662ac051c5ab4746e4f8b39881d9446a9140a88e965a48f248b497e87405`,
+`4b2934dad496999ce72939de0a0716457462077bb1d8695a3af5ff5a03a22080`,
 `3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`,
 `f73112c110a5ced50c3f64fcd53da66e022f20abbaef83ddb5be69d32390f420`,
 and `cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c`.
@@ -223,13 +226,17 @@ are respectively
 and `c86485d7298cd768a4ceb254274c6b331a9fb6981a5ae73cd6fb6328d90bbd6b`.
 
 The semantic buckets have target/current/remaining counts of
-`protectedAliases` 12/12/0, `indirectCalls` 12/1/11, `reflectComputed`
-12/1/11, `bindingMemberWrites` 14/4/10, `untrustedSinks` 24/9/15,
+`protectedAliases` 12/12/0, `indirectCalls` 12/12/0, `reflectComputed`
+12/12/0, `bindingMemberWrites` 14/14/0, `untrustedSinks` 24/9/15,
 `rawEscapes` 12/5/7, `literalMisuse` 14/4/10, `scopeJoins` 18/4/14,
 `nestedRecursion` 12/3/9, and `commitMutations` 200/17/183. The independent
 mutation review killed 12/12 real evaluator mutations.
 The distinct accepted integrated Ruflo evidence key is
 `programme-evidence/adr0036-private-lookup-358c19d0-2026-08-30`.
+The callee/receiver and binding/member-write checkpoints were independently
+reviewed and stored as
+`programme-evidence/adr0036-callee-receiver-d971bfa4-2026-08-30` and
+`programme-evidence/adr0036-binding-writes-86320201-2026-08-30`.
 
 The integrated checkpoint leaves import-only behavior at zero byte reads and
 exactly three exports on each of the three runtimes. It preserves the exact
