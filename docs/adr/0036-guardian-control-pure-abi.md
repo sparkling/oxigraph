@@ -56,9 +56,11 @@
   (`51fb17d1ff193dc37db2b16be60251c7bc745f479f0a8ee980ee24bc0caa0762`).
   Commits `d76e5e94`, `5cdde062`, `142869f3`, `6f1f5e70`, and
   formatting-only `07d99dea` add the independently reviewed ESTree and
-  provenance subset. It rejects 117 source-independent negatives, accepts five
-  named synthetic positives, and derives a 48-control delta from the parser
-  foundation: 46 reach ESTree policy; the two earlier rejections are
+  provenance subset. It rejects 117 layered source-independent negatives: 69
+  parser and grammar foundation controls outside the final semantic quota plus
+  48 semantic controls assigned exactly once within that final quota. It
+  accepts five named synthetic positives. Of the 48 semantic controls, 46
+  reach ESTree policy; the two earlier rejections are
   `requirements initializer semantic drift` and
   `shallow ambient freeze used as deep freeze`. Its 17 representative
   commit-mutation sources are inventory, not final closure. The accepted
@@ -69,22 +71,61 @@
   adversarial replay closes the previously found private-read laundering,
   conditional/logical `?:`, `&&`, `||`, and `??` dominance, direct-body commit,
   non-returning failure-callback, and callback-recursion counterexamples. The
-  source hard stop remains byte-identical with SHA-256
-  `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`,
-  and the six main TODOs remain byte-identical with SHA-256
-  `07fc8814b048337886faa80752e3564685537bffe571739297e1012c00e50225`.
-  The combined current, exact Node 20.0.0, and latest Node 20 matrices remain
-  identically 25 tests: 15 pass, exactly one deliberate absent-source failure,
-  and nine TODO. `npm audit` reports zero known vulnerabilities. This is still
-  only a partial source-hard-stopped foundation: 213 negative, six positive,
-  and 183 commit-mutation cases remain against the final 330/11/200 gates;
-  exact private-read-to-owner positive provenance, successful-path reachability,
-  complete receiver/alias and binding/member-write closure, computed-key and
-  indirect-call closure, path-sensitive normative key literals,
-  candidate-connected acceptance matrices, the production source module,
-  runtime registration, and the physical owner remain incomplete or absent.
-  Production containment readiness remains exactly
-  `{status: "unavailable", reason: "native-adapter-unavailable"}`
+  commits `970c135b` and `05796367` then add and repair the separately encoded
+  status-wire oracle. The first materialization was retained as review evidence
+  after an independent NO-GO found that it consumed design registries and
+  shared 15 non-primitive references across calls. The repair derives its
+  primary STATUS and atomic-prefix values directly from `legalSequences` plus
+  a freshly allocated evaluator-owned construction context. Its 28-function
+  reachable primary closure contains no design-oracle builder or registry
+  dependency; its five-function independent reconstruction closure contains no
+  primary-builder dependency. Two independent post-repair reviews and a root
+  reproduction returned GO for only this evaluator slice.
+
+  The repaired oracle materializes 15 distinct STATUS records with 23 source-
+  sequence memberships: 12 normal and three recovery-only, partitioned as six
+  admission-only, three recovery-only, six neither, and zero both. It
+  materializes four two-status atomic wire prefixes and rejects all four
+  reversed-order, first-omission, second-omission, and inserted-delimiter
+  variants. Its exact construction-context identity is
+  `fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23`;
+  status and atomic design projections remain respectively
+  `6e03baa638cd3b48221e9182d9de1dd74a9a7b454fce40719badb3d0d9b7de5e`
+  and
+  `a2b9524c88bbd78aca2d189c150a9e5499c0da3505c9109734ce78f0fa038ba1`;
+  materialized status and atomic inventories are respectively
+  `d871cbce866d934a6d30d8c1062e30f93b8a250b772b5284da50b83514fc4762`
+  and
+  `c6735a0da37cdaf3d6e9775dcb5dffc47f039e08df7d8db0adcf0313499479d4`;
+  and the complete oracle identity is
+  `57872372c67c5ad4580ed2945512fc5c7ec0923b121690c2a2927604608b3583`.
+  Repeated construction yields deep-equal 124-object graphs with zero shared
+  non-primitive references, retained byte views, or input aliases; 27 fresh-
+  byte mutation probes leave the oracle and pins unchanged. Import-only mode
+  performs zero byte reads and exposes exactly three exports on all three
+  runtimes.
+
+  The source hard stop remains exactly 506 bytes with SHA-256
+  `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`.
+  The new four-TODO tail is exactly 12,095 bytes with SHA-256
+  `3f58dc980e85a6d725a6c147c7d1f95d37e200197f84c292feaed9f4a5cd270c`.
+  Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 all produce the
+  exact direct 10/9/0/1, main 15/8/1/6, and combined 25/17/1/7
+  test/pass/fail/TODO matrices; the sole failure is the deliberate absent
+  candidate. `npm audit` reports zero known vulnerabilities.
+
+  This remains a partial source-hard-stopped foundation. The final semantic
+  quota still requires 282 negative controls, six positives, and 183 commit
+  mutations beyond the current 48/5/17. The 69 parser and grammar foundation
+  negatives are additional, so final all-layer evidence will contain 399
+  negatives rather than 330. Exact private-read-to-owner positive provenance,
+  successful-path reachability, complete receiver/alias and binding/member-
+  write closure, computed-key and indirect-call closure, path-sensitive
+  normative key literals, candidate-connected acceptance matrices, the
+  production source module, runtime registration, and the physical owner
+  remain incomplete or absent. Production containment readiness remains
+  exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`
+
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
 - **Related**:
