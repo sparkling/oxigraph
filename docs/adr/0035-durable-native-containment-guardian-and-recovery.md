@@ -13,19 +13,21 @@
   executable preflight. Commit `2f901134` adds the exact authority-null
   lifetime-v1 identity, record, replay, finite reducer, reservation, selector,
   and same-origin brand boundary ratified here, together with frozen,
-  semantic-adversarial, and hostile-input evaluators. None of these slices
-  writes or recovers a filesystem journal, runs the stable native guardian,
-  mutates a delegated cgroup, proves pidfd/waitid reap, or binds the executable
-  through the ADR's race-free launch event; they remain absent from runtime,
-  task-profile, and CLI registries. The next permitted slice is the
-  evaluator-owned recovery-v1 red suite and authority-null pure module, consuming
-  only the branded lifetime-v1 boundaries. The guardian-control contract must
-  then close before any filesystem-backed manager/guardian owner begins; no
-  existing slice may activate production containment, G1.7, G2.2,
+  semantic-adversarial, and hostile-input evaluators. Commits `2f2d1641`,
+  `5a3d63e8`, and `3c4294cc` complete the recovery-v1 authority-null constructor,
+  replay, planner, attempt boundary, containment recovery, failure-atomicity
+  repair, and dual-runtime evaluator closure. None of these slices writes or
+  recovers a filesystem journal, runs the stable native guardian, mutates a
+  delegated cgroup, proves pidfd/waitid reap, or binds the executable through
+  the ADR's race-free launch event; they remain absent from runtime,
+  task-profile, and CLI registries. The next permitted slice is ADR-0036's
+  evaluator-owned guardian-control RED suite and authority-null pure module.
+  That contract must close before any filesystem-backed manager/guardian owner
+  begins; no existing slice may activate production containment, G1.7, G2.2,
   qualification, promotion, or publication
 - Programme task: `task-1788002473147-nsat6x` (84% at lifetime-v1 checkpoint)
-- Contract-first successor task: `task-1788008900651-u20s3l` (75%; lifetime-v1
-  implemented, recovery-v1 next)
+- Contract-first successor task: `task-1788008900651-u20s3l` (completed;
+  journal-v2, lifetime-v1, and recovery-v1 authority-null contracts verified)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
@@ -77,9 +79,13 @@ qualified.
 
 This ADR remains the umbrella and sole owner of the frozen journal-v1,
 journal-v2, lifetime-v1, recovery-v1, cancel-only, lineage, recovery, Linux, and
-physical acceptance literals below. Four additive decisions refine the
-remaining implementation without superseding, copying, or weakening those
-literals:
+physical acceptance literals below. It also owns the guardian/supervisor
+process topology, inherited-descriptor provenance, and target supervisor
+descriptor map. It does not own the serialized guardian-control vocabulary,
+frame schemas, startup or `recvmsg` reports, byte ceilings, reducer transitions,
+validation failure codes, or transcript-terminal rule; ADR-0036 owns and
+freezes those literals. Four additive decisions refine the remaining
+implementation without superseding or weakening the umbrella constraints:
 
 | Decision                                                                                                                             | Exclusive implementation ownership                                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -163,11 +169,17 @@ guardian lifetime then ends; a restarted controller receives a new lifetime
 rather than attaching to the old socket.
 
 The additive authority-null `containment-guardian-control-v1` contract freezes
-this descriptor map, exact bounded initialization and admission frames,
-`SCM_RIGHTS` count and role validation, controller-loss response, status frames,
-limits, and finite failure reasons before native manager or guardian code is
-permitted. It accepts neither root paths nor injectable filesystem, cgroup, or
-process-mechanics callbacks.
+the serialized contract for this descriptor map, exact bounded initialization
+and admission frames, `SCM_RIGHTS` count and role validation, controller-loss
+response, status frames, limits, and finite failure reasons before native
+manager or guardian code is permitted. The guardian inherits the exact
+supervisor executable on guardian FD 7 and uses that held descriptor only for
+the race-free `execveat(AT_EMPTY_PATH)` transition. It is not supervisor FD 6.
+The controller-transferred admission set contains all 14 launch-capsule-v3 file
+roles, including the separate `supervisorSelf` retained byte-copy at supervisor
+FD 6. As launch-capsule v3 already states, that retained copy does not bind the
+executed supervisor image. The pure contract accepts neither root paths nor
+injectable filesystem, cgroup, or process-mechanics callbacks.
 
 The same contract has a separate recovery-only exec mode with exactly FDs 0
 through 6: FD 0 is a read-only bounded canonical recovery-request pipe; FDs 1
@@ -3427,44 +3439,45 @@ deliberate G1.7 identity guard reporting product paths changed after the old
 sealed e9 subject. This checkpoint does not refresh that subject or convert its
 stale seal into qualification evidence.
 
-The next evaluator-only recovery-v1 RED checkpoint freezes the contract before
-production implementation:
+The recovery-v1 checkpoint followed the evaluator-first RED-to-GREEN sequence:
 
-- the 1,037-line fixture and 75-test evaluator have SHA-256 identities
-  `d956a9952d479617ee672470ca7a390225cbeb681b916ba3ce8255470c748076`
-  and
-  `ecde446c4c179433a449641680ae995fa81e2139e209a4444ba0ab5069c40e52`;
-  the independent 1-test `exactRecord` seam has SHA-256
-  `eab46c8acfe8964121f8fb9cdfef1b9e4da32df9b763fc15423a0bdedb268af0`;
-- the evaluator owns the exact 99-field requirements oracle with SHA-256
+- the independent fixture, evaluator, and `exactRecord` seam froze the exact
+  99-field requirements oracle with SHA-256
   `278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a`
-  and defines the exact 53-name recovery-v1 public surface;
-- before any recovery module evaluation, its bounded lexical gate rejects all
-  eight disallowed import shapes and all 28 forbidden ambient-effect controls.
-  Forbidden ambient spellings are denied even when locally shadowed; ordinary
-  non-ambient declarations remain admitted;
-- on Node 24 and Node 20 the main evaluator reaches its sole intended RED,
-  `ERR_MODULE_NOT_FOUND`, because the recovery-v1 production source is absent.
-  The source-independent `exactRecord` seam reaches only its intended Option-A
-  RED: zero admitted permutations and three dynamic-intrinsic hits, while no
-  Proxy trap or accessor getter runs; and
-- the fixture smoke, raw/parser/import/ambient controls, embedded child-source
-  syntax, exact import and raw-byte preflight checks, four-cell post-reboot
-  quarantine certainty matrix, and two independent frozen-hash audits all pass
-  with no P0/P1 findings.
+  and the exact 53-name public surface before production implementation. Their
+  original RED proved source absence with `ERR_MODULE_NOT_FOUND` on Node 24 and
+  Node 20, while the source-independent seam retained trap-free rejection;
+- commit `2f2d1641` added the authority-null deterministic constructor, replay,
+  planner, attempt boundary, and recovery reducer. An independent review then
+  found a target replay-origin refresh whose late failure could commit private
+  state prematurely; commit `5a3d63e8` moved that commit after all fallible
+  work, and commit `3c4294cc` added the early- and late-failure regression
+  controls;
+- the final source, evaluator, fixture, and seam SHA-256 identities are
+  respectively
+  `e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d`,
+  `8c326d8823a02f54eef65eed236323ea7e1641a946c2994c4606ea1f5bde653a`,
+  `d956a9952d479617ee672470ca7a390225cbeb681b916ba3ce8255470c748076`,
+  and
+  `eab46c8acfe8964121f8fb9cdfef1b9e4da32df9b763fc15423a0bdedb268af0`;
+  and
+- the final recovery evaluator passes 75/75, the independent seam passes 1/1,
+  and the predecessor regression envelope passes 102/102 on both Node 24 and
+  Node 20. Independent contract and exact-hash review returned GO after the
+  failure-atomicity repair.
 
-This RED checkpoint is evaluator evidence only. It does not implement
-recovery-v1, prove a filesystem effect or recovery outcome, or grant any
+This GREEN checkpoint implements only the pure recovery-v1 value boundary. It
+does not prove a filesystem effect or recovery outcome and grants no
 containment, qualification, promotion, publication, or production authority.
 
 No live G1.7 control, provider, benchmark, qualification, promotion, or
-publication path ran for this checkpoint. The additive journal-bundle v2 and
-generation manifest and lifetime-v1 ledger now exist only as pure
-authority-null contracts. The recovery-v1 pure module, filesystem journal
-creation, sync and no-replace mechanics, stable native manager and
-guardian/reaper execution, recovery mutation, delegated-cgroup qualification,
-race-free exec/pidfd evidence, and the production native adapter remain
-unimplemented. Production readiness therefore remains exactly
+publication path ran for this checkpoint. The additive journal-bundle v2,
+generation manifest, lifetime-v1 ledger, and recovery-v1 module now exist only
+as pure authority-null contracts. Filesystem journal creation, sync and
+no-replace mechanics, stable native manager and guardian/reaper execution,
+recovery mutation, delegated-cgroup qualification, race-free exec/pidfd
+evidence, and the production native adapter remain unimplemented. Production
+readiness therefore remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 ## Acceptance boundary

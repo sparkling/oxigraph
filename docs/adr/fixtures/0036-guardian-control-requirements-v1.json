@@ -1,0 +1,511 @@
+{
+  "schema": "oxigraph.candidate-containment-guardian-control-requirements/v1",
+  "version": 1,
+  "predecessors": {
+    "direct": [
+      {
+        "specifier": "./containment-exact-v2.mjs",
+        "sha256": "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+        "requirementsSha256": null,
+        "imports": [
+          "boundedInteger",
+          "canonicalJsonBytes",
+          "canonicalJsonLine",
+          "copyBoundedBuffer",
+          "decodeCanonicalBase64",
+          "decodeCanonicalJsonLine",
+          "deepFreeze",
+          "exactBoolean",
+          "exactDigest",
+          "exactRecord",
+          "frozenCopyOnReadBytes",
+          "nullRecord",
+          "sha256"
+        ]
+      },
+      {
+        "specifier": "./containment-guardian-recovery-v1.mjs",
+        "sha256": "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+        "requirementsSha256": "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+        "imports": [
+          "CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1",
+          "CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1",
+          "CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1",
+          "CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1",
+          "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1",
+          "CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1",
+          "CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1"
+        ]
+      },
+      {
+        "specifier": "./containment-launch-capsule-v3.mjs",
+        "sha256": "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d",
+        "requirementsSha256": "4432b3334ff07b847f1ee8abe49c184df5c993545c21f405ccc1247ecb20604a",
+        "imports": [
+          "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3",
+          "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3",
+          "verifyCandidateContainmentLaunchCapsuleV3"
+        ]
+      }
+    ],
+    "evidenceOnly": [
+      {
+        "specifier": "./containment-supervisor-control-v2.mjs",
+        "sha256": "92cfae3b2e6b8e2ee196d7c5a21c760ae5d35d4f5335263a5ffc816fc2a80842"
+      },
+      {
+        "specifier": "./containment-supervisor-preflight-v4.mjs",
+        "sha256": "747c913e60768c53bdeeec923a6ff2f1319121d743bddd8e4db663c1a03d23ff"
+      }
+    ]
+  },
+  "schemas": {
+    "startupReport": "oxigraph.candidate-containment-guardian-startup-report/v1",
+    "openFileDescriptionScope": "oxigraph.candidate-containment-guardian-ofd-observation-scope/v1",
+    "openFileDescriptionObservation": "oxigraph.candidate-containment-guardian-ofd-observation/v1",
+    "admissionRecvmsgReport": "oxigraph.candidate-containment-guardian-admission-recvmsg-report/v1",
+    "wireFrame": "oxigraph.candidate-containment-guardian-control-frame/v1",
+    "recoverySelection": "oxigraph.candidate-containment-guardian-recovery-selection/v1",
+    "diagnosticSummary": "oxigraph.candidate-containment-guardian-diagnostic-summary/v1",
+    "startupProjection": "oxigraph.candidate-containment-guardian-startup/v1",
+    "inputProjection": "oxigraph.candidate-containment-guardian-control-input/v1",
+    "stateProjection": "oxigraph.candidate-containment-guardian-control-state/v1",
+    "transitionProjection": "oxigraph.candidate-containment-guardian-control-transition/v1",
+    "statusArtifact": "oxigraph.candidate-containment-guardian-status-artifact/v1"
+  },
+  "limits": {
+    "startupReportMaximumBytes": 8192,
+    "epochBytes": 32,
+    "admissionFrameMaximumBytes": 131072,
+    "admissionRecvmsgReportMaximumBytes": 16384,
+    "cancelFrameMaximumBytes": 4096,
+    "recoveryRequestMaximumBytes": 32768,
+    "statusFrameMaximumBytes": 8192,
+    "rawDiagnosticsMaximumBytes": 16384,
+    "diagnosticSummaryMaximumBytes": 1024,
+    "maximumTranscriptSymbols": 7,
+    "maximumAggregateWireBytes": 196608,
+    "admissionRightsCount": 14,
+    "admissionControlMessageCount": 1,
+    "recoveryStateMinimumCount": 1,
+    "recoveryStateSlots": 19,
+    "maximumStatusFramesPerTransition": 2,
+    "maximumAdmissionsPerTranscript": 1,
+    "concurrentAdmissionsPermitted": false,
+    "maximumAdmissionsPerGuardianLifetime": null
+  },
+  "modes": ["NORMAL", "RECOVERY_ONLY"],
+  "startupMaps": {
+    "normalDescriptorCount": 8,
+    "normalSha256": "1f2bcfca0089977fc1c5fdde2bfcfa6eed671e839a2daee87b5c19d3c2b4fffb",
+    "recoveryOnlyDescriptorCount": 7,
+    "recoveryOnlySha256": "620b125181725cff59b7d11d08f193250f9046d3aec4021016418d0ab42d4594"
+  },
+  "admissionRights": {
+    "count": 14,
+    "sha256": "082b09e65c5b58c92a909f27e3f9dd8b83e4833885e35846a31ace14c82744a2"
+  },
+  "frameFields": {
+    "startupReport": [
+      "schema",
+      "mode",
+      "requirementsSha256",
+      "expectedEpochSha256",
+      "openFileDescriptionObservationScopeSha256",
+      "descriptorCount",
+      "fd0",
+      "fd1",
+      "fd2",
+      "fd3",
+      "fd4",
+      "fd5",
+      "fd6",
+      "fd7"
+    ],
+    "startupDescriptor": [
+      "fd",
+      "role",
+      "kind",
+      "accessMode",
+      "closeOnExec",
+      "direction",
+      "statusFlags",
+      "openFileDescriptionClass",
+      "openFileDescriptionIdentitySha256",
+      "byteLength",
+      "contentSha256",
+      "launchFileIdentitySha256",
+      "currentOffset",
+      "socketFamily",
+      "socketType",
+      "connected",
+      "lockHeld"
+    ],
+    "admissionRecvmsgReport": [
+      "schema",
+      "messageByteLength",
+      "messageRawSha256",
+      "messageTruncated",
+      "controlTruncated",
+      "controlMessageCount",
+      "controlLevel",
+      "controlType",
+      "rightsCount",
+      "right0",
+      "right1",
+      "right2",
+      "right3",
+      "right4",
+      "right5",
+      "right6",
+      "right7",
+      "right8",
+      "right9",
+      "right10",
+      "right11",
+      "right12",
+      "right13"
+    ],
+    "admissionRight": [
+      "index",
+      "role",
+      "targetSupervisorFd",
+      "kind",
+      "accessMode",
+      "closeOnExec",
+      "statusFlags",
+      "openFileDescriptionClass",
+      "openFileDescriptionIdentitySha256",
+      "byteLength",
+      "contentSha256",
+      "launchFileIdentitySha256",
+      "currentOffset"
+    ],
+    "ADMIT": [
+      "schema",
+      "action",
+      "mode",
+      "sequence",
+      "previousFrameSha256",
+      "requirementsSha256",
+      "startupSha256",
+      "epochSha256",
+      "launchCapsuleV3Sha256",
+      "launchCapsuleV3"
+    ],
+    "CANCEL": [
+      "schema",
+      "action",
+      "mode",
+      "sequence",
+      "previousFrameSha256",
+      "requirementsSha256",
+      "startupSha256",
+      "epochSha256",
+      "admissionFrameSha256"
+    ],
+    "RECOVERY_REQUEST": [
+      "schema",
+      "action",
+      "mode",
+      "sequence",
+      "previousFrameSha256",
+      "requirementsSha256",
+      "startupSha256",
+      "epochSha256",
+      "recoverySelectionSha256",
+      "recoverySelection"
+    ],
+    "recoverySelection": [
+      "schema",
+      "targetSha256",
+      "recoveryRequirementsSha256",
+      "recoveryPlanSha256",
+      "recoveryReplaySha256",
+      "lifecycleInventorySha256",
+      "attemptSha256",
+      "planStatus",
+      "requiredActorKind",
+      "actorKind",
+      "recoveryActorEpochSha256",
+      "attemptDirectoryName",
+      "lifetimeAnchorProjectionSha256",
+      "lifetimeAttemptAnchorRawSha256",
+      "disposition",
+      "quarantineReason",
+      "sourceLocation",
+      "decisionSourceLocation",
+      "requiredDestinationLocation",
+      "stateCount",
+      "state0",
+      "state1",
+      "state2",
+      "state3",
+      "state4",
+      "state5",
+      "state6",
+      "state7",
+      "state8",
+      "state9",
+      "state10",
+      "state11",
+      "state12",
+      "state13",
+      "state14",
+      "state15",
+      "state16",
+      "state17",
+      "state18"
+    ],
+    "STATUS": [
+      "schema",
+      "action",
+      "mode",
+      "sequence",
+      "previousFrameSha256",
+      "requirementsSha256",
+      "startupSha256",
+      "epochSha256",
+      "state",
+      "admissionFrameSha256",
+      "recoveryRequestFrameSha256",
+      "terminalReason"
+    ],
+    "diagnosticSummary": ["schema", "byteLength", "rawSha256", "eofObserved"],
+    "startupProjection": [
+      "schema",
+      "mode",
+      "requirementsSha256",
+      "startupReportByteLength",
+      "startupReportSha256",
+      "epochSha256",
+      "descriptorCount",
+      "authority",
+      "physicalFacts"
+    ],
+    "inputProjection": [
+      "schema",
+      "kind",
+      "boundStateSha256",
+      "frameByteLength",
+      "frameSha256",
+      "auxiliaryByteLength",
+      "auxiliarySha256",
+      "authority",
+      "physicalFacts"
+    ],
+    "stateProjection": [
+      "schema",
+      "mode",
+      "phase",
+      "requirementsSha256",
+      "startupSha256",
+      "epochSha256",
+      "lastWireFrameSha256",
+      "nextWireSequence",
+      "aggregateWireBytes",
+      "admissionFrameSha256",
+      "recoveryRequestFrameSha256",
+      "admissionCount",
+      "cancelObserved",
+      "controllerClosedObserved",
+      "diagnosticFailureObserved",
+      "recoveryControlHandoffObserved",
+      "controlTerminalReason",
+      "statusEofObserved",
+      "transcriptTerminal",
+      "eventCount",
+      "authority",
+      "physicalFacts",
+      "stateSha256"
+    ],
+    "transitionProjection": [
+      "schema",
+      "state",
+      "statusFrameCount",
+      "statusFrame0",
+      "statusFrame1"
+    ],
+    "statusArtifactOwnKeys": [
+      "bytes",
+      "schema",
+      "mode",
+      "sequence",
+      "byteLength",
+      "rawSha256",
+      "state",
+      "terminalReason",
+      "authority",
+      "physicalFacts"
+    ]
+  },
+  "vocabularies": {
+    "inputKinds": [
+      "ADMIT",
+      "CANCEL",
+      "RECOVERY_REQUEST",
+      "CONTROLLER_CLOSED",
+      "DIAGNOSTIC_FAILURE",
+      "RECOVERY_CONTROL_HANDOFF",
+      "STATUS_EOF"
+    ],
+    "statusStates": [
+      "NORMAL_READY",
+      "ADMISSION_ACCEPTED",
+      "CANCEL_REQUIRED",
+      "RECOVERY_REQUIRED",
+      "RECOVERY_REQUEST_ACCEPTED",
+      "CONTROL_TERMINAL"
+    ],
+    "terminalReasons": [
+      "EXPLICIT_CANCEL",
+      "CONTROLLER_CLOSED",
+      "DIAGNOSTIC_FAILURE",
+      "RECOVERY_CONTROL_HANDOFF"
+    ],
+    "phases": [
+      "WAITING_NORMAL_INPUT",
+      "WAITING_RECOVERY_REQUEST",
+      "WAITING_RECOVERY_HANDOFF",
+      "CONTROL_TERMINAL_EMITTED",
+      "TRANSCRIPT_TERMINAL"
+    ],
+    "failureCodes": [
+      "CONTROL_BOUNDS",
+      "CONTROL_SHAPE",
+      "CONTROL_STARTUP",
+      "CONTROL_FRAME",
+      "CONTROL_RIGHTS",
+      "CONTROL_BINDING",
+      "CONTROL_TRANSITION"
+    ],
+    "failurePrecedence": [
+      "CONTROL_BOUNDS",
+      "CONTROL_SHAPE",
+      "CONTROL_STARTUP",
+      "CONTROL_FRAME",
+      "CONTROL_RIGHTS",
+      "CONTROL_BINDING",
+      "CONTROL_TRANSITION"
+    ],
+    "descriptorKinds": ["unix-seqpacket", "pipe", "directory", "regular"],
+    "accessModes": ["O_RDONLY", "O_WRONLY", "O_RDWR"],
+    "statusFlags": ["NONE", "O_LARGEFILE", "O_LARGEFILE|O_DIRECTORY"],
+    "directions": [
+      "BIDIRECTIONAL",
+      "GUARDIAN_TO_MANAGER",
+      "MANAGER_TO_GUARDIAN",
+      "NONE"
+    ],
+    "controlLevel": "SOL_SOCKET",
+    "controlType": "SCM_RIGHTS",
+    "receivedRightsCloseOnExec": true,
+    "openFileDescriptionNonAliasMethod": "startup-kcmp;admission-right-pairs-and-fd7-kcmp;cross-kind-exclusion-or-ADR0039-qualified-equivalent",
+    "planStatus": "RECOVERY_PLAN_READY",
+    "recoveryActorKind": "RECOVERY_ONLY_GUARDIAN",
+    "previousFrameGenesisSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "ambientIntrinsics": [
+      "Array",
+      "Boolean",
+      "Error",
+      "Number",
+      "Object",
+      "Reflect",
+      "Set",
+      "String",
+      "WeakMap"
+    ]
+  },
+  "legalSequences": {
+    "N1": [
+      "NORMAL_READY",
+      "CANCEL",
+      "CANCEL_REQUIRED",
+      "CONTROL_TERMINAL(EXPLICIT_CANCEL)",
+      "STATUS_EOF"
+    ],
+    "N2": [
+      "NORMAL_READY",
+      "ADMIT",
+      "ADMISSION_ACCEPTED",
+      "CANCEL",
+      "CANCEL_REQUIRED",
+      "CONTROL_TERMINAL(EXPLICIT_CANCEL)",
+      "STATUS_EOF"
+    ],
+    "N3": [
+      "NORMAL_READY",
+      "CONTROLLER_CLOSED",
+      "RECOVERY_REQUIRED",
+      "CONTROL_TERMINAL(CONTROLLER_CLOSED)",
+      "STATUS_EOF"
+    ],
+    "N4": [
+      "NORMAL_READY",
+      "ADMIT",
+      "ADMISSION_ACCEPTED",
+      "CONTROLLER_CLOSED",
+      "RECOVERY_REQUIRED",
+      "CONTROL_TERMINAL(CONTROLLER_CLOSED)",
+      "STATUS_EOF"
+    ],
+    "N5a": [
+      "NORMAL_READY",
+      "DIAGNOSTIC_FAILURE",
+      "CONTROL_TERMINAL(DIAGNOSTIC_FAILURE)",
+      "STATUS_EOF"
+    ],
+    "N5b": [
+      "NORMAL_READY",
+      "ADMIT",
+      "ADMISSION_ACCEPTED",
+      "DIAGNOSTIC_FAILURE",
+      "CONTROL_TERMINAL(DIAGNOSTIC_FAILURE)",
+      "STATUS_EOF"
+    ],
+    "R1": [
+      "RECOVERY_REQUEST",
+      "RECOVERY_REQUEST_ACCEPTED",
+      "RECOVERY_CONTROL_HANDOFF",
+      "CONTROL_TERMINAL(RECOVERY_CONTROL_HANDOFF)",
+      "STATUS_EOF"
+    ],
+    "R2": [
+      "RECOVERY_REQUEST",
+      "RECOVERY_REQUEST_ACCEPTED",
+      "DIAGNOSTIC_FAILURE",
+      "CONTROL_TERMINAL(DIAGNOSTIC_FAILURE)",
+      "STATUS_EOF"
+    ]
+  },
+  "privateStateStores": ["startupMetadata", "inputMetadata", "stateMetadata"],
+  "authority": {
+    "transportAuthority": false,
+    "descriptorAuthority": false,
+    "filesystemAuthority": false,
+    "cgroupAuthority": false,
+    "processAuthority": false,
+    "recoveryAuthority": false,
+    "runtimeAuthority": false
+  },
+  "physicalFacts": {
+    "socketTransfer": null,
+    "descriptorInventory": null,
+    "epochOrigin": null,
+    "guardianExecution": null,
+    "recoveryExecution": null,
+    "cleanup": null
+  },
+  "nonclaims": {
+    "socketTransferProved": false,
+    "descriptorFactsProved": false,
+    "epochOriginProved": false,
+    "recoveryBrandProvenanceProved": false,
+    "runtimeSerializationProved": false,
+    "guardianExecutionProved": false,
+    "recoveryExecutionProved": false,
+    "cleanupProved": false,
+    "runtimeRegistrationProved": false,
+    "productionReadinessProved": false
+  }
+}

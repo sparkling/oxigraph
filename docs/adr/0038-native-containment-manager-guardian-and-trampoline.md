@@ -57,6 +57,18 @@ other mutation before the positive exec stop fail closed. Pathname execution,
 post-release-only image checks, and source or ELF attestation without execution
 evidence are insufficient.
 
+The ADR-0036 admission report is a serialized claim, not proof that a received
+right remained unchanged. Before any remap, exec, or transfer of control, the
+physical protocol must close every controller-side sending alias and establish
+that no retained mutable alias or pathname authority can invalidate the
+observation at that boundary. After that handoff, the guardian must immediately
+revalidate every received right's complete identity, content, and current
+offset using offset-preserving reads. Closure, immutability, revalidation, and
+the transition to consumption require explicit evidence and fail closed on any
+gap or mismatch. The writable `childResult` may become mutable only after its
+verified initial state has crossed that boundary and control has transferred to
+the launched supervisor.
+
 ### Process and cgroup ownership
 
 The manager uses the held lifetime-cgroup descriptor with one
@@ -138,6 +150,9 @@ Implementation requires:
 - exact normal and recovery FD inventories, raw epoch framing, controller
   closure, admission descriptor roles, and diagnostic/status bounds from
   ADR-0036;
+- controller-side sending-alias closure, mutation exclusion, and immediate
+  offset-preserving identity/content/offset revalidation for every admission
+  right before remap, exec, or control transfer;
 - exact manager/guardian writer and cgroup-role separation from ADR-0037;
 - `clone3` initial placement, held target identity, membership readback, pidfd
   termination, HUP, exclusive `waitid(P_PIDFD)`, EOF, kill, quiescence, removal,
