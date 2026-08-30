@@ -4473,6 +4473,74 @@ function pinPredecessorSourcesBeforeCandidateRead() {
 
 const SYNCHRONOUS_PREDECESSOR_AUDIT =
   pinPredecessorSourcesBeforeCandidateRead();
+const ADVERSARIAL_WIRING_ACTIVITY = {
+  candidateSourceReadAttempts: 0,
+  candidateModuleImportAttempts: 0,
+  candidateModuleEvaluationCompletions: 0,
+  candidateBehaviorExecutionAttempts: 0,
+  candidateInputReads: 0,
+  oracleInputReads: 0,
+  freshLoaderInputReads: 0,
+  freshLoaderCalls: 0,
+};
+const adversarialModule = await import(
+  new URL(
+    "./candidate-containment-guardian-control-v1-adversarial.test.mjs",
+    import.meta.url,
+  ).href
+);
+const SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE =
+  adversarialModule.createSourceIndependentAdversarialOracle(
+    REQUIREMENTS_ORACLE,
+  );
+const failClosedFreshCandidateLoader = () => {
+  ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls += 1;
+  throw new Error(
+    "fresh candidate loading remains disabled until the candidate-connected TODO is implemented",
+  );
+};
+const DEFERRED_ADVERSARIAL_INPUTS = {
+  candidate: null,
+  oracle: SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE,
+  loadFreshCandidate: failClosedFreshCandidateLoader,
+};
+const adversarialRegistration = {};
+for (const [name, activityName] of [
+  ["candidate", "candidateInputReads"],
+  ["oracle", "oracleInputReads"],
+  ["loadFreshCandidate", "freshLoaderInputReads"],
+]) {
+  Object.defineProperty(adversarialRegistration, name, {
+    configurable: false,
+    enumerable: true,
+    get() {
+      ADVERSARIAL_WIRING_ACTIVITY[activityName] += 1;
+      return DEFERRED_ADVERSARIAL_INPUTS[name];
+    },
+  });
+}
+Object.freeze(adversarialRegistration);
+const ADVERSARIAL_REGISTRATION_RECEIPT =
+  adversarialModule.registerAdversarialCandidateTests(adversarialRegistration);
+const SYNCHRONOUS_ADVERSARIAL_REGISTRATION_AUDIT = Object.freeze({
+  predecessorAuditCompletedBeforeAdversarialImport:
+    SYNCHRONOUS_PREDECESSOR_AUDIT.completedBeforeCandidateRead,
+  candidateSourceReadAttemptsAtImportAndRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.candidateSourceReadAttempts,
+  candidateModuleImportAttemptsAtImportAndRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleImportAttempts,
+  candidateModuleEvaluationCompletionsAtImportAndRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions,
+  candidateBehaviorExecutionAttemptsAtImportAndRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.candidateBehaviorExecutionAttempts,
+  candidateInputReadsAtRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.candidateInputReads,
+  oracleInputReadsAtRegistration: ADVERSARIAL_WIRING_ACTIVITY.oracleInputReads,
+  freshLoaderInputReadsAtRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.freshLoaderInputReads,
+  freshLoaderCallsAtImportAndRegistration:
+    ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls,
+});
 const PARENTHESIZED_CALLEE_AST =
   parseCandidateModuleAst("(sha256)(bytes);").program;
 const STRICT_PARSER_CONTROLS = Object.freeze({
@@ -4527,15 +4595,19 @@ let candidateImportError = null;
 let candidateSourceGateError = null;
 let sourceText = null;
 try {
+  ADVERSARIAL_WIRING_ACTIVITY.candidateSourceReadAttempts += 1;
   sourceText = readFileSync(SOURCE_PATH, "utf8");
 } catch (error) {
   if (error?.code !== "ENOENT") throw error;
 }
 try {
-  candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(
-    sourceText,
-    () => import(SOURCE_URL.href),
-  );
+  candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(sourceText, () => {
+    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleImportAttempts += 1;
+    return import(SOURCE_URL.href).then((loadedCandidate) => {
+      ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions += 1;
+      return loadedCandidate;
+    });
+  });
 } catch (error) {
   if (sourceText !== null) {
     candidateSourceGateError = error;
@@ -4545,6 +4617,7 @@ try {
     throw error;
   }
 }
+DEFERRED_ADVERSARIAL_INPUTS.candidate = candidate;
 
 test("independently canonicalizes the normative requirements fixture", () => {
   assert.equal(
@@ -4666,6 +4739,68 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     evidenceOnlyCount: 2,
     sourceCount: 5,
   });
+  assert.deepEqual(SYNCHRONOUS_ADVERSARIAL_REGISTRATION_AUDIT, {
+    predecessorAuditCompletedBeforeAdversarialImport: true,
+    candidateSourceReadAttemptsAtImportAndRegistration: 0,
+    candidateModuleImportAttemptsAtImportAndRegistration: 0,
+    candidateModuleEvaluationCompletionsAtImportAndRegistration: 0,
+    candidateBehaviorExecutionAttemptsAtImportAndRegistration: 0,
+    candidateInputReadsAtRegistration: 0,
+    oracleInputReadsAtRegistration: 0,
+    freshLoaderInputReadsAtRegistration: 0,
+    freshLoaderCallsAtImportAndRegistration: 0,
+  });
+  assert.deepEqual(ADVERSARIAL_REGISTRATION_RECEIPT, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
+    inventorySha256:
+      "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e",
+    registeredCount: 2,
+    todoCount: 2,
+    inputsDeferredUntilExecution: true,
+  });
+  assert.equal(Object.isFrozen(ADVERSARIAL_REGISTRATION_RECEIPT), true);
+  assert.equal(Object.isFrozen(SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE), true);
+  assert.equal(
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.requirementsSha256,
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+  assert.deepEqual(SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.construction, {
+    fixtureDerived: true,
+    constructorApplicabilityProvenancePinned: true,
+    candidateInputAccepted: false,
+    candidateModuleReadByGenerator: false,
+    candidateModuleImportedByGenerator: false,
+    candidateModuleEvaluatedByGenerator: false,
+    candidateBehaviorExecuted: false,
+    wholeTransitionValuesMaterialized: false,
+    emittedStatusBytesMaterialized: false,
+  });
+  assert.deepEqual(SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.counts, {
+    wholeTransitionStateGoldenDesigns: 20,
+    emittedStatusByteGoldenDesigns: 15,
+    atomicTwoStatusWirePrefixControls: 4,
+    acceptedSymbolicPrefixObservations: 26,
+    descriptorAliasControls: 252,
+    constructibleFailurePrecedencePairs: 18,
+  });
+  assert.deepEqual(
+    {
+      candidate: ADVERSARIAL_WIRING_ACTIVITY.candidateInputReads,
+      oracle: ADVERSARIAL_WIRING_ACTIVITY.oracleInputReads,
+      loadFreshCandidate: ADVERSARIAL_WIRING_ACTIVITY.freshLoaderInputReads,
+    },
+    { candidate: 2, oracle: 2, loadFreshCandidate: 1 },
+  );
+  assert.equal(ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls, 0);
+  assert.equal(
+    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions,
+    0,
+  );
+  assert.equal(
+    ADVERSARIAL_WIRING_ACTIVITY.candidateBehaviorExecutionAttempts,
+    0,
+  );
   const fixturePins = new Map(
     [
       ...REQUIREMENTS_ORACLE.predecessors.direct,
