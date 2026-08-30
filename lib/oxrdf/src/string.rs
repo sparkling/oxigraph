@@ -64,6 +64,28 @@ pub struct OxStr<'a> {
     _marker: PhantomData<&'a ()>,
 }
 
+struct AllocationGuard {
+    data: NonNull<u8>,
+    layout: Layout,
+}
+
+impl AllocationGuard {
+    #[inline]
+    fn into_data(self) -> NonNull<u8> {
+        let guard = std::mem::ManuallyDrop::new(self);
+        guard.data
+    }
+}
+
+impl Drop for AllocationGuard {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: `data` was returned by `alloc` for this exact layout and the
+        // guard owns it until `into_data` transfers ownership to `OxStr`.
+        unsafe { dealloc(self.data.as_ptr(), self.layout) }
+    }
+}
+
 impl<'a> OxStr<'a> {
     /// Creates an `OxStr` borrowing from `value`.
     ///
@@ -102,12 +124,13 @@ impl<'a> OxStr<'a> {
 
     /// Creates an owned `OxStr` by copying `value`.
     ///
-    /// Returns `None` if allocation fails or if the final length exceeds the internal
-    /// representable size.
+    /// Returns [`ReserveError::CapacityOverflow`] if the value exceeds the internal
+    /// representable size and [`ReserveError::AllocError`] if allocation fails.
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxrdf::{OxStr, ReserveError};
     ///
-    /// let value = OxStr::try_new_owned("abc").unwrap();
+    /// let value: Result<_, ReserveError> = OxStr::try_new_owned("abc");
+    /// let value = value.unwrap();
     /// assert_eq!(value.as_str(), "abc");
     /// ```
     #[inline]
@@ -133,53 +156,60 @@ impl<'a> OxStr<'a> {
 
     /// Concatenates all `values` into a new owned `OxStr`.
     ///
-    /// Returns `None` if allocation fails or if the final length exceeds the internal
-    /// representable size.
+    /// Returns [`ReserveError::CapacityOverflow`] if the final length exceeds the
+    /// internal representable size, or if the aggregate length observed while
+    /// copying would exceed or fail to fill the precomputed allocation. Returns
+    /// [`ReserveError::AllocError`] if allocation fails.
+    ///
+    /// An `AsRef<str>` implementation must not rely on how many times it is
+    /// invoked. If it returns different values, this method either copies a
+    /// second-pass aggregate of exactly the precomputed length or returns
+    /// [`ReserveError::CapacityOverflow`]; it never writes outside the allocation.
     ///
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxrdf::{OxStr, ReserveError};
     ///
-    /// let value = OxStr::try_concat(&["ab", "cd", "ef"]).unwrap();
+    /// let value: Result<_, ReserveError> = OxStr::try_concat(&["ab", "cd", "ef"]);
+    /// let value = value.unwrap();
     /// assert_eq!(value.as_str(), "abcdef");
     /// ```
     #[inline]
     pub fn try_concat<T: AsRef<str>>(values: impl AsRef<[T]>) -> Result<Self, ReserveError> {
         let values = values.as_ref();
-        let len = values.iter().map(|s| s.as_ref().len()).sum();
-        if len >> KIND_SHIFT != 0 {
-            return Err(ReserveError::CapacityOverflow); // The length is so long that it prevents using the "owned" flag, we fail to create the string
-        }
+        let len = checked_concat_len(values.iter().map(|value| value.as_ref().len()))?;
 
         // SAFETY: we carefully choose the layout. Then we can allocate, check that allocation works and write to the allocation
         unsafe {
-            let layout = Self::owned_layout_for_len(len);
+            let layout = try_owned_layout_for_len(len)?;
             let data = NonNull::new(alloc(layout)).ok_or(ReserveError::AllocError {
                 layout,
                 non_exhaustive: (),
             })?;
-            data.cast::<AtomicUsize>().write(AtomicUsize::new(1));
-            let mut write_ptr = data.cast::<AtomicUsize>().add(1).cast::<u8>();
+            let guard = AllocationGuard { data, layout };
+            guard.data.cast::<AtomicUsize>().write(AtomicUsize::new(1));
+            let write_ptr = guard.data.cast::<AtomicUsize>().add(1).cast::<u8>();
+            let mut written: usize = 0;
             for value in values {
                 let value = value.as_ref();
+                let next = written
+                    .checked_add(value.len())
+                    .filter(|next| *next <= len)
+                    .ok_or(ReserveError::CapacityOverflow)?;
                 write_ptr
+                    .add(written)
                     .copy_from_nonoverlapping(NonNull::from(value.as_bytes()).cast(), value.len());
-                write_ptr = write_ptr.add(value.len());
+                written = next;
             }
+            if written != len {
+                return Err(ReserveError::CapacityOverflow);
+            }
+            let data = guard.into_data();
             Ok(Self {
                 len: len | OWNED_FLAG,
                 data,
                 _marker: PhantomData,
             })
         }
-    }
-
-    #[inline]
-    fn owned_layout_for_len(len: usize) -> Layout {
-        Layout::new::<AtomicUsize>()
-            .extend(Layout::array::<u8>(len).unwrap())
-            .unwrap()
-            .0
-            .pad_to_align()
     }
 
     /// Converts to an owned [`OxStr<'static>`](Self).
@@ -362,10 +392,13 @@ impl Drop for OxStr<'_> {
                     return;
                 }
                 fence(Ordering::Acquire);
-                dealloc(
-                    self.data.as_mut(),
-                    Self::owned_layout_for_len(self.owned_len()),
-                );
+                let Ok(layout) = try_owned_layout_for_len(self.owned_len()) else {
+                    // Every owned value was admitted through the same layout
+                    // function. A failure here means the internal invariant was
+                    // violated and deallocation cannot safely continue.
+                    abort()
+                };
+                dealloc(self.data.as_mut(), layout);
             }
         }
     }
@@ -588,8 +621,38 @@ enum OxStrKind {
     Owned = 1,
 }
 
-/// Error raised when an allocation fails
+fn checked_concat_len(lengths: impl IntoIterator<Item = usize>) -> Result<usize, ReserveError> {
+    let len = lengths.into_iter().try_fold(0_usize, |total, length| {
+        total
+            .checked_add(length)
+            .ok_or(ReserveError::CapacityOverflow)
+    })?;
+    if len & OWNED_FLAG == 0 {
+        Ok(len)
+    } else {
+        Err(ReserveError::CapacityOverflow)
+    }
+}
+
+fn try_owned_layout_for_len(len: usize) -> Result<Layout, ReserveError> {
+    if len & OWNED_FLAG != 0 {
+        return Err(ReserveError::CapacityOverflow);
+    }
+    let bytes = Layout::array::<u8>(len).map_err(|_| ReserveError::CapacityOverflow)?;
+    let (layout, offset) = Layout::new::<AtomicUsize>()
+        .extend(bytes)
+        .map_err(|_| ReserveError::CapacityOverflow)?;
+    debug_assert_eq!(
+        offset,
+        size_of::<AtomicUsize>(),
+        "the u8 payload must immediately follow the reference counter"
+    );
+    Ok(layout.pad_to_align())
+}
+
+/// Error raised when reserving storage for an owned [`OxStr`] fails.
 #[derive(PartialEq, Eq, Debug, Clone)]
+#[non_exhaustive]
 pub enum ReserveError {
     /// Error due to the computed capacity exceeding the data structure maximum
     CapacityOverflow,
@@ -626,6 +689,7 @@ impl From<ReserveError> for io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     #[cfg(target_pointer_width = "32")]
     use std::hint::black_box;
 
@@ -687,5 +751,92 @@ mod tests {
     #[test]
     fn default() {
         assert_eq!(OxStr::default(), "");
+    }
+
+    #[test]
+    fn checked_concat_length_and_layout_are_fallible() {
+        assert_eq!(checked_concat_len([2, 2, 2]), Ok(6));
+        assert_eq!(
+            checked_concat_len([usize::MAX, 1]),
+            Err(ReserveError::CapacityOverflow)
+        );
+        assert_eq!(
+            checked_concat_len([OWNED_FLAG]),
+            Err(ReserveError::CapacityOverflow)
+        );
+        try_owned_layout_for_len(0).unwrap();
+        assert_eq!(
+            try_owned_layout_for_len(OWNED_FLAG),
+            Err(ReserveError::CapacityOverflow)
+        );
+        assert_eq!(
+            try_owned_layout_for_len(OWNED_FLAG - 1),
+            Err(ReserveError::CapacityOverflow)
+        );
+    }
+
+    #[test]
+    fn fallible_concat_copies_exact_contents() {
+        let empty: [&str; 0] = [];
+        assert_eq!(OxStr::try_concat(empty).unwrap().as_str(), "");
+        assert_eq!(OxStr::try_concat(["abc"]).unwrap().as_str(), "abc");
+        assert_eq!(
+            OxStr::try_concat(["ab", "cd", "ef"]).unwrap().as_str(),
+            "abcdef"
+        );
+    }
+
+    struct ChangingAsRef {
+        calls: Cell<usize>,
+        first: &'static str,
+        second: &'static str,
+    }
+
+    impl AsRef<str> for ChangingAsRef {
+        fn as_ref(&self) -> &str {
+            let call = self.calls.get();
+            self.calls.set(call + 1);
+            if call == 0 { self.first } else { self.second }
+        }
+    }
+
+    #[test]
+    fn fallible_concat_bounds_changing_as_ref_lengths() {
+        for (first, second) in [("a", "longer"), ("longer", "a")] {
+            assert!(matches!(
+                OxStr::try_concat([ChangingAsRef {
+                    calls: Cell::new(0),
+                    first,
+                    second,
+                }]),
+                Err(ReserveError::CapacityOverflow)
+            ));
+        }
+
+        assert_eq!(
+            OxStr::try_concat([
+                ChangingAsRef {
+                    calls: Cell::new(0),
+                    first: "a",
+                    second: "longer",
+                },
+                ChangingAsRef {
+                    calls: Cell::new(0),
+                    first: "longer",
+                    second: "a",
+                },
+            ])
+            .unwrap()
+            .as_str(),
+            "longera"
+        );
+    }
+
+    #[test]
+    fn reserve_error_reports_out_of_memory() {
+        let error = ReserveError::CapacityOverflow;
+        assert!(error.to_string().contains("computed capacity exceeded"));
+        let error = io::Error::from(error);
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
     }
 }

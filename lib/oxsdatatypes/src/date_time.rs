@@ -2599,6 +2599,24 @@ mod tests {
     }
 
     #[test]
+    fn end_of_day_lexical_validation() -> Result<(), ParseDateTimeError> {
+        assert_eq!(
+            DateTime::from_str("1999-12-31T24:00:00.00")?,
+            DateTime::from_str("2000-01-01T00:00:00")?
+        );
+
+        for (time, date_time) in [
+            ("24:01:00", "2000-01-01T24:01:00"),
+            ("24:00:01", "2000-01-01T24:00:01"),
+            ("24:00:00.1", "2000-01-01T24:00:00.1"),
+        ] {
+            assert!(Time::from_str(time).is_err(), "{time}");
+            assert!(DateTime::from_str(date_time).is_err(), "{date_time}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn to_be_bytes() -> Result<(), ParseDateTimeError> {
         assert_eq!(
             DateTime::from_be_bytes(DateTime::MIN.to_be_bytes()),

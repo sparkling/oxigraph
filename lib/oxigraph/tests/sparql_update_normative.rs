@@ -321,6 +321,32 @@ fn rocksdb_write_only_clear_all_preserves_named_graph_topology() -> Result<(), B
     Ok(())
 }
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+#[test]
+fn rocksdb_transactional_clear_named_and_all_preserve_topology() -> Result<(), Box<dyn Error>> {
+    for (update, default_survives) in [("CLEAR NAMED", true), ("CLEAR ALL", false)] {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        let default_quad = quad(S, P, OLD, GraphName::DefaultGraph);
+        let named_quad = quad(S, P, NEW, named_graph(SOURCE));
+
+        store.insert(default_quad.clone())?;
+        store.insert(named_quad.clone())?;
+        store.insert_named_graph(node(DESTINATION))?;
+
+        SparqlEvaluator::new()
+            .parse_update(update)?
+            .on_dataset(&store)
+            .execute()?;
+
+        assert_eq!(store.contains(&default_quad)?, default_survives);
+        assert!(!store.contains(&named_quad)?);
+        assert!(graph_exists(&store, SOURCE)?);
+        assert!(graph_exists(&store, DESTINATION)?);
+    }
+    Ok(())
+}
+
 #[test]
 fn empty_graph_shortcuts_create_the_destination() -> Result<(), Box<dyn Error>> {
     for operation in ["ADD", "COPY", "MOVE"] {

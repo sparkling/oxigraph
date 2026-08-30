@@ -5,7 +5,7 @@
     reason = "integration test setup uses fallible public constructors"
 )]
 
-use oxigraph::model::{GraphName, NamedNode, Quad, Triple};
+use oxigraph::model::{GraphName, Literal, NamedNode, Quad, Triple};
 use oxigraph::sparql::{QueryEvaluationError, QueryResults, SparqlEvaluator, SparqlVersion};
 use oxigraph::store::Store;
 use spargebra::SparqlParser;
@@ -83,5 +83,38 @@ fn store_queries_enforce_the_selected_sparql_term_mode() -> Result<(), Box<dyn s
         .on_store(&declared_update_store)
         .execute()?;
     assert_eq!(declared_update_store.len()?, 1);
+    Ok(())
+}
+
+#[test]
+fn stored_big_string_ebv_is_true_in_sparql_11_and_12() -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::new()?;
+    store.insert(Quad::new(
+        NamedNode::new("urn:ebv:s")?,
+        NamedNode::new("urn:ebv:p")?,
+        Literal::new_simple_literal("0123456789abcdef"),
+        GraphName::DefaultGraph,
+    ))?;
+
+    for version in [SparqlVersion::V1_1, SparqlVersion::V1_2] {
+        for expression in [
+            "?value",
+            "IF(?value, true, false)",
+            "?value && true",
+            "?value || false",
+        ] {
+            let query = format!("ASK {{ <urn:ebv:s> <urn:ebv:p> ?value FILTER({expression}) }}");
+            let result = SparqlEvaluator::new()
+                .with_version(version)
+                .parse_query(&query)?
+                .on_store(&store)
+                .execute()?;
+
+            assert!(
+                matches!(result, QueryResults::Boolean(true)),
+                "{version:?}: {expression}"
+            );
+        }
+    }
     Ok(())
 }
