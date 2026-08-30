@@ -13,17 +13,24 @@
   oracle, bounded lexer, explicit top-level statement grammar, typed pure
   module-initializer grammar, and 69 pre-evaluation rejection controls with
   zero evaluation attempts. Commits `8e19f927` and `2d408a03` preserve the same
-  RED shape on Node 20.0.0 as on Node 20.20.2 and the current runtime. The
-  combined matrix is 25 tests: 15 pass, exactly one deliberate absent-source
-  `ERR_MODULE_NOT_FOUND` fails, and nine remain TODO. Commit `ae71ecdd` moves
-  all five byte-pinned predecessor and fixture checks ahead of candidate source
-  read or import. Two independent reviews accept only this partial,
-  source-hard-stopped checkpoint. Receiver and alias
-  origin, ambient/module/import/export binding and member writes, computed-key
-  and indirect-call closure, path-sensitive normative key literals, exact
-  private-store commit positions, candidate-connected acceptance matrices, the
-  production source module, runtime registration, and the physical owner remain
-  incomplete or absent. Production containment readiness remains exactly
+  RED shape on Node 20.0.0 as on Node 20.20.2 and the current runtime. Commit
+  `ae71ecdd` moves all five byte-pinned predecessor and fixture checks ahead of
+  candidate source read or import. Commit `f98724b4` adds the direct `acorn: latest`
+  development dependency resolved to 8.18.0, pins its lock integrity, installed
+  package manifest, and exact ESM entrypoint before loading that entrypoint,
+  fixes ES2022 module parsing with preserved parentheses and no fallback, and
+  rejects hashbang, return, await, and for-await syntax before the existing
+  static controls. The combined current, exact Node 20.0.0, and latest Node 20
+  matrices remain identically 25 tests: 15 pass, exactly one deliberate
+  absent-source failure, and nine TODO. `npm audit` reports zero known
+  vulnerabilities. Two independent reviews accept only this parser-foundation,
+  source-hard-stopped checkpoint. Complete reject-by-default binding and
+  receiver provenance, ambient/module/import/export binding and member writes,
+  computed-key and indirect-call closure, path-sensitive normative key
+  literals, exact private-store commit positions, candidate-connected
+  acceptance matrices, the production source module, runtime registration, and
+  the physical owner remain incomplete or absent. Production containment
+  readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
