@@ -145,6 +145,34 @@ const EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS = Object.freeze([
   "nonclaims",
 ]);
 
+function assertPinnedRequirementsOracleForStaticPolicy() {
+  assert.equal(
+    REQUIREMENTS_ORACLE !== null &&
+      typeof REQUIREMENTS_ORACLE === "object" &&
+      !Array.isArray(REQUIREMENTS_ORACLE),
+    true,
+  );
+  assert.equal(
+    semanticSha256(REQUIREMENTS_ORACLE),
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+  assert.equal(
+    REQUIREMENTS_ORACLE.schema,
+    "oxigraph.candidate-containment-guardian-control-requirements/v1",
+  );
+  assert.equal(REQUIREMENTS_ORACLE.version, 1);
+  assert.deepEqual(
+    Object.keys(REQUIREMENTS_ORACLE),
+    EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS,
+  );
+  return REQUIREMENTS_ORACLE;
+}
+
+// Source-policy allowlists may only be derived after this synchronous pin.
+// The later node:test repeats the checks as independently visible evidence.
+const STATIC_POLICY_REQUIREMENTS_ORACLE =
+  assertPinnedRequirementsOracleForStaticPolicy();
+
 const EXPANSION_ANCHORS = Object.freeze({
   namedExports: 13,
   wholeTransitionAndStateGoldens: 20,
@@ -701,16 +729,51 @@ const FORBIDDEN_MEMBER_NAMES = Object.freeze([
   "prototype",
 ]);
 
-const FORBIDDEN_COMPILE_TIME_STRINGS = Object.freeze([
-  ...FORBIDDEN_SOURCE_IDENTIFIERS,
-  ...FORBIDDEN_MEMBER_NAMES,
+const FORBIDDEN_EXACT_COMPILE_TIME_STRINGS = new Set(
+  [
+    ...FORBIDDEN_SOURCE_IDENTIFIERS,
+    ...FORBIDDEN_MEMBER_NAMES,
+    "OPENROUTER_API_KEY",
+    "openrouter",
+  ].map((value) => value.toLowerCase()),
+);
+
+const FORBIDDEN_COMPILE_TIME_PATH_PREFIXES = Object.freeze([
+  "file://",
+  "node:",
+  "/proc/",
+]);
+
+const FORBIDDEN_COMPILE_TIME_PATH_SUFFIXES = Object.freeze([
   "OPENROUTER_API_KEY",
   "candidate-containment-guardian-control-v1.test.mjs",
   "candidate-containment-guardian-control-v1-adversarial.test.mjs",
-  "file://",
-  "node:",
-  "openrouter",
-  "/proc/",
+]);
+
+const ASSIGNMENT_OPERATORS = new Set([
+  "=",
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "%=",
+  "**=",
+  "<<=",
+  ">>=",
+  ">>>=",
+  "&=",
+  "^=",
+  "|=",
+  "&&=",
+  "||=",
+  "??=",
+]);
+
+const PURE_MODULE_INITIALIZER_CALL_ARITIES = new Map([
+  ["canonicalJsonBytes", 1],
+  ["deepFreeze", 1],
+  ["nullRecord", 1],
+  ["sha256", 1],
 ]);
 
 const SOURCE_KEYWORDS = new Set([
@@ -779,9 +842,29 @@ function collectOracleRecordKeys(value, keys = new Set()) {
   return keys;
 }
 
+function collectOracleSourceLiterals(value, literals = new Set()) {
+  if (typeof value === "string") {
+    literals.add(value);
+    return literals;
+  }
+  if (value === null || typeof value !== "object") return literals;
+  if (Array.isArray(value)) {
+    for (const child of value) collectOracleSourceLiterals(child, literals);
+    return literals;
+  }
+  for (const child of Object.values(value)) {
+    collectOracleSourceLiterals(child, literals);
+  }
+  return literals;
+}
+
+const PINNED_NORMATIVE_SOURCE_LITERALS = collectOracleSourceLiterals(
+  STATIC_POLICY_REQUIREMENTS_ORACLE,
+);
+
 const ALLOWED_MEMBER_NAMES = new Set([
-  ...collectOracleRecordKeys(REQUIREMENTS_ORACLE),
-  ...Object.values(REQUIREMENTS_ORACLE.frameFields).flat(),
+  ...collectOracleRecordKeys(STATIC_POLICY_REQUIREMENTS_ORACLE),
+  ...Object.values(STATIC_POLICY_REQUIREMENTS_ORACLE.frameFields).flat(),
   "add",
   "artifact",
   "at",
@@ -883,7 +966,7 @@ function lexCandidateSource(source) {
       "'": "'",
     };
     if (Object.hasOwn(simple, value)) return simple[value];
-    if (value === "\n") return "";
+    if (["\n", "\u2028", "\u2029"].includes(value)) return "";
     if (value === "\r") {
       if (source[index] === "\n") index += 1;
       return "";
@@ -951,7 +1034,10 @@ function lexCandidateSource(source) {
     }
     if (character === "/" && source[index + 1] === "/") {
       index += 2;
-      while (index < source.length && !/[\r\n]/u.test(source[index])) {
+      while (
+        index < source.length &&
+        !/[\r\n\u2028\u2029]/u.test(source[index])
+      ) {
         index += 1;
       }
       continue;
@@ -979,15 +1065,41 @@ function lexCandidateSource(source) {
     }
     if (/[0-9]/u.test(character)) {
       const start = index++;
-      while (/[A-Za-z0-9_.]/u.test(source[index] ?? "")) index += 1;
+      while (/[0-9]/u.test(source[index] ?? "")) index += 1;
+      const raw = source.slice(start, index);
+      const continuation = codePointAt(index)?.value;
+      if (
+        !/^(?:0|[1-9][0-9]*)$/u.test(raw) ||
+        source[index] === "." ||
+        source[index] === "\\" ||
+        identifierPart(continuation)
+      ) {
+        fail("numeric literal outside bounded decimal-integer subset");
+      }
       push("number", source.slice(start, index), start, index);
       continue;
     }
     const start = index;
+    const four = source.slice(index, index + 4);
     const three = source.slice(index, index + 3);
     const two = source.slice(index, index + 2);
     let punctuator = character;
-    if (["...", "===", "!==", ">>>", "**="].includes(three)) {
+    if (four === ">>>=") {
+      punctuator = four;
+    } else if (
+      [
+        "...",
+        "===",
+        "!==",
+        ">>>",
+        "**=",
+        "<<=",
+        ">>=",
+        "&&=",
+        "||=",
+        "??=",
+      ].includes(three)
+    ) {
       punctuator = three;
     } else if (
       [
@@ -1540,11 +1652,25 @@ function assertBoundedSourceSubset(tokens) {
     }
   }
   for (const value of decodedCompileTimeStrings(tokens)) {
+    if (PINNED_NORMATIVE_SOURCE_LITERALS.has(value)) continue;
     const normalized = value.toLowerCase();
-    for (const forbidden of FORBIDDEN_COMPILE_TIME_STRINGS) {
-      if (normalized.includes(forbidden.toLowerCase())) {
-        throw new Error(`static gate: forbidden string ${forbidden}`);
-      }
+    const fragment = [...FORBIDDEN_EXACT_COMPILE_TIME_STRINGS].find(
+      (candidate) => normalized.includes(candidate),
+    );
+    if (fragment !== undefined) {
+      throw new Error(`static gate: forbidden string fragment ${fragment}`);
+    }
+    const prefix = FORBIDDEN_COMPILE_TIME_PATH_PREFIXES.find((candidate) =>
+      normalized.startsWith(candidate.toLowerCase()),
+    );
+    if (prefix !== undefined) {
+      throw new Error(`static gate: forbidden path prefix ${prefix}`);
+    }
+    const suffix = FORBIDDEN_COMPILE_TIME_PATH_SUFFIXES.find((candidate) =>
+      normalized.endsWith(candidate.toLowerCase()),
+    );
+    if (suffix !== undefined) {
+      throw new Error(`static gate: forbidden path suffix ${suffix}`);
     }
   }
   assertComputedMembersAreStaticIndexes(tokens);
@@ -1555,12 +1681,16 @@ function assertExactPrivateStoreManifest(tokens) {
   for (let index = 0; index < tokens.length; index += 1) {
     if (
       tokens[index].value === "const" &&
+      tokens[index].braceDepth === 0 &&
+      tokens[index].parenDepth === 0 &&
+      tokens[index].bracketDepth === 0 &&
       tokens[index + 1]?.type === "identifier" &&
       tokens[index + 2]?.value === "=" &&
       tokens[index + 3]?.value === "new" &&
       tokens[index + 4]?.value === "WeakMap" &&
       tokens[index + 5]?.value === "(" &&
-      tokens[index + 6]?.value === ")"
+      tokens[index + 6]?.value === ")" &&
+      tokens[index + 7]?.value === ";"
     ) {
       stores.push(tokens[index + 1].value);
     }
@@ -1581,10 +1711,15 @@ function assertExactPrivateStoreManifest(tokens) {
     for (let index = 0; index < tokens.length; index += 1) {
       if (tokens[index].value !== name) continue;
       if (
-        ["=", "+=", "-=", "*=", "/=", "%="].includes(tokens[index + 1]?.value)
+        ASSIGNMENT_OPERATORS.has(tokens[index + 1]?.value) ||
+        (tokens[index + 1]?.value === "." &&
+          ASSIGNMENT_OPERATORS.has(tokens[index + 3]?.value))
       ) {
         const declaration =
           tokens[index - 1]?.value === "const" &&
+          tokens[index - 1]?.braceDepth === 0 &&
+          tokens[index - 1]?.parenDepth === 0 &&
+          tokens[index - 1]?.bracketDepth === 0 &&
           tokens[index + 1]?.value === "=" &&
           tokens[index + 2]?.value === "new";
         if (!declaration) {
@@ -1596,25 +1731,266 @@ function assertExactPrivateStoreManifest(tokens) {
   return Object.freeze(stores);
 }
 
-function assertModuleScopeStoreClosure(tokens) {
+function statementTerminator(tokens, start) {
+  const base = tokens[start];
+  for (let index = start + 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (
+      token.value === ";" &&
+      token.braceDepth === base.braceDepth &&
+      token.parenDepth === base.parenDepth &&
+      token.bracketDepth === base.bracketDepth
+    ) {
+      return index;
+    }
+  }
+  throw new Error("static gate: unterminated module statement");
+}
+
+function functionDeclarationEnd(tokens, start) {
+  const functionIndex = tokens[start].value === "export" ? start + 1 : start;
+  if (
+    tokens[functionIndex]?.value !== "function" ||
+    tokens[functionIndex + 1]?.type !== "identifier" ||
+    tokens[functionIndex + 2]?.value !== "("
+  ) {
+    throw new Error("static gate: module function declaration");
+  }
+  const parametersEnd = matchingToken(tokens, functionIndex + 2, "(", ")");
+  const bodyStart = parametersEnd + 1;
+  if (tokens[bodyStart]?.value !== "{") {
+    throw new Error("static gate: module function body");
+  }
+  return matchingToken(tokens, bodyStart, "{", "}");
+}
+
+function assertModuleStatementTopology(tokens) {
+  let statementCount = 0;
+  for (let index = 0; index < tokens.length;) {
+    const token = tokens[index];
+    if (
+      token.braceDepth !== 0 ||
+      token.parenDepth !== 0 ||
+      token.bracketDepth !== 0
+    ) {
+      throw new Error("static gate: module statement depth");
+    }
+    if (token.value === ";") {
+      index += 1;
+      continue;
+    }
+    if (token.value === "import" || token.value === "const") {
+      index = statementTerminator(tokens, index) + 1;
+      statementCount += 1;
+      continue;
+    }
+    if (token.value === "function") {
+      index = functionDeclarationEnd(tokens, index) + 1;
+      statementCount += 1;
+      continue;
+    }
+    if (token.value === "export") {
+      if (tokens[index + 1]?.value === "const") {
+        index = statementTerminator(tokens, index) + 1;
+        statementCount += 1;
+        continue;
+      }
+      if (tokens[index + 1]?.value === "function") {
+        index = functionDeclarationEnd(tokens, index) + 1;
+        statementCount += 1;
+        continue;
+      }
+    }
+    throw new Error(`static gate: module statement ${token.value}`);
+  }
+  return statementCount;
+}
+
+function assertPureModuleInitializer(tokens, start, end, pureBindings) {
+  for (let index = start; index < end; index += 1) {
+    if (ASSIGNMENT_OPERATORS.has(tokens[index].value)) {
+      throw new Error("static gate: assignment in module initializer");
+    }
+  }
+
+  let cursor = start;
+  const result = (immutable, freezable) =>
+    Object.freeze({ immutable, freezable });
+  const primitiveResult = result(true, true);
+  let parseValue;
+
+  const parseDelimitedValues = (closing) => {
+    const values = [];
+    if (tokens[cursor]?.value === closing) {
+      cursor += 1;
+      return values;
+    }
+    while (cursor < end) {
+      values.push(parseValue());
+      if (tokens[cursor]?.value === closing) {
+        cursor += 1;
+        return values;
+      }
+      if (tokens[cursor]?.value !== ",") {
+        throw new Error("static gate: pure initializer separator");
+      }
+      cursor += 1;
+      if (tokens[cursor]?.value === closing) {
+        cursor += 1;
+        return values;
+      }
+    }
+    throw new Error(`static gate: unterminated pure initializer ${closing}`);
+  };
+
+  parseValue = () => {
+    const token = tokens[cursor];
+    if (token === undefined || cursor >= end) {
+      throw new Error("static gate: missing pure initializer value");
+    }
+    if (token.type === "string" || token.type === "number") {
+      cursor += 1;
+      return primitiveResult;
+    }
+    if (["false", "null", "true"].includes(token.value)) {
+      cursor += 1;
+      return primitiveResult;
+    }
+    if (token.value === "-") {
+      if (
+        tokens[cursor + 1]?.type !== "number" ||
+        tokens[cursor + 1]?.value === "0"
+      ) {
+        throw new Error("static gate: bounded negative integer");
+      }
+      cursor += 2;
+      return primitiveResult;
+    }
+    if (token.value === "[") {
+      cursor += 1;
+      const children = parseDelimitedValues("]");
+      return result(
+        false,
+        children.every(({ freezable }) => freezable),
+      );
+    }
+    if (token.value === "{") {
+      cursor += 1;
+      const children = [];
+      if (tokens[cursor]?.value === "}") {
+        cursor += 1;
+        return result(false, true);
+      }
+      while (cursor < end) {
+        const key = tokens[cursor];
+        if (!["identifier", "number", "string"].includes(key?.type)) {
+          throw new Error("static gate: static object key");
+        }
+        cursor += 1;
+        if (tokens[cursor]?.value !== ":") {
+          throw new Error("static gate: explicit object value");
+        }
+        cursor += 1;
+        children.push(parseValue());
+        if (tokens[cursor]?.value === "}") {
+          cursor += 1;
+          break;
+        }
+        if (tokens[cursor]?.value !== ",") {
+          throw new Error("static gate: object initializer separator");
+        }
+        cursor += 1;
+        if (tokens[cursor]?.value === "}") {
+          cursor += 1;
+          break;
+        }
+      }
+      return result(
+        false,
+        children.every(({ freezable }) => freezable),
+      );
+    }
+    if (token.value === "(") {
+      cursor += 1;
+      const nested = parseValue();
+      if (tokens[cursor]?.value !== ")") {
+        throw new Error("static gate: pure initializer parenthesis");
+      }
+      cursor += 1;
+      return nested;
+    }
+    if (token.type === "identifier") {
+      if (tokens[cursor + 1]?.value === "(") {
+        const expectedArity = PURE_MODULE_INITIALIZER_CALL_ARITIES.get(
+          token.value,
+        );
+        if (expectedArity === undefined) {
+          throw new Error(
+            `static gate: module initializer effect call ${token.value}`,
+          );
+        }
+        cursor += 2;
+        const parameters = parseDelimitedValues(")");
+        if (parameters.length !== expectedArity) {
+          throw new Error(`static gate: pure initializer arity ${token.value}`);
+        }
+        const [parameter] = parameters;
+        if (token.value === "deepFreeze") {
+          if (!parameter.freezable) {
+            throw new Error("static gate: non-freezable deepFreeze input");
+          }
+          return primitiveResult;
+        }
+        if (token.value === "canonicalJsonBytes") {
+          if (!parameter.freezable) {
+            throw new Error("static gate: unsafe canonical JSON input");
+          }
+          return result(false, false);
+        }
+        if (token.value === "nullRecord") {
+          if (!parameter.freezable) {
+            throw new Error("static gate: unsafe null-record input");
+          }
+          return result(false, true);
+        }
+        return primitiveResult;
+      }
+      if (!pureBindings.has(token.value)) {
+        throw new Error(`static gate: module initializer alias ${token.value}`);
+      }
+      cursor += 1;
+      return primitiveResult;
+    }
+    throw new Error(`static gate: impure module initializer ${token.value}`);
+  };
+
+  const initializer = parseValue();
+  if (cursor !== end) {
+    throw new Error("static gate: trailing module initializer syntax");
+  }
+  if (!initializer.immutable) {
+    throw new Error("static gate: mutable module initializer result");
+  }
+}
+
+function assertModuleInitializationClosure(tokens) {
+  assertModuleStatementTopology(tokens);
   const privateStores = new Set([
     "startupMetadata",
     "inputMetadata",
     "stateMetadata",
   ]);
+  const pureBindings = new Set();
   let checked = 0;
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (
-      !["const", "let"].includes(token.value) ||
+      token.value !== "const" ||
       token.braceDepth !== 0 ||
       token.parenDepth !== 0 ||
       token.bracketDepth !== 0
     ) {
       continue;
-    }
-    if (token.value === "let") {
-      throw new Error("static gate: module-scope reassignable state");
     }
     const name = tokens[index + 1]?.value;
     const initializer = tokens[index + 3];
@@ -1623,78 +1999,29 @@ function assertModuleScopeStoreClosure(tokens) {
       tokens[index + 2]?.value !== "=" ||
       initializer === undefined
     ) {
-      throw new Error("static gate: module-scope declaration shape");
+      throw new Error("static gate: module declaration shape");
     }
     checked += 1;
+    const declarationEnd = statementTerminator(tokens, index);
     if (privateStores.has(name)) {
       if (
         initializer.value !== "new" ||
-        tokens[index + 4]?.value !== "WeakMap"
+        tokens[index + 4]?.value !== "WeakMap" ||
+        tokens[index + 5]?.value !== "(" ||
+        tokens[index + 6]?.value !== ")" ||
+        declarationEnd !== index + 7
       ) {
         throw new Error("static gate: private store initializer");
       }
       continue;
     }
-    let declarationEnd = index + 3;
-    while (
-      declarationEnd < tokens.length &&
-      !(
-        tokens[declarationEnd].value === ";" &&
-        tokens[declarationEnd].braceDepth === token.braceDepth &&
-        tokens[declarationEnd].parenDepth === token.parenDepth &&
-        tokens[declarationEnd].bracketDepth === token.bracketDepth
-      )
-    ) {
-      declarationEnd += 1;
-    }
-    const initializerTokens = tokens.slice(index + 3, declarationEnd);
-    if (
-      initializerTokens.some(
-        (candidate, offset) =>
-          candidate.value === "new" &&
-          ["Set", "WeakMap"].includes(initializerTokens[offset + 1]?.value),
-      )
-    ) {
-      throw new Error(`static gate: mutable slotted module store ${name}`);
-    }
-    const primitive =
-      ["number", "string"].includes(initializer.type) ||
-      ["false", "null", "true"].includes(initializer.value);
-    const frozenOrPrimitiveCall =
-      ["deepFreeze", "sha256"].includes(initializer.value) &&
-      tokens[index + 4]?.value === "(";
-    if (!primitive && !frozenOrPrimitiveCall) {
-      throw new Error(`static gate: mutable module store ${name}`);
-    }
-  }
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (
-      token.value !== "=" ||
-      token.braceDepth !== 0 ||
-      token.parenDepth !== 0 ||
-      token.bracketDepth !== 0
-    ) {
-      continue;
-    }
-    const declaration = ["const", "let"].includes(tokens[index - 2]?.value);
-    if (!declaration) {
-      throw new Error("static gate: module-scope assignment");
-    }
-  }
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (
-      token.type !== "identifier" ||
-      tokens[index + 1]?.value !== "(" ||
-      token.braceDepth !== 0 ||
-      token.parenDepth !== 0 ||
-      token.bracketDepth !== 0 ||
-      ["=", "function", "new"].includes(tokens[index - 1]?.value)
-    ) {
-      continue;
-    }
-    throw new Error("static gate: module-scope effect call");
+    assertPureModuleInitializer(
+      tokens,
+      index + 3,
+      declarationEnd,
+      pureBindings,
+    );
+    pureBindings.add(name);
   }
   return checked;
 }
@@ -1705,7 +2032,7 @@ function auditCandidateSource(source) {
   const imports = parseExactImports(tokens);
   const exports = parseExactExports(tokens);
   const privateStores = assertExactPrivateStoreManifest(tokens);
-  const moduleStoreCount = assertModuleScopeStoreClosure(tokens);
+  const moduleStoreCount = assertModuleInitializationClosure(tokens);
   const identifierClosure = assertPositiveIdentifierClosure(
     tokens,
     imports,
@@ -1850,6 +2177,116 @@ function runStaticNegativeControls() {
     sourceSkeleton("const frozenSet = deepFreeze(new Set());"),
     sourceSkeleton("function populate() { return null; } populate();"),
   ];
+  const namedStaticGateEscapes = Object.freeze([
+    Object.freeze({
+      name: "nested private-store set call",
+      source: sourceSkeleton(
+        "const stable = deepFreeze([startupMetadata.set(null, null)]);",
+      ),
+    }),
+    Object.freeze({
+      name: "nested member assignment",
+      source: sourceSkeleton(
+        "const permissionStore = deepFreeze([]);\nconst stable = deepFreeze([permissionStore.set = null]);",
+      ),
+    }),
+    Object.freeze({
+      name: "bare-block private-store declarations",
+      source: sourceSkeleton().replace(
+        "const startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();",
+        "{\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n}",
+      ),
+    }),
+    Object.freeze({
+      name: "nested compound member assignment",
+      source: sourceSkeleton(
+        "const permissionStore = deepFreeze([]);\nconst stable = deepFreeze([permissionStore.set += 1]);",
+      ),
+    }),
+    Object.freeze({
+      name: "private-store frozen alias",
+      source: sourceSkeleton("const stable = deepFreeze([startupMetadata]);"),
+    }),
+    Object.freeze({
+      name: "imported-function frozen alias",
+      source: sourceSkeleton("const stable = deepFreeze([sha256]);"),
+    }),
+    Object.freeze({
+      name: "deepFreeze retains mutable canonical bytes",
+      source: sourceSkeleton(
+        'const stable = deepFreeze(canonicalJsonBytes("safe"));',
+      ),
+      expected: /non-freezable deepFreeze input/u,
+    }),
+    Object.freeze({
+      name: "fixture key is not a normative string-value exception",
+      source: sourceSkeleton(`
+function deriveAuthorityKey() {
+  return "processAuthority".slice(0, 7);
+}`),
+      expected: /forbidden string fragment process/u,
+    }),
+    Object.freeze({
+      name: "numeric member-chain authority gadget",
+      source: sourceSkeleton(
+        'const stable = deepFreeze([0..constructor.constructor("return pro" + ("cess"))()]);',
+      ),
+      expected: /numeric literal outside bounded decimal-integer subset/u,
+    }),
+    Object.freeze({
+      name: "parenthesized top-level invocation",
+      source: sourceSkeleton(
+        "function moduleEffect() { return null; }\n(moduleEffect)();",
+      ),
+      expected: /module statement \(/u,
+    }),
+    Object.freeze({
+      name: "parenthesized private-store method invocation",
+      source: sourceSkeleton("(startupMetadata.set)(nullRecord([]), null);"),
+      expected: /module statement \(/u,
+    }),
+    Object.freeze({
+      name: "non-normative substring Reflect authority gadget",
+      source: sourceSkeleton(`
+function reflectedAuthority(startupReportBytes) {
+  const mirror = Reflect;
+  const key = "xconstructor".slice(1);
+  const first = mirror.get(startupReportBytes, key);
+  const second = mirror.get(first, key);
+  const source = "xreturn process".slice(1);
+  return second(source)();
+}`),
+      expected: /forbidden string fragment constructor/u,
+    }),
+    Object.freeze({
+      name: "U+2028 line-comment import smuggling",
+      source: sourceSkeleton(
+        '// audit comment\u2028import fs from "node:fs"; fs.readFileSync("/proc/self/status");',
+      ),
+      expected: /forbidden path prefix node:/u,
+    }),
+    Object.freeze({
+      name: "U+2029 line-comment import smuggling",
+      source: sourceSkeleton(
+        '// audit comment\u2029import fs from "node:fs"; fs.readFileSync("/proc/self/status");',
+      ),
+      expected: /forbidden path prefix node:/u,
+    }),
+    Object.freeze({
+      name: "U+2028 string-continuation authority spelling",
+      source: sourceSkeleton(
+        `const forbidden = "pro\\${String.fromCodePoint(0x2028)}cess";`,
+      ),
+      expected: /forbidden string fragment process/u,
+    }),
+    Object.freeze({
+      name: "U+2029 string-continuation authority spelling",
+      source: sourceSkeleton(
+        `const forbidden = "pro\\${String.fromCodePoint(0x2029)}cess";`,
+      ),
+      expected: /forbidden string fragment process/u,
+    }),
+  ]);
   const sources = [
     ...imports.map((create) => create()),
     ...exports.map((create) => create()),
@@ -1863,7 +2300,31 @@ function runStaticNegativeControls() {
       evaluationAttempts += 1;
     });
   }
+  const namedRejected = [];
+  for (const { name, source, expected } of namedStaticGateEscapes) {
+    assert.throws(
+      () => {
+        auditCandidateSource(source);
+        evaluationAttempts += 1;
+      },
+      expected,
+      `static policy control: ${name}`,
+    );
+    namedRejected.push(name);
+  }
   assert.equal(evaluationAttempts, 0);
+  const requiredNormativeLiterals = Object.freeze([
+    "Array",
+    "Set",
+    "String",
+    "WeakMap",
+    "currentOffset",
+    "oxigraph.candidate-containment-guardian-control-requirements/v1",
+    EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY,
+  ]);
+  for (const value of requiredNormativeLiterals) {
+    assert.equal(PINNED_NORMATIVE_SOURCE_LITERALS.has(value), true, value);
+  }
   const positiveSources = [
     sourceSkeleton(),
     sourceSkeleton(
@@ -1873,13 +2334,28 @@ function runStaticNegativeControls() {
       "function select(values) { for (const value of values) { if (value) { return value; } } return null; }",
     ),
     sourceSkeleton("const frozenLocalTable = deepFreeze([]);"),
+    sourceSkeleton(
+      `const pinnedNormativeLiterals = deepFreeze(${JSON.stringify(requiredNormativeLiterals)});`,
+    ),
+    sourceSkeleton(
+      'const localRequirements = deepFreeze(nullRecord([["schema", "safe"]]));\nconst localDigest = sha256(canonicalJsonBytes(localRequirements));',
+    ),
+    sourceSkeleton(
+      "const unquotedNormativeObjectKey = deepFreeze({ processAuthority: false });",
+    ),
   ];
   for (const source of positiveSources) {
     assert.doesNotThrow(() => auditCandidateSource(source));
   }
   return Object.freeze({
-    rejected: sources.length,
+    rejected: sources.length + namedRejected.length,
+    namedRejected: Object.freeze(namedRejected),
     accepted: positiveSources.length,
+    namedAccepted: Object.freeze([
+      "pinned normative source literals",
+      "pure requirements and ephemeral canonical digest initializers",
+      "unquoted normative object key",
+    ]),
     evaluationAttempts,
   });
 }
@@ -1888,7 +2364,7 @@ function evaluateCandidateOnlyWhenEvaluatorCloses(source, evaluate) {
   if (source !== null) {
     auditCandidateSource(source);
     throw new Error(
-      "candidate evaluation disabled until the complete evaluator matrix is executable",
+      "candidate evaluation disabled until the complete evaluator matrix is executable and receiver-origin; ambient-binding/alias/member-write, computed-key, and indirect-call; path-sensitive normative key-literal representation; module/import/export-binding-write; and private-store commit-position closure are proved",
     );
   }
   return evaluate();
@@ -2101,8 +2577,31 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
 
 test("rejects static-policy negative controls before any evaluation attempt", () => {
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
-    rejected: 53,
-    accepted: 4,
+    rejected: 69,
+    namedRejected: [
+      "nested private-store set call",
+      "nested member assignment",
+      "bare-block private-store declarations",
+      "nested compound member assignment",
+      "private-store frozen alias",
+      "imported-function frozen alias",
+      "deepFreeze retains mutable canonical bytes",
+      "fixture key is not a normative string-value exception",
+      "numeric member-chain authority gadget",
+      "parenthesized top-level invocation",
+      "parenthesized private-store method invocation",
+      "non-normative substring Reflect authority gadget",
+      "U+2028 line-comment import smuggling",
+      "U+2029 line-comment import smuggling",
+      "U+2028 string-continuation authority spelling",
+      "U+2029 string-continuation authority spelling",
+    ],
+    accepted: 7,
+    namedAccepted: [
+      "pinned normative source literals",
+      "pure requirements and ephemeral canonical digest initializers",
+      "unquoted normative object key",
+    ],
     evaluationAttempts: 0,
   });
   assert.deepEqual(
@@ -2146,7 +2645,7 @@ test.todo("expand 15 independently encoded emitted-status byte goldens");
 test.todo("expand 4 atomic two-status internal wire-prefix controls");
 test.todo("expand every proper prefix and mutation of N1 through R2");
 test.todo(
-  "close receiver-origin and private-store commit-position proof before lifting the source-presence stop",
+  "close receiver-origin and alias dataflow; ambient binding, alias, and member writes, computed-key construction, and indirect calls; path-sensitive normative key-literal representation; module/import/export binding and member writes; and private-store owning-operation commit-position proof before lifting the source-presence stop",
 );
 test.todo(
   "complete all remaining ADR-0036 acceptance groups: 252 descriptor aliases; every bound, error-precedence rule, and frame field; transition, status-byte, and prefix goldens; recovery binding; WeakMap failure atomicity; and the complete Node 20 and non-G1.7 matrix",
