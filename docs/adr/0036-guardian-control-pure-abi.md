@@ -8,10 +8,21 @@
   reviewed source-absent, fail-closed evaluator checkpoint; commit `d3e6bd8b`
   adds source-independent exact-v2 controls for all nine byte positions, 108
   ignored-property variants, 63 hostile carriers, and the exact ten-operation
-  private-store test inventory. The positive lexical gate, candidate-connected
-  acceptance matrices, production source module, runtime registration, and
-  physical owner remain incomplete or absent. The current production
-  containment readiness remains unavailable
+  private-store test inventory. Commits `c9b063de` and `36499acf` add the exact
+  export/signature and predecessor manifests, synchronously pinned requirements
+  oracle, bounded lexer, explicit top-level statement grammar, typed pure
+  module-initializer grammar, and 69 pre-evaluation rejection controls with
+  zero evaluation attempts. Commits `8e19f927` and `2d408a03` preserve the same
+  RED shape on Node 20.0.0 as on Node 20.20.2 and the current runtime. The
+  combined matrix is 25 tests: 15 pass, exactly one deliberate absent-source
+  `ERR_MODULE_NOT_FOUND` fails, and nine remain TODO. Two independent reviews
+  accept only this partial, source-hard-stopped checkpoint. Receiver and alias
+  origin, ambient/module/import/export binding and member writes, computed-key
+  and indirect-call closure, path-sensitive normative key literals, exact
+  private-store commit positions, candidate-connected acceptance matrices, the
+  production source module, runtime registration, and the physical owner remain
+  incomplete or absent. Production containment readiness remains exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
 - **Related**:
