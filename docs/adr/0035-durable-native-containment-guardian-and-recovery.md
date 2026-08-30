@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-29
-- Updated: 2026-08-29
+- Updated: 2026-08-30
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented and still unregistered. Commit
   `ab668ddd` adds local-only, authority-null journal construction and replay for
@@ -30,7 +30,11 @@
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
 - **Related**:
-  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
+  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
+  [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md),
+  [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md),
+  [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md),
+  [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)
 
 ## Context
 
@@ -68,6 +72,27 @@ as an additive, versioned boundary. Keep the existing dormant supervisor,
 bootstrap-v3 bytes, schema-v1 contracts, registries, and fixed production
 readiness unchanged until the complete physical gate is independently
 qualified.
+
+### Decomposition and normative ownership
+
+This ADR remains the umbrella and sole owner of the frozen journal-v1,
+journal-v2, lifetime-v1, recovery-v1, cancel-only, lineage, recovery, Linux, and
+physical acceptance literals below. Four additive decisions refine the
+remaining implementation without superseding, copying, or weakening those
+literals:
+
+| Decision                                                                                                                             | Exclusive implementation ownership                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md)                                                            | Authority-null normal/recovery descriptor and frame contract before any physical owner                             |
+| [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)              | Held-root write-once filesystem mechanics, inventory, lifecycle moves, and manager writer handoff                  |
+| [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md) | Exact static executables, attestations, race-free launch, process/cgroup mechanics, and unregistered adapter       |
+| [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)  | Isolated physical qualification, exact receipts, runtime closure, and only then a fail-closed readiness transition |
+
+The implementation order is recovery-v1 under this ADR, then ADR-0036,
+ADR-0037, ADR-0038, and ADR-0039. Their Proposed status records work ownership,
+not evidence. This decomposition does not change this ADR's Proposed status,
+the current registries, any authority field, or production readiness
+`{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 ### Stable guardian and delegated topology
 

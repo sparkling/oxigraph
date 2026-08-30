@@ -1,0 +1,190 @@
+# ADR-0039: Delegated-host containment qualification and readiness
+
+- **Status**: Proposed
+- **Date**: 2026-08-30
+- Updated: 2026-08-30
+- Deciders: Oxigraph parity programme
+- Implementation status: not implemented. No delegated-host qualification
+  contract, current physical receipt, native adapter registration, or readiness
+  transition exists
+- **Depends on**:
+  [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md),
+  [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md)
+- **Related**:
+  [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md),
+  [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md),
+  [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
+  [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md),
+  [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
+  [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md),
+  [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
+  [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
+  [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
+  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)
+
+## Context
+
+ADRs 0035 through 0038 can freeze and locally exercise exact contracts,
+filesystem sequencing, executable bytes, and native mechanics. They cannot
+prove that a production host supplies the required cgroup delegation,
+filesystem behavior, kernel interfaces, service-manager launch root,
+permissions, reboot behavior, or power-loss durability. Making the candidate
+owner report verified readiness from local tests or version strings would turn
+assumptions into authority.
+
+This qualification is also distinct from ADR-0022's product-facing liveness,
+readiness, backup, and restore contract. It qualifies the engineering harness's
+containment host; it does not make the RDF store operationally ready.
+
+## Decision
+
+Keep production containment readiness exactly
+`{status:"unavailable",reason:"native-adapter-unavailable"}` until an explicitly
+authorized isolated delegated host or VM passes one exact qualification
+contract for the complete ADR-0035 through ADR-0038 physical graph.
+
+The qualification contract binds the exact manager, guardian, trampoline,
+supervisor, adapter, pure-contract requirements, state-root identity and
+filesystem profile, kernel and architecture profile, cgroup2 mount and
+namespace, delegated-root identity, controller and permission observations,
+service-manager launch configuration, test inventory, and raw receipts. A
+kernel version string, administrator assertion, earlier receipt, copied
+artifact, or replay on a different host is insufficient.
+
+### Delegated-host gate
+
+The first profile is limited to the Linux x86-64 baseline and exact feature
+probes specified by ADR-0035's
+[Linux feature and delegation gate](0035-durable-native-containment-guardian-and-recovery.md#linux-feature-and-delegation-gate).
+It must prove ordinary domain cgroups, the exact process-empty delegated parent,
+required controller state, `clone3` placement, pidfds, exclusive wait,
+`cgroup.kill`, quiescence, pathname removal, ownership and mode boundaries,
+and prevention of unowned migration or process creation in the subtree.
+
+The classified state filesystem must prove the local open-file-description lock
+and held-directory operations used by ADR-0037. Crash, manager death, guardian
+death, supervisor death, restart, reboot, and power-cut cases receive separate
+write-once receipts. A profile that cannot execute a required destructive or
+power-cycle control remains unqualified; it cannot weaken the requirement or
+substitute a simulation.
+
+Qualification runs are separate from G1.7. They cannot use G1.7 control,
+benchmark, final-decision, qualification, or promotion authority, and their
+receipts are not G1.7 receipts.
+
+### Readiness and integration
+
+Only after the exact physical gate and ADR-0034's complete schema-v2 admission
+gate pass may a later implementation replace the fixed unavailable production
+path with a receipt-bound verified native adapter. Readiness is current-state
+and fail-closed: missing, stale, mismatched, corrupt, unsupported, revoked, or
+unavailable host evidence returns unavailable or unproved and performs no
+candidate work.
+
+The same integration slice must add application-receipt v7 creation and replay,
+candidate-v2 evaluator reconstruction, the frozen task profile, command/CLI
+dispatch, and exact runtime closure. Application receipts v1 through v6,
+schema-v1 task contracts, predecessor registries, and legacy replay remain
+byte-compatible. Passing containment readiness permits a candidate attempt; it
+does not itself accept a product change or mint Router quality.
+
+The initially qualified protocol remains cancel-only. It rejects `COMMIT`, emits
+no application output, and cannot admit a semantic-change product module until
+the separate ADR-0034 gate and that module's evaluator pass.
+
+## Owned files
+
+This ADR owns these new qualification paths:
+
+- `tools/engineering-harness/src/qualification/native-containment-guardian-host-contract.mjs`;
+- `tools/engineering-harness/src/qualification/native-containment-guardian-host.mjs`;
+- matching host-contract and explicitly host-gated tests under
+  `tools/engineering-harness/test/`; and
+- `tools/engineering-harness/qualification/containment-guardian-v1/contract.json`.
+
+After qualification, it owns only the necessary integration changes in:
+
+- `tools/engineering-harness/src/candidate/containment-owner-v2.mjs`;
+- `tools/engineering-harness/src/candidate/sandbox-session-v2.mjs`;
+- `tools/engineering-harness/src/candidate/reconstruct-v2.mjs`;
+- `tools/engineering-harness/src/receipts/application.mjs`;
+- `tools/engineering-harness/src/runtime/application-admission.mjs`;
+- `tools/engineering-harness/src/task-profile.mjs`;
+- `tools/engineering-harness/src/command-registry.mjs`; and
+- `tools/engineering-harness/bin/oxigraph-engineering-harness.mjs`.
+
+Any new receipt schema, readiness value, profile, command, or fixture must first
+be ratified with exact bytes and independent negative controls. This ADR does
+not pre-authorize those future literals.
+
+## Nonclaims and authority boundary
+
+Before the full gate, every existing physical eligibility, final-decision
+eligibility, binding, production-containment, qualification, promotion, and
+publication field remains null or false. After an exact host qualifies,
+containment evidence is scoped only to that bound host, boot/profile, artifact
+set, state root, delegated root, and cancel-only protocol. It does not prove:
+
+- `COMMIT`, application output, semantic correctness, application acceptance,
+  or a product receipt;
+- G1.7 control, benchmark, performance, noise, qualification, or promotion;
+- transaction guarantees or completion of ADR-0018;
+- ADR-0020 durable change delivery, ADR-0021 transaction-time SHACL,
+  ADR-0022 backup/restore readiness, ADR-0023 statistics, ADR-0024 derived
+  indexes, or ADR-0025 federation;
+- support for another kernel, architecture, filesystem, cgroup topology,
+  container boundary, service manager, NFS, SMB, or unqualified environment;
+- reconstruction of historical parentage, pipe ownership, exit status, reap,
+  or ambiguous effects after guardian loss; or
+- publication authority.
+
+ADR-0019's implemented egress, cancellation, and service-claim boundary remains
+unchanged. Guardian controller-loss cancellation does not expand SERVICE or
+remote-input claims. Closing ADR-0039 can unblock ADR-0020 G2.2 admission work;
+it does not implement or advance that product slice by itself.
+
+## Acceptance boundary
+
+The gate requires:
+
+- every ADR-0035 acceptance item, every ADR-0036 control-ABI gate, every
+  ADR-0037 statefs/manager gate, and every ADR-0038 native artifact gate;
+- exact fail-closed feature probes for syscall, flag, cgroup2 mount, namespace,
+  controller, UID/GID, modes, common-ancestor and destination permissions,
+  directory operations, `cgroup.procs`, `cgroup.events`, `pids.current`,
+  `cgroup.kill`, pidfd, wait, trace, and executable identity;
+- real manager, guardian, supervisor, controller, descendant, and adapter fault
+  injection before and after every intent, effect, observation, durable record,
+  release, reap, move, removal, and close boundary;
+- controller restart with a live guardian, guardian death without invented
+  direct-child authority, same-boot recovery, one-through-four proved reboots,
+  migration attempts, unexpected descendants, delegation revocation, unknown
+  entries, timeouts, permission loss, and quarantine/operator-block behavior;
+- isolated crash, reboot, and power-cut receipts for the exact classified
+  filesystem profile and current-state verification after restart;
+- exact receipt binding to all source, artifact, recipe, host, boot, root,
+  contract, test, and result identities, with stale/cross-host/cross-boot/
+  cross-artifact substitution controls;
+- application-receipt v7 and replay controls while v1 through v6 and schema-v1
+  fixtures remain byte-identical;
+- exact task/profile/command/CLI and path-executed runtime closure with missing
+  or invalid qualification failing before candidate Git, submodule, process,
+  `ACCEPT`, or `REJECT` work;
+- focused host suites, current and Node 20 complete explicit non-G1.7 suites,
+  source-only programme and ADR-graph verification, and independent native,
+  filesystem, compatibility, security, and MetaHarness review; and
+- a separate human decision before any later semantic qualification, promotion,
+  or publication action.
+
+No live G1.7 control, provider, benchmark, semantic qualification, promotion,
+or publication is part of this gate.
+
+## Consequences
+
+- Production readiness becomes an exact current-host fact rather than a source
+  or configuration assertion.
+- Unsupported or drifted hosts fail closed without candidate execution.
+- Destructive kernel and power-cycle testing requires dedicated infrastructure
+  and separately controlled receipts.
+- Successful cancel-only containment still grants no product or promotion
+  authority.
