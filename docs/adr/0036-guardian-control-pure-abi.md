@@ -30,17 +30,50 @@
   evaluate the existing exact-v2 predecessor and routing helper through the
   adversarial lane's static import, so this checkpoint does not claim the
   stronger pin-before-every-predecessor-evaluation ordering required before
-  main-lane registration. The combined current, exact Node 20.0.0, and latest
-  Node 20 matrices remain identically 25 tests: 15 pass, exactly one deliberate
-  absent-source failure, and nine TODO. `npm audit` reports zero known
-  vulnerabilities. Independent reviews accept only these parser and registrar
-  foundations at the source-hard-stopped checkpoint. Complete
-  reject-by-default binding and receiver provenance,
-  ambient/module/import/export binding and member writes, computed-key and
-  indirect-call closure, path-sensitive normative key literals, exact
-  private-store commit positions, candidate-connected acceptance matrices, the
-  production source module, runtime registration, and the physical owner remain
-  incomplete or absent. Production containment readiness remains exactly
+  main-lane registration. Commit `96e4b712` freezes six source-independent
+  oracle-design inventories without materializing candidate-dependent values:
+  20 whole transition/state designs
+  (`251604392360b8024cbaf7d1e6ad48cdbddb5187d049aaeb5dbb50ce3f1d5acb`),
+  15 emitted-status designs
+  (`6e03baa638cd3b48221e9182d9de1dd74a9a7b454fce40719badb3d0d9b7de5e`),
+  four atomic two-status controls
+  (`a2b9524c88bbd78aca2d189c150a9e5499c0da3505c9109734ce78f0fa038ba1`),
+  26 symbolic prefix observations
+  (`eeac031f7f929c856d3b46af63bbaeebc33b827eb55fee6f93a4a55f643e89a6`),
+  252 descriptor aliases partitioned 91/112/28/21
+  (`30129d8d237f720fea41a8730d561e4dd615f35da565e5807e54aebb0c2ab9da`),
+  and 18 constructible precedence pairs
+  (`51fb17d1ff193dc37db2b16be60251c7bc745f479f0a8ee980ee24bc0caa0762`).
+  Commits `d76e5e94`, `5cdde062`, `142869f3`, `6f1f5e70`, and
+  formatting-only `07d99dea` add the independently reviewed ESTree and
+  provenance subset. It rejects 117 source-independent negatives, accepts five
+  named synthetic positives, and derives a 48-control delta from the parser
+  foundation: 46 reach ESTree policy; the two earlier rejections are
+  `requirements initializer semantic drift` and
+  `shallow ambient freeze used as deep freeze`. Its 17 representative
+  commit-mutation sources are inventory, not final closure. The accepted
+  baseline classifies all 1,149 AST nodes, records
+  84 bindings and references, 54 calls and callees, ten members, receivers,
+  mutations, private operations, and private commits, 40 direct pre-commit
+  calls, and the exact startup/input/state commit split 1/7/2. Independent
+  adversarial replay closes the previously found private-read laundering,
+  conditional/logical `?:`, `&&`, `||`, and `??` dominance, direct-body commit,
+  non-returning failure-callback, and callback-recursion counterexamples. The
+  source hard stop remains byte-identical with SHA-256
+  `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`,
+  and the six main TODOs remain byte-identical with SHA-256
+  `07fc8814b048337886faa80752e3564685537bffe571739297e1012c00e50225`.
+  The combined current, exact Node 20.0.0, and latest Node 20 matrices remain
+  identically 25 tests: 15 pass, exactly one deliberate absent-source failure,
+  and nine TODO. `npm audit` reports zero known vulnerabilities. This is still
+  only a partial source-hard-stopped foundation: 213 negative, six positive,
+  and 183 commit-mutation cases remain against the final 330/11/200 gates;
+  exact private-read-to-owner positive provenance, successful-path reachability,
+  complete receiver/alias and binding/member-write closure, computed-key and
+  indirect-call closure, path-sensitive normative key literals,
+  candidate-connected acceptance matrices, the production source module,
+  runtime registration, and the physical owner remain incomplete or absent.
+  Production containment readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
