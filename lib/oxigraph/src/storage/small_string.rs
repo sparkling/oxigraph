@@ -186,3 +186,44 @@ pub enum BadSmallStringError {
     #[error(transparent)]
     BadUtf8(#[from] Utf8Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_be_bytes_validates_length_and_utf8() {
+        for encoded_length in 0..=u8::MAX {
+            let mut bytes = [b'x'; 16];
+            bytes[15] = encoded_length;
+            let result = SmallString::from_be_bytes(bytes);
+
+            if encoded_length <= 15 {
+                assert!(
+                    matches!(
+                        result,
+                        Ok(value)
+                            if value.len() == usize::from(encoded_length)
+                                && value.as_bytes()
+                                    == &bytes[..usize::from(encoded_length)]
+                    ),
+                    "encoded length {encoded_length} did not decode to the expected prefix"
+                );
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(BadSmallStringError::TooLong(length))
+                        if length == usize::from(encoded_length)
+                ));
+            }
+        }
+
+        let mut invalid_utf8 = [0; 16];
+        invalid_utf8[0] = 0xff;
+        invalid_utf8[15] = 1;
+        assert!(matches!(
+            SmallString::from_be_bytes(invalid_utf8),
+            Err(BadSmallStringError::BadUtf8(_))
+        ));
+    }
+}

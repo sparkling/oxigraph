@@ -25,7 +25,7 @@ pub use crate::literal::BaseDirection;
 pub use crate::literal::{InvalidLiteralDatatypeError, Literal, LiteralRef};
 pub use crate::named_node::{NamedNode, NamedNodeRef};
 pub use crate::parser::TermParseError;
-pub use crate::string::{OxStr, OxString};
+pub use crate::string::{OxStr, OxString, ReserveError};
 pub use crate::triple::{
     GraphName, GraphNameRef, NamedOrBlankNode, NamedOrBlankNodeRef, Quad, QuadRef, Term, TermRef,
     Triple, TripleRef, TryFromTermError,

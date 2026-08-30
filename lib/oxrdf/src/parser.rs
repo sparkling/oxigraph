@@ -625,6 +625,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn numeric_literal_parser_preserves_remainder() {
+        for (input, expected) in [
+            ("1 )>>", Literal::new_typed_literal("1", xsd::INTEGER)),
+            ("1.2 )>>", Literal::new_typed_literal("1.2", xsd::DECIMAL)),
+            (
+                "1.2e3 )>>",
+                Literal::new_typed_literal("1.2e3", xsd::DOUBLE),
+            ),
+        ] {
+            let (actual, remainder) = read_literal(input).unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(remainder, " )>>");
+        }
+    }
+
+    #[test]
     #[cfg(feature = "rdf-12")]
     fn triple_term_parsing() {
         assert_eq!(

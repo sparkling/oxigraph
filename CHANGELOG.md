@@ -3,6 +3,9 @@
 ### Added
 - `sparopt`: `GraphPattern::join_order_variables`, exposing the join / variable-elimination order chosen by `Optimizer::optimize_graph_pattern` for consumption by external execution engines (e.g. worst-case-optimal join executors).
 
+### Changed
+- `oxrdf`: `OxStr::try_new_owned` and `OxStr::try_concat` now return `Result<_, ReserveError>` instead of `Option<_>`, and `ReserveError` is publicly exported. Callers matching `Some`/`None` must migrate to `Ok`/`Err`; capacity or allocation-layout overflow is reported as `ReserveError::CapacityOverflow`, while allocator failure is reported as `ReserveError::AllocError`.
+
 
 # [0.5.7] - 2026-04-19
 

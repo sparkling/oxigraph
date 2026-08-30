@@ -1632,26 +1632,59 @@ impl RocksDbStorageReadableTransaction<'_> {
     }
 
     pub fn clear_all_named_graphs(&mut self) -> Result<(), StorageError> {
+        self.clear_all_named_graphs_in_batches(BATCH_SIZE)
+    }
+
+    fn clear_all_named_graphs_in_batches(&mut self, batch_size: usize) -> Result<(), StorageError> {
+        if batch_size == 0 {
+            return Err(StorageError::Other(
+                "RocksDB clear batch size must be non-zero".into(),
+            ));
+        }
+
+        // This transaction owns a stable snapshot and clearing a graph retains
+        // its membership entry. Fixing the upper bound also makes a paging
+        // regression fail instead of looping forever.
+        let graph_count = self
+            .reader()
+            .named_graphs()
+            .try_fold(0_usize, |count, graph_name| {
+                graph_name?;
+                count.checked_add(1).ok_or_else(|| {
+                    StorageError::from(CorruptionError::msg("named graph count overflows usize"))
+                })
+            })?;
+
         let mut offset = 0;
-        loop {
+        while offset < graph_count {
+            let expected_batch_len = (graph_count - offset).min(batch_size);
             let graph_names = self
                 .reader()
                 .named_graphs()
                 .skip(offset)
-                .take(BATCH_SIZE)
+                .take(batch_size)
                 .collect::<Result<Vec<_>, _>>()?;
+            if graph_names.len() != expected_batch_len {
+                return Err(CorruptionError::msg(format!(
+                    "named graph batch at offset {offset} contained {} entries instead of {expected_batch_len}",
+                    graph_names.len()
+                ))
+                .into());
+            }
             for graph_name in &graph_names {
                 self.clear_encoded_graph(graph_name)?;
             }
-            if graph_names.len() < BATCH_SIZE {
-                return Ok(());
-            }
-            offset += BATCH_SIZE;
+            offset += expected_batch_len;
         }
+        Ok(())
     }
 
     pub fn clear_all_graphs(&mut self) -> Result<(), StorageError> {
-        self.clear_all_named_graphs()?;
+        self.clear_all_graphs_in_batches(BATCH_SIZE)
+    }
+
+    fn clear_all_graphs_in_batches(&mut self, batch_size: usize) -> Result<(), StorageError> {
+        self.clear_all_named_graphs_in_batches(batch_size)?;
         self.clear_graph(&GraphName::DefaultGraph)
     }
 
@@ -2219,6 +2252,122 @@ mod tests {
         assert!(storage.snapshot().is_empty()?);
         storage.snapshot().validate()?;
 
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic_in_result_fn)]
+    fn clear_graphs_in_multiple_batches_preserve_topology_and_metadata()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for clear_all in [false, true] {
+            let path = TempDir::new()?;
+            let storage = RocksDbStorage::open(path.as_ref())?;
+
+            let graphs = (0..5)
+                .map(|index| NamedNode::new_unchecked(format!("urn:batch:graph:{index}")))
+                .collect::<Vec<_>>();
+            let named_quads = graphs
+                .iter()
+                .enumerate()
+                .map(|(index, graph)| {
+                    Quad::new(
+                        NamedNode::new_unchecked(format!("urn:batch:subject:{index}")),
+                        NamedNode::new_unchecked("urn:batch:predicate"),
+                        NamedNode::new_unchecked("urn:batch:object"),
+                        graph.clone(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let encoded_graphs = graphs.iter().map(EncodedTerm::from).collect::<Vec<_>>();
+            let encoded_named_quads = named_quads
+                .iter()
+                .map(EncodedQuad::from)
+                .collect::<Vec<_>>();
+
+            let default_quad = Quad::new(
+                NamedNode::new_unchecked("urn:batch:default-subject"),
+                NamedNode::new_unchecked("urn:batch:predicate"),
+                NamedNode::new_unchecked("urn:batch:object"),
+                GraphName::DefaultGraph,
+            );
+            let encoded_default_quad = EncodedQuad::from(&default_quad);
+            let namespace = Namespace::new(
+                NamespacePrefix::new("batch")?,
+                NamedNode::new_unchecked("urn:batch:namespace:"),
+            );
+            let committed_key = [0x41; 16];
+            let rolled_back_key = [0x42; 16];
+
+            let mut setup = storage.start_transaction()?;
+            setup.insert(default_quad);
+            for (graph, quad) in graphs.iter().zip(&named_quads) {
+                setup.insert_named_graph(graph.clone().into());
+                setup.insert(quad.clone());
+            }
+            setup.set_namespace(namespace.clone());
+            setup.commit()?;
+
+            storage.write_raw_transaction_outcome_record(
+                &committed_key,
+                TRANSACTION_OUTCOME_COMMITTED,
+            )?;
+            storage.write_raw_transaction_outcome_record(
+                &rolled_back_key,
+                TRANSACTION_OUTCOME_ROLLED_BACK,
+            )?;
+
+            let mut zero_batch = storage.start_readable_transaction()?;
+            assert!(zero_batch.clear_all_named_graphs_in_batches(0).is_err());
+            drop(zero_batch);
+
+            let before = storage.snapshot();
+            assert_eq!(
+                before.named_graphs().collect::<Result<Vec<_>, _>>()?.len(),
+                5
+            );
+            assert_eq!(before.namespaces()?, vec![namespace.clone()]);
+            assert_eq!(
+                storage.lookup_transaction_outcome(&committed_key)?,
+                StorageTransactionOutcome::Committed
+            );
+            assert_eq!(
+                storage.lookup_transaction_outcome(&rolled_back_key)?,
+                StorageTransactionOutcome::RolledBack
+            );
+            before.validate()?;
+
+            let mut transaction = storage.start_readable_transaction()?;
+            if clear_all {
+                transaction.clear_all_graphs_in_batches(2)?;
+            } else {
+                transaction.clear_all_named_graphs_in_batches(2)?;
+            }
+            transaction.commit()?;
+
+            let after = storage.snapshot();
+            assert_eq!(after.contains(&encoded_default_quad)?, !clear_all);
+            assert_eq!(after.is_empty()?, clear_all);
+            for graph in &encoded_graphs {
+                assert!(after.contains_named_graph(graph)?);
+            }
+            for quad in &encoded_named_quads {
+                assert!(!after.contains(quad)?);
+            }
+            assert_eq!(
+                after.named_graphs().collect::<Result<Vec<_>, _>>()?.len(),
+                5
+            );
+            assert_eq!(after.namespaces()?, vec![namespace]);
+            assert_eq!(
+                storage.lookup_transaction_outcome(&committed_key)?,
+                StorageTransactionOutcome::Committed
+            );
+            assert_eq!(
+                storage.lookup_transaction_outcome(&rolled_back_key)?,
+                StorageTransactionOutcome::RolledBack
+            );
+            after.validate()?;
+        }
         Ok(())
     }
 }
