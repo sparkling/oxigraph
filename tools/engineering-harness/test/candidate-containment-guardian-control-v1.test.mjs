@@ -13,6 +13,7 @@ const SOURCE_URL = new URL(
   import.meta.url,
 );
 const SOURCE_PATH = fileURLToPath(SOURCE_URL);
+const REQUIREMENTS_ORACLE = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
 
 const EXPECTED_REQUIREMENTS_SHA256 =
   "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
@@ -39,6 +40,109 @@ const EXPECTED_EXPORTS = Object.freeze([
   "initializeCandidateContainmentGuardianControlV1",
   "reduceCandidateContainmentGuardianControlV1",
   "verifyCandidateContainmentGuardianStatusFrameV1",
+]);
+
+const EXPECTED_FUNCTION_SIGNATURES = Object.freeze([
+  Object.freeze({
+    name: "createCandidateContainmentGuardianStartupV1",
+    parameters: Object.freeze([
+      "startupReportBytes",
+      "epochBytes",
+      "epochEofObserved",
+    ]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianAdmissionInputV1",
+    parameters: Object.freeze([
+      "currentState",
+      "admissionFrameBytes",
+      "recvmsgReportBytes",
+    ]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianCancelInputV1",
+    parameters: Object.freeze([
+      "currentState",
+      "cancelFrameBytes",
+      "messageTruncated",
+      "controlTruncated",
+      "controlMessageCount",
+    ]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    parameters: Object.freeze([
+      "currentState",
+      "recoveryRequestFrameBytes",
+      "requestEofObserved",
+    ]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianControllerClosedInputV1",
+    parameters: Object.freeze(["currentState"]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    parameters: Object.freeze([
+      "currentState",
+      "diagnosticSummaryReportBytes",
+      "rawDiagnosticBytes",
+    ]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    parameters: Object.freeze(["currentState"]),
+  }),
+  Object.freeze({
+    name: "createCandidateContainmentGuardianStatusEofInputV1",
+    parameters: Object.freeze(["currentState"]),
+  }),
+  Object.freeze({
+    name: "initializeCandidateContainmentGuardianControlV1",
+    parameters: Object.freeze(["startupProjection"]),
+  }),
+  Object.freeze({
+    name: "reduceCandidateContainmentGuardianControlV1",
+    parameters: Object.freeze(["currentState", "brandedInput"]),
+  }),
+  Object.freeze({
+    name: "verifyCandidateContainmentGuardianStatusFrameV1",
+    parameters: Object.freeze(["startupProjection", "statusFrameBytes"]),
+  }),
+]);
+
+const EXPECTED_EXPORT_MANIFEST = Object.freeze([
+  Object.freeze({
+    name: "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS",
+    kind: "const",
+    arity: null,
+  }),
+  Object.freeze({
+    name: "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256",
+    kind: "const",
+    arity: null,
+  }),
+  ...EXPECTED_FUNCTION_SIGNATURES.map(({ name, parameters }) =>
+    Object.freeze({ name, kind: "function", arity: parameters.length }),
+  ),
+]);
+
+const EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS = Object.freeze([
+  "schema",
+  "version",
+  "predecessors",
+  "schemas",
+  "limits",
+  "modes",
+  "startupMaps",
+  "admissionRights",
+  "frameFields",
+  "vocabularies",
+  "legalSequences",
+  "privateStateStores",
+  "authority",
+  "physicalFacts",
+  "nonclaims",
 ]);
 
 const EXPANSION_ANCHORS = Object.freeze({
@@ -133,6 +237,113 @@ function semanticSha256(value) {
 
 function byteSha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function assertPinnedPredecessorBytes(bytes, golden) {
+  if (
+    bytes.length !== golden.byteLength ||
+    byteSha256(bytes) !== golden.sha256
+  ) {
+    throw new Error(`predecessor source pin mismatch: ${golden.specifier}`);
+  }
+}
+
+function predecessorByteMutations(bytes) {
+  assert.equal(bytes.length > 2, true);
+  const mutations = [];
+  for (const index of [0, Math.floor(bytes.length / 2), bytes.length - 1]) {
+    const mutated = Buffer.from(bytes);
+    mutated[index] ^= 1;
+    mutations.push(mutated);
+  }
+  mutations.push(Buffer.concat([bytes, Buffer.from([0x0a])]));
+  mutations.push(Buffer.from(bytes.subarray(0, bytes.length - 1)));
+  return Object.freeze(mutations);
+}
+
+function assertRequirementsValue(actual, expected) {
+  if (expected === null || typeof expected !== "object") {
+    assert.equal(actual, expected);
+    return;
+  }
+  assert.equal(Object.isFrozen(actual), true);
+  if (Array.isArray(expected)) {
+    assert.equal(Array.isArray(actual), true);
+    assert.equal(Object.getPrototypeOf(actual), Array.prototype);
+    assert.equal(actual.length, expected.length);
+    for (let index = 0; index < expected.length; index += 1) {
+      assertRequirementsValue(actual[index], expected[index]);
+    }
+    return;
+  }
+  assert.equal(Object.getPrototypeOf(actual), null);
+  assert.deepEqual(Object.keys(actual), Object.keys(expected));
+  for (const key of Object.keys(expected)) {
+    assertRequirementsValue(actual[key], expected[key]);
+  }
+}
+
+function assertCandidateModuleContract(moduleNamespace) {
+  assert.equal(Object.getPrototypeOf(moduleNamespace), null);
+  assert.equal(Object.isExtensible(moduleNamespace), false);
+  assert.deepEqual(Reflect.ownKeys(moduleNamespace), [
+    ...[...EXPECTED_EXPORTS].sort(),
+    Symbol.toStringTag,
+  ]);
+  assert.deepEqual(
+    Object.getOwnPropertyDescriptor(moduleNamespace, Symbol.toStringTag),
+    {
+      value: "Module",
+      writable: false,
+      enumerable: false,
+      configurable: false,
+    },
+  );
+  for (const { name, kind, arity } of EXPECTED_EXPORT_MANIFEST) {
+    assert.deepEqual(Object.getOwnPropertyDescriptor(moduleNamespace, name), {
+      value: moduleNamespace[name],
+      writable: true,
+      enumerable: true,
+      configurable: false,
+    });
+    if (kind !== "function") continue;
+    const value = moduleNamespace[name];
+    assert.equal(typeof value, "function");
+    assert.equal(value.name, name);
+    assert.equal(value.length, arity);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(value, "name"), {
+      value: name,
+      writable: false,
+      enumerable: false,
+      configurable: true,
+    });
+    assert.deepEqual(Object.getOwnPropertyDescriptor(value, "length"), {
+      value: arity,
+      writable: false,
+      enumerable: false,
+      configurable: true,
+    });
+    const prototype = Object.getOwnPropertyDescriptor(value, "prototype");
+    assert.equal(typeof prototype.value, "object");
+    assert.equal(Object.getPrototypeOf(prototype.value), Object.prototype);
+    assert.deepEqual(
+      {
+        writable: prototype.writable,
+        enumerable: prototype.enumerable,
+        configurable: prototype.configurable,
+      },
+      { writable: true, enumerable: false, configurable: false },
+    );
+  }
+  assert.equal(
+    moduleNamespace.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256,
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+  const requirements =
+    moduleNamespace.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS;
+  assertRequirementsValue(requirements, REQUIREMENTS_ORACLE);
+  assert.deepEqual(requirements, REQUIREMENTS_ORACLE);
+  assert.equal(semanticSha256(requirements), EXPECTED_REQUIREMENTS_SHA256);
 }
 
 function startupDescriptor(
@@ -394,19 +605,79 @@ const ALLOWED_IMPORTS = new Map([
   ],
 ]);
 
-const FORBIDDEN_SOURCE_TOKENS = Object.freeze([
+const ALLOWED_AMBIENT_INTRINSICS = Object.freeze([
+  "Array",
+  "Boolean",
+  "Error",
+  "Number",
+  "Object",
+  "Reflect",
+  "Set",
+  "String",
+  "WeakMap",
+]);
+
+const FORBIDDEN_SOURCE_IDENTIFIERS = Object.freeze([
+  "ArrayBuffer",
+  "AsyncFunction",
+  "AsyncGeneratorFunction",
+  "Atomics",
+  "BigInt64Array",
+  "BigUint64Array",
+  "BroadcastChannel",
   "Buffer",
+  "Bun",
+  "DataView",
   "Date",
+  "Deno",
+  "EventSource",
+  "FinalizationRegistry",
+  "Float32Array",
+  "Float64Array",
+  "Function",
+  "GeneratorFunction",
+  "Int16Array",
+  "Int32Array",
+  "Int8Array",
   "JSON",
+  "Math",
+  "MessageChannel",
+  "MessagePort",
   "Promise",
   "Proxy",
+  "SharedArrayBuffer",
+  "SharedWorker",
+  "TextDecoder",
+  "TextEncoder",
+  "Uint16Array",
+  "Uint32Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "WeakRef",
   "WeakSet",
   "WebAssembly",
+  "WebSocket",
+  "Worker",
+  "XMLHttpRequest",
+  "__dirname",
+  "__filename",
   "__proto__",
+  "arguments",
+  "atob",
+  "btoa",
+  "clearImmediate",
+  "clearInterval",
+  "clearTimeout",
+  "console",
   "constructor",
+  "crypto",
   "eval",
   "fetch",
+  "global",
   "globalThis",
+  "module",
+  "navigator",
+  "performance",
   "process",
   "prototype",
   "queueMicrotask",
@@ -414,114 +685,1043 @@ const FORBIDDEN_SOURCE_TOKENS = Object.freeze([
   "setImmediate",
   "setInterval",
   "setTimeout",
+  "structuredClone",
 ]);
 
-function stripCommentsAndStrings(source) {
-  let output = "";
-  for (let index = 0; index < source.length;) {
-    const current = source[index];
-    const next = source[index + 1];
-    if (current === "/" && next === "/") {
-      const end = source.indexOf("\n", index + 2);
-      const stop = end === -1 ? source.length : end;
-      output += " ".repeat(stop - index);
-      index = stop;
-      continue;
-    }
-    if (current === "/" && next === "*") {
-      const end = source.indexOf("*/", index + 2);
-      if (end === -1) throw new Error("static gate: unterminated comment");
-      const stop = end + 2;
-      output += source.slice(index, stop).replace(/[^\n]/gu, " ");
-      index = stop;
-      continue;
-    }
-    if (current === '"' || current === "'" || current === "`") {
-      const quote = current;
-      let stop = index + 1;
-      for (; stop < source.length; stop += 1) {
-        if (source[stop] === "\\") {
-          stop += 1;
-          continue;
-        }
-        if (source[stop] === quote) {
-          stop += 1;
-          break;
-        }
-      }
-      if (stop > source.length || source[stop - 1] !== quote) {
-        throw new Error("static gate: unterminated string");
-      }
-      output += source.slice(index, stop).replace(/[^\n]/gu, " ");
-      index = stop;
-      continue;
-    }
-    output += current;
-    index += 1;
+const FORBIDDEN_MEMBER_NAMES = Object.freeze([
+  "__defineGetter__",
+  "__defineSetter__",
+  "__lookupGetter__",
+  "__lookupSetter__",
+  "__proto__",
+  "arguments",
+  "callee",
+  "caller",
+  "constructor",
+  "prototype",
+]);
+
+const FORBIDDEN_COMPILE_TIME_STRINGS = Object.freeze([
+  ...FORBIDDEN_SOURCE_IDENTIFIERS,
+  ...FORBIDDEN_MEMBER_NAMES,
+  "OPENROUTER_API_KEY",
+  "candidate-containment-guardian-control-v1.test.mjs",
+  "candidate-containment-guardian-control-v1-adversarial.test.mjs",
+  "file://",
+  "node:",
+  "openrouter",
+  "/proc/",
+]);
+
+const SOURCE_KEYWORDS = new Set([
+  "break",
+  "case",
+  "catch",
+  "const",
+  "continue",
+  "default",
+  "do",
+  "else",
+  "export",
+  "false",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "if",
+  "import",
+  "let",
+  "new",
+  "null",
+  "of",
+  "return",
+  "switch",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "void",
+  "while",
+]);
+
+const ALLOWED_AMBIENT_MEMBERS = new Map([
+  ["Array", new Set(["isArray"])],
+  ["Boolean", new Set()],
+  ["Error", new Set()],
+  ["Number", new Set(["isFinite", "isInteger", "isSafeInteger"])],
+  [
+    "Object",
+    new Set([
+      "create",
+      "defineProperty",
+      "freeze",
+      "hasOwn",
+      "isExtensible",
+      "isFrozen",
+    ]),
+  ],
+  ["Reflect", new Set()],
+  ["Set", new Set()],
+  ["String", new Set()],
+  ["WeakMap", new Set()],
+]);
+
+function collectOracleRecordKeys(value, keys = new Set()) {
+  if (value === null || typeof value !== "object") return keys;
+  if (Array.isArray(value)) {
+    for (const child of value) collectOracleRecordKeys(child, keys);
+    return keys;
   }
-  return output;
+  for (const [key, child] of Object.entries(value)) {
+    keys.add(key);
+    collectOracleRecordKeys(child, keys);
+  }
+  return keys;
 }
 
-function auditCandidateSource(source) {
+const ALLOWED_MEMBER_NAMES = new Set([
+  ...collectOracleRecordKeys(REQUIREMENTS_ORACLE),
+  ...Object.values(REQUIREMENTS_ORACLE.frameFields).flat(),
+  "add",
+  "artifact",
+  "at",
+  "binding",
+  "byteLength",
+  "bytes",
+  "files",
+  "get",
+  "has",
+  "identity",
+  "includes",
+  "initialOffset",
+  "length",
+  "name",
+  "projectionSha256",
+  "push",
+  "rawSha256",
+  "set",
+  "sha256",
+  "size",
+  "slice",
+  "value",
+]);
+
+const UNTRUSTED_PUBLIC_PARAMETER_NAMES = new Set(
+  EXPECTED_FUNCTION_SIGNATURES.flatMap(({ parameters }) => parameters),
+);
+
+function lexCandidateSource(source) {
   if (typeof source !== "string") throw new Error("static gate: source");
-  const imports = [];
-  const importPattern =
-    /(^|\n)\s*import\s*\{([^}]*)\}\s*from\s*(["'])([^"']+)\3\s*;?/gu;
-  for (const match of source.matchAll(importPattern)) {
-    const names = match[2]
-      .split(",")
-      .map((name) => name.trim())
-      .filter(Boolean);
-    imports.push({ specifier: match[4], names });
-  }
-  const masked = stripCommentsAndStrings(source);
-  const importTokenCount = masked.match(/\bimport\b/gu)?.length ?? 0;
-  if (imports.length !== importTokenCount) {
-    throw new Error("static gate: non-static or malformed import");
-  }
-  if (/\bexport\s+(?:\*|\{[^}]*\})\s+from\b/gu.test(masked)) {
-    throw new Error("static gate: re-export");
-  }
-  if (/\\u(?:\{|[0-9a-fA-F]{4})/gu.test(masked)) {
-    throw new Error("static gate: encoded identifier");
-  }
-  assert.equal(imports.length, ALLOWED_IMPORTS.size);
-  const seen = new Set();
-  for (const { specifier, names } of imports) {
-    const expected = ALLOWED_IMPORTS.get(specifier);
-    if (expected === undefined || seen.has(specifier)) {
-      throw new Error("static gate: import specifier");
+  const tokens = [];
+  let index = 0;
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+
+  const fail = (reason) => {
+    throw new Error(`static gate: ${reason}`);
+  };
+  const push = (type, value, start, end) => {
+    tokens.push(
+      Object.freeze({
+        type,
+        value,
+        raw: source.slice(start, end),
+        start,
+        end,
+        braceDepth,
+        parenDepth,
+        bracketDepth,
+      }),
+    );
+  };
+  const identifierStart = (value) =>
+    value !== undefined && /[$_\p{ID_Start}]/u.test(value);
+  const identifierPart = (value) =>
+    value !== undefined && /[$_\u200c\u200d\p{ID_Continue}]/u.test(value);
+  const codePointAt = (position) => {
+    if (position >= source.length) return null;
+    const value = String.fromCodePoint(source.codePointAt(position));
+    return { value, end: position + value.length };
+  };
+  const unicodeEscapeAt = (position) => {
+    if (source[position] !== "\\" || source[position + 1] !== "u") return null;
+    let cursor = position + 2;
+    let hexadecimal;
+    if (source[cursor] === "{") {
+      const close = source.indexOf("}", cursor + 1);
+      if (close === -1) fail("unterminated Unicode escape");
+      hexadecimal = source.slice(cursor + 1, close);
+      if (!/^[0-9A-Fa-f]{1,6}$/u.test(hexadecimal)) {
+        fail("malformed Unicode escape");
+      }
+      cursor = close + 1;
+    } else {
+      hexadecimal = source.slice(cursor, cursor + 4);
+      if (!/^[0-9A-Fa-f]{4}$/u.test(hexadecimal)) {
+        fail("malformed Unicode escape");
+      }
+      cursor += 4;
     }
-    seen.add(specifier);
-    if (names.some((name) => !/^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name))) {
-      throw new Error("static gate: aliased or malformed named import");
+    const codePoint = Number.parseInt(hexadecimal, 16);
+    if (codePoint > 0x10ffff) fail("Unicode escape outside scalar range");
+    return { value: String.fromCodePoint(codePoint), end: cursor };
+  };
+  const escapedValue = () => {
+    if (index >= source.length) fail("unterminated escape");
+    const value = source[index++];
+    const simple = {
+      0: "\0",
+      b: "\b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "\t",
+      v: "\v",
+      "\\": "\\",
+      '"': '"',
+      "'": "'",
+    };
+    if (Object.hasOwn(simple, value)) return simple[value];
+    if (value === "\n") return "";
+    if (value === "\r") {
+      if (source[index] === "\n") index += 1;
+      return "";
     }
-    assert.deepEqual(names, expected);
+    if (value === "x") {
+      const hexadecimal = source.slice(index, index + 2);
+      if (!/^[0-9A-Fa-f]{2}$/u.test(hexadecimal)) {
+        fail("malformed hexadecimal escape");
+      }
+      index += 2;
+      return String.fromCodePoint(Number.parseInt(hexadecimal, 16));
+    }
+    if (value === "u") {
+      index -= 2;
+      const decoded = unicodeEscapeAt(index);
+      index = decoded.end;
+      return decoded.value;
+    }
+    return value;
+  };
+  const scanString = (quote) => {
+    const start = index++;
+    let value = "";
+    while (index < source.length) {
+      const character = source[index++];
+      if (character === quote) {
+        push("string", value, start, index);
+        return;
+      }
+      if (character === "\n" || character === "\r") {
+        fail("unterminated string");
+      }
+      value += character === "\\" ? escapedValue() : character;
+    }
+    fail("unterminated string");
+  };
+  const scanIdentifier = () => {
+    const start = index;
+    let value = "";
+    let first = true;
+    while (index < source.length) {
+      const escaped = unicodeEscapeAt(index);
+      const decoded = escaped ?? codePointAt(index);
+      if (decoded === null) break;
+      if (
+        !(first
+          ? identifierStart(decoded.value)
+          : identifierPart(decoded.value))
+      ) {
+        break;
+      }
+      value += decoded.value;
+      index = decoded.end;
+      first = false;
+    }
+    if (first) fail("malformed identifier");
+    push("identifier", value, start, index);
+  };
+
+  while (index < source.length) {
+    const character = source[index];
+    if (/\s/u.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (character === "/" && source[index + 1] === "/") {
+      index += 2;
+      while (index < source.length && !/[\r\n]/u.test(source[index])) {
+        index += 1;
+      }
+      continue;
+    }
+    if (character === "/" && source[index + 1] === "*") {
+      index += 2;
+      const end = source.indexOf("*/", index);
+      if (end === -1) fail("unterminated comment");
+      index = end + 2;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      scanString(character);
+      continue;
+    }
+    if (character === "`") fail("template literal outside bounded subset");
+    const escaped = unicodeEscapeAt(index);
+    const codePoint = codePointAt(index);
+    if (
+      (escaped !== null && identifierStart(escaped.value)) ||
+      (codePoint !== null && identifierStart(codePoint.value))
+    ) {
+      scanIdentifier();
+      continue;
+    }
+    if (/[0-9]/u.test(character)) {
+      const start = index++;
+      while (/[A-Za-z0-9_.]/u.test(source[index] ?? "")) index += 1;
+      push("number", source.slice(start, index), start, index);
+      continue;
+    }
+    const start = index;
+    const three = source.slice(index, index + 3);
+    const two = source.slice(index, index + 2);
+    let punctuator = character;
+    if (["...", "===", "!==", ">>>", "**="].includes(three)) {
+      punctuator = three;
+    } else if (
+      [
+        "=>",
+        "++",
+        "--",
+        "?.",
+        "**",
+        "&&",
+        "||",
+        "??",
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "+=",
+        "-=",
+        "*=",
+        "/=",
+        "%=",
+        "&=",
+        "|=",
+        "^=",
+        "<<",
+        ">>",
+      ].includes(two)
+    ) {
+      punctuator = two;
+    }
+    index += punctuator.length;
+    if (punctuator === "{") {
+      push("punctuator", punctuator, start, index);
+      braceDepth += 1;
+    } else if (punctuator === "}") {
+      braceDepth -= 1;
+      if (braceDepth < 0) fail("unbalanced closing brace");
+      push("punctuator", punctuator, start, index);
+    } else if (punctuator === "(") {
+      push("punctuator", punctuator, start, index);
+      parenDepth += 1;
+    } else if (punctuator === ")") {
+      parenDepth -= 1;
+      if (parenDepth < 0) fail("unbalanced closing parenthesis");
+      push("punctuator", punctuator, start, index);
+    } else if (punctuator === "[") {
+      push("punctuator", punctuator, start, index);
+      bracketDepth += 1;
+    } else if (punctuator === "]") {
+      bracketDepth -= 1;
+      if (bracketDepth < 0) fail("unbalanced closing bracket");
+      push("punctuator", punctuator, start, index);
+    } else {
+      push("punctuator", punctuator, start, index);
+    }
   }
-  for (const token of FORBIDDEN_SOURCE_TOKENS) {
-    const pattern = new RegExp(`\\b${token}\\b`, "u");
-    if (pattern.test(masked)) throw new Error(`static gate: ${token}`);
+  if (braceDepth !== 0 || parenDepth !== 0 || bracketDepth !== 0) {
+    fail("unbalanced source");
   }
-  const weakMaps = [
-    ...masked.matchAll(
-      /\b(?:const|let)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*new\s+WeakMap\s*\(\s*\)/gu,
+  return Object.freeze(tokens);
+}
+
+function matchingToken(tokens, openingIndex, opening, closing) {
+  let depth = 0;
+  for (let index = openingIndex; index < tokens.length; index += 1) {
+    if (tokens[index].value === opening) depth += 1;
+    if (tokens[index].value === closing) depth -= 1;
+    if (depth === 0) return index;
+  }
+  throw new Error(`static gate: unterminated ${opening}`);
+}
+
+function parseExactImports(tokens) {
+  const declarations = [];
+  const syntaxIndexes = new Set();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== "identifier" || token.value !== "import") continue;
+    if (
+      token.braceDepth !== 0 ||
+      token.parenDepth !== 0 ||
+      token.bracketDepth !== 0
+    ) {
+      throw new Error("static gate: nested or dynamic import");
+    }
+    const expectedEntry = [...ALLOWED_IMPORTS][declarations.length];
+    if (expectedEntry === undefined || tokens[index + 1]?.value !== "{") {
+      throw new Error("static gate: import form");
+    }
+    const [expectedSpecifier, expectedNames] = expectedEntry;
+    let cursor = index + 2;
+    const names = [];
+    while (tokens[cursor]?.value !== "}") {
+      const imported = tokens[cursor];
+      if (imported?.type !== "identifier") {
+        throw new Error("static gate: named import");
+      }
+      names.push(imported.value);
+      cursor += 1;
+      if (tokens[cursor]?.value === ",") {
+        cursor += 1;
+      } else if (tokens[cursor]?.value !== "}") {
+        throw new Error("static gate: named import separator");
+      }
+    }
+    if (
+      tokens[cursor + 1]?.value !== "from" ||
+      tokens[cursor + 2]?.type !== "string"
+    ) {
+      throw new Error("static gate: named import source");
+    }
+    const specifier = tokens[cursor + 2].value;
+    assert.equal(specifier, expectedSpecifier, "static gate: import order");
+    assert.deepEqual(names, expectedNames, "static gate: import names");
+    for (let covered = index; covered <= cursor + 2; covered += 1) {
+      syntaxIndexes.add(covered);
+    }
+    declarations.push(
+      Object.freeze({
+        specifier,
+        names: Object.freeze(names),
+        start: index,
+        end: cursor + 2,
+      }),
+    );
+    index = cursor + 2;
+  }
+  assert.equal(declarations.length, ALLOWED_IMPORTS.size);
+  assert.equal(
+    declarations.reduce(
+      (count, declaration) => count + declaration.names.length,
+      0,
     ),
-  ].map((match) => match[1]);
-  assert.deepEqual(weakMaps, [
+    23,
+  );
+  return Object.freeze({
+    declarations: Object.freeze(declarations),
+    syntaxIndexes,
+  });
+}
+
+function parseExactExports(tokens) {
+  const declarations = [];
+  const syntaxIndexes = new Set();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== "identifier" || token.value !== "export") continue;
+    if (
+      token.braceDepth !== 0 ||
+      token.parenDepth !== 0 ||
+      token.bracketDepth !== 0
+    ) {
+      throw new Error("static gate: nested export");
+    }
+    const expected = EXPECTED_EXPORT_MANIFEST[declarations.length];
+    const kind = tokens[index + 1]?.value;
+    const name = tokens[index + 2]?.value;
+    if (
+      expected === undefined ||
+      kind !== expected.kind ||
+      name !== expected.name ||
+      tokens[index + 2]?.type !== "identifier"
+    ) {
+      throw new Error("static gate: export inventory");
+    }
+    syntaxIndexes.add(index);
+    syntaxIndexes.add(index + 1);
+    syntaxIndexes.add(index + 2);
+    if (kind === "function") {
+      if (tokens[index + 3]?.value !== "(") {
+        throw new Error("static gate: export signature");
+      }
+      const closing = matchingToken(tokens, index + 3, "(", ")");
+      const parameters = [];
+      let cursor = index + 4;
+      while (cursor < closing) {
+        if (tokens[cursor]?.type !== "identifier") {
+          throw new Error("static gate: export parameter");
+        }
+        parameters.push(tokens[cursor].value);
+        syntaxIndexes.add(cursor);
+        cursor += 1;
+        if (cursor < closing) {
+          if (tokens[cursor]?.value !== ",") {
+            throw new Error("static gate: export parameter separator");
+          }
+          cursor += 1;
+        }
+      }
+      const signature = EXPECTED_FUNCTION_SIGNATURES.find(
+        (candidate) => candidate.name === name,
+      );
+      assert.deepEqual(parameters, signature.parameters);
+      if (tokens[closing + 1]?.value !== "{") {
+        throw new Error("static gate: export function body");
+      }
+      declarations.push(
+        Object.freeze({
+          name,
+          kind,
+          arity: parameters.length,
+          parameters: Object.freeze(parameters),
+          functionIndex: index + 1,
+          bodyOpenIndex: closing + 1,
+        }),
+      );
+    } else {
+      if (tokens[index + 3]?.value !== "=") {
+        throw new Error("static gate: exported const initializer");
+      }
+      declarations.push(Object.freeze({ name, kind, arity: null }));
+    }
+  }
+  assert.deepEqual(
+    declarations.map(({ name, kind, arity }) => ({ name, kind, arity })),
+    EXPECTED_EXPORT_MANIFEST,
+  );
+  return Object.freeze({
+    declarations: Object.freeze(declarations),
+    syntaxIndexes,
+  });
+}
+
+function buildLexicalScopes(tokens) {
+  const scopes = [{ parent: null, bindings: new Map() }];
+  const scopeAt = [];
+  const childScopeAtBrace = new Map();
+  const stack = [0];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.value === "}") stack.pop();
+    if (stack.length === 0) throw new Error("static gate: scope underflow");
+    scopeAt[index] = stack.at(-1);
+    if (token.value === "{") {
+      const child = scopes.length;
+      scopes.push({ parent: stack.at(-1), bindings: new Map() });
+      childScopeAtBrace.set(index, child);
+      stack.push(child);
+    }
+  }
+  if (stack.length !== 1) throw new Error("static gate: scope imbalance");
+  return { scopes, scopeAt, childScopeAtBrace };
+}
+
+function assertPositiveIdentifierClosure(tokens, imports, exports) {
+  const { scopes, scopeAt, childScopeAtBrace } = buildLexicalScopes(tokens);
+  const syntaxIndexes = new Set([
+    ...imports.syntaxIndexes,
+    ...exports.syntaxIndexes,
+  ]);
+  const protectedBindings = new Set([
+    ...ALLOWED_AMBIENT_INTRINSICS,
+    ...FORBIDDEN_SOURCE_IDENTIFIERS,
+    ...EXPECTED_EXPORTS,
+    ...[...ALLOWED_IMPORTS.values()].flat(),
+  ]);
+  const addBinding = (
+    scope,
+    name,
+    tokenIndex,
+    { protectedSeed = false } = {},
+  ) => {
+    if (!protectedSeed && protectedBindings.has(name)) {
+      throw new Error(`static gate: protected binding ${name}`);
+    }
+    const bindings = scopes[scope].bindings;
+    const existing = bindings.get(name);
+    if (existing !== undefined && existing !== tokenIndex) {
+      throw new Error(`static gate: duplicate binding ${name}`);
+    }
+    bindings.set(name, tokenIndex);
+    syntaxIndexes.add(tokenIndex);
+  };
+  for (const declaration of imports.declarations) {
+    for (const name of declaration.names)
+      addBinding(0, name, declaration.start, { protectedSeed: true });
+  }
+  for (const declaration of exports.declarations) {
+    const tokenIndex = tokens.findIndex(
+      (token, index) =>
+        index >= 0 &&
+        token.value === declaration.name &&
+        tokens[index - 2]?.value === "export",
+    );
+    addBinding(0, declaration.name, tokenIndex, { protectedSeed: true });
+  }
+
+  const functionBodies = new Map(
+    exports.declarations
+      .filter(({ kind }) => kind === "function")
+      .map((declaration) => [
+        declaration.functionIndex,
+        declaration.bodyOpenIndex,
+      ]),
+  );
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].value !== "function") continue;
+    const previous = tokens[index - 1]?.value;
+    if (![undefined, ";", "{", "}", "export"].includes(previous)) {
+      throw new Error(
+        "static gate: function expression outside bounded subset",
+      );
+    }
+    const nameToken = tokens[index + 1];
+    if (nameToken?.type !== "identifier" || tokens[index + 2]?.value !== "(") {
+      throw new Error("static gate: function declaration");
+    }
+    const closing = matchingToken(tokens, index + 2, "(", ")");
+    const bodyOpenIndex = closing + 1;
+    if (tokens[bodyOpenIndex]?.value !== "{") {
+      throw new Error("static gate: function body");
+    }
+    const bodyScope = childScopeAtBrace.get(bodyOpenIndex);
+    if (bodyScope === undefined) throw new Error("static gate: function scope");
+    if (!functionBodies.has(index)) {
+      addBinding(scopeAt[index], nameToken.value, index + 1);
+    }
+    syntaxIndexes.add(index);
+    syntaxIndexes.add(index + 1);
+    let cursor = index + 3;
+    while (cursor < closing) {
+      const parameter = tokens[cursor];
+      if (parameter?.type !== "identifier") {
+        throw new Error("static gate: simple parameters required");
+      }
+      addBinding(bodyScope, parameter.value, cursor);
+      cursor += 1;
+      if (cursor < closing) {
+        if (tokens[cursor]?.value !== ",") {
+          throw new Error("static gate: parameter separator");
+        }
+        cursor += 1;
+      }
+    }
+  }
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const declarationKind = tokens[index].value;
+    if (declarationKind === "var") {
+      throw new Error("static gate: var outside bounded subset");
+    }
+    if (!["const", "let"].includes(declarationKind)) continue;
+    syntaxIndexes.add(index);
+    const nameToken = tokens[index + 1];
+    if (nameToken?.type !== "identifier") {
+      throw new Error("static gate: simple binding required");
+    }
+    const forOf =
+      tokens[index - 1]?.value === "(" && tokens[index - 2]?.value === "for";
+    if (forOf) {
+      if (tokens[index + 2]?.value !== "of") {
+        throw new Error("static gate: only braced for-of loops are permitted");
+      }
+      const closing = matchingToken(tokens, index - 1, "(", ")");
+      if (tokens[closing + 1]?.value !== "{") {
+        throw new Error("static gate: for-of body must be braced");
+      }
+      addBinding(
+        childScopeAtBrace.get(closing + 1),
+        nameToken.value,
+        index + 1,
+      );
+      syntaxIndexes.add(index + 2);
+      continue;
+    }
+    if (tokens[index - 1]?.value === "export") {
+      continue;
+    }
+    if (!["=", ";"].includes(tokens[index + 2]?.value)) {
+      throw new Error("static gate: one simple declarator per statement");
+    }
+    addBinding(scopeAt[index], nameToken.value, index + 1);
+    const base = tokens[index];
+    for (let cursor = index + 2; cursor < tokens.length; cursor += 1) {
+      const token = tokens[cursor];
+      if (
+        token.value === ";" &&
+        token.braceDepth === base.braceDepth &&
+        token.parenDepth === base.parenDepth &&
+        token.bracketDepth === base.bracketDepth
+      ) {
+        break;
+      }
+      if (
+        token.value === "," &&
+        token.braceDepth === base.braceDepth &&
+        token.parenDepth === base.parenDepth &&
+        token.bracketDepth === base.bracketDepth
+      ) {
+        throw new Error("static gate: multiple declarators");
+      }
+    }
+  }
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].value !== "catch") continue;
+    if (
+      tokens[index + 1]?.value !== "(" ||
+      tokens[index + 2]?.type !== "identifier" ||
+      tokens[index + 3]?.value !== ")" ||
+      tokens[index + 4]?.value !== "{"
+    ) {
+      throw new Error("static gate: catch binding");
+    }
+    addBinding(
+      childScopeAtBrace.get(index + 4),
+      tokens[index + 2].value,
+      index + 2,
+    );
+    syntaxIndexes.add(index);
+  }
+
+  const resolve = (name, startingScope) => {
+    let scope = startingScope;
+    while (scope !== null) {
+      if (scopes[scope].bindings.has(name)) return true;
+      scope = scopes[scope].parent;
+    }
+    return false;
+  };
+  const forbiddenMembers = new Set(FORBIDDEN_MEMBER_NAMES);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== "identifier") continue;
+    if (token.raw.includes("\\")) {
+      throw new Error("static gate: encoded identifier");
+    }
+    if (syntaxIndexes.has(index) || SOURCE_KEYWORDS.has(token.value)) continue;
+    const previous = tokens[index - 1];
+    const next = tokens[index + 1];
+    if (previous?.value === ".") {
+      if (
+        forbiddenMembers.has(token.value) ||
+        !ALLOWED_MEMBER_NAMES.has(token.value)
+      ) {
+        throw new Error(`static gate: forbidden member ${token.value}`);
+      }
+      const base = tokens[index - 2];
+      if (UNTRUSTED_PUBLIC_PARAMETER_NAMES.has(base?.value)) {
+        throw new Error(
+          `static gate: direct member access on public input ${base.value}`,
+        );
+      }
+      const ambientMembers = ALLOWED_AMBIENT_MEMBERS.get(base?.value);
+      if (ambientMembers !== undefined && !ambientMembers.has(token.value)) {
+        throw new Error(
+          `static gate: ambient member ${base.value}.${token.value}`,
+        );
+      }
+      continue;
+    }
+    const objectKey =
+      ["{", ","].includes(previous?.value) && next?.value === ":";
+    if (objectKey) {
+      if (forbiddenMembers.has(token.value)) {
+        throw new Error(`static gate: forbidden key ${token.value}`);
+      }
+      continue;
+    }
+    if (
+      !ALLOWED_AMBIENT_INTRINSICS.includes(token.value) &&
+      !resolve(token.value, scopeAt[index])
+    ) {
+      throw new Error(`static gate: free identifier ${token.value}`);
+    }
+  }
+  return Object.freeze({
+    scopeCount: scopes.length,
+    bindingCount: scopes.reduce(
+      (total, scope) => total + scope.bindings.size,
+      0,
+    ),
+  });
+}
+
+function assertComputedMembersAreStaticIndexes(tokens) {
+  const canEndBase = (token) =>
+    token !== undefined &&
+    (["identifier", "number", "string"].includes(token.type) ||
+      [")", "]", "}"].includes(token.value));
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].value !== "[") continue;
+    const closing = matchingToken(tokens, index, "[", "]");
+    const previous = tokens[index - 1];
+    if (
+      ["{", ","].includes(previous?.value) &&
+      tokens[closing + 1]?.value === ":"
+    ) {
+      throw new Error("static gate: computed object key");
+    }
+    if (!canEndBase(previous)) continue;
+    const key = tokens.slice(index + 1, closing);
+    if (
+      key.length !== 1 ||
+      key[0].type !== "number" ||
+      !/^(?:0|[1-9][0-9]*)$/u.test(key[0].value)
+    ) {
+      throw new Error("static gate: dynamic computed member");
+    }
+    index = closing;
+  }
+}
+
+function decodedCompileTimeStrings(tokens) {
+  const values = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].type !== "string") continue;
+    let value = tokens[index].value;
+    values.push(value);
+    let cursor = index;
+    while (
+      tokens[cursor + 1]?.value === "+" &&
+      tokens[cursor + 2]?.type === "string"
+    ) {
+      value += tokens[cursor + 2].value;
+      values.push(value);
+      cursor += 2;
+    }
+  }
+  return values;
+}
+
+function assertBoundedSourceSubset(tokens) {
+  for (const token of tokens) {
+    if (["...", "=>", "++", "--", "?.", "/", "/="].includes(token.value)) {
+      throw new Error(`static gate: punctuator ${token.value}`);
+    }
+    if (
+      token.type === "identifier" &&
+      [
+        "async",
+        "await",
+        "class",
+        "debugger",
+        "delete",
+        "extends",
+        "instanceof",
+        "super",
+        "this",
+        "with",
+        "yield",
+      ].includes(token.value)
+    ) {
+      throw new Error(`static gate: syntax ${token.value}`);
+    }
+  }
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].value !== "new") continue;
+    if (!["Error", "Set", "WeakMap"].includes(tokens[index + 1]?.value)) {
+      throw new Error("static gate: constructor outside bounded subset");
+    }
+  }
+  for (const value of decodedCompileTimeStrings(tokens)) {
+    const normalized = value.toLowerCase();
+    for (const forbidden of FORBIDDEN_COMPILE_TIME_STRINGS) {
+      if (normalized.includes(forbidden.toLowerCase())) {
+        throw new Error(`static gate: forbidden string ${forbidden}`);
+      }
+    }
+  }
+  assertComputedMembersAreStaticIndexes(tokens);
+}
+
+function assertExactPrivateStoreManifest(tokens) {
+  const stores = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (
+      tokens[index].value === "const" &&
+      tokens[index + 1]?.type === "identifier" &&
+      tokens[index + 2]?.value === "=" &&
+      tokens[index + 3]?.value === "new" &&
+      tokens[index + 4]?.value === "WeakMap" &&
+      tokens[index + 5]?.value === "(" &&
+      tokens[index + 6]?.value === ")"
+    ) {
+      stores.push(tokens[index + 1].value);
+    }
+  }
+  assert.deepEqual(stores, [
     "startupMetadata",
     "inputMetadata",
     "stateMetadata",
   ]);
-  const exported = [
-    ...masked.matchAll(
-      /\bexport\s+(?:const|function)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gu,
-    ),
-  ].map((match) => match[1]);
-  assert.deepEqual(exported.sort(), [...EXPECTED_EXPORTS].sort());
+  assert.equal(
+    tokens.filter(
+      (token, index) =>
+        token.value === "new" && tokens[index + 1]?.value === "WeakMap",
+    ).length,
+    3,
+  );
+  for (const name of stores) {
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (tokens[index].value !== name) continue;
+      if (
+        ["=", "+=", "-=", "*=", "/=", "%="].includes(tokens[index + 1]?.value)
+      ) {
+        const declaration =
+          tokens[index - 1]?.value === "const" &&
+          tokens[index + 1]?.value === "=" &&
+          tokens[index + 2]?.value === "new";
+        if (!declaration) {
+          throw new Error(`static gate: private store reassignment ${name}`);
+        }
+      }
+    }
+  }
+  return Object.freeze(stores);
+}
+
+function assertModuleScopeStoreClosure(tokens) {
+  const privateStores = new Set([
+    "startupMetadata",
+    "inputMetadata",
+    "stateMetadata",
+  ]);
+  let checked = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (
+      !["const", "let"].includes(token.value) ||
+      token.braceDepth !== 0 ||
+      token.parenDepth !== 0 ||
+      token.bracketDepth !== 0
+    ) {
+      continue;
+    }
+    if (token.value === "let") {
+      throw new Error("static gate: module-scope reassignable state");
+    }
+    const name = tokens[index + 1]?.value;
+    const initializer = tokens[index + 3];
+    if (
+      tokens[index + 1]?.type !== "identifier" ||
+      tokens[index + 2]?.value !== "=" ||
+      initializer === undefined
+    ) {
+      throw new Error("static gate: module-scope declaration shape");
+    }
+    checked += 1;
+    if (privateStores.has(name)) {
+      if (
+        initializer.value !== "new" ||
+        tokens[index + 4]?.value !== "WeakMap"
+      ) {
+        throw new Error("static gate: private store initializer");
+      }
+      continue;
+    }
+    let declarationEnd = index + 3;
+    while (
+      declarationEnd < tokens.length &&
+      !(
+        tokens[declarationEnd].value === ";" &&
+        tokens[declarationEnd].braceDepth === token.braceDepth &&
+        tokens[declarationEnd].parenDepth === token.parenDepth &&
+        tokens[declarationEnd].bracketDepth === token.bracketDepth
+      )
+    ) {
+      declarationEnd += 1;
+    }
+    const initializerTokens = tokens.slice(index + 3, declarationEnd);
+    if (
+      initializerTokens.some(
+        (candidate, offset) =>
+          candidate.value === "new" &&
+          ["Set", "WeakMap"].includes(initializerTokens[offset + 1]?.value),
+      )
+    ) {
+      throw new Error(`static gate: mutable slotted module store ${name}`);
+    }
+    const primitive =
+      ["number", "string"].includes(initializer.type) ||
+      ["false", "null", "true"].includes(initializer.value);
+    const frozenOrPrimitiveCall =
+      ["deepFreeze", "sha256"].includes(initializer.value) &&
+      tokens[index + 4]?.value === "(";
+    if (!primitive && !frozenOrPrimitiveCall) {
+      throw new Error(`static gate: mutable module store ${name}`);
+    }
+  }
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (
+      token.value !== "=" ||
+      token.braceDepth !== 0 ||
+      token.parenDepth !== 0 ||
+      token.bracketDepth !== 0
+    ) {
+      continue;
+    }
+    const declaration = ["const", "let"].includes(tokens[index - 2]?.value);
+    if (!declaration) {
+      throw new Error("static gate: module-scope assignment");
+    }
+  }
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (
+      token.type !== "identifier" ||
+      tokens[index + 1]?.value !== "(" ||
+      token.braceDepth !== 0 ||
+      token.parenDepth !== 0 ||
+      token.bracketDepth !== 0 ||
+      ["=", "function", "new"].includes(tokens[index - 1]?.value)
+    ) {
+      continue;
+    }
+    throw new Error("static gate: module-scope effect call");
+  }
+  return checked;
+}
+
+function auditCandidateSource(source) {
+  const tokens = lexCandidateSource(source);
+  assertBoundedSourceSubset(tokens);
+  const imports = parseExactImports(tokens);
+  const exports = parseExactExports(tokens);
+  const privateStores = assertExactPrivateStoreManifest(tokens);
+  const moduleStoreCount = assertModuleScopeStoreClosure(tokens);
+  const identifierClosure = assertPositiveIdentifierClosure(
+    tokens,
+    imports,
+    exports,
+  );
   return Object.freeze({
-    importCount: imports.length,
-    exportCount: exported.length,
-    privateStoreCount: weakMaps.length,
+    importCount: imports.declarations.length,
+    importedNameCount: imports.declarations.reduce(
+      (count, declaration) => count + declaration.names.length,
+      0,
+    ),
+    exportCount: exports.declarations.length,
+    privateStoreCount: privateStores.length,
+    scopeCount: identifierClosure.scopeCount,
+    bindingCount: identifierClosure.bindingCount,
+    moduleStoreCount,
   });
 }
 
@@ -532,50 +1732,169 @@ function sourceSkeleton(extra = "") {
         `import { ${names.join(", ")} } from ${JSON.stringify(specifier)};`,
     )
     .join("\n");
-  const exports = EXPECTED_EXPORTS.map((name, index) =>
-    index < 2
-      ? `export const ${name} = ${index};`
-      : `export function ${name}() { return null; }`,
-  ).join("\n");
+  const exports = EXPECTED_EXPORT_MANIFEST.map((entry, index) => {
+    if (entry.kind === "const") return `export const ${entry.name} = ${index};`;
+    const signature = EXPECTED_FUNCTION_SIGNATURES.find(
+      ({ name }) => name === entry.name,
+    );
+    return `export function ${entry.name}(${signature.parameters.join(", ")}) { return null; }`;
+  }).join("\n");
   return `${importText}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}\n`;
 }
 
+function sourceWithImportMutation(mutate) {
+  const [firstSpecifier, firstNames] = [...ALLOWED_IMPORTS][0];
+  const original = `import { ${firstNames.join(", ")} } from ${JSON.stringify(firstSpecifier)};`;
+  return sourceSkeleton().replace(original, mutate(original, firstNames));
+}
+
 function runStaticNegativeControls() {
-  const mutations = [
-    'import fs from "node:fs";',
-    'import * as exact from "./containment-exact-v2.mjs";',
-    'import "./containment-exact-v2.mjs";',
-    'export * from "./containment-exact-v2.mjs";',
-    'const late = import("./containment-exact-v2.mjs");',
-    "const metadata = import.meta.url;",
-    "const delayed = setTimeout;",
+  const imports = [
+    () => sourceWithImportMutation(() => 'import value from "node:fs";'),
+    () =>
+      sourceWithImportMutation(
+        () => 'import * as exact from "./containment-exact-v2.mjs";',
+      ),
+    () =>
+      sourceWithImportMutation(() => 'import "./containment-exact-v2.mjs";'),
+    () =>
+      sourceWithImportMutation((original) =>
+        original.replace("boundedInteger", "boundedInteger as bounded"),
+      ),
+    () =>
+      sourceWithImportMutation((original) =>
+        original.replace("boundedInteger, ", ""),
+      ),
+    () =>
+      sourceWithImportMutation((original) =>
+        original.replace("boundedInteger", "boundedInteger, extraHelper"),
+      ),
+    () =>
+      sourceWithImportMutation((original) =>
+        original.replace(
+          "./containment-exact-v2.mjs",
+          "./containment-exact-v1.mjs",
+        ),
+      ),
+    () =>
+      `${sourceSkeleton()}\nimport { sha256 } from "./containment-exact-v2.mjs";`,
+    () =>
+      `${sourceSkeleton()}\nconst late = import("./containment-exact-v2.mjs");`,
+    () => `${sourceSkeleton()}\nconst metadata = import.meta;`,
+  ];
+  const exports = [
+    () => `${sourceSkeleton()}\nexport default null;`,
+    () => `${sourceSkeleton()}\nexport { sha256 };`,
+    () => `${sourceSkeleton()}\nexport * from "./containment-exact-v2.mjs";`,
+    () =>
+      sourceSkeleton().replace(
+        "export function createCandidateContainmentGuardianStartupV1(",
+        "export const createCandidateContainmentGuardianStartupV1 = function(",
+      ),
+    () =>
+      sourceSkeleton().replace(
+        "startupReportBytes, epochBytes, epochEofObserved",
+        "startupReportBytes, epochBytes",
+      ),
+    () =>
+      sourceSkeleton().replace(
+        "startupReportBytes, epochBytes, epochEofObserved",
+        "startupReportBytes, epochBytes, observedEof",
+      ),
+    () =>
+      sourceSkeleton().replace(
+        "startupReportBytes, epochBytes, epochEofObserved",
+        "startupReportBytes, epochBytes, epochEofObserved = true",
+      ),
+  ];
+  const authorityAndGadgets = [
     "const escaped = pr\\u006fcess;",
+    "const direct = process;",
+    "function hidden() { const local = null; } const leaked = local;",
+    "{ const sibling = null; } const leaked = sibling;",
+    "function process() { return null; }",
     "const gadget = value.constructor;",
-    "const forbidden = new WeakSet();",
+    'const gadget = value["constructor"];',
+    'const gadget = value["con" + "structor"];',
+    "const gadget = Reflect.construct;",
+    "const delayed = setTimeout;",
+    "const callback = new Function();",
+    "const proxied = new Proxy();",
+    "const weak = new WeakSet();",
+    "const metadata = globalThis.process;",
+    "const worker = new Worker();",
+    "const dynamic = value[key];",
+    "const spread = [...value];",
+    "const arrow = () => null;",
+    "const expression = function named() { return null; };",
+    "class Hidden {}",
+    "async function hidden() { return null; }",
+    'const path = "node:" + "fs";',
+    'const testPath = "candidate-containment-guardian-control-v1.test.mjs";',
+    'const hostPath = "/proc/self/fd";',
+    "const regularExpression = /^[a-z]+$/u;",
+    "const template = `static text`;",
+  ];
+  const stores = [
+    sourceSkeleton().replace("const startupMetadata", "let startupMetadata"),
+    sourceSkeleton().replace("startupMetadata", "startupMetadataWrong"),
+    sourceSkeleton().replace(
+      "const stateMetadata = new WeakMap();",
+      "const stateMetadata = new WeakMap();\nconst extraMetadata = new WeakMap();",
+    ),
+    `${sourceSkeleton()}\nstartupMetadata = stateMetadata;`,
+    sourceSkeleton("const permissionStore = new Set();"),
+    sourceSkeleton("const mutableArray = [];"),
+    sourceSkeleton("const mutableRecord = {};"),
+    sourceSkeleton("let mutableSession = null;"),
+    sourceSkeleton("const frozenSet = deepFreeze(new Set());"),
+    sourceSkeleton("function populate() { return null; } populate();"),
+  ];
+  const sources = [
+    ...imports.map((create) => create()),
+    ...exports.map((create) => create()),
+    ...authorityAndGadgets.map((body) => sourceSkeleton(body)),
+    ...stores,
   ];
   let evaluationAttempts = 0;
-  for (const mutation of mutations) {
+  for (const source of sources) {
     assert.throws(() => {
-      auditCandidateSource(sourceSkeleton(mutation));
+      auditCandidateSource(source);
       evaluationAttempts += 1;
     });
   }
   assert.equal(evaluationAttempts, 0);
-  assert.doesNotThrow(() => auditCandidateSource(sourceSkeleton()));
-  return Object.freeze({ rejected: mutations.length, evaluationAttempts });
+  const positiveSources = [
+    sourceSkeleton(),
+    sourceSkeleton(
+      "function localHelper(value) { const localValue = value; return localValue; }",
+    ),
+    sourceSkeleton(
+      "function select(values) { for (const value of values) { if (value) { return value; } } return null; }",
+    ),
+    sourceSkeleton("const frozenLocalTable = deepFreeze([]);"),
+  ];
+  for (const source of positiveSources) {
+    assert.doesNotThrow(() => auditCandidateSource(source));
+  }
+  return Object.freeze({
+    rejected: sources.length,
+    accepted: positiveSources.length,
+    evaluationAttempts,
+  });
 }
 
-function evaluateCandidateOnlyWhenSourceAbsent(source, evaluate) {
+function evaluateCandidateOnlyWhenEvaluatorCloses(source, evaluate) {
   if (source !== null) {
+    auditCandidateSource(source);
     throw new Error(
-      "candidate evaluation disabled until exhaustive positive-allowlist parser closure is implemented",
+      "candidate evaluation disabled until the complete evaluator matrix is executable",
     );
   }
   return evaluate();
 }
 
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
-const REQUIREMENTS_ORACLE = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
 
 let candidate = null;
 let candidateImportError = null;
@@ -587,7 +1906,7 @@ try {
   if (error?.code !== "ENOENT") throw error;
 }
 try {
-  candidate = await evaluateCandidateOnlyWhenSourceAbsent(
+  candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(
     sourceText,
     () => import(SOURCE_URL.href),
   );
@@ -622,6 +1941,72 @@ test("independently canonicalizes the normative requirements fixture", () => {
     REQUIREMENTS_ORACLE.predecessors.direct.length,
     ALLOWED_IMPORTS.size,
   );
+  assert.deepEqual(
+    Object.keys(REQUIREMENTS_ORACLE),
+    EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS,
+  );
+  assert.deepEqual(REQUIREMENTS_ORACLE.modes, ["NORMAL", "RECOVERY_ONLY"]);
+  assert.deepEqual(REQUIREMENTS_ORACLE.privateStateStores, [
+    "startupMetadata",
+    "inputMetadata",
+    "stateMetadata",
+  ]);
+  assert.deepEqual(
+    REQUIREMENTS_ORACLE.vocabularies.ambientIntrinsics,
+    ALLOWED_AMBIENT_INTRINSICS,
+  );
+  assert.deepEqual(REQUIREMENTS_ORACLE.authority, {
+    transportAuthority: false,
+    descriptorAuthority: false,
+    filesystemAuthority: false,
+    cgroupAuthority: false,
+    processAuthority: false,
+    recoveryAuthority: false,
+    runtimeAuthority: false,
+  });
+  assert.deepEqual(REQUIREMENTS_ORACLE.physicalFacts, {
+    socketTransfer: null,
+    descriptorInventory: null,
+    epochOrigin: null,
+    guardianExecution: null,
+    recoveryExecution: null,
+    cleanup: null,
+  });
+  assert.deepEqual(
+    REQUIREMENTS_ORACLE.predecessors.direct.map(
+      ({ specifier, sha256, requirementsSha256, imports }) => ({
+        specifier,
+        sha256,
+        requirementsSha256,
+        imports,
+      }),
+    ),
+    [
+      {
+        specifier: "./containment-exact-v2.mjs",
+        sha256:
+          "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+        requirementsSha256: null,
+        imports: ALLOWED_IMPORTS.get("./containment-exact-v2.mjs"),
+      },
+      {
+        specifier: "./containment-guardian-recovery-v1.mjs",
+        sha256:
+          "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+        requirementsSha256:
+          "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+        imports: ALLOWED_IMPORTS.get("./containment-guardian-recovery-v1.mjs"),
+      },
+      {
+        specifier: "./containment-launch-capsule-v3.mjs",
+        sha256:
+          "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d",
+        requirementsSha256:
+          "4432b3334ff07b847f1ee8abe49c184df5c993545c21f405ccc1247ecb20604a",
+        imports: ALLOWED_IMPORTS.get("./containment-launch-capsule-v3.mjs"),
+      },
+    ],
+  );
 });
 
 test("reconstructs all three map digests from separately authored goldens", () => {
@@ -651,7 +2036,7 @@ test("reconstructs all three map digests from separately authored goldens", () =
   );
 });
 
-test("pins all direct and evidence-only predecessor source bytes independently", () => {
+test("pins all predecessor bytes and rejects independent drift mutations", () => {
   const fixturePins = new Map(
     [
       ...REQUIREMENTS_ORACLE.predecessors.direct,
@@ -668,18 +2053,26 @@ test("pins all direct and evidence-only predecessor source bytes independently",
       .length,
     2,
   );
+  let rejectedMutations = 0;
   for (const golden of PREDECESSOR_SOURCE_GOLDENS) {
     const bytes = readFileSync(
       new URL(`../src/candidate/${golden.specifier.slice(2)}`, import.meta.url),
     );
-    assert.equal(bytes.length, golden.byteLength, golden.specifier);
-    assert.equal(byteSha256(bytes), golden.sha256, golden.specifier);
+    assert.doesNotThrow(() => assertPinnedPredecessorBytes(bytes, golden));
     assert.equal(
       fixturePins.get(golden.specifier),
       golden.sha256,
       golden.specifier,
     );
+    for (const mutated of predecessorByteMutations(bytes)) {
+      assert.throws(
+        () => assertPinnedPredecessorBytes(mutated, golden),
+        /predecessor source pin mismatch/gu,
+      );
+      rejectedMutations += 1;
+    }
   }
+  assert.equal(rejectedMutations, 25);
 });
 
 test("freezes the evaluator expansion-count anchors without claiming coverage", () => {
@@ -708,25 +2101,44 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
 
 test("rejects static-policy negative controls before any evaluation attempt", () => {
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
-    rejected: 10,
+    rejected: 53,
+    accepted: 4,
     evaluationAttempts: 0,
   });
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(auditCandidateSource(sourceSkeleton())).filter(([key]) =>
+        [
+          "importCount",
+          "importedNameCount",
+          "exportCount",
+          "privateStoreCount",
+        ].includes(key),
+      ),
+    ),
+    {
+      importCount: 3,
+      importedNameCount: 23,
+      exportCount: 13,
+      privateStoreCount: 3,
+    },
+  );
   let sourcePresentEvaluationAttempts = 0;
   assert.throws(
     () =>
-      evaluateCandidateOnlyWhenSourceAbsent(sourceSkeleton(), () => {
+      evaluateCandidateOnlyWhenEvaluatorCloses(sourceSkeleton(), () => {
         sourcePresentEvaluationAttempts += 1;
       }),
-    /evaluation disabled until exhaustive positive-allowlist parser closure/gu,
+    /evaluation disabled until the complete evaluator matrix is executable/gu,
   );
   assert.equal(sourcePresentEvaluationAttempts, 0);
 });
 
-test("reports the absent production module only through the controlled import", () => {
+test("loads the candidate once and freezes its exact module contract", () => {
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
   if (candidateImportError !== null) throw candidateImportError;
   assert.notEqual(candidate, null);
-  assert.deepEqual(Object.keys(candidate).sort(), [...EXPECTED_EXPORTS].sort());
+  assertCandidateModuleContract(candidate);
 });
 
 test.todo("expand 20 exact whole-transition and state goldens");
@@ -734,8 +2146,8 @@ test.todo("expand 15 independently encoded emitted-status byte goldens");
 test.todo("expand 4 atomic two-status internal wire-prefix controls");
 test.todo("expand every proper prefix and mutation of N1 through R2");
 test.todo(
-  "replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure for free identifiers, imports, exports, encoded identifiers, computed access, ambient authority, and test-gaming paths",
+  "close receiver-origin and private-store commit-position proof before lifting the source-presence stop",
 );
 test.todo(
-  "complete all remaining ADR-0036 acceptance groups: 252 descriptor aliases; every bound, error-precedence rule, and frame field; predecessor-drift mutations; the full static gate; export arities and descriptors; transition, status-byte, and prefix goldens; recovery binding; WeakMap failure atomicity; and the complete Node 20 and non-G1.7 matrix",
+  "complete all remaining ADR-0036 acceptance groups: 252 descriptor aliases; every bound, error-precedence rule, and frame field; transition, status-byte, and prefix goldens; recovery binding; WeakMap failure atomicity; and the complete Node 20 and non-G1.7 matrix",
 );
