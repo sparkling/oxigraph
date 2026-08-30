@@ -3,7 +3,8 @@
 Status: scoped schema-v5 Agentic-QE receipts are independently reopened, but
 the aggregate Agentic receipt, full current-HEAD qualification, and broad
 parity claims are withheld
-Evidence cut: 2026-07-26 normative baseline; prior reconciliation: 2026-08-27
+Evidence cut: 2026-07-26 normative baseline; dependency reconciliation:
+2026-08-31
 
 ## Bottom line
 
@@ -102,12 +103,29 @@ being presented as normative root-manifest coverage.
 | W3C RDF Canonicalization | `15619df2fda7a4ca88308733789b6774517f9638` | RDF Dataset Canonicalization 1.0 |
 | JSON-LD API | `92f07705a0c0ac27aa9bc6fe1322dcc9fad0114d` | Supporting JSON-LD 1.1 interchange |
 | JSON-LD Streaming | `64e6fea9eee3cf5d80468810552f50f6c487925f` | Supporting streaming interchange |
-| Notation3 | `b975fc59ab5d2ad2d28e7206f1c34c716977d2ad` | Optional Community Group draft profile |
+| Notation3 | `8a9ea8ed42ae0487b20803f5687017980bbe8e37` | Current dependency-maintenance pin for the optional Community Group draft profile; the last semantic receipt remains bound to `b975fc59ab5d2ad2d28e7206f1c34c716977d2ad` |
 
 JSON-LD API and Streaming evidence does not establish RDF 1.2 triple-term
 parity. Notation3 is an optional Community Group draft profile, not a W3C
 Recommendation-track RDF 1.2 surface. JSON-LD Framing is not pinned and is
 explicitly unsupported/out of programme scope.
+
+The N3 pin moved from `b975fc59ab5d2ad2d28e7206f1c34c716977d2ad`
+to `8a9ea8ed42ae0487b20803f5687017980bbe8e37` only for the independently
+reviewed development-dependency and generated-grammar repair. The bounded
+[maintenance receipt](n3-dependency-maintenance-receipt.json) records audit
+zero, deterministic ANTLR 4.13.2 and Webpack 5.110.2 outputs, Node 20/current
+build gates, and the npm 9 expired-key false rejection together with passing
+current-npm and independent ECDSA verification. It grants no semantic,
+production, qualification, promotion, publication, or readiness authority.
+The earlier 208/871/296 supporting-suite result remains historical evidence
+for `b975fc59ab5d2ad2d28e7206f1c34c716977d2ad`; it has not been rerun or
+relabeled for the new pin.
+
+The selected N3 commit is not reachable from its configured origin at this
+checkpoint. This parent integration is local-only: separately authorized
+submodule publication must occur before any parent commit carrying the new
+Gitlink is pushed or published.
 
 The reviewed Data Shapes suite-content SHA-256 is
 `1d2c1c40769da1cf63fef62f3029447a66b5e81b5744b4cf2eaa5e128ba51a3a`.
@@ -120,9 +138,11 @@ evidence verifier.
 The exact supporting parser lane passes 5/5 wrappers, with explicit bounded
 dispositions:
 
-- N3 passes 208 parser, 871 extended, and 296 Turtle cases. Its two 87-entry
-  reasoner manifests are unsupported because no reasoner handler/wrapper is
-  registered.
+- At historical pin `b975fc59ab5d2ad2d28e7206f1c34c716977d2ad`,
+  N3 passed 208 parser, 871 extended, and 296 Turtle cases. Its two 87-entry
+  reasoner manifests were unsupported because no reasoner handler/wrapper was
+  registered. No corresponding semantic receipt exists yet for the current
+  dependency-maintenance pin.
 - JSON-LD ToRDF has 467 entries: 446 pass and 21 are declared exclusions.
 - JSON-LD Streaming has 483 physical entries and 481 unique IDs. Four physical
   entries belonging to duplicate IDs `t0124` and `t0125` are quarantined by a

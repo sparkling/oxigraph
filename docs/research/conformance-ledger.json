@@ -1,14 +1,16 @@
 {
   "schemaVersion": 2,
   "observedAt": "2026-08-27",
-  "reconciledAt": "2026-08-27",
-  "reconciledAgainstBaseCommit": "5a93890f792f908da930e97fc3b1e7c910fc5802",
+  "reconciledAt": "2026-08-31",
+  "reconciledAgainstBaseCommit": "996491469537ce2bba4a0820a7f3d3c81f977d53",
   "currentHeadFreshness": {
     "status": "not-qualified",
     "policy": "An evidence entry remains authoritative for its sealed subject, but is current-HEAD evidence only when its freshness status is current and its protected source/inventory binding verifies.",
     "blockers": [
       "Schema-v5 adapter, persistence-write, and G1 regression receipts were independently reopened for tracked-clean subject 5a93890f; the 47-command aggregate Agentic profile remains unrun",
       "Full MetaHarness qualification and independent full verification have not been regenerated after the G0.7 protected-evidence freeze",
+      "The N3 dependency-maintenance pin advanced from b975fc59 to 8a9ea8e; the sealed 208/871/296 supporting-suite result remains evidence for b975fc59 only and has not been rerun or relabeled for the new pin",
+      "N3 commit 8a9ea8e is not reachable from its configured origin; the parent pin remains local-only and must not be pushed or published before separately authorized submodule publication",
       "The clean-subject G1.7 preflight for 5a93890f is INCONCLUSIVE because reference selection, performance and noise budgets, semantic and compatibility owner evidence, and the benchmark remain absent; promotion remains open and withheld, and no promotion is claimed or authorized"
     ]
   },
@@ -56,7 +58,8 @@
     },
     "jsonLdApi": "92f07705a0c0ac27aa9bc6fe1322dcc9fad0114d",
     "jsonLdStreaming": "64e6fea9eee3cf5d80468810552f50f6c487925f",
-    "n3OptionalCommunityGroupProfile": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+    "n3OptionalCommunityGroupProfile": "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
+    "n3HistoricalSemanticReceipt": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
     "jsonLdFraming": "unsupported-out-of-scope; no repository pin",
     "jena": "6.1.0",
     "souffle": "2.5",
@@ -187,9 +190,9 @@
     },
     {
       "id": "E-SUPPORTING-PARSER-SUITES",
-      "title": "Current optional and interchange parser-suite audit",
+      "title": "Last sealed optional and interchange parser-suite audit",
       "kind": "supporting-suite",
-      "sourcePins": ["jsonLdApi", "jsonLdStreaming", "n3OptionalCommunityGroupProfile"],
+      "sourcePins": ["jsonLdApi", "jsonLdStreaming", "n3HistoricalSemanticReceipt"],
       "command": "cargo test --locked -p oxigraph-testsuite --test parser --all-features supporting_ -- --nocapture",
       "result": {
         "wrapperTests": {"passed":5,"failed":0},
@@ -198,7 +201,35 @@
         "jsonLdStreaming": {"physicalEntries":483,"uniqueEntries":481,"quarantinedPhysicalEntries":4,"stableEntries":479,"passed":452,"declaredFailures":27,"duplicateIds":["t0124","t0125"]},
         "jsonLdFromRdf": {"automated":false,"manualGeneric":"9/54 pass; 45/54 fail","newOrChangedFailures":["t0027","t0028"]}
       },
+      "freshness": {
+        "n3": "historical at b975fc59ab5d2ad2d28e7206f1c34c716977d2ad; not current evidence for 8a9ea8ed42ae0487b20803f5687017980bbe8e37",
+        "disposition": "The N3 result remains authoritative for its sealed subject and must not be relabeled to the dependency-maintenance pin"
+      },
       "authority": "Supporting parser/interchange and optional Community Group profile evidence only; not RDF 1.2 family parity"
+    },
+    {
+      "id": "E-N3-DEPENDENCY-MAINTENANCE",
+      "title": "Independently verified N3 development-dependency and generated-grammar maintenance",
+      "kind": "dependency-maintenance",
+      "sourcePin": "n3OptionalCommunityGroupProfile",
+      "receipt": {
+        "path": "n3-dependency-maintenance-receipt.json",
+        "sha256": "f721c9ccc52e946c4a1d35b301da6291e0f682bf8d4bb13e2a771bdfd5b9db56"
+      },
+      "result": {
+        "npmAuditIncludingDev": 0,
+        "npmAuditOmitDev": 0,
+        "nodeCurrent": "24.14.1",
+        "node20Floor": "20.0.0",
+        "node20Current": "20.20.2",
+        "javascriptTests": "3/3 on all three Node runtimes",
+        "mavenPackage": "pass",
+        "n3Manifest": "198/198 with no positive, negative, or skipped failures",
+        "turtleManifest": "130/149 pass; the exact historical 19 positive failures are unchanged",
+        "publication": "local-only; selected commit is not reachable from the configured origin"
+      },
+      "signatureCaveat": "Node 20.0.0's bundled npm 9.6.4 reports EEXPIREDSIGNATUREKEY for antlr4@4.13.2. Current npm 11.11.0 and npm 10.8.2 report no invalid or missing signatures, and independent ECDSA verification passes because the package was signed before key expiry.",
+      "authority": "Development-dependency, deterministic generation, build, audit, and supply-chain evidence only; no semantic, production, qualification, promotion, publication, or readiness authority"
     },
     {
       "id": "E-OWL2RL-OFFICIAL",

@@ -41,7 +41,7 @@ export const G17_NATIVE_WORKSPACE_EXCLUDED_GITLINKS = Object.freeze([
   }),
   Object.freeze({
     path: "testsuite/N3",
-    commit: "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+    commit: "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
   }),
   Object.freeze({
     path: "testsuite/json-ld-api",
