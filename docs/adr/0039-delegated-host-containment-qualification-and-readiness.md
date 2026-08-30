@@ -81,16 +81,31 @@ and fail-closed: missing, stale, mismatched, corrupt, unsupported, revoked, or
 unavailable host evidence returns unavailable or unproved and performs no
 candidate work.
 
-The same integration slice must add application-receipt v7 creation and replay,
-candidate-v2 evaluator reconstruction, the frozen task profile, command/CLI
-dispatch, and exact runtime closure. Application receipts v1 through v6,
-schema-v1 task contracts, predecessor registries, and legacy replay remain
-byte-compatible. Passing containment readiness permits a candidate attempt; it
-does not itself accept a product change or mint Router quality.
+ADR-0034 owns and ratifies application-receipt-v7 construction, verification,
+and replay; schema-v2 dispatch and reconstruction; the frozen v2 task profile;
+command and CLI literals; and the early exact
+`executionGate: "native-containment-qualification-v1"` paired with
+`contractSchemaVersion: 2`. This ADR consumes those exact frozen bytes
+unchanged. It owns only current-host qualification, receipt-to-host binding and
+activation, and proof that the qualified path executed through the runtime.
+Application receipts v1 through v6, schema-v1 task contracts, predecessor
+registries, and legacy replay remain byte-compatible.
+
+The ADR-0034 gate precedes `reconstruct-v2` workspace preparation. While
+readiness is exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, preflight,
+run, and replay perform zero candidate/evaluator Git, submodule, process,
+provider, `ACCEPT`, `REJECT`, application-receipt emission, or Router-quality
+work. A later pre-execution check remains defense in depth. Qualification may
+activate only an exact receipt-bound path that preserves both checks and
+demonstrates path-executed runtime closure. Passing containment readiness
+permits only the bounded candidate attempt allowed by the frozen protocol; it
+does not accept a product change or mint Router quality.
 
 The initially qualified protocol remains cancel-only. It rejects `COMMIT`, emits
-no application output, and cannot admit a semantic-change product module until
-the separate ADR-0034 gate and that module's evaluator pass.
+no application output, and cannot admit G2.2 even after ADR-0034 and this ADR
+close. G2.2 requires a separately ratified commit-capable successor, its own
+frozen evaluator, and exact decision, receipt, and cleanup semantics.
 
 ## Owned files
 
@@ -102,20 +117,19 @@ This ADR owns these new qualification paths:
   `tools/engineering-harness/test/`; and
 - `tools/engineering-harness/qualification/containment-guardian-v1/contract.json`.
 
-After qualification, it owns only the necessary integration changes in:
+After qualification, it owns only the necessary binding and activation changes
+in:
 
 - `tools/engineering-harness/src/candidate/containment-owner-v2.mjs`;
-- `tools/engineering-harness/src/candidate/sandbox-session-v2.mjs`;
-- `tools/engineering-harness/src/candidate/reconstruct-v2.mjs`;
-- `tools/engineering-harness/src/receipts/application.mjs`;
-- `tools/engineering-harness/src/runtime/application-admission.mjs`;
-- `tools/engineering-harness/src/task-profile.mjs`;
-- `tools/engineering-harness/src/command-registry.mjs`; and
-- `tools/engineering-harness/bin/oxigraph-engineering-harness.mjs`.
+- `tools/engineering-harness/src/candidate/sandbox-session-v2.mjs`.
 
-Any new receipt schema, readiness value, profile, command, or fixture must first
-be ratified with exact bytes and independent negative controls. This ADR does
-not pre-authorize those future literals.
+ADR-0034 retains exclusive ownership of `reconstruct-v2`, application receipt
+and admission, contract/preflight/programme dispatch, task profile, command
+registry, CLI, package, and their focused v2 fixtures. Any qualification
+receipt, readiness value, activation fixture, or change to the two paths above
+must first be ratified with exact bytes and independent negative controls. This
+ADR does not pre-authorize those future literals or revise ADR-0034's frozen
+ones.
 
 ## Nonclaims and authority boundary
 
@@ -140,8 +154,10 @@ set, state root, delegated root, and cancel-only protocol. It does not prove:
 
 ADR-0019's implemented egress, cancellation, and service-claim boundary remains
 unchanged. Guardian controller-loss cancellation does not expand SERVICE or
-remote-input claims. Closing ADR-0039 can unblock ADR-0020 G2.2 admission work;
-it does not implement or advance that product slice by itself.
+remote-input claims. Closing ADR-0039 removes only the host-qualification and
+activation blocker. ADR-0020 G2.2 remains blocked by the cancel-only protocol
+until a separately ratified commit-capable successor closes; neither decision
+implements or advances that product slice by itself.
 
 ## Acceptance boundary
 
@@ -165,11 +181,16 @@ The gate requires:
 - exact receipt binding to all source, artifact, recipe, host, boot, root,
   contract, test, and result identities, with stale/cross-host/cross-boot/
   cross-artifact substitution controls;
-- application-receipt v7 and replay controls while v1 through v6 and schema-v1
-  fixtures remain byte-identical;
-- exact task/profile/command/CLI and path-executed runtime closure with missing
-  or invalid qualification failing before candidate Git, submodule, process,
-  `ACCEPT`, or `REJECT` work;
+- unchanged consumption of ADR-0034's exact application-receipt-v7,
+  schema-v2 reconstruction, task-profile, command, CLI, package, early-gate,
+  and focused-fixture bytes while v1 through v6 and schema-v1 fixtures remain
+  byte-identical;
+- exact current-host qualification binding plus path-executed runtime closure
+  through the activated `containment-owner-v2` and `sandbox-session-v2` paths,
+  with missing or invalid qualification failing at the early gate before
+  reconstruction workspace preparation or any candidate/evaluator Git,
+  submodule, process, provider, `ACCEPT`, `REJECT`, receipt-emission, or
+  Router-quality work;
 - focused host suites, current and Node 20 complete explicit non-G1.7 suites,
   source-only programme and ADR-graph verification, and independent native,
   filesystem, compatibility, security, and MetaHarness review; and

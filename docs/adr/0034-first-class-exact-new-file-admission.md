@@ -53,14 +53,15 @@
   separate committed-clean identity control passes 495/495, and that identity
   control passes 2/2 on both current Node and Node 20. The broader exact-create
   task remains 92% in progress; ADR-0035's separate native task is 75% in
-  progress. Existing schema-v1 bytes remain untouched. Production containment
-  remains fixed unavailable: the filesystem-backed native guardian/reaper,
-  recovery mutation, race-free exec and pidfd/waitid binding, interactive
-  native adapter, and full path-executed runtime-closure proof,
+  progress. Committed schema-v1 fixtures remain byte-identical. Production
+  containment remains fixed unavailable: the filesystem-backed native
+  guardian/reaper, recovery mutation, race-free exec and pidfd/waitid binding,
+  interactive native adapter, and full path-executed runtime-closure proof,
   application receipt v7/replay, evaluator reconstruction, profile/CLI
-  registration, and the complete gate are not implemented. Schema-v1 remains
-  the only registered task contract, and G2.2 may not admit a new product
-  module until the complete v2 gate passes
+  registration, the early qualification gate, and the complete gate are not
+  implemented. Schema-v1 remains the only registered task contract, and G2.2
+  may not admit a new product module until the complete v2 gate, current host
+  qualification, and a separately ratified commit-capable successor all pass
 - Programme task: `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
@@ -95,11 +96,12 @@ and receipted as such.
 ## Decision
 
 Add a schema-v2 engineering task contract with first-class, exact new-file
-admission. Keep all engineering task-contract schema-v1 files, canonical bytes,
-parsers, task-level receipt/projection bytes, and replay behavior unchanged; v1
-continues to require `allowCreate: false` and reject every creation patch. This
-task-contract version is distinct from the engineering application-receipt
-versions described below.
+admission. Keep the committed schema-v1 task and receipt fixtures and their
+canonical projection bytes byte-identical, and keep schema-v1 parsing, command,
+and replay behavior compatible while shared parser, dispatch, and command
+sources add v2. V1 continues to require `allowCreate: false` and reject every
+creation patch. This task-contract version is distinct from the engineering
+application-receipt versions described below.
 
 ### Exact scope and mutable baselines
 
@@ -244,6 +246,66 @@ must emit `oxigraph.engineering-application-receipt/v7`; it may not relabel an
 older application receipt. Replay recomputes every value from exact Git objects
 and rejects a receipt that relabels creation as modification.
 
+### Dormant pre-registration and early execution gate
+
+This ADR exclusively owns and ratifies the dormant application-receipt-v7
+constructor, verifier, and replay; schema-v2 command dispatch and candidate
+reconstruction; frozen v2 task profile; and exact command, CLI, and package
+literals. Application receipts v1 through v6 and committed schema-v1 receipt
+and task fixtures remain byte-identical; schema-v1 parsing, command, and replay
+behavior remains compatible while the shared dispatch sources add v2. ADR-0039
+may consume the ratified v2 bytes unchanged after host qualification; it does
+not own or revise them.
+
+Every schema-v2 preflight, run, and replay request carries exactly:
+
+```js
+{
+  contractSchemaVersion: 2,
+  executionGate: "native-containment-qualification-v1",
+}
+```
+
+The first executable action is the fail-closed qualification gate. It runs
+before `reconstruct-v2` performs workspace preparation or any candidate or
+evaluator Git read. While that gate returns exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, preflight,
+run, and replay perform zero candidate or evaluator Git work, submodule work,
+process launch, provider work, `ACCEPT`, `REJECT`, application-receipt
+emission, or Router-quality work. A later check immediately before physical
+execution remains mandatory defense in depth; it does not replace or defer the
+early gate.
+
+The exact dormant v2 implementation surface belongs to this ADR:
+
+- `tools/engineering-harness/src/receipts/application.mjs`;
+- `tools/engineering-harness/src/runtime/application-admission.mjs`;
+- `tools/engineering-harness/src/contract.mjs`;
+- `tools/engineering-harness/src/contract-v2.mjs`;
+- `tools/engineering-harness/src/runtime/preflight.mjs`;
+- `tools/engineering-harness/src/runtime/g12-programme.mjs`;
+- `tools/engineering-harness/src/candidate/reconstruct-v2.mjs`;
+- `tools/engineering-harness/src/task-profile.mjs`;
+- `tools/engineering-harness/src/command-registry.mjs`;
+- `tools/engineering-harness/bin/oxigraph-engineering-harness.mjs`; and
+- `tools/engineering-harness/package.json`.
+
+Focused evidence belongs in these existing paths:
+
+- `tools/engineering-harness/test/application-receipt.test.mjs`;
+- `tools/engineering-harness/test/application-admission.test.mjs`;
+- `tools/engineering-harness/test/contract.test.mjs`;
+- `tools/engineering-harness/test/contract-v2.test.mjs`;
+- `tools/engineering-harness/test/preflight.test.mjs`;
+- `tools/engineering-harness/test/g12-programme.test.mjs`;
+- `tools/engineering-harness/test/candidate-reconstruction-v2.test.mjs`;
+- `tools/engineering-harness/test/task-profile.test.mjs`; and
+- `tools/engineering-harness/test/cli.test.mjs`.
+
+The future implementation must freeze their exact v2 fixtures before
+registration and prove that every unavailable-gate path reaches none of the
+forbidden effects above.
+
 ### Bounded failure behavior
 
 The implementation follows the programme's adopted MetaHarness ADR-160 —
@@ -277,6 +339,12 @@ exact v2 model. Passing this harness gate is engineering evidence only; it does
 not implement G2.2, change ADR-0020's Proposed status, or grant semantic
 qualification or promotion authority.
 
+The currently designed containment protocol is cancel-only and rejects
+`COMMIT`. Therefore completion of this dormant gate and later ADR-0039 host
+qualification still cannot admit G2.2. A separately ratified commit-capable
+successor, with its own evaluator and exact receipt/cleanup semantics, must
+close before any semantic-change module can execute or commit.
+
 There is no pre-v2 exception or contingency. No product file, empty or
 otherwise, may be added to manufacture a present baseline before this gate is
 implemented and frozen.
@@ -290,6 +358,11 @@ The implementation must prove:
   `allowCreate: false`, and v1 rejects creation metadata;
 - application receipts v1-v6 and their verifiers are byte-identical, while an
   application receipt for a v2 task uses the new v7 schema and exact v2 fields;
+- the exact `contractSchemaVersion: 2` / execution-gate pair is required by
+  every v2 preflight, run, and replay path; unavailable or invalid
+  qualification stops before reconstruction workspace preparation and performs
+  zero candidate/evaluator Git, submodule, process, provider, `ACCEPT`,
+  `REJECT`, receipt-emission, or Router-quality work;
 - a frozen v2 fixture reconstructs one exact new module and one mixed
   existing-file/new-file candidate with raw statuses `M` and `A` respectively;
 - absent baselines are omitted from snapshots, explicit creation instructions
@@ -313,7 +386,9 @@ The implementation must prove:
   routing, local-only behavior, and no-promotion boundary are covered by
   exhaustive control tests; and
 - a frozen G2.2 profile can name its new product module only after these focused
-  tests and the full engineering-harness regression suite pass.
+  tests and the full engineering-harness regression suite pass, the exact host
+  qualification is current, and a separately ratified commit-capable successor
+  has replaced the cancel-only boundary.
 
 ## Consequences
 

@@ -30,10 +30,32 @@ faults, and semantic reducer faults difficult to distinguish.
 Introduce two separately testable boundaries after ADR-0036 closes:
 
 1. `containment-guardian-statefs-v1` owns held-descriptor filesystem inventory,
-   immutable artifact persistence, and lifecycle moves.
+   immutable artifact persistence, lifecycle moves, and the only policy/oracle
+   that may select a physical state-filesystem operation.
 2. `containment-guardian-manager-protocol-v1` owns the finite manager/guardian
    writer handoff and selects only operations already authorized by complete,
    branded ADR-0035 lifetime and recovery boundaries.
+
+The statefs boundary also owns one tiny, separately attested Linux x86-64
+link-time C syscall translation unit. Its sole entrypoint is exactly
+`oxigraph_containment_statefs_execute_v1(request, result)`. The request carries
+only bounded held `dirfd` values, bounded literal names, bounded byte views, and
+one of these six operations:
+
+- `LOCK_EX_NB`;
+- `INVENTORY`;
+- `PERSIST_NOREPLACE`;
+- `MKDIR_SYNC`;
+- `MOVE_NOREPLACE_SYNC`; or
+- `TEMP_CLEANUP`.
+
+The result reports the exact last completed step, failed step, `errno`, and
+bounded current observation. It reports an honest syscall prefix; it never
+selects policy, retries an ambiguous effect, or converts an error into durable
+success. The translation unit accepts no root pathname, callback, process,
+cgroup, provider, or fault-injection authority. Test builds may compile a
+finite fault selector for the independently enumerated fault matrix, but that
+selector is compiled out of every production object and executable.
 
 Neither boundary changes the frozen journal, lifetime, or recovery schemas.
 They consume exact bytes and same-origin selections from ADR-0035; they do not
@@ -87,14 +109,25 @@ syscall sequence, current observation, and unresolved outcome. An injected or
 real failure leaves an honest prefix. No catch block converts an ambiguous
 write, sync, rename, move, or directory-sync result into durable success.
 
+The JavaScript statefs module remains the sole policy and evidence oracle. The
+C translation unit is a bounded syscall executor beneath that oracle, not a
+second state machine. ADR-0038 may link and attest the exact resulting object
+unchanged; it may not copy, extend, reinterpret, or take ownership of its
+request/result protocol or filesystem policy.
+
 ## Owned files
 
 This ADR owns these new paths:
 
 - `tools/engineering-harness/src/candidate/containment-guardian-statefs-v1.mjs`;
 - `tools/engineering-harness/src/candidate/containment-guardian-manager-protocol-v1.mjs`;
+- `tools/engineering-harness/src/candidate/containment-guardian-statefs-syscalls-v1.h`;
+- `tools/engineering-harness/src/candidate/containment-guardian-statefs-syscalls-v1.c`;
+- `tools/engineering-harness/src/candidate/containment-guardian-statefs-syscalls-attestation-v1.mjs`;
 - `tools/engineering-harness/test/candidate-containment-guardian-statefs-v1.test.mjs`;
 - `tools/engineering-harness/test/candidate-containment-guardian-statefs-v1-faults.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-statefs-syscalls-v1.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-statefs-syscalls-v1-faults.test.mjs`;
   and
 - `tools/engineering-harness/test/candidate-containment-guardian-manager-protocol-v1.test.mjs`.
 
@@ -131,6 +164,12 @@ Implementation requires:
   writer action;
 - duplicate-manager and lock-loss controls with no fallback lock pathname;
 - evaluator-owned operation plans and independently observed syscall receipts;
+- an exact separately attested header, C source, compiler/recipe, repeated
+  byte-identical link-time object, fixed entrypoint, six-operation request
+  enum, and bounded last-step/failed-step/`errno`/observation result;
+- rejection of root paths, callbacks, unknown operations, unbounded names or
+  bytes, descriptor substitution, extra exports, process or cgroup behavior,
+  and any production object retaining the test-only fault selector;
 - injected failure immediately before and after create, write, file sync,
   no-replace install, directory sync, directory creation, move, source sync,
   destination sync, and cleanup boundaries;

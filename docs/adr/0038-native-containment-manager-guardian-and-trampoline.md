@@ -32,7 +32,9 @@ one unregistered native adapter after ADR-0036 and ADR-0037 close:
 
 - the manager consumes the held roots and locked open description, persists the
   manager protocol, owns lifetime-cgroup allocation and removal, and launches
-  admission or recovery guardians;
+  admission or recovery guardians. It links the exact separately attested
+  ADR-0037 statefs-syscalls object unchanged and invokes it only with requests
+  emitted by `containment-guardian-statefs-v1`;
 - the guardian adopts the exact control ABI, remains the supervisor's stable
   direct parent, owns only its generation-bound `ctl` and `job` cgroups, and
   persists only writer transitions permitted by ADR-0035 and ADR-0037; and
@@ -98,6 +100,17 @@ environment recipe, repeated-build artifact bytes, ELF structure, hardening,
 protocol requirements, and explicit nonclaims. Compiler availability or a
 matching ELF is not compiler causality or proof that the artifact executed.
 
+ADR-0037 exclusively owns
+`containment-guardian-statefs-syscalls-v1.h`, its C source, request/result
+protocol, six-operation vocabulary, object attestation, and statefs policy.
+This ADR neither regenerates nor forks those bytes. The manager build consumes
+the exact attested link-time object, binds its digest and unchanged exported
+entrypoint into the manager attestation, and proves that the final ELF contains
+that exact object without an alternate filesystem implementation. Its exclusive
+implementation scope is process, cgroup, and exec mechanics. Changing the
+object, compiling the production object with the test-only fault selector, or
+adding another state-filesystem syscall path requires ADR-0037 review first.
+
 ## Owned files
 
 This ADR owns these new sources:
@@ -112,8 +125,9 @@ This ADR owns these new sources:
 
 It also owns matching candidate native fixture, attestation, manager, guardian,
 trampoline, and fault tests under `tools/engineering-harness/test/`. It does not
-own or modify the frozen supervisor-v2, supervisor preflight-v4,
-bootstrap-v3, journal, lifetime, or recovery sources.
+own or modify ADR-0037's statefs-syscalls header, C source, attestation, or
+tests, or the frozen supervisor-v2, supervisor preflight-v4, bootstrap-v3,
+journal, lifetime, or recovery sources.
 
 ## Nonclaims and authority boundary
 
@@ -139,6 +153,9 @@ Implementation requires:
 
 - exact source, self-description, compiler, recipe, and repeated byte-identical
   static Linux x86-64 artifacts with independently verified ELF hardening;
+- exact unchanged linkage of ADR-0037's attested statefs-syscalls object and
+  sole entrypoint, including rejection of a rebuilt, substituted, extended,
+  fault-enabled, or second filesystem-syscall implementation;
 - preservation of every predecessor source, fixture, requirements digest,
   registry entry, and readiness value;
 - positive held manager and guardian exec stops, held/live image equality,

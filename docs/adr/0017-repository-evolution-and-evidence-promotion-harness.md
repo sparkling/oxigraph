@@ -260,7 +260,11 @@
   physical/final authority remain absent, null, or false. The physical native
   adapter and full path-executed runtime closure, receipt v7/replay, evaluator
   reconstruction, registry/CLI activation, and G2.2 remain open; ADR-0034 stays
-  Proposed and unregistered
+  Proposed and unregistered. ADR-0034 owns those dormant receipt-v7/schema-v2
+  registration bytes and their early qualification gate; ADR-0039 consumes
+  them unchanged and owns only current-host qualification, activation binding,
+  and path-executed runtime closure. ADR-0037 owns the bounded statefs-syscalls
+  object that ADR-0038 must link unchanged
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -594,7 +598,7 @@ G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
-ADR-0020 through ADR-0035 are seventeen Proposed living plans. G1.4a and G1.4b
+ADR-0020 through ADR-0039 are twenty-one Proposed living plans. G1.4a and G1.4b
 are completed product slices under Proposed ADR-0018, and G2.1 is implemented
 in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.
@@ -610,6 +614,23 @@ interactive physical cgroup adapter and full runtime-closure proof, receipt
 v7/replay, evaluator reconstruction, profile/CLI registration, the complete
 acceptance gate, and G2.2 remain open. ADR-0034 and ADR-0035 add no product
 G-identifier.
+
+The remaining containment gates have one-way ownership. ADR-0037 owns the sole
+statefs policy/oracle and a tiny separately attested Linux x86-64
+statefs-syscalls object; ADR-0038 links that object unchanged and owns only the
+manager/guardian/trampoline process/cgroup/exec mechanics. ADR-0034 owns dormant
+application receipt v7, schema-v2 reconstruction/dispatch/profile literals,
+and the early exact `executionGate: "native-containment-qualification-v1"` for
+`contractSchemaVersion: 2`. ADR-0039 consumes those bytes unchanged and owns
+only current-host qualification, receipt binding/activation, and path-executed
+runtime closure. Until then readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and the early
+gate stops before reconstruction workspace preparation or any candidate or
+evaluator Git, submodule, process, provider, `ACCEPT`, `REJECT`,
+receipt-emission, or Router-quality work. The later pre-execution check remains
+defense in depth.
+Even after qualification, the cancel-only protocol leaves G2.2 blocked until a
+separately ratified commit-capable successor closes.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on

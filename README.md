@@ -425,11 +425,11 @@ bounded authority-null scope. This is not filesystem durability, a stable
 native guardian/reaper, recovery mutation, delegated-cgroup evidence,
 pidfd/waitid reap, semantic retained-file validation, FD-6 execution binding,
 physical containment, or the full runtime closure. Production stays fixed
-unavailable until those gates and the exact path-executed runtime closure
-exist.
-Application receipt v7/replay, evaluator/profile/CLI registration, the complete
-ADR-0034 gate, and G2.2 remain open, so no new product module or promotion
-authority is admitted by this checkpoint.
+`{status: "unavailable", reason: "native-adapter-unavailable"}` until those
+gates and the exact path-executed runtime closure exist. Application receipt
+v7/replay, evaluator/profile/CLI registration, the complete ADR-0034 gate, and
+G2.2 remain open, so no new product module or promotion authority is admitted
+by this checkpoint.
 
 [ADR-0035 — Durable native containment guardian and crash recovery](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 separates the remaining stable guardian/reaper and crash-recovery design from
@@ -439,6 +439,26 @@ authority-null executable cancel preflight before delegated-host qualification.
 It is Proposed; its pure journal contract and test-local executable preflight
 fixture are implemented, unregistered, and grant no production containment or
 execution authority.
+
+The remaining Proposed containment decisions now have one-way ownership.
+[ADR-0037](./docs/adr/0037-durable-containment-statefs-and-manager-protocol.md)
+owns the sole statefs policy/oracle and exact separately attested bounded
+statefs-syscalls object;
+[ADR-0038](./docs/adr/0038-native-containment-manager-guardian-and-trampoline.md)
+must link that object unchanged and owns only manager/guardian/trampoline
+process/cgroup/exec mechanics. ADR-0034 owns dormant application receipt v7,
+schema-v2 reconstruction/dispatch/profile literals, and the early exact
+`executionGate: "native-containment-qualification-v1"` for
+`contractSchemaVersion: 2`.
+[ADR-0039](./docs/adr/0039-delegated-host-containment-qualification-and-readiness.md)
+consumes those bytes unchanged and owns only current-host qualification,
+receipt binding/activation, and path-executed runtime closure. While readiness
+has the unavailable value above, the early gate runs before reconstruction
+workspace preparation and performs no candidate/evaluator Git, submodule,
+process, provider, `ACCEPT`, `REJECT`, receipt-emission, or Router-quality work;
+the later check is defense in depth. The qualified protocol would still be
+cancel-only, so G2.2 additionally requires a separately ratified commit-capable
+successor.
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -532,14 +552,16 @@ The ADRs explain the principal boundaries:
   indexes, explicit federation, service identity, workload governance, safe
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
-  research into ADR-0018 and ADR-0020 through ADR-0035; ADR-0019 records the
-  implemented egress, cancellation, and service-claim slice. Seventeen decisions
+  research into ADR-0018 and ADR-0020 through ADR-0039; ADR-0019 records the
+  implemented egress, cancellation, and service-claim slice. Twenty-one decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
   support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 92%
   in-progress harness controls remain unregistered until their full v2
   acceptance gate closes. ADR-0035 separately governs the implemented pure
   journal contract and the still-unimplemented durable native guardian,
-  recovery, and executable-preflight boundary.
+  recovery, and executable-preflight boundary. ADR-0036 through ADR-0039 split
+  the pure ABI, statefs/syscalls, native process mechanics, and isolated-host
+  qualification/activation gates without changing production readiness.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

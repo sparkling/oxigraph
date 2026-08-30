@@ -41,12 +41,12 @@ mapping.
 | [ADR-0031 — Multi-repository lifecycle](0031-multi-repository-lifecycle.md)                                                          | Proposed    | Manage repositories through an authorized, journaled, resource-isolated, recoverable lifecycle                                                     |
 | [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md)                                          | Proposed    | Maintain optional rebuildable inferred views while keeping primary RDF authoritative and differential proof continuous                             |
 | [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md)                                                            | Proposed    | Research a bounded opt-in analytical join operator without replacing ordinary SPARQL planning or semantics                                         |
-| [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)                                      | Proposed    | Admit candidate-created modules only through schema-v2 exact paths, absent baselines, literal Git objects, and deterministic receipts              |
+| [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)                                      | Proposed    | Own exact schema-v2 admission, receipt-v7, dormant dispatch/profile literals, and the early fail-closed qualification gate                         |
 | [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)        | Proposed    | Keep a stable native reaper, persist intent before effects, and recover delegated cgroups without inventing reap or commit authority               |
 | [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md)                                                            | Proposed    | Freeze exact normal and recovery guardian transport without granting physical authority                                                            |
-| [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)              | Proposed    | Persist exact held-root state and manager handoffs without inventing process facts                                                                 |
-| [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md) | Proposed    | Implement exact unregistered native executables and race-free launch mechanics                                                                     |
-| [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)  | Proposed    | Require exact isolated-host qualification before any containment-readiness transition                                                              |
+| [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)              | Proposed    | Own the sole statefs policy/oracle, held-root protocol, and separately attested bounded statefs-syscalls object                                    |
+| [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md) | Proposed    | Link ADR-0037's object unchanged and own only unregistered process/cgroup/exec mechanics, executables, adapter, and race-free launch               |
+| [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)  | Proposed    | Consume ADR-0034's frozen bytes and own current-host qualification, activation binding, and path-executed runtime closure only                     |
 
 The index contains 39 decisions. ADR-0018 and ADR-0020 through ADR-0039 are
 living implementation decisions for
@@ -54,10 +54,19 @@ outstanding work. Their Proposed status is deliberate: the corresponding
 programme tasks and promotion evidence are not implemented merely because the
 architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
 and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
-implemented. ADR-0034 separately gates exact new-file admission before G2.2
-may add a semantic-change module. The repository ADR dry-run parses 221 unique
+implemented. ADR-0034 separately gates the exact schema-v2 new-file
+pre-registration required before G2.2 may add a semantic-change module. The
+repository ADR dry-run parses 221 unique
 graph edges: 46 `depends-on`, 171 `related`, and 4 `amends`, with no duplicate,
-dangling, or self edge and no directed dependency or supersession cycle. Commit
+dangling, or self edge and no directed dependency or supersession cycle.
+Ownership is likewise one-way: ADR-0037 owns the statefs policy and exact
+statefs-syscalls object, which ADR-0038 links unchanged; ADR-0034 owns dormant
+receipt-v7/schema-v2 pre-registration and the early qualification gate, whose
+frozen bytes ADR-0039 consumes while owning only current-host qualification,
+activation binding, and path-executed runtime closure. Readiness remains
+exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`. Even
+after those gates close, the cancel-only protocol leaves G2.2 blocked pending a
+separately ratified commit-capable successor. Commit
 `54a056e0` closes the reviewed, unregistered native-worker slice after 112/112
 focused controls, and `11e72201` adds the opaque structural verifier lifecycle
 with a 128/128 related non-G1.7 matrix. Commit `f3a0c127` adds the narrow
@@ -92,8 +101,9 @@ are GO. ADR-0035 task `task-1788002473147-nsat6x` is 75% in progress for this
 checkpoint; the broader exact-admission task remains 92%. Filesystem-backed
 guardian/reaper durability and recovery, delegated-cgroup evidence,
 pidfd/waitid and race-free exec binding, the physical native adapter and full
-runtime-closure proof, application receipt v7/replay, evaluator/profile/CLI
-registration, the complete gate, and G2.2 remain open. ADR-0035 separates
+runtime-closure proof, ADR-0034's application receipt v7/replay and
+evaluator/profile/CLI pre-registration, ADR-0039's qualification/activation
+gate, a later commit-capable successor, and G2.2 remain open. ADR-0035 separates
 those native concerns from ADR-0034's broader admission gate. ADR-0036 through
 ADR-0039 decompose the remaining control ABI, statefs/manager, native
 executable, and delegated-host readiness work without changing the current
