@@ -128,13 +128,56 @@ non-primitive references. The first version received an explicit NO-GO for
 depending on its design registries and sharing references; the follow-up
 derives directly from the requirements fixture's `legalSequences`. Two
 independent post-repair reviews and root reproduction returned GO for only this
-evaluator slice. Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 all
-produce direct 10/9/0/1, main 15/8/1/6, and combined 25/17/1/7
-test/pass/fail/TODO matrices. The sole focused failure remains the deliberately
-absent production candidate. The final semantic 330/11/200 matrix, candidate
-execution, runtime registration, native ownership, and production readiness
-remain unimplemented; readiness is still exactly
+evaluator slice.
+
+Commits `957237a3` and schema repair `54b40874` then freeze the accepted static
+evidence manifest. It records exactly 69 foundation negatives, 48 semantic
+negatives, five positives, and 17 commit-mutation IDs that are a subset of the
+48 semantic IDs. Current negative evidence is therefore exactly
+`117 = 69 + 48`, not 134. Against the semantic 330/11/200 targets, 282
+negatives, six positives, and 183 commit mutations remain; the final all-layer
+negative inventory is exactly `399 = 69 + 330`. Every one of the 122 entries
+has the exact fields `id`, `name`, `bucket`, `sourceSha256`, `astSha256`,
+`astNodeCount`, `expectedStage`, and `expectedError`. The literal tables retain
+the full source and normalized-AST hashes, AST node counts, rejection stages,
+and complete canonical errors without prefix or assertion-payload truncation.
+AST normalization omits exactly `end`, `loc`, `range`, `raw`, `sourceFile`, and
+`start`, then sorts object keys. Only the deliberately unparsable
+`FOUNDATION-N008` has null AST evidence.
+
+The exact schema
+`oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1`
+has SHA-256
+`eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
+Its ordered-control, ordered-semantic, bucket, foundation-name, positive-name,
+and commit-ID projections have SHA-256 values respectively
+`af44b6f3f20713ffdc3d48cae4eff404b80a1e27ae07783c4a6315e7dd562df0`,
+`597e02c51e9bb92c7bbfebf5562fc82930d88a78cbdd99ec0fd7b1c6a211360f`,
+`2205bbbfb666fc3b0de1350e9760c932d5fdfcfbd8be7961c9c1d86f6b8ac82e`,
+`3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`,
+`7237029edd59dee361030e12d12d3214c38fa83512a2866f8c7ce8e0bfb7bc28`,
+and `cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c`.
+Independent review first killed 14/15 manifest mutations and found the schema
+name was self-compared; `54b40874` adds the literal schema and independent
+schema-digest pins, after which 15/15 probes are killed. The accepted Ruflo
+record is
+`programme-evidence/adr0036-static-manifest-54b40874-2026-08-30`.
+
+The manifest checkpoint leaves import-only behavior at zero byte reads and
+exactly three exports. It preserves the exact 506-byte source hard stop
+`ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`
+and exact 12,095-byte four-TODO tail
+`3f58dc980e85a6d725a6c147c7d1f95d37e200197f84c292feaed9f4a5cd270c`.
+Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 all produce direct
+10/9/0/1, main 15/8/1/6, and combined 25/17/1/7 test/pass/fail/TODO matrices.
+The sole focused failure remains the deliberately absent production candidate.
+The incomplete semantic quota, candidate execution, runtime registration,
+native ownership, and production readiness remain unimplemented; readiness is
+still exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
+This is evaluator evidence only. It makes no production, semantic
+qualification, promotion, G1.7, publication, or task-profile claim.
 
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group

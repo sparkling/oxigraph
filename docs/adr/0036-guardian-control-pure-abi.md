@@ -105,6 +105,51 @@
   performs zero byte reads and exposes exactly three exports on all three
   runtimes.
 
+  Commits `957237a3` and `54b40874` freeze and then schema-harden the accepted
+  static-evidence manifest for this evaluator checkpoint. The recursively
+  frozen manifest contains exactly 69 foundation negatives, 48 semantic
+  negatives, and five positives. The 17 commit-mutation IDs are exactly the
+  `commitMutations` bucket and a subset of the 48 semantic IDs, never an
+  additive count. Therefore current negative evidence is exactly
+  `117 = 69 + 48`; the remaining semantic quota is 282 negatives, six
+  positives, and 183 commit mutations, and the final all-layer negative total
+  remains exactly `399 = 69 + 330`.
+
+  The manifest schema is exactly
+  `oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1`
+  with SHA-256
+  `eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
+  Every one of its 122 control entries has only `id`, `name`, `bucket`,
+  `sourceSha256`, `astSha256`, `astNodeCount`, `expectedStage`, and
+  `expectedError`. The literal evidence tables pin the full UTF-8 source hash,
+  normalized AST hash and node count, exact rejection stage, and full canonical
+  rejection text rather than an error prefix or truncated assertion payload.
+  AST normalization recursively omits exactly `end`, `loc`, `range`, `raw`,
+  `sourceFile`, and `start`, then sorts object keys.
+  `FOUNDATION-N008` is the sole parse rejection with a null AST hash and node
+  count; all other entries carry literal AST and source pins. The six additional
+  aggregate identities are:
+
+  - ordered 122-control identity projection:
+    `af44b6f3f20713ffdc3d48cae4eff404b80a1e27ae07783c4a6315e7dd562df0`;
+  - ordered 48-control semantic projection:
+    `597e02c51e9bb92c7bbfebf5562fc82930d88a78cbdd99ec0fd7b1c6a211360f`;
+  - semantic-bucket projection:
+    `2205bbbfb666fc3b0de1350e9760c932d5fdfcfbd8be7961c9c1d86f6b8ac82e`;
+  - foundation ID/name projection:
+    `3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`;
+  - positive ID/name projection:
+    `7237029edd59dee361030e12d12d3214c38fa83512a2866f8c7ce8e0bfb7bc28`;
+  - commit-ID projection:
+    `cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c`.
+
+  Independent mutation review initially killed 14 of 15 manifest mutations and
+  found that the schema-name mutation survived because the manifest was
+  compared only with its defining constant. Commit `54b40874` adds a literal
+  schema assertion plus the independent schema digest. The repaired exact
+  artifact kills 15/15 probes. The accepted Ruflo evidence is stored under
+  `programme-evidence/adr0036-static-manifest-54b40874-2026-08-30`.
+
   The source hard stop remains exactly 506 bytes with SHA-256
   `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`.
   The new four-TODO tail is exactly 12,095 bytes with SHA-256
