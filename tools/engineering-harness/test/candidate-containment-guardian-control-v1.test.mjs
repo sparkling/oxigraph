@@ -2398,17 +2398,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   let importIndex = 0;
   let exportIndex = 0;
   const registerModuleVariable = (declaration, exported) => {
-    if (
-      declaration.kind !== "const" ||
-      declaration.declarations.length !== 1
-    ) {
+    if (declaration.kind !== "const" || declaration.declarations.length !== 1) {
       fail("module variables must be one const declarator");
     }
     const declarator = declaration.declarations[0];
-    if (
-      declarator.id.type !== "Identifier" ||
-      declarator.init === null
-    ) {
+    if (declarator.id.type !== "Identifier" || declarator.init === null) {
       fail("module const requires a simple initialized binding");
     }
     const name = declarator.id.name;
@@ -2505,8 +2499,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         (entry) => entry.name === name,
       );
       if (
-        declaration.params.some((parameter) => parameter.type !== "Identifier") ||
-        declaration.params.map(({ name: parameterName }) => parameterName)
+        declaration.params.some(
+          (parameter) => parameter.type !== "Identifier",
+        ) ||
+        declaration.params
+          .map(({ name: parameterName }) => parameterName)
           .join("\u0000") !== signature.parameters.join("\u0000")
       ) {
         fail(`export signature mismatch ${name}`);
@@ -2598,12 +2595,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       if (
         node.regex !== undefined ||
         typeof node.value === "bigint" ||
-        ![
-          "boolean",
-          "number",
-          "string",
-        ].includes(typeof node.value) &&
-          node.value !== null
+        (!["boolean", "number", "string"].includes(typeof node.value) &&
+          node.value !== null)
       ) {
         fail("non-JSON requirements literal");
       }
@@ -2625,7 +2618,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       if (node.elements.some((element) => element === null)) {
         fail("requirements array hole");
       }
-      return node.elements.map((element) => normalizeStaticValue(element, stack));
+      return node.elements.map((element) =>
+        normalizeStaticValue(element, stack),
+      );
     }
     if (node.type === "ObjectExpression") {
       const record = {};
@@ -2698,7 +2693,10 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   const requirementsDigestEntry = moduleInitializers.get(
     "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256",
   );
-  if (requirementsEntry === undefined || requirementsDigestEntry === undefined) {
+  if (
+    requirementsEntry === undefined ||
+    requirementsDigestEntry === undefined
+  ) {
     fail("missing requirements exports");
   }
   requirementsDependencies.add(requirementsName);
@@ -2758,11 +2756,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     if (
       typeof node.value === "string" &&
       capabilityLookingString(node.value) &&
-      ![
-        "import-source",
-        "requirements-digest",
-        "requirements-value",
-      ].includes(role)
+      !["import-source", "requirements-digest", "requirements-value"].includes(
+        role,
+      )
     ) {
       fail(`capability-looking literal outside normative role ${node.value}`);
     }
@@ -2771,7 +2767,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   const evaluateIdentifier = (node, scope, usage = "value") => {
     markIdentifier(node, `identifier:${usage}`, { reference: true });
     const binding = resolve(scope, node.name);
-    if (binding.kind === "pending") fail(`binding used before proof ${node.name}`);
+    if (binding.kind === "pending")
+      fail(`binding used before proof ${node.name}`);
     if (binding.kind === "ambient" && binding.name === "Reflect") {
       fail("Reflect use is outside the closed subset");
     }
@@ -2780,9 +2777,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         fail(`internal call to exported operation ${node.name}`);
       }
       if (
-        !["ambient", "import-callable", "local-function"].includes(
-          binding.kind,
-        )
+        !["ambient", "import-callable", "local-function"].includes(binding.kind)
       ) {
         fail(`non-callable direct callee ${node.name}`);
       }
@@ -2831,7 +2826,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     if (node.key.type === "Identifier") {
       markIdentifier(node.key, "property-key");
       if (capabilityLookingString(node.key.name) && !normativeKey) {
-        fail(`capability-looking property key outside requirements ${node.key.name}`);
+        fail(
+          `capability-looking property key outside requirements ${node.key.name}`,
+        );
       }
     } else if (node.key.type === "Literal") {
       visitLiteral(
@@ -3347,7 +3344,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
 
   const visitBlock = (node, scope, context, { functionBody = false } = {}) => {
     mark(node, functionBody ? "function-body" : "block-statement");
-    const blockScope = functionBody ? scope : { parent: scope, bindings: new Map() };
+    const blockScope = functionBody
+      ? scope
+      : { parent: scope, bindings: new Map() };
     for (const statement of node.body) {
       const statementContext = functionBody
         ? {
@@ -3447,7 +3446,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   visitFunction = (record) => {
     if (record === undefined) fail("unknown function record");
     if (record.status === "complete") return record.returnValue;
-    if (record.status === "analyzing") fail(`recursive call graph ${record.name}`);
+    if (record.status === "analyzing")
+      fail(`recursive call graph ${record.name}`);
     record.status = "analyzing";
     const node = record.node;
     mark(node, record.exported ? "exported-function" : "local-function");
@@ -3486,7 +3486,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       pinnedFailureCodes.has(onlyStatement.argument.arguments[0].value);
     const expectedStore = PRIVATE_STORE_OWNER_BY_FUNCTION.get(record.name);
     if (expectedStore === undefined) {
-      if (record.commits.length !== 0) fail(`commit in non-owner ${record.name}`);
+      if (record.commits.length !== 0)
+        fail(`commit in non-owner ${record.name}`);
     } else {
       if (
         record.commits.length !== 1 ||
@@ -3523,7 +3524,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     if (context.returnValues.length > 0) {
       returnValue = context.returnValues[0];
       for (const value of context.returnValues.slice(1)) {
-        returnValue = joinValues(returnValue, value, `returns of ${record.name}`);
+        returnValue = joinValues(
+          returnValue,
+          value,
+          `returns of ${record.name}`,
+        );
       }
     }
     record.returnValue = returnValue;
@@ -3550,10 +3555,15 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     if (node.type === "ExportNamedDeclaration") {
       mark(node, "export-declaration");
       if (node.declaration.type === "VariableDeclaration") {
-        visitVariableDeclaration(node.declaration, moduleScope, {
-          functionRecord: null,
-          literalRole: "ordinary",
-        }, { module: true });
+        visitVariableDeclaration(
+          node.declaration,
+          moduleScope,
+          {
+            functionRecord: null,
+            literalRole: "ordinary",
+          },
+          { module: true },
+        );
       } else {
         visitFunction(functionRecords.get(node.declaration.id.name));
       }
@@ -3587,7 +3597,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   for (const expected of EXPECTED_PRIVATE_STORE_COMMITS) {
     const matches = privateCommits.filter(
       ({ functionName, storeName }) =>
-        functionName === expected.functionName && storeName === expected.storeName,
+        functionName === expected.functionName &&
+        storeName === expected.storeName,
     );
     if (matches.length !== 1) {
       fail(`private commit manifest ${expected.functionName}`);
@@ -3607,21 +3618,18 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     fail("private commit 1/7/2 store manifest");
   }
   if (counters.classifiedNodeCount !== expectedNodeCount) {
-    fail(
-      `node closure ${counters.classifiedNodeCount}/${expectedNodeCount}`,
-    );
+    fail(`node closure ${counters.classifiedNodeCount}/${expectedNodeCount}`);
   }
-  if (
-    counters.rawEscapeCount !== 0 ||
-    counters.unknownProvenanceCount !== 0
-  ) {
+  if (counters.rawEscapeCount !== 0 || counters.unknownProvenanceCount !== 0) {
     fail("nonzero escape or unknown-provenance counter");
   }
   return Object.freeze({
     ...counters,
     privateStoreCommitCounts: Object.freeze(storeCounts),
     privateStoreCommitManifest: Object.freeze(
-      EXPECTED_PRIVATE_STORE_COMMITS.map((entry) => Object.freeze({ ...entry })),
+      EXPECTED_PRIVATE_STORE_COMMITS.map((entry) =>
+        Object.freeze({ ...entry }),
+      ),
     ),
     moduleCallEdges: Object.freeze([...moduleCallEdges].sort()),
     nodeRoleCount: counters.classifiedNodeCount,
@@ -4061,9 +4069,7 @@ function reflectedAuthority(startupReportBytes) {
     }),
     Object.freeze({
       name: "recursive module-function call",
-      source: sourceSkeleton(
-        "function recursive() { return recursive(); }",
-      ),
+      source: sourceSkeleton("function recursive() { return recursive(); }"),
     }),
     Object.freeze({
       name: "requirements initializer semantic drift",
