@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 import { copyBoundedBuffer } from "../src/candidate/containment-exact-v2.mjs";
 
@@ -24,16 +25,105 @@ const EXPECTED_REQUIREMENTS_SHA256 =
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
 
-const BYTE_POSITIONS = Object.freeze([
-  "startupReportBytes",
-  "epochBytes",
-  "admissionFrameBytes",
-  "recvmsgReportBytes",
-  "cancelFrameBytes",
-  "recoveryRequestFrameBytes",
-  "diagnosticSummaryReportBytes",
-  "rawDiagnosticBytes",
-  "statusFrameBytes",
+const BYTE_POSITION_SPECS = Object.freeze([
+  Object.freeze({
+    name: "startupReportBytes",
+    minimumBytes: 0,
+    maximumBytes: 8_192,
+  }),
+  Object.freeze({
+    name: "epochBytes",
+    minimumBytes: 32,
+    maximumBytes: 32,
+  }),
+  Object.freeze({
+    name: "admissionFrameBytes",
+    minimumBytes: 0,
+    maximumBytes: 131_072,
+  }),
+  Object.freeze({
+    name: "recvmsgReportBytes",
+    minimumBytes: 0,
+    maximumBytes: 16_384,
+  }),
+  Object.freeze({
+    name: "cancelFrameBytes",
+    minimumBytes: 0,
+    maximumBytes: 4_096,
+  }),
+  Object.freeze({
+    name: "recoveryRequestFrameBytes",
+    minimumBytes: 0,
+    maximumBytes: 32_768,
+  }),
+  Object.freeze({
+    name: "diagnosticSummaryReportBytes",
+    minimumBytes: 0,
+    maximumBytes: 1_024,
+  }),
+  Object.freeze({
+    name: "rawDiagnosticBytes",
+    minimumBytes: 0,
+    maximumBytes: 16_384,
+  }),
+  Object.freeze({
+    name: "statusFrameBytes",
+    minimumBytes: 0,
+    maximumBytes: 8_192,
+  }),
+]);
+
+const BYTE_POSITIONS = Object.freeze(
+  BYTE_POSITION_SPECS.map(({ name }) => name),
+);
+
+const PRIVATE_STORE_COMMIT_CONTROL_PLAN = Object.freeze([
+  Object.freeze({
+    store: "startupMetadata",
+    operations: Object.freeze(["createCandidateContainmentGuardianStartupV1"]),
+    earlyFailure: "startup-report-over-byte-ceiling-before-decode",
+    lateFailure: "epoch-eof-or-startup-binding-after-bounded-copies",
+    success: "one-startup-brand-commit-after-all-fallible-work",
+    failureAfterSuccess:
+      "later-failed-startup-construction-does-not-corrupt-the-first-brand",
+    crossModule:
+      "startup-created-by-instance-a-rejected-by-initializer-instance-b",
+  }),
+  Object.freeze({
+    store: "inputMetadata",
+    operations: Object.freeze([
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "createCandidateContainmentGuardianCancelInputV1",
+      "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      "createCandidateContainmentGuardianControllerClosedInputV1",
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+      "createCandidateContainmentGuardianStatusEofInputV1",
+    ]),
+    earlyFailure:
+      "per-constructor-earliest-applicable-failure-before-private-commit",
+    lateFailure:
+      "per-constructor-latest-applicable-failure-before-private-commit",
+    success: "one-input-brand-commit-per-successful-constructor",
+    failureAfterSuccess:
+      "later-failed-input-construction-does-not-corrupt-the-first-brand",
+    crossModule: "input-created-by-instance-a-rejected-by-reducer-instance-b",
+  }),
+  Object.freeze({
+    store: "stateMetadata",
+    operations: Object.freeze([
+      "initializeCandidateContainmentGuardianControlV1",
+      "reduceCandidateContainmentGuardianControlV1",
+    ]),
+    earlyFailure:
+      "per-operation-earliest-applicable-failure-before-private-commit",
+    lateFailure:
+      "per-operation-latest-applicable-failure-before-private-commit",
+    success: "one-state-brand-commit-per-successful-initialize-or-reduce",
+    failureAfterSuccess:
+      "failed-reduction-does-not-corrupt-the-existing-state-brand",
+    crossModule: "state-created-by-instance-a-rejected-by-instance-b",
+  }),
 ]);
 
 const ALLOWED_IMPORTS = new Map([
@@ -233,16 +323,81 @@ function validSkeleton(extra = "") {
   return `${imports}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}`;
 }
 
-function snapshotCarrier(value, maximumBytes = 64) {
+function snapshotCarrier(
+  value,
+  { label = "guardian byte carrier", minimumBytes = 0, maximumBytes = 64 } = {},
+) {
   return copyBoundedBuffer(
     value,
-    "guardian byte carrier",
-    { minimumBytes: 0, maximumBytes },
+    label,
+    { minimumBytes, maximumBytes },
     (message) => {
       throw new TypeError(message);
     },
   );
 }
+
+function snapshotCarrierAtPosition(spec, value) {
+  return snapshotCarrier(value, {
+    label: spec.name,
+    minimumBytes: spec.minimumBytes,
+    maximumBytes: spec.maximumBytes,
+  });
+}
+
+function sampleCarrierBytes(spec) {
+  if (spec.name === "epochBytes") return Buffer.alloc(32, 0x45);
+  if (spec.name === "rawDiagnosticBytes") return Buffer.from([0x64]);
+  return Buffer.from([0x7b, 0x7d, 0x0a]);
+}
+
+function trapEveryObjectOperation(value, label) {
+  const sentinel = new Error(`${label}: Buffer Proxy trap ran`);
+  const state = { hits: 0 };
+  const trap = () => {
+    state.hits += 1;
+    throw sentinel;
+  };
+  return Object.freeze({
+    sentinel,
+    state,
+    value: new Proxy(value, {
+      defineProperty: trap,
+      deleteProperty: trap,
+      get: trap,
+      getOwnPropertyDescriptor: trap,
+      getPrototypeOf: trap,
+      has: trap,
+      isExtensible: trap,
+      ownKeys: trap,
+      preventExtensions: trap,
+      set: trap,
+      setPrototypeOf: trap,
+    }),
+  });
+}
+
+function assertCarrierRejection(invoke, expectedMessage, sentinel = null) {
+  assert.throws(invoke, (error) => {
+    if (sentinel !== null) assert.notEqual(error, sentinel);
+    assert.match(error.message, expectedMessage);
+    return true;
+  });
+}
+
+function ignoredPropertyVariants() {
+  const variants = [];
+  for (const keyKind of ["string", "symbol"]) {
+    for (const descriptorKind of ["data", "getter", "setter"]) {
+      for (const enumerable of [false, true]) {
+        variants.push(Object.freeze({ keyKind, descriptorKind, enumerable }));
+      }
+    }
+  }
+  return Object.freeze(variants);
+}
+
+const IGNORED_PROPERTY_VARIANTS = ignoredPropertyVariants();
 
 function exportedFunctionSource(source, name) {
   const marker = `export function ${name}(`;
@@ -347,63 +502,307 @@ test("pins the bounded snapshot path against extra-property traversal", () => {
   );
 });
 
-test("normalizes extra own properties identically at every byte position", () => {
-  const mutations = ["getter", "setter", "symbol", "data"];
+test("pins source-independent exact-v2 copy controls for all nine byte positions", () => {
+  assert.deepEqual(BYTE_POSITION_SPECS, [
+    { name: "startupReportBytes", minimumBytes: 0, maximumBytes: 8_192 },
+    { name: "epochBytes", minimumBytes: 32, maximumBytes: 32 },
+    { name: "admissionFrameBytes", minimumBytes: 0, maximumBytes: 131_072 },
+    { name: "recvmsgReportBytes", minimumBytes: 0, maximumBytes: 16_384 },
+    { name: "cancelFrameBytes", minimumBytes: 0, maximumBytes: 4_096 },
+    {
+      name: "recoveryRequestFrameBytes",
+      minimumBytes: 0,
+      maximumBytes: 32_768,
+    },
+    {
+      name: "diagnosticSummaryReportBytes",
+      minimumBytes: 0,
+      maximumBytes: 1_024,
+    },
+    { name: "rawDiagnosticBytes", minimumBytes: 0, maximumBytes: 16_384 },
+    { name: "statusFrameBytes", minimumBytes: 0, maximumBytes: 8_192 },
+  ]);
+  assert.deepEqual(BYTE_POSITIONS, [
+    "startupReportBytes",
+    "epochBytes",
+    "admissionFrameBytes",
+    "recvmsgReportBytes",
+    "cancelFrameBytes",
+    "recoveryRequestFrameBytes",
+    "diagnosticSummaryReportBytes",
+    "rawDiagnosticBytes",
+    "statusFrameBytes",
+  ]);
+
+  let overBoundGetterHits = 0;
+  let overBoundControls = 0;
+  for (const spec of BYTE_POSITION_SPECS) {
+    const atMaximum = Buffer.alloc(spec.maximumBytes, 0x61);
+    const maximumSnapshot = snapshotCarrierAtPosition(spec, atMaximum);
+    assert.equal(maximumSnapshot.length, spec.maximumBytes, spec.name);
+    assert.notEqual(maximumSnapshot, atMaximum, spec.name);
+
+    const oversized = Buffer.alloc(spec.maximumBytes + 1, 0x61);
+    Object.defineProperty(oversized, `ignored-${spec.name}`, {
+      configurable: true,
+      enumerable: true,
+      get() {
+        overBoundGetterHits += 1;
+        throw new Error(`${spec.name}: over-bound getter ran`);
+      },
+    });
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, oversized),
+      /outside its byte bound/gu,
+    );
+    overBoundControls += 1;
+  }
+  assert.deepEqual(
+    { overBoundControls, overBoundGetterHits },
+    { overBoundControls: 9, overBoundGetterHits: 0 },
+  );
+
+  assertCarrierRejection(
+    () =>
+      snapshotCarrierAtPosition(BYTE_POSITION_SPECS[1], Buffer.alloc(31, 0x45)),
+    /outside its byte bound/gu,
+  );
+});
+
+test("normalizes 12 string and symbol own-property controls at every byte position", () => {
   const touches = { reads: 0, writes: 0, invocations: 0 };
   let controls = 0;
-  for (const position of BYTE_POSITIONS) {
-    const baseline = Buffer.from([0x7b, 0x7d, 0x0a]);
-    const baselineSnapshot = snapshotCarrier(baseline);
-    for (const mutation of mutations) {
-      const bytes = Buffer.from([0x7b, 0x7d, 0x0a]);
+  for (const spec of BYTE_POSITION_SPECS) {
+    const baseline = sampleCarrierBytes(spec);
+    const baselineSnapshot = snapshotCarrierAtPosition(spec, baseline);
+    for (const variant of IGNORED_PROPERTY_VARIANTS) {
+      const bytes = Buffer.from(baseline);
       const callable = new Proxy(() => null, {
         apply() {
           touches.invocations += 1;
           return null;
         },
       });
-      if (mutation === "getter") {
-        Object.defineProperty(bytes, `extra-${position}`, {
-          configurable: true,
-          enumerable: true,
-          get() {
-            touches.reads += 1;
-            return callable;
-          },
-        });
-      } else if (mutation === "setter") {
-        Object.defineProperty(bytes, `extra-${position}`, {
-          configurable: true,
-          enumerable: true,
-          set() {
-            touches.writes += 1;
-          },
-        });
-      } else if (mutation === "symbol") {
-        bytes[Symbol(position)] = callable;
+      const label = `${spec.name}-${variant.keyKind}-${variant.descriptorKind}-${variant.enumerable}`;
+      const key =
+        variant.keyKind === "string" ? `extra-${label}` : Symbol(label);
+      const descriptor = {
+        configurable: true,
+        enumerable: variant.enumerable,
+      };
+      if (variant.descriptorKind === "getter") {
+        descriptor.get = () => {
+          touches.reads += 1;
+          return callable;
+        };
+      } else if (variant.descriptorKind === "setter") {
+        descriptor.set = () => {
+          touches.writes += 1;
+        };
       } else {
-        bytes[`extra-${position}`] = callable;
+        descriptor.value = callable;
+        descriptor.writable = true;
       }
-      const decoratedSnapshot = snapshotCarrier(bytes);
-      assert.deepEqual(decoratedSnapshot, baselineSnapshot);
-      assert.notEqual(decoratedSnapshot, bytes);
+      Object.defineProperty(bytes, key, descriptor);
+      const descriptorBefore = Object.getOwnPropertyDescriptor(bytes, key);
+      const decoratedSnapshot = snapshotCarrierAtPosition(spec, bytes);
+      const descriptorAfter = Object.getOwnPropertyDescriptor(bytes, key);
+
+      assert.deepEqual(decoratedSnapshot, baselineSnapshot, label);
+      assert.notEqual(decoratedSnapshot, bytes, label);
+      assert.equal(Object.getPrototypeOf(decoratedSnapshot), Buffer.prototype);
+      assert.equal(Object.hasOwn(decoratedSnapshot, key), false, label);
+      assert.equal(
+        Object.getOwnPropertyDescriptor(decoratedSnapshot, "length"),
+        undefined,
+      );
       assert.deepEqual(
         Reflect.ownKeys(decoratedSnapshot),
         Reflect.ownKeys(baselineSnapshot),
+        label,
       );
-      bytes[0] = 0;
-      assert.equal(decoratedSnapshot[0], 0x7b);
+      assert.deepEqual(descriptorAfter, descriptorBefore, label);
+      assert.equal(Object.hasOwn(bytes, key), true, label);
+
+      const originalFirstByte = decoratedSnapshot[0];
+      bytes[0] ^= 0xff;
+      assert.equal(decoratedSnapshot[0], originalFirstByte, label);
       controls += 1;
     }
   }
   assert.deepEqual(
-    { positions: BYTE_POSITIONS.length, controls, touches },
+    {
+      positions: BYTE_POSITIONS.length,
+      variants: IGNORED_PROPERTY_VARIANTS.length,
+      controls,
+      touches,
+    },
     {
       positions: 9,
-      controls: 36,
+      variants: 12,
+      controls: 108,
       touches: { reads: 0, writes: 0, invocations: 0 },
     },
   );
+});
+
+test("rejects every hostile byte-carrier class trap-free at all positions", () => {
+  class LocalBufferSubclass extends Buffer {}
+
+  const totals = {
+    brandedLookalikes: 0,
+    foreignPrototypes: 0,
+    nonBufferViews: 0,
+    ownLength: 0,
+    ownLengthGetterHits: 0,
+    proxies: 0,
+    proxyTrapHits: 0,
+    sharedBacking: 0,
+    subclasses: 0,
+  };
+
+  for (const spec of BYTE_POSITION_SPECS) {
+    const sample = sampleCarrierBytes(spec);
+
+    const trapped = trapEveryObjectOperation(Buffer.from(sample), spec.name);
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, trapped.value),
+      /exact non-Proxy Buffer/gu,
+      trapped.sentinel,
+    );
+    totals.proxies += 1;
+    totals.proxyTrapHits += trapped.state.hits;
+
+    const shared = Buffer.from(new SharedArrayBuffer(sample.length));
+    shared.set(sample);
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, shared),
+      /shared mutable backing/gu,
+    );
+    totals.sharedBacking += 1;
+
+    const subclass = Buffer.from(sample);
+    Object.setPrototypeOf(subclass, LocalBufferSubclass.prototype);
+    assert.equal(Buffer.isBuffer(subclass), true);
+    assert.notEqual(Object.getPrototypeOf(subclass), Buffer.prototype);
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, subclass),
+      /exact non-Proxy Buffer/gu,
+    );
+    totals.subclasses += 1;
+
+    const foreignPrototype = runInNewContext("Object.create(bufferPrototype)", {
+      bufferPrototype: Buffer.prototype,
+    });
+    const foreign = Buffer.from(sample);
+    Object.setPrototypeOf(foreign, foreignPrototype);
+    assert.equal(Buffer.isBuffer(foreign), true);
+    assert.notEqual(Object.getPrototypeOf(foreign), Buffer.prototype);
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, foreign),
+      /exact non-Proxy Buffer/gu,
+    );
+    totals.foreignPrototypes += 1;
+
+    const ownLength = Buffer.from(sample);
+    const ownLengthSentinel = new Error(`${spec.name}: own length getter ran`);
+    Object.defineProperty(ownLength, "length", {
+      configurable: true,
+      get() {
+        totals.ownLengthGetterHits += 1;
+        throw ownLengthSentinel;
+      },
+    });
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, ownLength),
+      /exact non-Proxy Buffer/gu,
+      ownLengthSentinel,
+    );
+    totals.ownLength += 1;
+
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, new Uint8Array(sample)),
+      /exact non-Proxy Buffer/gu,
+    );
+    totals.nonBufferViews += 1;
+
+    const brandedLookalike = Object.create(Buffer.prototype);
+    Object.defineProperty(brandedLookalike, "_isBuffer", {
+      configurable: true,
+      enumerable: true,
+      value: true,
+    });
+    assertCarrierRejection(
+      () => snapshotCarrierAtPosition(spec, brandedLookalike),
+      /(?:exact non-Proxy Buffer|length cannot be read intrinsically)/gu,
+    );
+    totals.brandedLookalikes += 1;
+  }
+
+  assert.deepEqual(totals, {
+    brandedLookalikes: 9,
+    foreignPrototypes: 9,
+    nonBufferViews: 9,
+    ownLength: 9,
+    ownLengthGetterHits: 0,
+    proxies: 9,
+    proxyTrapHits: 0,
+    sharedBacking: 9,
+    subclasses: 9,
+  });
+});
+
+test("freezes the 10-operation private-store evaluator design without claiming candidate execution", () => {
+  assert.deepEqual(
+    PRIVATE_STORE_COMMIT_CONTROL_PLAN.map(({ store }) => store),
+    ["startupMetadata", "inputMetadata", "stateMetadata"],
+  );
+  const expectedOperations = [
+    "createCandidateContainmentGuardianStartupV1",
+    "createCandidateContainmentGuardianAdmissionInputV1",
+    "createCandidateContainmentGuardianCancelInputV1",
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    "createCandidateContainmentGuardianStatusEofInputV1",
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ];
+  const operations = PRIVATE_STORE_COMMIT_CONTROL_PLAN.flatMap(
+    (entry) => entry.operations,
+  );
+  assert.deepEqual(operations, expectedOperations);
+  assert.equal(new Set(operations).size, 10);
+  assert.deepEqual(
+    EXPECTED_EXPORTS.filter(
+      (name) =>
+        !name.startsWith(
+          "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS",
+        ) && name !== "verifyCandidateContainmentGuardianStatusFrameV1",
+    ),
+    expectedOperations,
+  );
+  const phases = [
+    "earlyFailure",
+    "lateFailure",
+    "success",
+    "failureAfterSuccess",
+    "crossModule",
+  ];
+  const controls = [];
+  for (const entry of PRIVATE_STORE_COMMIT_CONTROL_PLAN) {
+    assert.equal(Object.isFrozen(entry), true);
+    assert.equal(Object.isFrozen(entry.operations), true);
+    assert.equal(entry.operations.length > 0, true);
+    for (const phase of phases) {
+      assert.equal(typeof entry[phase], "string");
+      assert.notEqual(entry[phase].length, 0);
+      controls.push(`${entry.store}:${phase}:${entry[phase]}`);
+    }
+  }
+  assert.equal(new Set(controls).size, 15);
+  assert.equal(Object.isFrozen(PRIVATE_STORE_COMMIT_CONTROL_PLAN), true);
 });
 
 test("keeps snapshot cost byte-bounded despite many extra own properties", () => {
@@ -420,24 +819,10 @@ test("keeps snapshot cost byte-bounded despite many extra own properties", () =>
     });
     bytes[Symbol(`extra-${index}`)] = index;
   }
-  const snapshot = snapshotCarrier(bytes, 1);
+  const snapshot = snapshotCarrier(bytes, { maximumBytes: 1 });
   assert.deepEqual(snapshot, Buffer.from([0x61]));
   assert.equal(accessorHits, 0);
   assert.deepEqual(Reflect.ownKeys(snapshot), ["0"]);
-});
-
-test("rejects an own length property without invoking it", () => {
-  const bytes = Buffer.from([0x61]);
-  let lengthGetterHits = 0;
-  Object.defineProperty(bytes, "length", {
-    configurable: true,
-    get() {
-      lengthGetterHits += 1;
-      return 1;
-    },
-  });
-  assert.throws(() => snapshotCarrier(bytes, 1), /exact non-Proxy Buffer/gu);
-  assert.equal(lengthGetterHits, 0);
 });
 
 test("does not create a second missing-module failure", () => {
@@ -445,11 +830,12 @@ test("does not create a second missing-module failure", () => {
   assert.equal(source, null);
 });
 
-test.todo("connect all 9 byte-position normalization controls to production");
 test.todo(
-  "expand Proxy, shared-backing, subclass, and foreign-Buffer controls",
+  "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
 );
-test.todo("expand three-store early, late, success, and cross-module commits");
+test.todo(
+  "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
+);
 test.todo(
   "replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure for free identifiers, imports, exports, encoded identifiers, computed access, ambient authority, and test-gaming paths",
 );
