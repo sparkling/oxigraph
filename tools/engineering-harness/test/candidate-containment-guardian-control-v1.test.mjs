@@ -2380,6 +2380,39 @@ function isExpectedAbsentCandidateModuleError(error, candidateSourceText) {
   return error.message === NODE_20_0_MISSING_CANDIDATE_MESSAGE;
 }
 
+function pinPredecessorSourcesBeforeCandidateRead() {
+  const fixturePins = new Map(
+    [
+      ...STATIC_POLICY_REQUIREMENTS_ORACLE.predecessors.direct,
+      ...STATIC_POLICY_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
+    ].map(({ specifier, sha256: expectedSha256 }) => [
+      specifier,
+      expectedSha256,
+    ]),
+  );
+  assert.equal(fixturePins.size, PREDECESSOR_SOURCE_GOLDENS.length);
+  let directCount = 0;
+  let evidenceOnlyCount = 0;
+  for (const golden of PREDECESSOR_SOURCE_GOLDENS) {
+    const bytes = readFileSync(
+      new URL(`../src/candidate/${golden.specifier.slice(2)}`, import.meta.url),
+    );
+    assertPinnedPredecessorBytes(bytes, golden);
+    assert.equal(fixturePins.get(golden.specifier), golden.sha256);
+    if (golden.kind === "direct") directCount += 1;
+    else if (golden.kind === "evidenceOnly") evidenceOnlyCount += 1;
+    else throw new Error(`unknown predecessor kind: ${golden.kind}`);
+  }
+  return Object.freeze({
+    completedBeforeCandidateRead: true,
+    directCount,
+    evidenceOnlyCount,
+    sourceCount: PREDECESSOR_SOURCE_GOLDENS.length,
+  });
+}
+
+const SYNCHRONOUS_PREDECESSOR_AUDIT =
+  pinPredecessorSourcesBeforeCandidateRead();
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 
 let candidate = null;
@@ -2520,6 +2553,12 @@ test("reconstructs all three map digests from separately authored goldens", () =
 });
 
 test("pins all predecessor bytes and rejects independent drift mutations", () => {
+  assert.deepEqual(SYNCHRONOUS_PREDECESSOR_AUDIT, {
+    completedBeforeCandidateRead: true,
+    directCount: 3,
+    evidenceOnlyCount: 2,
+    sourceCount: 5,
+  });
   const fixturePins = new Map(
     [
       ...REQUIREMENTS_ORACLE.predecessors.direct,
