@@ -239,12 +239,14 @@ bytes.
 
 That task-level schema family is separate from
 `oxigraph.engineering-application-receipt/v1` through `/v6`. Those application
-receipt bytes and verifiers remain unchanged. A v2 task whose application
-receipt body binds the ordered mutable-baseline states, ordered `A`/`M`
-projection, phase-specific protected manifests, and created blob identities
-must emit `oxigraph.engineering-application-receipt/v7`; it may not relabel an
-older application receipt. Replay recomputes every value from exact Git objects
-and rejects a receipt that relabels creation as modification.
+receipt fixture bytes remain byte-identical, and their verification and replay
+behavior remains compatible while shared verifier sources evolve to add v7. A
+v2 task whose application receipt body binds the ordered mutable-baseline
+states, ordered `A`/`M` projection, phase-specific protected manifests, and
+created blob identities must emit
+`oxigraph.engineering-application-receipt/v7`; it may not relabel an older
+application receipt. Replay recomputes every value from exact Git objects and
+rejects a receipt that relabels creation as modification.
 
 ### Dormant pre-registration and early execution gate
 
@@ -356,7 +358,8 @@ The implementation must prove:
 - all committed engineering task-contract and task-level receipt/projection
   schema-v1 fixtures are byte-identical, v1 still requires
   `allowCreate: false`, and v1 rejects creation metadata;
-- application receipts v1-v6 and their verifiers are byte-identical, while an
+- committed application-receipt v1-v6 fixture bytes are byte-identical and
+  their verification and replay behavior remains compatible, while an
   application receipt for a v2 task uses the new v7 schema and exact v2 fields;
 - the exact `contractSchemaVersion: 2` / execution-gate pair is required by
   every v2 preflight, run, and replay path; unavailable or invalid
