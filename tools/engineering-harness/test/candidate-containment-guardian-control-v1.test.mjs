@@ -4251,6 +4251,28 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "rawEscapes",
   "scopeJoins",
   "scopeJoins",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "indirectCalls",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
+  "reflectComputed",
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4287,11 +4309,11 @@ const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "24e1fe89f7a3b6efa9967a56549f9809e47c171101e7547239fbadc5a66c0de7",
+    "8614373558b1719a3cf5b9f66889ef8421712ff1c2cec6f77a6f11f31d085c9f",
   orderedSemanticProjectionSha256:
-    "a7af959d1a32a4a9dd545b6bc8211a5c304b37c932dd59d4efb0e2eeea9c7c69",
+    "662f2820f1345e5a27bccc20f15212f020d8a63e1c1ad47395d965822fc3dec7",
   bucketProjectionSha256:
-    "a8ea7637037d2cc75a9297d1caa07fed868141065c0bae0449ec82aaaee04391",
+    "05dc5fb269585310696203d3ebc7bc8680cdbe5deca0f06c15ad6f47d3209366",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
@@ -4429,7 +4451,29 @@ SEM-N056|1aa0e7958497f77ab9d91f54bff2fbbc03d229e00baebab291ce1af8b1cf7d5d|3fc3a0
 SEM-N057|6d0b349e5438d23e354d81b9f6e3aa05f2b97b289e795036098fd1e9c206840a|817cea47a5e6063c2e07d007c60c2c7e8b93dac46c5537c058e07a785a9b0502|1153|estree-policy|static gate: ESTree raw or unknown value returned from function
 SEM-N058|9d0d8d67f2ffe8a6952b52de79fa7be6c44516452d7ec1fc5c409d3e0460b9fd|0d55d80e7cb11bdde162be7dca6cd1c7e5741852ecd97f6becea175df897eff9|1159|estree-policy|static gate: ESTree raw or unknown value used as receiver for .bytes
 SEM-N059|ace81930dfdfb66cae570a3a0959828027a2de46843093fb472491b9f68a52c4|971ba3d9783b0ed4c8fb6b0e83afb58998ebcb8db16b4a8ad4df301c08275cb0|1164|estree-policy|static gate: ESTree unknown provenance join conditional expression
-SEM-N060|5318716e01ff9f07dbb0b84f47fd78466619b8d29f4975020afc422fb5452f45|3d81f243ae80ad914e0a941cea897e156fe0f6341cd8f5986bec3be301dbeede|1167|estree-policy|static gate: ESTree raw or unknown value logical ??`;
+SEM-N060|5318716e01ff9f07dbb0b84f47fd78466619b8d29f4975020afc422fb5452f45|3d81f243ae80ad914e0a941cea897e156fe0f6341cd8f5986bec3be301dbeede|1167|estree-policy|static gate: ESTree raw or unknown value logical ??
+SEM-N061|a9441d716cfd98fbcc210dc70c744e8c4d1f04231f3567f110b92bf51dd5060c|ca5beea638af85c4206d87535cc2228fa00e1b9ea6b4a6ef91081125c1f49558|1157|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N062|10534c204545368bdb1fecbe23e48216b07536a336a99e181d7f498d4bbcc52e|1eff79a987a215e3f3f5590a732c0322d4baa6013ca2330ff2019ed3c8986cc2|1161|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N063|cd85bf60cdae51a8349481736dccc549e6511fee1ed0ce2a97cf3394dbe52ad2|f06297b857972c3d3c71d1e1d5725aa15323abc6ee26421883577605db0e792a|1158|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N064|fe34edd0f00aa5f6921a5fb3547e261e7f562ebe9af58631b286122d60f0d519|677d906a0a0091d6bc026dab4fd7ea9334ab0f25c85abd27658cd98494a8a0af|1158|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N065|6f993c0f41ed6770e441b0965b4576a4530c06c0fd4afbb86755757c6daaa509|a50fb763e4ab3759a98e6af0d3e3b91e201e1ced8845fcc1560d3970f9c2ab15|1165|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N066|84900a459ae5b59b94087a9d267b1bbd9fb06055c90af760587a3f6d2981eb17|99cdb73584e8c7035b987d4363133cb89107b95bb8a5dc2654abe1e1a2c9dcd2|1161|estree-policy|static gate: ESTree indirect callee CallExpression
+SEM-N067|59ca91012c5daca2fc3d0d18f641a2dd875a047b2e2ccffe87e09c86186561af|12f71f68e5436f0b1138683627935a780b01fb378996d9a3b6876e5e1bdc2351|1169|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N068|0f8286014c19b1759d3eba3280cb7d6d7a5336f7ebaa11f7bc591c9cad9ff51c|bd09af652abe96bb4a41d252757c8abbe8ce96299fa1e18fef9f1202e25d2a13|1163|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N069|0fc2442d3c3c9eb6265468d7b3efbe05b58c790b819c5f90c3c4da9b8b7d3009|127f0e4ae3bb9eef5d95af78295e05be251fea204e9f29f81267cdb9510f8883|1163|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N070|24e97e48cc5f889060f1bfd679fb4eb4b1ec523f5b96c6046bea2fec26223415|a330a98df337d4984beb812f97b28203352118fd68291576a8a8ea551e08a254|1166|estree-policy|static gate: ESTree indirect callee CallExpression
+SEM-N071|1b1a3f9f2f6ac5a747c0e313dd387e30ddf57297776a81478bfc87d8e8e8a3c9|977ad1c90de7b48bdf2d3688cffbd8417d4c6e5b4c50b691df0cddb3cbe24740|1157|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N072|34d34e48eb17d602f09a797dc2945d878a467021a8146fbbf0e454a989fc273b|2b37927aba3c71dace09b1f7cb5bb467c1653f1e0d44bd9823bc317d243b9fbf|1157|estree-policy|static gate: ESTree computed member access
+SEM-N073|afa803c71adbe56dc713d5736491b585dde51bbef9617f600d967555a0ac4ada|054593ab2d4cf131bf452526f5d420cb8f368f6de2e0078278a2a870bc3aa06f|1156|estree-policy|static gate: ESTree computed member access
+SEM-N074|e6989bf63703bff28b704af5e79bd6e7df47d5363b8d0bb65880501512eaa1db|029be0389c72900b79486f8d1407eb8b955adb0cd62ea68fb8d4e6e25d203e30|1156|estree-policy|static gate: ESTree computed member access
+SEM-N075|369ac585797e30be7fb23c84f58731e373ca05baf3aeefd290ec28c5a875b2f5|4cb5a33b81d10ae2821f6ef11992feba6269ac161e18b919d13d34e21a788914|1156|estree-policy|static gate: ESTree computed member access
+SEM-N076|6df202d7c2bb0a82a81da9c507f6ea8f13858864c570abc1252de43a48adea5f|05eb26638f70a80495bd951a75cbd6f57d6c66b4294b97148512d210444a0f93|1156|estree-policy|static gate: ESTree computed member access
+SEM-N077|4dd3b4566db8b9e53380d9caacc8f5f502ac6e4a665480127eea76620e67cf03|5524c96f96712543543df9b6c50477b7eda268066ad96b79121402a8c5fec6db|1163|estree-policy|static gate: ESTree computed member access
+SEM-N078|3256db49c97c36ae1c4607100afa000e7e0b875742fb966324feb741b8cfa6e6|41af6f4f068ba13cece25559d855492aca6bea0f352011cefba45dac3a0b2362|1155|estree-policy|static gate: ESTree Reflect use is outside the closed subset
+SEM-N079|5f28652f30a53fb5cc67afec8ac59baa6e2f9f89b312615a25ce909b12e47081|65ca7ac96337b6d041bc2a655fb5f4bcd77f3dbe71f147c01cb6abfeb89f414e|1157|estree-policy|static gate: ESTree Reflect use is outside the closed subset
+SEM-N080|d29d2c6e0578d42475aba5029b02218a7e2728c57fb984a488237284e7b980b6|53c24a222af8ddbeeb4d4946c370ff34a1dbc4a0f6153da9cbad30440910a867|1155|estree-policy|static gate: ESTree Reflect use is outside the closed subset
+SEM-N081|7d17a1f5a8cee11d3cfd1ef90b899b64caba0bc91fd6eb6057c509dad862d296|1fdef7e685c16fa2240bac43b6c00183ed0c57682814ad1d246af71bcae9d912|1156|estree-policy|static gate: ESTree Reflect use is outside the closed subset
+SEM-N082|2d00dccbc881916c2ccfcb8db429120df47c645caac218dfdc787bc370fad314|55d7e02471e4800b11b9c008961952038a93ce1654524082a82278f305a9a68e|1161|estree-policy|static gate: ESTree Reflect use is outside the closed subset`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -4514,9 +4558,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 60);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 82);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 140);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 162);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -5522,6 +5566,164 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /raw or unknown value logical \?\?/u,
     }),
+    Object.freeze({
+      name: "parenthesized ambient coercer call",
+      source: sourceSkeleton(
+        "function parenthesizedAmbientCall() { return (String)(null); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "parenthesized local-function call",
+      source: sourceSkeleton(
+        "function directTarget() { return null; }\nfunction parenthesizedLocalCall() { return (directTarget)(); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "parenthesized exported-operation call",
+      source: sourceSkeleton(
+        "function parenthesizedExportCall() { return (verifyCandidateContainmentGuardianStatusFrameV1)(null, null); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "parenthesized authorized private-lookup call",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const observed = (startupMetadata.get)(startupProjection); return null;",
+          ],
+        ]),
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "parenthesized safe-member call",
+      source: sourceSkeleton(
+        "function parenthesizedMemberCall() { const values = deepFreeze([]); return (values.includes)(null); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "call-result callee",
+      source: sourceSkeleton(
+        "function returnNull() { return null; }\nfunction callResultAsCallee() { return returnNull()(); }",
+      ),
+      expected: /static gate: ESTree indirect callee CallExpression/u,
+    }),
+    Object.freeze({
+      name: "conditional-expression callee",
+      source: sourceSkeleton(
+        "function conditionalLeft() { return null; }\nfunction conditionalRight() { return null; }\nfunction conditionalCallee() { return (true ? conditionalLeft : conditionalRight)(); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "logical-expression callee",
+      source: sourceSkeleton(
+        "function logicalTarget() { return null; }\nfunction logicalCallee() { return (logicalTarget && logicalTarget)(); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "sequence-expression callee",
+      source: sourceSkeleton(
+        "function sequenceTarget() { return null; }\nfunction sequenceCallee() { return (null, sequenceTarget)(); }",
+      ),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "member-call result used as callee",
+      source: sourceSkeleton(
+        "function memberResultCallee() { const values = deepFreeze([null]); return values.at(0)(); }",
+      ),
+      expected: /static gate: ESTree indirect callee CallExpression/u,
+    }),
+    Object.freeze({
+      name: "unary-expression callee",
+      source: sourceSkeleton("function unaryCallee() { return (!false)(); }"),
+      expected: /static gate: ESTree parenthesized or indirect call/u,
+    }),
+    Object.freeze({
+      name: "computed public-input index",
+      source: sourceSkeleton(
+        "function computedPublicInput(startupReportBytes) { return startupReportBytes[0]; }",
+      ),
+      expected: /static gate: ESTree computed member access/u,
+    }),
+    Object.freeze({
+      name: "computed private-store index",
+      source: sourceSkeleton(
+        "function computedPrivateStore() { return startupMetadata[0]; }",
+      ),
+      expected: /static gate: ESTree computed member access/u,
+    }),
+    Object.freeze({
+      name: "computed imported-helper index",
+      source: sourceSkeleton(
+        "function computedImportedHelper() { return sha256[0]; }",
+      ),
+      expected: /static gate: ESTree computed member access/u,
+    }),
+    Object.freeze({
+      name: "computed ambient-intrinsic index",
+      source: sourceSkeleton(
+        "function computedAmbientIntrinsic() { return Object[0]; }",
+      ),
+      expected: /static gate: ESTree computed member access/u,
+    }),
+    Object.freeze({
+      name: "computed exported-operation index",
+      source: sourceSkeleton(
+        "function computedExportedOperation() { return verifyCandidateContainmentGuardianStatusFrameV1[0]; }",
+      ),
+      expected: /static gate: ESTree computed member access/u,
+    }),
+    Object.freeze({
+      name: "computed member callee",
+      source: sourceSkeleton(
+        "function computedMemberCallee() { const values = deepFreeze([]); return values[0](); }",
+      ),
+      expected: /static gate: ESTree computed member access/u,
+    }),
+    Object.freeze({
+      name: "direct Reflect call",
+      source: sourceSkeleton(
+        "function directReflectCall() { return Reflect(); }",
+      ),
+      expected: /static gate: ESTree Reflect use is outside the closed subset/u,
+    }),
+    Object.freeze({
+      name: "Reflect array element",
+      source: sourceSkeleton(
+        "function reflectArrayElement() { return deepFreeze([Reflect]); }",
+      ),
+      expected: /static gate: ESTree Reflect use is outside the closed subset/u,
+    }),
+    Object.freeze({
+      name: "Reflect unary operand",
+      source: sourceSkeleton(
+        "function reflectUnaryOperand() { return typeof Reflect; }",
+      ),
+      expected: /static gate: ESTree Reflect use is outside the closed subset/u,
+    }),
+    Object.freeze({
+      name: "Reflect argument",
+      source: sourceSkeleton(
+        "function reflectArgument() { return Boolean(Reflect); }",
+      ),
+      expected: /static gate: ESTree Reflect use is outside the closed subset/u,
+    }),
+    Object.freeze({
+      name: "Reflect conditional branch",
+      source: sourceSkeleton(
+        "function reflectConditionalBranch() { const value = true ? Reflect : null; return null; }",
+      ),
+      expected: /static gate: ESTree Reflect use is outside the closed subset/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -5731,8 +5933,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 76);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 60);
+  assert.equal(namedStageAudit.length, 98);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 82);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -5929,7 +6131,7 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 129,
+  sourceIndependentNegativeControls: 151,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
@@ -6267,7 +6469,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 129,
+    rejected: 151,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -6345,10 +6547,32 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "private lookup value inspected",
       "private lookup value joined conditionally",
       "private lookup value used as logical operand",
+      "parenthesized ambient coercer call",
+      "parenthesized local-function call",
+      "parenthesized exported-operation call",
+      "parenthesized authorized private-lookup call",
+      "parenthesized safe-member call",
+      "call-result callee",
+      "conditional-expression callee",
+      "logical-expression callee",
+      "sequence-expression callee",
+      "member-call result used as callee",
+      "unary-expression callee",
+      "computed public-input index",
+      "computed private-store index",
+      "computed imported-helper index",
+      "computed ambient-intrinsic index",
+      "computed exported-operation index",
+      "computed member callee",
+      "direct Reflect call",
+      "Reflect array element",
+      "Reflect unary operand",
+      "Reflect argument",
+      "Reflect conditional branch",
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 60,
-      estreePolicyReachedCount: 58,
+      totalDeltaSinceParserFoundation: 82,
+      estreePolicyReachedCount: 80,
       preEstreePolicyRejectionCount: 2,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -6388,7 +6612,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 60 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 82 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -6407,11 +6631,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 140);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 140);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 162);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 162);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    140,
+    162,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -6427,7 +6651,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    140,
+    162,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -6493,8 +6717,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ),
     [
       { bucket: "protectedAliases", target: 12, current: 12, remaining: 0 },
-      { bucket: "indirectCalls", target: 12, current: 1, remaining: 11 },
-      { bucket: "reflectComputed", target: 12, current: 1, remaining: 11 },
+      { bucket: "indirectCalls", target: 12, current: 12, remaining: 0 },
+      { bucket: "reflectComputed", target: 12, current: 12, remaining: 0 },
       {
         bucket: "bindingMemberWrites",
         target: 14,
@@ -6512,8 +6736,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 60);
-  assert.equal(new Set(bucketIds).size, 60);
+  assert.equal(bucketIds.length, 82);
+  assert.equal(new Set(bucketIds).size, 82);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -6569,10 +6793,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 60,
-    allCurrentNegatives: 129,
+    semanticNegatives: 82,
+    allCurrentNegatives: 151,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 270,
+    semanticRemainingNegatives: 248,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
@@ -6582,9 +6806,9 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     commitRemaining: 183,
     evaluationAttempts: 0,
   });
-  assert.equal(129, 69 + 60);
+  assert.equal(151, 69 + 82);
   assert.equal(399, 69 + 330);
-  assert.equal(270, 330 - 60);
+  assert.equal(248, 330 - 82);
   assert.equal(0, 11 - 11);
   assert.equal(183, 200 - 17);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
@@ -6722,13 +6946,68 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     semanticSha256(privateLookupReceiptWithoutProjectionHashes),
     EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.receiptWithoutProjectionHashesSha256,
   );
+  const preCalleeReceiverEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 60),
+    ...positiveEntries,
+  ];
+  const newCalleeReceiverEntries = semanticEntries.slice(60);
+  const preCalleeReceiverSourceHashes = new Set(
+    preCalleeReceiverEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preCalleeReceiverAstHashes = new Set(
+    preCalleeReceiverEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(newCalleeReceiverEntries.length, 22);
+  assert.deepEqual(
+    newCalleeReceiverEntries.map(({ id, bucket }) => ({ id, bucket })),
+    [
+      ...Array.from({ length: 11 }, (_, index) => ({
+        id: staticControlId("SEM-N", index + 60),
+        bucket: "indirectCalls",
+      })),
+      ...Array.from({ length: 11 }, (_, index) => ({
+        id: staticControlId("SEM-N", index + 71),
+        bucket: "reflectComputed",
+      })),
+    ],
+  );
+  assert.equal(
+    new Set(newCalleeReceiverEntries.map(({ sourceSha256 }) => sourceSha256))
+      .size,
+    22,
+  );
+  assert.equal(
+    new Set(newCalleeReceiverEntries.map(({ astSha256 }) => astSha256)).size,
+    22,
+  );
+  assert.equal(
+    newCalleeReceiverEntries.some(({ sourceSha256 }) =>
+      preCalleeReceiverSourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newCalleeReceiverEntries.some(({ astSha256 }) =>
+      preCalleeReceiverAstHashes.has(astSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newCalleeReceiverEntries.every(
+      ({ expectedStage }) => expectedStage === "estree-policy",
+    ),
+    true,
+  );
   const preLookupEntries = [
     ...foundationEntries,
     ...semanticEntries.slice(0, 48),
     ...positiveEntries.slice(0, 5),
   ];
   const newLookupEntries = [
-    ...semanticEntries.slice(48),
+    ...semanticEntries.slice(48, 60),
     ...positiveEntries.slice(5),
   ];
   const preLookupAstHashes = new Set(
@@ -6863,11 +7142,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 129,
+    sourceIndependentNegativeControls: 151,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 60,
-      estreePolicyReachedCount: 58,
+      totalDeltaSinceParserFoundation: 82,
+      estreePolicyReachedCount: 80,
       preEstreePolicyRejectionCount: 2,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
