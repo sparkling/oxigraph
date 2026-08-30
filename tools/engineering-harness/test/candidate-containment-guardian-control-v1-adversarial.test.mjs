@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import test from "node:test";
+import { readFileSync, realpathSync } from "node:fs";
+import nodeTest from "node:test";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
@@ -182,6 +182,159 @@ const EXPECTED_EXPORTS = Object.freeze([
   "reduceCandidateContainmentGuardianControlV1",
   "verifyCandidateContainmentGuardianStatusFrameV1",
 ]);
+
+const ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1";
+const EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256 =
+  "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e";
+const ADVERSARIAL_CANDIDATE_TEST_INVENTORY = Object.freeze([
+  Object.freeze({
+    id: "byte-position-carrier-controls",
+    name: "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
+    options: Object.freeze({ todo: true }),
+    requiredInputs: Object.freeze(["candidate", "oracle"]),
+  }),
+  Object.freeze({
+    id: "private-store-commit-controls",
+    name: "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
+    options: Object.freeze({ todo: true }),
+    requiredInputs: Object.freeze([
+      "candidate",
+      "oracle",
+      "loadFreshCandidate",
+    ]),
+  }),
+]);
+
+function adversarialCandidateTestInventoryProjection(inventory) {
+  return Object.freeze(
+    inventory.map(({ id, name, options, requiredInputs }) =>
+      Object.freeze({ id, name, options, requiredInputs }),
+    ),
+  );
+}
+
+function validateAdversarialCandidateTestInventory() {
+  assert.equal(Object.isFrozen(ADVERSARIAL_CANDIDATE_TEST_INVENTORY), true);
+  assert.equal(ADVERSARIAL_CANDIDATE_TEST_INVENTORY.length, 2);
+  const ids = [];
+  const names = [];
+  for (const entry of ADVERSARIAL_CANDIDATE_TEST_INVENTORY) {
+    assert.equal(Object.isFrozen(entry), true);
+    assert.equal(typeof entry.id, "string");
+    assert.notEqual(entry.id.length, 0);
+    assert.equal(typeof entry.name, "string");
+    assert.notEqual(entry.name.length, 0);
+    assert.equal(Object.isFrozen(entry.options), true);
+    assert.deepEqual(entry.options, { todo: true });
+    assert.equal(Object.isFrozen(entry.requiredInputs), true);
+    assert.equal(entry.requiredInputs.length > 0, true);
+    assert.equal(
+      entry.requiredInputs.every((name) =>
+        ["candidate", "oracle", "loadFreshCandidate"].includes(name),
+      ),
+      true,
+    );
+    assert.equal(
+      new Set(entry.requiredInputs).size,
+      entry.requiredInputs.length,
+    );
+    ids.push(entry.id);
+    names.push(entry.name);
+  }
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(new Set(names).size, names.length);
+  const projection = adversarialCandidateTestInventoryProjection(
+    ADVERSARIAL_CANDIDATE_TEST_INVENTORY,
+  );
+  assert.equal(Object.isFrozen(projection), true);
+  assert.equal(
+    projection.every((entry) => Object.isFrozen(entry)),
+    true,
+  );
+  const inventorySha256 = digest(projection);
+  assert.equal(
+    inventorySha256,
+    EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256,
+  );
+  const todoCount = projection.filter(({ options }) => options.todo).length;
+  assert.equal(todoCount, 2);
+  return Object.freeze({
+    inventory: ADVERSARIAL_CANDIDATE_TEST_INVENTORY,
+    inventorySha256,
+    todoCount,
+  });
+}
+
+function assertCandidateTestInputsAtExecution(registration, requiredInputs) {
+  for (const name of requiredInputs) {
+    const value = registration[name];
+    assert.notEqual(
+      value,
+      undefined,
+      `${name} must be supplied by the main lane`,
+    );
+    if (name === "loadFreshCandidate") {
+      assert.equal(typeof value, "function");
+    }
+  }
+}
+
+export function registerAdversarialCandidateTests(registration) {
+  if (
+    registration === null ||
+    (typeof registration !== "object" && typeof registration !== "function")
+  ) {
+    throw new TypeError("adversarial candidate registration must be an object");
+  }
+  for (const name of ["candidate", "oracle", "loadFreshCandidate"]) {
+    if (!Object.hasOwn(registration, name)) {
+      throw new TypeError(`adversarial candidate registration missing ${name}`);
+    }
+  }
+  const { registerTest = nodeTest } = registration;
+  if (typeof registerTest !== "function") {
+    throw new TypeError(
+      "adversarial candidate registerTest must be a function",
+    );
+  }
+
+  const { inventory, inventorySha256, todoCount } =
+    validateAdversarialCandidateTestInventory();
+  let registeredCount = 0;
+  for (const entry of inventory) {
+    registerTest(entry.name, entry.options, () => {
+      assertCandidateTestInputsAtExecution(registration, entry.requiredInputs);
+    });
+    registeredCount += 1;
+  }
+  assert.equal(registeredCount, inventory.length);
+  return Object.freeze({
+    schema: ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA,
+    inventorySha256,
+    registeredCount,
+    todoCount,
+    inputsDeferredUntilExecution: true,
+  });
+}
+
+function isDirectEntry(moduleUrl, entryPath) {
+  if (
+    typeof moduleUrl !== "string" ||
+    typeof entryPath !== "string" ||
+    entryPath.length === 0
+  ) {
+    return false;
+  }
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(entryPath);
+  } catch {
+    return false;
+  }
+}
+
+const DIRECT_ENTRY = isDirectEntry(import.meta.url, process.argv[1]);
+const test = DIRECT_ENTRY ? nodeTest : () => {};
 
 const FORBIDDEN = Object.freeze([
   "Buffer",
@@ -439,21 +592,23 @@ function evaluateCandidateOnlyWhenSourceAbsent(source, evaluate) {
   return evaluate();
 }
 
-const STATIC_CONTROLS = sourceIndependentStaticControls();
+const STATIC_CONTROLS = DIRECT_ENTRY ? sourceIndependentStaticControls() : null;
 let candidateSourceGateError = null;
 let source = null;
-try {
-  source = readFileSync(SOURCE_PATH, "utf8");
-} catch (error) {
-  if (error?.code !== "ENOENT") throw error;
-}
-if (source !== null) {
+if (DIRECT_ENTRY) {
   try {
-    evaluateCandidateOnlyWhenSourceAbsent(source, () => {
-      throw new Error("candidate evaluation attempted");
-    });
+    source = readFileSync(SOURCE_PATH, "utf8");
   } catch (error) {
-    candidateSourceGateError = error;
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (source !== null) {
+    try {
+      evaluateCandidateOnlyWhenSourceAbsent(source, () => {
+        throw new Error("candidate evaluation attempted");
+      });
+    } catch (error) {
+      candidateSourceGateError = error;
+    }
   }
 }
 
@@ -803,6 +958,75 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   }
   assert.equal(new Set(controls).size, 15);
   assert.equal(Object.isFrozen(PRIVATE_STORE_COMMIT_CONTROL_PLAN), true);
+
+  const expectedCandidateTestNames = [
+    "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
+    "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
+  ];
+  assert.deepEqual(
+    ADVERSARIAL_CANDIDATE_TEST_INVENTORY.map(({ name }) => name),
+    expectedCandidateTestNames,
+  );
+  assert.equal(Object.isFrozen(ADVERSARIAL_CANDIDATE_TEST_INVENTORY), true);
+  for (const entry of ADVERSARIAL_CANDIDATE_TEST_INVENTORY) {
+    assert.equal(Object.isFrozen(entry), true);
+    assert.equal(Object.isFrozen(entry.options), true);
+    assert.deepEqual(entry.options, { todo: true });
+  }
+
+  const accesses = { candidate: 0, oracle: 0, loadFreshCandidate: 0 };
+  const registrations = [];
+  const registration = {
+    registerTest(name, options, run) {
+      registrations.push(Object.freeze({ name, options, run }));
+    },
+  };
+  for (const name of Object.keys(accesses)) {
+    Object.defineProperty(registration, name, {
+      configurable: false,
+      enumerable: true,
+      get() {
+        accesses[name] += 1;
+        throw new Error(`${name} accessed during registration`);
+      },
+    });
+  }
+  const receipt = registerAdversarialCandidateTests(registration);
+  assert.deepEqual(accesses, {
+    candidate: 0,
+    oracle: 0,
+    loadFreshCandidate: 0,
+  });
+  assert.deepEqual(
+    registrations.map(({ name }) => name),
+    expectedCandidateTestNames,
+  );
+  assert.deepEqual(
+    registrations.map(({ options }) => options),
+    [{ todo: true }, { todo: true }],
+  );
+  assert.equal(
+    registrations.every(({ run }) => typeof run === "function"),
+    true,
+  );
+  assert.deepEqual(receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
+    inventorySha256:
+      "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e",
+    registeredCount: 2,
+    todoCount: 2,
+    inputsDeferredUntilExecution: true,
+  });
+  assert.equal(Object.isFrozen(receipt), true);
+
+  assert.equal(isDirectEntry(import.meta.url, undefined), false);
+  assert.equal(isDirectEntry(import.meta.url, ""), false);
+  assert.equal(
+    isDirectEntry(import.meta.url, fileURLToPath(import.meta.url)),
+    true,
+  );
+  assert.equal(isDirectEntry(import.meta.url, SOURCE_PATH), false);
 });
 
 test("keeps snapshot cost byte-bounded despite many extra own properties", () => {
