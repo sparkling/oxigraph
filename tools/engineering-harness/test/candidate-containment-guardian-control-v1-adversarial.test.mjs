@@ -5,8 +5,6 @@ import nodeTest from "node:test";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
-import { copyBoundedBuffer } from "../src/candidate/containment-exact-v2.mjs";
-
 const SOURCE_URL = new URL(
   "../src/candidate/containment-guardian-control-v1.mjs",
   import.meta.url,
@@ -20,6 +18,10 @@ const EXACT_V2_URL = new URL(
   "../src/candidate/containment-exact-v2.mjs",
   import.meta.url,
 );
+const EXPECTED_EXACT_V2_SOURCE_SHA256 =
+  "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3";
+const ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1";
 const EXPECTED_REQUIREMENTS_SHA256 =
   "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
@@ -537,7 +539,85 @@ function isDirectEntry(moduleUrl, entryPath) {
   }
 }
 
+async function loadExactV2ForAdversarialEntry({
+  directEntry,
+  readExactV2Source = () => readFileSync(EXACT_V2_URL),
+  importExactV2 = () => import(EXACT_V2_URL.href),
+}) {
+  assert.equal(typeof directEntry, "boolean");
+  assert.equal(typeof readExactV2Source, "function");
+  assert.equal(typeof importExactV2, "function");
+  if (!directEntry) {
+    return Object.freeze({
+      copyBoundedBuffer: null,
+      audit: Object.freeze({
+        schema: ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA,
+        mode: "IMPORTED",
+        expectedSourceSha256: EXPECTED_EXACT_V2_SOURCE_SHA256,
+        observedSourceSha256: null,
+        sourceReadCount: 0,
+        sourcePinSequence: null,
+        moduleLoadAttemptCount: 0,
+        moduleLoadAttemptSequence: null,
+        sourcePinnedBeforeModuleLoad: false,
+        copyBoundedBufferLoaded: false,
+      }),
+    });
+  }
+
+  let sequence = 0;
+  const exactV2SourceBytes = readExactV2Source();
+  const observedSourceSha256 = createHash("sha256")
+    .update(exactV2SourceBytes)
+    .digest("hex");
+  assert.equal(
+    observedSourceSha256,
+    EXPECTED_EXACT_V2_SOURCE_SHA256,
+    "adversarial exact-v2 source pin mismatch",
+  );
+  const sourcePinSequence = (sequence += 1);
+  const moduleLoadAttemptSequence = (sequence += 1);
+  assert.equal(sourcePinSequence < moduleLoadAttemptSequence, true);
+  const exactV2 = await importExactV2();
+  assert.equal(typeof exactV2.copyBoundedBuffer, "function");
+  return Object.freeze({
+    copyBoundedBuffer: exactV2.copyBoundedBuffer,
+    audit: Object.freeze({
+      schema: ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA,
+      mode: "DIRECT_ENTRY",
+      expectedSourceSha256: EXPECTED_EXACT_V2_SOURCE_SHA256,
+      observedSourceSha256,
+      sourceReadCount: 1,
+      sourcePinSequence,
+      moduleLoadAttemptCount: 1,
+      moduleLoadAttemptSequence,
+      sourcePinnedBeforeModuleLoad: true,
+      copyBoundedBufferLoaded: true,
+    }),
+  });
+}
+
 const DIRECT_ENTRY = isDirectEntry(import.meta.url, process.argv[1]);
+const EXACT_V2_LOAD = await loadExactV2ForAdversarialEntry({
+  directEntry: DIRECT_ENTRY,
+});
+const copyBoundedBuffer = EXACT_V2_LOAD.copyBoundedBuffer;
+const ADVERSARIAL_EXACT_V2_LOAD_AUDIT = EXACT_V2_LOAD.audit;
+if (!DIRECT_ENTRY) {
+  assert.equal(copyBoundedBuffer, null);
+  assert.deepEqual(ADVERSARIAL_EXACT_V2_LOAD_AUDIT, {
+    schema: ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA,
+    mode: "IMPORTED",
+    expectedSourceSha256: EXPECTED_EXACT_V2_SOURCE_SHA256,
+    observedSourceSha256: null,
+    sourceReadCount: 0,
+    sourcePinSequence: null,
+    moduleLoadAttemptCount: 0,
+    moduleLoadAttemptSequence: null,
+    sourcePinnedBeforeModuleLoad: false,
+    copyBoundedBufferLoaded: false,
+  });
+}
 const test = DIRECT_ENTRY ? nodeTest : () => {};
 
 const FORBIDDEN = Object.freeze([
@@ -2047,7 +2127,71 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
   assert.deepEqual(oracle.counts, EXPECTED_SOURCE_INDEPENDENT_ORACLE_COUNTS);
 });
 
-test("keeps its own pre-import gate green with zero evaluation attempts", () => {
+test("keeps its own pre-import gate green with zero evaluation attempts", async () => {
+  assert.deepEqual(ADVERSARIAL_EXACT_V2_LOAD_AUDIT, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1",
+    mode: "DIRECT_ENTRY",
+    expectedSourceSha256:
+      "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+    observedSourceSha256:
+      "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+    sourceReadCount: 1,
+    sourcePinSequence: 1,
+    moduleLoadAttemptCount: 1,
+    moduleLoadAttemptSequence: 2,
+    sourcePinnedBeforeModuleLoad: true,
+    copyBoundedBufferLoaded: true,
+  });
+
+  let importedModeSourceReads = 0;
+  let importedModeModuleLoads = 0;
+  const importedModeLoad = await loadExactV2ForAdversarialEntry({
+    directEntry: false,
+    readExactV2Source() {
+      importedModeSourceReads += 1;
+      throw new Error("imported mode read exact-v2 source");
+    },
+    importExactV2() {
+      importedModeModuleLoads += 1;
+      throw new Error("imported mode loaded exact-v2");
+    },
+  });
+  assert.equal(importedModeLoad.copyBoundedBuffer, null);
+  assert.deepEqual(importedModeLoad.audit, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1",
+    mode: "IMPORTED",
+    expectedSourceSha256:
+      "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+    observedSourceSha256: null,
+    sourceReadCount: 0,
+    sourcePinSequence: null,
+    moduleLoadAttemptCount: 0,
+    moduleLoadAttemptSequence: null,
+    sourcePinnedBeforeModuleLoad: false,
+    copyBoundedBufferLoaded: false,
+  });
+  assert.deepEqual(
+    { importedModeSourceReads, importedModeModuleLoads },
+    { importedModeSourceReads: 0, importedModeModuleLoads: 0 },
+  );
+
+  let driftModuleLoads = 0;
+  await assert.rejects(
+    () =>
+      loadExactV2ForAdversarialEntry({
+        directEntry: true,
+        readExactV2Source: () => Buffer.from("drift", "utf8"),
+        importExactV2() {
+          driftModuleLoads += 1;
+          throw new Error("drifted exact-v2 source was loaded");
+        },
+      }),
+    /adversarial exact-v2 source pin mismatch/gu,
+  );
+  assert.equal(driftModuleLoads, 0);
+
   assert.deepEqual(STATIC_CONTROLS, { rejected: 8, evaluationAttempts: 0 });
   let sourcePresentEvaluationAttempts = 0;
   assert.throws(
