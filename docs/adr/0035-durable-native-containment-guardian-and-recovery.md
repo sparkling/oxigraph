@@ -3427,6 +3427,36 @@ deliberate G1.7 identity guard reporting product paths changed after the old
 sealed e9 subject. This checkpoint does not refresh that subject or convert its
 stale seal into qualification evidence.
 
+The next evaluator-only recovery-v1 RED checkpoint freezes the contract before
+production implementation:
+
+- the 1,037-line fixture and 75-test evaluator have SHA-256 identities
+  `d956a9952d479617ee672470ca7a390225cbeb681b916ba3ce8255470c748076`
+  and
+  `ecde446c4c179433a449641680ae995fa81e2139e209a4444ba0ab5069c40e52`;
+  the independent 1-test `exactRecord` seam has SHA-256
+  `eab46c8acfe8964121f8fb9cdfef1b9e4da32df9b763fc15423a0bdedb268af0`;
+- the evaluator owns the exact 99-field requirements oracle with SHA-256
+  `278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a`
+  and defines the exact 53-name recovery-v1 public surface;
+- before any recovery module evaluation, its bounded lexical gate rejects all
+  eight disallowed import shapes and all 28 forbidden ambient-effect controls.
+  Forbidden ambient spellings are denied even when locally shadowed; ordinary
+  non-ambient declarations remain admitted;
+- on Node 24 and Node 20 the main evaluator reaches its sole intended RED,
+  `ERR_MODULE_NOT_FOUND`, because the recovery-v1 production source is absent.
+  The source-independent `exactRecord` seam reaches only its intended Option-A
+  RED: zero admitted permutations and three dynamic-intrinsic hits, while no
+  Proxy trap or accessor getter runs; and
+- the fixture smoke, raw/parser/import/ambient controls, embedded child-source
+  syntax, exact import and raw-byte preflight checks, four-cell post-reboot
+  quarantine certainty matrix, and two independent frozen-hash audits all pass
+  with no P0/P1 findings.
+
+This RED checkpoint is evaluator evidence only. It does not implement
+recovery-v1, prove a filesystem effect or recovery outcome, or grant any
+containment, qualification, promotion, publication, or production authority.
+
 No live G1.7 control, provider, benchmark, qualification, promotion, or
 publication path ran for this checkpoint. The additive journal-bundle v2 and
 generation manifest and lifetime-v1 ledger now exist only as pure
