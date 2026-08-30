@@ -301,7 +301,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - run: npm install
+      - run: npm ci
         working-directory: ./js
       - run: npm run pack
         working-directory: ./js
