@@ -4,8 +4,13 @@
 - **Date**: 2026-08-30
 - Updated: 2026-08-30
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented. No guardian-control evaluator, source
-  module, runtime registration, or physical owner exists. The current production
+- Implementation status: evaluator RED in progress. Commit `7a539665` adds the
+  reviewed source-absent, fail-closed evaluator checkpoint; commit `d3e6bd8b`
+  adds source-independent exact-v2 controls for all nine byte positions, 108
+  ignored-property variants, 63 hostile carriers, and the exact ten-operation
+  private-store test inventory. The positive lexical gate, candidate-connected
+  acceptance matrices, production source module, runtime registration, and
+  physical owner remain incomplete or absent. The current production
   containment readiness remains unavailable
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
