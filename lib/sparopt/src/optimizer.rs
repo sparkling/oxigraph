@@ -822,7 +822,19 @@ impl Optimizer {
                     .enumerate()
                     .filter(|(_, v)| **v)
                     .map(|(i, _)| i)
-                    .min_by_key(|i| estimate_query_expression_size(&to_reorder[*i], input_types))
+                    .min_by_key(|i| {
+                        let unbound_variable_service = matches!(
+                            &to_reorder[*i],
+                            QueryExpression::Service {
+                                name: NamedNodePattern::Variable(variable),
+                                ..
+                            } if input_types.get(variable).undef
+                        );
+                        (
+                            unbound_variable_service,
+                            estimate_query_expression_size(&to_reorder[*i], input_types),
+                        )
+                    })
                 {
                     not_yet_reordered_ids[next_entry_id] = false; // It's now done
                     let mut output = to_reorder[next_entry_id].clone();
@@ -1500,6 +1512,8 @@ fn does_contain_exists(expression: &Expression) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "sep-0006")]
+    use spargebra::{Query, SparqlParser};
 
     fn estimate_slice_size(offset: u64, limit: Option<u64>) -> u64 {
         estimate_query_expression_size(
@@ -1517,5 +1531,60 @@ mod tests {
         assert_eq!(estimate_slice_size(2, Some(1)), 1);
         assert_eq!(estimate_slice_size(6, Some(1)), 0);
         assert_eq!(estimate_slice_size(2, None), 3);
+    }
+
+    #[cfg(feature = "sep-0006")]
+    #[test]
+    fn variable_service_is_ordered_after_its_local_binder() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let query = SparqlParser::new().parse_query(
+            r#"PREFIX void: <http://rdfs.org/ns/void#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX doap: <http://usefulinc.com/ns/doap#>
+SELECT ?service ?title WHERE {
+  {
+    ?p dc:subject ?projectSubject ;
+       void:sparqlEndpoint ?service
+    FILTER regex(?projectSubject, "remote")
+  }
+  SERVICE ?service { ?project doap:name ?title }
+}"#,
+        )?;
+        let Query::Select(query) = query else {
+            return Err("expected SELECT query".into());
+        };
+        let optimized =
+            Optimizer::optimize_query_expression(QueryExpression::from(&query.expression));
+        let QueryExpression::Project { inner, .. } = optimized else {
+            return Err("expected projected query".into());
+        };
+        let QueryExpression::Join { left, right, .. } = *inner else {
+            return Err("variable SERVICE must remain behind a dependency-aware join".into());
+        };
+        if matches!(
+            left.as_ref(),
+            QueryExpression::Service {
+                name: NamedNodePattern::Variable(_),
+                ..
+            }
+        ) {
+            return Err("variable SERVICE must not be the left join input".into());
+        }
+        if infer_query_expression_types(left.as_ref(), VariableTypes::default())
+            .get(&Variable::new_unchecked("service"))
+            .undef
+        {
+            return Err("the left side must guarantee the SERVICE endpoint binding".into());
+        }
+        if !matches!(
+            right.as_ref(),
+            QueryExpression::Service {
+                name: NamedNodePattern::Variable(variable),
+                ..
+            } if variable.as_str() == "service"
+        ) {
+            return Err("variable SERVICE must be the right join input".into());
+        }
+        Ok(())
     }
 }
