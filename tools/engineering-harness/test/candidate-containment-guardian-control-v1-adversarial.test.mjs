@@ -50,6 +50,267 @@ const EXPECTED_SOURCE_INDEPENDENT_ORACLE_INVENTORY_SHA256 = Object.freeze({
   constructibleFailurePrecedencePairs:
     "51fb17d1ff193dc37db2b16be60251c7bc745f479f0a8ee980ee24bc0caa0762",
 });
+const SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-materialized-status-oracle/v1";
+const STATUS_ORACLE_CONSTRUCTION_CONTEXT_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-status-oracle-construction-context/v1";
+const STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-status-oracle-binding/v1";
+const STATUS_ORACLE_ENTRY_IDENTITY_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-status-oracle-entry-identity/v1";
+const STATUS_ORACLE_ATOMIC_IDENTITY_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-status-oracle-atomic-identity/v1";
+const EXPECTED_STATUS_FRAME_FIELDS = Object.freeze([
+  "schema",
+  "action",
+  "mode",
+  "sequence",
+  "previousFrameSha256",
+  "requirementsSha256",
+  "startupSha256",
+  "epochSha256",
+  "state",
+  "admissionFrameSha256",
+  "recoveryRequestFrameSha256",
+  "terminalReason",
+]);
+const STATUS_ORACLE_CONSTRUCTION_PREIMAGE_SPECS = Object.freeze([
+  Object.freeze({
+    id: "normal-startup-report",
+    format: "CANONICAL_JSONL",
+    value: `{"binding":"NORMAL_STARTUP_REPORT","schema":"${STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA}"}\n`,
+  }),
+  Object.freeze({
+    id: "normal-epoch",
+    format: "RAW_HEX",
+    value: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  }),
+  Object.freeze({
+    id: "recovery-only-startup-report",
+    format: "CANONICAL_JSONL",
+    value: `{"binding":"RECOVERY_ONLY_STARTUP_REPORT","schema":"${STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA}"}\n`,
+  }),
+  Object.freeze({
+    id: "recovery-only-epoch",
+    format: "RAW_HEX",
+    value: "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+  }),
+  Object.freeze({
+    id: "normal-admission-frame",
+    format: "CANONICAL_JSONL",
+    value: `{"binding":"NORMAL_ADMISSION_FRAME","schema":"${STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA}"}\n`,
+  }),
+  Object.freeze({
+    id: "normal-cancel-without-admission-frame",
+    format: "CANONICAL_JSONL",
+    value: `{"binding":"NORMAL_CANCEL_WITHOUT_ADMISSION_FRAME","schema":"${STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA}"}\n`,
+  }),
+  Object.freeze({
+    id: "normal-cancel-after-admission-frame",
+    format: "CANONICAL_JSONL",
+    value: `{"binding":"NORMAL_CANCEL_AFTER_ADMISSION_FRAME","schema":"${STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA}"}\n`,
+  }),
+  Object.freeze({
+    id: "recovery-only-request-frame",
+    format: "CANONICAL_JSONL",
+    value: `{"binding":"RECOVERY_ONLY_REQUEST_FRAME","schema":"${STATUS_ORACLE_BINDING_PREIMAGE_SCHEMA}"}\n`,
+  }),
+]);
+const EXPECTED_STATUS_ORACLE_BINDING_SHA256 = Object.freeze({
+  "normal-startup-report":
+    "d3e1ff2fb63ad41d7f3aa2a6331e27951935649cff629579c540962e207e4d70",
+  "normal-epoch":
+    "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+  "recovery-only-startup-report":
+    "8d3875efc7bac9141588f9b3c7616192a088d281c832d5225ad662dadcdf7eff",
+  "recovery-only-epoch":
+    "72dbb7336c76780023f83da4c355f2eeea85733b13d3477697917790c1229084",
+  "normal-admission-frame":
+    "41aaf237406afdf9f566c526c1516452d846f83bf02d91515d571717ae7224a5",
+  "normal-cancel-without-admission-frame":
+    "5d3e696b9736d744fc3cc5ad10aa4969d864c2593d79d560dd798661891cf06a",
+  "normal-cancel-after-admission-frame":
+    "c9959c2be56ece16cd7bdb39429a5512931f1e3c21026695d45877e80d9c0aa6",
+  "recovery-only-request-frame":
+    "afe6b47b961d9651c595c868955b2b1a30a869b03f0a44fef109ebe6126fe541",
+});
+const EXPECTED_STATUS_ORACLE_CONSTRUCTION_CONTEXT_SHA256 =
+  "fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23";
+const EXPECTED_MATERIALIZED_STATUS_ENTRY_DIGESTS = Object.freeze([
+  Object.freeze({
+    id: "emitted-status-byte-00",
+    frameSha256:
+      "edb6895fe23a0862b0d8e99c6915567622199ae260d32a6066f4033afe750f5e",
+    rawSha256:
+      "50dd61c048bf89b9c7bdd14fb269ca032f7129b0eeda18d47e4f0ef730c8e91f",
+    identitySha256:
+      "cec89783bc76b6e67cb1d57ff9e452d8d44b0c342f72d30f855f5605982d1024",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-01",
+    frameSha256:
+      "40f48560c823eff17a4dc2798798ea0a198b803194b1e103533226d7918b44a5",
+    rawSha256:
+      "0f266cbf8085670bf5f04bb24f375095232e036d8cc5b0fa75bd7a5205b2064d",
+    identitySha256:
+      "1dd8b29ff9bb1bf2c69997f8dcd010506b344e7a3467e8922f2a1eba4b18bd49",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-02",
+    frameSha256:
+      "9a2c66ef3dc4fcb6dca88b3a7bfefd4cf2ff4da0fdc3af79153983030061b59d",
+    rawSha256:
+      "59dcc9bd09b16f2f81f1ce89c0d283b9fe733799d34bcd8f1a83d30375f3a4de",
+    identitySha256:
+      "4970e65dbe175dc58ef45bd0626d102b3944451861a0f09f494a920764a887c3",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-03",
+    frameSha256:
+      "c5508bef6fbbc738caa92d11e9c2d5353d9ee793715de1f471f68aba1f9b0345",
+    rawSha256:
+      "50208e22fcb8808ebfe6d32734a7a3054da4c10e0f8084331f455ff78c388de0",
+    identitySha256:
+      "212c94e1cbcb3016adae65b22dd32d41e11b4608957c73eeb54bc6db899bc67a",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-04",
+    frameSha256:
+      "87cd122e04f649f18bb287d32b67571c93fdff2d39b93571848ff1fca347304e",
+    rawSha256:
+      "970cfda692bc7f1212d398b9c0db19a100fc5c60be91bc5a42a8728f14474fc3",
+    identitySha256:
+      "349807613a7f942bd6dea09fbf1264a53d653edb30706442c59840b417f0fdc4",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-05",
+    frameSha256:
+      "ba2799bbbbd4c4eccb8369bae8493cd6bdb5483f6fd4255be64ebd10a76cdaf7",
+    rawSha256:
+      "1136a1f92fe3a29ff71738fc6558ffedb6914d591f0b5d19f389399cba8f7b62",
+    identitySha256:
+      "5afa4223e46a0d9c0d273face2ab7302a6fa332fcaa3d9d3b98da7d798ef7991",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-06",
+    frameSha256:
+      "506f3dbc68fa1dd140699fd4ef68fb4e44a9a27019e4a991094f9910cc4d441c",
+    rawSha256:
+      "d4de93c414d6c421408dc3fb858bc56fa4e987fed4fd3e98eb9983bda223141e",
+    identitySha256:
+      "beb48e22bc0ffc0d49d217dbe3f2be4e1400579214427f134a6186a2bf3b2c58",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-07",
+    frameSha256:
+      "2280149c20d13c97c689f755c8247fcdc34f6abf05b60088ff25c7fce9e01b0e",
+    rawSha256:
+      "616927a88cae6d6b1fdee85f70927324fed23a7d1a8ec2659f08516e5aa8a9d8",
+    identitySha256:
+      "685a25e74b8d19504298675d6a50711e8200d55d34d138fb1574c6f8f23c66e3",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-08",
+    frameSha256:
+      "756c13d0c8ab97af961a07202e265e1deebb4901c018198b348b8efbe5f9b3fc",
+    rawSha256:
+      "2bdff765b3f4bcf1afde64b0ebcdc6df45bf4a2a1cd184ca3494a0cb4380c3c1",
+    identitySha256:
+      "9d93ca3c68b87a831fdf75d00f1e29da9966f24ffe363c09a3d1bb0a2d0f13f7",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-09",
+    frameSha256:
+      "25b99423a4f44ed2db739e48d1cc7ee309035c7ab504f65a7c8abf8ad3d8f224",
+    rawSha256:
+      "37c3afe9aac6e48fe7c05c97041d3fb464ded1c9264ff6fe194785ede2b69831",
+    identitySha256:
+      "a52f9ead6789752dd99ec4dbdddc4075a8623b5350e02e3ebefc9508f4d7248d",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-10",
+    frameSha256:
+      "5e97b53029fe430edd096e020d85e434d0b4b7db68c74afce68d053e85ccbda8",
+    rawSha256:
+      "007e1192642b1165dda19089af909e1532fa5b1534d3979b92b04edb409b4869",
+    identitySha256:
+      "1bace9ac1065fa5df7ed35c7483f4aa3be711b79f24d2782894d1130f10f2415",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-11",
+    frameSha256:
+      "e1ee298eb52f405e8d4e49c6300453e830009d041a828928a7a6edf000c330a6",
+    rawSha256:
+      "2a547f6435c0b405d19049d9af68afec5d465716f31edb3996c4da79d86e825d",
+    identitySha256:
+      "004ec0e68f90ac906eb33d330d203e9895ca8930380a4bc0b018d94aa5f35ab2",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-12",
+    frameSha256:
+      "a1f8e21b88ddad6f624130979f5108e64aa673dfca75f4048fb27d9cdef9e444",
+    rawSha256:
+      "4dd5816d7407b2d2495b5424a53c740055f43f0969accb000f825ac6f77f44bc",
+    identitySha256:
+      "e528ab5673fc5b804f8407e70a38d7fc86394593a31366d3024539fb0e269148",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-13",
+    frameSha256:
+      "5cdec0b9bb4bafa4ffd2d9a3c17e1ee4f73153329409a220c9123edfbf85da93",
+    rawSha256:
+      "459818f5b8a17ae8f0ecfcfc9fa93495405e3e6cfae886c06b5a8b340e8f9c7e",
+    identitySha256:
+      "a2e964b88302a6b2621b4c898b4864095b29f23af8b69751d82fd707dca50a58",
+  }),
+  Object.freeze({
+    id: "emitted-status-byte-14",
+    frameSha256:
+      "b373f9b91f7119d52355030f909caf30ce8331ea647ffa97230131ca7dd8e6ba",
+    rawSha256:
+      "5810d72d9091658f81b7b45c0ab019c0954306d96b4fd6f141d9b7978f300054",
+    identitySha256:
+      "7cf75981bb46ae6035de624582fda2e525f2f6642ce19de3a9d2de0b0c050a5e",
+  }),
+]);
+const EXPECTED_MATERIALIZED_ATOMIC_ENTRY_DIGESTS = Object.freeze([
+  Object.freeze({
+    id: "atomic-two-status-wire-prefix-00",
+    concatenatedRawSha256:
+      "c3f40f6e60994b8136bc9682fd6868882318e7ccf717284221b428cecdd84b77",
+    identitySha256:
+      "e78e57bf892bd874944e5595d4ea3fe948d924b931cde8e5c8e00d36f3ee09f7",
+  }),
+  Object.freeze({
+    id: "atomic-two-status-wire-prefix-01",
+    concatenatedRawSha256:
+      "186f006c63b529f25a6ce363d391fdc054f3581d0713f8839aef69e6318ece62",
+    identitySha256:
+      "c92229fba9ad435b54dd47636c58ecc6a07833e22d09e9e9ce98ea8c3e52fd36",
+  }),
+  Object.freeze({
+    id: "atomic-two-status-wire-prefix-02",
+    concatenatedRawSha256:
+      "6a58191f299e0cd18588bd3587409d93da53e73e05fee2e11d09ca0904bd40b7",
+    identitySha256:
+      "8c96a1bdea1ba0cf6a0fafe67ca44748ac13a0663af2523e988d910b639ce4c8",
+  }),
+  Object.freeze({
+    id: "atomic-two-status-wire-prefix-03",
+    concatenatedRawSha256:
+      "dc8487106a97106c1ef808bbe4d896e0c097940d84864ed64007c3b007ef32d1",
+    identitySha256:
+      "7abf9a7f2094913630148b755a2ad9799dc55833f60dd50ba001369565c503da",
+  }),
+]);
+const EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256 = Object.freeze({
+  emittedStatusByteGoldens:
+    "d871cbce866d934a6d30d8c1062e30f93b8a250b772b5284da50b83514fc4762",
+  atomicTwoStatusWirePrefixes:
+    "c6735a0da37cdaf3d6e9775dcb5dffc47f039e08df7d8db0adcf0313499479d4",
+});
+const EXPECTED_MATERIALIZED_STATUS_ORACLE_SHA256 =
+  "be634123e0de20c05ee292215b456589ac2ed885524bb350c83f7044160eb1f6";
 const FAILURE_PRECEDENCE_CONSTRUCTOR_APPLICABILITY = Object.freeze([
   Object.freeze({
     operation: "createCandidateContainmentGuardianStartupV1",
@@ -657,6 +918,26 @@ function digest(value) {
   return createHash("sha256")
     .update(Buffer.from(canonicalJson(value), "utf8"))
     .digest("hex");
+}
+
+function byteDigest(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function recursivelyFreezeStatusOracleValue(value, seen = new Set()) {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return value;
+  }
+  assert.equal(
+    ArrayBuffer.isView(value),
+    false,
+    "materialized status oracle must not retain mutable byte views",
+  );
+  seen.add(value);
+  for (const nested of Object.values(value)) {
+    recursivelyFreezeStatusOracleValue(nested, seen);
+  }
+  return Object.freeze(value);
 }
 
 function frozenArray(values) {
@@ -1624,6 +1905,945 @@ export function createSourceIndependentAdversarialOracle(requirements) {
   });
 }
 
+function createStatusOracleConstructionBinding(spec) {
+  assert.equal(typeof spec.id, "string");
+  assert.equal(typeof spec.value, "string");
+  let bytes;
+  let jsonl = null;
+  if (spec.format === "CANONICAL_JSONL") {
+    assert.equal(spec.value.endsWith("\n"), true);
+    assert.equal(spec.value.slice(0, -1).includes("\n"), false);
+    assert.equal(spec.value.includes("\r"), false);
+    assert.equal(
+      spec.value,
+      `${canonicalJson(JSON.parse(spec.value))}\n`,
+      spec.id,
+    );
+    jsonl = spec.value;
+    bytes = Buffer.from(jsonl, "utf8");
+  } else {
+    assert.equal(spec.format, "RAW_HEX");
+    assert.match(spec.value, /^(?:[0-9a-f]{2})+$/u);
+    bytes = Buffer.from(spec.value, "hex");
+    assert.equal(bytes.toString("hex"), spec.value);
+  }
+  const rawSha256 = byteDigest(bytes);
+  assert.equal(rawSha256, EXPECTED_STATUS_ORACLE_BINDING_SHA256[spec.id]);
+  return Object.freeze({
+    id: spec.id,
+    format: spec.format,
+    jsonl,
+    bytesHex: bytes.toString("hex"),
+    byteLength: bytes.length,
+    rawSha256,
+  });
+}
+
+function createStatusOracleConstructionContext() {
+  const bindings = Object.freeze(
+    Object.fromEntries(
+      STATUS_ORACLE_CONSTRUCTION_PREIMAGE_SPECS.map((spec) => {
+        const binding = createStatusOracleConstructionBinding(spec);
+        return [binding.id, binding];
+      }),
+    ),
+  );
+  assert.equal(Object.keys(bindings).length, 8);
+  assert.equal(
+    new Set(Object.values(bindings).map(({ rawSha256 }) => rawSha256)).size,
+    8,
+  );
+  assert.equal(bindings["normal-epoch"].byteLength, 32);
+  assert.equal(bindings["recovery-only-epoch"].byteLength, 32);
+  const projection = {
+    schema: STATUS_ORACLE_CONSTRUCTION_CONTEXT_SCHEMA,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    previousFrameGenesisSha256: "0".repeat(64),
+    bindings,
+    modeBindings: Object.freeze({
+      NORMAL: Object.freeze({
+        startupReportBindingId: "normal-startup-report",
+        epochBindingId: "normal-epoch",
+      }),
+      RECOVERY_ONLY: Object.freeze({
+        startupReportBindingId: "recovery-only-startup-report",
+        epochBindingId: "recovery-only-epoch",
+      }),
+    }),
+    priorWireBindings: Object.freeze({
+      ADMIT: "normal-admission-frame",
+      CANCEL_WITHOUT_ADMISSION: "normal-cancel-without-admission-frame",
+      CANCEL_AFTER_ADMISSION: "normal-cancel-after-admission-frame",
+      RECOVERY_REQUEST: "recovery-only-request-frame",
+    }),
+  };
+  const identitySha256 = digest(projection);
+  assert.equal(
+    identitySha256,
+    EXPECTED_STATUS_ORACLE_CONSTRUCTION_CONTEXT_SHA256,
+  );
+  return recursivelyFreezeStatusOracleValue({
+    ...projection,
+    identitySha256,
+  });
+}
+
+const STATUS_ORACLE_CONSTRUCTION_CONTEXT =
+  createStatusOracleConstructionContext();
+
+function statusOracleBinding(context, bindingId) {
+  assert.equal(Object.hasOwn(context.bindings, bindingId), true, bindingId);
+  return context.bindings[bindingId];
+}
+
+function statusOracleModeDigests(context, mode) {
+  const modeBinding = context.modeBindings[mode];
+  assert.notEqual(modeBinding, undefined, mode);
+  return Object.freeze({
+    startupSha256: statusOracleBinding(
+      context,
+      modeBinding.startupReportBindingId,
+    ).rawSha256,
+    epochSha256: statusOracleBinding(context, modeBinding.epochBindingId)
+      .rawSha256,
+  });
+}
+
+function previousWireBindingForStatusDesign(
+  requirements,
+  context,
+  design,
+  statusByPrefix,
+) {
+  const preceding = design.prefix.slice(0, -1);
+  for (let index = preceding.length - 1; index >= 0; index -= 1) {
+    const symbol = preceding[index];
+    if (symbol === "ADMIT") {
+      assert.equal(design.previousWireSymbol, symbol);
+      return statusOracleBinding(context, context.priorWireBindings.ADMIT)
+        .rawSha256;
+    }
+    if (symbol === "CANCEL") {
+      assert.equal(design.previousWireSymbol, symbol);
+      const key = design.prefix.includes("ADMIT")
+        ? "CANCEL_AFTER_ADMISSION"
+        : "CANCEL_WITHOUT_ADMISSION";
+      return statusOracleBinding(context, context.priorWireBindings[key])
+        .rawSha256;
+    }
+    if (symbol === "RECOVERY_REQUEST") {
+      assert.equal(design.previousWireSymbol, symbol);
+      return statusOracleBinding(
+        context,
+        context.priorWireBindings.RECOVERY_REQUEST,
+      ).rawSha256;
+    }
+    if (terminalStatusParts(requirements, symbol) !== null) {
+      assert.equal(design.previousWireSymbol, symbol);
+      const priorStatus = statusByPrefix.get(
+        canonicalJson(preceding.slice(0, index + 1)),
+      );
+      assert.notEqual(priorStatus, undefined, design.id);
+      return priorStatus.rawSha256;
+    }
+  }
+  assert.equal(design.previousWireSymbol, "GENESIS");
+  return context.previousFrameGenesisSha256;
+}
+
+function statusEntryIdentityProjection(entry) {
+  return {
+    schema: STATUS_ORACLE_ENTRY_IDENTITY_SCHEMA,
+    id: entry.id,
+    designId: entry.designId,
+    designSha256: entry.designSha256,
+    acceptedPrefixObservationId: entry.acceptedPrefixObservationId,
+    prefix: entry.prefix,
+    sourceSequences: entry.sourceSequences,
+    frameFields: EXPECTED_STATUS_FRAME_FIELDS,
+    frame: entry.frame,
+    canonicalJsonl: entry.canonicalJsonl,
+    byteLength: entry.byteLength,
+    frameSha256: entry.frameSha256,
+    rawSha256: entry.rawSha256,
+  };
+}
+
+function materializeStatusEntries(requirements, context, statusDesigns) {
+  assert.deepEqual(
+    requirements.frameFields.STATUS,
+    EXPECTED_STATUS_FRAME_FIELDS,
+  );
+  assert.equal(
+    context.previousFrameGenesisSha256,
+    requirements.vocabularies.previousFrameGenesisSha256,
+  );
+  const statusByPrefix = new Map();
+  const entries = statusDesigns.map((design) => {
+    const { startupSha256, epochSha256 } = statusOracleModeDigests(
+      context,
+      design.mode,
+    );
+    const admissionFrameSha256 = design.prefix.includes("ADMIT")
+      ? statusOracleBinding(context, context.priorWireBindings.ADMIT).rawSha256
+      : null;
+    const recoveryRequestFrameSha256 = design.prefix.includes(
+      "RECOVERY_REQUEST",
+    )
+      ? statusOracleBinding(context, context.priorWireBindings.RECOVERY_REQUEST)
+          .rawSha256
+      : null;
+    const frame = {
+      schema: requirements.schemas.wireFrame,
+      action: "STATUS",
+      mode: design.mode,
+      sequence: design.wireSequence,
+      previousFrameSha256: previousWireBindingForStatusDesign(
+        requirements,
+        context,
+        design,
+        statusByPrefix,
+      ),
+      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      startupSha256,
+      epochSha256,
+      state: design.state,
+      admissionFrameSha256,
+      recoveryRequestFrameSha256,
+      terminalReason: design.terminalReason,
+    };
+    assert.deepEqual(Object.keys(frame), EXPECTED_STATUS_FRAME_FIELDS);
+    const frozenFrame = recursivelyFreezeStatusOracleValue(frame);
+    const canonicalJsonl = `${canonicalJson(frozenFrame)}\n`;
+    assert.equal(canonicalJsonl.includes("\r"), false);
+    assert.equal(canonicalJsonl.slice(0, -1).includes("\n"), false);
+    const bytes = Buffer.from(canonicalJsonl, "utf8");
+    assert.equal(
+      bytes.length <= requirements.limits.statusFrameMaximumBytes,
+      true,
+    );
+    const draft = {
+      id: design.id,
+      designId: design.id,
+      designSha256: digest(design),
+      acceptedPrefixObservationId: design.acceptedPrefixObservationId,
+      prefix: frozenArray(design.prefix),
+      sourceSequences: frozenArray(design.sourceSequences),
+      frame: frozenFrame,
+      canonicalJsonl,
+      byteLength: bytes.length,
+      frameSha256: digest(frozenFrame),
+      rawSha256: byteDigest(bytes),
+    };
+    const entry = recursivelyFreezeStatusOracleValue({
+      ...draft,
+      identitySha256: digest(statusEntryIdentityProjection(draft)),
+    });
+    statusByPrefix.set(canonicalJson(design.prefix), entry);
+    return entry;
+  });
+  assert.equal(entries.length, 15);
+  return Object.freeze(entries);
+}
+
+function atomicEntryIdentityProjection(entry) {
+  return {
+    schema: STATUS_ORACLE_ATOMIC_IDENTITY_SCHEMA,
+    id: entry.id,
+    designId: entry.designId,
+    designSha256: entry.designSha256,
+    mode: entry.mode,
+    operation: entry.operation,
+    beforePrefix: entry.beforePrefix,
+    firstStatusPrefix: entry.firstStatusPrefix,
+    completeTransitionPrefix: entry.completeTransitionPrefix,
+    firstStatusObservationId: entry.firstStatusObservationId,
+    completeTransitionObservationId: entry.completeTransitionObservationId,
+    firstStatusDesignId: entry.firstStatusDesignId,
+    secondStatusDesignId: entry.secondStatusDesignId,
+    firstSequence: entry.firstSequence,
+    secondSequence: entry.secondSequence,
+    firstByteLength: entry.firstByteLength,
+    secondByteLength: entry.secondByteLength,
+    firstRawSha256: entry.firstRawSha256,
+    secondRawSha256: entry.secondRawSha256,
+    secondPreviousFrameSha256: entry.secondPreviousFrameSha256,
+    concatenatedJsonl: entry.concatenatedJsonl,
+    concatenatedByteLength: entry.concatenatedByteLength,
+    concatenatedRawSha256: entry.concatenatedRawSha256,
+    publicIntermediateState: entry.publicIntermediateState,
+  };
+}
+
+function materializeAtomicStatusPrefixes(atomicDesigns, statusEntries) {
+  const statusById = new Map(statusEntries.map((entry) => [entry.id, entry]));
+  const entries = atomicDesigns.map((design) => {
+    const first = statusById.get(design.firstStatusDesignId);
+    const second = statusById.get(design.secondStatusDesignId);
+    assert.notEqual(first, undefined, design.id);
+    assert.notEqual(second, undefined, design.id);
+    assert.equal(second.frame.sequence, first.frame.sequence + 1, design.id);
+    assert.equal(second.frame.previousFrameSha256, first.rawSha256, design.id);
+    const concatenatedJsonl = `${first.canonicalJsonl}${second.canonicalJsonl}`;
+    const concatenatedBytes = Buffer.from(concatenatedJsonl, "utf8");
+    assert.equal(
+      concatenatedBytes.length,
+      first.byteLength + second.byteLength,
+      design.id,
+    );
+    const draft = {
+      id: design.id,
+      designId: design.id,
+      designSha256: digest(design),
+      mode: design.mode,
+      operation: design.operation,
+      beforePrefix: frozenArray(design.beforePrefix),
+      firstStatusPrefix: frozenArray(design.firstStatusPrefix),
+      completeTransitionPrefix: frozenArray(design.completeTransitionPrefix),
+      firstStatusObservationId: design.firstStatusObservationId,
+      completeTransitionObservationId: design.completeTransitionObservationId,
+      firstStatusDesignId: design.firstStatusDesignId,
+      secondStatusDesignId: design.secondStatusDesignId,
+      firstSequence: first.frame.sequence,
+      secondSequence: second.frame.sequence,
+      firstByteLength: first.byteLength,
+      secondByteLength: second.byteLength,
+      firstRawSha256: first.rawSha256,
+      secondRawSha256: second.rawSha256,
+      secondPreviousFrameSha256: second.frame.previousFrameSha256,
+      concatenatedJsonl,
+      concatenatedByteLength: concatenatedBytes.length,
+      concatenatedRawSha256: byteDigest(concatenatedBytes),
+      publicIntermediateState: design.publicIntermediateState,
+    };
+    assert.equal(draft.publicIntermediateState, false);
+    return recursivelyFreezeStatusOracleValue({
+      ...draft,
+      identitySha256: digest(atomicEntryIdentityProjection(draft)),
+    });
+  });
+  assert.equal(entries.length, 4);
+  return Object.freeze(entries);
+}
+
+function materializedStatusEntryTuple(entry) {
+  return Object.freeze([
+    entry.id,
+    entry.designId,
+    entry.designSha256,
+    entry.acceptedPrefixObservationId,
+    entry.prefix,
+    entry.sourceSequences,
+    Object.freeze(
+      EXPECTED_STATUS_FRAME_FIELDS.map((field) => entry.frame[field]),
+    ),
+    entry.canonicalJsonl,
+    entry.byteLength,
+    entry.frameSha256,
+    entry.rawSha256,
+    entry.identitySha256,
+  ]);
+}
+
+function materializedAtomicEntryTuple(entry) {
+  return Object.freeze([
+    entry.id,
+    entry.designId,
+    entry.designSha256,
+    entry.mode,
+    entry.operation,
+    entry.beforePrefix,
+    entry.firstStatusPrefix,
+    entry.completeTransitionPrefix,
+    entry.firstStatusObservationId,
+    entry.completeTransitionObservationId,
+    entry.firstStatusDesignId,
+    entry.secondStatusDesignId,
+    entry.firstSequence,
+    entry.secondSequence,
+    entry.firstByteLength,
+    entry.secondByteLength,
+    entry.firstRawSha256,
+    entry.secondRawSha256,
+    entry.secondPreviousFrameSha256,
+    entry.concatenatedJsonl,
+    entry.concatenatedByteLength,
+    entry.concatenatedRawSha256,
+    entry.publicIntermediateState,
+    entry.identitySha256,
+  ]);
+}
+
+function independentlyCanonicalizeStatusOracleJson(value) {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "string"
+  ) {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    assert.equal(Number.isFinite(value), true);
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (Array.isArray(value)) {
+    let encoded = "[";
+    for (let index = 0; index < value.length; index += 1) {
+      if (index > 0) encoded += ",";
+      encoded += independentlyCanonicalizeStatusOracleJson(value[index]);
+    }
+    return `${encoded}]`;
+  }
+  assert.equal(typeof value, "object");
+  const keys = Object.keys(value).sort();
+  let encoded = "{";
+  for (let index = 0; index < keys.length; index += 1) {
+    if (index > 0) encoded += ",";
+    const key = keys[index];
+    encoded += `${JSON.stringify(key)}:${independentlyCanonicalizeStatusOracleJson(value[key])}`;
+  }
+  return `${encoded}}`;
+}
+
+function independentlyDigestStatusOracleValue(value) {
+  return createHash("sha256")
+    .update(
+      Buffer.from(independentlyCanonicalizeStatusOracleJson(value), "utf8"),
+    )
+    .digest("hex");
+}
+
+function independentlyDigestStatusOracleBytes(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function independentlyParseStatusSymbol(requirements, symbol) {
+  const terminal = /^CONTROL_TERMINAL\(([^()]+)\)$/u.exec(symbol);
+  if (terminal !== null) {
+    assert.equal(
+      requirements.vocabularies.terminalReasons.includes(terminal[1]),
+      true,
+    );
+    return { state: "CONTROL_TERMINAL", terminalReason: terminal[1] };
+  }
+  if (
+    symbol !== "CONTROL_TERMINAL" &&
+    requirements.vocabularies.statusStates.includes(symbol)
+  ) {
+    return { state: symbol, terminalReason: null };
+  }
+  return null;
+}
+
+// This reconstruction deliberately walks legalSequences directly. It does not
+// consume the primary status-design registry, either primary materializer, or
+// either primary identity encoder above.
+function independentlyReconstructMaterializedStatusTuples(
+  requirements,
+  context,
+) {
+  assert.deepEqual(
+    requirements.frameFields.STATUS,
+    EXPECTED_STATUS_FRAME_FIELDS,
+  );
+  const identifier = (family, index) =>
+    `${family}-${String(index).padStart(2, "0")}`;
+  const sequenceRows = Object.entries(requirements.legalSequences).map(
+    ([id, symbols]) => ({
+      id,
+      mode: id.startsWith("R") ? "RECOVERY_ONLY" : "NORMAL",
+      symbols: [...symbols],
+    }),
+  );
+
+  const prefixBuilders = [];
+  const prefixByKey = new Map();
+  const observePrefix = (row, symbols) => {
+    const key = JSON.stringify(symbols);
+    let builder = prefixByKey.get(key);
+    if (builder === undefined) {
+      builder = { mode: row.mode, symbols: [...symbols], sourceSequences: [] };
+      prefixByKey.set(key, builder);
+      prefixBuilders.push(builder);
+    }
+    assert.equal(builder.mode, row.mode);
+    if (!builder.sourceSequences.includes(row.id)) {
+      builder.sourceSequences.push(row.id);
+    }
+  };
+  for (const row of sequenceRows) {
+    if (row.mode === "RECOVERY_ONLY") observePrefix(row, []);
+  }
+  for (const row of sequenceRows) {
+    for (let length = 1; length < row.symbols.length; length += 1) {
+      observePrefix(row, row.symbols.slice(0, length));
+    }
+  }
+  const prefixIdByKey = new Map(
+    prefixBuilders.map(({ symbols }, index) => [
+      JSON.stringify(symbols),
+      identifier("symbolic-prefix", index),
+    ]),
+  );
+  assert.equal(prefixIdByKey.size, 26);
+
+  const statusBuilders = [];
+  const statusBuilderByPrefix = new Map();
+  for (const row of sequenceRows) {
+    const modeBinding = context.modeBindings[row.mode];
+    const startupSha256 =
+      context.bindings[modeBinding.startupReportBindingId].rawSha256;
+    const epochSha256 = context.bindings[modeBinding.epochBindingId].rawSha256;
+    let sequence = 0;
+    let previousFrameSha256 = context.previousFrameGenesisSha256;
+    let previousWireSymbol = "GENESIS";
+    let admissionFrameSha256 = null;
+    let recoveryRequestFrameSha256 = null;
+    for (let index = 0; index < row.symbols.length; index += 1) {
+      const symbol = row.symbols[index];
+      const status = independentlyParseStatusSymbol(requirements, symbol);
+      if (status !== null) {
+        const prefix = row.symbols.slice(0, index + 1);
+        const frame = {
+          schema: requirements.schemas.wireFrame,
+          action: "STATUS",
+          mode: row.mode,
+          sequence,
+          previousFrameSha256,
+          requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+          startupSha256,
+          epochSha256,
+          state: status.state,
+          admissionFrameSha256,
+          recoveryRequestFrameSha256,
+          terminalReason: status.terminalReason,
+        };
+        assert.deepEqual(Object.keys(frame), EXPECTED_STATUS_FRAME_FIELDS);
+        const canonicalJsonl = `${independentlyCanonicalizeStatusOracleJson(frame)}\n`;
+        const bytes = Buffer.from(canonicalJsonl, "utf8");
+        const candidate = {
+          admissionFrameBinding:
+            admissionFrameSha256 === null ? "NULL" : "PRESENT",
+          mode: row.mode,
+          prefix,
+          previousWireSymbol,
+          recoveryRequestFrameBinding:
+            recoveryRequestFrameSha256 === null ? "NULL" : "PRESENT",
+          sourceSequences: [],
+          state: status.state,
+          terminalReason: status.terminalReason,
+          wireSequence: sequence,
+          frame,
+          canonicalJsonl,
+          byteLength: bytes.length,
+          frameSha256: independentlyDigestStatusOracleValue(frame),
+          rawSha256: independentlyDigestStatusOracleBytes(bytes),
+        };
+        const key = JSON.stringify(prefix);
+        let builder = statusBuilderByPrefix.get(key);
+        if (builder === undefined) {
+          builder = candidate;
+          statusBuilderByPrefix.set(key, builder);
+          statusBuilders.push(builder);
+        } else {
+          assert.deepEqual(
+            { ...builder, sourceSequences: [] },
+            { ...candidate, sourceSequences: [] },
+          );
+        }
+        if (!builder.sourceSequences.includes(row.id)) {
+          builder.sourceSequences.push(row.id);
+        }
+        previousFrameSha256 = candidate.rawSha256;
+        previousWireSymbol = symbol;
+        sequence += 1;
+        continue;
+      }
+
+      if (symbol === "ADMIT") {
+        previousFrameSha256 =
+          context.bindings[context.priorWireBindings.ADMIT].rawSha256;
+        admissionFrameSha256 = previousFrameSha256;
+      } else if (symbol === "CANCEL") {
+        const bindingKey =
+          admissionFrameSha256 === null
+            ? "CANCEL_WITHOUT_ADMISSION"
+            : "CANCEL_AFTER_ADMISSION";
+        previousFrameSha256 =
+          context.bindings[context.priorWireBindings[bindingKey]].rawSha256;
+      } else if (symbol === "RECOVERY_REQUEST") {
+        previousFrameSha256 =
+          context.bindings[context.priorWireBindings.RECOVERY_REQUEST]
+            .rawSha256;
+        recoveryRequestFrameSha256 = previousFrameSha256;
+      } else {
+        continue;
+      }
+      previousWireSymbol = symbol;
+      sequence += 1;
+    }
+  }
+  assert.equal(statusBuilders.length, 15);
+
+  const independentStatusByPrefix = new Map();
+  const statusTuples = statusBuilders.map((builder, index) => {
+    const id = identifier("emitted-status-byte", index);
+    const acceptedPrefixObservationId = prefixIdByKey.get(
+      JSON.stringify(builder.prefix),
+    );
+    assert.notEqual(acceptedPrefixObservationId, undefined, id);
+    const design = {
+      id,
+      mode: builder.mode,
+      state: builder.state,
+      terminalReason: builder.terminalReason,
+      prefix: builder.prefix,
+      acceptedPrefixObservationId,
+      wireSequence: builder.wireSequence,
+      previousWireSymbol: builder.previousWireSymbol,
+      admissionFrameBinding: builder.admissionFrameBinding,
+      recoveryRequestFrameBinding: builder.recoveryRequestFrameBinding,
+      sourceSequences: builder.sourceSequences,
+    };
+    const draft = {
+      id,
+      designId: id,
+      designSha256: independentlyDigestStatusOracleValue(design),
+      acceptedPrefixObservationId,
+      prefix: builder.prefix,
+      sourceSequences: builder.sourceSequences,
+      frame: builder.frame,
+      canonicalJsonl: builder.canonicalJsonl,
+      byteLength: builder.byteLength,
+      frameSha256: builder.frameSha256,
+      rawSha256: builder.rawSha256,
+    };
+    const identityProjection = {
+      schema: STATUS_ORACLE_ENTRY_IDENTITY_SCHEMA,
+      id: draft.id,
+      designId: draft.designId,
+      designSha256: draft.designSha256,
+      acceptedPrefixObservationId: draft.acceptedPrefixObservationId,
+      prefix: draft.prefix,
+      sourceSequences: draft.sourceSequences,
+      frameFields: EXPECTED_STATUS_FRAME_FIELDS,
+      frame: draft.frame,
+      canonicalJsonl: draft.canonicalJsonl,
+      byteLength: draft.byteLength,
+      frameSha256: draft.frameSha256,
+      rawSha256: draft.rawSha256,
+    };
+    const entry = {
+      ...draft,
+      identitySha256: independentlyDigestStatusOracleValue(identityProjection),
+    };
+    independentStatusByPrefix.set(JSON.stringify(builder.prefix), entry);
+    return [
+      entry.id,
+      entry.designId,
+      entry.designSha256,
+      entry.acceptedPrefixObservationId,
+      entry.prefix,
+      entry.sourceSequences,
+      EXPECTED_STATUS_FRAME_FIELDS.map((field) => entry.frame[field]),
+      entry.canonicalJsonl,
+      entry.byteLength,
+      entry.frameSha256,
+      entry.rawSha256,
+      entry.identitySha256,
+    ];
+  });
+
+  const inputKinds = new Set(requirements.vocabularies.inputKinds);
+  const atomicByPrefix = new Map();
+  const atomicBuilders = [];
+  for (const row of sequenceRows) {
+    for (let index = 0; index < row.symbols.length; index += 1) {
+      const operation = row.symbols[index];
+      if (!inputKinds.has(operation)) continue;
+      let end = index + 1;
+      while (end < row.symbols.length && !inputKinds.has(row.symbols[end])) {
+        end += 1;
+      }
+      const emittedStatuses = row.symbols.slice(index + 1, end);
+      if (
+        emittedStatuses.length !== 2 ||
+        emittedStatuses.some(
+          (symbol) =>
+            independentlyParseStatusSymbol(requirements, symbol) === null,
+        )
+      ) {
+        continue;
+      }
+      const completeTransitionPrefix = row.symbols.slice(0, end);
+      const key = JSON.stringify(completeTransitionPrefix);
+      if (atomicByPrefix.has(key)) continue;
+      const firstStatusPrefix = row.symbols.slice(0, index + 2);
+      const builder = {
+        mode: row.mode,
+        operation,
+        beforePrefix: row.symbols.slice(0, index),
+        firstStatus: emittedStatuses[0],
+        secondStatus: emittedStatuses[1],
+        firstStatusPrefix,
+        completeTransitionPrefix,
+      };
+      atomicByPrefix.set(key, builder);
+      atomicBuilders.push(builder);
+    }
+  }
+  assert.equal(atomicBuilders.length, 4);
+
+  const atomicTuples = atomicBuilders.map((builder, index) => {
+    const id = identifier("atomic-two-status-wire-prefix", index);
+    const first = independentStatusByPrefix.get(
+      JSON.stringify(builder.firstStatusPrefix),
+    );
+    const second = independentStatusByPrefix.get(
+      JSON.stringify(builder.completeTransitionPrefix),
+    );
+    assert.notEqual(first, undefined, id);
+    assert.notEqual(second, undefined, id);
+    const firstStatusObservationId = prefixIdByKey.get(
+      JSON.stringify(builder.firstStatusPrefix),
+    );
+    const completeTransitionObservationId = prefixIdByKey.get(
+      JSON.stringify(builder.completeTransitionPrefix),
+    );
+    const design = {
+      id,
+      mode: builder.mode,
+      operation: builder.operation,
+      beforePrefix: builder.beforePrefix,
+      firstStatus: builder.firstStatus,
+      secondStatus: builder.secondStatus,
+      firstStatusPrefix: builder.firstStatusPrefix,
+      completeTransitionPrefix: builder.completeTransitionPrefix,
+      firstStatusObservationId,
+      completeTransitionObservationId,
+      firstStatusDesignId: first.id,
+      secondStatusDesignId: second.id,
+      publicIntermediateState: false,
+    };
+    assert.equal(second.frame.sequence, first.frame.sequence + 1, id);
+    assert.equal(second.frame.previousFrameSha256, first.rawSha256, id);
+    const concatenatedJsonl = `${first.canonicalJsonl}${second.canonicalJsonl}`;
+    const concatenatedBytes = Buffer.from(concatenatedJsonl, "utf8");
+    const draft = {
+      id,
+      designId: id,
+      designSha256: independentlyDigestStatusOracleValue(design),
+      mode: builder.mode,
+      operation: builder.operation,
+      beforePrefix: builder.beforePrefix,
+      firstStatusPrefix: builder.firstStatusPrefix,
+      completeTransitionPrefix: builder.completeTransitionPrefix,
+      firstStatusObservationId,
+      completeTransitionObservationId,
+      firstStatusDesignId: first.id,
+      secondStatusDesignId: second.id,
+      firstSequence: first.frame.sequence,
+      secondSequence: second.frame.sequence,
+      firstByteLength: first.byteLength,
+      secondByteLength: second.byteLength,
+      firstRawSha256: first.rawSha256,
+      secondRawSha256: second.rawSha256,
+      secondPreviousFrameSha256: second.frame.previousFrameSha256,
+      concatenatedJsonl,
+      concatenatedByteLength: concatenatedBytes.length,
+      concatenatedRawSha256:
+        independentlyDigestStatusOracleBytes(concatenatedBytes),
+      publicIntermediateState: false,
+    };
+    const identityProjection = {
+      schema: STATUS_ORACLE_ATOMIC_IDENTITY_SCHEMA,
+      id: draft.id,
+      designId: draft.designId,
+      designSha256: draft.designSha256,
+      mode: draft.mode,
+      operation: draft.operation,
+      beforePrefix: draft.beforePrefix,
+      firstStatusPrefix: draft.firstStatusPrefix,
+      completeTransitionPrefix: draft.completeTransitionPrefix,
+      firstStatusObservationId: draft.firstStatusObservationId,
+      completeTransitionObservationId: draft.completeTransitionObservationId,
+      firstStatusDesignId: draft.firstStatusDesignId,
+      secondStatusDesignId: draft.secondStatusDesignId,
+      firstSequence: draft.firstSequence,
+      secondSequence: draft.secondSequence,
+      firstByteLength: draft.firstByteLength,
+      secondByteLength: draft.secondByteLength,
+      firstRawSha256: draft.firstRawSha256,
+      secondRawSha256: draft.secondRawSha256,
+      secondPreviousFrameSha256: draft.secondPreviousFrameSha256,
+      concatenatedJsonl: draft.concatenatedJsonl,
+      concatenatedByteLength: draft.concatenatedByteLength,
+      concatenatedRawSha256: draft.concatenatedRawSha256,
+      publicIntermediateState: draft.publicIntermediateState,
+    };
+    const entry = {
+      ...draft,
+      identitySha256: independentlyDigestStatusOracleValue(identityProjection),
+    };
+    return [
+      entry.id,
+      entry.designId,
+      entry.designSha256,
+      entry.mode,
+      entry.operation,
+      entry.beforePrefix,
+      entry.firstStatusPrefix,
+      entry.completeTransitionPrefix,
+      entry.firstStatusObservationId,
+      entry.completeTransitionObservationId,
+      entry.firstStatusDesignId,
+      entry.secondStatusDesignId,
+      entry.firstSequence,
+      entry.secondSequence,
+      entry.firstByteLength,
+      entry.secondByteLength,
+      entry.firstRawSha256,
+      entry.secondRawSha256,
+      entry.secondPreviousFrameSha256,
+      entry.concatenatedJsonl,
+      entry.concatenatedByteLength,
+      entry.concatenatedRawSha256,
+      entry.publicIntermediateState,
+      entry.identitySha256,
+    ];
+  });
+
+  return {
+    statusTuples,
+    atomicTuples,
+    reconstruction: {
+      method: "independent-legalSequences-wire-simulation-and-tuple-projection",
+      primaryStatusDesignRegistryConsumed: false,
+      primaryStatusEncoderConsumed: false,
+      statusCount: statusTuples.length,
+      atomicCount: atomicTuples.length,
+      statusInventorySha256: independentlyDigestStatusOracleValue(statusTuples),
+      atomicInventorySha256: independentlyDigestStatusOracleValue(atomicTuples),
+    },
+  };
+}
+
+export function createSourceIndependentMaterializedStatusOracle(requirements) {
+  assertPinnedSourceIndependentOracleFixture(requirements);
+  const designOracle = createSourceIndependentAdversarialOracle(requirements);
+  const emittedStatusByteGoldens = materializeStatusEntries(
+    requirements,
+    STATUS_ORACLE_CONSTRUCTION_CONTEXT,
+    designOracle.registries.emittedStatusByteGoldenDesigns,
+  );
+  const atomicTwoStatusWirePrefixes = materializeAtomicStatusPrefixes(
+    designOracle.registries.atomicTwoStatusWirePrefixControls,
+    emittedStatusByteGoldens,
+  );
+  const statusTuples = Object.freeze(
+    emittedStatusByteGoldens.map(materializedStatusEntryTuple),
+  );
+  const atomicTuples = Object.freeze(
+    atomicTwoStatusWirePrefixes.map(materializedAtomicEntryTuple),
+  );
+  const independent = independentlyReconstructMaterializedStatusTuples(
+    requirements,
+    STATUS_ORACLE_CONSTRUCTION_CONTEXT,
+  );
+  assert.deepEqual(statusTuples, independent.statusTuples);
+  assert.deepEqual(atomicTuples, independent.atomicTuples);
+
+  const counts = Object.freeze({
+    emittedStatusByteGoldens: emittedStatusByteGoldens.length,
+    atomicTwoStatusWirePrefixes: atomicTwoStatusWirePrefixes.length,
+  });
+  assert.deepEqual(counts, {
+    emittedStatusByteGoldens: 15,
+    atomicTwoStatusWirePrefixes: 4,
+  });
+  const inventorySha256 = Object.freeze({
+    emittedStatusByteGoldens: digest(statusTuples),
+    atomicTwoStatusWirePrefixes: digest(atomicTuples),
+  });
+  assert.equal(
+    inventorySha256.emittedStatusByteGoldens,
+    independent.reconstruction.statusInventorySha256,
+  );
+  assert.equal(
+    inventorySha256.atomicTwoStatusWirePrefixes,
+    independent.reconstruction.atomicInventorySha256,
+  );
+  const statusEntryDigests = Object.freeze(
+    emittedStatusByteGoldens.map(
+      ({ id, frameSha256, rawSha256, identitySha256 }) =>
+        Object.freeze({ id, frameSha256, rawSha256, identitySha256 }),
+    ),
+  );
+  const atomicEntryDigests = Object.freeze(
+    atomicTwoStatusWirePrefixes.map(
+      ({ id, concatenatedRawSha256, identitySha256 }) =>
+        Object.freeze({ id, concatenatedRawSha256, identitySha256 }),
+    ),
+  );
+  assert.deepEqual(
+    statusEntryDigests,
+    EXPECTED_MATERIALIZED_STATUS_ENTRY_DIGESTS,
+  );
+  assert.deepEqual(
+    atomicEntryDigests,
+    EXPECTED_MATERIALIZED_ATOMIC_ENTRY_DIGESTS,
+  );
+  assert.deepEqual(
+    inventorySha256,
+    EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256,
+  );
+  const reconstruction = recursivelyFreezeStatusOracleValue({
+    ...independent.reconstruction,
+    independentlyReconstructedProjectionMatches: true,
+  });
+  const construction = recursivelyFreezeStatusOracleValue({
+    fixtureDerivedStatusTopology: true,
+    evaluatorOwnedConstructionContext: true,
+    constructionBindingsRehashed: true,
+    emittedStatusBytesMaterialized: true,
+    atomicConcatenatedBytesMaterialized: true,
+    candidateInputAccepted: false,
+    contractValidInputPreimagesProved: false,
+    reducerReachabilityProved: false,
+    candidateModuleReadByGenerator: false,
+    candidateModuleImportedByGenerator: false,
+    candidateModuleEvaluatedByGenerator: false,
+    candidateBehaviorExecuted: false,
+    candidateStatusBytesObserved: false,
+    runtimeWireEmissionProved: false,
+    runtimeRegistrationProved: false,
+    publicIntermediateStateInvented: false,
+    physicalAuthorityProved: false,
+  });
+  const identityProjection = {
+    schema: SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE_SCHEMA,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    constructionContextSha256:
+      STATUS_ORACLE_CONSTRUCTION_CONTEXT.identitySha256,
+    statusFrameFields: EXPECTED_STATUS_FRAME_FIELDS,
+    counts,
+    inventorySha256,
+    statusEntryDigests,
+    atomicEntryDigests,
+    reconstruction,
+    construction,
+  };
+  const identitySha256 = digest(identityProjection);
+  assert.equal(identitySha256, EXPECTED_MATERIALIZED_STATUS_ORACLE_SHA256);
+  return recursivelyFreezeStatusOracleValue({
+    ...identityProjection,
+    constructionContext: STATUS_ORACLE_CONSTRUCTION_CONTEXT,
+    emittedStatusByteGoldens,
+    atomicTwoStatusWirePrefixes,
+    identitySha256,
+  });
+}
+
 function assertRecursivelyFrozen(value, seen = new Set()) {
   if (value === null || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
@@ -2119,11 +3339,85 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
   assert.notEqual(independentlyCreatedOracle, oracle);
   assert.notEqual(independentlyCreatedOracle.registries, oracle.registries);
   assert.deepEqual(independentlyCreatedOracle, oracle);
+  const materialized = createSourceIndependentMaterializedStatusOracle(
+    JSON.parse(fixtureText),
+  );
+  assertRecursivelyFrozen(materialized);
+  assert.equal(
+    materialized.schema,
+    SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE_SCHEMA,
+  );
+  assert.deepEqual(materialized.counts, {
+    emittedStatusByteGoldens: 15,
+    atomicTwoStatusWirePrefixes: 4,
+  });
+  assert.deepEqual(
+    materialized.inventorySha256,
+    EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256,
+  );
+  assert.deepEqual(
+    materialized.statusEntryDigests,
+    EXPECTED_MATERIALIZED_STATUS_ENTRY_DIGESTS,
+  );
+  assert.deepEqual(
+    materialized.atomicEntryDigests,
+    EXPECTED_MATERIALIZED_ATOMIC_ENTRY_DIGESTS,
+  );
+  assert.equal(
+    materialized.identitySha256,
+    EXPECTED_MATERIALIZED_STATUS_ORACLE_SHA256,
+  );
+  assert.deepEqual(materialized.reconstruction, {
+    method: "independent-legalSequences-wire-simulation-and-tuple-projection",
+    primaryStatusDesignRegistryConsumed: false,
+    primaryStatusEncoderConsumed: false,
+    statusCount: 15,
+    atomicCount: 4,
+    statusInventorySha256:
+      EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256.emittedStatusByteGoldens,
+    atomicInventorySha256:
+      EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256.atomicTwoStatusWirePrefixes,
+    independentlyReconstructedProjectionMatches: true,
+  });
+  for (const entry of materialized.emittedStatusByteGoldens) {
+    assert.deepEqual(Object.keys(entry.frame), EXPECTED_STATUS_FRAME_FIELDS);
+    assert.equal(entry.canonicalJsonl, `${canonicalJson(entry.frame)}\n`);
+    assert.equal(entry.canonicalJsonl.includes("\r"), false);
+    assert.equal(entry.canonicalJsonl.slice(0, -1).includes("\n"), false);
+    assert.equal(
+      entry.byteLength,
+      Buffer.byteLength(entry.canonicalJsonl, "utf8"),
+    );
+    assert.equal(
+      entry.rawSha256,
+      byteDigest(Buffer.from(entry.canonicalJsonl, "utf8")),
+    );
+  }
+  for (const entry of materialized.atomicTwoStatusWirePrefixes) {
+    const first = materialized.emittedStatusByteGoldens.find(
+      ({ id }) => id === entry.firstStatusDesignId,
+    );
+    const second = materialized.emittedStatusByteGoldens.find(
+      ({ id }) => id === entry.secondStatusDesignId,
+    );
+    assert.notEqual(first, undefined);
+    assert.notEqual(second, undefined);
+    assert.equal(second.frame.sequence, first.frame.sequence + 1);
+    assert.equal(second.frame.previousFrameSha256, first.rawSha256);
+    assert.equal(entry.secondPreviousFrameSha256, first.rawSha256);
+    assert.equal(
+      entry.concatenatedJsonl,
+      `${first.canonicalJsonl}${second.canonicalJsonl}`,
+    );
+    assert.equal(entry.publicIntermediateState, false);
+  }
   const oracleSha256BeforeFixtureMutation = digest(oracle);
+  const materializedSha256BeforeFixtureMutation = digest(materialized);
   fixture.legalSequences.N1[0] = "MUTATED_AFTER_ORACLE_CONSTRUCTION";
   fixture.admissionRights.count = 0;
   fixture.startupMaps.normalDescriptorCount = 0;
   assert.equal(digest(oracle), oracleSha256BeforeFixtureMutation);
+  assert.equal(digest(materialized), materializedSha256BeforeFixtureMutation);
   assert.deepEqual(oracle.counts, EXPECTED_SOURCE_INDEPENDENT_ORACLE_COUNTS);
 });
 
