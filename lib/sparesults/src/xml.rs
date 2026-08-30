@@ -4,6 +4,7 @@ use crate::error::{QueryResultsParseError, QueryResultsSyntaxError};
 use crate::version::{parse_results_version, results_version_label, validate_term_version};
 use oxrdf::vocab::{rdf, xsd};
 use oxrdf::*;
+use oxstr::OxString;
 use quick_xml::escape::{EscapeError, resolve_xml_entity};
 use quick_xml::events::{BytesDecl, BytesEnd, BytesRef, BytesStart, BytesText, Event};
 use quick_xml::name::{NamespaceResolver, QName, ResolveResult};

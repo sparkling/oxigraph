@@ -1,3 +1,15 @@
+#![cfg_attr(doc, doc = include_str!("../README.md"))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![deny(
+    future_incompatible,
+    nonstandard_style,
+    rust_2018_idioms,
+    missing_copy_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unsafe_code,
+    unused_qualifications
+)]
 #![expect(unsafe_code)]
 
 #[cfg(feature = "serde")]
@@ -7,7 +19,7 @@ use std::borrow::{Borrow, Cow};
 use std::error::Error;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::mem::transmute;
+use std::mem::{size_of, transmute};
 use std::ops::Deref;
 use std::process::abort;
 use std::ptr::NonNull;
@@ -29,7 +41,7 @@ const OWNED_FLAG: usize = (OxStrKind::Owned as usize) << KIND_SHIFT;
 /// See [`OxStr`] for implementation details.
 ///
 /// ```
-/// use oxrdf::OxString;
+/// use oxstr::OxString;
 ///
 /// let value = OxString::new("hello");
 /// assert_eq!(value.as_str(), "hello");
@@ -50,7 +62,7 @@ pub type OxString = OxStr<'static>;
 /// When owned, cloning is cheap and increments an atomic reference count.
 ///
 /// ```
-/// use oxrdf::OxStr;
+/// use oxstr::OxStr;
 ///
 /// let borrowed = OxStr::new("hello");
 /// let owned = OxStr::new_owned("hello");
@@ -69,6 +81,11 @@ struct AllocationGuard {
     layout: Layout,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static ALLOCATION_GUARD_DROP_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl AllocationGuard {
     #[inline]
     fn into_data(self) -> NonNull<u8> {
@@ -80,6 +97,8 @@ impl AllocationGuard {
 impl Drop for AllocationGuard {
     #[inline]
     fn drop(&mut self) {
+        #[cfg(test)]
+        ALLOCATION_GUARD_DROP_COUNT.with(|count| count.set(count.get() + 1));
         // SAFETY: `data` was returned by `alloc` for this exact layout and the
         // guard owns it until `into_data` transfers ownership to `OxStr`.
         unsafe { dealloc(self.data.as_ptr(), self.layout) }
@@ -92,7 +111,7 @@ impl<'a> OxStr<'a> {
     /// This does not allocate and keeps the lifetime of `value`.
     ///
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxstr::OxStr;
     ///
     /// let value = OxStr::new("abc");
     /// assert_eq!(value.as_str(), "abc");
@@ -111,7 +130,7 @@ impl<'a> OxStr<'a> {
     ///
     /// Panics if allocation fails. Use [`try_new_owned`](Self::try_new_owned) for a fallible variant.
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxstr::OxStr;
     ///
     /// let value = OxStr::new_owned("abc");
     /// assert_eq!(value.as_str(), "abc");
@@ -127,7 +146,7 @@ impl<'a> OxStr<'a> {
     /// Returns [`ReserveError::CapacityOverflow`] if the value exceeds the internal
     /// representable size and [`ReserveError::AllocError`] if allocation fails.
     /// ```
-    /// use oxrdf::{OxStr, ReserveError};
+    /// use oxstr::{OxStr, ReserveError};
     ///
     /// let value: Result<_, ReserveError> = OxStr::try_new_owned("abc");
     /// let value = value.unwrap();
@@ -143,7 +162,7 @@ impl<'a> OxStr<'a> {
     /// Panics if allocation fails. Use [`try_concat`](Self::try_concat) for a fallible variant.
     ///
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxstr::OxStr;
     ///
     /// let value = OxStr::concat(["ab", "cd", "ef"]);
     /// assert_eq!(value.as_str(), "abcdef");
@@ -167,7 +186,7 @@ impl<'a> OxStr<'a> {
     /// [`ReserveError::CapacityOverflow`]; it never writes outside the allocation.
     ///
     /// ```
-    /// use oxrdf::{OxStr, ReserveError};
+    /// use oxstr::{OxStr, ReserveError};
     ///
     /// let value: Result<_, ReserveError> = OxStr::try_concat(&["ab", "cd", "ef"]);
     /// let value = value.unwrap();
@@ -218,7 +237,7 @@ impl<'a> OxStr<'a> {
     /// If `self` is borrowed, data is copied into a new allocation.
     ///
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxstr::OxStr;
     ///
     /// let borrowed = OxStr::new("hello");
     /// let owned = borrowed.to_owned();
@@ -268,7 +287,7 @@ impl<'a> OxStr<'a> {
     /// Returns `None` for borrowed values and for shared owned values (refcount > 1).
     ///
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxstr::OxStr;
     ///
     /// let mut borrowed = OxStr::new("abc");
     /// assert_eq!(borrowed.get_mut(), None);
@@ -294,7 +313,7 @@ impl<'a> OxStr<'a> {
     /// (copy-on-write). If already uniquely owned, no allocation is performed.
     ///
     /// ```
-    /// use oxrdf::OxStr;
+    /// use oxstr::OxStr;
     ///
     /// let value = OxStr::new("abc");
     /// let mut copy = value.clone();
@@ -634,19 +653,21 @@ fn checked_concat_len(lengths: impl IntoIterator<Item = usize>) -> Result<usize,
     }
 }
 
-fn try_owned_layout_for_len(len: usize) -> Result<Layout, ReserveError> {
+fn try_owned_layout_parts_for_len(len: usize) -> Result<(Layout, usize), ReserveError> {
     if len & OWNED_FLAG != 0 {
         return Err(ReserveError::CapacityOverflow);
     }
     let bytes = Layout::array::<u8>(len).map_err(|_| ReserveError::CapacityOverflow)?;
-    let (layout, offset) = Layout::new::<AtomicUsize>()
+    Layout::new::<AtomicUsize>()
         .extend(bytes)
-        .map_err(|_| ReserveError::CapacityOverflow)?;
-    debug_assert_eq!(
-        offset,
-        size_of::<AtomicUsize>(),
-        "the u8 payload must immediately follow the reference counter"
-    );
+        .map_err(|_| ReserveError::CapacityOverflow)
+}
+
+fn try_owned_layout_for_len(len: usize) -> Result<Layout, ReserveError> {
+    let (layout, offset) = try_owned_layout_parts_for_len(len)?;
+    if offset != size_of::<AtomicUsize>() {
+        return Err(ReserveError::CapacityOverflow);
+    }
     Ok(layout.pad_to_align())
 }
 
@@ -692,6 +713,14 @@ mod tests {
     use std::cell::Cell;
     #[cfg(target_pointer_width = "32")]
     use std::hint::black_box;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::process::Command;
+
+    const INVALID_DROP_CHILD_ENV: &str = "OXSTR_INVALID_DROP_CHILD";
+
+    fn allocation_guard_drop_count() -> usize {
+        ALLOCATION_GUARD_DROP_COUNT.with(Cell::get)
+    }
 
     #[test]
     fn owned_clone() {
@@ -764,6 +793,10 @@ mod tests {
             checked_concat_len([OWNED_FLAG]),
             Err(ReserveError::CapacityOverflow)
         );
+        let (layout, payload_offset) = try_owned_layout_parts_for_len(3).unwrap();
+        assert_eq!(payload_offset, size_of::<AtomicUsize>());
+        assert_eq!(layout.size(), payload_offset + 3);
+        assert!(try_owned_layout_for_len(3).unwrap().size() >= layout.size());
         try_owned_layout_for_len(0).unwrap();
         assert_eq!(
             try_owned_layout_for_len(OWNED_FLAG),
@@ -803,33 +836,93 @@ mod tests {
     #[test]
     fn fallible_concat_bounds_changing_as_ref_lengths() {
         for (first, second) in [("a", "longer"), ("longer", "a")] {
-            assert!(matches!(
-                OxStr::try_concat([ChangingAsRef {
-                    calls: Cell::new(0),
-                    first,
-                    second,
-                }]),
+            let value = ChangingAsRef {
+                calls: Cell::new(0),
+                first,
+                second,
+            };
+            let drops_before = allocation_guard_drop_count();
+            assert_eq!(
+                OxStr::try_concat(std::slice::from_ref(&value)),
                 Err(ReserveError::CapacityOverflow)
-            ));
+            );
+            assert_eq!(value.calls.get(), 2);
+            assert_eq!(allocation_guard_drop_count(), drops_before + 1);
         }
 
-        assert_eq!(
-            OxStr::try_concat([
-                ChangingAsRef {
-                    calls: Cell::new(0),
-                    first: "a",
-                    second: "longer",
-                },
-                ChangingAsRef {
-                    calls: Cell::new(0),
-                    first: "longer",
-                    second: "a",
-                },
-            ])
-            .unwrap()
-            .as_str(),
-            "longera"
-        );
+        let first = ChangingAsRef {
+            calls: Cell::new(0),
+            first: "a",
+            second: "longer",
+        };
+        let second = ChangingAsRef {
+            calls: Cell::new(0),
+            first: "longer",
+            second: "a",
+        };
+        let drops_before = allocation_guard_drop_count();
+        let result = OxStr::try_concat([&first, &second]).unwrap();
+        assert_eq!(result.as_str(), "longera");
+        assert_eq!(first.calls.get(), 2);
+        assert_eq!(second.calls.get(), 2);
+        assert_eq!(allocation_guard_drop_count(), drops_before);
+    }
+
+    struct PanickingAsRef {
+        calls: Cell<usize>,
+    }
+
+    impl AsRef<str> for PanickingAsRef {
+        fn as_ref(&self) -> &str {
+            let call = self.calls.get();
+            self.calls.set(call + 1);
+            if call == 0 {
+                "a"
+            } else {
+                std::panic::resume_unwind(Box::new("second AsRef call"))
+            }
+        }
+    }
+
+    #[test]
+    fn allocation_guard_deallocates_when_second_pass_panics() {
+        let value = PanickingAsRef {
+            calls: Cell::new(0),
+        };
+        let drops_before = allocation_guard_drop_count();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            OxStr::try_concat(std::slice::from_ref(&value))
+        }));
+        drop(result.unwrap_err());
+        assert_eq!(value.calls.get(), 2);
+        assert_eq!(allocation_guard_drop_count(), drops_before + 1);
+    }
+
+    #[test]
+    fn invalid_owned_layout_drop_fails_closed() {
+        if std::env::var_os(INVALID_DROP_CHILD_ENV).is_some() {
+            // SAFETY: The counter allocation is valid for the first and only
+            // atomic decrement. The deliberately invalid encoded length then
+            // exercises the fail-closed layout branch, which aborts before
+            // attempting to deallocate with an unproven layout.
+            unsafe {
+                let counter = Box::into_raw(Box::new(AtomicUsize::new(1)));
+                drop(OxStr {
+                    len: usize::MAX,
+                    data: NonNull::new_unchecked(counter.cast::<u8>()),
+                    _marker: PhantomData,
+                });
+            }
+            return;
+        }
+
+        let output = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("tests::invalid_owned_layout_drop_fails_closed")
+            .env(INVALID_DROP_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
     }
 
     #[test]

@@ -11,9 +11,9 @@ use crate::toolkit::{Parser, ReaderIterator, SliceIterator, TurtleParseError, Tu
 use oxiri::{Iri, IriParseError};
 use oxrdf::vocab::{rdf, xsd};
 use oxrdf::{
-    Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad, RdfVersion, Term,
-    Triple,
+    Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, Quad, RdfVersion, Term, Triple,
 };
+use oxstr::OxString;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::hash_map::Iter;

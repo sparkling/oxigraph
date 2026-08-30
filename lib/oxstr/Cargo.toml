@@ -1,0 +1,27 @@
+[package]
+name = "oxstr"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+readme = "README.md"
+keywords = ["String"]
+repository = "https://github.com/oxigraph/oxstr"
+homepage = "https://github.com/oxigraph/oxstr"
+description = "A compact string type merging Arc<str> and &str"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

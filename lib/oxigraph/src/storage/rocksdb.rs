@@ -2,7 +2,7 @@
 use crate::model::vocab::rdf;
 #[cfg(feature = "rdf-12")]
 use crate::model::{BlankNode, Triple};
-use crate::model::{GraphName, NamedNode, NamedOrBlankNode, OxString, Quad, Term};
+use crate::model::{GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 #[cfg(test)]
 use crate::storage::TransactionOutcomeFaultPoint;
 use crate::storage::binary_encoder::{
@@ -24,6 +24,7 @@ use crate::storage::{
     StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
 };
 use crate::store::{Namespace, NamespacePrefix};
+use oxstr::OxString;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(feature = "rdf-12")]
 use siphasher::sip128::{Hasher128, SipHasher24};

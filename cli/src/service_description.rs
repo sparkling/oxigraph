@@ -1,9 +1,10 @@
 use crate::rdf_response::RdfResponseFormat;
 use oxigraph::io::{JsonLdProfileSet, RdfFormat};
 use oxigraph::model::vocab::rdf;
-use oxigraph::model::{BlankNode, NamedNode, OxString, Triple};
+use oxigraph::model::{BlankNode, NamedNode, Triple};
 use oxigraph::sparql::results::QueryResultsFormat;
 use oxigraph::sparql::{QueryEntailment, SparqlEvaluator};
+use oxstr::OxString;
 
 mod sd {
     use oxigraph::model::NamedNode;

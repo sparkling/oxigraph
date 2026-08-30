@@ -17,9 +17,7 @@ use oxhttp::model::{Body, HeaderValue, Method, Request, Response, StatusCode, Ur
 use oxigraph::io::{
     DocumentLoader, JsonLdProfileSet, RdfFormat, RdfParseError, RdfParser, RdfSerializer,
 };
-use oxigraph::model::{
-    GraphName, IriParseError, NamedNode, NamedOrBlankNode, OxString, RdfVersion,
-};
+use oxigraph::model::{GraphName, IriParseError, NamedNode, NamedOrBlankNode, RdfVersion};
 use oxigraph::sparql::results::{QueryResultsFormat, QueryResultsSerializer};
 use oxigraph::sparql::{
     CancellationToken, QueryEntailment, QueryEntailmentOptions, QueryResults, SparqlEvaluator,
@@ -27,6 +25,7 @@ use oxigraph::sparql::{
 };
 use oxigraph::store::{BulkLoader, LoaderError, Store};
 use oxiri::{Iri, IriRef};
+use oxstr::OxString;
 use rayon_core::ThreadPoolBuilder;
 use std::cell::RefCell;
 use std::cmp::{max, min};
