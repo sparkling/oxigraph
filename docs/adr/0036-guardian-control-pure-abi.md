@@ -20,17 +20,27 @@
   package manifest, and exact ESM entrypoint before loading that entrypoint,
   fixes ES2022 module parsing with preserved parentheses and no fallback, and
   rejects hashbang, return, await, and for-await syntax before the existing
-  static controls. The combined current, exact Node 20.0.0, and latest Node 20
-  matrices remain identically 25 tests: 15 pass, exactly one deliberate
+  static controls. Commit `68aa25c9` adds the independently reviewed,
+  import-safe adversarial registrar foundation. Its frozen two-test inventory
+  has SHA-256
+  `f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e`;
+  registration reads none of the injected candidate, oracle, or fresh-loader
+  values and leaves both candidate-connected tests TODO. Import mode neither
+  reads candidate or fixture bytes nor registers standalone tests. It does
+  evaluate the existing exact-v2 predecessor and routing helper through the
+  adversarial lane's static import, so this checkpoint does not claim the
+  stronger pin-before-every-predecessor-evaluation ordering required before
+  main-lane registration. The combined current, exact Node 20.0.0, and latest
+  Node 20 matrices remain identically 25 tests: 15 pass, exactly one deliberate
   absent-source failure, and nine TODO. `npm audit` reports zero known
-  vulnerabilities. Two independent reviews accept only this parser-foundation,
-  source-hard-stopped checkpoint. Complete reject-by-default binding and
-  receiver provenance, ambient/module/import/export binding and member writes,
-  computed-key and indirect-call closure, path-sensitive normative key
-  literals, exact private-store commit positions, candidate-connected
-  acceptance matrices, the production source module, runtime registration, and
-  the physical owner remain incomplete or absent. Production containment
-  readiness remains exactly
+  vulnerabilities. Independent reviews accept only these parser and registrar
+  foundations at the source-hard-stopped checkpoint. Complete
+  reject-by-default binding and receiver provenance,
+  ambient/module/import/export binding and member writes, computed-key and
+  indirect-call closure, path-sensitive normative key literals, exact
+  private-store commit positions, candidate-connected acceptance matrices, the
+  production source module, runtime registration, and the physical owner remain
+  incomplete or absent. Production containment readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
