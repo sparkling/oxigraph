@@ -6592,6 +6592,55 @@ test("keeps target replay-origin refresh permission failure-atomic", () => {
       lifetimeTargetSelection: fixture.targetSelection(),
     }),
   );
+
+  const lateFixture = new RecoveryLifetimeFixture(
+    "target-refresh-failure-atomic-late",
+  );
+  const lateTarget = lateFixture.installRecoveryTarget(recovery);
+  lateFixture.addAnchor("LIVE_BIRTH_GUARDIAN");
+  const lateAnchorSelection = lateFixture.anchorSelection();
+  const latePredecessorHead = lateFixture.headSelection();
+  assertContractReject(() =>
+    recovery.replayCandidateContainmentRecoveryV1(
+      replayInput(lateFixture, lateTarget, {
+        entries: [],
+        expectedExternalHead: latePredecessorHead,
+        currentAnchorSelection: lateAnchorSelection,
+        currentAnchorPredecessorExternalHead: latePredecessorHead,
+      }),
+    ),
+  );
+  lateFixture.replayLifetime();
+  assertContractReject(() =>
+    recovery.verifyCandidateContainmentRecoveryTargetV1({
+      target: lateTarget,
+      generationManifest: artifact(lateFixture.journal.generationManifest),
+      normalJournalBundles:
+        lateFixture.journal.normalJournalBundles.map(artifact),
+      lifetimeTargetSelection: lateFixture.targetSelection(),
+    }),
+  );
+
+  const successFixture = new RecoveryLifetimeFixture(
+    "target-refresh-success-commit",
+  );
+  const successTarget = successFixture.installRecoveryTarget(recovery);
+  recovery.replayCandidateContainmentRecoveryV1(
+    replayInput(successFixture, successTarget, {
+      entries: [],
+      expectedExternalHead: successFixture.headSelection(),
+    }),
+  );
+  successFixture.replayLifetime();
+  const refreshed = recovery.verifyCandidateContainmentRecoveryTargetV1({
+    target: successTarget,
+    generationManifest: artifact(successFixture.journal.generationManifest),
+    normalJournalBundles:
+      successFixture.journal.normalJournalBundles.map(artifact),
+    lifetimeTargetSelection: successFixture.targetSelection(),
+  });
+  assert.deepEqual(plain(refreshed), plain(successTarget));
+  assert.notEqual(refreshed, successTarget);
 });
 
 test("rejects byte-equal separately branded boundaries, partial anchor triples, close mixing, and planning phase drift", () => {
