@@ -668,6 +668,8 @@ impl XmlInnerQueryResultsParser {
                                     object_stack: Vec::new(),
                                     triple_state_stack: Vec::new(),
                                     text_buffer: String::new(),
+                                    first_text_event_end: 0,
+                                    last_text_event_start: None,
                                     xml_version: self.xml_version,
                                     results_version: self.results_version,
                                     finished: false,
@@ -821,12 +823,33 @@ struct XmlInnerSolutionsParser {
     object_stack: Vec<Term>,
     triple_state_stack: Vec<u8>,
     text_buffer: String,
+    first_text_event_end: usize,
+    last_text_event_start: Option<usize>,
     xml_version: XmlVersion,
     results_version: Option<RdfVersion>,
     finished: bool,
 }
 
 impl XmlInnerSolutionsParser {
+    fn take_boundary_trimmed_text(&mut self) -> String {
+        let start = self.first_text_event_end
+            - self.text_buffer[..self.first_text_event_end]
+                .trim_start_matches(['\t', '\n', '\r', ' '])
+                .len();
+        let end = self
+            .last_text_event_start
+            .map_or(self.text_buffer.len(), |start| {
+                start
+                    + self.text_buffer[start..]
+                        .trim_end_matches(['\t', '\n', '\r', ' '])
+                        .len()
+            });
+        let text = take(&mut self.text_buffer);
+        self.first_text_event_end = 0;
+        self.last_text_event_start = None;
+        text.get(start..end).unwrap_or_default().to_owned()
+    }
+
     fn is_done(&self) -> bool {
         self.finished
     }
@@ -839,7 +862,7 @@ impl XmlInnerSolutionsParser {
         match event {
             Event::Start(event) => {
                 require_xml_whitespace(
-                    &take(&mut self.text_buffer),
+                    &self.take_boundary_trimmed_text(),
                     "between structural elements",
                 )?;
                 match self.state_stack.last().ok_or_else(|| {
@@ -1031,8 +1054,15 @@ impl XmlInnerSolutionsParser {
                 }
             }
             Event::Text(event) => {
-                self.text_buffer
-                    .push_str(&event.xml_content(self.xml_version));
+                let value = event.xml_content(self.xml_version);
+                if !value.is_empty() {
+                    let start = self.text_buffer.len();
+                    self.text_buffer.push_str(&value);
+                    if start == 0 {
+                        self.first_text_event_end = self.text_buffer.len();
+                    }
+                    self.last_text_event_start = Some(start);
+                }
                 Ok(None)
             }
             Event::End(event) => {
@@ -1041,7 +1071,7 @@ impl XmlInnerSolutionsParser {
                         "Extra XML is not allowed at the end of the document",
                     )
                 })?;
-                let raw_value = take(&mut self.text_buffer);
+                let raw_value = self.take_boundary_trimmed_text();
                 match state {
                     State::Document => {
                         expect_xml_end(&event, "sparql")?;
@@ -1116,9 +1146,7 @@ impl XmlInnerSolutionsParser {
                     }
                     State::Uri => {
                         expect_xml_end(&event, "uri")?;
-                        let value = OxString::new_owned(
-                            raw_value.trim_matches(|c| matches!(c, '\t' | '\n' | '\r' | ' ')),
-                        );
+                        let value = OxString::new_owned(&raw_value);
                         self.term = Some(
                             NamedNode::new(value.clone())
                                 .map_err(|e| {
@@ -1132,9 +1160,7 @@ impl XmlInnerSolutionsParser {
                     }
                     State::BNode => {
                         expect_xml_end(&event, "bnode")?;
-                        let value = OxString::new_owned(
-                            raw_value.trim_matches(|c| matches!(c, '\t' | '\n' | '\r' | ' ')),
-                        );
+                        let value = OxString::new_owned(&raw_value);
                         self.term = Some(
                             if value.is_empty() {
                                 BlankNode::default()
@@ -1231,7 +1257,7 @@ impl XmlInnerSolutionsParser {
             .into()),
             Event::Eof => {
                 if self.state_stack.is_empty() {
-                    require_xml_whitespace(&take(&mut self.text_buffer), "after sparql")?;
+                    require_xml_whitespace(&self.take_boundary_trimmed_text(), "after sparql")?;
                     self.finished = true;
                     Ok(None)
                 } else {
@@ -1248,12 +1274,16 @@ impl XmlInnerSolutionsParser {
             .into()),
             Event::GeneralRef(event) => {
                 decode_xml_entity(&event, &mut self.text_buffer, self.xml_version)?;
+                self.last_text_event_start = None;
                 Ok(None)
             }
             Event::Empty(_) => unreachable!("Empty events are expended"),
             Event::CData(event) => {
-                self.text_buffer
-                    .push_str(&event.xml_content(self.xml_version));
+                let value = event.xml_content(self.xml_version);
+                if !value.is_empty() {
+                    self.text_buffer.push_str(&value);
+                    self.last_text_event_start = None;
+                }
                 Ok(None)
             }
         }
@@ -1634,5 +1664,90 @@ fn map_xml_error(error: Error) -> io::Error {
             Arc::try_unwrap(error).unwrap_or_else(|error| io::Error::new(error.kind(), error))
         }
         _ => io::Error::new(io::ErrorKind::InvalidData, error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_single_term(input: &[u8]) -> Result<Term, QueryResultsSyntaxError> {
+        let SliceXmlQueryResultsParserOutput::Solutions {
+            variables,
+            mut solutions,
+        } = SliceXmlQueryResultsParserOutput::read(input, None)?
+        else {
+            return Err(QueryResultsSyntaxError::msg("Expected solutions"));
+        };
+        if variables.len() != 1 {
+            return Err(QueryResultsSyntaxError::msg("Expected one variable"));
+        }
+        let row = solutions
+            .parse_next()?
+            .ok_or_else(|| QueryResultsSyntaxError::msg("Expected one solution"))?;
+        let term = row
+            .into_iter()
+            .next()
+            .flatten()
+            .ok_or_else(|| QueryResultsSyntaxError::msg("Expected one bound term"))?;
+        if solutions.parse_next()?.is_some() {
+            return Err(QueryResultsSyntaxError::msg(
+                "Expected exactly one solution",
+            ));
+        }
+        Ok(term)
+    }
+
+    fn assert_single_term_error(input: &[u8]) -> Result<(), QueryResultsSyntaxError> {
+        let SliceXmlQueryResultsParserOutput::Solutions { mut solutions, .. } =
+            SliceXmlQueryResultsParserOutput::read(input, None)?
+        else {
+            return Err(QueryResultsSyntaxError::msg("Expected solutions"));
+        };
+        if solutions.parse_next().is_ok() {
+            return Err(QueryResultsSyntaxError::msg(
+                "Expected the RDF term to be rejected",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn literal_boundary_whitespace_distinguishes_text_references_and_cdata()
+    -> Result<(), QueryResultsSyntaxError> {
+        let term = parse_single_term(
+            br#"<sparql xmlns="http://www.w3.org/2005/sparql-results#"><head><variable name="x"/></head><results><result><binding name="x"><literal> &#32;&#9;value&#10;&#32; <![CDATA[ cdata ]]></literal></binding></result></results></sparql>"#,
+        )?;
+        assert_eq!(term, Term::from(Literal::from(" \tvalue\n   cdata ")));
+        Ok(())
+    }
+
+    #[test]
+    fn empty_cdata_does_not_preserve_ordinary_trailing_whitespace()
+    -> Result<(), QueryResultsSyntaxError> {
+        let term = parse_single_term(
+            br#"<sparql xmlns="http://www.w3.org/2005/sparql-results#"><head><variable name="x"/></head><results><result><binding name="x"><literal>value <![CDATA[]]></literal></binding></result></results></sparql>"#,
+        )?;
+        assert_eq!(term, Term::from(Literal::from("value")));
+        Ok(())
+    }
+
+    #[test]
+    fn uri_and_blank_node_boundary_whitespace_references_are_not_trimmed()
+    -> Result<(), QueryResultsSyntaxError> {
+        assert_single_term_error(
+            br#"<sparql xmlns="http://www.w3.org/2005/sparql-results#"><head><variable name="x"/></head><results><result><binding name="x"><uri>&#32;https://example.com/</uri></binding></result></results></sparql>"#,
+        )?;
+        assert_single_term_error(
+            br#"<sparql xmlns="http://www.w3.org/2005/sparql-results#"><head><variable name="x"/></head><results><result><binding name="x"><bnode>example&#32;</bnode></binding></result></results></sparql>"#,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn uri_boundary_whitespace_in_cdata_is_not_trimmed() -> Result<(), QueryResultsSyntaxError> {
+        assert_single_term_error(
+            br#"<sparql xmlns="http://www.w3.org/2005/sparql-results#"><head><variable name="x"/></head><results><result><binding name="x"><uri><![CDATA[ https://example.com/]]></uri></binding></result></results></sparql>"#,
+        )
     }
 }
