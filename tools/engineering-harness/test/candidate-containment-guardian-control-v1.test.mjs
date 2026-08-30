@@ -623,6 +623,37 @@ function byteSha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+const AST_EVIDENCE_OMITTED_FIELDS = new Set([
+  "end",
+  "loc",
+  "range",
+  "raw",
+  "sourceFile",
+  "start",
+]);
+
+function normalizeAstForEvidence(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(normalizeAstForEvidence);
+  return Object.fromEntries(
+    Object.keys(value)
+      .filter((key) => !AST_EVIDENCE_OMITTED_FIELDS.has(key))
+      .sort()
+      .map((key) => [key, normalizeAstForEvidence(value[key])]),
+  );
+}
+
+function recursivelyFreezeEvidence(value, seen = new Set()) {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return value;
+  }
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    recursivelyFreezeEvidence(value[key], seen);
+  }
+  return Object.freeze(value);
+}
+
 function assertRecursivelyFrozenWithoutByteViews(value, seen = new Set()) {
   if (value === null || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
@@ -3866,23 +3897,41 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
 }
 
 function auditCandidateSource(source, stageAudit = null) {
+  if (stageAudit !== null) stageAudit.expectedStage = "parse";
   const parsed = parseCandidateModuleAst(source);
+  if (stageAudit !== null) {
+    stageAudit.astNodeCount = parsed.nodeCount;
+    stageAudit.astSha256 = semanticSha256(
+      normalizeAstForEvidence(parsed.program),
+    );
+    stageAudit.expectedStage = "lex";
+  }
   const tokens = lexCandidateSource(source);
+  if (stageAudit !== null) stageAudit.expectedStage = "bounded-source-subset";
   assertBoundedSourceSubset(tokens);
+  if (stageAudit !== null) stageAudit.expectedStage = "imports";
   const imports = parseExactImports(tokens);
+  if (stageAudit !== null) stageAudit.expectedStage = "exports";
   const exports = parseExactExports(tokens);
+  if (stageAudit !== null) stageAudit.expectedStage = "private-store-manifest";
   const privateStores = assertExactPrivateStoreManifest(tokens);
+  if (stageAudit !== null) stageAudit.expectedStage = "module-initialization";
   const moduleStoreCount = assertModuleInitializationClosure(tokens);
+  if (stageAudit !== null) stageAudit.expectedStage = "identifier-closure";
   const identifierClosure = assertPositiveIdentifierClosure(
     tokens,
     imports,
     exports,
   );
-  if (stageAudit !== null) stageAudit.estreePolicyReached = true;
+  if (stageAudit !== null) {
+    stageAudit.estreePolicyReached = true;
+    stageAudit.expectedStage = "estree-policy";
+  }
   const astPolicy = assertRejectByDefaultEstreePolicy(
     parsed.program,
     parsed.nodeCount,
   );
+  if (stageAudit !== null) stageAudit.expectedStage = "accepted";
   return Object.freeze({
     importCount: imports.declarations.length,
     importedNameCount: imports.declarations.reduce(
@@ -3942,6 +3991,500 @@ function sourceWithImportMutation(mutate) {
   const [firstSpecifier, firstNames] = [...ALLOWED_IMPORTS][0];
   const original = `import { ${firstNames.join(", ")} } from ${JSON.stringify(firstSpecifier)};`;
   return sourceSkeleton().replace(original, mutate(original, firstNames));
+}
+
+const STATIC_EVIDENCE_MANIFEST_SCHEMA =
+  "oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1";
+const NAMED_FOUNDATION_CONTROL_COUNT = 16;
+const FOUNDATION_GENERATED_CONTROL_NAMES = Object.freeze([
+  "default import",
+  "namespace import",
+  "side-effect import",
+  "renamed imported binding",
+  "missing imported binding",
+  "extra imported binding",
+  "wrong import specifier",
+  "late import declaration",
+  "dynamic import expression",
+  "import.meta expression",
+  "default export",
+  "named re-export",
+  "export-all declaration",
+  "function-valued exported const",
+  "missing exported-function parameter",
+  "renamed exported-function parameter",
+  "defaulted exported-function parameter",
+  "escaped forbidden identifier",
+  "direct ambient process identifier",
+  "function-local binding escape",
+  "bare-block binding escape",
+  "forbidden function binding",
+  "constructor member gadget",
+  "computed constructor member gadget",
+  "concatenated constructor member gadget",
+  "Reflect.construct authority gadget",
+  "timer callback authority gadget",
+  "Function constructor gadget",
+  "Proxy constructor gadget",
+  "WeakSet constructor gadget",
+  "globalThis process authority gadget",
+  "Worker constructor gadget",
+  "dynamic computed member",
+  "spread syntax",
+  "arrow function expression",
+  "named function expression",
+  "class declaration",
+  "async function declaration",
+  "forbidden node path literal",
+  "evaluator source path literal",
+  "proc filesystem path literal",
+  "regular expression literal",
+  "template literal",
+  "mutable startup private-store binding",
+  "renamed startup private-store binding",
+  "extra private-store declaration",
+  "module private-store binding write",
+  "module mutable Set",
+  "module mutable Array",
+  "module mutable object",
+  "module mutable let binding",
+  "frozen mutable Set",
+  "top-level function invocation",
+]);
+const POSITIVE_CONTROL_NAMES = Object.freeze([
+  "exact requirements AST normalization",
+  "approved untrusted-value normalizer",
+  "frozen local iteration",
+  "frozen local module table",
+  "pure requirements and ephemeral canonical digest initializers",
+]);
+const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
+  "protectedAliases",
+  "untrustedSinks",
+  "indirectCalls",
+  "reflectComputed",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "literalMisuse",
+  "literalMisuse",
+  "scopeJoins",
+  "untrustedSinks",
+  "untrustedSinks",
+  "rawEscapes",
+  "rawEscapes",
+  "commitMutations",
+  "commitMutations",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "nestedRecursion",
+  "nestedRecursion",
+  "literalMisuse",
+  "literalMisuse",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "commitMutations",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "untrustedSinks",
+  "rawEscapes",
+  "untrustedSinks",
+  "untrustedSinks",
+  "scopeJoins",
+  "nestedRecursion",
+]);
+const SEMANTIC_BUCKET_TARGETS = Object.freeze([
+  Object.freeze({ bucket: "protectedAliases", target: 12 }),
+  Object.freeze({ bucket: "indirectCalls", target: 12 }),
+  Object.freeze({ bucket: "reflectComputed", target: 12 }),
+  Object.freeze({ bucket: "bindingMemberWrites", target: 14 }),
+  Object.freeze({ bucket: "untrustedSinks", target: 24 }),
+  Object.freeze({ bucket: "rawEscapes", target: 12 }),
+  Object.freeze({ bucket: "literalMisuse", target: 14 }),
+  Object.freeze({ bucket: "scopeJoins", target: 18 }),
+  Object.freeze({ bucket: "nestedRecursion", target: 12 }),
+  Object.freeze({ bucket: "commitMutations", target: 200 }),
+]);
+const COMMIT_MUTATION_IDS = Object.freeze([
+  "SEM-N014",
+  "SEM-N015",
+  "SEM-N026",
+  "SEM-N027",
+  "SEM-N028",
+  "SEM-N029",
+  "SEM-N030",
+  "SEM-N031",
+  "SEM-N032",
+  "SEM-N033",
+  "SEM-N034",
+  "SEM-N035",
+  "SEM-N036",
+  "SEM-N037",
+  "SEM-N038",
+  "SEM-N039",
+  "SEM-N040",
+]);
+const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
+  orderedControlIdentityProjectionSha256:
+    "af44b6f3f20713ffdc3d48cae4eff404b80a1e27ae07783c4a6315e7dd562df0",
+  orderedSemanticProjectionSha256:
+    "597e02c51e9bb92c7bbfebf5562fc82930d88a78cbdd99ec0fd7b1c6a211360f",
+  bucketProjectionSha256:
+    "2205bbbfb666fc3b0de1350e9760c932d5fdfcfbd8be7961c9c1d86f6b8ac82e",
+  foundationNameProjectionSha256:
+    "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
+  positiveNameProjectionSha256:
+    "7237029edd59dee361030e12d12d3214c38fa83512a2866f8c7ce8e0bfb7bc28",
+  commitIdProjectionSha256:
+    "cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c",
+});
+
+const FOUNDATION_CONTROL_EXPECTATION_PINS_TEXT = `FOUNDATION-N001|73b72eff1cb782348cd15eb554c75e9596fff4a5168f3fa0710a96f9191e7b6b|5e7971eb3c93baefc55f6b11670faef071baefc98d3d863f9fb733531e631b22|1125|bounded-source-subset|static gate: forbidden path prefix node:
+FOUNDATION-N002|9cc6387a03b706b4cee2c2df8fc8aaad47da3e4a8048c78fee15c53ad420ab13|926af5e0a9c17b36ba25df60e5396e779ef1a2dda84be970233be6989a3be2b6|1125|imports|static gate: import form
+FOUNDATION-N003|427c686deeef3eff2c2839a22f6575f4bdccbe7d1a01818784d4b22d4a396a7a|6a57106090219851e881d6e6c3745310ee392f04fa97f43e6621b7f3993bee9d|1123|imports|static gate: import form
+FOUNDATION-N004|7c07ee80f1c0e9f34628ecf15001340d59339b75b9a94aa31967a1dca079e31d|36c74c304480e5769ec7c4b5ac5d01a9b1e4088d3084ac55ce5a8dd2b77372b2|1150|imports|static gate: named import separator
+FOUNDATION-N005|d93607d67163ee6747606f341027e749b02b45c871e26c445fe59f63d1a6bbd5|4dae7d06b8e6f67f385f99ead988934c95a7659c9e6704faf992920066592d06|1147|imports|static gate: import names
+FOUNDATION-N006|cce746f1d09331e4177dffe802a1c56b8c3d751d31197fcd371bdd77a0d655f7|cd6619209126e06e5570a5dea2320f4251400e6cd9cd55c06c29901edd8a8f0a|1151|imports|static gate: import names
+FOUNDATION-N007|4ee10549486f29fe962fab513439f0822306f8e731e692be7b4519d22a4a44cb|3d1218ec6552f7f4b45cc40e8dd7ee3185ac0a79f40bcf01f5354b5dd594b9d0|1149|imports|static gate: import order
+FOUNDATION-N008|72b400af675f82f94ee2da3adc86c4c8743b2f3b2e549ee839bc323907ab8f4c|-|-|parse|static gate: invalid ECMAScript module syntax: Identifier 'sha256' has already been declared (22:9)
+FOUNDATION-N009|a6c18aa72614ae04ac30289c33f1b178d724d41687a1ad69117c5b524224a0ff|32591e5c9c1b1b78c10cb378f3f586f6569ddb91d1da6528eae552c51eceb9c4|1154|imports|static gate: import form
+FOUNDATION-N010|c8c6fa5bab67667efa083a924b80e41b2c93b275b70937cf3b0e137553e8a914|0935c7ce1a3b4c439175a78ed799510563698afe8ac499d0d10ff36ffb0ca1fa|1155|imports|static gate: import form
+FOUNDATION-N011|892a3a1c1ef6f3360ba31a4953f35dde47db2292cb587fb8d2b971920c41e027|1a44dd45914c8bd199b4c47b8c37be538281c910929c6b793b6210db86e5b46a|1151|exports|static gate: export inventory
+FOUNDATION-N012|79b4fbdae47319768e5a74aea728d34ec41a839da8f8ae9426c03e9a1a9352e9|42a101e7f2b834728ba46a8870ac98e3cc5e3066812078595d92e79a06ac8d2b|1152|exports|static gate: export inventory
+FOUNDATION-N013|ea2a24fd835d0db1418074a39b8699ba2c09918ce90a232e4832488e330a2da0|068ee78d2bf54e563d34d5f06d01cd1be61302aa76221caa5ccb1ee934d7441e|1151|exports|static gate: export inventory
+FOUNDATION-N014|26f5420ce577a1754ed66d13d5b470f2ade21eb0112ee0138d3c63ec7c66b385|a12d1515f4662db273ea0b08d51555951ef06871e593bc0863c7a8b58ba68e79|1151|exports|static gate: export inventory
+FOUNDATION-N015|f804b6f800922287452ef6d74079a5a378700e9b9fbc3cd1cf17db5c30944fb5|7a096d45addfba633176cafae2bbf8341f5e8d8727a28078b1d8c952debd9473|1148|exports|Expected values to be strictly deep-equal:
+FOUNDATION-N016|a4921e487b887022fc26930f898fb5fa15d7b9223659bced35d424d1b451df55|3a4e0b203fa87d3506f4082bf772a9a16452f2aa9a44b6c575bb47bfce2847aa|1149|exports|Expected values to be strictly deep-equal:
+FOUNDATION-N017|17129c92f9a153f7fa46d7a7e2e430efa16bb4f633eddce8b9c7e448c195bffc|0df4f105a508d724f9934ec9566b8aac59a7d9b0a2763a331593952f5902fa93|1151|exports|static gate: export parameter separator
+FOUNDATION-N018|83ead52ff068dba2102f1fbe44d7144ce2de92caa8f38cbb44bf1e2ead130c79|ab7b07f930dc5d49e040a80ff244501b11ba19e30f8941e78a5fc68c49673d8c|1153|module-initialization|static gate: module initializer alias process
+FOUNDATION-N019|56f161f42c5bacce15dc85bc270fd848f4cbf0e127a0c2049b2eaad955c81bf2|1aed6796df9f32edab6258ef013f8aba1a7767481ee6be9de2bbf33728b11bbe|1153|module-initialization|static gate: module initializer alias process
+FOUNDATION-N020|24ffbb2c263ef205b27833492097b20ed1a19e5a8aa0de73594fe09c6596be34|e555987b49f151dbb208ae272648d5d5075a96798a2080477639a3db69fb2c4d|1160|module-initialization|static gate: module initializer alias local
+FOUNDATION-N021|a03bf7ce5f58cb7dec99576b1438087042c50cd4be3ed7b8f2bf73ad40135caf|f93da4ac87d9ef2dca6acca2704447101af8468b708fd732cb9e4b7357674573|1158|module-initialization|static gate: module statement {
+FOUNDATION-N022|14a60f679f7bbf9325a6888a977ddfbbcfe00d7c3ef5506f696e83bba964c3d8|3b2c06b359362495ca4d08cc5f0785247de92220d6a5b4218e488c2496262b0e|1154|identifier-closure|static gate: protected binding process
+FOUNDATION-N023|77f5c0dda026f523caf1364136f9b1d53f50f99b4ed1fe6977f83951585cbad8|1ac2d5614d53e97adb5e2c8920be4b3d1b1bd37b19bf13328b65ed0e03a306df|1155|module-initialization|static gate: module initializer alias value
+FOUNDATION-N024|4547eee05c294e63e5cb5aeb26dc7b9d45500fcb03a68c4913a4092e7ebf9073|19fc99f930404e73afd75d9a89648647a05254272ae1ce2a2516f872d02f20de|1155|bounded-source-subset|static gate: forbidden string fragment constructor
+FOUNDATION-N025|736ee2239c03244fd8627e36dfe5cb8ed36b008e8175b8da4f63f367ee5600b5|f99ceb4298cae426f12d390059bdafbfc0a987cb448a8767b3851528227a775d|1157|bounded-source-subset|static gate: forbidden string fragment constructor
+FOUNDATION-N026|5706ded83be154cf2c586fd3b2d17edcc68c82087ae4d173dc955025e5bc7197|28ea7dda67d7854ba1f3fd20bfb49894370d30232e0b9e87d71fab52961ab3d1|1155|module-initialization|static gate: module initializer alias Reflect
+FOUNDATION-N027|2352f1fb891d5daf63c726559c1322abaf2afdc9bb884fe6c6116596cc9b0faf|d6111b564c587a5c9dd329512486a528d18ea9ef0b85d257332141d00f7312b1|1153|module-initialization|static gate: module initializer alias setTimeout
+FOUNDATION-N028|86ff8e1fdeb0068818df08f1fa60f5238994665afb3153f1f1f0fd5aee29fcbb|109cc5ca3e053b798a8a9f64e943806de335a808ffa1f223c48839f2917fdc4a|1154|bounded-source-subset|static gate: constructor outside bounded subset
+FOUNDATION-N029|71c4e5b380c64767de16828075db0b5cfafc6ec2c8e2792b01398cfffaebfc41|85b17dfa2b13990ea9577b8c086d93af88de80cffe463bd99a5779dc2e8d6862|1154|bounded-source-subset|static gate: constructor outside bounded subset
+FOUNDATION-N030|a95d29d791265e082e5bf9ed9853313f46218b335cc5dd94a51045af146ed6a4|3ead90910544badeb575c35a82dfc1c0c320dd4d17a1ed5f007cbb7b438541f2|1154|bounded-source-subset|static gate: constructor outside bounded subset
+FOUNDATION-N031|edc77b8dd6a41d5ce4fc3c87632857f97523a52f7347483c5650929ff9349fd3|0feeee17efd941165f9ebc24da7c46663aa2e287276685249386c2ae65b8dbe4|1155|module-initialization|static gate: module initializer alias globalThis
+FOUNDATION-N032|40095bb0d48331224caeaffdb303735882e0150c225e5460bd3ef107019a82b0|f26002f99bf179288ff9af231118ea874543aa78fe6aa6195eec9342b79eba90|1154|bounded-source-subset|static gate: constructor outside bounded subset
+FOUNDATION-N033|916198fbbd6ef3f84e00ae8525ae845b1decf61f6fe3abaae5feb5bc048ed842|62b30babe3887a2d4271303f292b2d257c1b07afc7a4bf0da8c4e82246666f5f|1155|bounded-source-subset|static gate: dynamic computed member
+FOUNDATION-N034|a40c8f5e1cbd9a01ce8ea205b14373ea77bedddabfb972e3867f343e1415b220|1e82dbe49711b28835ffe3c019ca64956b3108984734c8d7564e1f2d6b67fbed|1155|bounded-source-subset|static gate: punctuator ...
+FOUNDATION-N035|f464cd621b23e6c853e55953e27af829904cfc2c8cfbef800f991beb2461f331|b79b76d36b642d76f9955ebc41cc14ed117d981c77a476afab7775d26d5888c6|1154|bounded-source-subset|static gate: punctuator =>
+FOUNDATION-N036|cb0e6954c7f24cf57ed4dca52a7ef04dda074ad20fd3b948fadd72d948d79eec|971f2a6412e3d9cdc4c2909007999a382b3cf196c4243a49b3b1076a7769a190|1157|module-initialization|static gate: module initializer alias function
+FOUNDATION-N037|7e9e97731070baaab7d08d27293c3e47e60ded87b2693f604b14c8668c1661bd|d2036db6a233da0fcc259a1f961654d63f318d7d309b3daabd4e2bdbc6285629|1152|bounded-source-subset|static gate: syntax class
+FOUNDATION-N038|7f4e92a7cc68016695499ceaf0f6c7ff5f90e7ef714b20446da4179240f09a95|2757ecbe918455ecbc28e670e7ee63940f5a99f6c8f132c7ce1da8b688eef381|1154|bounded-source-subset|static gate: syntax async
+FOUNDATION-N039|a72506f107e8669e77c3850c0a374826a4bb6e16e910609c5fb02a99f13b1216|11b00ef412df0cd73d274a635a49608c8ee5aae04baede49595ea513616ebbc0|1155|bounded-source-subset|static gate: forbidden path prefix node:
+FOUNDATION-N040|55bc59a4fba8adebc75cf567de6a63237791883c5d6a5ee3a345061773165e61|c4ed0194ffa065cfd0418e7d3fa5aef0f1742aff70c4e1f7913d2b64c82ab00b|1153|bounded-source-subset|static gate: forbidden string fragment date
+FOUNDATION-N041|c1d7fd98703a6cf2e46e8cfe40fbb94575c0d7e5e9b712df2db8f6005f07f076|f90cd898b48fddee64bf8b49640707ab675405d73f61c639848ccbcdefd0ffca|1153|bounded-source-subset|static gate: forbidden path prefix /proc/
+FOUNDATION-N042|9178c18484a5f2178f8aef56e12901ddfc4875093fcf8ddfdb0de778f3accf3e|b70590689d74c707b0dc1b7eb8c6aafc4bfe1cd4081bf50eb28e7a5be81c4053|1153|bounded-source-subset|static gate: punctuator /
+FOUNDATION-N043|bff14fc33c2b1b31ca386bf6a21f9720615acfc1a488463cfba405f5a931152e|72dd69a59e50c7e7204d5a75839810c700fffeb55c83fe568fec8bf4c02b1530|1154|lex|static gate: template literal outside bounded subset
+FOUNDATION-N044|e73657410af7812dc4b1ef6bfac3fab358a3da72ca927baa2a152c3902bcbfb3|87e37657e6e5e8a3694f2653f1e548cd09aca8b38273e56675baf673b691f87b|1149|private-store-manifest|Expected values to be strictly deep-equal:
+FOUNDATION-N045|8c3242c6b60d9f5da7afa41aa80dad9fbabd4f4dc4b595c872c9cb7a30a73f9e|52cd59f0c4cb81152a0b05e88ef621d81629f7ee8ede3d50e3a38a19250e8a44|1149|private-store-manifest|Expected values to be strictly deep-equal:
+FOUNDATION-N046|cf873a1cb4ef26a5b6ff59c749d641835319e2aff604a9dacb07b83052a5b524|6611abeda5c9d8bc3e24a0296b7f3dc5675ba56084f898672fe043a3f1ad837d|1154|private-store-manifest|Expected values to be strictly deep-equal:
+FOUNDATION-N047|e6b6d543358c169e1504d97601184589fea0f91d062bb1ec50807a14ab1cc859|bfe6fe154da56fbc485cc2f110af810871ff549afc1d2551c66ef0f358e88b72|1153|private-store-manifest|static gate: private store reassignment startupMetadata
+FOUNDATION-N048|d04f0a456225aac22a47c599a031090d03ca22693f34824dd3cfe5b7c1299437|796603c563569201e4887e023fb9fb8b77c1f6a178b075f86248affed97d45a7|1154|module-initialization|static gate: module initializer alias new
+FOUNDATION-N049|66d84fa18b1e577ef6e638c1508c71e8d9daa8ba3774d161183f5dcb5dcff302|0a6e11d8db79a91ab07152a1a2988cb4b75a710787de285bc7faf5ff751c04e6|1153|module-initialization|static gate: mutable module initializer result
+FOUNDATION-N050|8a296be0cfa623b81bc68577536c72354656a9df915f72b29351f9066dee4963|d1c366da943e5419f2b10f7b5c8fed5760d994d3d80a047d328c99d2aee8ce93|1153|module-initialization|static gate: mutable module initializer result
+FOUNDATION-N051|f1667c0c5cc3b69dd02558024eefc18699211d9e53798e96ce64b0d5baed7273|87e3797afd9296f6b66e11550133f44a4e5a467113d23956cf8a88d4b6c5a646|1153|module-initialization|static gate: module statement let
+FOUNDATION-N052|84fc900490b22cb74de4762754fc1409362cb994d33ae1c66578049d0e0af199|b05fa70a35c7242991b5e365e38a03203742afd3a49a26f961af40db61398feb|1156|module-initialization|static gate: module initializer alias new
+FOUNDATION-N053|88e63fa422faf2a130b4f904aa5d910b613cc4888af5e5bacb9ac4cfb4041f95|6f34c1dc8dcd0351e64825c2ad77bcfd98a2c118dba37589c5b6270473eafd49|1157|module-initialization|static gate: module statement populate
+FOUNDATION-N054|4b46e1b2f28d643a14d333eff015b82acb9b1f5c57c965f9bc226eea82fe6d1a|0d773050618e63a59d539e77d6312c46444f50ca1503e874c22f4242ce05d177|1161|module-initialization|static gate: module initializer alias startupMetadata
+FOUNDATION-N055|ce3c566373fec18729a0aeeb70d54ab96964edc6cb242171848cc1b9baa07e3a|816da92bccd9a57b5f58a01d8e3906c72f2c91fc883e269bb6dd2fa4f02d23cc|1166|module-initialization|static gate: assignment in module initializer
+FOUNDATION-N056|bed5f961339f7cad14e3724b133ad4aa3db47a25d5888d03f624623c6b3b874e|1cf9b4d3a4b8c971da0ec96d7fc00eaefb8e54a11857e200c8e566d938dddbc8|1150|private-store-manifest|Expected values to be strictly deep-equal:
+FOUNDATION-N057|3ceb229e6684cdac9115c5cc379bae3232f3021914aa701b4b39a78932ed54b7|eb087eccb11d8b8082f6304aecbdcf3a9834e16feddba36f87c95ead91734b2e|1166|module-initialization|static gate: assignment in module initializer
+FOUNDATION-N058|6cd8e04c8452a776a1ea1481e93c27821c8e2478989309728781dba4331e892e|fa762291dec7d64aa45e5d0a811f263e9d0bd68a2ab48b9ccba855ba18982795|1156|module-initialization|static gate: module initializer alias startupMetadata
+FOUNDATION-N059|9f6be9e6383691d0bfd09881dc65ea3579a69275a3474b1669c1751f33d8e1af|8b5948630a487fafa804032601fe8cc9681e9343c68b60d9937b10028481e9ca|1156|module-initialization|static gate: module initializer alias sha256
+FOUNDATION-N060|81b13edbb027433fee2831708650278b40afcd0394a1fb21891a52a91f9d7e4e|77cc4aa6270773835c938aff62a7a497b1b6113bea3fcd29c2432f702cc1b4d5|1157|module-initialization|static gate: non-freezable deepFreeze input
+FOUNDATION-N061|81a6f3d253fe07a482f1d18454d37bfb52181b4b9b0393197d0b222a5d75ec43|daf74107bc5dc1c0e3b7c13c74a097f01dd71150ff80a89c53abd856ed3e5266|1159|estree-policy|static gate: ESTree capability-looking literal outside normative role processAuthority
+FOUNDATION-N062|7d383f646623737dbc5e3d22306f69f284dbd59462f2068c8fcb6e95b1b24660|18e8b2da60829a207e890a7b731cc9c953ca35f71478b1319de48d86ba35399a|1166|lex|static gate: numeric literal outside bounded decimal-integer subset
+FOUNDATION-N063|119521d4e0749e687ef1491528506a0046f86ff644939ff6a671aab96cf4f7c0|f03b095f333b2969d39255ea77e349a9dd3a506a7d079218af8a4a878350f8b1|1158|module-initialization|static gate: module statement (
+FOUNDATION-N064|72a1e80e78fa4a94896955537d5e6f235fa90099cfbae846144c0c735b59b316|1dca32dd8bb8b62db25cc3f3b92a641cea517949eed2841a00a2436f9482756f|1159|module-initialization|static gate: module statement (
+FOUNDATION-N065|fd20164d839bf2a76da4008d62f552fe84b11dc1d32bc87f872da6dd0326ccae|ad67d8d2dc88e9d7dfaabbd40fa7050a4dff651564decd3eb5a15c2bc3679cf9|1196|bounded-source-subset|static gate: forbidden string fragment constructor
+FOUNDATION-N066|261f5b29d6f3229aa7a98b5a31c015e19e3437d416826dde9267e4b716d8cbc3|353627c5d4a78a613e59e77c8038da2debce382b5f483449ce69fe15e2a57c61|1159|bounded-source-subset|static gate: forbidden path prefix node:
+FOUNDATION-N067|73e9339680322fd43cbee054f6e63cafdc6101269c56a36aa20d9e8a05e9f6db|353627c5d4a78a613e59e77c8038da2debce382b5f483449ce69fe15e2a57c61|1159|bounded-source-subset|static gate: forbidden path prefix node:
+FOUNDATION-N068|b530ac724bb99ebb00ab4545071d400ea3c3a4a75c9b710f4853a2f4cac0a344|a261c4be665ebf8283a5074ce80a9db53feda97a69b80da25d8baacf1e71b4bc|1153|bounded-source-subset|static gate: forbidden string fragment process
+FOUNDATION-N069|4e0cfb3f154f542add2c800d057142f740b707d0875bb91a4b2014886d9a79a9|a261c4be665ebf8283a5074ce80a9db53feda97a69b80da25d8baacf1e71b4bc|1153|bounded-source-subset|static gate: forbidden string fragment process`;
+
+const SEMANTIC_CONTROL_EXPECTATION_PINS_TEXT = `SEM-N001|83e881f193db0129666e2efcf160d0b1a4e1d69a5b337ca48a4a6d176e91651a|195eb4597f2653d256f147fa8429315d21127fa5869eee6e3df3482d9424c18f|1159|estree-policy|static gate: ESTree protected binding used as value sha256
+SEM-N002|f2e0bf284990a53d632ac3d7203fa22bece8bad7397fc7d082565e43dfd03ceb|436570f2afd940fce7000c1c2548040a3b62b3bdff8242eb0eb0ad63e21e0a52|1161|estree-policy|static gate: ESTree raw or unknown value used as receiver for .length
+SEM-N003|d03483c9ca4fc3d1f61f67f5aa76fec76d583f2774ffda8dcc18ace439f50032|390bf02cb01ae37b7fa3d92184805b9b4dba3a7ec2df6ae12e97a7ccf140b77d|1158|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N004|d8ecf0a5e279e7b8fc753b091111fa08c35d08af5f6b68067e0470fc44adb43e|1550291afaf6f209f85288148c838fac759861064595dcf994deb855de41d0c1|1162|estree-policy|static gate: ESTree computed member access
+SEM-N005|4fc577cebcf0877404bdb5b91119401ea27d3699efe41b6aefccab4801c4722f|504d991c2c339e15cb9e319f5d91c61aa03d63d43a473c4bba020441abe94613|1169|estree-policy|static gate: ESTree binding or member assignment
+SEM-N006|3dfcc27a44ecb4ba14972a3e2f708ddd1237b60240fc98d3ea6924059ed88c3d|1104e05cfe9973c129fef6ce9ad6a342c9ab37a7bc252b1e2a2cc956d135479a|1164|estree-policy|static gate: ESTree only one const declarator is supported
+SEM-N007|e4b68417cd753f7bf2c6367e64d9c29de75482a8d09968e73fedd6fd35558c26|203870f99996940bdbd7b56fffa546a98a8552d5c0cacaec24b48d08b691d1e1|1154|estree-policy|static gate: ESTree capability-looking literal outside normative role processAuthority
+SEM-N008|502e4d044bff2ea272d5e5bfce2cd130cbded344f703d4a858a744e1824b853f|92e0674ebbe239243645edf87d6c4afd5d84cebcf67fa955a82aac6fc46986ce|1158|estree-policy|static gate: ESTree capability-looking property key outside requirements processAuthority
+SEM-N009|c9f5b7a191e60cb104774c727d051d5adccad35fca446326fee03bf0f0d73150|8ae35ead2089ab6968a08d096b05c0b9f483aba4fafbca8e2760c97f4eaff1dc|1166|estree-policy|static gate: ESTree unknown provenance join conditional expression
+SEM-N010|8379f545a53d3685a982b616424e2a62f159ac4a9e6c3df6d92d65a4777e8103|f6a3a1490bb2708e4f719329cc19f8ac27ab2b2625a9ef0f53713a739cc577af|1160|estree-policy|static gate: ESTree raw or unknown value if condition
+SEM-N011|f83775d137f0326e7ee050201f2582716a7d639c97ac55c28f3c35be30061aad|fbe0d5fc2515ac258c175bb3715592026df946787a5f2d4642fe9d2ea0845f82|1163|estree-policy|static gate: ESTree raw or unknown value iterated
+SEM-N012|8e536d6d5f981f5e2398689a850b3191b786096e9cad8e4e93c6929d9a5f2a51|60d005a3f851daf3b373f1130b06db111721014704d686481783c7f255e9aca4|1155|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N013|b4bc0847cbbd9b7f908f1abcd38b754f657952ae064dc489cc4b2d0e336b8329|20450c27418578ab4a84626011816d8be65662f565d91aefa7a0e6427ba9cfce|1162|estree-policy|static gate: ESTree deepFreeze argument provenance
+SEM-N014|5fa3f306b1814be88b0f6812b59a615e705fb5966f465ecd8015e8f1a26fa976|57d8eb99875937213b130828b8dac93b2ca1d652a87fe2403ba21da759aafc69|1177|estree-policy|static gate: ESTree private commit owner wrongOwner
+SEM-N015|a0d9c0b4d5b58ef45558ca295fd528a5ea3764e00f04645cccbf1c232809d6b7|370c70cddc155742d8916762b369ef6371ea68374a512aa0af919205b916d117|1160|estree-policy|static gate: ESTree private commit must be a direct function-body statement
+SEM-N016|3fcfe1ed7df99d1bb91509df0819192d25e7e4177481689517b342311aec4110|d43b43f3e54da6b2742c1c8c12b9e6c85fda47417e2dc97071f0a9770a092199|1158|estree-policy|static gate: ESTree protected binding used as value Object
+SEM-N017|a0000bd789c6b8e96fbd059bd8bfb05a24c7230c95c9e882e1cb04983eaf0c21|883da9d7f052f5be224987099db20aa8bb553ac4ff7e5dee663e0b911d668733|1158|estree-policy|static gate: ESTree Reflect use is outside the closed subset
+SEM-N018|eea2e1289d0749fc079ca14caaf4e78bad00b011620169b297ec89e98c892847|511a7e7fff98aeb4fbaea81c05e469374db37ec1e20a92c5f013b23101c4c98b|1158|estree-policy|static gate: ESTree protected binding used as value reduceCandidateContainmentGuardianControlV1
+SEM-N019|368503accc540dd8ee85bcf265b3476eb362412b3f9e754fb6acec131b11fdbd|860b257cf1956aca1207ded350a4032760d178a42af6ac90529e90b7555fc98e|1173|estree-policy|static gate: ESTree internal call to exported operation reduceCandidateContainmentGuardianControlV1
+SEM-N020|6ac89467a280f327c02ab37967a218e3a323dbc75efc9015015c6c0f2a6c8cf9|fdf97521c9bdb128cbfa122b05eb9359a7a133c1172b14471c752747dc3898fe|1158|estree-policy|static gate: ESTree protected binding used as value CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS
+SEM-N021|f4339d932aeae295e6caf4f5ed5938f6c75bf65c1a9a7bd40530a5c33dec561f|389a697243f39dffe61acf92691697063ad791401e6184ddd443fee2e741a486|1158|estree-policy|static gate: ESTree protected binding used as value inputMetadata
+SEM-N022|8cdc043cfd9780bc62c9d2d02cb8b701b95418e852753ae017440197822e77b9|8dac1998c5220b69047f14e8a72bb7ea4c7e5e7df50ec2f8193aa38015fc8003|1159|estree-policy|static gate: ESTree unclassified statement FunctionDeclaration
+SEM-N023|0b8a80623f6fdbb6ecad7a07f4348f321f68db4a547c474305a97361fe6f08f1|6f6b78dda074913faff55b1761d25b64ee43148545fff97a512c01d3592c56aa|1155|estree-policy|static gate: ESTree recursive call graph recursive
+SEM-N024|7288bf9f0dc6c2d0c6a5cafade17bc29b24bbcf6897bddabe6a4f48e0fd6a860|9feba9ecbff7e9d2137464ef7aa9c79db3de3195cfaf7c0a5e4219b03ded1967|1149|bounded-source-subset|static gate: forbidden string fragment date
+SEM-N025|e02ccde70bd51c9344a1082863dbfa249a1388a24ee84f95e6fa7191af2f7d4f|cecf19069fec8b05c30a18b9d67e4fc1d3a29858c24859d96d2b2d2843d45bf0|1149|estree-policy|static gate: ESTree requirements digest initializer mismatch
+SEM-N026|c3ed0185b91adaa7a4bb74edd14fb3638fba3fefc3d71dc0d15e671451b97431|17b754a671b4a89df589d84987db397734ad08d99ef4cbf4c1bf70d6b2431cac|1155|estree-policy|static gate: ESTree private commit tail createCandidateContainmentGuardianStartupV1
+SEM-N027|63de6cd7ee8157052d9e57ad96855c5abaf51382b16a308b68b9d1357bbda725|33e677af5d259f4733bac767a64ca10df14c65aabb74669e5279f889b51cce36|1154|estree-policy|static gate: ESTree private commit tail createCandidateContainmentGuardianStartupV1
+SEM-N028|7bd378d2f780d09562c9c520d1399c94bff4556cb70ebbcc06405566a8f72b9b|f41a69e4e9044572f112bb9529e45277be62c77c71ec2a481d250ea1509ff434|1158|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N029|30b3684372eb13827cf5f6bb4660eecf3ef7870d15458b5d7e551108991259df|2022f290dd74889f74daff30bd875cb98ea48f8fb8d9c2a4793642f08238939b|1160|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N030|cb919be7e35acbfb73246bb9587d7f569ec67a04f8c995a9d6b3fd885b52f28c|cdcb72104669046aa31b427f4f49a1e83097090d4667d0e74e7d5e76fbb60585|1159|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N031|2262a6802c3a96197bf7e959b3198d61dc2aaf8f099438bbbe37fa3642462be4|b19d30ceae209cb369785de8300152c9ce8a1dc825f3a52c1c882a083367367f|1159|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N032|a91d769013f25df127f21f9fd4e0c3ba64d877119f2c0f7a601175a9204780cc|69080be85843ed739c902dcc8e6bdce7332f2b3b8a63e231aa2412def56d826c|1159|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N033|c242f1c32ba0ed39204dcba4461933447f53dba4d3c16329b3ca2cd6b8311de5|514f726547b088c8e593f9a6930cc2a9126a2032160253db4c1a80334e0cae16|1149|estree-policy|static gate: ESTree private commit tail createCandidateContainmentGuardianStartupV1
+SEM-N034|57cceca4d63535be1f4cb536a0e79c5071b1052e569b2e6c9ba4414d1f61d050|209ccde56f32e9fa4146812e1c7cd8e32425e1830ab09ce58e22715a041c60a3|1145|estree-policy|static gate: ESTree private commit arguments must be frozen and disjoint
+SEM-N035|d2df86e25bca79df6ed255e934979720bf9d0185e061203b653ac806e0165f23|6aac992b27fe9c9eb54fdca67927aa43e121cb53bbd5e98ab14507cb106ff457|1166|estree-policy|static gate: ESTree private commit arguments must be frozen and disjoint
+SEM-N036|4914094b858dedff4206e31a44394c47b9a4cb9d45fe5d4e52353f3a8e7100de|30231dd04d920ab217209f2d8e571069708fea792dd91665486154beae4cf62b|1156|estree-policy|static gate: ESTree exact private commit count createCandidateContainmentGuardianStartupV1
+SEM-N037|4c65d700242a18b82b18a853719cf48e99ad5b553682d8147594350f794418b8|73c81bf8944a63a1f38410cc98fad77a7cd2d62aa1b38a9a60fa22aee3b9df67|1149|estree-policy|static gate: ESTree private commit owner createCandidateContainmentGuardianStartupV1
+SEM-N038|c42a42e8620c1d046cfdbee314308685824592b8b8e0a3efccd98d968b831dc1|76952aca040711388842baede7b72749d918118ce90a2a5b3999d2f9bed23873|1150|estree-policy|static gate: ESTree parenthesized or indirect call
+SEM-N039|c69c5ff28054e5903d42a5a4d40e68fa927430f8726b4830228c594e3c9b3b03|6702a27228a5a7e8aeaee9848b1794317ca32af2d9bde11cc4eb462fb54cd309|1145|estree-policy|static gate: ESTree private commit requires two identifiers
+SEM-N040|5b17e05d44b0720aeaad31d6914888c94b748f7e6a6357c44382afd925f8fa73|f599a4659fd18d9a40710832843e5ac7dd25eb7210019599da1a919ad9a24264|1149|estree-policy|static gate: ESTree private commit requires function-local arguments
+SEM-N041|4d1312f5ba4184b262c995d355104462b8777f9d92c3ddb53a582ec89995a093|0f86cf568c24aa31817c470e50c2ec73010f263432a3ad7fa99158125f81a375|1164|estree-policy|static gate: ESTree mutating member call push
+SEM-N042|8db1f59718fbfcff2c7395fec5258edf215e84dca680c18bccba588195baddec|da4da9347ce5152e04c7a6b8ec9abaec3e3af5fc19b5595af45d55d15749de50|1165|estree-policy|static gate: ESTree mutating member call add
+SEM-N043|480c3c2c72e0ec9cae3ba435b158cbe8d7b01866d8ad6ae3828c540f4ea5c069|acc5703c6796876ef66b0362e046513e00ed2b14f5b297519aa67b44ec6c1339|1159|identifier-closure|static gate: forbidden member freeze
+SEM-N044|01281e395bbf50677cdb90a12562ae9fffdb46b0941c884a7d3a8fedca83e44d|0fe5bf8514332b71b34c8fa0b44d828d408bc680fc1a87e6bdb3b69f809a74c9|1158|estree-policy|static gate: ESTree deepFreeze argument provenance
+SEM-N045|dcd0b84e6ec634e54af1d63a350acdde0aba11e081a17b885eb41cf67cf77933|1d5c8592b1eac9972ae2ac0682ae0b56a99adc9aa1366ade8910d5d47a8b2cf8|1157|estree-policy|static gate: ESTree raw or unknown value ambient coercion String
+SEM-N046|42b089a8944b1e58989a7c72c9ed105711ee527c10823331a850b5fe02de445e|4d5400af18156c7794d1e8d65c32ac09c85d42c98a8eed4453127345391f587f|1162|estree-policy|static gate: ESTree raw or unknown value passed to local function localSink
+SEM-N047|3b0777daf5f80bffd69c3abc6d4d84ddb0b31a6d0f757c2823f02007a76874a7|225f4572c3ca11fe891d8c96a7d8e1a9a5b2f2bf86c430b142113dccbc1d3934|1165|estree-policy|static gate: ESTree failure callback may return noFail
+SEM-N048|ff65ffbafbd9bac23794dd43586b6d3f3d9f4e5cefcd93a103fdde7ce7634330|602773f1e8cc8a795d7443b0d13f4cce39d95d5d192f77102702f7e97c13bce3|1160|estree-policy|static gate: ESTree recursive call graph recursiveFailure`;
+
+const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
+POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
+POS-P003|ee9c363f0f7fa62114a29bb5eb70176753d4061e2714090f7126e3dca8ce6423|0c14bf96bb50459894fbd9130fd275bd13d1764423f2e57ebf554de291745278|1167|accepted|-
+POS-P004|f07475cf64ecec73afb4b645cb64032184d03c43ed3b4a99e8c08f753b20e3e6|216a6b69c2684c0d8741d61af956e6137ca311f055af5fb466b6ef7178b30fef|1155|accepted|-
+POS-P005|612e51636159788b3dd225f1d01b5aaac928ea2a2cd40a1ad1ac855414bb13ae|8f09df4ff27f4dabbe635485ff84fb577e5c75d9b80a3eed62552dde88c3fce1|1168|accepted|-`;
+
+// Preserve the complete canonical assertion payloads without delimiter or
+// newline loss in the compact literal pin table above.
+const ASSERTION_CONTROL_EXPECTATION_PINS_BASE64 =
+  "W3siaWQiOiJGT1VOREFUSU9OLU4wMDUiLCJlcnJvciI6Im5vZGU6YXNzZXJ0L3N0cmljdCBkZWVwU3RyaWN0RXF1YWw6IGFjdHVhbD1bXCJjYW5vbmljYWxKc29uQnl0ZXNcIixcImNhbm9uaWNhbEpzb25MaW5lXCIsXCJjb3B5Qm91bmRlZEJ1ZmZlclwiLFwiZGVjb2RlQ2Fub25pY2FsQmFzZTY0XCIsXCJkZWNvZGVDYW5vbmljYWxKc29uTGluZVwiLFwiZGVlcEZyZWV6ZVwiLFwiZXhhY3RCb29sZWFuXCIsXCJleGFjdERpZ2VzdFwiLFwiZXhhY3RSZWNvcmRcIixcImZyb3plbkNvcHlPblJlYWRCeXRlc1wiLFwibnVsbFJlY29yZFwiLFwic2hhMjU2XCJdIGV4cGVjdGVkPVtcImJvdW5kZWRJbnRlZ2VyXCIsXCJjYW5vbmljYWxKc29uQnl0ZXNcIixcImNhbm9uaWNhbEpzb25MaW5lXCIsXCJjb3B5Qm91bmRlZEJ1ZmZlclwiLFwiZGVjb2RlQ2Fub25pY2FsQmFzZTY0XCIsXCJkZWNvZGVDYW5vbmljYWxKc29uTGluZVwiLFwiZGVlcEZyZWV6ZVwiLFwiZXhhY3RCb29sZWFuXCIsXCJleGFjdERpZ2VzdFwiLFwiZXhhY3RSZWNvcmRcIixcImZyb3plbkNvcHlPblJlYWRCeXRlc1wiLFwibnVsbFJlY29yZFwiLFwic2hhMjU2XCJdIn0seyJpZCI6IkZPVU5EQVRJT04tTjAwNiIsImVycm9yIjoibm9kZTphc3NlcnQvc3RyaWN0IGRlZXBTdHJpY3RFcXVhbDogYWN0dWFsPVtcImJvdW5kZWRJbnRlZ2VyXCIsXCJleHRyYUhlbHBlclwiLFwiY2Fub25pY2FsSnNvbkJ5dGVzXCIsXCJjYW5vbmljYWxKc29uTGluZVwiLFwiY29weUJvdW5kZWRCdWZmZXJcIixcImRlY29kZUNhbm9uaWNhbEJhc2U2NFwiLFwiZGVjb2RlQ2Fub25pY2FsSnNvbkxpbmVcIixcImRlZXBGcmVlemVcIixcImV4YWN0Qm9vbGVhblwiLFwiZXhhY3REaWdlc3RcIixcImV4YWN0UmVjb3JkXCIsXCJmcm96ZW5Db3B5T25SZWFkQnl0ZXNcIixcIm51bGxSZWNvcmRcIixcInNoYTI1NlwiXSBleHBlY3RlZD1bXCJib3VuZGVkSW50ZWdlclwiLFwiY2Fub25pY2FsSnNvbkJ5dGVzXCIsXCJjYW5vbmljYWxKc29uTGluZVwiLFwiY29weUJvdW5kZWRCdWZmZXJcIixcImRlY29kZUNhbm9uaWNhbEJhc2U2NFwiLFwiZGVjb2RlQ2Fub25pY2FsSnNvbkxpbmVcIixcImRlZXBGcmVlemVcIixcImV4YWN0Qm9vbGVhblwiLFwiZXhhY3REaWdlc3RcIixcImV4YWN0UmVjb3JkXCIsXCJmcm96ZW5Db3B5T25SZWFkQnl0ZXNcIixcIm51bGxSZWNvcmRcIixcInNoYTI1NlwiXSJ9LHsiaWQiOiJGT1VOREFUSU9OLU4wMDciLCJlcnJvciI6Im5vZGU6YXNzZXJ0L3N0cmljdCBzdHJpY3RFcXVhbDogYWN0dWFsPVwiLi9jb250YWlubWVudC1leGFjdC12MS5tanNcIiBleHBlY3RlZD1cIi4vY29udGFpbm1lbnQtZXhhY3QtdjIubWpzXCIifSx7ImlkIjoiRk9VTkRBVElPTi1OMDE1IiwiZXJyb3IiOiJub2RlOmFzc2VydC9zdHJpY3QgZGVlcFN0cmljdEVxdWFsOiBhY3R1YWw9W1wic3RhcnR1cFJlcG9ydEJ5dGVzXCIsXCJlcG9jaEJ5dGVzXCJdIGV4cGVjdGVkPVtcInN0YXJ0dXBSZXBvcnRCeXRlc1wiLFwiZXBvY2hCeXRlc1wiLFwiZXBvY2hFb2ZPYnNlcnZlZFwiXSJ9LHsiaWQiOiJGT1VOREFUSU9OLU4wMTYiLCJlcnJvciI6Im5vZGU6YXNzZXJ0L3N0cmljdCBkZWVwU3RyaWN0RXF1YWw6IGFjdHVhbD1bXCJzdGFydHVwUmVwb3J0Qnl0ZXNcIixcImVwb2NoQnl0ZXNcIixcIm9ic2VydmVkRW9mXCJdIGV4cGVjdGVkPVtcInN0YXJ0dXBSZXBvcnRCeXRlc1wiLFwiZXBvY2hCeXRlc1wiLFwiZXBvY2hFb2ZPYnNlcnZlZFwiXSJ9LHsiaWQiOiJGT1VOREFUSU9OLU4wNDQiLCJlcnJvciI6Im5vZGU6YXNzZXJ0L3N0cmljdCBkZWVwU3RyaWN0RXF1YWw6IGFjdHVhbD1bXCJpbnB1dE1ldGFkYXRhXCIsXCJzdGF0ZU1ldGFkYXRhXCJdIGV4cGVjdGVkPVtcInN0YXJ0dXBNZXRhZGF0YVwiLFwiaW5wdXRNZXRhZGF0YVwiLFwic3RhdGVNZXRhZGF0YVwiXSJ9LHsiaWQiOiJGT1VOREFUSU9OLU4wNDUiLCJlcnJvciI6Im5vZGU6YXNzZXJ0L3N0cmljdCBkZWVwU3RyaWN0RXF1YWw6IGFjdHVhbD1bXCJzdGFydHVwTWV0YWRhdGFXcm9uZ1wiLFwiaW5wdXRNZXRhZGF0YVwiLFwic3RhdGVNZXRhZGF0YVwiXSBleHBlY3RlZD1bXCJzdGFydHVwTWV0YWRhdGFcIixcImlucHV0TWV0YWRhdGFcIixcInN0YXRlTWV0YWRhdGFcIl0ifSx7ImlkIjoiRk9VTkRBVElPTi1OMDQ2IiwiZXJyb3IiOiJub2RlOmFzc2VydC9zdHJpY3QgZGVlcFN0cmljdEVxdWFsOiBhY3R1YWw9W1wic3RhcnR1cE1ldGFkYXRhXCIsXCJpbnB1dE1ldGFkYXRhXCIsXCJzdGF0ZU1ldGFkYXRhXCIsXCJleHRyYU1ldGFkYXRhXCJdIGV4cGVjdGVkPVtcInN0YXJ0dXBNZXRhZGF0YVwiLFwiaW5wdXRNZXRhZGF0YVwiLFwic3RhdGVNZXRhZGF0YVwiXSJ9LHsiaWQiOiJGT1VOREFUSU9OLU4wNTYiLCJlcnJvciI6Im5vZGU6YXNzZXJ0L3N0cmljdCBkZWVwU3RyaWN0RXF1YWw6IGFjdHVhbD1bXSBleHBlY3RlZD1bXCJzdGFydHVwTWV0YWRhdGFcIixcImlucHV0TWV0YWRhdGFcIixcInN0YXRlTWV0YWRhdGFcIl0ifV0=";
+const ASSERTION_CONTROL_EXPECTATION_PINS = Object.freeze(
+  Object.fromEntries(
+    JSON.parse(
+      Buffer.from(ASSERTION_CONTROL_EXPECTATION_PINS_BASE64, "base64").toString(
+        "utf8",
+      ),
+    ).map(({ id, error }) => [id, error]),
+  ),
+);
+assert.equal(Object.keys(ASSERTION_CONTROL_EXPECTATION_PINS).length, 9);
+
+function parseStaticControlExpectationPins(text) {
+  return text.split("\n").map((line) => {
+    const [
+      id,
+      sourceSha256,
+      astSha256Text,
+      astNodeCountText,
+      expectedStage,
+      expectedErrorText,
+    ] = line.split("|");
+    assert.equal(line.split("|").length, 6, id);
+    assert.match(sourceSha256, /^[0-9a-f]{64}$/u, id);
+    assert.equal(
+      astSha256Text === "-" || /^[0-9a-f]{64}$/u.test(astSha256Text),
+      true,
+      id,
+    );
+    assert.equal(
+      astNodeCountText === "-" || /^[1-9][0-9]*$/u.test(astNodeCountText),
+      true,
+      id,
+    );
+    assert.equal(expectedStage.length > 0, true, id);
+    assert.equal(expectedErrorText.length > 0, true, id);
+    return Object.freeze({
+      id,
+      sourceSha256,
+      astSha256: astSha256Text === "-" ? null : astSha256Text,
+      astNodeCount: astNodeCountText === "-" ? null : Number(astNodeCountText),
+      expectedStage,
+      expectedError:
+        ASSERTION_CONTROL_EXPECTATION_PINS[id] ??
+        (expectedErrorText === "-" ? null : expectedErrorText),
+    });
+  });
+}
+
+const FOUNDATION_CONTROL_EXPECTATION_PINS = Object.freeze(
+  parseStaticControlExpectationPins(FOUNDATION_CONTROL_EXPECTATION_PINS_TEXT),
+);
+const SEMANTIC_CONTROL_EXPECTATION_PINS = Object.freeze(
+  parseStaticControlExpectationPins(SEMANTIC_CONTROL_EXPECTATION_PINS_TEXT),
+);
+const POSITIVE_CONTROL_EXPECTATION_PINS = Object.freeze(
+  parseStaticControlExpectationPins(POSITIVE_CONTROL_EXPECTATION_PINS_TEXT),
+);
+const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
+  Object.fromEntries(
+    [
+      ...FOUNDATION_CONTROL_EXPECTATION_PINS,
+      ...SEMANTIC_CONTROL_EXPECTATION_PINS,
+      ...POSITIVE_CONTROL_EXPECTATION_PINS,
+    ].map((pin) => [pin.id, pin]),
+  ),
+);
+assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 48);
+assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 5);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 122);
+
+function canonicalStaticControlRejectionMessage(error) {
+  if (error?.code !== "ERR_ASSERTION") return error.message;
+  return `node:assert/strict ${error.operator}: actual=${canonicalJson(error.actual)} expected=${canonicalJson(error.expected)}`;
+}
+
+function staticControlId(prefix, index) {
+  return `${prefix}${String(index + 1).padStart(3, "0")}`;
+}
+
+function createStaticControlEvidenceEntry({
+  id,
+  name,
+  bucket,
+  source,
+  stageAudit,
+  rejection,
+}) {
+  const expected = STATIC_CONTROL_EXPECTATION_PINS[id];
+  assert.notEqual(expected, undefined, id);
+  const actual = {
+    id,
+    sourceSha256: byteSha256(Buffer.from(source, "utf8")),
+    astSha256: stageAudit.astSha256 ?? null,
+    astNodeCount: stageAudit.astNodeCount ?? null,
+    expectedStage: stageAudit.expectedStage,
+    expectedError:
+      rejection === null
+        ? null
+        : canonicalStaticControlRejectionMessage(rejection),
+  };
+  assert.deepEqual(actual, expected, `${id} literal evidence pin`);
+  return Object.freeze({
+    id,
+    name,
+    bucket,
+    sourceSha256: expected.sourceSha256,
+    astSha256: expected.astSha256,
+    astNodeCount: expected.astNodeCount,
+    expectedStage: expected.expectedStage,
+    expectedError: expected.expectedError,
+  });
+}
+
+function staticControlIdentityProjection(entries) {
+  return entries.map(
+    ({
+      id,
+      name,
+      bucket,
+      sourceSha256,
+      astSha256,
+      astNodeCount,
+      expectedStage,
+      expectedError,
+    }) => ({
+      id,
+      name,
+      bucket,
+      sourceSha256,
+      astSha256,
+      astNodeCount,
+      expectedStage,
+      expectedError,
+    }),
+  );
+}
+
+function createStaticEvidenceManifest({
+  foundationNegatives,
+  semanticNegatives,
+  positives,
+  evaluationAttempts,
+}) {
+  const bucketProjection = SEMANTIC_BUCKET_TARGETS.map(({ bucket, target }) => {
+    const controlIds = semanticNegatives
+      .filter((entry) => entry.bucket === bucket)
+      .map((entry) => entry.id);
+    return Object.freeze({
+      bucket,
+      target,
+      current: controlIds.length,
+      remaining: target - controlIds.length,
+      controlIds: Object.freeze(controlIds),
+    });
+  });
+  const allEntries = [
+    ...foundationNegatives,
+    ...semanticNegatives,
+    ...positives,
+  ];
+  const aggregates = {
+    orderedControlIdentityProjectionSha256: semanticSha256(
+      staticControlIdentityProjection(allEntries),
+    ),
+    orderedSemanticProjectionSha256: semanticSha256(
+      staticControlIdentityProjection(semanticNegatives),
+    ),
+    bucketProjectionSha256: semanticSha256(bucketProjection),
+    foundationNameProjectionSha256: semanticSha256(
+      foundationNegatives.map(({ id, name }) => ({ id, name })),
+    ),
+    positiveNameProjectionSha256: semanticSha256(
+      positives.map(({ id, name }) => ({ id, name })),
+    ),
+    commitIdProjectionSha256: semanticSha256(COMMIT_MUTATION_IDS),
+  };
+  return recursivelyFreezeEvidence({
+    schema: STATIC_EVIDENCE_MANIFEST_SCHEMA,
+    foundationNegatives,
+    semanticNegatives,
+    positives,
+    commitMutationIds: [...COMMIT_MUTATION_IDS],
+    bucketProjection,
+    counts: {
+      foundationNegatives: foundationNegatives.length,
+      semanticNegatives: semanticNegatives.length,
+      allCurrentNegatives:
+        foundationNegatives.length + semanticNegatives.length,
+      semanticTargetNegatives: 330,
+      semanticRemainingNegatives: 330 - semanticNegatives.length,
+      allLayerTargetNegatives: 69 + 330,
+      positiveCurrent: positives.length,
+      positiveTarget: 11,
+      positiveRemaining: 11 - positives.length,
+      commitCurrent: COMMIT_MUTATION_IDS.length,
+      commitTarget: 200,
+      commitRemaining: 200 - COMMIT_MUTATION_IDS.length,
+      evaluationAttempts,
+    },
+    aggregates,
+  });
 }
 
 function runStaticNegativeControls() {
@@ -4562,30 +5105,89 @@ function reflectedAuthority(startupReportBytes) {
     ...authorityAndGadgets.map((body) => sourceSkeleton(body)),
     ...stores,
   ];
+  assert.equal(sources.length, FOUNDATION_GENERATED_CONTROL_NAMES.length);
   let evaluationAttempts = 0;
-  for (const source of sources) {
+  const generatedFoundationEvidence = [];
+  for (const [index, source] of sources.entries()) {
+    const stageAudit = {
+      astNodeCount: null,
+      astSha256: null,
+      estreePolicyReached: false,
+      expectedStage: "parse",
+    };
+    let rejection = null;
     assert.throws(() => {
-      auditCandidateSource(source);
-      evaluationAttempts += 1;
+      try {
+        auditCandidateSource(source, stageAudit);
+        evaluationAttempts += 1;
+      } catch (error) {
+        rejection = error;
+        throw error;
+      }
     });
+    assert.notEqual(rejection, null);
+    generatedFoundationEvidence.push(
+      createStaticControlEvidenceEntry({
+        id: staticControlId("FOUNDATION-N", index),
+        name: FOUNDATION_GENERATED_CONTROL_NAMES[index],
+        bucket: "foundation",
+        source,
+        stageAudit,
+        rejection,
+      }),
+    );
   }
   const namedRejected = [];
   const namedStageAudit = [];
-  for (const { name, source, expected } of namedStaticGateEscapes) {
-    const stageAudit = { estreePolicyReached: false };
+  const namedEvidence = [];
+  for (const [
+    index,
+    { name, source, expected },
+  ] of namedStaticGateEscapes.entries()) {
+    const stageAudit = {
+      astNodeCount: null,
+      astSha256: null,
+      estreePolicyReached: false,
+      expectedStage: "parse",
+    };
+    let rejection = null;
     assert.throws(
       () => {
-        auditCandidateSource(source, stageAudit);
-        evaluationAttempts += 1;
+        try {
+          auditCandidateSource(source, stageAudit);
+          evaluationAttempts += 1;
+        } catch (error) {
+          rejection = error;
+          throw error;
+        }
       },
       expected,
       `static policy control: ${name}`,
     );
+    assert.notEqual(rejection, null);
     namedRejected.push(name);
     namedStageAudit.push(
       Object.freeze({
         name,
         estreePolicyReached: stageAudit.estreePolicyReached,
+      }),
+    );
+    const foundation = index < 16;
+    namedEvidence.push(
+      createStaticControlEvidenceEntry({
+        id: foundation
+          ? staticControlId(
+              "FOUNDATION-N",
+              generatedFoundationEvidence.length + index,
+            )
+          : staticControlId("SEM-N", index - 16),
+        name,
+        bucket: foundation
+          ? "foundation"
+          : SEMANTIC_BUCKET_BY_ORDINAL[index - 16],
+        source,
+        stageAudit,
+        rejection,
       }),
     );
   }
@@ -4615,14 +5217,30 @@ function reflectedAuthority(startupReportBytes) {
       'const localRequirements = deepFreeze(nullRecord([["schema", "safe"]]));\nconst localDigest = sha256(canonicalJsonBytes(localRequirements));',
     ),
   ];
-  for (const source of positiveSources) {
-    assert.doesNotThrow(() => auditCandidateSource(source));
-  }
-  const layeredStartIndex = namedStageAudit.findIndex(
-    ({ name }) => name === "function-scoped imported helper alias",
+  assert.equal(positiveSources.length, POSITIVE_CONTROL_NAMES.length);
+  const positiveEvidence = positiveSources.map((source, index) => {
+    const stageAudit = {
+      astNodeCount: null,
+      astSha256: null,
+      estreePolicyReached: false,
+      expectedStage: "parse",
+    };
+    assert.doesNotThrow(() => auditCandidateSource(source, stageAudit));
+    return createStaticControlEvidenceEntry({
+      id: staticControlId("POS-P", index),
+      name: POSITIVE_CONTROL_NAMES[index],
+      bucket: "positive",
+      source,
+      stageAudit,
+      rejection: null,
+    });
+  });
+  assert.equal(namedStageAudit.length, 64);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 48);
+  const layeredStageAudit = namedStageAudit.slice(
+    NAMED_FOUNDATION_CONTROL_COUNT,
   );
-  assert.notEqual(layeredStartIndex, -1);
-  const layeredStageAudit = namedStageAudit.slice(layeredStartIndex);
+  assert.equal(layeredStageAudit.length, SEMANTIC_BUCKET_BY_ORDINAL.length);
   const preEstreePolicyRejections = layeredStageAudit.filter(
     ({ estreePolicyReached }) => !estreePolicyReached,
   );
@@ -4635,19 +5253,27 @@ function reflectedAuthority(startupReportBytes) {
       preEstreePolicyRejections.map(({ name }) => name),
     ),
   });
+  const foundationNegatives = Object.freeze([
+    ...generatedFoundationEvidence,
+    ...namedEvidence.slice(0, NAMED_FOUNDATION_CONTROL_COUNT),
+  ]);
+  const semanticNegatives = Object.freeze(
+    namedEvidence.slice(NAMED_FOUNDATION_CONTROL_COUNT),
+  );
+  const evidenceManifest = createStaticEvidenceManifest({
+    foundationNegatives,
+    semanticNegatives,
+    positives: Object.freeze(positiveEvidence),
+    evaluationAttempts,
+  });
   return Object.freeze({
     rejected: sources.length + namedRejected.length,
     namedRejected: Object.freeze(namedRejected),
     layeredStaticNegativeEvidence,
     accepted: positiveSources.length,
-    namedAccepted: Object.freeze([
-      "exact requirements AST normalization",
-      "approved untrusted-value normalizer",
-      "frozen local iteration",
-      "frozen local module table",
-      "pure requirements and ephemeral canonical digest initializers",
-    ]),
+    namedAccepted: POSITIVE_CONTROL_NAMES,
     evaluationAttempts,
+    evidenceManifest,
   });
 }
 
@@ -5119,7 +5745,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     "top-level await",
     "for-await",
   ]);
-  assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
+  const { evidenceManifest, ...staticNegativeControlReceipt } =
+    STATIC_NEGATIVE_CONTROLS;
+  assert.equal(evidenceManifest.schema, STATIC_EVIDENCE_MANIFEST_SCHEMA);
+  assert.deepEqual(staticNegativeControlReceipt, {
     rejected: 117,
     namedRejected: [
       "nested private-store set call",
@@ -5206,6 +5835,251 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ],
     evaluationAttempts: 0,
   });
+  const foundationEntries = evidenceManifest.foundationNegatives;
+  const semanticEntries = evidenceManifest.semanticNegatives;
+  const positiveEntries = evidenceManifest.positives;
+  const allEvidenceEntries = [
+    ...foundationEntries,
+    ...semanticEntries,
+    ...positiveEntries,
+  ];
+  assertRecursivelyFrozenWithoutByteViews(evidenceManifest);
+  assert.deepEqual(
+    foundationEntries.map(({ id }) => id),
+    Array.from({ length: 69 }, (_, index) =>
+      staticControlId("FOUNDATION-N", index),
+    ),
+  );
+  assert.deepEqual(
+    semanticEntries.map(({ id }) => id),
+    Array.from({ length: 48 }, (_, index) => staticControlId("SEM-N", index)),
+  );
+  assert.deepEqual(
+    positiveEntries.map(({ id }) => id),
+    Array.from({ length: 5 }, (_, index) => staticControlId("POS-P", index)),
+  );
+  for (const entry of allEvidenceEntries) {
+    assert.deepEqual(Object.keys(entry), [
+      "id",
+      "name",
+      "bucket",
+      "sourceSha256",
+      "astSha256",
+      "astNodeCount",
+      "expectedStage",
+      "expectedError",
+    ]);
+    assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
+  }
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 122);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 122);
+  assert.equal(
+    new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
+    122,
+  );
+  const foundationIds = new Set(foundationEntries.map(({ id }) => id));
+  const semanticIds = new Set(semanticEntries.map(({ id }) => id));
+  const positiveIds = new Set(positiveEntries.map(({ id }) => id));
+  assert.equal(
+    [...foundationIds].filter((id) => semanticIds.has(id)).length,
+    0,
+  );
+  assert.equal(
+    [...foundationIds].filter((id) => positiveIds.has(id)).length,
+    0,
+  );
+  assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
+  assert.equal(
+    new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
+    122,
+  );
+  assert.deepEqual(
+    allEvidenceEntries
+      .filter(({ astSha256 }) => astSha256 === null)
+      .map(({ id, astNodeCount, expectedStage }) => ({
+        id,
+        astNodeCount,
+        expectedStage,
+      })),
+    [
+      {
+        id: "FOUNDATION-N008",
+        astNodeCount: null,
+        expectedStage: "parse",
+      },
+    ],
+  );
+  for (const entry of allEvidenceEntries.filter(
+    ({ astSha256 }) => astSha256 !== null,
+  )) {
+    assert.match(entry.astSha256, /^[0-9a-f]{64}$/u, entry.id);
+    assert.equal(entry.astNodeCount > 0, true, entry.id);
+  }
+  assert.deepEqual(
+    allEvidenceEntries.map(
+      ({
+        id,
+        sourceSha256,
+        astSha256,
+        astNodeCount,
+        expectedStage,
+        expectedError,
+      }) => ({
+        id,
+        sourceSha256,
+        astSha256,
+        astNodeCount,
+        expectedStage,
+        expectedError,
+      }),
+    ),
+    [
+      ...FOUNDATION_CONTROL_EXPECTATION_PINS,
+      ...SEMANTIC_CONTROL_EXPECTATION_PINS,
+      ...POSITIVE_CONTROL_EXPECTATION_PINS,
+    ],
+  );
+  assert.deepEqual(
+    semanticEntries.map(({ id, bucket }) => ({ id, bucket })),
+    SEMANTIC_BUCKET_BY_ORDINAL.map((bucket, index) => ({
+      id: staticControlId("SEM-N", index),
+      bucket,
+    })),
+  );
+  assert.deepEqual(
+    evidenceManifest.bucketProjection.map(
+      ({ bucket, target, current, remaining }) => ({
+        bucket,
+        target,
+        current,
+        remaining,
+      }),
+    ),
+    [
+      { bucket: "protectedAliases", target: 12, current: 7, remaining: 5 },
+      { bucket: "indirectCalls", target: 12, current: 1, remaining: 11 },
+      { bucket: "reflectComputed", target: 12, current: 1, remaining: 11 },
+      {
+        bucket: "bindingMemberWrites",
+        target: 14,
+        current: 4,
+        remaining: 10,
+      },
+      { bucket: "untrustedSinks", target: 24, current: 6, remaining: 18 },
+      { bucket: "rawEscapes", target: 12, current: 3, remaining: 9 },
+      { bucket: "literalMisuse", target: 14, current: 4, remaining: 10 },
+      { bucket: "scopeJoins", target: 18, current: 2, remaining: 16 },
+      { bucket: "nestedRecursion", target: 12, current: 3, remaining: 9 },
+      { bucket: "commitMutations", target: 200, current: 17, remaining: 183 },
+    ],
+  );
+  const bucketIds = evidenceManifest.bucketProjection.flatMap(
+    ({ controlIds }) => controlIds,
+  );
+  assert.equal(bucketIds.length, 48);
+  assert.equal(new Set(bucketIds).size, 48);
+  assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
+  for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
+    assert.deepEqual(
+      controlIds,
+      semanticEntries
+        .filter((entry) => entry.bucket === bucket)
+        .map(({ id }) => id),
+    );
+  }
+  assert.deepEqual(evidenceManifest.commitMutationIds, COMMIT_MUTATION_IDS);
+  assert.deepEqual(
+    semanticEntries
+      .filter(({ bucket }) => bucket === "commitMutations")
+      .map(({ id }) => id),
+    COMMIT_MUTATION_IDS,
+  );
+  assert.equal(
+    evidenceManifest.commitMutationIds.every((id) => semanticIds.has(id)),
+    true,
+  );
+  assert.deepEqual(
+    ["SEM-N017", "SEM-N019", "SEM-N038", "SEM-N043", "SEM-N047"].map((id) => {
+      const { name, bucket } = semanticEntries.find((entry) => entry.id === id);
+      return { id, name, bucket };
+    }),
+    [
+      {
+        id: "SEM-N017",
+        name: "function-scoped Reflect alias",
+        bucket: "protectedAliases",
+      },
+      {
+        id: "SEM-N019",
+        name: "direct internal exported-operation call",
+        bucket: "protectedAliases",
+      },
+      {
+        id: "SEM-N038",
+        name: "parenthesized owning private-store callee",
+        bucket: "commitMutations",
+      },
+      {
+        id: "SEM-N043",
+        name: "shallow ambient freeze used as deep freeze",
+        bucket: "untrustedSinks",
+      },
+      {
+        id: "SEM-N047",
+        name: "nonthrowing imported failure callback",
+        bucket: "scopeJoins",
+      },
+    ],
+  );
+  assert.deepEqual(evidenceManifest.counts, {
+    foundationNegatives: 69,
+    semanticNegatives: 48,
+    allCurrentNegatives: 117,
+    semanticTargetNegatives: 330,
+    semanticRemainingNegatives: 282,
+    allLayerTargetNegatives: 399,
+    positiveCurrent: 5,
+    positiveTarget: 11,
+    positiveRemaining: 6,
+    commitCurrent: 17,
+    commitTarget: 200,
+    commitRemaining: 183,
+    evaluationAttempts: 0,
+  });
+  assert.equal(117, 69 + 48);
+  assert.equal(399, 69 + 330);
+  assert.equal(282, 330 - 48);
+  assert.equal(6, 11 - 5);
+  assert.equal(183, 200 - 17);
+  assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
+  assert.deepEqual(
+    evidenceManifest.aggregates,
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES,
+  );
+  assert.equal(
+    semanticSha256(staticControlIdentityProjection(allEvidenceEntries)),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.orderedControlIdentityProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(staticControlIdentityProjection(semanticEntries)),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.orderedSemanticProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(evidenceManifest.bucketProjection),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.bucketProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(foundationEntries.map(({ id, name }) => ({ id, name }))),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.foundationNameProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(positiveEntries.map(({ id, name }) => ({ id, name }))),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.positiveNameProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(evidenceManifest.commitMutationIds),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.commitIdProjectionSha256,
+  );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
     sourceIndependentNegativeControls: 117,
     acceptedSyntheticSources: 5,
