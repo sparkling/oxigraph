@@ -561,7 +561,12 @@ The ADRs explain the principal boundaries:
   journal contract and the still-unimplemented durable native guardian,
   recovery, and executable-preflight boundary. ADR-0036 through ADR-0039 split
   the pure ABI, statefs/syscalls, native process mechanics, and isolated-host
-  qualification/activation gates without changing production readiness.
+  qualification/activation gates without changing production readiness. The
+  ADR-0036 source-independent evaluator currently freezes 92/330 semantic
+  negatives and closes its protected-alias, callee/receiver,
+  computed/reflection, indirect-call, and binding/member-write buckets, while
+  the production source remains deliberately absent and readiness remains
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

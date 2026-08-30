@@ -108,14 +108,18 @@
 
   Commits `957237a3` and `54b40874` first froze and schema-hardened the accepted
   static-evidence manifest. Integrated commit `358c19d0` (source commit
-  `87d727bd`) adds the reviewed private-lookup slice. The current recursively
-  frozen manifest contains exactly 69 foundation negatives, 60 semantic
-  negatives, and 11 positives. The 17 commit-mutation IDs are exactly the
-  `commitMutations` bucket and a subset of the 60 semantic IDs, never an
-  additive count. Therefore current negative evidence is exactly
-  `129 = 69 + 60`; against the semantic 330/11/200 targets, 270 negatives, zero
+  `87d727bd`) adds the reviewed private-lookup slice. Integrated commit
+  `d971bfa4` (source commit `97436e80`) then adds `SEM-N061` through
+  `SEM-N082`, closing the `indirectCalls` and `reflectComputed` buckets at
+  12/12 each. Integrated commit `86320201` (source commit `32d3ee00`) adds
+  `SEM-N083` through `SEM-N092`, closing `bindingMemberWrites` at 14/14. The
+  current recursively frozen manifest contains exactly 69 foundation
+  negatives, 92 semantic negatives, and 11 positives. The 17 commit-mutation
+  IDs are exactly the `commitMutations` bucket and a subset of the 92 semantic
+  IDs, never an additive count. Therefore current negative evidence is exactly
+  `161 = 69 + 92`; against the semantic 330/11/200 targets, 238 negatives, zero
   positives, and 183 commit mutations remain. The 183 remaining commit
-  mutations are part of, not additional to, the 270 remaining semantic
+  mutations are part of, not additional to, the 238 remaining semantic
   negatives. The final all-layer negative target remains exactly
   `399 = 69 + 330`.
 
@@ -123,7 +127,7 @@
   `oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1`
   with SHA-256
   `eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
-  Every one of its 140 control entries has only `id`, `name`, `bucket`,
+  Every one of its 172 control entries has only `id`, `name`, `bucket`,
   `sourceSha256`, `astSha256`, `astNodeCount`, `expectedStage`, and
   `expectedError`. The literal evidence tables pin the full UTF-8 source hash,
   normalized AST hash and node count, exact rejection stage, and full canonical
@@ -133,12 +137,12 @@
   `FOUNDATION-N008` is the sole parse rejection with a null AST hash and node
   count; all other entries carry literal AST and source pins. The six current
   aggregate identities are:
-  - ordered 140-control identity projection:
-    `24e1fe89f7a3b6efa9967a56549f9809e47c171101e7547239fbadc5a66c0de7`;
-  - ordered 60-control semantic projection:
-    `a7af959d1a32a4a9dd545b6bc8211a5c304b37c932dd59d4efb0e2eeea9c7c69`;
+  - ordered 172-control identity projection:
+    `c26680e91a1a1da495af7c2684d73cc21368a8041d5f2ec29bea94a56900ba7b`;
+  - ordered 92-control semantic projection:
+    `2571662ac051c5ab4746e4f8b39881d9446a9140a88e965a48f248b497e87405`;
   - semantic-bucket projection:
-    `a8ea7637037d2cc75a9297d1caa07fed868141065c0bae0449ec82aaaee04391`;
+    `4b2934dad496999ce72939de0a0716457462077bb1d8695a3af5ff5a03a22080`;
   - foundation ID/name projection:
     `3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`;
   - positive ID/name projection:
@@ -209,9 +213,9 @@
   | Bucket                | Target | Current | Remaining |
   | --------------------- | -----: | ------: | --------: |
   | `protectedAliases`    |     12 |      12 |         0 |
-  | `indirectCalls`       |     12 |       1 |        11 |
-  | `reflectComputed`     |     12 |       1 |        11 |
-  | `bindingMemberWrites` |     14 |       4 |        10 |
+  | `indirectCalls`       |     12 |      12 |         0 |
+  | `reflectComputed`     |     12 |      12 |         0 |
+  | `bindingMemberWrites` |     14 |      14 |         0 |
   | `untrustedSinks`      |     24 |       9 |        15 |
   | `rawEscapes`          |     12 |       5 |         7 |
   | `literalMisuse`       |     14 |       4 |        10 |
@@ -230,6 +234,15 @@
   the mutation review killed 12/12 real evaluator mutations.
   The distinct accepted integrated Ruflo evidence key is
   `programme-evidence/adr0036-private-lookup-358c19d0-2026-08-30`.
+  The independently reviewed callee/receiver and binding/member-write records
+  are respectively
+  `programme-evidence/adr0036-callee-receiver-d971bfa4-2026-08-30` and
+  `programme-evidence/adr0036-binding-writes-86320201-2026-08-30`. Their
+  B1 review killed nine of eleven deliberately weakened implementations; the
+  other two were retained as honestly equivalent or shadowed mutations under
+  the layered policy. B2's three non-equivalent weakening scenarios were all
+  detected across the relevant layers. Neither batch changes the candidate
+  source stop, import-purity contract, or three-runtime matrices.
 
   The source hard stop remains exactly 506 bytes with SHA-256
   `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`.
@@ -243,16 +256,17 @@
   candidate. `npm audit` reports zero known vulnerabilities.
 
   This remains a partial source-hard-stopped foundation. The final semantic
-  quota still requires 270 negative controls, including 183 commit mutations,
-  beyond the current 60/11/17. The 69 parser and grammar foundation negatives
+  quota still requires 238 negative controls, including 183 commit mutations,
+  beyond the current 92/11/17. The 69 parser and grammar foundation negatives
   are additional, so final all-layer evidence will contain 399 negatives rather
   than 330. The static lookup slice does not fix global malformed-expression
   diagnostic precedence or prove actual runtime `WeakMap` lookup behavior.
-  Successful-path reachability, complete receiver/alias and binding/member-
-  write closure, computed-key and indirect-call closure, path-sensitive
-  normative key literals, candidate-connected acceptance matrices, the absent
-  production source module, runtime registration, and the physical native owner
-  remain incomplete. Production containment readiness remains exactly
+  The frozen protected-alias, callee/receiver, computed/reflection, indirect-
+  call, and binding/member-write quotas are complete. Successful-path
+  reachability, the remaining sink/escape/literal/join/recursion/commit quotas,
+  path-sensitive normative key literals, candidate-connected acceptance
+  matrices, the absent production source module, runtime registration, and the
+  physical native owner remain incomplete. Production containment readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 - **Depends on**:
