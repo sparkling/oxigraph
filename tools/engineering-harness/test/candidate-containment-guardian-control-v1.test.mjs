@@ -13,6 +13,8 @@ const SOURCE_URL = new URL(
   import.meta.url,
 );
 const SOURCE_PATH = fileURLToPath(SOURCE_URL);
+const EVALUATOR_PATH = fileURLToPath(import.meta.url);
+const NODE_20_0_MISSING_CANDIDATE_MESSAGE = `Cannot find module '${SOURCE_PATH}' imported from ${EVALUATOR_PATH}`;
 const REQUIREMENTS_ORACLE = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
 
 const EXPECTED_REQUIREMENTS_SHA256 =
@@ -2370,6 +2372,14 @@ function evaluateCandidateOnlyWhenEvaluatorCloses(source, evaluate) {
   return evaluate();
 }
 
+function isExpectedAbsentCandidateModuleError(error, candidateSourceText) {
+  if (candidateSourceText !== null || error?.code !== "ERR_MODULE_NOT_FOUND") {
+    return false;
+  }
+  if (error.url !== undefined) return error.url === SOURCE_URL.href;
+  return error.message === NODE_20_0_MISSING_CANDIDATE_MESSAGE;
+}
+
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 
 let candidate = null;
@@ -2389,10 +2399,7 @@ try {
 } catch (error) {
   if (sourceText !== null) {
     candidateSourceGateError = error;
-  } else if (
-    error?.code === "ERR_MODULE_NOT_FOUND" &&
-    error?.url === SOURCE_URL.href
-  ) {
+  } else if (isExpectedAbsentCandidateModuleError(error, sourceText)) {
     candidateImportError = error;
   } else {
     throw error;
@@ -2633,6 +2640,90 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal(sourcePresentEvaluationAttempts, 0);
 });
 
+test("recognizes only exact absent-candidate module-load failures", () => {
+  const urlShape = Object.freeze({
+    code: "ERR_MODULE_NOT_FOUND",
+    message: "URL-bearing runtimes use the authoritative URL field",
+    url: SOURCE_URL.href,
+  });
+  const node20Shape = Object.freeze({
+    code: "ERR_MODULE_NOT_FOUND",
+    message: NODE_20_0_MISSING_CANDIDATE_MESSAGE,
+  });
+  assert.equal(isExpectedAbsentCandidateModuleError(urlShape, null), true);
+  assert.equal(isExpectedAbsentCandidateModuleError(node20Shape, null), true);
+
+  const negativeControls = Object.freeze([
+    Object.freeze({
+      name: "source text is present",
+      error: urlShape,
+      sourceText: "export const present = true;",
+    }),
+    Object.freeze({
+      name: "wrong error code",
+      error: Object.freeze({
+        ...node20Shape,
+        code: "ERR_PACKAGE_PATH_NOT_EXPORTED",
+      }),
+      sourceText: null,
+    }),
+    Object.freeze({
+      name: "wrong candidate path",
+      error: Object.freeze({
+        ...node20Shape,
+        message: `Cannot find module '${SOURCE_PATH}.other' imported from ${EVALUATOR_PATH}`,
+      }),
+      sourceText: null,
+    }),
+    Object.freeze({
+      name: "wrong importer",
+      error: Object.freeze({
+        ...node20Shape,
+        message: `Cannot find module '${SOURCE_PATH}' imported from ${EVALUATOR_PATH}.other`,
+      }),
+      sourceText: null,
+    }),
+    Object.freeze({
+      name: "wrong message",
+      error: Object.freeze({
+        ...node20Shape,
+        message: `Cannot load module '${SOURCE_PATH}' imported from ${EVALUATOR_PATH}`,
+      }),
+      sourceText: null,
+    }),
+    Object.freeze({
+      name: "message suffix",
+      error: Object.freeze({
+        ...node20Shape,
+        message: `${NODE_20_0_MISSING_CANDIDATE_MESSAGE}\nextra`,
+      }),
+      sourceText: null,
+    }),
+    Object.freeze({
+      name: "wrong URL",
+      error: Object.freeze({ ...urlShape, url: `${SOURCE_URL.href}.other` }),
+      sourceText: null,
+    }),
+    Object.freeze({
+      name: "non-undefined URL cannot use the message fallback",
+      error: Object.freeze({ ...node20Shape, url: null }),
+      sourceText: null,
+    }),
+  ]);
+  for (const {
+    name,
+    error,
+    sourceText: syntheticSourceText,
+  } of negativeControls) {
+    assert.equal(
+      isExpectedAbsentCandidateModuleError(error, syntheticSourceText),
+      false,
+      name,
+    );
+  }
+  assert.equal(negativeControls.length, 8);
+});
+
 test("loads the candidate once and freezes its exact module contract", () => {
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
   if (candidateImportError !== null) throw candidateImportError;
@@ -2640,13 +2731,33 @@ test("loads the candidate once and freezes its exact module contract", () => {
   assertCandidateModuleContract(candidate);
 });
 
-test.todo("expand 20 exact whole-transition and state goldens");
-test.todo("expand 15 independently encoded emitted-status byte goldens");
-test.todo("expand 4 atomic two-status internal wire-prefix controls");
-test.todo("expand every proper prefix and mutation of N1 through R2");
-test.todo(
-  "close receiver-origin and alias dataflow; ambient binding, alias, and member writes, computed-key construction, and indirect calls; path-sensitive normative key-literal representation; module/import/export binding and member writes; and private-store owning-operation commit-position proof before lifting the source-presence stop",
+test(
+  "expand 20 exact whole-transition and state goldens",
+  { todo: true },
+  () => {},
 );
-test.todo(
+test(
+  "expand 15 independently encoded emitted-status byte goldens",
+  { todo: true },
+  () => {},
+);
+test(
+  "expand 4 atomic two-status internal wire-prefix controls",
+  { todo: true },
+  () => {},
+);
+test(
+  "expand every proper prefix and mutation of N1 through R2",
+  { todo: true },
+  () => {},
+);
+test(
+  "close receiver-origin and alias dataflow; ambient binding, alias, and member writes, computed-key construction, and indirect calls; path-sensitive normative key-literal representation; module/import/export binding and member writes; and private-store owning-operation commit-position proof before lifting the source-presence stop",
+  { todo: true },
+  () => {},
+);
+test(
   "complete all remaining ADR-0036 acceptance groups: 252 descriptor aliases; every bound, error-precedence rule, and frame field; transition, status-byte, and prefix goldens; recovery binding; WeakMap failure atomicity; and the complete Node 20 and non-G1.7 matrix",
+  { todo: true },
+  () => {},
 );
