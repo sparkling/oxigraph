@@ -830,12 +830,18 @@ test("does not create a second missing-module failure", () => {
   assert.equal(source, null);
 });
 
-test.todo(
+test(
   "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
+  { todo: true },
+  () => {},
 );
-test.todo(
+test(
   "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
+  { todo: true },
+  () => {},
 );
-test.todo(
+test(
   "replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure for free identifiers, imports, exports, encoded identifiers, computed access, ambient authority, and test-gaming paths",
+  { todo: true },
+  () => {},
 );
