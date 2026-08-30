@@ -58,6 +58,7 @@ oxrdfio.workspace = true
 oxrdfs = { workspace = true, optional = true }
 oxshacl = { workspace = true, optional = true }
 oxsdatatypes.workspace = true
+oxstr.workspace = true
 rand.workspace = true
 rustc-hash.workspace = true
 siphasher.workspace = true

@@ -9,7 +9,8 @@ use oxiri::{Iri, IriParseError};
 #[cfg(feature = "rdf-12")]
 use oxrdf::BaseDirection;
 use oxrdf::vocab::{rdf, xsd};
-use oxrdf::{BlankNode, Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, OxString, Quad};
+use oxrdf::{BlankNode, Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, Quad};
+use oxstr::OxString;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::Write;

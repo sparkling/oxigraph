@@ -1,6 +1,7 @@
 use crate::http::{EgressErrorKind, HttpClient, find_egress_error};
-use crate::model::{NamedNode, OxString};
+use crate::model::NamedNode;
 use oxiri::Iri;
+use oxstr::OxString;
 use sparesults::{QueryResultsParser, ReaderQueryResultsParserOutput};
 use spareval::{DefaultServiceHandler, QueryEvaluationError, QuerySolutionIter};
 use spargebra::SparqlVersion;

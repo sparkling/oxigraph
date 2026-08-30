@@ -1,4 +1,4 @@
-use crate::model::{GraphName, NamedNode, NamedOrBlankNode, OxString, Quad, Term};
+use crate::model::{GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 use crate::storage::CorruptionError;
 pub use crate::storage::error::StorageError;
 use crate::storage::numeric_encoder::{
@@ -12,6 +12,7 @@ use crate::store::{Namespace, NamespacePrefix};
 use dashmap::iter::Iter;
 use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
+use oxstr::OxString;
 use rustc_hash::{FxHashSet, FxHasher};
 use std::borrow::Borrow;
 use std::hash::{BuildHasherDefault, Hash, Hasher};

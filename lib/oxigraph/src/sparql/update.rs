@@ -6,7 +6,7 @@ use crate::io::DocumentLoader;
 use crate::io::RdfParser;
 use crate::model::{
     Dataset as OxDataset, GraphName as OxGraphName, NamedOrBlankNode as OxNamedOrBlankNode,
-    OxString, Quad as OxQuad, Term as OxTerm,
+    Quad as OxQuad, Term as OxTerm,
 };
 use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
@@ -16,6 +16,7 @@ use crate::store::{
     TransactionStartControl, TransactionStartError, TransactionalDataset, WritableDataset,
 };
 use oxiri::Iri;
+use oxstr::OxString;
 use rustc_hash::FxHashMap;
 use spareval::{
     CancellationToken, DeleteInsertQuad, InternalQuad, QueryDatasetSpecification, QueryEvaluator,
