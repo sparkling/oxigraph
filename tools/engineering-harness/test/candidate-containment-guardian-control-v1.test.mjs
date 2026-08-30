@@ -4140,6 +4140,8 @@ const COMMIT_MUTATION_IDS = Object.freeze([
   "SEM-N040",
 ]);
 const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
+  schemaSha256:
+    "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
     "af44b6f3f20713ffdc3d48cae4eff404b80a1e27ae07783c4a6315e7dd562df0",
   orderedSemanticProjectionSha256:
@@ -4445,6 +4447,7 @@ function createStaticEvidenceManifest({
     ...positives,
   ];
   const aggregates = {
+    schemaSha256: semanticSha256(STATIC_EVIDENCE_MANIFEST_SCHEMA),
     orderedControlIdentityProjectionSha256: semanticSha256(
       staticControlIdentityProjection(allEntries),
     ),
@@ -5747,7 +5750,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   ]);
   const { evidenceManifest, ...staticNegativeControlReceipt } =
     STATIC_NEGATIVE_CONTROLS;
-  assert.equal(evidenceManifest.schema, STATIC_EVIDENCE_MANIFEST_SCHEMA);
+  assert.equal(
+    evidenceManifest.schema,
+    "oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1",
+  );
   assert.deepEqual(staticNegativeControlReceipt, {
     rejected: 117,
     namedRejected: [
@@ -6055,6 +6061,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.deepEqual(
     evidenceManifest.aggregates,
     EXPECTED_STATIC_EVIDENCE_AGGREGATES,
+  );
+  assert.equal(
+    semanticSha256(evidenceManifest.schema),
+    EXPECTED_STATIC_EVIDENCE_AGGREGATES.schemaSha256,
   );
   assert.equal(
     semanticSha256(staticControlIdentityProjection(allEvidenceEntries)),
