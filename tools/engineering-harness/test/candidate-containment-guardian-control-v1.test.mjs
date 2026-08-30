@@ -546,10 +546,15 @@ const EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256 = Object.freeze({
   atomicTwoStatusWirePrefixes:
     "c6735a0da37cdaf3d6e9775dcb5dffc47f039e08df7d8db0adcf0313499479d4",
 });
+const EXPECTED_MATERIALIZED_DESIGN_PROJECTION_SHA256 = Object.freeze({
+  statuses: "6e03baa638cd3b48221e9182d9de1dd74a9a7b454fce40719badb3d0d9b7de5e",
+  atomicPrefixes:
+    "a2b9524c88bbd78aca2d189c150a9e5499c0da3505c9109734ce78f0fa038ba1",
+});
 const EXPECTED_MATERIALIZED_STATUS_CONTEXT_SHA256 =
   "fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23";
 const EXPECTED_MATERIALIZED_STATUS_ORACLE_SHA256 =
-  "be634123e0de20c05ee292215b456589ac2ed885524bb350c83f7044160eb1f6";
+  "57872372c67c5ad4580ed2945512fc5c7ec0923b121690c2a2927604608b3583";
 
 // Independently measured from the five ratified files. The fixture is verified
 // against these constants, never used to supply them.
@@ -622,10 +627,32 @@ function assertRecursivelyFrozenWithoutByteViews(value, seen = new Set()) {
   if (value === null || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
   assert.equal(ArrayBuffer.isView(value), false);
+  assert.equal(value instanceof ArrayBuffer, false);
+  if (typeof SharedArrayBuffer === "function") {
+    assert.equal(value instanceof SharedArrayBuffer, false);
+  }
   assert.equal(Object.isFrozen(value), true);
   for (const key of Reflect.ownKeys(value)) {
     assertRecursivelyFrozenWithoutByteViews(value[key], seen);
   }
+}
+
+function collectNonPrimitiveObjectReferences(value, references = new Set()) {
+  if (value === null || typeof value !== "object" || references.has(value)) {
+    return references;
+  }
+  references.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    collectNonPrimitiveObjectReferences(value[key], references);
+  }
+  return references;
+}
+
+function countSharedNonPrimitiveObjectReferences(left, right) {
+  const rightReferences = collectNonPrimitiveObjectReferences(right);
+  return [...collectNonPrimitiveObjectReferences(left)].filter((reference) =>
+    rightReferences.has(reference),
+  ).length;
 }
 
 function assertPinnedPredecessorBytes(bytes, golden) {
@@ -5367,7 +5394,21 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
     "function",
   );
   const oracle = SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE;
+  const separatelyAllocatedOracle =
+    adversarialModule.createSourceIndependentMaterializedStatusOracle(
+      JSON.parse(JSON.stringify(REQUIREMENTS_ORACLE)),
+    );
+  assert.deepEqual(separatelyAllocatedOracle, oracle);
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(oracle, separatelyAllocatedOracle),
+    0,
+  );
+  assert.equal(
+    collectNonPrimitiveObjectReferences(separatelyAllocatedOracle).size,
+    collectNonPrimitiveObjectReferences(oracle).size,
+  );
   assertRecursivelyFrozenWithoutByteViews(oracle);
+  assertRecursivelyFrozenWithoutByteViews(separatelyAllocatedOracle);
   assert.equal(
     oracle.schema,
     "oxigraph.test.candidate-containment-guardian-control-v1-materialized-status-oracle/v1",
@@ -5394,6 +5435,10 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
     EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256,
   );
   assert.deepEqual(
+    oracle.designProjectionSha256,
+    EXPECTED_MATERIALIZED_DESIGN_PROJECTION_SHA256,
+  );
+  assert.deepEqual(
     oracle.statusEntryDigests,
     EXPECTED_MATERIALIZED_STATUS_ENTRY_DIGESTS,
   );
@@ -5404,7 +5449,10 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
   assert.deepEqual(oracle.reconstruction, {
     method: "independent-legalSequences-wire-simulation-and-tuple-projection",
     primaryStatusDesignRegistryConsumed: false,
+    primaryStatusBuilderConsumed: false,
+    primaryAtomicBuilderConsumed: false,
     primaryStatusEncoderConsumed: false,
+    primaryAtomicEncoderConsumed: false,
     statusCount: 15,
     atomicCount: 4,
     statusInventorySha256:
@@ -5417,8 +5465,15 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
     fixtureDerivedStatusTopology: true,
     evaluatorOwnedConstructionContext: true,
     constructionBindingsRehashed: true,
+    hashBindingPreimagesConstructed: true,
     emittedStatusBytesMaterialized: true,
     atomicConcatenatedBytesMaterialized: true,
+    primaryStatusDesignRegistryConsumed: false,
+    primaryAtomicDesignRegistryConsumed: false,
+    brandedReducerInputsConstructed: false,
+    candidateConstructorsExecuted: false,
+    candidateReducerExecuted: false,
+    candidateAcceptanceProved: false,
     candidateInputAccepted: false,
     contractValidInputPreimagesProved: false,
     reducerReachabilityProved: false,
@@ -5432,18 +5487,65 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
     publicIntermediateStateInvented: false,
     physicalAuthorityProved: false,
   });
+  const independentlyCountedCoverage = {
+    modeCounts: { NORMAL: 0, RECOVERY_ONLY: 0 },
+    bindingPartitionCounts: {
+      admissionOnly: 0,
+      recoveryOnly: 0,
+      neither: 0,
+      both: 0,
+    },
+    sourceSequenceMembershipCount: 0,
+    uniqueRawSha256Count: new Set(
+      oracle.emittedStatusByteGoldens.map(({ rawSha256 }) => rawSha256),
+    ).size,
+  };
+  for (const entry of oracle.emittedStatusByteGoldens) {
+    independentlyCountedCoverage.modeCounts[entry.frame.mode] += 1;
+    const admission = entry.frame.admissionFrameSha256 !== null;
+    const recovery = entry.frame.recoveryRequestFrameSha256 !== null;
+    const partition = admission
+      ? recovery
+        ? "both"
+        : "admissionOnly"
+      : recovery
+        ? "recoveryOnly"
+        : "neither";
+    independentlyCountedCoverage.bindingPartitionCounts[partition] += 1;
+    independentlyCountedCoverage.sourceSequenceMembershipCount +=
+      entry.sourceSequences.length;
+  }
+  assert.deepEqual(independentlyCountedCoverage, {
+    modeCounts: { NORMAL: 12, RECOVERY_ONLY: 3 },
+    bindingPartitionCounts: {
+      admissionOnly: 6,
+      recoveryOnly: 3,
+      neither: 6,
+      both: 0,
+    },
+    sourceSequenceMembershipCount: 23,
+    uniqueRawSha256Count: 15,
+  });
+  assert.deepEqual(oracle.coverage, independentlyCountedCoverage);
 
   const bindings = Object.values(oracle.constructionContext.bindings);
   assert.equal(bindings.length, 8);
   assert.equal(new Set(bindings.map(({ id }) => id)).size, 8);
+  const oracleSha256BeforeReconstructedByteMutation = semanticSha256(oracle);
   for (const binding of bindings) {
     assert.match(binding.bytesHex, /^(?:[0-9a-f]{2})+$/u);
-    const bytes = Buffer.from(binding.bytesHex, "hex");
-    assert.equal(bytes.toString("hex"), binding.bytesHex);
-    assert.equal(bytes.length, binding.byteLength);
-    assert.equal(byteSha256(bytes), binding.rawSha256);
+    const reconstructedFromHex = Buffer.from(binding.bytesHex, "hex");
+    const reconstructedFromPreimage =
+      binding.format === "CANONICAL_JSONL"
+        ? Buffer.from(binding.jsonl, "utf8")
+        : Buffer.from(binding.bytesHex, "hex");
+    assert.notEqual(reconstructedFromHex, reconstructedFromPreimage);
+    assert.deepEqual(reconstructedFromHex, reconstructedFromPreimage);
+    assert.equal(reconstructedFromHex.toString("hex"), binding.bytesHex);
+    assert.equal(reconstructedFromHex.length, binding.byteLength);
+    assert.equal(byteSha256(reconstructedFromHex), binding.rawSha256);
     if (binding.format === "CANONICAL_JSONL") {
-      assert.equal(binding.jsonl, bytes.toString("utf8"));
+      assert.equal(binding.jsonl, reconstructedFromHex.toString("utf8"));
       assert.equal(binding.jsonl.endsWith("\n"), true);
       assert.equal(binding.jsonl.slice(0, -1).includes("\n"), false);
       assert.equal(binding.jsonl.includes("\r"), false);
@@ -5451,7 +5553,21 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
       assert.equal(binding.format, "RAW_HEX");
       assert.equal(binding.jsonl, null);
     }
+    const preservedHex = reconstructedFromHex.toString("hex");
+    reconstructedFromPreimage[0] ^= 0xff;
+    assert.notDeepEqual(reconstructedFromPreimage, reconstructedFromHex);
+    assert.equal(reconstructedFromHex.toString("hex"), preservedHex);
+    assert.equal(binding.bytesHex, preservedHex);
+    assert.equal(byteSha256(reconstructedFromHex), binding.rawSha256);
   }
+  assert.equal(
+    semanticSha256(oracle),
+    oracleSha256BeforeReconstructedByteMutation,
+  );
+  assert.deepEqual(
+    oracle.inventorySha256,
+    EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256,
+  );
 
   assert.equal(oracle.emittedStatusByteGoldens.length, 15);
   assert.equal(
@@ -5480,6 +5596,13 @@ test("expand 4 atomic two-status internal wire-prefix controls", () => {
     "function",
   );
   const oracle = SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE;
+  assert.deepEqual(oracle.atomicNegativeControls, {
+    controlCount: 4,
+    reversedConcatenationMismatchCount: 4,
+    firstFrameOmissionMismatchCount: 4,
+    secondFrameOmissionMismatchCount: 4,
+    insertedDelimiterMismatchCount: 4,
+  });
   assert.deepEqual(
     oracle.atomicEntryDigests,
     EXPECTED_MATERIALIZED_ATOMIC_ENTRY_DIGESTS,
@@ -5546,6 +5669,18 @@ test("expand 4 atomic two-status internal wire-prefix controls", () => {
     assert.equal(entry.concatenatedByteLength, byteLength);
     assert.equal(entry.concatenatedByteLength, concatenatedBytes.length);
     assert.equal(entry.concatenatedRawSha256, byteSha256(concatenatedBytes));
+    for (const negativeConcatenation of [
+      `${second.canonicalJsonl}${first.canonicalJsonl}`,
+      second.canonicalJsonl,
+      first.canonicalJsonl,
+      `${first.canonicalJsonl}\n${second.canonicalJsonl}`,
+    ]) {
+      assert.notEqual(negativeConcatenation, entry.concatenatedJsonl);
+      assert.notEqual(
+        byteSha256(Buffer.from(negativeConcatenation, "utf8")),
+        entry.concatenatedRawSha256,
+      );
+    }
     assert.equal(entry.publicIntermediateState, false);
   }
 });

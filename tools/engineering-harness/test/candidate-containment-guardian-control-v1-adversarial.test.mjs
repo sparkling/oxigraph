@@ -136,6 +136,10 @@ const EXPECTED_STATUS_ORACLE_BINDING_SHA256 = Object.freeze({
 });
 const EXPECTED_STATUS_ORACLE_CONSTRUCTION_CONTEXT_SHA256 =
   "fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23";
+const EXPECTED_PRIMARY_STATUS_DESIGN_PROJECTION_SHA256 =
+  "6e03baa638cd3b48221e9182d9de1dd74a9a7b454fce40719badb3d0d9b7de5e";
+const EXPECTED_PRIMARY_ATOMIC_DESIGN_PROJECTION_SHA256 =
+  "a2b9524c88bbd78aca2d189c150a9e5499c0da3505c9109734ce78f0fa038ba1";
 const EXPECTED_MATERIALIZED_STATUS_ENTRY_DIGESTS = Object.freeze([
   Object.freeze({
     id: "emitted-status-byte-00",
@@ -310,7 +314,7 @@ const EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256 = Object.freeze({
     "c6735a0da37cdaf3d6e9775dcb5dffc47f039e08df7d8db0adcf0313499479d4",
 });
 const EXPECTED_MATERIALIZED_STATUS_ORACLE_SHA256 =
-  "be634123e0de20c05ee292215b456589ac2ed885524bb350c83f7044160eb1f6";
+  "57872372c67c5ad4580ed2945512fc5c7ec0923b121690c2a2927604608b3583";
 const FAILURE_PRECEDENCE_CONSTRUCTOR_APPLICABILITY = Object.freeze([
   Object.freeze({
     operation: "createCandidateContainmentGuardianStartupV1",
@@ -933,6 +937,18 @@ function recursivelyFreezeStatusOracleValue(value, seen = new Set()) {
     false,
     "materialized status oracle must not retain mutable byte views",
   );
+  assert.equal(
+    value instanceof ArrayBuffer,
+    false,
+    "materialized status oracle must not retain ArrayBuffer instances",
+  );
+  if (typeof SharedArrayBuffer === "function") {
+    assert.equal(
+      value instanceof SharedArrayBuffer,
+      false,
+      "materialized status oracle must not retain SharedArrayBuffer instances",
+    );
+  }
   seen.add(value);
   for (const nested of Object.values(value)) {
     recursivelyFreezeStatusOracleValue(nested, seen);
@@ -1988,9 +2004,6 @@ function createStatusOracleConstructionContext() {
   });
 }
 
-const STATUS_ORACLE_CONSTRUCTION_CONTEXT =
-  createStatusOracleConstructionContext();
-
 function statusOracleBinding(context, bindingId) {
   assert.equal(Object.hasOwn(context.bindings, bindingId), true, bindingId);
   return context.bindings[bindingId];
@@ -2009,7 +2022,39 @@ function statusOracleModeDigests(context, mode) {
   });
 }
 
-function previousWireBindingForStatusDesign(
+function primaryPrefixObservationIdFromLegalSequences(
+  requirements,
+  targetSymbols,
+) {
+  const targetKey = canonicalJson(targetSymbols);
+  const observedKeys = new Set();
+  let matchedId;
+  const observe = (mode, symbols, sequenceId) => {
+    const key = canonicalJson(symbols);
+    if (observedKeys.has(key)) return;
+    const id = paddedId("symbolic-prefix", observedKeys.size);
+    observedKeys.add(key);
+    if (key === targetKey) matchedId = id;
+    assert.equal(typeof mode, "string");
+    assert.equal(typeof sequenceId, "string");
+  };
+  const sequenceRows = Object.entries(requirements.legalSequences).map(
+    ([id, symbols]) => ({ id, mode: sequenceMode(id), symbols }),
+  );
+  for (const row of sequenceRows) {
+    if (row.mode === "RECOVERY_ONLY") observe(row.mode, [], row.id);
+  }
+  for (const row of sequenceRows) {
+    for (let length = 1; length < row.symbols.length; length += 1) {
+      observe(row.mode, row.symbols.slice(0, length), row.id);
+    }
+  }
+  assert.equal(observedKeys.size, 26);
+  assert.notEqual(matchedId, undefined, targetKey);
+  return matchedId;
+}
+
+function primaryPreviousWireSha256FromStatusPrefix(
   requirements,
   context,
   design,
@@ -2069,7 +2114,10 @@ function statusEntryIdentityProjection(entry) {
   };
 }
 
-function materializeStatusEntries(requirements, context, statusDesigns) {
+function materializePrimaryStatusEntriesFromLegalSequences(
+  requirements,
+  context,
+) {
   assert.deepEqual(
     requirements.frameFields.STATUS,
     EXPECTED_STATUS_FRAME_FIELDS,
@@ -2078,8 +2126,71 @@ function materializeStatusEntries(requirements, context, statusDesigns) {
     context.previousFrameGenesisSha256,
     requirements.vocabularies.previousFrameGenesisSha256,
   );
+  const plans = [];
+  const planByPrefix = new Map();
+  for (const [sequenceId, symbols] of Object.entries(
+    requirements.legalSequences,
+  )) {
+    const mode = sequenceMode(sequenceId);
+    for (let index = 0; index < symbols.length; index += 1) {
+      const parts = terminalStatusParts(requirements, symbols[index]);
+      if (parts === null) continue;
+      const prefix = symbols.slice(0, index + 1);
+      const key = canonicalJson(prefix);
+      const precedingWireSymbols = symbols
+        .slice(0, index)
+        .filter((symbol) => isWireSymbol(requirements, symbol));
+      const candidate = {
+        mode,
+        state: parts.state,
+        terminalReason: parts.terminalReason,
+        prefix,
+        acceptedPrefixObservationId:
+          primaryPrefixObservationIdFromLegalSequences(requirements, prefix),
+        wireSequence: precedingWireSymbols.length,
+        previousWireSymbol: precedingWireSymbols.at(-1) ?? "GENESIS",
+        admissionFrameBinding: prefix.includes("ADMIT") ? "PRESENT" : "NULL",
+        recoveryRequestFrameBinding: prefix.includes("RECOVERY_REQUEST")
+          ? "PRESENT"
+          : "NULL",
+        sourceSequences: [],
+      };
+      assert.notEqual(candidate.acceptedPrefixObservationId, undefined, key);
+      let plan = planByPrefix.get(key);
+      if (plan === undefined) {
+        plan = candidate;
+        planByPrefix.set(key, plan);
+        plans.push(plan);
+      } else {
+        assert.deepEqual(
+          { ...plan, sourceSequences: [] },
+          { ...candidate, sourceSequences: [] },
+        );
+      }
+      if (!plan.sourceSequences.includes(sequenceId)) {
+        plan.sourceSequences.push(sequenceId);
+      }
+    }
+  }
+  assert.equal(plans.length, 15);
+
   const statusByPrefix = new Map();
-  const entries = statusDesigns.map((design) => {
+  const designProjections = [];
+  const entries = plans.map((plan, index) => {
+    const design = {
+      id: paddedId("emitted-status-byte", index),
+      mode: plan.mode,
+      state: plan.state,
+      terminalReason: plan.terminalReason,
+      prefix: [...plan.prefix],
+      acceptedPrefixObservationId: plan.acceptedPrefixObservationId,
+      wireSequence: plan.wireSequence,
+      previousWireSymbol: plan.previousWireSymbol,
+      admissionFrameBinding: plan.admissionFrameBinding,
+      recoveryRequestFrameBinding: plan.recoveryRequestFrameBinding,
+      sourceSequences: [...plan.sourceSequences],
+    };
+    designProjections.push(design);
     const { startupSha256, epochSha256 } = statusOracleModeDigests(
       context,
       design.mode,
@@ -2098,7 +2209,7 @@ function materializeStatusEntries(requirements, context, statusDesigns) {
       action: "STATUS",
       mode: design.mode,
       sequence: design.wireSequence,
-      previousFrameSha256: previousWireBindingForStatusDesign(
+      previousFrameSha256: primaryPreviousWireSha256FromStatusPrefix(
         requirements,
         context,
         design,
@@ -2143,7 +2254,15 @@ function materializeStatusEntries(requirements, context, statusDesigns) {
     return entry;
   });
   assert.equal(entries.length, 15);
-  return Object.freeze(entries);
+  const designProjectionSha256 = digest(designProjections);
+  assert.equal(
+    designProjectionSha256,
+    EXPECTED_PRIMARY_STATUS_DESIGN_PROJECTION_SHA256,
+  );
+  return {
+    entries: Object.freeze(entries),
+    designProjectionSha256,
+  };
 }
 
 function atomicEntryIdentityProjection(entry) {
@@ -2175,11 +2294,85 @@ function atomicEntryIdentityProjection(entry) {
   };
 }
 
-function materializeAtomicStatusPrefixes(atomicDesigns, statusEntries) {
-  const statusById = new Map(statusEntries.map((entry) => [entry.id, entry]));
-  const entries = atomicDesigns.map((design) => {
-    const first = statusById.get(design.firstStatusDesignId);
-    const second = statusById.get(design.secondStatusDesignId);
+function materializePrimaryAtomicStatusPrefixesFromLegalSequences(
+  requirements,
+  statusEntries,
+) {
+  const statusByPrefix = new Map(
+    statusEntries.map((entry) => [canonicalJson(entry.prefix), entry]),
+  );
+  const inputKinds = new Set(requirements.vocabularies.inputKinds);
+  const plans = [];
+  const observedCompletePrefixes = new Set();
+  for (const [sequenceId, symbols] of Object.entries(
+    requirements.legalSequences,
+  )) {
+    const mode = sequenceMode(sequenceId);
+    for (let index = 0; index < symbols.length; index += 1) {
+      const operation = symbols[index];
+      if (!inputKinds.has(operation)) continue;
+      let end = index + 1;
+      while (end < symbols.length && !inputKinds.has(symbols[end])) end += 1;
+      const emittedStatuses = symbols.slice(index + 1, end);
+      if (
+        emittedStatuses.length !== 2 ||
+        emittedStatuses.some(
+          (symbol) => terminalStatusParts(requirements, symbol) === null,
+        )
+      ) {
+        continue;
+      }
+      const completeTransitionPrefix = symbols.slice(0, end);
+      const completeKey = canonicalJson(completeTransitionPrefix);
+      if (observedCompletePrefixes.has(completeKey)) continue;
+      observedCompletePrefixes.add(completeKey);
+      plans.push({
+        mode,
+        operation,
+        beforePrefix: symbols.slice(0, index),
+        firstStatus: emittedStatuses[0],
+        secondStatus: emittedStatuses[1],
+        firstStatusPrefix: symbols.slice(0, index + 2),
+        completeTransitionPrefix,
+      });
+    }
+  }
+  assert.equal(plans.length, 4);
+
+  const designProjections = [];
+  const entries = plans.map((plan, index) => {
+    const id = paddedId("atomic-two-status-wire-prefix", index);
+    const firstStatusKey = canonicalJson(plan.firstStatusPrefix);
+    const completeKey = canonicalJson(plan.completeTransitionPrefix);
+    const first = statusByPrefix.get(firstStatusKey);
+    const second = statusByPrefix.get(completeKey);
+    assert.notEqual(first, undefined, id);
+    assert.notEqual(second, undefined, id);
+    const design = {
+      id,
+      mode: plan.mode,
+      operation: plan.operation,
+      beforePrefix: [...plan.beforePrefix],
+      firstStatus: plan.firstStatus,
+      secondStatus: plan.secondStatus,
+      firstStatusPrefix: [...plan.firstStatusPrefix],
+      completeTransitionPrefix: [...plan.completeTransitionPrefix],
+      firstStatusObservationId: primaryPrefixObservationIdFromLegalSequences(
+        requirements,
+        plan.firstStatusPrefix,
+      ),
+      completeTransitionObservationId:
+        primaryPrefixObservationIdFromLegalSequences(
+          requirements,
+          plan.completeTransitionPrefix,
+        ),
+      firstStatusDesignId: first.id,
+      secondStatusDesignId: second.id,
+      publicIntermediateState: false,
+    };
+    assert.notEqual(design.firstStatusObservationId, undefined, id);
+    assert.notEqual(design.completeTransitionObservationId, undefined, id);
+    designProjections.push(design);
     assert.notEqual(first, undefined, design.id);
     assert.notEqual(second, undefined, design.id);
     assert.equal(second.frame.sequence, first.frame.sequence + 1, design.id);
@@ -2223,7 +2416,15 @@ function materializeAtomicStatusPrefixes(atomicDesigns, statusEntries) {
     });
   });
   assert.equal(entries.length, 4);
-  return Object.freeze(entries);
+  const designProjectionSha256 = digest(designProjections);
+  assert.equal(
+    designProjectionSha256,
+    EXPECTED_PRIMARY_ATOMIC_DESIGN_PROJECTION_SHA256,
+  );
+  return {
+    entries: Object.freeze(entries),
+    designProjectionSha256,
+  };
 }
 
 function materializedStatusEntryTuple(entry) {
@@ -2719,7 +2920,10 @@ function independentlyReconstructMaterializedStatusTuples(
     reconstruction: {
       method: "independent-legalSequences-wire-simulation-and-tuple-projection",
       primaryStatusDesignRegistryConsumed: false,
+      primaryStatusBuilderConsumed: false,
+      primaryAtomicBuilderConsumed: false,
       primaryStatusEncoderConsumed: false,
+      primaryAtomicEncoderConsumed: false,
       statusCount: statusTuples.length,
       atomicCount: atomicTuples.length,
       statusInventorySha256: independentlyDigestStatusOracleValue(statusTuples),
@@ -2728,18 +2932,117 @@ function independentlyReconstructMaterializedStatusTuples(
   };
 }
 
+function createMaterializedStatusCoverageReceipt(statusEntries) {
+  const modeCounts = { NORMAL: 0, RECOVERY_ONLY: 0 };
+  const bindingPartitionCounts = {
+    admissionOnly: 0,
+    recoveryOnly: 0,
+    neither: 0,
+    both: 0,
+  };
+  let sourceSequenceMembershipCount = 0;
+  for (const entry of statusEntries) {
+    modeCounts[entry.frame.mode] += 1;
+    const admission = entry.frame.admissionFrameSha256 !== null;
+    const recovery = entry.frame.recoveryRequestFrameSha256 !== null;
+    const partition = admission
+      ? recovery
+        ? "both"
+        : "admissionOnly"
+      : recovery
+        ? "recoveryOnly"
+        : "neither";
+    bindingPartitionCounts[partition] += 1;
+    sourceSequenceMembershipCount += entry.sourceSequences.length;
+  }
+  const receipt = {
+    modeCounts,
+    bindingPartitionCounts,
+    sourceSequenceMembershipCount,
+    uniqueRawSha256Count: new Set(
+      statusEntries.map(({ rawSha256 }) => rawSha256),
+    ).size,
+  };
+  assert.deepEqual(receipt, {
+    modeCounts: { NORMAL: 12, RECOVERY_ONLY: 3 },
+    bindingPartitionCounts: {
+      admissionOnly: 6,
+      recoveryOnly: 3,
+      neither: 6,
+      both: 0,
+    },
+    sourceSequenceMembershipCount: 23,
+    uniqueRawSha256Count: 15,
+  });
+  return recursivelyFreezeStatusOracleValue(receipt);
+}
+
+function createAtomicNegativeControlReceipt(atomicEntries, statusEntries) {
+  const statusById = new Map(statusEntries.map((entry) => [entry.id, entry]));
+  const receipt = {
+    controlCount: atomicEntries.length,
+    reversedConcatenationMismatchCount: 0,
+    firstFrameOmissionMismatchCount: 0,
+    secondFrameOmissionMismatchCount: 0,
+    insertedDelimiterMismatchCount: 0,
+  };
+  for (const entry of atomicEntries) {
+    const first = statusById.get(entry.firstStatusDesignId);
+    const second = statusById.get(entry.secondStatusDesignId);
+    assert.notEqual(first, undefined, entry.id);
+    assert.notEqual(second, undefined, entry.id);
+    const negativeVariants = {
+      reversedConcatenation: `${second.canonicalJsonl}${first.canonicalJsonl}`,
+      firstFrameOmission: second.canonicalJsonl,
+      secondFrameOmission: first.canonicalJsonl,
+      insertedDelimiter: `${first.canonicalJsonl}\n${second.canonicalJsonl}`,
+    };
+    for (const [name, value] of Object.entries(negativeVariants)) {
+      assert.notEqual(value, entry.concatenatedJsonl, `${entry.id}:${name}`);
+      assert.notEqual(
+        byteDigest(Buffer.from(value, "utf8")),
+        entry.concatenatedRawSha256,
+        `${entry.id}:${name}`,
+      );
+    }
+    receipt.reversedConcatenationMismatchCount += 1;
+    receipt.firstFrameOmissionMismatchCount += 1;
+    receipt.secondFrameOmissionMismatchCount += 1;
+    receipt.insertedDelimiterMismatchCount += 1;
+  }
+  assert.deepEqual(receipt, {
+    controlCount: 4,
+    reversedConcatenationMismatchCount: 4,
+    firstFrameOmissionMismatchCount: 4,
+    secondFrameOmissionMismatchCount: 4,
+    insertedDelimiterMismatchCount: 4,
+  });
+  return recursivelyFreezeStatusOracleValue(receipt);
+}
+
 export function createSourceIndependentMaterializedStatusOracle(requirements) {
   assertPinnedSourceIndependentOracleFixture(requirements);
-  const designOracle = createSourceIndependentAdversarialOracle(requirements);
-  const emittedStatusByteGoldens = materializeStatusEntries(
-    requirements,
-    STATUS_ORACLE_CONSTRUCTION_CONTEXT,
-    designOracle.registries.emittedStatusByteGoldenDesigns,
-  );
-  const atomicTwoStatusWirePrefixes = materializeAtomicStatusPrefixes(
-    designOracle.registries.atomicTwoStatusWirePrefixControls,
-    emittedStatusByteGoldens,
-  );
+  const constructionContext = createStatusOracleConstructionContext();
+  const statusMaterialization =
+    materializePrimaryStatusEntriesFromLegalSequences(
+      requirements,
+      constructionContext,
+    );
+  const emittedStatusByteGoldens = statusMaterialization.entries;
+  const atomicMaterialization =
+    materializePrimaryAtomicStatusPrefixesFromLegalSequences(
+      requirements,
+      emittedStatusByteGoldens,
+    );
+  const atomicTwoStatusWirePrefixes = atomicMaterialization.entries;
+  const designProjectionSha256 = recursivelyFreezeStatusOracleValue({
+    statuses: statusMaterialization.designProjectionSha256,
+    atomicPrefixes: atomicMaterialization.designProjectionSha256,
+  });
+  assert.deepEqual(designProjectionSha256, {
+    statuses: EXPECTED_PRIMARY_STATUS_DESIGN_PROJECTION_SHA256,
+    atomicPrefixes: EXPECTED_PRIMARY_ATOMIC_DESIGN_PROJECTION_SHA256,
+  });
   const statusTuples = Object.freeze(
     emittedStatusByteGoldens.map(materializedStatusEntryTuple),
   );
@@ -2748,7 +3051,7 @@ export function createSourceIndependentMaterializedStatusOracle(requirements) {
   );
   const independent = independentlyReconstructMaterializedStatusTuples(
     requirements,
-    STATUS_ORACLE_CONSTRUCTION_CONTEXT,
+    constructionContext,
   );
   assert.deepEqual(statusTuples, independent.statusTuples);
   assert.deepEqual(atomicTuples, independent.atomicTuples);
@@ -2801,12 +3104,26 @@ export function createSourceIndependentMaterializedStatusOracle(requirements) {
     ...independent.reconstruction,
     independentlyReconstructedProjectionMatches: true,
   });
+  const coverage = createMaterializedStatusCoverageReceipt(
+    emittedStatusByteGoldens,
+  );
+  const atomicNegativeControls = createAtomicNegativeControlReceipt(
+    atomicTwoStatusWirePrefixes,
+    emittedStatusByteGoldens,
+  );
   const construction = recursivelyFreezeStatusOracleValue({
     fixtureDerivedStatusTopology: true,
     evaluatorOwnedConstructionContext: true,
     constructionBindingsRehashed: true,
+    hashBindingPreimagesConstructed: true,
     emittedStatusBytesMaterialized: true,
     atomicConcatenatedBytesMaterialized: true,
+    primaryStatusDesignRegistryConsumed: false,
+    primaryAtomicDesignRegistryConsumed: false,
+    brandedReducerInputsConstructed: false,
+    candidateConstructorsExecuted: false,
+    candidateReducerExecuted: false,
+    candidateAcceptanceProved: false,
     candidateInputAccepted: false,
     contractValidInputPreimagesProved: false,
     reducerReachabilityProved: false,
@@ -2820,24 +3137,29 @@ export function createSourceIndependentMaterializedStatusOracle(requirements) {
     publicIntermediateStateInvented: false,
     physicalAuthorityProved: false,
   });
+  const statusFrameFields = recursivelyFreezeStatusOracleValue([
+    ...EXPECTED_STATUS_FRAME_FIELDS,
+  ]);
   const identityProjection = {
     schema: SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE_SCHEMA,
     requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
-    constructionContextSha256:
-      STATUS_ORACLE_CONSTRUCTION_CONTEXT.identitySha256,
-    statusFrameFields: EXPECTED_STATUS_FRAME_FIELDS,
+    constructionContextSha256: constructionContext.identitySha256,
+    statusFrameFields,
     counts,
+    designProjectionSha256,
     inventorySha256,
     statusEntryDigests,
     atomicEntryDigests,
     reconstruction,
+    coverage,
+    atomicNegativeControls,
     construction,
   };
   const identitySha256 = digest(identityProjection);
   assert.equal(identitySha256, EXPECTED_MATERIALIZED_STATUS_ORACLE_SHA256);
   return recursivelyFreezeStatusOracleValue({
     ...identityProjection,
-    constructionContext: STATUS_ORACLE_CONSTRUCTION_CONTEXT,
+    constructionContext,
     emittedStatusByteGoldens,
     atomicTwoStatusWirePrefixes,
     identitySha256,
@@ -2847,10 +3169,34 @@ export function createSourceIndependentMaterializedStatusOracle(requirements) {
 function assertRecursivelyFrozen(value, seen = new Set()) {
   if (value === null || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
+  assert.equal(ArrayBuffer.isView(value), false);
+  assert.equal(value instanceof ArrayBuffer, false);
+  if (typeof SharedArrayBuffer === "function") {
+    assert.equal(value instanceof SharedArrayBuffer, false);
+  }
   assert.equal(Object.isFrozen(value), true);
   for (const key of Reflect.ownKeys(value)) {
     assertRecursivelyFrozen(value[key], seen);
   }
+}
+
+function nonPrimitiveObjectReferences(value, references = new Set()) {
+  if (value === null || typeof value !== "object" || references.has(value)) {
+    return references;
+  }
+  references.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    nonPrimitiveObjectReferences(value[key], references);
+  }
+  return references;
+}
+
+function sharedNonPrimitiveObjectReferences(left, right) {
+  const leftReferences = nonPrimitiveObjectReferences(left);
+  const rightReferences = nonPrimitiveObjectReferences(right);
+  return [...leftReferences].filter((reference) =>
+    rightReferences.has(reference),
+  );
 }
 
 function assertUniqueRegistryIds(registry) {
@@ -3342,6 +3688,54 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
   const materialized = createSourceIndependentMaterializedStatusOracle(
     JSON.parse(fixtureText),
   );
+  const independentlyAllocatedMaterialized =
+    createSourceIndependentMaterializedStatusOracle(JSON.parse(fixtureText));
+  const primaryMaterializerRegistryReferences = [
+    ...[
+      createSourceIndependentMaterializedStatusOracle,
+      materializePrimaryStatusEntriesFromLegalSequences,
+      materializePrimaryAtomicStatusPrefixesFromLegalSequences,
+    ]
+      .map((implementation) => implementation.toString())
+      .join("\n")
+      .matchAll(
+        /\b(?:createSourceIndependentAdversarialOracle|generateWholeTransitionStateGoldenDesigns|generateEmittedStatusByteGoldenDesigns|generateAtomicTwoStatusWirePrefixControls|generateAcceptedSymbolicPrefixObservations|materializeStatusEntries|materializeAtomicStatusPrefixes|registries|emittedStatusByteGoldenDesigns|atomicTwoStatusWirePrefixControls|wholeTransitionStateGoldenDesigns|acceptedSymbolicPrefixObservations)\b/gu,
+      ),
+  ].map(([name]) => name);
+  const secondaryReconstructionPrimaryDependencies = [
+    ...independentlyReconstructMaterializedStatusTuples
+      .toString()
+      .matchAll(
+        /\b(?:materializePrimaryStatusEntriesFromLegalSequences|materializePrimaryAtomicStatusPrefixesFromLegalSequences|primaryPrefixObservationIdFromLegalSequences|primaryPreviousWireSha256FromStatusPrefix|statusEntryIdentityProjection|atomicEntryIdentityProjection)\b/gu,
+      ),
+  ].map(([name]) => name);
+  const firstGraphObjectReferences = nonPrimitiveObjectReferences(materialized);
+  const secondGraphObjectReferences = nonPrimitiveObjectReferences(
+    independentlyAllocatedMaterialized,
+  );
+  const sharedGraphObjectReferences = sharedNonPrimitiveObjectReferences(
+    materialized,
+    independentlyAllocatedMaterialized,
+  );
+  assert.deepEqual(
+    {
+      primaryMaterializerRegistryReferences,
+      secondaryReconstructionPrimaryDependencies,
+      sharedNonPrimitiveObjectReferenceCount:
+        sharedGraphObjectReferences.length,
+    },
+    {
+      primaryMaterializerRegistryReferences: [],
+      secondaryReconstructionPrimaryDependencies: [],
+      sharedNonPrimitiveObjectReferenceCount: 0,
+    },
+  );
+  assert.equal(firstGraphObjectReferences.size > 0, true);
+  assert.equal(
+    secondGraphObjectReferences.size,
+    firstGraphObjectReferences.size,
+  );
+  assert.deepEqual(independentlyAllocatedMaterialized, materialized);
   assertRecursivelyFrozen(materialized);
   assert.equal(
     materialized.schema,
@@ -3355,6 +3749,10 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
     materialized.inventorySha256,
     EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256,
   );
+  assert.deepEqual(materialized.designProjectionSha256, {
+    statuses: EXPECTED_PRIMARY_STATUS_DESIGN_PROJECTION_SHA256,
+    atomicPrefixes: EXPECTED_PRIMARY_ATOMIC_DESIGN_PROJECTION_SHA256,
+  });
   assert.deepEqual(
     materialized.statusEntryDigests,
     EXPECTED_MATERIALIZED_STATUS_ENTRY_DIGESTS,
@@ -3370,7 +3768,10 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
   assert.deepEqual(materialized.reconstruction, {
     method: "independent-legalSequences-wire-simulation-and-tuple-projection",
     primaryStatusDesignRegistryConsumed: false,
+    primaryStatusBuilderConsumed: false,
+    primaryAtomicBuilderConsumed: false,
     primaryStatusEncoderConsumed: false,
+    primaryAtomicEncoderConsumed: false,
     statusCount: 15,
     atomicCount: 4,
     statusInventorySha256:
@@ -3378,6 +3779,50 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
     atomicInventorySha256:
       EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256.atomicTwoStatusWirePrefixes,
     independentlyReconstructedProjectionMatches: true,
+  });
+  assert.deepEqual(materialized.coverage, {
+    modeCounts: { NORMAL: 12, RECOVERY_ONLY: 3 },
+    bindingPartitionCounts: {
+      admissionOnly: 6,
+      recoveryOnly: 3,
+      neither: 6,
+      both: 0,
+    },
+    sourceSequenceMembershipCount: 23,
+    uniqueRawSha256Count: 15,
+  });
+  assert.deepEqual(materialized.atomicNegativeControls, {
+    controlCount: 4,
+    reversedConcatenationMismatchCount: 4,
+    firstFrameOmissionMismatchCount: 4,
+    secondFrameOmissionMismatchCount: 4,
+    insertedDelimiterMismatchCount: 4,
+  });
+  assert.deepEqual(materialized.construction, {
+    fixtureDerivedStatusTopology: true,
+    evaluatorOwnedConstructionContext: true,
+    constructionBindingsRehashed: true,
+    hashBindingPreimagesConstructed: true,
+    emittedStatusBytesMaterialized: true,
+    atomicConcatenatedBytesMaterialized: true,
+    primaryStatusDesignRegistryConsumed: false,
+    primaryAtomicDesignRegistryConsumed: false,
+    brandedReducerInputsConstructed: false,
+    candidateConstructorsExecuted: false,
+    candidateReducerExecuted: false,
+    candidateAcceptanceProved: false,
+    candidateInputAccepted: false,
+    contractValidInputPreimagesProved: false,
+    reducerReachabilityProved: false,
+    candidateModuleReadByGenerator: false,
+    candidateModuleImportedByGenerator: false,
+    candidateModuleEvaluatedByGenerator: false,
+    candidateBehaviorExecuted: false,
+    candidateStatusBytesObserved: false,
+    runtimeWireEmissionProved: false,
+    runtimeRegistrationProved: false,
+    publicIntermediateStateInvented: false,
+    physicalAuthorityProved: false,
   });
   for (const entry of materialized.emittedStatusByteGoldens) {
     assert.deepEqual(Object.keys(entry.frame), EXPECTED_STATUS_FRAME_FIELDS);
@@ -3411,6 +3856,36 @@ test("independently verifies the fixture digest in the adversarial lane", () => 
     );
     assert.equal(entry.publicIntermediateState, false);
   }
+  const materializedBeforeReconstructedByteMutation = digest(materialized);
+  for (const binding of Object.values(
+    materialized.constructionContext.bindings,
+  )) {
+    const fromPreimage =
+      binding.format === "CANONICAL_JSONL"
+        ? Buffer.from(binding.jsonl, "utf8")
+        : Buffer.from(binding.bytesHex, "hex");
+    const independentlyReconstructed = Buffer.from(binding.bytesHex, "hex");
+    assert.notEqual(fromPreimage, independentlyReconstructed);
+    assert.deepEqual(fromPreimage, independentlyReconstructed);
+    const independentlyReconstructedHex =
+      independentlyReconstructed.toString("hex");
+    fromPreimage[0] ^= 0xff;
+    assert.notDeepEqual(fromPreimage, independentlyReconstructed);
+    assert.equal(
+      independentlyReconstructed.toString("hex"),
+      independentlyReconstructedHex,
+    );
+    assert.equal(binding.bytesHex, independentlyReconstructedHex);
+    assert.equal(byteDigest(independentlyReconstructed), binding.rawSha256);
+  }
+  assert.equal(
+    digest(materialized),
+    materializedBeforeReconstructedByteMutation,
+  );
+  assert.deepEqual(
+    materialized.inventorySha256,
+    EXPECTED_MATERIALIZED_STATUS_INVENTORY_SHA256,
+  );
   const oracleSha256BeforeFixtureMutation = digest(oracle);
   const materializedSha256BeforeFixtureMutation = digest(materialized);
   fixture.legalSequences.N1[0] = "MUTATED_AFTER_ORACLE_CONSTRUCTION";
