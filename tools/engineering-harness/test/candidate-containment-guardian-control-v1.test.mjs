@@ -2219,6 +2219,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     "inputMetadata",
     "stateMetadata",
   ]);
+  const pinnedFailureCodes = new Set(
+    STATIC_POLICY_REQUIREMENTS_ORACLE.vocabularies.failureCodes,
+  );
   const protectedBindingKinds = new Set([
     "ambient",
     "export-value",
@@ -2461,6 +2464,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       exported,
       status: "pending",
       returnValue: null,
+      provenNonReturning: false,
       calls: [],
       commits: [],
     });
@@ -2919,7 +2923,18 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         if (argument.type !== "Identifier") {
           fail("failure callback must be a direct identifier");
         }
-        return evaluateIdentifier(argument, scope, "failure-callback").value;
+        const { binding, value } = evaluateIdentifier(
+          argument,
+          scope,
+          "failure-callback",
+        );
+        recordCallEdge(context.functionRecord, binding.name);
+        const callbackRecord = functionRecords.get(binding.name);
+        visitFunction(callbackRecord);
+        if (!callbackRecord.provenNonReturning) {
+          fail(`failure callback may return ${binding.name}`);
+        }
+        return value;
       }
       return evaluateExpression(argument, scope, context);
     });
@@ -3457,6 +3472,18 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       literalRole: "ordinary",
     };
     visitBlock(node.body, scope, context, { functionBody: true });
+    const [onlyStatement] = node.body.body;
+    record.provenNonReturning =
+      node.params.length === 0 &&
+      node.body.body.length === 1 &&
+      onlyStatement.type === "ThrowStatement" &&
+      onlyStatement.argument.type === "NewExpression" &&
+      onlyStatement.argument.callee.type === "Identifier" &&
+      onlyStatement.argument.callee.name === "Error" &&
+      onlyStatement.argument.arguments.length === 1 &&
+      onlyStatement.argument.arguments[0].type === "Literal" &&
+      typeof onlyStatement.argument.arguments[0].value === "string" &&
+      pinnedFailureCodes.has(onlyStatement.argument.arguments[0].value);
     const expectedStore = PRIVATE_STORE_OWNER_BY_FUNCTION.get(record.name);
     if (expectedStore === undefined) {
       if (record.commits.length !== 0) fail(`commit in non-owner ${record.name}`);
@@ -4249,6 +4276,20 @@ function reflectedAuthority(startupReportBytes) {
         "function localSink() { return null; } function routeRaw(startupReportBytes) { return localSink(startupReportBytes); }",
       ),
     }),
+    Object.freeze({
+      name: "nonthrowing imported failure callback",
+      source: sourceSkeleton(
+        'function noFail() { return null; } function normalizeWithNoFail(value) { return exactBoolean(value, true, "value", noFail); }',
+      ),
+      expected: /failure callback may return noFail/u,
+    }),
+    Object.freeze({
+      name: "recursive imported failure callback",
+      source: sourceSkeleton(
+        'function recursiveFailure(value) { return exactBoolean(value, true, "value", recursiveFailure); }',
+      ),
+      expected: /recursive call graph recursiveFailure/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -4400,9 +4441,9 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 113,
+  sourceIndependentNegativeControls: 115,
   acceptedSyntheticSources: 5,
-  newAstDataflowNegativeControls: 44,
+  newAstDataflowNegativeControls: 46,
   representativeCommitMutationControls: 15,
   finalRequiredNegativeControls: 330,
   finalRequiredPositiveControls: 11,
@@ -4411,6 +4452,7 @@ const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
     "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
     "the representative commit controls are not the final 200-mutation commit matrix",
     "private-store get positives and exact read-to-owner provenance remain unproved",
+    "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
   ]),
 });
@@ -4645,7 +4687,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     "for-await",
   ]);
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
-    rejected: 113,
+    rejected: 115,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -4707,6 +4749,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "untrusted value retained by frozen graph",
       "ambient coercion of untrusted value",
       "untrusted argument passed to local function",
+      "nonthrowing imported failure callback",
+      "recursive imported failure callback",
     ],
     accepted: 5,
     namedAccepted: [
@@ -4718,9 +4762,9 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     evaluationAttempts: 0,
   });
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 113,
+    sourceIndependentNegativeControls: 115,
     acceptedSyntheticSources: 5,
-    newAstDataflowNegativeControls: 44,
+    newAstDataflowNegativeControls: 46,
     representativeCommitMutationControls: 15,
     finalRequiredNegativeControls: 330,
     finalRequiredPositiveControls: 11,
@@ -4729,6 +4773,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
       "the representative commit controls are not the final 200-mutation commit matrix",
       "private-store get positives and exact read-to-owner provenance remain unproved",
+      "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
     ],
   });
