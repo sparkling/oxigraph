@@ -2226,6 +2226,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     "import-callable",
     "import-value",
     "local-function",
+    "private-read",
     "private-store",
   ]);
   const mutableKinds = new Set(["error", "mutable-local"]);
@@ -2991,7 +2992,13 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
             if (index === importedFailureCallbackIndex.get(binding.name)) {
               continue;
             }
-            if (index === 0 && rawFirstArgumentAllowed) continue;
+            if (
+              index === 0 &&
+              rawFirstArgumentAllowed &&
+              arguments_[index].kind === "untrusted"
+            ) {
+              continue;
+            }
             requireTrusted(
               arguments_[index],
               `normalizer argument ${binding.name}[${index}]`,
@@ -3064,7 +3071,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       }
       if (member.memberName === "get") {
         if (arguments_.length !== 1) fail("private get arity");
-        return makeValue("frozen");
+        return makeValue("private-read", {
+          freezable: false,
+          origins: [node, ...arguments_.flatMap(({ origins }) => origins)],
+          tainted: true,
+        });
       }
       counters.mutationCount += 1;
       counters.privateCommitCount += 1;
@@ -3217,15 +3228,30 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       mark(node, "logical-expression");
       const left = evaluateExpression(node.left, scope, context);
       requireTrusted(left, `logical ${node.operator}`);
-      const right = evaluateExpression(node.right, scope, context);
+      const right = evaluateExpression(node.right, scope, {
+        ...context,
+        controlDepth: (context.controlDepth ?? 0) + 1,
+      });
       return joinValues(left, right, `logical ${node.operator}`);
     }
     if (node.type === "ConditionalExpression") {
       mark(node, "conditional-expression");
       const testValue = evaluateExpression(node.test, scope, context);
       requireTrusted(testValue, "conditional test");
-      const consequent = evaluateExpression(node.consequent, scope, context);
-      const alternate = evaluateExpression(node.alternate, scope, context);
+      const branchContext = {
+        ...context,
+        controlDepth: (context.controlDepth ?? 0) + 1,
+      };
+      const consequent = evaluateExpression(
+        node.consequent,
+        scope,
+        branchContext,
+      );
+      const alternate = evaluateExpression(
+        node.alternate,
+        scope,
+        branchContext,
+      );
       return joinValues(consequent, alternate, "conditional expression");
     }
     if (node.type === "AssignmentExpression") {
@@ -3938,6 +3964,13 @@ function reflectedAuthority(startupReportBytes) {
       ),
     }),
     Object.freeze({
+      name: "private-store get embedded in returned frozen graph",
+      source: sourceSkeleton(
+        "function exposePrivateMetadata(key) { return deepFreeze([startupMetadata.get(key)]); }",
+      ),
+      expected: /deepFreeze argument provenance/u,
+    }),
+    Object.freeze({
       name: "private-store commit in non-owner",
       source: sourceSkeleton(
         "function wrongOwner() { const key = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(key, metadata); return key; }",
@@ -4052,6 +4085,34 @@ function reflectedAuthority(startupReportBytes) {
           ],
         ]),
       ),
+    }),
+    Object.freeze({
+      name: "conditional-expression fallible arm before private-store commit",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = true ? sha256(canonicalJsonBytes(null)) : null; startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1/u,
+    }),
+    Object.freeze({
+      name: "logical-expression fallible RHS before private-store commit",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = true && sha256(canonicalJsonBytes(null)); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1/u,
     }),
     Object.freeze({
       name: "private-store commit returns metadata",
@@ -4339,16 +4400,17 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 110,
+  sourceIndependentNegativeControls: 113,
   acceptedSyntheticSources: 5,
-  newAstDataflowNegativeControls: 41,
-  representativeCommitMutationControls: 13,
+  newAstDataflowNegativeControls: 44,
+  representativeCommitMutationControls: 15,
   finalRequiredNegativeControls: 330,
   finalRequiredPositiveControls: 11,
   fullSemanticGateClosed: false,
   nonclaims: Object.freeze([
     "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
     "the representative commit controls are not the final 200-mutation commit matrix",
+    "private-store get positives and exact read-to-owner provenance remain unproved",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
   ]),
 });
@@ -4583,7 +4645,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     "for-await",
   ]);
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
-    rejected: 110,
+    rejected: 113,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -4613,6 +4675,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "untrusted condition coercion",
       "untrusted iteration",
       "raw untrusted return",
+      "private-store get embedded in returned frozen graph",
       "private-store commit in non-owner",
       "private-store commit under control flow",
       "function-scoped ambient alias",
@@ -4628,6 +4691,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "private-store commit followed by fallible work",
       "private-store owner has early return",
       "conditional fallible work before private-store commit",
+      "conditional-expression fallible arm before private-store commit",
+      "logical-expression fallible RHS before private-store commit",
       "private-store commit returns metadata",
       "private-store commit aliases result and metadata",
       "private-store result and metadata share nested origin",
@@ -4653,16 +4718,17 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     evaluationAttempts: 0,
   });
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 110,
+    sourceIndependentNegativeControls: 113,
     acceptedSyntheticSources: 5,
-    newAstDataflowNegativeControls: 41,
-    representativeCommitMutationControls: 13,
+    newAstDataflowNegativeControls: 44,
+    representativeCommitMutationControls: 15,
     finalRequiredNegativeControls: 330,
     finalRequiredPositiveControls: 11,
     fullSemanticGateClosed: false,
     nonclaims: [
       "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
       "the representative commit controls are not the final 200-mutation commit matrix",
+      "private-store get positives and exact read-to-owner provenance remain unproved",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
     ],
   });
