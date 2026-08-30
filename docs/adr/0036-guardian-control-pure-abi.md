@@ -15,8 +15,10 @@
   zero evaluation attempts. Commits `8e19f927` and `2d408a03` preserve the same
   RED shape on Node 20.0.0 as on Node 20.20.2 and the current runtime. The
   combined matrix is 25 tests: 15 pass, exactly one deliberate absent-source
-  `ERR_MODULE_NOT_FOUND` fails, and nine remain TODO. Two independent reviews
-  accept only this partial, source-hard-stopped checkpoint. Receiver and alias
+  `ERR_MODULE_NOT_FOUND` fails, and nine remain TODO. Commit `ae71ecdd` moves
+  all five byte-pinned predecessor and fixture checks ahead of candidate source
+  read or import. Two independent reviews accept only this partial,
+  source-hard-stopped checkpoint. Receiver and alias
   origin, ambient/module/import/export binding and member writes, computed-key
   and indirect-call closure, path-sensitive normative key literals, exact
   private-store commit positions, candidate-connected acceptance matrices, the
@@ -912,6 +914,37 @@ default, namespace, side-effect, re-export, dynamic-import, `import.meta`,
 `eval`, `Function`, constructor-gadget, encoded-identifier, host-API, provider,
 runtime, and test-gaming paths fail with zero evaluation attempts.
 
+The security-relevant syntax and dataflow gate uses the direct `acorn`
+development dependency from the engineering-harness manifest. The manifest
+requests `latest`; the committed lockfile binds the exact reviewed parser
+artifact and integrity. Parsing is fixed to `ecmaVersion: 2022` and
+`sourceType: "module"`, with hashbangs, top-level return, top-level await, and
+every unclassified syntax node rejected. There is no lexer, regular-expression,
+or permissive parser fallback. Parser-lock drift is evaluator-evidence drift
+and requires review before the gate can run against candidate source.
+
+The resulting ESTree analysis is reject-by-default. It classifies every
+binding, receiver, callee, member access, literal role, branch join, mutation,
+and private-store operation by provenance. Imported helpers, ambient
+intrinsics, exported functions, and private stores may not be aliased or used
+as first-class values. Function parameters remain untrusted until an exact
+approved normalizer produces a bounded value. Computed members, indirect calls,
+binding or member writes, unknown/union provenance, and mutable values reaching
+a return or private-store commit fail before evaluation. The exact requirements
+initializer is normalized from its AST and compared with the independently
+pinned requirements oracle; capability-looking strings outside their exact
+normative AST roles are rejected.
+
+The analysis proves exactly ten direct private-store commits: one
+`startupMetadata.set`, seven `inputMetadata.set`, and two `stateMetadata.set`
+operations in their named owning functions. Each commit is outside control
+flow, is dominated by every fallible operation, receives already frozen local
+arguments, and is followed only by `return <prebuiltIdentifier>`. No early
+return, later read, call, branch, throw, coercion, mutation, second commit,
+store alias, or metadata path into the returned graph is permitted. Runtime
+failure-atomicity and cross-module controls remain required independently of
+this static proof.
+
 The exact import allowlist is:
 
 | Specifier                                | Exact named imports                                                                                                                                                                                                                                                                                                                                                            |
@@ -938,13 +971,26 @@ never physical origin or authority.
 
 ## Owned files
 
-This ADR owns only these new candidate and evaluator paths:
+This ADR owns these new candidate and evaluator paths:
 
 - `docs/adr/fixtures/0036-guardian-control-requirements-v1.json`;
 - `tools/engineering-harness/src/candidate/containment-guardian-control-v1.mjs`;
 - `tools/engineering-harness/test/candidate-containment-guardian-control-v1.test.mjs`;
   and
 - `tools/engineering-harness/test/candidate-containment-guardian-control-v1-adversarial.test.mjs`.
+
+It also authorizes changes to the following shared harness files solely to add
+`acorn` as an evaluator-only `latest` development dependency and bind its exact
+resolved artifact. No other dependency may be refreshed by that change:
+
+- `tools/engineering-harness/package.json`; and
+- `tools/engineering-harness/package-lock.json`.
+
+The parser is not a production-module dependency, is not part of the five-
+package runtime dependency identity in ADR-0017, and grants no production or
+provider capability. A separate analyzer support file would require another
+explicit owned-file amendment; until then the analyzer remains in the main
+evaluator.
 
 It may import only exact named exports from `containment-exact-v2.mjs`,
 `containment-guardian-recovery-v1.mjs`, and
@@ -1010,6 +1056,10 @@ Implementation requires:
   that prove no enumeration, inspection, read, write, invocation, or caller
   mutation;
 - a pre-evaluation static import/export and ambient-capability audit;
+- reject-by-default ESTree binding/provenance analysis, path-sensitive
+  normative-literal reconstruction, and exact ten-operation private-store
+  commit-position proof, with zero candidate evaluation attempts for every
+  negative control;
 - byte-identical predecessor sources and fixtures, and unchanged registries and
   `{status: "unavailable", reason: "native-adapter-unavailable"}` readiness; and
 - focused and complete explicit non-G1.7 suites on the current Node runtime and

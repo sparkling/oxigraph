@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-29
+- Updated: 2026-08-30
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -407,6 +407,17 @@ The initial required package set is `metaharness`, `@metaharness/harness`,
 `@ruvector/ruvllm` and `agenticow` remain optional until a tested local
 embedding or bounded copy-on-write path consumes them. All dependency installs
 disable lifecycle scripts.
+
+Those five packages are the engineering runtime dependency identity. An
+evaluator ADR may additionally authorize a parser, test runner, or other
+authority-null development dependency only under `devDependencies`. Such a
+dependency requests `latest`, is pinned to exact integrity-verified bytes by
+the committed lockfile, is excluded from runtime dependency and provider
+identity, and grants no execution, qualification, promotion, or publication
+authority. The owning evaluator ADR must explicitly authorize changes to the
+shared manifest and lockfile, prohibit a weaker fallback, and treat lock drift
+as evaluator-evidence drift. Installation continues to disable lifecycle
+scripts.
 
 Before adapting factory output, run disposable factory diagnostics for both
 `claude-code` and `codex` targets and retain their generated manifests, CLI
