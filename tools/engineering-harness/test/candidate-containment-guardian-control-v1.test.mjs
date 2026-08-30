@@ -4283,6 +4283,28 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "bindingMemberWrites",
   "bindingMemberWrites",
   "bindingMemberWrites",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "rawEscapes",
+  "rawEscapes",
+  "rawEscapes",
+  "rawEscapes",
+  "rawEscapes",
+  "rawEscapes",
+  "rawEscapes",
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4319,11 +4341,11 @@ const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "c26680e91a1a1da495af7c2684d73cc21368a8041d5f2ec29bea94a56900ba7b",
+    "045dfefb531fb1fa233ae174b9bb54a7cf9a6853a04efac93c6bb8960462ab0a",
   orderedSemanticProjectionSha256:
-    "2571662ac051c5ab4746e4f8b39881d9446a9140a88e965a48f248b497e87405",
+    "ac15fbece8518c97595f785fe8b1246a8b7a0acb999714316285432a8ac91b00",
   bucketProjectionSha256:
-    "4b2934dad496999ce72939de0a0716457462077bb1d8695a3af5ff5a03a22080",
+    "e462571150fb0dd89adbcbf776d95b0c94d7b8e75e14ff5b6b6a103f76f85962",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
@@ -4493,7 +4515,29 @@ SEM-N088|de1f691413e5129708d8a57fb2590b62642607d8efed1dce5f3fceadddc1139e|64c3dd
 SEM-N089|22adaf750c33b5ccf4e54b2c397ae695efea4dce91686747c5ccbe622e1d87ea|106fb2fd098b207f9f4ca5a1f084876606eb55798cb354309d5f499f19a75ea5|1158|estree-policy|static gate: ESTree binding or member assignment
 SEM-N090|3ca3b668c2702d570da491353b3054d3ee49733d135d1bb7e8664d969495d736|d612caa18465f142a931a9ac058e56348019a897dfd29407b7616250dd90c917|1160|estree-policy|static gate: ESTree binding or member assignment
 SEM-N091|73beee1db36b456475b0411a69a8c93229d0a13d9e643581aa8163602175ae48|345cbad706f87203f48fa539e538122ad4a564092745731f88ced510ff5fa042|1158|estree-policy|static gate: ESTree binding or member assignment
-SEM-N092|3834945ee3c0c0df25c90eceb02a5c8daa38720358fab8895077b9cf952b1362|f0a486596a3f72f77672e868027636292c065acb5e6222992ec71f02e645a910|1160|estree-policy|static gate: ESTree binding or member assignment`;
+SEM-N092|3834945ee3c0c0df25c90eceb02a5c8daa38720358fab8895077b9cf952b1362|f0a486596a3f72f77672e868027636292c065acb5e6222992ec71f02e645a910|1160|estree-policy|static gate: ESTree binding or member assignment
+SEM-N093|102862b37805ee83bf5b431c473bc8f887682dda053a9723ac1851422763da31|4f127964592414dc5390b666c993e35fab68a4f1badb4987c9c91827cb40eebd|1157|estree-policy|static gate: ESTree raw or unknown value passed to sha256
+SEM-N094|12b5a978c86424e87aa896aa3775564d73b4dd61fc3377a37141880445e6f5b6|f311025de64344e1c1be0d4fc869b14467d4e5b86d1f837d4717532f220238df|1157|estree-policy|static gate: ESTree raw or unknown value passed to canonicalJsonBytes
+SEM-N095|7d782282f4a36faf557559d55ca22771d2352ba7bc678c02da26c3df8998da06|10f4ed1b0cad4e993682a264728941e944945351faca9bc8a9f74efacda0d9df|1157|estree-policy|static gate: ESTree raw or unknown value passed to canonicalJsonLine
+SEM-N096|4e02af5f33c38dab0c885c8cfa7025481e01d234c858b7e87a11122b0ba2873b|8048a57a196a6c97c923a32ad203a2fba088b8dfd452246a38fa37c2c3985d58|1157|estree-policy|static gate: ESTree raw or unknown value ambient coercion Boolean
+SEM-N097|ecfc8f9a908b7d47934c832937ac47c0a52fe7fb1a2789ccab7294cb9d6978e9|9218591d15d87c3147620a042d4829fadb7f7398f97412b803102a7d27492795|1157|estree-policy|static gate: ESTree raw or unknown value constructor Error
+SEM-N098|931105a3c4de88eb76ce338856e43e567638dd0e2c3ff92b7a80b4b778d1fdcb|db742f0184b2dc39c44a8e099f3bff9e810b112fe37db94dff2684c9c3f80751|1161|estree-policy|static gate: ESTree raw or unknown value constructor Set
+SEM-N099|544ca84d32d81128a88c9c7ae70e9cfb16d028b962db39472d5a60abf9759332|9a209cdc2742005a3c0f65b01a9c43fc0e35572fee51e513477e74bedb78153a|1163|estree-policy|static gate: ESTree raw or unknown value passed to local function localBoundary
+SEM-N100|74e7a0e4f9cdfa69b8163f6df8b65b9bf772b18e9f12c14b1744420fa4ac256d|e1220c17028c2aa0cb19863ed11ec43bbd77ccb09bfd807d5effeac0678515e6|1165|estree-policy|static gate: ESTree raw or unknown value passed to member includes
+SEM-N101|20715e07ceb0be58524cd075d8d9ead1a25c557b9863143660050bf03f06222d|6761782d304da30ccbc644e184540d7fa72d8f0ef858321f23f7199428970632|1165|estree-policy|static gate: ESTree raw or unknown value passed to member at
+SEM-N102|ace474623e5f208fb3c968caf467c403055e59fe9c84ea822dbd95bb2fcc140d|a028c27ec66743a466dde1fea7782ef1bf0721e2874c15cdaed586ec16e28b0a|1161|estree-policy|static gate: ESTree raw or unknown value used as receiver for .bytes
+SEM-N103|07c6228e2e6f5a30daae6e9e5db0d02d1c6a1140f3c4c97addb52002ce531481|2a381a12b19bd62e356aab53e5f90f3938c287ef49dd64980d71f1aa27f5e73c|1156|estree-policy|static gate: ESTree raw or unknown value unary coercion !
+SEM-N104|0d6810f0bd421beb52a1a51874a1491213cb0207ef39eacca7e29eaa1bb7771c|0a69634c2282a518a272243608b251bf23a886d83f9b4fe557192c6e315da8e5|1157|estree-policy|static gate: ESTree raw or unknown value binary ===
+SEM-N105|3ff9ce4d437d5a7441afa70147188f842587b7492166ae045c533e516cf7c9b3|75298021dd5a5297baf7259bb9ed81f6b1993bcaa884f6752bb721620ba65e7b|1157|estree-policy|static gate: ESTree raw or unknown value logical &&
+SEM-N106|fb0732be0832b0698fbc9ac0cd92c28f4364a244cfac7030489f58691e784a31|7a234361d68d02e3c02c4e60f97fa80867596950ce2150ee027e8dd5d3049691|1158|estree-policy|static gate: ESTree raw or unknown value conditional test
+SEM-N107|178ea57186bd4456d631449411eea23c25a9c980aa95e45604841cbd57847660|99ad03576b113ec8a8f7fea3e2321e1662947441ca4e17a2c70f3228e1c517e5|1155|estree-policy|static gate: ESTree raw or unknown value thrown
+SEM-N108|45a50f597d1e5b8fa2b543d5feda9b526357c55b6e9593f8834acfca69659f7c|a1035accbfc725b919c28b01f507d1fe9c500454db1d0269bb837cdf61bf20a6|1163|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N109|04df07caf08d4042b0e599272c6749fb37f2d9732c739cb4e45ed485eaa8476a|59af11c9f759edb58e9ecd6efb387bc0a82103093c1001833e62cf25f3869fc0|1160|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N110|b284d9ea72324cdcb62c24c0994db9bc7f9ee51239668138250ebfe2c6b3597e|71b8baad9b376339e135f117ec45db02a2d075b72ebdff7472cf2528cdcd687b|1162|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N111|2136e7ffc08ba3abcb36375c67fb55dbf541309a1b5178ac04eca4893baa5c10|97dd1edf8d8b2388ed44e9c9d4baafd10d5ad1d624c48785ae3c3bd29838e721|1167|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N112|0ad909d4766f51ba1f048d1b5fcdc6e802873401ec397dc392442e5257dbdf78|e7f08e4fcc81655347bd84e9e9632d19ee279c1238fda310a7c4e7a1aa383add|1167|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N113|207978a4079e7ed7a094122d4daa674834f49451062a892ffe16e96e8bc47444|c5d6ffc1a4a745887d659fbd59508983a9abccdccb9ccac17a78f4d4faac5e64|1171|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N114|a5a98a6099e102690f19e6e3a0b1b420396d3284c592664bd08f75fdfd5d1851|b4f39ab0a0189f0000725d2a2f9abe1ca12caf5db1877caf9a7832ce6d7e370f|1161|estree-policy|static gate: ESTree raw or unknown value returned from function`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -4578,9 +4622,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 92);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 114);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 172);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 194);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -5814,6 +5858,166 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /static gate: ESTree binding or member assignment/u,
     }),
+    Object.freeze({
+      name: "untrusted value passed to sha256",
+      source: sourceSkeleton(
+        "function hashUntrusted(startupReportBytes) { return sha256(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value passed to sha256/u,
+    }),
+    Object.freeze({
+      name: "untrusted value passed to canonical JSON bytes",
+      source: sourceSkeleton(
+        "function encodeUntrusted(startupReportBytes) { return canonicalJsonBytes(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value passed to canonicalJsonBytes/u,
+    }),
+    Object.freeze({
+      name: "untrusted value passed to canonical JSON line",
+      source: sourceSkeleton(
+        "function lineEncodeUntrusted(startupReportBytes) { return canonicalJsonLine(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value passed to canonicalJsonLine/u,
+    }),
+    Object.freeze({
+      name: "untrusted ambient Boolean coercion",
+      source: sourceSkeleton(
+        "function booleanUntrusted(startupReportBytes) { return Boolean(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value ambient coercion Boolean/u,
+    }),
+    Object.freeze({
+      name: "untrusted Error constructor argument",
+      source: sourceSkeleton(
+        "function errorUntrusted(startupReportBytes) { throw new Error(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value constructor Error/u,
+    }),
+    Object.freeze({
+      name: "untrusted Set constructor argument",
+      source: sourceSkeleton(
+        "function setUntrusted(startupReportBytes) { const values = new Set(startupReportBytes); return null; }",
+      ),
+      expected: /raw or unknown value constructor Set/u,
+    }),
+    Object.freeze({
+      name: "untrusted value passed through local sink",
+      source: sourceSkeleton(
+        "function localBoundary(value) { return null; } function callLocalBoundary(startupReportBytes) { return localBoundary(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value passed to local function localBoundary/u,
+    }),
+    Object.freeze({
+      name: "untrusted argument passed to includes",
+      source: sourceSkeleton(
+        "function includesUntrusted(startupReportBytes) { const values = deepFreeze([]); return values.includes(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value passed to member includes/u,
+    }),
+    Object.freeze({
+      name: "untrusted argument passed to at",
+      source: sourceSkeleton(
+        "function atUntrusted(startupReportBytes) { const values = deepFreeze([]); return values.at(startupReportBytes); }",
+      ),
+      expected: /raw or unknown value passed to member at/u,
+    }),
+    Object.freeze({
+      name: "untrusted alias used as bytes receiver",
+      source: sourceSkeleton(
+        "function inspectUntrustedBytes(startupReportBytes) { const alias = startupReportBytes; return alias.bytes; }",
+      ),
+      expected: /raw or unknown value used as receiver for \.bytes/u,
+    }),
+    Object.freeze({
+      name: "untrusted unary coercion",
+      source: sourceSkeleton(
+        "function negateUntrusted(startupReportBytes) { return !startupReportBytes; }",
+      ),
+      expected: /raw or unknown value unary coercion !/u,
+    }),
+    Object.freeze({
+      name: "untrusted binary operand",
+      source: sourceSkeleton(
+        "function compareUntrusted(startupReportBytes) { return startupReportBytes === null; }",
+      ),
+      expected: /raw or unknown value binary ===/u,
+    }),
+    Object.freeze({
+      name: "untrusted logical operand",
+      source: sourceSkeleton(
+        "function logicalUntrusted(startupReportBytes) { return startupReportBytes && null; }",
+      ),
+      expected: /raw or unknown value logical &&/u,
+    }),
+    Object.freeze({
+      name: "untrusted conditional test",
+      source: sourceSkeleton(
+        "function conditionalUntrusted(startupReportBytes) { return startupReportBytes ? null : null; }",
+      ),
+      expected: /raw or unknown value conditional test/u,
+    }),
+    Object.freeze({
+      name: "untrusted value thrown directly",
+      source: sourceSkeleton(
+        "function throwUntrusted(startupReportBytes) { throw startupReportBytes; }",
+      ),
+      expected: /raw or unknown value thrown/u,
+    }),
+    Object.freeze({
+      name: "double-aliased untrusted return",
+      source: sourceSkeleton(
+        "function returnAliasedUntrusted(startupReportBytes) { const first = startupReportBytes; const second = first; return second; }",
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "untrusted array graph returned",
+      source: sourceSkeleton(
+        "function returnUntrustedArray(startupReportBytes) { const graph = [startupReportBytes]; return graph; }",
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "untrusted object graph returned",
+      source: sourceSkeleton(
+        "function returnUntrustedObject(startupReportBytes) { const graph = { bytes: startupReportBytes }; return graph; }",
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "bounded buffer copy returned without freezing",
+      source: sourceSkeleton(
+        'function failBufferCopy() { throw new Error("CONTROL_SHAPE"); } function returnCopiedBytes(startupReportBytes) { return copyBoundedBuffer(startupReportBytes, 0, 1, failBufferCopy); }',
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "decoded base64 bytes returned without freezing",
+      source: sourceSkeleton(
+        'function failBase64Decode() { throw new Error("CONTROL_SHAPE"); } function returnDecodedBytes(startupReportBytes) { return decodeCanonicalBase64(startupReportBytes, 1, 1, failBase64Decode); }',
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "sliced bounded buffer returned without freezing",
+      source: sourceSkeleton(
+        'function failBufferSlice() { throw new Error("CONTROL_SHAPE"); } function returnSlicedBytes(startupReportBytes) { return copyBoundedBuffer(startupReportBytes, 0, 1, failBufferSlice).slice(0); }',
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "aliased private lookup value returned",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const observed = startupMetadata.get(startupProjection); const alias = observed; return alias;",
+          ],
+        ]),
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -6023,8 +6227,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 108);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 92);
+  assert.equal(namedStageAudit.length, 130);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 114);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -6221,7 +6425,7 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 161,
+  sourceIndependentNegativeControls: 183,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
@@ -6559,7 +6763,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 161,
+    rejected: 183,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -6669,10 +6873,32 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "exported operation member compound assignment",
       "exported value binding assignment",
       "exported value member assignment",
+      "untrusted value passed to sha256",
+      "untrusted value passed to canonical JSON bytes",
+      "untrusted value passed to canonical JSON line",
+      "untrusted ambient Boolean coercion",
+      "untrusted Error constructor argument",
+      "untrusted Set constructor argument",
+      "untrusted value passed through local sink",
+      "untrusted argument passed to includes",
+      "untrusted argument passed to at",
+      "untrusted alias used as bytes receiver",
+      "untrusted unary coercion",
+      "untrusted binary operand",
+      "untrusted logical operand",
+      "untrusted conditional test",
+      "untrusted value thrown directly",
+      "double-aliased untrusted return",
+      "untrusted array graph returned",
+      "untrusted object graph returned",
+      "bounded buffer copy returned without freezing",
+      "decoded base64 bytes returned without freezing",
+      "sliced bounded buffer returned without freezing",
+      "aliased private lookup value returned",
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 92,
-      estreePolicyReachedCount: 89,
+      totalDeltaSinceParserFoundation: 114,
+      estreePolicyReachedCount: 111,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -6713,7 +6939,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 92 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 114 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -6732,11 +6958,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 172);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 172);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 194);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 194);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    172,
+    194,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -6752,7 +6978,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    172,
+    194,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -6826,8 +7052,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
         current: 14,
         remaining: 0,
       },
-      { bucket: "untrustedSinks", target: 24, current: 9, remaining: 15 },
-      { bucket: "rawEscapes", target: 12, current: 5, remaining: 7 },
+      { bucket: "untrustedSinks", target: 24, current: 24, remaining: 0 },
+      { bucket: "rawEscapes", target: 12, current: 12, remaining: 0 },
       { bucket: "literalMisuse", target: 14, current: 4, remaining: 10 },
       { bucket: "scopeJoins", target: 18, current: 4, remaining: 14 },
       { bucket: "nestedRecursion", target: 12, current: 3, remaining: 9 },
@@ -6837,8 +7063,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 92);
-  assert.equal(new Set(bucketIds).size, 92);
+  assert.equal(bucketIds.length, 114);
+  assert.equal(new Set(bucketIds).size, 114);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -6894,10 +7120,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 92,
-    allCurrentNegatives: 161,
+    semanticNegatives: 114,
+    allCurrentNegatives: 183,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 238,
+    semanticRemainingNegatives: 216,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
@@ -6907,9 +7133,9 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     commitRemaining: 183,
     evaluationAttempts: 0,
   });
-  assert.equal(161, 69 + 92);
+  assert.equal(183, 69 + 114);
   assert.equal(399, 69 + 330);
-  assert.equal(238, 330 - 92);
+  assert.equal(216, 330 - 114);
   assert.equal(0, 11 - 11);
   assert.equal(183, 200 - 17);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
@@ -7107,7 +7333,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ...semanticEntries.slice(0, 82),
     ...positiveEntries,
   ];
-  const newBindingWriteEntries = semanticEntries.slice(82);
+  const newBindingWriteEntries = semanticEntries.slice(82, 92);
   const preBindingWriteSourceHashes = new Set(
     preBindingWriteEntries.map(({ sourceSha256 }) => sourceSha256),
   );
@@ -7201,6 +7427,128 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     newBindingWriteEntries.map(({ id }) => id),
   );
   assert.equal(new Set(bindingWriteMutationControlIds).size, 10);
+  const preTaintBoundaryEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 92),
+    ...positiveEntries,
+  ];
+  const newTaintBoundaryEntries = semanticEntries.slice(92);
+  const preTaintBoundarySourceHashes = new Set(
+    preTaintBoundaryEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preTaintBoundaryAstHashes = new Set(
+    preTaintBoundaryEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(newTaintBoundaryEntries.length, 22);
+  assert.deepEqual(
+    newTaintBoundaryEntries.map(({ id, bucket }) => ({ id, bucket })),
+    [
+      ...Array.from({ length: 15 }, (_, index) => ({
+        id: staticControlId("SEM-N", index + 92),
+        bucket: "untrustedSinks",
+      })),
+      ...Array.from({ length: 7 }, (_, index) => ({
+        id: staticControlId("SEM-N", index + 107),
+        bucket: "rawEscapes",
+      })),
+    ],
+  );
+  assert.equal(
+    new Set(newTaintBoundaryEntries.map(({ sourceSha256 }) => sourceSha256))
+      .size,
+    22,
+  );
+  assert.equal(
+    new Set(newTaintBoundaryEntries.map(({ astSha256 }) => astSha256)).size,
+    22,
+  );
+  assert.equal(
+    newTaintBoundaryEntries.some(({ sourceSha256 }) =>
+      preTaintBoundarySourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newTaintBoundaryEntries.some(({ astSha256 }) =>
+      preTaintBoundaryAstHashes.has(astSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newTaintBoundaryEntries.every(
+      ({ expectedStage }) => expectedStage === "estree-policy",
+    ),
+    true,
+  );
+  assert.equal(
+    newTaintBoundaryEntries
+      .slice(0, 15)
+      .every(({ expectedError }) =>
+        expectedError.startsWith("static gate: ESTree raw or unknown value "),
+      ),
+    true,
+  );
+  assert.equal(
+    newTaintBoundaryEntries
+      .slice(15)
+      .every(
+        ({ expectedError }) =>
+          expectedError ===
+          "static gate: ESTree raw or unknown value returned from function",
+      ),
+    true,
+  );
+  const taintBoundaryMutationCoverage = Object.freeze([
+    Object.freeze({
+      mutation: "trusted-sink call arguments accept raw or unknown values",
+      coveredBy: Object.freeze([
+        "SEM-N093",
+        "SEM-N094",
+        "SEM-N095",
+        "SEM-N096",
+        "SEM-N097",
+        "SEM-N098",
+        "SEM-N099",
+      ]),
+    }),
+    Object.freeze({
+      mutation: "member calls and receivers accept raw or unknown values",
+      coveredBy: Object.freeze(["SEM-N100", "SEM-N101", "SEM-N102"]),
+    }),
+    Object.freeze({
+      mutation: "operators, branches, and throws accept raw values",
+      coveredBy: Object.freeze([
+        "SEM-N103",
+        "SEM-N104",
+        "SEM-N105",
+        "SEM-N106",
+        "SEM-N107",
+      ]),
+    }),
+    Object.freeze({
+      mutation: "aliases and aggregate graphs escape raw values",
+      coveredBy: Object.freeze(["SEM-N108", "SEM-N109", "SEM-N110"]),
+    }),
+    Object.freeze({
+      mutation: "helper and private-read results escape without freezing",
+      coveredBy: Object.freeze([
+        "SEM-N111",
+        "SEM-N112",
+        "SEM-N113",
+        "SEM-N114",
+      ]),
+    }),
+  ]);
+  const taintBoundaryMutationControlIds = taintBoundaryMutationCoverage.flatMap(
+    ({ coveredBy }) => coveredBy,
+  );
+  assert.deepEqual(
+    taintBoundaryMutationControlIds,
+    newTaintBoundaryEntries.map(({ id }) => id),
+  );
+  assert.equal(new Set(taintBoundaryMutationControlIds).size, 22);
   const preLookupEntries = [
     ...foundationEntries,
     ...semanticEntries.slice(0, 48),
@@ -7342,11 +7690,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 161,
+    sourceIndependentNegativeControls: 183,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 92,
-      estreePolicyReachedCount: 89,
+      totalDeltaSinceParserFoundation: 114,
+      estreePolicyReachedCount: 111,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
