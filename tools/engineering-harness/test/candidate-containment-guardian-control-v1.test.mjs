@@ -4273,6 +4273,16 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "reflectComputed",
   "reflectComputed",
   "reflectComputed",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
+  "bindingMemberWrites",
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4309,11 +4319,11 @@ const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "8614373558b1719a3cf5b9f66889ef8421712ff1c2cec6f77a6f11f31d085c9f",
+    "c26680e91a1a1da495af7c2684d73cc21368a8041d5f2ec29bea94a56900ba7b",
   orderedSemanticProjectionSha256:
-    "662f2820f1345e5a27bccc20f15212f020d8a63e1c1ad47395d965822fc3dec7",
+    "2571662ac051c5ab4746e4f8b39881d9446a9140a88e965a48f248b497e87405",
   bucketProjectionSha256:
-    "05dc5fb269585310696203d3ebc7bc8680cdbe5deca0f06c15ad6f47d3209366",
+    "4b2934dad496999ce72939de0a0716457462077bb1d8695a3af5ff5a03a22080",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
@@ -4473,7 +4483,17 @@ SEM-N078|3256db49c97c36ae1c4607100afa000e7e0b875742fb966324feb741b8cfa6e6|41af6f
 SEM-N079|5f28652f30a53fb5cc67afec8ac59baa6e2f9f89b312615a25ce909b12e47081|65ca7ac96337b6d041bc2a655fb5f4bcd77f3dbe71f147c01cb6abfeb89f414e|1157|estree-policy|static gate: ESTree Reflect use is outside the closed subset
 SEM-N080|d29d2c6e0578d42475aba5029b02218a7e2728c57fb984a488237284e7b980b6|53c24a222af8ddbeeb4d4946c370ff34a1dbc4a0f6153da9cbad30440910a867|1155|estree-policy|static gate: ESTree Reflect use is outside the closed subset
 SEM-N081|7d17a1f5a8cee11d3cfd1ef90b899b64caba0bc91fd6eb6057c509dad862d296|1fdef7e685c16fa2240bac43b6c00183ed0c57682814ad1d246af71bcae9d912|1156|estree-policy|static gate: ESTree Reflect use is outside the closed subset
-SEM-N082|2d00dccbc881916c2ccfcb8db429120df47c645caac218dfdc787bc370fad314|55d7e02471e4800b11b9c008961952038a93ce1654524082a82278f305a9a68e|1161|estree-policy|static gate: ESTree Reflect use is outside the closed subset`;
+SEM-N082|2d00dccbc881916c2ccfcb8db429120df47c645caac218dfdc787bc370fad314|55d7e02471e4800b11b9c008961952038a93ce1654524082a82278f305a9a68e|1161|estree-policy|static gate: ESTree Reflect use is outside the closed subset
+SEM-N083|850d4e1a5edadfb0d6552c837a9aa4e72fe1a6777ae15804a9b85faa65d859aa|7744eee313a4a1802f1a3aa8bd22d5cf0aa339e5560c8b7cc95d93624fd45c74|1166|estree-policy|static gate: ESTree binding or member assignment
+SEM-N084|9f5cf7ae108dcb6a7e317f898d6aab85a828c5822e1ba323f0688169e2a48847|05cb4ae877584a76b8d33bdd4c092eddfd5df070890a20140f02204bf7242d6c|1169|estree-policy|static gate: ESTree binding or member assignment
+SEM-N085|2e8389d406fa7e6b88d22fcfb79a6ac7368ed356c5b86f2da57ef3ff42d4e2e7|2420564a5747d9dfd75d489badf946a312c15a53687bbf5dc292c4b2e5ddaa5a|1158|estree-policy|static gate: ESTree binding or member assignment
+SEM-N086|ca2c393d339eb3a72229ba6d6b599fe03f8ba4eb03cb3f23c1834184e64f3ef7|787914a8f3270aa7bf55e5ee93f8060e19226ade22f44828fdbd2c7a22887812|1160|identifier-closure|static gate: ambient member Object.length
+SEM-N087|cfc4d0bb2b180f2cb82729a1c302a6dd683fa3457ef0ff5bfb43fe1c9bf3158f|67adf309a33a1530ac10f63fca40d5c3dce68afff93b94366a858e01ac8bcce3|1158|estree-policy|static gate: ESTree binding or member assignment
+SEM-N088|de1f691413e5129708d8a57fb2590b62642607d8efed1dce5f3fceadddc1139e|64c3ddb6666e4434811d22a2a232dace1f67f1677f3dac9b23a277a625766440|1160|estree-policy|static gate: ESTree binding or member assignment
+SEM-N089|22adaf750c33b5ccf4e54b2c397ae695efea4dce91686747c5ccbe622e1d87ea|106fb2fd098b207f9f4ca5a1f084876606eb55798cb354309d5f499f19a75ea5|1158|estree-policy|static gate: ESTree binding or member assignment
+SEM-N090|3ca3b668c2702d570da491353b3054d3ee49733d135d1bb7e8664d969495d736|d612caa18465f142a931a9ac058e56348019a897dfd29407b7616250dd90c917|1160|estree-policy|static gate: ESTree binding or member assignment
+SEM-N091|73beee1db36b456475b0411a69a8c93229d0a13d9e643581aa8163602175ae48|345cbad706f87203f48fa539e538122ad4a564092745731f88ced510ff5fa042|1158|estree-policy|static gate: ESTree binding or member assignment
+SEM-N092|3834945ee3c0c0df25c90eceb02a5c8daa38720358fab8895077b9cf952b1362|f0a486596a3f72f77672e868027636292c065acb5e6222992ec71f02e645a910|1160|estree-policy|static gate: ESTree binding or member assignment`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -4558,9 +4578,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 82);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 92);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 162);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 172);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -5724,6 +5744,76 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /static gate: ESTree Reflect use is outside the closed subset/u,
     }),
+    Object.freeze({
+      name: "local alias binding assignment",
+      source: sourceSkeleton(
+        "function writeLocalAlias() { const alias = deepFreeze([]); alias = deepFreeze([]); return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "local alias member compound assignment",
+      source: sourceSkeleton(
+        "function writeLocalAliasMember() { const alias = deepFreeze({ length: 0 }); alias.length += 1; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "ambient intrinsic binding assignment",
+      source: sourceSkeleton(
+        "function writeAmbientBinding() { Object = null; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "ambient intrinsic member assignment",
+      source: sourceSkeleton(
+        "function writeAmbientMember() { Object.length = 0; return null; }",
+      ),
+      expected: /static gate: ambient member Object\.length/u,
+    }),
+    Object.freeze({
+      name: "imported helper binding compound assignment",
+      source: sourceSkeleton(
+        "function writeImportedBinding() { sha256 += null; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "imported helper member assignment",
+      source: sourceSkeleton(
+        "function writeImportedMember() { sha256.length = 0; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "exported operation binding assignment",
+      source: sourceSkeleton(
+        "function writeExportedOperation() { verifyCandidateContainmentGuardianStatusFrameV1 = null; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "exported operation member compound assignment",
+      source: sourceSkeleton(
+        "function writeExportedOperationMember() { verifyCandidateContainmentGuardianStatusFrameV1.length += 1; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "exported value binding assignment",
+      source: sourceSkeleton(
+        "function writeExportedValue() { CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS = null; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
+    Object.freeze({
+      name: "exported value member assignment",
+      source: sourceSkeleton(
+        "function writeExportedValueMember() { CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS.length = 0; return null; }",
+      ),
+      expected: /static gate: ESTree binding or member assignment/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -5933,8 +6023,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 98);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 82);
+  assert.equal(namedStageAudit.length, 108);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 92);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -6131,7 +6221,7 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 151,
+  sourceIndependentNegativeControls: 161,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
@@ -6469,7 +6559,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 151,
+    rejected: 161,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -6569,14 +6659,25 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "Reflect unary operand",
       "Reflect argument",
       "Reflect conditional branch",
+      "local alias binding assignment",
+      "local alias member compound assignment",
+      "ambient intrinsic binding assignment",
+      "ambient intrinsic member assignment",
+      "imported helper binding compound assignment",
+      "imported helper member assignment",
+      "exported operation binding assignment",
+      "exported operation member compound assignment",
+      "exported value binding assignment",
+      "exported value member assignment",
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 82,
-      estreePolicyReachedCount: 80,
-      preEstreePolicyRejectionCount: 2,
+      totalDeltaSinceParserFoundation: 92,
+      estreePolicyReachedCount: 89,
+      preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
         "shallow ambient freeze used as deep freeze",
+        "ambient intrinsic member assignment",
       ],
     },
     accepted: 11,
@@ -6612,7 +6713,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 82 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 92 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -6631,11 +6732,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 162);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 162);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 172);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 172);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    162,
+    172,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -6651,7 +6752,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    162,
+    172,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -6722,8 +6823,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       {
         bucket: "bindingMemberWrites",
         target: 14,
-        current: 4,
-        remaining: 10,
+        current: 14,
+        remaining: 0,
       },
       { bucket: "untrustedSinks", target: 24, current: 9, remaining: 15 },
       { bucket: "rawEscapes", target: 12, current: 5, remaining: 7 },
@@ -6736,8 +6837,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 82);
-  assert.equal(new Set(bucketIds).size, 82);
+  assert.equal(bucketIds.length, 92);
+  assert.equal(new Set(bucketIds).size, 92);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -6793,10 +6894,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 82,
-    allCurrentNegatives: 151,
+    semanticNegatives: 92,
+    allCurrentNegatives: 161,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 248,
+    semanticRemainingNegatives: 238,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
@@ -6806,9 +6907,9 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     commitRemaining: 183,
     evaluationAttempts: 0,
   });
-  assert.equal(151, 69 + 82);
+  assert.equal(161, 69 + 92);
   assert.equal(399, 69 + 330);
-  assert.equal(248, 330 - 82);
+  assert.equal(238, 330 - 92);
   assert.equal(0, 11 - 11);
   assert.equal(183, 200 - 17);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
@@ -6951,7 +7052,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ...semanticEntries.slice(0, 60),
     ...positiveEntries,
   ];
-  const newCalleeReceiverEntries = semanticEntries.slice(60);
+  const newCalleeReceiverEntries = semanticEntries.slice(60, 82);
   const preCalleeReceiverSourceHashes = new Set(
     preCalleeReceiverEntries.map(({ sourceSha256 }) => sourceSha256),
   );
@@ -7001,6 +7102,105 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ),
     true,
   );
+  const preBindingWriteEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 82),
+    ...positiveEntries,
+  ];
+  const newBindingWriteEntries = semanticEntries.slice(82);
+  const preBindingWriteSourceHashes = new Set(
+    preBindingWriteEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preBindingWriteAstHashes = new Set(
+    preBindingWriteEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(newBindingWriteEntries.length, 10);
+  assert.deepEqual(
+    newBindingWriteEntries.map(({ id, bucket }) => ({ id, bucket })),
+    Array.from({ length: 10 }, (_, index) => ({
+      id: staticControlId("SEM-N", index + 82),
+      bucket: "bindingMemberWrites",
+    })),
+  );
+  assert.equal(
+    new Set(newBindingWriteEntries.map(({ sourceSha256 }) => sourceSha256))
+      .size,
+    10,
+  );
+  assert.equal(
+    new Set(newBindingWriteEntries.map(({ astSha256 }) => astSha256)).size,
+    10,
+  );
+  assert.equal(
+    newBindingWriteEntries.some(({ sourceSha256 }) =>
+      preBindingWriteSourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newBindingWriteEntries.some(({ astSha256 }) =>
+      preBindingWriteAstHashes.has(astSha256),
+    ),
+    false,
+  );
+  assert.deepEqual(
+    newBindingWriteEntries
+      .filter(({ expectedStage }) => expectedStage !== "estree-policy")
+      .map(({ id, name, expectedStage, expectedError }) => ({
+        id,
+        name,
+        expectedStage,
+        expectedError,
+      })),
+    [
+      {
+        id: "SEM-N086",
+        name: "ambient intrinsic member assignment",
+        expectedStage: "identifier-closure",
+        expectedError: "static gate: ambient member Object.length",
+      },
+    ],
+  );
+  assert.equal(
+    newBindingWriteEntries.filter(
+      ({ expectedStage, expectedError }) =>
+        expectedStage === "estree-policy" &&
+        expectedError === "static gate: ESTree binding or member assignment",
+    ).length,
+    9,
+  );
+  const bindingWriteMutationCoverage = Object.freeze([
+    Object.freeze({
+      mutation: "local alias binding and member writes",
+      coveredBy: Object.freeze(["SEM-N083", "SEM-N084"]),
+    }),
+    Object.freeze({
+      mutation: "ambient binding and member writes",
+      coveredBy: Object.freeze(["SEM-N085", "SEM-N086"]),
+    }),
+    Object.freeze({
+      mutation: "imported binding and member writes",
+      coveredBy: Object.freeze(["SEM-N087", "SEM-N088"]),
+    }),
+    Object.freeze({
+      mutation: "exported operation binding and member writes",
+      coveredBy: Object.freeze(["SEM-N089", "SEM-N090"]),
+    }),
+    Object.freeze({
+      mutation: "exported value binding and member writes",
+      coveredBy: Object.freeze(["SEM-N091", "SEM-N092"]),
+    }),
+  ]);
+  const bindingWriteMutationControlIds = bindingWriteMutationCoverage.flatMap(
+    ({ coveredBy }) => coveredBy,
+  );
+  assert.deepEqual(
+    bindingWriteMutationControlIds,
+    newBindingWriteEntries.map(({ id }) => id),
+  );
+  assert.equal(new Set(bindingWriteMutationControlIds).size, 10);
   const preLookupEntries = [
     ...foundationEntries,
     ...semanticEntries.slice(0, 48),
@@ -7142,15 +7342,16 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 151,
+    sourceIndependentNegativeControls: 161,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 82,
-      estreePolicyReachedCount: 80,
-      preEstreePolicyRejectionCount: 2,
+      totalDeltaSinceParserFoundation: 92,
+      estreePolicyReachedCount: 89,
+      preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
         "shallow ambient freeze used as deep freeze",
+        "ambient intrinsic member assignment",
       ],
     },
     representativeCommitMutationSourceInventory: 17,
