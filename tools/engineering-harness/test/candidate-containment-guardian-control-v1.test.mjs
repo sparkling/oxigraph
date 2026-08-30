@@ -3628,7 +3628,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   });
 }
 
-function auditCandidateSource(source) {
+function auditCandidateSource(source, stageAudit = null) {
   const parsed = parseCandidateModuleAst(source);
   const tokens = lexCandidateSource(source);
   assertBoundedSourceSubset(tokens);
@@ -3641,6 +3641,7 @@ function auditCandidateSource(source) {
     imports,
     exports,
   );
+  if (stageAudit !== null) stageAudit.estreePolicyReached = true;
   const astPolicy = assertRejectByDefaultEstreePolicy(
     parsed.program,
     parsed.nodeCount,
@@ -4010,10 +4011,11 @@ function reflectedAuthority(startupReportBytes) {
         new Map([
           [
             "createCandidateContainmentGuardianStartupV1",
-            "const key = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); if (epochEofObserved) { startupMetadata.set(key, metadata); } return key;",
+            "const result = deepFreeze(nullRecord([])); if (true) { const key = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(key, metadata); } return result;",
           ],
         ]),
       ),
+      expected: /private commit must be a direct function-body statement/u,
     }),
     Object.freeze({
       name: "function-scoped ambient alias",
@@ -4114,13 +4116,13 @@ function reflectedAuthority(startupReportBytes) {
       ),
     }),
     Object.freeze({
-      name: "conditional-expression fallible arm before private-store commit",
+      name: "conditional-expression skipped arm before private-store commit",
       source: sourceSkeleton(
         "",
         new Map([
           [
             "createCandidateContainmentGuardianStartupV1",
-            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = true ? sha256(canonicalJsonBytes(null)) : null; startupMetadata.set(result, metadata); return result;",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = false ? sha256(canonicalJsonBytes(null)) : null; startupMetadata.set(result, metadata); return result;",
           ],
         ]),
       ),
@@ -4128,13 +4130,41 @@ function reflectedAuthority(startupReportBytes) {
         /fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1/u,
     }),
     Object.freeze({
-      name: "logical-expression fallible RHS before private-store commit",
+      name: "logical-expression skipped AND RHS before private-store commit",
       source: sourceSkeleton(
         "",
         new Map([
           [
             "createCandidateContainmentGuardianStartupV1",
-            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = true && sha256(canonicalJsonBytes(null)); startupMetadata.set(result, metadata); return result;",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = false && sha256(canonicalJsonBytes(null)); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1/u,
+    }),
+    Object.freeze({
+      name: "logical-expression skipped OR RHS before private-store commit",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = true || sha256(canonicalJsonBytes(null)); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1/u,
+    }),
+    Object.freeze({
+      name: "logical-expression skipped nullish RHS before private-store commit",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const branch = true ?? sha256(canonicalJsonBytes(null)); startupMetadata.set(result, metadata); return result;",
           ],
         ]),
       ),
@@ -4305,16 +4335,24 @@ function reflectedAuthority(startupReportBytes) {
     });
   }
   const namedRejected = [];
+  const namedStageAudit = [];
   for (const { name, source, expected } of namedStaticGateEscapes) {
+    const stageAudit = { estreePolicyReached: false };
     assert.throws(
       () => {
-        auditCandidateSource(source);
+        auditCandidateSource(source, stageAudit);
         evaluationAttempts += 1;
       },
       expected,
       `static policy control: ${name}`,
     );
     namedRejected.push(name);
+    namedStageAudit.push(
+      Object.freeze({
+        name,
+        estreePolicyReached: stageAudit.estreePolicyReached,
+      }),
+    );
   }
   assert.equal(evaluationAttempts, 0);
   const requiredNormativeLiterals = Object.freeze([
@@ -4345,14 +4383,33 @@ function reflectedAuthority(startupReportBytes) {
   for (const source of positiveSources) {
     assert.doesNotThrow(() => auditCandidateSource(source));
   }
+  const layeredStartIndex = namedStageAudit.findIndex(
+    ({ name }) => name === "function-scoped imported helper alias",
+  );
+  assert.notEqual(layeredStartIndex, -1);
+  const layeredStageAudit = namedStageAudit.slice(layeredStartIndex);
+  const preEstreePolicyRejections = layeredStageAudit.filter(
+    ({ estreePolicyReached }) => !estreePolicyReached,
+  );
+  const layeredStaticNegativeEvidence = Object.freeze({
+    totalDeltaSinceParserFoundation: layeredStageAudit.length,
+    estreePolicyReachedCount:
+      layeredStageAudit.length - preEstreePolicyRejections.length,
+    preEstreePolicyRejectionCount: preEstreePolicyRejections.length,
+    preEstreePolicyRejectionNames: Object.freeze(
+      preEstreePolicyRejections.map(({ name }) => name),
+    ),
+  });
   return Object.freeze({
     rejected: sources.length + namedRejected.length,
     namedRejected: Object.freeze(namedRejected),
+    layeredStaticNegativeEvidence,
     accepted: positiveSources.length,
     namedAccepted: Object.freeze([
       "exact requirements AST normalization",
       "approved untrusted-value normalizer",
       "frozen local iteration",
+      "frozen local module table",
       "pure requirements and ephemeral canonical digest initializers",
     ]),
     evaluationAttempts,
@@ -4441,18 +4498,20 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 115,
+  sourceIndependentNegativeControls: 117,
   acceptedSyntheticSources: 5,
-  newAstDataflowNegativeControls: 46,
-  representativeCommitMutationControls: 15,
+  layeredStaticNegativeEvidence:
+    STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
+  representativeCommitMutationSourceInventory: 17,
   finalRequiredNegativeControls: 330,
   finalRequiredPositiveControls: 11,
   fullSemanticGateClosed: false,
   nonclaims: Object.freeze([
     "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
-    "the representative commit controls are not the final 200-mutation commit matrix",
+    "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
     "private-store get positives and exact read-to-owner provenance remain unproved",
     "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
+    "successful-path reachability before the syntactic private-store commit tail remains unproved",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
   ]),
 });
@@ -4687,7 +4746,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     "for-await",
   ]);
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
-    rejected: 115,
+    rejected: 117,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -4733,8 +4792,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "private-store commit followed by fallible work",
       "private-store owner has early return",
       "conditional fallible work before private-store commit",
-      "conditional-expression fallible arm before private-store commit",
-      "logical-expression fallible RHS before private-store commit",
+      "conditional-expression skipped arm before private-store commit",
+      "logical-expression skipped AND RHS before private-store commit",
+      "logical-expression skipped OR RHS before private-store commit",
+      "logical-expression skipped nullish RHS before private-store commit",
       "private-store commit returns metadata",
       "private-store commit aliases result and metadata",
       "private-store result and metadata share nested origin",
@@ -4752,28 +4813,47 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "nonthrowing imported failure callback",
       "recursive imported failure callback",
     ],
+    layeredStaticNegativeEvidence: {
+      totalDeltaSinceParserFoundation: 48,
+      estreePolicyReachedCount: 46,
+      preEstreePolicyRejectionCount: 2,
+      preEstreePolicyRejectionNames: [
+        "requirements initializer semantic drift",
+        "shallow ambient freeze used as deep freeze",
+      ],
+    },
     accepted: 5,
     namedAccepted: [
       "exact requirements AST normalization",
       "approved untrusted-value normalizer",
       "frozen local iteration",
+      "frozen local module table",
       "pure requirements and ephemeral canonical digest initializers",
     ],
     evaluationAttempts: 0,
   });
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 115,
+    sourceIndependentNegativeControls: 117,
     acceptedSyntheticSources: 5,
-    newAstDataflowNegativeControls: 46,
-    representativeCommitMutationControls: 15,
+    layeredStaticNegativeEvidence: {
+      totalDeltaSinceParserFoundation: 48,
+      estreePolicyReachedCount: 46,
+      preEstreePolicyRejectionCount: 2,
+      preEstreePolicyRejectionNames: [
+        "requirements initializer semantic drift",
+        "shallow ambient freeze used as deep freeze",
+      ],
+    },
+    representativeCommitMutationSourceInventory: 17,
     finalRequiredNegativeControls: 330,
     finalRequiredPositiveControls: 11,
     fullSemanticGateClosed: false,
     nonclaims: [
       "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
-      "the representative commit controls are not the final 200-mutation commit matrix",
+      "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
       "private-store get positives and exact read-to-owner provenance remain unproved",
       "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
+      "successful-path reachability before the syntactic private-store commit tail remains unproved",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
     ],
   });
