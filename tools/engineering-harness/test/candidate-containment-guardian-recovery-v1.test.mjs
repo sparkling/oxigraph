@@ -6556,6 +6556,44 @@ test("rejects lookalikes, cross-replay brands, and mixed current-anchor provenan
   );
 });
 
+test("keeps target replay-origin refresh permission failure-atomic", () => {
+  const controlFixture = new RecoveryLifetimeFixture(
+    "target-refresh-failure-atomic-control",
+  );
+  const controlTarget = controlFixture.installRecoveryTarget(recovery);
+  controlFixture.replayLifetime();
+  assertContractReject(() =>
+    recovery.verifyCandidateContainmentRecoveryTargetV1({
+      target: controlTarget,
+      generationManifest: artifact(controlFixture.journal.generationManifest),
+      normalJournalBundles:
+        controlFixture.journal.normalJournalBundles.map(artifact),
+      lifetimeTargetSelection: controlFixture.targetSelection(),
+    }),
+  );
+
+  const fixture = new RecoveryLifetimeFixture("target-refresh-failure-atomic");
+  const target = fixture.installRecoveryTarget(recovery);
+  assertContractReject(() =>
+    recovery.replayCandidateContainmentRecoveryV1({
+      ...replayInput(fixture, target, {
+        entries: [],
+        expectedExternalHead: fixture.headSelection(),
+      }),
+      expectedStateRootIdentitySha256: "not-a-digest",
+    }),
+  );
+  fixture.replayLifetime();
+  assertContractReject(() =>
+    recovery.verifyCandidateContainmentRecoveryTargetV1({
+      target,
+      generationManifest: artifact(fixture.journal.generationManifest),
+      normalJournalBundles: fixture.journal.normalJournalBundles.map(artifact),
+      lifetimeTargetSelection: fixture.targetSelection(),
+    }),
+  );
+});
+
 test("rejects byte-equal separately branded boundaries, partial anchor triples, close mixing, and planning phase drift", () => {
   const contextA = addReadyAnchor(buildGenesis("byte-equal-brand"));
   const targetA = contextA.target;

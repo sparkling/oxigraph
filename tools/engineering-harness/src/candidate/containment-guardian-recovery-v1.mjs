@@ -1461,7 +1461,6 @@ export function replayCandidateContainmentRecoveryV1(input) {
   );
   const targetAssociation = targetBrands.get(record.target);
   if (!targetAssociation) fail("recovery replay target is not branded");
-  targetRefreshPermitted.add(record.target);
   const entries = exactDenseArray(
     record.entries,
     "recovery replay entries",
@@ -1712,6 +1711,7 @@ export function replayCandidateContainmentRecoveryV1(input) {
       ["normalCloseDurabilityReceipt", normalCloseDurabilityReceipt],
     ]),
   );
+  targetRefreshPermitted.add(record.target);
   targetLastReplayAnchorKinds.set(
     record.target,
     currentAnchor === null ? null : currentAnchor.actorKind,
