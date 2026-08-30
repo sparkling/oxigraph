@@ -127,9 +127,12 @@ function parseCandidateModuleAst(source) {
   assert.equal(program.type, "Program");
   assert.equal(program.sourceType, "module");
   const stack = [program];
+  const visited = new WeakSet();
   let nodeCount = 0;
   while (stack.length > 0) {
     const node = stack.pop();
+    if (visited.has(node)) continue;
+    visited.add(node);
     nodeCount += 1;
     if (
       node.type === "AwaitExpression" ||
@@ -251,6 +254,37 @@ const EXPECTED_EXPORT_MANIFEST = Object.freeze([
     Object.freeze({ name, kind: "function", arity: parameters.length }),
   ),
 ]);
+
+const EXPECTED_PRIVATE_STORE_COMMITS = Object.freeze([
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianStartupV1",
+    storeName: "startupMetadata",
+  }),
+  ...[
+    "createCandidateContainmentGuardianAdmissionInputV1",
+    "createCandidateContainmentGuardianCancelInputV1",
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    "createCandidateContainmentGuardianStatusEofInputV1",
+  ].map((functionName) =>
+    Object.freeze({ functionName, storeName: "inputMetadata" }),
+  ),
+  ...[
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ].map((functionName) =>
+    Object.freeze({ functionName, storeName: "stateMetadata" }),
+  ),
+]);
+
+const PRIVATE_STORE_OWNER_BY_FUNCTION = new Map(
+  EXPECTED_PRIVATE_STORE_COMMITS.map(({ functionName, storeName }) => [
+    functionName,
+    storeName,
+  ]),
+);
 
 const EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS = Object.freeze([
   "schema",
@@ -977,7 +1011,8 @@ function collectOracleSourceLiterals(value, literals = new Set()) {
     for (const child of value) collectOracleSourceLiterals(child, literals);
     return literals;
   }
-  for (const child of Object.values(value)) {
+  for (const [key, child] of Object.entries(value)) {
+    literals.add(key);
     collectOracleSourceLiterals(child, literals);
   }
   return literals;
@@ -2151,6 +2186,1395 @@ function assertModuleInitializationClosure(tokens) {
   return checked;
 }
 
+function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
+  const counters = {
+    classifiedNodeCount: 0,
+    bindingCount: 0,
+    referenceCount: 0,
+    callCount: 0,
+    calleeCount: 0,
+    memberCount: 0,
+    receiverCount: 0,
+    literalCount: 0,
+    mutationCount: 0,
+    joinCount: 0,
+    rawEscapeCount: 0,
+    unknownProvenanceCount: 0,
+    privateOperationCount: 0,
+    privateCommitCount: 0,
+    privateDominatedCallCount: 0,
+    privateOwnerReturnCount: 0,
+    moduleCallEdgeCount: 0,
+  };
+  const classifiedNodes = new WeakSet();
+  const nodeRoles = new WeakMap();
+  const moduleScope = { parent: null, bindings: new Map() };
+  const moduleInitializers = new Map();
+  const functionRecords = new Map();
+  const requirementsDependencies = new Set();
+  const privateCommits = [];
+  const moduleCallEdges = new Set();
+  const privateStoreNames = new Set([
+    "startupMetadata",
+    "inputMetadata",
+    "stateMetadata",
+  ]);
+  const protectedBindingKinds = new Set([
+    "ambient",
+    "export-value",
+    "export-function",
+    "import-callable",
+    "import-value",
+    "local-function",
+    "private-store",
+  ]);
+  const mutableKinds = new Set(["error", "mutable-local"]);
+  const importedNormalizers = new Set([
+    "boundedInteger",
+    "copyBoundedBuffer",
+    "decodeCanonicalBase64",
+    "decodeCanonicalJsonLine",
+    "exactBoolean",
+    "exactDigest",
+    "exactRecord",
+  ]);
+  const importedFrozenResults = new Set([
+    "deepFreeze",
+    "frozenCopyOnReadBytes",
+    "verifyCandidateContainmentLaunchCapsuleV3",
+  ]);
+  const importedCallArities = new Map([
+    ["boundedInteger", new Set([5])],
+    ["canonicalJsonBytes", new Set([1])],
+    ["canonicalJsonLine", new Set([1])],
+    ["copyBoundedBuffer", new Set([4])],
+    ["decodeCanonicalBase64", new Set([4])],
+    ["decodeCanonicalJsonLine", new Set([4])],
+    ["deepFreeze", new Set([1])],
+    ["exactBoolean", new Set([4])],
+    ["exactDigest", new Set([3])],
+    ["exactRecord", new Set([4])],
+    ["frozenCopyOnReadBytes", new Set([1, 2])],
+    ["nullRecord", new Set([1])],
+    ["sha256", new Set([1])],
+    ["verifyCandidateContainmentLaunchCapsuleV3", new Set([1])],
+  ]);
+  const importedFailureCallbackIndex = new Map([
+    ["boundedInteger", 4],
+    ["copyBoundedBuffer", 3],
+    ["decodeCanonicalBase64", 3],
+    ["decodeCanonicalJsonLine", 3],
+    ["exactBoolean", 3],
+    ["exactDigest", 2],
+    ["exactRecord", 3],
+  ]);
+  const safeMemberMethods = new Set([
+    "add",
+    "at",
+    "get",
+    "has",
+    "includes",
+    "push",
+    "slice",
+  ]);
+
+  const fail = (reason) => {
+    throw new Error(`static gate: ESTree ${reason}`);
+  };
+  const makeValue = (
+    kind,
+    { freezable = true, origins = [], tainted = false } = {},
+  ) =>
+    Object.freeze({
+      kind,
+      freezable,
+      origins: Object.freeze([...new Set(origins)]),
+      tainted,
+    });
+  const IMMUTABLE_VALUE = makeValue("immutable");
+  const UNTRUSTED_VALUE = makeValue("untrusted", {
+    freezable: false,
+    tainted: true,
+  });
+  const valueWithOrigin = (kind, node, children = []) =>
+    makeValue(kind, {
+      freezable: children.every(({ freezable }) => freezable),
+      origins: [node, ...children.flatMap(({ origins }) => origins)],
+      tainted: children.some(({ tainted }) => tainted),
+    });
+  const frozenValue = (value) =>
+    makeValue("frozen", {
+      freezable: value.freezable,
+      origins: value.origins,
+      tainted: value.tainted,
+    });
+  const mark = (node, role) => {
+    if (node === null || typeof node?.type !== "string") {
+      fail(`invalid ${role} node`);
+    }
+    if (classifiedNodes.has(node)) return false;
+    classifiedNodes.add(node);
+    nodeRoles.set(node, role);
+    counters.classifiedNodeCount += 1;
+    return true;
+  };
+  const markIdentifier = (node, role, { reference = false } = {}) => {
+    if (node.type !== "Identifier") fail(`${role} must be an identifier`);
+    if (mark(node, role) && reference) counters.referenceCount += 1;
+  };
+  const declare = (
+    scope,
+    name,
+    binding,
+    { allowProtectedName = false } = {},
+  ) => {
+    if (
+      !allowProtectedName &&
+      (ALLOWED_AMBIENT_INTRINSICS.includes(name) ||
+        FORBIDDEN_SOURCE_IDENTIFIERS.includes(name) ||
+        EXPECTED_EXPORTS.includes(name) ||
+        privateStoreNames.has(name) ||
+        [...ALLOWED_IMPORTS.values()].some((names) => names.includes(name)))
+    ) {
+      fail(`protected binding declaration ${name}`);
+    }
+    if (scope.bindings.has(name)) fail(`duplicate binding ${name}`);
+    const declared = { name, scope, ...binding };
+    scope.bindings.set(name, declared);
+    counters.bindingCount += 1;
+    return declared;
+  };
+  const resolve = (scope, name) => {
+    for (let current = scope; current !== null; current = current.parent) {
+      const binding = current.bindings.get(name);
+      if (binding !== undefined) return binding;
+    }
+    if (ALLOWED_AMBIENT_INTRINSICS.includes(name)) {
+      return { name, kind: "ambient", value: makeValue("ambient") };
+    }
+    fail(`unresolved binding ${name}`);
+  };
+  const bindingValue = (binding) =>
+    binding.value ?? makeValue(binding.kind, { freezable: false });
+  const recordRawEscape = (reason) => {
+    counters.rawEscapeCount += 1;
+    fail(`raw or unknown value ${reason}`);
+  };
+  const requireTrusted = (value, reason, { allowMutable = false } = {}) => {
+    if (
+      value.kind === "untrusted" ||
+      value.kind === "unknown" ||
+      protectedBindingKinds.has(value.kind) ||
+      (!allowMutable && mutableKinds.has(value.kind)) ||
+      value.tainted
+    ) {
+      recordRawEscape(reason);
+    }
+    return value;
+  };
+  const sameProvenance = (left, right) =>
+    left.kind === right.kind &&
+    left.freezable === right.freezable &&
+    left.tainted === right.tainted &&
+    left.origins.length === right.origins.length &&
+    left.origins.every((origin) => right.origins.includes(origin));
+  const joinValues = (left, right, reason) => {
+    counters.joinCount += 1;
+    if (!sameProvenance(left, right)) {
+      counters.unknownProvenanceCount += 1;
+      fail(`unknown provenance join ${reason}`);
+    }
+    return left;
+  };
+  const valuesAreDisjoint = (left, right) =>
+    left.origins.length > 0 &&
+    right.origins.length > 0 &&
+    left.origins.every((origin) => !right.origins.includes(origin));
+
+  let importIndex = 0;
+  let exportIndex = 0;
+  const registerModuleVariable = (declaration, exported) => {
+    if (
+      declaration.kind !== "const" ||
+      declaration.declarations.length !== 1
+    ) {
+      fail("module variables must be one const declarator");
+    }
+    const declarator = declaration.declarations[0];
+    if (
+      declarator.id.type !== "Identifier" ||
+      declarator.init === null
+    ) {
+      fail("module const requires a simple initialized binding");
+    }
+    const name = declarator.id.name;
+    let kind = "pending";
+    let value = null;
+    if (privateStoreNames.has(name)) {
+      kind = "private-store";
+      value = makeValue(kind, { freezable: false });
+    } else if (
+      name === "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS"
+    ) {
+      kind = "export-value";
+      value = makeValue("frozen");
+    } else if (
+      name === "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
+    ) {
+      kind = "export-value";
+      value = IMMUTABLE_VALUE;
+    }
+    const binding = declare(
+      moduleScope,
+      name,
+      { kind, value, node: declarator.id, exported },
+      { allowProtectedName: exported || privateStoreNames.has(name) },
+    );
+    moduleInitializers.set(name, {
+      binding,
+      declarator,
+      initializer: declarator.init,
+    });
+  };
+  const registerFunction = (declaration, exported) => {
+    if (
+      declaration.id?.type !== "Identifier" ||
+      declaration.async ||
+      declaration.generator
+    ) {
+      fail("only named synchronous functions are supported");
+    }
+    const name = declaration.id.name;
+    const kind = exported ? "export-function" : "local-function";
+    const value = makeValue(kind, { freezable: false });
+    const binding = declare(
+      moduleScope,
+      name,
+      { kind, value, node: declaration.id, exported },
+      { allowProtectedName: exported },
+    );
+    functionRecords.set(name, {
+      name,
+      node: declaration,
+      binding,
+      exported,
+      status: "pending",
+      returnValue: null,
+      calls: [],
+      commits: [],
+    });
+  };
+  const registerExport = (statement) => {
+    if (
+      statement.source !== null ||
+      statement.specifiers.length !== 0 ||
+      statement.declaration === null
+    ) {
+      fail("only direct declaration exports are supported");
+    }
+    const expected = EXPECTED_EXPORT_MANIFEST[exportIndex++];
+    const declaration = statement.declaration;
+    const name =
+      declaration.type === "FunctionDeclaration"
+        ? declaration.id?.name
+        : declaration.type === "VariableDeclaration" &&
+            declaration.declarations.length === 1 &&
+            declaration.declarations[0].id.type === "Identifier"
+          ? declaration.declarations[0].id.name
+          : null;
+    const kind =
+      declaration.type === "FunctionDeclaration"
+        ? "function"
+        : declaration.type === "VariableDeclaration"
+          ? declaration.kind
+          : null;
+    if (
+      expected === undefined ||
+      expected.name !== name ||
+      expected.kind !== kind
+    ) {
+      fail("export manifest mismatch");
+    }
+    if (declaration.type === "FunctionDeclaration") {
+      const signature = EXPECTED_FUNCTION_SIGNATURES.find(
+        (entry) => entry.name === name,
+      );
+      if (
+        declaration.params.some((parameter) => parameter.type !== "Identifier") ||
+        declaration.params.map(({ name: parameterName }) => parameterName)
+          .join("\u0000") !== signature.parameters.join("\u0000")
+      ) {
+        fail(`export signature mismatch ${name}`);
+      }
+      registerFunction(declaration, true);
+    } else {
+      registerModuleVariable(declaration, true);
+    }
+  };
+
+  for (const statement of program.body) {
+    if (statement.type === "ImportDeclaration") {
+      const expected = [...ALLOWED_IMPORTS][importIndex++];
+      if (
+        expected === undefined ||
+        statement.source.type !== "Literal" ||
+        statement.source.value !== expected[0] ||
+        statement.specifiers.length !== expected[1].length
+      ) {
+        fail("import manifest mismatch");
+      }
+      for (let index = 0; index < statement.specifiers.length; index += 1) {
+        const specifier = statement.specifiers[index];
+        const expectedName = expected[1][index];
+        if (
+          specifier.type !== "ImportSpecifier" ||
+          specifier.imported.type !== "Identifier" ||
+          specifier.local.type !== "Identifier" ||
+          specifier.imported.name !== expectedName ||
+          specifier.local.name !== expectedName
+        ) {
+          fail("import binding mismatch");
+        }
+        const callable =
+          PURE_MODULE_INITIALIZER_CALL_ARITIES.has(expectedName) ||
+          [
+            "boundedInteger",
+            "canonicalJsonLine",
+            "copyBoundedBuffer",
+            "decodeCanonicalBase64",
+            "decodeCanonicalJsonLine",
+            "exactBoolean",
+            "exactDigest",
+            "exactRecord",
+            "frozenCopyOnReadBytes",
+            "verifyCandidateContainmentLaunchCapsuleV3",
+          ].includes(expectedName);
+        const kind = callable ? "import-callable" : "import-value";
+        declare(
+          moduleScope,
+          expectedName,
+          {
+            kind,
+            value: makeValue(kind, { freezable: false }),
+            node: specifier.local,
+          },
+          { allowProtectedName: true },
+        );
+      }
+      continue;
+    }
+    if (statement.type === "ExportNamedDeclaration") {
+      registerExport(statement);
+      continue;
+    }
+    if (statement.type === "VariableDeclaration") {
+      registerModuleVariable(statement, false);
+      continue;
+    }
+    if (statement.type === "FunctionDeclaration") {
+      registerFunction(statement, false);
+      continue;
+    }
+    if (statement.type === "EmptyStatement") continue;
+    fail(`unclassified module statement ${statement.type}`);
+  }
+  if (importIndex !== ALLOWED_IMPORTS.size) fail("incomplete import manifest");
+  if (exportIndex !== EXPECTED_EXPORT_MANIFEST.length) {
+    fail("incomplete export manifest");
+  }
+  for (const name of privateStoreNames) {
+    if (moduleScope.bindings.get(name)?.kind !== "private-store") {
+      fail(`private store manifest ${name}`);
+    }
+  }
+
+  const normalizeStaticValue = (node, stack = new Set()) => {
+    if (node.type === "Literal") {
+      if (
+        node.regex !== undefined ||
+        typeof node.value === "bigint" ||
+        ![
+          "boolean",
+          "number",
+          "string",
+        ].includes(typeof node.value) &&
+          node.value !== null
+      ) {
+        fail("non-JSON requirements literal");
+      }
+      return node.value;
+    }
+    if (node.type === "UnaryExpression") {
+      if (
+        node.operator !== "-" ||
+        node.argument.type !== "Literal" ||
+        typeof node.argument.value !== "number" ||
+        !Number.isSafeInteger(node.argument.value) ||
+        node.argument.value === 0
+      ) {
+        fail("requirements unary expression");
+      }
+      return -node.argument.value;
+    }
+    if (node.type === "ArrayExpression") {
+      if (node.elements.some((element) => element === null)) {
+        fail("requirements array hole");
+      }
+      return node.elements.map((element) => normalizeStaticValue(element, stack));
+    }
+    if (node.type === "ObjectExpression") {
+      const record = {};
+      for (const property of node.properties) {
+        if (
+          property.type !== "Property" ||
+          property.kind !== "init" ||
+          property.method ||
+          property.shorthand ||
+          property.computed ||
+          !["Identifier", "Literal"].includes(property.key.type)
+        ) {
+          fail("requirements object property");
+        }
+        const key =
+          property.key.type === "Identifier"
+            ? property.key.name
+            : property.key.value;
+        if (typeof key !== "string" || Object.hasOwn(record, key)) {
+          fail("requirements object key");
+        }
+        record[key] = normalizeStaticValue(property.value, stack);
+      }
+      return record;
+    }
+    if (node.type === "Identifier") {
+      const entry = moduleInitializers.get(node.name);
+      if (entry === undefined || stack.has(node.name)) {
+        fail(`requirements initializer reference ${node.name}`);
+      }
+      requirementsDependencies.add(node.name);
+      const next = new Set(stack);
+      next.add(node.name);
+      return normalizeStaticValue(entry.initializer, next);
+    }
+    if (node.type === "CallExpression") {
+      if (
+        node.optional ||
+        node.callee.type !== "Identifier" ||
+        node.arguments.length !== 1 ||
+        node.arguments[0].type === "SpreadElement"
+      ) {
+        fail("requirements initializer call");
+      }
+      const argument = normalizeStaticValue(node.arguments[0], stack);
+      if (node.callee.name === "deepFreeze") return argument;
+      if (node.callee.name !== "nullRecord" || !Array.isArray(argument)) {
+        fail(`requirements initializer call ${node.callee.name}`);
+      }
+      const record = {};
+      for (const entry of argument) {
+        if (
+          !Array.isArray(entry) ||
+          entry.length !== 2 ||
+          typeof entry[0] !== "string" ||
+          Object.hasOwn(record, entry[0])
+        ) {
+          fail("requirements null-record entry");
+        }
+        record[entry[0]] = entry[1];
+      }
+      return record;
+    }
+    fail(`unclassified requirements initializer ${node.type}`);
+  };
+
+  const requirementsName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const requirementsEntry = moduleInitializers.get(requirementsName);
+  const requirementsDigestEntry = moduleInitializers.get(
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256",
+  );
+  if (requirementsEntry === undefined || requirementsDigestEntry === undefined) {
+    fail("missing requirements exports");
+  }
+  requirementsDependencies.add(requirementsName);
+  const normalizedRequirements = normalizeStaticValue(
+    requirementsEntry.initializer,
+    new Set([requirementsName]),
+  );
+  if (
+    canonicalJson(normalizedRequirements) !==
+      canonicalJson(STATIC_POLICY_REQUIREMENTS_ORACLE) ||
+    semanticSha256(normalizedRequirements) !== EXPECTED_REQUIREMENTS_SHA256
+  ) {
+    fail("requirements initializer mismatch");
+  }
+  const digestInitializer = requirementsDigestEntry.initializer;
+  const digestIsLiteral =
+    digestInitializer.type === "Literal" &&
+    digestInitializer.value === EXPECTED_REQUIREMENTS_SHA256;
+  const digestIsExactComputation =
+    digestInitializer.type === "CallExpression" &&
+    !digestInitializer.optional &&
+    digestInitializer.callee.type === "Identifier" &&
+    digestInitializer.callee.name === "sha256" &&
+    digestInitializer.arguments.length === 1 &&
+    digestInitializer.arguments[0]?.type === "CallExpression" &&
+    !digestInitializer.arguments[0].optional &&
+    digestInitializer.arguments[0].callee.type === "Identifier" &&
+    digestInitializer.arguments[0].callee.name === "canonicalJsonBytes" &&
+    digestInitializer.arguments[0].arguments.length === 1 &&
+    digestInitializer.arguments[0].arguments[0]?.type === "Identifier" &&
+    digestInitializer.arguments[0].arguments[0].name === requirementsName;
+  if (!digestIsLiteral && !digestIsExactComputation) {
+    fail("requirements digest initializer mismatch");
+  }
+
+  const capabilityLookingString = (value) => {
+    const normalized = value.toLowerCase();
+    return (
+      [...FORBIDDEN_EXACT_COMPILE_TIME_STRINGS].some((fragment) =>
+        normalized.includes(fragment),
+      ) ||
+      FORBIDDEN_COMPILE_TIME_PATH_PREFIXES.some((prefix) =>
+        normalized.startsWith(prefix.toLowerCase()),
+      ) ||
+      FORBIDDEN_COMPILE_TIME_PATH_SUFFIXES.some((suffix) =>
+        normalized.endsWith(suffix.toLowerCase()),
+      )
+    );
+  };
+  const visitLiteral = (node, role) => {
+    if (node.type !== "Literal") fail(`${role} must be a literal`);
+    mark(node, `literal:${role}`);
+    counters.literalCount += 1;
+    if (node.regex !== undefined || typeof node.value === "bigint") {
+      fail(`unsupported literal ${role}`);
+    }
+    if (
+      typeof node.value === "string" &&
+      capabilityLookingString(node.value) &&
+      ![
+        "import-source",
+        "requirements-digest",
+        "requirements-value",
+      ].includes(role)
+    ) {
+      fail(`capability-looking literal outside normative role ${node.value}`);
+    }
+    return IMMUTABLE_VALUE;
+  };
+  const evaluateIdentifier = (node, scope, usage = "value") => {
+    markIdentifier(node, `identifier:${usage}`, { reference: true });
+    const binding = resolve(scope, node.name);
+    if (binding.kind === "pending") fail(`binding used before proof ${node.name}`);
+    if (binding.kind === "ambient" && binding.name === "Reflect") {
+      fail("Reflect use is outside the closed subset");
+    }
+    if (usage === "callee") {
+      if (binding.kind === "export-function") {
+        fail(`internal call to exported operation ${node.name}`);
+      }
+      if (
+        !["ambient", "import-callable", "local-function"].includes(
+          binding.kind,
+        )
+      ) {
+        fail(`non-callable direct callee ${node.name}`);
+      }
+      return { binding, value: bindingValue(binding) };
+    }
+    if (usage === "constructor") {
+      if (binding.kind !== "ambient") {
+        fail(`non-ambient constructor ${node.name}`);
+      }
+      return { binding, value: bindingValue(binding) };
+    }
+    if (usage === "failure-callback") {
+      if (binding.kind !== "local-function") {
+        fail(`failure callback provenance ${node.name}`);
+      }
+      return { binding, value: bindingValue(binding) };
+    }
+    if (usage === "receiver") {
+      if (!["ambient", "private-store"].includes(binding.kind)) {
+        fail(`protected receiver provenance ${node.name}`);
+      }
+      return { binding, value: bindingValue(binding) };
+    }
+    if (protectedBindingKinds.has(binding.kind)) {
+      fail(`protected binding used as value ${node.name}`);
+    }
+    return { binding, value: bindingValue(binding) };
+  };
+
+  let evaluateExpression;
+  let visitStatement;
+  let visitFunction;
+
+  const visitProperty = (node, scope, context) => {
+    if (
+      node.type !== "Property" ||
+      node.kind !== "init" ||
+      node.method ||
+      node.shorthand ||
+      node.computed
+    ) {
+      fail("unclassified object property");
+    }
+    mark(node, "object-property");
+    const normativeKey = context.literalRole === "requirements-value";
+    if (node.key.type === "Identifier") {
+      markIdentifier(node.key, "property-key");
+      if (capabilityLookingString(node.key.name) && !normativeKey) {
+        fail(`capability-looking property key outside requirements ${node.key.name}`);
+      }
+    } else if (node.key.type === "Literal") {
+      visitLiteral(
+        node.key,
+        normativeKey ? "requirements-value" : "property-key",
+      );
+    } else {
+      fail(`object key ${node.key.type}`);
+    }
+    return evaluateExpression(node.value, scope, context);
+  };
+
+  const evaluateMember = (node, scope, context, { asCallee = false } = {}) => {
+    mark(node, asCallee ? "direct-member-callee" : "member-value");
+    counters.memberCount += 1;
+    counters.receiverCount += 1;
+    if (node.optional) fail("optional member access");
+    if (node.computed) fail("computed member access");
+    if (node.property.type !== "Identifier") fail("non-identifier member");
+    markIdentifier(node.property, "member-name");
+    const memberName = node.property.name;
+    if (
+      FORBIDDEN_MEMBER_NAMES.includes(memberName) ||
+      !ALLOWED_MEMBER_NAMES.has(memberName)
+    ) {
+      fail(`forbidden member ${memberName}`);
+    }
+    if (node.object.type === "ParenthesizedExpression") {
+      fail("parenthesized receiver");
+    }
+    if (node.object.type === "Identifier") {
+      const binding = resolve(scope, node.object.name);
+      if (binding.kind === "private-store" || binding.kind === "ambient") {
+        evaluateIdentifier(node.object, scope, "receiver");
+        if (binding.kind === "private-store") {
+          if (!["get", "has", "set"].includes(memberName)) {
+            fail(`private-store member ${memberName}`);
+          }
+          if (!asCallee) fail("private-store member used as value");
+          return {
+            kind: "private-method",
+            memberName,
+            storeName: binding.name,
+          };
+        }
+        if (binding.name === "Reflect") fail("Reflect member use");
+        if (!ALLOWED_AMBIENT_MEMBERS.get(binding.name)?.has(memberName)) {
+          fail(`ambient member ${binding.name}.${memberName}`);
+        }
+        if (!asCallee) fail("ambient member used as value");
+        return {
+          kind: "ambient-method",
+          ambientName: binding.name,
+          memberName,
+        };
+      }
+    }
+    const receiver = evaluateExpression(node.object, scope, context);
+    requireTrusted(receiver, `used as receiver for .${memberName}`, {
+      allowMutable: true,
+    });
+    if (asCallee) {
+      if (!safeMemberMethods.has(memberName)) {
+        fail(`non-callable approved member ${memberName}`);
+      }
+      if (["add", "push"].includes(memberName)) {
+        fail(`mutating member call ${memberName}`);
+      }
+      return { kind: "safe-method", memberName, receiver };
+    }
+    if (safeMemberMethods.has(memberName)) {
+      fail(`method member used as value ${memberName}`);
+    }
+    if (memberName === "bytes") {
+      return valueWithOrigin("mutable-local", node, [receiver]);
+    }
+    return valueWithOrigin("immutable", node, [receiver]);
+  };
+
+  const evaluateArguments = (
+    nodes,
+    scope,
+    context,
+    { failureCallbackIndex = null } = {},
+  ) =>
+    nodes.map((argument, index) => {
+      if (argument.type === "SpreadElement") fail("spread argument");
+      if (index === failureCallbackIndex) {
+        if (argument.type !== "Identifier") {
+          fail("failure callback must be a direct identifier");
+        }
+        return evaluateIdentifier(argument, scope, "failure-callback").value;
+      }
+      return evaluateExpression(argument, scope, context);
+    });
+
+  const recordCallEdge = (from, to) => {
+    if (from === null) fail(`module initializer called local function ${to}`);
+    const edge = `${from.name}\u0000${to}`;
+    if (!moduleCallEdges.has(edge)) {
+      moduleCallEdges.add(edge);
+      counters.moduleCallEdgeCount += 1;
+    }
+  };
+
+  const evaluateCall = (node, scope, context) => {
+    mark(node, "call-expression");
+    counters.callCount += 1;
+    counters.calleeCount += 1;
+    context.functionRecord?.calls.push({
+      node,
+      controlDepth: context.controlDepth,
+      directStatement: context.directStatement,
+    });
+    if (node.optional) fail("optional call");
+    if (node.callee.type === "ParenthesizedExpression") {
+      fail("parenthesized or indirect call");
+    }
+    if (node.callee.type === "Identifier") {
+      const { binding } = evaluateIdentifier(node.callee, scope, "callee");
+      const allowedArities = importedCallArities.get(binding.name);
+      if (
+        binding.kind === "import-callable" &&
+        !allowedArities?.has(node.arguments.length)
+      ) {
+        fail(`imported callee arity ${binding.name}`);
+      }
+      const arguments_ = evaluateArguments(node.arguments, scope, context, {
+        failureCallbackIndex:
+          importedFailureCallbackIndex.get(binding.name) ?? null,
+      });
+      if (binding.kind === "import-callable") {
+        if (binding.name === "deepFreeze") {
+          if (
+            arguments_.length !== 1 ||
+            !arguments_[0].freezable ||
+            arguments_[0].tainted
+          ) {
+            fail("deepFreeze argument provenance");
+          }
+          return frozenValue(arguments_[0]);
+        }
+        if (binding.name === "nullRecord") {
+          if (
+            arguments_.length !== 1 ||
+            arguments_[0].kind !== "mutable-local" ||
+            arguments_[0].tainted
+          ) {
+            fail("nullRecord argument provenance");
+          }
+          return valueWithOrigin("mutable-local", node, arguments_);
+        }
+        if (importedNormalizers.has(binding.name)) {
+          const rawFirstArgumentAllowed = new Set([
+            "boundedInteger",
+            "copyBoundedBuffer",
+            "decodeCanonicalBase64",
+            "exactBoolean",
+            "exactDigest",
+          ]).has(binding.name);
+          for (let index = 0; index < arguments_.length; index += 1) {
+            if (index === importedFailureCallbackIndex.get(binding.name)) {
+              continue;
+            }
+            if (index === 0 && rawFirstArgumentAllowed) continue;
+            requireTrusted(
+              arguments_[index],
+              `normalizer argument ${binding.name}[${index}]`,
+              { allowMutable: true },
+            );
+          }
+          if (binding.name === "copyBoundedBuffer") {
+            return valueWithOrigin("mutable-local", node);
+          }
+          if (
+            ["decodeCanonicalBase64", "decodeCanonicalJsonLine"].includes(
+              binding.name,
+            )
+          ) {
+            return valueWithOrigin("mutable-local", node);
+          }
+          if (binding.name === "exactRecord") return arguments_[0];
+          return IMMUTABLE_VALUE;
+        }
+        for (const argument of arguments_) {
+          requireTrusted(argument, `passed to ${binding.name}`, {
+            allowMutable: true,
+          });
+        }
+        if (importedFrozenResults.has(binding.name)) {
+          return valueWithOrigin(
+            "frozen",
+            node,
+            binding.name === "frozenCopyOnReadBytes" ? [] : arguments_,
+          );
+        }
+        if (
+          ["canonicalJsonBytes", "canonicalJsonLine"].includes(binding.name)
+        ) {
+          return valueWithOrigin("mutable-local", node);
+        }
+        if (binding.name === "sha256") return IMMUTABLE_VALUE;
+        fail(`unclassified imported callee ${binding.name}`);
+      }
+      if (binding.kind === "ambient") {
+        if (!["Boolean", "Number", "String"].includes(binding.name)) {
+          fail(`ambient direct call ${binding.name}`);
+        }
+        for (const argument of arguments_) {
+          requireTrusted(argument, `ambient coercion ${binding.name}`);
+        }
+        return IMMUTABLE_VALUE;
+      }
+      if (binding.kind === "local-function") {
+        for (const argument of arguments_) {
+          requireTrusted(argument, `passed to local function ${binding.name}`);
+        }
+        recordCallEdge(context.functionRecord, binding.name);
+        return visitFunction(functionRecords.get(binding.name));
+      }
+      fail(`unclassified direct callee ${binding.name}`);
+    }
+    if (node.callee.type !== "MemberExpression") {
+      fail(`indirect callee ${node.callee.type}`);
+    }
+    const member = evaluateMember(node.callee, scope, context, {
+      asCallee: true,
+    });
+    const arguments_ = evaluateArguments(node.arguments, scope, context);
+    if (member.kind === "private-method") {
+      counters.privateOperationCount += 1;
+      if (member.memberName === "has") {
+        if (arguments_.length !== 1) fail("private has arity");
+        return IMMUTABLE_VALUE;
+      }
+      if (member.memberName === "get") {
+        if (arguments_.length !== 1) fail("private get arity");
+        return makeValue("frozen");
+      }
+      counters.mutationCount += 1;
+      counters.privateCommitCount += 1;
+      if (
+        arguments_.length !== 2 ||
+        node.arguments.some((argument) => argument.type !== "Identifier")
+      ) {
+        fail("private commit requires two identifiers");
+      }
+      if (
+        node.arguments.some((argument) => {
+          const binding = resolve(scope, argument.name);
+          return binding.kind !== "local" || binding.scope !== scope;
+        })
+      ) {
+        fail("private commit requires function-local arguments");
+      }
+      const expectedStore = PRIVATE_STORE_OWNER_BY_FUNCTION.get(
+        context.functionRecord?.name,
+      );
+      if (expectedStore !== member.storeName) {
+        fail(
+          `private commit owner ${context.functionRecord?.name ?? "<module>"}`,
+        );
+      }
+      if (
+        context.controlDepth !== 0 ||
+        context.expressionStatement?.expression !== node ||
+        context.directStatement !== context.expressionStatement
+      ) {
+        fail("private commit must be a direct function-body statement");
+      }
+      const [keyValue, metadataValue] = arguments_;
+      if (
+        keyValue.kind !== "frozen" ||
+        metadataValue.kind !== "frozen" ||
+        !valuesAreDisjoint(keyValue, metadataValue)
+      ) {
+        fail("private commit arguments must be frozen and disjoint");
+      }
+      const commit = {
+        call: node,
+        functionName: context.functionRecord.name,
+        storeName: member.storeName,
+        statement: context.expressionStatement,
+        keyName: node.arguments[0].name,
+        metadataName: node.arguments[1].name,
+      };
+      context.functionRecord.commits.push(commit);
+      privateCommits.push(commit);
+      return IMMUTABLE_VALUE;
+    }
+    for (const argument of arguments_) {
+      requireTrusted(argument, `passed to member ${member.memberName}`, {
+        allowMutable: true,
+      });
+    }
+    if (member.kind === "ambient-method") {
+      if (
+        member.ambientName === "Object" &&
+        ["create", "defineProperty", "freeze"].includes(member.memberName)
+      ) {
+        fail(`ambient heap mutation ${member.memberName}`);
+      }
+      return IMMUTABLE_VALUE;
+    }
+    if (["at", "get", "slice"].includes(member.memberName)) {
+      return valueWithOrigin("mutable-local", node, [member.receiver]);
+    }
+    return IMMUTABLE_VALUE;
+  };
+
+  const evaluateNew = (node, scope, context) => {
+    mark(node, "new-expression");
+    counters.callCount += 1;
+    counters.calleeCount += 1;
+    context.functionRecord?.calls.push({
+      node,
+      controlDepth: context.controlDepth,
+      directStatement: context.directStatement,
+    });
+    if (node.callee.type !== "Identifier") fail("indirect constructor");
+    const { binding } = evaluateIdentifier(node.callee, scope, "constructor");
+    const arguments_ = evaluateArguments(node.arguments, scope, context);
+    if (!["Error", "Set", "WeakMap"].includes(binding.name)) {
+      fail(`constructor ${binding.name}`);
+    }
+    for (const argument of arguments_) {
+      requireTrusted(argument, `constructor ${binding.name}`, {
+        allowMutable: true,
+      });
+    }
+    if (binding.name === "Error") return valueWithOrigin("error", node);
+    return valueWithOrigin("mutable-local", node, arguments_);
+  };
+
+  evaluateExpression = (node, scope, context = {}) => {
+    const literalRole = context.literalRole ?? "ordinary";
+    if (node.type === "Identifier") {
+      return evaluateIdentifier(node, scope).value;
+    }
+    if (node.type === "Literal") return visitLiteral(node, literalRole);
+    if (node.type === "ArrayExpression") {
+      mark(node, "array-expression");
+      if (node.elements.some((element) => element === null)) {
+        fail("array hole");
+      }
+      const children = node.elements.map((element) => {
+        if (element.type === "SpreadElement") fail("array spread");
+        return evaluateExpression(element, scope, context);
+      });
+      return valueWithOrigin("mutable-local", node, children);
+    }
+    if (node.type === "ObjectExpression") {
+      mark(node, "object-expression");
+      const children = node.properties.map((property) =>
+        visitProperty(property, scope, context),
+      );
+      return valueWithOrigin("mutable-local", node, children);
+    }
+    if (node.type === "CallExpression") {
+      return evaluateCall(node, scope, context);
+    }
+    if (node.type === "NewExpression") return evaluateNew(node, scope, context);
+    if (node.type === "MemberExpression") {
+      return evaluateMember(node, scope, context);
+    }
+    if (node.type === "ParenthesizedExpression") {
+      mark(node, "parenthesized-expression");
+      return evaluateExpression(node.expression, scope, context);
+    }
+    if (node.type === "UnaryExpression") {
+      mark(node, "unary-expression");
+      if (!["!", "-", "typeof", "void"].includes(node.operator)) {
+        fail(`unary operator ${node.operator}`);
+      }
+      const argument = evaluateExpression(node.argument, scope, context);
+      requireTrusted(argument, `unary coercion ${node.operator}`);
+      return IMMUTABLE_VALUE;
+    }
+    if (node.type === "BinaryExpression") {
+      mark(node, "binary-expression");
+      const left = evaluateExpression(node.left, scope, context);
+      const right = evaluateExpression(node.right, scope, context);
+      requireTrusted(left, `binary ${node.operator}`);
+      requireTrusted(right, `binary ${node.operator}`);
+      return IMMUTABLE_VALUE;
+    }
+    if (node.type === "LogicalExpression") {
+      mark(node, "logical-expression");
+      const left = evaluateExpression(node.left, scope, context);
+      requireTrusted(left, `logical ${node.operator}`);
+      const right = evaluateExpression(node.right, scope, context);
+      return joinValues(left, right, `logical ${node.operator}`);
+    }
+    if (node.type === "ConditionalExpression") {
+      mark(node, "conditional-expression");
+      const testValue = evaluateExpression(node.test, scope, context);
+      requireTrusted(testValue, "conditional test");
+      const consequent = evaluateExpression(node.consequent, scope, context);
+      const alternate = evaluateExpression(node.alternate, scope, context);
+      return joinValues(consequent, alternate, "conditional expression");
+    }
+    if (node.type === "AssignmentExpression") {
+      mark(node, "assignment-expression");
+      counters.mutationCount += 1;
+      fail("binding or member assignment");
+    }
+    if (node.type === "UpdateExpression") {
+      mark(node, "update-expression");
+      counters.mutationCount += 1;
+      fail("binding or member update");
+    }
+    fail(`unclassified expression ${node.type}`);
+  };
+
+  const visitVariableDeclaration = (
+    node,
+    scope,
+    context,
+    { module = false, loopValue = null } = {},
+  ) => {
+    mark(node, module ? "module-variable-declaration" : "variable-declaration");
+    if (node.kind !== "const" || node.declarations.length !== 1) {
+      fail("only one const declarator is supported");
+    }
+    const declarator = node.declarations[0];
+    mark(declarator, "variable-declarator");
+    if (declarator.id.type !== "Identifier") fail("destructuring binding");
+    markIdentifier(declarator.id, "binding");
+    let binding;
+    if (module) {
+      binding = moduleScope.bindings.get(declarator.id.name);
+      if (binding === undefined) {
+        fail(`unregistered module binding ${declarator.id.name}`);
+      }
+    } else {
+      binding = declare(scope, declarator.id.name, {
+        kind: "local",
+        value: null,
+        node: declarator.id,
+      });
+    }
+    let value;
+    if (loopValue !== null) {
+      if (declarator.init !== null) fail("for-of binding initializer");
+      value = loopValue;
+    } else {
+      if (declarator.init === null) fail("uninitialized const");
+      const name = declarator.id.name;
+      const literalRole = requirementsDependencies.has(name)
+        ? "requirements-value"
+        : name ===
+            "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
+          ? "requirements-digest"
+          : "ordinary";
+      value = evaluateExpression(declarator.init, scope, {
+        ...context,
+        literalRole,
+      });
+    }
+    if (module && binding.kind === "private-store") {
+      if (
+        declarator.init.type !== "NewExpression" ||
+        declarator.init.callee.type !== "Identifier" ||
+        declarator.init.callee.name !== "WeakMap" ||
+        declarator.init.arguments.length !== 0
+      ) {
+        fail(`private store initializer ${binding.name}`);
+      }
+      return;
+    }
+    if (module && mutableKinds.has(value.kind)) {
+      fail(`mutable module binding ${binding.name}`);
+    }
+    binding.kind = binding.kind === "export-value" ? binding.kind : "local";
+    binding.value = value;
+  };
+
+  const visitBlock = (node, scope, context, { functionBody = false } = {}) => {
+    mark(node, functionBody ? "function-body" : "block-statement");
+    const blockScope = functionBody ? scope : { parent: scope, bindings: new Map() };
+    for (const statement of node.body) {
+      const statementContext = functionBody
+        ? {
+            ...context,
+            directStatement: statement,
+            expressionStatement: null,
+          }
+        : { ...context, controlDepth: context.controlDepth + 1 };
+      visitStatement(statement, blockScope, statementContext);
+    }
+  };
+
+  visitStatement = (node, scope, context) => {
+    if (node.type === "VariableDeclaration") {
+      visitVariableDeclaration(node, scope, context);
+      return;
+    }
+    if (node.type === "ReturnStatement") {
+      mark(node, "return-statement");
+      const value =
+        node.argument === null
+          ? IMMUTABLE_VALUE
+          : evaluateExpression(node.argument, scope, context);
+      if (
+        value.kind === "untrusted" ||
+        value.kind === "unknown" ||
+        mutableKinds.has(value.kind) ||
+        value.tainted
+      ) {
+        recordRawEscape("returned from function");
+      }
+      context.returnValues.push(value);
+      context.returnStatements.push(node);
+      return;
+    }
+    if (node.type === "ExpressionStatement") {
+      mark(node, "expression-statement");
+      evaluateExpression(node.expression, scope, {
+        ...context,
+        expressionStatement: node,
+      });
+      return;
+    }
+    if (node.type === "BlockStatement") {
+      visitBlock(node, scope, context);
+      return;
+    }
+    if (node.type === "IfStatement") {
+      mark(node, "if-statement");
+      const testValue = evaluateExpression(node.test, scope, context);
+      requireTrusted(testValue, "if condition");
+      counters.joinCount += 1;
+      visitStatement(node.consequent, scope, {
+        ...context,
+        controlDepth: context.controlDepth + 1,
+      });
+      if (node.alternate !== null) {
+        visitStatement(node.alternate, scope, {
+          ...context,
+          controlDepth: context.controlDepth + 1,
+        });
+      }
+      return;
+    }
+    if (node.type === "ForOfStatement") {
+      mark(node, "for-of-statement");
+      if (node.await || node.left.type !== "VariableDeclaration") {
+        fail("for-of syntax");
+      }
+      const iterable = evaluateExpression(node.right, scope, context);
+      requireTrusted(iterable, "iterated", { allowMutable: false });
+      if (iterable.kind !== "frozen") fail("iterable must be frozen");
+      counters.joinCount += 1;
+      const loopScope = { parent: scope, bindings: new Map() };
+      visitVariableDeclaration(node.left, loopScope, context, {
+        loopValue: IMMUTABLE_VALUE,
+      });
+      visitStatement(node.body, loopScope, {
+        ...context,
+        controlDepth: context.controlDepth + 1,
+      });
+      return;
+    }
+    if (node.type === "ThrowStatement") {
+      mark(node, "throw-statement");
+      const value = evaluateExpression(node.argument, scope, context);
+      requireTrusted(value, "thrown", { allowMutable: true });
+      return;
+    }
+    if (node.type === "EmptyStatement") {
+      mark(node, "empty-statement");
+      return;
+    }
+    fail(`unclassified statement ${node.type}`);
+  };
+
+  visitFunction = (record) => {
+    if (record === undefined) fail("unknown function record");
+    if (record.status === "complete") return record.returnValue;
+    if (record.status === "analyzing") fail(`recursive call graph ${record.name}`);
+    record.status = "analyzing";
+    const node = record.node;
+    mark(node, record.exported ? "exported-function" : "local-function");
+    markIdentifier(node.id, "function-binding");
+    const scope = { parent: moduleScope, bindings: new Map() };
+    for (const parameter of node.params) {
+      if (parameter.type !== "Identifier") fail("non-identifier parameter");
+      markIdentifier(parameter, "parameter-binding");
+      declare(scope, parameter.name, {
+        kind: "parameter",
+        value: UNTRUSTED_VALUE,
+        node: parameter,
+      });
+    }
+    const context = {
+      functionRecord: record,
+      returnValues: [],
+      returnStatements: [],
+      controlDepth: 0,
+      directStatement: null,
+      expressionStatement: null,
+      literalRole: "ordinary",
+    };
+    visitBlock(node.body, scope, context, { functionBody: true });
+    const expectedStore = PRIVATE_STORE_OWNER_BY_FUNCTION.get(record.name);
+    if (expectedStore === undefined) {
+      if (record.commits.length !== 0) fail(`commit in non-owner ${record.name}`);
+    } else {
+      if (
+        record.commits.length !== 1 ||
+        record.commits[0].storeName !== expectedStore
+      ) {
+        fail(`exact private commit count ${record.name}`);
+      }
+      const commit = record.commits[0];
+      const body = node.body.body;
+      const commitIndex = body.indexOf(commit.statement);
+      const returnStatement = body.at(-1);
+      if (
+        context.returnStatements.length !== 1 ||
+        context.returnStatements[0] !== returnStatement ||
+        commitIndex !== body.length - 2 ||
+        returnStatement?.type !== "ReturnStatement" ||
+        returnStatement.argument?.type !== "Identifier" ||
+        returnStatement.argument.name !== commit.keyName ||
+        commit.keyName === commit.metadataName
+      ) {
+        fail(`private commit tail ${record.name}`);
+      }
+      counters.privateOwnerReturnCount += context.returnStatements.length;
+      for (const call of record.calls) {
+        if (call.node === commit.call) continue;
+        const statementIndex = body.indexOf(call.directStatement);
+        if (call.controlDepth !== 0 || statementIndex >= commitIndex) {
+          fail(`fallible operation does not dominate commit ${record.name}`);
+        }
+        counters.privateDominatedCallCount += 1;
+      }
+    }
+    let returnValue = IMMUTABLE_VALUE;
+    if (context.returnValues.length > 0) {
+      returnValue = context.returnValues[0];
+      for (const value of context.returnValues.slice(1)) {
+        returnValue = joinValues(returnValue, value, `returns of ${record.name}`);
+      }
+    }
+    record.returnValue = returnValue;
+    record.status = "complete";
+    return returnValue;
+  };
+
+  const visitImport = (node) => {
+    mark(node, "import-declaration");
+    for (const specifier of node.specifiers) {
+      mark(specifier, "import-specifier");
+      markIdentifier(specifier.local, "import-binding");
+      if (specifier.imported !== specifier.local) {
+        markIdentifier(specifier.imported, "imported-name");
+      }
+    }
+    visitLiteral(node.source, "import-source");
+  };
+  const visitModuleStatement = (node) => {
+    if (node.type === "ImportDeclaration") {
+      visitImport(node);
+      return;
+    }
+    if (node.type === "ExportNamedDeclaration") {
+      mark(node, "export-declaration");
+      if (node.declaration.type === "VariableDeclaration") {
+        visitVariableDeclaration(node.declaration, moduleScope, {
+          functionRecord: null,
+          literalRole: "ordinary",
+        }, { module: true });
+      } else {
+        visitFunction(functionRecords.get(node.declaration.id.name));
+      }
+      return;
+    }
+    if (node.type === "VariableDeclaration") {
+      visitVariableDeclaration(
+        node,
+        moduleScope,
+        { functionRecord: null, literalRole: "ordinary" },
+        { module: true },
+      );
+      return;
+    }
+    if (node.type === "FunctionDeclaration") {
+      visitFunction(functionRecords.get(node.id.name));
+      return;
+    }
+    if (node.type === "EmptyStatement") {
+      mark(node, "module-empty-statement");
+      return;
+    }
+    fail(`unclassified module node ${node.type}`);
+  };
+
+  mark(program, "program");
+  for (const statement of program.body) visitModuleStatement(statement);
+  if (privateCommits.length !== EXPECTED_PRIVATE_STORE_COMMITS.length) {
+    fail("exact ten private commits");
+  }
+  for (const expected of EXPECTED_PRIVATE_STORE_COMMITS) {
+    const matches = privateCommits.filter(
+      ({ functionName, storeName }) =>
+        functionName === expected.functionName && storeName === expected.storeName,
+    );
+    if (matches.length !== 1) {
+      fail(`private commit manifest ${expected.functionName}`);
+    }
+  }
+  const storeCounts = Object.fromEntries(
+    [...privateStoreNames].map((storeName) => [
+      storeName,
+      privateCommits.filter((commit) => commit.storeName === storeName).length,
+    ]),
+  );
+  if (
+    storeCounts.startupMetadata !== 1 ||
+    storeCounts.inputMetadata !== 7 ||
+    storeCounts.stateMetadata !== 2
+  ) {
+    fail("private commit 1/7/2 store manifest");
+  }
+  if (counters.classifiedNodeCount !== expectedNodeCount) {
+    fail(
+      `node closure ${counters.classifiedNodeCount}/${expectedNodeCount}`,
+    );
+  }
+  if (
+    counters.rawEscapeCount !== 0 ||
+    counters.unknownProvenanceCount !== 0
+  ) {
+    fail("nonzero escape or unknown-provenance counter");
+  }
+  return Object.freeze({
+    ...counters,
+    privateStoreCommitCounts: Object.freeze(storeCounts),
+    privateStoreCommitManifest: Object.freeze(
+      EXPECTED_PRIVATE_STORE_COMMITS.map((entry) => Object.freeze({ ...entry })),
+    ),
+    moduleCallEdges: Object.freeze([...moduleCallEdges].sort()),
+    nodeRoleCount: counters.classifiedNodeCount,
+  });
+}
+
 function auditCandidateSource(source) {
   const parsed = parseCandidateModuleAst(source);
   const tokens = lexCandidateSource(source);
@@ -2164,6 +3588,10 @@ function auditCandidateSource(source) {
     imports,
     exports,
   );
+  const astPolicy = assertRejectByDefaultEstreePolicy(
+    parsed.program,
+    parsed.nodeCount,
+  );
   return Object.freeze({
     importCount: imports.declarations.length,
     importedNameCount: imports.declarations.reduce(
@@ -2176,22 +3604,45 @@ function auditCandidateSource(source) {
     bindingCount: identifierClosure.bindingCount,
     moduleStoreCount,
     astNodeCount: parsed.nodeCount,
+    astPolicy,
   });
 }
 
-function sourceSkeleton(extra = "") {
+function sourceSkeleton(extra = "", functionBodyOverrides = new Map()) {
   const importText = [...ALLOWED_IMPORTS]
     .map(
       ([specifier, names]) =>
         `import { ${names.join(", ")} } from ${JSON.stringify(specifier)};`,
     )
     .join("\n");
-  const exports = EXPECTED_EXPORT_MANIFEST.map((entry, index) => {
-    if (entry.kind === "const") return `export const ${entry.name} = ${index};`;
+  const requirementsSource = JSON.stringify(REQUIREMENTS_ORACLE);
+  const exports = EXPECTED_EXPORT_MANIFEST.map((entry) => {
+    if (
+      entry.name === "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS"
+    ) {
+      return `export const ${entry.name} = deepFreeze(${requirementsSource});`;
+    }
+    if (
+      entry.name ===
+      "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
+    ) {
+      const digestSource = JSON.stringify(EXPECTED_REQUIREMENTS_SHA256);
+      return `export const ${entry.name} = ${digestSource};`;
+    }
+    if (entry.kind === "const") {
+      throw new Error(`unclassified synthetic const export ${entry.name}`);
+    }
     const signature = EXPECTED_FUNCTION_SIGNATURES.find(
       ({ name }) => name === entry.name,
     );
-    return `export function ${entry.name}(${signature.parameters.join(", ")}) { return null; }`;
+    const storeName = PRIVATE_STORE_OWNER_BY_FUNCTION.get(entry.name);
+    const body =
+      functionBodyOverrides.get(entry.name) ??
+      (storeName === undefined
+        ? "return null;"
+        : `const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); ${storeName}.set(result, metadata); return result;`);
+    const parameters = signature.parameters.join(", ");
+    return `export function ${entry.name}(${parameters}) { ${body} }`;
   }).join("\n");
   return `${importText}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}\n`;
 }
@@ -2351,7 +3802,8 @@ function runStaticNegativeControls() {
 function deriveAuthorityKey() {
   return "processAuthority".slice(0, 7);
 }`),
-      expected: /forbidden string fragment process/u,
+      expected:
+        /ESTree capability-looking literal outside normative role processAuthority/u,
     }),
     Object.freeze({
       name: "numeric member-chain authority gadget",
@@ -2413,6 +3865,329 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /forbidden string fragment process/u,
     }),
+    Object.freeze({
+      name: "function-scoped imported helper alias",
+      source: sourceSkeleton(
+        "function aliasImported(value) { const helper = sha256; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "laundered untrusted receiver",
+      source: sourceSkeleton(
+        "function launder(startupReportBytes) { const alias = startupReportBytes; return alias.length; }",
+      ),
+    }),
+    Object.freeze({
+      name: "parenthesized imported-helper call",
+      source: sourceSkeleton(
+        "function indirect(value) { return (sha256)(value); }",
+      ),
+    }),
+    Object.freeze({
+      name: "computed member on frozen local",
+      source: sourceSkeleton(
+        "function computed() { const values = deepFreeze([]); return values[0]; }",
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped member write",
+      source: sourceSkeleton(
+        "function mutateMember() { const value = deepFreeze({ length: 0 }); value.length = 1; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped binding write",
+      source: sourceSkeleton(
+        "function mutateBinding() { let value = null; value = deepFreeze([]); return value; }",
+      ),
+    }),
+    Object.freeze({
+      name: "normative literal outside normative role",
+      source: sourceSkeleton(
+        'function leakNormativeLiteral() { return "processAuthority"; }',
+      ),
+    }),
+    Object.freeze({
+      name: "normative record key outside requirements initializer",
+      source: sourceSkeleton(
+        "const unrelatedAuthority = deepFreeze({ processAuthority: false });",
+      ),
+    }),
+    Object.freeze({
+      name: "unknown provenance branch join",
+      source: sourceSkeleton(
+        "function joined(startupReportBytes) { const value = true ? deepFreeze([]) : startupReportBytes; return value.length; }",
+      ),
+    }),
+    Object.freeze({
+      name: "untrusted condition coercion",
+      source: sourceSkeleton(
+        "function coerce(startupReportBytes) { if (startupReportBytes) { return true; } return false; }",
+      ),
+    }),
+    Object.freeze({
+      name: "untrusted iteration",
+      source: sourceSkeleton(
+        "function iterate(startupReportBytes) { for (const value of startupReportBytes) { return value; } return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "raw untrusted return",
+      source: sourceSkeleton(
+        "function escape(startupReportBytes) { return startupReportBytes; }",
+      ),
+    }),
+    Object.freeze({
+      name: "private-store commit in non-owner",
+      source: sourceSkeleton(
+        "function wrongOwner() { const key = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(key, metadata); return key; }",
+      ),
+    }),
+    Object.freeze({
+      name: "private-store commit under control flow",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const key = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); if (epochEofObserved) { startupMetadata.set(key, metadata); } return key;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped ambient alias",
+      source: sourceSkeleton(
+        "function aliasAmbient() { const ambient = Object; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped Reflect alias",
+      source: sourceSkeleton(
+        "function aliasReflect() { const reflect = Reflect; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped exported-function alias",
+      source: sourceSkeleton(
+        "function aliasExport() { const operation = reduceCandidateContainmentGuardianControlV1; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "direct internal exported-operation call",
+      source: sourceSkeleton(
+        "function callExportedOperation() { const state = deepFreeze(nullRecord([])); const input = deepFreeze(nullRecord([])); return reduceCandidateContainmentGuardianControlV1(state, input); }",
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped exported-value alias",
+      source: sourceSkeleton(
+        "function aliasExportValue() { const value = CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "function-scoped private-store alias",
+      source: sourceSkeleton(
+        "function aliasStore() { const store = inputMetadata; return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "nested function declaration",
+      source: sourceSkeleton(
+        "function outer() { function nested() { return null; } return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "recursive module-function call",
+      source: sourceSkeleton(
+        "function recursive() { return recursive(); }",
+      ),
+    }),
+    Object.freeze({
+      name: "requirements initializer semantic drift",
+      source: sourceSkeleton().replace(
+        '"oxigraph.candidate-containment-guardian-control-requirements/v1"',
+        '"oxigraph.candidate-containment-guardian-control-requirements/v2"',
+      ),
+    }),
+    Object.freeze({
+      name: "requirements digest initializer drift",
+      source: sourceSkeleton().replace(
+        `export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256 = ${JSON.stringify(EXPECTED_REQUIREMENTS_SHA256)};`,
+        `export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256 = ${JSON.stringify("1".repeat(64))};`,
+      ),
+    }),
+    Object.freeze({
+      name: "private-store commit followed by fallible work",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); sha256(canonicalJsonBytes(null)); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "private-store owner has early return",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); if (true) { return result; } startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "conditional fallible work before private-store commit",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); if (true) { sha256(canonicalJsonBytes(null)); } startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "private-store commit returns metadata",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return metadata;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "private-store commit aliases result and metadata",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = result; startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "private-store result and metadata share nested origin",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const seed = deepFreeze({ bytes: nullRecord([]) }); const result = deepFreeze({ bytes: seed.bytes }); const metadata = deepFreeze({ bytes: seed.bytes }); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "second private-store commit",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "private-store commit uses wrong owning store",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "parenthesized owning private-store callee",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); (startupMetadata.set)(result, metadata); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "inline private-store commit arguments",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); startupMetadata.set(result, deepFreeze(nullRecord([]))); return result;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      name: "module-scoped private-store metadata argument",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const result = deepFreeze(nullRecord([])); startupMetadata.set(result, moduleMetadata); return result;",
+          ],
+        ]),
+      ).replace(
+        "const stateMetadata = new WeakMap();",
+        "const stateMetadata = new WeakMap();\nconst moduleMetadata = deepFreeze(nullRecord([]));",
+      ),
+    }),
+    Object.freeze({
+      name: "mutable array push call",
+      source: sourceSkeleton(
+        "function pushValue() { const values = []; values.push(null); return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "mutable set add call",
+      source: sourceSkeleton(
+        "function addValue() { const values = new Set(); values.add(null); return null; }",
+      ),
+    }),
+    Object.freeze({
+      name: "shallow ambient freeze used as deep freeze",
+      source: sourceSkeleton(
+        "function shallowFreeze() { return Object.freeze([{}]); }",
+      ),
+    }),
+    Object.freeze({
+      name: "untrusted value retained by frozen graph",
+      source: sourceSkeleton(
+        "function freezeRaw(startupReportBytes) { return deepFreeze([startupReportBytes]); }",
+      ),
+    }),
+    Object.freeze({
+      name: "ambient coercion of untrusted value",
+      source: sourceSkeleton(
+        "function stringifyRaw(startupReportBytes) { return String(startupReportBytes); }",
+      ),
+    }),
+    Object.freeze({
+      name: "untrusted argument passed to local function",
+      source: sourceSkeleton(
+        "function localSink() { return null; } function routeRaw(startupReportBytes) { return localSink(startupReportBytes); }",
+      ),
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -2455,20 +4230,14 @@ function reflectedAuthority(startupReportBytes) {
   const positiveSources = [
     sourceSkeleton(),
     sourceSkeleton(
-      "function localHelper(value) { const localValue = value; return localValue; }",
+      'function failValidation() { throw new Error("CONTROL_SHAPE"); } function localHelper(value) { const localValue = exactBoolean(value, true, "value", failValidation); return localValue; }',
     ),
     sourceSkeleton(
-      "function select(values) { for (const value of values) { if (value) { return value; } } return null; }",
+      "function select() { for (const value of deepFreeze([])) { if (value) { return false; } } return null; }",
     ),
     sourceSkeleton("const frozenLocalTable = deepFreeze([]);"),
     sourceSkeleton(
-      `const pinnedNormativeLiterals = deepFreeze(${JSON.stringify(requiredNormativeLiterals)});`,
-    ),
-    sourceSkeleton(
       'const localRequirements = deepFreeze(nullRecord([["schema", "safe"]]));\nconst localDigest = sha256(canonicalJsonBytes(localRequirements));',
-    ),
-    sourceSkeleton(
-      "const unquotedNormativeObjectKey = deepFreeze({ processAuthority: false });",
     ),
   ];
   for (const source of positiveSources) {
@@ -2479,9 +4248,10 @@ function reflectedAuthority(startupReportBytes) {
     namedRejected: Object.freeze(namedRejected),
     accepted: positiveSources.length,
     namedAccepted: Object.freeze([
-      "pinned normative source literals",
+      "exact requirements AST normalization",
+      "approved untrusted-value normalizer",
+      "frozen local iteration",
       "pure requirements and ephemeral canonical digest initializers",
-      "unquoted normative object key",
     ]),
     evaluationAttempts,
   });
@@ -2568,6 +4338,20 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
   ),
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
+const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
+  sourceIndependentNegativeControls: 110,
+  acceptedSyntheticSources: 5,
+  newAstDataflowNegativeControls: 41,
+  representativeCommitMutationControls: 13,
+  finalRequiredNegativeControls: 330,
+  finalRequiredPositiveControls: 11,
+  fullSemanticGateClosed: false,
+  nonclaims: Object.freeze([
+    "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
+    "the representative commit controls are not the final 200-mutation commit matrix",
+    "candidate evaluation and candidate-connected runtime acceptance remain disabled",
+  ]),
+});
 
 let candidate = null;
 let candidateImportError = null;
@@ -2799,7 +4583,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     "for-await",
   ]);
   assert.deepEqual(STATIC_NEGATIVE_CONTROLS, {
-    rejected: 69,
+    rejected: 110,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -2817,18 +4601,75 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "U+2029 line-comment import smuggling",
       "U+2028 string-continuation authority spelling",
       "U+2029 string-continuation authority spelling",
+      "function-scoped imported helper alias",
+      "laundered untrusted receiver",
+      "parenthesized imported-helper call",
+      "computed member on frozen local",
+      "function-scoped member write",
+      "function-scoped binding write",
+      "normative literal outside normative role",
+      "normative record key outside requirements initializer",
+      "unknown provenance branch join",
+      "untrusted condition coercion",
+      "untrusted iteration",
+      "raw untrusted return",
+      "private-store commit in non-owner",
+      "private-store commit under control flow",
+      "function-scoped ambient alias",
+      "function-scoped Reflect alias",
+      "function-scoped exported-function alias",
+      "direct internal exported-operation call",
+      "function-scoped exported-value alias",
+      "function-scoped private-store alias",
+      "nested function declaration",
+      "recursive module-function call",
+      "requirements initializer semantic drift",
+      "requirements digest initializer drift",
+      "private-store commit followed by fallible work",
+      "private-store owner has early return",
+      "conditional fallible work before private-store commit",
+      "private-store commit returns metadata",
+      "private-store commit aliases result and metadata",
+      "private-store result and metadata share nested origin",
+      "second private-store commit",
+      "private-store commit uses wrong owning store",
+      "parenthesized owning private-store callee",
+      "inline private-store commit arguments",
+      "module-scoped private-store metadata argument",
+      "mutable array push call",
+      "mutable set add call",
+      "shallow ambient freeze used as deep freeze",
+      "untrusted value retained by frozen graph",
+      "ambient coercion of untrusted value",
+      "untrusted argument passed to local function",
     ],
-    accepted: 7,
+    accepted: 5,
     namedAccepted: [
-      "pinned normative source literals",
+      "exact requirements AST normalization",
+      "approved untrusted-value normalizer",
+      "frozen local iteration",
       "pure requirements and ephemeral canonical digest initializers",
-      "unquoted normative object key",
     ],
     evaluationAttempts: 0,
   });
+  assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
+    sourceIndependentNegativeControls: 110,
+    acceptedSyntheticSources: 5,
+    newAstDataflowNegativeControls: 41,
+    representativeCommitMutationControls: 13,
+    finalRequiredNegativeControls: 330,
+    finalRequiredPositiveControls: 11,
+    fullSemanticGateClosed: false,
+    nonclaims: [
+      "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
+      "the representative commit controls are not the final 200-mutation commit matrix",
+      "candidate evaluation and candidate-connected runtime acceptance remain disabled",
+    ],
+  });
+  const baselineAudit = auditCandidateSource(sourceSkeleton());
   assert.deepEqual(
     Object.fromEntries(
-      Object.entries(auditCandidateSource(sourceSkeleton())).filter(([key]) =>
+      Object.entries(baselineAudit).filter(([key]) =>
         [
           "importCount",
           "importedNameCount",
@@ -2843,6 +4684,37 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       exportCount: 13,
       privateStoreCount: 3,
     },
+  );
+  assert.deepEqual(baselineAudit.astPolicy, {
+    classifiedNodeCount: 1_149,
+    bindingCount: 84,
+    referenceCount: 84,
+    callCount: 54,
+    calleeCount: 54,
+    memberCount: 10,
+    receiverCount: 10,
+    literalCount: 561,
+    mutationCount: 10,
+    joinCount: 0,
+    rawEscapeCount: 0,
+    unknownProvenanceCount: 0,
+    privateOperationCount: 10,
+    privateCommitCount: 10,
+    privateDominatedCallCount: 40,
+    privateOwnerReturnCount: 10,
+    moduleCallEdgeCount: 0,
+    privateStoreCommitCounts: {
+      startupMetadata: 1,
+      inputMetadata: 7,
+      stateMetadata: 2,
+    },
+    privateStoreCommitManifest: EXPECTED_PRIVATE_STORE_COMMITS,
+    moduleCallEdges: [],
+    nodeRoleCount: 1_149,
+  });
+  assert.equal(
+    baselineAudit.astPolicy.classifiedNodeCount,
+    baselineAudit.astNodeCount,
   );
   let sourcePresentEvaluationAttempts = 0;
   assert.throws(
