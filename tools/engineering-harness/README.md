@@ -119,6 +119,23 @@ mutation, delegated-cgroup evidence, and the physical native adapter remain
 unimplemented, so the decision does not change the fixed
 production-unavailable boundary.
 
+[ADR-0036 — Guardian-control pure ABI](../../docs/adr/0036-guardian-control-pure-abi.md)
+is also Proposed and source-hard-stopped. Commits `970c135b` and `05796367`
+materialize, then independently repair, the evaluator-owned STATUS-wire oracle:
+15 distinct STATUS records, four atomic two-record prefixes, exact construction
+and inventory identities, and fresh 124-object graphs with zero shared
+non-primitive references. The first version received an explicit NO-GO for
+depending on its design registries and sharing references; the follow-up
+derives directly from the requirements fixture's `legalSequences`. Two
+independent post-repair reviews and root reproduction returned GO for only this
+evaluator slice. Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 all
+produce direct 10/9/0/1, main 15/8/1/6, and combined 25/17/1/7
+test/pass/fail/TODO matrices. The sole focused failure remains the deliberately
+absent production candidate. The final semantic 330/11/200 matrix, candidate
+execution, runtime registration, native ownership, and production readiness
+remain unimplemented; readiness is still exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
 reuse is not identity-bearing, and pre/post verification detects but cannot
@@ -486,12 +503,17 @@ npm run g1.6:preflight
 npm run g1.7:preflight
 ```
 
-At the fail-closed v7 checkpoint, `npm test` reports 624 tests: 621 pass, none
-fail, and three intentional live-host tests are skipped. `npm run doctor` passes
-with 33 registered application commands and the latest-policy lock resolving
-AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness 0.4.8.
-Those versions are lock evidence, not a promise that future `latest` tags will
-remain unchanged.
+At the current fail-closed checkpoint, `npm test` reports 1,118 tests: 1,106
+pass, two fail, three intentional live-host tests are skipped, and seven are
+TODO. One failure is ADR-0036's deliberate absent-candidate stop. The other is
+the G1.7 identity gate refusing product paths changed after its sealed `e9`
+subject; that subject must be reviewed and resealed through its own authority
+boundary, never silently refreshed. This is not a green qualification result.
+`npm run doctor` passes with 33 registered application commands, both native
+host interfaces valid, `mcpRegistered: false`, and the latest-policy lock
+resolving AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness
+0.4.8. Those versions are lock evidence, not a promise that future `latest`
+tags will remain unchanged.
 
 The package is local-only. Presence of this directory is not an engineering
 readiness, product-correctness, semantic-qualification, or promotion claim.
