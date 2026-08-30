@@ -92,13 +92,20 @@ count are finite, each new frame's length and the resulting aggregate are
 checked before that frame is decoded. There is no one-shot aggregate for which
 earlier elements must be revisited.
 
-An ordinary exact local-realm `Buffer` with non-shared backing is accepted,
-length-checked intrinsically, and copied immediately. The module retains no
-caller alias. Any returned bytes are fresh copy-on-read views. Proxies,
-`SharedArrayBuffer` backing, non-Buffer views, Buffer subclasses, foreign Buffer
-prototypes, accessors, and branded lookalikes fail. Foreign non-null record and
-Array prototypes fail; the originating realm of a null-prototype record is not
-observable and is not claimed.
+An ordinary local-realm `Buffer` with non-shared backing is accepted,
+length-checked intrinsically, and copied immediately. Proxies, an own `length`
+property, `SharedArrayBuffer` backing, non-Buffer views, Buffer subclasses,
+foreign Buffer prototypes, and branded lookalikes fail. Arbitrary additional
+non-index own string or symbol properties, including data and accessor
+properties, are outside the byte-carrier semantics: the module never
+enumerates, inspects, reads, writes, or invokes them, they do not cause
+rejection, and they are absent from the clean copy. All semantics derive only
+from that immediate intrinsic copy of indexed bytes. This avoids an attacker-
+controlled property-list allocation before the byte bound while guaranteeing
+zero getter or setter invocations and no caller mutation. The module retains no
+caller alias. Any returned bytes are fresh copy-on-read views. Foreign non-null
+record and Array prototypes fail; the originating realm of a null-prototype
+record is not observable and is not claimed.
 
 ### Exact startup contract
 
@@ -782,15 +789,15 @@ application output, cleanup, journal fact, cgroup fact, or recovery completion.
 
 The complete validation failure vocabulary is:
 
-| Error message        | Meaning                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `CONTROL_BOUNDS`     | Pre-decode byte ceiling, epoch length, count, slot, or aggregate ceiling                                          |
-| `CONTROL_SHAPE`      | Buffer/type/hostile shape, UTF-8, JSONL, canonical encoding, missing/extra/duplicate field                        |
-| `CONTROL_STARTUP`    | Mode, FD, role, kind, access, direction, flag, socket, lock, EOF, or startup alias violation                      |
-| `CONTROL_FRAME`      | Schema, action, carrier, structural sequence, truncation, or forbidden ancillary violation                        |
-| `CONTROL_RIGHTS`     | Control-message count/type, right count/order/role/kind/access/flag/alias violation                               |
-| `CONTROL_BINDING`    | Requirements, startup, epoch, capsule, recovery selection, predecessor, previous-frame, or state binding mismatch |
-| `CONTROL_TRANSITION` | Illegal prefix, replay, reorder, second admission, recovery admission, or post-close/terminal input               |
+| Error message        | Meaning                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `CONTROL_BOUNDS`     | Pre-decode byte ceiling, epoch length, count, slot, or aggregate ceiling                                            |
+| `CONTROL_SHAPE`      | Buffer type, brand, local prototype, own-length, shared-backing, UTF-8, JSONL, canonical, or record-field violation |
+| `CONTROL_STARTUP`    | Mode, FD, role, kind, access, direction, flag, socket, lock, EOF, or startup alias violation                        |
+| `CONTROL_FRAME`      | Schema, action, carrier, structural sequence, truncation, or forbidden ancillary violation                          |
+| `CONTROL_RIGHTS`     | Control-message count/type, right count/order/role/kind/access/flag/alias violation                                 |
+| `CONTROL_BINDING`    | Requirements, startup, epoch, capsule, recovery selection, predecessor, previous-frame, or state binding mismatch   |
+| `CONTROL_TRANSITION` | Illegal prefix, replay, reorder, second admission, recovery admission, or post-close/terminal input                 |
 
 Each thrown error's message is exactly one code with no dynamic detail.
 Structural sequence range or type errors are `CONTROL_FRAME`; a structurally
@@ -819,7 +826,7 @@ Every nested record key, array item and order, null, number, boolean, string,
 specifier, source pin, import name, schema, limit, vocabulary, sequence,
 authority, physical fact, and nonclaim in that file is exact. Its canonical JSON
 SHA-256 is
-`1dd01753308b8b845b44352bd8d2f7d5e69055f346a42008a9824a4c3f10a819`,
+`0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`,
 which is the exact exported requirements digest.
 
 The fixture's normal startup-map digest is
@@ -981,8 +988,11 @@ Implementation requires:
   controls;
 - rejection of launch-capsule v2 substitution, a birth actor in recovery mode,
   non-null recovery state padding, malformed canonical bytes, foreign non-null
-  prototypes, Proxies, accessors, subclasses, shared backing, and separately
-  imported brands;
+  prototypes, Proxies, own `length`, subclasses, shared backing, and separately
+  imported brands, plus zero-invocation normalization controls for arbitrary
+  additional non-index own string, symbol, data, getter, and setter properties
+  that prove no enumeration, inspection, read, write, invocation, or caller
+  mutation;
 - a pre-evaluation static import/export and ambient-capability audit;
 - byte-identical predecessor sources and fixtures, and unchanged registries and
   `{status: "unavailable", reason: "native-adapter-unavailable"}` readiness; and

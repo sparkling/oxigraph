@@ -404,6 +404,7 @@
     "planStatus": "RECOVERY_PLAN_READY",
     "recoveryActorKind": "RECOVERY_ONLY_GUARDIAN",
     "previousFrameGenesisSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "byteCarrierAdditionalOwnPropertyPolicy": "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1",
     "ambientIntrinsics": [
       "Array",
       "Boolean",
