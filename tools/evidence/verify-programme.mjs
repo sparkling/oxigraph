@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import {
   agenticGeneratedWithinQualificationWindow,
   documentClaims,
+  expectedN3MaintenanceReceipt,
   expectedPins,
   semanticCommandIds,
   validateAdrIndex,
@@ -169,6 +170,20 @@ function readResearchJson(root, errors) {
     if (value !== undefined) documents.set(name, value);
   }
   return documents;
+}
+
+function verifyN3MaintenanceReceiptIntegrity(root, errors) {
+  const relativePath = `docs/research/${expectedN3MaintenanceReceipt.path}`;
+  const bytes = collect(errors, `${relativePath} bytes`, () =>
+    readFileSync(regularPath(root, relativePath)),
+  );
+  if (bytes === undefined) return;
+  const actual = sha256(bytes);
+  if (actual !== expectedN3MaintenanceReceipt.sha256) {
+    errors.push(
+      `${relativePath}: expected SHA-256 ${expectedN3MaintenanceReceipt.sha256}, got ${actual}`,
+    );
+  }
 }
 
 function verifyDocuments(root, errors) {
@@ -503,6 +518,7 @@ export function verifyProgramme(
   const errors = [];
   const documents = readResearchJson(root, errors);
   validateJsonDocuments(documents, errors);
+  verifyN3MaintenanceReceiptIntegrity(root, errors);
   const ledger = documents.get("conformance-ledger.json");
   const normative = documents.get("normative-requirements.json");
   const registry = documents.get("standards-registry.json");

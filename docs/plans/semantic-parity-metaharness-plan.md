@@ -58,7 +58,8 @@ Exact SHACL lane counts, exclusions, and artifact locations are read from the
 conformance ledger. They must not be inferred from inventory totals or promoted
 to a complete-family claim.
 
-The exact supporting parser lane passes 5/5 wrappers. Within those wrappers, N3
+The last sealed supporting parser lane passes 5/5 wrappers. Within those
+wrappers, N3 at `b975fc59ab5d2ad2d28e7206f1c34c716977d2ad`
 passes 208 parser, 871 extended, and 296 Turtle cases, but
 both 87-entry reasoner manifests remain unsupported because no reasoner
 handler/wrapper is registered. JSON-LD ToRDF passes 446 of 467 entries with 21
@@ -67,6 +68,17 @@ physical entries for duplicate IDs `t0124` and `t0125` are quarantined by a
 fail-closed preflight; the remaining 479 divide into 452 passes and 27 declared
 failures. JSON-LD FromRDF is not automated: the generic manual audit passes
 9/54 and fails 45/54, including current `t0027` and `t0028`.
+
+The repository now selects N3 commit
+`8a9ea8ed42ae0487b20803f5687017980bbe8e37` for an independently reviewed,
+audit-zero development-dependency and deterministic grammar-generation repair.
+Its [maintenance receipt](../research/n3-dependency-maintenance-receipt.json)
+is not a semantic receipt and does not relabel the 208/871/296 result. The N3
+part of the supporting lane is therefore historical until explicitly rerun at
+the new pin; no production, qualification, promotion, publication, or
+readiness claim follows from the repair. The Gitlink, registry, ledger, and
+receipt-policy changes are protected-input drift, so the existing absence of a
+current full MetaHarness receipt is unchanged.
 
 ## Architecture slices
 

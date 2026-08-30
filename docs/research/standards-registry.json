@@ -84,11 +84,19 @@
     },
     {
       "id": "w3c-n3",
-      "commit": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+      "commit": "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
       "url": "https://github.com/w3c-cg/N3",
+      "availability": "locally verified but not reachable from the configured origin at this checkpoint; parent publication is blocked until separately authorized submodule publication occurs first",
       "role": "optional Notation3 Community Group draft profile",
       "claimScope": "not a W3C Recommendation-track RDF 1.2 family surface",
-      "currentAudit": {
+      "dependencyMaintenanceReceipt": {
+        "path": "n3-dependency-maintenance-receipt.json",
+        "sha256": "f721c9ccc52e946c4a1d35b301da6291e0f682bf8d4bb13e2a771bdfd5b9db56",
+        "authority": "development-dependency, generated-grammar reproducibility, audit, and supply-chain evidence only; no semantic or production qualification"
+      },
+      "historicalSemanticAudit": {
+        "sourceCommit": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+        "status": "historical-only; not relabeled to the current dependency-maintenance pin",
         "parser": {"entries":208,"passed":208},
         "extended": {"entries":871,"passed":871},
         "turtle": {"entries":296,"passed":296},

@@ -1,0 +1,139 @@
+{
+  "schema": "oxigraph.n3-dependency-maintenance-receipt/v1",
+  "recordedAt": "2026-08-30",
+  "transition": {
+    "historicalSemanticCommit": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+    "intermediateRepairCommit": "a9d5740cbd7d52c5a7f8314753a41929a52843fe",
+    "selectedCommit": "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
+    "selectedCommitParent": "a9d5740cbd7d52c5a7f8314753a41929a52843fe",
+    "commits": 2,
+    "changedPathsFromHistoricalCommit": 50,
+    "canonicalDiffSha256FromHistoricalCommit": "f93b031eacd8e1fcfc2a0b7a495db879d384363c580939cc8c44f3b36bc70d6b",
+    "stablePatchIdFromHistoricalCommit": "821b792cb166348b980463ec6bc32237d3ba50ce"
+  },
+  "selectedArtifact": {
+    "tree": "f27062aad2b1a6e39844a4ac725b373ba6faff35",
+    "changedPathsAgainstParent": 46,
+    "generatedJavaPaths": 40,
+    "canonicalDiffSha256": "063357740116ce829fd50b08113eaa4e8f04030eb6f65d417fc1ba4b40a38152",
+    "stablePatchId": "9c5c623a3c05d2ce988532d12fd06a1658935201",
+    "packageJsonSha256": "06baf0fbbca7dfc11198f62e0dabc3454d7b1a47dc2e4aa43ca4b261058cdc4d",
+    "packageLockSha256": "7ed442b494053f6de4033e90bdc97980e9739011295e97fc61b5cffbaa8878a6",
+    "generatedJavaAggregateSha256": "0877e2af02fd819cf0f34c975904b56cd2e1858889a13ea025e4b1a1bee0aab2",
+    "generatedJavascriptAggregateSha256": "29120bb1b6d1e7968199fdf6069f9e86a120945d6899d1ffbad228e373e13e34"
+  },
+  "independentReview": {
+    "commit": "71a80570fe6fb6c2292854baa33dd110603a81d1",
+    "tree": "f27062aad2b1a6e39844a4ac725b373ba6faff35",
+    "canonicalDiffSha256": "063357740116ce829fd50b08113eaa4e8f04030eb6f65d417fc1ba4b40a38152",
+    "treeAndDiffByteIdentical": true
+  },
+  "dependencies": {
+    "antlrNpm": {
+      "selector": "4.13.2",
+      "resolved": "4.13.2",
+      "integrity": "sha512-QiVbZhyy4xAZ17UPEuG3YTOt8ZaoeOR1CvEAqrEsDBsOqINslaB147i9xqljZqoyf5S+EUlGStaj+t22LT9MOg=="
+    },
+    "antlrMavenPluginAndRuntime": "4.13.2",
+    "webpack": {
+      "selector": "latest",
+      "resolved": "5.110.2",
+      "integrity": "sha512-TciLrfM7zgEjqGdY851HkirDsSPQgTFsWQpl9oHqMAMYsHhEC0bKjscvjpnz+pzx10hLC8qISApGrsnrCP4UtQ=="
+    },
+    "lockRecordsIncludingRoot": 67,
+    "dependencyRecords": 66,
+    "allDependenciesDevOnly": true,
+    "lifecycleScripts": 0,
+    "offRegistryDependencies": 0,
+    "missingIntegrityRecords": 0,
+    "webpackCli": "absent; Webpack is invoked through its Node API to preserve the Node 20 floor"
+  },
+  "gates": {
+    "current": {
+      "node": "24.14.1",
+      "npm": "11.11.0",
+      "cleanInstallRuns": 2,
+      "auditIncludingDev": 0,
+      "auditOmitDev": 0,
+      "javascriptTests": "3/3",
+      "deterministicArtifacts": true
+    },
+    "node20Floor": {
+      "node": "20.0.0",
+      "npm": "9.6.4",
+      "cleanInstall": true,
+      "auditIncludingDev": 0,
+      "auditOmitDev": 0,
+      "javascriptTests": "3/3",
+      "deterministicArtifacts": true
+    },
+    "node20Current": {
+      "node": "20.20.2",
+      "npm": "10.8.2",
+      "cleanInstall": true,
+      "auditIncludingDev": 0,
+      "auditOmitDev": 0,
+      "javascriptTests": "3/3",
+      "deterministicArtifacts": true
+    },
+    "maven": {
+      "cleanPackage": "pass",
+      "compiledClasses": 72,
+      "antlrRuntime": "4.13.2"
+    },
+    "grammarSemantics": {
+      "n3Manifest": {
+        "total": 198,
+        "positiveFailed": 0,
+        "negativeFailed": 0,
+        "skipped": 0
+      },
+      "turtleManifest": {
+        "total": 149,
+        "positiveFailed": 19,
+        "negativeFailed": 0,
+        "skipped": 0
+      },
+      "turtleHistoricalFailureSetUnchanged": true
+    }
+  },
+  "signatureVerification": {
+    "currentNpm": { "invalid": [], "missing": [] },
+    "node20CurrentNpm": { "invalid": [], "missing": [] },
+    "node20FloorBundledNpm": {
+      "result": "EEXPIREDSIGNATUREKEY",
+      "package": "antlr4@4.13.2",
+      "keyId": "SHA256:jl3bwswu80PjjokCgh0o2w5c2U4LhQAE57gj9cz1kzA",
+      "classification": "npm 9 verifier false rejection caused by checking an expired signing key without honoring signing time"
+    },
+    "packagePublishedAt": "2024-08-03T18:55:21.066Z",
+    "signingKeyExpiresAt": "2025-01-29T00:00:00.000Z",
+    "independentEcdsaVerification": true,
+    "disposition": "The package was signed before key expiry; current npm and an independent ECDSA verifier accept the signature. Node 20.0.0 build and audit gates remain green, but its bundled npm 9 signature command is not accepted as a valid signature oracle."
+  },
+  "historicalSemanticEvidence": {
+    "sourceCommit": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+    "supportingWrapperResult": {
+      "parser": "208/208",
+      "extended": "871/871",
+      "turtle": "296/296"
+    },
+    "status": "historical-only; not relabeled to the selected dependency-maintenance commit"
+  },
+  "publication": {
+    "configuredRemote": "https://github.com/w3c-cg/N3.git",
+    "selectedCommitReachableFromConfiguredRemote": false,
+    "checkedAt": "2026-08-31",
+    "parentIntegrationStatus": "local-only",
+    "requiredSequence": "Obtain separate publication authority and make the selected submodule commit reachable before any parent commit that pins it is pushed or published."
+  },
+  "authority": {
+    "dependencyMaintenance": true,
+    "generatedGrammarReproducibility": true,
+    "semanticQualification": false,
+    "productionQualification": false,
+    "readinessLift": false,
+    "promotionAuthority": false,
+    "publicationAuthority": false
+  }
+}

@@ -183,7 +183,28 @@ export const expectedPins = Object.freeze({
   "w3c-rdf-canon-tests": "15619df2fda7a4ca88308733789b6774517f9638",
   "w3c-json-ld-api": "92f07705a0c0ac27aa9bc6fe1322dcc9fad0114d",
   "w3c-json-ld-streaming": "64e6fea9eee3cf5d80468810552f50f6c487925f",
-  "w3c-n3": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+  "w3c-n3": "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
+});
+
+export const expectedHistoricalPins = Object.freeze({
+  "w3c-n3-semantic-receipt": "b975fc59ab5d2ad2d28e7206f1c34c716977d2ad",
+});
+
+export const expectedN3MaintenanceReceipt = Object.freeze({
+  path: "n3-dependency-maintenance-receipt.json",
+  sha256: "f721c9ccc52e946c4a1d35b301da6291e0f682bf8d4bb13e2a771bdfd5b9db56",
+  schema: "oxigraph.n3-dependency-maintenance-receipt/v1",
+  commit: "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
+  parent: "a9d5740cbd7d52c5a7f8314753a41929a52843fe",
+  tree: "f27062aad2b1a6e39844a4ac725b373ba6faff35",
+  reviewCommit: "71a80570fe6fb6c2292854baa33dd110603a81d1",
+  canonicalDiffSha256:
+    "063357740116ce829fd50b08113eaa4e8f04030eb6f65d417fc1ba4b40a38152",
+  historicalDiffSha256:
+    "f93b031eacd8e1fcfc2a0b7a495db879d384363c580939cc8c44f3b36bc70d6b",
+  historicalStablePatchId: "821b792cb166348b980463ec6bc32237d3ba50ce",
+  packageLockSha256:
+    "7ed442b494053f6de4033e90bdc97980e9739011295e97fc61b5cffbaa8878a6",
 });
 
 export const expectedShaclIntegrity = Object.freeze({
@@ -246,6 +267,135 @@ function validateShaclIntegrity(label, value, errors) {
   }
 }
 
+export function validateN3MaintenanceReceipt(value, errors) {
+  const expected = expectedN3MaintenanceReceipt;
+  for (const [label, actual, required] of [
+    ["receipt schema", value?.schema, expected.schema],
+    [
+      "maintenance historical semantic commit",
+      value?.transition?.historicalSemanticCommit,
+      expectedHistoricalPins["w3c-n3-semantic-receipt"],
+    ],
+    [
+      "maintenance selected commit",
+      value?.transition?.selectedCommit,
+      expected.commit,
+    ],
+    [
+      "maintenance selected parent",
+      value?.transition?.selectedCommitParent,
+      expected.parent,
+    ],
+    ["maintenance transition commits", value?.transition?.commits, 2],
+    [
+      "maintenance transition changed paths",
+      value?.transition?.changedPathsFromHistoricalCommit,
+      50,
+    ],
+    [
+      "maintenance transition diff hash",
+      value?.transition?.canonicalDiffSha256FromHistoricalCommit,
+      expected.historicalDiffSha256,
+    ],
+    [
+      "maintenance transition patch id",
+      value?.transition?.stablePatchIdFromHistoricalCommit,
+      expected.historicalStablePatchId,
+    ],
+    ["maintenance selected tree", value?.selectedArtifact?.tree, expected.tree],
+    [
+      "maintenance changed paths",
+      value?.selectedArtifact?.changedPathsAgainstParent,
+      46,
+    ],
+    [
+      "maintenance generated Java paths",
+      value?.selectedArtifact?.generatedJavaPaths,
+      40,
+    ],
+    [
+      "maintenance diff hash",
+      value?.selectedArtifact?.canonicalDiffSha256,
+      expected.canonicalDiffSha256,
+    ],
+    [
+      "maintenance lock hash",
+      value?.selectedArtifact?.packageLockSha256,
+      expected.packageLockSha256,
+    ],
+    [
+      "independent review commit",
+      value?.independentReview?.commit,
+      expected.reviewCommit,
+    ],
+    ["independent review tree", value?.independentReview?.tree, expected.tree],
+    [
+      "independent review byte identity",
+      value?.independentReview?.treeAndDiffByteIdentical,
+      true,
+    ],
+    ["ANTLR npm resolution", value?.dependencies?.antlrNpm?.resolved, "4.13.2"],
+    [
+      "ANTLR Maven resolution",
+      value?.dependencies?.antlrMavenPluginAndRuntime,
+      "4.13.2",
+    ],
+    ["Webpack policy", value?.dependencies?.webpack?.selector, "latest"],
+    ["Webpack resolution", value?.dependencies?.webpack?.resolved, "5.110.2"],
+    [
+      "all dependencies dev-only",
+      value?.dependencies?.allDependenciesDevOnly,
+      true,
+    ],
+    ["lifecycle scripts", value?.dependencies?.lifecycleScripts, 0],
+    [
+      "off-registry dependencies",
+      value?.dependencies?.offRegistryDependencies,
+      0,
+    ],
+    ["current npm audit", value?.gates?.current?.auditIncludingDev, 0],
+    [
+      "Node 20 floor npm audit",
+      value?.gates?.node20Floor?.auditIncludingDev,
+      0,
+    ],
+    [
+      "Node 20 current npm audit",
+      value?.gates?.node20Current?.auditIncludingDev,
+      0,
+    ],
+    [
+      "historical semantic receipt commit",
+      value?.historicalSemanticEvidence?.sourceCommit,
+      expectedHistoricalPins["w3c-n3-semantic-receipt"],
+    ],
+    [
+      "selected commit remote reachability",
+      value?.publication?.selectedCommitReachableFromConfiguredRemote,
+      false,
+    ],
+    [
+      "parent integration publication status",
+      value?.publication?.parentIntegrationStatus,
+      "local-only",
+    ],
+    [
+      "semantic qualification authority",
+      value?.authority?.semanticQualification,
+      false,
+    ],
+    [
+      "production qualification authority",
+      value?.authority?.productionQualification,
+      false,
+    ],
+    ["readiness authority", value?.authority?.readinessLift, false],
+    ["publication authority", value?.authority?.publicationAuthority, false],
+  ]) {
+    equal(errors, `N3 ${label}`, actual, required);
+  }
+}
+
 function idMap(values, label, errors) {
   if (!Array.isArray(values)) {
     errors.push(`${label}: expected an array`);
@@ -266,6 +416,18 @@ function idMap(values, label, errors) {
 export function validateJsonDocuments(documents, errors) {
   const required = {
     "conformance-ledger.json": ["claimPolicy", "evidence", "profiles", "qualification"],
+    "n3-dependency-maintenance-receipt.json": [
+      "schema",
+      "transition",
+      "selectedArtifact",
+      "independentReview",
+      "dependencies",
+      "gates",
+      "signatureVerification",
+      "historicalSemanticEvidence",
+      "publication",
+      "authority",
+    ],
     "normative-requirements.json": ["documents", "requirements", "reviewState"],
     "standards-registry.json": ["claimPolicy", "families", "testSources"],
   };
@@ -287,6 +449,14 @@ export function validateJsonDocuments(documents, errors) {
   const ledger = documents.get("conformance-ledger.json");
   if (ledger && typeof ledger === "object" && !Array.isArray(ledger)) {
     equal(errors, "conformance ledger schema", ledger.schemaVersion, 2);
+  }
+  const n3Maintenance = documents.get("n3-dependency-maintenance-receipt.json");
+  if (
+    n3Maintenance &&
+    typeof n3Maintenance === "object" &&
+    !Array.isArray(n3Maintenance)
+  ) {
+    validateN3MaintenanceReceipt(n3Maintenance, errors);
   }
   const normative = documents.get("normative-requirements.json");
   if (normative && typeof normative === "object" && !Array.isArray(normative)) {
@@ -320,7 +490,18 @@ export function validateLedgerCounts(ledger, errors) {
   equal(errors, "Datalog failed tests", result("E-DATALOG-NATIVE")?.failed, 0);
   equal(errors, "semantic integration passed tests", result("E-STORE-NATIVE")?.passed, EXPECTED.semanticIntegration);
   equal(errors, "semantic integration failed tests", result("E-STORE-NATIVE")?.failed, 0);
-  const supporting = result("E-SUPPORTING-PARSER-SUITES");
+  const supportingEvidence = evidence.get("E-SUPPORTING-PARSER-SUITES");
+  const supporting = supportingEvidence?.result;
+  equal(
+    errors,
+    "supporting parser source pins",
+    JSON.stringify(supportingEvidence?.sourcePins),
+    JSON.stringify([
+      "jsonLdApi",
+      "jsonLdStreaming",
+      "n3HistoricalSemanticReceipt",
+    ]),
+  );
   equal(errors, "supporting wrapper passed tests", supporting?.wrapperTests?.passed, EXPECTED.supportingWrapper);
   equal(errors, "supporting wrapper failed tests", supporting?.wrapperTests?.failed, 0);
   equal(errors, "supporting N3 parser", supporting?.n3?.parser, "208/208");
@@ -332,6 +513,38 @@ export function validateLedgerCounts(ledger, errors) {
   equal(errors, "supporting streaming stable entries", supporting?.jsonLdStreaming?.stableEntries, 479);
   equal(errors, "supporting streaming passed", supporting?.jsonLdStreaming?.passed, 452);
   equal(errors, "supporting streaming failures", supporting?.jsonLdStreaming?.declaredFailures, 27);
+
+  const n3Maintenance = evidence.get("E-N3-DEPENDENCY-MAINTENANCE");
+  equal(
+    errors,
+    "N3 maintenance ledger source pin",
+    n3Maintenance?.sourcePin,
+    "n3OptionalCommunityGroupProfile",
+  );
+  equal(
+    errors,
+    "N3 maintenance ledger receipt path",
+    n3Maintenance?.receipt?.path,
+    expectedN3MaintenanceReceipt.path,
+  );
+  equal(
+    errors,
+    "N3 maintenance ledger receipt hash",
+    n3Maintenance?.receipt?.sha256,
+    expectedN3MaintenanceReceipt.sha256,
+  );
+  equal(
+    errors,
+    "N3 maintenance ledger audit including dev",
+    n3Maintenance?.result?.npmAuditIncludingDev,
+    0,
+  );
+  equal(
+    errors,
+    "N3 maintenance ledger production audit",
+    n3Maintenance?.result?.npmAuditOmitDev,
+    0,
+  );
 
   for (const [id, label, count] of [
     ["E-RDF12-OFFICIAL", "RDF 1.2", EXPECTED.rdf],
@@ -848,6 +1061,30 @@ export function validateRegistryPins(registry, ledger, heads, errors) {
     "ledger N3 pin",
     ledger?.reviewedPins?.n3OptionalCommunityGroupProfile,
     expectedPins["w3c-n3"],
+  );
+  equal(
+    errors,
+    "registry N3 historical semantic receipt pin",
+    sources.get("w3c-n3")?.historicalSemanticAudit?.sourceCommit,
+    expectedHistoricalPins["w3c-n3-semantic-receipt"],
+  );
+  equal(
+    errors,
+    "ledger N3 historical semantic receipt pin",
+    ledger?.reviewedPins?.n3HistoricalSemanticReceipt,
+    expectedHistoricalPins["w3c-n3-semantic-receipt"],
+  );
+  equal(
+    errors,
+    "registry N3 maintenance receipt path",
+    sources.get("w3c-n3")?.dependencyMaintenanceReceipt?.path,
+    expectedN3MaintenanceReceipt.path,
+  );
+  equal(
+    errors,
+    "registry N3 maintenance receipt hash",
+    sources.get("w3c-n3")?.dependencyMaintenanceReceipt?.sha256,
+    expectedN3MaintenanceReceipt.sha256,
   );
 }
 

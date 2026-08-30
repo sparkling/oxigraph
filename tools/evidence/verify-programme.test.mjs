@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   documentClaims,
+  expectedHistoricalPins,
+  expectedN3MaintenanceReceipt,
   expectedPins,
   expectedShaclIntegrity,
   validateAdrIndex,
@@ -21,6 +24,15 @@ const agenticIntegrity =
   "sha512-1bfL3zJJiwZNvcQ2yV7/6Z98U3LIKGS0eemYAxdVxwQ1DHgE9tuTt6pnluivXs3OSiKbd/v2X1iPP7FU0gFtfw==";
 const darwinIntegrity =
   "sha512-V+AhQvj9ijR8OK9TvogSngtz47q8pHPjMm1mWMoDUk1JaRKz88oJu/sPUQ5BApCIgeSWEKo/bzrFSV4Krb/3Fg==";
+const n3MaintenanceReceipt = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../docs/research/n3-dependency-maintenance-receipt.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
 const jenaSubjectSha256 =
   "182972ecb68f5d6e3868fa30bb44b860d50da6c135f2cc50e4236a2eb5876a63";
 const jenaDomains = {
@@ -65,6 +77,11 @@ function ledgerFixture() {
       { id: "E-STORE-NATIVE", result: { passed: 4, failed: 0 } },
       {
         id: "E-SUPPORTING-PARSER-SUITES",
+        sourcePins: [
+          "jsonLdApi",
+          "jsonLdStreaming",
+          "n3HistoricalSemanticReceipt",
+        ],
         result: {
           wrapperTests: { passed: 5, failed: 0 },
           n3: {
@@ -82,6 +99,18 @@ function ledgerFixture() {
             passed: 452,
             declaredFailures: 27,
           },
+        },
+      },
+      {
+        id: "E-N3-DEPENDENCY-MAINTENANCE",
+        sourcePin: "n3OptionalCommunityGroupProfile",
+        receipt: {
+          path: expectedN3MaintenanceReceipt.path,
+          sha256: expectedN3MaintenanceReceipt.sha256,
+        },
+        result: {
+          npmAuditIncludingDev: 0,
+          npmAuditOmitDev: 0,
         },
       },
       {
@@ -328,6 +357,8 @@ function ledgerFixture() {
       jsonLdApi: expectedPins["w3c-json-ld-api"],
       jsonLdStreaming: expectedPins["w3c-json-ld-streaming"],
       n3OptionalCommunityGroupProfile: expectedPins["w3c-n3"],
+      n3HistoricalSemanticReceipt:
+        expectedHistoricalPins["w3c-n3-semantic-receipt"],
       agenticQe: {
         policy: "latest",
         resolved: "3.13.12",
@@ -369,6 +400,9 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
   ).result.defaultFeatures.passed = 143;
   ledger.evidence.find((item) => item.id === "E-DATALOG-MUTATION").runId =
     "stale-run";
+  ledger.evidence.find(
+    (item) => item.id === "E-SUPPORTING-PARSER-SUITES",
+  ).sourcePins[2] = "n3OptionalCommunityGroupProfile";
   ledger.qualification.find(
     (item) => item.id === "agentic-qe",
   ).reconciledProfiles.persistenceWrite.receiptSha256 = "0".repeat(64);
@@ -395,6 +429,9 @@ test("canonical ledger exact counts pass and stale counts are all reported", () 
     errors.some((error) => error.startsWith("CLI default-feature tests:")),
   );
   assert(errors.some((error) => error.startsWith("mutation ledger run:")));
+  assert(
+    errors.some((error) => error.startsWith("supporting parser source pins:")),
+  );
   assert(
     errors.some((error) =>
       error.startsWith("Agentic-QE persistence-write receiptSha256:"),
@@ -531,6 +568,17 @@ test("registry pins must match both the reviewed constants and checkout heads", 
             },
           }
         : {}),
+      ...(id === "w3c-n3"
+        ? {
+            dependencyMaintenanceReceipt: {
+              path: expectedN3MaintenanceReceipt.path,
+              sha256: expectedN3MaintenanceReceipt.sha256,
+            },
+            historicalSemanticAudit: {
+              sourceCommit: expectedHistoricalPins["w3c-n3-semantic-receipt"],
+            },
+          }
+        : {}),
     })),
   };
   const heads = { ...expectedPins };
@@ -558,6 +606,30 @@ test("registry pins must match both the reviewed constants and checkout heads", 
       error.startsWith("registry SHACL suite-content hash:"),
     ),
   );
+
+  registry.testSources.find((item) => item.id === "w3c-json-ld-api").commit =
+    expectedPins["w3c-json-ld-api"];
+  const n3 = registry.testSources.find((item) => item.id === "w3c-n3");
+  n3.historicalSemanticAudit.sourceCommit = "3".repeat(40);
+  n3.dependencyMaintenanceReceipt.sha256 = "4".repeat(64);
+  ledger.reviewedPins.n3HistoricalSemanticReceipt = "5".repeat(40);
+  errors = [];
+  validateRegistryPins(registry, ledger, { ...expectedPins }, errors);
+  assert(
+    errors.some((error) =>
+      error.startsWith("registry N3 historical semantic receipt pin:"),
+    ),
+  );
+  assert(
+    errors.some((error) =>
+      error.startsWith("ledger N3 historical semantic receipt pin:"),
+    ),
+  );
+  assert(
+    errors.some((error) =>
+      error.startsWith("registry N3 maintenance receipt hash:"),
+    ),
+  );
 });
 
 test("key JSON shape validation rejects missing and non-object documents", () => {
@@ -575,6 +647,52 @@ test("key JSON shape validation rejects missing and non-object documents", () =>
   assert(
     errors.some((error) =>
       error.includes("normative-requirements.json: missing reviewState"),
+    ),
+  );
+});
+
+test("N3 maintenance receipt cannot relabel historical semantics or mint authority", () => {
+  const receipt = structuredClone(n3MaintenanceReceipt);
+  receipt.historicalSemanticEvidence.sourceCommit =
+    receipt.transition.selectedCommit;
+  receipt.publication.selectedCommitReachableFromConfiguredRemote = true;
+  receipt.authority.semanticQualification = true;
+  const documents = new Map([
+    [
+      "conformance-ledger.json",
+      {
+        schemaVersion: 2,
+        claimPolicy: {},
+        evidence: [],
+        profiles: [],
+        qualification: [],
+      },
+    ],
+    ["n3-dependency-maintenance-receipt.json", receipt],
+    [
+      "normative-requirements.json",
+      { documents: [], requirements: [], reviewState: {} },
+    ],
+    [
+      "standards-registry.json",
+      { claimPolicy: {}, families: [], testSources: [] },
+    ],
+  ]);
+  const errors = [];
+  validateJsonDocuments(documents, errors);
+  assert(
+    errors.some((error) =>
+      error.startsWith("N3 historical semantic receipt commit:"),
+    ),
+  );
+  assert(
+    errors.some((error) =>
+      error.startsWith("N3 semantic qualification authority:"),
+    ),
+  );
+  assert(
+    errors.some((error) =>
+      error.startsWith("N3 selected commit remote reachability:"),
     ),
   );
 });
@@ -607,6 +725,7 @@ test("normative SHACL document hashes are pinned to the generated inventory", ()
       },
     ],
     ["normative-requirements.json", normative],
+    ["n3-dependency-maintenance-receipt.json", n3MaintenanceReceipt],
     [
       "standards-registry.json",
       { claimPolicy: {}, families: [], testSources: [] },
