@@ -286,6 +286,52 @@ const PRIVATE_STORE_OWNER_BY_FUNCTION = new Map(
   ]),
 );
 
+const EXPECTED_PRIVATE_STORE_LOOKUPS = Object.freeze([
+  Object.freeze({
+    functionName: "initializeCandidateContainmentGuardianControlV1",
+    storeName: "startupMetadata",
+    keyParameterName: "startupProjection",
+  }),
+  Object.freeze({
+    functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+    storeName: "startupMetadata",
+    keyParameterName: "startupProjection",
+  }),
+  ...[
+    "createCandidateContainmentGuardianAdmissionInputV1",
+    "createCandidateContainmentGuardianCancelInputV1",
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    "createCandidateContainmentGuardianStatusEofInputV1",
+  ].map((functionName) =>
+    Object.freeze({
+      functionName,
+      storeName: "stateMetadata",
+      keyParameterName: "currentState",
+    }),
+  ),
+  Object.freeze({
+    functionName: "reduceCandidateContainmentGuardianControlV1",
+    storeName: "stateMetadata",
+    keyParameterName: "currentState",
+  }),
+  Object.freeze({
+    functionName: "reduceCandidateContainmentGuardianControlV1",
+    storeName: "inputMetadata",
+    keyParameterName: "brandedInput",
+  }),
+]);
+const PRIVATE_LOOKUP_POLICY_BY_FUNCTION_STORE = new Map(
+  EXPECTED_PRIVATE_STORE_LOOKUPS.map((entry) => [
+    `${entry.functionName}\u0000${entry.storeName}`,
+    entry,
+  ]),
+);
+assert.equal(EXPECTED_PRIVATE_STORE_LOOKUPS.length, 11);
+assert.equal(PRIVATE_LOOKUP_POLICY_BY_FUNCTION_STORE.size, 11);
+
 const EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS = Object.freeze([
   "schema",
   "version",
@@ -2473,6 +2519,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   const functionRecords = new Map();
   const requirementsDependencies = new Set();
   const privateCommits = [];
+  const privateLookups = [];
+  const privateLookupResultPolicies = [];
   const moduleCallEdges = new Set();
   const privateStoreNames = new Set([
     "startupMetadata",
@@ -2654,6 +2702,13 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     left.origins.length > 0 &&
     right.origins.length > 0 &&
     left.origins.every((origin) => !right.origins.includes(origin));
+
+  const privateLookupArgumentLabel = (arguments_) => {
+    if (arguments_.length !== 1) return `<arity-${arguments_.length}>`;
+    return arguments_[0].type === "Identifier"
+      ? arguments_[0].name
+      : `<${arguments_[0].type}>`;
+  };
 
   let importIndex = 0;
   let exportIndex = 0;
@@ -3337,17 +3392,62 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     const arguments_ = evaluateArguments(node.arguments, scope, context);
     if (member.kind === "private-method") {
       counters.privateOperationCount += 1;
-      if (member.memberName === "has") {
-        if (arguments_.length !== 1) fail("private has arity");
-        return IMMUTABLE_VALUE;
-      }
-      if (member.memberName === "get") {
-        if (arguments_.length !== 1) fail("private get arity");
-        return makeValue("private-read", {
-          freezable: false,
-          origins: [node, ...arguments_.flatMap(({ origins }) => origins)],
-          tainted: true,
+      if (["has", "get"].includes(member.memberName)) {
+        const functionName = context.functionRecord?.name ?? "<module>";
+        const policy = PRIVATE_LOOKUP_POLICY_BY_FUNCTION_STORE.get(
+          `${functionName}\u0000${member.storeName}`,
+        );
+        if (policy === undefined) {
+          fail(
+            `private lookup policy ${functionName}:${member.storeName}.${member.memberName}`,
+          );
+        } else {
+          const argumentLabel = privateLookupArgumentLabel(node.arguments);
+          const argumentNode = node.arguments[0];
+          const argumentBinding =
+            node.arguments.length === 1 && argumentNode.type === "Identifier"
+              ? resolve(scope, argumentNode.name)
+              : null;
+          if (
+            node.arguments.length !== 1 ||
+            argumentNode.type !== "Identifier" ||
+            argumentNode.name !== policy.keyParameterName ||
+            argumentBinding !==
+              context.parameterBindings.get(policy.keyParameterName)
+          ) {
+            fail(
+              `private lookup key ${functionName}:${member.storeName}.${member.memberName}:${argumentLabel}`,
+            );
+          } else {
+            privateLookups.push({
+              functionName,
+              storeName: member.storeName,
+              method: member.memberName,
+              keyParameterName: argumentNode.name,
+            });
+          }
+        }
+        const lookupResult =
+          member.memberName === "has"
+            ? IMMUTABLE_VALUE
+            : makeValue("private-read", {
+                freezable: false,
+                origins: [
+                  node,
+                  ...arguments_.flatMap(({ origins }) => origins),
+                ],
+                tainted: true,
+              });
+        privateLookupResultPolicies.push({
+          functionName,
+          storeName: member.storeName,
+          method: member.memberName,
+          keyParameterName: node.arguments[0].name,
+          kind: lookupResult.kind,
+          freezable: lookupResult.freezable,
+          tainted: lookupResult.tainted,
         });
+        return lookupResult;
       }
       counters.mutationCount += 1;
       counters.privateCommitCount += 1;
@@ -3713,17 +3813,22 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     mark(node, record.exported ? "exported-function" : "local-function");
     markIdentifier(node.id, "function-binding");
     const scope = { parent: moduleScope, bindings: new Map() };
+    const parameterBindings = new Map();
     for (const parameter of node.params) {
       if (parameter.type !== "Identifier") fail("non-identifier parameter");
       markIdentifier(parameter, "parameter-binding");
-      declare(scope, parameter.name, {
-        kind: "parameter",
-        value: UNTRUSTED_VALUE,
-        node: parameter,
-      });
+      parameterBindings.set(
+        parameter.name,
+        declare(scope, parameter.name, {
+          kind: "parameter",
+          value: UNTRUSTED_VALUE,
+          node: parameter,
+        }),
+      );
     }
     const context = {
       functionRecord: record,
+      parameterBindings,
       returnValues: [],
       returnStatements: [],
       controlDepth: 0,
@@ -3891,6 +3996,12 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         Object.freeze({ ...entry }),
       ),
     ),
+    privateLookupOperations: Object.freeze(
+      privateLookups.map((entry) => Object.freeze({ ...entry })),
+    ),
+    privateLookupResultPolicies: Object.freeze(
+      privateLookupResultPolicies.map((entry) => Object.freeze({ ...entry })),
+    ),
     moduleCallEdges: Object.freeze([...moduleCallEdges].sort()),
     nodeRoleCount: counters.classifiedNodeCount,
   });
@@ -3995,6 +4106,21 @@ function sourceWithImportMutation(mutate) {
 
 const STATIC_EVIDENCE_MANIFEST_SCHEMA =
   "oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1";
+const PRIVATE_LOOKUP_EVIDENCE_SCHEMA =
+  "oxigraph.candidate-containment-guardian-control-private-lookup-evidence/v1";
+const PRIVATE_LOOKUP_METHODS = Object.freeze(["has", "get"]);
+const EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS = Object.freeze({
+  schemaSha256:
+    "5ca5d446d3357b0b43b6421e1cedae2b62f37f9e58135349c7a663ec48b42b47",
+  methodsSha256:
+    "f0afdaedcb5432d380f9d18e533963f7dcdcff465c7b7864b89e72d09d235a01",
+  orderedAuthorizedPairProjectionSha256:
+    "562ce95945ad0e110eb9c01866a44c5202f37f2d4381a8ac8d68d7bded28b1e1",
+  orderedObservedOperationProjectionSha256:
+    "164ab5c6d611fa840804fb88d4e59035e897f9f72db97e8161ef52f92834ada7",
+  receiptWithoutProjectionHashesSha256:
+    "c86485d7298cd768a4ceb254274c6b331a9fb6981a5ae73cd6fb6328d90bbd6b",
+});
 const NAMED_FOUNDATION_CONTROL_COUNT = 16;
 const FOUNDATION_GENERATED_CONTROL_NAMES = Object.freeze([
   "default import",
@@ -4057,6 +4183,12 @@ const POSITIVE_CONTROL_NAMES = Object.freeze([
   "frozen local iteration",
   "frozen local module table",
   "pure requirements and ephemeral canonical digest initializers",
+  "initializer startup private lookup pair",
+  "status verifier startup private lookup pair",
+  "admission state private lookup pair",
+  "remaining input-constructor state private lookup pairs",
+  "reducer state private lookup pair",
+  "reducer branded-input private lookup pair",
 ]);
 const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "protectedAliases",
@@ -4107,6 +4239,18 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "untrustedSinks",
   "scopeJoins",
   "nestedRecursion",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "protectedAliases",
+  "untrustedSinks",
+  "untrustedSinks",
+  "untrustedSinks",
+  "rawEscapes",
+  "rawEscapes",
+  "scopeJoins",
+  "scopeJoins",
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4143,15 +4287,15 @@ const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "af44b6f3f20713ffdc3d48cae4eff404b80a1e27ae07783c4a6315e7dd562df0",
+    "24e1fe89f7a3b6efa9967a56549f9809e47c171101e7547239fbadc5a66c0de7",
   orderedSemanticProjectionSha256:
-    "597e02c51e9bb92c7bbfebf5562fc82930d88a78cbdd99ec0fd7b1c6a211360f",
+    "a7af959d1a32a4a9dd545b6bc8211a5c304b37c932dd59d4efb0e2eeea9c7c69",
   bucketProjectionSha256:
-    "2205bbbfb666fc3b0de1350e9760c932d5fdfcfbd8be7961c9c1d86f6b8ac82e",
+    "a8ea7637037d2cc75a9297d1caa07fed868141065c0bae0449ec82aaaee04391",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
-    "7237029edd59dee361030e12d12d3214c38fa83512a2866f8c7ce8e0bfb7bc28",
+    "f73112c110a5ced50c3f64fcd53da66e022f20abbaef83ddb5be69d32390f420",
   commitIdProjectionSha256:
     "cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c",
 });
@@ -4238,7 +4382,7 @@ SEM-N009|c9f5b7a191e60cb104774c727d051d5adccad35fca446326fee03bf0f0d73150|8ae35e
 SEM-N010|8379f545a53d3685a982b616424e2a62f159ac4a9e6c3df6d92d65a4777e8103|f6a3a1490bb2708e4f719329cc19f8ac27ab2b2625a9ef0f53713a739cc577af|1160|estree-policy|static gate: ESTree raw or unknown value if condition
 SEM-N011|f83775d137f0326e7ee050201f2582716a7d639c97ac55c28f3c35be30061aad|fbe0d5fc2515ac258c175bb3715592026df946787a5f2d4642fe9d2ea0845f82|1163|estree-policy|static gate: ESTree raw or unknown value iterated
 SEM-N012|8e536d6d5f981f5e2398689a850b3191b786096e9cad8e4e93c6929d9a5f2a51|60d005a3f851daf3b373f1130b06db111721014704d686481783c7f255e9aca4|1155|estree-policy|static gate: ESTree raw or unknown value returned from function
-SEM-N013|b4bc0847cbbd9b7f908f1abcd38b754f657952ae064dc489cc4b2d0e336b8329|20450c27418578ab4a84626011816d8be65662f565d91aefa7a0e6427ba9cfce|1162|estree-policy|static gate: ESTree deepFreeze argument provenance
+SEM-N013|cbc214639b03132d01081ac7c6acb6535a1b049ff7bb7e83989ee9d77d9d5364|179b90dc7f86d6790e60e5ebc2308386a6982e37e576447821eedee195fbe331|1156|estree-policy|static gate: ESTree deepFreeze argument provenance
 SEM-N014|5fa3f306b1814be88b0f6812b59a615e705fb5966f465ecd8015e8f1a26fa976|57d8eb99875937213b130828b8dac93b2ca1d652a87fe2403ba21da759aafc69|1177|estree-policy|static gate: ESTree private commit owner wrongOwner
 SEM-N015|a0d9c0b4d5b58ef45558ca295fd528a5ea3764e00f04645cccbf1c232809d6b7|370c70cddc155742d8916762b369ef6371ea68374a512aa0af919205b916d117|1160|estree-policy|static gate: ESTree private commit must be a direct function-body statement
 SEM-N016|3fcfe1ed7df99d1bb91509df0819192d25e7e4177481689517b342311aec4110|d43b43f3e54da6b2742c1c8c12b9e6c85fda47417e2dc97071f0a9770a092199|1158|estree-policy|static gate: ESTree protected binding used as value Object
@@ -4273,13 +4417,31 @@ SEM-N044|01281e395bbf50677cdb90a12562ae9fffdb46b0941c884a7d3a8fedca83e44d|0fe5bf
 SEM-N045|dcd0b84e6ec634e54af1d63a350acdde0aba11e081a17b885eb41cf67cf77933|1d5c8592b1eac9972ae2ac0682ae0b56a99adc9aa1366ade8910d5d47a8b2cf8|1157|estree-policy|static gate: ESTree raw or unknown value ambient coercion String
 SEM-N046|42b089a8944b1e58989a7c72c9ed105711ee527c10823331a850b5fe02de445e|4d5400af18156c7794d1e8d65c32ac09c85d42c98a8eed4453127345391f587f|1162|estree-policy|static gate: ESTree raw or unknown value passed to local function localSink
 SEM-N047|3b0777daf5f80bffd69c3abc6d4d84ddb0b31a6d0f757c2823f02007a76874a7|225f4572c3ca11fe891d8c96a7d8e1a9a5b2f2bf86c430b142113dccbc1d3934|1165|estree-policy|static gate: ESTree failure callback may return noFail
-SEM-N048|ff65ffbafbd9bac23794dd43586b6d3f3d9f4e5cefcd93a103fdde7ce7634330|602773f1e8cc8a795d7443b0d13f4cce39d95d5d192f77102702f7e97c13bce3|1160|estree-policy|static gate: ESTree recursive call graph recursiveFailure`;
+SEM-N048|ff65ffbafbd9bac23794dd43586b6d3f3d9f4e5cefcd93a103fdde7ce7634330|602773f1e8cc8a795d7443b0d13f4cce39d95d5d192f77102702f7e97c13bce3|1160|estree-policy|static gate: ESTree recursive call graph recursiveFailure
+SEM-N049|382eaedfa6842eba585d845e089a53dab26a00b82c126e782824fcd78ee67c65|6c9a2234babfcdb49e06419dbd3d3c4567e4d467c4475b3ba8fa0a84d97a2b6f|1159|estree-policy|static gate: ESTree private lookup policy probeStartupBrand:startupMetadata.has
+SEM-N050|70ca10f37e8ebad60afa2fa616ab95ce880e5f5d21b9804eff9e34c48a6e131e|26dfdbd3b58f04cc9e65d20527f122fd0d7bc298d2ade5da603fc55ed9be761b|1157|estree-policy|static gate: ESTree private lookup policy createCandidateContainmentGuardianStartupV1:startupMetadata.get
+SEM-N051|c339d7613797fc85ad23489a06e96387faf785cb0f19cdfedf7ca5ec8d1962c9|848065bc8c4c285e4ff93067d221a521e37d07fe38f03a7da8b61d167b150dbc|1157|estree-policy|static gate: ESTree private lookup policy initializeCandidateContainmentGuardianControlV1:inputMetadata.get
+SEM-N052|a043f1ad1bc8b2e87a645b819ef4f8892048fa2bf2a71918ab41680d92db5121|563cb87a947a86fd583c96d8e7812192eb335f64aec1f5ed3808faa8f849cd69|1157|estree-policy|static gate: ESTree private lookup policy verifyCandidateContainmentGuardianStatusFrameV1:stateMetadata.get
+SEM-N053|bba11346f57637522f2a2128ed0f35103210c464890e7a89439a787a64c615bd|34f4047fc78ffe53614c44eacabe6a4fb20853f54a0f9f4b8e9d3da453aacfe2|1157|estree-policy|static gate: ESTree private lookup policy createCandidateContainmentGuardianAdmissionInputV1:inputMetadata.get
+SEM-N054|47b81074a11b2844daaa07b77ea699ee7c56649cf9f9d6adf671962c7346f98b|576a2d852de3be582a76db52a46b4629194244449044376cef232e9ae88bbb62|1165|estree-policy|static gate: ESTree private lookup key initializeCandidateContainmentGuardianControlV1:startupMetadata.get:forged
+SEM-N055|feec76da1661e18039e45a197fcf5164a04025c5ddd146e83baafdaf59466952|7399c79db007804f44ec97beea7d48099fa0089faf2d5c5997d46d2177d1be47|1157|estree-policy|static gate: ESTree private lookup key reduceCandidateContainmentGuardianControlV1:stateMetadata.get:brandedInput
+SEM-N056|1aa0e7958497f77ab9d91f54bff2fbbc03d229e00baebab291ce1af8b1cf7d5d|3fc3a0c4850918a259815806812834a2751ed2a49ada7f25ee7a1e474e8deb84|1157|estree-policy|static gate: ESTree private lookup key createCandidateContainmentGuardianAdmissionInputV1:stateMetadata.has:admissionFrameBytes
+SEM-N057|6d0b349e5438d23e354d81b9f6e3aa05f2b97b289e795036098fd1e9c206840a|817cea47a5e6063c2e07d007c60c2c7e8b93dac46c5537c058e07a785a9b0502|1153|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N058|9d0d8d67f2ffe8a6952b52de79fa7be6c44516452d7ec1fc5c409d3e0460b9fd|0d55d80e7cb11bdde162be7dca6cd1c7e5741852ecd97f6becea175df897eff9|1159|estree-policy|static gate: ESTree raw or unknown value used as receiver for .bytes
+SEM-N059|ace81930dfdfb66cae570a3a0959828027a2de46843093fb472491b9f68a52c4|971ba3d9783b0ed4c8fb6b0e83afb58998ebcb8db16b4a8ad4df301c08275cb0|1164|estree-policy|static gate: ESTree unknown provenance join conditional expression
+SEM-N060|5318716e01ff9f07dbb0b84f47fd78466619b8d29f4975020afc422fb5452f45|3d81f243ae80ad914e0a941cea897e156fe0f6341cd8f5986bec3be301dbeede|1167|estree-policy|static gate: ESTree raw or unknown value logical ??`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
 POS-P003|ee9c363f0f7fa62114a29bb5eb70176753d4061e2714090f7126e3dca8ce6423|0c14bf96bb50459894fbd9130fd275bd13d1764423f2e57ebf554de291745278|1167|accepted|-
 POS-P004|f07475cf64ecec73afb4b645cb64032184d03c43ed3b4a99e8c08f753b20e3e6|216a6b69c2684c0d8741d61af956e6137ca311f055af5fb466b6ef7178b30fef|1155|accepted|-
-POS-P005|612e51636159788b3dd225f1d01b5aaac928ea2a2cd40a1ad1ac855414bb13ae|8f09df4ff27f4dabbe635485ff84fb577e5c75d9b80a3eed62552dde88c3fce1|1168|accepted|-`;
+POS-P005|612e51636159788b3dd225f1d01b5aaac928ea2a2cd40a1ad1ac855414bb13ae|8f09df4ff27f4dabbe635485ff84fb577e5c75d9b80a3eed62552dde88c3fce1|1168|accepted|-
+POS-P006|dbbcd95be39251964ab93f8efbf764bf7b3d296909558e0af929fa1136c50aa9|39068b60e31c1171c0d36a5a7465c1870436dbf98d4ef4fef9107017e5ee5fe3|1165|accepted|-
+POS-P007|dd612825afc1432da1801457984feb772ab602c4b7dd863922318c521e06b28b|39a504a9c65bad80c39d4d4c80486003d616dfdaa1a848ed0695fb3c7e99929a|1165|accepted|-
+POS-P008|1cad7a64848a0d03c0e3a92c19bb6981e5efd1f3aa587342503784588ae675c5|683624ec04e5dfb038b32041d8781ad717982424c9e2e011894b299c24e7cec8|1165|accepted|-
+POS-P009|492103fc5d819387ca0d71d45f499dfd0187e69dff406cd4a0fc7e4da5577603|2121d9703c44fcb45ef4c6438fb5cd6a963023184e0757f7a329a01da7f37c3a|1245|accepted|-
+POS-P010|2475a732fbb911b6cb3d152de04f88cb05deda9a38cef76accf77df77ea75b6a|fe3579f4ec165e5710024694e55502c602e07dbfc2cc7b374b9aaa3a9483fed0|1165|accepted|-
+POS-P011|6e746ae655f2d45553cf5e0348b84ba9a373c07836029a4a664150a9c86524d9|1f31397aae0b77941325b14d0aba2eab2a6c825b6b3069a654cb0e90ac3a1763|1165|accepted|-`;
 
 // Preserve the complete canonical assertion payloads without delimiter or
 // newline loss in the compact literal pin table above.
@@ -4352,9 +4514,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 48);
-assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 5);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 122);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 60);
+assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 140);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -4374,7 +4536,6 @@ function createStaticControlEvidenceEntry({
   rejection,
 }) {
   const expected = STATIC_CONTROL_EXPECTATION_PINS[id];
-  assert.notEqual(expected, undefined, id);
   const actual = {
     id,
     sourceSha256: byteSha256(Buffer.from(source, "utf8")),
@@ -4386,6 +4547,7 @@ function createStaticControlEvidenceEntry({
         ? null
         : canonicalStaticControlRejectionMessage(rejection),
   };
+  assert.notEqual(expected, undefined, id);
   assert.deepEqual(actual, expected, `${id} literal evidence pin`);
   return Object.freeze({
     id,
@@ -4487,6 +4649,101 @@ function createStaticEvidenceManifest({
       evaluationAttempts,
     },
     aggregates,
+  });
+}
+
+function createPrivateLookupManifest(positiveAudits) {
+  const positiveControlIds = Object.freeze(
+    Array.from({ length: 6 }, (_, index) =>
+      staticControlId("POS-P", index + 5),
+    ),
+  );
+  const selectedAudits = positiveAudits.filter(({ controlId }) =>
+    positiveControlIds.includes(controlId),
+  );
+  assert.deepEqual(
+    selectedAudits.map(({ controlId }) => controlId),
+    positiveControlIds,
+  );
+  assert.deepEqual(
+    selectedAudits.map(({ privateLookups }) => privateLookups.length),
+    [2, 2, 2, 12, 2, 2],
+  );
+  const observedOperations = selectedAudits.flatMap(
+    ({ controlId, privateLookups }) =>
+      privateLookups.map((lookup) => ({ controlId, ...lookup })),
+  );
+  const observedProjection = observedOperations.map(
+    ({ functionName, storeName, method, keyParameterName }) => ({
+      functionName,
+      storeName,
+      method,
+      keyParameterName,
+    }),
+  );
+  const expectedProjection = EXPECTED_PRIVATE_STORE_LOOKUPS.flatMap((pair) =>
+    PRIVATE_LOOKUP_METHODS.map((method) => ({ ...pair, method })),
+  );
+  assert.deepEqual(observedProjection, expectedProjection);
+  assert.equal(
+    new Set(observedProjection.map((entry) => canonicalJson(entry))).size,
+    22,
+  );
+  const storePairCounts = Object.fromEntries(
+    ["startupMetadata", "stateMetadata", "inputMetadata"].map((storeName) => [
+      storeName,
+      EXPECTED_PRIVATE_STORE_LOOKUPS.filter(
+        (entry) => entry.storeName === storeName,
+      ).length,
+    ]),
+  );
+  assert.deepEqual(storePairCounts, {
+    startupMetadata: 2,
+    stateMetadata: 8,
+    inputMetadata: 1,
+  });
+  const receiptWithoutProjectionHashes = {
+    schema: PRIVATE_LOOKUP_EVIDENCE_SCHEMA,
+    methods: [...PRIVATE_LOOKUP_METHODS],
+    authorizedPairs: EXPECTED_PRIVATE_STORE_LOOKUPS.map((entry) => ({
+      ...entry,
+    })),
+    positiveControlIds: [...positiveControlIds],
+    observedOperations,
+    counts: {
+      authorizedPairs: EXPECTED_PRIVATE_STORE_LOOKUPS.length,
+      methods: PRIVATE_LOOKUP_METHODS.length,
+      expectedOperations:
+        EXPECTED_PRIVATE_STORE_LOOKUPS.length * PRIVATE_LOOKUP_METHODS.length,
+      observedOperations: observedOperations.length,
+    },
+  };
+  assert.equal(
+    semanticSha256(PRIVATE_LOOKUP_EVIDENCE_SCHEMA),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.schemaSha256,
+  );
+  assert.equal(
+    semanticSha256(PRIVATE_LOOKUP_METHODS),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.methodsSha256,
+  );
+  assert.equal(
+    semanticSha256(EXPECTED_PRIVATE_STORE_LOOKUPS),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedAuthorizedPairProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(observedOperations),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedObservedOperationProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(receiptWithoutProjectionHashes),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.receiptWithoutProjectionHashesSha256,
+  );
+  return recursivelyFreezeEvidence({
+    ...receiptWithoutProjectionHashes,
+    orderedAuthorizedPairProjectionSha256:
+      EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedAuthorizedPairProjectionSha256,
+    orderedObservedOperationProjectionSha256:
+      EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedObservedOperationProjectionSha256,
   });
 }
 
@@ -4777,7 +5034,13 @@ function reflectedAuthority(startupReportBytes) {
     Object.freeze({
       name: "private-store get embedded in returned frozen graph",
       source: sourceSkeleton(
-        "function exposePrivateMetadata(key) { return deepFreeze([startupMetadata.get(key)]); }",
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return deepFreeze([startupMetadata.get(startupProjection)]);",
+          ],
+        ]),
       ),
       expected: /deepFreeze argument provenance/u,
     }),
@@ -5101,6 +5364,164 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /recursive call graph recursiveFailure/u,
     }),
+    Object.freeze({
+      name: "private lookup from unowned local helper",
+      source: sourceSkeleton(
+        "function probeStartupBrand(key) { return startupMetadata.has(key); }",
+      ),
+      expected:
+        /ESTree private lookup policy probeStartupBrand:startupMetadata\.has/u,
+    }),
+    Object.freeze({
+      name: "startup commit ownership does not grant private lookup",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "const observed = startupMetadata.get(startupReportBytes); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup policy createCandidateContainmentGuardianStartupV1:startupMetadata\.get/u,
+    }),
+    Object.freeze({
+      name: "initializer private lookup uses wrong store",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "initializeCandidateContainmentGuardianControlV1",
+            "const observed = inputMetadata.get(startupProjection); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup policy initializeCandidateContainmentGuardianControlV1:inputMetadata\.get/u,
+    }),
+    Object.freeze({
+      name: "status verifier private lookup uses wrong store",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const observed = stateMetadata.get(startupProjection); return null;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup policy verifyCandidateContainmentGuardianStatusFrameV1:stateMetadata\.get/u,
+    }),
+    Object.freeze({
+      name: "input commit ownership does not grant private lookup",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianAdmissionInputV1",
+            "const observed = inputMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup policy createCandidateContainmentGuardianAdmissionInputV1:inputMetadata\.get/u,
+    }),
+    Object.freeze({
+      name: "private lookup rejects function-local key",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "initializeCandidateContainmentGuardianControlV1",
+            "const forged = deepFreeze(nullRecord([])); const observed = startupMetadata.get(forged); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup key initializeCandidateContainmentGuardianControlV1:startupMetadata\.get:forged/u,
+    }),
+    Object.freeze({
+      name: "private lookup rejects wrong reducer parameter",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "reduceCandidateContainmentGuardianControlV1",
+            "const observed = stateMetadata.get(brandedInput); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup key reduceCandidateContainmentGuardianControlV1:stateMetadata\.get:brandedInput/u,
+    }),
+    Object.freeze({
+      name: "private lookup rejects wrong input-constructor parameter",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianAdmissionInputV1",
+            "const observed = stateMetadata.has(admissionFrameBytes); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /ESTree private lookup key createCandidateContainmentGuardianAdmissionInputV1:stateMetadata\.has:admissionFrameBytes/u,
+    }),
+    Object.freeze({
+      name: "private lookup value returned",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return startupMetadata.get(startupProjection);",
+          ],
+        ]),
+      ),
+      expected: /raw or unknown value returned from function/u,
+    }),
+    Object.freeze({
+      name: "private lookup value inspected",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const observed = startupMetadata.get(startupProjection); return observed.bytes;",
+          ],
+        ]),
+      ),
+      expected: /raw or unknown value used as receiver for \.bytes/u,
+    }),
+    Object.freeze({
+      name: "private lookup value joined conditionally",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const observed = startupMetadata.get(startupProjection); const selected = true ? observed : null; return null;",
+          ],
+        ]),
+      ),
+      expected: /unknown provenance join conditional expression/u,
+    }),
+    Object.freeze({
+      name: "private lookup value used as logical operand",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const observed = startupMetadata.get(startupProjection); const selected = observed ?? deepFreeze(nullRecord([])); return null;",
+          ],
+        ]),
+      ),
+      expected: /raw or unknown value logical \?\?/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -5219,8 +5640,70 @@ function reflectedAuthority(startupReportBytes) {
     sourceSkeleton(
       'const localRequirements = deepFreeze(nullRecord([["schema", "safe"]]));\nconst localDigest = sha256(canonicalJsonBytes(localRequirements));',
     ),
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "const present = startupMetadata.has(startupProjection); const observed = startupMetadata.get(startupProjection); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "verifyCandidateContainmentGuardianStatusFrameV1",
+          "const present = startupMetadata.has(startupProjection); const observed = startupMetadata.get(startupProjection); return null;",
+        ],
+      ]),
+    ),
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "createCandidateContainmentGuardianAdmissionInputV1",
+          "const present = stateMetadata.has(currentState); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    sourceSkeleton(
+      "",
+      new Map(
+        [
+          "createCandidateContainmentGuardianCancelInputV1",
+          "createCandidateContainmentGuardianRecoveryRequestInputV1",
+          "createCandidateContainmentGuardianControllerClosedInputV1",
+          "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+          "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+          "createCandidateContainmentGuardianStatusEofInputV1",
+        ].map((functionName) => [
+          functionName,
+          "const present = stateMetadata.has(currentState); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+        ]),
+      ),
+    ),
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "reduceCandidateContainmentGuardianControlV1",
+          "const present = stateMetadata.has(currentState); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "reduceCandidateContainmentGuardianControlV1",
+          "const present = inputMetadata.has(brandedInput); const observed = inputMetadata.get(brandedInput); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
   ];
   assert.equal(positiveSources.length, POSITIVE_CONTROL_NAMES.length);
+  const positiveAudits = [];
   const positiveEvidence = positiveSources.map((source, index) => {
     const stageAudit = {
       astNodeCount: null,
@@ -5228,7 +5711,17 @@ function reflectedAuthority(startupReportBytes) {
       estreePolicyReached: false,
       expectedStage: "parse",
     };
-    assert.doesNotThrow(() => auditCandidateSource(source, stageAudit));
+    let audit = null;
+    assert.doesNotThrow(() => {
+      audit = auditCandidateSource(source, stageAudit);
+    });
+    assert.notEqual(audit, null);
+    positiveAudits.push(
+      Object.freeze({
+        controlId: staticControlId("POS-P", index),
+        privateLookups: audit.astPolicy.privateLookupOperations,
+      }),
+    );
     return createStaticControlEvidenceEntry({
       id: staticControlId("POS-P", index),
       name: POSITIVE_CONTROL_NAMES[index],
@@ -5238,8 +5731,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 64);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 48);
+  assert.equal(namedStageAudit.length, 76);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 60);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -5269,6 +5762,7 @@ function reflectedAuthority(startupReportBytes) {
     positives: Object.freeze(positiveEvidence),
     evaluationAttempts,
   });
+  const privateLookupManifest = createPrivateLookupManifest(positiveAudits);
   return Object.freeze({
     rejected: sources.length + namedRejected.length,
     namedRejected: Object.freeze(namedRejected),
@@ -5277,6 +5771,7 @@ function reflectedAuthority(startupReportBytes) {
     namedAccepted: POSITIVE_CONTROL_NAMES,
     evaluationAttempts,
     evidenceManifest,
+    privateLookupManifest,
   });
 }
 
@@ -5434,8 +5929,8 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 117,
-  acceptedSyntheticSources: 5,
+  sourceIndependentNegativeControls: 129,
+  acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
   representativeCommitMutationSourceInventory: 17,
@@ -5445,7 +5940,7 @@ const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
   nonclaims: Object.freeze([
     "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
     "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
-    "private-store get positives and exact read-to-owner provenance remain unproved",
+    "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
     "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
     "successful-path reachability before the syntactic private-store commit tail remains unproved",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
@@ -5748,14 +6243,31 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     "top-level await",
     "for-await",
   ]);
-  const { evidenceManifest, ...staticNegativeControlReceipt } =
-    STATIC_NEGATIVE_CONTROLS;
+  const {
+    evidenceManifest,
+    privateLookupManifest,
+    ...staticNegativeControlReceipt
+  } = STATIC_NEGATIVE_CONTROLS;
   assert.equal(
     evidenceManifest.schema,
     "oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1",
   );
+  assert.deepEqual(Object.keys(evidenceManifest), [
+    "schema",
+    "foundationNegatives",
+    "semanticNegatives",
+    "positives",
+    "commitMutationIds",
+    "bucketProjection",
+    "counts",
+    "aggregates",
+  ]);
+  assert.deepEqual(
+    Object.keys(evidenceManifest.aggregates),
+    Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
+  );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 117,
+    rejected: 129,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -5821,23 +6333,41 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "untrusted argument passed to local function",
       "nonthrowing imported failure callback",
       "recursive imported failure callback",
+      "private lookup from unowned local helper",
+      "startup commit ownership does not grant private lookup",
+      "initializer private lookup uses wrong store",
+      "status verifier private lookup uses wrong store",
+      "input commit ownership does not grant private lookup",
+      "private lookup rejects function-local key",
+      "private lookup rejects wrong reducer parameter",
+      "private lookup rejects wrong input-constructor parameter",
+      "private lookup value returned",
+      "private lookup value inspected",
+      "private lookup value joined conditionally",
+      "private lookup value used as logical operand",
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 48,
-      estreePolicyReachedCount: 46,
+      totalDeltaSinceParserFoundation: 60,
+      estreePolicyReachedCount: 58,
       preEstreePolicyRejectionCount: 2,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
         "shallow ambient freeze used as deep freeze",
       ],
     },
-    accepted: 5,
+    accepted: 11,
     namedAccepted: [
       "exact requirements AST normalization",
       "approved untrusted-value normalizer",
       "frozen local iteration",
       "frozen local module table",
       "pure requirements and ephemeral canonical digest initializers",
+      "initializer startup private lookup pair",
+      "status verifier startup private lookup pair",
+      "admission state private lookup pair",
+      "remaining input-constructor state private lookup pairs",
+      "reducer state private lookup pair",
+      "reducer branded-input private lookup pair",
     ],
     evaluationAttempts: 0,
   });
@@ -5858,11 +6388,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 48 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 60 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
-    Array.from({ length: 5 }, (_, index) => staticControlId("POS-P", index)),
+    Array.from({ length: 11 }, (_, index) => staticControlId("POS-P", index)),
   );
   for (const entry of allEvidenceEntries) {
     assert.deepEqual(Object.keys(entry), [
@@ -5877,11 +6407,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 122);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 122);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 140);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 140);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    122,
+    140,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -5897,7 +6427,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    122,
+    140,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -5962,7 +6492,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       }),
     ),
     [
-      { bucket: "protectedAliases", target: 12, current: 7, remaining: 5 },
+      { bucket: "protectedAliases", target: 12, current: 12, remaining: 0 },
       { bucket: "indirectCalls", target: 12, current: 1, remaining: 11 },
       { bucket: "reflectComputed", target: 12, current: 1, remaining: 11 },
       {
@@ -5971,10 +6501,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
         current: 4,
         remaining: 10,
       },
-      { bucket: "untrustedSinks", target: 24, current: 6, remaining: 18 },
-      { bucket: "rawEscapes", target: 12, current: 3, remaining: 9 },
+      { bucket: "untrustedSinks", target: 24, current: 9, remaining: 15 },
+      { bucket: "rawEscapes", target: 12, current: 5, remaining: 7 },
       { bucket: "literalMisuse", target: 14, current: 4, remaining: 10 },
-      { bucket: "scopeJoins", target: 18, current: 2, remaining: 16 },
+      { bucket: "scopeJoins", target: 18, current: 4, remaining: 14 },
       { bucket: "nestedRecursion", target: 12, current: 3, remaining: 9 },
       { bucket: "commitMutations", target: 200, current: 17, remaining: 183 },
     ],
@@ -5982,8 +6512,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 48);
-  assert.equal(new Set(bucketIds).size, 48);
+  assert.equal(bucketIds.length, 60);
+  assert.equal(new Set(bucketIds).size, 60);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -6039,23 +6569,23 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 48,
-    allCurrentNegatives: 117,
+    semanticNegatives: 60,
+    allCurrentNegatives: 129,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 282,
+    semanticRemainingNegatives: 270,
     allLayerTargetNegatives: 399,
-    positiveCurrent: 5,
+    positiveCurrent: 11,
     positiveTarget: 11,
-    positiveRemaining: 6,
+    positiveRemaining: 0,
     commitCurrent: 17,
     commitTarget: 200,
     commitRemaining: 183,
     evaluationAttempts: 0,
   });
-  assert.equal(117, 69 + 48);
+  assert.equal(129, 69 + 60);
   assert.equal(399, 69 + 330);
-  assert.equal(282, 330 - 48);
-  assert.equal(6, 11 - 5);
+  assert.equal(270, 330 - 60);
+  assert.equal(0, 11 - 11);
   assert.equal(183, 200 - 17);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
   assert.deepEqual(
@@ -6090,12 +6620,254 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     semanticSha256(evidenceManifest.commitMutationIds),
     EXPECTED_STATIC_EVIDENCE_AGGREGATES.commitIdProjectionSha256,
   );
+  assertRecursivelyFrozenWithoutByteViews(privateLookupManifest);
+  assert.deepEqual(Object.keys(privateLookupManifest), [
+    "schema",
+    "methods",
+    "authorizedPairs",
+    "positiveControlIds",
+    "observedOperations",
+    "counts",
+    "orderedAuthorizedPairProjectionSha256",
+    "orderedObservedOperationProjectionSha256",
+  ]);
+  assert.equal(privateLookupManifest.schema, PRIVATE_LOOKUP_EVIDENCE_SCHEMA);
+  assert.deepEqual(privateLookupManifest.methods, ["has", "get"]);
+  assert.deepEqual(
+    privateLookupManifest.authorizedPairs,
+    EXPECTED_PRIVATE_STORE_LOOKUPS,
+  );
+  assert.deepEqual(privateLookupManifest.counts, {
+    authorizedPairs: 11,
+    methods: 2,
+    expectedOperations: 22,
+    observedOperations: 22,
+  });
+  assert.deepEqual(
+    privateLookupManifest.positiveControlIds,
+    Array.from({ length: 6 }, (_, index) =>
+      staticControlId("POS-P", index + 5),
+    ),
+  );
+  assert.equal(
+    new Set(
+      privateLookupManifest.observedOperations.map((entry) =>
+        canonicalJson(entry),
+      ),
+    ).size,
+    22,
+  );
+  assert.deepEqual(
+    privateLookupManifest.positiveControlIds.map(
+      (controlId) =>
+        privateLookupManifest.observedOperations.filter(
+          (entry) => entry.controlId === controlId,
+        ).length,
+    ),
+    [2, 2, 2, 12, 2, 2],
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      ["startupMetadata", "stateMetadata", "inputMetadata"].map((storeName) => [
+        storeName,
+        privateLookupManifest.authorizedPairs.filter(
+          (entry) => entry.storeName === storeName,
+        ).length,
+      ]),
+    ),
+    { startupMetadata: 2, stateMetadata: 8, inputMetadata: 1 },
+  );
+  assert.equal(
+    privateLookupManifest.authorizedPairs.some(
+      ({ functionName }) =>
+        functionName === "createCandidateContainmentGuardianStartupV1" ||
+        functionName === "probeStartupBrand",
+    ),
+    false,
+  );
+  assert.equal(
+    semanticSha256(privateLookupManifest.schema),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.schemaSha256,
+  );
+  assert.equal(
+    semanticSha256(privateLookupManifest.methods),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.methodsSha256,
+  );
+  assert.equal(
+    semanticSha256(privateLookupManifest.authorizedPairs),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedAuthorizedPairProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(privateLookupManifest.observedOperations),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedObservedOperationProjectionSha256,
+  );
+  assert.equal(
+    privateLookupManifest.orderedAuthorizedPairProjectionSha256,
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedAuthorizedPairProjectionSha256,
+  );
+  assert.equal(
+    privateLookupManifest.orderedObservedOperationProjectionSha256,
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.orderedObservedOperationProjectionSha256,
+  );
+  const privateLookupReceiptWithoutProjectionHashes = Object.fromEntries(
+    Object.entries(privateLookupManifest).filter(
+      ([key]) =>
+        ![
+          "orderedAuthorizedPairProjectionSha256",
+          "orderedObservedOperationProjectionSha256",
+        ].includes(key),
+    ),
+  );
+  assert.equal(
+    semanticSha256(privateLookupReceiptWithoutProjectionHashes),
+    EXPECTED_PRIVATE_LOOKUP_EVIDENCE_PINS.receiptWithoutProjectionHashesSha256,
+  );
+  const preLookupEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 48),
+    ...positiveEntries.slice(0, 5),
+  ];
+  const newLookupEntries = [
+    ...semanticEntries.slice(48),
+    ...positiveEntries.slice(5),
+  ];
+  const preLookupAstHashes = new Set(
+    preLookupEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(newLookupEntries.length, 18);
+  assert.equal(
+    new Set(newLookupEntries.map(({ astSha256 }) => astSha256)).size,
+    18,
+  );
+  assert.equal(
+    newLookupEntries.some(({ astSha256 }) => preLookupAstHashes.has(astSha256)),
+    false,
+  );
+  const privateLookupMutationCoverage = [
+    { mutation: "permissive local owner", coveredBy: ["SEM-N049"] },
+    {
+      mutation: "commit and read ownership conflation",
+      coveredBy: ["SEM-N050", "SEM-N053"],
+    },
+    {
+      mutation: "wrong store authorization",
+      coveredBy: ["SEM-N051", "SEM-N052"],
+    },
+    {
+      mutation: "wrong parameter authorization",
+      coveredBy: ["SEM-N055", "SEM-N056"],
+    },
+    {
+      mutation: "function-local key authorization",
+      coveredBy: ["SEM-N054"],
+    },
+    {
+      mutation: "weakened private-read provenance",
+      coveredBy: ["SEM-N057", "SEM-N058", "SEM-N059", "SEM-N060"],
+    },
+  ];
+  assert.equal(
+    privateLookupMutationCoverage.every(({ coveredBy }) =>
+      coveredBy.every((id) => semanticIds.has(id)),
+    ),
+    true,
+  );
+  assert.throws(
+    () =>
+      auditCandidateSource(
+        sourceSkeleton(
+          "",
+          new Map([
+            [
+              "verifyCandidateContainmentGuardianStatusFrameV1",
+              "{ const startupProjection = deepFreeze(nullRecord([])); const observed = startupMetadata.get(startupProjection); } return null;",
+            ],
+          ]),
+        ),
+      ),
+    {
+      message:
+        "static gate: ESTree private lookup key verifyCandidateContainmentGuardianStatusFrameV1:startupMetadata.get:startupProjection",
+    },
+  );
+  const immutableHasProbe = auditCandidateSource(
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "verifyCandidateContainmentGuardianStatusFrameV1",
+          "return startupMetadata.has(startupProjection);",
+        ],
+      ]),
+    ),
+  );
+  assert.deepEqual(immutableHasProbe.astPolicy.privateLookupOperations, [
+    {
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      storeName: "startupMetadata",
+      method: "has",
+      keyParameterName: "startupProjection",
+    },
+  ]);
+  assert.deepEqual(immutableHasProbe.astPolicy.privateLookupResultPolicies, [
+    {
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      storeName: "startupMetadata",
+      method: "has",
+      keyParameterName: "startupProjection",
+      kind: "immutable",
+      freezable: true,
+      tainted: false,
+    },
+  ]);
+  const privateGetProbe = auditCandidateSource(
+    sourceSkeleton(
+      "",
+      new Map([
+        [
+          "verifyCandidateContainmentGuardianStatusFrameV1",
+          "const observed = startupMetadata.get(startupProjection); return null;",
+        ],
+      ]),
+    ),
+  );
+  assert.deepEqual(privateGetProbe.astPolicy.privateLookupResultPolicies, [
+    {
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      storeName: "startupMetadata",
+      method: "get",
+      keyParameterName: "startupProjection",
+      kind: "private-read",
+      freezable: false,
+      tainted: true,
+    },
+  ]);
+  assert.throws(
+    () =>
+      auditCandidateSource(
+        sourceSkeleton(
+          "",
+          new Map([
+            [
+              "verifyCandidateContainmentGuardianStatusFrameV1",
+              "return startupMetadata.has(deepFreeze(nullRecord([])));",
+            ],
+          ]),
+        ),
+      ),
+    {
+      message:
+        "static gate: ESTree private lookup key verifyCandidateContainmentGuardianStatusFrameV1:startupMetadata.has:<CallExpression>",
+    },
+  );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 117,
-    acceptedSyntheticSources: 5,
+    sourceIndependentNegativeControls: 129,
+    acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 48,
-      estreePolicyReachedCount: 46,
+      totalDeltaSinceParserFoundation: 60,
+      estreePolicyReachedCount: 58,
       preEstreePolicyRejectionCount: 2,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -6109,7 +6881,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     nonclaims: [
       "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
       "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
-      "private-store get positives and exact read-to-owner provenance remain unproved",
+      "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
       "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
       "successful-path reachability before the syntactic private-store commit tail remains unproved",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
@@ -6158,6 +6930,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       stateMetadata: 2,
     },
     privateStoreCommitManifest: EXPECTED_PRIVATE_STORE_COMMITS,
+    privateLookupOperations: [],
+    privateLookupResultPolicies: [],
     moduleCallEdges: [],
     nodeRoleCount: 1_149,
   });
