@@ -3461,7 +3461,7 @@ The recovery-v1 checkpoint followed the evaluator-first RED-to-GREEN sequence:
   and
   `eab46c8acfe8964121f8fb9cdfef1b9e4da32df9b763fc15423a0bdedb268af0`;
   and
-- the final recovery evaluator passes 75/75, the independent seam passes 1/1,
+- the final recovery evaluator passes 76/76, the independent seam passes 1/1,
   and the predecessor regression envelope passes 102/102 on both Node 24 and
   Node 20. Independent contract and exact-hash review returned GO after the
   failure-atomicity repair.
