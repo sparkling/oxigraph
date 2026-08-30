@@ -7275,7 +7275,7 @@ test("admits every legal descriptor tuple for normal states zero through sevente
     admittedRecoveryOnlyByState,
     [1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1],
   );
-  assert.equal(admittedLiveShapes, 101);
+  assert.equal(admittedLiveShapes, 104);
   assert.equal(admittedRecoveryOnlyShapes, 24);
 });
 
