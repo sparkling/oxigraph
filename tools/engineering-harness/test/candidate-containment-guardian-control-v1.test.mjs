@@ -4274,6 +4274,139 @@ function sourceSkeleton(extra = "", functionBodyOverrides = new Map()) {
   return `${importText}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}\n`;
 }
 
+const PRIVATE_COMMIT_DOMINANCE_FAMILIES = Object.freeze([
+  Object.freeze({ name: "if branch", probeName: "dominanceProbe1" }),
+  Object.freeze({
+    name: "conditional expression",
+    probeName: "dominanceProbe2",
+  }),
+  Object.freeze({ name: "logical AND RHS", probeName: "dominanceProbe3" }),
+  Object.freeze({ name: "logical OR RHS", probeName: "dominanceProbe4" }),
+  Object.freeze({
+    name: "logical nullish RHS",
+    probeName: "dominanceProbe5",
+  }),
+]);
+
+const EXPECTED_PRIVATE_COMMIT_DOMINANCE_OWNER_RANGES = Object.freeze([
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianStartupV1",
+    storeName: "startupMetadata",
+    firstId: "SEM-N148",
+    lastId: "SEM-N152",
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianAdmissionInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N153",
+    lastId: "SEM-N157",
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianCancelInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N158",
+    lastId: "SEM-N162",
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N163",
+    lastId: "SEM-N167",
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianControllerClosedInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N168",
+    lastId: "SEM-N172",
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N173",
+    lastId: "SEM-N177",
+  }),
+  Object.freeze({
+    functionName:
+      "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N178",
+    lastId: "SEM-N182",
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianStatusEofInputV1",
+    storeName: "inputMetadata",
+    firstId: "SEM-N183",
+    lastId: "SEM-N187",
+  }),
+  Object.freeze({
+    functionName: "initializeCandidateContainmentGuardianControlV1",
+    storeName: "stateMetadata",
+    firstId: "SEM-N188",
+    lastId: "SEM-N192",
+  }),
+  Object.freeze({
+    functionName: "reduceCandidateContainmentGuardianControlV1",
+    storeName: "stateMetadata",
+    firstId: "SEM-N193",
+    lastId: "SEM-N197",
+  }),
+]);
+
+function privateCommitDominanceBranch(familyName, probeName) {
+  if (familyName === "if branch") {
+    return `if (true) { sha256(canonicalJsonBytes(${probeName})); }`;
+  }
+  if (familyName === "conditional expression") {
+    return `const dominanceBranch = false ? sha256(canonicalJsonBytes(${probeName})) : null;`;
+  }
+  if (familyName === "logical AND RHS") {
+    return `const dominanceBranch = false && sha256(canonicalJsonBytes(${probeName}));`;
+  }
+  if (familyName === "logical OR RHS") {
+    return `const dominanceBranch = true || sha256(canonicalJsonBytes(${probeName}));`;
+  }
+  if (familyName === "logical nullish RHS") {
+    return `const dominanceBranch = true ?? sha256(canonicalJsonBytes(${probeName}));`;
+  }
+  throw new Error(`unclassified private commit dominance family ${familyName}`);
+}
+
+const PRIVATE_COMMIT_DOMINANCE_CONTROLS = Object.freeze(
+  EXPECTED_PRIVATE_STORE_COMMITS.flatMap(
+    ({ functionName, storeName }, ownerIndex) =>
+      PRIVATE_COMMIT_DOMINANCE_FAMILIES.map(
+        ({ name: familyName, probeName }, familyIndex) => {
+          const body = [
+            "const result = deepFreeze(nullRecord([]));",
+            "const metadata = deepFreeze(nullRecord([]));",
+            `const ${probeName} = null;`,
+            privateCommitDominanceBranch(familyName, probeName),
+            `${storeName}.set(result, metadata);`,
+            "return result;",
+          ].join(" ");
+          return Object.freeze({
+            id: staticControlId(
+              "SEM-N",
+              147 +
+                ownerIndex * PRIVATE_COMMIT_DOMINANCE_FAMILIES.length +
+                familyIndex,
+            ),
+            functionName,
+            storeName,
+            familyName,
+            name: `${functionName} pre-commit ${familyName} dominance`,
+            source: sourceSkeleton("", new Map([[functionName, body]])),
+            expected: new RegExp(
+              `^Error: static gate: ESTree fallible operation does not dominate commit ${functionName}$`,
+              "u",
+            ),
+          });
+        },
+      ),
+  ),
+);
+assert.equal(PRIVATE_COMMIT_DOMINANCE_CONTROLS.length, 50);
+
 function sourceWithFactoredNormativeAuthority(extra = "") {
   const requirementsSource = JSON.stringify(REQUIREMENTS_ORACLE);
   const authoritySource = JSON.stringify(REQUIREMENTS_ORACLE.authority);
@@ -4533,6 +4666,7 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "nestedRecursion",
   "nestedRecursion",
   "nestedRecursion",
+  ...Array.from({ length: 50 }, () => "commitMutations"),
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4564,22 +4698,25 @@ const COMMIT_MUTATION_IDS = Object.freeze([
   "SEM-N038",
   "SEM-N039",
   "SEM-N040",
+  ...Array.from({ length: 50 }, (_, index) =>
+    staticControlId("SEM-N", 147 + index),
+  ),
 ]);
 const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "a2943afea60379318d0df11e973be1eab647576cf6f03671664f093abc601814",
+    "444134de2df5e8a2786ee804b13f5dd8bca45dcf7958a9b13b0eb36e86f88d91",
   orderedSemanticProjectionSha256:
-    "92720decee66fbd173d74dfff681b1d692728d88298700ead9dc53c1066ac62b",
+    "a5ab0a2701862159a2144e2ca31661263f06a83c68f1d72ca64847be6c3d51b9",
   bucketProjectionSha256:
-    "20e1339842647707f7f163e8bbc90535c4587342803594c7c28126e4c78d53d1",
+    "fc4b31fa4515cab07c9b72dc09dde3b46cdd62d0da3d34eb5074673a06e2aa9e",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
     "f73112c110a5ced50c3f64fcd53da66e022f20abbaef83ddb5be69d32390f420",
   commitIdProjectionSha256:
-    "cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c",
+    "af002b5a28d207a69f841f9b1aabb186e5474b62e1c1b0c7c4241a70351bdd8b",
 });
 
 const FOUNDATION_CONTROL_EXPECTATION_PINS_TEXT = `FOUNDATION-N001|73b72eff1cb782348cd15eb554c75e9596fff4a5168f3fa0710a96f9191e7b6b|5e7971eb3c93baefc55f6b11670faef071baefc98d3d863f9fb733531e631b22|1125|bounded-source-subset|static gate: forbidden path prefix node:
@@ -4798,7 +4935,57 @@ SEM-N143|583c3f93b53176b6b8bccd50dd5acd776c70582c243777f2ca804d5dafa68563|622b41
 SEM-N144|0326186356891c60ceb4ecaa9cf5e1dfa1c5ed4393a7c34494bf501225f5af77|3518291a9f17865063002caa86ec6ef90032fd1e947f4049ddebd4505e60e68a|1165|estree-policy|static gate: ESTree recursive call graph mixedCallback -> mixedCaller
 SEM-N145|f3bc3c7dc472c7d0aef8dd6005e17ca09931d1f3b0c5c7d4c0d4f38d670bce81|6abfb35b9cb2cf67678f5d7cf63fdd4968e6ba7f70591422f4e0f9467521e84e|1169|estree-policy|static gate: ESTree recursive call graph callbackAlpha -> callbackBeta
 SEM-N146|345da80e39d34f452217707e5c133fb9634d5d1b8283109cdb87356b0aec50ed|afd6b2a755bd665b72f1a2c25045cd11599bac4abaa3c591447e661c139f2ff2|1157|estree-policy|static gate: ESTree recursive call graph unreachableSelf
-SEM-N147|12d2de2828b58eee93bc513eabf168d9dd3ecd3e0b3c219c35da71c8b12504d1|7916520978e5a6bda609d58d51444c495ab0a501067a2caa1ed0f9e3a2de91fb|1165|estree-policy|static gate: ESTree recursive call graph detachedAlpha -> detachedBeta`;
+SEM-N147|12d2de2828b58eee93bc513eabf168d9dd3ecd3e0b3c219c35da71c8b12504d1|7916520978e5a6bda609d58d51444c495ab0a501067a2caa1ed0f9e3a2de91fb|1165|estree-policy|static gate: ESTree recursive call graph detachedAlpha -> detachedBeta
+SEM-N148|2b423912ae64d30b40b81ee25e8554a35b64f2311e51c034087b83506933fc50|7bd5bd8cfaa3bde6b803f86475b4c38245c81cec2be7cb00ee30a94bbfe678f6|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N149|03b37a437d3a5c8c7c89ca459d1a1e7a9657e797da6d300b3e674592382af910|1db57c3df329aa921eb1f2ce734d20c4692d7ed95899561edcae05f706b56264|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N150|22646df7ff8291f2ffbec20c2bbd085afd34da8e579992dd02b27a80c58e573d|0a6b83f18af80e9db0a5b074199d0df51cfe43046aca7e76783f9743d5f298c9|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N151|1281a916391235153d7995f510ad7d42197fa1f9f6fb414c1d2e80e556d9cab7|56e063db4e1a3ec28a6452a8d644916ad5c3a180173bbff69dd7cac63b161a8a|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N152|859b7751b00729dfe6f18f567664494b94cc1d5cd69597a772e92bc2f466f6c1|455c16692eab21f89600537d76d565fb8813239e3b73c56169530a9f7a7f0aaf|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStartupV1
+SEM-N153|eab0697efb2b75642b9d1ef03809577a5d1198d3eb27e121eb35dbeace1207be|8df82a16bec1992d957c44c4525e5f3b1148701e05f31590b75af60c094416dd|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianAdmissionInputV1
+SEM-N154|30ea438be4bea1dad1b3e8761e04274cb32d650a5d7a7e2f827bf2c1621378ab|dbbf3873ebe25d272c065a831b66eacc7df101504e8ec439db6a26444435246d|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianAdmissionInputV1
+SEM-N155|27eef7f3496c6123aa002e13afcb6a60d1addbc37f9352ff460c1f8c8e34ae69|5dad04a8f60d97da0c95eaef9675d6a39bfb18bbd8e228cbc2eef9d3960af456|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianAdmissionInputV1
+SEM-N156|3bba1f55af9b9d5d1fe57b46418c7ed0f6d2f70934b252f2665759784eaea29a|13e37d7898681124931e13daa81b6f7cf01b2e22e49a5fd2dbfb283955043aeb|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianAdmissionInputV1
+SEM-N157|8d0e48fdd0138c56fd4a6922fd97308600ee51895c0b2c0be62515c52923b050|5845a95b0df30469e00b19c8aa5294e97078990d81c9d90326e47bf267121a26|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianAdmissionInputV1
+SEM-N158|3a595e0350b33f3757d5182be78262ef1a9725a23486e576ff75c6221bc5d4a5|714bc1aa152e615823dbbe91c496c5ce4882f9d427e4c55fcf19dc29fd805c52|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianCancelInputV1
+SEM-N159|cca655f3eab0bbe295b5db0512b74718aa73d1ff90c946f19fa434aff9919050|b2cda4bfdd8ab3ba0060bd04721c6e8ca404c39c9a83bc5d5891d479892658eb|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianCancelInputV1
+SEM-N160|12a8a597206f78c776936549a4848d12462796bd127ad80778cd859284100e9c|3f2902d7181558a549e537f39e62bdf15c3846302bdc7c7ac99f77f68b263d8a|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianCancelInputV1
+SEM-N161|e59829f8a19b95d95fc02ffc5dfcc922e05382c5457769af7981c0eeaa32e926|b3915eeb7006eb3190a72e59441b83b7e136c25da6b0e678caefc1b3f0d6043f|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianCancelInputV1
+SEM-N162|2be699eef3234cac2ce0b5720ef1b2ef6bcf585668a539a04e1ac2812bd52c81|d3996e9684a855bbce5ef706d83e9a678937f21e745592b39b6dae267ca34674|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianCancelInputV1
+SEM-N163|c9470a6db14e32ff1c4f29bb114cb0d60481ca10b5e7a40813bc1b86cffd9e91|8c5408c6d86fee0685cd998ac109de07bb8a7b844a37d12b3477be3119592cb1|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryRequestInputV1
+SEM-N164|c27b60f7b4079e9799c59a048f3d110f2eb1ed977eb2395f6205f64c54b31283|b7c47a80a053d2e159383ff848b6e37b4647085389780af1562eef72b84b7f46|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryRequestInputV1
+SEM-N165|51c9af9a8901f1585f63120bbb8e7da53116701e8453555a4cfbb8bd591153d1|de21913b53fc013606fdf39bbc809b1d91b9f52188564349a64987305f268483|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryRequestInputV1
+SEM-N166|4026ac5805e64ab47fe0e263cb006110ca55eff805aff123a7c3e28aa159a0f9|90513c15e965ba2fdcfd11600418be7f178a486d5a8575bb0776c71c70e17716|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryRequestInputV1
+SEM-N167|f3f8f0c4000b8589c8b8fbc3673b14d848c3acb76b90fdb6db0dcb62be6637a5|6427e8daa76694aa8f86c865293c899667143858a8359ee0017b2735e12c4ca1|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryRequestInputV1
+SEM-N168|dfc84b5438de9d9d70cc9f4d78dcde818af2472751615d079a5a6b3a24c0b114|43b29723426cafc1255a74bb963eaa5a7de312b4bd74036538f78f0f854accf6|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianControllerClosedInputV1
+SEM-N169|f91ce2d20c01169399b74378828e9239b215976a5a2ceb2870e74262eff869b8|82ce8de347e7a341c8dc0aa012da34ddf29c9f0e7f026951580fba1becd46acb|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianControllerClosedInputV1
+SEM-N170|16c012d1750a2876fabbda6ee11f0e805acb10b1c26640059d886271dbbb22fe|25cb4cb9ec309b4de12790c7af2f91126dc55889ee73d95e71abf1d4f8d75c11|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianControllerClosedInputV1
+SEM-N171|a193fde1322bf8b2ecd4535b13b8dc86cfe544e4d043e6ddd7addabbd4f5bd0c|af32b2e55da17202638f4404b29c8086d3b043abf2b6325fba5c78cdf325f963|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianControllerClosedInputV1
+SEM-N172|85e0227f36b05a4fc7d58743cb5ccaab77c51c3deb1997894e169b5e174a5562|ec01bb9f8a92165c4e57e8cfd00e43713fb165a5d153d8b37ee5bc90344e05ce|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianControllerClosedInputV1
+SEM-N173|03c00886c3797910b0dcbf151175faa947aebe78bf96bd4029b50068c8e32a47|0cd2aed28f0c79e8eef4ab5f4fb603d61f2b308bcae8dbdb1cdc91f6a50eb9c7|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianDiagnosticFailureInputV1
+SEM-N174|462e03d7564906700ea33c313293fd967536da4ee2e06badf8386282fb8c5e66|e6801590179fc21c95c92c3a15f9e447c555c829a3b454a3c71de05cffaff366|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianDiagnosticFailureInputV1
+SEM-N175|5d265f9a7610043a7529e85e38d332749ce3c749ff79c1113add408462802b97|0781c7291d4648f8ce5ab84d4afdf763f06481e9e689904c9ee02af78b556255|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianDiagnosticFailureInputV1
+SEM-N176|cf0262747c2bf86b43eac2438c24fbd3e4d91253805c2bf03e355f7f4687df83|d7e8b16b85c92997547322f214e15b538bd67d83dee40b97120470554d28f524|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianDiagnosticFailureInputV1
+SEM-N177|fd00d420f98062835ed52ba4d310282dd6c9c83fdf69a1e47333c512932f2d4c|8a9e5573d3c45598075e543ae049f532636f38caec89f24e189c5f4454995d2f|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianDiagnosticFailureInputV1
+SEM-N178|b74a163065e8330a15fc7dc821dcae5b0dc9f60a544c4bd0175598845ddb570e|8061ca6bf8b7502fe69640051e5c5f4cdb50140dafeaaed8130e98f21b05f1b8|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryControlHandoffInputV1
+SEM-N179|183c3aaf413e131ec2d0acb2c592fd5fe715227631fd4fd49284d07340e3bfc6|8ed1ba57e8c8927992ceff0d4a7b73bbc70f8380a9cec20b97111eed824a2991|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryControlHandoffInputV1
+SEM-N180|30f1af69b7fbb5c38c33bd78af8ed4f3c4df4d4c9a78c59dcadb44da2dad16fe|dc276dd0616fd92ae4896b2cd0ee9c1690a5aacf82cf645b75521a5f52d454cc|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryControlHandoffInputV1
+SEM-N181|4acc64a52cc723fe83ccece21afe1c92272531d60d6b74df86351a24cf881d14|01e0b26ab4f99906fb64c6a35933e3b1aa6f173e2f70817052a1e074b353809b|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryControlHandoffInputV1
+SEM-N182|e38079229a79b66d4a4b2b7eac7871ddb3a37af1d698aff74006cc5601faf4d0|3a43498567d876dde4691e82d9005731a6f55ef787cfd5683f078330c77ad530|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianRecoveryControlHandoffInputV1
+SEM-N183|c1500a7d12a90a41a168f88a2341d1037892368a63c7d5dd645004baa75532ef|e4512253373a2acdfff641b8a8b5d25298f25d704b43af1ab6c416a9178f7d16|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStatusEofInputV1
+SEM-N184|c3f81e3d9750cdba447fde5478d51da5d7346e9359ed188271fb2d75a518f387|3181ffe3cc9d6fe1e8f4f3363e01bef6f69163faf07a329a72fc9daace33a5f1|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStatusEofInputV1
+SEM-N185|dbe4ad697e312edacedcfc03fd9f4e7a9b64245e23c915f54caa8d34a881f0f7|cdb232b7af46ac5da007395d27c784d08784bb7176f910a8f1e194da1605a120|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStatusEofInputV1
+SEM-N186|ca8f2d484d89c6f05f63c04128152676f16e60bb7a9d1c46e9c622fe67b8bce0|24cca1b18c36ac2c5065f807965c04bae7b1c2065ca4dcb5b9034e05507afae0|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStatusEofInputV1
+SEM-N187|f5760c232a030fcef50e6f1dfa725b33b91f74a1a2dcc30be595e90b376bacd8|d13ea9a68bb3f521187484a2342c7f424545cdf2cf72d3a575da393669e2fb2a|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit createCandidateContainmentGuardianStatusEofInputV1
+SEM-N188|ebd3651022e7839fd2f23e20c60c56c6f3f107a040f10ec1b50edd6d2d2496b3|8928aa133b119212486ade5e790378125b664fd3332f918ac41dc060f3ff93c2|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit initializeCandidateContainmentGuardianControlV1
+SEM-N189|656c54adacc5652ecd99893d31aa017ecf75626919f72f77be7bceaf99a57c91|2218ccbd9bfbdd49e5631a3285cfc214eaee950ea62c0bce3a42d402ce7ab19a|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit initializeCandidateContainmentGuardianControlV1
+SEM-N190|f3e34b91952acc79f1a036b563c6b2ed90225fa4d3c5800f72f60694a74063f3|a0b483dbe66c229b289f27589916be79fd5329dcb55efc9c8ee5af61abfa43b9|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit initializeCandidateContainmentGuardianControlV1
+SEM-N191|713f62c8e1b315029fdb1f077598ed8a34e6edfd8dab04377b1b6d892c23cbf3|15d34dcc67f614d9dbb68b8cdd124603ce1e2bf87d01fbde0c682a4e6886e6d5|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit initializeCandidateContainmentGuardianControlV1
+SEM-N192|8ff58f8cbe1bb5746b35f8d68660e9b5209ae500b050d2e9fec7cb1cf0c63651|f22161e2e070bb6b4d004e3fb1ae88deba08e21fd14651305944c01baa42cc08|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit initializeCandidateContainmentGuardianControlV1
+SEM-N193|256c098b18c531758d510c16b5892937e974112a6588cebfc08da213ce7b9fe1|c980b8dcfc6de686cde22eea313a4b8b7b0599cf430c7431b52ee97b0e894a77|1162|estree-policy|static gate: ESTree fallible operation does not dominate commit reduceCandidateContainmentGuardianControlV1
+SEM-N194|f3652faa0fc0f4eee8b31a675bd9ae5427ecc05c8d298379662f1b8507dc4ff4|3639848e0b12b63bb15caf8da9ba3540e0d2669251c4271c8dc0ed35c1a53096|1164|estree-policy|static gate: ESTree fallible operation does not dominate commit reduceCandidateContainmentGuardianControlV1
+SEM-N195|352ad0df937bd61acae4960a5c5de9c3170702804ba366ccd0d6baa21353d868|424f5ed6926ed8de4be469e4133d763296e71d3c78a58b7bca4081bdd724626f|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit reduceCandidateContainmentGuardianControlV1
+SEM-N196|278426c47cfc04d4bf17884e9242ef0bc4499bb434d6f8dd35f087daf960723c|d31f335719a779a96408f3a189025fc59c0b37b98816b7e0361b20110ab15d9b|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit reduceCandidateContainmentGuardianControlV1
+SEM-N197|4390a17b89547cf29f4b8bb08959468c1d1046caab819d04fb2f409e62ddf4bd|e615310522fd4f33ba0efca2e6b626bc8e5e7728d1809fa57b5a1e1650b9b073|1163|estree-policy|static gate: ESTree fallible operation does not dominate commit reduceCandidateContainmentGuardianControlV1`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -4883,9 +5070,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 147);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 197);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 227);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 277);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -6531,6 +6718,7 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /recursive call graph detachedAlpha -> detachedBeta/u,
     }),
+    ...PRIVATE_COMMIT_DOMINANCE_CONTROLS,
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -6740,8 +6928,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 163);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 147);
+  assert.equal(namedStageAudit.length, 213);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 197);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -6938,17 +7126,17 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 216,
+  sourceIndependentNegativeControls: 266,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
-  representativeCommitMutationSourceInventory: 17,
+  representativeCommitMutationSourceInventory: 67,
   finalRequiredNegativeControls: 330,
   finalRequiredPositiveControls: 11,
   fullSemanticGateClosed: false,
   nonclaims: Object.freeze([
     "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
-    "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
+    "the 67 current commit mutation sources are partial, not final 200-mutation closure",
     "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
     "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
@@ -7275,7 +7463,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 216,
+    rejected: 266,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -7440,10 +7628,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "two-callback-edge SCC",
       "unreachable self-recursive call",
       "unreachable detached call graph SCC",
+      ...PRIVATE_COMMIT_DOMINANCE_CONTROLS.map(({ name }) => name),
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 147,
-      estreePolicyReachedCount: 144,
+      totalDeltaSinceParserFoundation: 197,
+      estreePolicyReachedCount: 194,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -7484,7 +7673,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 147 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 197 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -7503,11 +7692,137 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 227);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 227);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 277);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 277);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    227,
+    277,
+  );
+  assert.deepEqual(
+    EXPECTED_PRIVATE_COMMIT_DOMINANCE_OWNER_RANGES.map(
+      ({ functionName, storeName }) => ({ functionName, storeName }),
+    ),
+    EXPECTED_PRIVATE_STORE_COMMITS,
+  );
+  assert.deepEqual(
+    EXPECTED_PRIVATE_COMMIT_DOMINANCE_OWNER_RANGES.map(
+      ({ functionName, storeName, firstId, lastId }, ownerIndex) => {
+        const ownerControls = PRIVATE_COMMIT_DOMINANCE_CONTROLS.slice(
+          ownerIndex * PRIVATE_COMMIT_DOMINANCE_FAMILIES.length,
+          (ownerIndex + 1) * PRIVATE_COMMIT_DOMINANCE_FAMILIES.length,
+        );
+        return {
+          functionNames: [
+            ...new Set(ownerControls.map((control) => control.functionName)),
+          ],
+          storeNames: [
+            ...new Set(ownerControls.map((control) => control.storeName)),
+          ],
+          firstId: ownerControls.at(0).id,
+          lastId: ownerControls.at(-1).id,
+          controlCount: ownerControls.length,
+        };
+      },
+    ),
+    EXPECTED_PRIVATE_COMMIT_DOMINANCE_OWNER_RANGES.map(
+      ({ functionName, storeName, firstId, lastId }) => ({
+        functionNames: [functionName],
+        storeNames: [storeName],
+        firstId,
+        lastId,
+        controlCount: 5,
+      }),
+    ),
+  );
+  const privateCommitDominanceEntries = semanticEntries.slice(147);
+  assert.equal(privateCommitDominanceEntries.length, 50);
+  assert.deepEqual(
+    privateCommitDominanceEntries.map((entry, index) => {
+      const control = PRIVATE_COMMIT_DOMINANCE_CONTROLS[index];
+      return {
+        id: entry.id,
+        functionName: control.functionName,
+        storeName: control.storeName,
+        familyName: control.familyName,
+        name: entry.name,
+        bucket: entry.bucket,
+        expectedStage: entry.expectedStage,
+        expectedError: entry.expectedError,
+      };
+    }),
+    EXPECTED_PRIVATE_COMMIT_DOMINANCE_OWNER_RANGES.flatMap(
+      ({ functionName, storeName }, ownerIndex) =>
+        PRIVATE_COMMIT_DOMINANCE_FAMILIES.map(
+          ({ name: familyName }, familyIndex) => ({
+            id: staticControlId(
+              "SEM-N",
+              147 +
+                ownerIndex * PRIVATE_COMMIT_DOMINANCE_FAMILIES.length +
+                familyIndex,
+            ),
+            functionName,
+            storeName,
+            familyName,
+            name: `${functionName} pre-commit ${familyName} dominance`,
+            bucket: "commitMutations",
+            expectedStage: "estree-policy",
+            expectedError: `static gate: ESTree fallible operation does not dominate commit ${functionName}`,
+          }),
+        ),
+    ),
+  );
+  assert.deepEqual(
+    privateCommitDominanceEntries.map(({ sourceSha256 }) => sourceSha256),
+    PRIVATE_COMMIT_DOMINANCE_CONTROLS.map(({ source }) =>
+      byteSha256(Buffer.from(source, "utf8")),
+    ),
+  );
+  assert.equal(
+    new Set(PRIVATE_COMMIT_DOMINANCE_CONTROLS.map(({ source }) => source)).size,
+    50,
+  );
+  assert.equal(
+    new Set(
+      privateCommitDominanceEntries.map(({ sourceSha256 }) => sourceSha256),
+    ).size,
+    50,
+  );
+  assert.equal(
+    new Set(privateCommitDominanceEntries.map(({ astSha256 }) => astSha256))
+      .size,
+    50,
+  );
+  assert.equal(
+    privateCommitDominanceEntries.every(
+      ({ astSha256, astNodeCount }) =>
+        astSha256 !== null && astNodeCount !== null,
+    ),
+    true,
+  );
+  const preB6EvidenceEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 147),
+    ...positiveEntries,
+  ];
+  const preB6SourceHashes = new Set(
+    preB6EvidenceEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preB6AstHashes = new Set(
+    preB6EvidenceEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(
+    privateCommitDominanceEntries.some(({ sourceSha256 }) =>
+      preB6SourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    privateCommitDominanceEntries.some(({ astSha256 }) =>
+      preB6AstHashes.has(astSha256),
+    ),
+    false,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -7523,7 +7838,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    227,
+    277,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -7602,14 +7917,14 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       { bucket: "literalMisuse", target: 14, current: 14, remaining: 0 },
       { bucket: "scopeJoins", target: 18, current: 18, remaining: 0 },
       { bucket: "nestedRecursion", target: 12, current: 12, remaining: 0 },
-      { bucket: "commitMutations", target: 200, current: 17, remaining: 183 },
+      { bucket: "commitMutations", target: 200, current: 67, remaining: 133 },
     ],
   );
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 147);
-  assert.equal(new Set(bucketIds).size, 147);
+  assert.equal(bucketIds.length, 197);
+  assert.equal(new Set(bucketIds).size, 197);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -7665,24 +7980,24 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 147,
-    allCurrentNegatives: 216,
+    semanticNegatives: 197,
+    allCurrentNegatives: 266,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 183,
+    semanticRemainingNegatives: 133,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
     positiveRemaining: 0,
-    commitCurrent: 17,
+    commitCurrent: 67,
     commitTarget: 200,
-    commitRemaining: 183,
+    commitRemaining: 133,
     evaluationAttempts: 0,
   });
-  assert.equal(216, 69 + 147);
+  assert.equal(266, 69 + 197);
   assert.equal(399, 69 + 330);
-  assert.equal(183, 330 - 147);
+  assert.equal(133, 330 - 197);
   assert.equal(0, 11 - 11);
-  assert.equal(183, 200 - 17);
+  assert.equal(133, 200 - 67);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
   assert.deepEqual(
     evidenceManifest.aggregates,
@@ -8197,7 +8512,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ...semanticEntries.slice(0, 124),
     ...positiveEntries,
   ];
-  const newControlFlowEntries = semanticEntries.slice(124);
+  const newControlFlowEntries = semanticEntries.slice(124, 147);
   const preControlFlowSourceHashes = new Set(
     preControlFlowEntries.map(({ sourceSha256 }) => sourceSha256),
   );
@@ -8460,11 +8775,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 216,
+    sourceIndependentNegativeControls: 266,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 147,
-      estreePolicyReachedCount: 144,
+      totalDeltaSinceParserFoundation: 197,
+      estreePolicyReachedCount: 194,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -8472,13 +8787,13 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
         "ambient intrinsic member assignment",
       ],
     },
-    representativeCommitMutationSourceInventory: 17,
+    representativeCommitMutationSourceInventory: 67,
     finalRequiredNegativeControls: 330,
     finalRequiredPositiveControls: 11,
     fullSemanticGateClosed: false,
     nonclaims: [
       "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
-      "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
+      "the 67 current commit mutation sources are partial, not final 200-mutation closure",
       "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
       "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
