@@ -1057,6 +1057,2022 @@ const ADMISSION_RIGHT_MAP_GOLDEN = Object.freeze(
   ),
 );
 
+const CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-contract-valid-runtime-oracle/v1";
+const CONTRACT_VALID_RUNTIME_WITNESS_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-contract-valid-witness/v1";
+const CONTRACT_VALID_RUNTIME_PREFIX_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-contract-valid-prefix/v1";
+const EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256 =
+  "4813c9281466a0f54d78577d90e4f675cff6e59c6a84ec5cc4afd4bc7a3211be";
+const EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256 = Object.freeze({
+  startupWitnesses:
+    "02da9739f1f020e820cea836863ac0a5b456b441fb9bc69101d78e614bec7202",
+  inputKindWitnesses:
+    "b0d053a3cd578a81f311fcf7fc67a2618d96d9502b22896942eb2fb6ecbb0c62",
+  legalSequences:
+    "2039aa09f1a7afe5497968b58d79bd42593bcbe939465ec398d047cd66de36e8",
+  wholeTransitions:
+    "9877877a3b7f65346805f8054853754c9caf020f9a104b867a9a441f469158ef",
+  acceptedPrefixes:
+    "0266d044924cdf066f5561d5df1fdc44874b1d9ce0d730ca90366387a8446233",
+  emittedStatuses:
+    "d4936a721fd10a1382ba76280f7ca875ece056836b5f1cb82bf7cd4a3a6f538b",
+  atomicPrefixes:
+    "a35911ae08605cd1ce18b456365d373c88135fb5d9963d50526f4012794c53d5",
+});
+const C12_SCHEMAS = Object.freeze({
+  startupReport: "oxigraph.candidate-containment-guardian-startup-report/v1",
+  openFileDescriptionScope:
+    "oxigraph.candidate-containment-guardian-ofd-observation-scope/v1",
+  openFileDescriptionObservation:
+    "oxigraph.candidate-containment-guardian-ofd-observation/v1",
+  admissionRecvmsgReport:
+    "oxigraph.candidate-containment-guardian-admission-recvmsg-report/v1",
+  wireFrame: "oxigraph.candidate-containment-guardian-control-frame/v1",
+  recoverySelection:
+    "oxigraph.candidate-containment-guardian-recovery-selection/v1",
+  diagnosticSummary:
+    "oxigraph.candidate-containment-guardian-diagnostic-summary/v1",
+  startupProjection: "oxigraph.candidate-containment-guardian-startup/v1",
+  inputProjection: "oxigraph.candidate-containment-guardian-control-input/v1",
+  stateProjection: "oxigraph.candidate-containment-guardian-control-state/v1",
+  transitionProjection:
+    "oxigraph.candidate-containment-guardian-control-transition/v1",
+  statusArtifact: "oxigraph.candidate-containment-guardian-status-artifact/v1",
+});
+const C12_AUTHORITY = Object.freeze({
+  transportAuthority: false,
+  descriptorAuthority: false,
+  filesystemAuthority: false,
+  cgroupAuthority: false,
+  processAuthority: false,
+  recoveryAuthority: false,
+  runtimeAuthority: false,
+});
+const C12_PHYSICAL_FACTS = Object.freeze({
+  socketTransfer: null,
+  descriptorInventory: null,
+  epochOrigin: null,
+  guardianExecution: null,
+  recoveryExecution: null,
+  cleanup: null,
+});
+const C12_NONCLAIMS = Object.freeze({
+  socketTransferProved: false,
+  descriptorFactsProved: false,
+  epochOriginProved: false,
+  recoveryBrandProvenanceProved: false,
+  runtimeSerializationProved: false,
+  guardianExecutionProved: false,
+  recoveryExecutionProved: false,
+  cleanupProved: false,
+  runtimeRegistrationProved: false,
+  productionReadinessProved: false,
+});
+const C12_GENESIS_SHA256 = "0".repeat(64);
+const C12_LAUNCH_REQUIREMENTS_SHA256 =
+  "4432b3334ff07b847f1ee8abe49c184df5c993545c21f405ccc1247ecb20604a";
+const C12_LAUNCH_FD_MAP_SHA256 =
+  "82794bfb6c3e99eb773d7c944e6622769a28002b7170a6a202d7fe30b211f05f";
+const C12_LAUNCH_REMAP_PLAN_SHA256 =
+  "f432ec6f1ef0d3efdfd46d8972f489aacc8179bac27d23e54b98ef0dd369a8db";
+const C12_RECOVERY_REQUIREMENTS_SHA256 =
+  "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a";
+const C12_STATUS_ARTIFACT_OWN_KEYS = Object.freeze([
+  "bytes",
+  "schema",
+  "mode",
+  "sequence",
+  "byteLength",
+  "rawSha256",
+  "state",
+  "terminalReason",
+  "authority",
+  "physicalFacts",
+]);
+const C12_STATUS_FRAME_FIELDS = Object.freeze([
+  "schema",
+  "action",
+  "mode",
+  "sequence",
+  "previousFrameSha256",
+  "requirementsSha256",
+  "startupSha256",
+  "epochSha256",
+  "state",
+  "admissionFrameSha256",
+  "recoveryRequestFrameSha256",
+  "terminalReason",
+]);
+const C12_STARTUP_REPORT_FIELDS = Object.freeze([
+  "schema",
+  "mode",
+  "requirementsSha256",
+  "expectedEpochSha256",
+  "openFileDescriptionObservationScopeSha256",
+  "descriptorCount",
+  "fd0",
+  "fd1",
+  "fd2",
+  "fd3",
+  "fd4",
+  "fd5",
+  "fd6",
+  "fd7",
+]);
+const C12_STARTUP_DESCRIPTOR_FIELDS = Object.freeze([
+  "fd",
+  "role",
+  "kind",
+  "accessMode",
+  "closeOnExec",
+  "direction",
+  "statusFlags",
+  "openFileDescriptionClass",
+  "openFileDescriptionIdentitySha256",
+  "byteLength",
+  "contentSha256",
+  "launchFileIdentitySha256",
+  "currentOffset",
+  "socketFamily",
+  "socketType",
+  "connected",
+  "lockHeld",
+]);
+const C12_INPUT_PROJECTION_FIELDS = Object.freeze([
+  "schema",
+  "kind",
+  "boundStateSha256",
+  "frameByteLength",
+  "frameSha256",
+  "auxiliaryByteLength",
+  "auxiliarySha256",
+  "authority",
+  "physicalFacts",
+]);
+const C12_RECOVERY_SELECTION_FIELDS = Object.freeze([
+  "schema",
+  "targetSha256",
+  "recoveryRequirementsSha256",
+  "recoveryPlanSha256",
+  "recoveryReplaySha256",
+  "lifecycleInventorySha256",
+  "attemptSha256",
+  "planStatus",
+  "requiredActorKind",
+  "actorKind",
+  "recoveryActorEpochSha256",
+  "attemptDirectoryName",
+  "lifetimeAnchorProjectionSha256",
+  "lifetimeAttemptAnchorRawSha256",
+  "disposition",
+  "quarantineReason",
+  "sourceLocation",
+  "decisionSourceLocation",
+  "requiredDestinationLocation",
+  "stateCount",
+  ...Array.from({ length: 19 }, (_, index) => `state${index}`),
+]);
+const C12_STATE_PROJECTION_FIELDS = Object.freeze([
+  "schema",
+  "mode",
+  "phase",
+  "requirementsSha256",
+  "startupSha256",
+  "epochSha256",
+  "lastWireFrameSha256",
+  "nextWireSequence",
+  "aggregateWireBytes",
+  "admissionFrameSha256",
+  "recoveryRequestFrameSha256",
+  "admissionCount",
+  "cancelObserved",
+  "controllerClosedObserved",
+  "diagnosticFailureObserved",
+  "recoveryControlHandoffObserved",
+  "controlTerminalReason",
+  "statusEofObserved",
+  "transcriptTerminal",
+  "eventCount",
+  "authority",
+  "physicalFacts",
+  "stateSha256",
+]);
+const C12_INPUT_KINDS = Object.freeze([
+  "ADMIT",
+  "CANCEL",
+  "RECOVERY_REQUEST",
+  "CONTROLLER_CLOSED",
+  "DIAGNOSTIC_FAILURE",
+  "RECOVERY_CONTROL_HANDOFF",
+  "STATUS_EOF",
+]);
+const C12_LEGAL_SEQUENCES = Object.freeze({
+  N1: Object.freeze([
+    "NORMAL_READY",
+    "CANCEL",
+    "CANCEL_REQUIRED",
+    "CONTROL_TERMINAL(EXPLICIT_CANCEL)",
+    "STATUS_EOF",
+  ]),
+  N2: Object.freeze([
+    "NORMAL_READY",
+    "ADMIT",
+    "ADMISSION_ACCEPTED",
+    "CANCEL",
+    "CANCEL_REQUIRED",
+    "CONTROL_TERMINAL(EXPLICIT_CANCEL)",
+    "STATUS_EOF",
+  ]),
+  N3: Object.freeze([
+    "NORMAL_READY",
+    "CONTROLLER_CLOSED",
+    "RECOVERY_REQUIRED",
+    "CONTROL_TERMINAL(CONTROLLER_CLOSED)",
+    "STATUS_EOF",
+  ]),
+  N4: Object.freeze([
+    "NORMAL_READY",
+    "ADMIT",
+    "ADMISSION_ACCEPTED",
+    "CONTROLLER_CLOSED",
+    "RECOVERY_REQUIRED",
+    "CONTROL_TERMINAL(CONTROLLER_CLOSED)",
+    "STATUS_EOF",
+  ]),
+  N5a: Object.freeze([
+    "NORMAL_READY",
+    "DIAGNOSTIC_FAILURE",
+    "CONTROL_TERMINAL(DIAGNOSTIC_FAILURE)",
+    "STATUS_EOF",
+  ]),
+  N5b: Object.freeze([
+    "NORMAL_READY",
+    "ADMIT",
+    "ADMISSION_ACCEPTED",
+    "DIAGNOSTIC_FAILURE",
+    "CONTROL_TERMINAL(DIAGNOSTIC_FAILURE)",
+    "STATUS_EOF",
+  ]),
+  R1: Object.freeze([
+    "RECOVERY_REQUEST",
+    "RECOVERY_REQUEST_ACCEPTED",
+    "RECOVERY_CONTROL_HANDOFF",
+    "CONTROL_TERMINAL(RECOVERY_CONTROL_HANDOFF)",
+    "STATUS_EOF",
+  ]),
+  R2: Object.freeze([
+    "RECOVERY_REQUEST",
+    "RECOVERY_REQUEST_ACCEPTED",
+    "DIAGNOSTIC_FAILURE",
+    "CONTROL_TERMINAL(DIAGNOSTIC_FAILURE)",
+    "STATUS_EOF",
+  ]),
+});
+const C12_RECOVERY_STATES = Object.freeze([
+  "RECOVERY_ATTEMPT_DURABLE",
+  "REBOOT_INTERRUPTION_OBSERVED",
+  "CGROUP_PATHS_ABSENT_OBSERVED",
+  "RECOVERED_TOMBSTONE_DURABLE",
+  "RECOVERED_LOCATION_OBSERVED",
+]);
+const C12_LAUNCH_FILE_SPECS = Object.freeze(
+  [
+    ["childExecutable", 4, null, null, "O_RDONLY|O_CLOEXEC", "0500"],
+    ["childStdin", 5, 0, null, "O_RDONLY|O_CLOEXEC", "0400"],
+    ["supervisorSelf", 6, null, null, "O_RDONLY|O_CLOEXEC", "0400"],
+    [
+      "payloadSandboxWorker",
+      7,
+      3,
+      "/runner/candidate/sandbox-session-worker-v2.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadProcess",
+      8,
+      4,
+      "/runner/native/process.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadBuildCommand",
+      9,
+      5,
+      "/runner/policy/build-command-v2.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadEvidenceLimits",
+      10,
+      6,
+      "/runner/policy/evidence-limits.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadSessionLimits",
+      11,
+      7,
+      "/runner/policy/session-v2-limits.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadTaskFailures",
+      12,
+      8,
+      "/runner/policy/task-v2-failures.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadRoutingFeatures",
+      13,
+      9,
+      "/runner/routing/features.mjs",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    [
+      "payloadSeccompLauncher",
+      14,
+      10,
+      "/runner/seccomp-launcher.py",
+      "O_RDONLY|O_CLOEXEC",
+      "0400",
+    ],
+    ["launchArgv", 15, null, null, "O_RDONLY|O_CLOEXEC", "0400"],
+    ["launchEnvironment", 16, null, null, "O_RDONLY|O_CLOEXEC", "0400"],
+    ["childResult", 17, 11, "/result/session.json", "O_RDWR|O_CLOEXEC", "0600"],
+  ].map((spec) => Object.freeze(spec)),
+);
+
+function c12Clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function c12LabelSha256(label) {
+  return byteSha256(Buffer.from(`adr0036-c12:${label}`, "utf8"));
+}
+
+function c12JsonlBinding(id, value) {
+  const jsonl = `${canonicalJson(value)}\n`;
+  const bytes = Buffer.from(jsonl, "utf8");
+  return {
+    schema: CONTRACT_VALID_RUNTIME_WITNESS_SCHEMA,
+    id,
+    format: "CANONICAL_JSONL",
+    value: c12Clone(value),
+    jsonl,
+    bytesHex: bytes.toString("hex"),
+    byteLength: bytes.length,
+    rawSha256: byteSha256(bytes),
+  };
+}
+
+function c12RawBinding(id, bytes) {
+  const copy = Buffer.from(bytes);
+  return {
+    schema: CONTRACT_VALID_RUNTIME_WITNESS_SCHEMA,
+    id,
+    format: "RAW_HEX",
+    value: null,
+    jsonl: null,
+    bytesHex: copy.toString("hex"),
+    byteLength: copy.length,
+    rawSha256: byteSha256(copy),
+  };
+}
+
+function c12CreateLaunchCapsuleWitness() {
+  const argv = ["/usr/bin/bwrap", "--clearenv", "--", "/usr/bin/node"];
+  const argvDocument = {
+    schema: "oxigraph.candidate-containment-launch-argv/v1",
+    argv,
+  };
+  const argvBinding = c12JsonlBinding("launch-argv", argvDocument);
+  const environmentEntries = [
+    { name: "LANG", value: "C.UTF-8" },
+    { name: "PATH", value: "/usr/bin:/bin" },
+  ];
+  const environmentDocument = {
+    schema: "oxigraph.candidate-containment-launch-environment/v1",
+    entries: environmentEntries,
+  };
+  const environmentBinding = c12JsonlBinding(
+    "launch-environment",
+    environmentDocument,
+  );
+  const files = C12_LAUNCH_FILE_SPECS.map(
+    (
+      [role, supervisorFd, childFd, destination, accessMode, permissions],
+      index,
+    ) => {
+      let content;
+      if (role === "childExecutable") {
+        content = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00]);
+      } else if (role === "launchArgv") {
+        content = Buffer.from(argvBinding.bytesHex, "hex");
+      } else if (role === "launchEnvironment") {
+        content = Buffer.from(environmentBinding.bytesHex, "hex");
+      } else if (role === "childResult") {
+        content = Buffer.alloc(0);
+      } else {
+        content = Buffer.from(`${role}\n`, "utf8");
+      }
+      const identity = {
+        device: "2049",
+        inode: String(30_000 + index),
+        links: "1",
+        type: "regular",
+        permissions,
+        owner: "1000",
+        group: "1000",
+        size: String(content.length),
+        modifiedNs: String(1_700_000_003_000_000_000n + BigInt(index)),
+        changedNs: String(1_700_000_004_000_000_000n + BigInt(index)),
+      };
+      return {
+        role,
+        supervisorFd,
+        childFd,
+        destination,
+        accessMode,
+        permissions,
+        byteLength: content.length,
+        sha256: byteSha256(content),
+        initialOffset: 0,
+        closeOnExec: true,
+        identity,
+      };
+    },
+  );
+  const capsule = {
+    schema: "oxigraph.candidate-containment-launch-capsule/v2",
+    requestSha256: "4".repeat(64),
+    generationSha256: "5".repeat(64),
+    requirementsSha256: C12_LAUNCH_REQUIREMENTS_SHA256,
+    fileDescriptorMapSha256: C12_LAUNCH_FD_MAP_SHA256,
+    remapPlanSha256: C12_LAUNCH_REMAP_PLAN_SHA256,
+    argv: {
+      schema: argvDocument.schema,
+      count: argv.length,
+      byteLength: argvBinding.byteLength,
+      rawSha256: argvBinding.rawSha256,
+      argv: [...argv],
+    },
+    environment: {
+      schema: environmentDocument.schema,
+      count: environmentEntries.length,
+      byteLength: environmentBinding.byteLength,
+      rawSha256: environmentBinding.rawSha256,
+      entries: c12Clone(environmentEntries),
+    },
+    files,
+    resultMaximumBytes: 256 * 1024 * 1024,
+  };
+  const binding = c12JsonlBinding("launch-capsule-v3", capsule);
+  assert.equal(binding.byteLength, 7_866);
+  assert.equal(
+    binding.rawSha256,
+    "65d49e83493ae64b8641e442ef7468dd218a9d9c8d93ac4944a1870ca6203935",
+  );
+  assert.equal(files.length, 14);
+  assert.deepEqual(
+    files.map(({ role }) => role),
+    RIGHT_ROLES,
+  );
+  assert.equal(
+    files.every(
+      ({ byteLength, sha256, identity }) =>
+        identity.size === String(byteLength) && /^[0-9a-f]{64}$/u.test(sha256),
+    ),
+    true,
+  );
+  return { binding, argvBinding, environmentBinding };
+}
+
+function c12CreateStartupWitness(mode) {
+  const normal = mode === "NORMAL";
+  const map = normal ? NORMAL_STARTUP_MAP_GOLDEN : RECOVERY_STARTUP_MAP_GOLDEN;
+  const epochBytes = normal
+    ? Buffer.from(
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "hex",
+      )
+    : Buffer.from(
+        "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "hex",
+      );
+  const epoch = c12RawBinding(`${mode.toLowerCase()}-epoch`, epochBytes);
+  const scope = {
+    schema: C12_SCHEMAS.openFileDescriptionScope,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    mode,
+    epochSha256: epoch.rawSha256,
+  };
+  const scopeSha256 = semanticSha256(scope);
+  const descriptors = map.map((spec) => {
+    if (spec === null) return null;
+    const observation = {
+      schema: C12_SCHEMAS.openFileDescriptionObservation,
+      scopeSha256,
+      equivalenceClass: spec.openFileDescriptionClass,
+    };
+    return {
+      fd: spec.fd,
+      role: spec.role,
+      kind: spec.kind,
+      accessMode: spec.accessMode,
+      closeOnExec: false,
+      direction: spec.direction,
+      statusFlags: spec.statusFlags,
+      openFileDescriptionClass: spec.openFileDescriptionClass,
+      openFileDescriptionIdentitySha256: semanticSha256(observation),
+      byteLength: null,
+      contentSha256: null,
+      launchFileIdentitySha256: null,
+      currentOffset: spec.currentOffset,
+      socketFamily: spec.socketFamily,
+      socketType: spec.socketType,
+      connected: spec.connected,
+      lockHeld: spec.lockHeld,
+    };
+  });
+  const descriptorCount = normal ? 8 : 7;
+  const report = {
+    schema: C12_SCHEMAS.startupReport,
+    mode,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    expectedEpochSha256: epoch.rawSha256,
+    openFileDescriptionObservationScopeSha256: scopeSha256,
+    descriptorCount,
+  };
+  for (const [index, descriptor] of descriptors.entries()) {
+    report[`fd${index}`] = descriptor;
+  }
+  const reportBinding = c12JsonlBinding(
+    `${mode.toLowerCase()}-startup-report`,
+    report,
+  );
+  assert.equal(reportBinding.byteLength <= 8_192, true);
+  assert.equal(epoch.byteLength, 32);
+  assert.equal(
+    new Set(
+      descriptors
+        .filter(Boolean)
+        .map(
+          ({ openFileDescriptionIdentitySha256 }) =>
+            openFileDescriptionIdentitySha256,
+        ),
+    ).size,
+    descriptorCount,
+  );
+  const expectedProjection = {
+    schema: C12_SCHEMAS.startupProjection,
+    mode,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    startupReportByteLength: reportBinding.byteLength,
+    startupReportSha256: reportBinding.rawSha256,
+    epochSha256: epoch.rawSha256,
+    descriptorCount,
+    authority: c12Clone(C12_AUTHORITY),
+    physicalFacts: c12Clone(C12_PHYSICAL_FACTS),
+  };
+  return {
+    schema: CONTRACT_VALID_RUNTIME_WITNESS_SCHEMA,
+    mode,
+    startupReport: reportBinding,
+    epoch,
+    epochEofObserved: true,
+    openFileDescriptionScope: scope,
+    openFileDescriptionScopeSha256: scopeSha256,
+    expectedProjection,
+  };
+}
+
+function c12CreateAdmissionRecvmsgWitness(
+  admissionFrame,
+  normalStartup,
+  launchCapsule,
+) {
+  const filesByRole = new Map(
+    launchCapsule.value.files.map((file) => [file.role, file]),
+  );
+  const report = {
+    schema: C12_SCHEMAS.admissionRecvmsgReport,
+    messageByteLength: admissionFrame.byteLength,
+    messageRawSha256: admissionFrame.rawSha256,
+    messageTruncated: false,
+    controlTruncated: false,
+    controlMessageCount: 1,
+    controlLevel: "SOL_SOCKET",
+    controlType: "SCM_RIGHTS",
+    rightsCount: 14,
+  };
+  for (const [index, spec] of ADMISSION_RIGHT_MAP_GOLDEN.entries()) {
+    const file = filesByRole.get(spec.role);
+    assert.notEqual(file, undefined);
+    const observation = {
+      schema: C12_SCHEMAS.openFileDescriptionObservation,
+      scopeSha256: normalStartup.openFileDescriptionScopeSha256,
+      equivalenceClass: spec.openFileDescriptionClass,
+    };
+    report[`right${index}`] = {
+      index,
+      role: spec.role,
+      targetSupervisorFd: spec.targetSupervisorFd,
+      kind: "regular",
+      accessMode: index === 13 ? "O_RDWR" : "O_RDONLY",
+      closeOnExec: true,
+      statusFlags: "O_LARGEFILE",
+      openFileDescriptionClass: spec.openFileDescriptionClass,
+      openFileDescriptionIdentitySha256: semanticSha256(observation),
+      byteLength: file.byteLength,
+      contentSha256: file.sha256,
+      launchFileIdentitySha256: semanticSha256(file.identity),
+      currentOffset: 0,
+    };
+  }
+  const binding = c12JsonlBinding("normal-admission-recvmsg-report", report);
+  assert.equal(binding.byteLength <= 16_384, true);
+  assert.equal(
+    new Set(
+      Array.from(
+        { length: 14 },
+        (_, index) => report[`right${index}`].openFileDescriptionIdentitySha256,
+      ),
+    ).size,
+    14,
+  );
+  return binding;
+}
+
+function c12CreateRecoverySelection(recoveryStartup) {
+  const selection = {
+    schema: C12_SCHEMAS.recoverySelection,
+    targetSha256: c12LabelSha256("recovery-target"),
+    recoveryRequirementsSha256: C12_RECOVERY_REQUIREMENTS_SHA256,
+    recoveryPlanSha256: c12LabelSha256("recovery-plan"),
+    recoveryReplaySha256: c12LabelSha256("recovery-replay"),
+    lifecycleInventorySha256: c12LabelSha256("lifecycle-inventory"),
+    attemptSha256: c12LabelSha256("recovery-attempt"),
+    planStatus: "RECOVERY_PLAN_READY",
+    requiredActorKind: "RECOVERY_ONLY_GUARDIAN",
+    actorKind: "RECOVERY_ONLY_GUARDIAN",
+    recoveryActorEpochSha256: recoveryStartup.epoch.rawSha256,
+    attemptDirectoryName: recoveryStartup.epoch.rawSha256,
+    lifetimeAnchorProjectionSha256: c12LabelSha256(
+      "lifetime-anchor-projection",
+    ),
+    lifetimeAttemptAnchorRawSha256: c12LabelSha256(
+      "lifetime-attempt-anchor-raw",
+    ),
+    disposition: "REBOOT_INTERRUPTION",
+    quarantineReason: null,
+    sourceLocation: "active",
+    decisionSourceLocation: "active",
+    requiredDestinationLocation: "recovered",
+    stateCount: C12_RECOVERY_STATES.length,
+  };
+  for (let index = 0; index < 19; index += 1) {
+    selection[`state${index}`] =
+      index < C12_RECOVERY_STATES.length
+        ? semanticSha256(C12_RECOVERY_STATES[index])
+        : null;
+  }
+  return selection;
+}
+
+function c12CreateState(fields) {
+  const projection = {
+    schema: C12_SCHEMAS.stateProjection,
+    mode: fields.mode,
+    phase: fields.phase,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    startupSha256: fields.startupSha256,
+    epochSha256: fields.epochSha256,
+    lastWireFrameSha256: fields.lastWireFrameSha256,
+    nextWireSequence: fields.nextWireSequence,
+    aggregateWireBytes: fields.aggregateWireBytes,
+    admissionFrameSha256: fields.admissionFrameSha256,
+    recoveryRequestFrameSha256: fields.recoveryRequestFrameSha256,
+    admissionCount: fields.admissionCount,
+    cancelObserved: fields.cancelObserved,
+    controllerClosedObserved: fields.controllerClosedObserved,
+    diagnosticFailureObserved: fields.diagnosticFailureObserved,
+    recoveryControlHandoffObserved: fields.recoveryControlHandoffObserved,
+    controlTerminalReason: fields.controlTerminalReason,
+    statusEofObserved: fields.statusEofObserved,
+    transcriptTerminal: fields.transcriptTerminal,
+    eventCount: fields.eventCount,
+    authority: c12Clone(C12_AUTHORITY),
+    physicalFacts: c12Clone(C12_PHYSICAL_FACTS),
+  };
+  return { ...projection, stateSha256: semanticSha256(projection) };
+}
+
+function c12CreateStatusWitness(fields, state, terminalReason) {
+  const frame = {
+    schema: C12_SCHEMAS.wireFrame,
+    action: "STATUS",
+    mode: state.mode,
+    sequence: state.nextWireSequence,
+    previousFrameSha256: state.lastWireFrameSha256,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    startupSha256: state.startupSha256,
+    epochSha256: state.epochSha256,
+    state: fields,
+    admissionFrameSha256: state.admissionFrameSha256,
+    recoveryRequestFrameSha256: state.recoveryRequestFrameSha256,
+    terminalReason,
+  };
+  const binding = c12JsonlBinding(
+    `status-${state.mode.toLowerCase()}-${state.nextWireSequence}-${fields}-${terminalReason ?? "none"}`,
+    frame,
+  );
+  assert.equal(binding.byteLength <= 8_192, true);
+  const token =
+    fields === "CONTROL_TERMINAL"
+      ? `CONTROL_TERMINAL(${terminalReason})`
+      : fields;
+  const expectedArtifact = {
+    ownKeys: [...C12_STATUS_ARTIFACT_OWN_KEYS],
+    bytesHex: binding.bytesHex,
+    fields: {
+      schema: C12_SCHEMAS.statusArtifact,
+      mode: state.mode,
+      sequence: frame.sequence,
+      byteLength: binding.byteLength,
+      rawSha256: binding.rawSha256,
+      state: fields,
+      terminalReason,
+      authority: c12Clone(C12_AUTHORITY),
+      physicalFacts: c12Clone(C12_PHYSICAL_FACTS),
+    },
+  };
+  return { token, frame, binding, expectedArtifact };
+}
+
+function c12AppendStatus(state, statusState, terminalReason) {
+  const status = c12CreateStatusWitness(statusState, state, terminalReason);
+  return {
+    status,
+    state: {
+      ...state,
+      lastWireFrameSha256: status.binding.rawSha256,
+      nextWireSequence: state.nextWireSequence + 1,
+      aggregateWireBytes: state.aggregateWireBytes + status.binding.byteLength,
+      eventCount: state.eventCount + 1,
+    },
+  };
+}
+
+function c12CreateInputWitness(kind, currentState, context) {
+  let frameBinding = null;
+  let auxiliaryBinding = null;
+  let scalarArguments = {};
+  if (kind === "ADMIT") {
+    const frame = {
+      schema: C12_SCHEMAS.wireFrame,
+      action: "ADMIT",
+      mode: "NORMAL",
+      sequence: currentState.nextWireSequence,
+      previousFrameSha256: currentState.lastWireFrameSha256,
+      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      startupSha256: currentState.startupSha256,
+      epochSha256: currentState.epochSha256,
+      launchCapsuleV3Sha256: context.launchCapsule.binding.rawSha256,
+      launchCapsuleV3: Buffer.from(
+        context.launchCapsule.binding.bytesHex,
+        "hex",
+      ).toString("base64"),
+    };
+    frameBinding = c12JsonlBinding("normal-admission-frame", frame);
+    auxiliaryBinding = c12CreateAdmissionRecvmsgWitness(
+      frameBinding,
+      context.startups.NORMAL,
+      context.launchCapsule.binding,
+    );
+    assert.equal(frameBinding.byteLength <= 131_072, true);
+  } else if (kind === "CANCEL") {
+    const frame = {
+      schema: C12_SCHEMAS.wireFrame,
+      action: "CANCEL",
+      mode: "NORMAL",
+      sequence: currentState.nextWireSequence,
+      previousFrameSha256: currentState.lastWireFrameSha256,
+      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      startupSha256: currentState.startupSha256,
+      epochSha256: currentState.epochSha256,
+      admissionFrameSha256: currentState.admissionFrameSha256,
+    };
+    frameBinding = c12JsonlBinding(
+      currentState.admissionFrameSha256 === null
+        ? "normal-cancel-without-admission-frame"
+        : "normal-cancel-after-admission-frame",
+      frame,
+    );
+    scalarArguments = {
+      messageTruncated: false,
+      controlTruncated: false,
+      controlMessageCount: 0,
+    };
+    assert.equal(frameBinding.byteLength <= 4_096, true);
+  } else if (kind === "RECOVERY_REQUEST") {
+    const selection = c12CreateRecoverySelection(
+      context.startups.RECOVERY_ONLY,
+    );
+    const frame = {
+      schema: C12_SCHEMAS.wireFrame,
+      action: "RECOVERY_REQUEST",
+      mode: "RECOVERY_ONLY",
+      sequence: currentState.nextWireSequence,
+      previousFrameSha256: currentState.lastWireFrameSha256,
+      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      startupSha256: currentState.startupSha256,
+      epochSha256: currentState.epochSha256,
+      recoverySelectionSha256: semanticSha256(selection),
+      recoverySelection: selection,
+    };
+    frameBinding = c12JsonlBinding("recovery-request-frame", frame);
+    scalarArguments = { requestEofObserved: true };
+    assert.equal(frameBinding.byteLength <= 32_768, true);
+  } else if (kind === "DIAGNOSTIC_FAILURE") {
+    const raw = c12RawBinding(
+      "raw-diagnostic",
+      Buffer.from("guardian diagnostic failure\n", "utf8"),
+    );
+    const summary = {
+      schema: C12_SCHEMAS.diagnosticSummary,
+      byteLength: raw.byteLength,
+      rawSha256: raw.rawSha256,
+      eofObserved: true,
+    };
+    frameBinding = c12JsonlBinding("diagnostic-summary-report", summary);
+    auxiliaryBinding = raw;
+    assert.equal(frameBinding.byteLength <= 1_024, true);
+    assert.equal(raw.byteLength <= 16_384, true);
+  } else if (
+    !["CONTROLLER_CLOSED", "RECOVERY_CONTROL_HANDOFF", "STATUS_EOF"].includes(
+      kind,
+    )
+  ) {
+    throw new Error(`unknown C12 input kind: ${kind}`);
+  }
+  const expectedProjection = {
+    schema: C12_SCHEMAS.inputProjection,
+    kind,
+    boundStateSha256: currentState.stateSha256,
+    frameByteLength: frameBinding?.byteLength ?? null,
+    frameSha256: frameBinding?.rawSha256 ?? null,
+    auxiliaryByteLength: auxiliaryBinding?.byteLength ?? null,
+    auxiliarySha256: auxiliaryBinding?.rawSha256 ?? null,
+    authority: c12Clone(C12_AUTHORITY),
+    physicalFacts: c12Clone(C12_PHYSICAL_FACTS),
+  };
+  return {
+    schema: CONTRACT_VALID_RUNTIME_WITNESS_SCHEMA,
+    kind,
+    boundStateSha256: currentState.stateSha256,
+    frame: frameBinding,
+    auxiliary: auxiliaryBinding,
+    scalarArguments,
+    expectedProjection,
+  };
+}
+
+function c12TransitionProjection(state, statuses) {
+  return {
+    schema: C12_SCHEMAS.transitionProjection,
+    state: c12Clone(state),
+    statusFrameCount: statuses.length,
+    statusFrame0:
+      statuses.length > 0 ? c12Clone(statuses[0].expectedArtifact) : null,
+    statusFrame1:
+      statuses.length > 1 ? c12Clone(statuses[1].expectedArtifact) : null,
+  };
+}
+
+function c12Initialize(startup) {
+  let fields = {
+    mode: startup.mode,
+    phase:
+      startup.mode === "NORMAL"
+        ? "WAITING_NORMAL_INPUT"
+        : "WAITING_RECOVERY_REQUEST",
+    startupSha256: startup.startupReport.rawSha256,
+    epochSha256: startup.epoch.rawSha256,
+    lastWireFrameSha256: C12_GENESIS_SHA256,
+    nextWireSequence: 0,
+    aggregateWireBytes: 0,
+    admissionFrameSha256: null,
+    recoveryRequestFrameSha256: null,
+    admissionCount: 0,
+    cancelObserved: false,
+    controllerClosedObserved: false,
+    diagnosticFailureObserved: false,
+    recoveryControlHandoffObserved: false,
+    controlTerminalReason: null,
+    statusEofObserved: false,
+    transcriptTerminal: false,
+    eventCount: 0,
+  };
+  const statuses = [];
+  if (startup.mode === "NORMAL") {
+    const appended = c12AppendStatus(fields, "NORMAL_READY", null);
+    fields = appended.state;
+    statuses.push(appended.status);
+  }
+  const state = c12CreateState(fields);
+  return {
+    state,
+    statuses,
+    expectedProjection: c12TransitionProjection(state, statuses),
+  };
+}
+
+function c12Reduce(currentState, input) {
+  let fields = c12Clone(currentState);
+  delete fields.stateSha256;
+  fields.eventCount += 1;
+  if (["ADMIT", "CANCEL", "RECOVERY_REQUEST"].includes(input.kind)) {
+    fields.lastWireFrameSha256 = input.frame.rawSha256;
+    fields.nextWireSequence += 1;
+    fields.aggregateWireBytes += input.frame.byteLength;
+  }
+  let statusSpecs;
+  if (input.kind === "ADMIT") {
+    fields.admissionFrameSha256 = input.frame.rawSha256;
+    fields.admissionCount = 1;
+    statusSpecs = [["ADMISSION_ACCEPTED", null]];
+  } else if (input.kind === "CANCEL") {
+    fields.phase = "CONTROL_TERMINAL_EMITTED";
+    fields.cancelObserved = true;
+    fields.controlTerminalReason = "EXPLICIT_CANCEL";
+    statusSpecs = [
+      ["CANCEL_REQUIRED", null],
+      ["CONTROL_TERMINAL", "EXPLICIT_CANCEL"],
+    ];
+  } else if (input.kind === "CONTROLLER_CLOSED") {
+    fields.phase = "CONTROL_TERMINAL_EMITTED";
+    fields.controllerClosedObserved = true;
+    fields.controlTerminalReason = "CONTROLLER_CLOSED";
+    statusSpecs = [
+      ["RECOVERY_REQUIRED", null],
+      ["CONTROL_TERMINAL", "CONTROLLER_CLOSED"],
+    ];
+  } else if (input.kind === "DIAGNOSTIC_FAILURE") {
+    fields.phase = "CONTROL_TERMINAL_EMITTED";
+    fields.diagnosticFailureObserved = true;
+    fields.controlTerminalReason = "DIAGNOSTIC_FAILURE";
+    statusSpecs = [["CONTROL_TERMINAL", "DIAGNOSTIC_FAILURE"]];
+  } else if (input.kind === "RECOVERY_REQUEST") {
+    fields.phase = "WAITING_RECOVERY_HANDOFF";
+    fields.recoveryRequestFrameSha256 = input.frame.rawSha256;
+    statusSpecs = [["RECOVERY_REQUEST_ACCEPTED", null]];
+  } else if (input.kind === "RECOVERY_CONTROL_HANDOFF") {
+    fields.phase = "CONTROL_TERMINAL_EMITTED";
+    fields.recoveryControlHandoffObserved = true;
+    fields.controlTerminalReason = "RECOVERY_CONTROL_HANDOFF";
+    statusSpecs = [["CONTROL_TERMINAL", "RECOVERY_CONTROL_HANDOFF"]];
+  } else if (input.kind === "STATUS_EOF") {
+    fields.phase = "TRANSCRIPT_TERMINAL";
+    fields.statusEofObserved = true;
+    fields.transcriptTerminal = true;
+    statusSpecs = [];
+  } else {
+    throw new Error(`unknown C12 reduction input: ${input.kind}`);
+  }
+  const statuses = [];
+  for (const [statusState, terminalReason] of statusSpecs) {
+    const appended = c12AppendStatus(fields, statusState, terminalReason);
+    fields = appended.state;
+    statuses.push(appended.status);
+  }
+  const state = c12CreateState(fields);
+  return {
+    state,
+    statuses,
+    expectedProjection: c12TransitionProjection(state, statuses),
+  };
+}
+
+function c12AssertBinding(binding) {
+  const bytes = Buffer.from(binding.bytesHex, "hex");
+  assert.equal(bytes.toString("hex"), binding.bytesHex);
+  assert.equal(bytes.length, binding.byteLength);
+  assert.equal(byteSha256(bytes), binding.rawSha256);
+  if (binding.format === "CANONICAL_JSONL") {
+    assert.equal(binding.jsonl, bytes.toString("utf8"));
+    assert.equal(binding.jsonl, `${canonicalJson(binding.value)}\n`);
+    assert.equal(binding.jsonl.endsWith("\n"), true);
+    assert.equal(binding.jsonl.slice(0, -1).includes("\n"), false);
+    assert.equal(binding.jsonl.includes("\r"), false);
+    assert.deepEqual(JSON.parse(binding.jsonl), binding.value);
+  } else {
+    assert.equal(binding.format, "RAW_HEX");
+    assert.equal(binding.value, null);
+    assert.equal(binding.jsonl, null);
+  }
+}
+
+function c12CollectBindings(value, bindings = [], seen = new Set()) {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return bindings;
+  }
+  seen.add(value);
+  if (
+    value.schema === CONTRACT_VALID_RUNTIME_WITNESS_SCHEMA &&
+    (value.format === "CANONICAL_JSONL" || value.format === "RAW_HEX")
+  ) {
+    bindings.push(value);
+  }
+  for (const child of Object.values(value)) {
+    c12CollectBindings(child, bindings, seen);
+  }
+  return bindings;
+}
+
+function c12CoreWithoutMembership(row) {
+  const clone = c12Clone(row);
+  delete clone.id;
+  delete clone.sourceSequences;
+  return clone;
+}
+
+function createContractValidRuntimeOracle() {
+  const launchCapsule = c12CreateLaunchCapsuleWitness();
+  const startups = {
+    NORMAL: c12CreateStartupWitness("NORMAL"),
+    RECOVERY_ONLY: c12CreateStartupWitness("RECOVERY_ONLY"),
+  };
+  const context = { launchCapsule, startups };
+  const transitionRows = [];
+  const transitionByPrefix = new Map();
+  const statusRows = [];
+  const statusByPrefix = new Map();
+  const inputKindWitnessByKind = new Map();
+  const scenarios = [];
+
+  const recordTransition = ({
+    mode,
+    operation,
+    beforePrefix,
+    acceptedPrefix,
+    beforeStateSha256,
+    input,
+    result,
+    statusPrefixes,
+    sequenceId,
+  }) => {
+    const key = JSON.stringify(acceptedPrefix);
+    const candidate = {
+      id: `whole-transition-state-${String(transitionRows.length).padStart(2, "0")}`,
+      mode,
+      operation,
+      beforePrefix: [...beforePrefix],
+      acceptedPrefix: [...acceptedPrefix],
+      beforeStateSha256,
+      inputWitness: input === null ? null : c12Clone(input),
+      statusPrefixes: c12Clone(statusPrefixes),
+      expectedProjection: c12Clone(result.expectedProjection),
+      sourceSequences: [sequenceId],
+    };
+    const existing = transitionByPrefix.get(key);
+    if (existing === undefined) {
+      transitionRows.push(candidate);
+      transitionByPrefix.set(key, candidate);
+    } else {
+      assert.deepEqual(
+        c12CoreWithoutMembership(existing),
+        c12CoreWithoutMembership(candidate),
+      );
+      existing.sourceSequences.push(sequenceId);
+    }
+  };
+
+  const recordStatus = (status, prefix, sequenceId) => {
+    const key = JSON.stringify(prefix);
+    const candidate = {
+      id: `emitted-status-${String(statusRows.length).padStart(2, "0")}`,
+      prefix: [...prefix],
+      frame: c12Clone(status.frame),
+      binding: c12Clone(status.binding),
+      expectedArtifact: c12Clone(status.expectedArtifact),
+      sourceSequences: [sequenceId],
+    };
+    const existing = statusByPrefix.get(key);
+    if (existing === undefined) {
+      statusRows.push(candidate);
+      statusByPrefix.set(key, candidate);
+    } else {
+      assert.deepEqual(
+        c12CoreWithoutMembership(existing),
+        c12CoreWithoutMembership(candidate),
+      );
+      existing.sourceSequences.push(sequenceId);
+    }
+  };
+
+  for (const [sequenceId, legalSequence] of Object.entries(
+    C12_LEGAL_SEQUENCES,
+  )) {
+    const operations = legalSequence.filter((symbol) =>
+      C12_INPUT_KINDS.includes(symbol),
+    );
+    const mode = sequenceId.startsWith("R") ? "RECOVERY_ONLY" : "NORMAL";
+    const initialized = c12Initialize(startups[mode]);
+    let currentState = initialized.state;
+    const symbols = [];
+    const events = [];
+    const initializationStatusPrefixes = [];
+    for (const status of initialized.statuses) {
+      symbols.push(status.token);
+      const prefix = [...symbols];
+      initializationStatusPrefixes.push(prefix);
+      events.push({
+        symbol: status.token,
+        wireBinding: c12Clone(status.binding),
+        publicState: null,
+      });
+      recordStatus(status, prefix, sequenceId);
+    }
+    if (events.length > 0) {
+      events.at(-1).publicState = c12Clone(currentState);
+    }
+    recordTransition({
+      mode,
+      operation: "INITIALIZE",
+      beforePrefix: [],
+      acceptedPrefix: symbols,
+      beforeStateSha256: null,
+      input: null,
+      result: initialized,
+      statusPrefixes: initializationStatusPrefixes,
+      sequenceId,
+    });
+    const initialState = c12Clone(currentState);
+
+    for (const operation of operations) {
+      const beforePrefix = [...symbols];
+      const beforeStateSha256 = currentState.stateSha256;
+      const input = c12CreateInputWitness(operation, currentState, context);
+      if (!inputKindWitnessByKind.has(operation)) {
+        inputKindWitnessByKind.set(operation, c12Clone(input));
+      }
+      const reduced = c12Reduce(currentState, input);
+      symbols.push(operation);
+      events.push({
+        symbol: operation,
+        wireBinding: ["ADMIT", "CANCEL", "RECOVERY_REQUEST"].includes(operation)
+          ? c12Clone(input.frame)
+          : null,
+        publicState: null,
+      });
+      const statusPrefixes = [];
+      for (const status of reduced.statuses) {
+        symbols.push(status.token);
+        const prefix = [...symbols];
+        statusPrefixes.push(prefix);
+        events.push({
+          symbol: status.token,
+          wireBinding: c12Clone(status.binding),
+          publicState: null,
+        });
+        recordStatus(status, prefix, sequenceId);
+      }
+      events.at(-1).publicState = c12Clone(reduced.state);
+      recordTransition({
+        mode,
+        operation,
+        beforePrefix,
+        acceptedPrefix: symbols,
+        beforeStateSha256,
+        input,
+        result: reduced,
+        statusPrefixes,
+        sequenceId,
+      });
+      currentState = reduced.state;
+    }
+    assert.deepEqual(symbols, C12_LEGAL_SEQUENCES[sequenceId]);
+    scenarios.push({
+      id: sequenceId,
+      mode,
+      symbols: [...symbols],
+      operations: [...operations],
+      initialState,
+      events,
+      terminalState: c12Clone(currentState),
+    });
+  }
+
+  const inputKindWitnesses = C12_INPUT_KINDS.map((kind) => {
+    const witness = inputKindWitnessByKind.get(kind);
+    assert.notEqual(witness, undefined, kind);
+    return witness;
+  });
+
+  const prefixRows = [];
+  const prefixBySymbols = new Map();
+  const recordPrefix = (scenario, length) => {
+    const symbols = scenario.symbols.slice(0, length);
+    const key = JSON.stringify(symbols);
+    const selectedEvents = scenario.events.slice(0, length);
+    const wireBindings = selectedEvents
+      .map(({ wireBinding }) => wireBinding)
+      .filter((binding) => binding !== null);
+    const wireBytes = Buffer.concat(
+      wireBindings.map(({ bytesHex }) => Buffer.from(bytesHex, "hex")),
+    );
+    const publicState =
+      length === 0 ? scenario.initialState : selectedEvents.at(-1).publicState;
+    const candidate = {
+      schema: CONTRACT_VALID_RUNTIME_PREFIX_SCHEMA,
+      id: `accepted-prefix-${String(prefixRows.length).padStart(2, "0")}`,
+      kind:
+        length === 0
+          ? "RECOVERY_INITIALIZATION_EMPTY"
+          : "NONEMPTY_PROPER_PREFIX",
+      mode: scenario.mode,
+      symbols,
+      eventCount: length,
+      wireFrameCount: wireBindings.length,
+      wireFrameSha256: wireBindings.map(({ rawSha256 }) => rawSha256),
+      concatenatedWireByteLength: wireBytes.length,
+      concatenatedWireSha256: byteSha256(wireBytes),
+      nextWireSequence: wireBindings.length,
+      lastWireFrameSha256: wireBindings.at(-1)?.rawSha256 ?? C12_GENESIS_SHA256,
+      publicStateAvailable: publicState !== null,
+      expectedPublicState: publicState === null ? null : c12Clone(publicState),
+      publicIntermediateStateInvented: false,
+      sourceSequences: [scenario.id],
+    };
+    const existing = prefixBySymbols.get(key);
+    if (existing === undefined) {
+      prefixRows.push(candidate);
+      prefixBySymbols.set(key, candidate);
+    } else {
+      assert.deepEqual(
+        c12CoreWithoutMembership(existing),
+        c12CoreWithoutMembership(candidate),
+      );
+      existing.sourceSequences.push(scenario.id);
+    }
+  };
+  for (const scenario of scenarios.filter(
+    ({ mode }) => mode === "RECOVERY_ONLY",
+  )) {
+    recordPrefix(scenario, 0);
+  }
+  for (const scenario of scenarios) {
+    for (let length = 1; length < scenario.symbols.length; length += 1) {
+      recordPrefix(scenario, length);
+    }
+  }
+
+  const atomicRows = transitionRows
+    .filter(({ statusPrefixes }) => statusPrefixes.length === 2)
+    .map((transition, index) => {
+      const first = statusByPrefix.get(
+        JSON.stringify(transition.statusPrefixes[0]),
+      );
+      const second = statusByPrefix.get(
+        JSON.stringify(transition.statusPrefixes[1]),
+      );
+      assert.notEqual(first, undefined);
+      assert.notEqual(second, undefined);
+      const concatenatedJsonl = `${first.binding.jsonl}${second.binding.jsonl}`;
+      const concatenatedBytes = Buffer.from(concatenatedJsonl, "utf8");
+      return {
+        id: `atomic-prefix-${String(index).padStart(2, "0")}`,
+        transitionId: transition.id,
+        firstStatusId: first.id,
+        secondStatusId: second.id,
+        firstPrefix: c12Clone(transition.statusPrefixes[0]),
+        completePrefix: c12Clone(transition.statusPrefixes[1]),
+        firstRawSha256: first.binding.rawSha256,
+        secondPreviousFrameSha256: second.frame.previousFrameSha256,
+        secondRawSha256: second.binding.rawSha256,
+        concatenatedJsonl,
+        concatenatedByteLength: concatenatedBytes.length,
+        concatenatedRawSha256: byteSha256(concatenatedBytes),
+        publicIntermediateState: false,
+      };
+    });
+
+  const legalSequenceWitnesses = scenarios.map((scenario) => {
+    const wireBindings = scenario.events
+      .map(({ wireBinding }) => wireBinding)
+      .filter((binding) => binding !== null);
+    const wireBytes = Buffer.concat(
+      wireBindings.map(({ bytesHex }) => Buffer.from(bytesHex, "hex")),
+    );
+    return {
+      id: scenario.id,
+      mode: scenario.mode,
+      symbols: [...scenario.symbols],
+      operations: [...scenario.operations],
+      wireFrameCount: wireBindings.length,
+      wireFrameSha256: wireBindings.map(({ rawSha256 }) => rawSha256),
+      aggregateWireBytes: wireBytes.length,
+      concatenatedWireSha256: byteSha256(wireBytes),
+      expectedTerminalState: c12Clone(scenario.terminalState),
+    };
+  });
+
+  const counts = {
+    startupWitnesses: 2,
+    inputKindWitnesses: inputKindWitnesses.length,
+    legalSequences: legalSequenceWitnesses.length,
+    wholeTransitions: transitionRows.length,
+    acceptedPrefixes: prefixRows.length,
+    emittedStatuses: statusRows.length,
+    atomicPrefixes: atomicRows.length,
+  };
+  const inventorySha256 = {
+    startupWitnesses: semanticSha256(Object.values(startups)),
+    inputKindWitnesses: semanticSha256(inputKindWitnesses),
+    legalSequences: semanticSha256(legalSequenceWitnesses),
+    wholeTransitions: semanticSha256(transitionRows),
+    acceptedPrefixes: semanticSha256(prefixRows),
+    emittedStatuses: semanticSha256(statusRows),
+    atomicPrefixes: semanticSha256(atomicRows),
+  };
+  const construction = {
+    evaluatorOwnedContractWitnesses: true,
+    contractValidInputPreimagesProved: true,
+    candidateIndependentExpectedProjections: true,
+    independentlyAuthoredLegalSequences: true,
+    independentlyAssembledLaunchCapsuleV3: true,
+    existingSyntheticOracleConsumed: false,
+    existingSyntheticOracleExpectedValueConsumed: false,
+    requirementsFixtureObjectGraphConsumed: false,
+    candidateModuleReadByGenerator: false,
+    candidateModuleImportedByGenerator: false,
+    candidateModuleEvaluatedByGenerator: false,
+    candidateBehaviorExecuted: false,
+    predecessorConstructorConsumed: false,
+    predecessorVerifierConsumedForExpectedValues: false,
+    publicIntermediateStateInvented: false,
+    physicalAuthorityProved: false,
+  };
+  const oracle = {
+    schema: CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA,
+    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    counts,
+    inventorySha256,
+    witnesses: {
+      startups: Object.values(startups).map(c12Clone),
+      launchCapsuleV3: c12Clone(launchCapsule),
+      inputKinds: inputKindWitnesses,
+    },
+    expected: {
+      legalSequences: legalSequenceWitnesses,
+      wholeTransitions: transitionRows,
+      acceptedPrefixes: prefixRows,
+      emittedStatuses: statusRows,
+      atomicPrefixes: atomicRows,
+    },
+    authority: c12Clone(C12_AUTHORITY),
+    physicalFacts: c12Clone(C12_PHYSICAL_FACTS),
+    nonclaims: c12Clone(C12_NONCLAIMS),
+    construction,
+  };
+  oracle.identitySha256 = semanticSha256(oracle);
+  c12AssertContractValidRuntimeOracle(oracle);
+  return recursivelyFreezeEvidence(oracle);
+}
+
+function c12AssertRecoverySelection(selection, expectedEpochSha256) {
+  assert.deepEqual(Object.keys(selection), C12_RECOVERY_SELECTION_FIELDS);
+  assert.equal(selection.schema, C12_SCHEMAS.recoverySelection);
+  for (const field of [
+    "targetSha256",
+    "recoveryRequirementsSha256",
+    "recoveryPlanSha256",
+    "recoveryReplaySha256",
+    "lifecycleInventorySha256",
+    "attemptSha256",
+    "recoveryActorEpochSha256",
+    "lifetimeAnchorProjectionSha256",
+    "lifetimeAttemptAnchorRawSha256",
+  ]) {
+    assert.match(selection[field], /^[0-9a-f]{64}$/u);
+  }
+  assert.equal(
+    selection.recoveryRequirementsSha256,
+    C12_RECOVERY_REQUIREMENTS_SHA256,
+  );
+  assert.equal(selection.planStatus, "RECOVERY_PLAN_READY");
+  assert.equal(selection.requiredActorKind, "RECOVERY_ONLY_GUARDIAN");
+  assert.equal(selection.actorKind, "RECOVERY_ONLY_GUARDIAN");
+  assert.equal(selection.recoveryActorEpochSha256, expectedEpochSha256);
+  assert.equal(selection.attemptDirectoryName, expectedEpochSha256);
+  assert.equal(selection.disposition, "REBOOT_INTERRUPTION");
+  assert.equal(selection.quarantineReason, null);
+  assert.equal(selection.sourceLocation, "active");
+  assert.equal(selection.decisionSourceLocation, selection.sourceLocation);
+  assert.equal(selection.requiredDestinationLocation, "recovered");
+  assert.equal(selection.stateCount, C12_RECOVERY_STATES.length);
+  for (let index = 0; index < 19; index += 1) {
+    assert.equal(
+      selection[`state${index}`],
+      index < C12_RECOVERY_STATES.length
+        ? semanticSha256(C12_RECOVERY_STATES[index])
+        : null,
+    );
+  }
+}
+
+function c12AssertContractValidRuntimeOracle(oracle) {
+  assert.equal(oracle.schema, CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA);
+  assert.equal(oracle.requirementsSha256, EXPECTED_REQUIREMENTS_SHA256);
+  assert.deepEqual(oracle.counts, {
+    startupWitnesses: 2,
+    inputKindWitnesses: 7,
+    legalSequences: 8,
+    wholeTransitions: 20,
+    acceptedPrefixes: 26,
+    emittedStatuses: 15,
+    atomicPrefixes: 4,
+  });
+  assert.deepEqual(
+    Object.fromEntries(
+      oracle.expected.legalSequences.map(({ id, symbols }) => [id, symbols]),
+    ),
+    C12_LEGAL_SEQUENCES,
+  );
+  assert.deepEqual(
+    oracle.witnesses.inputKinds.map(({ kind }) => kind),
+    C12_INPUT_KINDS,
+  );
+  assert.equal(
+    oracle.witnesses.launchCapsuleV3.binding.value.schema,
+    "oxigraph.candidate-containment-launch-capsule/v2",
+  );
+  assert.equal(
+    oracle.witnesses.launchCapsuleV3.binding.value.requirementsSha256,
+    C12_LAUNCH_REQUIREMENTS_SHA256,
+  );
+  assert.equal(oracle.witnesses.launchCapsuleV3.binding.value.files.length, 14);
+  for (const binding of c12CollectBindings(oracle)) {
+    c12AssertBinding(binding);
+  }
+  const startupByMode = new Map(
+    oracle.witnesses.startups.map((startup) => [startup.mode, startup]),
+  );
+  assert.deepEqual([...startupByMode.keys()], ["NORMAL", "RECOVERY_ONLY"]);
+  for (const [mode, golden] of [
+    ["NORMAL", NORMAL_STARTUP_MAP_GOLDEN],
+    ["RECOVERY_ONLY", RECOVERY_STARTUP_MAP_GOLDEN],
+  ]) {
+    const startup = startupByMode.get(mode);
+    assert.notEqual(startup, undefined);
+    assert.equal(startup.epochEofObserved, true);
+    assert.equal(startup.epoch.byteLength, 32);
+    assert.deepEqual(
+      Object.keys(startup.startupReport.value),
+      C12_STARTUP_REPORT_FIELDS,
+    );
+    assert.equal(startup.startupReport.value.schema, C12_SCHEMAS.startupReport);
+    assert.equal(startup.startupReport.value.mode, mode);
+    assert.equal(
+      startup.startupReport.value.expectedEpochSha256,
+      startup.epoch.rawSha256,
+    );
+    assert.equal(
+      startup.openFileDescriptionScopeSha256,
+      semanticSha256(startup.openFileDescriptionScope),
+    );
+    assert.equal(
+      startup.startupReport.value.openFileDescriptionObservationScopeSha256,
+      startup.openFileDescriptionScopeSha256,
+    );
+    for (const [index, spec] of golden.entries()) {
+      const descriptor = startup.startupReport.value[`fd${index}`];
+      if (spec === null) {
+        assert.equal(descriptor, null);
+        continue;
+      }
+      assert.deepEqual(Object.keys(descriptor), C12_STARTUP_DESCRIPTOR_FIELDS);
+      assert.deepEqual(
+        {
+          fd: descriptor.fd,
+          role: descriptor.role,
+          kind: descriptor.kind,
+          accessMode: descriptor.accessMode,
+          closeOnExec: descriptor.closeOnExec,
+          direction: descriptor.direction,
+          statusFlags: descriptor.statusFlags,
+          openFileDescriptionClass: descriptor.openFileDescriptionClass,
+          currentOffset: descriptor.currentOffset,
+          socketFamily: descriptor.socketFamily,
+          socketType: descriptor.socketType,
+          connected: descriptor.connected,
+          lockHeld: descriptor.lockHeld,
+        },
+        {
+          fd: spec.fd,
+          role: spec.role,
+          kind: spec.kind,
+          accessMode: spec.accessMode,
+          closeOnExec: false,
+          direction: spec.direction,
+          statusFlags: spec.statusFlags,
+          openFileDescriptionClass: spec.openFileDescriptionClass,
+          currentOffset: spec.currentOffset,
+          socketFamily: spec.socketFamily,
+          socketType: spec.socketType,
+          connected: spec.connected,
+          lockHeld: spec.lockHeld,
+        },
+      );
+      assert.equal(descriptor.byteLength, null);
+      assert.equal(descriptor.contentSha256, null);
+      assert.equal(descriptor.launchFileIdentitySha256, null);
+      assert.equal(
+        descriptor.openFileDescriptionIdentitySha256,
+        semanticSha256({
+          schema: C12_SCHEMAS.openFileDescriptionObservation,
+          scopeSha256: startup.openFileDescriptionScopeSha256,
+          equivalenceClass: descriptor.openFileDescriptionClass,
+        }),
+      );
+    }
+    assert.deepEqual(Object.keys(startup.expectedProjection), [
+      "schema",
+      "mode",
+      "requirementsSha256",
+      "startupReportByteLength",
+      "startupReportSha256",
+      "epochSha256",
+      "descriptorCount",
+      "authority",
+      "physicalFacts",
+    ]);
+  }
+  const launchCapsule = oracle.witnesses.launchCapsuleV3.binding;
+  const launchFilesByRole = new Map(
+    launchCapsule.value.files.map((file) => [file.role, file]),
+  );
+  for (const input of oracle.witnesses.inputKinds) {
+    assert.deepEqual(
+      Object.keys(input.expectedProjection),
+      C12_INPUT_PROJECTION_FIELDS,
+    );
+    assert.equal(input.expectedProjection.kind, input.kind);
+    assert.equal(
+      input.expectedProjection.boundStateSha256,
+      input.boundStateSha256,
+    );
+    assert.equal(
+      input.expectedProjection.frameByteLength,
+      input.frame?.byteLength ?? null,
+    );
+    assert.equal(
+      input.expectedProjection.frameSha256,
+      input.frame?.rawSha256 ?? null,
+    );
+    assert.equal(
+      input.expectedProjection.auxiliaryByteLength,
+      input.auxiliary?.byteLength ?? null,
+    );
+    assert.equal(
+      input.expectedProjection.auxiliarySha256,
+      input.auxiliary?.rawSha256 ?? null,
+    );
+    if (input.kind === "ADMIT") {
+      assert.deepEqual(Object.keys(input.frame.value), [
+        "schema",
+        "action",
+        "mode",
+        "sequence",
+        "previousFrameSha256",
+        "requirementsSha256",
+        "startupSha256",
+        "epochSha256",
+        "launchCapsuleV3Sha256",
+        "launchCapsuleV3",
+      ]);
+      assert.equal(input.frame.value.schema, C12_SCHEMAS.wireFrame);
+      assert.equal(input.frame.value.action, "ADMIT");
+      assert.equal(input.frame.value.mode, "NORMAL");
+      assert.equal(
+        Buffer.from(input.frame.value.launchCapsuleV3, "base64").toString(
+          "hex",
+        ),
+        launchCapsule.bytesHex,
+      );
+      assert.equal(
+        input.frame.value.launchCapsuleV3Sha256,
+        launchCapsule.rawSha256,
+      );
+      const report = input.auxiliary.value;
+      assert.equal(report.schema, C12_SCHEMAS.admissionRecvmsgReport);
+      assert.equal(report.messageByteLength, input.frame.byteLength);
+      assert.equal(report.messageRawSha256, input.frame.rawSha256);
+      assert.deepEqual(
+        {
+          messageTruncated: report.messageTruncated,
+          controlTruncated: report.controlTruncated,
+          controlMessageCount: report.controlMessageCount,
+          controlLevel: report.controlLevel,
+          controlType: report.controlType,
+          rightsCount: report.rightsCount,
+        },
+        {
+          messageTruncated: false,
+          controlTruncated: false,
+          controlMessageCount: 1,
+          controlLevel: "SOL_SOCKET",
+          controlType: "SCM_RIGHTS",
+          rightsCount: 14,
+        },
+      );
+      for (const [index, spec] of ADMISSION_RIGHT_MAP_GOLDEN.entries()) {
+        const right = report[`right${index}`];
+        const file = launchFilesByRole.get(spec.role);
+        assert.deepEqual(
+          {
+            index: right.index,
+            role: right.role,
+            targetSupervisorFd: right.targetSupervisorFd,
+            kind: right.kind,
+            accessMode: right.accessMode,
+            closeOnExec: right.closeOnExec,
+            statusFlags: right.statusFlags,
+            openFileDescriptionClass: right.openFileDescriptionClass,
+            currentOffset: right.currentOffset,
+          },
+          {
+            index,
+            role: spec.role,
+            targetSupervisorFd: spec.targetSupervisorFd,
+            kind: "regular",
+            accessMode: index === 13 ? "O_RDWR" : "O_RDONLY",
+            closeOnExec: true,
+            statusFlags: "O_LARGEFILE",
+            openFileDescriptionClass: index + 8,
+            currentOffset: 0,
+          },
+        );
+        assert.equal(right.byteLength, file.byteLength);
+        assert.equal(right.contentSha256, file.sha256);
+        assert.equal(
+          right.launchFileIdentitySha256,
+          semanticSha256(file.identity),
+        );
+      }
+    } else if (input.kind === "CANCEL") {
+      assert.equal(input.frame.value.schema, C12_SCHEMAS.wireFrame);
+      assert.equal(input.frame.value.action, "CANCEL");
+      assert.equal(input.frame.value.mode, "NORMAL");
+      assert.deepEqual(input.scalarArguments, {
+        messageTruncated: false,
+        controlTruncated: false,
+        controlMessageCount: 0,
+      });
+    } else if (input.kind === "RECOVERY_REQUEST") {
+      const selection = input.frame.value.recoverySelection;
+      assert.equal(input.frame.value.schema, C12_SCHEMAS.wireFrame);
+      assert.equal(input.frame.value.action, "RECOVERY_REQUEST");
+      assert.equal(input.frame.value.mode, "RECOVERY_ONLY");
+      assert.equal(
+        input.frame.value.recoverySelectionSha256,
+        semanticSha256(selection),
+      );
+      c12AssertRecoverySelection(selection, input.frame.value.epochSha256);
+      assert.deepEqual(input.scalarArguments, { requestEofObserved: true });
+    } else if (input.kind === "DIAGNOSTIC_FAILURE") {
+      assert.equal(input.frame.value.schema, C12_SCHEMAS.diagnosticSummary);
+      assert.equal(input.frame.value.byteLength, input.auxiliary.byteLength);
+      assert.equal(input.frame.value.rawSha256, input.auxiliary.rawSha256);
+      assert.equal(input.frame.value.eofObserved, true);
+    } else {
+      assert.equal(input.frame, null);
+      assert.equal(input.auxiliary, null);
+      assert.deepEqual(input.scalarArguments, {});
+    }
+  }
+  const stateBySha256 = new Map(
+    oracle.expected.wholeTransitions.map((transition) => [
+      transition.expectedProjection.state.stateSha256,
+      transition.expectedProjection.state,
+    ]),
+  );
+  const statusByPrefix = new Map(
+    oracle.expected.emittedStatuses.map((status) => [
+      JSON.stringify(status.prefix),
+      status,
+    ]),
+  );
+  for (const transition of oracle.expected.wholeTransitions) {
+    const state = transition.expectedProjection.state;
+    assert.deepEqual(Object.keys(state), C12_STATE_PROJECTION_FIELDS);
+    assert.equal(
+      transition.expectedProjection.schema,
+      C12_SCHEMAS.transitionProjection,
+    );
+    const withoutDigest = c12Clone(state);
+    delete withoutDigest.stateSha256;
+    assert.equal(state.stateSha256, semanticSha256(withoutDigest));
+    assert.equal(
+      transition.expectedProjection.statusFrameCount,
+      transition.statusPrefixes.length,
+    );
+    assert.equal(transition.expectedProjection.statusFrameCount <= 2, true);
+    const statuses = transition.statusPrefixes.map((prefix) => {
+      const status = statusByPrefix.get(JSON.stringify(prefix));
+      assert.notEqual(status, undefined);
+      return status;
+    });
+    assert.deepEqual(
+      transition.expectedProjection.statusFrame0,
+      statuses[0]?.expectedArtifact ?? null,
+    );
+    assert.deepEqual(
+      transition.expectedProjection.statusFrame1,
+      statuses[1]?.expectedArtifact ?? null,
+    );
+    if (transition.operation === "INITIALIZE") {
+      assert.equal(transition.beforeStateSha256, null);
+      assert.equal(transition.inputWitness, null);
+      assert.equal(state.eventCount, statuses.length);
+      assert.equal(
+        state.aggregateWireBytes,
+        statuses.reduce(
+          (total, status) => total + status.binding.byteLength,
+          0,
+        ),
+      );
+      continue;
+    }
+    const before = stateBySha256.get(transition.beforeStateSha256);
+    assert.notEqual(before, undefined);
+    const input = transition.inputWitness;
+    assert.equal(input.kind, transition.operation);
+    assert.equal(input.boundStateSha256, before.stateSha256);
+    const wireInput = ["ADMIT", "CANCEL", "RECOVERY_REQUEST"].includes(
+      input.kind,
+    );
+    if (wireInput) {
+      assert.equal(input.frame.value.sequence, before.nextWireSequence);
+      assert.equal(
+        input.frame.value.previousFrameSha256,
+        before.lastWireFrameSha256,
+      );
+      assert.equal(input.frame.value.startupSha256, before.startupSha256);
+      assert.equal(input.frame.value.epochSha256, before.epochSha256);
+    }
+    assert.equal(state.eventCount, before.eventCount + 1 + statuses.length);
+    assert.equal(
+      state.aggregateWireBytes,
+      before.aggregateWireBytes +
+        (wireInput ? input.frame.byteLength : 0) +
+        statuses.reduce(
+          (total, status) => total + status.binding.byteLength,
+          0,
+        ),
+    );
+    assert.equal(
+      state.nextWireSequence,
+      before.nextWireSequence + (wireInput ? 1 : 0) + statuses.length,
+    );
+  }
+  for (const status of oracle.expected.emittedStatuses) {
+    assert.deepEqual(Object.keys(status.frame), C12_STATUS_FRAME_FIELDS);
+    assert.equal(status.frame.action, "STATUS");
+    assert.deepEqual(status.frame, status.binding.value);
+    assert.deepEqual(
+      status.expectedArtifact.ownKeys,
+      C12_STATUS_ARTIFACT_OWN_KEYS,
+    );
+    assert.equal(status.expectedArtifact.bytesHex, status.binding.bytesHex);
+    assert.equal(
+      status.expectedArtifact.fields.sequence,
+      status.frame.sequence,
+    );
+    assert.equal(
+      status.expectedArtifact.fields.terminalReason,
+      status.frame.terminalReason,
+    );
+    assert.equal(
+      status.expectedArtifact.fields.rawSha256,
+      status.binding.rawSha256,
+    );
+    assert.equal(
+      status.expectedArtifact.fields.byteLength,
+      status.binding.byteLength,
+    );
+  }
+  for (const prefix of oracle.expected.acceptedPrefixes) {
+    assert.equal(prefix.eventCount, prefix.symbols.length);
+    assert.equal(prefix.nextWireSequence, prefix.wireFrameCount);
+    if (prefix.publicStateAvailable) {
+      assert.notEqual(prefix.expectedPublicState, null);
+    } else {
+      assert.equal(prefix.expectedPublicState, null);
+    }
+    assert.equal(prefix.publicIntermediateStateInvented, false);
+  }
+  const statusesById = new Map(
+    oracle.expected.emittedStatuses.map((status) => [status.id, status]),
+  );
+  for (const atomic of oracle.expected.atomicPrefixes) {
+    const first = statusesById.get(atomic.firstStatusId);
+    const second = statusesById.get(atomic.secondStatusId);
+    assert.notEqual(first, undefined);
+    assert.notEqual(second, undefined);
+    assert.equal(atomic.secondPreviousFrameSha256, first.binding.rawSha256);
+    assert.equal(second.frame.previousFrameSha256, first.binding.rawSha256);
+    assert.equal(
+      atomic.concatenatedJsonl,
+      `${first.binding.jsonl}${second.binding.jsonl}`,
+    );
+    assert.equal(atomic.publicIntermediateState, false);
+  }
+  assert.equal(
+    oracle.expected.emittedStatuses.reduce(
+      (count, status) => count + status.sourceSequences.length,
+      0,
+    ),
+    23,
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      oracle.expected.legalSequences.map(({ id, wireFrameCount }) => [
+        id,
+        wireFrameCount,
+      ]),
+    ),
+    EXPANSION_ANCHORS.completeSequenceWireFrameCounts,
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      oracle.expected.legalSequences.map(({ id, expectedTerminalState }) => [
+        id,
+        expectedTerminalState.eventCount,
+      ]),
+    ),
+    EXPANSION_ANCHORS.terminalEventCounts,
+  );
+  assert.deepEqual(
+    oracle.expected.wholeTransitions.reduce(
+      (counts, transition) => {
+        counts[transition.mode] += 1;
+        return counts;
+      },
+      { NORMAL: 0, RECOVERY_ONLY: 0 },
+    ),
+    { NORMAL: 14, RECOVERY_ONLY: 6 },
+  );
+  assert.deepEqual(
+    oracle.expected.wholeTransitions.reduce(
+      (counts, transition) => {
+        counts[transition.operation] += 1;
+        return counts;
+      },
+      {
+        INITIALIZE: 0,
+        ADMIT: 0,
+        CANCEL: 0,
+        RECOVERY_REQUEST: 0,
+        CONTROLLER_CLOSED: 0,
+        DIAGNOSTIC_FAILURE: 0,
+        RECOVERY_CONTROL_HANDOFF: 0,
+        STATUS_EOF: 0,
+      },
+    ),
+    {
+      INITIALIZE: 2,
+      ADMIT: 1,
+      CANCEL: 2,
+      RECOVERY_REQUEST: 1,
+      CONTROLLER_CLOSED: 2,
+      DIAGNOSTIC_FAILURE: 3,
+      RECOVERY_CONTROL_HANDOFF: 1,
+      STATUS_EOF: 8,
+    },
+  );
+  const statusCoverage = oracle.expected.emittedStatuses.reduce(
+    (coverage, status) => {
+      coverage.modes[status.frame.mode] += 1;
+      const admission = status.frame.admissionFrameSha256 !== null;
+      const recovery = status.frame.recoveryRequestFrameSha256 !== null;
+      const partition = admission
+        ? recovery
+          ? "both"
+          : "admissionOnly"
+        : recovery
+          ? "recoveryOnly"
+          : "neither";
+      coverage.bindings[partition] += 1;
+      return coverage;
+    },
+    {
+      modes: { NORMAL: 0, RECOVERY_ONLY: 0 },
+      bindings: { admissionOnly: 0, recoveryOnly: 0, neither: 0, both: 0 },
+    },
+  );
+  assert.deepEqual(statusCoverage, {
+    modes: { NORMAL: 12, RECOVERY_ONLY: 3 },
+    bindings: { admissionOnly: 6, recoveryOnly: 3, neither: 6, both: 0 },
+  });
+  assert.equal(
+    Object.values(oracle.authority).every((value) => !value),
+    true,
+  );
+  assert.equal(
+    Object.values(oracle.physicalFacts).every((value) => value === null),
+    true,
+  );
+  assert.equal(
+    Object.values(oracle.nonclaims).every((value) => !value),
+    true,
+  );
+  assert.deepEqual(oracle.construction, {
+    evaluatorOwnedContractWitnesses: true,
+    contractValidInputPreimagesProved: true,
+    candidateIndependentExpectedProjections: true,
+    independentlyAuthoredLegalSequences: true,
+    independentlyAssembledLaunchCapsuleV3: true,
+    existingSyntheticOracleConsumed: false,
+    existingSyntheticOracleExpectedValueConsumed: false,
+    requirementsFixtureObjectGraphConsumed: false,
+    candidateModuleReadByGenerator: false,
+    candidateModuleImportedByGenerator: false,
+    candidateModuleEvaluatedByGenerator: false,
+    candidateBehaviorExecuted: false,
+    predecessorConstructorConsumed: false,
+    predecessorVerifierConsumedForExpectedValues: false,
+    publicIntermediateStateInvented: false,
+    physicalAuthorityProved: false,
+  });
+  const withoutIdentity = c12Clone(oracle);
+  delete withoutIdentity.identitySha256;
+  assert.equal(oracle.identitySha256, semanticSha256(withoutIdentity));
+  assert.deepEqual(
+    oracle.inventorySha256,
+    EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
+  );
+  assert.equal(
+    oracle.identitySha256,
+    EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+  );
+}
+
+const C12_RUNTIME_ORACLE_CONSTRUCTION_FUNCTIONS = Object.freeze([
+  c12Clone,
+  c12LabelSha256,
+  c12JsonlBinding,
+  c12RawBinding,
+  c12CreateLaunchCapsuleWitness,
+  c12CreateStartupWitness,
+  c12CreateAdmissionRecvmsgWitness,
+  c12CreateRecoverySelection,
+  c12CreateState,
+  c12CreateStatusWitness,
+  c12AppendStatus,
+  c12CreateInputWitness,
+  c12TransitionProjection,
+  c12Initialize,
+  c12Reduce,
+  c12AssertBinding,
+  c12CollectBindings,
+  c12CoreWithoutMembership,
+  c12AssertRecoverySelection,
+  c12AssertContractValidRuntimeOracle,
+  createContractValidRuntimeOracle,
+]);
+const C12_FORBIDDEN_EXPECTED_VALUE_SOURCES = Object.freeze([
+  "REQUIREMENTS_ORACLE",
+  "STATIC_POLICY_REQUIREMENTS_ORACLE",
+  "SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE",
+  "SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE",
+  "adversarialModule",
+  "evaluateCandidateOnlyWhenEvaluatorCloses",
+  "verifyCandidateContainmentGuardianControlV1",
+  "verifyCandidateContainmentLaunchCapsuleV3",
+  "createCandidateContainmentLaunchCapsuleV3",
+]);
+const C12_EXPECTED_VALUE_SOURCE_AUDIT = Object.freeze({
+  forbiddenReferences: Object.freeze(
+    C12_FORBIDDEN_EXPECTED_VALUE_SOURCES.filter((name) =>
+      C12_RUNTIME_ORACLE_CONSTRUCTION_FUNCTIONS.some((builder) =>
+        builder.toString().includes(name),
+      ),
+    ),
+  ),
+  constructionFunctionCount: C12_RUNTIME_ORACLE_CONSTRUCTION_FUNCTIONS.length,
+});
+
 const ALLOWED_IMPORTS = new Map([
   [
     "./containment-exact-v2.mjs",
@@ -7786,6 +9802,8 @@ function pinPredecessorSourcesBeforeCandidateRead() {
 
 const SYNCHRONOUS_PREDECESSOR_AUDIT =
   pinPredecessorSourcesBeforeCandidateRead();
+assert.deepEqual(C12_EXPECTED_VALUE_SOURCE_AUDIT.forbiddenReferences, []);
+const CONTRACT_VALID_RUNTIME_ORACLE = createContractValidRuntimeOracle();
 const ADVERSARIAL_WIRING_ACTIVITY = {
   candidateSourceReadAttempts: 0,
   candidateModuleImportAttempts: 0,
@@ -8155,7 +10173,796 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
   assert.equal(rejectedMutations, 25);
 });
 
-test("freezes the evaluator expansion-count anchors without claiming coverage", () => {
+test("freezes the evaluator expansion-count anchors without claiming coverage", async () => {
+  const oracle = CONTRACT_VALID_RUNTIME_ORACLE;
+  assert.equal(
+    oracle.schema,
+    "oxigraph.test.candidate-containment-guardian-control-v1-contract-valid-runtime-oracle/v1",
+  );
+  assert.deepEqual(oracle.counts, {
+    startupWitnesses: 2,
+    inputKindWitnesses: 7,
+    legalSequences: 8,
+    wholeTransitions: 20,
+    acceptedPrefixes: 26,
+    emittedStatuses: 15,
+    atomicPrefixes: 4,
+  });
+  assert.deepEqual(
+    oracle.inventorySha256,
+    EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
+  );
+  assert.equal(
+    oracle.identitySha256,
+    EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+  );
+  assert.deepEqual(C12_EXPECTED_VALUE_SOURCE_AUDIT, {
+    forbiddenReferences: [],
+    constructionFunctionCount: 21,
+  });
+  assert.equal(sourceText, null);
+  assert.equal(candidate, null);
+  assert.equal(
+    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions,
+    0,
+  );
+  assert.equal(
+    ADVERSARIAL_WIRING_ACTIVITY.candidateBehaviorExecutionAttempts,
+    0,
+  );
+  assert.equal(
+    SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.construction
+      .contractValidInputPreimagesProved,
+    false,
+  );
+  assert.equal(oracle.construction.contractValidInputPreimagesProved, true);
+  assert.equal(oracle.nonclaims.recoveryBrandProvenanceProved, false);
+  assert.deepEqual(Object.keys(adversarialModule).sort(), [
+    "createSourceIndependentAdversarialOracle",
+    "createSourceIndependentMaterializedStatusOracle",
+    "registerAdversarialCandidateTests",
+  ]);
+  assert.equal(countSharedNonPrimitiveObjectReferences(oracle, candidate), 0);
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(
+      oracle,
+      SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE,
+    ),
+    0,
+  );
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(
+      oracle,
+      SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE,
+    ),
+    0,
+  );
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(oracle, REQUIREMENTS_ORACLE),
+    0,
+  );
+  const independentlyAllocatedOracle = createContractValidRuntimeOracle();
+  assert.deepEqual(independentlyAllocatedOracle, oracle);
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(
+      oracle,
+      independentlyAllocatedOracle,
+    ),
+    0,
+  );
+  assertRecursivelyFrozenWithoutByteViews(oracle);
+  assertRecursivelyFrozenWithoutByteViews(independentlyAllocatedOracle);
+  const oracleIdentityBeforePredecessorCrossCheck = oracle.identitySha256;
+  const { verifyCandidateContainmentLaunchCapsuleV3 } = await import(
+    new URL(
+      "../src/candidate/containment-launch-capsule-v3.mjs",
+      import.meta.url,
+    ).href
+  );
+  const independentlyVerifiedLaunchCapsule =
+    verifyCandidateContainmentLaunchCapsuleV3(
+      Buffer.from(oracle.witnesses.launchCapsuleV3.binding.bytesHex, "hex"),
+    );
+  assert.equal(
+    independentlyVerifiedLaunchCapsule.rawSha256,
+    oracle.witnesses.launchCapsuleV3.binding.rawSha256,
+  );
+  assert.equal(
+    independentlyVerifiedLaunchCapsule.byteLength,
+    oracle.witnesses.launchCapsuleV3.binding.byteLength,
+  );
+  assert.equal(
+    independentlyVerifiedLaunchCapsule.requirementsSha256,
+    C12_LAUNCH_REQUIREMENTS_SHA256,
+  );
+  assert.deepEqual(
+    c12Clone(independentlyVerifiedLaunchCapsule.files),
+    oracle.witnesses.launchCapsuleV3.binding.value.files,
+  );
+  assert.equal(
+    oracle.construction.predecessorVerifierConsumedForExpectedValues,
+    false,
+  );
+  assert.equal(
+    oracle.identitySha256,
+    oracleIdentityBeforePredecessorCrossCheck,
+  );
+
+  const resealJsonlBinding = (binding) => {
+    binding.jsonl = `${canonicalJson(binding.value)}\n`;
+    const bytes = Buffer.from(binding.jsonl, "utf8");
+    binding.bytesHex = bytes.toString("hex");
+    binding.byteLength = bytes.length;
+    binding.rawSha256 = byteSha256(bytes);
+  };
+  const resealRawBinding = (binding) => {
+    const bytes = Buffer.from(binding.bytesHex, "hex");
+    binding.byteLength = bytes.length;
+    binding.rawSha256 = byteSha256(bytes);
+  };
+  const resealOracle = (mutant) => {
+    mutant.inventorySha256 = {
+      startupWitnesses: semanticSha256(mutant.witnesses.startups),
+      inputKindWitnesses: semanticSha256(mutant.witnesses.inputKinds),
+      legalSequences: semanticSha256(mutant.expected.legalSequences),
+      wholeTransitions: semanticSha256(mutant.expected.wholeTransitions),
+      acceptedPrefixes: semanticSha256(mutant.expected.acceptedPrefixes),
+      emittedStatuses: semanticSha256(mutant.expected.emittedStatuses),
+      atomicPrefixes: semanticSha256(mutant.expected.atomicPrefixes),
+    };
+    delete mutant.identitySha256;
+    mutant.identitySha256 = semanticSha256(mutant);
+    return recursivelyFreezeEvidence(mutant);
+  };
+  const mutationKills = [];
+  const recordMutationKill = (id, run) => {
+    let rejection = null;
+    try {
+      run();
+    } catch (error) {
+      rejection = error;
+    }
+    assert.notEqual(rejection, null, `${id} survived`);
+    mutationKills.push({
+      id,
+      reason: String(rejection.message).split("\n", 1)[0],
+    });
+  };
+  const mutateOracle = (id, mutate) => {
+    const mutant = c12Clone(oracle);
+    const beforeMutationSha256 = semanticSha256(mutant);
+    mutate(mutant);
+    assert.notEqual(
+      semanticSha256(mutant),
+      beforeMutationSha256,
+      `${id} was a no-op`,
+    );
+    const resealedMutant = resealOracle(mutant);
+    recordMutationKill(id, () => {
+      c12AssertContractValidRuntimeOracle(resealedMutant);
+    });
+  };
+  const inputOfKind = (mutant, kind) =>
+    mutant.witnesses.inputKinds.find((input) => input.kind === kind);
+
+  mutateOracle("synthetic-preimage-substitution", (mutant) => {
+    mutant.witnesses.inputKinds[0] = c12Clone(
+      SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.constructionContext
+        .bindings["normal-admission-frame"],
+    );
+  });
+  mutateOracle("epoch-single-byte-flip", (mutant) => {
+    const epoch = mutant.witnesses.startups[0].epoch;
+    epoch.bytesHex = `${epoch.bytesHex.startsWith("00") ? "01" : "00"}${epoch.bytesHex.slice(2)}`;
+    resealRawBinding(epoch);
+  });
+
+  for (const [id, mutateLaunch] of [
+    [
+      "launch-byte-digest",
+      (capsule) => (capsule.files[0].sha256 = "0".repeat(64)),
+    ],
+    ["launch-role", (capsule) => (capsule.files[0].role = "childStdin")],
+    [
+      "launch-identity",
+      (capsule) => (capsule.files[0].identity.inode = "30001"),
+    ],
+    ["launch-offset", (capsule) => (capsule.files[0].initialOffset = 1)],
+    ["launch-vector", (capsule) => (capsule.argv.argv[0] = "/usr/bin/false")],
+    [
+      "launch-v2-schema-substitution",
+      (capsule) =>
+        (capsule.schema = "oxigraph.candidate-containment-launch-capsule/v1"),
+    ],
+  ]) {
+    mutateOracle(id, (mutant) => {
+      const binding = mutant.witnesses.launchCapsuleV3.binding;
+      mutateLaunch(binding.value);
+      resealJsonlBinding(binding);
+    });
+  }
+
+  for (const [id, mutateDescriptor] of [
+    [
+      "ofd-normal-class-duplicate",
+      (mutant) => {
+        const report = mutant.witnesses.startups[0].startupReport;
+        report.value.fd1.openFileDescriptionClass =
+          report.value.fd0.openFileDescriptionClass;
+        resealJsonlBinding(report);
+      },
+    ],
+    [
+      "ofd-recovery-identity-alias",
+      (mutant) => {
+        const report = mutant.witnesses.startups[1].startupReport;
+        report.value.fd1.openFileDescriptionIdentitySha256 =
+          report.value.fd0.openFileDescriptionIdentitySha256;
+        resealJsonlBinding(report);
+      },
+    ],
+    [
+      "ofd-admission-right-class-duplicate",
+      (mutant) => {
+        const report = inputOfKind(mutant, "ADMIT").auxiliary;
+        report.value.right0.openFileDescriptionClass =
+          report.value.right1.openFileDescriptionClass;
+        resealJsonlBinding(report);
+      },
+    ],
+  ]) {
+    mutateOracle(id, mutateDescriptor);
+  }
+
+  for (const [id, mutateAdmission] of [
+    [
+      "admit-message-binding",
+      (input) => (input.auxiliary.value.messageRawSha256 = "0".repeat(64)),
+    ],
+    [
+      "admit-message-truncation",
+      (input) => (input.auxiliary.value.messageTruncated = true),
+    ],
+    ["admit-right-count", (input) => (input.auxiliary.value.rightsCount = 13)],
+    [
+      "admit-right-content",
+      (input) => (input.auxiliary.value.right0.contentSha256 = "0".repeat(64)),
+    ],
+    [
+      "admit-launch-binding",
+      (input) => (input.frame.value.launchCapsuleV3Sha256 = "0".repeat(64)),
+    ],
+  ]) {
+    mutateOracle(id, (mutant) => {
+      const input = inputOfKind(mutant, "ADMIT");
+      mutateAdmission(input);
+      resealJsonlBinding(
+        id === "admit-launch-binding" ? input.frame : input.auxiliary,
+      );
+    });
+  }
+
+  for (const [id, mutateCancel] of [
+    [
+      "cancel-admission-nullability",
+      (input) => (input.frame.value.admissionFrameSha256 = "0".repeat(64)),
+    ],
+    ["cancel-sequence", (input) => (input.frame.value.sequence += 1)],
+    [
+      "cancel-previous-frame",
+      (input) => (input.frame.value.previousFrameSha256 = "1".repeat(64)),
+    ],
+    [
+      "cancel-scalar",
+      (input) => (input.scalarArguments.messageTruncated = true),
+    ],
+  ]) {
+    mutateOracle(id, (mutant) => {
+      const input = inputOfKind(mutant, "CANCEL");
+      mutateCancel(input);
+      if (id !== "cancel-scalar") resealJsonlBinding(input.frame);
+    });
+  }
+
+  const recoveryInput = inputOfKind(c12Clone(oracle), "RECOVERY_REQUEST");
+  for (const [id, mutateSelection] of [
+    [
+      "recovery-decision-source-relationship",
+      (selection) => (selection.decisionSourceLocation = null),
+    ],
+    [
+      "recovery-quarantine-nullability",
+      (selection) => (selection.quarantineReason = "UNKNOWN_BOOT_ID"),
+    ],
+    [
+      "recovery-unused-state-nullability",
+      (selection) => (selection.state5 = "0".repeat(64)),
+    ],
+    [
+      "recovery-state-order",
+      (selection) =>
+        ([selection.state1, selection.state2] = [
+          selection.state2,
+          selection.state1,
+        ]),
+    ],
+    ["recovery-state-count", (selection) => (selection.stateCount -= 1)],
+    [
+      "recovery-source-location",
+      (selection) => (selection.sourceLocation = "staging"),
+    ],
+  ]) {
+    const selection = c12Clone(recoveryInput.frame.value.recoverySelection);
+    const beforeMutationSha256 = semanticSha256(selection);
+    mutateSelection(selection);
+    assert.notEqual(
+      semanticSha256(selection),
+      beforeMutationSha256,
+      `${id} was a no-op`,
+    );
+    recordMutationKill(id, () => {
+      c12AssertRecoverySelection(
+        selection,
+        recoveryInput.frame.value.epochSha256,
+      );
+    });
+  }
+  mutateOracle("recovery-request-eof", (mutant) => {
+    inputOfKind(mutant, "RECOVERY_REQUEST").scalarArguments.requestEofObserved =
+      false;
+  });
+
+  for (const [id, mutateDiagnostic] of [
+    [
+      "diagnostic-byte",
+      (input) => {
+        input.auxiliary.bytesHex = `00${input.auxiliary.bytesHex.slice(2)}`;
+        resealRawBinding(input.auxiliary);
+      },
+    ],
+    ["diagnostic-length", (input) => (input.frame.value.byteLength += 1)],
+    [
+      "diagnostic-digest",
+      (input) => (input.frame.value.rawSha256 = "0".repeat(64)),
+    ],
+    ["diagnostic-eof", (input) => (input.frame.value.eofObserved = false)],
+    [
+      "diagnostic-bound-state",
+      (input) => {
+        input.boundStateSha256 = "1".repeat(64);
+        input.expectedProjection.boundStateSha256 = input.boundStateSha256;
+      },
+    ],
+  ]) {
+    mutateOracle(id, (mutant) => {
+      const input = inputOfKind(mutant, "DIAGNOSTIC_FAILURE");
+      mutateDiagnostic(input);
+      if (
+        ["diagnostic-length", "diagnostic-digest", "diagnostic-eof"].includes(
+          id,
+        )
+      ) {
+        resealJsonlBinding(input.frame);
+      }
+    });
+  }
+
+  for (
+    let index = 0;
+    index < oracle.expected.wholeTransitions.length;
+    index += 1
+  ) {
+    const family = [
+      "phase",
+      "boolean-flag",
+      "terminal-reason",
+      "counter",
+      "next-sequence",
+      "last-wire-hash",
+      "aggregate-bytes",
+      "event-count",
+      "state-digest",
+    ][index % 9];
+    mutateOracle(
+      `transition-${String(index).padStart(2, "0")}-${family}`,
+      (mutant) => {
+        const state =
+          mutant.expected.wholeTransitions[index].expectedProjection.state;
+        if (family === "phase") state.phase = `MUTATED_${state.phase}`;
+        else if (family === "boolean-flag")
+          state.cancelObserved = !state.cancelObserved;
+        else if (family === "terminal-reason")
+          state.controlTerminalReason =
+            state.controlTerminalReason === null ? "EXPLICIT_CANCEL" : null;
+        else if (family === "counter") state.admissionCount += 1;
+        else if (family === "next-sequence") state.nextWireSequence += 1;
+        else if (family === "last-wire-hash")
+          state.lastWireFrameSha256 =
+            state.lastWireFrameSha256 === "0".repeat(64)
+              ? "1".repeat(64)
+              : "0".repeat(64);
+        else if (family === "aggregate-bytes") state.aggregateWireBytes += 1;
+        else if (family === "event-count") state.eventCount += 1;
+        else {
+          state.stateSha256 =
+            state.stateSha256 === "0".repeat(64)
+              ? "1".repeat(64)
+              : "0".repeat(64);
+          return;
+        }
+        delete state.stateSha256;
+        state.stateSha256 = semanticSha256(state);
+      },
+    );
+  }
+  for (let index = 0; index < oracle.witnesses.inputKinds.length; index += 1) {
+    mutateOracle(
+      `input-${String(index).padStart(2, "0")}-binding`,
+      (mutant) => {
+        const input = mutant.witnesses.inputKinds[index];
+        input.boundStateSha256 = "1".repeat(64);
+        input.expectedProjection.boundStateSha256 = input.boundStateSha256;
+      },
+    );
+  }
+  for (
+    let index = 0;
+    index < oracle.expected.emittedStatuses.length;
+    index += 1
+  ) {
+    const family = [
+      "nullability",
+      "sequence",
+      "previous-frame",
+      "canonical-raw",
+      "extra-lf",
+    ][index % 5];
+    const id = `status-${String(index).padStart(2, "0")}-${family}`;
+    if (family === "extra-lf") {
+      const binding = c12Clone(oracle.expected.emittedStatuses[index].binding);
+      const beforeMutationSha256 = semanticSha256(binding);
+      binding.jsonl += "\n";
+      const bytes = Buffer.from(binding.jsonl, "utf8");
+      binding.bytesHex = bytes.toString("hex");
+      binding.byteLength = bytes.length;
+      binding.rawSha256 = byteSha256(bytes);
+      assert.notEqual(
+        semanticSha256(binding),
+        beforeMutationSha256,
+        `${id} was a no-op`,
+      );
+      recordMutationKill(id, () => {
+        c12AssertBinding(binding);
+      });
+      continue;
+    }
+    mutateOracle(id, (mutant) => {
+      const status = mutant.expected.emittedStatuses[index];
+      const frame = status.frame;
+      if (family === "nullability") {
+        frame.admissionFrameSha256 =
+          frame.admissionFrameSha256 === null ? "0".repeat(64) : null;
+      } else if (family === "sequence") frame.sequence += 1;
+      else if (family === "previous-frame")
+        frame.previousFrameSha256 =
+          frame.previousFrameSha256 === "0".repeat(64)
+            ? "1".repeat(64)
+            : "0".repeat(64);
+      else frame.state = `MUTATED_${frame.state}`;
+      status.binding.value = c12Clone(frame);
+      resealJsonlBinding(status.binding);
+      status.expectedArtifact.bytesHex = status.binding.bytesHex;
+      status.expectedArtifact.fields.sequence = frame.sequence;
+      status.expectedArtifact.fields.byteLength = status.binding.byteLength;
+      status.expectedArtifact.fields.rawSha256 = status.binding.rawSha256;
+      status.expectedArtifact.fields.state = frame.state;
+    });
+  }
+  for (
+    let index = 0;
+    index < oracle.expected.atomicPrefixes.length;
+    index += 1
+  ) {
+    const family = ["reverse", "omit-first", "omit-second", "insert-delimiter"][
+      index
+    ];
+    mutateOracle(
+      `atomic-${String(index).padStart(2, "0")}-${family}`,
+      (mutant) => {
+        const atomic = mutant.expected.atomicPrefixes[index];
+        const statuses = new Map(
+          mutant.expected.emittedStatuses.map((status) => [status.id, status]),
+        );
+        const first = statuses.get(atomic.firstStatusId).binding.jsonl;
+        const second = statuses.get(atomic.secondStatusId).binding.jsonl;
+        if (family === "reverse")
+          atomic.concatenatedJsonl = `${second}${first}`;
+        else if (family === "omit-first") atomic.concatenatedJsonl = second;
+        else if (family === "omit-second") atomic.concatenatedJsonl = first;
+        else atomic.concatenatedJsonl = `${first}\n${second}`;
+        const bytes = Buffer.from(atomic.concatenatedJsonl, "utf8");
+        atomic.concatenatedByteLength = bytes.length;
+        atomic.concatenatedRawSha256 = byteSha256(bytes);
+      },
+    );
+  }
+  for (
+    let index = 0;
+    index < oracle.expected.acceptedPrefixes.length;
+    index += 1
+  ) {
+    const family =
+      index < 5
+        ? "public-intermediate"
+        : index < 10
+          ? "post-terminal"
+          : index === 10 || index >= 21
+            ? "reorder-reverse"
+            : index < 15 || index === 20
+              ? "delete"
+              : "duplicate";
+    mutateOracle(
+      `prefix-${String(index).padStart(2, "0")}-${family}`,
+      (mutant) => {
+        const prefix = mutant.expected.acceptedPrefixes[index];
+        if (family === "public-intermediate") {
+          prefix.publicIntermediateStateInvented = true;
+        } else if (family === "post-terminal") {
+          prefix.symbols.push("STATUS_EOF", "MUTATED_AFTER_TERMINAL");
+          prefix.eventCount = prefix.symbols.length;
+        } else if (family === "reorder-reverse") {
+          assert.equal(prefix.symbols.length >= 2, true);
+          prefix.symbols.reverse();
+        } else if (family === "delete") {
+          assert.equal(prefix.symbols.length > 0, true);
+          prefix.symbols.pop();
+          prefix.eventCount = prefix.symbols.length;
+        } else {
+          assert.equal(prefix.symbols.length > 0, true);
+          prefix.symbols.push(prefix.symbols.at(-1));
+          prefix.eventCount = prefix.symbols.length;
+        }
+      },
+    );
+  }
+
+  recordMutationKill("graph-fixture-alias", () => {
+    const mutant = c12Clone(oracle);
+    mutant.fixtureAlias = REQUIREMENTS_ORACLE.modes;
+    assert.equal(
+      countSharedNonPrimitiveObjectReferences(mutant, REQUIREMENTS_ORACLE),
+      0,
+    );
+  });
+  recordMutationKill("graph-old-synthetic-alias", () => {
+    const mutant = c12Clone(oracle);
+    mutant.syntheticAlias =
+      SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.constructionContext;
+    assert.equal(
+      countSharedNonPrimitiveObjectReferences(
+        mutant,
+        SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE,
+      ),
+      0,
+    );
+  });
+  recordMutationKill("graph-retained-byte-view", () => {
+    const mutant = c12Clone(oracle);
+    mutant.retainedByteView = Buffer.from([0]);
+    const freezeExceptViews = (value, seen = new Set()) => {
+      if (
+        value === null ||
+        typeof value !== "object" ||
+        seen.has(value) ||
+        ArrayBuffer.isView(value)
+      ) {
+        return;
+      }
+      seen.add(value);
+      for (const child of Object.values(value)) freezeExceptViews(child, seen);
+      Object.freeze(value);
+    };
+    freezeExceptViews(mutant);
+    assertRecursivelyFrozenWithoutByteViews(mutant);
+  });
+  mutateOracle("candidate-derived-expected-value", (mutant) => {
+    mutant.construction.candidateModuleReadByGenerator = true;
+  });
+  mutateOracle("predecessor-verifier-derived-expected-value", (mutant) => {
+    mutant.construction.predecessorVerifierConsumedForExpectedValues = true;
+  });
+
+  const { candidateContainmentOwnerV2Readiness } = await import(
+    new URL("../src/candidate/containment-owner-v2.mjs", import.meta.url).href
+  );
+  const staticCounts = STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts;
+  const staticAggregates = STATIC_NEGATIVE_CONTROLS.evidenceManifest.aggregates;
+  const b11Receipt = recursivelyFreezeEvidence({
+    counts: {
+      foundation: staticCounts.foundationNegatives,
+      semantic: staticCounts.semanticNegatives,
+      negative: staticCounts.allCurrentNegatives,
+      positive: staticCounts.positiveCurrent,
+      total: staticCounts.allCurrentNegatives + staticCounts.positiveCurrent,
+      commitMutationSubset: staticCounts.commitCurrent,
+      negativeEvaluationAttempts: staticCounts.evaluationAttempts,
+    },
+    aggregates: {
+      orderedAll: staticAggregates.orderedControlIdentityProjectionSha256,
+      orderedSemantic: staticAggregates.orderedSemanticProjectionSha256,
+      bucket: staticAggregates.bucketProjectionSha256,
+      commitIds: staticAggregates.commitIdProjectionSha256,
+    },
+    oldSynthetic: {
+      context:
+        SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.constructionContextSha256,
+      whole: SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.identitySha256,
+      contractValidInputPreimagesProved:
+        SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.construction
+          .contractValidInputPreimagesProved,
+    },
+    readiness: candidateContainmentOwnerV2Readiness(),
+    matrices: {
+      direct: [10, 9, 0, 1],
+      main: [15, 8, 1, 6],
+      combined: [25, 17, 1, 7],
+    },
+    adversarialExports: Object.keys(adversarialModule).sort(),
+    importAndRegistration: c12Clone(SYNCHRONOUS_ADVERSARIAL_REGISTRATION_AUDIT),
+    sourceAbsent: sourceText === null,
+  });
+  const assertB11Receipt = (receipt) =>
+    assert.deepEqual(receipt, {
+      counts: {
+        foundation: 69,
+        semantic: 330,
+        negative: 399,
+        positive: 11,
+        total: 410,
+        commitMutationSubset: 200,
+        negativeEvaluationAttempts: 0,
+      },
+      aggregates: {
+        orderedAll:
+          "edb195e300e6f23dc3ce6fb62ed1084672afb0a682dc3c8a523ba59f630678ec",
+        orderedSemantic:
+          "d7226935eca7a7fc5ee362402d5e776ccd53a94ad8f8df12057bd287ff3fdb67",
+        bucket:
+          "de9a4c9b86e3de6f0efea05c856b9e4ea1bbe478092fddac22bd69144fad522c",
+        commitIds:
+          "f63ed0c1d6f16e26bf5c18eddb85a1a1a437584e8385e91a255da6f729a7b43b",
+      },
+      oldSynthetic: {
+        context:
+          "fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23",
+        whole:
+          "57872372c67c5ad4580ed2945512fc5c7ec0923b121690c2a2927604608b3583",
+        contractValidInputPreimagesProved: false,
+      },
+      readiness: {
+        status: "unavailable",
+        reason: "native-adapter-unavailable",
+      },
+      matrices: {
+        direct: [10, 9, 0, 1],
+        main: [15, 8, 1, 6],
+        combined: [25, 17, 1, 7],
+      },
+      adversarialExports: [
+        "createSourceIndependentAdversarialOracle",
+        "createSourceIndependentMaterializedStatusOracle",
+        "registerAdversarialCandidateTests",
+      ],
+      importAndRegistration: {
+        predecessorAuditCompletedBeforeAdversarialImport: true,
+        candidateSourceReadAttemptsAtImportAndRegistration: 0,
+        candidateModuleImportAttemptsAtImportAndRegistration: 0,
+        candidateModuleEvaluationCompletionsAtImportAndRegistration: 0,
+        candidateBehaviorExecutionAttemptsAtImportAndRegistration: 0,
+        candidateInputReadsAtRegistration: 0,
+        oracleInputReadsAtRegistration: 0,
+        freshLoaderInputReadsAtRegistration: 0,
+        freshLoaderCallsAtImportAndRegistration: 0,
+      },
+      sourceAbsent: true,
+    });
+  assertB11Receipt(b11Receipt);
+  for (const [id, mutateReceipt] of [
+    ["b11-count-drift", (receipt) => (receipt.counts.negative = 398)],
+    [
+      "b11-hash-drift",
+      (receipt) => (receipt.aggregates.orderedAll = "0".repeat(64)),
+    ],
+    [
+      "b11-old-nonclaim-drift",
+      (receipt) =>
+        (receipt.oldSynthetic.contractValidInputPreimagesProved = true),
+    ],
+    [
+      "b11-readiness-drift",
+      (receipt) => (receipt.readiness.status = "verified"),
+    ],
+    ["b11-matrix-drift", (receipt) => (receipt.matrices.main[1] = 9)],
+    [
+      "b11-fourth-adversarial-export",
+      (receipt) => receipt.adversarialExports.push("fourthExport"),
+    ],
+    [
+      "b11-import-registration-access",
+      (receipt) =>
+        (receipt.importAndRegistration.candidateSourceReadAttemptsAtImportAndRegistration = 1),
+    ],
+  ]) {
+    recordMutationKill(id, () => {
+      const receipt = c12Clone(b11Receipt);
+      mutateReceipt(receipt);
+      assertB11Receipt(receipt);
+    });
+  }
+  const mutationIds = mutationKills.map(({ id }) => id);
+  const familyCounts = (prefix) =>
+    mutationIds
+      .filter((id) => id.startsWith(`${prefix}-`))
+      .reduce((counts, id) => {
+        const family = id.slice(prefix.length + 4);
+        counts[family] = (counts[family] ?? 0) + 1;
+        return counts;
+      }, {});
+  assert.deepEqual(familyCounts("transition"), {
+    phase: 3,
+    "boolean-flag": 3,
+    "terminal-reason": 2,
+    counter: 2,
+    "next-sequence": 2,
+    "last-wire-hash": 2,
+    "aggregate-bytes": 2,
+    "event-count": 2,
+    "state-digest": 2,
+  });
+  assert.deepEqual(familyCounts("status"), {
+    nullability: 3,
+    sequence: 3,
+    "previous-frame": 3,
+    "canonical-raw": 3,
+    "extra-lf": 3,
+  });
+  assert.deepEqual(familyCounts("atomic"), {
+    reverse: 1,
+    "omit-first": 1,
+    "omit-second": 1,
+    "insert-delimiter": 1,
+  });
+  assert.deepEqual(familyCounts("prefix"), {
+    "public-intermediate": 5,
+    "post-terminal": 5,
+    "reorder-reverse": 6,
+    delete: 5,
+    duplicate: 5,
+  });
+  const mutationReceipt = recursivelyFreezeEvidence({
+    count: mutationKills.length,
+    killed: mutationKills.length,
+    survivors: 0,
+    idsSha256: semanticSha256(mutationIds),
+    kills: mutationKills,
+  });
+  assert.deepEqual(
+    {
+      count: mutationReceipt.count,
+      killed: mutationReceipt.killed,
+      survivors: mutationReceipt.survivors,
+      idsSha256: mutationReceipt.idsSha256,
+    },
+    {
+      count: 116,
+      killed: 116,
+      survivors: 0,
+      idsSha256:
+        "8b33de2efa8073d6d7d6be4aaf534cd0d624f7af434280091036b3bfc831bb76",
+    },
+  );
+  assertRecursivelyFrozenWithoutByteViews(mutationReceipt);
+
   assert.equal(EXPECTED_EXPORTS.length, EXPANSION_ANCHORS.namedExports);
   assert.deepEqual(EXPANSION_ANCHORS.completeSequenceWireFrameCounts, {
     N1: 4,
