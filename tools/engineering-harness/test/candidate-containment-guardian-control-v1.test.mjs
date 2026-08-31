@@ -2593,14 +2593,28 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   const fail = (reason) => {
     throw new Error(`static gate: ESTree ${reason}`);
   };
+  const STATIC_STRING_VALUE_LIMIT = 1024;
+  const mergeStaticStrings = (...collections) => {
+    const merged = [...new Set(collections.flat())];
+    if (merged.length > STATIC_STRING_VALUE_LIMIT) {
+      fail(`static string alternative limit ${merged.length}`);
+    }
+    return merged;
+  };
   const makeValue = (
     kind,
-    { freezable = true, origins = [], tainted = false } = {},
+    {
+      freezable = true,
+      origins = [],
+      staticStrings = [],
+      tainted = false,
+    } = {},
   ) =>
     Object.freeze({
       kind,
       freezable,
       origins: Object.freeze([...new Set(origins)]),
+      staticStrings: Object.freeze(mergeStaticStrings(staticStrings)),
       tainted,
     });
   const IMMUTABLE_VALUE = makeValue("immutable");
@@ -2608,16 +2622,25 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     freezable: false,
     tainted: true,
   });
-  const valueWithOrigin = (kind, node, children = []) =>
+  const valueWithOrigin = (
+    kind,
+    node,
+    children = [],
+    { staticStrings = null } = {},
+  ) =>
     makeValue(kind, {
       freezable: children.every(({ freezable }) => freezable),
       origins: [node, ...children.flatMap(({ origins }) => origins)],
+      staticStrings:
+        staticStrings ??
+        mergeStaticStrings(...children.map((child) => child.staticStrings)),
       tainted: children.some(({ tainted }) => tainted),
     });
   const frozenValue = (value) =>
     makeValue("frozen", {
       freezable: value.freezable,
       origins: value.origins,
+      staticStrings: value.staticStrings,
       tainted: value.tainted,
     });
   const mark = (node, role) => {
@@ -2673,6 +2696,14 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     fail(`raw or unknown value ${reason}`);
   };
   const requireTrusted = (value, reason, { allowMutable = false } = {}) => {
+    const escapedCapabilityString = value.staticStrings.find((candidate) =>
+      capabilityLookingString(candidate),
+    );
+    if (escapedCapabilityString !== undefined) {
+      fail(
+        `capability-looking normative literal ${reason} ${escapedCapabilityString}`,
+      );
+    }
     if (
       value.kind === "untrusted" ||
       value.kind === "unknown" ||
@@ -2696,7 +2727,15 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       counters.unknownProvenanceCount += 1;
       fail(`unknown provenance join ${reason}`);
     }
-    return left;
+    return makeValue(left.kind, {
+      freezable: left.freezable,
+      origins: left.origins,
+      staticStrings: mergeStaticStrings(
+        left.staticStrings,
+        right.staticStrings,
+      ),
+      tainted: left.tainted,
+    });
   };
   const valuesAreDisjoint = (left, right) =>
     left.origins.length > 0 &&
@@ -3061,6 +3100,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       )
     );
   };
+  const normativeLiteralRoles = new Set([
+    "import-source",
+    "requirements-digest",
+    "requirements-value",
+  ]);
   const visitLiteral = (node, role) => {
     if (node.type !== "Literal") fail(`${role} must be a literal`);
     mark(node, `literal:${role}`);
@@ -3077,7 +3121,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     ) {
       fail(`capability-looking literal outside normative role ${node.value}`);
     }
-    return IMMUTABLE_VALUE;
+    return typeof node.value === "string"
+      ? makeValue("immutable", { staticStrings: [node.value] })
+      : IMMUTABLE_VALUE;
   };
   const evaluateIdentifier = (node, scope, usage = "value") => {
     markIdentifier(node, `identifier:${usage}`, { reference: true });
@@ -3138,6 +3184,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     }
     mark(node, "object-property");
     const normativeKey = context.literalRole === "requirements-value";
+    let keyValue = IMMUTABLE_VALUE;
     if (node.key.type === "Identifier") {
       markIdentifier(node.key, "property-key");
       if (capabilityLookingString(node.key.name) && !normativeKey) {
@@ -3145,15 +3192,21 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
           `capability-looking property key outside requirements ${node.key.name}`,
         );
       }
+      if (capabilityLookingString(node.key.name)) {
+        keyValue = makeValue("immutable", {
+          staticStrings: [node.key.name],
+        });
+      }
     } else if (node.key.type === "Literal") {
-      visitLiteral(
+      keyValue = visitLiteral(
         node.key,
         normativeKey ? "requirements-value" : "property-key",
       );
     } else {
       fail(`object key ${node.key.type}`);
     }
-    return evaluateExpression(node.value, scope, context);
+    const propertyValue = evaluateExpression(node.value, scope, context);
+    return valueWithOrigin("immutable", node, [keyValue, propertyValue]);
   };
 
   const evaluateMember = (node, scope, context, { asCallee = false } = {}) => {
@@ -3371,6 +3424,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         }
         for (const argument of arguments_) {
           requireTrusted(argument, `ambient coercion ${binding.name}`);
+        }
+        if (binding.name === "String") {
+          return valueWithOrigin("immutable", node, arguments_, {
+            staticStrings: arguments_[0]?.staticStrings ?? [""],
+          });
         }
         return IMMUTABLE_VALUE;
       }
@@ -3594,7 +3652,32 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       const right = evaluateExpression(node.right, scope, context);
       requireTrusted(left, `binary ${node.operator}`);
       requireTrusted(right, `binary ${node.operator}`);
-      return IMMUTABLE_VALUE;
+      let staticStrings = [];
+      if (
+        node.operator === "+" &&
+        left.staticStrings.length > 0 &&
+        right.staticStrings.length > 0
+      ) {
+        staticStrings = mergeStaticStrings(
+          left.staticStrings.flatMap((leftValue) =>
+            right.staticStrings.map((rightValue) => leftValue + rightValue),
+          ),
+        );
+        const constructedCapabilityString = staticStrings.find((candidate) =>
+          capabilityLookingString(candidate),
+        );
+        if (
+          constructedCapabilityString !== undefined &&
+          !normativeLiteralRoles.has(literalRole)
+        ) {
+          fail(
+            `capability-looking constructed literal outside normative role ${constructedCapabilityString}`,
+          );
+        }
+      }
+      return valueWithOrigin("immutable", node, [left, right], {
+        staticStrings,
+      });
     }
     if (node.type === "LogicalExpression") {
       mark(node, "logical-expression");
@@ -3730,6 +3813,14 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         node.argument === null
           ? IMMUTABLE_VALUE
           : evaluateExpression(node.argument, scope, context);
+      const escapedCapabilityString = value.staticStrings.find((candidate) =>
+        capabilityLookingString(candidate),
+      );
+      if (escapedCapabilityString !== undefined) {
+        fail(
+          `capability-looking normative literal returned from function ${escapedCapabilityString}`,
+        );
+      }
       if (
         value.kind === "untrusted" ||
         value.kind === "unknown" ||
@@ -4098,6 +4189,25 @@ function sourceSkeleton(extra = "", functionBodyOverrides = new Map()) {
   return `${importText}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}\n`;
 }
 
+function sourceWithFactoredNormativeAuthority(extra = "") {
+  const requirementsSource = JSON.stringify(REQUIREMENTS_ORACLE);
+  const authoritySource = JSON.stringify(REQUIREMENTS_ORACLE.authority);
+  const authorityFieldSource = `"authority":${authoritySource}`;
+  const factoredRequirementsSource = requirementsSource.replace(
+    authorityFieldSource,
+    '"authority":normativeAuthority',
+  );
+  assert.notEqual(factoredRequirementsSource, requirementsSource);
+  const inlineRequirementsExport = `export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS = deepFreeze(${requirementsSource});`;
+  const factoredRequirementsExport = `const normativeAuthority = deepFreeze(${authoritySource});\nexport const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS = deepFreeze(${factoredRequirementsSource});`;
+  const source = sourceSkeleton(extra).replace(
+    inlineRequirementsExport,
+    factoredRequirementsExport,
+  );
+  assert.notEqual(source, sourceSkeleton(extra));
+  return source;
+}
+
 function sourceWithImportMutation(mutate) {
   const [firstSpecifier, firstNames] = [...ALLOWED_IMPORTS][0];
   const original = `import { ${firstNames.join(", ")} } from ${JSON.stringify(firstSpecifier)};`;
@@ -4305,6 +4415,16 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "rawEscapes",
   "rawEscapes",
   "rawEscapes",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
+  "literalMisuse",
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4341,11 +4461,11 @@ const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "045dfefb531fb1fa233ae174b9bb54a7cf9a6853a04efac93c6bb8960462ab0a",
+    "de9b9c5464c79de97720b58b4125f50e233a68daee02cc16bc4e3134e47bb967",
   orderedSemanticProjectionSha256:
-    "ac15fbece8518c97595f785fe8b1246a8b7a0acb999714316285432a8ac91b00",
+    "0d26b367875ff0abc14c108269fbd6b6679ec7e42260ddd2a63451699347c1e4",
   bucketProjectionSha256:
-    "e462571150fb0dd89adbcbf776d95b0c94d7b8e75e14ff5b6b6a103f76f85962",
+    "303720c0c8384747b1e0a8da00bdcb0f1a38ec87b6ffe6a10a13a3c288d99f01",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
@@ -4537,7 +4657,17 @@ SEM-N110|b284d9ea72324cdcb62c24c0994db9bc7f9ee51239668138250ebfe2c6b3597e|71b8ba
 SEM-N111|2136e7ffc08ba3abcb36375c67fb55dbf541309a1b5178ac04eca4893baa5c10|97dd1edf8d8b2388ed44e9c9d4baafd10d5ad1d624c48785ae3c3bd29838e721|1167|estree-policy|static gate: ESTree raw or unknown value returned from function
 SEM-N112|0ad909d4766f51ba1f048d1b5fcdc6e802873401ec397dc392442e5257dbdf78|e7f08e4fcc81655347bd84e9e9632d19ee279c1238fda310a7c4e7a1aa383add|1167|estree-policy|static gate: ESTree raw or unknown value returned from function
 SEM-N113|207978a4079e7ed7a094122d4daa674834f49451062a892ffe16e96e8bc47444|c5d6ffc1a4a745887d659fbd59508983a9abccdccb9ccac17a78f4d4faac5e64|1171|estree-policy|static gate: ESTree raw or unknown value returned from function
-SEM-N114|a5a98a6099e102690f19e6e3a0b1b420396d3284c592664bd08f75fdfd5d1851|b4f39ab0a0189f0000725d2a2f9abe1ca12caf5db1877caf9a7832ce6d7e370f|1161|estree-policy|static gate: ESTree raw or unknown value returned from function`;
+SEM-N114|a5a98a6099e102690f19e6e3a0b1b420396d3284c592664bd08f75fdfd5d1851|b4f39ab0a0189f0000725d2a2f9abe1ca12caf5db1877caf9a7832ce6d7e370f|1161|estree-policy|static gate: ESTree raw or unknown value returned from function
+SEM-N115|b198b464987a52f4b75c1aab2c6ee929373025aca3e258fcaf47264b9d714c0b|c4c0728ac98fee2511482c41a6d92f395fd09eb928347f3345f78f2f1b894a24|1162|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N116|75237558f8293d42f95dd537607617260307c1f604303fbde402f478b7e93409|361ba13d3a84a201de8b073ca3475885f08f6c32715e1faaff652b035c837481|1163|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N117|06011b51de535383d91a7548ae02dd4dd2e819f8b458daf66d726e4f7115f344|172d6215ae5c57f8a4fdbb35ed0d55d6c4ec3e03d8f7f8c2d0c41fa6421ca55a|1168|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N118|08ea2687ec4715324fc0d9521f2337b78892b7bdb19c371642b8274b44659289|6c6ba22d31f735350e67927f6a84a4e2d3c275175a24f7f8fe1c5515a073470e|1168|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N119|a4033470e243fbcbc8ef55930d548c96bd906b32875e9b23cb2f1e5dc5b08231|6303e49a413d7bee0c56f5c2d18e9d77ef6d0f187b5c3209ac2f2d6e392b887b|1167|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N120|c31728f13d1f9903c753f15aef359c6f45604e07cfa6fd7f649c40668c4f842b|df5987520ae2a11cf465afe7ab30e21ffbe17e5b9e3ffd058367f88f2f9ff301|1167|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N121|2d01644d83c9ac9ca14bc59c795b8ca8f17de13a59b0d104ac027afd9f673974|22ed7656f51ac599224e9c2e31ca5a7501f325b0ba0fe9f5c75e68690bf0c87e|1166|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N122|8a38870e5d6e2592e606da6ba46b5910873c37a384aa1f1932ac6f91a59c8889|e7d666e6164099782e73f38392303a0f3529e8a691cd22019978ebfeacb7c04b|1166|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
+SEM-N123|17136b465e235e153899b98a8add09d210ef00fda8ff5fbced63c3846802dab1|12b5dfd0eea8a7337ee360d50e643a928578c014fd927cd9cfdc672ffccd22ee|1160|estree-policy|static gate: ESTree capability-looking normative literal returned from function processAuthority
+SEM-N124|6bdb8210d9e2817e8efc182ee10d042ea50f8ab3cbc750ae890234abffa899d5|22f2273e62f1aae3408b4ffb8216813bbd56e89746ff35dca75c340d96e43f92|1162|estree-policy|static gate: ESTree capability-looking normative literal passed to sha256 processAuthority`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -4622,9 +4752,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 114);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 124);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 194);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 204);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -6018,6 +6148,86 @@ function reflectedAuthority(startupReportBytes) {
       ),
       expected: /raw or unknown value returned from function/u,
     }),
+    Object.freeze({
+      name: "ambient String coercion constructs normative authority key",
+      source: sourceSkeleton(
+        'function constructAuthorityKey() { const key = String("pro") + "cessAuthority"; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "nested fragments construct normative authority key",
+      source: sourceSkeleton(
+        'function constructNestedAuthorityKey() { const key = "pr" + ("oc" + "essAuthority"); return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "local aliases construct normative authority key",
+      source: sourceSkeleton(
+        'function constructAliasedAuthorityKey() { const prefix = "pro"; const suffix = "cessAuthority"; const key = prefix + suffix; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "module aliases construct normative authority key",
+      source: sourceSkeleton(
+        'const authorityPrefix = "pro"; const authoritySuffix = "cessAuthority"; function constructModuleAuthorityKey() { const key = authorityPrefix + authoritySuffix; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "conditional prefix constructs normative authority key",
+      source: sourceSkeleton(
+        'function constructConditionalPrefixAuthorityKey() { const prefix = true ? "pro" : "pr"; const key = prefix + "cessAuthority"; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "conditional suffix constructs normative authority key",
+      source: sourceSkeleton(
+        'function constructConditionalSuffixAuthorityKey() { const suffix = true ? "cessAuthority" : "ocessAuthority"; const key = "pro" + suffix; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "logical prefix constructs normative authority key",
+      source: sourceSkeleton(
+        'function constructLogicalAuthorityKey() { const prefix = true && "pro"; const key = prefix + "cessAuthority"; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "local return constructs normative authority key",
+      source: sourceSkeleton(
+        'function authorityPrefix() { return "pro"; } function constructReturnedAuthorityKey() { const key = authorityPrefix() + "cessAuthority"; return null; }',
+      ),
+      expected:
+        /capability-looking constructed literal outside normative role processAuthority/u,
+    }),
+    Object.freeze({
+      name: "factored normative authority object returned",
+      source: sourceWithFactoredNormativeAuthority(
+        "function returnNormativeAuthority() { return normativeAuthority; }",
+      ),
+      expected:
+        /capability-looking normative literal returned from function processAuthority/u,
+    }),
+    Object.freeze({
+      name: "factored normative authority object passed to sink",
+      source: sourceWithFactoredNormativeAuthority(
+        "function hashNormativeAuthority() { return sha256(normativeAuthority); }",
+      ),
+      expected:
+        /capability-looking normative literal passed to sha256 processAuthority/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -6227,8 +6437,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 130);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 114);
+  assert.equal(namedStageAudit.length, 140);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 124);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -6425,7 +6635,7 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 183,
+  sourceIndependentNegativeControls: 193,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
@@ -6763,7 +6973,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 183,
+    rejected: 193,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -6895,10 +7105,20 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "decoded base64 bytes returned without freezing",
       "sliced bounded buffer returned without freezing",
       "aliased private lookup value returned",
+      "ambient String coercion constructs normative authority key",
+      "nested fragments construct normative authority key",
+      "local aliases construct normative authority key",
+      "module aliases construct normative authority key",
+      "conditional prefix constructs normative authority key",
+      "conditional suffix constructs normative authority key",
+      "logical prefix constructs normative authority key",
+      "local return constructs normative authority key",
+      "factored normative authority object returned",
+      "factored normative authority object passed to sink",
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 114,
-      estreePolicyReachedCount: 111,
+      totalDeltaSinceParserFoundation: 124,
+      estreePolicyReachedCount: 121,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -6939,7 +7159,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 114 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 124 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -6958,11 +7178,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 194);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 194);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 204);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 204);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    194,
+    204,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -6978,7 +7198,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    194,
+    204,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -7054,7 +7274,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       },
       { bucket: "untrustedSinks", target: 24, current: 24, remaining: 0 },
       { bucket: "rawEscapes", target: 12, current: 12, remaining: 0 },
-      { bucket: "literalMisuse", target: 14, current: 4, remaining: 10 },
+      { bucket: "literalMisuse", target: 14, current: 14, remaining: 0 },
       { bucket: "scopeJoins", target: 18, current: 4, remaining: 14 },
       { bucket: "nestedRecursion", target: 12, current: 3, remaining: 9 },
       { bucket: "commitMutations", target: 200, current: 17, remaining: 183 },
@@ -7063,8 +7283,8 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 114);
-  assert.equal(new Set(bucketIds).size, 114);
+  assert.equal(bucketIds.length, 124);
+  assert.equal(new Set(bucketIds).size, 124);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -7120,10 +7340,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 114,
-    allCurrentNegatives: 183,
+    semanticNegatives: 124,
+    allCurrentNegatives: 193,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 216,
+    semanticRemainingNegatives: 206,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
@@ -7133,9 +7353,9 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     commitRemaining: 183,
     evaluationAttempts: 0,
   });
-  assert.equal(183, 69 + 114);
+  assert.equal(193, 69 + 124);
   assert.equal(399, 69 + 330);
-  assert.equal(216, 330 - 114);
+  assert.equal(206, 330 - 124);
   assert.equal(0, 11 - 11);
   assert.equal(183, 200 - 17);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
@@ -7432,7 +7652,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ...semanticEntries.slice(0, 92),
     ...positiveEntries,
   ];
-  const newTaintBoundaryEntries = semanticEntries.slice(92);
+  const newTaintBoundaryEntries = semanticEntries.slice(92, 114);
   const preTaintBoundarySourceHashes = new Set(
     preTaintBoundaryEntries.map(({ sourceSha256 }) => sourceSha256),
   );
@@ -7549,6 +7769,104 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     newTaintBoundaryEntries.map(({ id }) => id),
   );
   assert.equal(new Set(taintBoundaryMutationControlIds).size, 22);
+  const preLiteralPathEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 114),
+    ...positiveEntries,
+  ];
+  const newLiteralPathEntries = semanticEntries.slice(114);
+  const preLiteralPathSourceHashes = new Set(
+    preLiteralPathEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preLiteralPathAstHashes = new Set(
+    preLiteralPathEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(newLiteralPathEntries.length, 10);
+  assert.deepEqual(
+    newLiteralPathEntries.map(({ id, bucket }) => ({ id, bucket })),
+    Array.from({ length: 10 }, (_, index) => ({
+      id: staticControlId("SEM-N", index + 114),
+      bucket: "literalMisuse",
+    })),
+  );
+  assert.equal(
+    new Set(newLiteralPathEntries.map(({ sourceSha256 }) => sourceSha256)).size,
+    10,
+  );
+  assert.equal(
+    new Set(newLiteralPathEntries.map(({ astSha256 }) => astSha256)).size,
+    10,
+  );
+  assert.equal(
+    newLiteralPathEntries.some(({ sourceSha256 }) =>
+      preLiteralPathSourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newLiteralPathEntries.some(({ astSha256 }) =>
+      preLiteralPathAstHashes.has(astSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newLiteralPathEntries.every(
+      ({ expectedStage }) => expectedStage === "estree-policy",
+    ),
+    true,
+  );
+  assert.equal(
+    newLiteralPathEntries
+      .slice(0, 8)
+      .every(
+        ({ expectedError }) =>
+          expectedError ===
+          "static gate: ESTree capability-looking constructed literal outside normative role processAuthority",
+      ),
+    true,
+  );
+  assert.equal(
+    newLiteralPathEntries[8].expectedError,
+    "static gate: ESTree capability-looking normative literal returned from function processAuthority",
+  );
+  assert.equal(
+    newLiteralPathEntries[9].expectedError,
+    "static gate: ESTree capability-looking normative literal passed to sha256 processAuthority",
+  );
+  const literalPathMutationCoverage = Object.freeze([
+    Object.freeze({
+      mutation:
+        "ambient String coercion and nested fragments evade direct-literal checks",
+      coveredBy: Object.freeze(["SEM-N115", "SEM-N116"]),
+    }),
+    Object.freeze({
+      mutation: "local and module aliases erase literal-fragment provenance",
+      coveredBy: Object.freeze(["SEM-N117", "SEM-N118"]),
+    }),
+    Object.freeze({
+      mutation: "conditional and logical joins erase literal fragments",
+      coveredBy: Object.freeze(["SEM-N119", "SEM-N120", "SEM-N121"]),
+    }),
+    Object.freeze({
+      mutation: "local function returns erase literal-fragment provenance",
+      coveredBy: Object.freeze(["SEM-N122"]),
+    }),
+    Object.freeze({
+      mutation:
+        "factored requirements dependencies escape their normative path",
+      coveredBy: Object.freeze(["SEM-N123", "SEM-N124"]),
+    }),
+  ]);
+  const literalPathMutationControlIds = literalPathMutationCoverage.flatMap(
+    ({ coveredBy }) => coveredBy,
+  );
+  assert.deepEqual(
+    literalPathMutationControlIds,
+    newLiteralPathEntries.map(({ id }) => id),
+  );
+  assert.equal(new Set(literalPathMutationControlIds).size, 10);
   const preLookupEntries = [
     ...foundationEntries,
     ...semanticEntries.slice(0, 48),
@@ -7690,11 +8008,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 183,
+    sourceIndependentNegativeControls: 193,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 114,
-      estreePolicyReachedCount: 111,
+      totalDeltaSinceParserFoundation: 124,
+      estreePolicyReachedCount: 121,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
