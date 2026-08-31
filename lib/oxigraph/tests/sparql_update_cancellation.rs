@@ -115,7 +115,7 @@ impl WritableDataset for CancellationProbeTransaction<'_> {
         let subject = subject.cloned();
         let predicate = predicate.cloned();
         let object = object.cloned();
-        let graph_name = graph_name.map(|graph_name| graph_name.cloned());
+        let graph_name = graph_name.map(Option::<&NamedOrBlankNode>::cloned);
         Box::new(
             self.staged
                 .iter()

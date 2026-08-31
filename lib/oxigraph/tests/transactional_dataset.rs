@@ -60,7 +60,7 @@ impl WritableDataset for RewrittenTransaction<'_> {
         let subject = subject.cloned();
         let predicate = predicate.cloned();
         let object = object.cloned();
-        let graph_name = graph_name.map(|graph_name| graph_name.cloned());
+        let graph_name = graph_name.map(Option::<&NamedOrBlankNode>::cloned);
         Box::new(
             self.staged
                 .iter()
@@ -176,9 +176,11 @@ fn custom_persistence_plane_executes_sparql_update_with_read_your_writes()
             .iter()
             .any(|quad| quad.predicate.as_str() == "urn:p")
     );
-    assert!(snapshot.iter().any(|quad| {
-        quad.predicate.as_str() == "urn:p2" && quad.graph_name == GraphName::from(graph.clone())
-    }));
+    assert!(
+        snapshot
+            .iter()
+            .any(|quad| { quad.predicate.as_str() == "urn:p2" && quad.graph_name == graph })
+    );
 
     SparqlEvaluator::new()
         .parse_update("CLEAR GRAPH <urn:g>")?

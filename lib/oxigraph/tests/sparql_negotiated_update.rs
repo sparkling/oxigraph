@@ -232,7 +232,7 @@ impl WritableDataset for ProbeTransaction<'_> {
         let subject = subject.cloned();
         let predicate = predicate.cloned();
         let object = object.cloned();
-        let graph_name = graph_name.map(|graph_name| graph_name.cloned());
+        let graph_name = graph_name.map(Option::<&NamedOrBlankNode>::cloned);
         Box::new(
             self.staged
                 .iter()
@@ -401,10 +401,15 @@ fn request_requirements_are_rejected_before_transaction_open() -> Result<(), Tes
         request,
         "INSERT DATA { <urn:rejected> <urn:p> <urn:o> }",
     )?;
-    let error = result.expect_err("unsupported requirements must be rejected");
+    let Err(error) = result else {
+        return Err(io::Error::other("unsupported requirements must be rejected").into());
+    };
     let Some(TransactionStartError::RequirementsNotMet { unmet, .. }) = find_start_error(&error)
     else {
-        panic!("requirements rejection was not preserved as a source error: {error}")
+        return Err(io::Error::other(format!(
+            "requirements rejection was not preserved as a source error: {error}"
+        ))
+        .into());
     };
 
     assert_eq!(unmet, &[UnmetTransactionRequirement::WriterIsolation]);
@@ -518,7 +523,7 @@ fn successful_negotiated_update_commits_once() -> Result<(), TestError> {
         "INSERT DATA { <urn:committed> <urn:p> <urn:o> }",
     )?;
 
-    assert!(result.is_ok());
+    result?;
     assert_eq!(
         probe.receipt(),
         ProbeReceipt {

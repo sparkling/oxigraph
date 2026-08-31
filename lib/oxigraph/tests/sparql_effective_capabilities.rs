@@ -1,3 +1,8 @@
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "integration tests assert effective remote capability reporting"
+)]
+
 use oxigraph::model::{NamedNode, OxString, Variable};
 #[cfg(feature = "http-client")]
 use oxigraph::sparql::EgressPolicy;
