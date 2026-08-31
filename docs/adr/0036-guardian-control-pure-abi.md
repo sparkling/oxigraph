@@ -2,9 +2,10 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-08-30
+- Updated: 2026-08-31
 - Deciders: Oxigraph parity programme
-- Implementation status: evaluator RED in progress. Commit `7a539665` adds the
+- Implementation status: evaluator RED in progress through the B4 static
+  closure checkpoint. Commit `7a539665` adds the
   reviewed source-absent, fail-closed evaluator checkpoint; commit `d3e6bd8b`
   adds source-independent exact-v2 controls for all nine byte positions, 108
   ignored-property variants, 63 hostile carriers, and the exact ten-operation
@@ -112,22 +113,44 @@
   `d971bfa4` (source commit `97436e80`) then adds `SEM-N061` through
   `SEM-N082`, closing the `indirectCalls` and `reflectComputed` buckets at
   12/12 each. Integrated commit `86320201` (source commit `32d3ee00`) adds
-  `SEM-N083` through `SEM-N092`, closing `bindingMemberWrites` at 14/14. The
-  current recursively frozen manifest contains exactly 69 foundation
-  negatives, 92 semantic negatives, and 11 positives. The 17 commit-mutation
-  IDs are exactly the `commitMutations` bucket and a subset of the 92 semantic
-  IDs, never an additive count. Therefore current negative evidence is exactly
-  `161 = 69 + 92`; against the semantic 330/11/200 targets, 238 negatives, zero
-  positives, and 183 commit mutations remain. The 183 remaining commit
-  mutations are part of, not additional to, the 238 remaining semantic
-  negatives. The final all-layer negative target remains exactly
+  `SEM-N083` through `SEM-N092`, closing `bindingMemberWrites` at 14/14.
+  Integrated commit `99649146` (source commit `62fa9cb3`) adds B3
+  `SEM-N093` through `SEM-N114`: 15 `untrustedSinks` and seven `rawEscapes`
+  controls across imported, ambient, local-call, receiver, operator, return,
+  alias, aggregate, helper, and private-read paths. It closes those buckets at
+  24/24 and 12/12 and kills the five exact non-equivalent weakening probes
+  bound to `SEM-N093`, `SEM-N102`, `SEM-N108`, `SEM-N109`, and `SEM-N111`.
+  At that intermediate checkpoint the manifest contained 69 foundation
+  negatives, 114 semantic negatives, and 11 positives: 183 negatives and 194
+  controls in total, with 216 semantic negatives remaining.
+
+  Integrated commit `05bbd8bb` (source candidate `43b9c0cc`) adds B4
+  `SEM-N115` through `SEM-N124` and closes `literalMisuse` at 14/14. These ten
+  controls preserve literal-fragment provenance through ambient `String`
+  coercion, nested fragments, local and module aliases, conditional/logical
+  joins, local returns, and factored requirements dependencies. The amended
+  source candidate repaired the independently identified ambient-`String`
+  bypass before integration. Its focused static-policy case passes on the
+  current Node runtime and Node 20; on both runtimes the complete relevant
+  matrices retain the exact adversarial 9-pass/1-TODO and main
+  8-pass/1-deliberate-failure/6-TODO shape. The exact weakening is killed by
+  `SEM-N115`.
+
+  The current recursively frozen manifest therefore contains exactly 69
+  foundation negatives, 124 semantic negatives, and 11 positives. The 17
+  commit-mutation IDs are exactly the `commitMutations` bucket and a subset of
+  the 124 semantic IDs, never an additive count. Current negative evidence is
+  exactly `193 = 69 + 124`; against the semantic 330/11/200 targets, 206
+  negatives, zero positives, and 183 commit mutations remain. The 183
+  remaining commit mutations are part of, not additional to, the 206 remaining
+  semantic negatives. The final all-layer negative target remains exactly
   `399 = 69 + 330`.
 
   The manifest schema is exactly
   `oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1`
   with SHA-256
   `eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
-  Every one of its 172 control entries has only `id`, `name`, `bucket`,
+  Every one of its 204 control entries has only `id`, `name`, `bucket`,
   `sourceSha256`, `astSha256`, `astNodeCount`, `expectedStage`, and
   `expectedError`. The literal evidence tables pin the full UTF-8 source hash,
   normalized AST hash and node count, exact rejection stage, and full canonical
@@ -137,12 +160,12 @@
   `FOUNDATION-N008` is the sole parse rejection with a null AST hash and node
   count; all other entries carry literal AST and source pins. The six current
   aggregate identities are:
-  - ordered 172-control identity projection:
-    `c26680e91a1a1da495af7c2684d73cc21368a8041d5f2ec29bea94a56900ba7b`;
-  - ordered 92-control semantic projection:
-    `2571662ac051c5ab4746e4f8b39881d9446a9140a88e965a48f248b497e87405`;
+  - ordered 204-control identity projection:
+    `de9b9c5464c79de97720b58b4125f50e233a68daee02cc16bc4e3134e47bb967`;
+  - ordered 124-control semantic projection:
+    `0d26b367875ff0abc14c108269fbd6b6679ec7e42260ddd2a63451699347c1e4`;
   - semantic-bucket projection:
-    `4b2934dad496999ce72939de0a0716457462077bb1d8695a3af5ff5a03a22080`;
+    `303720c0c8384747b1e0a8da00bdcb0f1a38ec87b6ffe6a10a13a3c288d99f01`;
   - foundation ID/name projection:
     `3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`;
   - positive ID/name projection:
@@ -216,9 +239,9 @@
   | `indirectCalls`       |     12 |      12 |         0 |
   | `reflectComputed`     |     12 |      12 |         0 |
   | `bindingMemberWrites` |     14 |      14 |         0 |
-  | `untrustedSinks`      |     24 |       9 |        15 |
-  | `rawEscapes`          |     12 |       5 |         7 |
-  | `literalMisuse`       |     14 |       4 |        10 |
+  | `untrustedSinks`      |     24 |      24 |         0 |
+  | `rawEscapes`          |     12 |      12 |         0 |
+  | `literalMisuse`       |     14 |      14 |         0 |
   | `scopeJoins`          |     18 |       4 |        14 |
   | `nestedRecursion`     |     12 |       3 |         9 |
   | `commitMutations`     |    200 |      17 |       183 |
@@ -243,6 +266,11 @@
   the layered policy. B2's three non-equivalent weakening scenarios were all
   detected across the relevant layers. Neither batch changes the candidate
   source stop, import-purity contract, or three-runtime matrices.
+  The B3 taint-boundary and B4 literal-path records are respectively
+  `programme-evidence/adr0036-taint-boundary-99649146-2026-08-30` and
+  `programme-evidence/adr0036-b4-literal-paths-05bbd8bb-2026-08-31`. They bind
+  the exact integrated/source commits, counts, aggregate hashes, focused gates,
+  and authority-null claim boundary without relabeling any earlier receipt.
 
   The source hard stop remains exactly 506 bytes with SHA-256
   `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`.
@@ -256,17 +284,18 @@
   candidate. `npm audit` reports zero known vulnerabilities.
 
   This remains a partial source-hard-stopped foundation. The final semantic
-  quota still requires 238 negative controls, including 183 commit mutations,
-  beyond the current 92/11/17. The 69 parser and grammar foundation negatives
+  quota still requires 206 negative controls, including 183 commit mutations,
+  beyond the current 124/11/17. The 69 parser and grammar foundation negatives
   are additional, so final all-layer evidence will contain 399 negatives rather
   than 330. The static lookup slice does not fix global malformed-expression
   diagnostic precedence or prove actual runtime `WeakMap` lookup behavior.
   The frozen protected-alias, callee/receiver, computed/reflection, indirect-
-  call, and binding/member-write quotas are complete. Successful-path
-  reachability, the remaining sink/escape/literal/join/recursion/commit quotas,
-  path-sensitive normative key literals, candidate-connected acceptance
-  matrices, the absent production source module, runtime registration, and the
-  physical native owner remain incomplete. Production containment readiness remains exactly
+  call, binding/member-write, untrusted-sink, raw-escape, and literal-misuse
+  quotas are complete. Successful-path reachability, the remaining
+  scope-join, nested-recursion, and commit-mutation quotas,
+  candidate-connected acceptance matrices, the absent production source
+  module, runtime registration, and the physical native owner remain
+  incomplete. Production containment readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 - **Depends on**:

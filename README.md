@@ -562,10 +562,12 @@ The ADRs explain the principal boundaries:
   recovery, and executable-preflight boundary. ADR-0036 through ADR-0039 split
   the pure ABI, statefs/syscalls, native process mechanics, and isolated-host
   qualification/activation gates without changing production readiness. The
-  ADR-0036 source-independent evaluator currently freezes 92/330 semantic
-  negatives and closes its protected-alias, callee/receiver,
-  computed/reflection, indirect-call, and binding/member-write buckets, while
-  the production source remains deliberately absent and readiness remains
+  ADR-0036 source-independent evaluator currently freezes 124/330 semantic
+  negatives after integrated B3 commit `99649146` closes `untrustedSinks` and
+  `rawEscapes` and B4 commit `05bbd8bb` closes `literalMisuse`. Together with
+  69 foundation negatives and 11 positives, the frozen corpus now contains 204
+  controls; 206 semantic negatives remain. The production source remains
+  deliberately absent, ADR-0036 remains Proposed, and readiness remains
   `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
