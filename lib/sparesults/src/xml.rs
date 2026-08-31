@@ -1714,6 +1714,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "the assertion verifies the exact decoded literal while parser errors propagate"
+    )]
     fn literal_boundary_whitespace_distinguishes_text_references_and_cdata()
     -> Result<(), QueryResultsSyntaxError> {
         let term = parse_single_term(
@@ -1724,6 +1728,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "the assertion verifies the exact decoded literal while parser errors propagate"
+    )]
     fn empty_cdata_does_not_preserve_ordinary_trailing_whitespace()
     -> Result<(), QueryResultsSyntaxError> {
         let term = parse_single_term(

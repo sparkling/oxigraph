@@ -978,6 +978,17 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "the assertion verifies fail-closed decoding while construction errors propagate"
+    )]
+    #[cfg_attr(
+        not(feature = "rdf-12"),
+        expect(
+            clippy::single_element_loop,
+            reason = "RDF 1.1 has one reserved language-string datatype and RDF 1.2 has two"
+        )
+    )]
     fn corrupted_reserved_typed_literals_fail_closed() -> Result<(), Box<dyn std::error::Error>> {
         use crate::model::vocab::rdf;
 

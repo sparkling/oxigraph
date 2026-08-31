@@ -358,10 +358,6 @@ impl Storage {
     }
 
     #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
-    #[expect(
-        dead_code,
-        reason = "the evaluator-separated transaction-outcome fault suite consumes this test seam"
-    )]
     pub(crate) fn arm_transaction_outcome_fault(
         &self,
         point: TransactionOutcomeFaultPoint,
@@ -375,10 +371,6 @@ impl Storage {
     }
 
     #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
-    #[expect(
-        dead_code,
-        reason = "the evaluator-separated transaction-outcome fault suite consumes this test seam"
-    )]
     pub(crate) fn transaction_outcome_fault_events(
         &self,
     ) -> Result<Vec<TransactionOutcomeFaultPoint>, StorageError> {
@@ -391,10 +383,6 @@ impl Storage {
     }
 
     #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
-    #[expect(
-        dead_code,
-        reason = "the evaluator-separated malformed-outcome suite consumes this test seam"
-    )]
     pub(crate) fn write_raw_transaction_outcome_record(
         &self,
         transaction_key: &[u8; 16],
