@@ -6,19 +6,29 @@
 
 use oxigraph::model::{Dataset, GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 use oxigraph::sparql::{CancellationToken, SparqlEvaluator, UpdateEvaluationError};
-use oxigraph::store::{Store, TransactionalDataset, WritableDataset};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+use oxigraph::store::Store;
+use oxigraph::store::{TransactionalDataset, WritableDataset};
 use std::cell::{Cell, RefCell, RefMut};
 use std::convert::Infallible;
 use std::error::Error;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::io;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::sync::Arc;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::sync::mpsc::{self, RecvTimeoutError};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::thread;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::time::Duration;
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 type TestError = Box<dyn Error + Send + Sync>;
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 const MUST_BLOCK_FOR: Duration = Duration::from_millis(100);
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 const CANCELLATION_BOUND: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
@@ -351,6 +361,7 @@ fn cancellation_after_the_last_mutation_is_checked_before_commit() -> Result<(),
     Ok(())
 }
 
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 #[test]
 fn queued_store_update_uses_the_same_cancellation_token_and_releases_admission()
 -> Result<(), TestError> {

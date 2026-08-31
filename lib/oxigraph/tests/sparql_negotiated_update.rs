@@ -6,8 +6,10 @@
 
 use oxigraph::model::{Dataset, GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 use oxigraph::sparql::{CancellationToken, SparqlEvaluator, UpdateEvaluationError};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+use oxigraph::store::Store;
 use oxigraph::store::{
-    NegotiatedTransaction, NegotiatedTransactionalDataset, RollbackGuarantee, Store,
+    NegotiatedTransaction, NegotiatedTransactionalDataset, RollbackGuarantee,
     TransactionCapabilities, TransactionRequest, TransactionRequirements, TransactionStartControl,
     TransactionStartError, TransactionalDataset, UnmetTransactionRequirement, WritableDataset,
     WriterIsolation,

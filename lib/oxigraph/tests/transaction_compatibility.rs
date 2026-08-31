@@ -15,12 +15,13 @@ use fault_injecting_dataset::{FaultInjectingDataset, FaultPlan, FaultReceipt};
 use oxigraph::model::{GraphName, NamedNode, Quad};
 use oxigraph::sparql::SparqlEvaluator;
 use oxigraph::store::{
-    CancellationGuarantee, ConflictBehavior, NegotiatedTransactionalDataset,
-    OutcomeAwareTransactionalDataset, OutcomeLookup, RollbackGuarantee, TransactionCommitError,
-    TransactionKey, TransactionRequest, TransactionRequirements, TransactionRollbackError,
-    TransactionStartControl, TransactionStartError, UnmetTransactionRequirement, WritableDataset,
-    WriterIsolation,
+    CancellationGuarantee, ConflictBehavior, NegotiatedTransactionalDataset, OutcomeLookup,
+    RollbackGuarantee, TransactionCommitError, TransactionRequest, TransactionRequirements,
+    TransactionRollbackError, TransactionStartControl, TransactionStartError,
+    UnmetTransactionRequirement, WritableDataset, WriterIsolation,
 };
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+use oxigraph::store::{OutcomeAwareTransactionalDataset, TransactionKey};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
