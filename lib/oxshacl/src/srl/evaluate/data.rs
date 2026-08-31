@@ -59,20 +59,20 @@ fn ground_term(
 }
 
 fn as_subject(term: Term) -> Result<NamedOrBlankNode, SrlError> {
-    #[allow(
-        unreachable_patterns,
-        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-    )]
-    match term {
-        Term::NamedNode(node) => Ok(node.into()),
-        Term::BlankNode(node) => Ok(node.into()),
-        Term::Literal(_) => Err(SrlError::Unsupported(
+    if matches!(&term, Term::Literal(_)) {
+        return Err(SrlError::Unsupported(
             "generalized RDF subjects in SRL DATA evaluation".to_owned(),
-        )),
-        _ => Err(SrlError::Unsupported(
-            "RDF triple-term subjects in SRL DATA evaluation".to_owned(),
-        )),
+        ));
     }
+    #[cfg(feature = "rdf-12")]
+    if matches!(&term, Term::Triple(_)) {
+        return Err(SrlError::Unsupported(
+            "RDF triple-term subjects in SRL DATA evaluation".to_owned(),
+        ));
+    }
+    NamedOrBlankNode::try_from(term).map_err(|_| {
+        SrlError::Unsupported("RDF triple-term subjects in SRL DATA evaluation".to_owned())
+    })
 }
 
 struct BlankAllocator {
@@ -118,22 +118,62 @@ impl BlankAllocator {
 }
 
 fn collect_term_blanks(term: &Term, output: &mut BTreeSet<String>) {
-    #[allow(
-        unreachable_patterns,
-        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-    )]
-    match term {
-        Term::BlankNode(node) => {
+    if let Term::BlankNode(node) = term {
+        output.insert(node.as_str().to_owned());
+    }
+    #[cfg(feature = "rdf-12")]
+    if let Term::Triple(triple) = term {
+        if let NamedOrBlankNode::BlankNode(node) = &triple.subject {
             output.insert(node.as_str().to_owned());
         }
-        #[cfg(feature = "rdf-12")]
-        Term::Triple(triple) => {
-            if let NamedOrBlankNode::BlankNode(node) = &triple.subject {
-                output.insert(node.as_str().to_owned());
-            }
-            collect_term_blanks(&triple.object, output);
-        }
-        Term::NamedNode(_) | Term::Literal(_) => {}
-        _ => {}
+        collect_term_blanks(&triple.object, output);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "rdf-12")]
+    use super::*;
+    #[cfg(feature = "rdf-12")]
+    use oxrdf::{Literal, Triple};
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn triple_and_literal_subject_failures_remain_distinct() {
+        let triple = Term::Triple(Box::new(Triple::new(
+            NamedNode::new_unchecked("urn:subject"),
+            NamedNode::new_unchecked("urn:predicate"),
+            NamedNode::new_unchecked("urn:object"),
+        )));
+        assert!(matches!(
+            as_subject(triple),
+            Err(SrlError::Unsupported(reason))
+                if reason == "RDF triple-term subjects in SRL DATA evaluation"
+        ));
+        assert!(matches!(
+            as_subject(Literal::from("value").into()),
+            Err(SrlError::Unsupported(reason))
+                if reason == "generalized RDF subjects in SRL DATA evaluation"
+        ));
+    }
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn nested_triple_term_blank_nodes_are_reserved() {
+        let term = Term::Triple(Box::new(Triple::new(
+            BlankNode::new_unchecked("outer"),
+            NamedNode::new_unchecked("urn:predicate"),
+            Term::Triple(Box::new(Triple::new(
+                NamedNode::new_unchecked("urn:subject"),
+                NamedNode::new_unchecked("urn:nested-predicate"),
+                BlankNode::new_unchecked("inner"),
+            ))),
+        )));
+        let mut blank_nodes = BTreeSet::new();
+        collect_term_blanks(&term, &mut blank_nodes);
+        assert_eq!(
+            blank_nodes,
+            BTreeSet::from(["inner".to_owned(), "outer".to_owned()])
+        );
     }
 }

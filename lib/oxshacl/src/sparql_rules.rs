@@ -5,7 +5,7 @@ use crate::control::{LimitKind, ValidationError, ValidationOptions};
 use crate::model::{GraphSnapshot, ShapeId};
 use crate::profile::{ProfileId, ProfileSet};
 use crate::rules::RuleError;
-use oxrdf::Term;
+use oxrdf::{NamedOrBlankNode, Term};
 use oxsdatatypes::Decimal;
 use spargebra::Query;
 use std::collections::{BTreeMap, BTreeSet};
@@ -370,16 +370,7 @@ fn parse_order(source: &GraphSnapshot, subject: &ShapeId) -> Result<Decimal, Rul
 }
 
 fn as_node(term: Term) -> Option<ShapeId> {
-    #[allow(
-        unreachable_patterns,
-        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-    )]
-    match term {
-        Term::NamedNode(node) => Some(node.into()),
-        Term::BlankNode(node) => Some(node.into()),
-        Term::Literal(_) => None,
-        _ => None,
-    }
+    NamedOrBlankNode::try_from(term).ok()
 }
 
 fn require_profiles(profiles: &ProfileSet) -> Result<(), RuleError> {
