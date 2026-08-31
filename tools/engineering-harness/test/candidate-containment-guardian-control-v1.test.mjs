@@ -2741,6 +2741,16 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     left.origins.length > 0 &&
     right.origins.length > 0 &&
     left.origins.every((origin) => !right.origins.includes(origin));
+  const completion = (...states) => new Set(states);
+  const unionCompletions = (...completions) =>
+    new Set(completions.flatMap((states) => [...states]));
+  const sequenceCompletions = (before, after) => {
+    if (!before.has("normal")) return new Set(before);
+    return unionCompletions(
+      new Set([...before].filter((state) => state !== "normal")),
+      after,
+    );
+  };
 
   const privateLookupArgumentLabel = (arguments_) => {
     if (arguments_.length !== 1) return `<arity-${arguments_.length}>`;
@@ -3304,12 +3314,70 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       return evaluateExpression(argument, scope, context);
     });
 
+  const assertAcyclicLocalCallGraph = () => {
+    const names = [...functionRecords.keys()].sort();
+    const adjacency = new Map(names.map((name) => [name, []]));
+    for (const edge of moduleCallEdges) {
+      const [from, to] = edge.split("\u0000");
+      adjacency.get(from).push(to);
+    }
+    for (const targets of adjacency.values()) targets.sort();
+
+    let nextIndex = 0;
+    const indices = new Map();
+    const lowLinks = new Map();
+    const stack = [];
+    const onStack = new Set();
+    const components = [];
+    const visit = (name) => {
+      indices.set(name, nextIndex);
+      lowLinks.set(name, nextIndex);
+      nextIndex += 1;
+      stack.push(name);
+      onStack.add(name);
+      for (const target of adjacency.get(name)) {
+        if (!indices.has(target)) {
+          visit(target);
+          lowLinks.set(
+            name,
+            Math.min(lowLinks.get(name), lowLinks.get(target)),
+          );
+        } else if (onStack.has(target)) {
+          lowLinks.set(name, Math.min(lowLinks.get(name), indices.get(target)));
+        }
+      }
+      if (lowLinks.get(name) !== indices.get(name)) return;
+      const component = [];
+      let member;
+      do {
+        member = stack.pop();
+        onStack.delete(member);
+        component.push(member);
+      } while (member !== name);
+      components.push(component.sort());
+    };
+    for (const name of names) {
+      if (!indices.has(name)) visit(name);
+    }
+    const recursiveComponent = components
+      .filter(
+        (component) =>
+          component.length > 1 ||
+          adjacency.get(component[0]).includes(component[0]),
+      )
+      .sort((left, right) => left[0].localeCompare(right[0]))[0];
+    if (recursiveComponent !== undefined) {
+      fail(`recursive call graph ${recursiveComponent.join(" -> ")}`);
+    }
+  };
+
   const recordCallEdge = (from, to) => {
     if (from === null) fail(`module initializer called local function ${to}`);
     const edge = `${from.name}\u0000${to}`;
     if (!moduleCallEdges.has(edge)) {
       moduleCallEdges.add(edge);
       counters.moduleCallEdgeCount += 1;
+      assertAcyclicLocalCallGraph();
     }
   };
 
@@ -3687,7 +3755,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         ...context,
         controlDepth: (context.controlDepth ?? 0) + 1,
       });
-      return joinValues(left, right, `logical ${node.operator}`);
+      return joinValues(
+        left,
+        right,
+        node.operator === "||" ? "logical OR" : `logical ${node.operator}`,
+      );
     }
     if (node.type === "ConditionalExpression") {
       mark(node, "conditional-expression");
@@ -3790,6 +3862,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     const blockScope = functionBody
       ? scope
       : { parent: scope, bindings: new Map() };
+    let blockCompletion = completion("normal");
     for (const statement of node.body) {
       const statementContext = functionBody
         ? {
@@ -3798,14 +3871,18 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
             expressionStatement: null,
           }
         : { ...context, controlDepth: context.controlDepth + 1 };
-      visitStatement(statement, blockScope, statementContext);
+      blockCompletion = sequenceCompletions(
+        blockCompletion,
+        visitStatement(statement, blockScope, statementContext),
+      );
     }
+    return blockCompletion;
   };
 
   visitStatement = (node, scope, context) => {
     if (node.type === "VariableDeclaration") {
       visitVariableDeclaration(node, scope, context);
-      return;
+      return completion("normal");
     }
     if (node.type === "ReturnStatement") {
       mark(node, "return-statement");
@@ -3831,7 +3908,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       }
       context.returnValues.push(value);
       context.returnStatements.push(node);
-      return;
+      return completion("return");
     }
     if (node.type === "ExpressionStatement") {
       mark(node, "expression-statement");
@@ -3839,28 +3916,28 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         ...context,
         expressionStatement: node,
       });
-      return;
+      return completion("normal");
     }
     if (node.type === "BlockStatement") {
-      visitBlock(node, scope, context);
-      return;
+      return visitBlock(node, scope, context);
     }
     if (node.type === "IfStatement") {
       mark(node, "if-statement");
       const testValue = evaluateExpression(node.test, scope, context);
       requireTrusted(testValue, "if condition");
       counters.joinCount += 1;
-      visitStatement(node.consequent, scope, {
+      const consequentCompletion = visitStatement(node.consequent, scope, {
         ...context,
         controlDepth: context.controlDepth + 1,
       });
-      if (node.alternate !== null) {
-        visitStatement(node.alternate, scope, {
-          ...context,
-          controlDepth: context.controlDepth + 1,
-        });
-      }
-      return;
+      const alternateCompletion =
+        node.alternate === null
+          ? completion("normal")
+          : visitStatement(node.alternate, scope, {
+              ...context,
+              controlDepth: context.controlDepth + 1,
+            });
+      return unionCompletions(consequentCompletion, alternateCompletion);
     }
     if (node.type === "ForOfStatement") {
       mark(node, "for-of-statement");
@@ -3875,21 +3952,21 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       visitVariableDeclaration(node.left, loopScope, context, {
         loopValue: IMMUTABLE_VALUE,
       });
-      visitStatement(node.body, loopScope, {
+      const bodyCompletion = visitStatement(node.body, loopScope, {
         ...context,
         controlDepth: context.controlDepth + 1,
       });
-      return;
+      return unionCompletions(completion("normal"), bodyCompletion);
     }
     if (node.type === "ThrowStatement") {
       mark(node, "throw-statement");
       const value = evaluateExpression(node.argument, scope, context);
       requireTrusted(value, "thrown", { allowMutable: true });
-      return;
+      return completion("throw");
     }
     if (node.type === "EmptyStatement") {
       mark(node, "empty-statement");
-      return;
+      return completion("normal");
     }
     fail(`unclassified statement ${node.type}`);
   };
@@ -3927,7 +4004,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       expressionStatement: null,
       literalRole: "ordinary",
     };
-    visitBlock(node.body, scope, context, { functionBody: true });
+    const functionCompletion = visitBlock(node.body, scope, context, {
+      functionBody: true,
+    });
     const [onlyStatement] = node.body.body;
     record.provenNonReturning =
       node.params.length === 0 &&
@@ -3975,6 +4054,12 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         }
         counters.privateDominatedCallCount += 1;
       }
+    }
+    if (expectedStore !== undefined && !functionCompletion.has("return")) {
+      fail(`private commit return unreachable ${record.name}`);
+    }
+    if (functionCompletion.has("normal")) {
+      fail(`function may complete without explicit return ${record.name}`);
     }
     let returnValue = IMMUTABLE_VALUE;
     if (context.returnValues.length > 0) {
@@ -4425,6 +4510,29 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   "literalMisuse",
   "literalMisuse",
   "literalMisuse",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "scopeJoins",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
+  "nestedRecursion",
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -4461,11 +4569,11 @@ const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "de9b9c5464c79de97720b58b4125f50e233a68daee02cc16bc4e3134e47bb967",
+    "a2943afea60379318d0df11e973be1eab647576cf6f03671664f093abc601814",
   orderedSemanticProjectionSha256:
-    "0d26b367875ff0abc14c108269fbd6b6679ec7e42260ddd2a63451699347c1e4",
+    "92720decee66fbd173d74dfff681b1d692728d88298700ead9dc53c1066ac62b",
   bucketProjectionSha256:
-    "303720c0c8384747b1e0a8da00bdcb0f1a38ec87b6ffe6a10a13a3c288d99f01",
+    "20e1339842647707f7f163e8bbc90535c4587342803594c7c28126e4c78d53d1",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
@@ -4667,7 +4775,30 @@ SEM-N120|c31728f13d1f9903c753f15aef359c6f45604e07cfa6fd7f649c40668c4f842b|df5987
 SEM-N121|2d01644d83c9ac9ca14bc59c795b8ca8f17de13a59b0d104ac027afd9f673974|22ed7656f51ac599224e9c2e31ca5a7501f325b0ba0fe9f5c75e68690bf0c87e|1166|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
 SEM-N122|8a38870e5d6e2592e606da6ba46b5910873c37a384aa1f1932ac6f91a59c8889|e7d666e6164099782e73f38392303a0f3529e8a691cd22019978ebfeacb7c04b|1166|estree-policy|static gate: ESTree capability-looking constructed literal outside normative role processAuthority
 SEM-N123|17136b465e235e153899b98a8add09d210ef00fda8ff5fbced63c3846802dab1|12b5dfd0eea8a7337ee360d50e643a928578c014fd927cd9cfdc672ffccd22ee|1160|estree-policy|static gate: ESTree capability-looking normative literal returned from function processAuthority
-SEM-N124|6bdb8210d9e2817e8efc182ee10d042ea50f8ab3cbc750ae890234abffa899d5|22f2273e62f1aae3408b4ffb8216813bbd56e89746ff35dca75c340d96e43f92|1162|estree-policy|static gate: ESTree capability-looking normative literal passed to sha256 processAuthority`;
+SEM-N124|6bdb8210d9e2817e8efc182ee10d042ea50f8ab3cbc750ae890234abffa899d5|22f2273e62f1aae3408b4ffb8216813bbd56e89746ff35dca75c340d96e43f92|1162|estree-policy|static gate: ESTree capability-looking normative literal passed to sha256 processAuthority
+SEM-N125|38765ae9e7053f89fe112c743ffea83e245893acfee20c6f1aac33d7b93ca378|e39d0626198656380399cecaa03f404d21713e7ed116b3b5cb95fa30a70291ff|1162|estree-policy|static gate: ESTree unknown provenance join conditional expression
+SEM-N126|1039f451af8d171277f1ee2c939ec38d0b7e648142938fcf6b978219bbba0c93|9b1bca11a1b77e6c7f4e53c97bce9df84044c559ca265c3c72c8ab30618f3dd1|1161|estree-policy|static gate: ESTree unknown provenance join logical &&
+SEM-N127|d78c882bb12f6d49b78a60587817bd8a28d38d227e3163d4855181f47ff484ac|ec5970a81852fd173f582b4e3123b0932a4a2d0f31df52c0a607de3ac5c992c0|1161|estree-policy|static gate: ESTree unknown provenance join logical OR
+SEM-N128|27b9281cccbaf7e9ad152f0f773fa5d4e85f7245576e68d9746c1bf095982b35|3ea643b25cbff26f054d63fb953eed7e1385410658fce4c331f0ecff20534d12|1161|estree-policy|static gate: ESTree unknown provenance join logical ??
+SEM-N129|93708314e9d81bd24f7700f27587e07bd01e049432da695d5dbca397f5fc6502|5aa33f64be6a8b7ef6cd36006c66187f21f36c1e3ad08af9802d2db5277f4e82|1165|estree-policy|static gate: ESTree unknown provenance join returns of joinBranchReturns
+SEM-N130|929535cad3305742a1f5102fb73589fd50c777fdd71d3c38a04302f7750e9702|7a7b3d138c701d91073ca549792ac1022a46ccc83cc8364bb3124f8fb10db995|1172|estree-policy|static gate: ESTree unknown provenance join returns of joinNestedReturns
+SEM-N131|dfe3b4b50151747568c441cc130d5caefe8425e2d8ea0e6ed514b14c7fde5766|4820e17484bc604f438c3f62f412ed87708d1b0d47f7a0a0aa48ac14b093c576|1174|estree-policy|static gate: ESTree unknown provenance join returns of joinLoopReturns
+SEM-N132|3927be0eb11d7238c3aa0d6e8aefa6047dc565ba968c0ac9ee24e6e8d452b83d|f8cb61a0689974659116e6aed79ba2ee3af2cfd7712aedcfcd6fce0fe859e4a2|1157|estree-policy|static gate: ESTree function may complete without explicit return conditionalFallthrough
+SEM-N133|2eae9153bd6bb4604c96ea3191c72df363519a0df4bc0da99476923fbae396ff|2916c381e4a2d943fd122ba35dada5b96ee0424ad948bdbd9f45d3dfc3a97b5a|1167|estree-policy|static gate: ESTree function may complete without explicit return loopFallthrough
+SEM-N134|1beb513c29e898044a73d95612edddfad143009425c2dfb2543611c8334245d8|1e40d91f1721a376dcf682806812d0cdad59c2420166d6854882af4eb601ae5d|1152|estree-policy|static gate: ESTree function may complete without explicit return emptyFallthrough
+SEM-N135|0e4e3e58d3206b89a841ddbda6fe43b246c3e23a58390dfc313a3ab937eae51a|2f1e6ba6203993962638b17aba4fc8090c1238eabb82a41df3d6b3ed2247f207|1157|estree-policy|static gate: ESTree function may complete without explicit return throwFallthrough
+SEM-N136|c61bbf97696e2d09eba05916c7a122803294bea03ee3e9b753e2272341bc7d2f|7544cecb98fb59800a2b4a8024fe8d0d64b3e4c1009b839e503323baa82d9795|1163|estree-policy|static gate: ESTree function may complete without explicit return maybeFallthrough
+SEM-N137|5e4bdaf4e18c0cfb8b4d07844e0c465d16f8c21c66bcd94e52843c0252e21160|5efdd3f95d51f733a4f40b748832b1e3cd89c88312cc2de460223d78a519c85e|1170|estree-policy|static gate: ESTree function may complete without explicit return fallthroughFailure
+SEM-N138|b771bd80b5af4134b7d5d3ef347868c1d541dcde714a0734d5c2c5f04c7d0cb3|d1686b95db6a9e6e8957655b795799908b8c2253c3db3ec54f7fdfcf75f0e0e3|1151|estree-policy|static gate: ESTree private commit return unreachable createCandidateContainmentGuardianStartupV1
+SEM-N139|55854e968879748f1f553f0c30ddd18782f5ff0d6342acdcdb8086b1e507f377|4cbeba4967d4a22ebb05458878b945b1cb820518d2c795520b89ed9b3fcdc1a3|1161|estree-policy|static gate: ESTree recursive call graph sccAlpha -> sccBeta
+SEM-N140|15d1b2f889c580f6c726b78011b0f92189d2114986376bdb942cfcab40aa4ea2|1f2d1c206a2deaead465c34671082cd963326f7a1ead859f3571a1a7640b4508|1167|estree-policy|static gate: ESTree recursive call graph cycleAlpha -> cycleBeta -> cycleGamma
+SEM-N141|9b19bc3c84097b344c6860456fa9673169830ca45362be008d0f038ae9b09229|b0b9fa1a49daf00cc115ff53f05008898deeff10308a1d37bdac6fa7e609bf26|1164|estree-policy|static gate: ESTree recursive call graph branchAlpha -> branchBeta
+SEM-N142|2b5929e7ba0bbbbd480a4e16b2629e6367d3cdc3968cf0e669daaa7f3aaf678a|a497e6edd0615891682517534c36769244acc8eab47d59ba5b0285ad37eb4391|1176|estree-policy|static gate: ESTree recursive call graph loopAlpha -> loopBeta
+SEM-N143|583c3f93b53176b6b8bccd50dd5acd776c70582c243777f2ca804d5dafa68563|622b41854f87db1d8c6720d73066b3b9146d7cc05a506fa58127d1748e464b44|1159|estree-policy|static gate: ESTree recursive call graph selfFailure
+SEM-N144|0326186356891c60ceb4ecaa9cf5e1dfa1c5ed4393a7c34494bf501225f5af77|3518291a9f17865063002caa86ec6ef90032fd1e947f4049ddebd4505e60e68a|1165|estree-policy|static gate: ESTree recursive call graph mixedCallback -> mixedCaller
+SEM-N145|f3bc3c7dc472c7d0aef8dd6005e17ca09931d1f3b0c5c7d4c0d4f38d670bce81|6abfb35b9cb2cf67678f5d7cf63fdd4968e6ba7f70591422f4e0f9467521e84e|1169|estree-policy|static gate: ESTree recursive call graph callbackAlpha -> callbackBeta
+SEM-N146|345da80e39d34f452217707e5c133fb9634d5d1b8283109cdb87356b0aec50ed|afd6b2a755bd665b72f1a2c25045cd11599bac4abaa3c591447e661c139f2ff2|1157|estree-policy|static gate: ESTree recursive call graph unreachableSelf
+SEM-N147|12d2de2828b58eee93bc513eabf168d9dd3ecd3e0b3c219c35da71c8b12504d1|7916520978e5a6bda609d58d51444c495ab0a501067a2caa1ed0f9e3a2de91fb|1165|estree-policy|static gate: ESTree recursive call graph detachedAlpha -> detachedBeta`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -4752,9 +4883,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 124);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 147);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 204);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 227);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -6228,6 +6359,178 @@ function reflectedAuthority(startupReportBytes) {
       expected:
         /capability-looking normative literal passed to sha256 processAuthority/u,
     }),
+    Object.freeze({
+      name: "conditional-expression joins distinct frozen origins",
+      source: sourceSkeleton(
+        "function joinConditionalOrigins() { return true ? deepFreeze([]) : deepFreeze([null]); }",
+      ),
+      expected: /unknown provenance join conditional expression/u,
+    }),
+    Object.freeze({
+      name: "logical AND joins distinct frozen origins",
+      source: sourceSkeleton(
+        "function joinLogicalAndOrigins() { return deepFreeze([]) && deepFreeze([null]); }",
+      ),
+      expected: /unknown provenance join logical &&/u,
+    }),
+    Object.freeze({
+      name: "logical OR joins distinct frozen origins",
+      source: sourceSkeleton(
+        "function joinLogicalOrOrigins() { return deepFreeze([]) || deepFreeze([null]); }",
+      ),
+      expected: /unknown provenance join logical OR/u,
+    }),
+    Object.freeze({
+      name: "logical nullish joins distinct frozen origins",
+      source: sourceSkeleton(
+        "function joinLogicalNullishOrigins() { return deepFreeze([]) ?? deepFreeze([null]); }",
+      ),
+      expected: /unknown provenance join logical \?\?/u,
+    }),
+    Object.freeze({
+      name: "if branches join distinct return origins",
+      source: sourceSkeleton(
+        "function joinBranchReturns() { if (true) { return deepFreeze([]); } else { return deepFreeze([null]); } }",
+      ),
+      expected: /unknown provenance join returns of joinBranchReturns/u,
+    }),
+    Object.freeze({
+      name: "nested conditional joins distinct return origins",
+      source: sourceSkeleton(
+        "function joinNestedReturns() { if (true) { if (false) { return deepFreeze([]); } return deepFreeze([null]); } return deepFreeze([false]); }",
+      ),
+      expected: /unknown provenance join returns of joinNestedReturns/u,
+    }),
+    Object.freeze({
+      name: "for-of and fallthrough join distinct return origins",
+      source: sourceSkeleton(
+        "function joinLoopReturns() { const values = deepFreeze([null]); for (const value of values) { return deepFreeze([]); } return deepFreeze([null]); }",
+      ),
+      expected: /unknown provenance join returns of joinLoopReturns/u,
+    }),
+    Object.freeze({
+      name: "conditional return leaves successful fallthrough",
+      source: sourceSkeleton(
+        "function conditionalFallthrough() { if (true) { return null; } }",
+      ),
+      expected:
+        /function may complete without explicit return conditionalFallthrough/u,
+    }),
+    Object.freeze({
+      name: "for-of return leaves zero-iteration fallthrough",
+      source: sourceSkeleton(
+        "function loopFallthrough() { const values = deepFreeze([null]); for (const value of values) { return null; } }",
+      ),
+      expected:
+        /function may complete without explicit return loopFallthrough/u,
+    }),
+    Object.freeze({
+      name: "empty local function falls through",
+      source: sourceSkeleton("function emptyFallthrough() {}"),
+      expected:
+        /function may complete without explicit return emptyFallthrough/u,
+    }),
+    Object.freeze({
+      name: "conditional throw leaves successful fallthrough",
+      source: sourceSkeleton(
+        "function throwFallthrough() { if (true) { throw null; } }",
+      ),
+      expected:
+        /function may complete without explicit return throwFallthrough/u,
+    }),
+    Object.freeze({
+      name: "called local function may fall through",
+      source: sourceSkeleton(
+        "function callFallthrough() { return maybeFallthrough(); } function maybeFallthrough() { if (true) { return null; } }",
+      ),
+      expected:
+        /function may complete without explicit return maybeFallthrough/u,
+    }),
+    Object.freeze({
+      name: "failure callback may fall through",
+      source: sourceSkeleton(
+        'function normalizeWithFallthrough(value) { return exactBoolean(value, true, "value", fallthroughFailure); } function fallthroughFailure() { if (true) { throw new Error("CONTROL_SHAPE"); } }',
+      ),
+      expected:
+        /function may complete without explicit return fallthroughFailure/u,
+    }),
+    Object.freeze({
+      name: "private-store owner commit return is unreachable",
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "createCandidateContainmentGuardianStartupV1",
+            "throw null; const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return result;",
+          ],
+        ]),
+      ),
+      expected:
+        /private commit return unreachable createCandidateContainmentGuardianStartupV1/u,
+    }),
+    Object.freeze({
+      name: "two-function call graph SCC",
+      source: sourceSkeleton(
+        "function sccAlpha() { return sccBeta(); } function sccBeta() { return sccAlpha(); }",
+      ),
+      expected: /recursive call graph sccAlpha -> sccBeta/u,
+    }),
+    Object.freeze({
+      name: "three-function call graph SCC",
+      source: sourceSkeleton(
+        "function cycleAlpha() { return cycleBeta(); } function cycleBeta() { return cycleGamma(); } function cycleGamma() { return cycleAlpha(); }",
+      ),
+      expected: /recursive call graph cycleAlpha -> cycleBeta -> cycleGamma/u,
+    }),
+    Object.freeze({
+      name: "conditional-edge call graph SCC",
+      source: sourceSkeleton(
+        "function branchAlpha() { return true ? branchBeta() : null; } function branchBeta() { return branchAlpha(); }",
+      ),
+      expected: /recursive call graph branchAlpha -> branchBeta/u,
+    }),
+    Object.freeze({
+      name: "loop-edge call graph SCC",
+      source: sourceSkeleton(
+        "function loopAlpha() { const values = deepFreeze([null]); for (const value of values) { return loopBeta(); } return null; } function loopBeta() { return loopAlpha(); }",
+      ),
+      expected: /recursive call graph loopAlpha -> loopBeta/u,
+    }),
+    Object.freeze({
+      name: "self-recursive failure callback SCC",
+      source: sourceSkeleton(
+        'function selfFailure() { return exactBoolean(null, true, "value", selfFailure); }',
+      ),
+      expected: /recursive call graph selfFailure/u,
+    }),
+    Object.freeze({
+      name: "mixed callback and direct-call SCC",
+      source: sourceSkeleton(
+        'function mixedCallback() { return mixedCaller(); } function mixedCaller() { return exactBoolean(null, true, "value", mixedCallback); }',
+      ),
+      expected: /recursive call graph mixedCallback -> mixedCaller/u,
+    }),
+    Object.freeze({
+      name: "two-callback-edge SCC",
+      source: sourceSkeleton(
+        'function callbackAlpha() { return exactBoolean(null, true, "value", callbackBeta); } function callbackBeta() { return exactBoolean(null, true, "value", callbackAlpha); }',
+      ),
+      expected: /recursive call graph callbackAlpha -> callbackBeta/u,
+    }),
+    Object.freeze({
+      name: "unreachable self-recursive call",
+      source: sourceSkeleton(
+        "function unreachableSelf() { return null; unreachableSelf(); }",
+      ),
+      expected: /recursive call graph unreachableSelf/u,
+    }),
+    Object.freeze({
+      name: "unreachable detached call graph SCC",
+      source: sourceSkeleton(
+        "function detachedAlpha() { return null; detachedBeta(); } function detachedBeta() { return null; detachedAlpha(); }",
+      ),
+      expected: /recursive call graph detachedAlpha -> detachedBeta/u,
+    }),
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -6437,8 +6740,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 140);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 124);
+  assert.equal(namedStageAudit.length, 163);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 147);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -6485,7 +6788,7 @@ function evaluateCandidateOnlyWhenEvaluatorCloses(source, evaluate) {
   if (source !== null) {
     auditCandidateSource(source);
     throw new Error(
-      "candidate evaluation disabled until the complete evaluator matrix is executable and receiver-origin; ambient-binding/alias/member-write, computed-key, and indirect-call; path-sensitive normative key-literal representation; module/import/export-binding-write; and private-store commit-position closure are proved",
+      "candidate evaluation disabled until the complete evaluator matrix is executable and the remaining private-store commit-position and semantic-mutation quotas are proved",
     );
   }
   return evaluate();
@@ -6635,7 +6938,7 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 193,
+  sourceIndependentNegativeControls: 216,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
@@ -6648,7 +6951,6 @@ const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
     "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
     "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
     "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
-    "successful-path reachability before the syntactic private-store commit tail remains unproved",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
   ]),
 });
@@ -6973,7 +7275,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 193,
+    rejected: 216,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -7115,10 +7417,33 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "local return constructs normative authority key",
       "factored normative authority object returned",
       "factored normative authority object passed to sink",
+      "conditional-expression joins distinct frozen origins",
+      "logical AND joins distinct frozen origins",
+      "logical OR joins distinct frozen origins",
+      "logical nullish joins distinct frozen origins",
+      "if branches join distinct return origins",
+      "nested conditional joins distinct return origins",
+      "for-of and fallthrough join distinct return origins",
+      "conditional return leaves successful fallthrough",
+      "for-of return leaves zero-iteration fallthrough",
+      "empty local function falls through",
+      "conditional throw leaves successful fallthrough",
+      "called local function may fall through",
+      "failure callback may fall through",
+      "private-store owner commit return is unreachable",
+      "two-function call graph SCC",
+      "three-function call graph SCC",
+      "conditional-edge call graph SCC",
+      "loop-edge call graph SCC",
+      "self-recursive failure callback SCC",
+      "mixed callback and direct-call SCC",
+      "two-callback-edge SCC",
+      "unreachable self-recursive call",
+      "unreachable detached call graph SCC",
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 124,
-      estreePolicyReachedCount: 121,
+      totalDeltaSinceParserFoundation: 147,
+      estreePolicyReachedCount: 144,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -7159,7 +7484,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 124 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 147 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -7178,11 +7503,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 204);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 204);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 227);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 227);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    204,
+    227,
   );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
@@ -7198,7 +7523,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    204,
+    227,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -7275,16 +7600,16 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       { bucket: "untrustedSinks", target: 24, current: 24, remaining: 0 },
       { bucket: "rawEscapes", target: 12, current: 12, remaining: 0 },
       { bucket: "literalMisuse", target: 14, current: 14, remaining: 0 },
-      { bucket: "scopeJoins", target: 18, current: 4, remaining: 14 },
-      { bucket: "nestedRecursion", target: 12, current: 3, remaining: 9 },
+      { bucket: "scopeJoins", target: 18, current: 18, remaining: 0 },
+      { bucket: "nestedRecursion", target: 12, current: 12, remaining: 0 },
       { bucket: "commitMutations", target: 200, current: 17, remaining: 183 },
     ],
   );
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 124);
-  assert.equal(new Set(bucketIds).size, 124);
+  assert.equal(bucketIds.length, 147);
+  assert.equal(new Set(bucketIds).size, 147);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -7340,10 +7665,10 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 124,
-    allCurrentNegatives: 193,
+    semanticNegatives: 147,
+    allCurrentNegatives: 216,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 206,
+    semanticRemainingNegatives: 183,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
@@ -7353,9 +7678,9 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     commitRemaining: 183,
     evaluationAttempts: 0,
   });
-  assert.equal(193, 69 + 124);
+  assert.equal(216, 69 + 147);
   assert.equal(399, 69 + 330);
-  assert.equal(206, 330 - 124);
+  assert.equal(183, 330 - 147);
   assert.equal(0, 11 - 11);
   assert.equal(183, 200 - 17);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
@@ -7774,7 +8099,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ...semanticEntries.slice(0, 114),
     ...positiveEntries,
   ];
-  const newLiteralPathEntries = semanticEntries.slice(114);
+  const newLiteralPathEntries = semanticEntries.slice(114, 124);
   const preLiteralPathSourceHashes = new Set(
     preLiteralPathEntries.map(({ sourceSha256 }) => sourceSha256),
   );
@@ -7867,6 +8192,133 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     newLiteralPathEntries.map(({ id }) => id),
   );
   assert.equal(new Set(literalPathMutationControlIds).size, 10);
+  const preControlFlowEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 124),
+    ...positiveEntries,
+  ];
+  const newControlFlowEntries = semanticEntries.slice(124);
+  const preControlFlowSourceHashes = new Set(
+    preControlFlowEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preControlFlowAstHashes = new Set(
+    preControlFlowEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(newControlFlowEntries.length, 23);
+  assert.deepEqual(
+    newControlFlowEntries.map(({ id, bucket }) => ({ id, bucket })),
+    [
+      ...Array.from({ length: 14 }, (_, index) => ({
+        id: staticControlId("SEM-N", index + 124),
+        bucket: "scopeJoins",
+      })),
+      ...Array.from({ length: 9 }, (_, index) => ({
+        id: staticControlId("SEM-N", index + 138),
+        bucket: "nestedRecursion",
+      })),
+    ],
+  );
+  assert.equal(
+    new Set(newControlFlowEntries.map(({ sourceSha256 }) => sourceSha256)).size,
+    23,
+  );
+  assert.equal(
+    new Set(newControlFlowEntries.map(({ astSha256 }) => astSha256)).size,
+    23,
+  );
+  assert.equal(
+    newControlFlowEntries.some(({ sourceSha256 }) =>
+      preControlFlowSourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newControlFlowEntries.some(({ astSha256 }) =>
+      preControlFlowAstHashes.has(astSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    newControlFlowEntries.every(
+      ({ expectedStage }) => expectedStage === "estree-policy",
+    ),
+    true,
+  );
+  const controlFlowMutationCoverage = Object.freeze([
+    Object.freeze({
+      mutation: "distinct expression origins merge without a provenance join",
+      coveredBy: Object.freeze([
+        "SEM-N125",
+        "SEM-N126",
+        "SEM-N127",
+        "SEM-N128",
+      ]),
+    }),
+    Object.freeze({
+      mutation: "multi-return and loop origins merge without a provenance join",
+      coveredBy: Object.freeze(["SEM-N129", "SEM-N130", "SEM-N131"]),
+    }),
+    Object.freeze({
+      mutation: "conditional and loop fallthrough is treated as a return",
+      coveredBy: Object.freeze([
+        "SEM-N132",
+        "SEM-N133",
+        "SEM-N134",
+        "SEM-N135",
+      ]),
+    }),
+    Object.freeze({
+      mutation: "callee, callback, or private-owner completion is not proved",
+      coveredBy: Object.freeze(["SEM-N136", "SEM-N137", "SEM-N138"]),
+    }),
+    Object.freeze({
+      mutation: "ordinary control-flow SCCs are not rejected",
+      coveredBy: Object.freeze([
+        "SEM-N139",
+        "SEM-N140",
+        "SEM-N141",
+        "SEM-N142",
+      ]),
+    }),
+    Object.freeze({
+      mutation: "failure-callback edges are omitted from SCC detection",
+      coveredBy: Object.freeze(["SEM-N143", "SEM-N144", "SEM-N145"]),
+    }),
+    Object.freeze({
+      mutation: "unreachable call edges are omitted from SCC detection",
+      coveredBy: Object.freeze(["SEM-N146", "SEM-N147"]),
+    }),
+  ]);
+  const controlFlowMutationControlIds = controlFlowMutationCoverage.flatMap(
+    ({ coveredBy }) => coveredBy,
+  );
+  assert.deepEqual(
+    controlFlowMutationControlIds,
+    newControlFlowEntries.map(({ id }) => id),
+  );
+  assert.equal(new Set(controlFlowMutationControlIds).size, 23);
+  const acceptedControlFlowVariations = Object.freeze([
+    sourceSkeleton(
+      "function sameOriginJoin() { const value = deepFreeze([]); return true ? value : value; }",
+    ),
+    sourceSkeleton(
+      "function completeBranches() { if (true) { return null; } else { return null; } }",
+    ),
+    sourceSkeleton(
+      "function completeLoop() { const values = deepFreeze([null]); for (const value of values) { return null; } return null; }",
+    ),
+    sourceSkeleton(
+      "function acyclicLeaf() { return null; } function acyclicRoot() { return acyclicLeaf(); }",
+    ),
+    sourceSkeleton(
+      'function pinnedFailure() { throw new Error("CONTROL_SHAPE"); } function normalizedValue(value) { return exactBoolean(value, true, "value", pinnedFailure); }',
+    ),
+  ]);
+  for (const source of acceptedControlFlowVariations) {
+    assert.doesNotThrow(() => auditCandidateSource(source));
+  }
   const preLookupEntries = [
     ...foundationEntries,
     ...semanticEntries.slice(0, 48),
@@ -8008,11 +8460,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 193,
+    sourceIndependentNegativeControls: 216,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 124,
-      estreePolicyReachedCount: 121,
+      totalDeltaSinceParserFoundation: 147,
+      estreePolicyReachedCount: 144,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -8029,7 +8481,6 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "the 17 representative commit mutation sources are inventory, not per-gate or final 200-mutation closure",
       "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
       "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
-      "successful-path reachability before the syntactic private-store commit tail remains unproved",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
     ],
   });
@@ -8494,7 +8945,7 @@ test(
   () => {},
 );
 test(
-  "close receiver-origin and alias dataflow; ambient binding, alias, and member writes, computed-key construction, and indirect calls; path-sensitive normative key-literal representation; module/import/export binding and member writes; and private-store owning-operation commit-position proof before lifting the source-presence stop",
+  "close the remaining private-store commit-position and semantic-mutation quotas before lifting the source-presence stop",
   { todo: true },
   () => {},
 );
