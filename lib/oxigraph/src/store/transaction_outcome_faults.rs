@@ -1,5 +1,11 @@
 //! Evaluator for transaction-outcome storage-call fault safety.
 
+#![expect(
+    clippy::panic_in_result_fn,
+    clippy::tests_outside_test_module,
+    reason = "this cfg(test)-only evaluator uses assertions while propagating storage failures"
+)]
+
 use super::{
     OutcomeAwareTransactionalDataset, StorageError, Store, TransactionCommitError, TransactionKey,
     TransactionOutcome, TransactionRequest, TransactionStartError,
@@ -23,6 +29,10 @@ fn quad(label: &str) -> Quad {
     )
 }
 
+#[expect(
+    clippy::panic,
+    reason = "an unexpected commit result is an immediate evaluator assertion failure"
+)]
 fn expect_indeterminate_commit(
     result: Result<(), TransactionCommitError<StorageError>>,
     expected_key: &TransactionKey,
@@ -32,7 +42,10 @@ fn expect_indeterminate_commit(
             transaction_key,
             source,
         }) => {
-            assert_eq!(&transaction_key, expected_key);
+            assert_eq!(
+                &transaction_key, expected_key,
+                "the indeterminate outcome must retain the caller-supplied transaction key"
+            );
             source
         }
         other => panic!("faulted commit did not return a typed indeterminate result: {other:?}"),

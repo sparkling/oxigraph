@@ -130,36 +130,43 @@ impl TransactionCapabilities {
         self.outcome_lookup
     }
 
+    #[must_use]
     pub const fn with_atomic_publication(mut self) -> Self {
         self.atomic_publication = true;
         self
     }
 
+    #[must_use]
     pub const fn with_read_your_writes(mut self) -> Self {
         self.read_your_writes = true;
         self
     }
 
+    #[must_use]
     pub const fn with_writer_isolation(mut self, value: WriterIsolation) -> Self {
         self.writer_isolation = value;
         self
     }
 
+    #[must_use]
     pub const fn with_conflict_behavior(mut self, value: ConflictBehavior) -> Self {
         self.conflict_behavior = value;
         self
     }
 
+    #[must_use]
     pub const fn with_cancellation(mut self, value: CancellationGuarantee) -> Self {
         self.cancellation = value;
         self
     }
 
+    #[must_use]
     pub const fn with_rollback(mut self, value: RollbackGuarantee) -> Self {
         self.rollback = value;
         self
     }
 
+    #[must_use]
     pub const fn with_outcome_lookup(mut self, value: OutcomeLookup) -> Self {
         self.outcome_lookup = value;
         self
@@ -230,21 +237,25 @@ impl TransactionRequirements {
         }
     }
 
+    #[must_use]
     pub const fn requiring_writer_isolation(mut self, value: WriterIsolation) -> Self {
         self.writer_isolation = value;
         self
     }
 
+    #[must_use]
     pub const fn requiring_conflict_behavior(mut self, value: ConflictBehavior) -> Self {
         self.conflict_behavior = value;
         self
     }
 
+    #[must_use]
     pub const fn requiring_cancellation(mut self, value: CancellationGuarantee) -> Self {
         self.cancellation = value;
         self
     }
 
+    #[must_use]
     pub const fn requiring_outcome_lookup(mut self, value: OutcomeLookup) -> Self {
         self.outcome_lookup = value;
         self
@@ -369,14 +380,12 @@ pub enum TransactionStartError<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for TransactionStartError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RequirementsNotMet { .. } => {
-                formatter.write_str("transaction requirements are not met")
-            }
-            Self::Cancelled => formatter.write_str("transaction start was cancelled"),
-            Self::TimedOut => formatter.write_str("transaction start timed out"),
-            Self::Backend(error) => write!(formatter, "failed to open transaction: {error}"),
+            Self::RequirementsNotMet { .. } => f.write_str("transaction requirements are not met"),
+            Self::Cancelled => f.write_str("transaction start was cancelled"),
+            Self::TimedOut => f.write_str("transaction start timed out"),
+            Self::Backend(error) => write!(f, "failed to open transaction: {error}"),
         }
     }
 }
@@ -403,13 +412,13 @@ pub enum TransactionCommitError<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for TransactionCommitError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Rejected(error) => write!(formatter, "transaction was rejected: {error}"),
-            Self::Conflicted => formatter.write_str("transaction conflicted"),
-            Self::Cancelled => formatter.write_str("transaction was cancelled"),
+            Self::Rejected(error) => write!(f, "transaction was rejected: {error}"),
+            Self::Conflicted => f.write_str("transaction conflicted"),
+            Self::Cancelled => f.write_str("transaction was cancelled"),
             Self::Indeterminate { source, .. } => {
-                write!(formatter, "transaction outcome is indeterminate: {source}")
+                write!(f, "transaction outcome is indeterminate: {source}")
             }
         }
     }
@@ -431,9 +440,9 @@ pub enum TransactionRollbackError<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for TransactionRollbackError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Failed(error) => write!(formatter, "transaction rollback failed: {error}"),
+            Self::Failed(error) => write!(f, "transaction rollback failed: {error}"),
         }
     }
 }
