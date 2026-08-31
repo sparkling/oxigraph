@@ -20,8 +20,8 @@ use std::fmt;
 struct ProbeError(&'static str);
 
 impl fmt::Display for ProbeError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
     }
 }
 
@@ -202,18 +202,20 @@ fn default_request_preserves_the_legacy_minimum_and_returns_the_effective_profil
 }
 
 #[test]
-fn unmet_dimensions_are_reported_before_a_backend_transaction_is_opened() {
+fn unmet_dimensions_are_reported_before_a_backend_transaction_is_opened()
+-> Result<(), Box<dyn Error>> {
     let advertised = serialized_profile();
     let dataset = ProbeDataset::new(advertised.clone());
     let requirements = TransactionRequirements::legacy()
         .requiring_conflict_behavior(ConflictBehavior::DetectedAndRejected)
         .requiring_cancellation(CancellationGuarantee::BeforeCommitAttempt);
 
-    let Err(error) = dataset.start_transaction_with(TransactionRequest::new(requirements)) else {
-        panic!("an unsupported minimum was silently weakened")
-    };
+    let error = dataset
+        .start_transaction_with(TransactionRequest::new(requirements))
+        .err()
+        .ok_or("an unsupported minimum was silently weakened")?;
     let TransactionStartError::RequirementsNotMet { unmet, effective } = error else {
-        panic!("an unsupported minimum reached the backend")
+        return Err("an unsupported minimum reached the backend".into());
     };
     assert_eq!(
         unmet,
@@ -224,6 +226,7 @@ fn unmet_dimensions_are_reported_before_a_backend_transaction_is_opened() {
     );
     assert_eq!(effective, advertised);
     assert_eq!(dataset.opens.get(), 0);
+    Ok(())
 }
 
 #[test]
@@ -276,11 +279,12 @@ fn all_capability_dimensions_are_negotiated_independently() {
 }
 
 #[test]
-fn backend_open_failure_is_typed_once_after_successful_negotiation() {
+fn backend_open_failure_is_typed_once_after_successful_negotiation() -> Result<(), Box<dyn Error>> {
     let dataset = FailingProbeDataset::new(serialized_profile());
-    let Err(error) = dataset.start_transaction_with(TransactionRequest::default()) else {
-        panic!("a backend-open failure was silently accepted")
-    };
+    let error = dataset
+        .start_transaction_with(TransactionRequest::default())
+        .err()
+        .ok_or("a backend-open failure was silently accepted")?;
 
     assert_eq!(dataset.opens.get(), 1);
     assert_eq!(
@@ -288,9 +292,10 @@ fn backend_open_failure_is_typed_once_after_successful_negotiation() {
         Some("open failed".into())
     );
     let TransactionStartError::Backend(source) = error else {
-        panic!("a negotiated backend-open failure was reclassified")
+        return Err("a negotiated backend-open failure was reclassified".into());
     };
     assert_eq!(source.to_string(), "open failed");
+    Ok(())
 }
 
 #[test]
@@ -324,10 +329,12 @@ fn rocksdb_capabilities_are_derived_from_the_open_store_instance() -> Result<(),
         read_only.transaction_capabilities(),
         TransactionCapabilities::none()
     );
-    let Err(TransactionStartError::RequirementsNotMet { unmet, effective }) =
-        read_only.start_transaction_with(TransactionRequest::default())
-    else {
-        panic!("a read-only instance accepted a write request")
+    let error = read_only
+        .start_transaction_with(TransactionRequest::default())
+        .err()
+        .ok_or("a read-only instance accepted a write request")?;
+    let TransactionStartError::RequirementsNotMet { unmet, effective } = error else {
+        return Err("a read-only instance returned an unexpected transaction start error".into());
     };
     assert!(unmet.contains(&UnmetTransactionRequirement::AtomicPublication));
     assert!(unmet.contains(&UnmetTransactionRequirement::ReadYourWrites));
@@ -367,7 +374,7 @@ fn typed_commit_outcomes_separate_safe_non_commit_from_indeterminate_commit() {
 }
 
 #[test]
-fn typed_extensions_preserve_backend_error_sources() {
+fn typed_extensions_preserve_backend_error_sources() -> Result<(), Box<dyn Error>> {
     let start = TransactionStartError::Backend(ProbeError("open failed"));
     assert_eq!(
         Error::source(&start).map(ToString::to_string),
@@ -380,8 +387,7 @@ fn typed_extensions_preserve_backend_error_sources() {
         Some("rollback failed".into())
     );
 
-    OutcomeAwareWritableDataset::commit_with_outcome(ProbeTransaction)
-        .expect("the typed extension remains independently implementable");
-    OutcomeAwareWritableDataset::rollback_with_outcome(ProbeTransaction)
-        .expect("the typed extension remains independently implementable");
+    OutcomeAwareWritableDataset::commit_with_outcome(ProbeTransaction)?;
+    OutcomeAwareWritableDataset::rollback_with_outcome(ProbeTransaction)?;
+    Ok(())
 }

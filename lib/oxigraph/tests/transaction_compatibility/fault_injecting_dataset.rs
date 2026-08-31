@@ -114,10 +114,10 @@ pub enum FaultDatasetError<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for FaultDatasetError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Backend(error) => error.fmt(formatter),
-            Self::Injected(message) => formatter.write_str(message),
+            Self::Backend(error) => error.fmt(f),
+            Self::Injected(message) => f.write_str(message),
         }
     }
 }

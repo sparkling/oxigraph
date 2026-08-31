@@ -120,8 +120,11 @@ fn a_durable_requirement_is_rejected_before_memory_reserves_the_key() -> Result<
             .requiring_outcome_lookup(OutcomeLookup::DurableByTransactionKey),
     );
     let outcome = store.start_transaction_with_key(request, transaction_key.clone());
-    let Err(TransactionStartError::RequirementsNotMet { .. }) = outcome else {
-        panic!("memory silently accepted durable outcome lookup")
+    let error = outcome
+        .err()
+        .ok_or("memory silently accepted durable outcome lookup")?;
+    let TransactionStartError::RequirementsNotMet { .. } = error else {
+        return Err("memory returned an unexpected transaction start error".into());
     };
     assert_eq!(
         store.lookup_transaction_outcome(&transaction_key)?,
