@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use oxigraph_fuzz::count_triple_blank_nodes;
+use oxigraph_fuzz::{bounded_triple_graphs_are_isomorphic, count_triple_blank_nodes};
 use oxrdf::graph::CanonicalizationAlgorithm;
 use oxrdf::{Graph, Triple};
 use oxrdfxml::{RdfXmlParser, RdfXmlSerializer};
@@ -101,12 +101,14 @@ fuzz_target!(|data: &[u8]| {
         })
         .unwrap();
 
-    // We check the roundtrip has not changed anything
-    assert_eq!(
-        new_triples,
-        triples,
-        "Error on '{}' based on '{}'",
-        String::from_utf8_lossy(&new_serialization),
-        String::from_utf8_lossy(data)
-    );
+    // RDF/XML cannot preserve blank-node labels across a serialization boundary.
+    // Compare graph semantics within the target's existing bounded isomorphism budget.
+    if let Some(isomorphic) = bounded_triple_graphs_are_isomorphic(&new_triples, &triples) {
+        assert!(
+            isomorphic,
+            "Error on '{}' based on '{}'",
+            String::from_utf8_lossy(&new_serialization),
+            String::from_utf8_lossy(data)
+        );
+    }
 });
