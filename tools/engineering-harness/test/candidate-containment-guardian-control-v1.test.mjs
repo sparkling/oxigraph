@@ -4926,6 +4926,92 @@ const PRIVATE_COMMIT_CARDINALITY_CONTROLS = Object.freeze(
 );
 assert.equal(PRIVATE_COMMIT_CARDINALITY_CONTROLS.length, 30);
 
+const PRIVATE_COMMIT_AGGREGATE_FAMILIES = Object.freeze([
+  "moved to non-owner",
+  "owner store swap",
+  "missing and duplicate owners",
+]);
+
+function privateCommitAggregateSource(familyName) {
+  if (familyName === "moved to non-owner") {
+    const source = sourceSkeleton(
+      "",
+      new Map([
+        [
+          "createCandidateContainmentGuardianStartupV1",
+          "const movedOwnerResult = deepFreeze(nullRecord([])); return movedOwnerResult;",
+        ],
+      ]),
+    );
+    const sourceWithNonOwner = source.replace(
+      "const stateMetadata = new WeakMap();",
+      "const stateMetadata = new WeakMap();\nfunction aggregateCommitNonOwner() { const movedCommitResult = deepFreeze(nullRecord([])); const movedCommitMetadata = deepFreeze(nullRecord([])); startupMetadata.set(movedCommitResult, movedCommitMetadata); return movedCommitResult; }",
+    );
+    assert.notEqual(sourceWithNonOwner, source);
+    return sourceWithNonOwner;
+  }
+  if (familyName === "owner store swap") {
+    return sourceSkeleton(
+      "",
+      new Map([
+        [
+          "createCandidateContainmentGuardianStartupV1",
+          "const swappedStartupResult = deepFreeze(nullRecord([])); const swappedStartupMetadata = deepFreeze(nullRecord([])); inputMetadata.set(swappedStartupResult, swappedStartupMetadata); return swappedStartupResult;",
+        ],
+        [
+          "createCandidateContainmentGuardianAdmissionInputV1",
+          "const swappedAdmissionResult = deepFreeze(nullRecord([])); const swappedAdmissionMetadata = deepFreeze(nullRecord([])); startupMetadata.set(swappedAdmissionResult, swappedAdmissionMetadata); return swappedAdmissionResult;",
+        ],
+      ]),
+    );
+  }
+  if (familyName === "missing and duplicate owners") {
+    return sourceSkeleton(
+      "",
+      new Map([
+        [
+          "createCandidateContainmentGuardianAdmissionInputV1",
+          "const aggregateOmittedResult = deepFreeze(nullRecord([])); return aggregateOmittedResult;",
+        ],
+        [
+          "createCandidateContainmentGuardianCancelInputV1",
+          "const aggregateDuplicateResult = deepFreeze(nullRecord([])); const aggregateDuplicateMetadata = deepFreeze(nullRecord([])); inputMetadata.set(aggregateDuplicateResult, aggregateDuplicateMetadata); inputMetadata.set(aggregateDuplicateResult, aggregateDuplicateMetadata); return aggregateDuplicateResult;",
+        ],
+      ]),
+    );
+  }
+  throw new Error(`unclassified private commit aggregate family ${familyName}`);
+}
+
+function privateCommitAggregateExpectedError(familyName) {
+  if (familyName === "moved to non-owner") {
+    return "static gate: ESTree private commit owner aggregateCommitNonOwner";
+  }
+  if (familyName === "owner store swap") {
+    return "static gate: ESTree private commit owner createCandidateContainmentGuardianStartupV1";
+  }
+  if (familyName === "missing and duplicate owners") {
+    return "static gate: ESTree exact private commit count createCandidateContainmentGuardianAdmissionInputV1";
+  }
+  throw new Error(`unclassified private commit aggregate family ${familyName}`);
+}
+
+const PRIVATE_COMMIT_AGGREGATE_CONTROLS = Object.freeze(
+  PRIVATE_COMMIT_AGGREGATE_FAMILIES.map((familyName, familyIndex) =>
+    Object.freeze({
+      id: staticControlId("SEM-N", 327 + familyIndex),
+      familyName,
+      name: `aggregate-preserving private commit ${familyName}`,
+      source: privateCommitAggregateSource(familyName),
+      expected: new RegExp(
+        `^Error: ${privateCommitAggregateExpectedError(familyName)}$`,
+        "u",
+      ),
+    }),
+  ),
+);
+assert.equal(PRIVATE_COMMIT_AGGREGATE_CONTROLS.length, 3);
+
 function sourceWithFactoredNormativeAuthority(extra = "") {
   const requirementsSource = JSON.stringify(REQUIREMENTS_ORACLE);
   const authoritySource = JSON.stringify(REQUIREMENTS_ORACLE.authority);
@@ -5190,6 +5276,7 @@ const SEMANTIC_BUCKET_BY_ORDINAL = Object.freeze([
   ...Array.from({ length: 30 }, () => "commitMutations"),
   ...Array.from({ length: 40 }, () => "commitMutations"),
   ...Array.from({ length: 30 }, () => "commitMutations"),
+  ...Array.from({ length: 3 }, () => "commitMutations"),
 ]);
 const SEMANTIC_BUCKET_TARGETS = Object.freeze([
   Object.freeze({ bucket: "protectedAliases", target: 12 }),
@@ -5236,22 +5323,25 @@ const COMMIT_MUTATION_IDS = Object.freeze([
   ...Array.from({ length: 30 }, (_, index) =>
     staticControlId("SEM-N", 297 + index),
   ),
+  ...Array.from({ length: 3 }, (_, index) =>
+    staticControlId("SEM-N", 327 + index),
+  ),
 ]);
 const EXPECTED_STATIC_EVIDENCE_AGGREGATES = Object.freeze({
   schemaSha256:
     "eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0",
   orderedControlIdentityProjectionSha256:
-    "4ea0c59c323f5d6bc14f4f14bc41caf4a41cdca22bcea0c6a5046405e009af5e",
+    "edb195e300e6f23dc3ce6fb62ed1084672afb0a682dc3c8a523ba59f630678ec",
   orderedSemanticProjectionSha256:
-    "26bfff3b3103a3c4ee827577435216814efc819ba82c3b13798227c40029d33b",
+    "d7226935eca7a7fc5ee362402d5e776ccd53a94ad8f8df12057bd287ff3fdb67",
   bucketProjectionSha256:
-    "c2dbb6c05cb8ca6c9a88a89a6776cf900f019069baa216746abb5f8d47bbf296",
+    "de9a4c9b86e3de6f0efea05c856b9e4ea1bbe478092fddac22bd69144fad522c",
   foundationNameProjectionSha256:
     "3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5",
   positiveNameProjectionSha256:
     "f73112c110a5ced50c3f64fcd53da66e022f20abbaef83ddb5be69d32390f420",
   commitIdProjectionSha256:
-    "81bb33c13768de0760fcb6ce420fde5b9006f30849d3049fd5ec5a5761ae4105",
+    "f63ed0c1d6f16e26bf5c18eddb85a1a1a437584e8385e91a255da6f729a7b43b",
 });
 
 const FOUNDATION_CONTROL_EXPECTATION_PINS_TEXT = `FOUNDATION-N001|73b72eff1cb782348cd15eb554c75e9596fff4a5168f3fa0710a96f9191e7b6b|5e7971eb3c93baefc55f6b11670faef071baefc98d3d863f9fb733531e631b22|1125|bounded-source-subset|static gate: forbidden path prefix node:
@@ -5650,7 +5740,10 @@ SEM-N323|ae5541e6cfb84674397c06461849b5e0a9f15095559478d811480b9bf0ab91ad|16eb44
 SEM-N324|32bb7278f218a8568756146ffd3a006fcae8d983161518cefbca06fe29c657ea|4f81ed91c58f9f33fef8c45d44f25678823fc78ac3229651828b96afbc42755c|1156|estree-policy|static gate: ESTree exact private commit count initializeCandidateContainmentGuardianControlV1
 SEM-N325|dc0d1357d279b2a5e71878b0786256b2d5d4b124527e2b1a1ca00dc205b81f75|2c1ebf0c9835a7bfa64295013d3498c7ef37c32be56f4a4218777c1d255745fc|1134|estree-policy|static gate: ESTree exact private commit count reduceCandidateContainmentGuardianControlV1
 SEM-N326|a20c94c8b96b2af62f5eff9fb8357435074750300fe987837e1e2ecd82e69fee|239162715e697bd82ea956f90d1ab18d5c5d81aee657e7f474b5c1470d4fbee0|1149|estree-policy|static gate: ESTree private commit owner reduceCandidateContainmentGuardianControlV1
-SEM-N327|d77cd7c841ee3c62f5ddfecdc9018e5a8946f6959fdbef973ed4a49202477ff4|4e9b7ef406e99c66268434d93138c7662338f6fb5cc246883356adbde023e2de|1156|estree-policy|static gate: ESTree exact private commit count reduceCandidateContainmentGuardianControlV1`;
+SEM-N327|d77cd7c841ee3c62f5ddfecdc9018e5a8946f6959fdbef973ed4a49202477ff4|4e9b7ef406e99c66268434d93138c7662338f6fb5cc246883356adbde023e2de|1156|estree-policy|static gate: ESTree exact private commit count reduceCandidateContainmentGuardianControlV1
+SEM-N328|60cdcc00e45847abf716836fbbe44d4a747810c14cbde7061e293e635ecfb376|b33d42e81f7e37c5454c67ca47136dcb7e38ccf8d575e16295927753fa19fe0f|1162|estree-policy|static gate: ESTree private commit owner aggregateCommitNonOwner
+SEM-N329|e1c28c77e5bf88fa2397907ac6955ccc53f7f928640e5f7a9f1c2b54c41b9581|8b0f45faa1de67c648104275ce9cc6b2677d8371b5af4d86a260bea0ffaf75d5|1149|estree-policy|static gate: ESTree private commit owner createCandidateContainmentGuardianStartupV1
+SEM-N330|095c17ad779046124b89db1041979dab4174ee6142baa1fb2fb324f856003179|fbcb03edae876186eef6e977ce7c1ebc3498fb4bdabdaec7ee4fd8e034051f6d|1141|estree-policy|static gate: ESTree exact private commit count createCandidateContainmentGuardianAdmissionInputV1`;
 
 const POSITIVE_CONTROL_EXPECTATION_PINS_TEXT = `POS-P001|1833d04623330968e87ecdcdefb7f9324598301cf89691bf7a5f18b30bcb13b0|958d07ae92f1e08483b9948bb86525299ce5a7d8a5c77450916f39c679590df1|1149|accepted|-
 POS-P002|52136dd8f54a7cf4d2f3b09314696e4b96136c50f27bbb6730aeee761e240f6c|55d6de40d7edc001614d95da59266e6f507397160e15f6b84492d0c1879aa35d|1171|accepted|-
@@ -5735,9 +5828,9 @@ const STATIC_CONTROL_EXPECTATION_PINS = Object.freeze(
   ),
 );
 assert.equal(FOUNDATION_CONTROL_EXPECTATION_PINS.length, 69);
-assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 327);
+assert.equal(SEMANTIC_CONTROL_EXPECTATION_PINS.length, 330);
 assert.equal(POSITIVE_CONTROL_EXPECTATION_PINS.length, 11);
-assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 407);
+assert.equal(Object.keys(STATIC_CONTROL_EXPECTATION_PINS).length, 410);
 
 function canonicalStaticControlRejectionMessage(error) {
   if (error?.code !== "ERR_ASSERTION") return error.message;
@@ -7388,6 +7481,7 @@ function reflectedAuthority(startupReportBytes) {
     ...PRIVATE_COMMIT_PROVENANCE_CONTROLS,
     ...PRIVATE_COMMIT_CALL_SHAPE_CONTROLS,
     ...PRIVATE_COMMIT_CARDINALITY_CONTROLS,
+    ...PRIVATE_COMMIT_AGGREGATE_CONTROLS,
   ]);
   const sources = [
     ...imports.map((create) => create()),
@@ -7597,8 +7691,8 @@ function reflectedAuthority(startupReportBytes) {
       rejection: null,
     });
   });
-  assert.equal(namedStageAudit.length, 343);
-  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 327);
+  assert.equal(namedStageAudit.length, 346);
+  assert.equal(SEMANTIC_BUCKET_BY_ORDINAL.length, 330);
   const layeredStageAudit = namedStageAudit.slice(
     NAMED_FOUNDATION_CONTROL_COUNT,
   );
@@ -7795,17 +7889,17 @@ const STRICT_PARSER_CONTROLS = Object.freeze({
 });
 const STATIC_NEGATIVE_CONTROLS = runStaticNegativeControls();
 const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
-  sourceIndependentNegativeControls: 396,
+  sourceIndependentNegativeControls: 399,
   acceptedSyntheticSources: 11,
   layeredStaticNegativeEvidence:
     STATIC_NEGATIVE_CONTROLS.layeredStaticNegativeEvidence,
-  representativeCommitMutationSourceInventory: 197,
+  representativeCommitMutationSourceInventory: 200,
   finalRequiredNegativeControls: 330,
   finalRequiredPositiveControls: 11,
-  fullSemanticGateClosed: false,
+  fullSemanticGateClosed: true,
   nonclaims: Object.freeze([
-    "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
-    "the 197 current commit mutation sources are partial, not final 200-mutation closure",
+    "the closed 330-negative and 11-positive static matrix does not authorize candidate evaluation or lift the source-presence stop",
+    "the closed 200-mutation inventory is static evaluator evidence, not runtime WeakMap behavior",
     "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
     "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
     "candidate evaluation and candidate-connected runtime acceptance remain disabled",
@@ -8132,7 +8226,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     Object.keys(EXPECTED_STATIC_EVIDENCE_AGGREGATES),
   );
   assert.deepEqual(staticNegativeControlReceipt, {
-    rejected: 396,
+    rejected: 399,
     namedRejected: [
       "nested private-store set call",
       "nested member assignment",
@@ -8302,10 +8396,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       ...PRIVATE_COMMIT_PROVENANCE_CONTROLS.map(({ name }) => name),
       ...PRIVATE_COMMIT_CALL_SHAPE_CONTROLS.map(({ name }) => name),
       ...PRIVATE_COMMIT_CARDINALITY_CONTROLS.map(({ name }) => name),
+      ...PRIVATE_COMMIT_AGGREGATE_CONTROLS.map(({ name }) => name),
     ],
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 327,
-      estreePolicyReachedCount: 324,
+      totalDeltaSinceParserFoundation: 330,
+      estreePolicyReachedCount: 327,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -8346,7 +8441,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(
     semanticEntries.map(({ id }) => id),
-    Array.from({ length: 327 }, (_, index) => staticControlId("SEM-N", index)),
+    Array.from({ length: 330 }, (_, index) => staticControlId("SEM-N", index)),
   );
   assert.deepEqual(
     positiveEntries.map(({ id }) => id),
@@ -8365,11 +8460,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ]);
     assert.equal(Object.hasOwn(entry, "source"), false, entry.id);
   }
-  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 407);
-  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 407);
+  assert.equal(new Set(allEvidenceEntries.map(({ id }) => id)).size, 410);
+  assert.equal(new Set(allEvidenceEntries.map(({ name }) => name)).size, 410);
   assert.equal(
     new Set(allEvidenceEntries.map(({ sourceSha256 }) => sourceSha256)).size,
-    407,
+    410,
   );
   assert.deepEqual(
     EXPECTED_PRIVATE_COMMIT_DOMINANCE_OWNER_RANGES.map(
@@ -8932,7 +9027,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       }),
     ),
   );
-  const privateCommitCardinalityEntries = semanticEntries.slice(297);
+  const privateCommitCardinalityEntries = semanticEntries.slice(297, 327);
   assert.equal(privateCommitCardinalityEntries.length, 30);
   assert.deepEqual(
     privateCommitCardinalityEntries.map((entry, index) => {
@@ -9041,6 +9136,129 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     ),
     false,
   );
+  const privateCommitAggregateEntries = semanticEntries.slice(327);
+  assert.equal(privateCommitAggregateEntries.length, 3);
+  assert.deepEqual(
+    privateCommitAggregateEntries.map((entry, index) => {
+      const control = PRIVATE_COMMIT_AGGREGATE_CONTROLS[index];
+      return {
+        id: entry.id,
+        familyName: control.familyName,
+        name: entry.name,
+        bucket: entry.bucket,
+        expectedStage: entry.expectedStage,
+        expectedError: entry.expectedError,
+      };
+    }),
+    PRIVATE_COMMIT_AGGREGATE_FAMILIES.map((familyName, familyIndex) => ({
+      id: staticControlId("SEM-N", 327 + familyIndex),
+      familyName,
+      name: `aggregate-preserving private commit ${familyName}`,
+      bucket: "commitMutations",
+      expectedStage: "estree-policy",
+      expectedError: privateCommitAggregateExpectedError(familyName),
+    })),
+  );
+  assert.deepEqual(
+    privateCommitAggregateEntries.map(({ sourceSha256 }) => sourceSha256),
+    PRIVATE_COMMIT_AGGREGATE_CONTROLS.map(({ source }) =>
+      byteSha256(Buffer.from(source, "utf8")),
+    ),
+  );
+  assert.equal(
+    new Set(PRIVATE_COMMIT_AGGREGATE_CONTROLS.map(({ source }) => source)).size,
+    3,
+  );
+  assert.equal(
+    new Set(
+      privateCommitAggregateEntries.map(({ sourceSha256 }) => sourceSha256),
+    ).size,
+    3,
+  );
+  assert.equal(
+    new Set(privateCommitAggregateEntries.map(({ astSha256 }) => astSha256))
+      .size,
+    3,
+  );
+  assert.equal(
+    privateCommitAggregateEntries.every(
+      ({ astSha256, astNodeCount }) =>
+        astSha256 !== null && astNodeCount !== null,
+    ),
+    true,
+  );
+  const aggregateStoreSetCounts = PRIVATE_COMMIT_AGGREGATE_CONTROLS.map(
+    ({ familyName, source }) => {
+      const count = (storeName) =>
+        source.match(new RegExp(`${storeName}\\.set\\(`, "gu"))?.length ?? 0;
+      const startupMetadata = count("startupMetadata");
+      const inputMetadata = count("inputMetadata");
+      const stateMetadata = count("stateMetadata");
+      return {
+        familyName,
+        total: startupMetadata + inputMetadata + stateMetadata,
+        startupMetadata,
+        inputMetadata,
+        stateMetadata,
+      };
+    },
+  );
+  assert.deepEqual(
+    aggregateStoreSetCounts,
+    PRIVATE_COMMIT_AGGREGATE_FAMILIES.map((familyName) => ({
+      familyName,
+      total: 10,
+      startupMetadata: 1,
+      inputMetadata: 7,
+      stateMetadata: 2,
+    })),
+  );
+  assert.equal(
+    PRIVATE_COMMIT_AGGREGATE_CONTROLS[0].source.includes(
+      "function aggregateCommitNonOwner()",
+    ),
+    true,
+  );
+  assert.equal(
+    PRIVATE_COMMIT_AGGREGATE_CONTROLS[1].source.includes(
+      "inputMetadata.set(swappedStartupResult, swappedStartupMetadata)",
+    ) &&
+      PRIVATE_COMMIT_AGGREGATE_CONTROLS[1].source.includes(
+        "startupMetadata.set(swappedAdmissionResult, swappedAdmissionMetadata)",
+      ),
+    true,
+  );
+  assert.equal(
+    PRIVATE_COMMIT_AGGREGATE_CONTROLS[2].source.match(
+      /inputMetadata\.set\(aggregateDuplicateResult, aggregateDuplicateMetadata\)/gu,
+    )?.length,
+    2,
+  );
+  const preB11EvidenceEntries = [
+    ...foundationEntries,
+    ...semanticEntries.slice(0, 327),
+    ...positiveEntries,
+  ];
+  const preB11SourceHashes = new Set(
+    preB11EvidenceEntries.map(({ sourceSha256 }) => sourceSha256),
+  );
+  const preB11AstHashes = new Set(
+    preB11EvidenceEntries
+      .map(({ astSha256 }) => astSha256)
+      .filter((astSha256) => astSha256 !== null),
+  );
+  assert.equal(
+    privateCommitAggregateEntries.some(({ sourceSha256 }) =>
+      preB11SourceHashes.has(sourceSha256),
+    ),
+    false,
+  );
+  assert.equal(
+    privateCommitAggregateEntries.some(({ astSha256 }) =>
+      preB11AstHashes.has(astSha256),
+    ),
+    false,
+  );
   const foundationIds = new Set(foundationEntries.map(({ id }) => id));
   const semanticIds = new Set(semanticEntries.map(({ id }) => id));
   const positiveIds = new Set(positiveEntries.map(({ id }) => id));
@@ -9055,7 +9273,7 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   assert.equal([...semanticIds].filter((id) => positiveIds.has(id)).length, 0);
   assert.equal(
     new Set([...foundationIds, ...semanticIds, ...positiveIds]).size,
-    407,
+    410,
   );
   assert.deepEqual(
     allEvidenceEntries
@@ -9134,14 +9352,14 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       { bucket: "literalMisuse", target: 14, current: 14, remaining: 0 },
       { bucket: "scopeJoins", target: 18, current: 18, remaining: 0 },
       { bucket: "nestedRecursion", target: 12, current: 12, remaining: 0 },
-      { bucket: "commitMutations", target: 200, current: 197, remaining: 3 },
+      { bucket: "commitMutations", target: 200, current: 200, remaining: 0 },
     ],
   );
   const bucketIds = evidenceManifest.bucketProjection.flatMap(
     ({ controlIds }) => controlIds,
   );
-  assert.equal(bucketIds.length, 327);
-  assert.equal(new Set(bucketIds).size, 327);
+  assert.equal(bucketIds.length, 330);
+  assert.equal(new Set(bucketIds).size, 330);
   assert.deepEqual([...bucketIds].sort(), [...semanticIds].sort());
   for (const { bucket, controlIds } of evidenceManifest.bucketProjection) {
     assert.deepEqual(
@@ -9197,24 +9415,24 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
   );
   assert.deepEqual(evidenceManifest.counts, {
     foundationNegatives: 69,
-    semanticNegatives: 327,
-    allCurrentNegatives: 396,
+    semanticNegatives: 330,
+    allCurrentNegatives: 399,
     semanticTargetNegatives: 330,
-    semanticRemainingNegatives: 3,
+    semanticRemainingNegatives: 0,
     allLayerTargetNegatives: 399,
     positiveCurrent: 11,
     positiveTarget: 11,
     positiveRemaining: 0,
-    commitCurrent: 197,
+    commitCurrent: 200,
     commitTarget: 200,
-    commitRemaining: 3,
+    commitRemaining: 0,
     evaluationAttempts: 0,
   });
-  assert.equal(396, 69 + 327);
   assert.equal(399, 69 + 330);
-  assert.equal(3, 330 - 327);
+  assert.equal(399, 69 + 330);
+  assert.equal(0, 330 - 330);
   assert.equal(0, 11 - 11);
-  assert.equal(3, 200 - 197);
+  assert.equal(0, 200 - 200);
   assert.equal(STATIC_NEGATIVE_CONTROLS.evaluationAttempts, 0);
   assert.deepEqual(
     evidenceManifest.aggregates,
@@ -9992,11 +10210,11 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     },
   );
   assert.deepEqual(STATIC_ESTREE_SUBSET_EVIDENCE, {
-    sourceIndependentNegativeControls: 396,
+    sourceIndependentNegativeControls: 399,
     acceptedSyntheticSources: 11,
     layeredStaticNegativeEvidence: {
-      totalDeltaSinceParserFoundation: 327,
-      estreePolicyReachedCount: 324,
+      totalDeltaSinceParserFoundation: 330,
+      estreePolicyReachedCount: 327,
       preEstreePolicyRejectionCount: 3,
       preEstreePolicyRejectionNames: [
         "requirements initializer semantic drift",
@@ -10004,13 +10222,13 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
         "ambient intrinsic member assignment",
       ],
     },
-    representativeCommitMutationSourceInventory: 197,
+    representativeCommitMutationSourceInventory: 200,
     finalRequiredNegativeControls: 330,
     finalRequiredPositiveControls: 11,
-    fullSemanticGateClosed: false,
+    fullSemanticGateClosed: true,
     nonclaims: [
-      "the final 330-negative and 11-positive AST/dataflow matrix is not complete",
-      "the 197 current commit mutation sources are partial, not final 200-mutation closure",
+      "the closed 330-negative and 11-positive static matrix does not authorize candidate evaluation or lift the source-presence stop",
+      "the closed 200-mutation inventory is static evaluator evidence, not runtime WeakMap behavior",
       "private-store lookup evidence proves only the exact static owner, store, method, and key-parameter policy",
       "failure callbacks are accepted only as exact zero-parameter pinned-code throwers",
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
