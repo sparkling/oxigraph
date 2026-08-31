@@ -107,12 +107,16 @@ gate, a later commit-capable successor, and G2.2 remain open. ADR-0035 separates
 those native concerns from ADR-0034's broader admission gate. ADR-0036 through
 ADR-0039 decompose the remaining control ABI, statefs/manager, native
 executable, and delegated-host readiness work without changing the current
-unavailable boundary. ADR-0036's integrated B3/B4 evaluator checkpoints now
-freeze 124/330 semantic negatives, plus 69 foundation negatives and 11
-positives: 204 controls in total. Commits `99649146` and `05bbd8bb` close the
-`untrustedSinks`, `rawEscapes`, and `literalMisuse` buckets; the candidate
-source remains absent and this evidence does not change ADR-0036's Proposed
-status. Twenty-one decisions in this range remain Proposed.
+unavailable boundary. ADR-0036's integrated B3-B6 evaluator checkpoints now
+freeze 197/330 semantic negatives, plus 69 foundation negatives and 11
+positives: 277 controls in total. Commits `99649146` and `05bbd8bb` close the
+`untrustedSinks`, `rawEscapes`, and `literalMisuse` buckets; commit `61122498`
+closes `scopeJoins` and `nestedRecursion`; and commit `2f9e51ed` raises
+`commitMutations` to 67/200, leaving 133 semantic negatives. The candidate
+source remains absent, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and this
+evidence does not change ADR-0036's Proposed status. Twenty-one decisions in
+this range remain Proposed.
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only

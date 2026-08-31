@@ -4,7 +4,7 @@
 - **Date**: 2026-08-30
 - Updated: 2026-08-31
 - Deciders: Oxigraph parity programme
-- Implementation status: evaluator RED in progress through the B4 static
+- Implementation status: evaluator RED in progress through the B6 static
   closure checkpoint. Commit `7a539665` adds the
   reviewed source-absent, fail-closed evaluator checkpoint; commit `d3e6bd8b`
   adds source-independent exact-v2 controls for all nine byte positions, 108
@@ -136,13 +136,37 @@
   8-pass/1-deliberate-failure/6-TODO shape. The exact weakening is killed by
   `SEM-N115`.
 
+  Integrated commit `61122498` (source candidate `d07c43c`) adds B5
+  `SEM-N125` through `SEM-N147`: 14 `scopeJoins` and nine `nestedRecursion`
+  controls, closing those buckets at 18/18 and 12/12. Six non-equivalent
+  weakening probes are killed and four false-positive probes remain accepted.
+  The B5 ordered-control, ordered-semantic, and bucket-projection SHA-256
+  identities are respectively
+  `a2943afea60379318d0df11e973be1eab647576cf6f03671664f093abc601814`,
+  `92720decee66fbd173d74dfff681b1d692728d88298700ead9dc53c1066ac62b`,
+  and
+  `20e1339842647707f7f163e8bbc90535c4587342803594c7c28126e4c78d53d1`.
+  Tarjan traversal supplies the pinned full-SCC diagnostic; the existing
+  analyzing-state guard remains a conservative recursion fallback, so this
+  checkpoint does not claim that Tarjan alone proves recursion rejection.
+
+  Integrated commit `2f9e51ed` (source candidate `cf9f2eb1`) adds B6
+  `SEM-N148` through `SEM-N197`: 50 `commitMutations` controls covering ten
+  commit owners across `if`, conditional, `&&`, `||`, and `??` forms. The
+  bucket is now 67/200. Exactly 194 of the 197 semantic negatives reach ESTree;
+  the other three are pinned pre-ESTree rejections. Five operator-specific
+  mutants are killed and byte-exactly restored. Independent review returned GO
+  for this bounded evaluator checkpoint on current Node 24.14.1, exact Node
+  20.0.0, and Node 20.20.2 while preserving the exact direct 10/9/0/1, main
+  15/8/1/6, and combined 25/17/1/7 test/pass/fail/TODO matrices.
+
   The current recursively frozen manifest therefore contains exactly 69
-  foundation negatives, 124 semantic negatives, and 11 positives. The 17
+  foundation negatives, 197 semantic negatives, and 11 positives. The 67
   commit-mutation IDs are exactly the `commitMutations` bucket and a subset of
-  the 124 semantic IDs, never an additive count. Current negative evidence is
-  exactly `193 = 69 + 124`; against the semantic 330/11/200 targets, 206
-  negatives, zero positives, and 183 commit mutations remain. The 183
-  remaining commit mutations are part of, not additional to, the 206 remaining
+  the 197 semantic IDs, never an additive count. Current negative evidence is
+  exactly `266 = 69 + 197`; against the semantic 330/11/200 targets, 133
+  negatives, zero positives, and 133 commit mutations remain. The 133
+  remaining commit mutations are part of, not additional to, the 133 remaining
   semantic negatives. The final all-layer negative target remains exactly
   `399 = 69 + 330`.
 
@@ -150,7 +174,7 @@
   `oxigraph.candidate-containment-guardian-control-static-evidence-manifest/v1`
   with SHA-256
   `eb34893fe9502ba08706fde2ee442711e1f902de281e3aa41552a1ce98df60e0`.
-  Every one of its 204 control entries has only `id`, `name`, `bucket`,
+  Every one of its 277 control entries has only `id`, `name`, `bucket`,
   `sourceSha256`, `astSha256`, `astNodeCount`, `expectedStage`, and
   `expectedError`. The literal evidence tables pin the full UTF-8 source hash,
   normalized AST hash and node count, exact rejection stage, and full canonical
@@ -160,18 +184,18 @@
   `FOUNDATION-N008` is the sole parse rejection with a null AST hash and node
   count; all other entries carry literal AST and source pins. The six current
   aggregate identities are:
-  - ordered 204-control identity projection:
-    `de9b9c5464c79de97720b58b4125f50e233a68daee02cc16bc4e3134e47bb967`;
-  - ordered 124-control semantic projection:
-    `0d26b367875ff0abc14c108269fbd6b6679ec7e42260ddd2a63451699347c1e4`;
+  - ordered 277-control identity projection:
+    `444134de2df5e8a2786ee804b13f5dd8bca45dcf7958a9b13b0eb36e86f88d91`;
+  - ordered 197-control semantic projection:
+    `a5ab0a2701862159a2144e2ca31661263f06a83c68f1d72ca64847be6c3d51b9`;
   - semantic-bucket projection:
-    `303720c0c8384747b1e0a8da00bdcb0f1a38ec87b6ffe6a10a13a3c288d99f01`;
+    `fc4b31fa4515cab07c9b72dc09dde3b46cdd62d0da3d34eb5074673a06e2aa9e`;
   - foundation ID/name projection:
     `3064a09db3f937a55e3d0febeca0a2f41ea836bc394cc1259748b268f59f6ce5`;
   - positive ID/name projection:
     `f73112c110a5ced50c3f64fcd53da66e022f20abbaef83ddb5be69d32390f420`;
   - commit-ID projection:
-    `cda7855dc809ea3c5fefea4cb8417aae203ebb805b97e93f55a8899284171f1c`.
+    `af002b5a28d207a69f841f9b1aabb186e5474b62e1c1b0c7c4241a70351bdd8b`.
 
   `SEM-N013` was deliberately rewritten rather than silently rebaselined. Its
   former unowned helper would now fail at the new owner policy before exercising
@@ -242,9 +266,9 @@
   | `untrustedSinks`      |     24 |      24 |         0 |
   | `rawEscapes`          |     12 |      12 |         0 |
   | `literalMisuse`       |     14 |      14 |         0 |
-  | `scopeJoins`          |     18 |       4 |        14 |
-  | `nestedRecursion`     |     12 |       3 |         9 |
-  | `commitMutations`     |    200 |      17 |       183 |
+  | `scopeJoins`          |     18 |      18 |         0 |
+  | `nestedRecursion`     |     12 |      12 |         0 |
+  | `commitMutations`     |    200 |      67 |       133 |
 
   Independent mutation review initially killed 14 of 15 manifest mutations and
   found that the schema-name mutation survived because the manifest was
@@ -271,6 +295,12 @@
   `programme-evidence/adr0036-b4-literal-paths-05bbd8bb-2026-08-31`. They bind
   the exact integrated/source commits, counts, aggregate hashes, focused gates,
   and authority-null claim boundary without relabeling any earlier receipt.
+  The corresponding B5 CFG/call-graph and B6 dominance records are
+  `programme-evidence/adr0036-b5-cfg-callgraph-61122498-2026-08-31` and
+  `programme-evidence/adr0036-b6-dominance-2f9e51ed-2026-08-31`. They bind the
+  exact source and integrated commits, projection hashes, three-runtime
+  matrices, mutation results, candidate-absence stop, and unchanged authority
+  boundary.
 
   The source hard stop remains exactly 506 bytes with SHA-256
   `ac601db2df0b54bd27076633f2af1db613ee488d737c8bb85bd371febdc71de7`.
@@ -284,15 +314,15 @@
   candidate. `npm audit` reports zero known vulnerabilities.
 
   This remains a partial source-hard-stopped foundation. The final semantic
-  quota still requires 206 negative controls, including 183 commit mutations,
-  beyond the current 124/11/17. The 69 parser and grammar foundation negatives
+  quota still requires 133 negative controls, all within the remaining 133
+  commit mutations, beyond the current 197/11/67. The 69 parser and grammar foundation negatives
   are additional, so final all-layer evidence will contain 399 negatives rather
   than 330. The static lookup slice does not fix global malformed-expression
   diagnostic precedence or prove actual runtime `WeakMap` lookup behavior.
   The frozen protected-alias, callee/receiver, computed/reflection, indirect-
   call, binding/member-write, untrusted-sink, raw-escape, and literal-misuse
-  quotas are complete. Successful-path reachability, the remaining
-  scope-join, nested-recursion, and commit-mutation quotas,
+  quotas are complete, as are the scope-join and nested-recursion quotas.
+  Successful-path reachability, the remaining commit-mutation quota,
   candidate-connected acceptance matrices, the absent production source
   module, runtime registration, and the physical native owner remain
   incomplete. Production containment readiness remains exactly
