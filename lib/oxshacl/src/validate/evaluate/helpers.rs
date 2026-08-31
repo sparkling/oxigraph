@@ -412,15 +412,12 @@ pub(super) fn expression_source(expression: &crate::NodeExpression) -> NodeExpre
 }
 
 pub(super) fn lexical(term: &Term) -> Option<&str> {
-    #[allow(
-        unreachable_patterns,
-        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-    )]
-    match term {
-        Term::NamedNode(node) => Some(node.as_str()),
-        Term::Literal(literal) => Some(literal.value()),
-        Term::BlankNode(_) => None,
-        _ => None,
+    if let Term::NamedNode(node) = term {
+        Some(node.as_str())
+    } else if let Term::Literal(literal) = term {
+        Some(literal.value())
+    } else {
+        None
     }
 }
 

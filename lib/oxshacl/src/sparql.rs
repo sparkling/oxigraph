@@ -409,15 +409,14 @@ fn interpolate_message(message: &Literal, bindings: &[(String, Option<Term>)]) -
 }
 
 fn parameter_text(term: &Term) -> String {
-    #[allow(
-        unreachable_patterns,
-        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-    )]
-    match term {
-        Term::Literal(literal) => literal.value().to_owned(),
-        Term::NamedNode(node) => node.as_str().to_owned(),
-        Term::BlankNode(node) => node.as_str().to_owned(),
-        _ => term.to_string(),
+    if let Term::Literal(literal) = term {
+        literal.value().to_owned()
+    } else if let Term::NamedNode(node) = term {
+        node.as_str().to_owned()
+    } else if let Term::BlankNode(node) = term {
+        node.as_str().to_owned()
+    } else {
+        term.to_string()
     }
 }
 

@@ -57,6 +57,18 @@ impl Violation {
     }
 }
 
+fn node_expression_shape_id(shape: &Term) -> Result<crate::model::ShapeId, ValidationError> {
+    if let Term::NamedNode(node) = shape {
+        Ok(node.clone().into())
+    } else if let Term::BlankNode(node) = shape {
+        Ok(node.clone().into())
+    } else {
+        Err(ValidationError::IllFormed(
+            "sh:nodeByExpression output must be a shape IRI or blank node".to_owned(),
+        ))
+    }
+}
+
 pub(super) fn evaluate_constraint(
     context: &mut ValidationContext<'_>,
     shape: &Shape,
@@ -400,26 +412,7 @@ pub(super) fn evaluate_constraint(
                     context.max_depth,
                 )?;
                 for shape in shapes {
-                    #[allow(
-                        unreachable_patterns,
-                        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-                    )]
-                    let shape_id = match &shape {
-                        Term::NamedNode(node) => node.clone().into(),
-                        Term::BlankNode(node) => node.clone().into(),
-                        Term::Literal(_) => {
-                            return Err(ValidationError::IllFormed(
-                                "sh:nodeByExpression output must be a shape IRI or blank node"
-                                    .to_owned(),
-                            ));
-                        }
-                        _ => {
-                            return Err(ValidationError::IllFormed(
-                                "sh:nodeByExpression output must be a shape IRI or blank node"
-                                    .to_owned(),
-                            ));
-                        }
-                    };
+                    let shape_id = node_expression_shape_id(&shape)?;
                     let target_shape = context.shape(&shape_id)?;
                     if !context
                         .validate_shape(&target_shape, value, budget, depth, false)?
@@ -435,5 +428,28 @@ pub(super) fn evaluate_constraint(
         }
         #[cfg(feature = "sparql")]
         Constraint::Sparql(constraint) => constraint.evaluate(context.graph, focus, values, budget),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "rdf-12")]
+    use super::*;
+    #[cfg(feature = "rdf-12")]
+    use oxrdf::Triple;
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn triple_term_node_expression_shape_ids_fail_closed() {
+        let triple = Term::Triple(Box::new(Triple::new(
+            NamedNode::new_unchecked("urn:subject"),
+            NamedNode::new_unchecked("urn:predicate"),
+            NamedNode::new_unchecked("urn:object"),
+        )));
+        assert!(matches!(
+            node_expression_shape_id(&triple),
+            Err(ValidationError::IllFormed(reason))
+                if reason == "sh:nodeByExpression output must be a shape IRI or blank node"
+        ));
     }
 }

@@ -393,14 +393,8 @@ fn rename_subject(
 }
 
 fn rename_term(term: Term, mapping: &BTreeMap<String, BlankNode>) -> Term {
-    #[allow(
-        unreachable_patterns,
-        reason = "dependency feature unification may expose RDF 1.2 triple terms"
-    )]
     match term {
-        Term::NamedNode(node) => node.into(),
         Term::BlankNode(node) => mapping[node.as_str()].clone().into(),
-        Term::Literal(literal) => literal.into(),
         #[cfg(feature = "rdf-12")]
         Term::Triple(triple) => Term::Triple(Box::new(Triple::new(
             rename_subject(triple.subject, mapping),
@@ -408,5 +402,39 @@ fn rename_term(term: Term, mapping: &BTreeMap<String, BlankNode>) -> Term {
             rename_term(triple.object, mapping),
         ))),
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "rdf-12")]
+    use super::*;
+
+    #[cfg(feature = "rdf-12")]
+    #[test]
+    fn nested_triple_term_blank_nodes_are_renamed_recursively() {
+        let mapping = BTreeMap::from([
+            ("outer".to_owned(), BlankNode::new_unchecked("mapped-outer")),
+            ("inner".to_owned(), BlankNode::new_unchecked("mapped-inner")),
+        ]);
+        let source = Term::Triple(Box::new(Triple::new(
+            BlankNode::new_unchecked("outer"),
+            NamedNode::new_unchecked("urn:predicate"),
+            Term::Triple(Box::new(Triple::new(
+                NamedNode::new_unchecked("urn:subject"),
+                NamedNode::new_unchecked("urn:nested-predicate"),
+                BlankNode::new_unchecked("inner"),
+            ))),
+        )));
+        let expected = Term::Triple(Box::new(Triple::new(
+            BlankNode::new_unchecked("mapped-outer"),
+            NamedNode::new_unchecked("urn:predicate"),
+            Term::Triple(Box::new(Triple::new(
+                NamedNode::new_unchecked("urn:subject"),
+                NamedNode::new_unchecked("urn:nested-predicate"),
+                BlankNode::new_unchecked("mapped-inner"),
+            ))),
+        )));
+        assert_eq!(rename_term(source, &mapping), expected);
     }
 }
