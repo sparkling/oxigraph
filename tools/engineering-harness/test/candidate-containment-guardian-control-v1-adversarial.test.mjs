@@ -9396,6 +9396,708 @@ function observeDirectProvenancePolicyControls() {
   });
 }
 
+const DIRECT_C14_CANDIDATE_ACTIVATION_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c14-direct-candidate-activation/v1";
+const DIRECT_C14_CANDIDATE_ACTIVATION_MODE = "candidate-activation";
+const DIRECT_C14_CANDIDATE_REQUIREMENTS_REJECTION =
+  "direct static gate: contextual provenance REQUIREMENTS_ROOT_NOT_EXACT";
+const DIRECT_C14_CANDIDATE_STATE_COMMIT_REJECTION =
+  "direct static gate: contextual provenance STATE_COMMIT_KEY_NOT_EXACT";
+const DIRECT_C14_CANDIDATE_STATE_COMMIT_METADATA_REJECTION =
+  "direct static gate: contextual provenance STATE_COMMIT_METADATA_NOT_EXACT";
+const DIRECT_C14_CANDIDATE_STATE_METADATA_REJECTION =
+  "direct static gate: contextual provenance STATE_METADATA_NOT_EXACT";
+const DIRECT_C14_CANDIDATE_STATE_METADATA_STATE_REJECTION =
+  "direct static gate: contextual provenance STATE_METADATA_STATE_NOT_EXACT";
+const DIRECT_C14_CANDIDATE_STATE_REJECTION =
+  "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT";
+const DIRECT_C14_CANDIDATE_STATE_SHA256_RECORD_REJECTION =
+  "direct static gate: contextual provenance STATE_SHA256_RECORD_NOT_ALLOWED";
+const EXPECTED_DIRECT_C14_FRAGMENT_CONTROL_PROJECTION_SHA256 =
+  "b6e978a81e9dc80d3383bf6661caa737485966ed13e801fc3f5532f5676e607b";
+const EXPECTED_DIRECT_C14_CANDIDATE_ACTIVATION_PROJECTION_SHA256 =
+  "9ab99ecba7c172747732b72c2c45745cc276373d53b86be2d8537cabb65c13f8";
+const EXPECTED_DIRECT_C14_PRODUCTION_POLICY_PROJECTION_SHA256 =
+  "8721dd53b0df5c78f36e0af035e0ce40795d375f5bfeac356cba0e121b719f91";
+const DIRECT_C14_CANDIDATE_STATE_COMMIT_OWNERS = Object.freeze([
+  "initializeCandidateContainmentGuardianControlV1",
+  "reduceCandidateContainmentGuardianControlV1",
+]);
+const DIRECT_C14_CANDIDATE_STATE_METADATA_FIELDS = Object.freeze([
+  "mode",
+  "phase",
+  "stateSha256",
+  "eventCount",
+]);
+const DIRECT_C14_PRODUCTION_AUDIT_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c14-direct-production-audit/v1";
+const DIRECT_C14_PRODUCTION_POLICY_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c14-direct-production-policy/v1";
+
+function auditDirectCandidateSourceForProduction(
+  sourceBytes,
+  { audit = independentStaticAudit } = {},
+) {
+  assert.equal(typeof audit, "function");
+  const source = directStrictUtf8Source(sourceBytes);
+  const auditInputBytes = Buffer.from(source, "utf8");
+  const legacyAudit = audit(auditInputBytes);
+  const candidateAudit = audit(
+    auditInputBytes,
+    DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+  );
+  if (
+    candidateAudit?.c14Provenance?.mode !== DIRECT_C14_CANDIDATE_ACTIVATION_MODE
+  ) {
+    throw new Error(
+      `${DIRECT_C14_CANDIDATE_ACTIVATION_SCHEMA}: missing composed candidate provenance pass`,
+    );
+  }
+  return Object.freeze({
+    ...legacyAudit,
+    c14Provenance: candidateAudit.c14Provenance,
+    productionAudit: Object.freeze({
+      schema: DIRECT_C14_PRODUCTION_AUDIT_SCHEMA,
+      order: Object.freeze(["legacy", "candidate"]),
+      legacyCount: 1,
+      candidateCount: 1,
+      sameDecodedSource: true,
+      sourceSha256: byteDigest(auditInputBytes),
+    }),
+  });
+}
+
+const DIRECT_C14_PRODUCTION_AUDIT_BINDING =
+  auditDirectCandidateSourceForProduction;
+
+function directCandidateActivationStateBody({
+  preimageMutation = null,
+  missingProtectedState = false,
+  metadataStateArgument = null,
+  untaggedStateCommit = false,
+  wrongCommitKey = false,
+  wrongCommitMetadata = false,
+} = {}) {
+  if (untaggedStateCommit) {
+    return "const projection = deepFreeze(nullRecord([])); const privateMetadata = deepFreeze(nullRecord([])); stateMetadata.set(projection, privateMetadata); return projection;";
+  }
+  let body = directStateHashProjectionBody({ preimageMutation });
+  const emptyMetadata = "const privateMetadata = deepFreeze(nullRecord([]));";
+  const exactMetadata = "const metadata = stateProjectionMetadata(projection);";
+  assert.equal(body.includes(emptyMetadata), true);
+  body = body.replace(emptyMetadata, exactMetadata);
+  const originalCommit = "stateMetadata.set(projection, privateMetadata);";
+  assert.equal(body.includes(originalCommit), true);
+  body = body.replace(
+    originalCommit,
+    "stateMetadata.set(projection, metadata);",
+  );
+  if (missingProtectedState) {
+    const protectedEntries =
+      ', ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]';
+    assert.equal(body.split(protectedEntries).length - 1, 2);
+    body = body.replaceAll(protectedEntries, "");
+  }
+  if (metadataStateArgument !== null) {
+    const exactMetadata =
+      "const metadata = stateProjectionMetadata(projection);";
+    assert.equal(body.includes(exactMetadata), true);
+    body = body.replace(
+      exactMetadata,
+      `const metadata = stateProjectionMetadata(${metadataStateArgument});`,
+    );
+  }
+  if (wrongCommitKey) {
+    const exactCommit = "stateMetadata.set(projection, metadata);";
+    assert.equal(body.includes(exactCommit), true);
+    body = body.replace(exactCommit, "stateMetadata.set(metadata, metadata);");
+  }
+  if (wrongCommitMetadata) {
+    const exactCommit = "stateMetadata.set(projection, metadata);";
+    assert.equal(body.includes(exactCommit), true);
+    body = body.replace(
+      exactCommit,
+      "stateMetadata.set(projection, projection);",
+    );
+  }
+  return body;
+}
+
+function directCandidateActivationMetadataHelper(mutation = null) {
+  const entries = [
+    '["mode", state.mode]',
+    '["phase", state.phase]',
+    '["stateSha256", state.stateSha256]',
+    '["eventCount", state.eventCount]',
+  ];
+  if (mutation === "reordered") {
+    [entries[0], entries[1]] = [entries[1], entries[0]];
+  } else if (mutation === "omitted") {
+    entries.pop();
+  } else if (mutation === "extra") {
+    entries.push('["extra", state.eventCount]');
+  } else if (mutation === "wrong-value-source") {
+    entries[0] = '["mode", state.phase]';
+  } else if (mutation === "wrong-state-sha256-source") {
+    entries[2] = '["stateSha256", state.requirementsSha256]';
+  } else if (mutation !== null) {
+    throw new Error(`unclassified state metadata mutation ${mutation}`);
+  }
+  return `function stateProjectionMetadata(state) { return deepFreeze(nullRecord([${entries.join(", ")}])); }`;
+}
+
+function directCandidateActivationSkeleton({
+  initializePreimageMutation = null,
+  initializeMissingProtectedState = false,
+  initializeMetadataStateArgument = null,
+  initializeWrongCommitKey = false,
+  initializeWrongCommitMetadata = false,
+  reducePreimageMutation = null,
+  reduceMissingProtectedState = false,
+  reduceMetadataStateArgument = null,
+  untaggedStateCommit = false,
+  reduceWrongCommitKey = false,
+  reduceWrongCommitMetadata = false,
+  metadataMutation = null,
+  startupBody = "return null;",
+  verificationBody = "return null;",
+  extra = "",
+} = {}) {
+  const requirementsName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const requirementsDigestName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256";
+  const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+  assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
+  const inlineDeclaration = `export const ${requirementsName} = 0;`;
+  const rootedDeclaration = `const guardianContract = deepFreeze(${directNullRecordSource(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
+  const digestDeclaration = `export const ${requirementsDigestName} = 1;`;
+  const exactDigestDeclaration = `export const ${requirementsDigestName} = ${JSON.stringify(EXPECTED_REQUIREMENTS_SHA256)};`;
+  const stateProjectionMetadataHelper =
+    directCandidateActivationMetadataHelper(metadataMutation);
+  let source = validSkeleton(
+    `${stateProjectionMetadataHelper}\n${extra}`,
+    new Map([
+      [
+        "initializeCandidateContainmentGuardianControlV1",
+        directCandidateActivationStateBody({
+          preimageMutation: initializePreimageMutation,
+          missingProtectedState: initializeMissingProtectedState,
+          metadataStateArgument: initializeMetadataStateArgument,
+          untaggedStateCommit,
+          wrongCommitKey: initializeWrongCommitKey,
+          wrongCommitMetadata: initializeWrongCommitMetadata,
+        }),
+      ],
+      [
+        "reduceCandidateContainmentGuardianControlV1",
+        directCandidateActivationStateBody({
+          preimageMutation: reducePreimageMutation,
+          missingProtectedState: reduceMissingProtectedState,
+          metadataStateArgument: reduceMetadataStateArgument,
+          untaggedStateCommit,
+          wrongCommitKey: reduceWrongCommitKey,
+          wrongCommitMetadata: reduceWrongCommitMetadata,
+        }),
+      ],
+      ["createCandidateContainmentGuardianStartupV1", startupBody],
+      ["verifyCandidateContainmentGuardianStatusFrameV1", verificationBody],
+    ]),
+  );
+  assert.equal(source.includes(inlineDeclaration), true);
+  assert.equal(source.includes(digestDeclaration), true);
+  source = source.replace(inlineDeclaration, rootedDeclaration);
+  return source.replace(digestDeclaration, exactDigestDeclaration);
+}
+
+function directCandidateActivationControls() {
+  const realSourceLimitFailure =
+    'function failBounds() { throw new Error("CONTROL_BOUNDS"); }';
+  const realSourceLimitBody =
+    'const startupCarrier = copyBoundedBuffer(startupReportBytes, "startup report bytes", { minimumBytes: 0, maximumBytes: guardianContract.limits.startupReportMaximumBytes }, failBounds); return null;';
+  return Object.freeze([
+    Object.freeze({
+      id: "direct-candidate-unverified-baseline-root",
+      source: validSkeleton(),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_REQUIREMENTS_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-untagged-baseline-state-commit",
+      source: directCandidateActivationSkeleton({
+        untaggedStateCommit: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-exact-state-and-four-key-metadata",
+      source: directCandidateActivationSkeleton(),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: true,
+      expectedCandidateRejection: null,
+    }),
+    ...["initialize", "reduce"].flatMap((owner) =>
+      ["omitted", "reordered", "substituted", "arbitrary"].map(
+        (preimageMutation) =>
+          Object.freeze({
+            id: `direct-candidate-${owner}-${preimageMutation}-state-preimage`,
+            source: directCandidateActivationSkeleton(
+              owner === "initialize"
+                ? { initializePreimageMutation: preimageMutation }
+                : { reducePreimageMutation: preimageMutation },
+            ),
+            expectedLegacyAccepted: true,
+            expectedCandidateAccepted: false,
+            expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_REJECTION,
+          }),
+      ),
+    ),
+    Object.freeze({
+      id: "direct-candidate-missing-protected-reducer-state-commit",
+      source: directCandidateActivationSkeleton({
+        reduceMissingProtectedState: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-missing-protected-initialize-state-commit",
+      source: directCandidateActivationSkeleton({
+        initializeMissingProtectedState: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-reducer-wrong-state-commit-key",
+      source: directCandidateActivationSkeleton({
+        reduceWrongCommitKey: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_COMMIT_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-initialize-wrong-state-commit-key",
+      source: directCandidateActivationSkeleton({
+        initializeWrongCommitKey: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_COMMIT_REJECTION,
+    }),
+    ...[
+      "reordered",
+      "omitted",
+      "extra",
+      "wrong-value-source",
+      "wrong-state-sha256-source",
+    ].map((metadataMutation) =>
+      Object.freeze({
+        id: `direct-candidate-${metadataMutation}-state-projection-metadata`,
+        source: directCandidateActivationSkeleton({ metadataMutation }),
+        expectedLegacyAccepted: true,
+        expectedCandidateAccepted: false,
+        expectedCandidateRejection:
+          DIRECT_C14_CANDIDATE_STATE_METADATA_REJECTION,
+      }),
+    ),
+    Object.freeze({
+      id: "direct-candidate-untagged-state-projection-metadata-argument",
+      source: directCandidateActivationSkeleton({
+        reduceMetadataStateArgument: "statePreimage",
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection:
+        DIRECT_C14_CANDIDATE_STATE_METADATA_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-wrong-state-commit-metadata-value",
+      source: directCandidateActivationSkeleton({
+        reduceWrongCommitMetadata: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection:
+        DIRECT_C14_CANDIDATE_STATE_COMMIT_METADATA_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-unrelated-state-sha256-record",
+      source: directCandidateActivationSkeleton({
+        extra:
+          'function unrelatedStateSha256Record() { return deepFreeze(nullRecord([["mode", null], ["phase", null], ["stateSha256", null], ["eventCount", null]])); }',
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection:
+        DIRECT_C14_CANDIDATE_STATE_SHA256_RECORD_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-real-startup-limits-leaf",
+      source: directCandidateActivationSkeleton({
+        startupBody: realSourceLimitBody,
+        extra: realSourceLimitFailure,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: true,
+      expectedCandidateRejection: null,
+    }),
+    Object.freeze({
+      id: "direct-candidate-requirements-limits-subtree-escape",
+      source: directCandidateActivationSkeleton({
+        verificationBody: "return guardianContract.limits;",
+      }),
+      expectedLegacyAccepted: false,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: null,
+    }),
+  ]);
+}
+
+function directC14FragmentControlProjection() {
+  return directProvenancePolicyControls().map(
+    ({ id, accepted, expectedRejection = null, source }) =>
+      Object.freeze({
+        id,
+        accepted,
+        expectedRejection,
+        sourceSha256: byteDigest(Buffer.from(source, "utf8")),
+      }),
+  );
+}
+
+function directC14ProductionPolicyProjection(fragmentProjection) {
+  return Object.freeze({
+    schema: DIRECT_C14_PRODUCTION_POLICY_SCHEMA,
+    candidateMode: DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+    fragmentControls: Object.freeze(fragmentProjection),
+  });
+}
+
+function expectedDirectC14ProductionFragmentReceipt(control) {
+  return Object.freeze({
+    schema: DIRECT_C14_PRODUCTION_POLICY_SCHEMA,
+    mode: "fragment-control",
+    candidateMode: DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+    sourceSha256: byteDigest(Buffer.from(control.source, "utf8")),
+    accepted: control.accepted,
+    rejection: control.expectedRejection ?? null,
+  });
+}
+
+function observeDirectC14ProductionPolicyControls(controls) {
+  return controls.map((control) => {
+    const { id, source } = control;
+    const sourceBytes = Buffer.from(source, "utf8");
+    const order = [];
+    const candidateStageAudit = Object.create(null);
+    let candidateRejection = null;
+    let productionRejection = null;
+    let candidateCallCount = 0;
+    let sharedAuditInputBytes = null;
+    let sameDecodedSource = true;
+    try {
+      DIRECT_C14_PRODUCTION_AUDIT_BINDING(sourceBytes, {
+        audit(observedSourceBytes, mode) {
+          if (sharedAuditInputBytes === null) {
+            sharedAuditInputBytes = observedSourceBytes;
+          }
+          sameDecodedSource &&=
+            observedSourceBytes === sharedAuditInputBytes &&
+            observedSourceBytes.toString("utf8") === source;
+          if (mode !== DIRECT_C14_CANDIDATE_ACTIVATION_MODE) {
+            order.push("legacy");
+            assert.equal(arguments.length, 1);
+            return Object.freeze({ legacyMarker: "accepted" });
+          }
+          order.push("candidate");
+          candidateCallCount += 1;
+          assert.equal(arguments.length, 2);
+          try {
+            return independentStaticAudit(
+              observedSourceBytes,
+              mode,
+              candidateStageAudit,
+            );
+          } catch (error) {
+            candidateRejection = error;
+            throw error;
+          }
+        },
+      });
+    } catch (error) {
+      productionRejection = error;
+    }
+    return Object.freeze({
+      id,
+      order: Object.freeze(order),
+      candidateCallCount,
+      sameDecodedSource,
+      fragmentReceipt: candidateStageAudit.c14FragmentPolicy ?? null,
+      candidateRejection: candidateRejection?.message ?? null,
+      productionRejection: productionRejection?.message ?? null,
+    });
+  });
+}
+
+function assertDirectC14ProductionPolicyCoupling(fragmentProjection) {
+  const controls = directProvenancePolicyControls();
+  const policyProjection =
+    directC14ProductionPolicyProjection(fragmentProjection);
+  assert.equal(
+    digest(policyProjection),
+    EXPECTED_DIRECT_C14_PRODUCTION_POLICY_PROJECTION_SHA256,
+  );
+  const observations = observeDirectC14ProductionPolicyControls(controls);
+  assert.equal(observations.length, 73);
+  assert.deepEqual(
+    observations.map(
+      ({
+        id,
+        order,
+        candidateCallCount,
+        sameDecodedSource,
+        fragmentReceipt,
+      }) => ({
+        id,
+        order,
+        candidateCallCount,
+        sameDecodedSource,
+        fragmentReceipt,
+      }),
+    ),
+    controls.map((control) => ({
+      id: control.id,
+      order: ["legacy", "candidate"],
+      candidateCallCount: 1,
+      sameDecodedSource: true,
+      fragmentReceipt: expectedDirectC14ProductionFragmentReceipt(control),
+    })),
+    `${DIRECT_C14_PRODUCTION_POLICY_SCHEMA}: candidate mode did not run the frozen fragment policy`,
+  );
+  assert.deepEqual(
+    observations
+      .filter((_, index) => !controls[index].accepted)
+      .map(({ id, candidateRejection, productionRejection }) => ({
+        id,
+        candidateRejection,
+        productionRejection,
+      })),
+    controls
+      .filter(({ accepted }) => !accepted)
+      .map(({ id, expectedRejection }) => ({
+        id,
+        candidateRejection: expectedRejection,
+        productionRejection: expectedRejection,
+      })),
+    `${DIRECT_C14_PRODUCTION_POLICY_SCHEMA}: fragment rejection drifted in production candidate mode`,
+  );
+}
+
+function directCandidateActivationProjection(controls) {
+  return controls.map(
+    ({
+      id,
+      source,
+      expectedLegacyAccepted,
+      expectedCandidateAccepted,
+      expectedCandidateRejection,
+    }) =>
+      Object.freeze({
+        id,
+        sourceSha256: byteDigest(Buffer.from(source, "utf8")),
+        expectedLegacyAccepted,
+        expectedCandidateAccepted,
+        expectedCandidateRejection,
+      }),
+  );
+}
+
+function observeDirectCandidateActivationControls(controls) {
+  return controls.map(({ id, source }) => {
+    const sourceBytes = Buffer.from(source, "utf8");
+    const order = [];
+    let legacyRejection = null;
+    let candidateAudit = null;
+    let candidateRejection = null;
+    try {
+      candidateAudit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(sourceBytes, {
+        audit(observedSourceBytes, mode) {
+          const phase =
+            mode === DIRECT_C14_CANDIDATE_ACTIVATION_MODE
+              ? "candidate"
+              : "legacy";
+          order.push(phase);
+          const observedAudit = independentStaticAudit(
+            observedSourceBytes,
+            mode,
+          );
+          if (phase === "candidate") candidateAudit = observedAudit;
+          return observedAudit;
+        },
+      });
+    } catch (error) {
+      if (order.at(-1) === "candidate") candidateRejection = error;
+      else legacyRejection = error;
+    }
+    return Object.freeze({
+      id,
+      order: Object.freeze(order),
+      legacyAccepted: legacyRejection === null,
+      candidateAttempted: order.includes("candidate"),
+      candidateAccepted:
+        order.includes("candidate") && candidateRejection === null,
+      candidateMode: candidateAudit?.c14Provenance?.mode ?? null,
+      candidateRejection: candidateRejection?.message ?? null,
+    });
+  });
+}
+
+function expectedDirectCandidateActivationObservations(controls) {
+  return controls.map(
+    ({
+      id,
+      expectedLegacyAccepted,
+      expectedCandidateAccepted,
+      expectedCandidateRejection,
+    }) =>
+      Object.freeze({
+        id,
+        order: Object.freeze(
+          expectedLegacyAccepted ? ["legacy", "candidate"] : ["legacy"],
+        ),
+        legacyAccepted: expectedLegacyAccepted,
+        candidateAttempted: expectedLegacyAccepted,
+        candidateAccepted: expectedLegacyAccepted && expectedCandidateAccepted,
+        candidateMode:
+          expectedLegacyAccepted && expectedCandidateAccepted
+            ? DIRECT_C14_CANDIDATE_ACTIVATION_MODE
+            : null,
+        candidateRejection: expectedCandidateRejection,
+      }),
+  );
+}
+
+function assertDirectCandidateProductionAuditBindingContract() {
+  assert.equal(
+    DIRECT_C14_PRODUCTION_AUDIT_BINDING,
+    auditDirectCandidateSourceForProduction,
+  );
+  const source = "export const c14ProductionAuditProbe = null;\n";
+  const sourceBytes = Buffer.from(source, "utf8");
+  const calls = [];
+  let sharedAuditInputBytes = null;
+  const audit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(sourceBytes, {
+    audit(...args) {
+      const [observedSourceBytes, mode = "candidate-complete"] = args;
+      if (sharedAuditInputBytes === null) {
+        sharedAuditInputBytes = observedSourceBytes;
+      }
+      calls.push(
+        Object.freeze({
+          argumentCount: args.length,
+          mode,
+          sameAuditInput: observedSourceBytes === sharedAuditInputBytes,
+          source,
+          sourceMatches: observedSourceBytes.toString("utf8") === source,
+        }),
+      );
+      return mode === DIRECT_C14_CANDIDATE_ACTIVATION_MODE
+        ? Object.freeze({
+            c14Provenance: Object.freeze({ mode }),
+          })
+        : Object.freeze({ legacyMarker: "accepted" });
+    },
+  });
+  assert.notEqual(sharedAuditInputBytes, sourceBytes);
+  assert.equal(Object.getPrototypeOf(sharedAuditInputBytes), Buffer.prototype);
+  assert.deepEqual(calls, [
+    {
+      argumentCount: 1,
+      mode: "candidate-complete",
+      sameAuditInput: true,
+      source,
+      sourceMatches: true,
+    },
+    {
+      argumentCount: 2,
+      mode: DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+      sameAuditInput: true,
+      source,
+      sourceMatches: true,
+    },
+  ]);
+  assert.deepEqual(audit, {
+    legacyMarker: "accepted",
+    c14Provenance: {
+      mode: DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+    },
+    productionAudit: {
+      schema: DIRECT_C14_PRODUCTION_AUDIT_SCHEMA,
+      order: ["legacy", "candidate"],
+      legacyCount: 1,
+      candidateCount: 1,
+      sameDecodedSource: true,
+      sourceSha256: byteDigest(sourceBytes),
+    },
+  });
+}
+
+function assertDirectCandidateActivationContract() {
+  assertDirectCandidateProductionAuditBindingContract();
+  const fragmentProjection = directC14FragmentControlProjection();
+  assert.equal(fragmentProjection.length, 73);
+  assert.equal(
+    fragmentProjection.filter(({ accepted }) => accepted).length,
+    27,
+  );
+  assert.equal(
+    fragmentProjection.filter(({ accepted }) => !accepted).length,
+    46,
+  );
+  assert.equal(
+    digest(fragmentProjection),
+    EXPECTED_DIRECT_C14_FRAGMENT_CONTROL_PROJECTION_SHA256,
+  );
+  const controls = directCandidateActivationControls();
+  assert.equal(controls.length, 25);
+  assert.equal(new Set(controls.map(({ id }) => id)).size, 25);
+  assert.deepEqual(DIRECT_C14_CANDIDATE_STATE_COMMIT_OWNERS, [
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ]);
+  assert.deepEqual(DIRECT_C14_CANDIDATE_STATE_METADATA_FIELDS, [
+    "mode",
+    "phase",
+    "stateSha256",
+    "eventCount",
+  ]);
+  const activationProjection = directCandidateActivationProjection(controls);
+  assert.equal(
+    digest(activationProjection),
+    EXPECTED_DIRECT_C14_CANDIDATE_ACTIVATION_PROJECTION_SHA256,
+  );
+  assertDirectC14ProductionPolicyCoupling(fragmentProjection);
+  const actual = observeDirectCandidateActivationControls(controls);
+  const expected = expectedDirectCandidateActivationObservations(controls);
+  assert.deepEqual(
+    actual.at(0),
+    expected.at(0),
+    `${DIRECT_C14_CANDIDATE_ACTIVATION_SCHEMA}: missing composed candidate provenance pass`,
+  );
+  assert.deepEqual(
+    actual.slice(1),
+    expected.slice(1),
+    `${DIRECT_C14_CANDIDATE_ACTIVATION_SCHEMA}: candidate provenance contract mismatch`,
+  );
+}
+
 function snapshotCarrier(
   value,
   { label = "guardian byte carrier", minimumBytes = 0, maximumBytes = 64 } = {},
@@ -9524,7 +10226,7 @@ if (DIRECT_ENTRY) {
   }
   if (sourceBytes !== null) {
     try {
-      sourceAudit = independentStaticAudit(sourceBytes);
+      sourceAudit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(sourceBytes);
       DIRECT_CANDIDATE_ACTIVITY.sourceAudits += 1;
     } catch (error) {
       candidateSourceGateError = error;
@@ -10261,6 +10963,7 @@ test("keeps snapshot cost byte-bounded despite many extra own properties", () =>
 });
 
 test("does not create a second missing-module failure", () => {
+  assertDirectCandidateActivationContract();
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
   assert.equal(sourceBytes === null || sourceAudit !== null, true);
   assert.deepEqual(

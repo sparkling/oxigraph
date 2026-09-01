@@ -8840,6 +8840,656 @@ function observeMainProvenancePolicyControls() {
   });
 }
 
+const MAIN_C14_CANDIDATE_ACTIVATION_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c14-candidate-activation/v1";
+const MAIN_C14_CANDIDATE_ACTIVATION_MODE = "candidate-activation";
+const MAIN_C14_CANDIDATE_STATE_COMMIT_REJECTION =
+  "static gate: ESTree provenance STATE_COMMIT_KEY_NOT_EXACT";
+const MAIN_C14_CANDIDATE_STATE_COMMIT_METADATA_REJECTION =
+  "static gate: ESTree provenance STATE_COMMIT_METADATA_NOT_EXACT";
+const MAIN_C14_CANDIDATE_STATE_METADATA_REJECTION =
+  "static gate: ESTree provenance STATE_METADATA_NOT_EXACT";
+const MAIN_C14_CANDIDATE_STATE_METADATA_STATE_REJECTION =
+  "static gate: ESTree provenance STATE_METADATA_STATE_NOT_EXACT";
+const MAIN_C14_CANDIDATE_STATE_REJECTION =
+  "static gate: ESTree provenance STATE_PREIMAGE_NOT_EXACT";
+const MAIN_C14_CANDIDATE_STATE_SHA256_RECORD_REJECTION =
+  "static gate: ESTree provenance STATE_SHA256_RECORD_NOT_ALLOWED";
+const EXPECTED_MAIN_C14_FRAGMENT_CONTROL_PROJECTION_SHA256 =
+  "59bbaf35ca3346313d59c41e137cdfcd594a262e1b3267d147d3c72fb9f310f3";
+const EXPECTED_MAIN_C14_CANDIDATE_ACTIVATION_PROJECTION_SHA256 =
+  "444ef0c5be3177553d0a39d7a9087cbd38facb2750a1816ca6a9c549749a7a5a";
+const EXPECTED_MAIN_C14_PRODUCTION_POLICY_PROJECTION_SHA256 =
+  "b4ff8ae733a841e754874f0b5b78724919cdbc22a272be4cfd122ed4aaa803ca";
+const MAIN_C14_CANDIDATE_STATE_COMMIT_OWNERS = Object.freeze([
+  "initializeCandidateContainmentGuardianControlV1",
+  "reduceCandidateContainmentGuardianControlV1",
+]);
+const MAIN_C14_CANDIDATE_STATE_METADATA_FIELDS = Object.freeze([
+  "mode",
+  "phase",
+  "stateSha256",
+  "eventCount",
+]);
+const MAIN_C14_PRODUCTION_AUDIT_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c14-production-audit/v1";
+const MAIN_C14_PRODUCTION_POLICY_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c14-production-policy/v1";
+
+function auditMainCandidateSourceForProduction(
+  source,
+  { audit = auditCandidateSource } = {},
+) {
+  assert.equal(typeof source, "string");
+  assert.equal(typeof audit, "function");
+  const legacyAudit = audit(source);
+  const candidateAudit = audit(
+    source,
+    null,
+    MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+  );
+  if (
+    candidateAudit?.c14Provenance?.mode !== MAIN_C14_CANDIDATE_ACTIVATION_MODE
+  ) {
+    throw new Error(
+      `${MAIN_C14_CANDIDATE_ACTIVATION_SCHEMA}: missing composed candidate provenance pass`,
+    );
+  }
+  return Object.freeze({
+    ...legacyAudit,
+    c14Provenance: candidateAudit.c14Provenance,
+    productionAudit: Object.freeze({
+      schema: MAIN_C14_PRODUCTION_AUDIT_SCHEMA,
+      order: Object.freeze(["legacy", "candidate"]),
+      legacyCount: 1,
+      candidateCount: 1,
+      sameDecodedSource: true,
+      sourceSha256: byteSha256(Buffer.from(source, "utf8")),
+    }),
+  });
+}
+
+const MAIN_C14_PRODUCTION_AUDIT_BINDING = auditMainCandidateSourceForProduction;
+
+function mainCandidateActivationStateBody({
+  preimageMutation = null,
+  missingProtectedState = false,
+  metadataStateArgument = null,
+  wrongCommitKey = false,
+  wrongCommitMetadata = false,
+} = {}) {
+  let body = mainStateHashProjectionBody({ preimageMutation });
+  const emptyMetadata = "const metadata = deepFreeze(nullRecord([]));";
+  const exactMetadata = "const metadata = stateProjectionMetadata(result);";
+  assert.equal(body.includes(emptyMetadata), true);
+  body = body.replace(emptyMetadata, exactMetadata);
+  if (missingProtectedState) {
+    const protectedEntries =
+      ', ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]';
+    assert.equal(body.split(protectedEntries).length - 1, 2);
+    body = body.replaceAll(protectedEntries, "");
+  }
+  if (metadataStateArgument !== null) {
+    const exactMetadata = "const metadata = stateProjectionMetadata(result);";
+    assert.equal(body.includes(exactMetadata), true);
+    body = body.replace(
+      exactMetadata,
+      `const metadata = stateProjectionMetadata(${metadataStateArgument});`,
+    );
+  }
+  if (wrongCommitKey) {
+    const exactCommit = "stateMetadata.set(result, metadata);";
+    assert.equal(body.includes(exactCommit), true);
+    body = body.replace(exactCommit, "stateMetadata.set(metadata, metadata);");
+  }
+  if (wrongCommitMetadata) {
+    const exactCommit = "stateMetadata.set(result, metadata);";
+    assert.equal(body.includes(exactCommit), true);
+    body = body.replace(exactCommit, "stateMetadata.set(result, result);");
+  }
+  return body;
+}
+
+function mainCandidateActivationMetadataHelper(mutation = null) {
+  const entries = [
+    '["mode", state.mode]',
+    '["phase", state.phase]',
+    '["stateSha256", state.stateSha256]',
+    '["eventCount", state.eventCount]',
+  ];
+  if (mutation === "reordered") {
+    [entries[0], entries[1]] = [entries[1], entries[0]];
+  } else if (mutation === "omitted") {
+    entries.pop();
+  } else if (mutation === "extra") {
+    entries.push('["extra", state.eventCount]');
+  } else if (mutation === "wrong-value-source") {
+    entries[0] = '["mode", state.phase]';
+  } else if (mutation === "wrong-state-sha256-source") {
+    entries[2] = '["stateSha256", state.requirementsSha256]';
+  } else if (mutation !== null) {
+    throw new Error(`unclassified state metadata mutation ${mutation}`);
+  }
+  return `function stateProjectionMetadata(state) { return deepFreeze(nullRecord([${entries.join(", ")}])); }`;
+}
+
+function mainCandidateActivationSkeleton({
+  initializePreimageMutation = null,
+  initializeMissingProtectedState = false,
+  initializeMetadataStateArgument = null,
+  initializeWrongCommitKey = false,
+  initializeWrongCommitMetadata = false,
+  reducePreimageMutation = null,
+  reduceMissingProtectedState = false,
+  reduceMetadataStateArgument = null,
+  reduceWrongCommitKey = false,
+  reduceWrongCommitMetadata = false,
+  metadataMutation = null,
+  startupBody = "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return result;",
+  verificationBody = "return null;",
+  extra = "",
+} = {}) {
+  const requirementsName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const inlineDeclaration = `export const ${requirementsName} = deepFreeze(${JSON.stringify(REQUIREMENTS_ORACLE)});`;
+  const rootedDeclaration = `const guardianContract = deepFreeze(${mainNullRecordSource(REQUIREMENTS_ORACLE)});\nexport const ${requirementsName} = guardianContract;`;
+  const stateProjectionMetadataHelper =
+    mainCandidateActivationMetadataHelper(metadataMutation);
+  const source = sourceSkeleton(
+    `${stateProjectionMetadataHelper}\n${extra}`,
+    new Map([
+      [
+        "initializeCandidateContainmentGuardianControlV1",
+        mainCandidateActivationStateBody({
+          preimageMutation: initializePreimageMutation,
+          missingProtectedState: initializeMissingProtectedState,
+          metadataStateArgument: initializeMetadataStateArgument,
+          wrongCommitKey: initializeWrongCommitKey,
+          wrongCommitMetadata: initializeWrongCommitMetadata,
+        }),
+      ],
+      [
+        "reduceCandidateContainmentGuardianControlV1",
+        mainCandidateActivationStateBody({
+          preimageMutation: reducePreimageMutation,
+          missingProtectedState: reduceMissingProtectedState,
+          metadataStateArgument: reduceMetadataStateArgument,
+          wrongCommitKey: reduceWrongCommitKey,
+          wrongCommitMetadata: reduceWrongCommitMetadata,
+        }),
+      ],
+      ["createCandidateContainmentGuardianStartupV1", startupBody],
+      ["verifyCandidateContainmentGuardianStatusFrameV1", verificationBody],
+    ]),
+  );
+  assert.equal(source.includes(inlineDeclaration), true);
+  return source.replace(inlineDeclaration, rootedDeclaration);
+}
+
+function mainCandidateActivationControls() {
+  const realSourceLimitFailure =
+    'function failBounds() { throw new Error("CONTROL_BOUNDS"); }';
+  const realSourceLimitBody =
+    'const startupCarrier = copyBoundedBuffer(startupReportBytes, "startup report bytes", { minimumBytes: 0, maximumBytes: guardianContract.limits.startupReportMaximumBytes }, failBounds); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return result;';
+  return Object.freeze([
+    Object.freeze({
+      id: "candidate-untagged-baseline-state-commit",
+      source: sourceSkeleton(),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-exact-state-and-four-key-metadata",
+      source: mainCandidateActivationSkeleton(),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: true,
+      expectedCandidateRejection: null,
+    }),
+    ...["initialize", "reduce"].flatMap((owner) =>
+      ["omitted", "reordered", "substituted", "arbitrary"].map(
+        (preimageMutation) =>
+          Object.freeze({
+            id: `candidate-${owner}-${preimageMutation}-state-preimage`,
+            source: mainCandidateActivationSkeleton(
+              owner === "initialize"
+                ? { initializePreimageMutation: preimageMutation }
+                : { reducePreimageMutation: preimageMutation },
+            ),
+            expectedLegacyAccepted: true,
+            expectedCandidateAccepted: false,
+            expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_REJECTION,
+          }),
+      ),
+    ),
+    Object.freeze({
+      id: "candidate-missing-protected-reducer-state-commit",
+      source: mainCandidateActivationSkeleton({
+        reduceMissingProtectedState: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-missing-protected-initialize-state-commit",
+      source: mainCandidateActivationSkeleton({
+        initializeMissingProtectedState: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-reducer-wrong-state-commit-key",
+      source: mainCandidateActivationSkeleton({
+        reduceWrongCommitKey: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_COMMIT_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-initialize-wrong-state-commit-key",
+      source: mainCandidateActivationSkeleton({
+        initializeWrongCommitKey: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_COMMIT_REJECTION,
+    }),
+    ...[
+      "reordered",
+      "omitted",
+      "extra",
+      "wrong-value-source",
+      "wrong-state-sha256-source",
+    ].map((metadataMutation) =>
+      Object.freeze({
+        id: `candidate-${metadataMutation}-state-projection-metadata`,
+        source: mainCandidateActivationSkeleton({ metadataMutation }),
+        expectedLegacyAccepted: true,
+        expectedCandidateAccepted: false,
+        expectedCandidateRejection: MAIN_C14_CANDIDATE_STATE_METADATA_REJECTION,
+      }),
+    ),
+    Object.freeze({
+      id: "candidate-untagged-state-projection-metadata-argument",
+      source: mainCandidateActivationSkeleton({
+        reduceMetadataStateArgument: "unsignedState",
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection:
+        MAIN_C14_CANDIDATE_STATE_METADATA_STATE_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-wrong-state-commit-metadata-value",
+      source: mainCandidateActivationSkeleton({
+        reduceWrongCommitMetadata: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection:
+        MAIN_C14_CANDIDATE_STATE_COMMIT_METADATA_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-unrelated-state-sha256-record",
+      source: mainCandidateActivationSkeleton({
+        extra:
+          'function unrelatedStateSha256Record() { return deepFreeze(nullRecord([["mode", null], ["phase", null], ["stateSha256", null], ["eventCount", null]])); }',
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection:
+        MAIN_C14_CANDIDATE_STATE_SHA256_RECORD_REJECTION,
+    }),
+    Object.freeze({
+      id: "candidate-real-startup-limits-leaf",
+      source: mainCandidateActivationSkeleton({
+        startupBody: realSourceLimitBody,
+        extra: realSourceLimitFailure,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: true,
+      expectedCandidateRejection: null,
+    }),
+    Object.freeze({
+      id: "candidate-requirements-limits-subtree-escape",
+      source: mainCandidateActivationSkeleton({
+        verificationBody: "return guardianContract.limits;",
+      }),
+      expectedLegacyAccepted: false,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: null,
+    }),
+  ]);
+}
+
+function mainC14FragmentControlProjection() {
+  return mainProvenancePolicyControls().map(
+    ({ id, accepted, expectedRejection = null, source }) =>
+      Object.freeze({
+        id,
+        accepted,
+        expectedRejection,
+        sourceSha256: byteSha256(Buffer.from(source, "utf8")),
+      }),
+  );
+}
+
+function mainC14ProductionPolicyProjection(fragmentProjection) {
+  return Object.freeze({
+    schema: MAIN_C14_PRODUCTION_POLICY_SCHEMA,
+    candidateMode: MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+    fragmentControls: Object.freeze(fragmentProjection),
+  });
+}
+
+function expectedMainC14ProductionFragmentReceipt(control) {
+  return Object.freeze({
+    schema: MAIN_C14_PRODUCTION_POLICY_SCHEMA,
+    mode: "fragment-control",
+    candidateMode: MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+    sourceSha256: byteSha256(Buffer.from(control.source, "utf8")),
+    accepted: control.accepted,
+    rejection: control.expectedRejection ?? null,
+  });
+}
+
+function observeMainC14ProductionPolicyControls(controls) {
+  return controls.map((control) => {
+    const { id, source } = control;
+    const order = [];
+    const candidateStageAudit = Object.create(null);
+    let candidateRejection = null;
+    let productionRejection = null;
+    let candidateCallCount = 0;
+    let sameDecodedSource = true;
+    try {
+      MAIN_C14_PRODUCTION_AUDIT_BINDING(source, {
+        audit(observedSource, stageAudit, mode) {
+          sameDecodedSource &&= observedSource === source;
+          if (mode !== MAIN_C14_CANDIDATE_ACTIVATION_MODE) {
+            order.push("legacy");
+            assert.equal(arguments.length, 1);
+            return Object.freeze({ legacyMarker: "accepted" });
+          }
+          order.push("candidate");
+          candidateCallCount += 1;
+          assert.equal(arguments.length, 3);
+          assert.equal(stageAudit, null);
+          try {
+            return auditCandidateSource(
+              observedSource,
+              candidateStageAudit,
+              mode,
+            );
+          } catch (error) {
+            candidateRejection = error;
+            throw error;
+          }
+        },
+      });
+    } catch (error) {
+      productionRejection = error;
+    }
+    return Object.freeze({
+      id,
+      order: Object.freeze(order),
+      candidateCallCount,
+      sameDecodedSource,
+      fragmentReceipt: candidateStageAudit.c14FragmentPolicy ?? null,
+      candidateRejection: candidateRejection?.message ?? null,
+      productionRejection: productionRejection?.message ?? null,
+    });
+  });
+}
+
+function assertMainC14ProductionPolicyCoupling(fragmentProjection) {
+  const controls = mainProvenancePolicyControls();
+  const policyProjection =
+    mainC14ProductionPolicyProjection(fragmentProjection);
+  assert.equal(
+    semanticSha256(policyProjection),
+    EXPECTED_MAIN_C14_PRODUCTION_POLICY_PROJECTION_SHA256,
+  );
+  const observations = observeMainC14ProductionPolicyControls(controls);
+  assert.equal(observations.length, 73);
+  assert.deepEqual(
+    observations.map(
+      ({
+        id,
+        order,
+        candidateCallCount,
+        sameDecodedSource,
+        fragmentReceipt,
+      }) => ({
+        id,
+        order,
+        candidateCallCount,
+        sameDecodedSource,
+        fragmentReceipt,
+      }),
+    ),
+    controls.map((control) => ({
+      id: control.id,
+      order: ["legacy", "candidate"],
+      candidateCallCount: 1,
+      sameDecodedSource: true,
+      fragmentReceipt: expectedMainC14ProductionFragmentReceipt(control),
+    })),
+    `${MAIN_C14_PRODUCTION_POLICY_SCHEMA}: candidate mode did not run the frozen fragment policy`,
+  );
+  assert.deepEqual(
+    observations
+      .filter((_, index) => !controls[index].accepted)
+      .map(({ id, candidateRejection, productionRejection }) => ({
+        id,
+        candidateRejection,
+        productionRejection,
+      })),
+    controls
+      .filter(({ accepted }) => !accepted)
+      .map(({ id, expectedRejection }) => ({
+        id,
+        candidateRejection: expectedRejection,
+        productionRejection: expectedRejection,
+      })),
+    `${MAIN_C14_PRODUCTION_POLICY_SCHEMA}: fragment rejection drifted in production candidate mode`,
+  );
+}
+
+function mainCandidateActivationProjection(controls) {
+  return controls.map(
+    ({
+      id,
+      source,
+      expectedLegacyAccepted,
+      expectedCandidateAccepted,
+      expectedCandidateRejection,
+    }) =>
+      Object.freeze({
+        id,
+        sourceSha256: byteSha256(Buffer.from(source, "utf8")),
+        expectedLegacyAccepted,
+        expectedCandidateAccepted,
+        expectedCandidateRejection,
+      }),
+  );
+}
+
+function observeMainCandidateActivationControls(controls) {
+  return controls.map(({ id, source }) => {
+    const order = [];
+    let legacyRejection = null;
+    let candidateAudit = null;
+    let candidateRejection = null;
+    try {
+      candidateAudit = MAIN_C14_PRODUCTION_AUDIT_BINDING(source, {
+        audit(observedSource, stageAudit, mode) {
+          assert.equal(observedSource, source);
+          const phase =
+            mode === MAIN_C14_CANDIDATE_ACTIVATION_MODE
+              ? "candidate"
+              : "legacy";
+          order.push(phase);
+          const observedAudit = auditCandidateSource(
+            observedSource,
+            stageAudit,
+            mode,
+          );
+          if (phase === "candidate") candidateAudit = observedAudit;
+          return observedAudit;
+        },
+      });
+    } catch (error) {
+      if (order.at(-1) === "candidate") candidateRejection = error;
+      else legacyRejection = error;
+    }
+    return Object.freeze({
+      id,
+      order: Object.freeze(order),
+      legacyAccepted: legacyRejection === null,
+      candidateAttempted: order.includes("candidate"),
+      candidateAccepted:
+        order.includes("candidate") && candidateRejection === null,
+      candidateMode: candidateAudit?.c14Provenance?.mode ?? null,
+      candidateRejection: candidateRejection?.message ?? null,
+    });
+  });
+}
+
+function expectedMainCandidateActivationObservations(controls) {
+  return controls.map(
+    ({
+      id,
+      expectedLegacyAccepted,
+      expectedCandidateAccepted,
+      expectedCandidateRejection,
+    }) =>
+      Object.freeze({
+        id,
+        order: Object.freeze(
+          expectedLegacyAccepted ? ["legacy", "candidate"] : ["legacy"],
+        ),
+        legacyAccepted: expectedLegacyAccepted,
+        candidateAttempted: expectedLegacyAccepted,
+        candidateAccepted: expectedLegacyAccepted && expectedCandidateAccepted,
+        candidateMode:
+          expectedLegacyAccepted && expectedCandidateAccepted
+            ? MAIN_C14_CANDIDATE_ACTIVATION_MODE
+            : null,
+        candidateRejection: expectedCandidateRejection,
+      }),
+  );
+}
+
+function assertMainCandidateProductionAuditBindingContract() {
+  assert.equal(
+    MAIN_C14_PRODUCTION_AUDIT_BINDING,
+    auditMainCandidateSourceForProduction,
+  );
+  const source = "export const c14ProductionAuditProbe = null;\n";
+  const calls = [];
+  const audit = MAIN_C14_PRODUCTION_AUDIT_BINDING(source, {
+    audit(...args) {
+      const [observedSource, stageAudit = null, mode = "candidate-complete"] =
+        args;
+      calls.push(
+        Object.freeze({
+          argumentCount: args.length,
+          mode,
+          sameDecodedSource: observedSource === source,
+          stageAudit,
+        }),
+      );
+      return mode === MAIN_C14_CANDIDATE_ACTIVATION_MODE
+        ? Object.freeze({
+            c14Provenance: Object.freeze({ mode }),
+          })
+        : Object.freeze({ legacyMarker: "accepted" });
+    },
+  });
+  assert.deepEqual(calls, [
+    {
+      argumentCount: 1,
+      mode: "candidate-complete",
+      sameDecodedSource: true,
+      stageAudit: null,
+    },
+    {
+      argumentCount: 3,
+      mode: MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+      sameDecodedSource: true,
+      stageAudit: null,
+    },
+  ]);
+  assert.deepEqual(audit, {
+    legacyMarker: "accepted",
+    c14Provenance: {
+      mode: MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+    },
+    productionAudit: {
+      schema: MAIN_C14_PRODUCTION_AUDIT_SCHEMA,
+      order: ["legacy", "candidate"],
+      legacyCount: 1,
+      candidateCount: 1,
+      sameDecodedSource: true,
+      sourceSha256: byteSha256(Buffer.from(source, "utf8")),
+    },
+  });
+}
+
+function assertMainCandidateActivationContract() {
+  assertMainCandidateProductionAuditBindingContract();
+  const fragmentProjection = mainC14FragmentControlProjection();
+  assert.equal(fragmentProjection.length, 73);
+  assert.equal(
+    fragmentProjection.filter(({ accepted }) => accepted).length,
+    27,
+  );
+  assert.equal(
+    fragmentProjection.filter(({ accepted }) => !accepted).length,
+    46,
+  );
+  assert.equal(
+    semanticSha256(fragmentProjection),
+    EXPECTED_MAIN_C14_FRAGMENT_CONTROL_PROJECTION_SHA256,
+  );
+  const controls = mainCandidateActivationControls();
+  assert.equal(controls.length, 24);
+  assert.equal(new Set(controls.map(({ id }) => id)).size, 24);
+  assert.deepEqual(MAIN_C14_CANDIDATE_STATE_COMMIT_OWNERS, [
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ]);
+  assert.deepEqual(MAIN_C14_CANDIDATE_STATE_METADATA_FIELDS, [
+    "mode",
+    "phase",
+    "stateSha256",
+    "eventCount",
+  ]);
+  const activationProjection = mainCandidateActivationProjection(controls);
+  assert.equal(
+    semanticSha256(activationProjection),
+    EXPECTED_MAIN_C14_CANDIDATE_ACTIVATION_PROJECTION_SHA256,
+  );
+  assertMainC14ProductionPolicyCoupling(fragmentProjection);
+  const actual = observeMainCandidateActivationControls(controls);
+  const expected = expectedMainCandidateActivationObservations(controls);
+  assert.deepEqual(
+    actual.at(0),
+    expected.at(0),
+    `${MAIN_C14_CANDIDATE_ACTIVATION_SCHEMA}: missing composed candidate provenance pass`,
+  );
+  assert.deepEqual(
+    actual.slice(1),
+    expected.slice(1),
+    `${MAIN_C14_CANDIDATE_ACTIVATION_SCHEMA}: candidate provenance contract mismatch`,
+  );
+}
+
 const BRAND_NORMALIZATION_HELPERS =
   'function failBrandBinding() { throw new Error("CONTROL_BINDING"); } function failRecordShape() { throw new Error("CONTROL_SHAPE"); } function failNonBindingBrand() { throw new Error("CONTROL_STARTUP"); } function checkBrandInHelper(value) { exactBoolean(value, true, "value", failBrandBinding); return null; }';
 
@@ -13499,7 +14149,7 @@ const C12_ORACLE_CONSTRUCTION_RECEIPT = recursivelyFreezeEvidence({
 const PRODUCTION_FRESH_CANDIDATE_LOADER =
   createDeterministicFreshCandidateLoader({
     readSourceBytes: () => readFileSync(SOURCE_PATH),
-    auditSource: auditCandidateSource,
+    auditSource: MAIN_C14_PRODUCTION_AUDIT_BINDING,
     importCandidate: (href) => import(href),
   });
 const ADVERSARIAL_WIRING_ACTIVITY = {
@@ -14012,7 +14662,7 @@ try {
   candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(sourceBytes, {
     liftReceipt: C13_SOURCE_LIFT_RECEIPT,
     assertLiftReceipt: assertC13SourceLiftReceipt,
-    auditSource: auditCandidateSource,
+    auditSource: MAIN_C14_PRODUCTION_AUDIT_BINDING,
     installFreshLoaderBaseline:
       PRODUCTION_FRESH_CANDIDATE_LOADER.installAuditedBaseline,
     importCandidate: async (href) => {
@@ -17963,6 +18613,7 @@ test("recognizes only exact absent-candidate module-load failures", () => {
 });
 
 test("loads the candidate once and freezes its exact module contract", () => {
+  assertMainCandidateActivationContract();
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
   if (candidateImportError !== null) throw candidateImportError;
   assert.notEqual(candidate, null);
