@@ -6895,6 +6895,122 @@ function sourceSkeleton(extra = "", functionBodyOverrides = new Map()) {
   return `${importText}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}\n`;
 }
 
+function provenanceRequirementsSkeleton(
+  functionBody,
+  extra = "",
+  functionName = "verifyCandidateContainmentGuardianStatusFrameV1",
+) {
+  const requirementsName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const inlineDeclaration = `export const ${requirementsName} = deepFreeze(${JSON.stringify(REQUIREMENTS_ORACLE)});`;
+  const rootedDeclaration = `const guardianContract = deepFreeze(${JSON.stringify(REQUIREMENTS_ORACLE)});\nexport const ${requirementsName} = guardianContract;`;
+  const source = sourceSkeleton(extra, new Map([[functionName, functionBody]]));
+  assert.equal(source.includes(inlineDeclaration), true);
+  return source.replace(inlineDeclaration, rootedDeclaration);
+}
+
+function mainProvenancePolicyControls() {
+  const authorityProjection =
+    'function authorityProjection() { return deepFreeze(nullRecord([["transportAuthority", false], ["descriptorAuthority", false], ["filesystemAuthority", false], ["cgroupAuthority", false], ["processAuthority", false], ["recoveryAuthority", false], ["runtimeAuthority", false]])); }';
+  return Object.freeze([
+    Object.freeze({
+      id: "requirements-exact-path",
+      accepted: true,
+      source: provenanceRequirementsSkeleton(
+        "const schema = guardianContract.schemas.startupProjection; return schema;",
+      ),
+    }),
+    Object.freeze({
+      id: "requirements-whole-root-escape",
+      accepted: false,
+      source: provenanceRequirementsSkeleton("return guardianContract;"),
+    }),
+    Object.freeze({
+      id: "authority-exact-output",
+      accepted: true,
+      source: sourceSkeleton(authorityProjection),
+    }),
+    Object.freeze({
+      id: "authority-capability-key-outside-exact-output",
+      accepted: false,
+      source: sourceSkeleton(
+        'function wrongProjection() { return deepFreeze(nullRecord([["processAuthority", false]])); }',
+      ),
+    }),
+    Object.freeze({
+      id: "pinned-import-read-normalize",
+      accepted: true,
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const state = CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1.at(0); const bytes = canonicalJsonBytes(state); return sha256(bytes);",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "pinned-import-whole-value-escape",
+      accepted: false,
+      source: sourceSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "local-helper-all-trusted-callers",
+      accepted: true,
+      source: sourceSkeleton(
+        "function trustedLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'const first = trustedLength("bounded"); const second = trustedLength(deepFreeze(["bounded"])); return first + second;',
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "local-helper-untrusted-caller",
+      accepted: false,
+      source: sourceSkeleton(
+        "function trustedLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return trustedLength(startupProjection);",
+          ],
+        ]),
+      ),
+    }),
+  ]);
+}
+
+function observeMainProvenancePolicyControls() {
+  return mainProvenancePolicyControls().map(({ id, accepted, source }) => {
+    let rejection = null;
+    try {
+      auditCandidateSource(source);
+    } catch (error) {
+      rejection = error;
+    }
+    if (!accepted && rejection !== null) {
+      assert.match(rejection.message, /^static gate:/u, id);
+    }
+    return Object.freeze({
+      id,
+      expectedAccepted: accepted,
+      actualAccepted: rejection === null,
+    });
+  });
+}
+
 const BRAND_NORMALIZATION_HELPERS =
   'function failBrandBinding() { throw new Error("CONTROL_BINDING"); } function failRecordShape() { throw new Error("CONTROL_SHAPE"); } function failNonBindingBrand() { throw new Error("CONTROL_STARTUP"); } function checkBrandInHelper(value) { exactBoolean(value, true, "value", failBrandBinding); return null; }';
 
@@ -13719,6 +13835,75 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     R1: 5,
     R2: 5,
   });
+});
+
+test("defines the provenance-preserving evaluator policy before implementation", () => {
+  const observations = observeMainProvenancePolicyControls();
+  assert.deepEqual(
+    observations.map(({ id, actualAccepted }) => ({
+      id,
+      accepted: actualAccepted,
+    })),
+    observations.map(({ id, expectedAccepted }) => ({
+      id,
+      accepted: expectedAccepted,
+    })),
+  );
+});
+
+test("keeps C14 runtime comparisons within their construction context", () => {
+  const copyWithFrozenNullRecords = (value) => {
+    if (value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) {
+      return Object.freeze(value.map(copyWithFrozenNullRecords));
+    }
+    const copy = Object.create(null);
+    for (const [key, child] of Object.entries(value)) {
+      copy[key] = copyWithFrozenNullRecords(child);
+    }
+    return Object.freeze(copy);
+  };
+  const nullPrototypeRequirements =
+    copyWithFrozenNullRecords(REQUIREMENTS_ORACLE);
+  assert.doesNotThrow(() =>
+    assertRequirementsValue(nullPrototypeRequirements, REQUIREMENTS_ORACLE),
+  );
+  assert.equal(
+    semanticSha256(nullPrototypeRequirements),
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+  assert.throws(
+    () => assert.deepEqual(nullPrototypeRequirements, REQUIREMENTS_ORACLE),
+    { code: "ERR_ASSERTION" },
+  );
+
+  const contractStatusHashes = new Set(
+    CONTRACT_VALID_RUNTIME_ORACLE.expected.emittedStatuses.map(
+      ({ binding }) => binding.rawSha256,
+    ),
+  );
+  const materializedStatusHashes = new Set(
+    SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.emittedStatusByteGoldens.map(
+      ({ rawSha256 }) => rawSha256,
+    ),
+  );
+  assert.equal(contractStatusHashes.size, 15);
+  assert.equal(materializedStatusHashes.size, 15);
+  assert.notDeepEqual(contractStatusHashes, materializedStatusHashes);
+
+  const contractAtomicHashes = new Set(
+    CONTRACT_VALID_RUNTIME_ORACLE.expected.atomicPrefixes.map(
+      ({ concatenatedRawSha256 }) => concatenatedRawSha256,
+    ),
+  );
+  const materializedAtomicHashes = new Set(
+    SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.atomicTwoStatusWirePrefixes.map(
+      ({ concatenatedRawSha256 }) => concatenatedRawSha256,
+    ),
+  );
+  assert.equal(contractAtomicHashes.size, 4);
+  assert.equal(materializedAtomicHashes.size, 4);
+  assert.notDeepEqual(contractAtomicHashes, materializedAtomicHashes);
 });
 
 test("rejects static-policy negative controls before any evaluation attempt", () => {

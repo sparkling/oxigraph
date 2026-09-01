@@ -7405,6 +7405,124 @@ function validSkeleton(extra = "", functionBodyOverrides = new Map()) {
   return `${imports}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}`;
 }
 
+function directProvenanceRequirementsSkeleton(
+  functionBody,
+  extra = "",
+  functionName = "verifyCandidateContainmentGuardianStatusFrameV1",
+) {
+  const requirementsName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+  assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
+  const inlineDeclaration = `export const ${requirementsName} = 0;`;
+  const rootedDeclaration = `const guardianContract = deepFreeze(${JSON.stringify(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
+  const source = validSkeleton(extra, new Map([[functionName, functionBody]]));
+  assert.equal(source.includes(inlineDeclaration), true);
+  return source.replace(inlineDeclaration, rootedDeclaration);
+}
+
+function directProvenancePolicyControls() {
+  const authorityProjection =
+    'function authorityProjection() { return deepFreeze(nullRecord([["transportAuthority", false], ["descriptorAuthority", false], ["filesystemAuthority", false], ["cgroupAuthority", false], ["processAuthority", false], ["recoveryAuthority", false], ["runtimeAuthority", false]])); }';
+  return Object.freeze([
+    Object.freeze({
+      id: "direct-requirements-exact-path",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        "const schema = guardianContract.schemas.startupProjection; return schema;",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-whole-root-escape",
+      accepted: false,
+      source: directProvenanceRequirementsSkeleton("return guardianContract;"),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-output",
+      accepted: true,
+      source: validSkeleton(authorityProjection),
+    }),
+    Object.freeze({
+      id: "direct-authority-ordinary-identifier-key",
+      accepted: false,
+      source: validSkeleton(
+        "function wrongProjection() { const value = deepFreeze({ processAuthority: false }); return value; }",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-read-normalize",
+      accepted: true,
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const state = CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1.at(0); const bytes = canonicalJsonBytes(state); return sha256(bytes);",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-whole-value-escape",
+      accepted: false,
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-all-trusted-callers",
+      accepted: true,
+      source: validSkeleton(
+        "function trustedLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'const first = trustedLength("bounded"); const second = trustedLength(deepFreeze(["bounded"])); return first + second;',
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-untrusted-caller",
+      accepted: false,
+      source: validSkeleton(
+        "function trustedLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return trustedLength(startupProjection);",
+          ],
+        ]),
+      ),
+    }),
+  ]);
+}
+
+function observeDirectProvenancePolicyControls() {
+  return directProvenancePolicyControls().map(({ id, accepted, source }) => {
+    let rejection = null;
+    try {
+      independentStaticAudit(Buffer.from(source, "utf8"));
+    } catch (error) {
+      rejection = error;
+    }
+    if (!accepted && rejection !== null) {
+      assert.match(rejection.message, /^direct static gate:/u, id);
+    }
+    return Object.freeze({
+      id,
+      expectedAccepted: accepted,
+      actualAccepted: rejection === null,
+    });
+  });
+}
+
 function snapshotCarrier(
   value,
   { label = "guardian byte carrier", minimumBytes = 0, maximumBytes = 64 } = {},
@@ -8283,6 +8401,20 @@ test("does not create a second missing-module failure", () => {
       moduleImports: 0,
       moduleEvaluations: 0,
     },
+  );
+});
+
+test("defines the independent provenance policy before implementation", () => {
+  const observations = observeDirectProvenancePolicyControls();
+  assert.deepEqual(
+    observations.map(({ id, actualAccepted }) => ({
+      id,
+      accepted: actualAccepted,
+    })),
+    observations.map(({ id, expectedAccepted }) => ({
+      id,
+      accepted: expectedAccepted,
+    })),
   );
 });
 
