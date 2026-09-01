@@ -4920,11 +4920,17 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       callerDerived,
       typeofStrings: ["number"],
     });
-  const abstractLengthValue = (value) => {
+  const INDEX_SUMMARY_MASK = 1;
+  const LENGTH_SUMMARY_MASK = 2;
+  const ITERATION_SUMMARY_MASK = 4;
+  const summaryMaskForValue = (value) =>
+    (value.compileTime.indexSummaryLeaf ? INDEX_SUMMARY_MASK : 0) |
+    (value.compileTime.lengthSummaryLeaf ? LENGTH_SUMMARY_MASK : 0) |
+    (value.compileTime.iterationSummaryLeaf ? ITERATION_SUMMARY_MASK : 0);
+  const abstractLengthValue = (value, summaryMask = 0) => {
     if (
-      value.compileTime.lengthSummaryLeaf ||
-      value.compileTime.indexSummaryLeaf ||
-      value.compileTime.iterationSummaryLeaf
+      (summaryMask & LENGTH_SUMMARY_MASK) !== 0 ||
+      value.compileTime.lengthSummaryLeaf
     ) {
       return null;
     }
@@ -4976,7 +4982,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       }
       return primitiveLengths.length === 1
         ? primitiveLengths[0]
-        : joinLengthValues(primitiveLengths);
+        : joinLengthValuesWithSummaryMask(primitiveLengths, summaryMask);
     }
     if (value.compileTime.unknownMemberValue) {
       return makeCallerDerivedUnknownValue(hasCallerDerivedProvenance(value));
@@ -4990,7 +4996,11 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     }
     return makeCallerDerivedUnknownValue(hasCallerDerivedProvenance(value));
   };
-  const joinAbstractValues = (...values) => {
+  const joinAbstractValuesWithSummaryMask = (summaryMask, ...values) => {
+    const activeSummaryMask = values.reduce(
+      (mask, value) => mask | summaryMaskForValue(value),
+      summaryMask,
+    );
     const exactStrings = values.every(hasCompleteExactStringDomain)
       ? mergeExactStrings(...values)
       : [];
@@ -5002,7 +5012,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       arrayLength !== null &&
       values.every((value) => value.arrayElements?.length === arrayLength)
         ? Array.from({ length: arrayLength }, (_, index) =>
-            joinAbstractValues(
+            joinAbstractValuesWithSummaryMask(
+              activeSummaryMask,
               ...values.map((value) => value.arrayElements[index]),
             ),
           )
@@ -5024,7 +5035,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         ? null
         : propertyNames.map((name) => [
             name,
-            joinAbstractValues(
+            joinAbstractValuesWithSummaryMask(
+              activeSummaryMask,
               ...values.map((value) => {
                 const property = value.objectProperties.find(
                   ([candidate]) => candidate === name,
@@ -5044,12 +5056,16 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       (value) => value.compileTime.sequenceShape,
     );
     const sequenceElement = sequenceShape
-      ? joinAbstractValues(
+      ? joinAbstractValuesWithSummaryMask(
+          activeSummaryMask,
           ...values.map((value) => {
             if (value.arrayElements !== null) {
               return value.arrayElements.length === 0
                 ? exactUndefinedValue
-                : joinAbstractValues(...value.arrayElements);
+                : joinAbstractValuesWithSummaryMask(
+                    activeSummaryMask,
+                    ...value.arrayElements,
+                  );
             }
             return (
               value.compileTime.sequenceElement ??
@@ -5059,9 +5075,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         )
       : null;
     const valueIsIndexable = (value) =>
-      !value.compileTime.indexSummaryLeaf &&
-      !value.compileTime.iterationSummaryLeaf &&
-      !value.compileTime.lengthSummaryLeaf &&
+      (activeSummaryMask & INDEX_SUMMARY_MASK) === 0 &&
       (value.compileTime.indexableShape ||
         value.exactStrings.length > 0 ||
         value.arrayElements !== null ||
@@ -5070,11 +5084,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         value.compileTime.arraySequence);
     const indexableShape = values.every(valueIsIndexable);
     const indexElementForValue = (value) => {
-      if (
-        value.compileTime.indexSummaryLeaf ||
-        value.compileTime.iterationSummaryLeaf ||
-        value.compileTime.lengthSummaryLeaf
-      ) {
+      if ((activeSummaryMask & INDEX_SUMMARY_MASK) !== 0) {
         return null;
       }
       if (value.compileTime.indexElement !== null) {
@@ -5084,12 +5094,15 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         const elements = exactStringIndexElements(value);
         return elements.length === 0
           ? exactUndefinedValue
-          : joinIndexElements(elements);
+          : joinIndexElementsWithSummaryMask(elements, activeSummaryMask);
       }
       if (value.arrayElements !== null) {
         return value.arrayElements.length === 0
           ? exactUndefinedValue
-          : joinIndexElements(value.arrayElements);
+          : joinIndexElementsWithSummaryMask(
+              value.arrayElements,
+              activeSummaryMask,
+            );
       }
       if (
         value.compileTime.sequenceShape &&
@@ -5115,10 +5128,15 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       : [];
     const indexElement = !indexableShape
       ? null
-      : joinIndexElements([...indexElements, exactUndefinedValue]);
-    const lengthValues = values.map(abstractLengthValue);
+      : joinIndexElementsWithSummaryMask(
+          [...indexElements, exactUndefinedValue],
+          activeSummaryMask,
+        );
+    const lengthValues = values.map((value) =>
+      abstractLengthValue(value, activeSummaryMask),
+    );
     const lengthValue = lengthValues.every((value) => value !== null)
-      ? joinLengthValues(lengthValues)
+      ? joinLengthValuesWithSummaryMask(lengthValues, activeSummaryMask)
       : null;
     const iterableElementsKnown = values.every(
       (value) => value.compileTime.iterableElements !== null,
@@ -5130,7 +5148,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       iterableElementsKnown &&
       iterableLengths.every((length) => length === iterableLengths[0])
         ? Array.from({ length: iterableLengths[0] }, (_, index) =>
-            joinAbstractValues(
+            joinAbstractValuesWithSummaryMask(
+              activeSummaryMask,
               ...values.map(
                 (value) => value.compileTime.iterableElements[index],
               ),
@@ -5138,11 +5157,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           )
         : null;
     const iterationElementForValue = (value) => {
-      if (
-        value.compileTime.iterationSummaryLeaf ||
-        value.compileTime.indexSummaryLeaf ||
-        value.compileTime.lengthSummaryLeaf
-      ) {
+      if ((activeSummaryMask & ITERATION_SUMMARY_MASK) !== 0) {
         return null;
       }
       if (value.compileTime.iterationElement !== null) {
@@ -5151,16 +5166,24 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       if (value.compileTime.iterableElements !== null) {
         return value.compileTime.iterableElements.length === 0
           ? null
-          : joinIterationElements(value.compileTime.iterableElements);
+          : joinIterationElementsWithSummaryMask(
+              value.compileTime.iterableElements,
+              activeSummaryMask,
+            );
       }
       if (value.arrayElements !== null) {
         return value.arrayElements.length === 0
           ? null
-          : joinIterationElements(value.arrayElements);
+          : joinIterationElementsWithSummaryMask(
+              value.arrayElements,
+              activeSummaryMask,
+            );
       }
       if (value.exactStrings.length > 0) {
         const elements = exactStringIterationElements(value);
-        return elements.length === 0 ? null : joinIterationElements(elements);
+        return elements.length === 0
+          ? null
+          : joinIterationElementsWithSummaryMask(elements, activeSummaryMask);
       }
       if (hasUnknownStringProvenance(value)) {
         return makeCallerDerivedUnknownValue(hasCallerDerivedProvenance(value));
@@ -5182,7 +5205,10 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     const iterationElement =
       iterationElements.length === 0
         ? null
-        : joinIterationElements(iterationElements);
+        : joinIterationElementsWithSummaryMask(
+            iterationElements,
+            activeSummaryMask,
+          );
     const completeTypeSets = values.every(
       (value) => value.compileTime.typeofStrings.length > 0,
     );
@@ -5229,19 +5255,14 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         sequenceElement,
         indexableShape,
         indexElement,
-        indexSummaryLeaf: values.every(
-          (value) => value.compileTime.indexSummaryLeaf,
-        ),
+        indexSummaryLeaf: (activeSummaryMask & INDEX_SUMMARY_MASK) !== 0,
         lengthValue,
-        lengthSummaryLeaf: values.every(
-          (value) => value.compileTime.lengthSummaryLeaf,
-        ),
+        lengthSummaryLeaf: (activeSummaryMask & LENGTH_SUMMARY_MASK) !== 0,
         iterableElements,
         iterableShape,
         iterationElement,
-        iterationSummaryLeaf: values.every(
-          (value) => value.compileTime.iterationSummaryLeaf,
-        ),
+        iterationSummaryLeaf:
+          (activeSummaryMask & ITERATION_SUMMARY_MASK) !== 0,
         unknownMemberValue:
           values.some((value) => value.compileTime.unknownMemberValue) ||
           (objectProperties === null &&
@@ -5261,6 +5282,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       },
     );
   };
+  const joinAbstractValues = (...values) =>
+    joinAbstractValuesWithSummaryMask(0, ...values);
   const asIterationSummaryLeaf = (value) =>
     makeValue(
       value.kind,
@@ -5291,18 +5314,33 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       value.objectProperties,
       { ...value.compileTime, lengthSummaryLeaf: true },
     );
-  const joinIndexElements = (elements) =>
+  const joinIndexElementsWithSummaryMask = (elements, summaryMask) =>
     elements.length === 0
       ? null
-      : joinAbstractValues(...elements.map(asIndexSummaryLeaf));
-  const joinLengthValues = (values) =>
+      : joinAbstractValuesWithSummaryMask(
+          summaryMask | INDEX_SUMMARY_MASK,
+          ...elements.map(asIndexSummaryLeaf),
+        );
+  const joinIndexElements = (elements) =>
+    joinIndexElementsWithSummaryMask(elements, 0);
+  const joinLengthValuesWithSummaryMask = (values, summaryMask) =>
     values.length === 0
       ? null
-      : joinAbstractValues(...values.map(asLengthSummaryLeaf));
-  const joinIterationElements = (elements) =>
+      : joinAbstractValuesWithSummaryMask(
+          summaryMask | LENGTH_SUMMARY_MASK,
+          ...values.map(asLengthSummaryLeaf),
+        );
+  const joinLengthValues = (values) =>
+    joinLengthValuesWithSummaryMask(values, 0);
+  const joinIterationElementsWithSummaryMask = (elements, summaryMask) =>
     elements.length === 0
       ? null
-      : joinAbstractValues(...elements.map(asIterationSummaryLeaf));
+      : joinAbstractValuesWithSummaryMask(
+          summaryMask | ITERATION_SUMMARY_MASK,
+          ...elements.map(asIterationSummaryLeaf),
+        );
+  const joinIterationElements = (elements) =>
+    joinIterationElementsWithSummaryMask(elements, 0);
   const exposeSummaryValue = (value) =>
     makeValue(
       value.kind,
@@ -5862,7 +5900,34 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         receiver.compileTime.arraySequence &&
         receiver.arrayElements === null
       ) {
-        return makeArraySequenceValue(hasCallerDerivedProvenance(receiver));
+        const callerDerived = hasCallerDerivedProvenance(receiver);
+        const fallbackElement = makeCallerDerivedUnknownValue(callerDerived);
+        const sequenceElement =
+          receiver.compileTime.sequenceElement ?? fallbackElement;
+        return makeValue(
+          "mutable-local",
+          receiver.staticStrings,
+          [],
+          [],
+          null,
+          null,
+          {
+            known:
+              receiver.compileTime.known &&
+              argumentValues.every(({ compileTime }) => compileTime.known),
+            callerDerived,
+            unknownStringCoercion: true,
+            arraySequence: true,
+            sequenceShape: true,
+            sequenceElement,
+            indexableShape: true,
+            indexElement: receiver.compileTime.indexElement ?? sequenceElement,
+            iterableShape: true,
+            iterationElement:
+              receiver.compileTime.iterationElement ?? sequenceElement,
+            typeofStrings: ["object"],
+          },
+        );
       }
       if (receiver.exactStrings.length > 0) {
         const exactStrings = receiver.exactStrings.map((value) =>
@@ -8948,11 +9013,11 @@ function contextualPositive() {
       'const selected = currentState ? new Set([["y"], ["z"]]) : new Set(["x"]); for (const value of selected) { const next = value.length + 1; } return null;',
     ),
     approvedOneParameterExportSourceWithExtra(
-      'const value = localValues(currentState).at(0); const next = value.length + 1; return next;',
+      "const value = localValues(currentState).at(0); const next = value.length + 1; return next;",
       'function localValues(value) { if (value) { return ["x"]; } return [["y"], ["z"]]; }',
     ),
     approvedOneParameterExportSourceWithExtra(
-      'for (const value of localValues(currentState)) { const next = value.length + 1; } return null;',
+      "for (const value of localValues(currentState)) { const next = value.length + 1; } return null;",
       'function localValues(value) { if (value) { return new Set(["x"]); } return new Set([["y"], ["z"]]); }',
     ),
     approvedOneParameterExportSource(
@@ -8988,8 +9053,11 @@ function contextualPositive() {
   ];
   assert.equal(crossSummaryPrecisionPositiveSources.length, 22);
   for (const sourceText of crossSummaryPrecisionPositiveSources) {
-    const audit = independentStaticAudit(asBytes(sourceText));
-    assert.equal(audit.classifiedNodeCount, audit.nodeCount);
+    let audit;
+    assert.doesNotThrow(() => {
+      audit = independentStaticAudit(asBytes(sourceText));
+    }, sourceText);
+    assert.equal(audit.classifiedNodeCount, audit.nodeCount, sourceText);
   }
 
   const mutationKills = [];
