@@ -4914,6 +4914,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   };
   const classifiedNodes = new WeakSet();
   const nodeRoles = new WeakMap();
+  const privateHasCandidates = new WeakMap();
+  const directPrivateHasBindings = new WeakMap();
   const moduleScope = { parent: null, bindings: new Map() };
   const moduleInitializers = new Map();
   const functionRecords = new Map();
@@ -5158,6 +5160,22 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       ? arguments_[0].name
       : `<${arguments_[0].type}>`;
   };
+  const directStatementIndex = (functionRecord, statement) =>
+    functionRecord.node.body.body.indexOf(statement);
+  const privateHasCandidateForArgument = (
+    argumentNode,
+    argumentValue,
+    scope,
+  ) => {
+    const candidate = privateHasCandidates.get(argumentValue);
+    if (candidate === undefined) return null;
+    if (candidate.call === argumentNode) return candidate;
+    if (argumentNode.type !== "Identifier") return null;
+    const argumentBinding = resolve(scope, argumentNode.name);
+    return directPrivateHasBindings.get(argumentBinding) === candidate
+      ? candidate
+      : null;
+  };
 
   let importIndex = 0;
   let exportIndex = 0;
@@ -5223,6 +5241,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       status: "pending",
       returnValue: null,
       provenNonReturning: false,
+      provenFailureCode: null,
       calls: [],
       commits: [],
     });
@@ -5829,6 +5848,15 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
           return valueWithOrigin("mutable-local", node, arguments_);
         }
         if (importedNormalizers.has(binding.name)) {
+          const rawExactRecordBinding =
+            binding.name === "exactRecord" &&
+            node.arguments[0]?.type === "Identifier"
+              ? resolve(scope, node.arguments[0].name)
+              : null;
+          const rawExactRecordParameter =
+            rawExactRecordBinding?.kind === "parameter" &&
+            rawExactRecordBinding ===
+              context.parameterBindings?.get(node.arguments[0].name);
           const rawFirstArgumentAllowed = new Set([
             "boundedInteger",
             "copyBoundedBuffer",
@@ -5842,7 +5870,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
             }
             if (
               index === 0 &&
-              rawFirstArgumentAllowed &&
+              (rawFirstArgumentAllowed || rawExactRecordParameter) &&
               arguments_[index].kind === "untrusted"
             ) {
               continue;
@@ -5852,6 +5880,44 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
               `normalizer argument ${binding.name}[${index}]`,
               { allowMutable: true },
             );
+          }
+          if (binding.name === "exactBoolean") {
+            const candidate = privateHasCandidateForArgument(
+              node.arguments[0],
+              arguments_[0],
+              scope,
+            );
+            const failureCallbackBinding =
+              node.arguments[3]?.type === "Identifier"
+                ? resolve(scope, node.arguments[3].name)
+                : null;
+            const failureCallbackRecord =
+              failureCallbackBinding === null
+                ? null
+                : functionRecords.get(failureCallbackBinding.name);
+            if (
+              candidate !== null &&
+              node.arguments[1]?.type === "Literal" &&
+              node.arguments[1].value === true &&
+              failureCallbackRecord?.provenFailureCode === "CONTROL_BINDING" &&
+              context.functionRecord === candidate.functionRecord &&
+              context.controlDepth === 0 &&
+              candidate.controlDepth === 0 &&
+              context.directStatement !== null &&
+              directStatementIndex(
+                context.functionRecord,
+                candidate.statement,
+              ) <
+                directStatementIndex(
+                  context.functionRecord,
+                  context.directStatement,
+                )
+            ) {
+              context.validatedBrandChecks.push({
+                ...candidate,
+                checkStatement: context.directStatement,
+              });
+            }
           }
           if (binding.name === "copyBoundedBuffer") {
             return valueWithOrigin("mutable-local", node);
@@ -5863,7 +5929,29 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
           ) {
             return valueWithOrigin("mutable-local", node);
           }
-          if (binding.name === "exactRecord") return arguments_[0];
+          if (binding.name === "exactRecord") {
+            if (!rawExactRecordParameter) return arguments_[0];
+            const normalizationStatementIndex = directStatementIndex(
+              context.functionRecord,
+              context.directStatement,
+            );
+            const proof = context.completeBrandProofs.find(
+              (candidate) =>
+                candidate.parameterBinding === rawExactRecordBinding &&
+                candidate.functionRecord === context.functionRecord &&
+                context.controlDepth === 0 &&
+                directStatementIndex(
+                  context.functionRecord,
+                  candidate.getStatement,
+                ) < normalizationStatementIndex,
+            );
+            if (proof === undefined) {
+              fail(
+                `exactRecord parameter lacks complete brand proof ${context.functionRecord.name}:${rawExactRecordBinding.name}`,
+              );
+            }
+            return valueWithOrigin("mutable-local", node);
+          }
           return IMMUTABLE_VALUE;
         }
         for (const argument of arguments_) {
@@ -5920,6 +6008,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       counters.privateOperationCount += 1;
       if (["has", "get"].includes(member.memberName)) {
         const functionName = context.functionRecord?.name ?? "<module>";
+        let lookupParameterBinding = null;
         const policy = PRIVATE_LOOKUP_POLICY_BY_FUNCTION_STORE.get(
           `${functionName}\u0000${member.storeName}`,
         );
@@ -5945,6 +6034,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
               `private lookup key ${functionName}:${member.storeName}.${member.memberName}:${argumentLabel}`,
             );
           } else {
+            lookupParameterBinding = argumentBinding;
             privateLookups.push({
               functionName,
               storeName: member.storeName,
@@ -5955,7 +6045,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         }
         const lookupResult =
           member.memberName === "has"
-            ? IMMUTABLE_VALUE
+            ? makeValue("immutable")
             : makeValue("private-read", {
                 freezable: false,
                 origins: [
@@ -5964,6 +6054,40 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
                 ],
                 tainted: true,
               });
+        if (member.memberName === "has") {
+          privateHasCandidates.set(lookupResult, {
+            call: node,
+            controlDepth: context.controlDepth,
+            functionRecord: context.functionRecord,
+            parameterBinding: lookupParameterBinding,
+            statement: context.directStatement,
+            storeName: member.storeName,
+          });
+        } else if (
+          context.controlDepth === 0 &&
+          context.directStatement !== null
+        ) {
+          const getStatementIndex = directStatementIndex(
+            context.functionRecord,
+            context.directStatement,
+          );
+          const validatedCheck = context.validatedBrandChecks.find(
+            (candidate) =>
+              candidate.functionRecord === context.functionRecord &&
+              candidate.storeName === member.storeName &&
+              candidate.parameterBinding === lookupParameterBinding &&
+              directStatementIndex(
+                context.functionRecord,
+                candidate.checkStatement,
+              ) < getStatementIndex,
+          );
+          if (validatedCheck !== undefined) {
+            context.completeBrandProofs.push({
+              ...validatedCheck,
+              getStatement: context.directStatement,
+            });
+          }
+        }
         privateLookupResultPolicies.push({
           functionName,
           storeName: member.storeName,
@@ -6255,6 +6379,13 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     }
     binding.kind = binding.kind === "export-value" ? binding.kind : "local";
     binding.value = value;
+    const privateHasCandidate = privateHasCandidates.get(value);
+    if (
+      privateHasCandidate !== undefined &&
+      declarator.init === privateHasCandidate.call
+    ) {
+      directPrivateHasBindings.set(binding, privateHasCandidate);
+    }
   };
 
   const visitBlock = (node, scope, context, { functionBody = false } = {}) => {
@@ -6399,6 +6530,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       parameterBindings,
       returnValues: [],
       returnStatements: [],
+      validatedBrandChecks: [],
+      completeBrandProofs: [],
       controlDepth: 0,
       directStatement: null,
       expressionStatement: null,
@@ -6408,7 +6541,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       functionBody: true,
     });
     const [onlyStatement] = node.body.body;
-    record.provenNonReturning =
+    record.provenFailureCode =
       node.params.length === 0 &&
       node.body.body.length === 1 &&
       onlyStatement.type === "ThrowStatement" &&
@@ -6418,7 +6551,10 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       onlyStatement.argument.arguments.length === 1 &&
       onlyStatement.argument.arguments[0].type === "Literal" &&
       typeof onlyStatement.argument.arguments[0].value === "string" &&
-      pinnedFailureCodes.has(onlyStatement.argument.arguments[0].value);
+      pinnedFailureCodes.has(onlyStatement.argument.arguments[0].value)
+        ? onlyStatement.argument.arguments[0].value
+        : null;
+    record.provenNonReturning = record.provenFailureCode !== null;
     const expectedStore = PRIVATE_STORE_OWNER_BY_FUNCTION.get(record.name);
     if (expectedStore === undefined) {
       if (record.commits.length !== 0)
