@@ -327,6 +327,105 @@ test(
 );
 
 test(
+  "category helper uses the retained util.types.isUint8Array intrinsic",
+  { skip: HELPER_RED_SKIP },
+  async () => {
+    const original = Object.getOwnPropertyDescriptor(
+      utilTypes,
+      "isUint8Array",
+    );
+    assert.equal(typeof original?.value, "function");
+    const calls = [];
+    Object.defineProperty(utilTypes, "isUint8Array", {
+      ...original,
+      value(value) {
+        calls.push(value);
+        return Reflect.apply(original.value, utilTypes, [value]);
+      },
+    });
+
+    let retainedIntrinsicModule;
+    try {
+      freshImportOrdinal += 1;
+      retainedIntrinsicModule = await import(
+        `${EXACT_V2_URL.href}?retained-isUint8Array=${freshImportOrdinal}`
+      );
+    } finally {
+      Object.defineProperty(utilTypes, "isUint8Array", original);
+    }
+
+    const value = ordinaryBuffer([1, 2, 3]);
+    const copied = retainedIntrinsicModule.copyBoundedBufferByFailureCategory(
+      value,
+      "carrier",
+      { maximumBytes: 3 },
+      () => {
+        throw new Error("unexpected bounds");
+      },
+      () => {
+        throw new Error("unexpected shape");
+      },
+    );
+    assert.deepEqual(calls, [value]);
+    assert.deepEqual([...copied], [1, 2, 3]);
+  },
+);
+
+test(
+  "category helper rejects over-bound Buffer-prototype non-Uint8 forgeries through shape",
+  { skip: HELPER_RED_SKIP },
+  () => {
+    const lookalike = Object.create(Buffer.prototype);
+    assert.equal(utilTypes.isUint8Array(lookalike), false);
+    assertFailureCategory(lookalike, { maximumBytes: 0 }, "shape");
+
+    const dataView = new DataView(new ArrayBuffer(1));
+    assert.equal(dataView.byteLength, 1);
+    Object.setPrototypeOf(dataView, Buffer.prototype);
+    assert.equal(utilTypes.isUint8Array(dataView), false);
+    assertFailureCategory(dataView, { maximumBytes: 0 }, "shape");
+
+    const nonUint8TypedArrays = [
+      Int8Array,
+      Uint8ClampedArray,
+      Int16Array,
+      Uint16Array,
+      Int32Array,
+      Uint32Array,
+      Float32Array,
+      Float64Array,
+      BigInt64Array,
+      BigUint64Array,
+    ];
+    if (typeof globalThis.Float16Array === "function") {
+      nonUint8TypedArrays.push(globalThis.Float16Array);
+    }
+    for (const TypedArray of nonUint8TypedArrays) {
+      const value = new TypedArray(1);
+      assert.equal(value.length, 1, `${TypedArray.name} intrinsic length`);
+      Object.setPrototypeOf(value, Buffer.prototype);
+      assert.equal(
+        utilTypes.isUint8Array(value),
+        false,
+        TypedArray.name,
+      );
+      assertFailureCategory(value, { maximumBytes: 0 }, "shape");
+    }
+  },
+);
+
+test(
+  "category helper applies bounds before local Uint8Array prototype shape",
+  { skip: HELPER_RED_SKIP },
+  () => {
+    const value = new Uint8Array([1, 2, 3, 4]);
+    assert.equal(utilTypes.isUint8Array(value), true);
+    assertFailureCategory(value, { maximumBytes: 3 }, "bounds");
+    assertFailureCategory(value, { maximumBytes: 4 }, "shape");
+  },
+);
+
+test(
   "category helper maps non-safe and out-of-range intrinsic lengths to bounds",
   { skip: HELPER_RED_SKIP },
   async () => {
@@ -437,6 +536,62 @@ test(
 );
 
 test(
+  "category helper does not read backing constructor or Symbol.species accessors",
+  { skip: HELPER_RED_SKIP },
+  () => {
+    const effects = [];
+    const constructorValue = ordinaryBuffer([2, 3]);
+    Object.defineProperty(constructorValue.buffer, "constructor", {
+      configurable: true,
+      get() {
+        effects.push("constructor");
+        throw new Error("unexpected backing constructor read");
+      },
+    });
+    const constructorCopy = copyBoundedBufferByFailureCategory(
+      constructorValue,
+      "constructor carrier",
+      { maximumBytes: 2 },
+      () => {
+        throw new Error("unexpected bounds");
+      },
+      () => {
+        throw new Error("unexpected shape");
+      },
+    );
+
+    const speciesValue = ordinaryBuffer([5, 7]);
+    const hostileConstructor = Object.create(null);
+    Object.defineProperty(hostileConstructor, Symbol.species, {
+      configurable: true,
+      get() {
+        effects.push("Symbol.species");
+        throw new Error("unexpected backing Symbol.species read");
+      },
+    });
+    Object.defineProperty(speciesValue.buffer, "constructor", {
+      configurable: true,
+      value: hostileConstructor,
+    });
+    const speciesCopy = copyBoundedBufferByFailureCategory(
+      speciesValue,
+      "species carrier",
+      { maximumBytes: 2 },
+      () => {
+        throw new Error("unexpected bounds");
+      },
+      () => {
+        throw new Error("unexpected shape");
+      },
+    );
+
+    assert.deepEqual(effects, []);
+    assert.deepEqual([...constructorCopy], [2, 3]);
+    assert.deepEqual([...speciesCopy], [5, 7]);
+  },
+);
+
+test(
   "category helper rejects detached backing through shape after an in-range intrinsic length",
   { skip: HELPER_RED_SKIP },
   () => {
@@ -445,6 +600,22 @@ test(
     structuredClone(backing, { transfer: [backing] });
     assert.equal(value.length, 0);
     assertFailureCategory(value, { maximumBytes: 0 }, "shape");
+  },
+);
+
+test(
+  "category helper applies detached intrinsic zero length to bounds before backing shape",
+  { skip: HELPER_RED_SKIP },
+  () => {
+    const backing = new ArrayBuffer(2);
+    const value = Buffer.from(backing);
+    structuredClone(backing, { transfer: [backing] });
+    assert.equal(value.length, 0);
+    assertFailureCategory(
+      value,
+      { minimumBytes: 1, maximumBytes: 1 },
+      "bounds",
+    );
   },
 );
 
@@ -487,6 +658,39 @@ test(
     );
     assert.equal(empty.length, 0);
     assert.equal(Object.getPrototypeOf(empty), Buffer.prototype);
+  },
+);
+
+test(
+  "category helper admits a local Uint8Array normalized to Buffer.prototype without retaining an alias",
+  { skip: HELPER_RED_SKIP },
+  () => {
+    const backing = new ArrayBuffer(4);
+    const value = new Uint8Array(backing);
+    value.set([3, 5, 8, 13]);
+    Object.setPrototypeOf(value, Buffer.prototype);
+    assert.equal(utilTypes.isUint8Array(value), true);
+    assert.equal(Object.getPrototypeOf(value), Buffer.prototype);
+
+    const callbackCalls = [];
+    const copied = copyBoundedBufferByFailureCategory(
+      value,
+      "carrier",
+      { maximumBytes: 4 },
+      () => callbackCalls.push("bounds"),
+      () => callbackCalls.push("shape"),
+    );
+    assert.deepEqual(callbackCalls, []);
+    assert.equal(Buffer.isBuffer(copied), true);
+    assert.equal(Object.getPrototypeOf(copied), Buffer.prototype);
+    assert.notEqual(copied, value);
+    assert.notEqual(copied.buffer, backing);
+    assert.deepEqual([...copied], [3, 5, 8, 13]);
+
+    value[0] = 21;
+    assert.deepEqual([...copied], [3, 5, 8, 13]);
+    copied[1] = 34;
+    assert.deepEqual([...value], [21, 5, 8, 13]);
   },
 );
 
