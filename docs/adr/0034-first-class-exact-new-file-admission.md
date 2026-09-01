@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-28
-- Updated: 2026-09-01
+- Updated: 2026-09-02
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented and deliberately unregistered.
   Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 byte compatibility and
@@ -148,25 +148,58 @@ copyBoundedBufferByFailureCategory(
 )
 ```
 
-The new helper's validation and first-failure order is exact:
+The helper defines an observable intrinsic-Uint8 byte carrier, not Buffer
+construction provenance. All intrinsics named below are retained before a
+caller value is accepted. Its validation and first-failure order is exact:
 
-1. Reject a Proxy or non-Buffer through `failShape`, without reading a caller
-   property, enumerating keys, or invoking a caller accessor.
-2. Read the typed-array length intrinsically. Reject a non-safe or out-of-range
-   length through `failBounds` before inspecting the later shape conditions.
-3. Reject a Buffer subclass, foreign Buffer prototype, own `length` property,
-   unreadable intrinsic backing store, or `SharedArrayBuffer` backing through
-   `failShape`.
+1. If retained `util.types.isProxy` identifies `value` as a Proxy, or retained
+   `util.types.isUint8Array(value)` is false, call `failShape`. This stage reads
+   no caller property, enumerates no caller key, and invokes no caller
+   accessor.
+2. Read `value`'s length with the retained typed-array intrinsic length getter.
+   An unreadable or non-safe intrinsic length, an invalid byte interval, or a
+   length outside that interval calls `failBounds`. No later shape condition is
+   inspected first.
+3. Require the immediate prototype to equal the retained local
+   `Buffer.prototype`, require no own `length` property, and read the backing
+   store with the retained typed-array intrinsic backing getter. An inspection
+   failure, a different immediate prototype, an own `length`, or
+   `SharedArrayBuffer` backing calls `failShape`. For non-shared backing, prove
+   liveness only by retained `Reflect.construct(DataView, [backing, 0, 0])`;
+   failure of that zero-length view construction also calls `failShape`.
 4. Only after every preceding validation succeeds, allocate a fresh ordinary
    local Buffer, copy the indexed bytes with retained intrinsics, return it, and
    retain no caller alias.
 
-The first applicable stage owns a combined fault. Therefore an over-bound
-Buffer that also has a subclass or foreign prototype, an own `length`, or
-shared backing fails through `failBounds`; a Proxy or non-Buffer always fails
-through `failShape`. Arbitrary additional non-index own string or symbol
-properties remain unenumerated, unread, unwritten, and absent from the copy.
-Both failure callbacks are terminal and may not return.
+The first applicable stage owns a combined fault. A non-Uint8 forgery fails
+shape before bounds. An over-bound intrinsic Uint8 value with a later prototype,
+own-length, backing-read, shared-backing, or detached-backing fault fails bounds.
+A detached carrier whose intrinsic length is zero fails bounds when the minimum
+is one, but reaches the liveness check and fails shape when zero is in range. A
+local `Uint8Array` whose immediate prototype has been normalized to the retained
+local `Buffer.prototype` is intentionally admitted: the supported observations
+cannot distinguish its construction history from a Buffer's. In contrast,
+`Object.create(Buffer.prototype)`, a `DataView`, and a non-Uint8 typed array
+remain non-Uint8 forgeries and fail at stage 1 even if their immediate prototype
+is changed to `Buffer.prototype`.
+
+Stage 3's liveness check may not use `ArrayBuffer.prototype.slice`, any other
+species-bearing operation, or any copying operation. Such probes can consult a
+backing store's `constructor` or `Symbol.species` and can allocate or copy before
+shape validation. Those properties remain unread, and the only byte copy is the
+fresh result created at stage 4. Arbitrary additional non-index own string or
+symbol properties remain unenumerated, unread, unwritten, and absent from the
+copy. Both failure callbacks are terminal and may not return.
+
+The supported-runtime basis is the engineering harness's Node `>=20` floor and
+its Node 20/current-runtime lanes. Those runtimes provide the retained public
+Node and language intrinsics above, but no supported intrinsic that recovers a
+carrier's Buffer-construction history once the same observable intrinsic-Uint8
+brand and immediate local prototype are present. This ADR-local contract is
+therefore complete in terms of supported observations and adds no external
+library, native add-on, undocumented V8 dependency, or construction-provenance
+claim.
+
 The existing `copyBoundedBuffer` and `exactBufferByteLength` functions retain
 their current semantics; the new category-aware order is not retrofitted into
 either function.

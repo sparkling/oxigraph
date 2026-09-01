@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-01
+- Updated: 2026-09-02
 - Deciders: Oxigraph parity programme
 - Implementation status: evaluator RED in progress through the B6 static
   closure checkpoint. Commit `7a539665` adds the
@@ -396,14 +396,43 @@ may not consume the helper before that amendment is integrated.
 For guardian-control byte inputs, C15 must supply a terminal `failBounds`
 callback that throws an Error whose message is exactly `CONTROL_BOUNDS` and a
 terminal `failShape` callback that throws an Error whose message is exactly
-`CONTROL_SHAPE`. The shared helper fixes the
-first-failure order: Proxy or non-Buffer to shape; intrinsic length outside the
-constructor's exact byte interval to bounds; then subclass or foreign
-prototype, own `length`, unreadable backing, or shared backing to shape; and a
-fresh intrinsic copy only after all validation succeeds. Consequently an
-over-bound Buffer that also has any of those later shape faults is
-`CONTROL_BOUNDS`. No caller property enumeration, accessor invocation, retained
-alias, or pre-validation copy is permitted.
+`CONTROL_SHAPE`. The helper accepts an observable intrinsic-Uint8 byte carrier;
+C15 adds no Buffer-construction-provenance semantics. Its exact first-failure
+order mirrors ADR-0034:
+
+1. A Proxy, or any value for which retained
+   `util.types.isUint8Array(value)` is false, fails `CONTROL_SHAPE` without a
+   caller property read, key enumeration, or accessor invocation.
+2. The retained typed-array intrinsic length getter supplies the byte length.
+   An unreadable or non-safe length, an invalid interval, or an out-of-interval
+   length fails `CONTROL_BOUNDS` before any later shape check.
+3. The value must have the retained local `Buffer.prototype` as its immediate
+   prototype, no own `length`, a backing store readable through the retained
+   typed-array intrinsic getter, non-`SharedArrayBuffer` backing, and live
+   backing proved only by retained
+   `Reflect.construct(DataView, [backing, 0, 0])`. Any failure at this stage is
+   `CONTROL_SHAPE`.
+4. Success returns a fresh ordinary local Buffer copied with retained
+   intrinsics after validation and retains no caller alias.
+
+A non-Uint8 forgery fails shape before bounds. An over-bound intrinsic Uint8
+carrier with a later shape fault fails bounds. A detached carrier whose
+intrinsic length is zero fails bounds when the minimum is one and otherwise
+reaches the liveness probe and fails shape. A local `Uint8Array` normalized to
+the retained local `Buffer.prototype` is intentionally admitted because the
+supported public runtime observations cannot distinguish how it was
+constructed from a Buffer. `Object.create(Buffer.prototype)`, `DataView`, and
+non-Uint8 typed-array forgeries are rejected at stage 1 even after prototype
+forgery.
+
+The liveness probe may not use `ArrayBuffer.prototype.slice`, any other
+species-bearing operation, or any copying operation; it must not read backing
+`constructor` or `Symbol.species`. No caller property enumeration, accessor
+invocation, retained alias, or pre-validation copy is permitted. This contract
+uses only retained public Node and language intrinsics available at the
+engineering harness's Node `>=20` floor and Node 20/current-runtime lanes. It
+adds no external library, native add-on, undocumented V8 dependency, or
+construction-provenance claim.
 
 This documentation amendment does not claim that the additive export exists.
 The predecessor table, machine-readable requirements fixture, current
@@ -420,9 +449,10 @@ completion claim.
 
 ### Bounded input representation
 
-Every untrusted aggregate is received as a byte-bounded ordinary `Buffer` and
-copied before decoding or hashing. There is no caller-provided descriptor,
-right, event, transcript, or record array and no public object-record bypass.
+Every untrusted aggregate is received as a byte-bounded intrinsic-Uint8 carrier
+with the exact observable shape above and copied before decoding or hashing.
+There is no caller-provided descriptor, right, event, transcript, or record
+array and no public object-record bypass.
 Canonical JSON inputs contain exactly one JSON value followed by exactly one LF.
 Malformed UTF-8, CR, NUL, embedded or trailing lines, duplicate-key encodings,
 noncanonical key or value spellings, and trailing bytes fail. The byte ceiling
@@ -447,20 +477,23 @@ count are finite, each new frame's length and the resulting aggregate are
 checked before that frame is decoded. There is no one-shot aggregate for which
 earlier elements must be revisited.
 
-An ordinary local-realm `Buffer` with non-shared backing is accepted,
-length-checked intrinsically, and copied immediately. Proxies, an own `length`
-property, `SharedArrayBuffer` backing, non-Buffer views, Buffer subclasses,
-foreign Buffer prototypes, and branded lookalikes fail. Arbitrary additional
-non-index own string or symbol properties, including data and accessor
-properties, are outside the byte-carrier semantics: the module never
-enumerates, inspects, reads, writes, or invokes them, they do not cause
-rejection, and they are absent from the clean copy. All semantics derive only
-from that immediate intrinsic copy of indexed bytes. This avoids an attacker-
-controlled property-list allocation before the byte bound while guaranteeing
-zero getter or setter invocations and no caller mutation. The module retains no
-caller alias. Any returned bytes are fresh copy-on-read views. Foreign non-null
-record and Array prototypes fail; the originating realm of a null-prototype
-record is not observable and is not claimed.
+An intrinsic Uint8 value with the immediate retained local `Buffer.prototype`,
+no own `length`, and readable, live, non-shared backing is accepted,
+length-checked intrinsically, and copied only after validation. This observable
+set includes an ordinary local-realm Buffer and intentionally includes a local
+`Uint8Array` normalized to that same prototype. It excludes Proxies,
+non-Uint8 views and forgeries, a different immediate prototype, an own
+`length`, unreadable or detached backing, and `SharedArrayBuffer` backing.
+Arbitrary additional non-index own string or symbol properties, including data
+and accessor properties, are outside the byte-carrier semantics: the module
+never enumerates, inspects, reads, writes, or invokes them, they do not cause
+rejection, and they are absent from the clean copy. All byte semantics derive
+only from the final retained-intrinsic copy of indexed bytes. This avoids an
+attacker-controlled property-list allocation before the byte bound while
+guaranteeing zero getter or setter invocations and no caller mutation. The
+module retains no caller alias. Any returned bytes are fresh copy-on-read views.
+Foreign non-null record and Array prototypes fail; the originating realm of a
+null-prototype record is not observable and is not claimed.
 
 ### Exact startup contract
 
@@ -1147,7 +1180,7 @@ The complete validation failure vocabulary is:
 | Error message        | Meaning                                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `CONTROL_BOUNDS`     | Pre-decode byte ceiling, epoch length, count, slot, or aggregate ceiling                                            |
-| `CONTROL_SHAPE`      | Buffer type, brand, local prototype, own-length, shared-backing, UTF-8, JSONL, canonical, or record-field violation |
+| `CONTROL_SHAPE`      | Intrinsic-Uint8 brand, local prototype, own-length, backing readability/liveness/sharing, UTF-8, JSONL, canonical, or record-field violation |
 | `CONTROL_STARTUP`    | Mode, FD, role, kind, access, direction, flag, socket, lock, EOF, or startup alias violation                        |
 | `CONTROL_FRAME`      | Schema, action, carrier, structural sequence, truncation, or forbidden ancillary violation                          |
 | `CONTROL_RIGHTS`     | Control-message count/type, right count/order/role/kind/access/flag/alias violation                                 |
@@ -1382,13 +1415,20 @@ Implementation requires:
   prefix, and all delete, duplicate, reorder, direction, sequence,
   second-admission, stale-state, and post-terminal mutations of the eight legal
   sequences;
-- bounds-first and trap-free adversarial validation, copy-on-entry and
-  copy-on-read bytes, recursive output freezing, and exact private-store commit
-  controls;
+- bounds-first and trap-free adversarial validation, including shape-first
+  rejection of non-Uint8 forgeries, bounds-first rejection of intrinsic Uint8
+  carriers with later shape faults, and detached-zero minimum-zero/minimum-one
+  precedence; copy-on-entry and copy-on-read bytes, recursive output freezing,
+  and exact private-store commit controls;
 - rejection of launch-capsule v2 substitution, a birth actor in recovery mode,
   non-null recovery state padding, malformed canonical bytes, foreign non-null
-  prototypes, Proxies, own `length`, subclasses, shared backing, and separately
-  imported brands, plus zero-invocation normalization controls for arbitrary
+  record/Array prototypes, Proxies, `Object.create(Buffer.prototype)`,
+  `DataView` and non-Uint8 typed-array prototype forgeries, own `length`,
+  non-local immediate byte-carrier prototypes, unreadable, detached, or shared
+  backing, and separately imported brands; admission and no-alias copying of a
+  local `Uint8Array` normalized to the retained local `Buffer.prototype`;
+  zero use of `ArrayBuffer.prototype.slice`, species-bearing, or copying
+  liveness probes; plus zero-invocation normalization controls for arbitrary
   additional non-index own string, symbol, data, getter, and setter properties
   that prove no enumeration, inspection, read, write, invocation, or caller
   mutation;
