@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-28
-- Updated: 2026-08-29
+- Updated: 2026-09-01
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented and deliberately unregistered.
   Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 byte compatibility and
@@ -102,6 +102,99 @@ and replay behavior compatible while shared parser, dispatch, and command
 sources add v2. V1 continues to require `allowCreate: false` and reject every
 creation patch. This task-contract version is distinct from the engineering
 application-receipt versions described below.
+
+### Shared exact-v2 byte-helper ownership amendment
+
+ADR-0034 owns the shared
+[`containment-exact-v2.mjs`](../../tools/engineering-harness/src/candidate/containment-exact-v2.mjs)
+source and the additive category-aware byte-helper ABI specified below.
+ADR-0036 is a pinned consumer, not a co-owner. At the amendment baseline
+`3ecff6f2`, the source SHA-256 is
+`2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`
+and its existing public surface is exactly these 18 function exports:
+
+```text
+sha256
+nullRecord
+deepFreeze
+frozenCopyOnReadBytes
+exactRecord
+exactDenseArray
+boundedInteger
+exactBoolean
+exactDigest
+exactDecimal
+exactUnicodeString
+copyBoundedBuffer
+exactBufferByteLength
+decodeCanonicalJsonLine
+canonicalJsonLine
+canonicalJsonBytes
+encodeCanonicalBase64
+decodeCanonicalBase64
+```
+
+An implementation owned by this ADR may add exactly this function without
+changing any existing export's name, positional signature, defaults, return
+value, failure behavior, or other observable semantics:
+
+```text
+copyBoundedBufferByFailureCategory(
+  value,
+  label,
+  { minimumBytes = 0, maximumBytes },
+  failBounds,
+  failShape,
+)
+```
+
+The new helper's validation and first-failure order is exact:
+
+1. Reject a Proxy or non-Buffer through `failShape`, without reading a caller
+   property, enumerating keys, or invoking a caller accessor.
+2. Read the typed-array length intrinsically. Reject a non-safe or out-of-range
+   length through `failBounds` before inspecting the later shape conditions.
+3. Reject a Buffer subclass, foreign Buffer prototype, own `length` property,
+   unreadable intrinsic backing store, or `SharedArrayBuffer` backing through
+   `failShape`.
+4. Only after every preceding validation succeeds, allocate a fresh ordinary
+   local Buffer, copy the indexed bytes with retained intrinsics, return it, and
+   retain no caller alias.
+
+The first applicable stage owns a combined fault. Therefore an over-bound
+Buffer that also has a subclass or foreign prototype, an own `length`, or
+shared backing fails through `failBounds`; a Proxy or non-Buffer always fails
+through `failShape`. Arbitrary additional non-index own string or symbol
+properties remain unenumerated, unread, unwritten, and absent from the copy.
+Both failure callbacks are terminal and may not return.
+The existing `copyBoundedBuffer` and `exactBufferByteLength` functions retain
+their current semantics; the new category-aware order is not retrofitted into
+either function.
+
+The following nine source files are the complete direct-importer set at the
+amendment baseline. Their bytes and SHA-256 identities remain unchanged by the
+additive helper slice:
+
+| Direct importer | SHA-256 |
+| --- | --- |
+| `containment-guardian-journal-v1.mjs` | `c48c6692752550a547fa5936ab47c78170c6e33f0d8d527fe2d24c4ffc5e1276` |
+| `containment-guardian-journal-v2.mjs` | `0fd3751914828519300cdcb3d327824ce78c5b95e5a9acd7211a376b548f0075` |
+| `containment-guardian-lifetime-v1.mjs` | `f454ee962615e887c294f4aabade6a640ac1881fd3662842b75a3be8afb8f3e5` |
+| `containment-guardian-recovery-v1.mjs` | `e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d` |
+| `containment-launch-capsule-v2.mjs` | `4b6a7ed38f3b91d25488d0f9a3c88d376e1907086be17c62dc949ab80c74dda4` |
+| `containment-launch-capsule-v3.mjs` | `9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d` |
+| `containment-supervisor-bootstrap-v3.mjs` | `f045a0830067f9e41d6532663754938d1cdeece4f088b732dac054ba9fe3efa5` |
+| `containment-supervisor-control-v2.mjs` | `92cfae3b2e6b8e2ee196d7c5a21c760ae5d35d4f5335263a5ffc816fc2a80842` |
+| `containment-supervisor-preflight-v4.mjs` | `747c913e60768c53bdeeec923a6ff2f1319121d743bddd8e4db663c1a03d23ff` |
+
+Adding the helper changes the shared exact-v2 source identity and therefore
+requires explicit downstream evidence review even though those nine importer
+sources remain byte-identical. No source pin, fixture digest, expected result,
+or receipt may be silently refreshed, resealed, or rebaselined. This amendment
+does not authorize a package-manifest or lockfile change, dependency refresh,
+readiness transition, runtime registration, qualification, authority,
+promotion, or publication. All such state remains unchanged until exact
+re-pinned evidence is separately reviewed.
 
 ### Exact scope and mutable baselines
 

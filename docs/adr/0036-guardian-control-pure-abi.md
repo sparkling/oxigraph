@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-08-31
+- Updated: 2026-09-01
 - Deciders: Oxigraph parity programme
 - Implementation status: evaluator RED in progress through the B6 static
   closure checkpoint. Commit `7a539665` adds the
@@ -383,6 +383,40 @@ source hashes are respectively
 `747c913e60768c53bdeeec923a6ff2f1319121d743bddd8e4db663c1a03d23ff`.
 Predecessor drift requires explicit ADR review and never an automatic hash
 refresh.
+
+### C15 shared-byte-helper prerequisite
+
+ADR-0034 owns the additive shared exact-v2 helper
+`copyBoundedBufferByFailureCategory(value, label,
+{minimumBytes = 0, maximumBytes}, failBounds, failShape)`. This ADR is a pinned
+consumer and does not acquire ownership of `containment-exact-v2.mjs`. C15
+(`task-1788204841083-htz7p5`) depends on the ADR-0034 ownership amendment and
+may not consume the helper before that amendment is integrated.
+
+For guardian-control byte inputs, C15 must supply a terminal `failBounds`
+callback that throws an Error whose message is exactly `CONTROL_BOUNDS` and a
+terminal `failShape` callback that throws an Error whose message is exactly
+`CONTROL_SHAPE`. The shared helper fixes the
+first-failure order: Proxy or non-Buffer to shape; intrinsic length outside the
+constructor's exact byte interval to bounds; then subclass or foreign
+prototype, own `length`, unreadable backing, or shared backing to shape; and a
+fresh intrinsic copy only after all validation succeeds. Consequently an
+over-bound Buffer that also has any of those later shape faults is
+`CONTROL_BOUNDS`. No caller property enumeration, accessor invocation, retained
+alias, or pre-validation copy is permitted.
+
+This documentation amendment does not claim that the additive export exists.
+The predecessor table, machine-readable requirements fixture, current
+requirements digest, exact named-import allowlist, and evaluator pins continue
+to bind the pre-amendment exact-v2 bytes. C15 must explicitly re-pin the changed
+exact-v2 source, amend and independently verify the named-import projection and
+requirements evidence, and replay affected direct and transitive evidence
+without changing the existing 18 exact-v2 exports or the nine incumbent direct
+importer sources and digests recorded by ADR-0034. There is no automatic hash
+refresh or evidence rebaseline. Package manifests and lockfiles, readiness,
+runtime registration, authority, qualification, promotion, and publication
+remain unchanged. This prerequisite records no C15 implementation or
+completion claim.
 
 ### Bounded input representation
 
