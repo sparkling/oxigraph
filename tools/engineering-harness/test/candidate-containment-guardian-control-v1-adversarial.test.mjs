@@ -7428,13 +7428,19 @@ function directProvenanceRequirementsSkeleton(
 ) {
   const requirementsName =
     "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const requirementsDigestName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256";
   const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
   assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
   const inlineDeclaration = `export const ${requirementsName} = 0;`;
   const rootedDeclaration = `const guardianContract = deepFreeze(${directNullRecordSource(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
-  const source = validSkeleton(extra, new Map([[functionName, functionBody]]));
+  const digestDeclaration = `export const ${requirementsDigestName} = 1;`;
+  const exactDigestDeclaration = `export const ${requirementsDigestName} = ${JSON.stringify(EXPECTED_REQUIREMENTS_SHA256)};`;
+  let source = validSkeleton(extra, new Map([[functionName, functionBody]]));
   assert.equal(source.includes(inlineDeclaration), true);
-  return source.replace(inlineDeclaration, rootedDeclaration);
+  assert.equal(source.includes(digestDeclaration), true);
+  source = source.replace(inlineDeclaration, rootedDeclaration);
+  return source.replace(digestDeclaration, exactDigestDeclaration);
 }
 
 function directRequirementsBindingSkeleton(functionBody, bindingDeclaration) {
@@ -7447,6 +7453,360 @@ function directRequirementsBindingSkeleton(functionBody, bindingDeclaration) {
     exportDeclaration,
     `${bindingDeclaration}\n${exportDeclaration}`,
   );
+}
+
+function directCommittedProtectedProjectionBody(schemaPath, storeName) {
+  return `const projection = deepFreeze(nullRecord([["schema", ${schemaPath}], ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]])); const privateMetadata = deepFreeze(nullRecord([])); ${storeName}.set(projection, privateMetadata); return projection;`;
+}
+
+function directStateHashProjectionBody({ includeDigestTooEarly = false } = {}) {
+  const exactEntries =
+    '["schema", guardianContract.schemas.stateProjection], ["mode", selectedMode], ["phase", selectedPhase], ["requirementsSha256", CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256], ["startupSha256", guardianContract.startupMaps.normalSha256], ["epochSha256", guardianContract.startupMaps.recoveryOnlySha256], ["lastWireFrameSha256", guardianContract.vocabularies.previousFrameGenesisSha256], ["nextWireSequence", 0], ["aggregateWireBytes", 0], ["admissionFrameSha256", null], ["recoveryRequestFrameSha256", null], ["admissionCount", 0], ["cancelObserved", false], ["controllerClosedObserved", false], ["diagnosticFailureObserved", false], ["recoveryControlHandoffObserved", false], ["controlTerminalReason", null], ["statusEofObserved", false], ["transcriptTerminal", false], ["eventCount", 0], ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]';
+  const invalidEntry = includeDigestTooEarly
+    ? ', ["stateSha256", guardianContract.startupMaps.recoveryOnlySha256]'
+    : "";
+  return `const selectedMode = guardianContract.modes.at(0); const selectedPhase = guardianContract.vocabularies.phases.at(0); const statePreimage = deepFreeze(nullRecord([${exactEntries}${invalidEntry}])); const projectionDigest = sha256(canonicalJsonBytes(statePreimage)); const projection = deepFreeze(nullRecord([${exactEntries}, ["stateSha256", projectionDigest]])); const privateMetadata = deepFreeze(nullRecord([])); stateMetadata.set(projection, privateMetadata); return projection;`;
+}
+
+function directFrozenSourceShapePolicyControls() {
+  const rejectShape =
+    'function rejectDirectShape() { throw new Error("CONTROL_SHAPE"); }';
+  const rejectBounds =
+    'function rejectDirectBounds() { throw new Error("CONTROL_BOUNDS"); }';
+  const rejectBrand =
+    'function rejectDirectBrand() { throw new Error("CONTROL_BINDING"); } function rejectDirectRecord() { throw new Error("CONTROL_SHAPE"); }';
+  const decodeStatus =
+    'const decodedFrame = decodeCanonicalJsonLine(statusFrameBytes, "status frame", guardianContract.limits.statusFrameMaximumBytes, rejectDirectShape);';
+  const normalizeSelection = `${decodeStatus} const recoverySelection = exactRecord(decodedFrame.value, guardianContract.frameFields.recoverySelection, "recovery selection", rejectDirectShape);`;
+  const verifyLaunch = `${decodeStatus} const admission = exactRecord(decodedFrame.value, guardianContract.frameFields.ADMIT, "admission frame", rejectDirectShape); const launchBytes = decodeCanonicalBase64(admission.launchCapsuleV3, "launch capsule", guardianContract.limits.admissionFrameMaximumBytes, rejectDirectShape); const launchResult = verifyCandidateContainmentLaunchCapsuleV3(launchBytes);`;
+  return Object.freeze([
+    Object.freeze({
+      id: "direct-requirements-field-list-normalizer-leaf",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${decodeStatus} const status = exactRecord(decodedFrame.value, guardianContract.frameFields.STATUS, "status frame", rejectDirectShape); return status.schema === guardianContract.schemas.wireFrame;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-field-list-whole-record",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_PATH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        `${decodeStatus} const status = exactRecord(decodedFrame.value, guardianContract.frameFields, "status frame", rejectDirectShape); return status.schema;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-numeric-bound-leaf",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'return boundedInteger(1, "status count", 0, guardianContract.limits.maximumStatusFramesPerTransition, rejectDirectBounds);',
+        rejectBounds,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-numeric-bound-whole-record",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_PATH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        'return boundedInteger(1, "status count", 0, guardianContract.limits, rejectDirectBounds);',
+        rejectBounds,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-strict-equality-leaves",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        "const schemaPair = guardianContract.schemas.inputProjection !== guardianContract.schemas.stateProjection; const mapPair = guardianContract.startupMaps.normalSha256 !== guardianContract.startupMaps.recoveryOnlySha256; const vocabularyPair = guardianContract.vocabularies.controlLevel !== guardianContract.vocabularies.controlType; return schemaPair && mapPair && vocabularyPair;",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-strict-equality-whole-subtree",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_PATH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        "return guardianContract.startupMaps === guardianContract.startupMaps;",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-array-receiver-leaves",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'const modeKnown = guardianContract.modes.includes("RECOVERY_ONLY"); const inputKnown = guardianContract.vocabularies.inputKinds.includes("CANCEL"); const firstInputField = guardianContract.frameFields.inputProjection.at(0); return modeKnown && inputKnown && firstInputField === "schema";',
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-array-receiver-whole-record",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_PATH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        'return guardianContract.frameFields.includes("schema");',
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-ternary-selected-numeric-leaves",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'const recovery = guardianContract.modes.includes("RECOVERY_ONLY"); const descriptorCount = recovery ? guardianContract.startupMaps.recoveryOnlyDescriptorCount : guardianContract.startupMaps.normalDescriptorCount; return boundedInteger(descriptorCount, "descriptor count", 0, guardianContract.limits.admissionRightsCount, rejectDirectBounds);',
+        rejectBounds,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-ternary-selected-whole-record",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_PATH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        'const recovery = guardianContract.modes.includes("RECOVERY_ONLY"); const descriptorCount = recovery ? guardianContract.startupMaps.recoveryOnlyDescriptorCount : guardianContract.startupMaps; return boundedInteger(descriptorCount, "descriptor count", 0, guardianContract.limits.admissionRightsCount, rejectDirectBounds);',
+        rejectBounds,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-protected-output-startup-authority-physical-facts",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        directCommittedProtectedProjectionBody(
+          "guardianContract.schemas.startupProjection",
+          "startupMetadata",
+        ),
+        "",
+        "createCandidateContainmentGuardianStartupV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-protected-output-input-authority-physical-facts",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        directCommittedProtectedProjectionBody(
+          "guardianContract.schemas.inputProjection",
+          "inputMetadata",
+        ),
+        "",
+        "createCandidateContainmentGuardianControllerClosedInputV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-protected-output-state-authority-physical-facts",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        directCommittedProtectedProjectionBody(
+          "guardianContract.schemas.stateProjection",
+          "stateMetadata",
+        ),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-protected-output-status-authority-physical-facts",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'const safeBytes = copyBoundedBuffer(statusFrameBytes, "status frame", { minimumBytes: 0, maximumBytes: guardianContract.limits.statusFrameMaximumBytes }, rejectDirectBounds); return frozenCopyOnReadBytes(safeBytes, [["schema", guardianContract.schemas.statusArtifact], ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]]);',
+        rejectBounds,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-protected-output-swapped-authority-physical-facts",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_WRONG_PLACEMENT",
+      source: directProvenanceRequirementsSkeleton(
+        'return deepFreeze(nullRecord([["schema", guardianContract.schemas.statusArtifact], ["authority", guardianContract.physicalFacts], ["physicalFacts", guardianContract.authority]]));',
+      ),
+    }),
+    Object.freeze({
+      id: "direct-state-exact-unsigned-preimage-hash",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        directStateHashProjectionBody(),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-state-inexact-unsigned-preimage-hash",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT",
+      source: directProvenanceRequirementsSkeleton(
+        directStateHashProjectionBody({ includeDigestTooEarly: true }),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-normalized-dynamic-membership",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${normalizeSelection} const planKnown = CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1.includes(recoverySelection.planStatus); const actorKnown = CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1.includes(recoverySelection.actorKind); const dispositionKnown = CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1.includes(recoverySelection.disposition); const locationKnown = CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1.includes(recoverySelection.sourceLocation); const quarantineKnown = CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1.includes(recoverySelection.quarantineReason); return planKnown && actorKnown && dispositionKnown && locationKnown && quarantineKnown;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-raw-dynamic-membership",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        `${normalizeSelection} return CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1.includes(decodedFrame.value.planStatus);`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-recovery-digest-normalized-comparison",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${normalizeSelection} return recoverySelection.recoveryRequirementsSha256 === CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-recovery-digest-direct-escape",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-projection-chain",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} const selectedFile = directSelectLaunchFile(launchResult); const fileIdentity = directNormalizeLaunchIdentity(selectedFile); const fileIdentitySha256 = directDigestLaunchIdentity(fileIdentity); const requirementsEqual = launchResult.requirementsSha256 === CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3; const rawEqual = launchResult.rawSha256 === admission.launchCapsuleV3Sha256; const identityEqual = fileIdentity.role === selectedFile.role && fileIdentity.byteLength === selectedFile.byteLength && fileIdentity.sha256 === selectedFile.sha256; return requirementsEqual && rawEqual && identityEqual && fileIdentitySha256.length === 64;`,
+        `${rejectShape} function directSelectLaunchFile(value) { return value.files.at(0); } function directNormalizeLaunchIdentity(value) { return deepFreeze(nullRecord([["role", value.role], ["byteLength", value.byteLength], ["sha256", value.sha256]])); } function directDigestLaunchIdentity(value) { return sha256(canonicalJsonBytes(value)); }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-digest-direct-escape",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-result-direct-escape",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} return launchResult;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-wrong-member",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_MEMBER_NOT_ALLOWED",
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} return launchResult.environment;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-file-direct-escape",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} const selectedFile = launchResult.files.at(0); return selectedFile;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-normalize-first-nested-value",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${normalizeSelection} return directReadPlanStatus(recoverySelection);`,
+        `${rejectShape} function directReadPlanStatus(value) { return value.planStatus; }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-raw-nested-value",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALLER_UNTRUSTED",
+      source: directProvenanceRequirementsSkeleton(
+        `${normalizeSelection} return directReadPlanStatus(decodedFrame.value);`,
+        `${rejectShape} function directReadPlanStatus(value) { return value.planStatus; }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-branded-exact-record",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'const brandPresent = startupMetadata.has(startupProjection); exactBoolean(brandPresent, true, "startup projection brand", rejectDirectBrand); const privateMetadata = startupMetadata.get(startupProjection); const startup = exactRecord(startupProjection, guardianContract.frameFields.startupProjection, "startup projection", rejectDirectRecord); return directReadBrandedSchema(startup);',
+        `${rejectBrand} function directReadBrandedSchema(value) { return value.schema; }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-copied-and-decoded-bytes",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'const safeCopy = copyBoundedBuffer(statusFrameBytes, "status frame", { minimumBytes: 0, maximumBytes: guardianContract.limits.statusFrameMaximumBytes }, rejectDirectShape); const canonicalFrame = decodeCanonicalJsonLine(statusFrameBytes, "status frame", guardianContract.limits.statusFrameMaximumBytes, rejectDirectShape); return directTrustedByteLength(safeCopy) + directTrustedByteLength(canonicalFrame.bytes);',
+        `${rejectShape} function directTrustedByteLength(value) { return value.length; }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-protected-import-result",
+      accepted: true,
+      source: validSkeleton(
+        "function directImportedStateLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const importedState = CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1.at(0); return directImportedStateLength(importedState);",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-generated-normalized-transitive-callers",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${decodeStatus} const normalizedStatus = exactRecord(decodedFrame.value, guardianContract.frameFields.STATUS, "status frame", rejectDirectShape); const generatedStatus = deepFreeze(nullRecord([["schema", guardianContract.schemas.wireFrame]])); const normalizedLength = directFromNormalized(normalizedStatus); const generatedLength = directFromGenerated(generatedStatus); return normalizedLength + generatedLength;`,
+        `${rejectShape} function directSchemaLeaf(value) { return value.schema; } function directSchemaLength(value) { return directSchemaLeaf(value).length; } function directFromNormalized(value) { return directSchemaLength(value); } function directFromGenerated(value) { return directSchemaLength(value); }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-failure-callback-normalizer-argument",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        'const canonicalFrame = decodeCanonicalJsonLine(statusFrameBytes, "status frame", guardianContract.limits.statusFrameMaximumBytes, directExactFailure); const status = exactRecord(canonicalFrame.value, guardianContract.frameFields.STATUS, "status frame", directExactFailure); return status.schema;',
+        'function directExactFailure() { throw new Error("CONTROL_SHAPE"); }',
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-failure-callback-alias",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALL_INDIRECT",
+      source: directProvenanceRequirementsSkeleton(
+        'const callback = directExactFailure; const canonicalFrame = decodeCanonicalJsonLine(statusFrameBytes, "status frame", guardianContract.limits.statusFrameMaximumBytes, callback); return canonicalFrame.bytes.length;',
+        'function directExactFailure() { throw new Error("CONTROL_SHAPE"); }',
+      ),
+    }),
+  ]);
 }
 
 function directProvenancePolicyControls() {
@@ -7806,30 +8166,41 @@ function directProvenancePolicyControls() {
         ]),
       ),
     }),
+    ...directFrozenSourceShapePolicyControls(),
   ]);
 }
 
 function observeDirectProvenancePolicyControls() {
-  return directProvenancePolicyControls().map(
-    ({ id, accepted, expectedRejection = null, source }) => {
-      let rejection = null;
-      try {
-        independentStaticAudit(Buffer.from(source, "utf8"));
-      } catch (error) {
-        rejection = error;
-      }
-      return Object.freeze({
-        id,
-        expectedAccepted: accepted,
-        actualAccepted: rejection === null,
-        rejectionStageMatched:
-          accepted || rejection === null
-            ? null
-            : rejection.message === expectedRejection,
-        rejectionMessage: rejection?.message ?? null,
-      });
-    },
-  );
+  const controls = directProvenancePolicyControls();
+  assert.equal(controls.length, 63);
+  assert.equal(new Set(controls.map(({ id }) => id)).size, 63);
+  assert.equal(controls.filter(({ accepted }) => accepted).length, 26);
+  assert.equal(controls.filter(({ accepted }) => !accepted).length, 37);
+  return controls.map(({ id, accepted, expectedRejection = null, source }) => {
+    let sourceParsed = true;
+    try {
+      directParse(source, DIRECT_ACORN_PARSE_OPTIONS);
+    } catch {
+      sourceParsed = false;
+    }
+    let rejection = null;
+    try {
+      independentStaticAudit(Buffer.from(source, "utf8"));
+    } catch (error) {
+      rejection = error;
+    }
+    return Object.freeze({
+      id,
+      expectedAccepted: accepted,
+      actualAccepted: rejection === null,
+      sourceParsed,
+      rejectionStageMatched:
+        accepted || rejection === null
+          ? null
+          : rejection.message === expectedRejection,
+      rejectionMessage: rejection?.message ?? null,
+    });
+  });
 }
 
 function snapshotCarrier(
@@ -8716,15 +9087,19 @@ test("does not create a second missing-module failure", () => {
 test("defines the independent provenance policy before implementation", () => {
   const observations = observeDirectProvenancePolicyControls();
   assert.deepEqual(
-    observations.map(({ id, actualAccepted, rejectionStageMatched }) => ({
-      id,
-      accepted: actualAccepted,
-      rejectionStageMatched,
-    })),
+    observations.map(
+      ({ id, actualAccepted, rejectionStageMatched, sourceParsed }) => ({
+        id,
+        accepted: actualAccepted,
+        rejectionStageMatched,
+        sourceParsed,
+      }),
+    ),
     observations.map(({ id, expectedAccepted }) => ({
       id,
       accepted: expectedAccepted,
       rejectionStageMatched: expectedAccepted ? null : true,
+      sourceParsed: true,
     })),
   );
 });
