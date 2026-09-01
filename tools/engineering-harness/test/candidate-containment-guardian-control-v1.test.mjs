@@ -11237,6 +11237,120 @@ function assertB11StaticClosureReceipt(receipt) {
 }
 assertB11StaticClosureReceipt(B11_STATIC_CLOSURE_RECEIPT);
 
+const EXPECTED_C13_SOURCE_LIFT_POLICY_PROJECTION = Object.freeze({
+  staticClosureAloneAuthorizesImport: false,
+  fullMainAuditRequiredBeforePresentImport: true,
+  absentImportUsesCanonicalSourceUrlOnce: true,
+  candidateBehaviorProved: false,
+  filesystemToctouClosed: false,
+  c12ReceiptResealed: false,
+});
+
+function c13SourceLiftPolicyProjection(receipt) {
+  return {
+    staticClosureAloneAuthorizesImport:
+      receipt.staticClosureAloneAuthorizesImport,
+    fullMainAuditRequiredBeforePresentImport:
+      receipt.fullMainAuditRequiredBeforePresentImport,
+    absentImportUsesCanonicalSourceUrlOnce:
+      receipt.absentImportUsesCanonicalSourceUrlOnce,
+    candidateBehaviorProved: receipt.candidateBehaviorProved,
+    filesystemToctouClosed: receipt.filesystemToctouClosed,
+    c12ReceiptResealed: receipt.c12ReceiptResealed,
+  };
+}
+
+function assertC13SourceLiftPolicyProjection(projection) {
+  if (
+    canonicalJson(projection) !==
+    canonicalJson(EXPECTED_C13_SOURCE_LIFT_POLICY_PROJECTION)
+  ) {
+    throw new Error("C13 source-lift policy gate: projection mismatch");
+  }
+  return Object.freeze({
+    fieldCount: Object.keys(projection).length,
+    projectionSha256: semanticSha256(projection),
+  });
+}
+
+function mainEvaluatorC13SourceLiftPolicyProjection(program) {
+  const matches = program.body.flatMap((statement) => {
+    if (statement.type !== "VariableDeclaration") return [];
+    return statement.declarations.filter(
+      (declaration) =>
+        declaration.id.type === "Identifier" &&
+        declaration.id.name === "C13_SOURCE_LIFT_RECEIPT",
+    );
+  });
+  if (matches.length !== 1) {
+    throw new Error(
+      "C13 source-lift evaluator gate: receipt declaration mismatch",
+    );
+  }
+  const initializer = matches[0].init;
+  if (
+    initializer?.type !== "CallExpression" ||
+    initializer.callee.type !== "Identifier" ||
+    initializer.callee.name !== "recursivelyFreezeEvidence" ||
+    initializer.arguments.length !== 1 ||
+    initializer.arguments[0].type !== "ObjectExpression"
+  ) {
+    throw new Error(
+      "C13 source-lift evaluator gate: receipt declaration mismatch",
+    );
+  }
+  const properties = new Map(
+    initializer.arguments[0].properties.flatMap((property) =>
+      property.type === "Property" &&
+      !property.computed &&
+      property.key.type === "Identifier"
+        ? [[property.key.name, property.value]]
+        : [],
+    ),
+  );
+  const projection = {};
+  for (const key of Object.keys(EXPECTED_C13_SOURCE_LIFT_POLICY_PROJECTION)) {
+    const value = properties.get(key);
+    if (value?.type !== "Literal" || typeof value.value !== "boolean") {
+      throw new Error(
+        "C13 source-lift evaluator gate: policy field declaration mismatch",
+      );
+    }
+    projection[key] = value.value;
+  }
+  return projection;
+}
+
+function assertMainEvaluatorC13SemanticPolicyBytes(evaluatorBytes) {
+  if (
+    !Buffer.isBuffer(evaluatorBytes) ||
+    Object.getPrototypeOf(evaluatorBytes) !== Buffer.prototype
+  ) {
+    throw new TypeError(
+      "C13 source-lift evaluator gate requires an ordinary Buffer",
+    );
+  }
+  const source = evaluatorBytes.toString("utf8");
+  if (!Buffer.from(source, "utf8").equals(evaluatorBytes)) {
+    throw new Error("C13 source-lift evaluator gate: non-canonical UTF-8");
+  }
+  let program;
+  try {
+    program = parse(source, ACORN_PARSE_OPTIONS);
+  } catch (error) {
+    throw new Error(
+      `C13 source-lift evaluator gate: invalid module syntax: ${error.message}`,
+    );
+  }
+  const projection = mainEvaluatorC13SourceLiftPolicyProjection(program);
+  const receipt = assertC13SourceLiftPolicyProjection(projection);
+  return Object.freeze({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-main-evaluator-policy-gate/v1",
+    ...receipt,
+  });
+}
+
 const C13_SOURCE_LIFT_RECEIPT = recursivelyFreezeEvidence({
   schema:
     "oxigraph.test.candidate-containment-guardian-control-v1-c13-source-lift/v1",
@@ -11268,6 +11382,7 @@ const C13_SOURCE_LIFT_RECEIPT = recursivelyFreezeEvidence({
 });
 
 function assertC13SourceLiftReceipt(receipt) {
+  assertC13SourceLiftPolicyProjection(c13SourceLiftPolicyProjection(receipt));
   assert.deepEqual(receipt, {
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-c13-source-lift/v1",
@@ -16416,38 +16531,63 @@ test("close the remaining private-store commit-position and semantic-mutation qu
 
   const evaluatorBytes = readFileSync(EVALUATOR_PATH);
   const evaluatorSha256Before = byteSha256(evaluatorBytes);
+  const baselineEvaluatorPolicy =
+    assertMainEvaluatorC13SemanticPolicyBytes(evaluatorBytes);
   const restoredEvaluatorBytes = Buffer.from(evaluatorBytes);
-  const evaluatorMarker = Buffer.from(
-    'test("close the remaining private-store commit-position and semantic-mutation quotas before lifting the source-presence stop", async () => {\n  const syntheticSourceBytes = Buffer.from(sourceSkeleton(), "utf8");',
-    "utf8",
+  const evaluatorProgram = parse(
+    evaluatorBytes.toString("utf8"),
+    ACORN_PARSE_OPTIONS,
   );
-  const evaluatorMarkerOffset = restoredEvaluatorBytes.indexOf(evaluatorMarker);
-  assert.notEqual(evaluatorMarkerOffset, -1);
-  assert.equal(
-    restoredEvaluatorBytes.indexOf(
-      evaluatorMarker,
+  const sourceLiftDeclarator = evaluatorProgram.body
+    .flatMap((statement) =>
+      statement.type === "VariableDeclaration" ? statement.declarations : [],
+    )
+    .find(
+      (declaration) =>
+        declaration.id.type === "Identifier" &&
+        declaration.id.name === "C13_SOURCE_LIFT_RECEIPT",
+    );
+  assert.notEqual(sourceLiftDeclarator, undefined);
+  const sourceLiftObject = sourceLiftDeclarator.init.arguments[0];
+  const toctouProperty = sourceLiftObject.properties.find(
+    (property) =>
+      property.type === "Property" &&
+      !property.computed &&
+      property.key.type === "Identifier" &&
+      property.key.name === "filesystemToctouClosed",
+  );
+  assert.notEqual(toctouProperty, undefined);
+  assert.equal(toctouProperty.value.type, "Literal");
+  assert.equal(toctouProperty.value.value, false);
+  const evaluatorMarker = Buffer.from("false", "utf8");
+  const evaluatorMutant = Buffer.from("true ", "utf8");
+  assert.equal(evaluatorMutant.length, evaluatorMarker.length);
+  const evaluatorMarkerOffset = toctouProperty.value.start;
+  assert.deepEqual(
+    restoredEvaluatorBytes.subarray(
+      evaluatorMarkerOffset,
       evaluatorMarkerOffset + evaluatorMarker.length,
     ),
-    -1,
+    evaluatorMarker,
   );
-  restoredEvaluatorBytes[evaluatorMarkerOffset] ^= 0x01;
-  killSync("main-evaluator-byte-mutation", () =>
-    assert.equal(
-      restoredEvaluatorBytes
-        .subarray(
-          evaluatorMarkerOffset,
-          evaluatorMarkerOffset + evaluatorMarker.length,
-        )
-        .equals(evaluatorMarker),
-      true,
-    ),
+  evaluatorMutant.copy(restoredEvaluatorBytes, evaluatorMarkerOffset);
+  let evaluatorPolicyRejection = null;
+  try {
+    assertMainEvaluatorC13SemanticPolicyBytes(restoredEvaluatorBytes);
+  } catch (error) {
+    evaluatorPolicyRejection = error;
+  }
+  assert.equal(
+    evaluatorPolicyRejection?.message,
+    "C13 source-lift policy gate: projection mismatch",
   );
-  evaluatorBytes.copy(
+  const evaluatorMutatedSha256 = byteSha256(restoredEvaluatorBytes);
+  evaluatorMarker.copy(restoredEvaluatorBytes, evaluatorMarkerOffset);
+  const restoredEvaluatorPolicy = assertMainEvaluatorC13SemanticPolicyBytes(
     restoredEvaluatorBytes,
-    evaluatorMarkerOffset,
-    evaluatorMarkerOffset,
-    evaluatorMarkerOffset + evaluatorMarker.length,
   );
+  assert.deepEqual(restoredEvaluatorPolicy, baselineEvaluatorPolicy);
+  assert.equal(restoredEvaluatorBytes.equals(evaluatorBytes), true);
   assert.equal(byteSha256(restoredEvaluatorBytes), evaluatorSha256Before);
 
   const mutationIds = mutationKills.map(({ id }) => id);
@@ -16461,8 +16601,20 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     kills: mutationKills,
     concreteRestoration: {
       evaluatorPreSha256: evaluatorSha256Before,
+      evaluatorMutatedSha256,
       evaluatorPostSha256: byteSha256(restoredEvaluatorBytes),
+      evaluatorMutationOffset: evaluatorMarkerOffset,
+      evaluatorSemanticPolicyField:
+        "C13_SOURCE_LIFT_RECEIPT.filesystemToctouClosed",
+      evaluatorSemanticEdit: "false->true",
+      evaluatorMutatedRejectedByPolicyGate:
+        evaluatorPolicyRejection?.message ===
+        "C13 source-lift policy gate: projection mismatch",
+      evaluatorRestoredAcceptedByPolicyGate: true,
       evaluatorRestoredByteExact: true,
+      evaluatorMutatedPolicyProjectionValidated: true,
+      evaluatorMutatedModuleExecuted: false,
+      evaluatorMutationKillClaimed: false,
       sourceBaselineSha256: syntheticSourceSha256,
       sourceRestoredSha256: byteSha256(freshSourceBytes),
       sourceRestoredByteExact: freshSourceBytes.equals(syntheticSourceBytes),
@@ -16476,21 +16628,36 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 140,
-      killed: 140,
+      count: 139,
+      killed: 139,
       survivors: 0,
       idsSha256:
-        "855495fc8291974c96b67e352c9a57fc6157ac63a533552d016e8cd451135929",
+        "c28632ae1090b75a0ab33c79fdde6e9917987caaf4bc05e581594221c7eba8b9",
     },
   );
-  assert.deepEqual(mutationReceipt.concreteRestoration, {
-    evaluatorPreSha256: evaluatorSha256Before,
-    evaluatorPostSha256: evaluatorSha256Before,
-    evaluatorRestoredByteExact: true,
-    sourceBaselineSha256: syntheticSourceSha256,
-    sourceRestoredSha256: syntheticSourceSha256,
-    sourceRestoredByteExact: true,
-  });
+  assert.equal(
+    mutationReceipt.concreteRestoration.evaluatorPreSha256,
+    mutationReceipt.concreteRestoration.evaluatorPostSha256,
+  );
+  assert.notEqual(
+    mutationReceipt.concreteRestoration.evaluatorMutatedSha256,
+    mutationReceipt.concreteRestoration.evaluatorPreSha256,
+  );
+  assert.deepEqual(
+    {
+      sourceBaselineSha256:
+        mutationReceipt.concreteRestoration.sourceBaselineSha256,
+      sourceRestoredSha256:
+        mutationReceipt.concreteRestoration.sourceRestoredSha256,
+      sourceRestoredByteExact:
+        mutationReceipt.concreteRestoration.sourceRestoredByteExact,
+    },
+    {
+      sourceBaselineSha256: syntheticSourceSha256,
+      sourceRestoredSha256: syntheticSourceSha256,
+      sourceRestoredByteExact: true,
+    },
+  );
   assertRecursivelyFrozenWithoutByteViews(mutationReceipt);
 });
 test(

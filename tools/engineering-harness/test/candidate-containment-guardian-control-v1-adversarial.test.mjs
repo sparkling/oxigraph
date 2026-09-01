@@ -3778,27 +3778,523 @@ function assertSourceIndependentAdversarialOracle(oracle, requirements) {
   });
 }
 
-const DIRECT_ALLOWED_AMBIENT_INTRINSICS = new Set([
-  "Array",
+const EXPECTED_DIRECT_AMBIENT_MEMBER_POLICY = Object.freeze([
+  Object.freeze(["Array", Object.freeze(["isArray"])]),
+  Object.freeze(["Boolean", Object.freeze([])]),
+  Object.freeze(["Error", Object.freeze([])]),
+  Object.freeze([
+    "Number",
+    Object.freeze(["isFinite", "isInteger", "isSafeInteger"]),
+  ]),
+  Object.freeze([
+    "Object",
+    Object.freeze([
+      "create",
+      "defineProperty",
+      "freeze",
+      "hasOwn",
+      "isExtensible",
+      "isFrozen",
+    ]),
+  ]),
+  Object.freeze(["Reflect", Object.freeze([])]),
+  Object.freeze(["Set", Object.freeze([])]),
+  Object.freeze(["String", Object.freeze([])]),
+  Object.freeze(["WeakMap", Object.freeze([])]),
+]);
+const DIRECT_ALLOWED_AMBIENT_MEMBERS = new Map([
+  ["Array", new Set(["isArray"])],
+  ["Boolean", new Set()],
+  ["Error", new Set()],
+  ["Number", new Set(["isFinite", "isInteger", "isSafeInteger"])],
+  [
+    "Object",
+    new Set([
+      "create",
+      "defineProperty",
+      "freeze",
+      "hasOwn",
+      "isExtensible",
+      "isFrozen",
+    ]),
+  ],
+  ["Reflect", new Set()],
+  ["Set", new Set()],
+  ["String", new Set()],
+  ["WeakMap", new Set()],
+]);
+
+function directAmbientMemberPolicyProjection(policy) {
+  return [...policy].map(([name, members]) => [name, [...members]]);
+}
+
+function directAssertAmbientMemberPolicyProjection(projection) {
+  if (
+    canonicalJson(projection) !==
+    canonicalJson(EXPECTED_DIRECT_AMBIENT_MEMBER_POLICY)
+  ) {
+    throw new Error(
+      "direct evaluator policy gate: ambient member contract mismatch",
+    );
+  }
+  return Object.freeze({
+    entryCount: projection.length,
+    policySha256: digest(projection),
+  });
+}
+const DIRECT_ALLOWED_AMBIENT_DIRECT_CALLS = new Set([
   "Boolean",
-  "Error",
   "Number",
-  "Object",
-  "Reflect",
-  "Set",
   "String",
+]);
+const DIRECT_ALLOWED_AMBIENT_CONSTRUCTORS = new Set([
+  "Error",
+  "Set",
   "WeakMap",
+]);
+const DIRECT_CONTEXTUAL_AMBIENT_MEMBER_CALLS = new Map([
+  ["Array", new Set(["isArray"])],
+  ["Number", new Set(["isFinite", "isInteger", "isSafeInteger"])],
+  ["Object", new Set(["hasOwn", "isExtensible", "isFrozen"])],
+]);
+const DIRECT_FORBIDDEN_MEMBER_NAMES = new Set([
+  "__defineGetter__",
+  "__defineSetter__",
+  "__lookupGetter__",
+  "__lookupSetter__",
+  "__proto__",
+  "arguments",
+  "callee",
+  "caller",
+  "constructor",
+  "prototype",
 ]);
 const DIRECT_FORBIDDEN_IDENTIFIER_NAMES = new Set([
   ...FORBIDDEN,
+  "ArrayBuffer",
+  "AsyncFunction",
+  "AsyncGeneratorFunction",
+  "Atomics",
+  "BigInt64Array",
+  "BigUint64Array",
+  "BroadcastChannel",
+  "Bun",
+  "DataView",
+  "Deno",
+  "EventSource",
+  "FinalizationRegistry",
+  "Float32Array",
+  "Float64Array",
   "Function",
-  "require",
-  "module",
-  "fetch",
-  "setInterval",
+  "GeneratorFunction",
+  "Int16Array",
+  "Int32Array",
+  "Int8Array",
+  "Math",
+  "MessageChannel",
+  "MessagePort",
+  "SharedArrayBuffer",
+  "SharedWorker",
+  "TextDecoder",
+  "TextEncoder",
+  "Uint16Array",
+  "Uint32Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "WeakRef",
+  "WebAssembly",
+  "WebSocket",
+  "Worker",
+  "XMLHttpRequest",
+  "__dirname",
+  "__filename",
+  "arguments",
+  "atob",
+  "btoa",
+  "clearImmediate",
   "clearInterval",
   "clearTimeout",
+  "console",
+  "crypto",
+  "global",
+  "module",
+  "navigator",
+  "performance",
   "queueMicrotask",
+  "require",
+  "setImmediate",
+  "setInterval",
+  "structuredClone",
+]);
+const DIRECT_PRIVATE_STORE_NAMES = new Set([
+  "startupMetadata",
+  "inputMetadata",
+  "stateMetadata",
+]);
+const DIRECT_IMPORTED_CALLABLE_NAMES = new Set([
+  "boundedInteger",
+  "canonicalJsonBytes",
+  "canonicalJsonLine",
+  "copyBoundedBuffer",
+  "decodeCanonicalBase64",
+  "decodeCanonicalJsonLine",
+  "deepFreeze",
+  "exactBoolean",
+  "exactDigest",
+  "exactRecord",
+  "frozenCopyOnReadBytes",
+  "nullRecord",
+  "sha256",
+  "verifyCandidateContainmentLaunchCapsuleV3",
+]);
+const DIRECT_IMPORTED_FAILURE_CALLBACK_INDEX = new Map([
+  ["boundedInteger", 4],
+  ["copyBoundedBuffer", 3],
+  ["decodeCanonicalBase64", 3],
+  ["decodeCanonicalJsonLine", 3],
+  ["exactBoolean", 3],
+  ["exactDigest", 2],
+  ["exactRecord", 3],
+]);
+const DIRECT_PRIVATE_STORE_OWNER_BY_FUNCTION = new Map(
+  PRIVATE_STORE_COMMIT_CONTROL_PLAN.flatMap(({ store, operations }) =>
+    operations.map((operation) => [operation, store]),
+  ),
+);
+const DIRECT_PRIVATE_LOOKUP_POLICY = new Map(
+  [
+    [
+      "initializeCandidateContainmentGuardianControlV1",
+      "startupMetadata",
+      "startupProjection",
+    ],
+    [
+      "verifyCandidateContainmentGuardianStatusFrameV1",
+      "startupMetadata",
+      "startupProjection",
+    ],
+    ...[
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "createCandidateContainmentGuardianCancelInputV1",
+      "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      "createCandidateContainmentGuardianControllerClosedInputV1",
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+      "createCandidateContainmentGuardianStatusEofInputV1",
+    ].map((functionName) => [functionName, "stateMetadata", "currentState"]),
+    [
+      "reduceCandidateContainmentGuardianControlV1",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "reduceCandidateContainmentGuardianControlV1",
+      "inputMetadata",
+      "brandedInput",
+    ],
+  ].map(([functionName, storeName, parameterName]) => [
+    `${functionName}\u0000${storeName}`,
+    parameterName,
+  ]),
+);
+const DIRECT_PROTECTED_BINDING_NAMES = new Set([
+  ...[...ALLOWED_IMPORTS.values()].flat(),
+  ...EXPECTED_EXPORTS,
+  ...DIRECT_PRIVATE_STORE_NAMES,
+  ...DIRECT_ALLOWED_AMBIENT_MEMBERS.keys(),
+  ...DIRECT_FORBIDDEN_IDENTIFIER_NAMES,
+]);
+const DIRECT_FORBIDDEN_COMPILE_TIME_STRINGS = new Set(
+  [
+    ...DIRECT_FORBIDDEN_IDENTIFIER_NAMES,
+    ...DIRECT_FORBIDDEN_MEMBER_NAMES,
+    "OPENROUTER_API_KEY",
+    "openrouter",
+  ].map((value) => value.toLowerCase()),
+);
+const DIRECT_SAFE_MEMBER_METHODS = new Set([
+  "at",
+  "get",
+  "has",
+  "includes",
+  "slice",
+]);
+const DIRECT_METHOD_MEMBER_NAMES = new Set([
+  "add",
+  "at",
+  "get",
+  "has",
+  "includes",
+  "push",
+  "set",
+  "slice",
+]);
+const DIRECT_ALLOWED_MEMBER_NAMES = new Set([
+  "ADMIT",
+  "CANCEL",
+  "N1",
+  "N2",
+  "N3",
+  "N4",
+  "N5a",
+  "N5b",
+  "R1",
+  "R2",
+  "RECOVERY_REQUEST",
+  "STATUS",
+  "accessMode",
+  "accessModes",
+  "action",
+  "actorKind",
+  "add",
+  "admissionControlMessageCount",
+  "admissionCount",
+  "admissionFrameMaximumBytes",
+  "admissionFrameSha256",
+  "admissionRecvmsgReport",
+  "admissionRecvmsgReportMaximumBytes",
+  "admissionRight",
+  "admissionRights",
+  "admissionRightsCount",
+  "aggregateWireBytes",
+  "ambientIntrinsics",
+  "artifact",
+  "at",
+  "attemptDirectoryName",
+  "attemptSha256",
+  "authority",
+  "auxiliaryByteLength",
+  "auxiliarySha256",
+  "binding",
+  "boundStateSha256",
+  "byteCarrierAdditionalOwnPropertyPolicy",
+  "byteLength",
+  "bytes",
+  "cancelFrameMaximumBytes",
+  "cancelObserved",
+  "cgroupAuthority",
+  "cleanup",
+  "cleanupProved",
+  "closeOnExec",
+  "concurrentAdmissionsPermitted",
+  "connected",
+  "contentSha256",
+  "controlLevel",
+  "controlMessageCount",
+  "controlTerminalReason",
+  "controlTruncated",
+  "controlType",
+  "controllerClosedObserved",
+  "count",
+  "currentOffset",
+  "decisionSourceLocation",
+  "descriptorAuthority",
+  "descriptorCount",
+  "descriptorFactsProved",
+  "descriptorInventory",
+  "descriptorKinds",
+  "diagnosticFailureObserved",
+  "diagnosticSummary",
+  "diagnosticSummaryMaximumBytes",
+  "direct",
+  "direction",
+  "directions",
+  "disposition",
+  "eofObserved",
+  "epochBytes",
+  "epochOrigin",
+  "epochOriginProved",
+  "epochSha256",
+  "eventCount",
+  "evidenceOnly",
+  "expectedEpochSha256",
+  "failureCodes",
+  "failurePrecedence",
+  "fd",
+  "fd0",
+  "fd1",
+  "fd2",
+  "fd3",
+  "fd4",
+  "fd5",
+  "fd6",
+  "fd7",
+  "files",
+  "filesystemAuthority",
+  "frameByteLength",
+  "frameFields",
+  "frameSha256",
+  "get",
+  "guardianExecution",
+  "guardianExecutionProved",
+  "has",
+  "hasOwn",
+  "identity",
+  "imports",
+  "includes",
+  "index",
+  "initialOffset",
+  "inputKinds",
+  "inputProjection",
+  "isArray",
+  "isExtensible",
+  "isFinite",
+  "isFrozen",
+  "isInteger",
+  "isSafeInteger",
+  "kind",
+  "lastWireFrameSha256",
+  "launchCapsuleV3",
+  "launchCapsuleV3Sha256",
+  "launchFileIdentitySha256",
+  "legalSequences",
+  "length",
+  "lifecycleInventorySha256",
+  "lifetimeAnchorProjectionSha256",
+  "lifetimeAttemptAnchorRawSha256",
+  "limits",
+  "lockHeld",
+  "maximumAdmissionsPerGuardianLifetime",
+  "maximumAdmissionsPerTranscript",
+  "maximumAggregateWireBytes",
+  "maximumStatusFramesPerTransition",
+  "maximumTranscriptSymbols",
+  "messageByteLength",
+  "messageRawSha256",
+  "messageTruncated",
+  "mode",
+  "modes",
+  "name",
+  "nextWireSequence",
+  "nonclaims",
+  "normalDescriptorCount",
+  "normalSha256",
+  "openFileDescriptionClass",
+  "openFileDescriptionIdentitySha256",
+  "openFileDescriptionNonAliasMethod",
+  "openFileDescriptionObservation",
+  "openFileDescriptionObservationScopeSha256",
+  "openFileDescriptionScope",
+  "phase",
+  "phases",
+  "physicalFacts",
+  "planStatus",
+  "predecessors",
+  "previousFrameGenesisSha256",
+  "previousFrameSha256",
+  "privateStateStores",
+  "processAuthority",
+  "productionReadinessProved",
+  "projectionSha256",
+  "push",
+  "quarantineReason",
+  "rawDiagnosticsMaximumBytes",
+  "rawSha256",
+  "receivedRightsCloseOnExec",
+  "recoveryActorEpochSha256",
+  "recoveryActorKind",
+  "recoveryAuthority",
+  "recoveryBrandProvenanceProved",
+  "recoveryControlHandoffObserved",
+  "recoveryExecution",
+  "recoveryExecutionProved",
+  "recoveryOnlyDescriptorCount",
+  "recoveryOnlySha256",
+  "recoveryPlanSha256",
+  "recoveryReplaySha256",
+  "recoveryRequestFrameSha256",
+  "recoveryRequestMaximumBytes",
+  "recoveryRequirementsSha256",
+  "recoverySelection",
+  "recoverySelectionSha256",
+  "recoveryStateMinimumCount",
+  "recoveryStateSlots",
+  "requiredActorKind",
+  "requiredDestinationLocation",
+  "requirementsSha256",
+  "right0",
+  "right1",
+  "right10",
+  "right11",
+  "right12",
+  "right13",
+  "right2",
+  "right3",
+  "right4",
+  "right5",
+  "right6",
+  "right7",
+  "right8",
+  "right9",
+  "rightsCount",
+  "role",
+  "runtimeAuthority",
+  "runtimeRegistrationProved",
+  "runtimeSerializationProved",
+  "schema",
+  "schemas",
+  "sequence",
+  "set",
+  "sha256",
+  "size",
+  "slice",
+  "socketFamily",
+  "socketTransfer",
+  "socketTransferProved",
+  "socketType",
+  "sourceLocation",
+  "specifier",
+  "startupDescriptor",
+  "startupMaps",
+  "startupProjection",
+  "startupReport",
+  "startupReportByteLength",
+  "startupReportMaximumBytes",
+  "startupReportSha256",
+  "startupSha256",
+  "state",
+  "state0",
+  "state1",
+  "state10",
+  "state11",
+  "state12",
+  "state13",
+  "state14",
+  "state15",
+  "state16",
+  "state17",
+  "state18",
+  "state2",
+  "state3",
+  "state4",
+  "state5",
+  "state6",
+  "state7",
+  "state8",
+  "state9",
+  "stateCount",
+  "stateProjection",
+  "stateSha256",
+  "statusArtifact",
+  "statusArtifactOwnKeys",
+  "statusEofObserved",
+  "statusFlags",
+  "statusFrame0",
+  "statusFrame1",
+  "statusFrameCount",
+  "statusFrameMaximumBytes",
+  "statusStates",
+  "targetSha256",
+  "targetSupervisorFd",
+  "terminalReason",
+  "terminalReasons",
+  "transcriptTerminal",
+  "transitionProjection",
+  "transportAuthority",
+  "value",
+  "version",
+  "vocabularies",
+  "wireFrame",
 ]);
 const DIRECT_NODE_FIELDS = Object.freeze({
   Program: Object.freeze(["body", "sourceType"]),
@@ -3962,10 +4458,21 @@ function directAssertLiteralSafe(value, parent) {
 
 function directWalkAst(program, source) {
   let nodeCount = 0;
+  const seenNodes = new WeakSet();
+  const weakMapConstructions = [];
   const walk = (node, parent = null) => {
     if (node === null || typeof node !== "object") return;
+    if (seenNodes.has(node)) return;
+    seenNodes.add(node);
     directAssertNodeShape(node);
     nodeCount += 1;
+    if (
+      node.type === "NewExpression" &&
+      node.callee.type === "Identifier" &&
+      node.callee.name === "WeakMap"
+    ) {
+      weakMapConstructions.push(node);
+    }
     if (node.type === "Identifier") {
       const spelling = source.slice(node.start, node.end);
       if (
@@ -3974,30 +4481,56 @@ function directWalkAst(program, source) {
       ) {
         throw new Error("direct static gate: escaped or encoded identifier");
       }
-      if (DIRECT_FORBIDDEN_IDENTIFIER_NAMES.has(node.name)) {
+    }
+    if (node.type === "Literal") {
+      if (node.regex !== undefined || typeof node.value === "bigint") {
+        throw new Error("direct static gate: unsupported literal syntax");
+      }
+      directAssertLiteralSafe(node.value, parent);
+    }
+    if (
+      node.type === "TemplateLiteral" ||
+      node.type === "TaggedTemplateExpression"
+    ) {
+      throw new Error("direct static gate: template literal syntax");
+    }
+    if (
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression"
+    ) {
+      throw new Error("direct static gate: function expression syntax");
+    }
+    if (node.type === "FunctionDeclaration" && (node.async || node.generator)) {
+      throw new Error("direct static gate: asynchronous or generator function");
+    }
+    if (node.type === "SpreadElement") {
+      throw new Error("direct static gate: spread syntax");
+    }
+    if (node.type === "MemberExpression") {
+      const memberName = node.computed
+        ? directFoldString(node.property)
+        : node.property.type === "Identifier"
+          ? node.property.name
+          : null;
+      if (node.computed || node.optional === true) {
         throw new Error(
-          `direct static gate: forbidden identifier ${node.name}`,
+          "direct static gate: computed or optional member access",
         );
       }
-    }
-    if (node.type === "Literal") directAssertLiteralSafe(node.value, parent);
-    if (node.type === "TemplateLiteral" && node.expressions.length !== 0) {
-      throw new Error("direct static gate: interpolated template literal");
-    }
-    if (
-      node.type === "MemberExpression" &&
-      (node.computed || node.optional === true)
-    ) {
-      throw new Error("direct static gate: computed or optional member access");
-    }
-    if (
-      node.type === "MemberExpression" &&
-      node.property.type === "Identifier"
-    ) {
       if (
-        ["__proto__", "prototype", "constructor"].includes(node.property.name)
+        node.object.type === "Identifier" &&
+        DIRECT_ALLOWED_AMBIENT_MEMBERS.has(node.object.name)
       ) {
-        throw new Error("direct static gate: prototype or constructor gadget");
+        if (
+          !DIRECT_ALLOWED_AMBIENT_MEMBERS.get(node.object.name).has(memberName)
+        ) {
+          throw new Error(
+            `direct static gate: ambient member ${node.object.name}.${memberName}`,
+          );
+        }
+        if (parent?.type !== "CallExpression" || parent.callee !== node) {
+          throw new Error("direct static gate: ambient member used as value");
+        }
       }
     }
     if (node.type === "Property" && node.computed) {
@@ -4029,201 +4562,798 @@ function directWalkAst(program, source) {
     }
   };
   walk(program);
-  return nodeCount;
-}
-
-function directDeclarePattern(pattern, scope) {
-  if (pattern === null) return;
-  if (pattern.type === "Identifier") {
-    scope.names.add(pattern.name);
-    return;
-  }
-  if (pattern.type === "RestElement") {
-    directDeclarePattern(pattern.argument, scope);
-    return;
-  }
-  if (pattern.type === "AssignmentPattern") {
-    directDeclarePattern(pattern.left, scope);
-    return;
-  }
-  if (pattern.type === "ArrayPattern") {
-    for (const element of pattern.elements)
-      directDeclarePattern(element, scope);
-    return;
-  }
-  if (pattern.type === "ObjectPattern") {
-    for (const property of pattern.properties) {
-      directDeclarePattern(
-        property.type === "RestElement" ? property.argument : property.value,
-        scope,
-      );
-    }
-    return;
-  }
-  throw new Error(`direct static gate: unsupported binding ${pattern.type}`);
-}
-
-function directResolveFreeIdentifiers(program) {
-  const scopeByNode = new WeakMap();
-  const createScope = (parent) => ({ parent, names: new Set() });
-  const collect = (node, scope) => {
-    if (node === null || typeof node !== "object") return;
-    if (node.type === "Program") {
-      scopeByNode.set(node, scope);
-      for (const statement of node.body) collect(statement, scope);
-      return;
-    }
-    if (node.type === "ImportDeclaration") {
-      for (const specifier of node.specifiers)
-        scope.names.add(specifier.local.name);
-      return;
-    }
-    if (node.type === "ExportNamedDeclaration") {
-      if (node.declaration !== null) collect(node.declaration, scope);
-      return;
-    }
-    if (node.type === "FunctionDeclaration") {
-      scope.names.add(node.id.name);
-      const functionScope = createScope(scope);
-      scopeByNode.set(node, functionScope);
-      for (const parameter of node.params)
-        directDeclarePattern(parameter, functionScope);
-      collect(node.body, functionScope);
-      return;
-    }
-    if (
-      node.type === "FunctionExpression" ||
-      node.type === "ArrowFunctionExpression"
-    ) {
-      const functionScope = createScope(scope);
-      scopeByNode.set(node, functionScope);
-      if (node.id !== null) functionScope.names.add(node.id.name);
-      for (const parameter of node.params)
-        directDeclarePattern(parameter, functionScope);
-      collect(node.body, functionScope);
-      return;
-    }
-    if (node.type === "BlockStatement") {
-      const blockScope = createScope(scope);
-      scopeByNode.set(node, blockScope);
-      for (const statement of node.body) collect(statement, blockScope);
-      return;
-    }
-    if (node.type === "CatchClause") {
-      const catchScope = createScope(scope);
-      scopeByNode.set(node, catchScope);
-      directDeclarePattern(node.param, catchScope);
-      collect(node.body, catchScope);
-      return;
-    }
-    if (node.type === "VariableDeclaration") {
-      for (const declaration of node.declarations) {
-        directDeclarePattern(declaration.id, scope);
-        collect(declaration.init, scope);
-      }
-      return;
-    }
-    for (const value of Object.values(node)) {
-      if (Array.isArray(value)) {
-        for (const child of value) {
-          if (child !== null && typeof child?.type === "string")
-            collect(child, scope);
-        }
-      } else if (value !== null && typeof value?.type === "string") {
-        collect(value, scope);
-      }
-    }
-  };
-  const moduleScope = createScope(null);
-  collect(program, moduleScope);
-  const resolves = (scope, name) => {
-    for (let current = scope; current !== null; current = current.parent) {
-      if (current.names.has(name)) return true;
-    }
-    return DIRECT_ALLOWED_AMBIENT_INTRINSICS.has(name);
-  };
-  let referenceCount = 0;
-  const visit = (node, scope, role = "reference") => {
-    if (node === null || typeof node !== "object") return;
-    scope = scopeByNode.get(node) ?? scope;
-    if (node.type === "Identifier") {
-      if (role === "reference") {
-        referenceCount += 1;
-        if (!resolves(scope, node.name)) {
-          throw new Error(`direct static gate: free identifier ${node.name}`);
-        }
-      }
-      return;
-    }
-    if (node.type === "ImportDeclaration") return;
-    if (node.type === "ExportNamedDeclaration") {
-      visit(node.declaration, scope);
-      return;
-    }
-    if (node.type === "VariableDeclaration") {
-      for (const declaration of node.declarations) {
-        visit(declaration.id, scope, "binding");
-        visit(declaration.init, scope);
-      }
-      return;
-    }
-    if (
-      node.type === "FunctionDeclaration" ||
-      node.type === "FunctionExpression" ||
-      node.type === "ArrowFunctionExpression"
-    ) {
-      visit(node.id, scope, "binding");
-      for (const parameter of node.params) visit(parameter, scope, "binding");
-      visit(node.body, scope);
-      return;
-    }
-    if (node.type === "MemberExpression") {
-      visit(node.object, scope);
-      visit(node.property, scope, node.computed ? "reference" : "property");
-      return;
-    }
-    if (node.type === "Property") {
-      visit(node.key, scope, node.computed ? "reference" : "property");
-      visit(
-        node.value,
-        scope,
-        node.shorthand
-          ? "reference"
-          : role === "binding"
-            ? "binding"
-            : "reference",
-      );
-      return;
-    }
-    if (node.type === "LabeledStatement") {
-      visit(node.label, scope, "label");
-      visit(node.body, scope);
-      return;
-    }
-    if (node.type === "BreakStatement" || node.type === "ContinueStatement") {
-      visit(node.label, scope, "label");
-      return;
-    }
-    for (const [key, value] of Object.entries(node)) {
-      if (["type", "start", "end"].includes(key)) continue;
-      if (Array.isArray(value)) {
-        for (const child of value) {
-          if (child !== null && typeof child?.type === "string")
-            visit(child, scope, role);
-        }
-      } else if (value !== null && typeof value?.type === "string") {
-        visit(value, scope, role);
-      }
-    }
-  };
-  visit(program, moduleScope);
   return Object.freeze({
-    moduleBindingCount: moduleScope.names.size,
-    referenceCount,
+    nodeCount,
+    weakMapConstructions: Object.freeze(weakMapConstructions),
   });
 }
 
-function directAssertExactSurface(program) {
+function directAssertContextualGrammar(program, expectedNodeCount) {
+  const classifiedNodes = new WeakSet();
+  const moduleScope = { parent: null, bindings: new Map() };
+  const functionRecords = new Map();
+  const counters = {
+    classifiedNodeCount: 0,
+    referenceCount: 0,
+    privateOperationCount: 0,
+  };
+  const fail = (reason) => {
+    throw new Error(`direct static gate: contextual ${reason}`);
+  };
+  const mark = (node, role) => {
+    if (node === null || typeof node?.type !== "string") {
+      fail(`invalid ${role} node`);
+    }
+    if (!classifiedNodes.has(node)) {
+      classifiedNodes.add(node);
+      counters.classifiedNodeCount += 1;
+    }
+  };
+  const markIdentifier = (node, role, { reference = false } = {}) => {
+    if (node?.type !== "Identifier") fail(`${role} must be an identifier`);
+    const firstClassification = !classifiedNodes.has(node);
+    mark(node, role);
+    if (reference && firstClassification) counters.referenceCount += 1;
+  };
+  const makeValue = (kind, staticStrings = []) =>
+    Object.freeze({
+      kind,
+      staticStrings: Object.freeze([...new Set(staticStrings)]),
+    });
+  const immutableValue = makeValue("immutable");
+  const mergeStaticStrings = (...values) => [
+    ...new Set(values.flatMap(({ staticStrings }) => staticStrings)),
+  ];
+  const capabilityLookingString = (value) => {
+    const normalized = value.toLowerCase();
+    return (
+      [...DIRECT_FORBIDDEN_COMPILE_TIME_STRINGS].some((fragment) =>
+        normalized.includes(fragment),
+      ) ||
+      normalized.startsWith("file://") ||
+      normalized.startsWith("node:") ||
+      normalized.startsWith("/proc/")
+    );
+  };
+  const assertStaticStrings = (strings, literalRole) => {
+    if (literalRole !== "ordinary") return;
+    const capability = strings.find(capabilityLookingString);
+    if (capability !== undefined) {
+      fail(`capability-looking compile-time string ${capability}`);
+    }
+  };
+  const declare = (
+    scope,
+    name,
+    binding,
+    { allowProtectedName = false } = {},
+  ) => {
+    if (!allowProtectedName && DIRECT_PROTECTED_BINDING_NAMES.has(name)) {
+      fail(`protected binding declaration ${name}`);
+    }
+    if (scope.bindings.has(name)) fail(`duplicate binding ${name}`);
+    const declared = { name, scope, ...binding };
+    scope.bindings.set(name, declared);
+    return declared;
+  };
+  const resolve = (scope, name) => {
+    for (let current = scope; current !== null; current = current.parent) {
+      const binding = current.bindings.get(name);
+      if (binding !== undefined) return binding;
+    }
+    if (DIRECT_ALLOWED_AMBIENT_MEMBERS.has(name)) {
+      return { name, kind: "ambient", value: makeValue("protected") };
+    }
+    fail(`free identifier ${name}`);
+  };
+  const registerVariable = (node, exported) => {
+    if (node.kind !== "const" || node.declarations.length !== 1) {
+      fail("module variable must be one const declarator");
+    }
+    const declarator = node.declarations[0];
+    if (declarator.id.type !== "Identifier" || declarator.init === null) {
+      fail("module const requires a simple initialized identifier");
+    }
+    const name = declarator.id.name;
+    const privateStore = DIRECT_PRIVATE_STORE_NAMES.has(name);
+    declare(
+      moduleScope,
+      name,
+      {
+        kind: privateStore
+          ? "private-store"
+          : exported
+            ? "export-value"
+            : "pending",
+        value: privateStore ? makeValue("protected") : null,
+        declarator,
+      },
+      { allowProtectedName: privateStore || exported },
+    );
+  };
+  const registerFunction = (node, exported) => {
+    if (
+      node.id?.type !== "Identifier" ||
+      node.async ||
+      node.generator ||
+      node.expression ||
+      node.params.some((parameter) => parameter.type !== "Identifier")
+    ) {
+      fail("only named synchronous functions with identifier parameters");
+    }
+    const binding = declare(
+      moduleScope,
+      node.id.name,
+      {
+        kind: exported ? "export-function" : "local-function",
+        value: makeValue("protected"),
+      },
+      { allowProtectedName: exported },
+    );
+    functionRecords.set(node.id.name, { node, binding, exported });
+  };
+  for (const statement of program.body) {
+    if (statement.type === "ImportDeclaration") {
+      for (const specifier of statement.specifiers) {
+        declare(
+          moduleScope,
+          specifier.local.name,
+          {
+            kind: DIRECT_IMPORTED_CALLABLE_NAMES.has(specifier.local.name)
+              ? "import-callable"
+              : "import-value",
+            value: makeValue("protected"),
+          },
+          { allowProtectedName: true },
+        );
+      }
+      continue;
+    }
+    if (statement.type === "ExportNamedDeclaration") {
+      if (
+        statement.source !== null ||
+        statement.specifiers.length !== 0 ||
+        statement.declaration === null
+      ) {
+        fail("only declaration exports are supported");
+      }
+      if (statement.declaration.type === "VariableDeclaration") {
+        registerVariable(statement.declaration, true);
+      } else if (statement.declaration.type === "FunctionDeclaration") {
+        registerFunction(statement.declaration, true);
+      } else {
+        fail(`export declaration ${statement.declaration.type}`);
+      }
+      continue;
+    }
+    if (statement.type === "VariableDeclaration") {
+      registerVariable(statement, false);
+      continue;
+    }
+    if (statement.type === "FunctionDeclaration") {
+      registerFunction(statement, false);
+      continue;
+    }
+    if (statement.type !== "EmptyStatement") {
+      fail(`module statement ${statement.type}`);
+    }
+  }
+
+  let evaluateExpression;
+  let visitStatement;
+  const visitLiteral = (node, literalRole) => {
+    mark(node, `literal:${literalRole}`);
+    if (
+      node.regex !== undefined ||
+      typeof node.value === "bigint" ||
+      (!["boolean", "number", "string"].includes(typeof node.value) &&
+        node.value !== null)
+    ) {
+      fail("unsupported literal value");
+    }
+    if (typeof node.value === "number") {
+      if (
+        !Number.isSafeInteger(node.value) ||
+        !/^(?:0|[1-9][0-9]*)$/u.test(node.raw)
+      ) {
+        fail(`non-canonical integer literal ${node.raw}`);
+      }
+      return immutableValue;
+    }
+    if (typeof node.value === "string") {
+      assertStaticStrings([node.value], literalRole);
+      return makeValue("immutable", [node.value]);
+    }
+    return immutableValue;
+  };
+  const evaluateIdentifier = (
+    node,
+    scope,
+    { usage = "value", literalRole = "ordinary" } = {},
+  ) => {
+    markIdentifier(node, `identifier:${usage}`, { reference: true });
+    const binding = resolve(scope, node.name);
+    if (binding.kind === "pending" || binding.value === null) {
+      fail(`binding used before initializer ${node.name}`);
+    }
+    if (usage === "callee") {
+      if (
+        !["ambient", "import-callable", "local-function"].includes(binding.kind)
+      ) {
+        fail(`protected or non-callable direct callee ${node.name}`);
+      }
+      if (
+        binding.kind === "ambient" &&
+        !DIRECT_ALLOWED_AMBIENT_DIRECT_CALLS.has(node.name)
+      ) {
+        fail(`ambient direct call ${node.name}`);
+      }
+      return binding;
+    }
+    if (usage === "constructor") {
+      if (
+        binding.kind !== "ambient" ||
+        !DIRECT_ALLOWED_AMBIENT_CONSTRUCTORS.has(node.name)
+      ) {
+        fail(`constructor ${node.name}`);
+      }
+      return binding;
+    }
+    if (usage === "failure-callback") {
+      if (binding.kind !== "local-function") {
+        fail(`failure callback ${node.name}`);
+      }
+      return binding;
+    }
+    if (usage === "receiver") return binding;
+    if (
+      [
+        "ambient",
+        "export-function",
+        "import-callable",
+        "local-function",
+        "private-store",
+      ].includes(binding.kind) ||
+      (["export-value", "import-value"].includes(binding.kind) &&
+        literalRole === "ordinary")
+    ) {
+      fail(`protected binding used as value ${node.name}`);
+    }
+    return binding.value ?? immutableValue;
+  };
+  const visitProperty = (node, scope, context) => {
+    if (
+      node.type !== "Property" ||
+      node.kind !== "init" ||
+      node.method ||
+      node.shorthand ||
+      node.computed
+    ) {
+      fail("object property form");
+    }
+    mark(node, "object-property");
+    let key;
+    if (node.key.type === "Identifier") {
+      markIdentifier(node.key, "property-key");
+      key = node.key.name;
+    } else if (node.key.type === "Literal") {
+      const keyValue = visitLiteral(node.key, context.literalRole);
+      key = node.key.value;
+      assertStaticStrings(keyValue.staticStrings, context.literalRole);
+    } else {
+      fail(`object key ${node.key.type}`);
+    }
+    if (
+      typeof key !== "string" ||
+      DIRECT_FORBIDDEN_MEMBER_NAMES.has(key) ||
+      !DIRECT_ALLOWED_MEMBER_NAMES.has(key)
+    ) {
+      fail(`object property key ${String(key)}`);
+    }
+    return evaluateExpression(node.value, scope, context);
+  };
+  const evaluateMember = (node, scope, context, { asCallee = false } = {}) => {
+    mark(node, asCallee ? "member-callee" : "member-value");
+    if (node.computed || node.optional || node.property.type !== "Identifier") {
+      fail("computed, optional, or non-identifier member");
+    }
+    markIdentifier(node.property, "member-name");
+    const memberName = node.property.name;
+    if (
+      DIRECT_FORBIDDEN_MEMBER_NAMES.has(memberName) ||
+      !DIRECT_ALLOWED_MEMBER_NAMES.has(memberName)
+    ) {
+      fail(`member name ${memberName}`);
+    }
+    if (node.object.type === "ParenthesizedExpression") {
+      fail("parenthesized member receiver");
+    }
+    if (node.object.type === "Identifier") {
+      const binding = resolve(scope, node.object.name);
+      if (binding.kind === "private-store" || binding.kind === "ambient") {
+        evaluateIdentifier(node.object, scope, {
+          usage: "receiver",
+          literalRole: context.literalRole,
+        });
+        if (binding.kind === "private-store") {
+          if (!asCallee || !["has", "get", "set"].includes(memberName)) {
+            fail(`private-store member use ${memberName}`);
+          }
+          return {
+            kind: "private-method",
+            memberName,
+            storeName: binding.name,
+          };
+        }
+        if (
+          !asCallee ||
+          !DIRECT_CONTEXTUAL_AMBIENT_MEMBER_CALLS.get(binding.name)?.has(
+            memberName,
+          )
+        ) {
+          fail(`ambient member use ${binding.name}.${memberName}`);
+        }
+        return {
+          kind: "ambient-method",
+          memberName,
+          ambientName: binding.name,
+        };
+      }
+    }
+    const receiver = evaluateExpression(node.object, scope, context);
+    if (["parameter", "private-read", "protected"].includes(receiver.kind)) {
+      fail(`untrusted or protected member receiver`);
+    }
+    if (asCallee) {
+      if (!DIRECT_SAFE_MEMBER_METHODS.has(memberName)) {
+        fail(`member call ${memberName}`);
+      }
+      return { kind: "safe-method", memberName };
+    }
+    if (DIRECT_METHOD_MEMBER_NAMES.has(memberName)) {
+      fail(`method member used as value ${memberName}`);
+    }
+    return immutableValue;
+  };
+  const evaluateCall = (node, scope, context) => {
+    mark(node, "call-expression");
+    if (node.optional || node.callee.type === "ParenthesizedExpression") {
+      fail("indirect or optional call");
+    }
+    const directBinding =
+      node.callee.type === "Identifier"
+        ? evaluateIdentifier(node.callee, scope, {
+            usage: "callee",
+            literalRole: context.literalRole,
+          })
+        : null;
+    const failureCallbackIndex =
+      directBinding?.kind === "import-callable"
+        ? (DIRECT_IMPORTED_FAILURE_CALLBACK_INDEX.get(directBinding.name) ??
+          null)
+        : null;
+    const argumentValues = node.arguments.map((argument, index) => {
+      if (argument.type === "SpreadElement") fail("spread call argument");
+      if (index === failureCallbackIndex) {
+        if (argument.type !== "Identifier") {
+          fail("failure callback must be an identifier");
+        }
+        evaluateIdentifier(argument, scope, {
+          usage: "failure-callback",
+          literalRole: context.literalRole,
+        });
+        return makeValue("protected");
+      }
+      return evaluateExpression(argument, scope, context);
+    });
+    if (node.callee.type === "Identifier") {
+      const binding = directBinding;
+      if (binding.kind === "ambient" && binding.name === "String") {
+        const strings = argumentValues[0]?.staticStrings ?? [];
+        assertStaticStrings(strings, context.literalRole);
+        return makeValue("immutable", strings);
+      }
+      if (
+        binding.kind === "import-callable" &&
+        [
+          "copyBoundedBuffer",
+          "decodeCanonicalBase64",
+          "decodeCanonicalJsonLine",
+          "canonicalJsonBytes",
+          "canonicalJsonLine",
+          "nullRecord",
+        ].includes(binding.name)
+      ) {
+        return makeValue(
+          "mutable-local",
+          mergeStaticStrings(...argumentValues),
+        );
+      }
+      if (
+        binding.kind === "import-callable" &&
+        [
+          "deepFreeze",
+          "frozenCopyOnReadBytes",
+          "verifyCandidateContainmentLaunchCapsuleV3",
+        ].includes(binding.name)
+      ) {
+        return makeValue("frozen", mergeStaticStrings(...argumentValues));
+      }
+      return makeValue("immutable", mergeStaticStrings(...argumentValues));
+    }
+    if (node.callee.type !== "MemberExpression") {
+      fail(`callee ${node.callee.type}`);
+    }
+    const member = evaluateMember(node.callee, scope, context, {
+      asCallee: true,
+    });
+    if (member.kind === "private-method") {
+      counters.privateOperationCount += 1;
+      const functionName = context.functionName;
+      if (["has", "get"].includes(member.memberName)) {
+        const expectedParameter = DIRECT_PRIVATE_LOOKUP_POLICY.get(
+          `${functionName}\u0000${member.storeName}`,
+        );
+        if (
+          expectedParameter === undefined ||
+          node.arguments.length !== 1 ||
+          node.arguments[0].type !== "Identifier" ||
+          node.arguments[0].name !== expectedParameter ||
+          resolve(scope, expectedParameter).kind !== "parameter"
+        ) {
+          fail(
+            `private lookup ${functionName}:${member.storeName}.${member.memberName}`,
+          );
+        }
+        return member.memberName === "has"
+          ? immutableValue
+          : makeValue("private-read");
+      }
+      if (
+        DIRECT_PRIVATE_STORE_OWNER_BY_FUNCTION.get(functionName) !==
+          member.storeName ||
+        node.arguments.length !== 2 ||
+        node.arguments[0].type !== "Identifier" ||
+        node.arguments[0].name !== "result" ||
+        node.arguments[1].type !== "Identifier" ||
+        node.arguments[1].name !== "metadata" ||
+        resolve(scope, "result").kind !== "local" ||
+        resolve(scope, "metadata").kind !== "local"
+      ) {
+        fail(`private commit ${functionName}:${member.storeName}`);
+      }
+    }
+    return immutableValue;
+  };
+  const evaluateNew = (node, scope, context) => {
+    mark(node, "new-expression");
+    if (node.callee.type !== "Identifier") fail("indirect constructor");
+    const binding = evaluateIdentifier(node.callee, scope, {
+      usage: "constructor",
+      literalRole: context.literalRole,
+    });
+    for (const argument of node.arguments) {
+      if (argument.type === "SpreadElement") fail("spread constructor");
+      evaluateExpression(argument, scope, context);
+    }
+    return makeValue(
+      binding.name === "WeakMap" ? "private-store-value" : "mutable-local",
+    );
+  };
+  evaluateExpression = (node, scope, context = {}) => {
+    const literalRole = context.literalRole ?? "ordinary";
+    const expressionContext = { ...context, literalRole };
+    if (node.type === "Identifier") {
+      return evaluateIdentifier(node, scope, { literalRole });
+    }
+    if (node.type === "Literal") return visitLiteral(node, literalRole);
+    if (node.type === "ArrayExpression") {
+      mark(node, "array-expression");
+      if (node.elements.some((element) => element === null)) fail("array hole");
+      const values = node.elements.map((element) => {
+        if (element.type === "SpreadElement") fail("array spread");
+        return evaluateExpression(element, scope, expressionContext);
+      });
+      return makeValue("mutable-local", mergeStaticStrings(...values));
+    }
+    if (node.type === "ObjectExpression") {
+      mark(node, "object-expression");
+      const values = node.properties.map((property) =>
+        visitProperty(property, scope, expressionContext),
+      );
+      return makeValue("mutable-local", mergeStaticStrings(...values));
+    }
+    if (node.type === "CallExpression") {
+      return evaluateCall(node, scope, expressionContext);
+    }
+    if (node.type === "NewExpression") {
+      return evaluateNew(node, scope, expressionContext);
+    }
+    if (node.type === "MemberExpression") {
+      return evaluateMember(node, scope, expressionContext);
+    }
+    if (node.type === "ParenthesizedExpression") {
+      mark(node, "parenthesized-expression");
+      return evaluateExpression(node.expression, scope, expressionContext);
+    }
+    if (node.type === "UnaryExpression") {
+      mark(node, "unary-expression");
+      if (
+        !node.prefix ||
+        !["!", "-", "typeof", "void"].includes(node.operator)
+      ) {
+        fail(`unary operator ${node.operator}`);
+      }
+      if (
+        node.operator === "-" &&
+        node.argument.type === "Literal" &&
+        Object.is(node.argument.value, 0)
+      ) {
+        fail("non-canonical negative zero");
+      }
+      evaluateExpression(node.argument, scope, expressionContext);
+      return immutableValue;
+    }
+    if (node.type === "BinaryExpression") {
+      mark(node, "binary-expression");
+      if (["in", "instanceof"].includes(node.operator)) {
+        fail(`binary operator ${node.operator}`);
+      }
+      const left = evaluateExpression(node.left, scope, expressionContext);
+      const right = evaluateExpression(node.right, scope, expressionContext);
+      const staticStrings =
+        node.operator === "+" &&
+        left.staticStrings.length > 0 &&
+        right.staticStrings.length > 0
+          ? left.staticStrings.flatMap((leftValue) =>
+              right.staticStrings.map((rightValue) => leftValue + rightValue),
+            )
+          : [];
+      assertStaticStrings(staticStrings, literalRole);
+      return makeValue("immutable", staticStrings);
+    }
+    if (node.type === "LogicalExpression") {
+      mark(node, "logical-expression");
+      if (!["&&", "||", "??"].includes(node.operator)) {
+        fail(`logical operator ${node.operator}`);
+      }
+      const left = evaluateExpression(node.left, scope, expressionContext);
+      const right = evaluateExpression(node.right, scope, expressionContext);
+      const staticStrings = mergeStaticStrings(left, right);
+      assertStaticStrings(staticStrings, literalRole);
+      return makeValue("immutable", staticStrings);
+    }
+    if (node.type === "ConditionalExpression") {
+      mark(node, "conditional-expression");
+      evaluateExpression(node.test, scope, expressionContext);
+      const consequent = evaluateExpression(
+        node.consequent,
+        scope,
+        expressionContext,
+      );
+      const alternate = evaluateExpression(
+        node.alternate,
+        scope,
+        expressionContext,
+      );
+      const staticStrings = mergeStaticStrings(consequent, alternate);
+      assertStaticStrings(staticStrings, literalRole);
+      return makeValue("immutable", staticStrings);
+    }
+    fail(`expression ${node.type}`);
+  };
+  const visitVariable = (
+    node,
+    scope,
+    context,
+    { module = false, forOf = false } = {},
+  ) => {
+    mark(node, module ? "module-variable" : "local-variable");
+    if (node.kind !== "const" || node.declarations.length !== 1) {
+      fail("only one const declarator");
+    }
+    const declarator = node.declarations[0];
+    mark(declarator, "variable-declarator");
+    if (declarator.id.type !== "Identifier") fail("destructuring binding");
+    markIdentifier(declarator.id, "binding");
+    let binding;
+    if (module) {
+      binding = moduleScope.bindings.get(declarator.id.name);
+      if (binding === undefined) fail(`unregistered module binding`);
+    } else {
+      binding = declare(scope, declarator.id.name, {
+        kind: "local",
+        value: null,
+      });
+    }
+    if (forOf) {
+      if (declarator.init !== null) fail("for-of initializer");
+      binding.value = immutableValue;
+      return;
+    }
+    if (declarator.init === null) fail("uninitialized const");
+    const literalRole =
+      declarator.id.name ===
+      "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS"
+        ? "requirements-value"
+        : declarator.id.name ===
+            "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
+          ? "requirements-digest"
+          : "ordinary";
+    const value = evaluateExpression(declarator.init, scope, {
+      ...context,
+      literalRole,
+    });
+    if (binding.kind === "private-store") {
+      if (
+        value.kind !== "private-store-value" ||
+        declarator.init.type !== "NewExpression" ||
+        declarator.init.callee.name !== "WeakMap" ||
+        declarator.init.arguments.length !== 0
+      ) {
+        fail(`private store initializer ${binding.name}`);
+      }
+      return;
+    }
+    if (module && value.kind === "mutable-local") {
+      fail(`mutable module binding ${binding.name}`);
+    }
+    binding.value = value;
+    if (binding.kind === "pending") binding.kind = "local";
+  };
+  const visitBlock = (node, scope, context, { functionBody = false } = {}) => {
+    mark(node, functionBody ? "function-body" : "block-statement");
+    const blockScope = functionBody
+      ? scope
+      : { parent: scope, bindings: new Map() };
+    for (const statement of node.body) {
+      visitStatement(statement, blockScope, context);
+    }
+  };
+  visitStatement = (node, scope, context) => {
+    if (node.type === "VariableDeclaration") {
+      visitVariable(node, scope, context);
+      return;
+    }
+    if (node.type === "ReturnStatement") {
+      mark(node, "return-statement");
+      if (node.argument !== null)
+        evaluateExpression(node.argument, scope, context);
+      return;
+    }
+    if (node.type === "ExpressionStatement") {
+      mark(node, "expression-statement");
+      if (node.expression.type !== "CallExpression") {
+        fail(`expression statement ${node.expression.type}`);
+      }
+      evaluateExpression(node.expression, scope, context);
+      return;
+    }
+    if (node.type === "BlockStatement") {
+      visitBlock(node, scope, context);
+      return;
+    }
+    if (node.type === "IfStatement") {
+      mark(node, "if-statement");
+      evaluateExpression(node.test, scope, context);
+      visitStatement(node.consequent, scope, context);
+      if (node.alternate !== null)
+        visitStatement(node.alternate, scope, context);
+      return;
+    }
+    if (node.type === "ForOfStatement") {
+      mark(node, "for-of-statement");
+      if (
+        node.await ||
+        node.left.type !== "VariableDeclaration" ||
+        node.body.type !== "BlockStatement"
+      ) {
+        fail("for-of shape");
+      }
+      evaluateExpression(node.right, scope, context);
+      const loopScope = { parent: scope, bindings: new Map() };
+      visitVariable(node.left, loopScope, context, { forOf: true });
+      visitBlock(node.body, loopScope, context);
+      return;
+    }
+    if (node.type === "ThrowStatement") {
+      mark(node, "throw-statement");
+      evaluateExpression(node.argument, scope, context);
+      return;
+    }
+    if (node.type === "EmptyStatement") {
+      mark(node, "empty-statement");
+      return;
+    }
+    fail(`statement ${node.type}`);
+  };
+  const visitFunction = (node) => {
+    mark(node, "function-declaration");
+    markIdentifier(node.id, "function-binding");
+    const functionScope = { parent: moduleScope, bindings: new Map() };
+    for (const parameter of node.params) {
+      if (parameter.type !== "Identifier") fail("function parameter pattern");
+      markIdentifier(parameter, "parameter-binding");
+      declare(functionScope, parameter.name, {
+        kind: "parameter",
+        value: makeValue("parameter"),
+      });
+    }
+    visitBlock(
+      node.body,
+      functionScope,
+      { functionName: node.id.name, literalRole: "ordinary" },
+      { functionBody: true },
+    );
+  };
+  const visitImport = (node) => {
+    mark(node, "import-declaration");
+    for (const specifier of node.specifiers) {
+      mark(specifier, "import-specifier");
+      markIdentifier(specifier.imported, "imported-name");
+      markIdentifier(specifier.local, "import-binding");
+    }
+    visitLiteral(node.source, "import-source");
+  };
+  const visitModuleStatement = (node) => {
+    if (node.type === "ImportDeclaration") {
+      visitImport(node);
+      return;
+    }
+    if (node.type === "ExportNamedDeclaration") {
+      mark(node, "export-declaration");
+      if (node.declaration.type === "VariableDeclaration") {
+        visitVariable(node.declaration, moduleScope, {}, { module: true });
+      } else {
+        visitFunction(node.declaration);
+      }
+      return;
+    }
+    if (node.type === "VariableDeclaration") {
+      visitVariable(node, moduleScope, {}, { module: true });
+      return;
+    }
+    if (node.type === "FunctionDeclaration") {
+      visitFunction(node);
+      return;
+    }
+    if (node.type === "EmptyStatement") {
+      mark(node, "module-empty-statement");
+      return;
+    }
+    fail(`module statement ${node.type}`);
+  };
+  mark(program, "program");
+  for (const statement of program.body) visitModuleStatement(statement);
+  if (counters.classifiedNodeCount !== expectedNodeCount) {
+    const unclassifiedNodeTypes = [];
+    const collectUnclassified = (node) => {
+      if (node === null || typeof node?.type !== "string") return;
+      if (!classifiedNodes.has(node)) unclassifiedNodeTypes.push(node.type);
+      for (const field of DIRECT_NODE_FIELDS[node.type]) {
+        const value = node[field];
+        if (Array.isArray(value)) {
+          for (const child of value) collectUnclassified(child);
+        } else {
+          collectUnclassified(value);
+        }
+      }
+    };
+    collectUnclassified(program);
+    fail(
+      `node closure ${counters.classifiedNodeCount}/${expectedNodeCount}:${unclassifiedNodeTypes.join(",")}`,
+    );
+  }
+  return Object.freeze({
+    moduleBindingCount: moduleScope.bindings.size,
+    referenceCount: counters.referenceCount,
+    classifiedNodeCount: counters.classifiedNodeCount,
+    privateOperationCount: counters.privateOperationCount,
+  });
+}
+
+function directAssertExactSurface(program, weakMapConstructions) {
+  assert.equal(Object.isFrozen(weakMapConstructions), true);
   const imports = program.body.filter(
     ({ type }) => type === "ImportDeclaration",
   );
@@ -4292,14 +5422,25 @@ function directAssertExactSurface(program) {
       assert.equal(statement.kind, "const");
       assert.equal(declaration.id.type, "Identifier");
       assert.deepEqual(declaration.init.arguments, []);
-      return [declaration.id.name];
+      return [
+        Object.freeze({
+          name: declaration.id.name,
+          construction: declaration.init,
+        }),
+      ];
     });
   });
-  assert.deepEqual(stores, [
-    "startupMetadata",
-    "inputMetadata",
-    "stateMetadata",
-  ]);
+  assert.deepEqual(
+    stores.map(({ name }) => name),
+    ["startupMetadata", "inputMetadata", "stateMetadata"],
+  );
+  assert.equal(weakMapConstructions.length, stores.length);
+  assert.equal(
+    weakMapConstructions.every((construction) =>
+      stores.some((store) => store.construction === construction),
+    ),
+    true,
+  );
   return Object.freeze({
     importCount: imports.length,
     exportCount: exports.length,
@@ -4324,13 +5465,110 @@ function independentStaticAudit(sourceBytes) {
   }
   assert.equal(program.type, "Program");
   assert.equal(program.sourceType, "module");
-  const nodeCount = directWalkAst(program, source);
-  const surface = directAssertExactSurface(program);
-  const scope = directResolveFreeIdentifiers(program);
-  return Object.freeze({ ...surface, ...scope, nodeCount });
+  const walkAudit = directWalkAst(program, source);
+  const surface = directAssertExactSurface(
+    program,
+    walkAudit.weakMapConstructions,
+  );
+  const scope = directAssertContextualGrammar(program, walkAudit.nodeCount);
+  return Object.freeze({
+    ...surface,
+    ...scope,
+    nodeCount: walkAudit.nodeCount,
+  });
 }
 
-function validSkeleton(extra = "") {
+function directEvaluatorAmbientMemberPolicyProjection(program) {
+  const matches = program.body.flatMap((statement) => {
+    if (statement.type !== "VariableDeclaration") return [];
+    return statement.declarations.filter(
+      (declaration) =>
+        declaration.id.type === "Identifier" &&
+        declaration.id.name === "DIRECT_ALLOWED_AMBIENT_MEMBERS",
+    );
+  });
+  if (matches.length !== 1) {
+    throw new Error(
+      "direct evaluator policy gate: ambient member declaration mismatch",
+    );
+  }
+  const initializer = matches[0].init;
+  if (
+    initializer?.type !== "NewExpression" ||
+    initializer.callee.type !== "Identifier" ||
+    initializer.callee.name !== "Map" ||
+    initializer.arguments.length !== 1 ||
+    initializer.arguments[0].type !== "ArrayExpression"
+  ) {
+    throw new Error(
+      "direct evaluator policy gate: ambient member declaration mismatch",
+    );
+  }
+  const projection = [];
+  for (const entry of initializer.arguments[0].elements) {
+    if (
+      entry?.type !== "ArrayExpression" ||
+      entry.elements.length !== 2 ||
+      entry.elements[0]?.type !== "Literal" ||
+      typeof entry.elements[0].value !== "string"
+    ) {
+      throw new Error(
+        "direct evaluator policy gate: ambient member declaration mismatch",
+      );
+    }
+    const setInitializer = entry.elements[1];
+    if (
+      setInitializer?.type !== "NewExpression" ||
+      setInitializer.callee.type !== "Identifier" ||
+      setInitializer.callee.name !== "Set" ||
+      setInitializer.arguments.length > 1
+    ) {
+      throw new Error(
+        "direct evaluator policy gate: ambient member declaration mismatch",
+      );
+    }
+    const members = [];
+    if (setInitializer.arguments.length === 1) {
+      const memberArray = setInitializer.arguments[0];
+      if (memberArray.type !== "ArrayExpression") {
+        throw new Error(
+          "direct evaluator policy gate: ambient member declaration mismatch",
+        );
+      }
+      for (const member of memberArray.elements) {
+        if (member?.type !== "Literal" || typeof member.value !== "string") {
+          throw new Error(
+            "direct evaluator policy gate: ambient member declaration mismatch",
+          );
+        }
+        members.push(member.value);
+      }
+    }
+    projection.push([entry.elements[0].value, members]);
+  }
+  return projection;
+}
+
+function directAssertEvaluatorSemanticPolicyBytes(evaluatorBytes) {
+  const source = directStrictUtf8Source(evaluatorBytes);
+  let program;
+  try {
+    program = directParse(source, DIRECT_ACORN_PARSE_OPTIONS);
+  } catch (error) {
+    throw new Error(
+      `direct evaluator policy gate: invalid module syntax: ${error.message}`,
+    );
+  }
+  const projection = directEvaluatorAmbientMemberPolicyProjection(program);
+  const receipt = directAssertAmbientMemberPolicyProjection(projection);
+  return Object.freeze({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-direct-evaluator-policy-gate/v1",
+    ...receipt,
+  });
+}
+
+function validSkeleton(extra = "", functionBodyOverrides = new Map()) {
   const imports = [...ALLOWED_IMPORTS]
     .map(
       ([specifier, names]) =>
@@ -4343,7 +5581,9 @@ function validSkeleton(extra = "") {
       (candidate) => candidate.name === name,
     );
     assert.notEqual(signature, undefined);
-    return `export function ${name}(${signature.parameters.join(", ")}) { return null; }`;
+    return `export function ${name}(${signature.parameters.join(", ")}) { ${
+      functionBodyOverrides.get(name) ?? "return null;"
+    } }`;
   }).join("\n");
   return `${imports}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}`;
 }
@@ -5298,8 +6538,183 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
     version: null,
   });
 
+  const approvedAmbientAudit = independentStaticAudit(
+    asBytes(
+      validSkeleton(`
+function approvedAmbientCalls() {
+  Array.isArray([]);
+  Boolean(false);
+  const error = new Error("bounded");
+  Number(0);
+  Number.isFinite(0);
+  Number.isInteger(0);
+  Number.isSafeInteger(0);
+  Object.hasOwn({}, "value");
+  Object.isExtensible({});
+  Object.isFrozen({});
+  const set = new Set();
+  String("bounded");
+  if (false) { throw error; }
+  set.has(null);
+  return null;
+}`),
+    ),
+  );
+  assert.equal(approvedAmbientAudit.nodeCount > baselineAudit.nodeCount, true);
+  assert.equal(
+    directAssertAmbientMemberPolicyProjection(
+      directAmbientMemberPolicyProjection(DIRECT_ALLOWED_AMBIENT_MEMBERS),
+    ).entryCount,
+    9,
+  );
+
+  const contextualPositiveSources = [
+    validSkeleton(),
+    validSkeleton(
+      'function failValidation() { throw new Error("CONTROL_SHAPE"); } function localHelper(value) { const localValue = exactBoolean(value, true, "value", failValidation); return localValue; }',
+    ),
+    validSkeleton(
+      "function select() { for (const value of deepFreeze([])) { if (value) { return false; } } return null; }",
+    ),
+    validSkeleton("const frozenLocalTable = deepFreeze([]);"),
+    validSkeleton(
+      'const localRequirements = deepFreeze(nullRecord([["schema", "safe"]])); const localDigest = sha256(canonicalJsonBytes(localRequirements));',
+    ),
+    validSkeleton(
+      "",
+      new Map([
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "const present = startupMetadata.has(startupProjection); const observed = startupMetadata.get(startupProjection); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    validSkeleton(
+      "",
+      new Map([
+        [
+          "verifyCandidateContainmentGuardianStatusFrameV1",
+          "const present = startupMetadata.has(startupProjection); const observed = startupMetadata.get(startupProjection); return null;",
+        ],
+      ]),
+    ),
+    validSkeleton(
+      "",
+      new Map([
+        [
+          "createCandidateContainmentGuardianAdmissionInputV1",
+          "const present = stateMetadata.has(currentState); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    validSkeleton(
+      "",
+      new Map(
+        [
+          "createCandidateContainmentGuardianCancelInputV1",
+          "createCandidateContainmentGuardianRecoveryRequestInputV1",
+          "createCandidateContainmentGuardianControllerClosedInputV1",
+          "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+          "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+          "createCandidateContainmentGuardianStatusEofInputV1",
+        ].map((functionName) => [
+          functionName,
+          "const present = stateMetadata.has(currentState); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); inputMetadata.set(result, metadata); return result;",
+        ]),
+      ),
+    ),
+    validSkeleton(
+      "",
+      new Map([
+        [
+          "reduceCandidateContainmentGuardianControlV1",
+          "const present = stateMetadata.has(currentState); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    validSkeleton(
+      "",
+      new Map([
+        [
+          "reduceCandidateContainmentGuardianControlV1",
+          "const present = inputMetadata.has(brandedInput); const observed = inputMetadata.get(brandedInput); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ),
+    validSkeleton(
+      "function sameOriginJoin() { const value = deepFreeze([]); return true ? value : value; }",
+    ),
+    validSkeleton(
+      "function completeBranches() { if (true) { return null; } else { return null; } }",
+    ),
+    validSkeleton(
+      "function completeLoop() { const values = deepFreeze([null]); for (const value of values) { return null; } return null; }",
+    ),
+    validSkeleton(
+      "function acyclicLeaf() { return null; } function acyclicRoot() { return acyclicLeaf(); }",
+    ),
+    validSkeleton(
+      'function pinnedFailure() { throw new Error("CONTROL_SHAPE"); } function normalizedValue(value) { return exactBoolean(value, true, "value", pinnedFailure); }',
+    ),
+  ];
+  assert.equal(contextualPositiveSources.length, 16);
+  const contextualPositiveAudits = contextualPositiveSources.map((sourceText) =>
+    independentStaticAudit(asBytes(sourceText)),
+  );
+  assert.equal(
+    contextualPositiveAudits.every(
+      ({ nodeCount, classifiedNodeCount }) =>
+        nodeCount === classifiedNodeCount && nodeCount > 0,
+    ),
+    true,
+  );
+  const antiOverrejectAudit = independentStaticAudit(
+    asBytes(
+      validSkeleton(`
+function contextualPositive() {
+  const array = [null, true, 1, "bounded"];
+  const record = { value: null };
+  const set = new Set();
+  const error = new Error("bounded");
+  if (Boolean(false)) { ; }
+  for (const item of array) { if (item) { ; } }
+  if (false) { throw error; }
+  const result = (true ? 1 : 2) + (false || 0);
+  Array.isArray(array);
+  Number.isInteger(result);
+  Object.hasOwn(record, "value");
+  set.has(null);
+  String("bounded");
+  return null;
+}`),
+    ),
+  );
+  assert.equal(
+    antiOverrejectAudit.classifiedNodeCount,
+    antiOverrejectAudit.nodeCount,
+  );
+  const trustedMemberRolePositiveSources = [
+    validSkeleton(
+      "function helper() { const value = deepFreeze([null]); const member = value.length; return member; }",
+    ),
+    validSkeleton(
+      "function helper() { const value = deepFreeze([null]); value.slice(0); return null; }",
+    ),
+    validSkeleton(
+      "function helper() { const value = deepFreeze([null]).slice(0); return value.length; }",
+    ),
+    validSkeleton(
+      'function helper() { const value = String("bounded").length; return value; }',
+    ),
+  ];
+  assert.equal(trustedMemberRolePositiveSources.length, 4);
+  for (const sourceText of trustedMemberRolePositiveSources) {
+    const audit = independentStaticAudit(asBytes(sourceText));
+    assert.equal(audit.classifiedNodeCount, audit.nodeCount);
+  }
+
   const mutationKills = [];
-  const kill = (id, run) => {
+  const kill = (id, run, expectedMessage = null) => {
     let rejection = null;
     try {
       run();
@@ -5307,6 +6722,9 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
       rejection = error;
     }
     assert.notEqual(rejection, null, `${id} survived`);
+    if (expectedMessage !== null) {
+      assert.match(String(rejection.message), expectedMessage, id);
+    }
     mutationKills.push(
       Object.freeze({
         id,
@@ -5337,6 +6755,271 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
   for (const freeIdentifier of forbiddenFreeAmbientControls) {
     kill(`direct-free-${freeIdentifier}`, () =>
       auditExtra(`const leaked = ${freeIdentifier};`),
+    );
+  }
+  const contextualMutationSources = [
+    [
+      "direct-context-param-object-pattern",
+      "function helper({ value }) { return value; }",
+    ],
+    [
+      "direct-context-param-array-pattern",
+      "function helper([value]) { return value; }",
+    ],
+    [
+      "direct-context-param-rest",
+      "function helper(...values) { return values; }",
+    ],
+    [
+      "direct-context-param-default",
+      "function helper(value = null) { return value; }",
+    ],
+    [
+      "direct-context-param-rest-destructure",
+      "function helper(...[value]) { return value; }",
+    ],
+    ["direct-context-var-object-pattern", "const { value } = { value: null };"],
+    ["direct-context-var-array-pattern", "const [value] = [null];"],
+    [
+      "direct-context-var-object-rest",
+      "const { value, ...rest } = { value: null };",
+    ],
+    ["direct-context-var-array-rest", "const [value, ...rest] = [null];"],
+    ["direct-context-let", "let value = null;"],
+    ["direct-context-var", "var value = null;"],
+    [
+      "direct-context-multiple-declarators",
+      "const first = null, second = null;",
+    ],
+    [
+      "direct-context-nested-function",
+      "function outer() { function inner() { return null; } return null; }",
+    ],
+    ["direct-context-try-catch", "try {} catch (error) {}"],
+    ["direct-context-try-finally", "try {} finally {}"],
+    ["direct-context-while", "while (false) {}"],
+    ["direct-context-do-while", "do {} while (false);"],
+    ["direct-context-classic-for", "for (;;) {}"],
+    [
+      "direct-context-for-in",
+      "const value = deepFreeze({}); for (const key in value) {}",
+    ],
+    [
+      "direct-context-switch",
+      "const value = null; switch (value) { case null: break; default: break; }",
+    ],
+    ["direct-context-label", "label: {}"],
+    ["direct-context-continue-label", "loop: for (;;) { continue loop; }"],
+    [
+      "direct-context-assignment",
+      "function helper() { const value = null; value = false; return null; }",
+    ],
+    [
+      "direct-context-compound-assignment",
+      "function helper() { const value = 0; value += 1; return null; }",
+    ],
+    [
+      "direct-context-update",
+      "function helper() { const value = 0; value++; return null; }",
+    ],
+    ["direct-context-sequence", "const value = (null, false);"],
+    ["direct-context-decimal-fraction", "const value = 1.5;"],
+    ["direct-context-exponent-number", "const value = 1e3;"],
+    ["direct-context-numeric-separator", "const value = 1_000;"],
+    ["direct-context-negative-zero", "const value = -0;"],
+    ["direct-context-array-hole", "const value = deepFreeze([,]);"],
+    [
+      "direct-context-object-shorthand",
+      "const value = null; const record = deepFreeze({ value });",
+    ],
+    ["direct-context-import-as-value", "const helperAlias = sha256;"],
+    [
+      "direct-context-import-member-as-value",
+      "const helperMember = sha256.call;",
+    ],
+    [
+      "direct-context-export-as-value",
+      "const operation = reduceCandidateContainmentGuardianControlV1;",
+    ],
+    [
+      "direct-context-private-store-as-value",
+      "const storeAlias = startupMetadata;",
+    ],
+    [
+      "direct-context-private-member-as-value",
+      "const setter = startupMetadata.set;",
+    ],
+    [
+      "direct-context-lexical-member-as-value",
+      "const value = deepFreeze({}); const member = value.toString;",
+    ],
+    [
+      "direct-context-lexical-member-call",
+      "function helper() { const value = {}; value.toString(); return null; }",
+    ],
+    [
+      "direct-context-param-member-call",
+      "function helper(value) { value.toString(); return null; }",
+    ],
+    [
+      "direct-context-param-safe-member-call",
+      "function helper(value) { value.slice(0); return null; }",
+    ],
+    [
+      "direct-context-ambient-call-result-member",
+      "function helper() { Object.freeze({}).toString(); return null; }",
+    ],
+    [
+      "direct-context-new-lexical-constructor",
+      "function Helper() { return null; } const value = new Helper();",
+    ],
+    ["direct-context-mutable-module-set", "const value = new Set();"],
+    [
+      "direct-context-delete",
+      "function helper() { const value = {}; delete value.value; return null; }",
+    ],
+    ["direct-context-in-operator", 'const value = "value" in {};'],
+    ["direct-context-top-level-throw", 'throw new Error("bounded");'],
+    [
+      "direct-context-shadow-import-parameter",
+      "function helper(sha256) { return null; }",
+    ],
+    [
+      "direct-context-shadow-store-parameter",
+      "function helper(startupMetadata) { return null; }",
+    ],
+    [
+      "direct-context-shadow-export-parameter",
+      "function helper(reduceCandidateContainmentGuardianControlV1) { return null; }",
+    ],
+    [
+      "direct-context-shadow-import-local",
+      "function helper() { const sha256 = null; return null; }",
+    ],
+    [
+      "direct-context-import-call-indirection",
+      "function helper() { sha256.call(null, null); return null; }",
+    ],
+    [
+      "direct-context-import-bind-indirection",
+      "function helper() { const bound = sha256.bind(null); return null; }",
+    ],
+    [
+      "direct-context-store-call-indirection",
+      "function helper() { startupMetadata.set.call(null, null, null); return null; }",
+    ],
+    [
+      "direct-context-export-call-indirection",
+      "function helper() { reduceCandidateContainmentGuardianControlV1.call(null, null, null); return null; }",
+    ],
+    [
+      "direct-context-object-key-proto",
+      'const value = deepFreeze({ "__proto__": null });',
+    ],
+    [
+      "direct-context-object-key-constructor",
+      'const value = deepFreeze({ "constructor": null });',
+    ],
+    [
+      "direct-context-object-key-prototype",
+      'const value = deepFreeze({ "prototype": null });',
+    ],
+    [
+      "direct-context-object-define-constructor",
+      'function helper() { Object.defineProperty({}, "constructor", { value: null }); return null; }',
+    ],
+    ["direct-context-capability-constructor", 'const value = "constructor";'],
+    [
+      "direct-context-capability-folded-constructor",
+      'const value = "con" + "structor";',
+    ],
+    ["direct-context-capability-process", 'const value = "process";'],
+    ["direct-context-capability-global", 'const value = "globalThis";'],
+    ["direct-context-capability-require", 'const value = "require";'],
+    ["direct-context-capability-function", 'const value = "Function";'],
+    [
+      "direct-context-error-stack",
+      'function helper() { const error = new Error("bounded"); return error.stack; }',
+    ],
+    [
+      "direct-context-lookup-getter",
+      "function helper(value) { value.__lookupGetter__; return null; }",
+    ],
+    [
+      "direct-context-define-getter",
+      "function helper(value) { value.__defineGetter__; return null; }",
+    ],
+    [
+      "direct-context-caller",
+      "function helper(value) { value.caller; return null; }",
+    ],
+    [
+      "direct-context-callee",
+      "function helper(value) { value.callee; return null; }",
+    ],
+    [
+      "direct-context-arguments-member",
+      "function helper(value) { value.arguments; return null; }",
+    ],
+    [
+      "direct-context-object-create",
+      "function helper() { Object.create(null); return null; }",
+    ],
+    [
+      "direct-context-object-define-property",
+      'function helper() { Object.defineProperty({}, "value", { value: null }); return null; }',
+    ],
+    [
+      "direct-context-object-freeze",
+      "function helper() { Object.freeze({}); return null; }",
+    ],
+  ];
+  for (const [id, sourceText] of contextualMutationSources) {
+    kill(id, () => auditExtra(sourceText), /^direct static gate: contextual /u);
+  }
+  const contextualPrivateMutationSources = [
+    [
+      "direct-context-private-wrong-store",
+      new Map([
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "const present = stateMetadata.has(startupProjection); return null;",
+        ],
+      ]),
+    ],
+    [
+      "direct-context-private-wrong-key",
+      new Map([
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "const local = deepFreeze(nullRecord([])); const observed = startupMetadata.get(local); return null;",
+        ],
+      ]),
+    ],
+    [
+      "direct-context-private-wrong-commit-owner",
+      new Map([
+        [
+          "createCandidateContainmentGuardianAdmissionInputV1",
+          "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;",
+        ],
+      ]),
+    ],
+    [
+      "direct-context-private-member-value-in-owner",
+      new Map([
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "const getter = startupMetadata.get; return null;",
+        ],
+      ]),
+    ],
+  ];
+  for (const [id, overrides] of contextualPrivateMutationSources) {
+    kill(
+      id,
+      () => independentStaticAudit(asBytes(validSkeleton("", overrides))),
+      /^direct static gate: contextual /u,
     );
   }
   for (const [id, sourceText] of [
@@ -5401,6 +7084,99 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
       ),
     ],
     [
+      "direct-private-store-nested-extra",
+      `${baseline}\nfunction hiddenStore() { const hiddenMetadata = new WeakMap(); return null; }`,
+    ],
+    ["direct-static-template", `${baseline}\nconst literal = \`static text\`;`],
+    [
+      "direct-tagged-template",
+      `${baseline}\nfunction tag(parts) { return parts; } const literal = tag\`static text\`;`,
+    ],
+    ["direct-regular-expression", `${baseline}\nconst pattern = /^[a-z]+$/u;`],
+    ["direct-bigint-literal", `${baseline}\nconst value = 1n;`],
+    ["direct-arrow-function", `${baseline}\nconst helper = () => null;`],
+    [
+      "direct-function-expression",
+      `${baseline}\nconst helper = function named() { return null; };`,
+    ],
+    [
+      "direct-async-function-declaration",
+      `${baseline}\nasync function helper() { return null; }`,
+    ],
+    [
+      "direct-async-function-expression",
+      `${baseline}\nconst helper = async function () { return null; };`,
+    ],
+    [
+      "direct-generator-function-declaration",
+      `${baseline}\nfunction* helper() { return null; }`,
+    ],
+    ["direct-class-declaration", `${baseline}\nclass Hidden {}`],
+    ["direct-spread-syntax", `${baseline}\nconst spread = [...[]];`],
+    [
+      "direct-assignment-default-free-identifier",
+      `${baseline}\nfunction helper(value = ambientLeak) { return value; }`,
+    ],
+    ["direct-ambient-array-from", `${baseline}\nconst value = Array.from([]);`],
+    [
+      "direct-ambient-boolean-call-member",
+      `${baseline}\nconst value = Boolean.call(null, false);`,
+    ],
+    [
+      "direct-ambient-error-capture-stack-trace",
+      `${baseline}\nError.captureStackTrace({});`,
+    ],
+    [
+      "direct-ambient-number-parse-int",
+      `${baseline}\nconst value = Number.parseInt("1", 10);`,
+    ],
+    [
+      "direct-ambient-object-assign",
+      `${baseline}\nconst value = Object.assign({}, {});`,
+    ],
+    [
+      "direct-ambient-reflect-get",
+      `${baseline}\nconst value = Reflect.get({}, "value");`,
+    ],
+    [
+      "direct-ambient-set-call-member",
+      `${baseline}\nconst value = Set.call(null);`,
+    ],
+    [
+      "direct-ambient-string-raw-member",
+      `${baseline}\nconst value = String.raw("bounded");`,
+    ],
+    [
+      "direct-ambient-weak-map-call-member",
+      `${baseline}\nconst value = WeakMap.call(null);`,
+    ],
+    [
+      "direct-ambient-member-as-value",
+      `${baseline}\nconst freeze = Object.freeze;`,
+    ],
+    [
+      "direct-ambient-object-as-value",
+      `${baseline}\nconst objectAlias = Object;`,
+    ],
+    [
+      "direct-ambient-reflect-as-value",
+      `${baseline}\nconst reflectAlias = Reflect;`,
+    ],
+    ["direct-ambient-invalid-call", `${baseline}\nconst value = Object();`],
+    [
+      "direct-ambient-invalid-constructor",
+      `${baseline}\nconst value = new Object();`,
+    ],
+    ["direct-protected-ambient-binding", `${baseline}\nconst Object = null;`],
+    [
+      "direct-string-computed-constructor",
+      `${baseline}\nconst gadget = Object["constructor"];`,
+    ],
+    [
+      "direct-folded-computed-constructor",
+      `${baseline}\nconst gadget = Object["con" + "structor"];`,
+    ],
+    [
       "direct-dynamic-import",
       `${baseline}\nconst dynamic = import("./containment-exact-v2.mjs");`,
     ],
@@ -5436,10 +7212,7 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
     ],
     ["direct-top-level-await", `${baseline}\nawait null;`],
     ["direct-hashbang", `#!/usr/bin/env node\n${baseline}`],
-    [
-      "direct-for-await",
-      `${baseline}\nasync function consume(values) { for await (const value of values) {} }`,
-    ],
+    ["direct-for-await", `${baseline}\nfor await (const value of []) {}`],
   ]) {
     kill(id, () => independentStaticAudit(asBytes(sourceText)));
   }
@@ -5481,29 +7254,45 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
 
   const evaluatorBytes = readFileSync(fileURLToPath(import.meta.url));
   const evaluatorSha256Before = byteDigest(evaluatorBytes);
-  const restored = Buffer.from(evaluatorBytes);
-  const marker = Buffer.from(
-    "replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure",
+  const baselineEvaluatorPolicy =
+    directAssertEvaluatorSemanticPolicyBytes(evaluatorBytes);
+  const evaluatorPolicyProbe = Buffer.from(evaluatorBytes);
+  const policyMarker = Buffer.from(
+    ["  [", JSON.stringify("Reflect"), ", new Set()],"].join(""),
     "utf8",
   );
-  const markerOffset = restored.indexOf(marker);
-  assert.notEqual(markerOffset, -1);
-  restored[markerOffset] ^= 0x01;
-  kill("direct-evaluator-byte-mutation", () => {
-    assert.equal(
-      restored
-        .subarray(markerOffset, markerOffset + marker.length)
-        .equals(marker),
-      true,
-    );
-  });
-  evaluatorBytes.copy(
-    restored,
-    markerOffset,
-    markerOffset,
-    markerOffset + marker.length,
+  const policyMutant = Buffer.from(
+    ["  [", JSON.stringify("Refleck"), ", new Set()],"].join(""),
+    "utf8",
   );
-  assert.equal(byteDigest(restored), evaluatorSha256Before);
+  assert.equal(policyMutant.length, policyMarker.length);
+  const markerOffset = evaluatorPolicyProbe.indexOf(policyMarker);
+  assert.notEqual(markerOffset, -1);
+  assert.equal(
+    evaluatorPolicyProbe.indexOf(
+      policyMarker,
+      markerOffset + policyMarker.length,
+    ),
+    -1,
+  );
+  policyMutant.copy(evaluatorPolicyProbe, markerOffset);
+  let evaluatorPolicyRejection = null;
+  try {
+    directAssertEvaluatorSemanticPolicyBytes(evaluatorPolicyProbe);
+  } catch (error) {
+    evaluatorPolicyRejection = error;
+  }
+  assert.equal(
+    evaluatorPolicyRejection?.message,
+    "direct evaluator policy gate: ambient member contract mismatch",
+  );
+  const mutatedEvaluatorSha256 = byteDigest(evaluatorPolicyProbe);
+  policyMarker.copy(evaluatorPolicyProbe, markerOffset);
+  const restoredEvaluatorPolicy =
+    directAssertEvaluatorSemanticPolicyBytes(evaluatorPolicyProbe);
+  assert.equal(evaluatorPolicyProbe.equals(evaluatorBytes), true);
+  assert.equal(byteDigest(evaluatorPolicyProbe), evaluatorSha256Before);
+  assert.deepEqual(restoredEvaluatorPolicy, baselineEvaluatorPolicy);
 
   const mutationIds = mutationKills.map(({ id }) => id);
   const mutationReceipt = recursivelyFreezeStatusOracleValue({
@@ -5514,10 +7303,21 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
     survivors: 0,
     idsSha256: digest(mutationIds),
     kills: mutationKills,
-    evaluatorByteRestoration: {
+    concreteRestoration: {
       preSha256: evaluatorSha256Before,
-      postSha256: byteDigest(restored),
+      mutatedSha256: mutatedEvaluatorSha256,
+      postSha256: byteDigest(evaluatorPolicyProbe),
+      mutationOffset: markerOffset,
+      semanticPolicyField: "DIRECT_ALLOWED_AMBIENT_MEMBERS.Reflect",
+      semanticEdit: "Reflect->Refleck",
+      mutatedRejectedByPolicyGate:
+        evaluatorPolicyRejection?.message ===
+        "direct evaluator policy gate: ambient member contract mismatch",
+      restoredAcceptedByPolicyGate: true,
       restoredByteExact: true,
+      mutatedPolicyProjectionValidated: true,
+      mutatedEvaluatorModuleExecuted: false,
+      mutationKillClaimed: false,
     },
   });
   assert.deepEqual(
@@ -5528,15 +7328,19 @@ test("replace the fail-closed source-presence stop with exhaustive positive-allo
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 71,
-      killed: 71,
+      count: 215,
+      killed: 215,
       survivors: 0,
       idsSha256:
-        "7c758bae96d1cc6df64aeb1dd0bd4c15f178f1b87b99c44aefb676612f80a81a",
+        "50fbd1a9ebae2c1c33727377d57a6c3c07a5132ae4df36d99bd6694b9d0e126d",
     },
   );
   assert.equal(
-    mutationReceipt.evaluatorByteRestoration.preSha256,
-    mutationReceipt.evaluatorByteRestoration.postSha256,
+    mutationReceipt.concreteRestoration.preSha256,
+    mutationReceipt.concreteRestoration.postSha256,
+  );
+  assert.notEqual(
+    mutationReceipt.concreteRestoration.mutatedSha256,
+    mutationReceipt.concreteRestoration.preSha256,
   );
 });
