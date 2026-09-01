@@ -4666,6 +4666,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         indexableShape: compileTime?.indexableShape === true,
         indexElement: compileTime?.indexElement ?? null,
         indexSummaryLeaf: compileTime?.indexSummaryLeaf === true,
+        lengthValue: compileTime?.lengthValue ?? null,
+        lengthSummaryLeaf: compileTime?.lengthSummaryLeaf === true,
         iterableElements:
           compileTime?.iterableElements == null
             ? null
@@ -4906,6 +4908,88 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         makeExactStringElementValue(exactString.at(index)),
       ),
     );
+  const makeExactIntegerDomainValue = (integers, callerDerived = false) =>
+    makeValue("immutable", [], [], integers, null, null, {
+      known: true,
+      callerDerived,
+      stringConversions: integers.map((value) => String(value)),
+      typeofStrings: ["number"],
+    });
+  const makeUnknownIntegerDomainValue = (callerDerived = false) =>
+    makeValue("immutable", [], [], [], null, null, {
+      callerDerived,
+      typeofStrings: ["number"],
+    });
+  const abstractLengthValue = (value) => {
+    if (
+      value.compileTime.lengthSummaryLeaf ||
+      value.compileTime.indexSummaryLeaf ||
+      value.compileTime.iterationSummaryLeaf
+    ) {
+      return null;
+    }
+    if (value.compileTime.lengthValue !== null) {
+      return value.compileTime.lengthValue;
+    }
+    if (value.exactStrings.length > 0) {
+      return makeExactIntegerDomainValue(
+        value.exactStrings.map((entry) => entry.length),
+        hasCallerDerivedProvenance(value),
+      );
+    }
+    if (value.arrayElements !== null) {
+      return makeExactIntegerDomainValue(
+        [value.arrayElements.length],
+        hasCallerDerivedProvenance(value),
+      );
+    }
+    if (value.objectProperties !== null) {
+      const property = value.objectProperties.find(
+        ([name]) => name === "length",
+      );
+      if (property !== undefined) return property[1];
+      return value.compileTime.unknownMemberValue
+        ? makeCallerDerivedUnknownValue(hasCallerDerivedProvenance(value))
+        : exactUndefinedValue;
+    }
+    if (
+      value.compileTime.indexableShape ||
+      value.compileTime.sequenceShape ||
+      value.compileTime.byteSequence ||
+      value.compileTime.arraySequence
+    ) {
+      return makeUnknownIntegerDomainValue(hasCallerDerivedProvenance(value));
+    }
+    const typeStrings = value.compileTime.typeofStrings;
+    if (
+      typeStrings.length > 0 &&
+      typeStrings.every((type) => type !== "object")
+    ) {
+      const primitiveLengths = [];
+      if (typeStrings.includes("string")) {
+        primitiveLengths.push(
+          makeUnknownIntegerDomainValue(hasCallerDerivedProvenance(value)),
+        );
+      }
+      if (typeStrings.some((type) => type !== "string")) {
+        primitiveLengths.push(exactUndefinedValue);
+      }
+      return primitiveLengths.length === 1
+        ? primitiveLengths[0]
+        : joinLengthValues(primitiveLengths);
+    }
+    if (value.compileTime.unknownMemberValue) {
+      return makeCallerDerivedUnknownValue(hasCallerDerivedProvenance(value));
+    }
+    if (
+      value.compileTime.known &&
+      typeStrings.length > 0 &&
+      typeStrings.every((type) => type === "object")
+    ) {
+      return exactUndefinedValue;
+    }
+    return makeCallerDerivedUnknownValue(hasCallerDerivedProvenance(value));
+  };
   const joinAbstractValues = (...values) => {
     const exactStrings = values.every(hasCompleteExactStringDomain)
       ? mergeExactStrings(...values)
@@ -4977,6 +5061,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     const valueIsIndexable = (value) =>
       !value.compileTime.indexSummaryLeaf &&
       !value.compileTime.iterationSummaryLeaf &&
+      !value.compileTime.lengthSummaryLeaf &&
       (value.compileTime.indexableShape ||
         value.exactStrings.length > 0 ||
         value.arrayElements !== null ||
@@ -4987,7 +5072,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     const indexElementForValue = (value) => {
       if (
         value.compileTime.indexSummaryLeaf ||
-        value.compileTime.iterationSummaryLeaf
+        value.compileTime.iterationSummaryLeaf ||
+        value.compileTime.lengthSummaryLeaf
       ) {
         return null;
       }
@@ -5030,6 +5116,10 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     const indexElement = !indexableShape
       ? null
       : joinIndexElements([...indexElements, exactUndefinedValue]);
+    const lengthValues = values.map(abstractLengthValue);
+    const lengthValue = lengthValues.every((value) => value !== null)
+      ? joinLengthValues(lengthValues)
+      : null;
     const iterableElementsKnown = values.every(
       (value) => value.compileTime.iterableElements !== null,
     );
@@ -5050,7 +5140,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     const iterationElementForValue = (value) => {
       if (
         value.compileTime.iterationSummaryLeaf ||
-        value.compileTime.indexSummaryLeaf
+        value.compileTime.indexSummaryLeaf ||
+        value.compileTime.lengthSummaryLeaf
       ) {
         return null;
       }
@@ -5141,6 +5232,10 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         indexSummaryLeaf: values.every(
           (value) => value.compileTime.indexSummaryLeaf,
         ),
+        lengthValue,
+        lengthSummaryLeaf: values.every(
+          (value) => value.compileTime.lengthSummaryLeaf,
+        ),
         iterableElements,
         iterableShape,
         iterationElement,
@@ -5186,10 +5281,24 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       value.objectProperties,
       { ...value.compileTime, indexSummaryLeaf: true },
     );
+  const asLengthSummaryLeaf = (value) =>
+    makeValue(
+      value.kind,
+      value.staticStrings,
+      value.exactStrings,
+      value.staticIntegers,
+      value.arrayElements,
+      value.objectProperties,
+      { ...value.compileTime, lengthSummaryLeaf: true },
+    );
   const joinIndexElements = (elements) =>
     elements.length === 0
       ? null
       : joinAbstractValues(...elements.map(asIndexSummaryLeaf));
+  const joinLengthValues = (values) =>
+    values.length === 0
+      ? null
+      : joinAbstractValues(...values.map(asLengthSummaryLeaf));
   const joinIterationElements = (elements) =>
     elements.length === 0
       ? null
@@ -5205,6 +5314,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       {
         ...value.compileTime,
         indexSummaryLeaf: false,
+        lengthSummaryLeaf: false,
         iterationSummaryLeaf: false,
       },
     );
@@ -5547,29 +5657,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       fail(`method member used as value ${memberName}`);
     }
     if (memberName === "length") {
-      const lengths =
-        receiver.exactStrings.length > 0
-          ? receiver.exactStrings.map((value) => value.length)
-          : receiver.arrayElements !== null
-            ? [receiver.arrayElements.length]
-            : [];
-      if (lengths.length > 0) {
-        return makeValue("immutable", [], [], lengths, null, null, {
-          known: true,
-          callerDerived: hasCallerDerivedProvenance(receiver),
-          stringConversions: lengths.map((value) => String(value)),
-          typeofStrings: ["number"],
-        });
-      }
-      if (
-        receiver.compileTime.typeofStrings.includes("string") ||
-        receiver.compileTime.sequenceShape
-      ) {
-        return makeValue("immutable", [], [], [], null, null, {
-          callerDerived: hasCallerDerivedProvenance(receiver),
-          typeofStrings: ["number"],
-        });
-      }
+      const lengthValue = abstractLengthValue(receiver);
+      if (lengthValue !== null) return exposeSummaryValue(lengthValue);
     }
     if (receiver.objectProperties !== null) {
       const property = receiver.objectProperties.find(
@@ -8759,6 +8848,74 @@ function contextualPositive() {
     const audit = independentStaticAudit(asBytes(sourceText));
     assert.equal(audit.classifiedNodeCount, audit.nodeCount);
   }
+  const joinedLengthDomainPrecisionPositiveSources = [
+    approvedOneParameterExportSource(
+      'const selected = currentState ? new Set(["safe"]) : "x"; const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : Number(currentState); const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? Number(currentState) : "x"; const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : deepFreeze({ value: "safe" }); const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ value: "safe" }) : "x"; const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : deepFreeze({ length: String(currentState) }); const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: String(currentState) }) : "x"; const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : deepFreeze({ length: Boolean(currentState) }); const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: Boolean(currentState) }) : "x"; const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : deepFreeze({ length: null }); const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : ["safe"]; const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? ["safe"] : "x"; const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : canonicalJsonBytes(null); const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? canonicalJsonBytes(null) : "x"; const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : deepFreeze({ length: Number(currentState) }); const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: Number(currentState) }) : "x"; const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : "yy"; const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? ["x"] : ["x", "y"]; const next = selected.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const inner = currentState ? deepFreeze({ length: String(currentState) }) : new Set(["safe"]); const selected = currentState ? "x" : inner; const kind = typeof selected.length; const next = kind.length + 1; return next;',
+    ),
+    approvedOneParameterExportSourceWithExtra(
+      "const selected = localLength(currentState); const kind = typeof selected.length; const next = kind.length + 1; return next;",
+      'function localLength(value) { if (value) { return "x"; } return deepFreeze({ length: String(value) }); }',
+    ),
+  ];
+  assert.equal(joinedLengthDomainPrecisionPositiveSources.length, 20);
+  for (const sourceText of joinedLengthDomainPrecisionPositiveSources) {
+    const audit = independentStaticAudit(asBytes(sourceText));
+    assert.equal(audit.classifiedNodeCount, audit.nodeCount);
+  }
 
   const mutationKills = [];
   const kill = (id, run, expectedMessage = null) => {
@@ -10607,11 +10764,11 @@ function contextualPositive() {
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 417,
-      killed: 417,
+      count: 438,
+      killed: 438,
       survivors: 0,
       idsSha256:
-        "27de9265023fca21364bd376e4c9588d50f6127a3ec1b634284066e4e6da84cd",
+        "b6370134ca46feaa9e36edc1d9314c855d9e0df4ab8e7c0db24334605023ce28",
     },
   );
   assert.equal(
