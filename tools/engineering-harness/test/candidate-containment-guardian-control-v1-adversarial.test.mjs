@@ -7405,6 +7405,22 @@ function validSkeleton(extra = "", functionBodyOverrides = new Map()) {
   return `${imports}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}`;
 }
 
+function directNullRecordSource(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((child) => directNullRecordSource(child)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).map(
+      ([key, child]) =>
+        `[${JSON.stringify(key)},${directNullRecordSource(child)}]`,
+    );
+    return `nullRecord([${entries.join(",")}])`;
+  }
+  const source = JSON.stringify(value);
+  assert.notEqual(source, undefined);
+  return source;
+}
+
 function directProvenanceRequirementsSkeleton(
   functionBody,
   extra = "",
@@ -7415,15 +7431,30 @@ function directProvenanceRequirementsSkeleton(
   const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
   assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
   const inlineDeclaration = `export const ${requirementsName} = 0;`;
-  const rootedDeclaration = `const guardianContract = deepFreeze(${JSON.stringify(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
+  const rootedDeclaration = `const guardianContract = deepFreeze(${directNullRecordSource(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
   const source = validSkeleton(extra, new Map([[functionName, functionBody]]));
   assert.equal(source.includes(inlineDeclaration), true);
   return source.replace(inlineDeclaration, rootedDeclaration);
 }
 
+function directRequirementsBindingSkeleton(functionBody, bindingDeclaration) {
+  const requirementsName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const exportDeclaration = `export const ${requirementsName} = guardianContract;`;
+  const source = directProvenanceRequirementsSkeleton(functionBody);
+  assert.equal(source.includes(exportDeclaration), true);
+  return source.replace(
+    exportDeclaration,
+    `${bindingDeclaration}\n${exportDeclaration}`,
+  );
+}
+
 function directProvenancePolicyControls() {
-  const authorityProjection =
-    'function authorityProjection() { return deepFreeze(nullRecord([["transportAuthority", false], ["descriptorAuthority", false], ["filesystemAuthority", false], ["cgroupAuthority", false], ["processAuthority", false], ["recoveryAuthority", false], ["runtimeAuthority", false]])); }';
+  const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+  assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
+  const unverifiedAuthority =
+    'deepFreeze(nullRecord([["transportAuthority", false], ["descriptorAuthority", false], ["filesystemAuthority", false], ["cgroupAuthority", false], ["processAuthority", false], ["recoveryAuthority", false], ["runtimeAuthority", false]]))';
+  const unverifiedRequirements = `const unverifiedGuardianContract = deepFreeze(${directNullRecordSource(pinnedRequirements)});`;
   return Object.freeze([
     Object.freeze({
       id: "direct-requirements-exact-path",
@@ -7435,18 +7466,142 @@ function directProvenancePolicyControls() {
     Object.freeze({
       id: "direct-requirements-whole-root-escape",
       accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_ROOT_ESCAPE",
       source: directProvenanceRequirementsSkeleton("return guardianContract;"),
     }),
     Object.freeze({
-      id: "direct-authority-exact-output",
+      id: "direct-requirements-unverified-byte-equal-root",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_ROOT_NOT_EXACT",
+      source: directRequirementsBindingSkeleton(
+        "const schema = unverifiedGuardianContract.schemas.startupProjection; return schema;",
+        unverifiedRequirements,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-root-alias",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_ROOT_NOT_EXACT",
+      source: directRequirementsBindingSkeleton(
+        "const schema = guardianAlias.schemas.startupProjection; return schema;",
+        "const guardianAlias = guardianContract;",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-requirements-wrong-subtree-escape",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance REQUIREMENTS_PATH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        "return guardianContract.schemas;",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-requirements-path-output",
       accepted: true,
-      source: validSkeleton(authorityProjection),
+      source: directProvenanceRequirementsSkeleton(
+        'return deepFreeze(nullRecord([["schema", guardianContract.schemas.statusArtifact], ["authority", guardianContract.authority]]));',
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-path-direct-return",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_DIRECT_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        "return guardianContract.authority;",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-byte-equal-direct-return",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_DIRECT_ESCAPE",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            `return ${unverifiedAuthority};`,
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-byte-equal-at-output-key",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_WRONG_PLACEMENT",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            `return deepFreeze(nullRecord([["schema", "oxigraph.candidate-containment-guardian-status-artifact/v1"], ["authority", ${unverifiedAuthority}]]));`,
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-path-wrong-output-key",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_WRONG_PLACEMENT",
+      source: directProvenanceRequirementsSkeleton(
+        'return deepFreeze(nullRecord([["schema", guardianContract.schemas.statusArtifact], ["physicalFacts", guardianContract.authority]]));',
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-path-hash-sink",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_HASH_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        "return sha256(canonicalJsonBytes(guardianContract.authority));",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-path-coercion-sink",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_COERCION_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        "return String(guardianContract.authority);",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-authority-exact-path-general-call-sink",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_GENERAL_SINK_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        "return directGeneralAuthoritySink(guardianContract.authority);",
+        "function directGeneralAuthoritySink(value) { return null; }",
+      ),
     }),
     Object.freeze({
       id: "direct-authority-ordinary-identifier-key",
       accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance AUTHORITY_WRONG_PLACEMENT",
       source: validSkeleton(
         "function wrongProjection() { const value = deepFreeze({ processAuthority: false }); return value; }",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-array-includes",
+      accepted: true,
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'return CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1.includes("RECOVERY_PLAN_READY");',
+          ],
+        ]),
       ),
     }),
     Object.freeze({
@@ -7463,14 +7618,117 @@ function directProvenancePolicyControls() {
       ),
     }),
     Object.freeze({
+      id: "direct-pinned-import-digest-exact-validation",
+      accepted: true,
+      source: validSkeleton(
+        'function directFailPinnedDigest() { throw new Error("CONTROL_BINDING"); }',
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'return exactDigest(CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1, "recovery requirements", directFailPinnedDigest);',
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-launch-file-specs-read",
+      accepted: true,
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3.fileSpecs.length === 14;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
       id: "direct-pinned-import-whole-value-escape",
       accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
       source: validSkeleton(
         "",
         new Map([
           [
             "verifyCandidateContainmentGuardianStatusFrameV1",
             "return CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-array-hash-sink",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return sha256(canonicalJsonBytes(CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1));",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-object-hash-sink",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return sha256(canonicalJsonBytes(CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3));",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-alias",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "const states = CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1; return null;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-wrong-member",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_MEMBER_NOT_ALLOWED",
+      source: validSkeleton(
+        "",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3.schema.length === 1;",
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-import-general-call-sink",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: validSkeleton(
+        "function directGeneralImportSink(value) { return null; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            "return directGeneralImportSink(CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1);",
           ],
         ]),
       ),
@@ -7491,6 +7749,8 @@ function directProvenancePolicyControls() {
     Object.freeze({
       id: "direct-local-helper-untrusted-caller",
       accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALLER_UNTRUSTED",
       source: validSkeleton(
         "function trustedLength(value) { return value.length; }",
         new Map([
@@ -7501,26 +7761,75 @@ function directProvenancePolicyControls() {
         ]),
       ),
     }),
+    Object.freeze({
+      id: "direct-local-helper-mixed-trusted-and-exported-callers",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALLER_MIXED",
+      source: validSkeleton(
+        "function trustedLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'const trusted = trustedLength("bounded"); const raw = trustedLength(startupProjection); return trusted + raw;',
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-indirect-call",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALL_INDIRECT",
+      source: validSkeleton(
+        "function trustedLength(value) { return value.length; }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'return (trustedLength)("bounded");',
+          ],
+        ]),
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-recursive-call",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALL_RECURSIVE",
+      source: validSkeleton(
+        "function trustedLength(value) { if (value.length === 0) { return 0; } return trustedLength(value.slice(1)); }",
+        new Map([
+          [
+            "verifyCandidateContainmentGuardianStatusFrameV1",
+            'return trustedLength("bounded");',
+          ],
+        ]),
+      ),
+    }),
   ]);
 }
 
 function observeDirectProvenancePolicyControls() {
-  return directProvenancePolicyControls().map(({ id, accepted, source }) => {
-    let rejection = null;
-    try {
-      independentStaticAudit(Buffer.from(source, "utf8"));
-    } catch (error) {
-      rejection = error;
-    }
-    if (!accepted && rejection !== null) {
-      assert.match(rejection.message, /^direct static gate:/u, id);
-    }
-    return Object.freeze({
-      id,
-      expectedAccepted: accepted,
-      actualAccepted: rejection === null,
-    });
-  });
+  return directProvenancePolicyControls().map(
+    ({ id, accepted, expectedRejection = null, source }) => {
+      let rejection = null;
+      try {
+        independentStaticAudit(Buffer.from(source, "utf8"));
+      } catch (error) {
+        rejection = error;
+      }
+      return Object.freeze({
+        id,
+        expectedAccepted: accepted,
+        actualAccepted: rejection === null,
+        rejectionStageMatched:
+          accepted || rejection === null
+            ? null
+            : rejection.message === expectedRejection,
+        rejectionMessage: rejection?.message ?? null,
+      });
+    },
+  );
 }
 
 function snapshotCarrier(
@@ -8407,13 +8716,15 @@ test("does not create a second missing-module failure", () => {
 test("defines the independent provenance policy before implementation", () => {
   const observations = observeDirectProvenancePolicyControls();
   assert.deepEqual(
-    observations.map(({ id, actualAccepted }) => ({
+    observations.map(({ id, actualAccepted, rejectionStageMatched }) => ({
       id,
       accepted: actualAccepted,
+      rejectionStageMatched,
     })),
     observations.map(({ id, expectedAccepted }) => ({
       id,
       accepted: expectedAccepted,
+      rejectionStageMatched: expectedAccepted ? null : true,
     })),
   );
 });
