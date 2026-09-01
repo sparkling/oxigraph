@@ -8916,6 +8916,81 @@ function contextualPositive() {
     const audit = independentStaticAudit(asBytes(sourceText));
     assert.equal(audit.classifiedNodeCount, audit.nodeCount);
   }
+  const crossSummaryPrecisionPositiveSources = [
+    approvedOneParameterExportSource(
+      'const selected = currentState ? ["x"] : [["y"], ["z"]]; const value = selected.at(0); const next = value.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? [["y"], ["z"]] : ["x"]; const value = selected.at(0); const next = value.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? ["x"] : [["y"], ["z"]]; const value = selected.slice(0, 1).at(0); const next = value.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? [["y"], ["z"]] : ["x"]; const value = selected.slice(0, 1).at(0); const next = value.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'for (const value of ["x", ["y"]]) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'for (const value of [["y"], "x"]) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'for (const value of new Set(["x", ["y"]])) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'for (const value of new Set([["y"], "x"])) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? new Set(["x"]) : new Set([["y"], ["z"]]); for (const value of selected) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? new Set([["y"], ["z"]]) : new Set(["x"]); for (const value of selected) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSourceWithExtra(
+      'const value = localValues(currentState).at(0); const next = value.length + 1; return next;',
+      'function localValues(value) { if (value) { return ["x"]; } return [["y"], ["z"]]; }',
+    ),
+    approvedOneParameterExportSourceWithExtra(
+      'for (const value of localValues(currentState)) { const next = value.length + 1; } return null;',
+      'function localValues(value) { if (value) { return new Set(["x"]); } return new Set([["y"], ["z"]]); }',
+    ),
+    approvedOneParameterExportSource(
+      'const inner = currentState ? ["x"] : [["y"], ["z"]]; const selected = currentState ? inner : [["q"], ["r"], ["s"]]; const value = selected.at(0); const next = value.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const inner = currentState ? new Set(["x"]) : new Set([["y"], ["z"]]); const selected = currentState ? inner : new Set([["q"], ["r"], ["s"]]); for (const value of selected) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: "x" }) : deepFreeze({ length: ["y"] }); const next = selected.length.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: ["y"] }) : deepFreeze({ length: "x" }); const next = selected.length.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: "x" }) : deepFreeze({ length: ["y"] }); const next = selected.length.slice(0, 1).length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: ["y"] }) : deepFreeze({ length: "x" }); const next = selected.length.slice(0, 1).length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: new Set(["x"]) }) : deepFreeze({ length: new Set([["y"], ["z"]]) }); for (const value of selected.length) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? deepFreeze({ length: new Set([["y"], ["z"]]) }) : deepFreeze({ length: new Set(["x"]) }); for (const value of selected.length) { const next = value.length + 1; } return null;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? [String(currentState)] : [["y"], ["z"]]; const value = selected.at(0); const next = value.length + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? [["y"], ["z"]] : [String(currentState)]; const value = selected.at(0); const next = value.length + 1; return next;',
+    ),
+  ];
+  assert.equal(crossSummaryPrecisionPositiveSources.length, 22);
+  for (const sourceText of crossSummaryPrecisionPositiveSources) {
+    const audit = independentStaticAudit(asBytes(sourceText));
+    assert.equal(audit.classifiedNodeCount, audit.nodeCount);
+  }
 
   const mutationKills = [];
   const kill = (id, run, expectedMessage = null) => {
