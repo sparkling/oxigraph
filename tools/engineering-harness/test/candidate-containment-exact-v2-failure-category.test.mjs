@@ -346,15 +346,17 @@ test(
       "bounds",
     );
 
+    const invalidLengthTarget = ordinaryBuffer([1]);
     const invalidLengthModule = await importWithTypedArrayGetter(
       "length",
-      () =>
+      (originalGetter) =>
         function invalidIntrinsicLength() {
-          return Number.NaN;
+          if (this === invalidLengthTarget) return Number.NaN;
+          return Reflect.apply(originalGetter, this, []);
         },
     );
     assertFailureCategory(
-      ordinaryBuffer([1]),
+      invalidLengthTarget,
       { maximumBytes: 4 },
       "bounds",
       invalidLengthModule.copyBoundedBufferByFailureCategory,
