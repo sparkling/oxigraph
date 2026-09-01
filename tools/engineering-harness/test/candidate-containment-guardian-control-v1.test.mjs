@@ -1824,6 +1824,29 @@ function c12CreateRecoveryAttemptPreimage(recoveryStartup) {
   return attempt;
 }
 
+function c12CreateRecoveryAttemptForSelection(recoveryStartup, selection) {
+  const attempt = c12CreateRecoveryAttemptPreimage(recoveryStartup);
+  Object.assign(attempt, {
+    targetSha256: selection.targetSha256,
+    actorKind: selection.actorKind,
+    recoveryActorEpochSha256: selection.recoveryActorEpochSha256,
+    attemptDirectoryName: selection.attemptDirectoryName,
+    lifetimeAttemptAnchorRawSha256: selection.lifetimeAttemptAnchorRawSha256,
+    disposition: selection.disposition,
+    reportedSourceLocation: selection.sourceLocation,
+    decisionSourceLocation: selection.decisionSourceLocation,
+    reportedLifecycleInventorySha256: selection.lifecycleInventorySha256,
+    quarantineReason: selection.quarantineReason,
+  });
+  delete attempt.attemptSha256;
+  attempt.attemptSha256 = semanticSha256(attempt);
+  assert.deepEqual(Object.keys(attempt), C12_RECOVERY_ATTEMPT_FIELDS);
+  const prefix = c12Clone(attempt);
+  delete prefix.attemptSha256;
+  assert.equal(attempt.attemptSha256, semanticSha256(prefix));
+  return attempt;
+}
+
 function c12CreateRecoverySelection(recoveryStartup) {
   const attempt = c12CreateRecoveryAttemptPreimage(recoveryStartup);
   const selection = {
@@ -1999,6 +2022,13 @@ function c12CreateInputWitness(kind, currentState, context) {
     const selection = c12CreateRecoverySelection(
       context.startups.RECOVERY_ONLY,
     );
+    if (context.mutateRecoverySelection !== null) {
+      context.mutateRecoverySelection(selection);
+      selection.attemptSha256 = c12CreateRecoveryAttemptForSelection(
+        context.startups.RECOVERY_ONLY,
+        selection,
+      ).attemptSha256;
+    }
     const frame = {
       schema: C12_SCHEMAS.wireFrame,
       action: "RECOVERY_REQUEST",
@@ -2217,13 +2247,18 @@ function c12CoreWithoutMembership(row) {
   return clone;
 }
 
-function createContractValidRuntimeOracle() {
+function c12BuildContractValidRuntimeOracle(mutateRecoverySelection = null) {
+  assert.equal(
+    mutateRecoverySelection === null ||
+      typeof mutateRecoverySelection === "function",
+    true,
+  );
   const launchCapsule = c12CreateLaunchCapsuleWitness();
   const startups = {
     NORMAL: c12CreateStartupWitness("NORMAL"),
     RECOVERY_ONLY: c12CreateStartupWitness("RECOVERY_ONLY"),
   };
-  const context = { launchCapsule, startups };
+  const context = { launchCapsule, startups, mutateRecoverySelection };
   const transitionRows = [];
   const transitionByPrefix = new Map();
   const statusRows = [];
@@ -2557,14 +2592,10 @@ function createContractValidRuntimeOracle() {
     construction,
   };
   oracle.identitySha256 = semanticSha256(oracle);
-  c12AssertContractValidRuntimeOracle(oracle);
-  return recursivelyFreezeEvidence(oracle);
+  return oracle;
 }
 
-function c12AssertRecoverySelection(selection, expectedEpochSha256) {
-  const attempt = c12CreateRecoveryAttemptPreimage({
-    epoch: { rawSha256: expectedEpochSha256 },
-  });
+function c12AssertRecoverySelectionShape(selection) {
   assert.deepEqual(Object.keys(selection), C12_RECOVERY_SELECTION_FIELDS);
   assert.equal(selection.schema, C12_SCHEMAS.recoverySelection);
   for (const field of [
@@ -2584,6 +2615,89 @@ function c12AssertRecoverySelection(selection, expectedEpochSha256) {
     selection.recoveryRequirementsSha256,
     C12_RECOVERY_REQUIREMENTS_SHA256,
   );
+  assert.equal(selection.planStatus, "RECOVERY_PLAN_READY");
+  assert.equal(
+    ["LIVE_BIRTH_GUARDIAN", "RECOVERY_ONLY_GUARDIAN"].includes(
+      selection.requiredActorKind,
+    ),
+    true,
+  );
+  assert.equal(selection.actorKind, selection.requiredActorKind);
+  assert.equal(
+    selection.attemptDirectoryName,
+    selection.recoveryActorEpochSha256,
+  );
+  assert.equal(
+    [
+      "GENESIS_ABORT",
+      "SAME_BOOT_RECONCILE",
+      "REBOOT_INTERRUPTION",
+      "QUARANTINE",
+      "RECOVERED_DECISION_RESUME",
+      "QUARANTINE_DECISION_RESUME",
+    ].includes(selection.disposition),
+    true,
+  );
+  assert.equal(
+    ["staging", "active", "recovered", "quarantined"].includes(
+      selection.sourceLocation,
+    ),
+    true,
+  );
+  assert.equal(
+    ["staging", "active", "recovered", "quarantined"].includes(
+      selection.decisionSourceLocation,
+    ),
+    true,
+  );
+  assert.equal(
+    ["recovered", "quarantined"].includes(
+      selection.requiredDestinationLocation,
+    ),
+    true,
+  );
+  if (
+    ["GENESIS_ABORT", "SAME_BOOT_RECONCILE", "REBOOT_INTERRUPTION"].includes(
+      selection.disposition,
+    )
+  ) {
+    assert.equal(selection.quarantineReason, null);
+    assert.equal(selection.decisionSourceLocation, selection.sourceLocation);
+    assert.equal(selection.requiredDestinationLocation, "recovered");
+  } else if (selection.disposition === "QUARANTINE") {
+    assert.equal(
+      [
+        "UNKNOWN_BOOT_ID",
+        "DELEGATED_ROOT_IDENTITY_UNKNOWN_OR_DRIFTED",
+        "UNSAFE_CGROUP_INVENTORY",
+        "INCONSISTENT_GENERATION_STATE",
+        "UNSUPPORTED_RECOVERY_INTERFACE",
+        "RECOVERY_EFFECT_UNCERTAIN",
+      ].includes(selection.quarantineReason),
+      true,
+    );
+    assert.equal(selection.decisionSourceLocation, selection.sourceLocation);
+    assert.equal(selection.requiredDestinationLocation, "quarantined");
+  }
+  if (selection.disposition === "REBOOT_INTERRUPTION") {
+    assert.equal(selection.actorKind, "RECOVERY_ONLY_GUARDIAN");
+  }
+  assert.equal(Number.isInteger(selection.stateCount), true);
+  assert.equal(selection.stateCount >= 1 && selection.stateCount <= 19, true);
+  for (let index = 0; index < 19; index += 1) {
+    if (index < selection.stateCount) {
+      assert.match(selection[`state${index}`], /^[0-9a-f]{64}$/u);
+    } else {
+      assert.equal(selection[`state${index}`], null);
+    }
+  }
+}
+
+function c12AssertRecoverySelection(selection, expectedEpochSha256) {
+  c12AssertRecoverySelectionShape(selection);
+  const attempt = c12CreateRecoveryAttemptPreimage({
+    epoch: { rawSha256: expectedEpochSha256 },
+  });
   assert.deepEqual(
     Object.fromEntries(
       Object.keys(C12_RECOVERY_PREDECESSOR_PROJECTION).map((field) => [
@@ -2593,7 +2707,6 @@ function c12AssertRecoverySelection(selection, expectedEpochSha256) {
     ),
     C12_RECOVERY_PREDECESSOR_PROJECTION,
   );
-  assert.equal(selection.planStatus, "RECOVERY_PLAN_READY");
   assert.equal(selection.requiredActorKind, "RECOVERY_ONLY_GUARDIAN");
   assert.equal(selection.actorKind, attempt.actorKind);
   assert.equal(
@@ -2624,7 +2737,11 @@ function c12AssertRecoverySelection(selection, expectedEpochSha256) {
   );
 }
 
-function c12AssertContractValidRuntimeOracle(oracle) {
+function c12AssertLocallyConsistentRuntimeOracle(
+  oracle,
+  requireExactRecoverySelection,
+) {
+  assert.equal(typeof requireExactRecoverySelection, "boolean");
   assert.equal(oracle.schema, CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA);
   assert.equal(oracle.requirementsSha256, EXPECTED_REQUIREMENTS_SHA256);
   assert.deepEqual(oracle.counts, {
@@ -2881,7 +2998,11 @@ function c12AssertContractValidRuntimeOracle(oracle) {
         input.frame.value.recoverySelectionSha256,
         semanticSha256(selection),
       );
-      c12AssertRecoverySelection(selection, input.frame.value.epochSha256);
+      if (requireExactRecoverySelection) {
+        c12AssertRecoverySelection(selection, input.frame.value.epochSha256);
+      } else {
+        c12AssertRecoverySelectionShape(selection);
+      }
       assert.deepEqual(input.scalarArguments, { requestEofObserved: true });
     } else if (input.kind === "DIAGNOSTIC_FAILURE") {
       assert.equal(input.frame.value.schema, C12_SCHEMAS.diagnosticSummary);
@@ -3151,6 +3272,19 @@ function c12AssertContractValidRuntimeOracle(oracle) {
   const withoutIdentity = c12Clone(oracle);
   delete withoutIdentity.identitySha256;
   assert.equal(oracle.identitySha256, semanticSha256(withoutIdentity));
+  assert.deepEqual(oracle.inventorySha256, {
+    startupWitnesses: semanticSha256(oracle.witnesses.startups),
+    inputKindWitnesses: semanticSha256(oracle.witnesses.inputKinds),
+    legalSequences: semanticSha256(oracle.expected.legalSequences),
+    wholeTransitions: semanticSha256(oracle.expected.wholeTransitions),
+    acceptedPrefixes: semanticSha256(oracle.expected.acceptedPrefixes),
+    emittedStatuses: semanticSha256(oracle.expected.emittedStatuses),
+    atomicPrefixes: semanticSha256(oracle.expected.atomicPrefixes),
+  });
+}
+
+function c12AssertContractValidRuntimeOracle(oracle) {
+  c12AssertLocallyConsistentRuntimeOracle(oracle, true);
   assert.deepEqual(
     oracle.inventorySha256,
     EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
@@ -3161,6 +3295,115 @@ function c12AssertContractValidRuntimeOracle(oracle) {
   );
 }
 
+function createContractValidRuntimeOracle() {
+  const oracle = c12BuildContractValidRuntimeOracle();
+  c12AssertContractValidRuntimeOracle(oracle);
+  return recursivelyFreezeEvidence(oracle);
+}
+
+function c12CreateCoherentlyResealedRecoveryOracle(mutateRecoverySelection) {
+  assert.equal(typeof mutateRecoverySelection, "function");
+  const oracle = c12BuildContractValidRuntimeOracle(mutateRecoverySelection);
+  c12AssertLocallyConsistentRuntimeOracle(oracle, false);
+  const recoveryStartup = oracle.witnesses.startups.find(
+    ({ mode }) => mode === "RECOVERY_ONLY",
+  );
+  const selection = oracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "RECOVERY_REQUEST",
+  ).frame.value.recoverySelection;
+  const attempt = c12CreateRecoveryAttemptForSelection(
+    recoveryStartup,
+    selection,
+  );
+  assert.equal(selection.attemptSha256, attempt.attemptSha256);
+  const world = recursivelyFreezeEvidence({ oracle, attempt });
+  assertRecursivelyFrozenWithoutByteViews(world);
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(world.oracle, world.attempt),
+    0,
+  );
+  return world;
+}
+
+function c12SetRecoveryStates(selection, states) {
+  selection.stateCount = states.length;
+  for (let index = 0; index < 19; index += 1) {
+    selection[`state${index}`] =
+      index < states.length ? semanticSha256(states[index]) : null;
+  }
+}
+
+const C12_GATE6_RECOVERY_MUTATIONS = Object.freeze([
+  Object.freeze({
+    id: "recovery-used-state-hash",
+    firstFailureField: "state0",
+    attemptVerifierMustReject: false,
+    mutateRecoverySelection(selection) {
+      selection.state0 = "0".repeat(64);
+    },
+  }),
+  Object.freeze({
+    id: "recovery-disposition",
+    firstFailureField: "disposition",
+    attemptVerifierMustReject: true,
+    mutateRecoverySelection(selection) {
+      selection.disposition = "GENESIS_ABORT";
+      c12SetRecoveryStates(selection, [
+        "RECOVERY_ATTEMPT_DURABLE",
+        "GENESIS_ABORT_RECOVERY_REQUIRED",
+        "CGROUP_PATHS_ABSENT_OBSERVED",
+        "RECOVERED_TOMBSTONE_DURABLE",
+        "RECOVERED_LOCATION_OBSERVED",
+      ]);
+    },
+  }),
+  Object.freeze({
+    id: "recovery-actor-kind",
+    firstFailureField: "actorKind",
+    attemptVerifierMustReject: true,
+    mutateRecoverySelection(selection) {
+      selection.actorKind = "LIVE_BIRTH_GUARDIAN";
+      selection.requiredActorKind = "LIVE_BIRTH_GUARDIAN";
+      selection.disposition = "GENESIS_ABORT";
+      c12SetRecoveryStates(selection, [
+        "RECOVERY_ATTEMPT_DURABLE",
+        "GENESIS_ABORT_RECOVERY_REQUIRED",
+        "CGROUP_PATHS_ABSENT_OBSERVED",
+        "RECOVERED_TOMBSTONE_DURABLE",
+        "RECOVERED_LOCATION_OBSERVED",
+      ]);
+    },
+  }),
+  Object.freeze({
+    id: "recovery-destination-location",
+    firstFailureField: "requiredDestinationLocation",
+    attemptVerifierMustReject: true,
+    mutateRecoverySelection(selection) {
+      selection.requiredDestinationLocation = "quarantined";
+      selection.disposition = "QUARANTINE";
+      selection.quarantineReason = "UNKNOWN_BOOT_ID";
+      selection.decisionSourceLocation = selection.sourceLocation;
+      c12SetRecoveryStates(selection, [
+        "RECOVERY_ATTEMPT_DURABLE",
+        "QUARANTINE_INTENT_DURABLE",
+        "QUARANTINED_LOCATION_OBSERVED",
+      ]);
+    },
+  }),
+  Object.freeze({
+    id: "recovery-self-consistent-synthetic-predecessor-bundle",
+    firstFailureField: "targetSha256",
+    attemptVerifierMustReject: true,
+    mutateRecoverySelection(selection) {
+      for (const field of Object.keys(C12_RECOVERY_PREDECESSOR_PROJECTION)) {
+        selection[field] = byteSha256(
+          Buffer.from(`synthetic-predecessor:${field}`, "utf8"),
+        );
+      }
+    },
+  }),
+]);
+
 const C12_RUNTIME_ORACLE_CONSTRUCTION_FUNCTIONS = Object.freeze([
   c12Clone,
   c12JsonlBinding,
@@ -3169,6 +3412,7 @@ const C12_RUNTIME_ORACLE_CONSTRUCTION_FUNCTIONS = Object.freeze([
   c12CreateStartupWitness,
   c12CreateAdmissionRecvmsgWitness,
   c12CreateRecoveryAttemptPreimage,
+  c12CreateRecoveryAttemptForSelection,
   c12CreateRecoverySelection,
   c12CreateState,
   c12CreateStatusWitness,
@@ -3180,9 +3424,13 @@ const C12_RUNTIME_ORACLE_CONSTRUCTION_FUNCTIONS = Object.freeze([
   c12AssertBinding,
   c12CollectBindings,
   c12CoreWithoutMembership,
+  c12BuildContractValidRuntimeOracle,
+  c12AssertRecoverySelectionShape,
   c12AssertRecoverySelection,
+  c12AssertLocallyConsistentRuntimeOracle,
   c12AssertContractValidRuntimeOracle,
   createContractValidRuntimeOracle,
+  c12CreateCoherentlyResealedRecoveryOracle,
 ]);
 const C12_FORBIDDEN_EXPECTED_VALUE_SOURCES = Object.freeze([
   "REQUIREMENTS_ORACLE",
@@ -9936,10 +10184,275 @@ function pinPredecessorSourcesBeforeCandidateRead() {
   });
 }
 
+function c12AssertSelectionMatchesIndependentPredecessorTuple(
+  selection,
+  predecessorTuple,
+) {
+  const comparisonOrder = [
+    "schema",
+    "targetSha256",
+    "recoveryRequirementsSha256",
+    "recoveryPlanSha256",
+    "recoveryReplaySha256",
+    "lifecycleInventorySha256",
+    "lifetimeAnchorProjectionSha256",
+    "lifetimeAttemptAnchorRawSha256",
+    "planStatus",
+    "actorKind",
+    "requiredActorKind",
+    "recoveryActorEpochSha256",
+    "attemptDirectoryName",
+    "requiredDestinationLocation",
+    "disposition",
+    "quarantineReason",
+    "sourceLocation",
+    "decisionSourceLocation",
+    "stateCount",
+    ...Array.from({ length: 19 }, (_, index) => `state${index}`),
+    "attemptSha256",
+  ];
+  assert.deepEqual(
+    [...comparisonOrder].sort(),
+    [...C12_RECOVERY_SELECTION_FIELDS].sort(),
+  );
+  for (const field of comparisonOrder) {
+    assert.equal(
+      predecessorTuple[field] === null ||
+        ["string", "number", "boolean"].includes(
+          typeof predecessorTuple[field],
+        ),
+      true,
+      `C12 predecessor tuple field is not scalar: ${field}`,
+    );
+    if (selection[field] !== predecessorTuple[field]) {
+      throw new Error(
+        `C12 independent predecessor tuple crosswalk mismatch: ${field}`,
+      );
+    }
+  }
+}
+
+function c12AssertGate6RecoveryCascade(canonicalOracle, falseWorldOracle) {
+  c12AssertLocallyConsistentRuntimeOracle(falseWorldOracle, false);
+  assertRecursivelyFrozenWithoutByteViews(falseWorldOracle);
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(canonicalOracle, falseWorldOracle),
+    0,
+  );
+
+  const changedIndexes = (canonicalRows, falseWorldRows) => {
+    assert.equal(falseWorldRows.length, canonicalRows.length);
+    return canonicalRows.flatMap((canonicalRow, index) => {
+      assert.equal(falseWorldRows[index].id, canonicalRow.id);
+      return semanticSha256(falseWorldRows[index]) ===
+        semanticSha256(canonicalRow)
+        ? []
+        : [index];
+    });
+  };
+  const changedInputKinds = canonicalOracle.witnesses.inputKinds.flatMap(
+    (canonicalInput, index) =>
+      semanticSha256(falseWorldOracle.witnesses.inputKinds[index]) ===
+      semanticSha256(canonicalInput)
+        ? []
+        : [canonicalInput.kind],
+  );
+  assert.deepEqual(changedInputKinds, [
+    "RECOVERY_REQUEST",
+    "RECOVERY_CONTROL_HANDOFF",
+  ]);
+
+  const canonicalRecoveryTransition =
+    canonicalOracle.expected.wholeTransitions.find(
+      ({ operation }) => operation === "RECOVERY_REQUEST",
+    );
+  const falseWorldRecoveryTransition =
+    falseWorldOracle.expected.wholeTransitions.find(
+      ({ operation }) => operation === "RECOVERY_REQUEST",
+    );
+  const canonicalRecoveryInput = canonicalOracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "RECOVERY_REQUEST",
+  );
+  const falseWorldRecoveryInput = falseWorldOracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "RECOVERY_REQUEST",
+  );
+  for (const value of [
+    canonicalRecoveryTransition,
+    falseWorldRecoveryTransition,
+    canonicalRecoveryInput,
+    falseWorldRecoveryInput,
+  ]) {
+    assert.notEqual(value, undefined);
+  }
+  const recoveryRequestPairs = [
+    [canonicalRecoveryInput.frame, falseWorldRecoveryInput.frame],
+    [
+      canonicalRecoveryTransition.inputWitness.frame,
+      falseWorldRecoveryTransition.inputWitness.frame,
+    ],
+  ];
+  for (const [canonicalBinding, falseWorldBinding] of recoveryRequestPairs) {
+    assert.notEqual(falseWorldBinding.rawSha256, canonicalBinding.rawSha256);
+    c12AssertBinding(falseWorldBinding);
+  }
+
+  const canonicalRecoveryStatuses =
+    canonicalOracle.expected.emittedStatuses.filter(
+      ({ frame }) => frame.mode === "RECOVERY_ONLY",
+    );
+  const falseWorldRecoveryStatuses =
+    falseWorldOracle.expected.emittedStatuses.filter(
+      ({ frame }) => frame.mode === "RECOVERY_ONLY",
+    );
+  assert.equal(canonicalRecoveryStatuses.length, 3);
+  assert.equal(falseWorldRecoveryStatuses.length, 3);
+  for (let index = 0; index < canonicalRecoveryStatuses.length; index += 1) {
+    assert.notEqual(
+      semanticSha256(falseWorldRecoveryStatuses[index]),
+      semanticSha256(canonicalRecoveryStatuses[index]),
+    );
+  }
+  assert.deepEqual(
+    changedIndexes(
+      canonicalOracle.expected.emittedStatuses,
+      falseWorldOracle.expected.emittedStatuses,
+    ),
+    falseWorldOracle.expected.emittedStatuses.flatMap((status, index) =>
+      status.frame.mode === "RECOVERY_ONLY" ? [index] : [],
+    ),
+  );
+
+  const dependentTransitionIds = changedIndexes(
+    canonicalOracle.expected.wholeTransitions,
+    falseWorldOracle.expected.wholeTransitions,
+  );
+  const acceptedPrefixIds = changedIndexes(
+    canonicalOracle.expected.acceptedPrefixes,
+    falseWorldOracle.expected.acceptedPrefixes,
+  );
+  assert.deepEqual(dependentTransitionIds, [15, 16, 17, 18, 19]);
+  assert.deepEqual(acceptedPrefixIds, [20, 21, 22, 23, 24, 25]);
+
+  const legalSequenceIds = canonicalOracle.expected.legalSequences.flatMap(
+    (canonicalSequence, index) =>
+      semanticSha256(falseWorldOracle.expected.legalSequences[index]) ===
+      semanticSha256(canonicalSequence)
+        ? []
+        : [canonicalSequence.id],
+  );
+  assert.deepEqual(legalSequenceIds, ["R1", "R2"]);
+
+  const affectedInventoryHashes = Object.keys(
+    canonicalOracle.inventorySha256,
+  ).filter(
+    (name) =>
+      falseWorldOracle.inventorySha256[name] !==
+      canonicalOracle.inventorySha256[name],
+  );
+  const unchangedInventoryHashes = Object.keys(
+    canonicalOracle.inventorySha256,
+  ).filter(
+    (name) =>
+      falseWorldOracle.inventorySha256[name] ===
+      canonicalOracle.inventorySha256[name],
+  );
+  assert.deepEqual(affectedInventoryHashes, [
+    "inputKindWitnesses",
+    "legalSequences",
+    "wholeTransitions",
+    "acceptedPrefixes",
+    "emittedStatuses",
+  ]);
+  assert.deepEqual(unchangedInventoryHashes, [
+    "startupWitnesses",
+    "atomicPrefixes",
+  ]);
+  assert.notEqual(
+    falseWorldOracle.identitySha256,
+    canonicalOracle.identitySha256,
+  );
+
+  const recoveryInitialization = (candidateOracle) =>
+    candidateOracle.expected.wholeTransitions.find(
+      ({ mode, operation }) =>
+        mode === "RECOVERY_ONLY" && operation === "INITIALIZE",
+    );
+  const emptyRecoveryPrefix = (candidateOracle) =>
+    candidateOracle.expected.acceptedPrefixes.find(
+      ({ kind }) => kind === "RECOVERY_INITIALIZATION_EMPTY",
+    );
+  assert.deepEqual(
+    recoveryInitialization(falseWorldOracle),
+    recoveryInitialization(canonicalOracle),
+  );
+  assert.deepEqual(
+    emptyRecoveryPrefix(falseWorldOracle),
+    emptyRecoveryPrefix(canonicalOracle),
+  );
+
+  return recursivelyFreezeEvidence({
+    recoveryRequestBindings: recoveryRequestPairs.length,
+    recoveryStatuses: falseWorldRecoveryStatuses.length,
+    dependentTransitionIds,
+    acceptedPrefixIds,
+    legalSequenceIds,
+    affectedInventoryHashes,
+    wholeOracleIdentity: true,
+    unchangedInventoryHashes,
+    recoveryInitializationUnchanged: true,
+    emptyRecoveryPrefixUnchanged: true,
+  });
+}
+
+function c12CreateGate6FalseWorldIdentityReceipt(world, cascadeCoverage) {
+  const recoveryInput = world.oracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "RECOVERY_REQUEST",
+  );
+  const recoveryStatuses = world.oracle.expected.emittedStatuses.filter(
+    ({ frame }) => frame.mode === "RECOVERY_ONLY",
+  );
+  const sequencesById = new Map(
+    world.oracle.expected.legalSequences.map((sequence) => [
+      sequence.id,
+      sequence,
+    ]),
+  );
+  return recursivelyFreezeEvidence({
+    attemptFieldCount: Object.keys(world.attempt).length,
+    attemptSha256: world.attempt.attemptSha256,
+    completeAttemptSemanticSha256: semanticSha256(world.attempt),
+    selectionSemanticSha256: semanticSha256(
+      recoveryInput.frame.value.recoverySelection,
+    ),
+    requestByteLength: recoveryInput.frame.byteLength,
+    requestRawSha256: recoveryInput.frame.rawSha256,
+    requestSemanticSha256: semanticSha256(recoveryInput.frame.value),
+    recoveryStatusRawSha256: recoveryStatuses.map(
+      ({ binding }) => binding.rawSha256,
+    ),
+    dependentTransitionSha256: cascadeCoverage.dependentTransitionIds.map(
+      (index) => semanticSha256(world.oracle.expected.wholeTransitions[index]),
+    ),
+    acceptedPrefixSha256: cascadeCoverage.acceptedPrefixIds.map((index) =>
+      semanticSha256(world.oracle.expected.acceptedPrefixes[index]),
+    ),
+    legalSequenceSha256: Object.fromEntries(
+      cascadeCoverage.legalSequenceIds.map((id) => [
+        id,
+        semanticSha256(sequencesById.get(id)),
+      ]),
+    ),
+    inventorySha256: c12Clone(world.oracle.inventorySha256),
+    wholeOracleIdentitySha256: world.oracle.identitySha256,
+  });
+}
+
 async function verifyC12RecoveryAttemptAfterExpectedConstruction(
   oracle,
   recoveryStartup,
+  gate6Cases,
 ) {
+  assert.equal(Array.isArray(gate6Cases), true);
   const expectedAttempt = c12CreateRecoveryAttemptPreimage(recoveryStartup);
   const oracleIdentityBeforePredecessorVerification = oracle.identitySha256;
   const recovery = await import(
@@ -10139,10 +10652,137 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
     lifetimeAttemptAnchorRawSha256:
       anchorSelection.lifetimeAttemptAnchorRawSha256,
   };
+  const verifiedSelectionProjection = {
+    schema: C12_SCHEMAS.recoverySelection,
+    targetSha256: observedProjection.targetSha256,
+    recoveryRequirementsSha256:
+      recovery.CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1,
+    recoveryPlanSha256: observedProjection.recoveryPlanSha256,
+    recoveryReplaySha256: observedProjection.recoveryReplaySha256,
+    lifecycleInventorySha256: observedProjection.lifecycleInventorySha256,
+    attemptSha256: observedProjection.attemptSha256,
+    planStatus: plan.status,
+    requiredActorKind: plan.requiredActorKind,
+    actorKind: verifiedAttempt.actorKind,
+    recoveryActorEpochSha256: verifiedAttempt.recoveryActorEpochSha256,
+    attemptDirectoryName: verifiedAttempt.attemptDirectoryName,
+    lifetimeAnchorProjectionSha256:
+      observedProjection.lifetimeAnchorProjectionSha256,
+    lifetimeAttemptAnchorRawSha256:
+      observedProjection.lifetimeAttemptAnchorRawSha256,
+    disposition: plan.disposition,
+    quarantineReason: plan.quarantineReason,
+    sourceLocation: plan.sourceLocation,
+    decisionSourceLocation: plan.decisionSourceLocation,
+    requiredDestinationLocation: plan.requiredDestinationLocation,
+    stateCount: plan.states.length,
+  };
+  for (let index = 0; index < 19; index += 1) {
+    verifiedSelectionProjection[`state${index}`] =
+      index < plan.states.length ? semanticSha256(plan.states[index]) : null;
+  }
+  const frozenVerifiedSelectionProjection = recursivelyFreezeEvidence(
+    verifiedSelectionProjection,
+  );
+  assertRecursivelyFrozenWithoutByteViews(frozenVerifiedSelectionProjection);
+  assert.equal(
+    countSharedNonPrimitiveObjectReferences(
+      oracle,
+      frozenVerifiedSelectionProjection,
+    ),
+    0,
+  );
+  for (const { world } of gate6Cases) {
+    assert.equal(
+      countSharedNonPrimitiveObjectReferences(
+        world,
+        frozenVerifiedSelectionProjection,
+      ),
+      0,
+    );
+  }
   assert.deepEqual(observedProjection, C12_RECOVERY_PREDECESSOR_PROJECTION);
+  const expectedRecoverySelection = oracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "RECOVERY_REQUEST",
+  ).frame.value.recoverySelection;
+  c12AssertSelectionMatchesIndependentPredecessorTuple(
+    expectedRecoverySelection,
+    frozenVerifiedSelectionProjection,
+  );
   assert.deepEqual(c12Clone(attempt), expectedAttempt);
   assert.deepEqual(c12Clone(verifiedAttempt), expectedAttempt);
   assert.notEqual(attempt, verifiedAttempt);
+  const gate6PredecessorReceipts = gate6Cases.map(
+    ({ id, firstFailureField, attemptVerifierMustReject, world }) => {
+      const falseWorldSelection = world.oracle.witnesses.inputKinds.find(
+        ({ kind }) => kind === "RECOVERY_REQUEST",
+      ).frame.value.recoverySelection;
+      const falseAttemptPrefix = c12Clone(world.attempt);
+      delete falseAttemptPrefix.attemptSha256;
+      assert.deepEqual(Object.keys(world.attempt), C12_RECOVERY_ATTEMPT_FIELDS);
+      assert.equal(
+        world.attempt.attemptSha256,
+        semanticSha256(falseAttemptPrefix),
+      );
+      assert.equal(
+        falseWorldSelection.attemptSha256,
+        world.attempt.attemptSha256,
+      );
+
+      let crosswalkRejection = null;
+      try {
+        c12AssertSelectionMatchesIndependentPredecessorTuple(
+          falseWorldSelection,
+          frozenVerifiedSelectionProjection,
+        );
+      } catch (error) {
+        crosswalkRejection = error;
+      }
+      assert.notEqual(crosswalkRejection, null, `${id} crosswalk survived`);
+      assert.equal(
+        crosswalkRejection.message,
+        `C12 independent predecessor tuple crosswalk mismatch: ${firstFailureField}`,
+      );
+
+      let attemptVerifierRejection = null;
+      let attemptVerifierResult = null;
+      try {
+        attemptVerifierResult =
+          recovery.verifyCandidateContainmentRecoveryAttemptV1({
+            attempt: c12Clone(world.attempt),
+            ...attemptInput,
+          });
+      } catch (error) {
+        attemptVerifierRejection = error;
+      }
+      if (attemptVerifierMustReject) {
+        assert.notEqual(
+          attemptVerifierRejection,
+          null,
+          `${id} predecessor attempt verifier survived`,
+        );
+        assert.equal(attemptVerifierResult, null);
+      } else {
+        assert.equal(attemptVerifierRejection, null);
+        assert.deepEqual(c12Clone(attemptVerifierResult), expectedAttempt);
+      }
+
+      return recursivelyFreezeEvidence({
+        id,
+        firstFailureBoundary: "INDEPENDENT_PREDECESSOR_TUPLE_CROSSWALK",
+        firstFailureField,
+        completeAttemptFieldCount: Object.keys(world.attempt).length,
+        attemptSelfConsistent: true,
+        actualPredecessorVerifierExercised: true,
+        attemptVerifierMustReject,
+        attemptVerifierRejected: attemptVerifierRejection !== null,
+        attemptVerifierReason:
+          attemptVerifierRejection === null
+            ? null
+            : String(attemptVerifierRejection.message).split("\n", 1)[0],
+      });
+    },
+  );
   for (const comparisonGraph of [
     fixture,
     target,
@@ -10162,22 +10802,34 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
       countSharedNonPrimitiveObjectReferences(oracle, comparisonGraph),
       0,
     );
+    for (const { world } of gate6Cases) {
+      assert.equal(
+        countSharedNonPrimitiveObjectReferences(world, comparisonGraph),
+        0,
+      );
+    }
   }
   assert.equal(
     oracle.identitySha256,
     oracleIdentityBeforePredecessorVerification,
   );
   return Object.freeze({
-    finding: "C12-RECOVERY-PREIMAGE-001",
-    predecessorSourceSha256:
-      "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
-    expectedAttemptConstructedBeforePredecessorImport: true,
-    predecessorConstructorsConsumedForExpectedValues: false,
-    predecessorVerifierConsumedForExpectedValues: false,
-    verifiedAttemptMatchesIndependentPreimage: true,
-    verifiedProjectionMatchesIndependentExpectedValues: true,
-    retainedVerifierOwnedObjectReferences: 0,
-    recoveryBrandProvenanceProved: false,
+    receipt: Object.freeze({
+      finding: "C12-RECOVERY-PREIMAGE-001",
+      predecessorSourceSha256:
+        "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+      expectedAttemptConstructedBeforePredecessorImport: true,
+      predecessorConstructorsConsumedForExpectedValues: false,
+      predecessorVerifierConsumedForExpectedValues: false,
+      verifiedAttemptMatchesIndependentPreimage: true,
+      verifiedProjectionMatchesIndependentExpectedValues: true,
+      retainedVerifierOwnedObjectReferences: 0,
+      recoveryBrandProvenanceProved: false,
+    }),
+    verifiedSelectionProjection: frozenVerifiedSelectionProjection,
+    gate6PredecessorReceipts: recursivelyFreezeEvidence(
+      gate6PredecessorReceipts,
+    ),
   });
 }
 
@@ -10579,7 +11231,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
   );
   assert.deepEqual(C12_EXPECTED_VALUE_SOURCE_AUDIT, {
     forbiddenReferences: [],
-    constructionFunctionCount: 21,
+    constructionFunctionCount: 26,
   });
   assert.equal(sourceText, null);
   assert.equal(candidate, null);
@@ -10672,11 +11324,32 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     ({ mode }) => mode === "RECOVERY_ONLY",
   );
   assert.notEqual(recoveryStartup, undefined);
-  const recoveryAttemptVerification =
-    await verifyC12RecoveryAttemptAfterExpectedConstruction(
-      oracle,
-      recoveryStartup,
+  const gate6Cases = C12_GATE6_RECOVERY_MUTATIONS.map((mutation) => {
+    const world = c12CreateCoherentlyResealedRecoveryOracle(
+      mutation.mutateRecoverySelection,
     );
+    const cascadeCoverage = c12AssertGate6RecoveryCascade(oracle, world.oracle);
+    const identityReceipt = c12CreateGate6FalseWorldIdentityReceipt(
+      world,
+      cascadeCoverage,
+    );
+    return Object.freeze({
+      ...mutation,
+      world,
+      cascadeCoverage,
+      identityReceipt,
+      identityReceiptSha256: semanticSha256(identityReceipt),
+    });
+  });
+  const {
+    receipt: recoveryAttemptVerification,
+    verifiedSelectionProjection,
+    gate6PredecessorReceipts,
+  } = await verifyC12RecoveryAttemptAfterExpectedConstruction(
+    oracle,
+    recoveryStartup,
+    gate6Cases,
+  );
   assert.deepEqual(recoveryAttemptVerification, {
     finding: "C12-RECOVERY-PREIMAGE-001",
     predecessorSourceSha256:
@@ -10689,6 +11362,53 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     retainedVerifierOwnedObjectReferences: 0,
     recoveryBrandProvenanceProved: false,
   });
+  assert.equal(
+    semanticSha256(gate6PredecessorReceipts),
+    "1045eab7fdde69cebb62e22cfb9f113cf722df5c20c5a53fc0f1852a9eb9d1b0",
+  );
+  assert.deepEqual(
+    gate6PredecessorReceipts.map((receipt) => ({
+      id: receipt.id,
+      firstFailureField: receipt.firstFailureField,
+      completeAttemptFieldCount: receipt.completeAttemptFieldCount,
+      attemptSelfConsistent: receipt.attemptSelfConsistent,
+      actualPredecessorVerifierExercised:
+        receipt.actualPredecessorVerifierExercised,
+      attemptVerifierMustReject: receipt.attemptVerifierMustReject,
+      attemptVerifierRejected: receipt.attemptVerifierRejected,
+      attemptVerifierReasonPresent: receipt.attemptVerifierReason !== null,
+    })),
+    C12_GATE6_RECOVERY_MUTATIONS.map((mutation) => ({
+      id: mutation.id,
+      firstFailureField: mutation.firstFailureField,
+      completeAttemptFieldCount: 30,
+      attemptSelfConsistent: true,
+      actualPredecessorVerifierExercised: true,
+      attemptVerifierMustReject: mutation.attemptVerifierMustReject,
+      attemptVerifierRejected: mutation.attemptVerifierMustReject,
+      attemptVerifierReasonPresent: mutation.attemptVerifierMustReject,
+    })),
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      gate6Cases.map(({ id, identityReceiptSha256 }) => [
+        id,
+        identityReceiptSha256,
+      ]),
+    ),
+    {
+      "recovery-used-state-hash":
+        "f141454d8df7eb6b41106b9b9e8688a7ed4227edbfd098467c9edbd0b0f87fa1",
+      "recovery-disposition":
+        "8d356bc03fbfe888e275ac3cd1b63c25492aaeacefa12ec3d2165927f4703701",
+      "recovery-actor-kind":
+        "96093f7e76902d1a938c83ddf43358e90940728eca1de3a0f6f2c07ee5c90f3a",
+      "recovery-destination-location":
+        "79767b59d1da59dc8a141ae46871503e38011a2ae6e2810dcb6171a4a04caa3c",
+      "recovery-self-consistent-synthetic-predecessor-bundle":
+        "cfba243cc60dd0a00d447f8d95080e2c2a4a0b48c982d999bee71eecac4a9edf",
+    },
+  );
 
   const resealJsonlBinding = (binding) => {
     binding.jsonl = `${canonicalJson(binding.value)}\n`;
@@ -10717,7 +11437,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     return recursivelyFreezeEvidence(mutant);
   };
   const mutationKills = [];
-  const recordMutationKill = (id, run) => {
+  const recordMutationKill = (id, run, evidence = {}) => {
     let rejection = null;
     try {
       run();
@@ -10725,9 +11445,17 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
       rejection = error;
     }
     assert.notEqual(rejection, null, `${id} survived`);
+    const reason = String(rejection.message).split("\n", 1)[0];
+    if (evidence.firstFailureField !== undefined) {
+      assert.equal(
+        reason,
+        `C12 independent predecessor tuple crosswalk mismatch: ${evidence.firstFailureField}`,
+      );
+    }
     mutationKills.push({
       id,
-      reason: String(rejection.message).split("\n", 1)[0],
+      reason,
+      ...evidence,
     });
   };
   const mutateOracle = (id, mutate) => {
@@ -10880,6 +11608,50 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     semanticSha256(recoveryInput.frame.value),
     EXPECTED_C12_RECOVERY_REQUEST_SEMANTIC_SHA256,
   );
+  const gate6MutationById = new Map(
+    C12_GATE6_RECOVERY_MUTATIONS.map((mutation) => [mutation.id, mutation]),
+  );
+  const gate6CaseById = new Map(gate6Cases.map((entry) => [entry.id, entry]));
+  const gate6PredecessorReceiptById = new Map(
+    gate6PredecessorReceipts.map((entry) => [entry.id, entry]),
+  );
+  const recordCoherentGate6Mutation = (id) => {
+    const canonicalIdentityBefore = oracle.identitySha256;
+    const gate6Case = gate6CaseById.get(id);
+    const predecessorReceipt = gate6PredecessorReceiptById.get(id);
+    assert.notEqual(gate6Case, undefined);
+    assert.notEqual(predecessorReceipt, undefined);
+    const falseWorldOracle = gate6Case.world.oracle;
+    assert.equal(oracle.identitySha256, canonicalIdentityBefore);
+    assert.equal(
+      oracle.identitySha256,
+      EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+    );
+    const falseWorldSelection = falseWorldOracle.witnesses.inputKinds.find(
+      ({ kind }) => kind === "RECOVERY_REQUEST",
+    ).frame.value.recoverySelection;
+    recordMutationKill(
+      id,
+      () => {
+        c12AssertSelectionMatchesIndependentPredecessorTuple(
+          falseWorldSelection,
+          verifiedSelectionProjection,
+        );
+      },
+      {
+        localConsistencyProved: true,
+        cascadeCoverage: gate6Case.cascadeCoverage,
+        canonicalOracleIdentityRestored: true,
+        zeroSharedNonPrimitiveReferences: true,
+        firstFailureBoundary: "INDEPENDENT_PREDECESSOR_TUPLE_CROSSWALK",
+        firstFailureField: gate6Case.firstFailureField,
+        predecessorAttemptCrosscheck: predecessorReceipt,
+        falseWorldIdentityReceipt: gate6Case.identityReceipt,
+        falseWorldIdentityReceiptSha256: gate6Case.identityReceiptSha256,
+      },
+    );
+    assert.equal(oracle.identitySha256, canonicalIdentityBefore);
+  };
   for (const [id, mutateSelection] of [
     [
       "recovery-decision-source-relationship",
@@ -10903,7 +11675,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     ],
     [
       "recovery-used-state-hash",
-      (selection) => (selection.state0 = "0".repeat(64)),
+      gate6MutationById.get("recovery-used-state-hash").mutateRecoverySelection,
     ],
     ["recovery-state-count", (selection) => (selection.stateCount -= 1)],
     [
@@ -10912,17 +11684,22 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     ],
     [
       "recovery-disposition",
-      (selection) => (selection.disposition = "GENESIS_ABORT"),
+      gate6MutationById.get("recovery-disposition").mutateRecoverySelection,
     ],
     [
       "recovery-actor-kind",
-      (selection) => (selection.actorKind = "LIVE_BIRTH_GUARDIAN"),
+      gate6MutationById.get("recovery-actor-kind").mutateRecoverySelection,
     ],
     [
       "recovery-destination-location",
-      (selection) => (selection.requiredDestinationLocation = "quarantined"),
+      gate6MutationById.get("recovery-destination-location")
+        .mutateRecoverySelection,
     ],
   ]) {
+    if (gate6CaseById.has(id)) {
+      recordCoherentGate6Mutation(id);
+      continue;
+    }
     const selection = c12Clone(recoveryInput.frame.value.recoverySelection);
     const beforeMutationSha256 = semanticSha256(selection);
     mutateSelection(selection);
@@ -10938,34 +11715,8 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
       );
     });
   }
-  const syntheticPredecessorInput = c12Clone(recoveryInput);
-  const syntheticPredecessorSelection =
-    syntheticPredecessorInput.frame.value.recoverySelection;
-  for (const field of Object.keys(C12_RECOVERY_PREDECESSOR_PROJECTION)) {
-    syntheticPredecessorSelection[field] = byteSha256(
-      Buffer.from(`synthetic-predecessor:${field}`, "utf8"),
-    );
-  }
-  syntheticPredecessorInput.frame.value.recoverySelectionSha256 =
-    semanticSha256(syntheticPredecessorSelection);
-  resealJsonlBinding(syntheticPredecessorInput.frame);
-  syntheticPredecessorInput.expectedProjection.frameByteLength =
-    syntheticPredecessorInput.frame.byteLength;
-  syntheticPredecessorInput.expectedProjection.frameSha256 =
-    syntheticPredecessorInput.frame.rawSha256;
-  c12AssertBinding(syntheticPredecessorInput.frame);
-  assert.equal(
-    syntheticPredecessorInput.frame.value.recoverySelectionSha256,
-    semanticSha256(syntheticPredecessorSelection),
-  );
-  recordMutationKill(
+  recordCoherentGate6Mutation(
     "recovery-self-consistent-synthetic-predecessor-bundle",
-    () => {
-      c12AssertRecoverySelection(
-        syntheticPredecessorSelection,
-        syntheticPredecessorInput.frame.value.epochSha256,
-      );
-    },
   );
   mutateOracle("recovery-request-eof", (mutant) => {
     inputOfKind(mutant, "RECOVERY_REQUEST").scalarArguments.requestEofObserved =
@@ -11402,6 +12153,64 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     delete: 5,
     duplicate: 5,
   });
+  const expectedGate6FailureFields = {
+    "recovery-used-state-hash": "state0",
+    "recovery-disposition": "disposition",
+    "recovery-actor-kind": "actorKind",
+    "recovery-destination-location": "requiredDestinationLocation",
+    "recovery-self-consistent-synthetic-predecessor-bundle": "targetSha256",
+  };
+  assert.deepEqual(
+    Object.fromEntries(
+      mutationKills
+        .filter(({ id }) => Object.hasOwn(expectedGate6FailureFields, id))
+        .map((kill) => [
+          kill.id,
+          {
+            localConsistencyProved: kill.localConsistencyProved,
+            cascadeCoverage: kill.cascadeCoverage,
+            canonicalOracleIdentityRestored:
+              kill.canonicalOracleIdentityRestored,
+            zeroSharedNonPrimitiveReferences:
+              kill.zeroSharedNonPrimitiveReferences,
+            firstFailureBoundary: kill.firstFailureBoundary,
+            firstFailureField: kill.firstFailureField,
+          },
+        ]),
+    ),
+    Object.fromEntries(
+      Object.entries(expectedGate6FailureFields).map(
+        ([id, firstFailureField]) => [
+          id,
+          {
+            localConsistencyProved: true,
+            cascadeCoverage: {
+              recoveryRequestBindings: 2,
+              recoveryStatuses: 3,
+              dependentTransitionIds: [15, 16, 17, 18, 19],
+              acceptedPrefixIds: [20, 21, 22, 23, 24, 25],
+              legalSequenceIds: ["R1", "R2"],
+              affectedInventoryHashes: [
+                "inputKindWitnesses",
+                "legalSequences",
+                "wholeTransitions",
+                "acceptedPrefixes",
+                "emittedStatuses",
+              ],
+              wholeOracleIdentity: true,
+              unchangedInventoryHashes: ["startupWitnesses", "atomicPrefixes"],
+              recoveryInitializationUnchanged: true,
+              emptyRecoveryPrefixUnchanged: true,
+            },
+            canonicalOracleIdentityRestored: true,
+            zeroSharedNonPrimitiveReferences: true,
+            firstFailureBoundary: "INDEPENDENT_PREDECESSOR_TUPLE_CROSSWALK",
+            firstFailureField,
+          },
+        ],
+      ),
+    ),
+  );
   const mutationReceipt = recursivelyFreezeEvidence({
     count: mutationKills.length,
     killed: mutationKills.length,
