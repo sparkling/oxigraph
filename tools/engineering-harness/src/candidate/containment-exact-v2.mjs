@@ -17,15 +17,20 @@ const objectIsFrozen = Object.isFrozen;
 const objectValues = Object.values;
 const arrayIsArray = Array.isArray;
 const arrayBufferIsView = ArrayBuffer.isView;
+const dataViewConstructor = DataView;
 const reflectApply = Reflect.apply;
+const reflectConstruct = Reflect.construct;
 const reflectOwnKeys = Reflect.ownKeys;
 const bufferAllocUnsafe = Buffer.allocUnsafe.bind(Buffer);
+const bufferAllocUnsafeSlow = Buffer.allocUnsafeSlow.bind(Buffer);
 const bufferByteLength = Buffer.byteLength.bind(Buffer);
 const bufferFrom = Buffer.from.bind(Buffer);
 const bufferIsBuffer = Buffer.isBuffer.bind(Buffer);
 const bufferToString = Buffer.prototype.toString;
+const numberIsSafeInteger = Number.isSafeInteger;
 const utilTypesIsProxy = utilTypes.isProxy;
 const utilTypesIsSharedArrayBuffer = utilTypes.isSharedArrayBuffer;
+const utilTypesIsUint8Array = utilTypes.isUint8Array;
 const typedArrayPrototype = objectGetPrototypeOf(Uint8Array.prototype);
 const typedArrayLengthGetter = objectGetOwnPropertyDescriptor(
   typedArrayPrototype,
@@ -256,6 +261,73 @@ export function copyBoundedBuffer(
     fail,
   );
   const copied = bufferAllocUnsafe(length);
+  reflectApply(typedArraySet, copied, [value]);
+  return copied;
+}
+
+function terminalFailure(fail) {
+  reflectApply(fail, undefined, []);
+  throw new Error("EXACT_V2_FAILURE_CALLBACK_RETURNED");
+}
+
+export function copyBoundedBufferByFailureCategory(
+  value,
+  label,
+  { minimumBytes = 0, maximumBytes },
+  failBounds,
+  failShape,
+) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypesIsProxy(value) ||
+    !utilTypesIsUint8Array(value)
+  ) {
+    terminalFailure(failShape);
+  }
+
+  let length;
+  try {
+    length = reflectApply(typedArrayLengthGetter, value, []);
+  } catch {
+    terminalFailure(failBounds);
+  }
+  if (
+    !numberIsSafeInteger(minimumBytes) ||
+    minimumBytes < 0 ||
+    !numberIsSafeInteger(maximumBytes) ||
+    maximumBytes < minimumBytes ||
+    !numberIsSafeInteger(length) ||
+    length < minimumBytes ||
+    length > maximumBytes
+  ) {
+    terminalFailure(failBounds);
+  }
+
+  let exactPrototypeAndLength;
+  try {
+    exactPrototypeAndLength =
+      objectGetPrototypeOf(value) === bufferPrototype &&
+      objectGetOwnPropertyDescriptor(value, "length") === undefined;
+  } catch {
+    terminalFailure(failShape);
+  }
+  if (!exactPrototypeAndLength) terminalFailure(failShape);
+
+  let backing;
+  try {
+    backing = reflectApply(typedArrayBufferGetter, value, []);
+  } catch {
+    terminalFailure(failShape);
+  }
+  if (utilTypesIsSharedArrayBuffer(backing)) terminalFailure(failShape);
+  try {
+    reflectConstruct(dataViewConstructor, [backing, 0, 0]);
+  } catch {
+    terminalFailure(failShape);
+  }
+
+  const copied = bufferAllocUnsafeSlow(length);
   reflectApply(typedArraySet, copied, [value]);
   return copied;
 }
