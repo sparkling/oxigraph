@@ -4643,6 +4643,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
             ),
       compileTime: Object.freeze({
         known: compileTime?.known === true,
+        unknownString: compileTime?.unknownString === true,
         stringConversions: boundedStaticStrings(
           compileTime?.stringConversions ?? [],
           "string-conversions",
@@ -4685,9 +4686,11 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           "concatenation",
         );
   const exactArrayElementStringConversions = (value) =>
-    value.compileTime.arrayElementStringConversions.length > 0
-      ? value.compileTime.arrayElementStringConversions
-      : exactStringConversions(value);
+    value.compileTime.unknownString
+      ? []
+      : value.compileTime.arrayElementStringConversions.length > 0
+        ? value.compileTime.arrayElementStringConversions
+        : exactStringConversions(value);
   const exactArrayStringConversions = (elements) => {
     let conversions = [""];
     for (const [index, element] of elements.entries()) {
@@ -4701,6 +4704,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     return conversions;
   };
   const exactStringConversions = (value) => {
+    if (value.compileTime.unknownString) return [];
     if (value.compileTime.stringConversions.length > 0) {
       return value.compileTime.stringConversions;
     }
@@ -4714,6 +4718,15 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     if (value.arrayElements === null) return [];
     return exactArrayStringConversions(value.arrayElements);
   };
+  const hasUnknownStringProvenance = (value) =>
+    value.compileTime.unknownString ||
+    (value.compileTime.typeofStrings.includes("string") &&
+      exactStringConversions(value).length === 0);
+  const isDefinitelyNonStringPrimitive = (value) =>
+    value.compileTime.typeofStrings.length > 0 &&
+    value.compileTime.typeofStrings.every((type) =>
+      ["boolean", "number", "undefined"].includes(type),
+    );
   const capabilityLookingString = (value) => {
     const normalized = value.toLowerCase();
     return (
@@ -5115,6 +5128,12 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
   };
   const evaluateSafeMemberTransform = (member, argumentValues, context) => {
     const { memberName, receiver } = member;
+    if (
+      ["at", "slice"].includes(memberName) &&
+      hasUnknownStringProvenance(receiver)
+    ) {
+      fail(`unanalyzable string-bearing member transform ${memberName}`);
+    }
     if (memberName === "at") {
       if (argumentValues.length !== 1) {
         if (
@@ -5322,6 +5341,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           null,
           {
             known: exactStrings.length > 0,
+            unknownString: exactStrings.length === 0,
             stringConversions: exactStrings,
             typeofStrings: ["string"],
             plusStrings: exactStrings,
@@ -5452,11 +5472,23 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           null,
           {
             known: deterministicArgumentsKnown,
+            unknownString:
+              resultType === "string" && !deterministicArgumentsKnown,
             typeofStrings: resultType === undefined ? [] : [resultType],
           },
         );
       }
-      return makeValue("immutable", mergeStaticStrings(...argumentValues));
+      return makeValue(
+        "immutable",
+        mergeStaticStrings(...argumentValues),
+        [],
+        [],
+        null,
+        null,
+        {
+          unknownString: argumentValues.some(hasUnknownStringProvenance),
+        },
+      );
     }
     if (node.callee.type !== "MemberExpression") {
       fail(`callee ${node.callee.type}`);
@@ -5486,7 +5518,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           ? makeValue("immutable", [], [], [], null, null, {
               typeofStrings: ["boolean"],
             })
-          : makeValue("private-read");
+          : makeValue("private-read", [], [], [], null, null, {
+              unknownString: true,
+            });
       }
       if (
         DIRECT_PRIVATE_STORE_OWNER_BY_FUNCTION.get(functionName) !==
@@ -5526,11 +5560,16 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     });
     let stringConversions = [];
     let objectProperties = null;
+    let unknownString = false;
     if (binding.name === "Error") {
       const messages =
         argumentValues.length === 0
           ? [""]
           : exactStringConversions(argumentValues[0]);
+      unknownString =
+        argumentValues.length > 0 &&
+        (messages.length === 0 ||
+          hasUnknownStringProvenance(argumentValues[0]));
       stringConversions = messages.map((message) =>
         message.length === 0 ? "Error" : `Error: ${message}`,
       );
@@ -5557,6 +5596,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         null,
         {
           known: messages.length > 0,
+          unknownString,
           stringConversions: messages,
           typeofStrings: messages.length > 0 ? ["string"] : [],
           plusStrings: messages,
@@ -5599,6 +5639,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       objectProperties,
       {
         known: stringConversions.length > 0,
+        unknownString,
         stringConversions,
         typeofStrings: ["object"],
         plusStrings: stringConversions,
@@ -5629,6 +5670,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         null,
         {
           known: values.every(({ compileTime }) => compileTime.known),
+          unknownString: values.some(hasUnknownStringProvenance),
           stringConversions,
           typeofStrings: ["object"],
           plusStrings: stringConversions,
@@ -5741,9 +5783,12 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       const right = evaluateExpression(node.right, scope, expressionContext);
       const compileTimeKnown =
         left.compileTime.known && right.compileTime.known;
+      const unknownStringOperand =
+        hasUnknownStringProvenance(left) || hasUnknownStringProvenance(right);
       const stringCoercion =
         node.operator === "+" &&
-        (left.compileTime.plusStrings.length > 0 ||
+        (unknownStringOperand ||
+          left.compileTime.plusStrings.length > 0 ||
           right.compileTime.plusStrings.length > 0 ||
           left.compileTime.typeofStrings.includes("string") ||
           right.compileTime.typeofStrings.includes("string"));
@@ -5751,6 +5796,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         node.operator === "+" ? exactStringConversions(left) : [];
       const rightConversions =
         node.operator === "+" ? exactStringConversions(right) : [];
+      if (stringCoercion && unknownStringOperand) {
+        fail("caller-drivable string concatenation");
+      }
       if (
         stringCoercion &&
         ((left.compileTime.known && leftConversions.length === 0) ||
@@ -5774,6 +5822,11 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         "===",
         "!==",
       ].includes(node.operator);
+      const numericAddition =
+        node.operator === "+" &&
+        !stringCoercion &&
+        isDefinitelyNonStringPrimitive(left) &&
+        isDefinitelyNonStringPrimitive(right);
       const resultTypes =
         exactStrings.length > 0
           ? ["string"]
@@ -5782,7 +5835,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
             : node.operator === "+"
               ? stringCoercion
                 ? ["string"]
-                : ["number", "string"]
+                : numericAddition
+                  ? ["number"]
+                  : ["number", "string"]
               : ["number"];
       const staticStrings = [
         ...mergeStaticStrings(left, right),
@@ -5798,6 +5853,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         null,
         {
           known: compileTimeKnown,
+          unknownString:
+            resultTypes.includes("string") && exactStrings.length === 0,
           stringConversions: exactStrings,
           typeofStrings: resultTypes,
           plusStrings: exactStrings,
@@ -5823,6 +5880,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         null,
         {
           known: left.compileTime.known && right.compileTime.known,
+          unknownString:
+            hasUnknownStringProvenance(left) ||
+            hasUnknownStringProvenance(right),
           stringConversions: [
             ...new Set([
               ...left.compileTime.stringConversions,
@@ -5878,6 +5938,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         null,
         {
           known: consequent.compileTime.known && alternate.compileTime.known,
+          unknownString:
+            hasUnknownStringProvenance(consequent) ||
+            hasUnknownStringProvenance(alternate),
           stringConversions: [
             ...new Set([
               ...consequent.compileTime.stringConversions,
@@ -6044,7 +6107,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       markIdentifier(parameter, "parameter-binding");
       declare(functionScope, parameter.name, {
         kind: "parameter",
-        value: makeValue("parameter"),
+        value: makeValue("parameter", [], [], [], null, null, {
+          unknownString: true,
+        }),
       });
     }
     visitBlock(
@@ -7564,6 +7629,48 @@ function contextualPositive() {
     assert.equal(audit.classifiedNodeCount, audit.nodeCount);
   }
 
+  const approvedOneParameterExportSource = (body) =>
+    validSkeleton(
+      "",
+      new Map([
+        ["createCandidateContainmentGuardianControllerClosedInputV1", body],
+      ]),
+    );
+  const callerStringTypeOnlyPositiveSources = [
+    approvedOneParameterExportSource(
+      "const kind = typeof String(currentState); return kind;",
+    ),
+    approvedOneParameterExportSource(
+      "const kind = typeof currentState; return kind;",
+    ),
+    approvedOneParameterExportSource(
+      "const length = String(currentState).length; return length;",
+    ),
+    approvedOneParameterExportSource(
+      'const present = String(currentState).includes("bounded"); return present;',
+    ),
+    approvedOneParameterExportSource(
+      "const present = Boolean(currentState); return present;",
+    ),
+    approvedOneParameterExportSource(
+      "const next = Number(currentState) + 1; return next;",
+    ),
+    approvedOneParameterExportSource(
+      "const next = Number(currentState) + 1 + 1; return next;",
+    ),
+    approvedOneParameterExportSource(
+      "const kind = typeof sha256(currentState); return kind;",
+    ),
+    approvedOneParameterExportSource(
+      "const next = sha256(currentState).length + 1; return next;",
+    ),
+  ];
+  assert.equal(callerStringTypeOnlyPositiveSources.length, 9);
+  for (const sourceText of callerStringTypeOnlyPositiveSources) {
+    const audit = independentStaticAudit(asBytes(sourceText));
+    assert.equal(audit.classifiedNodeCount, audit.nodeCount);
+  }
+
   const mutationKills = [];
   const kill = (id, run, expectedMessage = null) => {
     let rejection = null;
@@ -8183,6 +8290,109 @@ function contextualPositive() {
       /^direct static gate: contextual (?:capability-looking compile-time string |unanalyzable string-bearing)/u,
     );
   }
+  const callerDrivenStringMutationSources = [
+    [
+      "direct-caller-string-at-derived-value",
+      "const hidden = String(currentState).at(0); return null;",
+    ],
+    [
+      "direct-caller-string-slice-derived-value",
+      "const hidden = String(currentState).slice(0, 1); return null;",
+    ],
+    [
+      "direct-caller-string-at-node",
+      'const hidden = String(currentState).at(0) + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-string-slice-node",
+      'const hidden = String(currentState).slice(0, 1) + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-string-direct-node",
+      'const hidden = String(currentState) + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-string-reversed-node",
+      'const hidden = "nod" + String(currentState); return null;',
+    ],
+    [
+      "direct-caller-coercion-node",
+      'const hidden = currentState + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-string-at-openrouter",
+      'const hidden = String(currentState).at(0) + "penRouter"; return null;',
+    ],
+    [
+      "direct-caller-string-at-evaluator",
+      'const hidden = String(currentState).at(0) + "valuator"; return null;',
+    ],
+    [
+      "direct-caller-string-at-test-path",
+      'const hidden = String(currentState).at(0) + "est/probe.mjs"; return null;',
+    ],
+    [
+      "direct-caller-string-slice-proc",
+      'const hidden = String(currentState).slice(0, 2) + "roc/self/status"; return null;',
+    ],
+    [
+      "direct-caller-string-at-process",
+      'const hidden = String(currentState).at(0) + "rocess"; return null;',
+    ],
+    [
+      "direct-caller-string-slice-constructor",
+      'const hidden = String(currentState).slice(0, 3) + "structor"; return null;',
+    ],
+    [
+      "direct-caller-string-at-function",
+      'const hidden = String(currentState).at(0) + "unction"; return null;',
+    ],
+    [
+      "direct-caller-string-conditional-node",
+      'const prefix = true ? String(currentState) : "n"; const hidden = prefix + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-string-logical-node",
+      'const prefix = false || String(currentState); const hidden = prefix + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-array-string-at-node",
+      'const hidden = String([currentState]).at(0) + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-object-member-string-at-node",
+      'const value = deepFreeze({ value: currentState }).value; const hidden = String(value).at(0) + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-error-string-evaluator",
+      'const hidden = new Error(String(currentState)) + "valuator"; return null;',
+    ],
+    [
+      "direct-caller-boolean-string-at-fetch",
+      'const hidden = String(Boolean(currentState)).at(0) + "etch"; return null;',
+    ],
+    [
+      "direct-caller-sha-string-at-fetch",
+      'const hidden = sha256(currentState).at(0) + "etch"; return null;',
+    ],
+    [
+      "direct-private-read-string-at-node",
+      'const observed = stateMetadata.get(currentState); const hidden = String(observed).at(0) + "ode:fs"; return null;',
+    ],
+    [
+      "direct-caller-string-slice-at-node",
+      'const hidden = String(currentState).slice(0, 2).at(0) + "ode:fs"; return null;',
+    ],
+  ];
+  assert.equal(callerDrivenStringMutationSources.length, 23);
+  for (const [id, body] of callerDrivenStringMutationSources) {
+    kill(
+      id,
+      () =>
+        independentStaticAudit(asBytes(approvedOneParameterExportSource(body))),
+      /^direct static gate: contextual (?:caller-drivable string concatenation|unanalyzable string-bearing member transform)/u,
+    );
+  }
   const contextualPrivateMutationSources = [
     [
       "direct-context-private-wrong-store",
@@ -8534,11 +8744,11 @@ function contextualPositive() {
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 299,
-      killed: 299,
+      count: 322,
+      killed: 322,
       survivors: 0,
       idsSha256:
-        "3db87d662a945ffdef308ecaf2f7e143b53a0e02f181c983aefd4c7f867d8c7d",
+        "b14181e1e8c8bd5f8878bf923f6759f36ef675e3be88fe18c3caaae97d06389c",
     },
   );
   assert.equal(
