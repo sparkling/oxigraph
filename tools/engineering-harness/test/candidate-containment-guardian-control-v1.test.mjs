@@ -12089,6 +12089,455 @@ try {
 }
 DEFERRED_ADVERSARIAL_INPUTS.candidate = candidate;
 
+function c14CandidateOrThrow() {
+  if (candidateSourceGateError !== null) throw candidateSourceGateError;
+  if (candidateImportError !== null) throw candidateImportError;
+  assert.notEqual(candidate, null);
+  return candidate;
+}
+
+function c14BindingBytes(binding) {
+  const bytes = Buffer.from(binding.bytesHex, "hex");
+  assert.equal(bytes.length, binding.byteLength);
+  assert.equal(byteSha256(bytes), binding.rawSha256);
+  return bytes;
+}
+
+function c14AssertFrozenProjection(actual, expected, label) {
+  if (expected === null || typeof expected !== "object") {
+    assert.equal(actual, expected, label);
+    return;
+  }
+  assert.notEqual(actual, null, label);
+  assert.equal(typeof actual, "object", label);
+  assert.equal(Object.isFrozen(actual), true, label);
+  if (Array.isArray(expected)) {
+    assert.equal(Array.isArray(actual), true, label);
+    assert.equal(Object.getPrototypeOf(actual), Array.prototype, label);
+    assert.equal(actual.length, expected.length, label);
+    for (let index = 0; index < expected.length; index += 1) {
+      c14AssertFrozenProjection(
+        actual[index],
+        expected[index],
+        `${label}[${index}]`,
+      );
+    }
+    return;
+  }
+  assert.equal(Array.isArray(actual), false, label);
+  assert.equal(Object.getPrototypeOf(actual), null, label);
+  assert.deepEqual(Reflect.ownKeys(actual), Object.keys(expected), label);
+  for (const key of Object.keys(expected)) {
+    assert.deepEqual(
+      Object.getOwnPropertyDescriptor(actual, key),
+      {
+        value: actual[key],
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      },
+      `${label}.${key} descriptor`,
+    );
+    c14AssertFrozenProjection(actual[key], expected[key], `${label}.${key}`);
+  }
+}
+
+function c14AssertStatusArtifact(actual, expected, label) {
+  assert.notEqual(actual, null, label);
+  assert.equal(Object.getPrototypeOf(actual), null, label);
+  assert.equal(Object.isFrozen(actual), true, label);
+  assert.deepEqual(Reflect.ownKeys(actual), expected.ownKeys, label);
+  const bytesDescriptor = Object.getOwnPropertyDescriptor(actual, "bytes");
+  assert.equal(typeof bytesDescriptor.get, "function", label);
+  assert.equal(bytesDescriptor.set, undefined, label);
+  assert.equal(bytesDescriptor.enumerable, true, label);
+  assert.equal(bytesDescriptor.configurable, false, label);
+  assert.equal(Object.hasOwn(bytesDescriptor, "value"), false, label);
+  assert.equal(Object.hasOwn(bytesDescriptor, "writable"), false, label);
+  const firstBytes = actual.bytes;
+  const secondBytes = actual.bytes;
+  assert.equal(Buffer.isBuffer(firstBytes), true, label);
+  assert.equal(Buffer.isBuffer(secondBytes), true, label);
+  assert.equal(Object.getPrototypeOf(firstBytes), Buffer.prototype, label);
+  assert.equal(Object.getPrototypeOf(secondBytes), Buffer.prototype, label);
+  assert.equal(
+    Object.getOwnPropertyDescriptor(firstBytes, "length"),
+    undefined,
+    label,
+  );
+  assert.notEqual(firstBytes, secondBytes, label);
+  assert.equal(firstBytes.toString("hex"), expected.bytesHex, label);
+  assert.equal(secondBytes.toString("hex"), expected.bytesHex, label);
+  if (firstBytes.length > 0) firstBytes[0] ^= 0xff;
+  assert.equal(secondBytes.toString("hex"), expected.bytesHex, label);
+  assert.equal(actual.bytes.toString("hex"), expected.bytesHex, label);
+  for (const key of Object.keys(expected.fields)) {
+    assert.deepEqual(
+      Object.getOwnPropertyDescriptor(actual, key),
+      {
+        value: actual[key],
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      },
+      `${label}.${key} descriptor`,
+    );
+    c14AssertFrozenProjection(
+      actual[key],
+      expected.fields[key],
+      `${label}.${key}`,
+    );
+  }
+}
+
+function c14AssertTransition(actual, expected, label) {
+  assert.notEqual(actual, null, label);
+  assert.equal(Object.getPrototypeOf(actual), null, label);
+  assert.equal(Object.isFrozen(actual), true, label);
+  assert.deepEqual(Reflect.ownKeys(actual), Object.keys(expected), label);
+  for (const key of Object.keys(expected)) {
+    const descriptor = Object.getOwnPropertyDescriptor(actual, key);
+    assert.equal(Object.hasOwn(descriptor, "value"), true, label);
+    assert.equal(descriptor.writable, false, label);
+    assert.equal(descriptor.enumerable, true, label);
+    assert.equal(descriptor.configurable, false, label);
+  }
+  assert.equal(actual.schema, expected.schema, label);
+  c14AssertFrozenProjection(actual.state, expected.state, `${label}.state`);
+  assert.equal(
+    actual.statusFrameCount,
+    expected.statusFrameCount,
+    `${label}.statusFrameCount`,
+  );
+  const statuses = [actual.statusFrame0, actual.statusFrame1].slice(
+    0,
+    actual.statusFrameCount,
+  );
+  for (const [index, status] of statuses.entries()) {
+    c14AssertStatusArtifact(
+      status,
+      expected[`statusFrame${index}`],
+      `${label}.statusFrame${index}`,
+    );
+  }
+  for (let index = actual.statusFrameCount; index < 2; index += 1) {
+    assert.equal(actual[`statusFrame${index}`], null, label);
+    assert.equal(expected[`statusFrame${index}`], null, label);
+  }
+  return statuses;
+}
+
+function c14CreateCandidateStartup(moduleNamespace, startupWitness) {
+  const startup = moduleNamespace.createCandidateContainmentGuardianStartupV1(
+    c14BindingBytes(startupWitness.startupReport),
+    c14BindingBytes(startupWitness.epoch),
+    startupWitness.epochEofObserved,
+  );
+  c14AssertFrozenProjection(
+    startup,
+    startupWitness.expectedProjection,
+    `startup ${startupWitness.mode}`,
+  );
+  return startup;
+}
+
+function c14CreateCandidateInput(moduleNamespace, currentState, witness) {
+  let input;
+  if (witness.kind === "ADMIT") {
+    input = moduleNamespace.createCandidateContainmentGuardianAdmissionInputV1(
+      currentState,
+      c14BindingBytes(witness.frame),
+      c14BindingBytes(witness.auxiliary),
+    );
+  } else if (witness.kind === "CANCEL") {
+    input = moduleNamespace.createCandidateContainmentGuardianCancelInputV1(
+      currentState,
+      c14BindingBytes(witness.frame),
+      witness.scalarArguments.messageTruncated,
+      witness.scalarArguments.controlTruncated,
+      witness.scalarArguments.controlMessageCount,
+    );
+  } else if (witness.kind === "RECOVERY_REQUEST") {
+    input =
+      moduleNamespace.createCandidateContainmentGuardianRecoveryRequestInputV1(
+        currentState,
+        c14BindingBytes(witness.frame),
+        witness.scalarArguments.requestEofObserved,
+      );
+  } else if (witness.kind === "CONTROLLER_CLOSED") {
+    input =
+      moduleNamespace.createCandidateContainmentGuardianControllerClosedInputV1(
+        currentState,
+      );
+  } else if (witness.kind === "DIAGNOSTIC_FAILURE") {
+    input =
+      moduleNamespace.createCandidateContainmentGuardianDiagnosticFailureInputV1(
+        currentState,
+        c14BindingBytes(witness.frame),
+        c14BindingBytes(witness.auxiliary),
+      );
+  } else if (witness.kind === "RECOVERY_CONTROL_HANDOFF") {
+    input =
+      moduleNamespace.createCandidateContainmentGuardianRecoveryControlHandoffInputV1(
+        currentState,
+      );
+  } else {
+    assert.equal(witness.kind, "STATUS_EOF");
+    input =
+      moduleNamespace.createCandidateContainmentGuardianStatusEofInputV1(
+        currentState,
+      );
+  }
+  c14AssertFrozenProjection(
+    input,
+    witness.expectedProjection,
+    `input ${witness.kind}`,
+  );
+  return input;
+}
+
+function c14StatusToken(status) {
+  return status.state === "CONTROL_TERMINAL"
+    ? `CONTROL_TERMINAL(${status.terminalReason})`
+    : status.state;
+}
+
+function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
+  const moduleNamespace = c14CandidateOrThrow();
+  const oracle = CONTRACT_VALID_RUNTIME_ORACLE;
+  const startupByMode = new Map(
+    oracle.witnesses.startups.map((startup) => [startup.mode, startup]),
+  );
+  const transitionIds = new Set();
+  const prefixIds = new Set();
+  const statusIds = new Set();
+  const verifiedStatusIds = new Set();
+  const statusRawSha256 = new Set();
+  const atomicIds = new Set();
+  const atomicConcatenatedRawSha256 = new Set();
+  const expectedPrefixBySymbols = new Map(
+    oracle.expected.acceptedPrefixes.map((prefix) => [
+      JSON.stringify(prefix.symbols),
+      prefix,
+    ]),
+  );
+  const expectedStatusByPrefix = new Map(
+    oracle.expected.emittedStatuses.map((status) => [
+      JSON.stringify(status.prefix),
+      status,
+    ]),
+  );
+  const expectedAtomicByTransitionId = new Map(
+    oracle.expected.atomicPrefixes.map((atomic) => [
+      atomic.transitionId,
+      atomic,
+    ]),
+  );
+
+  for (const sequence of oracle.expected.legalSequences) {
+    const startupWitness = startupByMode.get(sequence.mode);
+    assert.notEqual(startupWitness, undefined, sequence.id);
+    const startup = c14CreateCandidateStartup(moduleNamespace, startupWitness);
+    let transition =
+      moduleNamespace.initializeCandidateContainmentGuardianControlV1(startup);
+    let expectedTransition = oracle.expected.wholeTransitions.find(
+      (entry) =>
+        entry.operation === "INITIALIZE" &&
+        entry.mode === sequence.mode &&
+        entry.sourceSequences.includes(sequence.id),
+    );
+    assert.notEqual(expectedTransition, undefined, sequence.id);
+    let statuses = c14AssertTransition(
+      transition,
+      expectedTransition.expectedProjection,
+      `${sequence.id} initialize`,
+    );
+    transitionIds.add(expectedTransition.id);
+    let currentState = transition.state;
+    const symbols = [];
+    const wireFrames = [];
+
+    const recordPrefix = (publicState) => {
+      const proper = symbols.length < sequence.symbols.length;
+      const expectedPrefix = expectedPrefixBySymbols.get(
+        JSON.stringify(symbols),
+      );
+      if (!proper) {
+        assert.equal(expectedPrefix, undefined, sequence.id);
+        return;
+      }
+      assert.notEqual(expectedPrefix, undefined, `${sequence.id} prefix`);
+      assert.equal(expectedPrefix.sourceSequences.includes(sequence.id), true);
+      assert.equal(expectedPrefix.mode, sequence.mode);
+      assert.equal(expectedPrefix.eventCount, symbols.length);
+      assert.equal(expectedPrefix.wireFrameCount, wireFrames.length);
+      assert.deepEqual(
+        expectedPrefix.wireFrameSha256,
+        wireFrames.map(({ rawSha256 }) => rawSha256),
+      );
+      const concatenated = Buffer.concat(wireFrames.map(({ bytes }) => bytes));
+      assert.equal(
+        expectedPrefix.concatenatedWireByteLength,
+        concatenated.length,
+      );
+      assert.equal(
+        expectedPrefix.concatenatedWireSha256,
+        byteSha256(concatenated),
+      );
+      assert.equal(expectedPrefix.nextWireSequence, wireFrames.length);
+      assert.equal(
+        expectedPrefix.lastWireFrameSha256,
+        wireFrames.at(-1)?.rawSha256 ?? C12_GENESIS_SHA256,
+      );
+      assert.equal(expectedPrefix.publicStateAvailable, publicState !== null);
+      assert.equal(expectedPrefix.publicIntermediateStateInvented, false);
+      if (publicState === null) {
+        assert.equal(expectedPrefix.expectedPublicState, null);
+      } else {
+        c14AssertFrozenProjection(
+          publicState,
+          expectedPrefix.expectedPublicState,
+          `${sequence.id} public prefix state`,
+        );
+      }
+      prefixIds.add(expectedPrefix.id);
+    };
+
+    const recordStatus = (status, publicState) => {
+      symbols.push(c14StatusToken(status));
+      const expectedStatus = expectedStatusByPrefix.get(
+        JSON.stringify(symbols),
+      );
+      assert.notEqual(expectedStatus, undefined, `${sequence.id} status`);
+      assert.equal(expectedStatus.sourceSequences.includes(sequence.id), true);
+      c14AssertStatusArtifact(
+        status,
+        expectedStatus.expectedArtifact,
+        `${sequence.id} ${expectedStatus.id}`,
+      );
+      statusIds.add(expectedStatus.id);
+      statusRawSha256.add(status.rawSha256);
+      const statusBytes = status.bytes;
+      wireFrames.push({ bytes: statusBytes, rawSha256: status.rawSha256 });
+      if (verifyStatuses) {
+        const verified =
+          moduleNamespace.verifyCandidateContainmentGuardianStatusFrameV1(
+            startup,
+            statusBytes,
+          );
+        c14AssertStatusArtifact(
+          verified,
+          expectedStatus.expectedArtifact,
+          `${sequence.id} verified ${expectedStatus.id}`,
+        );
+        verifiedStatusIds.add(expectedStatus.id);
+      }
+      recordPrefix(publicState);
+    };
+
+    for (const [index, status] of statuses.entries()) {
+      recordStatus(status, index === statuses.length - 1 ? currentState : null);
+    }
+    if (statuses.length === 0) recordPrefix(currentState);
+
+    for (const operation of sequence.operations) {
+      expectedTransition = oracle.expected.wholeTransitions.find(
+        (entry) =>
+          entry.operation === operation &&
+          entry.mode === sequence.mode &&
+          entry.sourceSequences.includes(sequence.id) &&
+          JSON.stringify(entry.beforePrefix) === JSON.stringify(symbols),
+      );
+      assert.notEqual(
+        expectedTransition,
+        undefined,
+        `${sequence.id} ${operation}`,
+      );
+      const witness = expectedTransition.inputWitness;
+      const input = c14CreateCandidateInput(
+        moduleNamespace,
+        currentState,
+        witness,
+      );
+      transition = moduleNamespace.reduceCandidateContainmentGuardianControlV1(
+        currentState,
+        input,
+      );
+      statuses = c14AssertTransition(
+        transition,
+        expectedTransition.expectedProjection,
+        `${sequence.id} ${operation}`,
+      );
+      transitionIds.add(expectedTransition.id);
+      currentState = transition.state;
+      symbols.push(operation);
+      if (["ADMIT", "CANCEL", "RECOVERY_REQUEST"].includes(operation)) {
+        wireFrames.push({
+          bytes: c14BindingBytes(witness.frame),
+          rawSha256: witness.frame.rawSha256,
+        });
+      }
+      recordPrefix(statuses.length === 0 ? currentState : null);
+      for (const [index, status] of statuses.entries()) {
+        recordStatus(
+          status,
+          index === statuses.length - 1 ? currentState : null,
+        );
+      }
+      if (statuses.length === 2) {
+        const expectedAtomic = expectedAtomicByTransitionId.get(
+          expectedTransition.id,
+        );
+        assert.notEqual(expectedAtomic, undefined, expectedTransition.id);
+        const first = statuses[0].bytes;
+        const second = statuses[1].bytes;
+        const concatenated = Buffer.concat([first, second]);
+        assert.equal(expectedAtomic.firstRawSha256, statuses[0].rawSha256);
+        assert.equal(
+          expectedAtomic.secondPreviousFrameSha256,
+          JSON.parse(second.toString("utf8")).previousFrameSha256,
+        );
+        assert.equal(expectedAtomic.secondRawSha256, statuses[1].rawSha256);
+        assert.equal(
+          expectedAtomic.concatenatedByteLength,
+          concatenated.length,
+        );
+        assert.equal(
+          expectedAtomic.concatenatedRawSha256,
+          byteSha256(concatenated),
+        );
+        assert.equal(expectedAtomic.publicIntermediateState, false);
+        atomicIds.add(expectedAtomic.id);
+        atomicConcatenatedRawSha256.add(expectedAtomic.concatenatedRawSha256);
+      }
+      assert.deepEqual(symbols, expectedTransition.acceptedPrefix);
+    }
+    assert.deepEqual(symbols, sequence.symbols, sequence.id);
+    c14AssertFrozenProjection(
+      currentState,
+      sequence.expectedTerminalState,
+      `${sequence.id} terminal state`,
+    );
+  }
+
+  assert.equal(transitionIds.size, 20);
+  assert.equal(prefixIds.size, 26);
+  assert.equal(statusIds.size, 15);
+  assert.equal(verifiedStatusIds.size, verifyStatuses ? 15 : 0);
+  assert.equal(atomicIds.size, 4);
+  return Object.freeze({
+    transitionIds: Object.freeze([...transitionIds]),
+    prefixIds: Object.freeze([...prefixIds]),
+    statusIds: Object.freeze([...statusIds]),
+    verifiedStatusIds: Object.freeze([...verifiedStatusIds]),
+    statusRawSha256: Object.freeze([...statusRawSha256]),
+    atomicIds: Object.freeze([...atomicIds]),
+    atomicConcatenatedRawSha256: Object.freeze([
+      ...atomicConcatenatedRawSha256,
+    ]),
+  });
+}
+
 test("independently canonicalizes the normative requirements fixture", () => {
   assert.equal(
     semanticSha256(REQUIREMENTS_ORACLE),
@@ -15500,11 +15949,10 @@ test("loads the candidate once and freezes its exact module contract", () => {
   assertCandidateModuleContract(candidate);
 });
 
-test(
-  "expand 20 exact whole-transition and state goldens",
-  { todo: true },
-  () => {},
-);
+test("expand 20 exact whole-transition and state goldens", () => {
+  const observations = c14ReplayPositiveContract();
+  assert.equal(observations.transitionIds.length, 20);
+});
 test("expand 15 independently encoded emitted-status byte goldens", () => {
   assert.equal(
     typeof adversarialModule.createSourceIndependentMaterializedStatusOracle,
@@ -15706,6 +16154,13 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
     assert.equal(entry.frameSha256, semanticSha256(entry.frame));
     assert.equal(entry.rawSha256, byteSha256(bytes));
   }
+  const observations = c14ReplayPositiveContract({ verifyStatuses: true });
+  assert.equal(observations.statusIds.length, 15);
+  assert.equal(observations.verifiedStatusIds.length, 15);
+  assert.deepEqual(
+    new Set(observations.statusRawSha256),
+    new Set(oracle.emittedStatusByteGoldens.map(({ rawSha256 }) => rawSha256)),
+  );
 });
 test("expand 4 atomic two-status internal wire-prefix controls", () => {
   assert.equal(
@@ -15800,12 +16255,21 @@ test("expand 4 atomic two-status internal wire-prefix controls", () => {
     }
     assert.equal(entry.publicIntermediateState, false);
   }
+  const observations = c14ReplayPositiveContract();
+  assert.equal(observations.atomicIds.length, 4);
+  assert.deepEqual(
+    new Set(observations.atomicConcatenatedRawSha256),
+    new Set(
+      oracle.atomicTwoStatusWirePrefixes.map(
+        ({ concatenatedRawSha256 }) => concatenatedRawSha256,
+      ),
+    ),
+  );
 });
-test(
-  "expand every proper prefix and mutation of N1 through R2",
-  { todo: true },
-  () => {},
-);
+test("expand every proper prefix and mutation of N1 through R2", () => {
+  const observations = c14ReplayPositiveContract();
+  assert.equal(observations.prefixIds.length, 26);
+});
 test("close the remaining private-store commit-position and semantic-mutation quotas before lifting the source-presence stop", async () => {
   const syntheticSourceBytes = Buffer.from(sourceSkeleton(), "utf8");
   const syntheticSourceSha256 = byteSha256(syntheticSourceBytes);
