@@ -7265,7 +7265,1053 @@ function directAssertExactSurface(program, weakMapConstructions) {
   });
 }
 
-function independentStaticAudit(sourceBytes) {
+function assertDirectC14FragmentProvenance(program) {
+  const fail = (code) => {
+    throw new Error(`direct static gate: contextual provenance ${code}`);
+  };
+  const directRequirementsOracle = JSON.parse(
+    readFileSync(REQUIREMENTS_URL, "utf8"),
+  );
+  if (digest(directRequirementsOracle) !== EXPECTED_REQUIREMENTS_SHA256) {
+    fail("REQUIREMENTS_ROOT_NOT_EXACT");
+  }
+  const exactHelperNames = new Set(
+    ALLOWED_IMPORTS.get("./containment-exact-v2.mjs"),
+  );
+  const recoveryValueNames = new Set(
+    ALLOWED_IMPORTS.get("./containment-guardian-recovery-v1.mjs"),
+  );
+  const launchValueNames = new Set(
+    ALLOWED_IMPORTS.get("./containment-launch-capsule-v3.mjs"),
+  );
+  const recoveryArrayNames = new Set([
+    "CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1",
+  ]);
+  const recoveryDigestName =
+    "CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1";
+  const launchDigestName =
+    "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3";
+  const launchRequirementsName = "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3";
+  const launchVerifierName = "verifyCandidateContainmentLaunchCapsuleV3";
+  const requirementsExportName =
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
+  const authorityKeys = Object.freeze(
+    Object.keys(directRequirementsOracle.authority),
+  );
+  const authorityKeySet = new Set(authorityKeys);
+  const stateFields = Object.freeze([
+    ...directRequirementsOracle.frameFields.stateProjection,
+  ]);
+  const unsignedStateFields = Object.freeze(stateFields.slice(0, -1));
+  const failureArgumentIndex = new Map([
+    ["boundedInteger", 4],
+    ["copyBoundedBuffer", 3],
+    ["decodeCanonicalBase64", 3],
+    ["decodeCanonicalJsonLine", 3],
+    ["exactBoolean", 3],
+    ["exactDigest", 2],
+    ["exactRecord", 3],
+  ]);
+
+  const parents = new WeakMap();
+  const allNodes = [];
+  const walk = (value, parent = null) => {
+    if (value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const child of value) walk(child, parent);
+      return;
+    }
+    if (typeof value.type !== "string") return;
+    if (parent !== null) parents.set(value, parent);
+    allNodes.push(value);
+    for (const [key, child] of Object.entries(value)) {
+      if (["end", "loc", "range", "raw", "sourceFile", "start"].includes(key)) {
+        continue;
+      }
+      if (Array.isArray(child)) {
+        for (const entry of child) walk(entry, value);
+      } else {
+        walk(child, value);
+      }
+    }
+  };
+  walk(program);
+
+  const moduleDeclarations = new Map();
+  const localFunctions = new Map();
+  const exportedFunctions = [];
+  const importedBindings = new Map();
+  let requirementsExportInitializer = null;
+  const registerVariableDeclaration = (declaration, exported) => {
+    for (const declarator of declaration.declarations) {
+      if (declarator.id.type !== "Identifier" || declarator.init === null) {
+        continue;
+      }
+      moduleDeclarations.set(declarator.id.name, {
+        init: declarator.init,
+        exported,
+      });
+      if (exported && declarator.id.name === requirementsExportName) {
+        requirementsExportInitializer = declarator.init;
+      }
+    }
+  };
+  for (const statement of program.body) {
+    if (statement.type === "ImportDeclaration") {
+      const source = statement.source.value;
+      const allowed = ALLOWED_IMPORTS.get(source);
+      if (allowed === undefined) {
+        throw new Error(
+          "direct static gate: surface provenance PINNED_IMPORT_SOURCE_MISMATCH",
+        );
+      }
+      const observed = [];
+      for (const specifier of statement.specifiers) {
+        if (
+          specifier.type !== "ImportSpecifier" ||
+          specifier.imported.type !== "Identifier" ||
+          specifier.local.type !== "Identifier" ||
+          specifier.imported.name !== specifier.local.name
+        ) {
+          throw new Error(
+            "direct static gate: surface provenance PINNED_IMPORT_NAME_MISMATCH",
+          );
+        }
+        observed.push(specifier.imported.name);
+        importedBindings.set(specifier.local.name, source);
+      }
+      if (observed.join("\u0000") !== allowed.join("\u0000")) {
+        throw new Error(
+          "direct static gate: surface provenance PINNED_IMPORT_NAME_MISMATCH",
+        );
+      }
+      continue;
+    }
+    if (statement.type === "VariableDeclaration") {
+      registerVariableDeclaration(statement, false);
+      continue;
+    }
+    if (statement.type === "FunctionDeclaration") {
+      localFunctions.set(statement.id.name, statement);
+      continue;
+    }
+    if (statement.type === "ExportNamedDeclaration") {
+      if (statement.declaration?.type === "VariableDeclaration") {
+        registerVariableDeclaration(statement.declaration, true);
+      } else if (statement.declaration?.type === "FunctionDeclaration") {
+        exportedFunctions.push(statement.declaration);
+      }
+    }
+  }
+
+  const staticAstValue = (node) => {
+    if (node?.type === "Literal") return node.value;
+    if (node?.type === "UnaryExpression" && node.operator === "-") {
+      const argument = staticAstValue(node.argument);
+      return typeof argument === "number" ? -argument : undefined;
+    }
+    if (node?.type === "ArrayExpression") {
+      const value = [];
+      for (const element of node.elements) {
+        const child = staticAstValue(element);
+        if (child === undefined) return undefined;
+        value.push(child);
+      }
+      return value;
+    }
+    if (node?.type === "ObjectExpression") {
+      const value = {};
+      for (const property of node.properties) {
+        if (
+          property.type !== "Property" ||
+          property.kind !== "init" ||
+          property.method ||
+          property.computed
+        ) {
+          return undefined;
+        }
+        const key =
+          property.key.type === "Identifier"
+            ? property.key.name
+            : property.key.type === "Literal"
+              ? String(property.key.value)
+              : null;
+        const child = staticAstValue(property.value);
+        if (key === null || child === undefined) return undefined;
+        value[key] = child;
+      }
+      return value;
+    }
+    if (
+      node?.type === "CallExpression" &&
+      !node.optional &&
+      node.callee.type === "Identifier" &&
+      node.callee.name === "deepFreeze" &&
+      node.arguments.length === 1
+    ) {
+      return staticAstValue(node.arguments[0]);
+    }
+    if (
+      node?.type === "CallExpression" &&
+      !node.optional &&
+      node.callee.type === "Identifier" &&
+      node.callee.name === "nullRecord" &&
+      node.arguments.length === 1 &&
+      node.arguments[0].type === "ArrayExpression"
+    ) {
+      const value = {};
+      for (const entry of node.arguments[0].elements) {
+        if (entry?.type !== "ArrayExpression" || entry.elements.length !== 2) {
+          return undefined;
+        }
+        const key = staticAstValue(entry.elements[0]);
+        const child = staticAstValue(entry.elements[1]);
+        if (typeof key !== "string" || child === undefined) return undefined;
+        value[key] = child;
+      }
+      return value;
+    }
+    return undefined;
+  };
+  const rootNames = new Set([requirementsExportName]);
+  let rootInitializer = requirementsExportInitializer;
+  if (requirementsExportInitializer?.type === "Identifier") {
+    rootNames.add(requirementsExportInitializer.name);
+    rootInitializer = moduleDeclarations.get(
+      requirementsExportInitializer.name,
+    )?.init;
+  }
+  const rootStaticValue = staticAstValue(rootInitializer);
+  const exactRootAvailable =
+    rootStaticValue !== undefined &&
+    digest(rootStaticValue) === EXPECTED_REQUIREMENTS_SHA256;
+  if (
+    requirementsExportInitializer?.type === "Identifier" &&
+    !exactRootAvailable
+  ) {
+    fail("REQUIREMENTS_ROOT_NOT_EXACT");
+  }
+  if (!exactRootAvailable) rootNames.clear();
+  const invalidRequirementRoots = new Set(
+    exactRootAvailable ? [] : [requirementsExportName],
+  );
+  for (const [name, { init }] of moduleDeclarations) {
+    if (rootNames.has(name)) continue;
+    if (init.type === "Identifier" && rootNames.has(init.name)) {
+      invalidRequirementRoots.add(name);
+      continue;
+    }
+    const candidate = staticAstValue(init);
+    if (
+      candidate !== undefined &&
+      candidate !== null &&
+      typeof candidate === "object" &&
+      digest(candidate) === EXPECTED_REQUIREMENTS_SHA256
+    ) {
+      invalidRequirementRoots.add(name);
+    }
+  }
+
+  const literalKey = (node) =>
+    node?.type === "Literal"
+      ? typeof node.value === "string"
+        ? node.value
+        : null
+      : node?.type === "Identifier"
+        ? node.name
+        : null;
+  const nodeShape = (node) => {
+    if (node === null || typeof node !== "object") return node;
+    if (Array.isArray(node)) return node.map(nodeShape);
+    return Object.fromEntries(
+      Object.entries(node)
+        .filter(
+          ([key]) =>
+            !["end", "loc", "range", "raw", "sourceFile", "start"].includes(
+              key,
+            ),
+        )
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, nodeShape(child)]),
+    );
+  };
+  const nodeShapeIdentity = (node) => JSON.stringify(nodeShape(node));
+  const memberProperty = (node) => {
+    if (node.type !== "MemberExpression" || node.optional) return null;
+    if (!node.computed && node.property.type === "Identifier") {
+      return node.property.name;
+    }
+    if (node.computed && node.property.type === "Literal") {
+      return typeof node.property.value === "string"
+        ? node.property.value
+        : null;
+    }
+    return null;
+  };
+  const memberPath = (node) => {
+    const path = [];
+    let cursor = node;
+    while (cursor?.type === "MemberExpression") {
+      const property = memberProperty(cursor);
+      if (property === null) return null;
+      path.unshift(property);
+      cursor = cursor.object;
+    }
+    if (cursor?.type !== "Identifier") return null;
+    return { root: cursor.name, path };
+  };
+  const pathValue = (path) => {
+    let value = directRequirementsOracle;
+    for (const key of path) {
+      if (value === null || typeof value !== "object" || !(key in value)) {
+        return undefined;
+      }
+      value = value[key];
+    }
+    return value;
+  };
+  const isExactProtectedPath = (node, kind) => {
+    const path = memberPath(node);
+    return (
+      path !== null &&
+      rootNames.has(path.root) &&
+      path.path.length === 1 &&
+      path.path[0] === kind
+    );
+  };
+
+  const SAFE = Object.freeze({ kind: "safe" });
+  const RAW = Object.freeze({ kind: "raw" });
+  const DECODED = Object.freeze({ kind: "decoded" });
+  const value = (kind, fields = {}) => ({ kind, ...fields });
+  const isRawish = (observed) =>
+    observed.kind === "raw" || observed.tainted === true;
+  const moduleValues = new Map();
+  const reachedLocalFunctions = new Set();
+  const localCallerClasses = new Map();
+  const activeFunctions = [];
+
+  const exactFailureFunction = (name) => {
+    const fn = localFunctions.get(name);
+    if (
+      fn === undefined ||
+      fn.params.length !== 0 ||
+      fn.body.body.length !== 1
+    ) {
+      return false;
+    }
+    const statement = fn.body.body[0];
+    return (
+      statement.type === "ThrowStatement" &&
+      statement.argument?.type === "NewExpression" &&
+      statement.argument.callee.type === "Identifier" &&
+      statement.argument.callee.name === "Error" &&
+      statement.argument.arguments.length === 1 &&
+      statement.argument.arguments[0].type === "Literal" &&
+      directRequirementsOracle.vocabularies.failureCodes.includes(
+        statement.argument.arguments[0].value,
+      )
+    );
+  };
+
+  let evaluateExpression;
+  let evaluateFunction;
+  const resolveModuleValue = (name) => {
+    if (rootNames.has(name)) return value("requirements", { path: [] });
+    if (invalidRequirementRoots.has(name)) return value("invalid-requirements");
+    if (localFunctions.has(name)) return value("function", { name });
+    if (recoveryArrayNames.has(name)) return value("pinned-array", { name });
+    if (name === recoveryDigestName || name === launchDigestName) {
+      return value("pinned-digest", { name });
+    }
+    if (name === launchRequirementsName) return value("launch-requirements");
+    if (name === launchVerifierName) return value("import-callable", { name });
+    if (exactHelperNames.has(name)) return value("import-callable", { name });
+    if (importedBindings.has(name)) return value("pinned", { name });
+    if (
+      [
+        "Array",
+        "Boolean",
+        "Error",
+        "Number",
+        "Object",
+        "Reflect",
+        "Set",
+        "String",
+        "WeakMap",
+      ].includes(name)
+    ) {
+      return value("ambient", { name });
+    }
+    if (moduleValues.has(name)) return moduleValues.get(name);
+    const declaration = moduleDeclarations.get(name);
+    if (declaration !== undefined) {
+      if (
+        declaration.init.type === "Identifier" &&
+        (rootNames.has(declaration.init.name) ||
+          invalidRequirementRoots.has(declaration.init.name))
+      ) {
+        const invalid = value("invalid-requirements");
+        moduleValues.set(name, invalid);
+        return invalid;
+      }
+      const staticValue = staticAstValue(declaration.init);
+      const resolved =
+        staticValue === undefined ? SAFE : value("safe", { staticValue });
+      moduleValues.set(name, resolved);
+      return resolved;
+    }
+    return SAFE;
+  };
+  const resolveValue = (environment, name) =>
+    environment.has(name) ? environment.get(name) : resolveModuleValue(name);
+  const requirementResult = (path) => {
+    const observed = pathValue(path);
+    if (observed === undefined) fail("REQUIREMENTS_PATH_ESCAPE");
+    if (path.length === 1 && path[0] === "authority") {
+      return value("protected", { protectedKind: "authority", path });
+    }
+    if (path.length === 1 && path[0] === "physicalFacts") {
+      return value("protected", { protectedKind: "physicalFacts", path });
+    }
+    if (observed !== null && typeof observed === "object") {
+      return value(
+        Array.isArray(observed) ? "requirements-array" : "requirements-subtree",
+        {
+          path,
+        },
+      );
+    }
+    return value("requirements-leaf", { path });
+  };
+  const rejectEscapingValue = (observed) => {
+    if (observed.kind === "requirements") fail("REQUIREMENTS_ROOT_ESCAPE");
+    if (observed.kind === "invalid-requirements") {
+      fail("REQUIREMENTS_ROOT_NOT_EXACT");
+    }
+    if (
+      observed.kind === "requirements-array" ||
+      observed.kind === "requirements-subtree"
+    ) {
+      fail("REQUIREMENTS_PATH_ESCAPE");
+    }
+    if (
+      observed.kind === "protected" ||
+      observed.kind === "authority-lookalike"
+    ) {
+      fail("AUTHORITY_DIRECT_ESCAPE");
+    }
+    if (
+      [
+        "pinned",
+        "pinned-array",
+        "pinned-digest",
+        "launch-requirements",
+        "launch-projection",
+        "launch-file",
+        "launch-files",
+        "launch-identity",
+      ].includes(observed.kind)
+    ) {
+      fail("PINNED_IMPORT_ESCAPE");
+    }
+  };
+  const recordKeys = (arrayNode) => {
+    if (arrayNode?.type !== "ArrayExpression") return null;
+    const keys = [];
+    for (const entry of arrayNode.elements) {
+      if (entry?.type !== "ArrayExpression" || entry.elements.length !== 2) {
+        return null;
+      }
+      const key = literalKey(entry.elements[0]);
+      if (key === null) return null;
+      keys.push(key);
+    }
+    return keys;
+  };
+  const evaluateRecordEntries = (arrayNode, environment) => {
+    const keys = recordKeys(arrayNode);
+    if (keys === null)
+      return value("record", { keys: [], protectedSlots: false });
+    const isAuthorityLookalike =
+      keys.length === authorityKeys.length &&
+      keys.every((key, index) => key === authorityKeys[index]) &&
+      arrayNode.elements.every(
+        (entry) =>
+          entry.elements[1]?.type === "Literal" &&
+          entry.elements[1].value === false,
+      );
+    if (isAuthorityLookalike) {
+      return value("authority-lookalike", { keys });
+    }
+    if (keys.some((key) => authorityKeySet.has(key))) {
+      fail("AUTHORITY_WRONG_PLACEMENT");
+    }
+    let protectedSlots = false;
+    let tainted = false;
+    const children = [];
+    const entryShapes = [];
+    for (const entry of arrayNode.elements) {
+      const key = literalKey(entry.elements[0]);
+      const childNode = entry.elements[1];
+      const child = evaluateExpression(childNode, environment);
+      children.push(child);
+      entryShapes.push(nodeShapeIdentity(childNode));
+      tainted ||= isRawish(child);
+      if (key === "authority" || key === "physicalFacts") {
+        if (
+          child.kind !== "protected" ||
+          child.protectedKind !== key ||
+          !isExactProtectedPath(childNode, key)
+        ) {
+          fail("AUTHORITY_WRONG_PLACEMENT");
+        }
+        protectedSlots = true;
+      } else if (
+        child.kind === "protected" ||
+        child.kind === "authority-lookalike"
+      ) {
+        fail("AUTHORITY_WRONG_PLACEMENT");
+      }
+    }
+    if (keys.includes("stateSha256")) {
+      if (keys.join("\u0000") !== stateFields.join("\u0000")) {
+        fail("STATE_PREIMAGE_NOT_EXACT");
+      }
+      const stateDigest = children.at(-1);
+      if (
+        stateDigest.kind !== "state-digest" ||
+        stateDigest.preimageShapes.join("\u0000") !==
+          entryShapes.slice(0, -1).join("\u0000")
+      ) {
+        fail("STATE_PREIMAGE_NOT_EXACT");
+      }
+    }
+    return value("record", {
+      keys,
+      protectedSlots,
+      tainted,
+      entryShapes,
+    });
+  };
+  const requireOrdinaryArgument = (
+    observed,
+    { allowRequirementsArray = false } = {},
+  ) => {
+    if (observed.kind === "requirements") fail("REQUIREMENTS_ROOT_ESCAPE");
+    if (observed.kind === "invalid-requirements") {
+      fail("REQUIREMENTS_ROOT_NOT_EXACT");
+    }
+    if (observed.kind === "requirements-subtree") {
+      fail("REQUIREMENTS_PATH_ESCAPE");
+    }
+    if (observed.kind === "requirements-array" && !allowRequirementsArray) {
+      fail("REQUIREMENTS_PATH_ESCAPE");
+    }
+    if (observed.kind === "protected") fail("AUTHORITY_GENERAL_SINK_ESCAPE");
+    if (
+      [
+        "pinned",
+        "pinned-array",
+        "launch-requirements",
+        "launch-identity",
+      ].includes(observed.kind)
+    ) {
+      fail("PINNED_IMPORT_ESCAPE");
+    }
+  };
+
+  const assignVariable = (environment, declarator, observed) => {
+    if (declarator.id.type !== "Identifier") return;
+    if (
+      observed.kind === "pinned-array" ||
+      observed.kind === "pinned-digest" ||
+      observed.kind === "launch-requirements"
+    ) {
+      fail("PINNED_IMPORT_ESCAPE");
+    }
+    if (observed.kind === "function") fail("LOCAL_CALL_INDIRECT");
+    if (
+      declarator.id.name === "stateSha256" &&
+      observed.kind !== "state-digest"
+    ) {
+      fail("STATE_PREIMAGE_NOT_EXACT");
+    }
+    environment.set(declarator.id.name, observed);
+  };
+
+  evaluateExpression = (node, environment) => {
+    if (node === null) return SAFE;
+    if (node.type === "Literal") return SAFE;
+    if (node.type === "Identifier") return resolveValue(environment, node.name);
+    if (node.type === "ParenthesizedExpression") {
+      return evaluateExpression(node.expression, environment);
+    }
+    if (node.type === "ArrayExpression") {
+      let tainted = false;
+      for (const element of node.elements) {
+        if (element !== null) {
+          const observed = evaluateExpression(element, environment);
+          requireOrdinaryArgument(observed);
+          tainted ||= isRawish(observed);
+        }
+      }
+      return tainted ? value("safe", { tainted: true }) : SAFE;
+    }
+    if (node.type === "ObjectExpression") {
+      let tainted = false;
+      for (const property of node.properties) {
+        if (property.type === "Property") {
+          if (authorityKeySet.has(literalKey(property.key))) {
+            fail("AUTHORITY_WRONG_PLACEMENT");
+          }
+          const observed = evaluateExpression(property.value, environment);
+          requireOrdinaryArgument(observed);
+          tainted ||= isRawish(observed);
+        }
+      }
+      return tainted ? value("safe", { tainted: true }) : SAFE;
+    }
+    if (node.type === "MemberExpression") {
+      const path = memberPath(node);
+      if (path !== null && invalidRequirementRoots.has(path.root)) {
+        fail("REQUIREMENTS_ROOT_NOT_EXACT");
+      }
+      if (path !== null && rootNames.has(path.root)) {
+        return requirementResult(path.path);
+      }
+      const receiver = evaluateExpression(node.object, environment);
+      const property = memberProperty(node);
+      if (receiver.kind === "invalid-requirements") {
+        fail("REQUIREMENTS_ROOT_NOT_EXACT");
+      }
+      if (receiver.kind === "requirements") {
+        return requirementResult(property === null ? [] : [property]);
+      }
+      if (
+        receiver.kind === "requirements-subtree" ||
+        receiver.kind === "requirements-array"
+      ) {
+        if (property === null) fail("REQUIREMENTS_PATH_ESCAPE");
+        return requirementResult([...receiver.path, property]);
+      }
+      if (receiver.kind === "protected") {
+        fail("AUTHORITY_DIRECT_ESCAPE");
+      }
+      if (receiver.kind === "decoded") {
+        if (property === "value") return RAW;
+        if (property === "bytes") return SAFE;
+        return SAFE;
+      }
+      if (receiver.kind === "raw") return RAW;
+      if (receiver.tainted === true) return RAW;
+      if (receiver.kind === "launch-requirements") {
+        if (property !== "fileSpecs") fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+        return value("launch-file-specs");
+      }
+      if (receiver.kind === "launch-file-specs") {
+        if (property !== "length") fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+        return SAFE;
+      }
+      if (receiver.kind === "launch-projection") {
+        if (["requirementsSha256", "rawSha256"].includes(property)) return SAFE;
+        if (property === "files") return value("launch-files");
+        fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+      }
+      if (receiver.kind === "launch-file") {
+        if (
+          ["role", "byteLength", "sha256", "initialOffset"].includes(property)
+        ) {
+          return SAFE;
+        }
+        if (property === "identity") return value("launch-identity");
+        fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+      }
+      if (receiver.kind === "launch-identity") {
+        fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+      }
+      if (receiver.kind === "pinned-array") {
+        return value("pinned-array-member", { receiver, property });
+      }
+      return SAFE;
+    }
+    if (node.type === "CallExpression") {
+      if (node.optional) fail("LOCAL_CALL_INDIRECT");
+      if (node.callee.type === "ParenthesizedExpression") {
+        const target = evaluateExpression(node.callee.expression, environment);
+        if (target.kind === "function") fail("LOCAL_CALL_INDIRECT");
+      }
+      if (node.callee.type === "MemberExpression") {
+        const receiver = evaluateExpression(node.callee.object, environment);
+        const method = memberProperty(node.callee);
+        if (receiver.kind === "requirements-array") {
+          if (!["at", "includes"].includes(method)) {
+            fail("REQUIREMENTS_PATH_ESCAPE");
+          }
+          for (const argument of node.arguments) {
+            requireOrdinaryArgument(evaluateExpression(argument, environment));
+          }
+          return SAFE;
+        }
+        if (
+          receiver.kind === "requirements" ||
+          receiver.kind === "requirements-subtree"
+        ) {
+          fail("REQUIREMENTS_PATH_ESCAPE");
+        }
+        if (receiver.kind === "pinned-array") {
+          if (!["at", "includes"].includes(method)) {
+            fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+          }
+          const arguments_ = node.arguments.map((argument) =>
+            evaluateExpression(argument, environment),
+          );
+          if (arguments_.some(({ kind }) => kind === "raw")) {
+            fail("PINNED_IMPORT_ESCAPE");
+          }
+          return method === "at" ? value("pinned-derived") : SAFE;
+        }
+        if (receiver.kind === "launch-files") {
+          if (method !== "at") fail("PINNED_IMPORT_MEMBER_NOT_ALLOWED");
+          for (const argument of node.arguments) {
+            const observed = evaluateExpression(argument, environment);
+            requireOrdinaryArgument(observed);
+            const literalIndex =
+              argument.type === "Literal" &&
+              Number.isInteger(argument.value) &&
+              argument.value >= 0;
+            if (!literalIndex && observed.kind !== "bounded-integer") {
+              fail("PINNED_IMPORT_ESCAPE");
+            }
+          }
+          return value("launch-file");
+        }
+        for (const argument of node.arguments) {
+          requireOrdinaryArgument(evaluateExpression(argument, environment));
+        }
+        return receiver.kind === "raw" ? RAW : SAFE;
+      }
+      if (node.callee.type !== "Identifier") return SAFE;
+      const calleeName = node.callee.name;
+      if (localFunctions.has(calleeName)) {
+        const arguments_ = node.arguments.map((argument) =>
+          evaluateExpression(argument, environment),
+        );
+        if (arguments_.some(({ kind }) => kind === "protected")) {
+          fail("AUTHORITY_GENERAL_SINK_ESCAPE");
+        }
+        if (
+          arguments_.some(({ kind }) =>
+            [
+              "pinned",
+              "pinned-array",
+              "pinned-digest",
+              "launch-requirements",
+              "launch-identity",
+            ].includes(kind),
+          )
+        ) {
+          fail("PINNED_IMPORT_ESCAPE");
+        }
+        const classification = arguments_.some(isRawish) ? "raw" : "trusted";
+        const classes = localCallerClasses.get(calleeName) ?? new Set();
+        classes.add(classification);
+        localCallerClasses.set(calleeName, classes);
+        if (activeFunctions.includes(calleeName)) fail("LOCAL_CALL_RECURSIVE");
+        return evaluateFunction(
+          localFunctions.get(calleeName),
+          arguments_,
+          false,
+        );
+      }
+      if (calleeName === "nullRecord") {
+        return evaluateRecordEntries(node.arguments[0], environment);
+      }
+      if (calleeName === "deepFreeze") {
+        return evaluateExpression(node.arguments[0], environment);
+      }
+      if (calleeName === "frozenCopyOnReadBytes") {
+        requireOrdinaryArgument(
+          evaluateExpression(node.arguments[0], environment),
+        );
+        if (node.arguments.length === 2) {
+          evaluateRecordEntries(node.arguments[1], environment);
+        }
+        return SAFE;
+      }
+      if (calleeName === "decodeCanonicalJsonLine") {
+        const failureIndex = failureArgumentIndex.get(calleeName);
+        for (let index = 0; index < node.arguments.length; index += 1) {
+          const argument = node.arguments[index];
+          if (
+            index === failureIndex &&
+            argument.type === "Identifier" &&
+            exactFailureFunction(argument.name)
+          ) {
+            continue;
+          }
+          requireOrdinaryArgument(evaluateExpression(argument, environment));
+        }
+        return DECODED;
+      }
+      if (
+        calleeName === "copyBoundedBuffer" ||
+        calleeName === "decodeCanonicalBase64"
+      ) {
+        const failureIndex = failureArgumentIndex.get(calleeName);
+        for (let index = 0; index < node.arguments.length; index += 1) {
+          const argument = node.arguments[index];
+          if (
+            index === failureIndex &&
+            argument.type === "Identifier" &&
+            exactFailureFunction(argument.name)
+          ) {
+            continue;
+          }
+          requireOrdinaryArgument(evaluateExpression(argument, environment));
+        }
+        return SAFE;
+      }
+      if (
+        [
+          "boundedInteger",
+          "exactBoolean",
+          "exactDigest",
+          "exactRecord",
+        ].includes(calleeName)
+      ) {
+        const failureIndex = failureArgumentIndex.get(calleeName);
+        for (let index = 0; index < node.arguments.length; index += 1) {
+          const argument = node.arguments[index];
+          if (
+            index === failureIndex &&
+            argument.type === "Identifier" &&
+            exactFailureFunction(argument.name)
+          ) {
+            continue;
+          }
+          const observed = evaluateExpression(argument, environment);
+          requireOrdinaryArgument(observed, {
+            allowRequirementsArray: calleeName === "exactRecord" && index === 1,
+          });
+        }
+        if (calleeName === "exactRecord") return value("normalized");
+        if (calleeName === "boundedInteger") return value("bounded-integer");
+        return SAFE;
+      }
+      if (calleeName === "canonicalJsonBytes") {
+        const observed = evaluateExpression(node.arguments[0], environment);
+        if (observed.kind === "launch-identity") {
+          if (node.arguments[0].type !== "MemberExpression") {
+            fail("PINNED_IMPORT_ESCAPE");
+          }
+          return SAFE;
+        }
+        if (
+          observed.kind === "protected" ||
+          observed.kind === "authority-lookalike"
+        ) {
+          fail("AUTHORITY_HASH_ESCAPE");
+        }
+        if (observed.kind === "record" && observed.protectedSlots) {
+          if (
+            observed.keys.join("\u0000") !== unsignedStateFields.join("\u0000")
+          ) {
+            fail("STATE_PREIMAGE_NOT_EXACT");
+          }
+          return value("state-preimage-bytes", {
+            preimageShapes: observed.entryShapes,
+          });
+        }
+        requireOrdinaryArgument(observed);
+        return isRawish(observed) ? RAW : SAFE;
+      }
+      if (calleeName === "sha256") {
+        const observed = evaluateExpression(node.arguments[0], environment);
+        requireOrdinaryArgument(observed);
+        return observed.kind === "state-preimage-bytes"
+          ? value("state-digest", {
+              preimageShapes: observed.preimageShapes,
+            })
+          : isRawish(observed)
+            ? RAW
+            : SAFE;
+      }
+      if (calleeName === "canonicalJsonLine") {
+        let tainted = false;
+        for (const argument of node.arguments) {
+          const observed = evaluateExpression(argument, environment);
+          requireOrdinaryArgument(observed);
+          tainted ||= isRawish(observed);
+        }
+        return tainted ? RAW : SAFE;
+      }
+      if (calleeName === launchVerifierName) {
+        for (const argument of node.arguments) {
+          requireOrdinaryArgument(evaluateExpression(argument, environment));
+        }
+        return value("launch-projection");
+      }
+      if (calleeName === "String") {
+        const observed = evaluateExpression(node.arguments[0], environment);
+        if (
+          observed.kind === "protected" ||
+          observed.kind === "authority-lookalike"
+        ) {
+          fail("AUTHORITY_COERCION_ESCAPE");
+        }
+        requireOrdinaryArgument(observed);
+        return isRawish(observed) ? RAW : SAFE;
+      }
+      for (const argument of node.arguments) {
+        requireOrdinaryArgument(evaluateExpression(argument, environment));
+      }
+      return SAFE;
+    }
+    if (node.type === "BinaryExpression" || node.type === "LogicalExpression") {
+      const left = evaluateExpression(node.left, environment);
+      const right = evaluateExpression(node.right, environment);
+      if (
+        (left.kind === "pinned-digest" || right.kind === "pinned-digest") &&
+        !["===", "!=="].includes(node.operator)
+      ) {
+        fail("PINNED_IMPORT_ESCAPE");
+      }
+      requireOrdinaryArgument(left);
+      requireOrdinaryArgument(right);
+      return isRawish(left) || isRawish(right) ? RAW : SAFE;
+    }
+    if (node.type === "ConditionalExpression") {
+      const test = evaluateExpression(node.test, environment);
+      requireOrdinaryArgument(test);
+      const consequent = evaluateExpression(node.consequent, environment);
+      const alternate = evaluateExpression(node.alternate, environment);
+      requireOrdinaryArgument(consequent);
+      requireOrdinaryArgument(alternate);
+      return isRawish(test) || isRawish(consequent) || isRawish(alternate)
+        ? RAW
+        : SAFE;
+    }
+    if (node.type === "UnaryExpression") {
+      const observed = evaluateExpression(node.argument, environment);
+      requireOrdinaryArgument(observed);
+      return isRawish(observed) ? RAW : SAFE;
+    }
+    if (node.type === "NewExpression") {
+      for (const argument of node.arguments) {
+        requireOrdinaryArgument(evaluateExpression(argument, environment));
+      }
+      return SAFE;
+    }
+    return SAFE;
+  };
+
+  const evaluateStatements = (statements, environment, exported) => {
+    let returned = null;
+    for (const statement of statements) {
+      if (statement.type === "VariableDeclaration") {
+        for (const declarator of statement.declarations) {
+          const observed = evaluateExpression(declarator.init, environment);
+          assignVariable(environment, declarator, observed);
+        }
+      } else if (statement.type === "ExpressionStatement") {
+        evaluateExpression(statement.expression, environment);
+      } else if (statement.type === "ReturnStatement") {
+        returned = evaluateExpression(statement.argument, environment);
+        if (exported) rejectEscapingValue(returned);
+      } else if (statement.type === "IfStatement") {
+        requireOrdinaryArgument(
+          evaluateExpression(statement.test, environment),
+        );
+        const consequent =
+          statement.consequent.type === "BlockStatement"
+            ? statement.consequent.body
+            : [statement.consequent];
+        const branchReturn = evaluateStatements(
+          consequent,
+          new Map(environment),
+          exported,
+        );
+        if (branchReturn !== null) returned = branchReturn;
+        if (statement.alternate !== null) {
+          const alternate =
+            statement.alternate.type === "BlockStatement"
+              ? statement.alternate.body
+              : [statement.alternate];
+          const alternateReturn = evaluateStatements(
+            alternate,
+            new Map(environment),
+            exported,
+          );
+          if (alternateReturn !== null) returned = alternateReturn;
+        }
+      } else if (statement.type === "BlockStatement") {
+        const blockReturn = evaluateStatements(
+          statement.body,
+          new Map(environment),
+          exported,
+        );
+        if (blockReturn !== null) returned = blockReturn;
+      } else if (statement.type === "ThrowStatement") {
+        evaluateExpression(statement.argument, environment);
+      }
+    }
+    return returned ?? SAFE;
+  };
+  evaluateFunction = (fn, arguments_, exported) => {
+    const name = fn.id.name;
+    if (activeFunctions.includes(name)) fail("LOCAL_CALL_RECURSIVE");
+    activeFunctions.push(name);
+    if (!exported) reachedLocalFunctions.add(name);
+    const environment = new Map();
+    for (let index = 0; index < fn.params.length; index += 1) {
+      const parameter = fn.params[index];
+      if (parameter.type === "Identifier") {
+        environment.set(parameter.name, arguments_[index] ?? RAW);
+      }
+    }
+    const returned = evaluateStatements(fn.body.body, environment, exported);
+    activeFunctions.pop();
+    return returned;
+  };
+
+  for (const fn of exportedFunctions) {
+    evaluateFunction(
+      fn,
+      fn.params.map(() => RAW),
+      true,
+    );
+  }
+  for (const [name, fn] of localFunctions) {
+    if (!reachedLocalFunctions.has(name) && fn.params.length === 0) {
+      evaluateFunction(fn, [], false);
+    }
+  }
+  for (const classes of localCallerClasses.values()) {
+    if (classes.has("raw") && classes.has("trusted")) {
+      fail("LOCAL_CALLER_MIXED");
+    }
+  }
+  for (const classes of localCallerClasses.values()) {
+    if (classes.has("raw")) fail("LOCAL_CALLER_UNTRUSTED");
+  }
+  return Object.freeze({
+    mode: "fragment-control",
+    rootBindingCount: rootNames.size,
+    localFunctionCount: localFunctions.size,
+    localCallerCount: localCallerClasses.size,
+  });
+}
+
+function independentStaticAudit(
+  sourceBytes,
+  c14ProvenanceMode = "candidate-complete",
+) {
   if (directParse === null) {
     throw new Error(
       "direct static gate: parser unavailable outside direct entry",
@@ -7282,6 +8328,11 @@ function independentStaticAudit(sourceBytes) {
   }
   assert.equal(program.type, "Program");
   assert.equal(program.sourceType, "module");
+  if (c14ProvenanceMode === "fragment-control") {
+    return Object.freeze({
+      c14Provenance: assertDirectC14FragmentProvenance(program),
+    });
+  }
   const walkAudit = directWalkAst(program, source);
   const surface = directAssertExactSurface(
     program,
@@ -8327,7 +9378,7 @@ function observeDirectProvenancePolicyControls() {
     }
     let rejection = null;
     try {
-      independentStaticAudit(Buffer.from(source, "utf8"));
+      independentStaticAudit(Buffer.from(source, "utf8"), "fragment-control");
     } catch (error) {
       rejection = error;
     }
