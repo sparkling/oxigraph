@@ -5141,6 +5141,29 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     left.origins.length > 0 &&
     right.origins.length > 0 &&
     left.origins.every((origin) => !right.origins.includes(origin));
+  const directFrozenNullRecordEntries = (initializer) => {
+    if (
+      initializer?.type !== "CallExpression" ||
+      initializer.optional ||
+      initializer.callee.type !== "Identifier" ||
+      initializer.callee.name !== "deepFreeze" ||
+      initializer.arguments.length !== 1
+    ) {
+      return null;
+    }
+    const nullRecordCall = initializer.arguments[0];
+    if (
+      nullRecordCall.type !== "CallExpression" ||
+      nullRecordCall.optional ||
+      nullRecordCall.callee.type !== "Identifier" ||
+      nullRecordCall.callee.name !== "nullRecord" ||
+      nullRecordCall.arguments.length !== 1 ||
+      nullRecordCall.arguments[0].type !== "ArrayExpression"
+    ) {
+      return null;
+    }
+    return nullRecordCall.arguments[0].elements;
+  };
   const completion = (...states) => new Set(states);
   const unionCompletions = (...completions) =>
     new Set(completions.flatMap((states) => [...states]));
@@ -6440,10 +6463,72 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         commitIndex !== body.length - 2 ||
         returnStatement?.type !== "ReturnStatement" ||
         returnStatement.argument?.type !== "Identifier" ||
-        returnStatement.argument.name !== commit.keyName ||
+        returnStatement.argument.name === commit.metadataName ||
         commit.keyName === commit.metadataName
       ) {
         fail(`private commit tail ${record.name}`);
+      }
+      const returnName = returnStatement.argument.name;
+      if (returnName !== commit.keyName) {
+        if (
+          expectedStore !== "stateMetadata" ||
+          ![
+            "initializeCandidateContainmentGuardianControlV1",
+            "reduceCandidateContainmentGuardianControlV1",
+          ].includes(record.name)
+        ) {
+          fail(`private commit tail ${record.name}`);
+        }
+        const returnBinding = resolve(scope, returnName);
+        const metadataBinding = resolve(scope, commit.metadataName);
+        const returnValue = bindingValue(returnBinding);
+        const metadataValue = bindingValue(metadataBinding);
+        if (
+          returnBinding.kind !== "local" ||
+          returnBinding.scope !== scope ||
+          returnValue.kind !== "frozen"
+        ) {
+          fail(
+            `private state transition must be prebuilt and frozen ${record.name}`,
+          );
+        }
+        if (!valuesAreDisjoint(returnValue, metadataValue)) {
+          fail(`private state transition contains metadata ${record.name}`);
+        }
+        const returnDeclaration = body.find(
+          (statement) =>
+            statement.type === "VariableDeclaration" &&
+            statement.declarations.length === 1 &&
+            statement.declarations[0].id.type === "Identifier" &&
+            statement.declarations[0].id.name === returnName,
+        );
+        const entries = directFrozenNullRecordEntries(
+          returnDeclaration?.declarations[0].init,
+        );
+        if (entries === null) {
+          fail(
+            `private state transition must be a frozen null record ${record.name}`,
+          );
+        }
+        const stateEntries = entries.filter(
+          (entry) =>
+            entry?.type === "ArrayExpression" &&
+            entry.elements.length === 2 &&
+            entry.elements[0]?.type === "Literal" &&
+            entry.elements[0].value === "state",
+        );
+        const [stateEntry] = stateEntries;
+        if (
+          stateEntries.length !== 1 ||
+          stateEntry.elements[1]?.type !== "Identifier" ||
+          stateEntry.elements[1].name !== commit.keyName ||
+          resolve(scope, stateEntry.elements[1].name) !==
+            resolve(scope, commit.keyName)
+        ) {
+          fail(
+            `private state transition must directly contain committed result ${record.name}`,
+          );
+        }
       }
       counters.privateOwnerReturnCount += context.returnStatements.length;
       for (const call of record.calls) {
@@ -6958,6 +7043,13 @@ const C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES = Object.freeze(
         /^Error: static gate: ESTree private state transition must directly contain committed result reduceCandidateContainmentGuardianControlV1$/u,
     }),
     Object.freeze({
+      name: "state owner transition duplicates state",
+      functionName: "reduceCandidateContainmentGuardianControlV1",
+      body: 'const result = deepFreeze(nullRecord([])); const wrongState = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", result], ["state", wrongState]])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;',
+      expected:
+        /^Error: static gate: ESTree private state transition must directly contain committed result reduceCandidateContainmentGuardianControlV1$/u,
+    }),
+    Object.freeze({
       name: "state owner transition retains private metadata",
       functionName: "initializeCandidateContainmentGuardianControlV1",
       body: 'const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", result], ["metadata", metadata]])); stateMetadata.set(result, metadata); return transition;',
@@ -6970,6 +7062,13 @@ const C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES = Object.freeze(
       body: 'const result = deepFreeze(nullRecord([])); const transition = nullRecord([["state", result]]); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;',
       expected:
         /^Error: static gate: ESTree raw or unknown value returned from function$/u,
+    }),
+    Object.freeze({
+      name: "state owner transition is not a null record",
+      functionName: "initializeCandidateContainmentGuardianControlV1",
+      body: "const result = deepFreeze(nullRecord([])); const transition = deepFreeze({ state: result }); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;",
+      expected:
+        /^Error: static gate: ESTree private state transition must be a frozen null record initializeCandidateContainmentGuardianControlV1$/u,
     }),
     Object.freeze({
       name: "non-state owner cannot use transition return exception",
@@ -6994,6 +7093,15 @@ const C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES = Object.freeze(
       ),
     }),
   ),
+);
+assert.equal(C13A_STATE_OWNER_TRANSITION_TAIL_POSITIVES.length, 2);
+assert.equal(C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES.length, 8);
+assert.equal(
+  new Set([
+    ...C13A_STATE_OWNER_TRANSITION_TAIL_POSITIVES.map(({ source }) => source),
+    ...C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES.map(({ source }) => source),
+  ]).size,
+  10,
 );
 
 const PRIVATE_COMMIT_PROVENANCE_FAMILIES = Object.freeze([
@@ -14859,10 +14967,14 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     functionName,
     source,
   } of C13A_STATE_OWNER_TRANSITION_TAIL_POSITIVES) {
-    assert.doesNotThrow(
-      () => auditCandidateSource(source),
-      `${functionName} commits its state and returns its containing transition`,
-    );
+    const audit = auditCandidateSource(source);
+    assert.deepEqual(audit.astPolicy.privateStoreCommitCounts, {
+      startupMetadata: 1,
+      inputMetadata: 7,
+      stateMetadata: 2,
+    });
+    assert.equal(audit.astPolicy.privateCommitCount, 10, functionName);
+    assert.equal(audit.astPolicy.privateOwnerReturnCount, 10, functionName);
   }
   for (const {
     name,
