@@ -4595,15 +4595,125 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     mark(node, role);
     if (reference && firstClassification) counters.referenceCount += 1;
   };
-  const makeValue = (kind, staticStrings = []) =>
+  const DIRECT_STATIC_STRING_VALUE_LIMIT = 2_048;
+  const DIRECT_STATIC_STRING_BYTE_LIMIT = 131_072;
+  const boundedStaticStrings = (values, role) => {
+    if (values.length > DIRECT_STATIC_STRING_VALUE_LIMIT) {
+      fail(`bounded static-string provenance ${role}`);
+    }
+    const strings = [...new Set(values)];
+    if (
+      strings.some(
+        (value) =>
+          typeof value !== "string" ||
+          Buffer.byteLength(value, "utf8") > DIRECT_STATIC_STRING_BYTE_LIMIT,
+      )
+    ) {
+      fail(`bounded static-string provenance ${role}`);
+    }
+    return Object.freeze(strings);
+  };
+  const makeValue = (
+    kind,
+    staticStrings = [],
+    exactStrings = [],
+    staticIntegers = [],
+    arrayElements = null,
+    objectProperties = null,
+    compileTime = null,
+  ) =>
     Object.freeze({
       kind,
-      staticStrings: Object.freeze([...new Set(staticStrings)]),
+      staticStrings: boundedStaticStrings(staticStrings, "fragments"),
+      exactStrings: boundedStaticStrings(exactStrings, "exact-values"),
+      staticIntegers: Object.freeze([
+        ...new Set(
+          staticIntegers.filter((value) => Number.isSafeInteger(value)),
+        ),
+      ]),
+      arrayElements:
+        arrayElements === null ? null : Object.freeze([...arrayElements]),
+      objectProperties:
+        objectProperties === null
+          ? null
+          : Object.freeze(
+              objectProperties.map(([name, value]) =>
+                Object.freeze([name, value]),
+              ),
+            ),
+      compileTime: Object.freeze({
+        known: compileTime?.known === true,
+        stringConversions: boundedStaticStrings(
+          compileTime?.stringConversions ?? [],
+          "string-conversions",
+        ),
+        arrayElementStringConversions: boundedStaticStrings(
+          compileTime?.arrayElementStringConversions ?? [],
+          "array-element-string-conversions",
+        ),
+        typeofStrings: boundedStaticStrings(
+          compileTime?.typeofStrings ?? [],
+          "typeof-values",
+        ),
+        plusStrings: boundedStaticStrings(
+          compileTime?.plusStrings ?? [],
+          "to-primitive-string-values",
+        ),
+      }),
     });
   const immutableValue = makeValue("immutable");
+  const exactUndefinedValue = makeValue("immutable", [], [], [], null, null, {
+    known: true,
+    stringConversions: ["undefined"],
+    arrayElementStringConversions: [""],
+    typeofStrings: ["undefined"],
+  });
   const mergeStaticStrings = (...values) => [
     ...new Set(values.flatMap(({ staticStrings }) => staticStrings)),
   ];
+  const mergeExactStrings = (...values) => [
+    ...new Set(values.flatMap(({ exactStrings }) => exactStrings)),
+  ];
+  const combineExactStrings = (left, right) =>
+    left.length > 0 &&
+    right.length > DIRECT_STATIC_STRING_VALUE_LIMIT / left.length
+      ? fail("bounded static-string provenance concatenation")
+      : boundedStaticStrings(
+          left.flatMap((leftValue) =>
+            right.map((rightValue) => leftValue + rightValue),
+          ),
+          "concatenation",
+        );
+  const exactArrayElementStringConversions = (value) =>
+    value.compileTime.arrayElementStringConversions.length > 0
+      ? value.compileTime.arrayElementStringConversions
+      : exactStringConversions(value);
+  const exactArrayStringConversions = (elements) => {
+    let conversions = [""];
+    for (const [index, element] of elements.entries()) {
+      const elementConversions = exactArrayElementStringConversions(element);
+      if (elementConversions.length === 0) return [];
+      conversions = combineExactStrings(
+        conversions.map((prefix) => (index === 0 ? prefix : `${prefix},`)),
+        elementConversions,
+      );
+    }
+    return conversions;
+  };
+  const exactStringConversions = (value) => {
+    if (value.compileTime.stringConversions.length > 0) {
+      return value.compileTime.stringConversions;
+    }
+    if (value.exactStrings.length > 0) return value.exactStrings;
+    if (value.staticIntegers.length > 0) {
+      return boundedStaticStrings(
+        value.staticIntegers.map((integer) => String(integer)),
+        "integer-string-conversion",
+      );
+    }
+    if (value.arrayElements === null) return [];
+    return exactArrayStringConversions(value.arrayElements);
+  };
   const capabilityLookingString = (value) => {
     const normalized = value.toLowerCase();
     return (
@@ -4611,8 +4721,11 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         normalized.includes(fragment),
       ) ||
       normalized.startsWith("file://") ||
-      normalized.startsWith("node:") ||
-      normalized.startsWith("/proc/")
+      normalized.includes("node:") ||
+      /(?:^|[\\/])proc(?:[\\/]|$)/u.test(normalized) ||
+      normalized.includes("openrouter") ||
+      normalized.includes("evaluator") ||
+      /(?:^|[\\/])tests?(?:[\\/.]|$)/u.test(normalized)
     );
   };
   const assertStaticStrings = (strings, literalRole) => {
@@ -4758,13 +4871,35 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       ) {
         fail(`non-canonical integer literal ${node.raw}`);
       }
-      return immutableValue;
+      return makeValue("immutable", [], [], [node.value], null, null, {
+        known: true,
+        stringConversions: [String(node.value)],
+        typeofStrings: ["number"],
+      });
     }
     if (typeof node.value === "string") {
       assertStaticStrings([node.value], literalRole);
-      return makeValue("immutable", [node.value]);
+      return makeValue(
+        "immutable",
+        [node.value],
+        [node.value],
+        [],
+        null,
+        null,
+        {
+          known: true,
+          stringConversions: [node.value],
+          typeofStrings: ["string"],
+          plusStrings: [node.value],
+        },
+      );
     }
-    return immutableValue;
+    return makeValue("immutable", [], [], [], null, null, {
+      known: true,
+      stringConversions: [String(node.value)],
+      arrayElementStringConversions: node.value === null ? [""] : [],
+      typeofStrings: [node.value === null ? "object" : typeof node.value],
+    });
   };
   const evaluateIdentifier = (
     node,
@@ -4850,7 +4985,10 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     ) {
       fail(`object property key ${String(key)}`);
     }
-    return evaluateExpression(node.value, scope, context);
+    return {
+      key,
+      value: evaluateExpression(node.value, scope, context),
+    };
   };
   const evaluateMember = (node, scope, context, { asCallee = false } = {}) => {
     mark(node, asCallee ? "member-callee" : "member-value");
@@ -4908,12 +5046,220 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       if (!DIRECT_SAFE_MEMBER_METHODS.has(memberName)) {
         fail(`member call ${memberName}`);
       }
-      return { kind: "safe-method", memberName };
+      return { kind: "safe-method", memberName, receiver };
     }
     if (DIRECT_METHOD_MEMBER_NAMES.has(memberName)) {
       fail(`method member used as value ${memberName}`);
     }
+    if (memberName === "length") {
+      const lengths =
+        receiver.exactStrings.length > 0
+          ? receiver.exactStrings.map((value) => value.length)
+          : receiver.arrayElements !== null
+            ? [receiver.arrayElements.length]
+            : [];
+      if (lengths.length > 0) {
+        return makeValue("immutable", [], [], lengths, null, null, {
+          known: true,
+          stringConversions: lengths.map((value) => String(value)),
+          typeofStrings: ["number"],
+        });
+      }
+      if (receiver.compileTime.typeofStrings.includes("string")) {
+        return makeValue("immutable", [], [], [], null, null, {
+          typeofStrings: ["number"],
+        });
+      }
+    }
+    if (receiver.objectProperties !== null) {
+      const property = receiver.objectProperties.find(
+        ([name]) => name === memberName,
+      );
+      if (property !== undefined) return property[1];
+      return exactUndefinedValue;
+    }
+    if (
+      receiver.compileTime.known &&
+      receiver.arrayElements === null &&
+      receiver.compileTime.typeofStrings.length > 0 &&
+      receiver.compileTime.typeofStrings.every((value) => value === "object")
+    ) {
+      fail("unanalyzable string-bearing known object member");
+    }
+    if (
+      receiver.compileTime.known ||
+      (receiver.compileTime.typeofStrings.length > 0 &&
+        receiver.compileTime.typeofStrings.every((value) => value !== "object"))
+    ) {
+      const exactUndefined =
+        receiver.exactStrings.length > 0 ||
+        receiver.arrayElements !== null ||
+        (receiver.compileTime.typeofStrings.length > 0 &&
+          receiver.compileTime.typeofStrings.every(
+            (value) => value !== "object",
+          ));
+      return makeValue("immutable", [], [], [], null, null, {
+        known: exactUndefined,
+        stringConversions: exactUndefined ? ["undefined"] : [],
+        arrayElementStringConversions: exactUndefined ? [""] : [],
+        typeofStrings: exactUndefined ? ["undefined"] : [],
+      });
+    }
     return immutableValue;
+  };
+  const requireStaticIntegerArgument = (argumentValue, memberName) => {
+    if (argumentValue.staticIntegers.length !== 1) {
+      fail(`unanalyzable string-bearing member transform ${memberName}`);
+    }
+    return argumentValue.staticIntegers[0];
+  };
+  const evaluateSafeMemberTransform = (member, argumentValues, context) => {
+    const { memberName, receiver } = member;
+    if (memberName === "at") {
+      if (argumentValues.length !== 1) {
+        if (
+          receiver.staticStrings.length > 0 ||
+          receiver.arrayElements !== null ||
+          receiver.compileTime.known
+        ) {
+          fail(`unanalyzable string-bearing member transform ${memberName}`);
+        }
+        return immutableValue;
+      }
+      if (
+        receiver.exactStrings.length === 0 &&
+        receiver.arrayElements === null
+      ) {
+        if (receiver.staticStrings.length > 0 || receiver.compileTime.known) {
+          fail(`unanalyzable string-bearing member transform ${memberName}`);
+        }
+        return immutableValue;
+      }
+      const index = requireStaticIntegerArgument(argumentValues[0], memberName);
+      if (receiver.exactStrings.length > 0) {
+        const transformed = receiver.exactStrings.map((value) =>
+          value.at(index),
+        );
+        const exactStrings = transformed.filter((value) => value !== undefined);
+        const hasUndefined = transformed.some((value) => value === undefined);
+        const stringConversions = [
+          ...exactStrings,
+          ...(hasUndefined ? ["undefined"] : []),
+        ];
+        const typeofStrings = [
+          ...(exactStrings.length > 0 ? ["string"] : []),
+          ...(hasUndefined ? ["undefined"] : []),
+        ];
+        const staticStrings = [
+          ...mergeStaticStrings(receiver),
+          ...stringConversions,
+        ];
+        assertStaticStrings(staticStrings, context.literalRole);
+        return makeValue(
+          "immutable",
+          staticStrings,
+          exactStrings,
+          [],
+          null,
+          null,
+          {
+            known: true,
+            stringConversions,
+            arrayElementStringConversions: [
+              ...exactStrings,
+              ...(hasUndefined ? [""] : []),
+            ],
+            typeofStrings,
+            plusStrings: stringConversions,
+          },
+        );
+      }
+      const normalizedIndex =
+        index < 0 ? receiver.arrayElements.length + index : index;
+      const element = receiver.arrayElements[normalizedIndex];
+      if (element === undefined) return exactUndefinedValue;
+      assertStaticStrings(element.staticStrings, context.literalRole);
+      return makeValue(
+        "immutable",
+        element.staticStrings,
+        element.exactStrings,
+        element.staticIntegers,
+        element.arrayElements,
+        element.objectProperties,
+        element.compileTime,
+      );
+    }
+    if (memberName === "slice") {
+      if (argumentValues.length > 2) {
+        if (
+          receiver.staticStrings.length > 0 ||
+          receiver.arrayElements !== null ||
+          receiver.compileTime.known
+        ) {
+          fail(`unanalyzable string-bearing member transform ${memberName}`);
+        }
+        return immutableValue;
+      }
+      const indexes = argumentValues.map((argumentValue) =>
+        requireStaticIntegerArgument(argumentValue, memberName),
+      );
+      if (receiver.exactStrings.length > 0) {
+        const exactStrings = receiver.exactStrings.map((value) =>
+          value.slice(...indexes),
+        );
+        const staticStrings = [
+          ...mergeStaticStrings(receiver),
+          ...exactStrings,
+        ];
+        assertStaticStrings(staticStrings, context.literalRole);
+        return makeValue(
+          "immutable",
+          staticStrings,
+          exactStrings,
+          [],
+          null,
+          null,
+          {
+            known: true,
+            stringConversions: exactStrings,
+            typeofStrings: ["string"],
+            plusStrings: exactStrings,
+          },
+        );
+      }
+      if (receiver.arrayElements !== null) {
+        const arrayElements = receiver.arrayElements.slice(...indexes);
+        const stringConversions = exactArrayStringConversions(arrayElements);
+        const staticStrings = mergeStaticStrings(...arrayElements);
+        assertStaticStrings(staticStrings, context.literalRole);
+        return makeValue(
+          "mutable-local",
+          staticStrings,
+          [],
+          [],
+          arrayElements,
+          null,
+          {
+            known: arrayElements.every(({ compileTime }) => compileTime.known),
+            stringConversions,
+            typeofStrings: ["object"],
+            plusStrings: stringConversions,
+          },
+        );
+      }
+      if (receiver.staticStrings.length > 0 || receiver.compileTime.known) {
+        fail(`unanalyzable string-bearing member transform ${memberName}`);
+      }
+    }
+    const knownResult =
+      receiver.compileTime.known &&
+      argumentValues.every(({ compileTime }) => compileTime.known);
+    return makeValue("immutable", [], [], [], null, null, {
+      known: knownResult,
+      typeofStrings: ["has", "includes"].includes(memberName)
+        ? ["boolean"]
+        : [],
+    });
   };
   const evaluateCall = (node, scope, context) => {
     mark(node, "call-expression");
@@ -4946,12 +5292,50 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       }
       return evaluateExpression(argument, scope, context);
     });
+    const deterministicArgumentsKnown = argumentValues.every(
+      ({ compileTime }, index) =>
+        index === failureCallbackIndex || compileTime.known,
+    );
     if (node.callee.type === "Identifier") {
       const binding = directBinding;
       if (binding.kind === "ambient" && binding.name === "String") {
         const strings = argumentValues[0]?.staticStrings ?? [];
+        const exactStrings =
+          argumentValues.length === 0
+            ? [""]
+            : exactStringConversions(argumentValues[0]);
+        if (
+          exactStrings.length === 0 &&
+          (strings.length > 0 || argumentValues[0]?.compileTime.known === true)
+        ) {
+          fail("unanalyzable string-bearing String conversion");
+        }
         assertStaticStrings(strings, context.literalRole);
-        return makeValue("immutable", strings);
+        const staticStrings = [...strings, ...exactStrings];
+        assertStaticStrings(staticStrings, context.literalRole);
+        return makeValue(
+          "immutable",
+          staticStrings,
+          exactStrings,
+          [],
+          null,
+          null,
+          {
+            known: exactStrings.length > 0,
+            stringConversions: exactStrings,
+            typeofStrings: ["string"],
+            plusStrings: exactStrings,
+          },
+        );
+      }
+      if (
+        binding.kind === "ambient" &&
+        ["Boolean", "Number"].includes(binding.name)
+      ) {
+        return makeValue("immutable", [], [], [], null, null, {
+          known: deterministicArgumentsKnown,
+          typeofStrings: [binding.name.toLowerCase()],
+        });
       }
       if (
         binding.kind === "import-callable" &&
@@ -4964,9 +5348,58 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           "nullRecord",
         ].includes(binding.name)
       ) {
+        if (binding.name === "nullRecord") {
+          const entries = argumentValues[0]?.arrayElements ?? null;
+          if (entries === null) {
+            if (argumentValues[0]?.staticStrings.length > 0) {
+              fail("unanalyzable string-bearing nullRecord construction");
+            }
+          } else {
+            const objectProperties = entries.map((entry) => {
+              if (
+                entry.arrayElements?.length !== 2 ||
+                entry.arrayElements[0].exactStrings.length !== 1
+              ) {
+                fail("unanalyzable string-bearing nullRecord entry");
+              }
+              return [
+                entry.arrayElements[0].exactStrings[0],
+                entry.arrayElements[1],
+              ];
+            });
+            if (
+              new Set(objectProperties.map(([name]) => name)).size !==
+              objectProperties.length
+            ) {
+              fail("duplicate nullRecord property");
+            }
+            return makeValue(
+              "mutable-local",
+              mergeStaticStrings(...argumentValues),
+              [],
+              [],
+              null,
+              objectProperties,
+              {
+                known: true,
+                stringConversions: ["[object Object]"],
+                typeofStrings: ["object"],
+                plusStrings: ["[object Object]"],
+              },
+            );
+          }
+        }
         return makeValue(
           "mutable-local",
           mergeStaticStrings(...argumentValues),
+          [],
+          [],
+          null,
+          null,
+          {
+            known: deterministicArgumentsKnown,
+            typeofStrings: ["object"],
+          },
         );
       }
       if (
@@ -4977,7 +5410,51 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           "verifyCandidateContainmentLaunchCapsuleV3",
         ].includes(binding.name)
       ) {
-        return makeValue("frozen", mergeStaticStrings(...argumentValues));
+        if (binding.name === "deepFreeze") {
+          const value = argumentValues[0] ?? immutableValue;
+          return makeValue(
+            "frozen",
+            value.staticStrings,
+            value.exactStrings,
+            value.staticIntegers,
+            value.arrayElements,
+            value.objectProperties,
+            value.compileTime,
+          );
+        }
+        return makeValue(
+          "frozen",
+          mergeStaticStrings(...argumentValues),
+          [],
+          [],
+          null,
+          null,
+          {
+            known: deterministicArgumentsKnown,
+            typeofStrings: ["object"],
+          },
+        );
+      }
+      if (binding.kind === "import-callable") {
+        const resultType = new Map([
+          ["boundedInteger", "number"],
+          ["exactBoolean", "boolean"],
+          ["exactDigest", "string"],
+          ["exactRecord", "object"],
+          ["sha256", "string"],
+        ]).get(binding.name);
+        return makeValue(
+          "immutable",
+          mergeStaticStrings(...argumentValues),
+          [],
+          [],
+          null,
+          null,
+          {
+            known: deterministicArgumentsKnown,
+            typeofStrings: resultType === undefined ? [] : [resultType],
+          },
+        );
       }
       return makeValue("immutable", mergeStaticStrings(...argumentValues));
     }
@@ -5006,7 +5483,9 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           );
         }
         return member.memberName === "has"
-          ? immutableValue
+          ? makeValue("immutable", [], [], [], null, null, {
+              typeofStrings: ["boolean"],
+            })
           : makeValue("private-read");
       }
       if (
@@ -5023,6 +5502,15 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         fail(`private commit ${functionName}:${member.storeName}`);
       }
     }
+    if (member.kind === "safe-method") {
+      return evaluateSafeMemberTransform(member, argumentValues, context);
+    }
+    if (member.kind === "ambient-method") {
+      return makeValue("immutable", [], [], [], null, null, {
+        known: deterministicArgumentsKnown,
+        typeofStrings: ["boolean"],
+      });
+    }
     return immutableValue;
   };
   const evaluateNew = (node, scope, context) => {
@@ -5032,12 +5520,89 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       usage: "constructor",
       literalRole: context.literalRole,
     });
-    for (const argument of node.arguments) {
+    const argumentValues = node.arguments.map((argument) => {
       if (argument.type === "SpreadElement") fail("spread constructor");
-      evaluateExpression(argument, scope, context);
+      return evaluateExpression(argument, scope, context);
+    });
+    let stringConversions = [];
+    let objectProperties = null;
+    if (binding.name === "Error") {
+      const messages =
+        argumentValues.length === 0
+          ? [""]
+          : exactStringConversions(argumentValues[0]);
+      stringConversions = messages.map((message) =>
+        message.length === 0 ? "Error" : `Error: ${message}`,
+      );
+      const nameValue = makeValue(
+        "immutable",
+        ["Error"],
+        ["Error"],
+        [],
+        null,
+        null,
+        {
+          known: true,
+          stringConversions: ["Error"],
+          typeofStrings: ["string"],
+          plusStrings: ["Error"],
+        },
+      );
+      const messageValue = makeValue(
+        "immutable",
+        messages,
+        messages,
+        [],
+        null,
+        null,
+        {
+          known: messages.length > 0,
+          stringConversions: messages,
+          typeofStrings: messages.length > 0 ? ["string"] : [],
+          plusStrings: messages,
+        },
+      );
+      objectProperties = [
+        ["name", nameValue],
+        ["message", messageValue],
+      ];
+    } else if (binding.name === "Set") {
+      stringConversions = ["[object Set]"];
+      const size = argumentValues.length === 0 ? 0 : null;
+      objectProperties = [
+        [
+          "size",
+          makeValue(
+            "immutable",
+            [],
+            [],
+            size === null ? [] : [size],
+            null,
+            null,
+            {
+              known: true,
+              stringConversions: size === null ? [] : [String(size)],
+              typeofStrings: ["number"],
+            },
+          ),
+        ],
+      ];
+    } else if (binding.name === "WeakMap") {
+      stringConversions = ["[object WeakMap]"];
     }
     return makeValue(
       binding.name === "WeakMap" ? "private-store-value" : "mutable-local",
+      [],
+      [],
+      [],
+      null,
+      objectProperties,
+      {
+        known: stringConversions.length > 0,
+        stringConversions,
+        typeofStrings: ["object"],
+        plusStrings: stringConversions,
+      },
     );
   };
   evaluateExpression = (node, scope, context = {}) => {
@@ -5054,14 +5619,46 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         if (element.type === "SpreadElement") fail("array spread");
         return evaluateExpression(element, scope, expressionContext);
       });
-      return makeValue("mutable-local", mergeStaticStrings(...values));
+      const stringConversions = exactArrayStringConversions(values);
+      return makeValue(
+        "mutable-local",
+        mergeStaticStrings(...values),
+        [],
+        [],
+        values,
+        null,
+        {
+          known: values.every(({ compileTime }) => compileTime.known),
+          stringConversions,
+          typeofStrings: ["object"],
+          plusStrings: stringConversions,
+        },
+      );
     }
     if (node.type === "ObjectExpression") {
       mark(node, "object-expression");
-      const values = node.properties.map((property) =>
+      const properties = node.properties.map((property) =>
         visitProperty(property, scope, expressionContext),
       );
-      return makeValue("mutable-local", mergeStaticStrings(...values));
+      if (
+        new Set(properties.map(({ key }) => key)).size !== properties.length
+      ) {
+        fail("duplicate object property");
+      }
+      return makeValue(
+        "mutable-local",
+        mergeStaticStrings(...properties.map(({ value }) => value)),
+        [],
+        [],
+        null,
+        properties.map(({ key, value }) => [key, value]),
+        {
+          known: true,
+          stringConversions: ["[object Object]"],
+          typeofStrings: ["object"],
+          plusStrings: ["[object Object]"],
+        },
+      );
     }
     if (node.type === "CallExpression") {
       return evaluateCall(node, scope, expressionContext);
@@ -5091,8 +5688,49 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       ) {
         fail("non-canonical negative zero");
       }
-      evaluateExpression(node.argument, scope, expressionContext);
-      return immutableValue;
+      const argument = evaluateExpression(
+        node.argument,
+        scope,
+        expressionContext,
+      );
+      if (node.operator === "typeof") {
+        const exactStrings = argument.compileTime.typeofStrings;
+        assertStaticStrings(exactStrings, literalRole);
+        return makeValue(
+          "immutable",
+          exactStrings,
+          exactStrings,
+          [],
+          null,
+          null,
+          {
+            known: exactStrings.length > 0,
+            stringConversions: exactStrings,
+            typeofStrings: exactStrings.length > 0 ? ["string"] : [],
+            plusStrings: exactStrings,
+          },
+        );
+      }
+      if (node.operator === "void") {
+        return makeValue("immutable", [], [], [], null, null, {
+          known: true,
+          stringConversions: ["undefined"],
+          arrayElementStringConversions: [""],
+          typeofStrings: ["undefined"],
+        });
+      }
+      if (node.operator === "-" && argument.staticIntegers.length > 0) {
+        const integers = argument.staticIntegers.map((value) => -value);
+        return makeValue("immutable", [], [], integers, null, null, {
+          known: true,
+          stringConversions: integers.map((value) => String(value)),
+          typeofStrings: ["number"],
+        });
+      }
+      return makeValue("immutable", [], [], [], null, null, {
+        known: argument.compileTime.known,
+        typeofStrings: [node.operator === "-" ? "number" : "boolean"],
+      });
     }
     if (node.type === "BinaryExpression") {
       mark(node, "binary-expression");
@@ -5101,16 +5739,70 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       }
       const left = evaluateExpression(node.left, scope, expressionContext);
       const right = evaluateExpression(node.right, scope, expressionContext);
-      const staticStrings =
+      const compileTimeKnown =
+        left.compileTime.known && right.compileTime.known;
+      const stringCoercion =
         node.operator === "+" &&
-        left.staticStrings.length > 0 &&
-        right.staticStrings.length > 0
-          ? left.staticStrings.flatMap((leftValue) =>
-              right.staticStrings.map((rightValue) => leftValue + rightValue),
-            )
+        (left.compileTime.plusStrings.length > 0 ||
+          right.compileTime.plusStrings.length > 0 ||
+          left.compileTime.typeofStrings.includes("string") ||
+          right.compileTime.typeofStrings.includes("string"));
+      const leftConversions =
+        node.operator === "+" ? exactStringConversions(left) : [];
+      const rightConversions =
+        node.operator === "+" ? exactStringConversions(right) : [];
+      if (
+        stringCoercion &&
+        ((left.compileTime.known && leftConversions.length === 0) ||
+          (right.compileTime.known && rightConversions.length === 0))
+      ) {
+        fail("unanalyzable string-bearing binary + conversion");
+      }
+      const exactStrings =
+        stringCoercion &&
+        leftConversions.length > 0 &&
+        rightConversions.length > 0
+          ? combineExactStrings(leftConversions, rightConversions)
           : [];
+      const comparison = [
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "==",
+        "!=",
+        "===",
+        "!==",
+      ].includes(node.operator);
+      const resultTypes =
+        exactStrings.length > 0
+          ? ["string"]
+          : comparison
+            ? ["boolean"]
+            : node.operator === "+"
+              ? stringCoercion
+                ? ["string"]
+                : ["number", "string"]
+              : ["number"];
+      const staticStrings = [
+        ...mergeStaticStrings(left, right),
+        ...exactStrings,
+      ];
       assertStaticStrings(staticStrings, literalRole);
-      return makeValue("immutable", staticStrings);
+      return makeValue(
+        "immutable",
+        staticStrings,
+        exactStrings,
+        [],
+        null,
+        null,
+        {
+          known: compileTimeKnown,
+          stringConversions: exactStrings,
+          typeofStrings: resultTypes,
+          plusStrings: exactStrings,
+        },
+      );
     }
     if (node.type === "LogicalExpression") {
       mark(node, "logical-expression");
@@ -5120,8 +5812,46 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       const left = evaluateExpression(node.left, scope, expressionContext);
       const right = evaluateExpression(node.right, scope, expressionContext);
       const staticStrings = mergeStaticStrings(left, right);
+      const exactStrings = mergeExactStrings(left, right);
       assertStaticStrings(staticStrings, literalRole);
-      return makeValue("immutable", staticStrings);
+      return makeValue(
+        "immutable",
+        staticStrings,
+        exactStrings,
+        [],
+        null,
+        null,
+        {
+          known: left.compileTime.known && right.compileTime.known,
+          stringConversions: [
+            ...new Set([
+              ...left.compileTime.stringConversions,
+              ...right.compileTime.stringConversions,
+            ]),
+          ],
+          arrayElementStringConversions: [
+            ...new Set([
+              ...exactArrayElementStringConversions(left),
+              ...exactArrayElementStringConversions(right),
+            ]),
+          ],
+          typeofStrings:
+            left.compileTime.known && right.compileTime.known
+              ? [
+                  ...new Set([
+                    ...left.compileTime.typeofStrings,
+                    ...right.compileTime.typeofStrings,
+                  ]),
+                ]
+              : [],
+          plusStrings: [
+            ...new Set([
+              ...left.compileTime.plusStrings,
+              ...right.compileTime.plusStrings,
+            ]),
+          ],
+        },
+      );
     }
     if (node.type === "ConditionalExpression") {
       mark(node, "conditional-expression");
@@ -5137,8 +5867,46 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         expressionContext,
       );
       const staticStrings = mergeStaticStrings(consequent, alternate);
+      const exactStrings = mergeExactStrings(consequent, alternate);
       assertStaticStrings(staticStrings, literalRole);
-      return makeValue("immutable", staticStrings);
+      return makeValue(
+        "immutable",
+        staticStrings,
+        exactStrings,
+        [],
+        null,
+        null,
+        {
+          known: consequent.compileTime.known && alternate.compileTime.known,
+          stringConversions: [
+            ...new Set([
+              ...consequent.compileTime.stringConversions,
+              ...alternate.compileTime.stringConversions,
+            ]),
+          ],
+          arrayElementStringConversions: [
+            ...new Set([
+              ...exactArrayElementStringConversions(consequent),
+              ...exactArrayElementStringConversions(alternate),
+            ]),
+          ],
+          typeofStrings:
+            consequent.compileTime.known && alternate.compileTime.known
+              ? [
+                  ...new Set([
+                    ...consequent.compileTime.typeofStrings,
+                    ...alternate.compileTime.typeofStrings,
+                  ]),
+                ]
+              : [],
+          plusStrings: [
+            ...new Set([
+              ...consequent.compileTime.plusStrings,
+              ...alternate.compileTime.plusStrings,
+            ]),
+          ],
+        },
+      );
     }
     fail(`expression ${node.type}`);
   };
@@ -6712,6 +7480,89 @@ function contextualPositive() {
     const audit = independentStaticAudit(asBytes(sourceText));
     assert.equal(audit.classifiedNodeCount, audit.nodeCount);
   }
+  const trustedComputedStringPositiveSources = [
+    validSkeleton('const boundedAt = "bounded".at(0);'),
+    validSkeleton('const boundedSlice = "bounded".slice(1, 4);'),
+    validSkeleton('const boundedStringSlice = String("bounded").slice(0, 7);'),
+    validSkeleton('const boundedFrozenAt = deepFreeze(["bounded"]).at(0);'),
+    validSkeleton(
+      'function helper() { const values = deepFreeze(["bounded"]); return values.at(0); }',
+    ),
+    validSkeleton(
+      'function helper() { const value = String("bounded"); return value.slice(0, 3); }',
+    ),
+    validSkeleton(
+      'const boundedFrozenString = String(deepFreeze(["bounded"]));',
+    ),
+    validSkeleton(
+      'const boundedObjectMember = deepFreeze({ value: "bounded" }).value;',
+    ),
+    validSkeleton(
+      'function helper() { const record = deepFreeze({ value: "bounded" }); return record.value; }',
+    ),
+    validSkeleton(
+      'const boundedNullRecordMember = deepFreeze(nullRecord([["value", "bounded"]])).value;',
+    ),
+    validSkeleton(
+      'const boundedSliceAt = deepFreeze(["bounded"]).slice(0, 1).at(0);',
+    ),
+    validSkeleton(
+      'const boundedSliceString = String(deepFreeze(["bounded"]).slice(0, 1));',
+    ),
+    validSkeleton("const boundedNullString = String(null);"),
+    validSkeleton("const boundedBooleanString = String(false);"),
+    validSkeleton("const boundedVoidString = String(void 0);"),
+    validSkeleton('const boundedErrorString = String(new Error("bounded"));'),
+    validSkeleton("const boundedSetString = String(new Set());"),
+    validSkeleton(
+      "function helper() { const kind = typeof false; return kind.slice(0, 3); }",
+    ),
+    validSkeleton('const boundedArrayConcat = ["bound"] + "ed";'),
+    validSkeleton(
+      'const boundedFrozenArrayConcat = deepFreeze(["bound"]) + "ed";',
+    ),
+    validSkeleton(
+      'function helper() { const values = deepFreeze(["bound"]); return values.slice(0, 1) + "ed"; }',
+    ),
+    validSkeleton(
+      'const boundedRecordArrayConcat = deepFreeze({ value: ["bound"] }).value + "ed";',
+    ),
+    validSkeleton(
+      'const boundedErrorConcat = new Error("bounded") + " suffix";',
+    ),
+    validSkeleton(
+      'const boundedIncludes = "bounded".includes("bound"); const boundedSetHas = new Set().has(null);',
+    ),
+    validSkeleton(
+      "const boundedStaticDigest = sha256(canonicalJsonBytes(false)); function staticLineHelper() { const boundedStaticLine = canonicalJsonLine(false); return null; }",
+    ),
+    validSkeleton(
+      "const boundedMissing = deepFreeze({}).value; const boundedSum = 1 + 2; const boundedSumType = typeof boundedSum;",
+    ),
+    validSkeleton("const boundedPrimitiveMissing = Boolean(false).value;"),
+    validSkeleton("const boundedUnaryType = typeof -true;"),
+    validSkeleton(
+      'const boundedStringAtMiss = "".at(0); const boundedArrayAtMiss = deepFreeze([]).at(0);',
+    ),
+    validSkeleton(
+      'const boundedNullJoin = "bounded" + [null]; const boundedUndefinedJoin = "bounded" + [void 0]; const boundedNestedNullJoin = "bounded" + [[null]];',
+    ),
+    validSkeleton("const boundedLineType = typeof canonicalJsonLine(null);"),
+    validSkeleton(
+      "function invariantCallTypeHelper(input) { const stringKind = typeof String(input); const booleanKind = typeof Boolean(input); const numberKind = typeof Number(input); const bytesKind = typeof canonicalJsonBytes(input); return null; }",
+    ),
+    validSkeleton(
+      "function invariantOperatorTypeHelper(input) { const negated = !input; const discarded = void input; const compared = input === input; const subtracted = input - 1; return null; }",
+    ),
+    validSkeleton(
+      "function opaqueResultHelper() { const bytes = canonicalJsonBytes(null); return null; }",
+    ),
+  ];
+  assert.equal(trustedComputedStringPositiveSources.length, 34);
+  for (const sourceText of trustedComputedStringPositiveSources) {
+    const audit = independentStaticAudit(asBytes(sourceText));
+    assert.equal(audit.classifiedNodeCount, audit.nodeCount);
+  }
 
   const mutationKills = [];
   const kill = (id, run, expectedMessage = null) => {
@@ -6976,6 +7827,361 @@ function contextualPositive() {
   ];
   for (const [id, sourceText] of contextualMutationSources) {
     kill(id, () => auditExtra(sourceText), /^direct static gate: contextual /u);
+  }
+  const computedEquivalentMutationSources = [
+    [
+      "direct-computed-equivalent-node-at",
+      'const value = "n".at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-node-string-at",
+      'const value = String("n").at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-node-frozen-array-at",
+      'const value = deepFreeze(["n"]).at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-node-frozen-local-at",
+      'function helper() { const values = deepFreeze(["n"]); return values.at(0) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-string-frozen-array",
+      'const value = String(deepFreeze(["n"])) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-frozen-object-member",
+      'const value = deepFreeze({ value: "n" }).value + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-frozen-local-object-member",
+      'function helper() { const record = deepFreeze({ value: "n" }); return record.value + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-null-record-member",
+      'const value = deepFreeze(nullRecord([["value", "n"]])).value + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-array-slice-at",
+      'const value = deepFreeze(["n"]).slice(0, 1).at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-array-slice-string",
+      'const value = String(deepFreeze(["n"]).slice(0, 1)) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-proc-slice",
+      'const value = "/prX".slice(0, 3) + "oc/self/environ";',
+    ],
+    [
+      "direct-computed-equivalent-evaluator-slice",
+      'const value = "evaX".slice(0, 3) + "luator";',
+    ],
+    [
+      "direct-computed-equivalent-test-path-slice",
+      'const value = "../teX".slice(0, 5) + "st/probe.mjs";',
+    ],
+    [
+      "direct-computed-equivalent-openrouter-slice",
+      'const value = "OpenX".slice(0, 4) + "Router";',
+    ],
+    [
+      "direct-computed-equivalent-process-at",
+      'const value = "p".at(0) + "rocess";',
+    ],
+    [
+      "direct-computed-equivalent-constructor-slice",
+      'const value = "conX".slice(0, 3) + "structor";',
+    ],
+    ["direct-computed-equivalent-eval-at", 'const value = "e".at(0) + "val";'],
+    [
+      "direct-computed-equivalent-function-slice",
+      'const value = "FunX".slice(0, 3) + "ction";',
+    ],
+    [
+      "direct-computed-equivalent-buffer-slice",
+      'const value = "BufX".slice(0, 3) + "fer";',
+    ],
+    ["direct-computed-equivalent-date-at", 'const value = "D".at(0) + "ate";'],
+    [
+      "direct-computed-equivalent-json-slice",
+      'const value = "JSX".slice(0, 2) + "ON";',
+    ],
+    [
+      "direct-computed-equivalent-promise-slice",
+      'const value = "ProX".slice(0, 3) + "mise";',
+    ],
+    [
+      "direct-computed-equivalent-proxy-slice",
+      'const value = "PrX".slice(0, 2) + "oxy";',
+    ],
+    [
+      "direct-computed-equivalent-weakset-slice",
+      'const value = "WeakX".slice(0, 4) + "Set";',
+    ],
+    [
+      "direct-computed-equivalent-proto-slice",
+      'const value = "__prX".slice(0, 4) + "oto__";',
+    ],
+    [
+      "direct-computed-equivalent-fetch-at",
+      'const value = "f".at(0) + "etch";',
+    ],
+    [
+      "direct-computed-equivalent-global-slice",
+      'const value = "globalX".slice(0, 6) + "This";',
+    ],
+    [
+      "direct-computed-equivalent-prototype-slice",
+      'const value = "proX".slice(0, 3) + "totype";',
+    ],
+    [
+      "direct-computed-equivalent-timeout-slice",
+      'const value = "setX".slice(0, 3) + "Timeout";',
+    ],
+    [
+      "direct-computed-equivalent-require-slice",
+      'const value = "reX".slice(0, 2) + "quire";',
+    ],
+    [
+      "direct-computed-equivalent-null-string-at",
+      'const value = String(null).at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-boolean-string-at",
+      'const value = String(false).at(0) + "etch";',
+    ],
+    [
+      "direct-computed-equivalent-void-string-at",
+      'const value = String(void 0).at(3) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-error-string-at",
+      'const value = String(new Error("n")).at(7) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-set-string-slice",
+      'const value = String(new Set()).slice(8, 9) + "etTimeout";',
+    ],
+    [
+      "direct-computed-equivalent-local-typeof-at",
+      'function helper() { const kind = typeof false; return kind.at(0) + "uffer"; }',
+    ],
+  ];
+  assert.equal(computedEquivalentMutationSources.length, 36);
+  for (const [id, sourceText] of computedEquivalentMutationSources) {
+    kill(
+      id,
+      () => auditExtra(sourceText),
+      /^direct static gate: contextual capability-looking compile-time string /u,
+    );
+  }
+  kill(
+    "direct-computed-equivalent-arithmetic-string-at",
+    () => auditExtra('const value = String(0 / 0).at(0) + "ode:fs";'),
+    /^direct static gate: contextual unanalyzable string-bearing String conversion$/u,
+  );
+  kill(
+    "direct-computed-equivalent-duplicate-object-last-value",
+    () =>
+      auditExtra(
+        'const value = deepFreeze({ value: "safe", value: "n" }).value + "ode:fs";',
+      ),
+    /^direct static gate: contextual duplicate object property$/u,
+  );
+  const computedKnownResultMutationSources = [
+    [
+      "direct-computed-equivalent-implicit-array-plus",
+      'const value = ["n"] + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-frozen-array-plus",
+      'const value = deepFreeze(["n"]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-array-slice-plus",
+      'const value = deepFreeze(["n"]).slice(0, 1) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-nested-array-plus",
+      'const value = [["n"]] + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-conditional-array-plus",
+      'const value = (true ? ["n"] : ["safe"]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-logical-array-plus",
+      'const value = (true && ["n"]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-nullish-array-plus",
+      'const value = (null ?? ["n"]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-record-array-plus",
+      'const value = deepFreeze({ value: ["n"] }).value + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-null-record-array-plus",
+      'const value = deepFreeze(nullRecord([["value", ["n"]]])).value + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-implicit-error-plus",
+      'const value = new Error("n") + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-boolean-call-string",
+      'const value = String(Boolean(false)).at(0) + "etch";',
+    ],
+    [
+      "direct-computed-equivalent-includes-string",
+      'const value = String("x".includes("x")).at(3) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-set-has-string",
+      'const value = String(new Set().has(null)).at(3) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-array-is-array-string",
+      'const value = String(Array.isArray([])).at(3) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-number-is-integer-string",
+      'const value = String(Number.isInteger(0)).at(3) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-object-has-own-string",
+      'const value = String(Object.hasOwn({ value: null }, "value")).at(3) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-canonical-json-bytes-string",
+      'const value = String(canonicalJsonBytes(null)).at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-canonical-json-line-string",
+      'const value = String(canonicalJsonLine(false)).at(0) + "etch";',
+    ],
+    [
+      "direct-computed-equivalent-static-sha-at",
+      'const value = sha256(canonicalJsonBytes(false)).at(0) + "etch";',
+    ],
+    [
+      "direct-computed-equivalent-arithmetic-typeof",
+      'function helper() { const result = 1 - 1; const kind = typeof result; return kind.at(0) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-comparison-typeof",
+      'function helper() { const result = 1 < 2; const kind = typeof result; return kind.at(4) + "val"; }',
+    ],
+    [
+      "direct-computed-equivalent-error-name",
+      'const value = new Error("bounded").name.at(0) + "val";',
+    ],
+    [
+      "direct-computed-equivalent-set-size-typeof",
+      'function helper() { const size = new Set().size; const kind = typeof size; return kind.at(0) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-missing-object-property",
+      'const value = String(deepFreeze({}).value).at(1) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-missing-null-record-property",
+      'function helper() { const record = deepFreeze(nullRecord([])); const missing = record.value; const kind = typeof missing; return kind.at(1) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-missing-primitive-property",
+      'const value = String(Boolean(false).value).at(1) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-unary-number-type",
+      'const result = -true; const kind = typeof result; const value = kind.at(0) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-string-at-undefined-type",
+      'const result = "".at(0); const kind = typeof result; const value = kind.at(1) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-array-at-undefined-type",
+      'const result = deepFreeze([]).at(0); const kind = typeof result; const value = kind.at(1) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-line-result-type",
+      'const kind = typeof canonicalJsonLine(null); const value = kind.at(0) + "penRouter";',
+    ],
+    [
+      "direct-computed-equivalent-null-array-join",
+      'const value = "n" + [null] + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-frozen-null-array-join",
+      'const value = "n" + deepFreeze([null]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-nested-null-array-join",
+      'const value = "n" + deepFreeze([[null]]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-missing-array-element-join",
+      'const missing = deepFreeze({}).value; const value = "n" + [missing] + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-null-array-string",
+      'const value = "n" + String([null]) + "ode:fs";',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-string-type",
+      'function helper(input) { const kind = typeof String(input); return kind.at(4) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-boolean-type",
+      'function helper(input) { const kind = typeof Boolean(input); return kind.at(4) + "val"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-number-type",
+      'function helper(input) { const kind = typeof Number(input); return kind.at(0) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-bytes-type",
+      'function helper(input) { const kind = typeof canonicalJsonBytes(input); return kind.at(0) + "penRouter"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-sha-type",
+      'function helper(input) { const kind = typeof sha256(input); return kind.at(4) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-includes-type",
+      'function helper(input) { const result = "x".includes(String(input)); const kind = typeof result; return kind.at(4) + "val"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-negation-type",
+      'function helper(input) { const result = !input; const kind = typeof result; return kind.at(4) + "val"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-void-type",
+      'function helper(input) { const result = void input; const kind = typeof result; return kind.at(1) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-comparison-type",
+      'function helper(input) { const result = input === input; const kind = typeof result; return kind.at(4) + "val"; }',
+    ],
+    [
+      "direct-computed-equivalent-dynamic-arithmetic-type",
+      'function helper(input) { const result = input - 1; const kind = typeof result; return kind.at(0) + "ode:fs"; }',
+    ],
+    [
+      "direct-computed-equivalent-known-opaque-member",
+      'function helper() { const bytes = canonicalJsonBytes(null); const result = bytes.name; return String(result).at(1) + "ode:fs"; }',
+    ],
+  ];
+  assert.equal(computedKnownResultMutationSources.length, 46);
+  for (const [id, sourceText] of computedKnownResultMutationSources) {
+    kill(
+      id,
+      () => auditExtra(sourceText),
+      /^direct static gate: contextual (?:capability-looking compile-time string |unanalyzable string-bearing)/u,
+    );
   }
   const contextualPrivateMutationSources = [
     [
@@ -7328,11 +8534,11 @@ function contextualPositive() {
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 215,
-      killed: 215,
+      count: 299,
+      killed: 299,
       survivors: 0,
       idsSha256:
-        "50fbd1a9ebae2c1c33727377d57a6c3c07a5132ae4df36d99bd6694b9d0e126d",
+        "3db87d662a945ffdef308ecaf2f7e143b53a0e02f181c983aefd4c7f867d8c7d",
     },
   );
   assert.equal(
