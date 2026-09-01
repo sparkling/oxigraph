@@ -7459,13 +7459,51 @@ function directCommittedProtectedProjectionBody(schemaPath, storeName) {
   return `const projection = deepFreeze(nullRecord([["schema", ${schemaPath}], ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]])); const privateMetadata = deepFreeze(nullRecord([])); ${storeName}.set(projection, privateMetadata); return projection;`;
 }
 
-function directStateHashProjectionBody({ includeDigestTooEarly = false } = {}) {
-  const exactEntries =
-    '["schema", guardianContract.schemas.stateProjection], ["mode", selectedMode], ["phase", selectedPhase], ["requirementsSha256", CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256], ["startupSha256", guardianContract.startupMaps.normalSha256], ["epochSha256", guardianContract.startupMaps.recoveryOnlySha256], ["lastWireFrameSha256", guardianContract.vocabularies.previousFrameGenesisSha256], ["nextWireSequence", 0], ["aggregateWireBytes", 0], ["admissionFrameSha256", null], ["recoveryRequestFrameSha256", null], ["admissionCount", 0], ["cancelObserved", false], ["controllerClosedObserved", false], ["diagnosticFailureObserved", false], ["recoveryControlHandoffObserved", false], ["controlTerminalReason", null], ["statusEofObserved", false], ["transcriptTerminal", false], ["eventCount", 0], ["authority", guardianContract.authority], ["physicalFacts", guardianContract.physicalFacts]';
-  const invalidEntry = includeDigestTooEarly
-    ? ', ["stateSha256", guardianContract.startupMaps.recoveryOnlySha256]'
-    : "";
-  return `const selectedMode = guardianContract.modes.at(0); const selectedPhase = guardianContract.vocabularies.phases.at(0); const statePreimage = deepFreeze(nullRecord([${exactEntries}${invalidEntry}])); const projectionDigest = sha256(canonicalJsonBytes(statePreimage)); const projection = deepFreeze(nullRecord([${exactEntries}, ["stateSha256", projectionDigest]])); const privateMetadata = deepFreeze(nullRecord([])); stateMetadata.set(projection, privateMetadata); return projection;`;
+function directStateHashProjectionBody({ preimageMutation = null } = {}) {
+  const exactEntries = [
+    '["schema", guardianContract.schemas.stateProjection]',
+    '["mode", selectedMode]',
+    '["phase", selectedPhase]',
+    '["requirementsSha256", CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256]',
+    '["startupSha256", guardianContract.startupMaps.normalSha256]',
+    '["epochSha256", guardianContract.startupMaps.recoveryOnlySha256]',
+    '["lastWireFrameSha256", guardianContract.vocabularies.previousFrameGenesisSha256]',
+    '["nextWireSequence", 0]',
+    '["aggregateWireBytes", 0]',
+    '["admissionFrameSha256", null]',
+    '["recoveryRequestFrameSha256", null]',
+    '["admissionCount", 0]',
+    '["cancelObserved", false]',
+    '["controllerClosedObserved", false]',
+    '["diagnosticFailureObserved", false]',
+    '["recoveryControlHandoffObserved", false]',
+    '["controlTerminalReason", null]',
+    '["statusEofObserved", false]',
+    '["transcriptTerminal", false]',
+    '["eventCount", 0]',
+    '["authority", guardianContract.authority]',
+    '["physicalFacts", guardianContract.physicalFacts]',
+  ];
+  const preimageEntries = [...exactEntries];
+  if (preimageMutation === "digest-too-early") {
+    preimageEntries.push(
+      '["stateSha256", guardianContract.startupMaps.recoveryOnlySha256]',
+    );
+  } else if (preimageMutation === "omitted") {
+    preimageEntries.splice(19, 1);
+  } else if (preimageMutation === "reordered") {
+    [preimageEntries[17], preimageEntries[18]] = [
+      preimageEntries[18],
+      preimageEntries[17],
+    ];
+  } else if (preimageMutation === "substituted") {
+    preimageEntries[0] = '["schema", guardianContract.schemas.inputProjection]';
+  } else if (preimageMutation === "arbitrary") {
+    preimageEntries.splice(2, 18);
+  } else if (preimageMutation !== null) {
+    throw new Error(`unclassified state preimage mutation ${preimageMutation}`);
+  }
+  return `const selectedMode = guardianContract.modes.at(0); const selectedPhase = guardianContract.vocabularies.phases.at(0); const statePreimage = deepFreeze(nullRecord([${preimageEntries.join(", ")}])); const projectionDigest = sha256(canonicalJsonBytes(statePreimage)); const projection = deepFreeze(nullRecord([${exactEntries.join(", ")}, ["stateSha256", projectionDigest]])); const privateMetadata = deepFreeze(nullRecord([])); stateMetadata.set(projection, privateMetadata); return projection;`;
 }
 
 function directFrozenSourceShapePolicyControls() {
@@ -7634,7 +7672,53 @@ function directFrozenSourceShapePolicyControls() {
       expectedRejection:
         "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT",
       source: directProvenanceRequirementsSkeleton(
-        directStateHashProjectionBody({ includeDigestTooEarly: true }),
+        directStateHashProjectionBody({
+          preimageMutation: "digest-too-early",
+        }),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-state-omitted-field-preimage-hash",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT",
+      source: directProvenanceRequirementsSkeleton(
+        directStateHashProjectionBody({ preimageMutation: "omitted" }),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-state-reordered-field-preimage-hash",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT",
+      source: directProvenanceRequirementsSkeleton(
+        directStateHashProjectionBody({ preimageMutation: "reordered" }),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-state-substituted-schema-preimage-hash",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT",
+      source: directProvenanceRequirementsSkeleton(
+        directStateHashProjectionBody({ preimageMutation: "substituted" }),
+        "",
+        "initializeCandidateContainmentGuardianControlV1",
+      ),
+    }),
+    Object.freeze({
+      id: "direct-state-arbitrary-short-preimage-hash",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance STATE_PREIMAGE_NOT_EXACT",
+      source: directProvenanceRequirementsSkeleton(
+        directStateHashProjectionBody({ preimageMutation: "arbitrary" }),
         "",
         "initializeCandidateContainmentGuardianControlV1",
       ),
@@ -7686,6 +7770,44 @@ function directFrozenSourceShapePolicyControls() {
       source: directProvenanceRequirementsSkeleton(
         `${verifyLaunch} const selectedFile = directSelectLaunchFile(launchResult); const fileIdentity = directNormalizeLaunchIdentity(selectedFile); const fileIdentitySha256 = directDigestLaunchIdentity(fileIdentity); const requirementsEqual = launchResult.requirementsSha256 === CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3; const rawEqual = launchResult.rawSha256 === admission.launchCapsuleV3Sha256; const identityEqual = fileIdentity.role === selectedFile.role && fileIdentity.byteLength === selectedFile.byteLength && fileIdentity.sha256 === selectedFile.sha256; return requirementsEqual && rawEqual && identityEqual && fileIdentitySha256.length === 64;`,
         `${rejectShape} function directSelectLaunchFile(value) { return value.files.at(0); } function directNormalizeLaunchIdentity(value) { return deepFreeze(nullRecord([["role", value.role], ["byteLength", value.byteLength], ["sha256", value.sha256]])); } function directDigestLaunchIdentity(value) { return sha256(canonicalJsonBytes(value)); }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-bounded-dynamic-file-projection",
+      accepted: true,
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} const right = exactRecord(decodedFrame.value, guardianContract.frameFields.admissionRight, "admission right", rejectDirectShape); const index = boundedInteger(right.index, "admission right index", 0, guardianContract.limits.admissionRightsCount, rejectDirectBounds); const selectedFile = launchResult.files.at(index); const identitySha256 = sha256(canonicalJsonBytes(selectedFile.identity)); const requirementsEqual = launchResult.requirementsSha256 === CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3; const fileEqual = right.role === selectedFile.role && right.byteLength === selectedFile.byteLength && right.contentSha256 === selectedFile.sha256 && right.launchFileIdentitySha256 === identitySha256 && right.currentOffset === selectedFile.initialOffset; return requirementsEqual && fileEqual;`,
+        `${rejectShape} ${rejectBounds}`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-unbounded-dynamic-file-index",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} const selectedFile = launchResult.files.at(admission.sequence); return selectedFile.role === admission.action;`,
+        rejectShape,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-identity-direct-escape",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_ESCAPE",
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} const index = boundedInteger(admission.sequence, "launch file index", 0, guardianContract.limits.admissionRightsCount, rejectDirectBounds); const selectedFile = launchResult.files.at(index); return selectedFile.identity;`,
+        `${rejectShape} ${rejectBounds}`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-pinned-launch-verifier-identity-wrong-member",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance PINNED_IMPORT_MEMBER_NOT_ALLOWED",
+      source: directProvenanceRequirementsSkeleton(
+        `${verifyLaunch} const index = boundedInteger(admission.sequence, "launch file index", 0, guardianContract.limits.admissionRightsCount, rejectDirectBounds); const selectedFile = launchResult.files.at(index); return selectedFile.identity.environment;`,
+        `${rejectShape} ${rejectBounds}`,
       ),
     }),
     Object.freeze({
@@ -7786,6 +7908,26 @@ function directFrozenSourceShapePolicyControls() {
       source: directProvenanceRequirementsSkeleton(
         `${decodeStatus} const normalizedStatus = exactRecord(decodedFrame.value, guardianContract.frameFields.STATUS, "status frame", rejectDirectShape); const generatedStatus = deepFreeze(nullRecord([["schema", guardianContract.schemas.wireFrame]])); const normalizedLength = directFromNormalized(normalizedStatus); const generatedLength = directFromGenerated(generatedStatus); return normalizedLength + generatedLength;`,
         `${rejectShape} function directSchemaLeaf(value) { return value.schema; } function directSchemaLength(value) { return directSchemaLeaf(value).length; } function directFromNormalized(value) { return directSchemaLength(value); } function directFromGenerated(value) { return directSchemaLength(value); }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-transitive-untrusted-caller",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALLER_UNTRUSTED",
+      source: directProvenanceRequirementsSkeleton(
+        `${decodeStatus} return directUntrustedWrapper(decodedFrame.value);`,
+        `${rejectShape} function directUntrustedLeaf(value) { return value.schema; } function directUntrustedWrapper(value) { return directUntrustedLeaf(value); }`,
+      ),
+    }),
+    Object.freeze({
+      id: "direct-local-helper-transitive-mixed-callers",
+      accepted: false,
+      expectedRejection:
+        "direct static gate: contextual provenance LOCAL_CALLER_MIXED",
+      source: directProvenanceRequirementsSkeleton(
+        `${decodeStatus} const normalizedStatus = exactRecord(decodedFrame.value, guardianContract.frameFields.STATUS, "status frame", rejectDirectShape); const trusted = directMixedTrustedWrapper(normalizedStatus); const raw = directMixedRawWrapper(decodedFrame.value); return trusted + raw;`,
+        `${rejectShape} function directMixedLeaf(value) { return value.schema; } function directMixedTrustedWrapper(value) { return directMixedLeaf(value); } function directMixedRawWrapper(value) { return directMixedLeaf(value); }`,
       ),
     }),
     Object.freeze({
@@ -8172,10 +8314,10 @@ function directProvenancePolicyControls() {
 
 function observeDirectProvenancePolicyControls() {
   const controls = directProvenancePolicyControls();
-  assert.equal(controls.length, 63);
-  assert.equal(new Set(controls.map(({ id }) => id)).size, 63);
-  assert.equal(controls.filter(({ accepted }) => accepted).length, 26);
-  assert.equal(controls.filter(({ accepted }) => !accepted).length, 37);
+  assert.equal(controls.length, 73);
+  assert.equal(new Set(controls.map(({ id }) => id)).size, 73);
+  assert.equal(controls.filter(({ accepted }) => accepted).length, 27);
+  assert.equal(controls.filter(({ accepted }) => !accepted).length, 46);
   return controls.map(({ id, accepted, expectedRejection = null, source }) => {
     let sourceParsed = true;
     try {
