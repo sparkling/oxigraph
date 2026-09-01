@@ -6923,6 +6923,79 @@ const PRIVATE_COMMIT_TAIL_CONTROLS = Object.freeze(
 );
 assert.equal(PRIVATE_COMMIT_TAIL_CONTROLS.length, 30);
 
+const C13A_STATE_OWNER_TRANSITION_TAIL_BODY =
+  'const result = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", result]])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;';
+
+const C13A_STATE_OWNER_TRANSITION_TAIL_POSITIVES = Object.freeze(
+  [
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ].map((functionName) =>
+    Object.freeze({
+      functionName,
+      source: sourceSkeleton(
+        "",
+        new Map([[functionName, C13A_STATE_OWNER_TRANSITION_TAIL_BODY]]),
+      ),
+    }),
+  ),
+);
+
+const C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES = Object.freeze(
+  [
+    Object.freeze({
+      name: "state owner transition contains another state",
+      functionName: "initializeCandidateContainmentGuardianControlV1",
+      body: 'const result = deepFreeze(nullRecord([])); const wrongState = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", wrongState]])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;',
+      expected:
+        /^Error: static gate: ESTree private state transition must directly contain committed result initializeCandidateContainmentGuardianControlV1$/u,
+    }),
+    Object.freeze({
+      name: "state owner transition omits state",
+      functionName: "reduceCandidateContainmentGuardianControlV1",
+      body: "const result = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;",
+      expected:
+        /^Error: static gate: ESTree private state transition must directly contain committed result reduceCandidateContainmentGuardianControlV1$/u,
+    }),
+    Object.freeze({
+      name: "state owner transition retains private metadata",
+      functionName: "initializeCandidateContainmentGuardianControlV1",
+      body: 'const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", result], ["metadata", metadata]])); stateMetadata.set(result, metadata); return transition;',
+      expected:
+        /^Error: static gate: ESTree private state transition contains metadata initializeCandidateContainmentGuardianControlV1$/u,
+    }),
+    Object.freeze({
+      name: "state owner transition is mutable",
+      functionName: "reduceCandidateContainmentGuardianControlV1",
+      body: 'const result = deepFreeze(nullRecord([])); const transition = nullRecord([["state", result]]); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return transition;',
+      expected:
+        /^Error: static gate: ESTree raw or unknown value returned from function$/u,
+    }),
+    Object.freeze({
+      name: "non-state owner cannot use transition return exception",
+      functionName: "createCandidateContainmentGuardianStartupV1",
+      body: 'const result = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", result]])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return transition;',
+      expected:
+        /^Error: static gate: ESTree private commit tail createCandidateContainmentGuardianStartupV1$/u,
+    }),
+    Object.freeze({
+      name: "state owner performs post-commit work",
+      functionName: "initializeCandidateContainmentGuardianControlV1",
+      body: 'const result = deepFreeze(nullRecord([])); const transition = deepFreeze(nullRecord([["state", result]])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); sha256(canonicalJsonBytes(null)); return transition;',
+      expected:
+        /^Error: static gate: ESTree private commit tail initializeCandidateContainmentGuardianControlV1$/u,
+    }),
+  ].map((control) =>
+    Object.freeze({
+      ...control,
+      source: sourceSkeleton(
+        "",
+        new Map([[control.functionName, control.body]]),
+      ),
+    }),
+  ),
+);
+
 const PRIVATE_COMMIT_PROVENANCE_FAMILIES = Object.freeze([
   "unfrozen key",
   "unfrozen metadata",
@@ -14782,6 +14855,22 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
       "candidate evaluation and candidate-connected runtime acceptance remain disabled",
     ],
   });
+  for (const {
+    functionName,
+    source,
+  } of C13A_STATE_OWNER_TRANSITION_TAIL_POSITIVES) {
+    assert.doesNotThrow(
+      () => auditCandidateSource(source),
+      `${functionName} commits its state and returns its containing transition`,
+    );
+  }
+  for (const {
+    name,
+    source,
+    expected,
+  } of C13A_STATE_OWNER_TRANSITION_TAIL_NEGATIVES) {
+    assert.throws(() => auditCandidateSource(source), expected, name);
+  }
   const baselineAudit = auditCandidateSource(sourceSkeleton());
   assert.deepEqual(
     Object.fromEntries(
