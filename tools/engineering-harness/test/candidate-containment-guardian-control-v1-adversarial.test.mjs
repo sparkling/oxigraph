@@ -18,6 +18,37 @@ const EXACT_V2_URL = new URL(
   "../src/candidate/containment-exact-v2.mjs",
   import.meta.url,
 );
+const HARNESS_PACKAGE_URL = new URL("../package.json", import.meta.url);
+const HARNESS_LOCK_URL = new URL("../package-lock.json", import.meta.url);
+const ACORN_PACKAGE_URL = new URL(
+  "../node_modules/acorn/package.json",
+  import.meta.url,
+);
+const EXPECTED_DIRECT_ACORN = Object.freeze({
+  version: "8.18.0",
+  integrity:
+    "sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==",
+  license: "MIT",
+  packageJsonSha256:
+    "5c1ed7259579a7899b303f514b0194adcb9fe474fc7d136a84c6a45f10eefc84",
+  importEntrypoint: "./dist/acorn.mjs",
+  importEntrypointSha256:
+    "953573b8fdab71599749ea5f2b33d3e760c2116178f9423ee7458dbe39d59453",
+});
+const ACORN_IMPORT_ENTRYPOINT_URL = new URL(
+  EXPECTED_DIRECT_ACORN.importEntrypoint,
+  ACORN_PACKAGE_URL,
+);
+const DIRECT_ACORN_PARSE_OPTIONS = Object.freeze({
+  ecmaVersion: 2022,
+  sourceType: "module",
+  allowAwaitOutsideFunction: false,
+  allowHashBang: false,
+  allowReturnOutsideFunction: false,
+  preserveParens: true,
+});
+const DIRECT_PARSER_LOAD_AUDIT_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-direct-parser-load/v1";
 const EXPECTED_EXACT_V2_SOURCE_SHA256 =
   "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3";
 const ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA =
@@ -653,6 +684,53 @@ const EXPECTED_EXPORTS = Object.freeze([
   "reduceCandidateContainmentGuardianControlV1",
   "verifyCandidateContainmentGuardianStatusFrameV1",
 ]);
+const EXPECTED_DIRECT_FUNCTION_SIGNATURES = Object.freeze(
+  Object.entries({
+    createCandidateContainmentGuardianStartupV1: [
+      "startupReportBytes",
+      "epochBytes",
+      "epochEofObserved",
+    ],
+    createCandidateContainmentGuardianAdmissionInputV1: [
+      "currentState",
+      "admissionFrameBytes",
+      "recvmsgReportBytes",
+    ],
+    createCandidateContainmentGuardianCancelInputV1: [
+      "currentState",
+      "cancelFrameBytes",
+      "messageTruncated",
+      "controlTruncated",
+      "controlMessageCount",
+    ],
+    createCandidateContainmentGuardianRecoveryRequestInputV1: [
+      "currentState",
+      "recoveryRequestFrameBytes",
+      "requestEofObserved",
+    ],
+    createCandidateContainmentGuardianControllerClosedInputV1: ["currentState"],
+    createCandidateContainmentGuardianDiagnosticFailureInputV1: [
+      "currentState",
+      "diagnosticSummaryReportBytes",
+      "rawDiagnosticBytes",
+    ],
+    createCandidateContainmentGuardianRecoveryControlHandoffInputV1: [
+      "currentState",
+    ],
+    createCandidateContainmentGuardianStatusEofInputV1: ["currentState"],
+    initializeCandidateContainmentGuardianControlV1: ["startupProjection"],
+    reduceCandidateContainmentGuardianControlV1: [
+      "currentState",
+      "brandedInput",
+    ],
+    verifyCandidateContainmentGuardianStatusFrameV1: [
+      "startupProjection",
+      "statusFrameBytes",
+    ],
+  }).map(([name, parameters]) =>
+    Object.freeze({ name, parameters: Object.freeze(parameters) }),
+  ),
+);
 
 const ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1";
@@ -737,9 +815,9 @@ function validateAdversarialCandidateTestInventory() {
   });
 }
 
-function assertCandidateTestInputsAtExecution(registration, requiredInputs) {
+function assertCandidateTestInputsAtExecution(captured, requiredInputs) {
   for (const name of requiredInputs) {
-    const value = registration[name];
+    const value = captured[name];
     assert.notEqual(
       value,
       undefined,
@@ -749,6 +827,142 @@ function assertCandidateTestInputsAtExecution(registration, requiredInputs) {
       assert.equal(typeof value, "function");
     }
   }
+}
+
+const C13_DEFERRED_CALLBACK_RESULT_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c13-deferred-callback/v1";
+const C13_BYTE_POSITION_OPERATION = Object.freeze({
+  startupReportBytes: "createCandidateContainmentGuardianStartupV1",
+  epochBytes: "createCandidateContainmentGuardianStartupV1",
+  admissionFrameBytes: "createCandidateContainmentGuardianAdmissionInputV1",
+  recvmsgReportBytes: "createCandidateContainmentGuardianAdmissionInputV1",
+  cancelFrameBytes: "createCandidateContainmentGuardianCancelInputV1",
+  recoveryRequestFrameBytes:
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+  diagnosticSummaryReportBytes:
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+  rawDiagnosticBytes:
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+  statusFrameBytes: "verifyCandidateContainmentGuardianStatusFrameV1",
+});
+const C13_BYTE_POSITION_CASES = Object.freeze([
+  "minimum",
+  "maximum",
+  "own-length-collision",
+  "subclass",
+  "foreign-prototype",
+  "shared-backing",
+  "bounds-before-shape",
+  "proxy-trap-free",
+  "non-buffer",
+]);
+const C13_PRIVATE_STORE_PHASES = Object.freeze([
+  "earlyFailure",
+  "lateFailure",
+  "success",
+  "failureAfterSuccess",
+  "crossModule",
+]);
+
+function c13DeferredCallbackResult(id) {
+  return Object.freeze({
+    schema: C13_DEFERRED_CALLBACK_RESULT_SCHEMA,
+    id,
+    status: "DEFERRED_SOURCE_ABSENT",
+    candidateBehaviorAttemptCount: 0,
+    freshLoaderCallCount: 0,
+    candidateBehaviorProved: false,
+  });
+}
+
+function c13RunBytePositionCandidateControls({ candidate, oracle }) {
+  if (candidate === null) {
+    return c13DeferredCallbackResult("byte-position-carrier-controls");
+  }
+  assert.equal(typeof candidate, "object");
+  assert.notEqual(oracle, null);
+  const oracleIdentitySha256 =
+    oracle.identitySha256 ?? oracle.requirementsSha256 ?? null;
+  assert.match(oracleIdentitySha256, /^[0-9a-f]{64}$/u);
+  const controlIds = [];
+  for (const spec of BYTE_POSITION_SPECS) {
+    const operation = C13_BYTE_POSITION_OPERATION[spec.name];
+    assert.equal(typeof candidate[operation], "function", operation);
+    for (const family of C13_BYTE_POSITION_CASES) {
+      const control = Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-control/v1",
+        position: spec.name,
+        minimumBytes: spec.minimumBytes,
+        maximumBytes: spec.maximumBytes,
+        family,
+        oracleIdentitySha256,
+      });
+      candidate[operation](control);
+      controlIds.push(`${spec.name}:${family}`);
+    }
+  }
+  assert.equal(controlIds.length, 81);
+  assert.equal(new Set(controlIds).size, 81);
+  return Object.freeze({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-dispatch/v1",
+    positionCount: BYTE_POSITION_SPECS.length,
+    familyCount: C13_BYTE_POSITION_CASES.length,
+    controlCount: controlIds.length,
+    controlIds: Object.freeze(controlIds),
+    candidateBehaviorProved: false,
+  });
+}
+
+async function c13RunPrivateStoreCandidateControls({
+  candidate,
+  oracle,
+  loadFreshCandidate,
+}) {
+  if (candidate === null) {
+    return c13DeferredCallbackResult("private-store-commit-controls");
+  }
+  assert.equal(typeof candidate, "object");
+  assert.notEqual(oracle, null);
+  assert.equal(typeof loadFreshCandidate, "function");
+  const freshCandidate = await loadFreshCandidate();
+  assert.equal(typeof freshCandidate, "object");
+  assert.notEqual(freshCandidate, candidate);
+  const controlIds = [];
+  for (const entry of PRIVATE_STORE_COMMIT_CONTROL_PLAN) {
+    for (const operation of entry.operations) {
+      for (const phase of C13_PRIVATE_STORE_PHASES) {
+        const moduleInstance =
+          phase === "crossModule" ? freshCandidate : candidate;
+        assert.equal(typeof moduleInstance[operation], "function", operation);
+        moduleInstance[operation](
+          Object.freeze({
+            schema:
+              "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-control/v1",
+            store: entry.store,
+            operation,
+            phase,
+            oracleIdentitySha256:
+              oracle.identitySha256 ?? oracle.requirementsSha256 ?? null,
+          }),
+        );
+        controlIds.push(`${operation}:${phase}`);
+      }
+    }
+  }
+  assert.equal(controlIds.length, 50);
+  assert.equal(new Set(controlIds).size, 50);
+  return Object.freeze({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
+    ownerCount: 10,
+    phaseCount: 5,
+    controlCount: controlIds.length,
+    freshLoaderCallCount: 1,
+    controlIds: Object.freeze(controlIds),
+    candidateBehaviorProved: false,
+  });
 }
 
 export function registerAdversarialCandidateTests(registration) {
@@ -774,8 +988,20 @@ export function registerAdversarialCandidateTests(registration) {
     validateAdversarialCandidateTestInventory();
   let registeredCount = 0;
   for (const entry of inventory) {
-    registerTest(entry.name, entry.options, () => {
-      assertCandidateTestInputsAtExecution(registration, entry.requiredInputs);
+    registerTest(entry.name, entry.options, async () => {
+      const captured = Object.freeze(
+        Object.fromEntries(
+          entry.requiredInputs.map((name) => [name, registration[name]]),
+        ),
+      );
+      assertCandidateTestInputsAtExecution(captured, entry.requiredInputs);
+      if (entry.id === "byte-position-carrier-controls") {
+        return c13RunBytePositionCandidateControls(captured);
+      }
+      if (entry.id === "private-store-commit-controls") {
+        return c13RunPrivateStoreCandidateControls(captured);
+      }
+      throw new Error(`unknown adversarial candidate test id: ${entry.id}`);
     });
     registeredCount += 1;
   }
@@ -862,13 +1088,141 @@ async function loadExactV2ForAdversarialEntry({
   });
 }
 
+async function loadDirectParserForAdversarialEntry({
+  directEntry,
+  readHarnessManifest = () => readFileSync(HARNESS_PACKAGE_URL),
+  readHarnessLock = () => readFileSync(HARNESS_LOCK_URL),
+  readInstalledPackage = () => readFileSync(ACORN_PACKAGE_URL),
+  readInstalledEntrypoint = () => readFileSync(ACORN_IMPORT_ENTRYPOINT_URL),
+  importParser = () => import(ACORN_IMPORT_ENTRYPOINT_URL.href),
+}) {
+  assert.equal(typeof directEntry, "boolean");
+  if (!directEntry) {
+    return Object.freeze({
+      parse: null,
+      audit: Object.freeze({
+        schema: DIRECT_PARSER_LOAD_AUDIT_SCHEMA,
+        mode: "IMPORTED",
+        manifestReadCount: 0,
+        lockReadCount: 0,
+        installedPackageReadCount: 0,
+        installedEntrypointReadCount: 0,
+        parserImportCount: 0,
+        identityPinnedBeforeImport: false,
+        version: null,
+      }),
+    });
+  }
+  for (const dependency of [
+    readHarnessManifest,
+    readHarnessLock,
+    readInstalledPackage,
+    readInstalledEntrypoint,
+    importParser,
+  ]) {
+    assert.equal(typeof dependency, "function");
+  }
+  let sequence = 0;
+  const manifestBytes = readHarnessManifest();
+  const manifestReadSequence = (sequence += 1);
+  const lockBytes = readHarnessLock();
+  const lockReadSequence = (sequence += 1);
+  const installedPackageBytes = readInstalledPackage();
+  const installedPackageReadSequence = (sequence += 1);
+  const installedEntrypointBytes = readInstalledEntrypoint();
+  const installedEntrypointReadSequence = (sequence += 1);
+  const manifest = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const lock = JSON.parse(Buffer.from(lockBytes).toString("utf8"));
+  const installed = JSON.parse(
+    Buffer.from(installedPackageBytes).toString("utf8"),
+  );
+  assert.deepEqual(manifest.devDependencies, { acorn: "latest" });
+  assert.deepEqual(lock.packages[""].devDependencies, manifest.devDependencies);
+  const locked = lock.packages["node_modules/acorn"];
+  assert.deepEqual(
+    {
+      version: locked?.version,
+      integrity: locked?.integrity,
+      license: locked?.license,
+    },
+    {
+      version: EXPECTED_DIRECT_ACORN.version,
+      integrity: EXPECTED_DIRECT_ACORN.integrity,
+      license: EXPECTED_DIRECT_ACORN.license,
+    },
+  );
+  assert.equal(Object.hasOwn(locked, "dependencies"), false);
+  assert.deepEqual(
+    { version: installed.version, license: installed.license },
+    {
+      version: EXPECTED_DIRECT_ACORN.version,
+      license: EXPECTED_DIRECT_ACORN.license,
+    },
+  );
+  assert.equal(
+    createHash("sha256").update(installedPackageBytes).digest("hex"),
+    EXPECTED_DIRECT_ACORN.packageJsonSha256,
+  );
+  assert.equal(
+    installed.exports?.["."]?.[0]?.import,
+    EXPECTED_DIRECT_ACORN.importEntrypoint,
+  );
+  assert.equal(
+    createHash("sha256").update(installedEntrypointBytes).digest("hex"),
+    EXPECTED_DIRECT_ACORN.importEntrypointSha256,
+  );
+  const identityPinSequence = (sequence += 1);
+  const parserImportSequence = (sequence += 1);
+  const parser = await importParser();
+  assert.equal(parser.version, EXPECTED_DIRECT_ACORN.version);
+  assert.equal(typeof parser.parse, "function");
+  assert.equal(identityPinSequence < parserImportSequence, true);
+  return Object.freeze({
+    parse: parser.parse,
+    audit: Object.freeze({
+      schema: DIRECT_PARSER_LOAD_AUDIT_SCHEMA,
+      mode: "DIRECT_ENTRY",
+      manifestReadCount: 1,
+      lockReadCount: 1,
+      installedPackageReadCount: 1,
+      installedEntrypointReadCount: 1,
+      parserImportCount: 1,
+      manifestReadSequence,
+      lockReadSequence,
+      installedPackageReadSequence,
+      installedEntrypointReadSequence,
+      identityPinSequence,
+      parserImportSequence,
+      identityPinnedBeforeImport: true,
+      version: parser.version,
+    }),
+  });
+}
+
 const DIRECT_ENTRY = isDirectEntry(import.meta.url, process.argv[1]);
+const DIRECT_PARSER_LOAD = await loadDirectParserForAdversarialEntry({
+  directEntry: DIRECT_ENTRY,
+});
+const directParse = DIRECT_PARSER_LOAD.parse;
+const DIRECT_PARSER_LOAD_AUDIT = DIRECT_PARSER_LOAD.audit;
 const EXACT_V2_LOAD = await loadExactV2ForAdversarialEntry({
   directEntry: DIRECT_ENTRY,
 });
 const copyBoundedBuffer = EXACT_V2_LOAD.copyBoundedBuffer;
 const ADVERSARIAL_EXACT_V2_LOAD_AUDIT = EXACT_V2_LOAD.audit;
 if (!DIRECT_ENTRY) {
+  assert.equal(directParse, null);
+  assert.deepEqual(DIRECT_PARSER_LOAD_AUDIT, {
+    schema: DIRECT_PARSER_LOAD_AUDIT_SCHEMA,
+    mode: "IMPORTED",
+    manifestReadCount: 0,
+    lockReadCount: 0,
+    installedPackageReadCount: 0,
+    installedEntrypointReadCount: 0,
+    parserImportCount: 0,
+    identityPinnedBeforeImport: false,
+    version: null,
+  });
   assert.equal(copyBoundedBuffer, null);
   assert.deepEqual(ADVERSARIAL_EXACT_V2_LOAD_AUDIT, {
     schema: ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA,
@@ -3424,90 +3778,556 @@ function assertSourceIndependentAdversarialOracle(oracle, requirements) {
   });
 }
 
-function maskCommentsAndStrings(source) {
-  let output = "";
-  for (let index = 0; index < source.length;) {
-    if (source[index] === "/" && source[index + 1] === "/") {
-      const end = source.indexOf("\n", index + 2);
-      const stop = end === -1 ? source.length : end;
-      output += " ".repeat(stop - index);
-      index = stop;
-      continue;
-    }
-    if (source[index] === "/" && source[index + 1] === "*") {
-      const end = source.indexOf("*/", index + 2);
-      if (end === -1) throw new Error("static gate: comment");
-      const stop = end + 2;
-      output += source.slice(index, stop).replace(/[^\n]/gu, " ");
-      index = stop;
-      continue;
-    }
-    if (
-      source[index] === '"' ||
-      source[index] === "'" ||
-      source[index] === "`"
-    ) {
-      const quote = source[index];
-      let stop = index + 1;
-      while (stop < source.length) {
-        if (source[stop] === "\\") stop += 2;
-        else if (source[stop] === quote) {
-          stop += 1;
-          break;
-        } else stop += 1;
-      }
-      if (source[stop - 1] !== quote) throw new Error("static gate: string");
-      output += source.slice(index, stop).replace(/[^\n]/gu, " ");
-      index = stop;
-      continue;
-    }
-    output += source[index];
-    index += 1;
+const DIRECT_ALLOWED_AMBIENT_INTRINSICS = new Set([
+  "Array",
+  "Boolean",
+  "Error",
+  "Number",
+  "Object",
+  "Reflect",
+  "Set",
+  "String",
+  "WeakMap",
+]);
+const DIRECT_FORBIDDEN_IDENTIFIER_NAMES = new Set([
+  ...FORBIDDEN,
+  "Function",
+  "require",
+  "module",
+  "fetch",
+  "setInterval",
+  "clearInterval",
+  "clearTimeout",
+  "queueMicrotask",
+]);
+const DIRECT_NODE_FIELDS = Object.freeze({
+  Program: Object.freeze(["body", "sourceType"]),
+  ImportDeclaration: Object.freeze(["specifiers", "source"]),
+  ImportSpecifier: Object.freeze(["local", "imported"]),
+  ExportNamedDeclaration: Object.freeze([
+    "declaration",
+    "specifiers",
+    "source",
+  ]),
+  VariableDeclaration: Object.freeze(["declarations", "kind"]),
+  VariableDeclarator: Object.freeze(["id", "init"]),
+  FunctionDeclaration: Object.freeze([
+    "id",
+    "expression",
+    "generator",
+    "async",
+    "params",
+    "body",
+  ]),
+  FunctionExpression: Object.freeze([
+    "id",
+    "expression",
+    "generator",
+    "async",
+    "params",
+    "body",
+  ]),
+  ArrowFunctionExpression: Object.freeze([
+    "id",
+    "expression",
+    "generator",
+    "async",
+    "params",
+    "body",
+  ]),
+  BlockStatement: Object.freeze(["body"]),
+  EmptyStatement: Object.freeze([]),
+  ReturnStatement: Object.freeze(["argument"]),
+  ExpressionStatement: Object.freeze(["expression"]),
+  IfStatement: Object.freeze(["test", "consequent", "alternate"]),
+  ThrowStatement: Object.freeze(["argument"]),
+  TryStatement: Object.freeze(["block", "handler", "finalizer"]),
+  CatchClause: Object.freeze(["param", "body"]),
+  ForStatement: Object.freeze(["init", "test", "update", "body"]),
+  ForOfStatement: Object.freeze(["left", "right", "body", "await"]),
+  ForInStatement: Object.freeze(["left", "right", "body"]),
+  WhileStatement: Object.freeze(["test", "body"]),
+  DoWhileStatement: Object.freeze(["body", "test"]),
+  SwitchStatement: Object.freeze(["discriminant", "cases"]),
+  SwitchCase: Object.freeze(["test", "consequent"]),
+  BreakStatement: Object.freeze(["label"]),
+  ContinueStatement: Object.freeze(["label"]),
+  LabeledStatement: Object.freeze(["label", "body"]),
+  Identifier: Object.freeze(["name"]),
+  Literal: Object.freeze(["value", "raw", "regex", "bigint"]),
+  ObjectExpression: Object.freeze(["properties"]),
+  ObjectPattern: Object.freeze(["properties"]),
+  Property: Object.freeze([
+    "method",
+    "shorthand",
+    "computed",
+    "key",
+    "value",
+    "kind",
+  ]),
+  ArrayExpression: Object.freeze(["elements"]),
+  ArrayPattern: Object.freeze(["elements"]),
+  CallExpression: Object.freeze(["callee", "arguments", "optional"]),
+  NewExpression: Object.freeze(["callee", "arguments"]),
+  MemberExpression: Object.freeze([
+    "object",
+    "property",
+    "computed",
+    "optional",
+  ]),
+  UnaryExpression: Object.freeze(["operator", "prefix", "argument"]),
+  UpdateExpression: Object.freeze(["operator", "prefix", "argument"]),
+  BinaryExpression: Object.freeze(["left", "operator", "right"]),
+  LogicalExpression: Object.freeze(["left", "operator", "right"]),
+  AssignmentExpression: Object.freeze(["operator", "left", "right"]),
+  AssignmentPattern: Object.freeze(["left", "right"]),
+  ConditionalExpression: Object.freeze(["test", "consequent", "alternate"]),
+  SequenceExpression: Object.freeze(["expressions"]),
+  TemplateLiteral: Object.freeze(["expressions", "quasis"]),
+  TemplateElement: Object.freeze(["value", "tail"]),
+  TaggedTemplateExpression: Object.freeze(["tag", "quasi"]),
+  SpreadElement: Object.freeze(["argument"]),
+  RestElement: Object.freeze(["argument"]),
+  ParenthesizedExpression: Object.freeze(["expression"]),
+});
+
+function directStrictUtf8Source(sourceBytes) {
+  if (
+    !Buffer.isBuffer(sourceBytes) ||
+    Object.getPrototypeOf(sourceBytes) !== Buffer.prototype ||
+    Object.getOwnPropertyDescriptor(sourceBytes, "length") !== undefined
+  ) {
+    throw new Error("direct static gate: source must be an ordinary Buffer");
   }
-  return output;
+  const copied = Buffer.from(sourceBytes);
+  const source = copied.toString("utf8");
+  if (!Buffer.from(source, "utf8").equals(copied)) {
+    throw new Error("direct static gate: source is not strict UTF-8");
+  }
+  if (source.includes("\u2028") || source.includes("\u2029")) {
+    throw new Error("direct static gate: Unicode line separator");
+  }
+  return source;
 }
 
-function independentStaticAudit(source) {
-  const imports = [
-    ...source.matchAll(
-      /(^|\n)\s*import\s*\{([^}]*)\}\s*from\s*(["'])([^"']+)\3\s*;?/gu,
-    ),
-  ].map((match) => ({
-    specifier: match[4],
-    names: match[2]
-      .split(",")
-      .map((name) => name.trim())
-      .filter(Boolean),
-  }));
-  const masked = maskCommentsAndStrings(source);
-  assert.equal(imports.length, masked.match(/\bimport\b/gu)?.length ?? 0);
-  assert.equal(imports.length, 3);
-  assert.equal(new Set(imports.map(({ specifier }) => specifier)).size, 3);
-  for (const { specifier, names } of imports) {
-    assert.deepEqual(names, ALLOWED_IMPORTS.get(specifier));
+function directAssertNodeShape(node) {
+  const allowedFields = DIRECT_NODE_FIELDS[node.type];
+  if (allowedFields === undefined) {
+    throw new Error(`direct static gate: unknown AST node ${node.type}`);
   }
-  assert.equal(/\bexport\s+(?:\*|\{[^}]*\})\s+from\b/gu.test(masked), false);
-  assert.equal(/\\u(?:\{|[0-9a-fA-F]{4})/gu.test(masked), false);
-  for (const token of FORBIDDEN) {
-    assert.equal(new RegExp(`\\b${token}\\b`, "u").test(masked), false, token);
+  const allowed = new Set(["type", "start", "end", ...allowedFields]);
+  for (const key of Object.keys(node)) {
+    if (!allowed.has(key)) {
+      throw new Error(
+        `direct static gate: unknown AST key ${node.type}.${key}`,
+      );
+    }
   }
-  const stores = [
-    ...masked.matchAll(
-      /\b(?:const|let)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*new\s+WeakMap\s*\(\s*\)/gu,
-    ),
-  ].map((match) => match[1]);
+}
+
+function directFoldString(node) {
+  if (node?.type === "Literal" && typeof node.value === "string") {
+    return node.value;
+  }
+  if (
+    node?.type === "TemplateLiteral" &&
+    node.expressions.length === 0 &&
+    node.quasis.length === 1
+  ) {
+    return node.quasis[0].value.cooked;
+  }
+  if (node?.type === "BinaryExpression" && node.operator === "+") {
+    const left = directFoldString(node.left);
+    const right = directFoldString(node.right);
+    return left === null || right === null ? null : `${left}${right}`;
+  }
+  return null;
+}
+
+function directAssertLiteralSafe(value, parent) {
+  if (typeof value !== "string" || parent?.type === "ImportDeclaration") {
+    return;
+  }
+  const normalized = value.toLowerCase();
+  if (
+    normalized.includes("node:") ||
+    /(?:^|\/)proc(?:\/|$)/u.test(normalized) ||
+    normalized.includes("openrouter") ||
+    normalized.includes("evaluator") ||
+    /(?:^|[\\/])tests?(?:[\\/.]|$)/u.test(normalized)
+  ) {
+    throw new Error("direct static gate: forbidden literal or path");
+  }
+}
+
+function directWalkAst(program, source) {
+  let nodeCount = 0;
+  const walk = (node, parent = null) => {
+    if (node === null || typeof node !== "object") return;
+    directAssertNodeShape(node);
+    nodeCount += 1;
+    if (node.type === "Identifier") {
+      const spelling = source.slice(node.start, node.end);
+      if (
+        spelling !== node.name ||
+        !/^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(spelling)
+      ) {
+        throw new Error("direct static gate: escaped or encoded identifier");
+      }
+      if (DIRECT_FORBIDDEN_IDENTIFIER_NAMES.has(node.name)) {
+        throw new Error(
+          `direct static gate: forbidden identifier ${node.name}`,
+        );
+      }
+    }
+    if (node.type === "Literal") directAssertLiteralSafe(node.value, parent);
+    if (node.type === "TemplateLiteral" && node.expressions.length !== 0) {
+      throw new Error("direct static gate: interpolated template literal");
+    }
+    if (
+      node.type === "MemberExpression" &&
+      (node.computed || node.optional === true)
+    ) {
+      throw new Error("direct static gate: computed or optional member access");
+    }
+    if (
+      node.type === "MemberExpression" &&
+      node.property.type === "Identifier"
+    ) {
+      if (
+        ["__proto__", "prototype", "constructor"].includes(node.property.name)
+      ) {
+        throw new Error("direct static gate: prototype or constructor gadget");
+      }
+    }
+    if (node.type === "Property" && node.computed) {
+      throw new Error("direct static gate: computed property");
+    }
+    if (
+      node.type === "CallExpression" &&
+      (node.optional === true || node.callee.type === "ParenthesizedExpression")
+    ) {
+      throw new Error("direct static gate: indirect or optional call");
+    }
+    if (node.type === "ForOfStatement" && node.await) {
+      throw new Error("direct static gate: for-await syntax");
+    }
+    const folded = directFoldString(node);
+    if (folded !== null && node.type !== "Literal") {
+      directAssertLiteralSafe(folded, parent);
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (["type", "start", "end"].includes(key)) continue;
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child !== null && typeof child?.type === "string")
+            walk(child, node);
+        }
+      } else if (value !== null && typeof value?.type === "string") {
+        walk(value, node);
+      }
+    }
+  };
+  walk(program);
+  return nodeCount;
+}
+
+function directDeclarePattern(pattern, scope) {
+  if (pattern === null) return;
+  if (pattern.type === "Identifier") {
+    scope.names.add(pattern.name);
+    return;
+  }
+  if (pattern.type === "RestElement") {
+    directDeclarePattern(pattern.argument, scope);
+    return;
+  }
+  if (pattern.type === "AssignmentPattern") {
+    directDeclarePattern(pattern.left, scope);
+    return;
+  }
+  if (pattern.type === "ArrayPattern") {
+    for (const element of pattern.elements)
+      directDeclarePattern(element, scope);
+    return;
+  }
+  if (pattern.type === "ObjectPattern") {
+    for (const property of pattern.properties) {
+      directDeclarePattern(
+        property.type === "RestElement" ? property.argument : property.value,
+        scope,
+      );
+    }
+    return;
+  }
+  throw new Error(`direct static gate: unsupported binding ${pattern.type}`);
+}
+
+function directResolveFreeIdentifiers(program) {
+  const scopeByNode = new WeakMap();
+  const createScope = (parent) => ({ parent, names: new Set() });
+  const collect = (node, scope) => {
+    if (node === null || typeof node !== "object") return;
+    if (node.type === "Program") {
+      scopeByNode.set(node, scope);
+      for (const statement of node.body) collect(statement, scope);
+      return;
+    }
+    if (node.type === "ImportDeclaration") {
+      for (const specifier of node.specifiers)
+        scope.names.add(specifier.local.name);
+      return;
+    }
+    if (node.type === "ExportNamedDeclaration") {
+      if (node.declaration !== null) collect(node.declaration, scope);
+      return;
+    }
+    if (node.type === "FunctionDeclaration") {
+      scope.names.add(node.id.name);
+      const functionScope = createScope(scope);
+      scopeByNode.set(node, functionScope);
+      for (const parameter of node.params)
+        directDeclarePattern(parameter, functionScope);
+      collect(node.body, functionScope);
+      return;
+    }
+    if (
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression"
+    ) {
+      const functionScope = createScope(scope);
+      scopeByNode.set(node, functionScope);
+      if (node.id !== null) functionScope.names.add(node.id.name);
+      for (const parameter of node.params)
+        directDeclarePattern(parameter, functionScope);
+      collect(node.body, functionScope);
+      return;
+    }
+    if (node.type === "BlockStatement") {
+      const blockScope = createScope(scope);
+      scopeByNode.set(node, blockScope);
+      for (const statement of node.body) collect(statement, blockScope);
+      return;
+    }
+    if (node.type === "CatchClause") {
+      const catchScope = createScope(scope);
+      scopeByNode.set(node, catchScope);
+      directDeclarePattern(node.param, catchScope);
+      collect(node.body, catchScope);
+      return;
+    }
+    if (node.type === "VariableDeclaration") {
+      for (const declaration of node.declarations) {
+        directDeclarePattern(declaration.id, scope);
+        collect(declaration.init, scope);
+      }
+      return;
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child !== null && typeof child?.type === "string")
+            collect(child, scope);
+        }
+      } else if (value !== null && typeof value?.type === "string") {
+        collect(value, scope);
+      }
+    }
+  };
+  const moduleScope = createScope(null);
+  collect(program, moduleScope);
+  const resolves = (scope, name) => {
+    for (let current = scope; current !== null; current = current.parent) {
+      if (current.names.has(name)) return true;
+    }
+    return DIRECT_ALLOWED_AMBIENT_INTRINSICS.has(name);
+  };
+  let referenceCount = 0;
+  const visit = (node, scope, role = "reference") => {
+    if (node === null || typeof node !== "object") return;
+    scope = scopeByNode.get(node) ?? scope;
+    if (node.type === "Identifier") {
+      if (role === "reference") {
+        referenceCount += 1;
+        if (!resolves(scope, node.name)) {
+          throw new Error(`direct static gate: free identifier ${node.name}`);
+        }
+      }
+      return;
+    }
+    if (node.type === "ImportDeclaration") return;
+    if (node.type === "ExportNamedDeclaration") {
+      visit(node.declaration, scope);
+      return;
+    }
+    if (node.type === "VariableDeclaration") {
+      for (const declaration of node.declarations) {
+        visit(declaration.id, scope, "binding");
+        visit(declaration.init, scope);
+      }
+      return;
+    }
+    if (
+      node.type === "FunctionDeclaration" ||
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression"
+    ) {
+      visit(node.id, scope, "binding");
+      for (const parameter of node.params) visit(parameter, scope, "binding");
+      visit(node.body, scope);
+      return;
+    }
+    if (node.type === "MemberExpression") {
+      visit(node.object, scope);
+      visit(node.property, scope, node.computed ? "reference" : "property");
+      return;
+    }
+    if (node.type === "Property") {
+      visit(node.key, scope, node.computed ? "reference" : "property");
+      visit(
+        node.value,
+        scope,
+        node.shorthand
+          ? "reference"
+          : role === "binding"
+            ? "binding"
+            : "reference",
+      );
+      return;
+    }
+    if (node.type === "LabeledStatement") {
+      visit(node.label, scope, "label");
+      visit(node.body, scope);
+      return;
+    }
+    if (node.type === "BreakStatement" || node.type === "ContinueStatement") {
+      visit(node.label, scope, "label");
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (["type", "start", "end"].includes(key)) continue;
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child !== null && typeof child?.type === "string")
+            visit(child, scope, role);
+        }
+      } else if (value !== null && typeof value?.type === "string") {
+        visit(value, scope, role);
+      }
+    }
+  };
+  visit(program, moduleScope);
+  return Object.freeze({
+    moduleBindingCount: moduleScope.names.size,
+    referenceCount,
+  });
+}
+
+function directAssertExactSurface(program) {
+  const imports = program.body.filter(
+    ({ type }) => type === "ImportDeclaration",
+  );
+  assert.equal(imports.length, ALLOWED_IMPORTS.size);
+  assert.deepEqual(
+    imports.map(({ source }) => source.value),
+    [...ALLOWED_IMPORTS.keys()],
+  );
+  imports.forEach((declaration, index) => {
+    const expectedNames = [...ALLOWED_IMPORTS.values()][index];
+    assert.equal(declaration.specifiers.length, expectedNames.length);
+    assert.deepEqual(
+      declaration.specifiers.map((specifier) => ({
+        type: specifier.type,
+        imported: specifier.imported.name,
+        local: specifier.local.name,
+      })),
+      expectedNames.map((name) => ({
+        type: "ImportSpecifier",
+        imported: name,
+        local: name,
+      })),
+    );
+  });
+  const exports = program.body.filter(
+    ({ type }) => type === "ExportNamedDeclaration",
+  );
+  assert.equal(exports.length, EXPECTED_EXPORTS.length);
+  const exportedNames = [];
+  for (const declaration of exports) {
+    assert.equal(declaration.source, null);
+    assert.deepEqual(declaration.specifiers, []);
+    assert.notEqual(declaration.declaration, null);
+    if (declaration.declaration.type === "FunctionDeclaration") {
+      const functionNode = declaration.declaration;
+      exportedNames.push(functionNode.id.name);
+      const signature = EXPECTED_DIRECT_FUNCTION_SIGNATURES.find(
+        ({ name }) => name === functionNode.id.name,
+      );
+      assert.notEqual(signature, undefined);
+      assert.deepEqual(
+        functionNode.params.map((parameter) => parameter.name),
+        signature.parameters,
+      );
+      assert.equal(functionNode.async, false);
+      assert.equal(functionNode.generator, false);
+    } else {
+      assert.equal(declaration.declaration.type, "VariableDeclaration");
+      assert.equal(declaration.declaration.kind, "const");
+      assert.equal(declaration.declaration.declarations.length, 1);
+      exportedNames.push(declaration.declaration.declarations[0].id.name);
+    }
+  }
+  assert.deepEqual(exportedNames, EXPECTED_EXPORTS);
+  assert.equal(new Set(exportedNames).size, EXPECTED_EXPORTS.length);
+  const stores = program.body.flatMap((statement) => {
+    if (statement.type !== "VariableDeclaration") return [];
+    return statement.declarations.flatMap((declaration) => {
+      if (
+        declaration.init?.type !== "NewExpression" ||
+        declaration.init.callee?.type !== "Identifier" ||
+        declaration.init.callee.name !== "WeakMap"
+      ) {
+        return [];
+      }
+      assert.equal(statement.kind, "const");
+      assert.equal(declaration.id.type, "Identifier");
+      assert.deepEqual(declaration.init.arguments, []);
+      return [declaration.id.name];
+    });
+  });
   assert.deepEqual(stores, [
     "startupMetadata",
     "inputMetadata",
     "stateMetadata",
   ]);
-  const exported = [
-    ...masked.matchAll(
-      /\bexport\s+(?:const|function)\s+([A-Za-z_$][A-Za-z0-9_$]*)/gu,
-    ),
-  ].map((match) => match[1]);
-  assert.deepEqual(exported.sort(), [...EXPECTED_EXPORTS].sort());
-  return Object.freeze({ imports: imports.length, stores: stores.length });
+  return Object.freeze({
+    importCount: imports.length,
+    exportCount: exports.length,
+    privateStoreCount: stores.length,
+  });
+}
+
+function independentStaticAudit(sourceBytes) {
+  if (directParse === null) {
+    throw new Error(
+      "direct static gate: parser unavailable outside direct entry",
+    );
+  }
+  const source = directStrictUtf8Source(sourceBytes);
+  let program;
+  try {
+    program = directParse(source, DIRECT_ACORN_PARSE_OPTIONS);
+  } catch (error) {
+    throw new Error(
+      `direct static gate: invalid module syntax: ${error.message}`,
+    );
+  }
+  assert.equal(program.type, "Program");
+  assert.equal(program.sourceType, "module");
+  const nodeCount = directWalkAst(program, source);
+  const surface = directAssertExactSurface(program);
+  const scope = directResolveFreeIdentifiers(program);
+  return Object.freeze({ ...surface, ...scope, nodeCount });
 }
 
 function validSkeleton(extra = "") {
@@ -3517,11 +4337,14 @@ function validSkeleton(extra = "") {
         `import { ${names.join(", ")} } from ${JSON.stringify(specifier)};`,
     )
     .join("\n");
-  const exports = EXPECTED_EXPORTS.map((name, index) =>
-    index < 2
-      ? `export const ${name} = ${index};`
-      : `export function ${name}() { return null; }`,
-  ).join("\n");
+  const exports = EXPECTED_EXPORTS.map((name, index) => {
+    if (index < 2) return `export const ${name} = ${index};`;
+    const signature = EXPECTED_DIRECT_FUNCTION_SIGNATURES.find(
+      (candidate) => candidate.name === name,
+    );
+    assert.notEqual(signature, undefined);
+    return `export function ${name}(${signature.parameters.join(", ")}) { return null; }`;
+  }).join("\n");
   return `${imports}\nconst startupMetadata = new WeakMap();\nconst inputMetadata = new WeakMap();\nconst stateMetadata = new WeakMap();\n${exports}\n${extra}`;
 }
 
@@ -3623,38 +4446,38 @@ function sourceIndependentStaticControls() {
   let evaluationAttempts = 0;
   for (const value of cases) {
     assert.throws(() => {
-      independentStaticAudit(validSkeleton(value));
+      independentStaticAudit(Buffer.from(validSkeleton(value), "utf8"));
       evaluationAttempts += 1;
     });
   }
   assert.equal(evaluationAttempts, 0);
-  assert.doesNotThrow(() => independentStaticAudit(validSkeleton()));
+  assert.doesNotThrow(() =>
+    independentStaticAudit(Buffer.from(validSkeleton(), "utf8")),
+  );
   return Object.freeze({ rejected: cases.length, evaluationAttempts });
-}
-
-function evaluateCandidateOnlyWhenSourceAbsent(source, evaluate) {
-  if (source !== null) {
-    throw new Error(
-      "candidate evaluation disabled until exhaustive positive-allowlist parser closure is implemented",
-    );
-  }
-  return evaluate();
 }
 
 const STATIC_CONTROLS = DIRECT_ENTRY ? sourceIndependentStaticControls() : null;
 let candidateSourceGateError = null;
-let source = null;
+let sourceBytes = null;
+let sourceAudit = null;
+const DIRECT_CANDIDATE_ACTIVITY = {
+  sourceReads: 0,
+  sourceAudits: 0,
+  moduleImports: 0,
+  moduleEvaluations: 0,
+};
 if (DIRECT_ENTRY) {
   try {
-    source = readFileSync(SOURCE_PATH, "utf8");
+    DIRECT_CANDIDATE_ACTIVITY.sourceReads += 1;
+    sourceBytes = readFileSync(SOURCE_PATH);
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
-  if (source !== null) {
+  if (sourceBytes !== null) {
     try {
-      evaluateCandidateOnlyWhenSourceAbsent(source, () => {
-        throw new Error("candidate evaluation attempted");
-      });
+      sourceAudit = independentStaticAudit(sourceBytes);
+      DIRECT_CANDIDATE_ACTIVITY.sourceAudits += 1;
     } catch (error) {
       candidateSourceGateError = error;
     }
@@ -3962,15 +4785,16 @@ test("keeps its own pre-import gate green with zero evaluation attempts", async 
   assert.equal(driftModuleLoads, 0);
 
   assert.deepEqual(STATIC_CONTROLS, { rejected: 8, evaluationAttempts: 0 });
-  let sourcePresentEvaluationAttempts = 0;
-  assert.throws(
-    () =>
-      evaluateCandidateOnlyWhenSourceAbsent(validSkeleton(), () => {
-        sourcePresentEvaluationAttempts += 1;
-      }),
-    /evaluation disabled until exhaustive positive-allowlist parser closure/gu,
+  assert.doesNotThrow(() =>
+    independentStaticAudit(Buffer.from(validSkeleton(), "utf8")),
   );
-  assert.equal(sourcePresentEvaluationAttempts, 0);
+  assert.deepEqual(
+    {
+      moduleImports: DIRECT_CANDIDATE_ACTIVITY.moduleImports,
+      moduleEvaluations: DIRECT_CANDIDATE_ACTIVITY.moduleEvaluations,
+    },
+    { moduleImports: 0, moduleEvaluations: 0 },
+  );
 });
 
 test("pins the bounded snapshot path against extra-property traversal", () => {
@@ -4390,11 +5214,329 @@ test("keeps snapshot cost byte-bounded despite many extra own properties", () =>
 
 test("does not create a second missing-module failure", () => {
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
-  assert.equal(source, null);
+  assert.equal(sourceBytes === null || sourceAudit !== null, true);
+  assert.deepEqual(
+    {
+      sourceAudits: DIRECT_CANDIDATE_ACTIVITY.sourceAudits,
+      moduleImports: DIRECT_CANDIDATE_ACTIVITY.moduleImports,
+      moduleEvaluations: DIRECT_CANDIDATE_ACTIVITY.moduleEvaluations,
+    },
+    {
+      sourceAudits: sourceBytes === null ? 0 : 1,
+      moduleImports: 0,
+      moduleEvaluations: 0,
+    },
+  );
 });
 
-test(
-  "replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure for free identifiers, imports, exports, encoded identifiers, computed access, ambient authority, and test-gaming paths",
-  { todo: true },
-  () => {},
-);
+test("replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure for free identifiers, imports, exports, encoded identifiers, computed access, ambient authority, and test-gaming paths", async () => {
+  const asBytes = (sourceText) => Buffer.from(sourceText, "utf8");
+  const baseline = validSkeleton();
+  const baselineAudit = independentStaticAudit(asBytes(baseline));
+  assert.deepEqual(
+    {
+      importCount: baselineAudit.importCount,
+      exportCount: baselineAudit.exportCount,
+      privateStoreCount: baselineAudit.privateStoreCount,
+    },
+    { importCount: 3, exportCount: 13, privateStoreCount: 3 },
+  );
+  assert.equal(baselineAudit.nodeCount > 0, true);
+  assert.equal(baselineAudit.referenceCount > 0, true);
+  assert.deepEqual(DIRECT_PARSER_LOAD_AUDIT, {
+    schema: DIRECT_PARSER_LOAD_AUDIT_SCHEMA,
+    mode: "DIRECT_ENTRY",
+    manifestReadCount: 1,
+    lockReadCount: 1,
+    installedPackageReadCount: 1,
+    installedEntrypointReadCount: 1,
+    parserImportCount: 1,
+    manifestReadSequence: 1,
+    lockReadSequence: 2,
+    installedPackageReadSequence: 3,
+    installedEntrypointReadSequence: 4,
+    identityPinSequence: 5,
+    parserImportSequence: 6,
+    identityPinnedBeforeImport: true,
+    version: "8.18.0",
+  });
+
+  let importedModeReads = 0;
+  let importedModeLoads = 0;
+  const importedModeParser = await loadDirectParserForAdversarialEntry({
+    directEntry: false,
+    readHarnessManifest() {
+      importedModeReads += 1;
+    },
+    readHarnessLock() {
+      importedModeReads += 1;
+    },
+    readInstalledPackage() {
+      importedModeReads += 1;
+    },
+    readInstalledEntrypoint() {
+      importedModeReads += 1;
+    },
+    importParser() {
+      importedModeLoads += 1;
+    },
+  });
+  assert.equal(importedModeParser.parse, null);
+  assert.deepEqual(
+    { importedModeReads, importedModeLoads },
+    { importedModeReads: 0, importedModeLoads: 0 },
+  );
+  assert.deepEqual(importedModeParser.audit, {
+    schema: DIRECT_PARSER_LOAD_AUDIT_SCHEMA,
+    mode: "IMPORTED",
+    manifestReadCount: 0,
+    lockReadCount: 0,
+    installedPackageReadCount: 0,
+    installedEntrypointReadCount: 0,
+    parserImportCount: 0,
+    identityPinnedBeforeImport: false,
+    version: null,
+  });
+
+  const mutationKills = [];
+  const kill = (id, run) => {
+    let rejection = null;
+    try {
+      run();
+    } catch (error) {
+      rejection = error;
+    }
+    assert.notEqual(rejection, null, `${id} survived`);
+    mutationKills.push(
+      Object.freeze({
+        id,
+        reason: String(rejection.message).split("\n", 1)[0],
+      }),
+    );
+  };
+  const auditExtra = (extra) =>
+    independentStaticAudit(asBytes(validSkeleton(extra)));
+  const forbiddenFreeAmbientControls = [
+    ...new Set([
+      ...DIRECT_FORBIDDEN_IDENTIFIER_NAMES,
+      "Atomics",
+      "BigInt",
+      "console",
+      "crypto",
+      "Intl",
+      "Math",
+      "navigator",
+      "performance",
+      "setImmediate",
+      "SharedArrayBuffer",
+      "structuredClone",
+      "URL",
+      "WebAssembly",
+    ]),
+  ].sort();
+  for (const freeIdentifier of forbiddenFreeAmbientControls) {
+    kill(`direct-free-${freeIdentifier}`, () =>
+      auditExtra(`const leaked = ${freeIdentifier};`),
+    );
+  }
+  for (const [id, sourceText] of [
+    [
+      "direct-import-default",
+      `${baseline}\nimport value from "./containment-exact-v2.mjs";`,
+    ],
+    [
+      "direct-import-namespace",
+      `${baseline}\nimport * as exact from "./containment-exact-v2.mjs";`,
+    ],
+    [
+      "direct-import-side-effect",
+      `${baseline}\nimport "./containment-exact-v2.mjs";`,
+    ],
+    [
+      "direct-import-alias",
+      baseline.replace("boundedInteger,", "boundedInteger as renamed,"),
+    ],
+    ["direct-import-missing", baseline.replace("boundedInteger, ", "")],
+    [
+      "direct-import-extra",
+      baseline.replace("boundedInteger,", "boundedInteger, extraHelper,"),
+    ],
+    [
+      "direct-import-duplicate",
+      baseline.replace("boundedInteger,", "boundedInteger, boundedInteger,"),
+    ],
+    [
+      "direct-export-missing",
+      baseline.replace(
+        "export function createCandidateContainmentGuardianStartupV1",
+        "function createCandidateContainmentGuardianStartupV1",
+      ),
+    ],
+    ["direct-export-extra", `${baseline}\nexport const extraExport = null;`],
+    [
+      "direct-export-duplicate",
+      `${baseline}\nexport { CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS };`,
+    ],
+    ["direct-export-default", `${baseline}\nexport default null;`],
+    [
+      "direct-reexport",
+      `${baseline}\nexport { sha256 } from "./containment-exact-v2.mjs";`,
+    ],
+    [
+      "direct-function-signature-drift",
+      baseline.replace(
+        "(startupReportBytes, epochBytes, epochEofObserved)",
+        "(epochBytes, startupReportBytes, epochEofObserved)",
+      ),
+    ],
+    [
+      "direct-private-store-name-drift",
+      baseline.replaceAll("startupMetadata", "renamedStartupMetadata"),
+    ],
+    [
+      "direct-private-store-extra",
+      baseline.replace(
+        "const startupMetadata = new WeakMap();",
+        "const startupMetadata = new WeakMap();\nconst extraMetadata = new WeakMap();",
+      ),
+    ],
+    [
+      "direct-dynamic-import",
+      `${baseline}\nconst dynamic = import("./containment-exact-v2.mjs");`,
+    ],
+    ["direct-import-meta", `${baseline}\nconst metadata = import.meta.url;`],
+    [
+      "direct-escaped-identifier",
+      `${baseline}\nconst escaped = gl\\u006fbalThis;`,
+    ],
+    [
+      "direct-unicode-line-separator",
+      `${baseline}\nconst split = 1;\u2028const line = 2;`,
+    ],
+    ["direct-computed-member", `${baseline}\nconst member = Object["keys"];`],
+    [
+      "direct-constructor-gadget",
+      `${baseline}\nconst gadget = Object.constructor;`,
+    ],
+    [
+      "direct-prototype-gadget",
+      `${baseline}\nconst gadget = Object.prototype;`,
+    ],
+    ["direct-node-literal", `${baseline}\nconst path = "node:fs";`],
+    ["direct-proc-literal", `${baseline}\nconst path = "/proc/self/environ";`],
+    ["direct-evaluator-literal", `${baseline}\nconst path = "evaluator";`],
+    [
+      "direct-test-path-literal",
+      `${baseline}\nconst path = "../test/probe.mjs";`,
+    ],
+    ["direct-openrouter-literal", `${baseline}\nconst path = "OpenRouter";`],
+    [
+      "direct-computed-forbidden-literal",
+      `${baseline}\nconst path = "node" + ":fs";`,
+    ],
+    ["direct-top-level-await", `${baseline}\nawait null;`],
+    ["direct-hashbang", `#!/usr/bin/env node\n${baseline}`],
+    [
+      "direct-for-await",
+      `${baseline}\nasync function consume(values) { for await (const value of values) {} }`,
+    ],
+  ]) {
+    kill(id, () => independentStaticAudit(asBytes(sourceText)));
+  }
+  kill("direct-invalid-utf8", () =>
+    independentStaticAudit(Buffer.from([0xc3, 0x28])),
+  );
+  kill("direct-non-byte-source", () => independentStaticAudit(baseline));
+  kill("direct-unknown-node", () =>
+    directAssertNodeShape({ type: "FutureExpression", start: 0, end: 0 }),
+  );
+  kill("direct-unknown-key", () =>
+    directAssertNodeShape({
+      type: "Identifier",
+      start: 0,
+      end: 1,
+      name: "x",
+      futureParserField: true,
+    }),
+  );
+  let fallbackImportCount = 0;
+  await assert.rejects(
+    () =>
+      loadDirectParserForAdversarialEntry({
+        directEntry: true,
+        importParser() {
+          fallbackImportCount += 1;
+          return Promise.resolve({ version: "8.18.0", parse: null });
+        },
+      }),
+    /function|strictEqual/gu,
+  );
+  assert.equal(fallbackImportCount, 1);
+  mutationKills.push(
+    Object.freeze({
+      id: "direct-no-parser-fallback",
+      reason: "pinned parser must expose the exact parse function",
+    }),
+  );
+
+  const evaluatorBytes = readFileSync(fileURLToPath(import.meta.url));
+  const evaluatorSha256Before = byteDigest(evaluatorBytes);
+  const restored = Buffer.from(evaluatorBytes);
+  const marker = Buffer.from(
+    "replace the fail-closed source-presence stop with exhaustive positive-allowlist parser closure",
+    "utf8",
+  );
+  const markerOffset = restored.indexOf(marker);
+  assert.notEqual(markerOffset, -1);
+  restored[markerOffset] ^= 0x01;
+  kill("direct-evaluator-byte-mutation", () => {
+    assert.equal(
+      restored
+        .subarray(markerOffset, markerOffset + marker.length)
+        .equals(marker),
+      true,
+    );
+  });
+  evaluatorBytes.copy(
+    restored,
+    markerOffset,
+    markerOffset,
+    markerOffset + marker.length,
+  );
+  assert.equal(byteDigest(restored), evaluatorSha256Before);
+
+  const mutationIds = mutationKills.map(({ id }) => id);
+  const mutationReceipt = recursivelyFreezeStatusOracleValue({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-direct-mutation-receipt/v1",
+    count: mutationKills.length,
+    killed: mutationKills.length,
+    survivors: 0,
+    idsSha256: digest(mutationIds),
+    kills: mutationKills,
+    evaluatorByteRestoration: {
+      preSha256: evaluatorSha256Before,
+      postSha256: byteDigest(restored),
+      restoredByteExact: true,
+    },
+  });
+  assert.deepEqual(
+    {
+      count: mutationReceipt.count,
+      killed: mutationReceipt.killed,
+      survivors: mutationReceipt.survivors,
+      idsSha256: mutationReceipt.idsSha256,
+    },
+    {
+      count: 71,
+      killed: 71,
+      survivors: 0,
+      idsSha256:
+        "7c758bae96d1cc6df64aeb1dd0bd4c15f178f1b87b99c44aefb676612f80a81a",
+    },
+  );
+  assert.equal(
+    mutationReceipt.evaluatorByteRestoration.preSha256,
+    mutationReceipt.evaluatorByteRestoration.postSha256,
+  );
+});

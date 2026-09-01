@@ -10135,14 +10135,171 @@ function reflectedAuthority(startupReportBytes) {
   });
 }
 
-function evaluateCandidateOnlyWhenEvaluatorCloses(source, evaluate) {
-  if (source !== null) {
-    auditCandidateSource(source);
-    throw new Error(
-      "candidate evaluation disabled until the complete evaluator matrix is executable and the remaining private-store commit-position and semantic-mutation quotas are proved",
-    );
+function strictCandidateSourceUtf8(sourceBytes) {
+  if (
+    !Buffer.isBuffer(sourceBytes) ||
+    Object.getPrototypeOf(sourceBytes) !== Buffer.prototype ||
+    Object.getOwnPropertyDescriptor(sourceBytes, "length") !== undefined
+  ) {
+    throw new Error("candidate source must be an ordinary Buffer");
   }
-  return evaluate();
+  const copied = Buffer.from(sourceBytes);
+  const source = copied.toString("utf8");
+  if (!Buffer.from(source, "utf8").equals(copied)) {
+    throw new Error("candidate source is not strict UTF-8");
+  }
+  return Object.freeze({
+    source,
+    byteLength: copied.length,
+    sha256: byteSha256(copied),
+    bytesHex: copied.toString("hex"),
+  });
+}
+
+function assertCanonicalFreshCandidateUrl(href, sourceSha256, ordinal) {
+  const expected = new URL(SOURCE_URL.href);
+  expected.search = `?sourceSha256=${sourceSha256}&loadOrdinal=${String(ordinal).padStart(8, "0")}`;
+  assert.equal(href, expected.href);
+  const observed = new URL(href);
+  assert.equal(observed.hash, "");
+  assert.deepEqual(
+    [...observed.searchParams.keys()],
+    ["sourceSha256", "loadOrdinal"],
+  );
+  assert.match(observed.searchParams.get("sourceSha256"), /^[0-9a-f]{64}$/u);
+  assert.match(observed.searchParams.get("loadOrdinal"), /^[0-9]{8}$/u);
+}
+
+function createDeterministicFreshCandidateLoader(dependencies) {
+  assert.equal(dependencies !== null && typeof dependencies === "object", true);
+  assert.equal(
+    Object.keys(dependencies).every((key) =>
+      [
+        "readSourceBytes",
+        "auditSource",
+        "importCandidate",
+        "sourceUrl",
+      ].includes(key),
+    ),
+    true,
+    "fresh loader dependency surface",
+  );
+  const {
+    readSourceBytes,
+    auditSource,
+    importCandidate,
+    sourceUrl = SOURCE_URL,
+  } = dependencies;
+  assert.equal(typeof readSourceBytes, "function");
+  assert.equal(typeof auditSource, "function");
+  assert.equal(typeof importCandidate, "function");
+  assert.equal(sourceUrl instanceof URL, true);
+  assert.equal(sourceUrl.search, "");
+  assert.equal(sourceUrl.hash, "");
+  let baseline = null;
+  let successfulOrdinal = 0;
+  let lastLoadReceipt = null;
+
+  const installAuditedBaseline = (sourceBytes) => {
+    assert.equal(baseline, null, "fresh loader baseline already installed");
+    const decoded = strictCandidateSourceUtf8(sourceBytes);
+    baseline = Object.freeze({
+      byteLength: decoded.byteLength,
+      sha256: decoded.sha256,
+      bytesHex: decoded.bytesHex,
+    });
+    return baseline;
+  };
+
+  const loadFreshCandidate = async () => {
+    if (baseline === null) {
+      throw new Error("fresh candidate loader baseline is not installed");
+    }
+    let sequence = 0;
+    const sourceBytes = readSourceBytes();
+    const readSequence = (sequence += 1);
+    const observedByteLength = sourceBytes.length;
+    const observedSha256 = byteSha256(sourceBytes);
+    const observedBytesHex = Buffer.from(sourceBytes).toString("hex");
+    assert.deepEqual(
+      {
+        byteLength: observedByteLength,
+        sha256: observedSha256,
+        bytesHex: observedBytesHex,
+      },
+      baseline,
+      "fresh candidate source drift",
+    );
+    const pinSequence = (sequence += 1);
+    const decoded = strictCandidateSourceUtf8(sourceBytes);
+    const decodeSequence = (sequence += 1);
+    assert.deepEqual(
+      {
+        byteLength: decoded.byteLength,
+        sha256: decoded.sha256,
+        bytesHex: decoded.bytesHex,
+      },
+      baseline,
+    );
+    auditSource(decoded.source);
+    const auditSequence = (sequence += 1);
+    const ordinal = successfulOrdinal + 1;
+    const loadUrl = new URL(sourceUrl.href);
+    loadUrl.searchParams.set("sourceSha256", baseline.sha256);
+    loadUrl.searchParams.set("loadOrdinal", String(ordinal).padStart(8, "0"));
+    assert.equal(
+      loadUrl.search,
+      `?sourceSha256=${baseline.sha256}&loadOrdinal=${String(ordinal).padStart(8, "0")}`,
+    );
+    assert.equal(loadUrl.hash, "");
+    assertCanonicalFreshCandidateUrl(loadUrl.href, baseline.sha256, ordinal);
+    const importSequence = (sequence += 1);
+    const loaded = await importCandidate(loadUrl.href);
+    successfulOrdinal = ordinal;
+    lastLoadReceipt = Object.freeze({
+      readSequence,
+      pinSequence,
+      decodeSequence,
+      auditSequence,
+      importSequence,
+      ordinal,
+      url: loadUrl.href,
+      sourceSha256: baseline.sha256,
+      ordered:
+        readSequence < pinSequence &&
+        pinSequence < decodeSequence &&
+        decodeSequence < auditSequence &&
+        auditSequence < importSequence,
+    });
+    return loaded;
+  };
+
+  return Object.freeze({
+    installAuditedBaseline,
+    loadFreshCandidate,
+    baselineReceipt: () => baseline,
+    lastLoadReceipt: () => lastLoadReceipt,
+    successfulOrdinal: () => successfulOrdinal,
+  });
+}
+
+async function evaluateCandidateOnlyWhenEvaluatorCloses(
+  sourceBytes,
+  {
+    liftReceipt,
+    assertLiftReceipt,
+    auditSource,
+    installFreshLoaderBaseline,
+    importCandidate,
+  },
+) {
+  assertLiftReceipt(liftReceipt);
+  if (sourceBytes !== null) {
+    const decoded = strictCandidateSourceUtf8(sourceBytes);
+    auditSource(decoded.source);
+    installFreshLoaderBaseline(sourceBytes);
+  }
+  return importCandidate(SOURCE_URL.href);
 }
 
 function isExpectedAbsentCandidateModuleError(error, candidateSourceText) {
@@ -10837,6 +10994,24 @@ const SYNCHRONOUS_PREDECESSOR_AUDIT =
   pinPredecessorSourcesBeforeCandidateRead();
 assert.deepEqual(C12_EXPECTED_VALUE_SOURCE_AUDIT.forbiddenReferences, []);
 const CONTRACT_VALID_RUNTIME_ORACLE = createContractValidRuntimeOracle();
+const C12_ORACLE_CONSTRUCTION_RECEIPT = recursivelyFreezeEvidence({
+  schema:
+    "oxigraph.test.candidate-containment-guardian-control-v1-c12-construction-phase/v1",
+  phase: "AFTER_ORACLE_BEFORE_ADVERSARIAL_IMPORT_AND_SOURCE_OBSERVATION",
+  oracleIdentitySha256:
+    "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+  candidateSourceReadAttempts: 0,
+  candidateModuleImportAttempts: 0,
+  candidateModuleEvaluationCompletions: 0,
+  candidateBehaviorExecutionAttempts: 0,
+  candidateOrSourceStateConsumedForExpectedValues: false,
+});
+const PRODUCTION_FRESH_CANDIDATE_LOADER =
+  createDeterministicFreshCandidateLoader({
+    readSourceBytes: () => readFileSync(SOURCE_PATH),
+    auditSource: auditCandidateSource,
+    importCandidate: (href) => import(href),
+  });
 const ADVERSARIAL_WIRING_ACTIVITY = {
   candidateSourceReadAttempts: 0,
   candidateModuleImportAttempts: 0,
@@ -10861,16 +11036,13 @@ const SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE =
   adversarialModule.createSourceIndependentMaterializedStatusOracle(
     REQUIREMENTS_ORACLE,
   );
-const failClosedFreshCandidateLoader = () => {
-  ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls += 1;
-  throw new Error(
-    "fresh candidate loading remains disabled until the candidate-connected TODO is implemented",
-  );
-};
 const DEFERRED_ADVERSARIAL_INPUTS = {
   candidate: null,
-  oracle: SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE,
-  loadFreshCandidate: failClosedFreshCandidateLoader,
+  oracle: CONTRACT_VALID_RUNTIME_ORACLE,
+  loadFreshCandidate: async () => {
+    ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls += 1;
+    return PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
+  },
 };
 const adversarialRegistration = {};
 for (const [name, activityName] of [
@@ -10957,26 +11129,297 @@ const STATIC_ESTREE_SUBSET_EVIDENCE = Object.freeze({
   ]),
 });
 
+const { candidateContainmentOwnerV2Readiness } = await import(
+  new URL("../src/candidate/containment-owner-v2.mjs", import.meta.url).href
+);
+const B11_STATIC_CLOSURE_RECEIPT = recursivelyFreezeEvidence({
+  counts: {
+    foundation:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.foundationNegatives,
+    semantic:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.semanticNegatives,
+    negative:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.allCurrentNegatives,
+    positive: STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.positiveCurrent,
+    total:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.allCurrentNegatives +
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.positiveCurrent,
+    commitMutationSubset:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.commitCurrent,
+    negativeEvaluationAttempts:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts.evaluationAttempts,
+  },
+  aggregates: {
+    orderedAll:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.aggregates
+        .orderedControlIdentityProjectionSha256,
+    orderedSemantic:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.aggregates
+        .orderedSemanticProjectionSha256,
+    bucket:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.aggregates
+        .bucketProjectionSha256,
+    commitIds:
+      STATIC_NEGATIVE_CONTROLS.evidenceManifest.aggregates
+        .commitIdProjectionSha256,
+  },
+  oldSynthetic: {
+    context:
+      SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.constructionContextSha256,
+    whole: SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.identitySha256,
+    contractValidInputPreimagesProved: false,
+  },
+  readiness: candidateContainmentOwnerV2Readiness(),
+  matrices: {
+    direct: [10, 9, 0, 1],
+    main: [15, 8, 1, 6],
+    combined: [25, 17, 1, 7],
+  },
+  adversarialExports: Object.keys(adversarialModule).sort(),
+  importAndRegistration: c12Clone(SYNCHRONOUS_ADVERSARIAL_REGISTRATION_AUDIT),
+  sourceAbsent: true,
+});
+
+function assertB11StaticClosureReceipt(receipt) {
+  assert.deepEqual(receipt, {
+    counts: {
+      foundation: 69,
+      semantic: 330,
+      negative: 399,
+      positive: 11,
+      total: 410,
+      commitMutationSubset: 200,
+      negativeEvaluationAttempts: 0,
+    },
+    aggregates: {
+      orderedAll:
+        "edb195e300e6f23dc3ce6fb62ed1084672afb0a682dc3c8a523ba59f630678ec",
+      orderedSemantic:
+        "d7226935eca7a7fc5ee362402d5e776ccd53a94ad8f8df12057bd287ff3fdb67",
+      bucket:
+        "de9a4c9b86e3de6f0efea05c856b9e4ea1bbe478092fddac22bd69144fad522c",
+      commitIds:
+        "f63ed0c1d6f16e26bf5c18eddb85a1a1a437584e8385e91a255da6f729a7b43b",
+    },
+    oldSynthetic: {
+      context:
+        "fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23",
+      whole: "57872372c67c5ad4580ed2945512fc5c7ec0923b121690c2a2927604608b3583",
+      contractValidInputPreimagesProved: false,
+    },
+    readiness: {
+      status: "unavailable",
+      reason: "native-adapter-unavailable",
+    },
+    matrices: {
+      direct: [10, 9, 0, 1],
+      main: [15, 8, 1, 6],
+      combined: [25, 17, 1, 7],
+    },
+    adversarialExports: [
+      "createSourceIndependentAdversarialOracle",
+      "createSourceIndependentMaterializedStatusOracle",
+      "registerAdversarialCandidateTests",
+    ],
+    importAndRegistration: {
+      predecessorAuditCompletedBeforeAdversarialImport: true,
+      candidateSourceReadAttemptsAtImportAndRegistration: 0,
+      candidateModuleImportAttemptsAtImportAndRegistration: 0,
+      candidateModuleEvaluationCompletionsAtImportAndRegistration: 0,
+      candidateBehaviorExecutionAttemptsAtImportAndRegistration: 0,
+      candidateInputReadsAtRegistration: 0,
+      oracleInputReadsAtRegistration: 0,
+      freshLoaderInputReadsAtRegistration: 0,
+      freshLoaderCallsAtImportAndRegistration: 0,
+    },
+    sourceAbsent: true,
+  });
+}
+assertB11StaticClosureReceipt(B11_STATIC_CLOSURE_RECEIPT);
+
+const C13_SOURCE_LIFT_RECEIPT = recursivelyFreezeEvidence({
+  schema:
+    "oxigraph.test.candidate-containment-guardian-control-v1-c13-source-lift/v1",
+  b11: {
+    negative: B11_STATIC_CLOSURE_RECEIPT.counts.negative,
+    positive: B11_STATIC_CLOSURE_RECEIPT.counts.positive,
+    total: B11_STATIC_CLOSURE_RECEIPT.counts.total,
+    commitMutationSubset:
+      B11_STATIC_CLOSURE_RECEIPT.counts.commitMutationSubset,
+    orderedAll: B11_STATIC_CLOSURE_RECEIPT.aggregates.orderedAll,
+    orderedSemantic: B11_STATIC_CLOSURE_RECEIPT.aggregates.orderedSemantic,
+    bucket: B11_STATIC_CLOSURE_RECEIPT.aggregates.bucket,
+    commitIds: B11_STATIC_CLOSURE_RECEIPT.aggregates.commitIds,
+    fullSemanticGateClosed:
+      STATIC_ESTREE_SUBSET_EVIDENCE.fullSemanticGateClosed,
+    historicalSourceAbsent: B11_STATIC_CLOSURE_RECEIPT.sourceAbsent,
+  },
+  staticClosureAloneAuthorizesImport: false,
+  fullMainAuditRequiredBeforePresentImport: true,
+  absentImportUsesCanonicalSourceUrlOnce: true,
+  candidateBehaviorProved: false,
+  filesystemToctouClosed: false,
+  c12ReceiptResealed: false,
+  targetMatrices: {
+    direct: [10, 10, 0, 0],
+    main: [15, 9, 1, 5],
+    combined: [25, 19, 1, 5],
+  },
+});
+
+function assertC13SourceLiftReceipt(receipt) {
+  assert.deepEqual(receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-source-lift/v1",
+    b11: {
+      negative: 399,
+      positive: 11,
+      total: 410,
+      commitMutationSubset: 200,
+      orderedAll:
+        "edb195e300e6f23dc3ce6fb62ed1084672afb0a682dc3c8a523ba59f630678ec",
+      orderedSemantic:
+        "d7226935eca7a7fc5ee362402d5e776ccd53a94ad8f8df12057bd287ff3fdb67",
+      bucket:
+        "de9a4c9b86e3de6f0efea05c856b9e4ea1bbe478092fddac22bd69144fad522c",
+      commitIds:
+        "f63ed0c1d6f16e26bf5c18eddb85a1a1a437584e8385e91a255da6f729a7b43b",
+      fullSemanticGateClosed: true,
+      historicalSourceAbsent: true,
+    },
+    staticClosureAloneAuthorizesImport: false,
+    fullMainAuditRequiredBeforePresentImport: true,
+    absentImportUsesCanonicalSourceUrlOnce: true,
+    candidateBehaviorProved: false,
+    filesystemToctouClosed: false,
+    c12ReceiptResealed: false,
+    targetMatrices: {
+      direct: [10, 10, 0, 0],
+      main: [15, 9, 1, 5],
+      combined: [25, 19, 1, 5],
+    },
+  });
+}
+assertC13SourceLiftReceipt(C13_SOURCE_LIFT_RECEIPT);
+
+const C13_COMPATIBILITY_RECEIPT = recursivelyFreezeEvidence({
+  schema:
+    "oxigraph.test.candidate-containment-guardian-control-v1-c13-compatibility/v1",
+  c12: {
+    oracleIdentitySha256: CONTRACT_VALID_RUNTIME_ORACLE.identitySha256,
+    oracleInventorySha256: c12Clone(
+      CONTRACT_VALID_RUNTIME_ORACLE.inventorySha256,
+    ),
+    mutationCount: 122,
+    mutationKilled: 122,
+    mutationSurvivors: 0,
+    mutationIdsSha256:
+      "51c8ec88d1b16ee7ba37c445be642fca65f9a76e034ac91ed1e3911e4d515e62",
+    recoveryReceiptVectorSha256:
+      "1045eab7fdde69cebb62e22cfb9f113cf722df5c20c5a53fc0f1852a9eb9d1b0",
+    recoveryBrandProvenanceProved:
+      CONTRACT_VALID_RUNTIME_ORACLE.nonclaims.recoveryBrandProvenanceProved,
+  },
+  b11: {
+    matrices: c12Clone(B11_STATIC_CLOSURE_RECEIPT.matrices),
+    readiness: c12Clone(B11_STATIC_CLOSURE_RECEIPT.readiness),
+    oldSyntheticContractValidInputPreimagesProved:
+      B11_STATIC_CLOSURE_RECEIPT.oldSynthetic.contractValidInputPreimagesProved,
+    historicalSourceAbsent: B11_STATIC_CLOSURE_RECEIPT.sourceAbsent,
+  },
+  c12ConstructionPhase: c12Clone(C12_ORACLE_CONSTRUCTION_RECEIPT),
+});
+
+function assertC13CompatibilityReceipt(receipt) {
+  assert.deepEqual(receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-compatibility/v1",
+    c12: {
+      oracleIdentitySha256:
+        "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+      oracleInventorySha256: {
+        startupWitnesses:
+          "02da9739f1f020e820cea836863ac0a5b456b441fb9bc69101d78e614bec7202",
+        inputKindWitnesses:
+          "8b2cd104ffcf39b50f9b8c9ff7b3fbccb7fbdcdbb0a05cf527aac124628111fe",
+        legalSequences:
+          "04bb7e1504c0cc49f3fcfaedd2307deee7c128a781da0e23ea3b55bc2b4e9d13",
+        wholeTransitions:
+          "3786a8c4a698978592e37cec844eb028f8fbf98c4a1d09fad5309edcebbc1d26",
+        acceptedPrefixes:
+          "30d0f193526079714f479e4d81d64bd717ce81c5cfba2bbab29c5e861b2f7fd8",
+        emittedStatuses:
+          "65be9ddf2766a80d97f12c641214a05b358cf9b2aede18000a534025a7a9d9a7",
+        atomicPrefixes:
+          "a35911ae08605cd1ce18b456365d373c88135fb5d9963d50526f4012794c53d5",
+      },
+      mutationCount: 122,
+      mutationKilled: 122,
+      mutationSurvivors: 0,
+      mutationIdsSha256:
+        "51c8ec88d1b16ee7ba37c445be642fca65f9a76e034ac91ed1e3911e4d515e62",
+      recoveryReceiptVectorSha256:
+        "1045eab7fdde69cebb62e22cfb9f113cf722df5c20c5a53fc0f1852a9eb9d1b0",
+      recoveryBrandProvenanceProved: false,
+    },
+    b11: {
+      matrices: {
+        direct: [10, 9, 0, 1],
+        main: [15, 8, 1, 6],
+        combined: [25, 17, 1, 7],
+      },
+      readiness: {
+        status: "unavailable",
+        reason: "native-adapter-unavailable",
+      },
+      oldSyntheticContractValidInputPreimagesProved: false,
+      historicalSourceAbsent: true,
+    },
+    c12ConstructionPhase: {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-control-v1-c12-construction-phase/v1",
+      phase: "AFTER_ORACLE_BEFORE_ADVERSARIAL_IMPORT_AND_SOURCE_OBSERVATION",
+      oracleIdentitySha256:
+        "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+      candidateSourceReadAttempts: 0,
+      candidateModuleImportAttempts: 0,
+      candidateModuleEvaluationCompletions: 0,
+      candidateBehaviorExecutionAttempts: 0,
+      candidateOrSourceStateConsumedForExpectedValues: false,
+    },
+  });
+}
+assertC13CompatibilityReceipt(C13_COMPATIBILITY_RECEIPT);
+
 let candidate = null;
 let candidateImportError = null;
 let candidateSourceGateError = null;
+let sourceBytes = null;
 let sourceText = null;
 try {
   ADVERSARIAL_WIRING_ACTIVITY.candidateSourceReadAttempts += 1;
-  sourceText = readFileSync(SOURCE_PATH, "utf8");
+  sourceBytes = readFileSync(SOURCE_PATH);
+  sourceText = strictCandidateSourceUtf8(sourceBytes).source;
 } catch (error) {
   if (error?.code !== "ENOENT") throw error;
 }
 try {
-  candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(sourceText, () => {
-    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleImportAttempts += 1;
-    return import(SOURCE_URL.href).then((loadedCandidate) => {
+  candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(sourceBytes, {
+    liftReceipt: C13_SOURCE_LIFT_RECEIPT,
+    assertLiftReceipt: assertC13SourceLiftReceipt,
+    auditSource: auditCandidateSource,
+    installFreshLoaderBaseline:
+      PRODUCTION_FRESH_CANDIDATE_LOADER.installAuditedBaseline,
+    importCandidate: async (href) => {
+      assert.equal(href, SOURCE_URL.href);
+      ADVERSARIAL_WIRING_ACTIVITY.candidateModuleImportAttempts += 1;
+      const loadedCandidate = await import(href);
       ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions += 1;
       return loadedCandidate;
-    });
+    },
   });
 } catch (error) {
-  if (sourceText !== null) {
+  if (sourceBytes !== null) {
     candidateSourceGateError = error;
   } else if (isExpectedAbsentCandidateModuleError(error, sourceText)) {
     candidateImportError = error;
@@ -11161,11 +11604,11 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
   );
   assert.equal(ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls, 0);
   assert.equal(
-    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions,
+    C12_ORACLE_CONSTRUCTION_RECEIPT.candidateModuleEvaluationCompletions,
     0,
   );
   assert.equal(
-    ADVERSARIAL_WIRING_ACTIVITY.candidateBehaviorExecutionAttempts,
+    C12_ORACLE_CONSTRUCTION_RECEIPT.candidateBehaviorExecutionAttempts,
     0,
   );
   const fixturePins = new Map(
@@ -11233,16 +11676,19 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     forbiddenReferences: [],
     constructionFunctionCount: 26,
   });
-  assert.equal(sourceText, null);
-  assert.equal(candidate, null);
-  assert.equal(
-    ADVERSARIAL_WIRING_ACTIVITY.candidateModuleEvaluationCompletions,
-    0,
-  );
-  assert.equal(
-    ADVERSARIAL_WIRING_ACTIVITY.candidateBehaviorExecutionAttempts,
-    0,
-  );
+  assert.deepEqual(C12_ORACLE_CONSTRUCTION_RECEIPT, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c12-construction-phase/v1",
+    phase: "AFTER_ORACLE_BEFORE_ADVERSARIAL_IMPORT_AND_SOURCE_OBSERVATION",
+    oracleIdentitySha256:
+      "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+    candidateSourceReadAttempts: 0,
+    candidateModuleImportAttempts: 0,
+    candidateModuleEvaluationCompletions: 0,
+    candidateBehaviorExecutionAttempts: 0,
+    candidateOrSourceStateConsumedForExpectedValues: false,
+  });
+  assertRecursivelyFrozenWithoutByteViews(C12_ORACLE_CONSTRUCTION_RECEIPT);
   assert.equal(
     SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.construction
       .contractValidInputPreimagesProved,
@@ -11986,100 +12432,8 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     mutant.construction.predecessorConstructorConsumedForExpectedValues = true;
   });
 
-  const { candidateContainmentOwnerV2Readiness } = await import(
-    new URL("../src/candidate/containment-owner-v2.mjs", import.meta.url).href
-  );
-  const staticCounts = STATIC_NEGATIVE_CONTROLS.evidenceManifest.counts;
-  const staticAggregates = STATIC_NEGATIVE_CONTROLS.evidenceManifest.aggregates;
-  const b11Receipt = recursivelyFreezeEvidence({
-    counts: {
-      foundation: staticCounts.foundationNegatives,
-      semantic: staticCounts.semanticNegatives,
-      negative: staticCounts.allCurrentNegatives,
-      positive: staticCounts.positiveCurrent,
-      total: staticCounts.allCurrentNegatives + staticCounts.positiveCurrent,
-      commitMutationSubset: staticCounts.commitCurrent,
-      negativeEvaluationAttempts: staticCounts.evaluationAttempts,
-    },
-    aggregates: {
-      orderedAll: staticAggregates.orderedControlIdentityProjectionSha256,
-      orderedSemantic: staticAggregates.orderedSemanticProjectionSha256,
-      bucket: staticAggregates.bucketProjectionSha256,
-      commitIds: staticAggregates.commitIdProjectionSha256,
-    },
-    oldSynthetic: {
-      context:
-        SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.constructionContextSha256,
-      whole: SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.identitySha256,
-      contractValidInputPreimagesProved:
-        SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE.construction
-          .contractValidInputPreimagesProved,
-    },
-    readiness: candidateContainmentOwnerV2Readiness(),
-    matrices: {
-      direct: [10, 9, 0, 1],
-      main: [15, 8, 1, 6],
-      combined: [25, 17, 1, 7],
-    },
-    adversarialExports: Object.keys(adversarialModule).sort(),
-    importAndRegistration: c12Clone(SYNCHRONOUS_ADVERSARIAL_REGISTRATION_AUDIT),
-    sourceAbsent: sourceText === null,
-  });
-  const assertB11Receipt = (receipt) =>
-    assert.deepEqual(receipt, {
-      counts: {
-        foundation: 69,
-        semantic: 330,
-        negative: 399,
-        positive: 11,
-        total: 410,
-        commitMutationSubset: 200,
-        negativeEvaluationAttempts: 0,
-      },
-      aggregates: {
-        orderedAll:
-          "edb195e300e6f23dc3ce6fb62ed1084672afb0a682dc3c8a523ba59f630678ec",
-        orderedSemantic:
-          "d7226935eca7a7fc5ee362402d5e776ccd53a94ad8f8df12057bd287ff3fdb67",
-        bucket:
-          "de9a4c9b86e3de6f0efea05c856b9e4ea1bbe478092fddac22bd69144fad522c",
-        commitIds:
-          "f63ed0c1d6f16e26bf5c18eddb85a1a1a437584e8385e91a255da6f729a7b43b",
-      },
-      oldSynthetic: {
-        context:
-          "fd008c99ac11e32de80c25399d5a8d34bb6ab4832c6e58e969b84993b7470f23",
-        whole:
-          "57872372c67c5ad4580ed2945512fc5c7ec0923b121690c2a2927604608b3583",
-        contractValidInputPreimagesProved: false,
-      },
-      readiness: {
-        status: "unavailable",
-        reason: "native-adapter-unavailable",
-      },
-      matrices: {
-        direct: [10, 9, 0, 1],
-        main: [15, 8, 1, 6],
-        combined: [25, 17, 1, 7],
-      },
-      adversarialExports: [
-        "createSourceIndependentAdversarialOracle",
-        "createSourceIndependentMaterializedStatusOracle",
-        "registerAdversarialCandidateTests",
-      ],
-      importAndRegistration: {
-        predecessorAuditCompletedBeforeAdversarialImport: true,
-        candidateSourceReadAttemptsAtImportAndRegistration: 0,
-        candidateModuleImportAttemptsAtImportAndRegistration: 0,
-        candidateModuleEvaluationCompletionsAtImportAndRegistration: 0,
-        candidateBehaviorExecutionAttemptsAtImportAndRegistration: 0,
-        candidateInputReadsAtRegistration: 0,
-        oracleInputReadsAtRegistration: 0,
-        freshLoaderInputReadsAtRegistration: 0,
-        freshLoaderCallsAtImportAndRegistration: 0,
-      },
-      sourceAbsent: true,
-    });
+  const b11Receipt = B11_STATIC_CLOSURE_RECEIPT;
+  const assertB11Receipt = assertB11StaticClosureReceipt;
   assertB11Receipt(b11Receipt);
   for (const [id, mutateReceipt] of [
     ["b11-count-drift", (receipt) => (receipt.counts.negative = 398)],
@@ -14365,15 +14719,13 @@ test("rejects static-policy negative controls before any evaluation attempt", ()
     baselineAudit.astPolicy.classifiedNodeCount,
     baselineAudit.astNodeCount,
   );
-  let sourcePresentEvaluationAttempts = 0;
-  assert.throws(
-    () =>
-      evaluateCandidateOnlyWhenEvaluatorCloses(sourceSkeleton(), () => {
-        sourcePresentEvaluationAttempts += 1;
-      }),
-    /evaluation disabled until the complete evaluator matrix is executable/gu,
+  assert.doesNotThrow(() =>
+    assertC13SourceLiftReceipt(C13_SOURCE_LIFT_RECEIPT),
   );
-  assert.equal(sourcePresentEvaluationAttempts, 0);
+  assert.equal(
+    C13_SOURCE_LIFT_RECEIPT.staticClosureAloneAuthorizesImport,
+    false,
+  );
 });
 
 test("recognizes only exact absent-candidate module-load failures", () => {
@@ -14773,11 +15125,1374 @@ test(
   { todo: true },
   () => {},
 );
-test(
-  "close the remaining private-store commit-position and semantic-mutation quotas before lifting the source-presence stop",
-  { todo: true },
-  () => {},
-);
+test("close the remaining private-store commit-position and semantic-mutation quotas before lifting the source-presence stop", async () => {
+  const syntheticSourceBytes = Buffer.from(sourceSkeleton(), "utf8");
+  const syntheticSourceSha256 = byteSha256(syntheticSourceBytes);
+  const mutationKills = [];
+  const recordKill = (id, rejection) => {
+    assert.notEqual(rejection, null, `${id} survived`);
+    assert.equal(
+      mutationKills.some((entry) => entry.id === id),
+      false,
+      `${id} is duplicated`,
+    );
+    mutationKills.push(
+      Object.freeze({
+        id,
+        reason: String(rejection.message).split("\n", 1)[0],
+      }),
+    );
+  };
+  const killSync = (id, run) => {
+    let rejection = null;
+    try {
+      run();
+    } catch (error) {
+      rejection = error;
+    }
+    recordKill(id, rejection);
+  };
+  const killAsync = async (id, run) => {
+    let rejection = null;
+    try {
+      await run();
+    } catch (error) {
+      rejection = error;
+    }
+    recordKill(id, rejection);
+  };
+  const mutateClone = (id, value, mutate, validate) => {
+    const mutant = c12Clone(value);
+    mutate(mutant);
+    assert.notDeepEqual(mutant, value, `${id} must not be a no-op`);
+    killSync(id, () => validate(mutant));
+  };
+
+  const initialEvents = [];
+  let initialAuditCount = 0;
+  let initialBaselineInstallCount = 0;
+  let initialImportCount = 0;
+  let freshSourceBytes = Buffer.from(syntheticSourceBytes);
+  let freshAuditMustFail = false;
+  let freshImportIdentity = 0;
+  const freshImportUrls = [];
+  const freshImportedModules = [];
+  const freshLoader = createDeterministicFreshCandidateLoader({
+    readSourceBytes() {
+      initialEvents.push("fresh-read");
+      return Buffer.from(freshSourceBytes);
+    },
+    auditSource(source) {
+      initialEvents.push("fresh-full-main-audit");
+      if (freshAuditMustFail) {
+        throw new Error("synthetic fresh full-main audit failure");
+      }
+      auditCandidateSource(source);
+    },
+    importCandidate(href) {
+      initialEvents.push("fresh-import");
+      freshImportUrls.push(href);
+      const loaded = Object.freeze({
+        syntheticFreshModuleIdentity: (freshImportIdentity += 1),
+      });
+      freshImportedModules.push(loaded);
+      return Promise.resolve(loaded);
+    },
+  });
+  const initialCandidate = Object.freeze({
+    syntheticInitialModuleIdentity: 1,
+  });
+  const loadedInitialCandidate = await evaluateCandidateOnlyWhenEvaluatorCloses(
+    syntheticSourceBytes,
+    {
+      liftReceipt: C13_SOURCE_LIFT_RECEIPT,
+      assertLiftReceipt: assertC13SourceLiftReceipt,
+      auditSource(source) {
+        initialEvents.push("initial-full-main-audit");
+        initialAuditCount += 1;
+        auditCandidateSource(source);
+      },
+      installFreshLoaderBaseline(bytes) {
+        initialEvents.push("initial-baseline-install");
+        initialBaselineInstallCount += 1;
+        return freshLoader.installAuditedBaseline(bytes);
+      },
+      importCandidate(href) {
+        initialEvents.push("initial-import");
+        initialImportCount += 1;
+        assert.equal(href, SOURCE_URL.href);
+        return Promise.resolve(initialCandidate);
+      },
+    },
+  );
+  assert.equal(loadedInitialCandidate, initialCandidate);
+  const presentGateReceipt = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-initial-gate/v1",
+    mode: "PRESENT",
+    sourceSha256: syntheticSourceSha256,
+    fullMainAuditCount: initialAuditCount,
+    baselineInstallCount: initialBaselineInstallCount,
+    importCount: initialImportCount,
+    importUrl: SOURCE_URL.href,
+    orderedEvents: initialEvents.slice(0, 3),
+    directAuditSubstitutedForMainAudit: false,
+  });
+  const assertPresentGateReceipt = (receipt) =>
+    assert.deepEqual(receipt, {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-control-v1-c13-initial-gate/v1",
+      mode: "PRESENT",
+      sourceSha256: syntheticSourceSha256,
+      fullMainAuditCount: 1,
+      baselineInstallCount: 1,
+      importCount: 1,
+      importUrl: SOURCE_URL.href,
+      orderedEvents: [
+        "initial-full-main-audit",
+        "initial-baseline-install",
+        "initial-import",
+      ],
+      directAuditSubstitutedForMainAudit: false,
+    });
+  assertPresentGateReceipt(presentGateReceipt);
+
+  const baselineReceipt = freshLoader.baselineReceipt();
+  assert.deepEqual(baselineReceipt, {
+    byteLength: syntheticSourceBytes.length,
+    sha256: syntheticSourceSha256,
+    bytesHex: syntheticSourceBytes.toString("hex"),
+  });
+  assertRecursivelyFrozenWithoutByteViews(baselineReceipt);
+
+  const firstFreshCandidate = await freshLoader.loadFreshCandidate();
+  const firstFreshReceipt = freshLoader.lastLoadReceipt();
+  const secondFreshCandidate = await freshLoader.loadFreshCandidate();
+  const secondFreshReceipt = freshLoader.lastLoadReceipt();
+  assert.notEqual(firstFreshCandidate, secondFreshCandidate);
+  assert.notEqual(freshImportUrls[0], freshImportUrls[1]);
+  const assertFreshReceipt = (receipt, ordinal) => {
+    const expectedUrl = new URL(SOURCE_URL.href);
+    expectedUrl.search = `?sourceSha256=${syntheticSourceSha256}&loadOrdinal=${String(
+      ordinal,
+    ).padStart(8, "0")}`;
+    assert.deepEqual(receipt, {
+      readSequence: 1,
+      pinSequence: 2,
+      decodeSequence: 3,
+      auditSequence: 4,
+      importSequence: 5,
+      ordinal,
+      url: expectedUrl.href,
+      sourceSha256: syntheticSourceSha256,
+      ordered: true,
+    });
+  };
+  assertFreshReceipt(firstFreshReceipt, 1);
+  assertFreshReceipt(secondFreshReceipt, 2);
+  assert.deepEqual(freshImportedModules, [
+    firstFreshCandidate,
+    secondFreshCandidate,
+  ]);
+  assert.equal(freshLoader.successfulOrdinal(), 2);
+
+  const absentEvents = [];
+  let absentAuditCount = 0;
+  let absentBaselineInstallCount = 0;
+  let absentImportCount = 0;
+  const absentSentinel = Object.freeze({ syntheticAbsentImport: true });
+  const absentResult = await evaluateCandidateOnlyWhenEvaluatorCloses(null, {
+    liftReceipt: C13_SOURCE_LIFT_RECEIPT,
+    assertLiftReceipt: assertC13SourceLiftReceipt,
+    auditSource() {
+      absentAuditCount += 1;
+      absentEvents.push("audit");
+    },
+    installFreshLoaderBaseline() {
+      absentBaselineInstallCount += 1;
+      absentEvents.push("baseline");
+    },
+    importCandidate(href) {
+      absentImportCount += 1;
+      absentEvents.push("import");
+      assert.equal(href, SOURCE_URL.href);
+      return Promise.resolve(absentSentinel);
+    },
+  });
+  assert.equal(absentResult, absentSentinel);
+  const absentGateReceipt = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-initial-gate/v1",
+    mode: "ABSENT",
+    sourceSha256: null,
+    fullMainAuditCount: absentAuditCount,
+    baselineInstallCount: absentBaselineInstallCount,
+    importCount: absentImportCount,
+    importUrl: SOURCE_URL.href,
+    orderedEvents: absentEvents,
+  });
+  const assertAbsentGateReceipt = (receipt) =>
+    assert.deepEqual(receipt, {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-control-v1-c13-initial-gate/v1",
+      mode: "ABSENT",
+      sourceSha256: null,
+      fullMainAuditCount: 0,
+      baselineInstallCount: 0,
+      importCount: 1,
+      importUrl: SOURCE_URL.href,
+      orderedEvents: ["import"],
+    });
+  assertAbsentGateReceipt(absentGateReceipt);
+
+  const expectedBytePositionSpecs = Object.freeze([
+    Object.freeze({
+      name: "startupReportBytes",
+      operation: "createCandidateContainmentGuardianStartupV1",
+      minimumBytes: 0,
+      maximumBytes: 8_192,
+    }),
+    Object.freeze({
+      name: "epochBytes",
+      operation: "createCandidateContainmentGuardianStartupV1",
+      minimumBytes: 32,
+      maximumBytes: 32,
+    }),
+    Object.freeze({
+      name: "admissionFrameBytes",
+      operation: "createCandidateContainmentGuardianAdmissionInputV1",
+      minimumBytes: 0,
+      maximumBytes: 131_072,
+    }),
+    Object.freeze({
+      name: "recvmsgReportBytes",
+      operation: "createCandidateContainmentGuardianAdmissionInputV1",
+      minimumBytes: 0,
+      maximumBytes: 16_384,
+    }),
+    Object.freeze({
+      name: "cancelFrameBytes",
+      operation: "createCandidateContainmentGuardianCancelInputV1",
+      minimumBytes: 0,
+      maximumBytes: 4_096,
+    }),
+    Object.freeze({
+      name: "recoveryRequestFrameBytes",
+      operation: "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      minimumBytes: 0,
+      maximumBytes: 32_768,
+    }),
+    Object.freeze({
+      name: "diagnosticSummaryReportBytes",
+      operation: "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      minimumBytes: 0,
+      maximumBytes: 1_024,
+    }),
+    Object.freeze({
+      name: "rawDiagnosticBytes",
+      operation: "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      minimumBytes: 0,
+      maximumBytes: 16_384,
+    }),
+    Object.freeze({
+      name: "statusFrameBytes",
+      operation: "verifyCandidateContainmentGuardianStatusFrameV1",
+      minimumBytes: 0,
+      maximumBytes: 8_192,
+    }),
+  ]);
+  const expectedByteFamilies = Object.freeze([
+    "minimum",
+    "maximum",
+    "own-length-collision",
+    "subclass",
+    "foreign-prototype",
+    "shared-backing",
+    "bounds-before-shape",
+    "proxy-trap-free",
+    "non-buffer",
+  ]);
+  const expectedPrivateOperations = Object.freeze([
+    "createCandidateContainmentGuardianStartupV1",
+    "createCandidateContainmentGuardianAdmissionInputV1",
+    "createCandidateContainmentGuardianCancelInputV1",
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    "createCandidateContainmentGuardianStatusEofInputV1",
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ]);
+  const expectedPrivateStoreByOperation = Object.freeze(
+    Object.fromEntries(
+      EXPECTED_PRIVATE_STORE_COMMITS.map(({ functionName, storeName }) => [
+        functionName,
+        storeName,
+      ]),
+    ),
+  );
+  const expectedPrivatePhases = Object.freeze([
+    "earlyFailure",
+    "lateFailure",
+    "success",
+    "failureAfterSuccess",
+    "crossModule",
+  ]);
+  const expectedByteControlIds = Object.freeze(
+    expectedBytePositionSpecs.flatMap(({ name }) =>
+      expectedByteFamilies.map((family) => `${name}:${family}`),
+    ),
+  );
+  const expectedPrivateControlIds = Object.freeze(
+    expectedPrivateOperations.flatMap((operation) =>
+      expectedPrivatePhases.map((phase) => `${operation}:${phase}`),
+    ),
+  );
+  const makeSyntheticCandidate = (moduleIdentity) => {
+    const calls = [];
+    const candidateModule = {};
+    for (const operation of new Set([
+      ...expectedBytePositionSpecs.map((entry) => entry.operation),
+      ...expectedPrivateOperations,
+    ])) {
+      candidateModule[operation] = (control) => {
+        assert.equal(Object.isFrozen(control), true);
+        calls.push(
+          recursivelyFreezeEvidence({
+            moduleIdentity,
+            operation,
+            control: c12Clone(control),
+          }),
+        );
+        return null;
+      };
+    }
+    return Object.freeze({
+      module: Object.freeze(candidateModule),
+      calls,
+    });
+  };
+  const primarySyntheticCandidate = makeSyntheticCandidate("primary");
+  const freshSyntheticCandidate = makeSyntheticCandidate("fresh");
+  const syntheticRegistrations = [];
+  const syntheticGetterReads = {
+    candidate: 0,
+    oracle: 0,
+    loadFreshCandidate: 0,
+  };
+  const syntheticGetterOrder = [];
+  let activeSyntheticCallback = "registration";
+  let syntheticFreshLoaderCalls = 0;
+  const syntheticRegistration = {
+    registerTest(name, options, run) {
+      syntheticRegistrations.push({ name, options, run });
+    },
+  };
+  for (const [name, value] of [
+    ["candidate", primarySyntheticCandidate.module],
+    ["oracle", CONTRACT_VALID_RUNTIME_ORACLE],
+    [
+      "loadFreshCandidate",
+      async () => {
+        syntheticFreshLoaderCalls += 1;
+        return freshSyntheticCandidate.module;
+      },
+    ],
+  ]) {
+    Object.defineProperty(syntheticRegistration, name, {
+      configurable: false,
+      enumerable: true,
+      get() {
+        syntheticGetterReads[name] += 1;
+        syntheticGetterOrder.push(`${activeSyntheticCallback}:${name}`);
+        return value;
+      },
+    });
+  }
+  const syntheticRegistrationReceipt =
+    adversarialModule.registerAdversarialCandidateTests(syntheticRegistration);
+  const registrationGetterReads = c12Clone(syntheticGetterReads);
+  assert.deepEqual(registrationGetterReads, {
+    candidate: 0,
+    oracle: 0,
+    loadFreshCandidate: 0,
+  });
+  assert.equal(syntheticFreshLoaderCalls, 0);
+  assert.equal(syntheticRegistrations.length, 2);
+  activeSyntheticCallback = "byte";
+  const byteDispatchReceipt = await syntheticRegistrations[0].run();
+  activeSyntheticCallback = "private";
+  const privateDispatchReceipt = await syntheticRegistrations[1].run();
+  activeSyntheticCallback = "complete";
+  assert.deepEqual(syntheticGetterReads, {
+    candidate: 2,
+    oracle: 2,
+    loadFreshCandidate: 1,
+  });
+  assert.deepEqual(syntheticGetterOrder, [
+    "byte:candidate",
+    "byte:oracle",
+    "private:candidate",
+    "private:oracle",
+    "private:loadFreshCandidate",
+  ]);
+  assert.equal(syntheticFreshLoaderCalls, 1);
+
+  const primaryByteCalls = primarySyntheticCandidate.calls.filter(
+    ({ control }) =>
+      control.schema ===
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-control/v1",
+  );
+  const primaryPrivateCalls = primarySyntheticCandidate.calls.filter(
+    ({ control }) =>
+      control.schema ===
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-control/v1",
+  );
+  assert.deepEqual(
+    primaryByteCalls.map(({ operation, control }) => ({
+      operation,
+      position: control.position,
+      minimumBytes: control.minimumBytes,
+      maximumBytes: control.maximumBytes,
+      family: control.family,
+      oracleIdentitySha256: control.oracleIdentitySha256,
+    })),
+    expectedBytePositionSpecs.flatMap((spec) =>
+      expectedByteFamilies.map((family) => ({
+        operation: spec.operation,
+        position: spec.name,
+        minimumBytes: spec.minimumBytes,
+        maximumBytes: spec.maximumBytes,
+        family,
+        oracleIdentitySha256:
+          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+      })),
+    ),
+  );
+  assert.deepEqual(
+    primaryPrivateCalls.map(({ operation, control }) => ({
+      operation,
+      store: control.store,
+      phase: control.phase,
+      oracleIdentitySha256: control.oracleIdentitySha256,
+    })),
+    expectedPrivateOperations.flatMap((operation) =>
+      expectedPrivatePhases
+        .filter((phase) => phase !== "crossModule")
+        .map((phase) => ({
+          operation,
+          store: expectedPrivateStoreByOperation[operation],
+          phase,
+          oracleIdentitySha256:
+            "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+        })),
+    ),
+  );
+  assert.deepEqual(
+    freshSyntheticCandidate.calls.map(({ operation, control }) => ({
+      operation,
+      store: control.store,
+      phase: control.phase,
+      oracleIdentitySha256: control.oracleIdentitySha256,
+    })),
+    expectedPrivateOperations.map((operation) => ({
+      operation,
+      store: expectedPrivateStoreByOperation[operation],
+      phase: "crossModule",
+      oracleIdentitySha256:
+        "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+    })),
+  );
+
+  const callbackWiringReceipt = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-callback-wiring/v1",
+    registration: c12Clone(syntheticRegistrationReceipt),
+    registeredTests: syntheticRegistrations.map(({ name, options }, index) =>
+      Object.freeze({
+        name,
+        options: c12Clone(options),
+        requiredInputs:
+          index === 0
+            ? ["candidate", "oracle"]
+            : ["candidate", "oracle", "loadFreshCandidate"],
+      }),
+    ),
+    registrationGetterReads,
+    executionGetterReads: c12Clone(syntheticGetterReads),
+    executionGetterOrder: syntheticGetterOrder,
+    byteDispatch: c12Clone(byteDispatchReceipt),
+    privateDispatch: c12Clone(privateDispatchReceipt),
+    primaryControlCount: primarySyntheticCandidate.calls.length,
+    freshControlCount: freshSyntheticCandidate.calls.length,
+    freshLoaderCallCount: syntheticFreshLoaderCalls,
+    candidateBehaviorProved: false,
+  });
+  const expectedRegisteredTests = [
+    {
+      name: "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
+      options: { todo: true },
+      requiredInputs: ["candidate", "oracle"],
+    },
+    {
+      name: "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
+      options: { todo: true },
+      requiredInputs: ["candidate", "oracle", "loadFreshCandidate"],
+    },
+  ];
+  const assertCallbackWiringReceipt = (receipt) =>
+    assert.deepEqual(receipt, {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-control-v1-c13-callback-wiring/v1",
+      registration: {
+        schema:
+          "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
+        inventorySha256:
+          "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e",
+        registeredCount: 2,
+        todoCount: 2,
+        inputsDeferredUntilExecution: true,
+      },
+      registeredTests: expectedRegisteredTests,
+      registrationGetterReads: {
+        candidate: 0,
+        oracle: 0,
+        loadFreshCandidate: 0,
+      },
+      executionGetterReads: {
+        candidate: 2,
+        oracle: 2,
+        loadFreshCandidate: 1,
+      },
+      executionGetterOrder: [
+        "byte:candidate",
+        "byte:oracle",
+        "private:candidate",
+        "private:oracle",
+        "private:loadFreshCandidate",
+      ],
+      byteDispatch: {
+        schema:
+          "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-dispatch/v1",
+        positionCount: 9,
+        familyCount: 9,
+        controlCount: 81,
+        controlIds: expectedByteControlIds,
+        candidateBehaviorProved: false,
+      },
+      privateDispatch: {
+        schema:
+          "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
+        ownerCount: 10,
+        phaseCount: 5,
+        controlCount: 50,
+        freshLoaderCallCount: 1,
+        controlIds: expectedPrivateControlIds,
+        candidateBehaviorProved: false,
+      },
+      primaryControlCount: 121,
+      freshControlCount: 10,
+      freshLoaderCallCount: 1,
+      candidateBehaviorProved: false,
+    });
+  assertCallbackWiringReceipt(callbackWiringReceipt);
+  assertRecursivelyFrozenWithoutByteViews(callbackWiringReceipt);
+
+  const scalarPaths = [];
+  const collectScalarPaths = (value, path = []) => {
+    if (value === null || typeof value !== "object") {
+      scalarPaths.push(path);
+      return;
+    }
+    for (const key of Object.keys(value)) {
+      collectScalarPaths(value[key], [...path, key]);
+    }
+  };
+  collectScalarPaths(C13_SOURCE_LIFT_RECEIPT);
+  const readPath = (value, path) =>
+    path.reduce((current, key) => current[key], value);
+  const writePath = (value, path, replacement) => {
+    const parent = path
+      .slice(0, -1)
+      .reduce((current, key) => current[key], value);
+    parent[path.at(-1)] = replacement;
+  };
+  for (const path of scalarPaths) {
+    const id = `lift-field-${path.join("-")}`;
+    mutateClone(
+      id,
+      C13_SOURCE_LIFT_RECEIPT,
+      (mutant) => {
+        const original = readPath(mutant, path);
+        const replacement =
+          typeof original === "boolean"
+            ? !original
+            : typeof original === "number"
+              ? original + 1
+              : /^[0-9a-f]{64}$/u.test(original)
+                ? `${original.slice(0, -1)}${original.endsWith("0") ? "1" : "0"}`
+                : `${original}-drift`;
+        writePath(mutant, path, replacement);
+      },
+      assertC13SourceLiftReceipt,
+    );
+  }
+  mutateClone(
+    "lift-historical-source-aliased-to-live-present-state",
+    C13_SOURCE_LIFT_RECEIPT,
+    (mutant) => {
+      mutant.b11.historicalSourceAbsent = syntheticSourceBytes === null;
+    },
+    assertC13SourceLiftReceipt,
+  );
+
+  const invalidLiftReceipt = c12Clone(C13_SOURCE_LIFT_RECEIPT);
+  invalidLiftReceipt.fullMainAuditRequiredBeforePresentImport = false;
+  let invalidLiftAuditCount = 0;
+  let invalidLiftBaselineCount = 0;
+  let invalidLiftImportCount = 0;
+  await killAsync("present-invalid-receipt-before-audit-import", () =>
+    evaluateCandidateOnlyWhenEvaluatorCloses(syntheticSourceBytes, {
+      liftReceipt: invalidLiftReceipt,
+      assertLiftReceipt: assertC13SourceLiftReceipt,
+      auditSource() {
+        invalidLiftAuditCount += 1;
+      },
+      installFreshLoaderBaseline() {
+        invalidLiftBaselineCount += 1;
+      },
+      importCandidate() {
+        invalidLiftImportCount += 1;
+      },
+    }),
+  );
+  assert.deepEqual(
+    { invalidLiftAuditCount, invalidLiftBaselineCount, invalidLiftImportCount },
+    {
+      invalidLiftAuditCount: 0,
+      invalidLiftBaselineCount: 0,
+      invalidLiftImportCount: 0,
+    },
+  );
+
+  let invalidUtf8AuditCount = 0;
+  let invalidUtf8BaselineCount = 0;
+  let invalidUtf8ImportCount = 0;
+  await killAsync("present-strict-utf8-decode-drift", () =>
+    evaluateCandidateOnlyWhenEvaluatorCloses(Buffer.from([0xc3, 0x28]), {
+      liftReceipt: C13_SOURCE_LIFT_RECEIPT,
+      assertLiftReceipt: assertC13SourceLiftReceipt,
+      auditSource() {
+        invalidUtf8AuditCount += 1;
+      },
+      installFreshLoaderBaseline() {
+        invalidUtf8BaselineCount += 1;
+      },
+      importCandidate() {
+        invalidUtf8ImportCount += 1;
+      },
+    }),
+  );
+  assert.deepEqual(
+    { invalidUtf8AuditCount, invalidUtf8BaselineCount, invalidUtf8ImportCount },
+    {
+      invalidUtf8AuditCount: 0,
+      invalidUtf8BaselineCount: 0,
+      invalidUtf8ImportCount: 0,
+    },
+  );
+
+  let failedMainAuditBaselineCount = 0;
+  let failedMainAuditImportCount = 0;
+  await killAsync("present-full-main-audit-failure-before-import", () =>
+    evaluateCandidateOnlyWhenEvaluatorCloses(syntheticSourceBytes, {
+      liftReceipt: C13_SOURCE_LIFT_RECEIPT,
+      assertLiftReceipt: assertC13SourceLiftReceipt,
+      auditSource() {
+        throw new Error("synthetic initial full-main audit failure");
+      },
+      installFreshLoaderBaseline() {
+        failedMainAuditBaselineCount += 1;
+      },
+      importCandidate() {
+        failedMainAuditImportCount += 1;
+      },
+    }),
+  );
+  assert.deepEqual(
+    { failedMainAuditBaselineCount, failedMainAuditImportCount },
+    { failedMainAuditBaselineCount: 0, failedMainAuditImportCount: 0 },
+  );
+  for (const [id, mutate] of [
+    [
+      "present-import-before-main-audit",
+      (receipt) => {
+        receipt.orderedEvents = [
+          "initial-import",
+          "initial-full-main-audit",
+          "initial-baseline-install",
+        ];
+      },
+    ],
+    [
+      "present-direct-audit-substituted",
+      (receipt) => {
+        receipt.directAuditSubstitutedForMainAudit = true;
+      },
+    ],
+    [
+      "present-baseline-before-main-audit",
+      (receipt) => {
+        receipt.orderedEvents = [
+          "initial-baseline-install",
+          "initial-full-main-audit",
+          "initial-import",
+        ];
+      },
+    ],
+    [
+      "present-zero-imports",
+      (receipt) => {
+        receipt.importCount = 0;
+      },
+    ],
+    [
+      "present-two-imports",
+      (receipt) => {
+        receipt.importCount = 2;
+      },
+    ],
+    [
+      "present-query-on-initial-import",
+      (receipt) => {
+        receipt.importUrl = `${SOURCE_URL.href}?fresh=1`;
+      },
+    ],
+    [
+      "present-fragment-on-initial-import",
+      (receipt) => {
+        receipt.importUrl = `${SOURCE_URL.href}#fresh`;
+      },
+    ],
+  ]) {
+    mutateClone(id, presentGateReceipt, mutate, assertPresentGateReceipt);
+  }
+
+  const exactUrlError = {
+    code: "ERR_MODULE_NOT_FOUND",
+    message: "URL-bearing runtime",
+    url: SOURCE_URL.href,
+  };
+  const exactMessageError = {
+    code: "ERR_MODULE_NOT_FOUND",
+    message: NODE_20_0_MISSING_CANDIDATE_MESSAGE,
+  };
+  for (const [id, error, syntheticSourceText] of [
+    [
+      "absent-wrong-error-code",
+      { ...exactMessageError, code: "ERR_PACKAGE_PATH_NOT_EXPORTED" },
+      null,
+    ],
+    [
+      "absent-wrong-candidate-path",
+      {
+        ...exactMessageError,
+        message: `Cannot find module '${SOURCE_PATH}.other' imported from ${EVALUATOR_PATH}`,
+      },
+      null,
+    ],
+    [
+      "absent-wrong-importer-path",
+      {
+        ...exactMessageError,
+        message: `Cannot find module '${SOURCE_PATH}' imported from ${EVALUATOR_PATH}.other`,
+      },
+      null,
+    ],
+    [
+      "absent-wrong-message",
+      {
+        ...exactMessageError,
+        message: `Cannot load module '${SOURCE_PATH}' imported from ${EVALUATOR_PATH}`,
+      },
+      null,
+    ],
+    [
+      "absent-message-suffix",
+      {
+        ...exactMessageError,
+        message: `${NODE_20_0_MISSING_CANDIDATE_MESSAGE}\nextra`,
+      },
+      null,
+    ],
+    [
+      "absent-wrong-url",
+      { ...exactUrlError, url: `${SOURCE_URL.href}.other` },
+      null,
+    ],
+    [
+      "absent-url-query",
+      { ...exactUrlError, url: `${SOURCE_URL.href}?fresh=1` },
+      null,
+    ],
+    [
+      "absent-url-fragment",
+      { ...exactUrlError, url: `${SOURCE_URL.href}#fresh` },
+      null,
+    ],
+    ["absent-present-source-state", exactUrlError, sourceSkeleton()],
+    [
+      "absent-null-url-blocks-message-fallback",
+      { ...exactMessageError, url: null },
+      null,
+    ],
+  ]) {
+    killSync(id, () =>
+      assert.equal(
+        isExpectedAbsentCandidateModuleError(error, syntheticSourceText),
+        true,
+      ),
+    );
+  }
+  for (const [id, mutate] of [
+    [
+      "absent-zero-imports",
+      (receipt) => {
+        receipt.importCount = 0;
+        receipt.orderedEvents = [];
+      },
+    ],
+    [
+      "absent-two-imports",
+      (receipt) => {
+        receipt.importCount = 2;
+        receipt.orderedEvents = ["import", "import"];
+      },
+    ],
+    [
+      "absent-suffixed-import-url",
+      (receipt) => {
+        receipt.importUrl = `${SOURCE_URL.href}.other`;
+      },
+    ],
+  ]) {
+    mutateClone(id, absentGateReceipt, mutate, assertAbsentGateReceipt);
+  }
+
+  freshSourceBytes[0] ^= 0x01;
+  await killAsync("fresh-equal-length-byte-flip", () =>
+    freshLoader.loadFreshCandidate(),
+  );
+  freshSourceBytes = Buffer.from(syntheticSourceBytes);
+  assert.equal(freshLoader.successfulOrdinal(), 2);
+  assert.equal(freshImportUrls.length, 2);
+  freshSourceBytes = Buffer.concat([syntheticSourceBytes, Buffer.from([0])]);
+  await killAsync("fresh-changed-length-and-sha", () =>
+    freshLoader.loadFreshCandidate(),
+  );
+  freshSourceBytes = Buffer.from(syntheticSourceBytes);
+  assert.equal(freshLoader.successfulOrdinal(), 2);
+  assert.equal(freshImportUrls.length, 2);
+  freshAuditMustFail = true;
+  await killAsync("fresh-reaudit-failure-before-import", () =>
+    freshLoader.loadFreshCandidate(),
+  );
+  freshAuditMustFail = false;
+  assert.equal(freshLoader.successfulOrdinal(), 2);
+  assert.equal(freshImportUrls.length, 2);
+  const thirdFreshCandidate = await freshLoader.loadFreshCandidate();
+  const thirdFreshReceipt = freshLoader.lastLoadReceipt();
+  assertFreshReceipt(thirdFreshReceipt, 3);
+  assert.notEqual(thirdFreshCandidate, firstFreshCandidate);
+  assert.notEqual(thirdFreshCandidate, secondFreshCandidate);
+  assert.equal(freshLoader.successfulOrdinal(), 3);
+
+  const canonicalFreshUrl = (ordinal, sha256 = syntheticSourceSha256) => {
+    const url = new URL(SOURCE_URL.href);
+    url.search = `?sourceSha256=${sha256}&loadOrdinal=${String(ordinal).padStart(8, "0")}`;
+    return url.href;
+  };
+  for (const [id, mutate] of [
+    [
+      "fresh-missing-reread",
+      (receipt) => {
+        receipt.readSequence = null;
+      },
+    ],
+    [
+      "fresh-missing-repin",
+      (receipt) => {
+        receipt.pinSequence = null;
+      },
+    ],
+    [
+      "fresh-missing-strict-decode",
+      (receipt) => {
+        receipt.decodeSequence = null;
+      },
+    ],
+    [
+      "fresh-missing-reaudit",
+      (receipt) => {
+        receipt.auditSequence = null;
+      },
+    ],
+    [
+      "fresh-import-before-audit",
+      (receipt) => {
+        receipt.importSequence = 3;
+        receipt.ordered = false;
+      },
+    ],
+    [
+      "fresh-changed-sha-self-consistent-url",
+      (receipt) => {
+        const driftedSha256 = `0${syntheticSourceSha256.slice(1)}`;
+        receipt.sourceSha256 = driftedSha256;
+        receipt.url = canonicalFreshUrl(2, driftedSha256);
+      },
+    ],
+    [
+      "fresh-fixed-query",
+      (receipt) => {
+        receipt.url = `${SOURCE_URL.href}?fresh=1`;
+      },
+    ],
+    [
+      "fresh-repeated-url-and-ordinal",
+      (receipt) => {
+        receipt.ordinal = 1;
+        receipt.url = canonicalFreshUrl(1);
+      },
+    ],
+    [
+      "fresh-bare-url",
+      (receipt) => {
+        receipt.url = SOURCE_URL.href;
+      },
+    ],
+    [
+      "fresh-noncanonical-query-order",
+      (receipt) => {
+        receipt.url = `${SOURCE_URL.href}?loadOrdinal=00000002&sourceSha256=${syntheticSourceSha256}`;
+      },
+    ],
+    [
+      "fresh-ordinal-skip",
+      (receipt) => {
+        receipt.ordinal = 3;
+        receipt.url = canonicalFreshUrl(3);
+      },
+    ],
+    [
+      "fresh-ordinal-reuse",
+      (receipt) => {
+        receipt.ordinal = 1;
+        receipt.url = canonicalFreshUrl(1);
+      },
+    ],
+    [
+      "fresh-ordinal-width",
+      (receipt) => {
+        receipt.url = `${SOURCE_URL.href}?sourceSha256=${syntheticSourceSha256}&loadOrdinal=2`;
+      },
+    ],
+    [
+      "fresh-query-fragment",
+      (receipt) => {
+        receipt.url = `${canonicalFreshUrl(2)}#fragment`;
+      },
+    ],
+  ]) {
+    mutateClone(id, secondFreshReceipt, mutate, (receipt) =>
+      assertFreshReceipt(receipt, 2),
+    );
+  }
+  killSync("fresh-mutable-baseline", () => {
+    const mutableBaseline = { ...baselineReceipt };
+    assertRecursivelyFrozenWithoutByteViews(mutableBaseline);
+  });
+  for (const forbiddenDependency of ["time", "random", "provider"]) {
+    killSync(`fresh-${forbiddenDependency}-dependency`, () =>
+      createDeterministicFreshCandidateLoader({
+        readSourceBytes: () => Buffer.from(syntheticSourceBytes),
+        auditSource: auditCandidateSource,
+        importCandidate: () => Promise.resolve(Object.freeze({})),
+        [forbiddenDependency]: () => 0,
+      }),
+    );
+  }
+  for (const [id, sourceUrl] of [
+    ["fresh-source-url-query", new URL(`${SOURCE_URL.href}?existing=1`)],
+    ["fresh-source-url-fragment", new URL(`${SOURCE_URL.href}#existing`)],
+  ]) {
+    killSync(id, () => {
+      createDeterministicFreshCandidateLoader({
+        readSourceBytes: () => Buffer.from(syntheticSourceBytes),
+        auditSource: auditCandidateSource,
+        importCandidate: () => Promise.resolve(Object.freeze({})),
+        sourceUrl,
+      });
+    });
+  }
+  await killAsync("fresh-source-url-path-drift", async () => {
+    const mutantLoader = createDeterministicFreshCandidateLoader({
+      readSourceBytes: () => Buffer.from(syntheticSourceBytes),
+      auditSource: auditCandidateSource,
+      importCandidate: () => Promise.resolve(Object.freeze({})),
+      sourceUrl: new URL(`${SOURCE_URL.href}.different`),
+    });
+    mutantLoader.installAuditedBaseline(syntheticSourceBytes);
+    await mutantLoader.loadFreshCandidate();
+  });
+
+  for (const [id, mutate] of [
+    [
+      "registration-inventory-hash-drift",
+      (receipt) => {
+        receipt.registration.inventorySha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "registration-count-drift",
+      (receipt) => {
+        receipt.registration.registeredCount = 1;
+      },
+    ],
+    [
+      "registration-todo-count-drift",
+      (receipt) => {
+        receipt.registration.todoCount = 1;
+      },
+    ],
+    [
+      "registration-name-drift",
+      (receipt) => {
+        receipt.registeredTests[0].name += " drift";
+      },
+    ],
+    [
+      "registration-options-drift",
+      (receipt) => {
+        receipt.registeredTests[0].options.todo = false;
+      },
+    ],
+    [
+      "registration-required-input-drift",
+      (receipt) => {
+        receipt.registeredTests[1].requiredInputs.pop();
+      },
+    ],
+    [
+      "registration-time-candidate-getter",
+      (receipt) => {
+        receipt.registrationGetterReads.candidate = 1;
+      },
+    ],
+    [
+      "registration-time-oracle-getter",
+      (receipt) => {
+        receipt.registrationGetterReads.oracle = 1;
+      },
+    ],
+    [
+      "registration-time-loader-getter",
+      (receipt) => {
+        receipt.registrationGetterReads.loadFreshCandidate = 1;
+      },
+    ],
+    [
+      "execution-repeated-candidate-getter",
+      (receipt) => {
+        receipt.executionGetterReads.candidate = 3;
+      },
+    ],
+    [
+      "execution-repeated-oracle-getter",
+      (receipt) => {
+        receipt.executionGetterReads.oracle = 3;
+      },
+    ],
+    [
+      "execution-repeated-loader-getter",
+      (receipt) => {
+        receipt.executionGetterReads.loadFreshCandidate = 2;
+      },
+    ],
+    [
+      "execution-getter-order-drift",
+      (receipt) => {
+        receipt.executionGetterOrder.reverse();
+      },
+    ],
+    [
+      "registration-cross-module-loader-count",
+      (receipt) => {
+        receipt.freshLoaderCallCount = 2;
+        receipt.privateDispatch.freshLoaderCallCount = 2;
+      },
+    ],
+    [
+      "registration-cross-module-identity-alias",
+      (receipt) => {
+        receipt.freshControlCount = 0;
+        receipt.primaryControlCount = 131;
+      },
+    ],
+    [
+      "registration-candidate-behavior-nonclaim-drift",
+      (receipt) => {
+        receipt.candidateBehaviorProved = true;
+        receipt.byteDispatch.candidateBehaviorProved = true;
+        receipt.privateDispatch.candidateBehaviorProved = true;
+      },
+    ],
+  ]) {
+    mutateClone(id, callbackWiringReceipt, mutate, assertCallbackWiringReceipt);
+  }
+  for (const { name } of expectedBytePositionSpecs) {
+    mutateClone(
+      `registration-missing-byte-position-${name}`,
+      callbackWiringReceipt,
+      (receipt) => {
+        receipt.byteDispatch.controlIds =
+          receipt.byteDispatch.controlIds.filter(
+            (controlId) => !controlId.startsWith(`${name}:`),
+          );
+        receipt.byteDispatch.positionCount -= 1;
+        receipt.byteDispatch.controlCount =
+          receipt.byteDispatch.controlIds.length;
+        receipt.primaryControlCount -= expectedByteFamilies.length;
+      },
+      assertCallbackWiringReceipt,
+    );
+  }
+  for (const family of expectedByteFamilies) {
+    mutateClone(
+      `registration-missing-byte-family-${family}`,
+      callbackWiringReceipt,
+      (receipt) => {
+        receipt.byteDispatch.controlIds =
+          receipt.byteDispatch.controlIds.filter(
+            (controlId) => !controlId.endsWith(`:${family}`),
+          );
+        receipt.byteDispatch.familyCount -= 1;
+        receipt.byteDispatch.controlCount =
+          receipt.byteDispatch.controlIds.length;
+        receipt.primaryControlCount -= expectedBytePositionSpecs.length;
+      },
+      assertCallbackWiringReceipt,
+    );
+  }
+  for (const operation of expectedPrivateOperations) {
+    mutateClone(
+      `registration-missing-private-owner-${operation}`,
+      callbackWiringReceipt,
+      (receipt) => {
+        receipt.privateDispatch.controlIds =
+          receipt.privateDispatch.controlIds.filter(
+            (controlId) => !controlId.startsWith(`${operation}:`),
+          );
+        receipt.privateDispatch.ownerCount -= 1;
+        receipt.privateDispatch.controlCount =
+          receipt.privateDispatch.controlIds.length;
+        receipt.primaryControlCount -= 4;
+        receipt.freshControlCount -= 1;
+      },
+      assertCallbackWiringReceipt,
+    );
+  }
+  for (const phase of expectedPrivatePhases) {
+    mutateClone(
+      `registration-missing-private-phase-${phase}`,
+      callbackWiringReceipt,
+      (receipt) => {
+        receipt.privateDispatch.controlIds =
+          receipt.privateDispatch.controlIds.filter(
+            (controlId) => !controlId.endsWith(`:${phase}`),
+          );
+        receipt.privateDispatch.phaseCount -= 1;
+        receipt.privateDispatch.controlCount =
+          receipt.privateDispatch.controlIds.length;
+        if (phase === "crossModule") {
+          receipt.freshControlCount = 0;
+        } else {
+          receipt.primaryControlCount -= expectedPrivateOperations.length;
+        }
+      },
+      assertCallbackWiringReceipt,
+    );
+  }
+
+  for (const [id, mutate] of [
+    [
+      "compat-c12-oracle-identity-drift",
+      (receipt) => {
+        receipt.c12.oracleIdentitySha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "compat-c12-inventory-hash-drift",
+      (receipt) => {
+        receipt.c12.oracleInventorySha256.wholeTransitions = "0".repeat(64);
+      },
+    ],
+    [
+      "compat-c12-mutation-count-drift",
+      (receipt) => {
+        receipt.c12.mutationCount = 123;
+      },
+    ],
+    [
+      "compat-c12-mutation-killed-drift",
+      (receipt) => {
+        receipt.c12.mutationKilled = 121;
+        receipt.c12.mutationSurvivors = 1;
+      },
+    ],
+    [
+      "compat-c12-mutation-id-hash-drift",
+      (receipt) => {
+        receipt.c12.mutationIdsSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "compat-c12-recovery-vector-drift",
+      (receipt) => {
+        receipt.c12.recoveryReceiptVectorSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "compat-c12-recovery-brand-nonclaim-drift",
+      (receipt) => {
+        receipt.c12.recoveryBrandProvenanceProved = true;
+      },
+    ],
+    [
+      "compat-b11-matrix-drift",
+      (receipt) => {
+        receipt.b11.matrices.main[1] = 9;
+      },
+    ],
+    [
+      "compat-b11-readiness-drift",
+      (receipt) => {
+        receipt.b11.readiness.status = "available";
+      },
+    ],
+    [
+      "compat-b11-synthetic-nonclaim-drift",
+      (receipt) => {
+        receipt.b11.oldSyntheticContractValidInputPreimagesProved = true;
+      },
+    ],
+    [
+      "compat-b11-historical-source-aliased-live",
+      (receipt) => {
+        receipt.b11.historicalSourceAbsent = syntheticSourceBytes === null;
+      },
+    ],
+    [
+      "compat-c12-construction-source-read-drift",
+      (receipt) => {
+        receipt.c12ConstructionPhase.candidateSourceReadAttempts = 1;
+      },
+    ],
+    [
+      "compat-c12-construction-behavior-drift",
+      (receipt) => {
+        receipt.c12ConstructionPhase.candidateBehaviorExecutionAttempts = 1;
+      },
+    ],
+  ]) {
+    mutateClone(
+      id,
+      C13_COMPATIBILITY_RECEIPT,
+      mutate,
+      assertC13CompatibilityReceipt,
+    );
+  }
+
+  const evaluatorBytes = readFileSync(EVALUATOR_PATH);
+  const evaluatorSha256Before = byteSha256(evaluatorBytes);
+  const restoredEvaluatorBytes = Buffer.from(evaluatorBytes);
+  const evaluatorMarker = Buffer.from(
+    'test("close the remaining private-store commit-position and semantic-mutation quotas before lifting the source-presence stop", async () => {\n  const syntheticSourceBytes = Buffer.from(sourceSkeleton(), "utf8");',
+    "utf8",
+  );
+  const evaluatorMarkerOffset = restoredEvaluatorBytes.indexOf(evaluatorMarker);
+  assert.notEqual(evaluatorMarkerOffset, -1);
+  assert.equal(
+    restoredEvaluatorBytes.indexOf(
+      evaluatorMarker,
+      evaluatorMarkerOffset + evaluatorMarker.length,
+    ),
+    -1,
+  );
+  restoredEvaluatorBytes[evaluatorMarkerOffset] ^= 0x01;
+  killSync("main-evaluator-byte-mutation", () =>
+    assert.equal(
+      restoredEvaluatorBytes
+        .subarray(
+          evaluatorMarkerOffset,
+          evaluatorMarkerOffset + evaluatorMarker.length,
+        )
+        .equals(evaluatorMarker),
+      true,
+    ),
+  );
+  evaluatorBytes.copy(
+    restoredEvaluatorBytes,
+    evaluatorMarkerOffset,
+    evaluatorMarkerOffset,
+    evaluatorMarkerOffset + evaluatorMarker.length,
+  );
+  assert.equal(byteSha256(restoredEvaluatorBytes), evaluatorSha256Before);
+
+  const mutationIds = mutationKills.map(({ id }) => id);
+  const mutationReceipt = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-main-mutation-receipt/v1",
+    count: mutationKills.length,
+    killed: mutationKills.length,
+    survivors: 0,
+    idsSha256: semanticSha256(mutationIds),
+    kills: mutationKills,
+    concreteRestoration: {
+      evaluatorPreSha256: evaluatorSha256Before,
+      evaluatorPostSha256: byteSha256(restoredEvaluatorBytes),
+      evaluatorRestoredByteExact: true,
+      sourceBaselineSha256: syntheticSourceSha256,
+      sourceRestoredSha256: byteSha256(freshSourceBytes),
+      sourceRestoredByteExact: freshSourceBytes.equals(syntheticSourceBytes),
+    },
+  });
+  assert.deepEqual(
+    {
+      count: mutationReceipt.count,
+      killed: mutationReceipt.killed,
+      survivors: mutationReceipt.survivors,
+      idsSha256: mutationReceipt.idsSha256,
+    },
+    {
+      count: 140,
+      killed: 140,
+      survivors: 0,
+      idsSha256:
+        "855495fc8291974c96b67e352c9a57fc6157ac63a533552d016e8cd451135929",
+    },
+  );
+  assert.deepEqual(mutationReceipt.concreteRestoration, {
+    evaluatorPreSha256: evaluatorSha256Before,
+    evaluatorPostSha256: evaluatorSha256Before,
+    evaluatorRestoredByteExact: true,
+    sourceBaselineSha256: syntheticSourceSha256,
+    sourceRestoredSha256: syntheticSourceSha256,
+    sourceRestoredByteExact: true,
+  });
+  assertRecursivelyFrozenWithoutByteViews(mutationReceipt);
+});
 test(
   "complete all remaining ADR-0036 acceptance groups: 252 descriptor aliases; every bound, error-precedence rule, and frame field; transition, status-byte, and prefix goldens; recovery binding; WeakMap failure atomicity; and the complete Node 20 and non-G1.7 matrix",
   { todo: true },
