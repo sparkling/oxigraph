@@ -4866,7 +4866,24 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       },
     );
   };
+  const hasCompleteExactStringDomain = (value) =>
+    value.compileTime.known &&
+    !value.compileTime.unknownString &&
+    value.exactStrings.length > 0 &&
+    value.compileTime.typeofStrings.length === 1 &&
+    value.compileTime.typeofStrings[0] === "string";
+  const hasCompleteStaticIntegerDomain = (value) =>
+    value.compileTime.known &&
+    value.staticIntegers.length > 0 &&
+    value.compileTime.typeofStrings.length === 1 &&
+    value.compileTime.typeofStrings[0] === "number";
   const joinAbstractValues = (...values) => {
+    const exactStrings = values.every(hasCompleteExactStringDomain)
+      ? mergeExactStrings(...values)
+      : [];
+    const staticIntegers = values.every(hasCompleteStaticIntegerDomain)
+      ? [...new Set(values.flatMap(({ staticIntegers }) => staticIntegers))]
+      : [];
     const arrayLength = values[0].arrayElements?.length ?? null;
     const arrayElements =
       arrayLength !== null &&
@@ -5014,8 +5031,8 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         ? values[0].kind
         : "immutable",
       mergeStaticStrings(...values),
-      mergeExactStrings(...values),
-      [...new Set(values.flatMap(({ staticIntegers }) => staticIntegers))],
+      exactStrings,
+      staticIntegers,
       arrayElements,
       objectProperties,
       {
@@ -8504,8 +8521,36 @@ function contextualPositive() {
     approvedOneParameterExportSource(
       "const left = [Number(currentState), 1].slice(0, 1); const right = new Set([1, 2]); const selected = currentState ? left : right; for (const value of selected) { const next = value + 1 + 1; } return null;",
     ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "safe" : "bounded"; const first = selected.at(0); const next = first.length + 1 + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : "yy"; const next = selected.length + 1 + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      "const selected = currentState ? 1 : 2; const next = selected + 1 + 1; return next;",
+    ),
+    approvedOneParameterExportSource(
+      "const selected = currentState ? Number(currentState) : Number(currentState); const next = selected + 1 + 1; return next;",
+    ),
+    approvedOneParameterExportSource(
+      "const selected = currentState ? 1 : Number(currentState); const next = selected + 1 + 1; return next;",
+    ),
+    approvedOneParameterExportSource(
+      "const selected = currentState ? [1] : [Number(currentState)]; const value = selected.at(0); const next = value + 1 + 1; return next;",
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : ["safe"]; const kind = typeof selected.length; const next = kind.length + 1 + 1; return next;',
+    ),
+    approvedOneParameterExportSource(
+      'const selected = currentState ? "x" : new Set(["safe"]); const kind = typeof selected.length; const next = kind.length + 1 + 1; return next;',
+    ),
+    approvedOneParameterExportSourceWithExtra(
+      "const selected = localNumber(currentState); const next = selected + 1 + 1; return next;",
+      "function localNumber(value) { if (value) { return 1; } return Number(value); }",
+    ),
   ];
-  assert.equal(returnAndContainerPrecisionPositiveSources.length, 27);
+  assert.equal(returnAndContainerPrecisionPositiveSources.length, 36);
   for (const sourceText of returnAndContainerPrecisionPositiveSources) {
     const audit = independentStaticAudit(asBytes(sourceText));
     assert.equal(audit.classifiedNodeCount, audit.nodeCount);
@@ -9685,6 +9730,103 @@ function contextualPositive() {
   for (const [id, sourceText] of partialRecordMemberMutationSources) {
     kill(id, () => independentStaticAudit(asBytes(sourceText)));
   }
+  const partialExactJoinMutationSources = [
+    [
+      "direct-string-array-partial-exact-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : ["n"]; const hidden = selected.at(0) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-array-string-partial-exact-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? ["n"] : "x"; const hidden = selected.at(0) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-string-array-partial-length-index-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : ["a", "b"]; const index = selected.length; const hidden = "xxn".at(index) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-array-string-partial-length-index-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? ["a", "b"] : "x"; const index = selected.length; const hidden = "xxn".at(index) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-string-record-partial-length-index-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : { length: 2 }; const index = selected.length; const hidden = "xxn".at(index) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-record-string-partial-length-index-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? { length: 2 } : "x"; const index = selected.length; const hidden = "xxn".at(index) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-string-set-partial-length-string-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : new Set(["safe"]); const hidden = String(selected.length).at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-set-string-partial-length-string-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? new Set(["safe"]) : "x"; const hidden = String(selected.length).at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-string-number-partial-length-string-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : Number(currentState); const hidden = String(selected.length).at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-number-string-partial-length-string-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? Number(currentState) : "x"; const hidden = String(selected.length).at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-literal-dynamic-number-partial-exact-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? 1 : Number(currentState); const hidden = String(selected).at(0) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-dynamic-literal-number-partial-exact-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? Number(currentState) : 1; const hidden = String(selected).at(0) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-literal-arithmetic-number-partial-exact-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? 1 : Number(currentState) + 0; const hidden = String(selected).at(0) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-local-return-number-partial-exact-at-node",
+      approvedOneParameterExportSourceWithExtra(
+        'const hidden = String(localNumber(currentState)).at(0) + "ode:fs"; return null;',
+        "function localNumber(value) { if (value) { return 1; } return Number(value); }",
+      ),
+    ],
+    [
+      "direct-nested-array-number-partial-exact-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? [1] : [Number(currentState)]; const value = selected.at(0); const hidden = String(value).at(0) + "ode:fs"; return null;',
+      ),
+    ],
+  ];
+  assert.equal(partialExactJoinMutationSources.length, 15);
+  for (const [id, sourceText] of partialExactJoinMutationSources) {
+    kill(id, () => independentStaticAudit(asBytes(sourceText)));
+  }
   const contextualPrivateMutationSources = [
     [
       "direct-context-private-wrong-store",
@@ -10036,11 +10178,11 @@ function contextualPositive() {
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 389,
-      killed: 389,
+      count: 404,
+      killed: 404,
       survivors: 0,
       idsSha256:
-        "1446b43716401ea3d94485323defd914b4db3e5755d1caaf0fc2b76b703ab71e",
+        "6e9d04df1b3282c4fadabcfcac43f991cd95e5a79c1ea3b1623809188228e96a",
     },
   );
   assert.equal(
