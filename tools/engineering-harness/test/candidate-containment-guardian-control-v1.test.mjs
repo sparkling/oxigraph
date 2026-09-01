@@ -6760,7 +6760,7 @@ function sourceSkeleton(extra = "", functionBodyOverrides = new Map()) {
 }
 
 const BRAND_NORMALIZATION_HELPERS =
-  'function failBrandValidation() { throw new Error("CONTROL_SHAPE"); } function failOtherBrandValidation() { throw new Error("CONTROL_BINDING"); }';
+  'function failBrandBinding() { throw new Error("CONTROL_BINDING"); } function failRecordShape() { throw new Error("CONTROL_SHAPE"); } function failNonBindingBrand() { throw new Error("CONTROL_STARTUP"); } function checkBrandInHelper(value) { exactBoolean(value, true, "value", failBrandBinding); return null; }';
 
 function brandNormalizationSource(functionName, body) {
   return sourceSkeleton(
@@ -6770,94 +6770,221 @@ function brandNormalizationSource(functionName, body) {
 }
 
 const BRAND_NORMALIZATION_CONTRACT_CONTROLS = Object.freeze({
-  approved: Object.freeze({
-    functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-    body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandValidation); const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); const normalizedSchema = normalized.schema; const observed = startupMetadata.get(startupProjection); return null;',
-  }),
+  approved: Object.freeze([
+    Object.freeze({
+      name: "startup parameter normalized after complete brand proof",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); const normalizedSchema = normalized.schema; return null;',
+      expectedLookups: Object.freeze([
+        Object.freeze({
+          storeName: "startupMetadata",
+          method: "has",
+          keyParameterName: "startupProjection",
+        }),
+        Object.freeze({
+          storeName: "startupMetadata",
+          method: "get",
+          keyParameterName: "startupProjection",
+        }),
+      ]),
+    }),
+    Object.freeze({
+      name: "reducer parameters independently normalized after complete proofs",
+      functionName: "reduceCandidateContainmentGuardianControlV1",
+      body: 'const statePresent = stateMetadata.has(currentState); exactBoolean(statePresent, true, "value", failBrandBinding); const stateObserved = stateMetadata.get(currentState); const normalizedState = exactRecord(currentState, [], "value", failRecordShape); const inputPresent = inputMetadata.has(brandedInput); exactBoolean(inputPresent, true, "value", failBrandBinding); const inputObserved = inputMetadata.get(brandedInput); const normalizedInput = exactRecord(brandedInput, [], "value", failRecordShape); const stateSchema = normalizedState.schema; const inputSchema = normalizedInput.schema; const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;',
+      expectedLookups: Object.freeze([
+        Object.freeze({
+          storeName: "stateMetadata",
+          method: "has",
+          keyParameterName: "currentState",
+        }),
+        Object.freeze({
+          storeName: "stateMetadata",
+          method: "get",
+          keyParameterName: "currentState",
+        }),
+        Object.freeze({
+          storeName: "inputMetadata",
+          method: "has",
+          keyParameterName: "brandedInput",
+        }),
+        Object.freeze({
+          storeName: "inputMetadata",
+          method: "get",
+          keyParameterName: "brandedInput",
+        }),
+      ]),
+    }),
+  ]),
   rejected: Object.freeze([
     Object.freeze({
-      name: "exactRecord precedes matching private-store has",
+      name: "exactRecord precedes matching brand lookup",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'const normalized = exactRecord(startupProjection, [], "value", failRecordShape); const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
     }),
     Object.freeze({
       name: "exactRecord follows has but precedes its successful check",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'const present = startupMetadata.has(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); exactBoolean(present, true, "value", failBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'const present = startupMetadata.has(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
     }),
     Object.freeze({
-      name: "brand proof comes from the wrong private store",
-      functionName: "reduceCandidateContainmentGuardianControlV1",
-      body: 'const present = inputMetadata.has(brandedInput); exactBoolean(present, true, "value", failBrandValidation); const normalized = exactRecord(currentState, [], "value", failBrandValidation); const stateObserved = stateMetadata.get(currentState); const inputObserved = inputMetadata.get(brandedInput); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;',
+      name: "exactRecord follows brand check but precedes paired get",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); const observed = startupMetadata.get(startupProjection); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
     }),
     Object.freeze({
-      name: "brand proof comes from the wrong parameter",
+      name: "paired get precedes successful brand check",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); const observed = startupMetadata.get(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
+    }),
+    Object.freeze({
+      name: "completed proof comes from the wrong private store",
       functionName: "reduceCandidateContainmentGuardianControlV1",
-      body: 'const present = stateMetadata.has(currentState); exactBoolean(present, true, "value", failBrandValidation); const normalized = exactRecord(brandedInput, [], "value", failBrandValidation); const observed = stateMetadata.get(currentState); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;',
+      body: 'const inputPresent = inputMetadata.has(brandedInput); exactBoolean(inputPresent, true, "value", failBrandBinding); const inputObserved = inputMetadata.get(brandedInput); const normalizedState = exactRecord(currentState, [], "value", failRecordShape); const statePresent = stateMetadata.has(currentState); exactBoolean(statePresent, true, "value", failBrandBinding); const stateObserved = stateMetadata.get(currentState); const normalizedInput = exactRecord(brandedInput, [], "value", failRecordShape); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof reduceCandidateContainmentGuardianControlV1:currentState",
+    }),
+    Object.freeze({
+      name: "completed proof comes from the wrong parameter",
+      functionName: "reduceCandidateContainmentGuardianControlV1",
+      body: 'const statePresent = stateMetadata.has(currentState); exactBoolean(statePresent, true, "value", failBrandBinding); const stateObserved = stateMetadata.get(currentState); const normalizedInput = exactRecord(brandedInput, [], "value", failRecordShape); const inputPresent = inputMetadata.has(brandedInput); exactBoolean(inputPresent, true, "value", failBrandBinding); const inputObserved = inputMetadata.get(brandedInput); const normalizedState = exactRecord(currentState, [], "value", failRecordShape); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof reduceCandidateContainmentGuardianControlV1:brandedInput",
     }),
     Object.freeze({
       name: "brand presence is checked against false",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, false, "value", failBrandValidation); const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, false, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
     }),
     Object.freeze({
-      name: "brand proof and record normalization use different failures",
+      name: "brand presence uses the shape failure callback",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandValidation); const normalized = exactRecord(startupProjection, [], "value", failOtherBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failRecordShape); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
+    }),
+    Object.freeze({
+      name: "brand presence uses a nonbinding failure callback",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failNonBindingBrand); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
     }),
     Object.freeze({
       name: "brand-presence result is laundered through an alias",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'const present = startupMetadata.has(startupProjection); const aliasedPresent = present; exactBoolean(aliasedPresent, true, "value", failBrandValidation); const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'const present = startupMetadata.has(startupProjection); const aliasedPresent = present; exactBoolean(aliasedPresent, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
+    }),
+    Object.freeze({
+      name: "raw parameter is laundered through an alias",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); const aliasedProjection = startupProjection; const normalized = exactRecord(aliasedProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree raw or unknown value normalizer argument exactRecord[0]",
     }),
     Object.freeze({
       name: "brand proof exists only under control flow",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'if (true) { const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandValidation); } const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'if (true) { const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); } const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
+    }),
+    Object.freeze({
+      name: "brand check exists only in a logical-expression RHS",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); const checked = true && exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
+    }),
+    Object.freeze({
+      name: "state check is crossed with the input get",
+      functionName: "reduceCandidateContainmentGuardianControlV1",
+      body: 'const statePresent = stateMetadata.has(currentState); exactBoolean(statePresent, true, "value", failBrandBinding); const inputPresent = inputMetadata.has(brandedInput); exactBoolean(inputPresent, true, "value", failBrandBinding); const inputObserved = inputMetadata.get(brandedInput); const normalizedState = exactRecord(currentState, [], "value", failRecordShape); const stateObserved = stateMetadata.get(currentState); const normalizedInput = exactRecord(brandedInput, [], "value", failRecordShape); const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); stateMetadata.set(result, metadata); return result;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof reduceCandidateContainmentGuardianControlV1:currentState",
+    }),
+    Object.freeze({
+      name: "brand check is delegated across a function boundary",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); const checked = checkBrandInHelper(present); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(startupProjection, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
     }),
     Object.freeze({
       name: "raw exactRecord parameter has no brand proof",
       functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
-      body: 'const normalized = exactRecord(startupProjection, [], "value", failBrandValidation); const observed = startupMetadata.get(startupProjection); return null;',
+      body: 'const normalized = exactRecord(startupProjection, [], "value", failRecordShape); const present = startupMetadata.has(startupProjection); const observed = startupMetadata.get(startupProjection); return null;',
+      expected:
+        "static gate: ESTree exactRecord parameter lacks complete brand proof verifyCandidateContainmentGuardianStatusFrameV1:startupProjection",
+    }),
+    Object.freeze({
+      name: "private-read value is passed to exactRecord",
+      functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+      body: 'const present = startupMetadata.has(startupProjection); exactBoolean(present, true, "value", failBrandBinding); const observed = startupMetadata.get(startupProjection); const normalized = exactRecord(observed, [], "value", failRecordShape); return null;',
+      expected:
+        "static gate: ESTree raw or unknown value normalizer argument exactRecord[0]",
     }),
   ]),
 });
 
 function assertBrandNormalizationContract() {
-  assert.equal(BRAND_NORMALIZATION_CONTRACT_CONTROLS.rejected.length, 9);
-  for (const {
-    name,
-    functionName,
-    body,
-  } of BRAND_NORMALIZATION_CONTRACT_CONTROLS.rejected) {
-    assert.throws(
-      () => auditCandidateSource(brandNormalizationSource(functionName, body)),
-      /static gate: ESTree/u,
-      name,
-    );
-  }
-  const { functionName, body } = BRAND_NORMALIZATION_CONTRACT_CONTROLS.approved;
-  let approvedAudit = null;
-  assert.doesNotThrow(() => {
-    approvedAudit = auditCandidateSource(
-      brandNormalizationSource(functionName, body),
-    );
+  assert.equal(BRAND_NORMALIZATION_CONTRACT_CONTROLS.approved.length, 2);
+  assert.equal(BRAND_NORMALIZATION_CONTRACT_CONTROLS.rejected.length, 17);
+  const observed = [
+    ...BRAND_NORMALIZATION_CONTRACT_CONTROLS.approved.map((control) => ({
+      ...control,
+      expected: "accepted",
+    })),
+    ...BRAND_NORMALIZATION_CONTRACT_CONTROLS.rejected,
+  ].map(({ name, functionName, body, expected, expectedLookups }) => {
+    try {
+      const audit = auditCandidateSource(
+        brandNormalizationSource(functionName, body),
+      );
+      return {
+        name,
+        outcome: "accepted",
+        lookups: audit.astPolicy.privateLookupOperations.map(
+          ({ storeName, method, keyParameterName }) => ({
+            storeName,
+            method,
+            keyParameterName,
+          }),
+        ),
+      };
+    } catch (error) {
+      return { name, outcome: "rejected", message: error.message };
+    }
   });
-  assert.notEqual(approvedAudit, null);
-  assert.deepEqual(approvedAudit.astPolicy.privateLookupOperations, [
-    {
-      functionName,
-      storeName: "startupMetadata",
-      method: "has",
-      keyParameterName: "startupProjection",
-    },
-    {
-      functionName,
-      storeName: "startupMetadata",
-      method: "get",
-      keyParameterName: "startupProjection",
-    },
-  ]);
+  const expected = [
+    ...BRAND_NORMALIZATION_CONTRACT_CONTROLS.approved.map(
+      ({ name, expectedLookups }) => ({
+        name,
+        outcome: "accepted",
+        lookups: expectedLookups,
+      }),
+    ),
+    ...BRAND_NORMALIZATION_CONTRACT_CONTROLS.rejected.map(
+      ({ name, expected: message }) => ({
+        name,
+        outcome: "rejected",
+        message,
+      }),
+    ),
+  ];
+  assert.deepEqual(observed, expected);
 }
 
 const PRIVATE_COMMIT_DOMINANCE_FAMILIES = Object.freeze([
