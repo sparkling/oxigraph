@@ -10122,6 +10122,140 @@ function contextualPositive() {
   for (const [id, sourceText] of partialExactJoinMutationSources) {
     kill(id, () => independentStaticAudit(asBytes(sourceText)));
   }
+  const joinedLengthDomainMutationSources = [
+    [
+      "direct-joined-length-string-set-type-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : new Set(["safe"]); const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-set-string-type-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? new Set(["safe"]) : "x"; const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-number-type-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : Number(currentState); const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-number-string-type-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? Number(currentState) : "x"; const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-string-type-at-set-timeout",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ length: String(currentState) }); const kind = typeof selected.length; const hidden = kind.at(0) + "etTimeout"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-record-string-string-type-at-set-timeout",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? deepFreeze({ length: String(currentState) }) : "x"; const kind = typeof selected.length; const hidden = kind.at(0) + "etTimeout"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-boolean-type-at-buffer",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ length: Boolean(currentState) }); const kind = typeof selected.length; const hidden = kind.at(0) + "uffer"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-record-boolean-string-type-at-buffer",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? deepFreeze({ length: Boolean(currentState) }) : "x"; const kind = typeof selected.length; const hidden = kind.at(0) + "uffer"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-null-type-at-openrouter",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ length: null }); const kind = typeof selected.length; const hidden = kind.at(0) + "penrouter"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-object-type-at-openrouter",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ length: deepFreeze({}) }); const kind = typeof selected.length; const hidden = kind.at(0) + "penrouter"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-absent-type-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ value: "safe" }); const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-record-absent-string-type-at-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? deepFreeze({ value: "safe" }) : "x"; const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-exact-plus-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ length: "n" }); const hidden = selected.length + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-record-exact-string-plus-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? deepFreeze({ length: "n" }) : "x"; const hidden = selected.length + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-record-array-plus-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? "x" : deepFreeze({ length: ["n"] }); const hidden = selected.length + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-record-array-string-plus-node",
+      approvedOneParameterExportSource(
+        'const selected = currentState ? deepFreeze({ length: ["n"] }) : "x"; const hidden = selected.length + "ode:fs"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-local-string-record-type-at-set-timeout",
+      approvedOneParameterExportSourceWithExtra(
+        'const selected = localLength(currentState); const kind = typeof selected.length; const hidden = kind.at(0) + "etTimeout"; return null;',
+        'function localLength(value) { if (value) { return "x"; } return deepFreeze({ length: String(value) }); }',
+      ),
+    ],
+    [
+      "direct-joined-length-local-string-record-exact-plus-node",
+      approvedOneParameterExportSourceWithExtra(
+        'const selected = localLength(currentState); const hidden = selected.length + "ode:fs"; return null;',
+        'function localLength(value) { if (value) { return "x"; } return deepFreeze({ length: "n" }); }',
+      ),
+    ],
+    [
+      "direct-joined-length-nested-string-record-set-type-at-set-timeout",
+      approvedOneParameterExportSource(
+        'const inner = currentState ? deepFreeze({ length: String(currentState) }) : new Set(["safe"]); const selected = currentState ? "x" : inner; const kind = typeof selected.length; const hidden = kind.at(0) + "etTimeout"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-nested-string-record-number-type-at-set-timeout",
+      approvedOneParameterExportSource(
+        'const inner = currentState ? deepFreeze({ length: String(currentState) }) : Number(currentState); const selected = currentState ? "x" : inner; const kind = typeof selected.length; const hidden = kind.at(0) + "etTimeout"; return null;',
+      ),
+    ],
+    [
+      "direct-joined-length-string-dynamic-record-type-at-node",
+      approvedOneParameterExportSource(
+        'const record = frozenCopyOnReadBytes(canonicalJsonBytes(null), currentState); const selected = currentState ? "x" : record; const kind = typeof selected.length; const hidden = kind.at(1) + "ode:fs"; return null;',
+      ),
+    ],
+  ];
+  assert.equal(joinedLengthDomainMutationSources.length, 21);
+  for (const [id, sourceText] of joinedLengthDomainMutationSources) {
+    kill(id, () => independentStaticAudit(asBytes(sourceText)));
+  }
   const contextualPrivateMutationSources = [
     [
       "direct-context-private-wrong-store",
