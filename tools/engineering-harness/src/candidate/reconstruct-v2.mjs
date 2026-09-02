@@ -35,6 +35,7 @@ import { classifyTrustedCandidateVerificationV2 } from "./verifier-v2-core.mjs";
 const temporaryPrefix = "oxigraph-candidate-v2-";
 const cloneOutputBytes = 8 * 1024 * 1024;
 const patchOutputBytes = 8 * 1024 * 1024;
+const contractBlobOutputBytes = 256 * 1024 * 1024;
 const commitOutputBytes = 4 * 1024;
 const commitMessage = Buffer.from(
   "Oxigraph engineering-harness v2 candidate\n",
@@ -577,6 +578,7 @@ async function requireBoundPhase({
     workspace,
     home: gitHome,
     oid: expected.objectId,
+    maxOutputBytes: contractBlobOutputBytes,
   });
   if (sha256(content) !== expected.contentSha256) {
     fail("ERR_BASELINE_STATE", `mutable baseline content changed: ${path}`);
@@ -620,6 +622,67 @@ async function requireMutableBaselines({
         `evaluator changed a present mutable baseline: ${binding.path}`,
       );
     }
+  }
+}
+
+async function requireEvaluatorIdentity({
+  primitives,
+  workspace,
+  gitHome,
+  baselineTree,
+  evaluatorTree,
+  contract,
+}) {
+  const declaration = contract.evaluator;
+  let oldEntry;
+  if (declaration.changeStatus === "A") {
+    requireAbsentPath(baselineTree, declaration.path);
+  } else {
+    oldEntry = requireRegularBlob(
+      baselineTree,
+      declaration.path,
+      "ERR_BASELINE_STATE",
+    );
+  }
+  const newEntry = requireRegularBlob(
+    evaluatorTree,
+    declaration.path,
+    "ERR_BASELINE_STATE",
+  );
+  const rawDiff = await primitives.diffTreesV2({
+    workspace,
+    home: gitHome,
+    oldTree: contract.baseline.tree,
+    newTree: declaration.tree,
+    maxOutputBytes: contract.ceilings.maxPatchBytes,
+  });
+  if (rawDiff.changeCount !== 1) {
+    fail(
+      "ERR_BASELINE_STATE",
+      "evaluator must contain exactly one frozen raw change",
+    );
+  }
+  const change = rawDiff.changes[0];
+  if (
+    !change.path.equals(exactPathBytes(declaration.path)) ||
+    change.status !== declaration.changeStatus ||
+    change.newOid !== declaration.blob ||
+    newEntry.oid !== declaration.blob ||
+    (declaration.changeStatus === "M" && oldEntry.oid !== change.oldOid)
+  ) {
+    fail(
+      "ERR_BASELINE_STATE",
+      "evaluator raw change does not match its frozen identity",
+    );
+  }
+  const content = await primitives.readBlobByOid({
+    workspace,
+    home: gitHome,
+    oid: declaration.blob,
+    maxOutputBytes: contractBlobOutputBytes,
+  });
+  if (sha256(content) !== declaration.contentSha256) {
+    fail("ERR_BASELINE_STATE", "evaluator blob content digest does not match");
   }
 }
 
@@ -927,7 +990,7 @@ async function reconstructCandidateV2Once(rawInput, controller) {
         ],
         cwd: workspace,
         home: gitHome,
-        maxOutputBytes: patchOutputBytes,
+        maxOutputBytes: contract.ceilings.maxPatchBytes,
       }),
     );
     if (sha256(evaluatorPatch) !== contract.evaluator.patchSha256) {
@@ -956,6 +1019,15 @@ async function reconstructCandidateV2Once(rawInput, controller) {
       workspace,
       home: gitHome,
       tree: contract.evaluator.tree,
+    });
+
+    await requireEvaluatorIdentity({
+      primitives,
+      workspace,
+      gitHome,
+      baselineTree,
+      evaluatorTree,
+      contract,
     });
 
     await requireMutableBaselines({

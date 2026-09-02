@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
+import { types as utilTypes } from "node:util";
 
 import { validateCandidatePatch, validateCandidatePath } from "./paths.mjs";
-import { isTaskV2Failure, taskV2Failure } from "./task-v2-failures.mjs";
+import {
+  isTaskV2Failure,
+  taskV2Failure,
+  withTaskV2FailureBoundary,
+} from "./task-v2-failures.mjs";
 
 const ASCII_SEGMENT = "[A-Za-z0-9_][A-Za-z0-9._-]*";
 const TASK_V2_PATH = new RegExp(
@@ -29,6 +34,36 @@ function plainObject(value) {
     !Array.isArray(value) &&
     [Object.prototype, null].includes(Object.getPrototypeOf(value))
   );
+}
+
+function plainOwnDataSnapshot(value, label) {
+  let descriptors;
+  try {
+    if (utilTypes.isProxy(value) || !plainObject(value)) {
+      fail(
+        "ERR_CONTRACT_SCHEMA_OR_KEYS",
+        `${label} must be a plain own-data record`,
+      );
+    }
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch (error) {
+    if (isTaskV2Failure(error)) throw error;
+    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+  }
+  const keys = Reflect.ownKeys(descriptors);
+  if (
+    keys.some((key) => typeof key !== "string") ||
+    keys.some(
+      (key) =>
+        !("value" in descriptors[key]) || descriptors[key].enumerable !== true,
+    )
+  ) {
+    fail(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      `${label} must contain only enumerable own data properties`,
+    );
+  }
+  return Object.fromEntries(keys.map((key) => [key, descriptors[key].value]));
 }
 
 function exactUtf8Bytes(value, label, code = "ERR_PATCH_CANONICAL") {
@@ -79,19 +114,11 @@ function strictDescendant(path, prefix) {
   return path.startsWith(`${prefix}/`);
 }
 
-function frozenPathList(value, label) {
-  if (!Array.isArray(value) || value.length > MAX_SCOPE_PATHS) {
-    fail(
-      "ERR_CONTRACT_SCHEMA_OR_KEYS",
-      `${label} must be a bounded path array`,
-    );
-  }
+function frozenPathList(value, label, maximum = MAX_SCOPE_PATHS) {
+  const values = exactOwnDataArray(value, label, maximum);
   const paths = [];
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index)) {
-      fail("ERR_CONTRACT_SCHEMA_OR_KEYS", `${label} must not be sparse`);
-    }
-    paths.push(validateTaskV2Path(value[index], `${label}[${index}]`));
+  for (let index = 0; index < values.length; index += 1) {
+    paths.push(validateTaskV2Path(values[index], `${label}[${index}]`));
   }
   return Object.freeze(paths);
 }
@@ -151,21 +178,45 @@ function rejectCrossRelations(leftPaths, rightPaths, label) {
   }
 }
 
-function rawScope(scopeOrContract) {
-  if (!plainObject(scopeOrContract)) {
-    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", "v2 scope input must be an object");
+function snapshotScopeInput(scopeOrContract) {
+  const input = plainOwnDataSnapshot(scopeOrContract, "v2 scope input");
+  const scope = Object.hasOwn(input, "scope")
+    ? plainOwnDataSnapshot(input.scope, "v2 scope")
+    : input;
+  let evaluatorPath = input.evaluatorPath;
+  if (
+    (evaluatorPath === undefined || evaluatorPath === null) &&
+    Object.hasOwn(input, "evaluator")
+  ) {
+    const evaluator = plainOwnDataSnapshot(input.evaluator, "v2 evaluator");
+    evaluatorPath = evaluator.path;
   }
-  const scope = Object.hasOwn(scopeOrContract, "scope")
-    ? scopeOrContract.scope
-    : scopeOrContract;
-  if (!plainObject(scope)) {
-    fail("ERR_CONTRACT_SCHEMA_OR_KEYS", "v2 scope must be an object");
+  if (evaluatorPath !== undefined && evaluatorPath !== null) {
+    validateTaskV2Path(evaluatorPath, "evaluator.path");
+  } else {
+    evaluatorPath = undefined;
   }
-  return scope;
+  return Object.freeze({ scope, evaluatorPath });
 }
 
-function v1ContractFor(scopeOrContract, scope) {
-  return Object.hasOwn(scopeOrContract, "scope") ? scopeOrContract : { scope };
+function v1ContractFor(scope, projected, evaluatorPath) {
+  const blockedExact = Object.hasOwn(scope, "blockedExact")
+    ? frozenPathList(scope.blockedExact, "scope.blockedExact", 256)
+    : Object.freeze([]);
+  const blockedPrefixes = Object.hasOwn(scope, "blockedPrefixes")
+    ? frozenPathList(scope.blockedPrefixes, "scope.blockedPrefixes", 256)
+    : Object.freeze([]);
+  const contract = {
+    scope: Object.freeze({
+      mutableExact: projected.mutableExact,
+      mutablePrefixes: projected.mutablePrefixes,
+      blockedExact,
+      blockedPrefixes,
+      allowCreate: projected.allowCreate,
+    }),
+  };
+  if (evaluatorPath !== undefined) contract.evaluatorPath = evaluatorPath;
+  return Object.freeze(contract);
 }
 
 function validateLegacyProtection(path, contract) {
@@ -180,8 +231,9 @@ function validateLegacyProtection(path, contract) {
   }
 }
 
-export function validateTaskV2Scope(scopeOrContract) {
-  const scope = rawScope(scopeOrContract);
+function validateTaskV2ScopeInternal(scopeOrContract) {
+  const captured = snapshotScopeInput(scopeOrContract);
+  const { scope } = captured;
   const mutableExact = frozenPathList(scope.mutableExact, "scope.mutableExact");
   const createExact = frozenPathList(scope.createExact, "scope.createExact");
   const mutablePrefixes = frozenPathList(
@@ -258,7 +310,11 @@ export function validateTaskV2Scope(scopeOrContract) {
     );
   }
 
-  const legacyContract = v1ContractFor(scopeOrContract, scope);
+  const legacyContract = v1ContractFor(
+    scope,
+    { mutableExact, mutablePrefixes, allowCreate },
+    captured.evaluatorPath,
+  );
   for (const path of [...mutableExact, ...mutablePrefixes]) {
     validateLegacyProtection(path, legacyContract);
   }
@@ -269,6 +325,12 @@ export function validateTaskV2Scope(scopeOrContract) {
     mutablePrefixes,
     allowCreate,
   });
+}
+
+export function validateTaskV2Scope(scopeOrContract) {
+  return withTaskV2FailureBoundary(() =>
+    validateTaskV2ScopeInternal(scopeOrContract),
+  );
 }
 
 function contentBytes(value) {
@@ -333,6 +395,7 @@ function exactOwnDataArray(value, label, maximum = MAX_SCOPE_PATHS) {
   let descriptors;
   try {
     if (
+      utilTypes.isProxy(value) ||
       !Array.isArray(value) ||
       Object.getPrototypeOf(value) !== Array.prototype
     ) {
@@ -697,7 +760,12 @@ export function validateCandidatePatchV2(patch, contract, options = undefined) {
 
   const scope = validateTaskV2Scope(contract);
   const objectFormat = contractObjectFormat(contract, options);
-  const legacyContract = v1ContractFor(contract, rawScope(contract));
+  const captured = snapshotScopeInput(contract);
+  const legacyContract = v1ContractFor(
+    captured.scope,
+    scope,
+    captured.evaluatorPath,
+  );
   const lines = patch.slice(0, -1).split("\n");
   const paths = [];
   const pathStatuses = [];

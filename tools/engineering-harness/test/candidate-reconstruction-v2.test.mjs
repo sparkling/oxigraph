@@ -224,7 +224,11 @@ function manifestBinding(full, protectedManifest) {
 
 async function createFixture(
   t,
-  { objectFormat = "sha1", folded = false } = {},
+  {
+    objectFormat = "sha1",
+    folded = false,
+    evaluatorContent = "evaluator\n",
+  } = {},
 ) {
   const root = await mkdtemp(
     join(tmpdir(), "oxigraph-reconstruct-v2-fixture-"),
@@ -246,7 +250,7 @@ async function createFixture(
     await writeFile(join(repo, "src/Created.txt"), "collision\n", "utf8");
   }
   const baseline = await commit(repo, home, "baseline");
-  await writeFile(join(repo, "tests/evaluator.txt"), "evaluator\n", "utf8");
+  await writeFile(join(repo, "tests/evaluator.txt"), evaluatorContent);
   const evaluator = await commit(repo, home, "evaluator");
   const evaluatorPatch = await runGitBytes({
     args: evaluatorDiffArgs(baseline.commit, evaluator.commit),
@@ -265,10 +269,11 @@ async function createFixture(
     tree: evaluator.tree,
   });
   const evaluatorEntry = treeEntryAtPath(evaluatorTree, "tests/evaluator.txt");
-  const evaluatorContent = await readBlobByOid({
+  const evaluatorBlobContent = await readBlobByOid({
     workspace: repo,
     home,
     oid: evaluatorEntry.oid,
+    maxOutputBytes: 256 * 1024 * 1024,
   });
 
   async function contractFor({ mutableExact, createExact }) {
@@ -353,7 +358,7 @@ async function createFixture(
         path: "tests/evaluator.txt",
         changeStatus: "A",
         blob: evaluatorEntry.oid,
-        contentSha256: sha256(evaluatorContent),
+        contentSha256: sha256(evaluatorBlobContent),
         patchSha256: sha256(evaluatorPatch),
       },
       scope: {
@@ -492,6 +497,92 @@ test("v2 reconstruction derives authority only from exact contract bytes", async
     }),
     v2Failure("ERR_RECONSTRUCTION"),
   );
+});
+
+test("v2 reconstruction independently binds the exact evaluator change identity", async (t) => {
+  const fixture = await createFixture(t);
+  const original = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const patch = creationSection("src/created.txt", "created\n", "sha1");
+  const cases = [
+    (contract) => {
+      contract.evaluator.changeStatus = "M";
+    },
+    (contract) => {
+      contract.evaluator.path = "tests/protected.txt";
+      contract.scope.blockedExact = ["tests/protected.txt"];
+    },
+    (contract) => {
+      contract.evaluator.blob = "1".repeat(contract.evaluator.blob.length);
+    },
+    (contract) => {
+      contract.evaluator.contentSha256 = "1".repeat(64);
+    },
+  ];
+
+  for (const mutate of cases) {
+    const contract = structuredClone(original);
+    mutate(contract);
+    await assert.rejects(
+      reconstructCandidateV2({
+        repositoryRoot: fixture.repo,
+        contract,
+        patch,
+      }),
+      v2Failure("ERR_BASELINE_STATE"),
+    );
+  }
+});
+
+test("v2 reconstruction enforces the contract evaluator patch ceiling", async (t) => {
+  const fixture = await createFixture(t, {
+    evaluatorContent: `${"x".repeat(4_096)}\n`,
+  });
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  const patch = creationSection("src/created.txt", "created\n", "sha1");
+  contract.ceilings.maxPatchBytes = Buffer.byteLength(patch, "utf8");
+  let retainedRoot;
+  const controller = createCandidateV2ReconstructorForTesting((input) => {
+    if (input.args[0] === "clone") retainedRoot = input.cwd;
+    return runGitBytes(input);
+  });
+  t.after(async () => {
+    if (retainedRoot !== undefined) {
+      await rm(retainedRoot, { recursive: true, force: true });
+    }
+  });
+
+  await assert.rejects(
+    controller.reconstructCandidateV2({
+      repositoryRoot: fixture.repo,
+      contractBytes: exactContractBytes(contract),
+      patch,
+    }),
+    v2Failure("ERR_RECONSTRUCTION"),
+  );
+});
+
+test("v2 reconstruction matches the contract verifier blob ceiling", async (t) => {
+  const fixture = await createFixture(t, {
+    evaluatorContent: Buffer.alloc(32 * 1024 * 1024 + 1),
+  });
+  const contract = await fixture.contractFor({
+    mutableExact: ["src/created.txt"],
+    createExact: ["src/created.txt"],
+  });
+  contract.ceilings.maxPatchBytes = 256 * 1024;
+  const patch = creationSection("src/created.txt", "created\n", "sha1");
+  const candidate = await reconstructCandidateV2({
+    repositoryRoot: fixture.repo,
+    contract,
+    patch,
+  });
+  await disposeCandidateV2(candidate);
 });
 
 test("v2 reconstruction retains quarantined roots for unproved or contradictory Git cleanup", async (t) => {

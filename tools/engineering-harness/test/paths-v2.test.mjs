@@ -114,6 +114,90 @@ test("v2 paths use only strict ASCII-safe segments and a fixed ASCII fold", () =
   }
 });
 
+test("scope validation maps hostile object traps to one typed terminal failure", () => {
+  let trapCalls = 0;
+  const hostile = new Proxy(
+    {},
+    {
+      getPrototypeOf() {
+        trapCalls += 1;
+        throw new Error("/private/worktree token=secret");
+      },
+    },
+  );
+
+  assert.throws(() => validateTaskV2Scope(hostile), (error) => {
+    assert.equal(error instanceof TaskV2Failure, true);
+    assert.equal(error.code, "ERR_CONTRACT_SCHEMA_OR_KEYS");
+    assert.equal(error.terminal, true);
+    assert.equal(error.retryAllowed, false);
+    assert.doesNotMatch(`${error.stack}\n${JSON.stringify(error)}`, /private|secret|token/u);
+    return true;
+  });
+  assert.equal(trapCalls, 0);
+});
+
+test("scope validation rejects field and element accessors without invoking them", () => {
+  for (const kind of ["field", "element", "evaluator"]) {
+    const value = contract({
+      mutableExact: [CREATED],
+      createExact: [CREATED],
+    });
+    let getterCalls = 0;
+    if (kind === "evaluator") {
+      Object.defineProperty(value.evaluator, "path", {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return CREATED;
+        },
+      });
+    } else if (kind === "field") {
+      Object.defineProperty(value.scope, "mutableExact", {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return [CREATED];
+        },
+      });
+    } else {
+      const paths = [];
+      Object.defineProperty(paths, 0, {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return CREATED;
+        },
+      });
+      paths.length = 1;
+      value.scope.mutableExact = paths;
+    }
+
+    assert.throws(
+      () => validateTaskV2Scope(value),
+      failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+    );
+    assert.equal(getterCalls, 0);
+  }
+});
+
+test("scope and patch policy keep the evaluator path protected", () => {
+  const value = contract({
+    mutableExact: [CREATED],
+    createExact: [CREATED],
+  });
+  value.evaluator.path = CREATED;
+
+  assert.throws(
+    () => validateTaskV2Scope(value),
+    failureCode("ERR_PATH_COLLISION"),
+  );
+  assert.throws(
+    () => validateCandidatePatchV2(createdSection(), value),
+    failureCode("ERR_PATH_COLLISION"),
+  );
+});
+
 test("scope validation rejects exact, ancestor, and portable-fold ambiguity", () => {
   for (const mutableExact of [
     ["src/a.rs", "src/a.rs"],
