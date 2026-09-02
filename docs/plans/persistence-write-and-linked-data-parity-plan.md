@@ -40,6 +40,8 @@
   `040f33438693d3e3f64f8052a849b1c84caa58d8`
 - ADR-0036 C15 guardian-control checkpoint:
   `4620dd92273c06e997a55a2204a01d311f3027de`
+- ADR-0036 C16 guardian-control checkpoint:
+  `930a7722490b8ad63d6825a25bd7bcb138140dd3`
 - Architecture decision: [ADR-0016 — Backend-neutral transactional RDF writes](../adr/0016-backend-neutral-transactional-writes.md)
 - Exact new-file admission decision:
   [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)
@@ -225,6 +227,29 @@ ADR-0036 remains Proposed, readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and no
 dependency, production runtime, qualification, promotion, publication, push,
 or physical authority changes.
+
+The dated 2026-09-02 ADR-0036 C16 private-store checkpoint is GREEN from RED
+`5f717090fcc118d299cadf446fe0703026d360b6` to integrated commit
+`930a7722490b8ad63d6825a25bd7bcb138140dd3`, tree
+`2492ce6e2dd4f73e1c9749e657f05e09e71fd962`. Only the main and adversarial
+evaluators changed; the C15 source, helper, fixture, runtime oracle, package,
+lockfile, and dependency envelope is unchanged. The C16 receipt identity
+`914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa`
+binds three stores, ten owners, five phases, and 50 unique controls. Its
+three-entry registration inventory has zero registration TODOs at identity
+`b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9`.
+Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass direct 11/11,
+main 19 total / 18 pass / zero fail / one TODO, combined 30 total / 29 pass /
+zero fail / one TODO, helper 20/20, and ADR verifier 1/1. Independent review
+returned APPROVE with no findings. C17 final aggregate is the sole evaluator
+TODO; C18-C21 remain pending. At the pre-documentation freeze, C16 task
+`task-1788204847572-uh0olo` was recorded `in_progress` at 95%; its ledger
+closure is a post-integration action, not evidence conferred by this plan. The
+checkpoint advances neither G2.2 nor the unresolved
+dual-host plan. ADR-0036 remains Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and it grants
+no production, runtime, filesystem, process, cgroup, qualification, promotion,
+publication, push, product, or physical authority.
 
 ## Evidence policy
 
@@ -1033,6 +1058,8 @@ repository's Ruflo memory:
 | Eclipse RDF4J comparison        | `task-1787593372137-3j8kyo` | `research/oxigraph-2026-08-24-r3-rdf4j-gap`                                                            |
 | Exact new-file admission / G2.2 | `task-1787935934614-ibmjn1` | [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md) |
 | Guardian-control C15/C16-C21     | `task-1788042241332-xafq11` | [ADR-0036 — Guardian-control pure ABI](../adr/0036-guardian-control-pure-abi.md)                       |
+| Guardian-control C16 current     | `task-1788204847572-uh0olo` | [ADR-0036 C16 private-store record](../adr/0036-guardian-control-pure-abi.md#c16-private-store-runtime-atomicity-record-2026-09-02) |
+| Guardian-control C17-C21 pending | `task-1788204854834-82qx49` | [ADR-0036 remaining acceptance boundary](../adr/0036-guardian-control-pure-abi.md#acceptance-boundary) |
 
 Exact recall from the three research-memory entries succeeded. The fourth and
 fifth rows are active programme task maps for prerequisite gates; they are not
@@ -1042,6 +1069,11 @@ neural predictor had real embeddings but no stored patterns and returned no
 prediction; it did not influence prioritization. The synthesis above is the
 traceable intersection of recalled local findings and current first-party
 sources.
+
+The two dated C16/C17 rows above refine that active map: C16
+implementation/evidence is complete, and its task was recorded 95%
+`in_progress` at the pre-documentation freeze pending post-integration ledger
+closure; C17 is the sole evaluator TODO, with C18-C21 pending.
 
 The Brain search verified the persistent swarm implementation in
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts`; that source supports

@@ -335,6 +335,15 @@
   checkpoint does not change this ADR's Proposed status or the readiness value
   above.
 
+  The dated 2026-09-02 C16 private-store checkpoint is GREEN at integrated
+  commit `930a7722`, after RED commit `5f717090`. Independent review returned
+  APPROVE with no findings. On Node 24.14.1, exact Node 20.0.0, and Node
+  20.20.2, direct is 11/11, main is 19 total / 18 pass / zero fail / one TODO,
+  and combined is 30 total / 29 pass / zero fail / one TODO. C17 final aggregate
+  is the sole remaining evaluator TODO; C18-C21 remain pending. This newer
+  bounded checkpoint also leaves this ADR Proposed and readiness exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
 - **Related**:
@@ -554,6 +563,103 @@ change is part of C15. ADR-0036 remains Proposed; readiness remains exactly
 runtime, G1.7, G2.2, qualification, promotion, publication, push, or physical
 authority. The programme's dual-host plan remains unresolved and receives no
 evidence or authority from this checkpoint.
+
+### C16 private-store runtime-atomicity record (2026-09-02)
+
+The C15 record above remains historical evidence and is not rewritten. C16
+started at RED commit `5f717090fcc118d299cadf446fe0703026d360b6` and became
+GREEN at integrated commit `930a7722490b8ad63d6825a25bd7bcb138140dd3`, tree
+`2492ce6e2dd4f73e1c9749e657f05e09e71fd962`, with parent `5f717090` and
+integrated RED-to-GREEN patch SHA-256
+`c81948744ff415d4ab72cea4a7aa51ceedfcf2da25def018e91232dfbd85bb87`.
+Only the two evaluator files changed:
+
+| Evaluator artifact | Bytes | SHA-256 | Git blob |
+| --- | ---: | --- | --- |
+| `candidate-containment-guardian-control-v1-adversarial.test.mjs` | 658,087 | `b2edf959bf2e7bd933d37c3521c495da955b1e7a4eac069361465f443de423ef` | `63fa67d7bd4fe7a2921fbc8f77c57b8e75adb010` |
+| `candidate-containment-guardian-control-v1.test.mjs` | 912,778 | `bc0b322dc5394a30fd846bd756899d77e6dfdec783108c648720ad2ba4ca2207` | `aa8253e7188a7499d840ea7eac7ed71fa3184677` |
+
+The live C15 product envelope is unchanged: exact-v2 remains 12,687 bytes at
+`194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`,
+guardian-control remains 81,670 bytes at
+`3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718`,
+and the live v1 fixture remains 14,230 bytes with raw/canonical identities
+`4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` /
+`7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`.
+The same v1 fixture path therefore remains the live C15 fixture; historical
+C14 remains the private reconstruction recorded above. C16 changes no product
+source, helper, fixture, package, lockfile, dependency, or runtime registration.
+
+The frozen C16 private-store dispatch receipt uses schema
+`oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-dispatch/v1`
+and has identity
+`914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa`.
+It binds three private stores, ten owner operations, five phases, and 50 unique
+controls: 40 primary-module and ten fresh-module controls, with ten controls in
+each of `earlyFailure`, `lateFailure`, `success`, `failureAfterSuccess`, and
+`crossModule`. The exact control-ID sequence has identity
+`fcecf21e42d79a9a8f40d0514c1c2f2cdbf77b9af2dd64630347053f81eea364`;
+the exact owner-operation sequence has identity
+`828671fb22e3cb674daa99d972b87250cf059da5e0524d8b725407f66f0748b1`.
+The exact ordered phase-name array has the distinct-preimage identity
+`c7c768bdabe36cc08a7bcafdfc4046c3647a4fa13b77fcdc6a1d1891bdd178f9`;
+the exact sorted phase-count object has the different-preimage identity
+`61af05cd58789f22f82dc3014e2ba36fd3781183437d0ba0326edfef78f193ae`.
+
+The store distribution is one/seven/two owners and five/35/ten controls for
+startup/input/state metadata. Candidate calls are 274 attempts, 224 successes,
+and 50 rejections; owner-target calls are 70 attempts, 30 successes, and 40
+rejections. Primary/fresh calls are 246/28, and setup/downstream calls are
+168/36. The receipt also proves 40
+successful owner results, ten distinct allocation pairs, 20 downstream
+usability checks, ten prior-brand preservation checks, ten structural-clone
+rejections, ten cross-module rejections, and four explicitly collapsed
+late-failure boundaries.
+
+The runtime evidence covers eight mutant classes: correct same-module private
+commit and downstream use; owner/store/key isolation; prior-brand survival after
+late failure; structural-clone rejection as `CONTROL_BINDING`; fresh-module
+isolation; reducer state-brand checking; reducer input-brand checking; and
+rejection of public-digest-only authority. Three static complements retain the
+exact store/key/metadata provenance and commit-tail/dominance proofs. Abandoned
+`WeakMap` keys are not directly observed, and this evidence makes no claim from
+key enumeration.
+
+The fresh candidate is distinct and loaded exactly once. Its main-evaluator
+audit reads, pins, decodes, audits, and imports in sequence 1/2/3/4/5, advances
+the successful ordinal by exactly one, binds source SHA-256
+`3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718`,
+uses only the canonical SHA-256 plus padded ordinal query, and applies the full
+main audit before import. The live runtime oracle remains
+`57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5`.
+
+Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each reproduce direct
+11 total / 11 pass / zero fail / zero TODO, main 19 total / 18 pass / zero fail /
+one TODO, and combined 30 total / 29 pass / zero fail / one TODO. The
+post-integration Node 24.14.1 combined run is identical, the exact-v2 helper is
+20/20, and the ADR verifier is 1/1. Independent review returned APPROVE with no
+findings and reproduced the combined matrix on Node 24.14.1 and Node 20.20.2.
+The repository evidence key is
+`adr0036-c16-green-integration-930a7722-2026-09-02`.
+
+The registration inventory is now exactly three entries, zero registration
+TODOs, and identity
+`b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9`.
+C17 final aggregate (`task-1788204854834-82qx49`) is the sole evaluator TODO;
+it intentionally sits outside adversarial registration. At the
+pre-documentation evidence freeze, Ruflo task `task-1788204847572-uh0olo` was
+recorded `in_progress` at 95%; its ledger closure is intentionally a
+post-integration operation and is not evidence conferred by this record.
+Earlier task prose used pre-C15 10/15/25 denominators; the dated
+C16 evidence corrects the live matrix to 11/19/30 without rewriting that
+historical text. C18-C20 independent reviews and C21 documentation/umbrella
+closure remain pending.
+
+ADR-0036 remains Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. C16 grants no
+production, product, runtime, filesystem, process, cgroup, G1.7, G2.2,
+qualification, promotion, publication, push, or physical authority. The
+programme's dual-host plan remains unresolved.
 
 ### Bounded input representation
 
@@ -1572,6 +1678,12 @@ GREEN. The C16 private-store and C17 final-aggregate evaluator entries remain
 TODO; C18-C20 independent review and C21 documentation/umbrella closure remain
 pending. Accordingly, this acceptance list is not a claim that the complete
 ADR-0036 programme is closed.
+
+The dated 2026-09-02 C16 private-store entry is now implemented and GREEN. The
+three-entry registration inventory has zero registration TODOs, while C17 final
+aggregate remains the sole evaluator TODO outside that registration. C18-C20
+independent reviews and C21 documentation/umbrella closure remain pending, so
+the complete ADR-0036 programme is still not closed.
 
 ## Consequences
 

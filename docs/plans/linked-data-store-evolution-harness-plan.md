@@ -13,7 +13,7 @@
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
 - Current engineering control checkpoint:
-  `4620dd92273c06e997a55a2204a01d311f3027de`
+  `930a7722490b8ad63d6825a25bd7bcb138140dd3`
 - Current product checkpoint:
   `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
 - Semantic Builder handover reviewed against:
@@ -1129,6 +1129,13 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | ADR-0036 C12-C14 implementation history    | `task-1788042241332-xafq11`                                                                                                                         | Historical checkpoint through integrated commit `c333f8c5`: the private evaluator closes the C12 runtime oracle, C13 source lift, and C14 candidate activation while preserving exact-v2 10,833-byte SHA `2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`, guardian 81,189-byte SHA `505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d`, and fixture 14,213-byte raw/canonical hashes `968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082` / `0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`. All three runtimes passed direct 11 and main 15 with zero failures and three TODOs. This row is history, not the live C15 artifact envelope. |
 | ADR-0036 C15 byte semantics                | `task-1788204841083-htz7p5` / `task-1788286308271-uvhpg1`                                                                                           | Current GREEN checkpoint through helper `41dd2508`, guardian/fixture `23d37556`, and evaluator `4620dd92`. The same v1 fixture path advances live C15 at raw/canonical hashes `4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` / `7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`; historical C14 is evaluator-private reconstruction. Node 24.14.1, 20.0.0, and 20.20.2 each pass direct 11/11, main 19 total / 17 pass / zero fail / two TODO, helper 20/20, and ADR verifier 1/1. Independent verdict: APPROVE. Live runtime-oracle, AST, and three-entry registration identities are `57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5`, `36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53`, and `27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d`. ADR-0036 stays Proposed and authority-null. |
 | ADR-0036 C16-C21 remaining closure         | `task-1788204847572-uh0olo` / `task-1788204854834-82qx49` / `task-1788204862237-jcs5sd` / `task-1788204868984-521i0d` / `task-1788204877088-j678ig` / `task-1788204883871-l9tsh9` | C16 private-store and C17 final aggregate are the two remaining evaluator TODOs. C18-C20 independent reviews and C21 documentation/umbrella closure remain pending. No task in this tail has runtime, G1.7, G2.2, qualification, promotion, publication, or push authority. Readiness remains exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`. |
+| ADR-0036 C16 private-store runtime          | `task-1788204847572-uh0olo`                                                                                                                         | Dated 2026-09-02 GREEN checkpoint from RED `5f717090` to integrated `930a7722` (tree `2492ce6e`), with evidence key `adr0036-c16-green-integration-930a7722-2026-09-02`. Only the two evaluators changed. The receipt identity `914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa` binds 3 stores, 10 owners, 5 phases, and 50 unique controls; the registration identity `b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9` binds 3 entries and zero registration TODOs. Node 24.14.1, 20.0.0, and 20.20.2 each pass direct 11/11, main 19 total / 18 pass / zero fail / one TODO, combined 30 total / 29 pass / zero fail / one TODO, helper 20/20, and ADR verifier 1/1. Independent verdict: APPROVE/no findings. At the pre-documentation freeze, the task was recorded 95% `in_progress`; ledger closure is a post-integration action, not evidence conferred by this row. ADR-0036 stays Proposed and authority-null. |
+| ADR-0036 C17-C21 remaining closure          | `task-1788204854834-82qx49` / `task-1788204862237-jcs5sd` / `task-1788204868984-521i0d` / `task-1788204877088-j678ig` / `task-1788204883871-l9tsh9` | C17 final aggregate is the sole evaluator TODO and sits outside the three-entry adversarial registration inventory. C18-C20 independent reviews and C21 documentation/umbrella closure remain pending. No task in this tail has runtime, filesystem, process, cgroup, G1.7, G2.2, qualification, promotion, publication, push, product, or physical authority. Readiness remains exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`. |
+
+Beneath the preserved pre-C16 planning row, the two dated rows above are the
+current C16/C17-C21 split. Earlier task prose used pre-C15 10/15/25
+direct/main/combined denominators; the dated C16 evidence corrects them to
+11/19/30 without rewriting the historical task record.
 
 B5 killed six weakening probes and accepted four false-positive probes. B6
 killed and byte-exactly restored five operator-specific mutants, and 194 of
@@ -1139,6 +1146,9 @@ direct/main/combined matrices on current Node 24.14.1, Node 20.0.0, and Node
 The programme's dual-host plan remains unresolved. The C15 GREEN evidence does
 not settle its documentation/versioning corrections and grants it no runtime,
 qualification, or publication authority.
+
+The C16 evaluator-only evidence likewise does not advance that plan or grant
+runtime, qualification, publication, or product authority.
 
 The three G1.7 reviews ran under reviewer swarm
 `swarm-1787778496656-aq8q1c`. They are adversarial control review, not product

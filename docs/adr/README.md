@@ -134,6 +134,28 @@ pending. ADR-0036 stays Proposed, readiness stays exactly
 adds no dependency, runtime registration, production authority, qualification,
 promotion, or publication permission.
 
+The preceding paragraph remains the dated C15 record. The 2026-09-02 C16
+private-store checkpoint is GREEN from RED `5f717090` to integrated commit
+`930a7722`; only the main and adversarial evaluators changed. The frozen receipt
+identity is
+`914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa`,
+covering three stores, ten owners, five phases, and 50 unique controls. The
+registration inventory remains three entries but now has zero registration
+TODOs at identity
+`b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9`.
+Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass direct 11/11 and
+report main 19 total / 18 pass / zero fail / one TODO and combined 30 total /
+29 pass / zero fail / one TODO. Independent review returned APPROVE with no
+findings. C17 final aggregate is the sole evaluator TODO; C18-C21 remain
+pending. At the pre-documentation freeze, C16 task
+`task-1788204847572-uh0olo` was recorded `in_progress` at 95%; its ledger
+closure is a post-integration action, not evidence conferred by this index.
+ADR-0036 remains Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and C16 grants
+no source, helper, fixture, package, lockfile, dependency, production, runtime,
+filesystem, process, cgroup, G1.7, G2.2, qualification, promotion, publication,
+push, or product authority.
+
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only

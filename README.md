@@ -446,6 +446,24 @@ open. ADR-0036 remains Proposed, production readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and C15 changes
 no package, lockfile, dependency, runtime registration, or authority.
 
+The dated 2026-09-02 ADR-0036 C16 private-store checkpoint is also GREEN, from
+RED `5f717090` to integrated commit `930a7722`. Only the main and adversarial
+evaluators changed; the C15 helper, guardian, live v1 fixture, and runtime-oracle
+identities remain unchanged. The frozen C16 receipt
+`914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa`
+binds three stores, ten owners, five phases, and 50 unique runtime controls.
+Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass direct 11/11 and
+report main 19 total / 18 pass / zero fail / one TODO, for combined 30 total /
+29 pass / zero fail / one TODO; helper remains 20/20 and the ADR verifier is
+1/1. Independent review returned APPROVE with no findings. The three-entry
+registration inventory now has zero registration TODOs; C17 final aggregate is
+the sole evaluator TODO, and C18-C21 remain pending. ADR-0036 remains Proposed,
+readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and C16 adds
+no source, helper, fixture, package, lockfile, dependency, runtime registration,
+or runtime, filesystem, process, cgroup, G1.7, G2.2, production, product,
+qualification, promotion, publication, push, or physical authority.
+
 [ADR-0035 — Durable native containment guardian and crash recovery](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 separates the remaining stable guardian/reaper and crash-recovery design from
 the broader admission gate. It requires an intent-first write-once journal,
@@ -595,6 +613,19 @@ The ADRs explain the principal boundaries:
   value is reconstructed privately. The decision stays Proposed, readiness and
   authority stay unchanged, and the unresolved dual-host plan is not advanced
   by this evidence.
+
+  That C15 paragraph remains the historical checkpoint. The dated C16
+  private-store checkpoint is integrated at `930a7722`: each of the same three
+  Node runtimes passes direct 11/11, main 18 pass / zero fail / one TODO, and
+  combined 29 pass / zero fail / one TODO. Its registration inventory has three
+  entries and zero registration TODOs; C17 final aggregate is the sole evaluator
+  TODO outside that registration, while C18-C21 remain pending. At the
+  pre-documentation freeze, C16 task `task-1788204847572-uh0olo` was recorded
+  `in_progress` at 95%; its ledger closure is a post-integration action, not
+  evidence conferred by this text. The decision stays
+  Proposed, readiness stays exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`, and neither
+  authority nor the unresolved dual-host plan advances.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

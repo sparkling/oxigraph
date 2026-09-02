@@ -715,5 +715,61 @@ The `npm test` totals above are the preserved pre-C15 broad checkpoint; they are
 not relabelled by the focused C15 GREEN result. The dated C15 matrix is the
 explicit three-runtime direct/main/helper/ADR-verifier matrix recorded above.
 
+### ADR-0036 C16 checkpoint — 2026-09-02
+
+The C15 section above remains historical evidence. C16 is GREEN from RED commit
+`5f717090fcc118d299cadf446fe0703026d360b6` to integrated commit
+`930a7722490b8ad63d6825a25bd7bcb138140dd3`, tree
+`2492ce6e2dd4f73e1c9749e657f05e09e71fd962`; the integrated patch SHA-256 is
+`c81948744ff415d4ab72cea4a7aa51ceedfcf2da25def018e91232dfbd85bb87`.
+Only the evaluators changed. The adversarial evaluator is 658,087 bytes at
+SHA-256 `b2edf959bf2e7bd933d37c3521c495da955b1e7a4eac069361465f443de423ef`
+and Git blob `63fa67d7bd4fe7a2921fbc8f77c57b8e75adb010`; the main evaluator is
+912,778 bytes at SHA-256
+`bc0b322dc5394a30fd846bd756899d77e6dfdec783108c648720ad2ba4ca2207`
+and Git blob `aa8253e7188a7499d840ea7eac7ed71fa3184677`.
+
+The frozen private-store receipt identity is
+`914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa`.
+It binds three stores, ten owner operations, five phases, and 50 unique controls
+(40 primary and ten fresh), with ten controls per phase. Store owner/control
+splits are 1/7/2 and 5/35/10. Candidate behavior is 274 attempts / 224 successes
+/ 50 rejections; owner targets are 70/30/40; primary/fresh calls are 246/28;
+setup/downstream calls are 168/36. The exact control-ID and owner-operation
+preimages have identities
+`fcecf21e42d79a9a8f40d0514c1c2f2cdbf77b9af2dd64630347053f81eea364`
+and `828671fb22e3cb674daa99d972b87250cf059da5e0524d8b725407f66f0748b1`.
+The exact ordered phase-name array has identity
+`c7c768bdabe36cc08a7bcafdfc4046c3647a4fa13b77fcdc6a1d1891bdd178f9`;
+the distinct exact sorted phase-count object preimage has identity
+`61af05cd58789f22f82dc3014e2ba36fd3781183437d0ba0326edfef78f193ae`.
+
+The fresh candidate is distinct and loaded once through read/pin/decode/audit/
+import sequence 1/2/3/4/5, with a one-step ordinal advance, canonical source
+SHA-256 plus padded ordinal query, and the full main audit before import. The
+live oracle remains
+`57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5`.
+The registration inventory now has three entries, zero registration TODOs, and
+identity
+`b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9`.
+
+Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass direct
+11/11/0/0 and report main 19/18/0/1 and combined 30/29/0/1
+test/pass/fail/TODO. The post-integration Node 24.14.1 combined result is the
+same; the helper passes 20/20 and the ADR verifier passes 1/1. Independent
+review returned APPROVE with no findings and reproduced combined results on
+Node 24.14.1 and Node 20.20.2. These focused C16 totals do not relabel the
+preserved broad `npm test` totals above.
+
+C17 final aggregate is the sole evaluator TODO; C18-C21 remain pending. At the
+pre-documentation freeze, task `task-1788204847572-uh0olo` was recorded
+`in_progress` at 95%; its ledger closure is a post-integration action, not
+evidence conferred by this README. ADR-0036 remains Proposed and readiness
+remains exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`.
+No source,
+helper, fixture, package, lockfile, dependency, runtime, filesystem, process,
+cgroup, G1.7, G2.2, qualification, promotion, publication, push, product, or
+physical authority changed, and the dual-host plan remains unresolved.
+
 The package is local-only. Presence of this directory is not an engineering
 readiness, product-correctness, semantic-qualification, or promotion claim.
