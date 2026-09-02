@@ -17225,6 +17225,7 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     registeredCount: 2,
     todoCount: 1,
     inputsDeferredUntilExecution: true,
+    privateStoreTodoDeferralBoundToEntryOptions: true,
   });
   assert.equal(Object.isFrozen(ADVERSARIAL_REGISTRATION_RECEIPT), true);
   assert.equal(Object.isFrozen(SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE), true);
@@ -21637,6 +21638,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         registeredCount: 2,
         todoCount: 1,
         inputsDeferredUntilExecution: true,
+        privateStoreTodoDeferralBoundToEntryOptions: true,
       },
       registeredTests: expectedRegisteredTests,
       registrationGetterReads: {
@@ -21677,6 +21679,10 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         controlCount: 50,
         freshLoaderCallCount: 1,
         controlIds: expectedPrivateControlIds,
+        entryTodo: true,
+        candidateInputThenable: false,
+        candidateInputAwaited: false,
+        todoDeferralBoundToEntryOptions: true,
         candidateBehaviorProved: false,
       },
       primaryControlCount: 41,
@@ -22155,6 +22161,13 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
     ],
     [
+      "registration-private-store-todo-deferral-coupling-drift",
+      (receipt) => {
+        receipt.registration.privateStoreTodoDeferralBoundToEntryOptions =
+          false;
+      },
+    ],
+    [
       "registration-name-drift",
       (receipt) => {
         receipt.registeredTests[0].name += " drift";
@@ -22501,11 +22514,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 131,
-      killed: 131,
+      count: 132,
+      killed: 132,
       survivors: 0,
       idsSha256:
-        "ecd7b5a45eb2dcd44da00dc74aaead41599917aaa2db687d95c662690f76dd41",
+        "1d16a37cec6e3151957c3f9223a2ea48d3bd41ee8fbef53245a5f9a1b6f8a215",
     },
   );
   assert.equal(

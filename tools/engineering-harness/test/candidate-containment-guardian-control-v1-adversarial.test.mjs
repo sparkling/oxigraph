@@ -966,15 +966,40 @@ async function c13RunBytePositionCandidateControls({ candidate, oracle }) {
   });
 }
 
-async function c13RunPrivateStoreCandidateControls({
-  candidate,
-  oracle,
-  loadFreshCandidate,
-}) {
-  if (
-    candidate === null ||
-    (typeof candidate === "object" && typeof candidate.then === "function")
-  ) {
+function c13CandidateInputThenable(candidate) {
+  return (
+    candidate !== null &&
+    (typeof candidate === "object" || typeof candidate === "function") &&
+    typeof candidate.then === "function"
+  );
+}
+
+function c13PrivateStoreTodoDeferredCallbackResult() {
+  return Object.freeze({
+    schema: C13_DEFERRED_CALLBACK_RESULT_SCHEMA,
+    id: "private-store-commit-controls",
+    status: "DEFERRED_ENTRY_TODO",
+    candidateBehaviorAttemptCount: 0,
+    freshLoaderCallCount: 0,
+    entryTodo: true,
+    candidateInputThenable: true,
+    candidateInputAwaited: false,
+    todoDeferralBoundToEntryOptions: true,
+    candidateBehaviorProved: false,
+  });
+}
+
+async function c13RunPrivateStoreCandidateControls(
+  { candidate, oracle, loadFreshCandidate },
+  { entryTodo },
+) {
+  assert.equal(typeof entryTodo, "boolean");
+  const candidateInputThenable = c13CandidateInputThenable(candidate);
+  if (entryTodo && candidateInputThenable) {
+    return c13PrivateStoreTodoDeferredCallbackResult();
+  }
+  candidate = await candidate;
+  if (candidate === null) {
     return c13DeferredCallbackResult("private-store-commit-controls");
   }
   assert.equal(typeof candidate, "object");
@@ -1015,6 +1040,10 @@ async function c13RunPrivateStoreCandidateControls({
     controlCount: controlIds.length,
     freshLoaderCallCount: 1,
     controlIds: Object.freeze(controlIds),
+    entryTodo,
+    candidateInputThenable,
+    candidateInputAwaited: candidateInputThenable,
+    todoDeferralBoundToEntryOptions: true,
     candidateBehaviorProved: false,
   });
 }
@@ -1053,7 +1082,9 @@ export function registerAdversarialCandidateTests(registration) {
         return c13RunBytePositionCandidateControls(captured);
       }
       if (entry.id === "private-store-commit-controls") {
-        return c13RunPrivateStoreCandidateControls(captured);
+        return c13RunPrivateStoreCandidateControls(captured, {
+          entryTodo: entry.options.todo === true,
+        });
       }
       throw new Error(`unknown adversarial candidate test id: ${entry.id}`);
     });
@@ -1066,6 +1097,7 @@ export function registerAdversarialCandidateTests(registration) {
     registeredCount,
     todoCount,
     inputsDeferredUntilExecution: true,
+    privateStoreTodoDeferralBoundToEntryOptions: true,
   });
 }
 
@@ -12485,7 +12517,7 @@ test("rejects every hostile byte-carrier class trap-free at all positions", () =
   });
 });
 
-test("freezes the 10-operation private-store evaluator design without claiming candidate execution", () => {
+test("freezes the 10-operation private-store evaluator design without claiming candidate execution", async () => {
   assert.deepEqual(
     PRIVATE_STORE_COMMIT_CONTROL_PLAN.map(({ store }) => store),
     ["startupMetadata", "inputMetadata", "stateMetadata"],
@@ -12598,8 +12630,94 @@ test("freezes the 10-operation private-store evaluator design without claiming c
     registeredCount: 2,
     todoCount: 1,
     inputsDeferredUntilExecution: true,
+    privateStoreTodoDeferralBoundToEntryOptions: true,
   });
   assert.equal(Object.isFrozen(receipt), true);
+
+  const activationOracle = Object.freeze({
+    identitySha256: "a".repeat(64),
+  });
+  const makePrivateControlCandidate = (calls) =>
+    Object.freeze(
+      Object.fromEntries(
+        expectedOperations.map((operation) => [
+          operation,
+          (control) => {
+            assert.equal(Object.isFrozen(control), true);
+            calls.push(`${operation}:${control.phase}`);
+          },
+        ]),
+      ),
+    );
+  let todoLoaderCalls = 0;
+  const unresolvedCandidate = new Promise(() => {});
+  const todoDeferred = await c13RunPrivateStoreCandidateControls(
+    {
+      candidate: unresolvedCandidate,
+      oracle: activationOracle,
+      loadFreshCandidate: async () => {
+        todoLoaderCalls += 1;
+        throw new Error("private-store TODO invoked its fresh loader");
+      },
+    },
+    { entryTodo: true },
+  );
+  assert.deepEqual(todoDeferred, {
+    schema: C13_DEFERRED_CALLBACK_RESULT_SCHEMA,
+    id: "private-store-commit-controls",
+    status: "DEFERRED_ENTRY_TODO",
+    candidateBehaviorAttemptCount: 0,
+    freshLoaderCallCount: 0,
+    entryTodo: true,
+    candidateInputThenable: true,
+    candidateInputAwaited: false,
+    todoDeferralBoundToEntryOptions: true,
+    candidateBehaviorProved: false,
+  });
+  assert.equal(todoLoaderCalls, 0);
+
+  const primaryActivationCalls = [];
+  const freshActivationCalls = [];
+  let activeLoaderCalls = 0;
+  const activated = await c13RunPrivateStoreCandidateControls(
+    {
+      candidate: Promise.resolve(
+        makePrivateControlCandidate(primaryActivationCalls),
+      ),
+      oracle: activationOracle,
+      loadFreshCandidate: async () => {
+        activeLoaderCalls += 1;
+        return makePrivateControlCandidate(freshActivationCalls);
+      },
+    },
+    { entryTodo: false },
+  );
+  const expectedPrivateControlIds = expectedOperations.flatMap((operation) =>
+    phases.map((phase) => `${operation}:${phase}`),
+  );
+  assert.deepEqual(activated, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
+    ownerCount: 10,
+    phaseCount: 5,
+    controlCount: 50,
+    freshLoaderCallCount: 1,
+    controlIds: expectedPrivateControlIds,
+    entryTodo: false,
+    candidateInputThenable: true,
+    candidateInputAwaited: true,
+    todoDeferralBoundToEntryOptions: true,
+    candidateBehaviorProved: false,
+  });
+  assert.deepEqual(
+    primaryActivationCalls,
+    expectedPrivateControlIds.filter((id) => !id.endsWith(":crossModule")),
+  );
+  assert.deepEqual(
+    freshActivationCalls,
+    expectedPrivateControlIds.filter((id) => id.endsWith(":crossModule")),
+  );
+  assert.equal(activeLoaderCalls, 1);
 
   assert.equal(isDirectEntry(import.meta.url, undefined), false);
   assert.equal(isDirectEntry(import.meta.url, ""), false);
