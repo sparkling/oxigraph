@@ -1569,7 +1569,7 @@ const EXPECTED_DIRECT_FUNCTION_SIGNATURES = Object.freeze(
 const ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1";
 const EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256 =
-  "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d";
+  "b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9";
 const ADVERSARIAL_CANDIDATE_TEST_INVENTORY = Object.freeze([
   Object.freeze({
     id: "byte-position-carrier-controls",
@@ -1586,7 +1586,7 @@ const ADVERSARIAL_CANDIDATE_TEST_INVENTORY = Object.freeze([
   Object.freeze({
     id: "private-store-commit-controls",
     name: "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
-    options: Object.freeze({ todo: true }),
+    options: Object.freeze({}),
     requiredInputs: Object.freeze([
       "candidate",
       "oracle",
@@ -1606,7 +1606,7 @@ function adversarialCandidateTestInventoryProjection(inventory) {
 function validateAdversarialCandidateTestInventory() {
   assert.equal(Object.isFrozen(ADVERSARIAL_CANDIDATE_TEST_INVENTORY), true);
   assert.equal(ADVERSARIAL_CANDIDATE_TEST_INVENTORY.length, 3);
-  const expectedOptions = [{}, {}, { todo: true }];
+  const expectedOptions = [{}, {}, {}];
   const ids = [];
   const names = [];
   for (const [index, entry] of ADVERSARIAL_CANDIDATE_TEST_INVENTORY.entries()) {
@@ -1648,7 +1648,7 @@ function validateAdversarialCandidateTestInventory() {
     EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256,
   );
   const todoCount = projection.filter(({ options }) => options.todo).length;
-  assert.equal(todoCount, 1);
+  assert.equal(todoCount, 0);
   return Object.freeze({
     inventory: ADVERSARIAL_CANDIDATE_TEST_INVENTORY,
     inventorySha256,
@@ -14297,7 +14297,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   }
   assert.deepEqual(
     ADVERSARIAL_CANDIDATE_TEST_INVENTORY.map(({ options }) => options),
-    [{}, {}, { todo: true }],
+    [{}, {}, {}],
   );
 
   const accesses = { candidate: 0, oracle: 0, loadFreshCandidate: 0 };
@@ -14329,7 +14329,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   );
   assert.deepEqual(
     registrations.map(({ options }) => options),
-    [{}, {}, { todo: true }],
+    [{}, {}, {}],
   );
   assert.equal(
     registrations.every(({ run }) => typeof run === "function"),
@@ -14339,9 +14339,9 @@ test("freezes the 10-operation private-store evaluator design without claiming c
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d",
+      "b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9",
     registeredCount: 3,
-    todoCount: 1,
+    todoCount: 0,
     inputsDeferredUntilExecution: true,
     privateStoreTodoDeferralBoundToEntryOptions: true,
   });
@@ -14512,7 +14512,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   assert.equal(directActivationRegistrations.length, 3);
   assert.deepEqual(
     directActivationRegistrations.map(({ options }) => options),
-    [{}, {}, { todo: true }],
+    [{}, {}, {}],
   );
   const directLaunchTranslationReceipt =
     await directActivationRegistrations[1].run();
