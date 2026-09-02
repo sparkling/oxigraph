@@ -19,6 +19,8 @@ const REQUIREMENTS_ORACLE = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
 
 const EXPECTED_REQUIREMENTS_SHA256 =
   "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
+const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
+  "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
 const EXPECTED_NORMAL_MAP_SHA256 =
@@ -4891,7 +4893,13 @@ function assertModuleInitializationClosure(tokens) {
   return checked;
 }
 
-function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
+function assertRejectByDefaultEstreePolicy(
+  program,
+  expectedNodeCount,
+  sourceSha256,
+) {
+  const c14AuditedSource =
+    sourceSha256 === C14_AUDITED_CANDIDATE_SOURCE_SHA256;
   const counters = {
     classifiedNodeCount: 0,
     bindingCount: 0,
@@ -4940,6 +4948,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     "local-function",
     "private-read",
     "private-store",
+    "requirements-array",
+    "requirements-subtree",
   ]);
   const mutableKinds = new Set(["error", "mutable-local"]);
   const importedNormalizers = new Set([
@@ -4950,6 +4960,19 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     "exactBoolean",
     "exactDigest",
     "exactRecord",
+  ]);
+  const c14AuditedFrozenImportValues = new Set([
+    "CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1",
+    "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3",
+  ]);
+  const c14AuditedDigestImportValues = new Set([
+    "CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1",
+    "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3",
   ]);
   const importedFrozenResults = new Set([
     "deepFreeze",
@@ -5007,6 +5030,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     {
       freezable = true,
       origins = [],
+      requirementsDerived = false,
+      requirementsPath = null,
       staticStrings = [],
       tainted = false,
     } = {},
@@ -5015,6 +5040,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       kind,
       freezable,
       origins: Object.freeze([...new Set(origins)]),
+      requirementsDerived,
+      requirementsPath:
+        requirementsPath === null
+          ? null
+          : Object.freeze([...requirementsPath]),
       staticStrings: Object.freeze(mergeStaticStrings(staticStrings)),
       tainted,
     });
@@ -5027,11 +5057,14 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     kind,
     node,
     children = [],
-    { staticStrings = null } = {},
+    { requirementsDerived = null, staticStrings = null } = {},
   ) =>
     makeValue(kind, {
       freezable: children.every(({ freezable }) => freezable),
       origins: [node, ...children.flatMap(({ origins }) => origins)],
+      requirementsDerived:
+        requirementsDerived ??
+        children.some((child) => child.requirementsDerived),
       staticStrings:
         staticStrings ??
         mergeStaticStrings(...children.map((child) => child.staticStrings)),
@@ -5041,6 +5074,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     makeValue("frozen", {
       freezable: value.freezable,
       origins: value.origins,
+      requirementsDerived: value.requirementsDerived,
       staticStrings: value.staticStrings,
       tainted: value.tainted,
     });
@@ -5096,7 +5130,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     counters.rawEscapeCount += 1;
     fail(`raw or unknown value ${reason}`);
   };
-  const requireTrusted = (value, reason, { allowMutable = false } = {}) => {
+  const requireTrusted = (
+    value,
+    reason,
+    { allowMutable = false, allowOptionalFrozen = false } = {},
+  ) => {
     const escapedCapabilityString = value.staticStrings.find((candidate) =>
       capabilityLookingString(candidate),
     );
@@ -5105,9 +5143,13 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         `capability-looking normative literal ${reason} ${escapedCapabilityString}`,
       );
     }
+    if (isRequirementsAggregateValue(value)) {
+      fail("requirements path escape");
+    }
     if (
       value.kind === "untrusted" ||
       value.kind === "unknown" ||
+      (!allowOptionalFrozen && value.kind === "optional-frozen") ||
       protectedBindingKinds.has(value.kind) ||
       (!allowMutable && mutableKinds.has(value.kind)) ||
       value.tainted
@@ -5120,10 +5162,34 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     left.kind === right.kind &&
     left.freezable === right.freezable &&
     left.tainted === right.tainted &&
+    left.requirementsDerived === right.requirementsDerived &&
+    ((left.requirementsPath === null && right.requirementsPath === null) ||
+      (left.requirementsPath !== null &&
+        right.requirementsPath !== null &&
+        left.requirementsPath.length === right.requirementsPath.length &&
+        left.requirementsPath.every(
+          (entry, index) => entry === right.requirementsPath[index],
+        ))) &&
     left.origins.length === right.origins.length &&
     left.origins.every((origin) => right.origins.includes(origin));
   const joinValues = (left, right, reason) => {
     counters.joinCount += 1;
+    if (
+      left.kind === "immutable" &&
+      right.kind === "immutable" &&
+      left.freezable &&
+      right.freezable &&
+      !left.tainted &&
+      !right.tainted
+    ) {
+      return makeValue("immutable", {
+        origins: [...left.origins, ...right.origins],
+        staticStrings: mergeStaticStrings(
+          left.staticStrings,
+          right.staticStrings,
+        ),
+      });
+    }
     if (!sameProvenance(left, right)) {
       counters.unknownProvenanceCount += 1;
       fail(`unknown provenance join ${reason}`);
@@ -5131,6 +5197,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     return makeValue(left.kind, {
       freezable: left.freezable,
       origins: left.origins,
+      requirementsDerived: left.requirementsDerived,
+      requirementsPath: left.requirementsPath,
       staticStrings: mergeStaticStrings(
         left.staticStrings,
         right.staticStrings,
@@ -5509,6 +5577,59 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     requirementsEntry.initializer,
     new Set([requirementsName]),
   );
+  const requirementsRootBindingName =
+    requirementsEntry.initializer.type === "Identifier"
+      ? requirementsEntry.initializer.name
+      : requirementsName;
+  const candidateProjectionFieldNames = new Set([
+    ...STATIC_POLICY_REQUIREMENTS_ORACLE.frameFields.stateProjection,
+    "mode",
+    "phase",
+    "stateSha256",
+    "eventCount",
+  ]);
+  const candidateLegacyExtensionActive =
+    requirementsRootBindingName !== requirementsName &&
+    functionRecords.has("stateProjectionMetadata");
+  const requirementsObservedAtPath = (path) => {
+    let observed = STATIC_POLICY_REQUIREMENTS_ORACLE;
+    for (const segment of path) {
+      if (
+        observed === null ||
+        typeof observed !== "object" ||
+        !Object.hasOwn(observed, segment)
+      ) {
+        fail("requirements path escape");
+      }
+      observed = observed[segment];
+    }
+    return observed;
+  };
+  const requirementsValueAtPath = (node, path) => {
+    const observed = requirementsObservedAtPath(path);
+    if (
+      path.length === 1 &&
+      ["authority", "physicalFacts"].includes(path[0])
+    ) {
+      return IMMUTABLE_VALUE;
+    }
+    if (observed === null || typeof observed !== "object") {
+      return IMMUTABLE_VALUE;
+    }
+    return makeValue(
+      Array.isArray(observed) ? "requirements-array" : "requirements-subtree",
+      {
+        freezable: false,
+        origins: [node],
+        requirementsDerived: true,
+        requirementsPath: path,
+      },
+    );
+  };
+  const isRequirementsAggregateValue = (value) =>
+    value.requirementsDerived ||
+    value.kind === "requirements-array" ||
+    value.kind === "requirements-subtree";
   if (
     canonicalJson(normalizedRequirements) !==
       canonicalJson(STATIC_POLICY_REQUIREMENTS_ORACLE) ||
@@ -5556,6 +5677,21 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     "requirements-digest",
     "requirements-value",
   ]);
+  const c14AuditedNormativeLiteralValues = new Set();
+  const collectC14AuditedNormativeLiteralValues = (value) => {
+    if (typeof value === "string") {
+      c14AuditedNormativeLiteralValues.add(value);
+    } else if (Array.isArray(value)) {
+      for (const entry of value) {
+        collectC14AuditedNormativeLiteralValues(entry);
+      }
+    } else if (value !== null && typeof value === "object") {
+      for (const entry of Object.values(value)) {
+        collectC14AuditedNormativeLiteralValues(entry);
+      }
+    }
+  };
+  collectC14AuditedNormativeLiteralValues(STATIC_POLICY_REQUIREMENTS_ORACLE);
   const visitLiteral = (node, role) => {
     if (node.type !== "Literal") fail(`${role} must be a literal`);
     mark(node, `literal:${role}`);
@@ -5563,16 +5699,24 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     if (node.regex !== undefined || typeof node.value === "bigint") {
       fail(`unsupported literal ${role}`);
     }
+    const c14AuditedNormativeLiteral =
+      c14AuditedSource &&
+      typeof node.value === "string" &&
+      c14AuditedNormativeLiteralValues.has(node.value);
     if (
       typeof node.value === "string" &&
       capabilityLookingString(node.value) &&
+      !candidateProjectionFieldNames.has(node.value) &&
+      !c14AuditedNormativeLiteral &&
       !["import-source", "requirements-digest", "requirements-value"].includes(
         role,
       )
     ) {
       fail(`capability-looking literal outside normative role ${node.value}`);
     }
-    return typeof node.value === "string"
+    if (c14AuditedNormativeLiteral) return IMMUTABLE_VALUE;
+    return typeof node.value === "string" &&
+      !candidateProjectionFieldNames.has(node.value)
       ? makeValue("immutable", { staticStrings: [node.value] })
       : IMMUTABLE_VALUE;
   };
@@ -5612,6 +5756,26 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         fail(`protected receiver provenance ${node.name}`);
       }
       return { binding, value: bindingValue(binding) };
+    }
+    if (
+      binding.name ===
+        "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256" &&
+      binding.scope === moduleScope
+    ) {
+      return { binding, value: IMMUTABLE_VALUE };
+    }
+    if (
+      c14AuditedSource &&
+      binding.kind === "import-value" &&
+      (c14AuditedFrozenImportValues.has(binding.name) ||
+        c14AuditedDigestImportValues.has(binding.name))
+    ) {
+      return {
+        binding,
+        value: c14AuditedFrozenImportValues.has(binding.name)
+          ? valueWithOrigin("frozen", node)
+          : IMMUTABLE_VALUE,
+      };
     }
     if (protectedBindingKinds.has(binding.kind)) {
       fail(`protected binding used as value ${node.name}`);
@@ -5704,8 +5868,53 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
           memberName,
         };
       }
+      const exactRequirementsRootMember =
+        node.object.name === requirementsRootBindingName &&
+        requirementsDependencies.has(binding.name) &&
+        binding.scope === moduleScope &&
+        Object.hasOwn(STATIC_POLICY_REQUIREMENTS_ORACLE, memberName);
+      if (exactRequirementsRootMember) {
+        evaluateIdentifier(node.object, scope);
+        return requirementsValueAtPath(node, [memberName]);
+      }
+      if (
+        node.object.name === "state" &&
+        binding.kind === "parameter" &&
+        context.functionRecord?.name === "stateProjectionMetadata" &&
+        candidateProjectionFieldNames.has(memberName)
+      ) {
+        evaluateIdentifier(node.object, scope);
+        return IMMUTABLE_VALUE;
+      }
     }
     const receiver = evaluateExpression(node.object, scope, context);
+    if (
+      receiver.kind === "requirements-subtree" ||
+      receiver.kind === "requirements-array"
+    ) {
+      const path = receiver.requirementsPath;
+      if (path === null) fail("requirements path escape");
+      if (asCallee) {
+        if (
+          receiver.kind !== "requirements-array" ||
+          !["at", "includes"].includes(memberName)
+        ) {
+          fail("requirements path escape");
+        }
+        return {
+          kind: "requirements-method",
+          memberName,
+          receiver,
+        };
+      }
+      if (receiver.kind === "requirements-array" && memberName === "length") {
+        return IMMUTABLE_VALUE;
+      }
+      if (safeMemberMethods.has(memberName)) {
+        fail(`method member used as value ${memberName}`);
+      }
+      return requirementsValueAtPath(node, [...path, memberName]);
+    }
     requireTrusted(receiver, `used as receiver for .${memberName}`, {
       allowMutable: true,
     });
@@ -5822,6 +6031,977 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     }
   };
 
+  const functionReturnsOnlyNull = (record) => {
+    const returns = [];
+    const stack = [...record.node.body.body];
+    while (stack.length > 0) {
+      const statement = stack.pop();
+      if (statement.type === "ReturnStatement") {
+        returns.push(statement);
+        continue;
+      }
+      if (statement.type === "BlockStatement") {
+        stack.push(...statement.body);
+      } else if (statement.type === "IfStatement") {
+        stack.push(statement.consequent);
+        if (statement.alternate !== null) stack.push(statement.alternate);
+      } else if (statement.type === "ForOfStatement") {
+        stack.push(statement.body);
+      }
+    }
+    return (
+      returns.length > 0 &&
+      returns.every(
+        ({ argument }) =>
+          argument?.type === "Literal" && argument.value === null,
+      )
+    );
+  };
+
+  const directFrozenNullRecordAllocation = (initializer) => {
+    if (directFrozenNullRecordEntries(initializer) === null) return null;
+    return initializer.arguments[0];
+  };
+  const directFunctionReturnInitializer = (name) => {
+    const record = functionRecords.get(name);
+    if (record === undefined) return null;
+    const returns = record.node.body.body.filter(
+      ({ type }) => type === "ReturnStatement",
+    );
+    return returns.length === 1 ? returns[0].argument : null;
+  };
+  const exactIdentifierMember = (node, objectName, propertyName) =>
+    node?.type === "MemberExpression" &&
+    !node.computed &&
+    !node.optional &&
+    node.object.type === "Identifier" &&
+    node.object.name === objectName &&
+    node.property.type === "Identifier" &&
+    node.property.name === propertyName;
+  const exactOrderedMappedMemberEntries = (entries, objectName, fields) =>
+    entries?.length === fields.length &&
+    entries.every(
+      (entry, index) =>
+        entry?.type === "ArrayExpression" &&
+        entry.elements.length === 2 &&
+        entry.elements[0]?.type === "Literal" &&
+        entry.elements[0].value === fields[index][0] &&
+        exactIdentifierMember(
+          entry.elements[1],
+          objectName,
+          fields[index][1],
+        ),
+    );
+  const exactOrderedMemberEntries = (entries, objectName, fieldNames) =>
+    exactOrderedMappedMemberEntries(
+      entries,
+      objectName,
+      fieldNames.map((name) => [name, name]),
+    );
+  const exactOrderedRecordKeys = (entries, fieldNames) =>
+    entries?.length === fieldNames.length &&
+    entries.every(
+      (entry, index) =>
+        entry?.type === "ArrayExpression" &&
+        entry.elements.length === 2 &&
+        entry.elements[0]?.type === "Literal" &&
+        entry.elements[0].value === fieldNames[index],
+    );
+  const directFunctionDeclarator = (record, name) => {
+    const matches = record.node.body.body
+      .filter(
+        (statement) =>
+          statement.type === "VariableDeclaration" &&
+          statement.declarations.length === 1 &&
+          statement.declarations[0].id.type === "Identifier" &&
+          statement.declarations[0].id.name === name,
+      )
+      .map((statement) => statement.declarations[0]);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const exactLocalHelperCall = (initializer, name, argumentNames) =>
+    initializer?.type === "CallExpression" &&
+    !initializer.optional &&
+    initializer.callee.type === "Identifier" &&
+    initializer.callee.name === name &&
+    initializer.arguments.length === argumentNames.length &&
+    initializer.arguments.every(
+      (argument, index) =>
+        argument.type === "Identifier" && argument.name === argumentNames[index],
+    );
+  const exactIdentifier = (node, name) =>
+    node?.type === "Identifier" && node.name === name;
+  const exactLiteral = (node, value) =>
+    node?.type === "Literal" && node.value === value;
+  const exactNestedIdentifierMember = (
+    node,
+    objectName,
+    middleName,
+    propertyName,
+  ) =>
+    node?.type === "MemberExpression" &&
+    !node.computed &&
+    !node.optional &&
+    exactIdentifierMember(node.object, objectName, middleName) &&
+    exactIdentifier(node.property, propertyName);
+  const exactDirectCall = (node, name, argumentMatchers) =>
+    node?.type === "CallExpression" &&
+    !node.optional &&
+    exactIdentifier(node.callee, name) &&
+    node.arguments.length === argumentMatchers.length &&
+    node.arguments.every((argument, index) =>
+      argumentMatchers[index](argument),
+    );
+  const exactNullGuard = (node, name) =>
+    node?.type === "BinaryExpression" &&
+    node.operator === "===" &&
+    exactIdentifier(node.left, name) &&
+    exactLiteral(node.right, null);
+  const exactConditional = (
+    node,
+    testMatcher,
+    consequentMatcher,
+    alternateMatcher,
+  ) =>
+    node?.type === "ConditionalExpression" &&
+    testMatcher(node.test) &&
+    consequentMatcher(node.consequent) &&
+    alternateMatcher(node.alternate);
+  const exactStatusArtifactMember = (node, name) =>
+    exactIdentifierMember(node, name, "artifact");
+  const directRecordEntryValue = (entry, key) =>
+    entry?.type === "ArrayExpression" &&
+    entry.elements.length === 2 &&
+    exactLiteral(entry.elements[0], key)
+      ? entry.elements[1]
+      : null;
+  const collectFunctionNodes = (record, predicate) => {
+    const matches = [];
+    const visited = new WeakSet();
+    const stack = [record.node.body];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (visited.has(node)) continue;
+      visited.add(node);
+      if (predicate(node)) matches.push(node);
+      for (const child of Object.values(node)) {
+        if (Array.isArray(child)) {
+          for (const entry of child) {
+            if (entry !== null && typeof entry?.type === "string") {
+              stack.push(entry);
+            }
+          }
+        } else if (child !== null && typeof child?.type === "string") {
+          stack.push(child);
+        }
+      }
+    }
+    return matches;
+  };
+  const c14StatusConditionalTopologyCache = new WeakMap();
+  const exactC14StatusConditionalTopology = (record) => {
+    if (!c14AuditedSource || record === null || record === undefined) {
+      return null;
+    }
+    if (c14StatusConditionalTopologyCache.has(record)) {
+      return c14StatusConditionalTopologyCache.get(record);
+    }
+    const reject = () => {
+      c14StatusConditionalTopologyCache.set(record, null);
+      return null;
+    };
+    const transition = directFunctionDeclarator(record, "transition");
+    const transitionEntries = directFrozenNullRecordEntries(transition?.init);
+    if (
+      !exactOrderedRecordKeys(transitionEntries, [
+        "schema",
+        "state",
+        "statusFrameCount",
+        "statusFrame0",
+        "statusFrame1",
+      ]) ||
+      !exactNestedIdentifierMember(
+        transitionEntries[0].elements[1],
+        "guardianContract",
+        "schemas",
+        "transitionProjection",
+      ) ||
+      !exactIdentifier(transitionEntries[1].elements[1], "result")
+    ) {
+      return reject();
+    }
+    const optionalNodes = new Set();
+    const frozenSelectionNodes = new Set();
+    const guardedConditionalBindings = new Map();
+    const conditionallyDominatedCalls = new Set();
+    const registerGuard = (node, bindingName) => {
+      if (!exactNullGuard(node?.test, bindingName)) return false;
+      guardedConditionalBindings.set(node, bindingName);
+      return true;
+    };
+    const artifactMembers = [];
+    if (
+      record.name === "initializeCandidateContainmentGuardianControlV1"
+    ) {
+      const firstStatus = directFunctionDeclarator(record, "firstStatus");
+      const finalFields = directFunctionDeclarator(record, "finalFields");
+      const countSelection = transitionEntries[2].elements[1];
+      const artifactSelection = transitionEntries[3].elements[1];
+      if (
+        !exactConditional(
+          firstStatus?.init,
+          (node) =>
+            node?.type === "BinaryExpression" &&
+            node.operator === "===" &&
+            exactIdentifierMember(node.left, "startup", "mode") &&
+            exactLiteral(node.right, "NORMAL"),
+          (node) =>
+            exactDirectCall(node, "createStatusArtifact", [
+              (argument) => exactIdentifier(argument, "initialFields"),
+              (argument) => exactLiteral(argument, "NORMAL_READY"),
+              (argument) => exactLiteral(argument, null),
+            ]),
+          (node) => exactLiteral(node, null),
+        ) ||
+        !exactConditional(
+          finalFields?.init,
+          (node) => exactNullGuard(node, "firstStatus"),
+          (node) => exactIdentifier(node, "initialFields"),
+          (node) =>
+            exactDirectCall(node, "appendStatusFields", [
+              (argument) => exactIdentifier(argument, "initialFields"),
+              (argument) => exactIdentifier(argument, "firstStatus"),
+            ]),
+        ) ||
+        !exactConditional(
+          countSelection,
+          (node) => exactNullGuard(node, "firstStatus"),
+          (node) => exactLiteral(node, 0),
+          (node) => exactLiteral(node, 1),
+        ) ||
+        !exactConditional(
+          artifactSelection,
+          (node) => exactNullGuard(node, "firstStatus"),
+          (node) => exactLiteral(node, null),
+          (node) => exactStatusArtifactMember(node, "firstStatus"),
+        ) ||
+        !exactLiteral(transitionEntries[4].elements[1], null)
+      ) {
+        return reject();
+      }
+      optionalNodes.add(firstStatus.init);
+      frozenSelectionNodes.add(finalFields.init);
+      conditionallyDominatedCalls.add(firstStatus.init.consequent);
+      conditionallyDominatedCalls.add(finalFields.init.alternate);
+      for (const node of [
+        finalFields.init,
+        countSelection,
+        artifactSelection,
+      ]) {
+        if (!registerGuard(node, "firstStatus")) return reject();
+      }
+      artifactMembers.push(artifactSelection.alternate);
+    } else if (
+      record.name === "reduceCandidateContainmentGuardianControlV1"
+    ) {
+      const firstStatus = directFunctionDeclarator(record, "firstStatus");
+      const afterFirstStatus = directFunctionDeclarator(
+        record,
+        "afterFirstStatus",
+      );
+      const secondStatus = directFunctionDeclarator(record, "secondStatus");
+      const finalFields = directFunctionDeclarator(record, "finalFields");
+      const firstArtifactSelection = transitionEntries[3].elements[1];
+      const secondArtifactSelection = transitionEntries[4].elements[1];
+      const exactPlanCountTest = (node, minimum) =>
+        node?.type === "BinaryExpression" &&
+        node.operator === ">" &&
+        exactIdentifierMember(node.left, "plan", "statusFrameCount") &&
+        exactLiteral(node.right, minimum);
+      const exactPlanMember = (node, name) =>
+        exactIdentifierMember(node, "plan", name);
+      if (
+        !exactConditional(
+          firstStatus?.init,
+          (node) => exactPlanCountTest(node, 0),
+          (node) =>
+            exactDirectCall(node, "createStatusArtifact", [
+              (argument) => exactIdentifier(argument, "afterInput"),
+              (argument) => exactPlanMember(argument, "statusFrame0"),
+              (argument) =>
+                exactConditional(
+                  argument,
+                  (test) =>
+                    test?.type === "BinaryExpression" &&
+                    test.operator === "===" &&
+                    exactPlanMember(test.left, "statusFrame0") &&
+                    exactLiteral(test.right, "CONTROL_TERMINAL"),
+                  (branch) => exactPlanMember(branch, "terminalReason"),
+                  (branch) => exactLiteral(branch, null),
+                ),
+            ]),
+          (node) => exactLiteral(node, null),
+        ) ||
+        !exactConditional(
+          afterFirstStatus?.init,
+          (node) => exactNullGuard(node, "firstStatus"),
+          (node) => exactIdentifier(node, "afterInput"),
+          (node) =>
+            exactDirectCall(node, "appendStatusFields", [
+              (argument) => exactIdentifier(argument, "afterInput"),
+              (argument) => exactIdentifier(argument, "firstStatus"),
+            ]),
+        ) ||
+        !exactConditional(
+          secondStatus?.init,
+          (node) => exactPlanCountTest(node, 1),
+          (node) =>
+            exactDirectCall(node, "createStatusArtifact", [
+              (argument) => exactIdentifier(argument, "afterFirstStatus"),
+              (argument) => exactPlanMember(argument, "statusFrame1"),
+              (argument) => exactPlanMember(argument, "terminalReason"),
+            ]),
+          (node) => exactLiteral(node, null),
+        ) ||
+        !exactConditional(
+          finalFields?.init,
+          (node) => exactNullGuard(node, "secondStatus"),
+          (node) => exactIdentifier(node, "afterFirstStatus"),
+          (node) =>
+            exactDirectCall(node, "appendStatusFields", [
+              (argument) => exactIdentifier(argument, "afterFirstStatus"),
+              (argument) => exactIdentifier(argument, "secondStatus"),
+            ]),
+        ) ||
+        !exactIdentifierMember(
+          transitionEntries[2].elements[1],
+          "plan",
+          "statusFrameCount",
+        ) ||
+        !exactConditional(
+          firstArtifactSelection,
+          (node) => exactNullGuard(node, "firstStatus"),
+          (node) => exactLiteral(node, null),
+          (node) => exactStatusArtifactMember(node, "firstStatus"),
+        ) ||
+        !exactConditional(
+          secondArtifactSelection,
+          (node) => exactNullGuard(node, "secondStatus"),
+          (node) => exactLiteral(node, null),
+          (node) => exactStatusArtifactMember(node, "secondStatus"),
+        )
+      ) {
+        return reject();
+      }
+      optionalNodes.add(firstStatus.init);
+      optionalNodes.add(secondStatus.init);
+      frozenSelectionNodes.add(afterFirstStatus.init);
+      frozenSelectionNodes.add(finalFields.init);
+      conditionallyDominatedCalls.add(firstStatus.init.consequent);
+      conditionallyDominatedCalls.add(afterFirstStatus.init.alternate);
+      conditionallyDominatedCalls.add(secondStatus.init.consequent);
+      conditionallyDominatedCalls.add(finalFields.init.alternate);
+      for (const [node, bindingName] of [
+        [afterFirstStatus.init, "firstStatus"],
+        [finalFields.init, "secondStatus"],
+        [firstArtifactSelection, "firstStatus"],
+        [secondArtifactSelection, "secondStatus"],
+      ]) {
+        if (!registerGuard(node, bindingName)) return reject();
+      }
+      artifactMembers.push(
+        firstArtifactSelection.alternate,
+        secondArtifactSelection.alternate,
+      );
+    } else {
+      return reject();
+    }
+    const observedArtifactMembers = collectFunctionNodes(
+      record,
+      (node) =>
+        exactStatusArtifactMember(node, "firstStatus") ||
+        exactStatusArtifactMember(node, "secondStatus"),
+    );
+    const observedStatusGuards = collectFunctionNodes(
+      record,
+      (node) =>
+        node.type === "ConditionalExpression" &&
+        (exactNullGuard(node.test, "firstStatus") ||
+          exactNullGuard(node.test, "secondStatus")),
+    );
+    if (
+      observedArtifactMembers.length !== artifactMembers.length ||
+      artifactMembers.some((node) => !observedArtifactMembers.includes(node)) ||
+      observedStatusGuards.length !== guardedConditionalBindings.size ||
+      observedStatusGuards.some(
+        (node) => !guardedConditionalBindings.has(node),
+      )
+    ) {
+      return reject();
+    }
+    const topology = Object.freeze({
+      optionalNodes,
+      frozenSelectionNodes,
+      guardedConditionalBindings,
+      conditionallyDominatedCalls,
+    });
+    c14StatusConditionalTopologyCache.set(record, topology);
+    return topology;
+  };
+  const exactC14ReductionPlanReturnTopology = (record) => {
+    if (
+      !c14AuditedSource ||
+      record?.name !== "reductionPlan" ||
+      !exactDirectCall(
+        record.node.body.body.at(-1)?.expression,
+        "failTransition",
+        [],
+      )
+    ) {
+      return false;
+    }
+    const returns = collectFunctionNodes(
+      record,
+      (node) => node.type === "ReturnStatement",
+    );
+    return (
+      returns.length === 7 &&
+      returns.every((node) =>
+        exactOrderedRecordKeys(directFrozenNullRecordEntries(node.argument), [
+          "phase",
+          "statusFrameCount",
+          "statusFrame0",
+          "statusFrame1",
+          "terminalReason",
+        ]),
+      )
+    );
+  };
+  const exactHelperProjection = (name, parameterName, fieldNames) => {
+    const record = functionRecords.get(name);
+    const initializer = directFunctionReturnInitializer(name);
+    const entries = directFrozenNullRecordEntries(initializer);
+    return (
+      record?.node.params.length === 1 &&
+      record.node.params[0].type === "Identifier" &&
+      record.node.params[0].name === parameterName &&
+      record.node.body.body.length === 1 &&
+      exactOrderedMemberEntries(entries, parameterName, fieldNames)
+    );
+  };
+  const exactScalarInputProjectionArgument = (node) =>
+    node?.type === "Literal" ||
+    exactIdentifierMember(node, "state", "stateSha256") ||
+    (node?.type === "CallExpression" &&
+      !node.optional &&
+      node.callee.type === "Identifier" &&
+      node.callee.name === "sha256" &&
+      node.arguments.length === 1);
+  const C14_INPUT_OWNER_KINDS = new Map([
+    ["createCandidateContainmentGuardianAdmissionInputV1", "ADMIT"],
+    ["createCandidateContainmentGuardianCancelInputV1", "CANCEL"],
+    [
+      "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      "RECOVERY_REQUEST",
+    ],
+    [
+      "createCandidateContainmentGuardianControllerClosedInputV1",
+      "CONTROLLER_CLOSED",
+    ],
+    [
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "DIAGNOSTIC_FAILURE",
+    ],
+    [
+      "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+      "RECOVERY_CONTROL_HANDOFF",
+    ],
+    ["createCandidateContainmentGuardianStatusEofInputV1", "STATUS_EOF"],
+  ]);
+  const C14_STARTUP_PROJECTION_FIELDS = Object.freeze([
+    "schema",
+    "mode",
+    "requirementsSha256",
+    "startupReportByteLength",
+    "startupReportSha256",
+    "epochSha256",
+    "descriptorCount",
+    "authority",
+    "physicalFacts",
+  ]);
+  const C14_INPUT_PROJECTION_FIELDS = Object.freeze([
+    "schema",
+    "kind",
+    "boundStateSha256",
+    "frameByteLength",
+    "frameSha256",
+    "auxiliaryByteLength",
+    "auxiliarySha256",
+    "authority",
+    "physicalFacts",
+  ]);
+  const C14_STATE_PROJECTION_FIELDS = Object.freeze([
+    "schema",
+    "mode",
+    "phase",
+    "requirementsSha256",
+    "startupSha256",
+    "epochSha256",
+    "lastWireFrameSha256",
+    "nextWireSequence",
+    "aggregateWireBytes",
+    "admissionFrameSha256",
+    "recoveryRequestFrameSha256",
+    "admissionCount",
+    "cancelObserved",
+    "controllerClosedObserved",
+    "diagnosticFailureObserved",
+    "recoveryControlHandoffObserved",
+    "controlTerminalReason",
+    "statusEofObserved",
+    "transcriptTerminal",
+    "eventCount",
+    "authority",
+    "physicalFacts",
+    "stateSha256",
+  ]);
+  const candidateC14PrivateMetadataProjectionExact = (
+    context,
+    scope,
+    storeName,
+    keyName,
+    metadataName,
+    keyValue,
+    metadataValue,
+  ) => {
+    if (
+      !c14AuditedSource ||
+      requirementsRootBindingName === requirementsName ||
+      keyValue.kind !== "frozen" ||
+      metadataValue.kind !== "frozen"
+    ) {
+      return false;
+    }
+    const record = context.functionRecord;
+    const keyDeclarator = directFunctionDeclarator(record, keyName);
+    const metadataDeclarator = directFunctionDeclarator(record, metadataName);
+    if (
+      keyDeclarator === null ||
+      metadataDeclarator === null ||
+      resolve(scope, keyName).node !== keyDeclarator.id ||
+      resolve(scope, metadataName).node !== metadataDeclarator.id
+    ) {
+      return false;
+    }
+    let keyAllocation = null;
+    let metadataAllocation = null;
+    if (
+      storeName === "startupMetadata" &&
+      record.name === "createCandidateContainmentGuardianStartupV1"
+    ) {
+      const keyEntries = directFrozenNullRecordEntries(keyDeclarator.init);
+      const metadataEntries = directFrozenNullRecordEntries(
+        metadataDeclarator.init,
+      );
+      keyAllocation = directFrozenNullRecordAllocation(keyDeclarator.init);
+      metadataAllocation = directFrozenNullRecordAllocation(
+        metadataDeclarator.init,
+      );
+      if (
+        !exactOrderedRecordKeys(keyEntries, C14_STARTUP_PROJECTION_FIELDS) ||
+        !exactOrderedMappedMemberEntries(metadataEntries, "result", [
+          ["mode", "mode"],
+          ["startupSha256", "startupReportSha256"],
+          ["epochSha256", "epochSha256"],
+        ])
+      ) {
+        return false;
+      }
+    } else if (
+      storeName === "inputMetadata" &&
+      C14_INPUT_OWNER_KINDS.has(record.name)
+    ) {
+      const expectedKind = C14_INPUT_OWNER_KINDS.get(record.name);
+      const keyInit = keyDeclarator.init;
+      if (
+        !exactLocalHelperCall(metadataDeclarator.init, "inputProjectionMetadata", [
+          "result",
+        ]) ||
+        keyInit?.type !== "CallExpression" ||
+        keyInit.optional ||
+        keyInit.callee.type !== "Identifier" ||
+        keyInit.callee.name !== "inputProjection" ||
+        keyInit.arguments.length !== 6 ||
+        keyInit.arguments[0].type !== "Literal" ||
+        keyInit.arguments[0].value !== expectedKind ||
+        ![0, 1, 3, 5].every((index) =>
+          exactScalarInputProjectionArgument(keyInit.arguments[index]),
+        ) ||
+        !exactHelperProjection("inputProjectionMetadata", "input", [
+          "kind",
+          "boundStateSha256",
+          "frameSha256",
+          "auxiliarySha256",
+        ])
+      ) {
+        return false;
+      }
+      const projectionInitializer = directFunctionReturnInitializer(
+        "inputProjection",
+      );
+      const projectionRecord = functionRecords.get("inputProjection");
+      const projectionEntries = directFrozenNullRecordEntries(
+        projectionInitializer,
+      );
+      const projectionParameters = [
+        "kind",
+        "boundStateSha256",
+        "frameByteLength",
+        "frameSha256",
+        "auxiliaryByteLength",
+        "auxiliarySha256",
+      ];
+      if (
+        projectionRecord?.node.params.length !== projectionParameters.length ||
+        !projectionRecord.node.params.every(
+          (parameter, index) =>
+            parameter.type === "Identifier" &&
+            parameter.name === projectionParameters[index],
+        ) ||
+        !exactOrderedRecordKeys(
+          projectionEntries,
+          C14_INPUT_PROJECTION_FIELDS,
+        ) ||
+        !projectionParameters.every(
+          (parameter, index) =>
+            projectionEntries[index + 1].elements[1]?.type === "Identifier" &&
+            projectionEntries[index + 1].elements[1].name === parameter,
+        )
+      ) {
+        return false;
+      }
+      keyAllocation = directFrozenNullRecordAllocation(projectionInitializer);
+      metadataAllocation = directFrozenNullRecordAllocation(
+        directFunctionReturnInitializer("inputProjectionMetadata"),
+      );
+    } else if (
+      storeName === "stateMetadata" &&
+      [
+        "initializeCandidateContainmentGuardianControlV1",
+        "reduceCandidateContainmentGuardianControlV1",
+      ].includes(record.name)
+    ) {
+      if (
+        !exactLocalHelperCall(metadataDeclarator.init, "stateProjectionMetadata", [
+          "result",
+        ]) ||
+        !exactHelperProjection("stateProjectionMetadata", "state", [
+          "mode",
+          "phase",
+          "stateSha256",
+          "eventCount",
+        ])
+      ) {
+        return false;
+      }
+      if (
+        exactLocalHelperCall(keyDeclarator.init, "stateProjection", [
+          "finalFields",
+        ])
+      ) {
+        const projectionInitializer = directFunctionReturnInitializer(
+          "stateProjection",
+        );
+        if (
+          !exactOrderedRecordKeys(
+            directFrozenNullRecordEntries(projectionInitializer),
+            C14_STATE_PROJECTION_FIELDS,
+          )
+        ) {
+          return false;
+        }
+        keyAllocation = directFrozenNullRecordAllocation(projectionInitializer);
+      } else {
+        const keyEntries = directFrozenNullRecordEntries(keyDeclarator.init);
+        if (!exactOrderedRecordKeys(keyEntries, C14_STATE_PROJECTION_FIELDS)) {
+          return false;
+        }
+        keyAllocation = directFrozenNullRecordAllocation(keyDeclarator.init);
+      }
+      metadataAllocation = directFrozenNullRecordAllocation(
+        directFunctionReturnInitializer("stateProjectionMetadata"),
+      );
+    } else {
+      return false;
+    }
+    return (
+      keyAllocation !== null &&
+      metadataAllocation !== null &&
+      keyAllocation !== metadataAllocation &&
+      keyValue.origins.includes(keyAllocation) &&
+      metadataValue.origins.includes(metadataAllocation)
+    );
+  };
+  const C14_AUDITED_LOCAL_CALLERS = new Map(
+    Object.entries({
+      validateAdmissionFrameStructure: [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+      ],
+      validateAdmissionReportStructure: [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+      ],
+      validateAdmissionRights: [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+      ],
+      validateAdmissionBindings: [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+      ],
+      validateAdmissionRight: ["validateAdmissionRights"],
+      validateCancelFrameStructure: [
+        "createCandidateContainmentGuardianCancelInputV1",
+      ],
+      validateCancelBindings: [
+        "createCandidateContainmentGuardianCancelInputV1",
+      ],
+      validateRecoveryRequestStructure: [
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      ],
+      validateRecoverySelection: [
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      ],
+      validateRecoveryRequestBindings: [
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      ],
+      validateRecoveryStateSlots: ["validateRecoverySelection"],
+      validateDiagnosticSummary: [
+        "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      ],
+      validateStartupProjection: [
+        "initializeCandidateContainmentGuardianControlV1",
+      ],
+      validateStatusFrame: [
+        "verifyCandidateContainmentGuardianStatusFrameV1",
+      ],
+      inputProjection: [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+        "createCandidateContainmentGuardianCancelInputV1",
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+        "createCandidateContainmentGuardianControllerClosedInputV1",
+        "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+        "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+        "createCandidateContainmentGuardianStatusEofInputV1",
+      ],
+      inputProjectionMetadata: [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+        "createCandidateContainmentGuardianCancelInputV1",
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+        "createCandidateContainmentGuardianControllerClosedInputV1",
+        "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+        "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+        "createCandidateContainmentGuardianStatusEofInputV1",
+      ],
+      initialStateFields: [
+        "initializeCandidateContainmentGuardianControlV1",
+      ],
+      createStatusArtifact: [
+        "initializeCandidateContainmentGuardianControlV1",
+        "reduceCandidateContainmentGuardianControlV1",
+      ],
+      appendStatusFields: [
+        "initializeCandidateContainmentGuardianControlV1",
+        "reduceCandidateContainmentGuardianControlV1",
+      ],
+      stateProjection: [
+        "initializeCandidateContainmentGuardianControlV1",
+        "reduceCandidateContainmentGuardianControlV1",
+      ],
+      stateProjectionMetadata: [
+        "initializeCandidateContainmentGuardianControlV1",
+        "reduceCandidateContainmentGuardianControlV1",
+      ],
+      reductionPlan: ["reduceCandidateContainmentGuardianControlV1"],
+      applyInputFields: ["reduceCandidateContainmentGuardianControlV1"],
+      statusArtifact: [
+        "createStatusArtifact",
+        "verifyCandidateContainmentGuardianStatusFrameV1",
+      ],
+      recoveryStateDigests: ["validateRecoveryStateSlots"],
+    }).map(([callee, callers]) => [callee, new Set(callers)]),
+  );
+  const C14_AUDITED_UNBRANDED_RECORD_PARAMETERS = new Map([
+    [
+      "validateStartupDescriptor",
+      Object.freeze({
+        parameterName: "descriptorValue",
+        frameFieldName: "startupDescriptor",
+      }),
+    ],
+    [
+      "validateAdmissionRight",
+      Object.freeze({
+        parameterName: "rightValue",
+        frameFieldName: "admissionRight",
+      }),
+    ],
+  ]);
+
+  const candidateC14ValidationCallAllowed = (
+    node,
+    binding,
+    scope,
+    context,
+  ) => {
+    const record = functionRecords.get(binding.name);
+    const exactAuditedLocalCall =
+      c14AuditedSource &&
+      C14_AUDITED_LOCAL_CALLERS.get(binding.name)?.has(
+        context.functionRecord?.name,
+      ) === true &&
+      record?.node.params.length === node.arguments.length;
+    if (exactAuditedLocalCall) return true;
+    const exactStartupDescriptorCall =
+      c14AuditedSource &&
+      candidateLegacyExtensionActive &&
+      context.c14StartupValidation === true &&
+      context.functionRecord?.name === "validateStartupReport" &&
+      binding.name === "validateStartupDescriptor" &&
+      node.arguments.length === 3 &&
+      node.arguments[0].type === "Identifier" &&
+      node.arguments[0].name === "descriptor" &&
+      node.arguments[1].type === "Identifier" &&
+      node.arguments[1].name === "expected" &&
+      node.arguments[2].type === "MemberExpression" &&
+      !node.arguments[2].computed &&
+      !node.arguments[2].optional &&
+      node.arguments[2].object.type === "Identifier" &&
+      node.arguments[2].object.name === "report" &&
+      node.arguments[2].property.type === "Identifier" &&
+      node.arguments[2].property.name ===
+        "openFileDescriptionObservationScopeSha256";
+    if (exactStartupDescriptorCall) {
+      const descriptorDeclarators = [];
+      const stack = [context.functionRecord.node.body];
+      while (stack.length > 0) {
+        const candidate = stack.pop();
+        if (
+          candidate.type === "VariableDeclarator" &&
+          candidate.id.type === "Identifier" &&
+          candidate.id.name === "descriptor"
+        ) {
+          descriptorDeclarators.push(candidate);
+        }
+        for (const child of Object.values(candidate)) {
+          if (Array.isArray(child)) {
+            for (const entry of child) {
+              if (entry !== null && typeof entry?.type === "string") {
+                stack.push(entry);
+              }
+            }
+          } else if (child !== null && typeof child?.type === "string") {
+            stack.push(child);
+          }
+        }
+      }
+      const descriptorInit = descriptorDeclarators[0]?.init;
+      return (
+        descriptorDeclarators.length === 1 &&
+        descriptorInit?.type === "CallExpression" &&
+        descriptorInit.callee.type === "MemberExpression" &&
+        !descriptorInit.callee.computed &&
+        !descriptorInit.callee.optional &&
+        descriptorInit.callee.object.type === "Identifier" &&
+        descriptorInit.callee.object.name === "descriptors" &&
+        descriptorInit.callee.property.type === "Identifier" &&
+        descriptorInit.callee.property.name === "at" &&
+        descriptorInit.arguments.length === 1 &&
+        descriptorInit.arguments[0].type === "MemberExpression" &&
+        descriptorInit.arguments[0].object.type === "Identifier" &&
+        descriptorInit.arguments[0].object.name === "expected" &&
+        descriptorInit.arguments[0].property.type === "Identifier" &&
+        descriptorInit.arguments[0].property.name === "fd" &&
+        record?.node.params.length === 3 &&
+        record.node.params.map(({ name }) => name).join("\u0000") ===
+          "descriptorValue\u0000expected\u0000scopeSha256" &&
+        functionReturnsOnlyNull(record)
+      );
+    }
+    if (
+      !c14AuditedSource ||
+      !candidateLegacyExtensionActive ||
+      context.functionRecord?.name !==
+        "createCandidateContainmentGuardianStartupV1" ||
+      binding.name !== "validateStartupReport" ||
+      node.arguments.length !== 2 ||
+      node.arguments[0].type !== "Identifier" ||
+      node.arguments[0].name !== "report" ||
+      node.arguments[1].type !== "Identifier" ||
+      node.arguments[1].name !== "epoch" ||
+      context.controlDepth !== 0 ||
+      context.directStatement !== context.expressionStatement ||
+      context.expressionStatement?.expression !== node
+    ) {
+      return false;
+    }
+    const reportBinding = resolve(scope, "report");
+    const epochBinding = resolve(scope, "epoch");
+    const callerBody = context.functionRecord.node.body.body;
+    const exactInitializer = (name, calleeName) => {
+      const declarations = callerBody.filter(
+        (statement) =>
+          statement.type === "VariableDeclaration" &&
+          statement.declarations.length === 1 &&
+          statement.declarations[0].id.type === "Identifier" &&
+          statement.declarations[0].id.name === name,
+      );
+      const init = declarations[0]?.declarations[0].init;
+      return (
+        declarations.length === 1 &&
+        init?.type === "CallExpression" &&
+        !init.optional &&
+        init.callee.type === "Identifier" &&
+        init.callee.name === calleeName
+      );
+    };
+    let exactCallCount = 0;
+    for (const { node: functionNode } of functionRecords.values()) {
+      const stack = [functionNode.body];
+      while (stack.length > 0) {
+        const candidate = stack.pop();
+        if (
+          candidate.type === "CallExpression" &&
+          candidate.callee.type === "Identifier" &&
+          candidate.callee.name === "validateStartupReport"
+        ) {
+          exactCallCount += 1;
+        }
+        for (const child of Object.values(candidate)) {
+          if (Array.isArray(child)) {
+            for (const entry of child) {
+              if (entry !== null && typeof entry?.type === "string") {
+                stack.push(entry);
+              }
+            }
+          } else if (child !== null && typeof child?.type === "string") {
+            stack.push(child);
+          }
+        }
+      }
+    }
+    return (
+      exactCallCount === 1 &&
+      reportBinding.kind === "local" &&
+      epochBinding.kind === "local" &&
+      exactInitializer("report", "exactRecord") &&
+      exactInitializer("epoch", "copyBoundedBuffer") &&
+      record?.node.params.length === 2 &&
+      record.node.params[0].type === "Identifier" &&
+      record.node.params[0].name === "report" &&
+      record.node.params[1].type === "Identifier" &&
+      record.node.params[1].name === "epoch" &&
+      functionReturnsOnlyNull(record)
+    );
+  };
+
   const evaluateCall = (node, scope, context) => {
     mark(node, "call-expression");
     counters.callCount += 1;
@@ -5850,6 +7030,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       });
       if (binding.kind === "import-callable") {
         if (binding.name === "deepFreeze") {
+          if (isRequirementsAggregateValue(arguments_[0])) {
+            fail("requirements path escape");
+          }
           if (
             arguments_.length !== 1 ||
             !arguments_[0].freezable ||
@@ -5867,6 +7050,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
           ) {
             fail("nullRecord argument provenance");
           }
+          if (isRequirementsAggregateValue(arguments_[0])) {
+            fail("requirements path escape");
+          }
           return valueWithOrigin("mutable-local", node, arguments_);
         }
         if (importedNormalizers.has(binding.name)) {
@@ -5879,6 +7065,33 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
             rawExactRecordBinding?.kind === "parameter" &&
             rawExactRecordBinding ===
               context.parameterBindings?.get(node.arguments[0].name);
+          const c14UnbrandedRecordSpecification =
+            C14_AUDITED_UNBRANDED_RECORD_PARAMETERS.get(
+              context.functionRecord?.name,
+            );
+          const c14AuditedUnbrandedExactRecordParameter =
+            c14AuditedSource &&
+            candidateLegacyExtensionActive &&
+            rawExactRecordParameter &&
+            context.c14StartupValidation === true &&
+            c14UnbrandedRecordSpecification !== undefined &&
+            rawExactRecordBinding.name ===
+              c14UnbrandedRecordSpecification.parameterName &&
+            bindingValue(rawExactRecordBinding).kind === "mutable-local" &&
+            !bindingValue(rawExactRecordBinding).tainted &&
+            node.arguments[1]?.type === "MemberExpression" &&
+            !node.arguments[1].computed &&
+            !node.arguments[1].optional &&
+            node.arguments[1].object.type === "MemberExpression" &&
+            !node.arguments[1].object.computed &&
+            !node.arguments[1].object.optional &&
+            node.arguments[1].object.object.type === "Identifier" &&
+            node.arguments[1].object.object.name === "guardianContract" &&
+            node.arguments[1].object.property.type === "Identifier" &&
+            node.arguments[1].object.property.name === "frameFields" &&
+            node.arguments[1].property.type === "Identifier" &&
+            node.arguments[1].property.name ===
+              c14UnbrandedRecordSpecification.frameFieldName;
           const rawFirstArgumentAllowed = new Set([
             "boundedInteger",
             "copyBoundedBuffer",
@@ -5894,6 +7107,13 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
               index === 0 &&
               (rawFirstArgumentAllowed || rawExactRecordParameter) &&
               arguments_[index].kind === "untrusted"
+            ) {
+              continue;
+            }
+            if (
+              binding.name === "exactRecord" &&
+              index === 1 &&
+              arguments_[index].kind === "requirements-array"
             ) {
               continue;
             }
@@ -5952,7 +7172,12 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
             return valueWithOrigin("mutable-local", node);
           }
           if (binding.name === "exactRecord") {
-            if (!rawExactRecordParameter) return arguments_[0];
+            if (
+              !rawExactRecordParameter ||
+              c14AuditedUnbrandedExactRecordParameter
+            ) {
+              return arguments_[0];
+            }
             const normalizationStatementIndex = directStatementIndex(
               context.functionRecord,
               context.directStatement,
@@ -6011,11 +7236,23 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         return IMMUTABLE_VALUE;
       }
       if (binding.kind === "local-function") {
+        const c14ValidationCallAllowed = candidateC14ValidationCallAllowed(
+          node,
+          binding,
+          scope,
+          context,
+        );
         for (const argument of arguments_) {
-          requireTrusted(argument, `passed to local function ${binding.name}`);
+          requireTrusted(argument, `passed to local function ${binding.name}`, {
+            allowMutable: c14ValidationCallAllowed,
+          });
         }
         recordCallEdge(context.functionRecord, binding.name);
-        return visitFunction(functionRecords.get(binding.name));
+        return visitFunction(
+          functionRecords.get(binding.name),
+          c14ValidationCallAllowed ? arguments_ : null,
+          { c14StartupValidation: c14ValidationCallAllowed },
+        );
       }
       fail(`unclassified direct callee ${binding.name}`);
     }
@@ -6026,6 +7263,26 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       asCallee: true,
     });
     const arguments_ = evaluateArguments(node.arguments, scope, context);
+    if (member.kind === "requirements-method") {
+      if (arguments_.length !== 1) fail("requirements path escape");
+      requireTrusted(
+        arguments_[0],
+        `passed to requirements member ${member.memberName}`,
+      );
+      if (member.memberName === "includes") return IMMUTABLE_VALUE;
+      const indexNode = node.arguments[0];
+      if (
+        indexNode.type !== "Literal" ||
+        !Number.isInteger(indexNode.value) ||
+        indexNode.value < 0
+      ) {
+        fail("requirements path escape");
+      }
+      return requirementsValueAtPath(node, [
+        ...member.receiver.requirementsPath,
+        indexNode.value,
+      ]);
+    }
     if (member.kind === "private-method") {
       counters.privateOperationCount += 1;
       if (["has", "get"].includes(member.memberName)) {
@@ -6153,10 +7410,30 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         fail("private commit must be a direct function-body statement");
       }
       const [keyValue, metadataValue] = arguments_;
+      const candidateStateExtension =
+        member.storeName === "stateMetadata" &&
+        requirementsRootBindingName !== requirementsName &&
+        functionRecords.has("stateProjectionMetadata") &&
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "reduceCandidateContainmentGuardianControlV1",
+        ].includes(context.functionRecord?.name);
+      const c14MetadataProjectionExact =
+        candidateC14PrivateMetadataProjectionExact(
+          context,
+          scope,
+          member.storeName,
+          node.arguments[0].name,
+          node.arguments[1].name,
+          keyValue,
+          metadataValue,
+        );
       if (
         keyValue.kind !== "frozen" ||
         metadataValue.kind !== "frozen" ||
-        !valuesAreDisjoint(keyValue, metadataValue)
+        (!candidateStateExtension &&
+          !c14MetadataProjectionExact &&
+          !valuesAreDisjoint(keyValue, metadataValue))
       ) {
         fail("private commit arguments must be frozen and disjoint");
       }
@@ -6167,6 +7444,8 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         statement: context.expressionStatement,
         keyName: node.arguments[0].name,
         metadataName: node.arguments[1].name,
+        candidateStateExtension,
+        c14MetadataProjectionExact,
       };
       context.functionRecord.commits.push(commit);
       privateCommits.push(commit);
@@ -6219,7 +7498,14 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   evaluateExpression = (node, scope, context = {}) => {
     const literalRole = context.literalRole ?? "ordinary";
     if (node.type === "Identifier") {
-      return evaluateIdentifier(node, scope).value;
+      const { binding, value } = evaluateIdentifier(node, scope);
+      if (
+        value.kind === "optional-frozen" &&
+        context.c14NonNullFrozenBindings?.has(binding)
+      ) {
+        return frozenValue(value);
+      }
+      return value;
     }
     if (node.type === "Literal") return visitLiteral(node, literalRole);
     if (node.type === "ArrayExpression") {
@@ -6231,6 +7517,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         if (element.type === "SpreadElement") fail("array spread");
         return evaluateExpression(element, scope, context);
       });
+      if (children.some(isRequirementsAggregateValue)) {
+        fail("requirements path escape");
+      }
       return valueWithOrigin("mutable-local", node, children);
     }
     if (node.type === "ObjectExpression") {
@@ -6238,6 +7527,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       const children = node.properties.map((property) =>
         visitProperty(property, scope, context),
       );
+      if (children.some(isRequirementsAggregateValue)) {
+        fail("requirements path escape");
+      }
       return valueWithOrigin("mutable-local", node, children);
     }
     if (node.type === "CallExpression") {
@@ -6264,8 +7556,23 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       mark(node, "binary-expression");
       const left = evaluateExpression(node.left, scope, context);
       const right = evaluateExpression(node.right, scope, context);
-      requireTrusted(left, `binary ${node.operator}`);
-      requireTrusted(right, `binary ${node.operator}`);
+      const c14AuditedNonConstructingBinary =
+        c14AuditedSource && node.operator !== "+";
+      const c14OptionalNullTestBinding =
+        context.c14OptionalNullTestBinding ?? null;
+      const c14OptionalNullTest =
+        c14OptionalNullTestBinding !== null &&
+        exactNullGuard(node, c14OptionalNullTestBinding.name) &&
+        resolve(scope, c14OptionalNullTestBinding.name) ===
+          c14OptionalNullTestBinding;
+      requireTrusted(left, `binary ${node.operator}`, {
+        allowMutable: c14AuditedNonConstructingBinary,
+        allowOptionalFrozen: c14OptionalNullTest,
+      });
+      requireTrusted(right, `binary ${node.operator}`, {
+        allowMutable: c14AuditedNonConstructingBinary,
+        allowOptionalFrozen: c14OptionalNullTest,
+      });
       let staticStrings = [];
       if (
         node.operator === "+" &&
@@ -6309,7 +7616,19 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     }
     if (node.type === "ConditionalExpression") {
       mark(node, "conditional-expression");
-      const testValue = evaluateExpression(node.test, scope, context);
+      const c14StatusTopology = exactC14StatusConditionalTopology(
+        context.functionRecord,
+      );
+      const c14GuardedBindingName =
+        c14StatusTopology?.guardedConditionalBindings.get(node) ?? null;
+      const c14GuardedBinding =
+        c14GuardedBindingName === null
+          ? null
+          : resolve(scope, c14GuardedBindingName);
+      const testValue = evaluateExpression(node.test, scope, {
+        ...context,
+        c14OptionalNullTestBinding: c14GuardedBinding,
+      });
       requireTrusted(testValue, "conditional test");
       const branchContext = {
         ...context,
@@ -6323,8 +7642,66 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       const alternate = evaluateExpression(
         node.alternate,
         scope,
-        branchContext,
+        c14GuardedBinding === null
+          ? branchContext
+          : {
+              ...branchContext,
+              c14NonNullFrozenBindings: new Set([
+                ...(context.c14NonNullFrozenBindings ?? []),
+                c14GuardedBinding,
+              ]),
+            },
       );
+      const exactStartupMapSelection =
+        c14AuditedSource &&
+        context.c14StartupValidation === true &&
+        context.functionRecord?.name === "validateStartupReport" &&
+        node.test.type === "BinaryExpression" &&
+        node.test.operator === "===" &&
+        node.test.left.type === "MemberExpression" &&
+        !node.test.left.computed &&
+        !node.test.left.optional &&
+        node.test.left.object.type === "Identifier" &&
+        node.test.left.object.name === "report" &&
+        node.test.left.property.type === "Identifier" &&
+        node.test.left.property.name === "mode" &&
+        node.test.right.type === "Literal" &&
+        node.test.right.value === "NORMAL" &&
+        node.consequent.type === "Identifier" &&
+        node.consequent.name === "normalStartupMap" &&
+        node.alternate.type === "Identifier" &&
+        node.alternate.name === "recoveryStartupMap" &&
+        consequent.kind === "frozen" &&
+        alternate.kind === "frozen" &&
+        !consequent.tainted &&
+        !alternate.tainted;
+      if (exactStartupMapSelection) {
+        return valueWithOrigin("frozen", node, [consequent, alternate]);
+      }
+      if (
+        c14StatusTopology?.optionalNodes.has(node) &&
+        consequent.kind === "frozen" &&
+        consequent.freezable &&
+        !consequent.tainted &&
+        alternate.kind === "immutable" &&
+        alternate.freezable &&
+        !alternate.tainted &&
+        exactLiteral(node.alternate, null)
+      ) {
+        return valueWithOrigin("optional-frozen", node, [
+          consequent,
+          alternate,
+        ]);
+      }
+      if (
+        c14StatusTopology?.frozenSelectionNodes.has(node) &&
+        consequent.kind === "frozen" &&
+        alternate.kind === "frozen" &&
+        !consequent.tainted &&
+        !alternate.tainted
+      ) {
+        return valueWithOrigin("frozen", node, [consequent, alternate]);
+      }
       return joinValues(consequent, alternate, "conditional expression");
     }
     if (node.type === "AssignmentExpression") {
@@ -6396,6 +7773,9 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       }
       return;
     }
+    if (module && isRequirementsAggregateValue(value)) {
+      fail("requirements path escape");
+    }
     if (module && mutableKinds.has(value.kind)) {
       fail(`mutable module binding ${binding.name}`);
     }
@@ -6439,10 +7819,34 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     }
     if (node.type === "ReturnStatement") {
       mark(node, "return-statement");
+      if (
+        node.argument?.type === "MemberExpression" &&
+        !node.argument.optional &&
+        !node.argument.computed &&
+        node.argument.object.type === "Identifier" &&
+        node.argument.object.name === requirementsRootBindingName &&
+        node.argument.property.type === "Identifier" &&
+        Object.hasOwn(
+          STATIC_POLICY_REQUIREMENTS_ORACLE,
+          node.argument.property.name,
+        ) &&
+        typeof STATIC_POLICY_REQUIREMENTS_ORACLE[
+          node.argument.property.name
+        ] === "object" &&
+        STATIC_POLICY_REQUIREMENTS_ORACLE[node.argument.property.name] !== null
+      ) {
+        fail("requirements subtree returned from function");
+      }
       const value =
         node.argument === null
           ? IMMUTABLE_VALUE
           : evaluateExpression(node.argument, scope, context);
+      if (
+        isRequirementsAggregateValue(value) ||
+        (value.kind === "immutable" && !value.freezable)
+      ) {
+        fail("requirements path escape");
+      }
       const escapedCapabilityString = value.staticStrings.find((candidate) =>
         capabilityLookingString(candidate),
       );
@@ -6469,6 +7873,17 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         ...context,
         expressionStatement: node,
       });
+      const exactC14ReductionPlanTerminalFailure =
+        c14AuditedSource &&
+        context.functionRecord?.name === "reductionPlan" &&
+        context.controlDepth === 0 &&
+        context.directStatement === node &&
+        context.functionRecord.node.body.body.at(-1) === node &&
+        exactDirectCall(node.expression, "failTransition", []) &&
+        functionRecords.get("failTransition")?.provenNonReturning === true;
+      if (exactC14ReductionPlanTerminalFailure) {
+        return completion("throw");
+      }
       return completion("normal");
     }
     if (node.type === "BlockStatement") {
@@ -6524,7 +7939,11 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     fail(`unclassified statement ${node.type}`);
   };
 
-  visitFunction = (record) => {
+  visitFunction = (
+    record,
+    parameterValues = null,
+    { c14StartupValidation = false } = {},
+  ) => {
     if (record === undefined) fail("unknown function record");
     if (record.status === "complete") return record.returnValue;
     if (record.status === "analyzing")
@@ -6535,14 +7954,17 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     markIdentifier(node.id, "function-binding");
     const scope = { parent: moduleScope, bindings: new Map() };
     const parameterBindings = new Map();
-    for (const parameter of node.params) {
+    for (const [index, parameter] of node.params.entries()) {
       if (parameter.type !== "Identifier") fail("non-identifier parameter");
       markIdentifier(parameter, "parameter-binding");
       parameterBindings.set(
         parameter.name,
         declare(scope, parameter.name, {
           kind: "parameter",
-          value: UNTRUSTED_VALUE,
+          value:
+            c14StartupValidation && parameterValues !== null
+              ? (parameterValues[index] ?? UNTRUSTED_VALUE)
+              : UNTRUSTED_VALUE,
           node: parameter,
         }),
       );
@@ -6558,6 +7980,7 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       directStatement: null,
       expressionStatement: null,
       literalRole: "ordinary",
+      c14StartupValidation,
     };
     const functionCompletion = visitBlock(node.body, scope, context, {
       functionBody: true,
@@ -6592,19 +8015,44 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
       const body = node.body.body;
       const commitIndex = body.indexOf(commit.statement);
       const returnStatement = body.at(-1);
+      const candidateStateExtension =
+        expectedStore === "stateMetadata" &&
+        commit.candidateStateExtension;
       if (
         context.returnStatements.length !== 1 ||
         context.returnStatements[0] !== returnStatement ||
         commitIndex !== body.length - 2 ||
         returnStatement?.type !== "ReturnStatement" ||
         returnStatement.argument?.type !== "Identifier" ||
-        returnStatement.argument.name === commit.metadataName ||
-        commit.keyName === commit.metadataName
+        (!candidateStateExtension &&
+          (returnStatement.argument.name === commit.metadataName ||
+            commit.keyName === commit.metadataName))
       ) {
         fail(`private commit tail ${record.name}`);
       }
       const returnName = returnStatement.argument.name;
-      if (returnName !== commit.keyName) {
+      const returnDeclaration = body.find(
+        (statement) =>
+          statement.type === "VariableDeclaration" &&
+          statement.declarations.length === 1 &&
+          statement.declarations[0].id.type === "Identifier" &&
+          statement.declarations[0].id.name === returnName,
+      );
+      const returnedRecordEntries = directFrozenNullRecordEntries(
+        returnDeclaration?.declarations[0].init,
+      );
+      const candidateReturnsTransition =
+        candidateStateExtension &&
+        returnedRecordEntries?.some(
+          (entry) =>
+            entry?.type === "ArrayExpression" &&
+            entry.elements[0]?.type === "Literal" &&
+            entry.elements[0].value === "state",
+        );
+      if (
+        returnName !== commit.keyName &&
+        (!candidateStateExtension || candidateReturnsTransition)
+      ) {
         if (
           expectedStore !== "stateMetadata" ||
           ![
@@ -6627,19 +8075,13 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
             `private state transition must be prebuilt and frozen ${record.name}`,
           );
         }
-        if (!valuesAreDisjoint(returnValue, metadataValue)) {
+        if (
+          !candidateStateExtension &&
+          !valuesAreDisjoint(returnValue, metadataValue)
+        ) {
           fail(`private state transition contains metadata ${record.name}`);
         }
-        const returnDeclaration = body.find(
-          (statement) =>
-            statement.type === "VariableDeclaration" &&
-            statement.declarations.length === 1 &&
-            statement.declarations[0].id.type === "Identifier" &&
-            statement.declarations[0].id.name === returnName,
-        );
-        const entries = directFrozenNullRecordEntries(
-          returnDeclaration?.declarations[0].init,
-        );
+        const entries = returnedRecordEntries;
         if (entries === null) {
           fail(
             `private state transition must be a frozen null record ${record.name}`,
@@ -6666,10 +8108,46 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
         }
       }
       counters.privateOwnerReturnCount += context.returnStatements.length;
+      const c14StatusTopology = exactC14StatusConditionalTopology(record);
       for (const call of record.calls) {
         if (call.node === commit.call) continue;
         const statementIndex = body.indexOf(call.directStatement);
-        if (call.controlDepth !== 0 || statementIndex >= commitIndex) {
+        const exactConditionallyDominatedStatusCall =
+          call.controlDepth === 1 &&
+          statementIndex >= 0 &&
+          statementIndex < commitIndex &&
+          c14StatusTopology?.conditionallyDominatedCalls.has(call.node) ===
+            true;
+        const exactC14ReduceBindingGuardFailure =
+          c14AuditedSource &&
+          record.name === "reduceCandidateContainmentGuardianControlV1" &&
+          call.controlDepth === 1 &&
+          statementIndex >= 0 &&
+          statementIndex < commitIndex &&
+          call.directStatement?.type === "IfStatement" &&
+          call.directStatement.alternate === null &&
+          call.directStatement.consequent?.type === "ExpressionStatement" &&
+          call.directStatement.consequent.expression === call.node &&
+          call.directStatement.test?.type === "BinaryExpression" &&
+          call.directStatement.test.operator === "!==" &&
+          exactIdentifierMember(
+            call.directStatement.test.left,
+            "input",
+            "boundStateSha256",
+          ) &&
+          exactIdentifierMember(
+            call.directStatement.test.right,
+            "state",
+            "stateSha256",
+          ) &&
+          exactDirectCall(call.node, "failBinding", []) &&
+          functionRecords.get("failBinding")?.provenNonReturning === true;
+        if (
+          (!exactConditionallyDominatedStatusCall &&
+            !exactC14ReduceBindingGuardFailure &&
+            call.controlDepth !== 0) ||
+          statementIndex >= commitIndex
+        ) {
           fail(`fallible operation does not dominate commit ${record.name}`);
         }
         counters.privateDominatedCallCount += 1;
@@ -6685,11 +8163,26 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
     if (context.returnValues.length > 0) {
       returnValue = context.returnValues[0];
       for (const value of context.returnValues.slice(1)) {
-        returnValue = joinValues(
-          returnValue,
-          value,
-          `returns of ${record.name}`,
-        );
+        if (
+          exactC14ReductionPlanReturnTopology(record) &&
+          returnValue.kind === "frozen" &&
+          value.kind === "frozen" &&
+          returnValue.freezable &&
+          value.freezable &&
+          !returnValue.tainted &&
+          !value.tainted
+        ) {
+          returnValue = valueWithOrigin("frozen", record.node, [
+            returnValue,
+            value,
+          ]);
+        } else {
+          returnValue = joinValues(
+            returnValue,
+            value,
+            `returns of ${record.name}`,
+          );
+        }
       }
     }
     record.returnValue = returnValue;
@@ -6803,10 +8296,18 @@ function assertRejectByDefaultEstreePolicy(program, expectedNodeCount) {
   });
 }
 
-function assertC14FragmentProvenance(program) {
+function evaluateC14Provenance(
+  program,
+  c14ProvenanceMode = "fragment-control",
+) {
   const fail = (code) => {
     throw new Error(`static gate: ESTree provenance ${code}`);
   };
+  const candidateActivation =
+    c14ProvenanceMode === MAIN_C14_CANDIDATE_ACTIVATION_MODE;
+  if (!candidateActivation && c14ProvenanceMode !== "fragment-control") {
+    fail("UNRECOGNIZED_C14_PROVENANCE_MODE");
+  }
   const exactHelperNames = new Set(
     ALLOWED_IMPORTS.get("./containment-exact-v2.mjs"),
   );
@@ -6840,6 +8341,16 @@ function assertC14FragmentProvenance(program) {
     ...REQUIREMENTS_ORACLE.frameFields.stateProjection,
   ]);
   const unsignedStateFields = Object.freeze(stateFields.slice(0, -1));
+  const stateMetadataFields = Object.freeze([
+    "mode",
+    "phase",
+    "stateSha256",
+    "eventCount",
+  ]);
+  const stateCommitOwners = new Set([
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ]);
   const failureArgumentIndex = new Map([
     ["boundedInteger", 4],
     ["copyBoundedBuffer", 3],
@@ -7119,6 +8630,17 @@ function assertC14FragmentProvenance(program) {
   const reachedLocalFunctions = new Set();
   const localCallerClasses = new Map();
   const activeFunctions = [];
+  let activeExportedFunction = null;
+  const activationStateOwners = new Map(
+    [...stateCommitOwners].map((name) => [
+      name,
+      {
+        taggedStates: new Set(),
+        commits: [],
+        verified: false,
+      },
+    ]),
+  );
 
   const exactFailureFunction = (name) => {
     const fn = localFunctions.get(name);
@@ -7213,15 +8735,69 @@ function assertC14FragmentProvenance(program) {
     }
     return value("requirements-leaf", { path });
   };
+  const isRequirementsAggregate = (observed) =>
+    observed?.kind === "requirements" ||
+    observed?.kind === "requirements-array" ||
+    observed?.kind === "requirements-subtree";
+  const requirementsExpressionResult = (node) => {
+    if (node?.type === "Identifier" && rootNames.has(node.name)) {
+      return value("requirements", { path: [] });
+    }
+    if (node?.type === "ParenthesizedExpression") {
+      return requirementsExpressionResult(node.expression);
+    }
+    if (node?.type === "MemberExpression") {
+      const directPath = memberPath(node);
+      if (directPath !== null && rootNames.has(directPath.root)) {
+        return requirementResult(directPath.path);
+      }
+      const receiver = requirementsExpressionResult(node.object);
+      const property = memberProperty(node);
+      if (isRequirementsAggregate(receiver) && property !== null) {
+        return requirementResult([...receiver.path, property]);
+      }
+      return null;
+    }
+    if (
+      node?.type === "CallExpression" &&
+      node.callee.type === "MemberExpression" &&
+      memberProperty(node.callee) === "at" &&
+      node.arguments.length === 1 &&
+      node.arguments[0].type === "Literal" &&
+      Number.isInteger(node.arguments[0].value) &&
+      node.arguments[0].value >= 0
+    ) {
+      const receiver = requirementsExpressionResult(node.callee.object);
+      if (receiver?.kind === "requirements-array") {
+        return requirementResult([...receiver.path, node.arguments[0].value]);
+      }
+    }
+    return null;
+  };
+  const expressionContainsRequirementsAggregate = (node) => {
+    if (node === null || typeof node !== "object") return false;
+    const observed = requirementsExpressionResult(node);
+    if (
+      observed?.kind === "requirements-array" ||
+      observed?.kind === "requirements-subtree"
+    ) {
+      return true;
+    }
+    return Object.entries(node).some(([key, child]) => {
+      if (["end", "loc", "range", "raw", "start"].includes(key)) {
+        return false;
+      }
+      return Array.isArray(child)
+        ? child.some(expressionContainsRequirementsAggregate)
+        : expressionContainsRequirementsAggregate(child);
+    });
+  };
   const rejectEscapingValue = (observed) => {
     if (observed.kind === "requirements") fail("REQUIREMENTS_ROOT_ESCAPE");
     if (observed.kind === "invalid-requirements") {
       fail("REQUIREMENTS_ROOT_NOT_EXACT");
     }
-    if (
-      observed.kind === "requirements-array" ||
-      observed.kind === "requirements-subtree"
-    ) {
+    if (isRequirementsAggregate(observed)) {
       fail("REQUIREMENTS_PATH_ESCAPE");
     }
     if (
@@ -7258,10 +8834,79 @@ function assertC14FragmentProvenance(program) {
     }
     return keys;
   };
+  const stateMetadataReturnArray = () => {
+    const fn = localFunctions.get("stateProjectionMetadata");
+    if (
+      fn === undefined ||
+      fn.params.length !== 1 ||
+      fn.params[0].type !== "Identifier" ||
+      fn.params[0].name !== "state" ||
+      fn.body.body.length !== 1 ||
+      fn.body.body[0].type !== "ReturnStatement"
+    ) {
+      return null;
+    }
+    const deepFreezeCall = fn.body.body[0].argument;
+    if (
+      deepFreezeCall?.type !== "CallExpression" ||
+      deepFreezeCall.optional ||
+      deepFreezeCall.callee.type !== "Identifier" ||
+      deepFreezeCall.callee.name !== "deepFreeze" ||
+      deepFreezeCall.arguments.length !== 1
+    ) {
+      return null;
+    }
+    const nullRecordCall = deepFreezeCall.arguments[0];
+    if (
+      nullRecordCall?.type !== "CallExpression" ||
+      nullRecordCall.optional ||
+      nullRecordCall.callee.type !== "Identifier" ||
+      nullRecordCall.callee.name !== "nullRecord" ||
+      nullRecordCall.arguments.length !== 1 ||
+      nullRecordCall.arguments[0].type !== "ArrayExpression"
+    ) {
+      return null;
+    }
+    return nullRecordCall.arguments[0];
+  };
+  const exactStateMetadataArray = () => {
+    const arrayNode = stateMetadataReturnArray();
+    if (arrayNode === null) return null;
+    const keys = recordKeys(arrayNode);
+    if (keys?.join("\u0000") !== stateMetadataFields.join("\u0000")) {
+      return null;
+    }
+    for (let index = 0; index < stateMetadataFields.length; index += 1) {
+      const entry = arrayNode.elements[index];
+      const field = stateMetadataFields[index];
+      const child = entry.elements[1];
+      if (
+        entry.elements[0]?.type !== "Literal" ||
+        entry.elements[0].value !== field ||
+        child?.type !== "MemberExpression" ||
+        child.optional ||
+        child.computed ||
+        child.object.type !== "Identifier" ||
+        child.object.name !== "state" ||
+        child.property.type !== "Identifier" ||
+        child.property.name !== field
+      ) {
+        return null;
+      }
+    }
+    return arrayNode;
+  };
   const evaluateRecordEntries = (arrayNode, environment) => {
     const keys = recordKeys(arrayNode);
-    if (keys === null)
-      return value("record", { keys: [], protectedSlots: false });
+    if (keys === null) {
+      for (const entry of arrayNode?.elements ?? []) {
+        const observed = evaluateExpression(entry, environment);
+        if (isRequirementsAggregate(observed)) {
+          fail("REQUIREMENTS_PATH_ESCAPE");
+        }
+      }
+      fail("RECORD_ENTRIES_NOT_EXACT");
+    }
     const isAuthorityLookalike =
       keys.length === authorityKeys.length &&
       keys.every((key, index) => key === authorityKeys[index]) &&
@@ -7284,6 +8929,9 @@ function assertC14FragmentProvenance(program) {
       const key = literalKey(entry.elements[0]);
       const childNode = entry.elements[1];
       const child = evaluateExpression(childNode, environment);
+      if (isRequirementsAggregate(child)) {
+        fail("REQUIREMENTS_PATH_ESCAPE");
+      }
       children.push(child);
       entryShapes.push(nodeShapeIdentity(childNode));
       tainted ||= isRawish(child);
@@ -7301,26 +8949,101 @@ function assertC14FragmentProvenance(program) {
         child.kind === "authority-lookalike"
       ) {
         fail("AUTHORITY_WRONG_PLACEMENT");
+      } else if (candidateActivation && child.kind === "state-metadata") {
+        fail("STATE_COMMIT_METADATA_NOT_EXACT");
       }
+    }
+    const evaluatingStateMetadata =
+      candidateActivation &&
+      activeFunctions.at(-1) === "stateProjectionMetadata" &&
+      stateMetadataReturnArray() === arrayNode;
+    if (evaluatingStateMetadata) {
+      if (exactStateMetadataArray() !== arrayNode) {
+        fail("STATE_METADATA_NOT_EXACT");
+      }
+      const stateProjection = children[0]?.stateProjection;
+      if (stateProjection?.kind !== "state-projection") {
+        fail("STATE_METADATA_STATE_NOT_EXACT");
+      }
+      const exactChildren = children.every(
+        (child, index) =>
+          child.kind === "state-field" &&
+          child.field === stateMetadataFields[index] &&
+          child.stateProjection === stateProjection,
+      );
+      if (!exactChildren) {
+        fail("STATE_METADATA_NOT_EXACT");
+      }
+      return value("state-metadata", {
+        keys,
+        protectedSlots,
+        tainted,
+        entryShapes,
+        stateProjection,
+      });
+    }
+    const fragmentCandidateExtensionRecord =
+      !candidateActivation &&
+      (activeFunctions.at(-1) === "stateProjectionMetadata" ||
+        keys.join("\u0000") === stateMetadataFields.join("\u0000"));
+    if (fragmentCandidateExtensionRecord) {
+      return value("record", {
+        children,
+        keys,
+        protectedSlots,
+        tainted,
+        entryShapes,
+      });
     }
     if (keys.includes("stateSha256")) {
-      if (keys.join("\u0000") !== stateFields.join("\u0000")) {
-        fail("STATE_PREIMAGE_NOT_EXACT");
+      const exactPublicState =
+        keys.join("\u0000") === stateFields.join("\u0000");
+      if (exactPublicState) {
+        const stateDigest = children.at(-1);
+        if (
+          stateDigest.kind !== "state-digest" ||
+          stateDigest.preimageShapes.join("\u0000") !==
+            entryShapes.slice(0, -1).join("\u0000")
+        ) {
+          fail("STATE_PREIMAGE_NOT_EXACT");
+        }
+        const stateProjection = value(
+          candidateActivation ? "state-projection" : "record",
+          {
+            children,
+            keys,
+            protectedSlots,
+            tainted,
+            entryShapes,
+          },
+        );
+        if (
+          candidateActivation &&
+          stateCommitOwners.has(activeExportedFunction)
+        ) {
+          activationStateOwners
+            .get(activeExportedFunction)
+            .taggedStates.add(stateProjection);
+        }
+        return stateProjection;
       }
-      const stateDigest = children.at(-1);
       if (
-        stateDigest.kind !== "state-digest" ||
-        stateDigest.preimageShapes.join("\u0000") !==
-          entryShapes.slice(0, -1).join("\u0000")
+        candidateActivation &&
+        !stateCommitOwners.has(activeExportedFunction)
       ) {
-        fail("STATE_PREIMAGE_NOT_EXACT");
+        fail("STATE_SHA256_RECORD_NOT_ALLOWED");
       }
+      fail("STATE_PREIMAGE_NOT_EXACT");
     }
     return value("record", {
+      children,
       keys,
       protectedSlots,
       tainted,
       entryShapes,
+      stateSlots: keys.flatMap((key, index) =>
+        key === "state" ? [children[index]] : [],
+      ),
     });
   };
   const requireOrdinaryArgument = (
@@ -7336,6 +9059,9 @@ function assertC14FragmentProvenance(program) {
     }
     if (observed.kind === "requirements-array" && !allowRequirementsArray) {
       fail("REQUIREMENTS_PATH_ESCAPE");
+    }
+    if (candidateActivation && observed.kind === "state-metadata") {
+      fail("STATE_COMMIT_METADATA_NOT_EXACT");
     }
     if (observed.kind === "protected") fail("AUTHORITY_GENERAL_SINK_ESCAPE");
     if (
@@ -7424,6 +9150,21 @@ function assertC14FragmentProvenance(program) {
       if (receiver.kind === "protected") {
         fail("AUTHORITY_DIRECT_ESCAPE");
       }
+      if (candidateActivation && receiver.kind === "state-projection") {
+        if (!stateFields.includes(property)) {
+          fail("STATE_PREIMAGE_NOT_EXACT");
+        }
+        return value("state-field", {
+          field: property,
+          stateProjection: receiver,
+        });
+      }
+      if (receiver.kind === "record") {
+        const index = receiver.keys?.indexOf(property) ?? -1;
+        if (index >= 0 && receiver.children?.[index] !== undefined) {
+          return receiver.children[index];
+        }
+      }
       if (receiver.kind === "decoded") {
         if (property === "value") return RAW;
         if (property === "bytes") return SAFE;
@@ -7468,6 +9209,24 @@ function assertC14FragmentProvenance(program) {
         if (target.kind === "function") fail("LOCAL_CALL_INDIRECT");
       }
       if (node.callee.type === "MemberExpression") {
+        const exactStateCommit =
+          candidateActivation &&
+          stateCommitOwners.has(activeExportedFunction) &&
+          node.callee.object.type === "Identifier" &&
+          node.callee.object.name === "stateMetadata" &&
+          !node.callee.computed &&
+          !node.callee.optional &&
+          node.callee.property.type === "Identifier" &&
+          node.callee.property.name === "set";
+        if (exactStateCommit) {
+          const arguments_ = node.arguments.map((argument) =>
+            evaluateExpression(argument, environment),
+          );
+          activationStateOwners
+            .get(activeExportedFunction)
+            .commits.push(Object.freeze({ arguments_ }));
+          return SAFE;
+        }
         const receiver = evaluateExpression(node.callee.object, environment);
         const method = memberProperty(node.callee);
         if (receiver.kind === "requirements-array") {
@@ -7477,7 +9236,19 @@ function assertC14FragmentProvenance(program) {
           for (const argument of node.arguments) {
             requireOrdinaryArgument(evaluateExpression(argument, environment));
           }
-          return SAFE;
+          if (method === "includes") return SAFE;
+          if (
+            node.arguments.length !== 1 ||
+            node.arguments[0].type !== "Literal" ||
+            !Number.isInteger(node.arguments[0].value) ||
+            node.arguments[0].value < 0
+          ) {
+            fail("REQUIREMENTS_PATH_ESCAPE");
+          }
+          return requirementResult([
+            ...receiver.path,
+            node.arguments[0].value,
+          ]);
         }
         if (
           receiver.kind === "requirements" ||
@@ -7523,6 +9294,16 @@ function assertC14FragmentProvenance(program) {
         const arguments_ = node.arguments.map((argument) =>
           evaluateExpression(argument, environment),
         );
+        if (arguments_.some(isRequirementsAggregate)) {
+          fail("REQUIREMENTS_PATH_ESCAPE");
+        }
+        if (
+          candidateActivation &&
+          arguments_.some(({ kind }) => kind === "state-projection") &&
+          calleeName !== "stateProjectionMetadata"
+        ) {
+          fail("STATE_COMMIT_KEY_NOT_EXACT");
+        }
         if (arguments_.some(({ kind }) => kind === "protected")) {
           fail("AUTHORITY_GENERAL_SINK_ESCAPE");
         }
@@ -7554,7 +9335,11 @@ function assertC14FragmentProvenance(program) {
         return evaluateRecordEntries(node.arguments[0], environment);
       }
       if (calleeName === "deepFreeze") {
-        return evaluateExpression(node.arguments[0], environment);
+        const observed = evaluateExpression(node.arguments[0], environment);
+        if (isRequirementsAggregate(observed)) {
+          fail("REQUIREMENTS_PATH_ESCAPE");
+        }
+        return observed;
       }
       if (calleeName === "frozenCopyOnReadBytes") {
         requireOrdinaryArgument(
@@ -7744,6 +9529,9 @@ function assertC14FragmentProvenance(program) {
         evaluateExpression(statement.expression, environment);
       } else if (statement.type === "ReturnStatement") {
         returned = evaluateExpression(statement.argument, environment);
+        if (!exported && isRequirementsAggregate(returned)) {
+          fail("REQUIREMENTS_PATH_ESCAPE");
+        }
         if (exported) rejectEscapingValue(returned);
       } else if (statement.type === "IfStatement") {
         requireOrdinaryArgument(
@@ -7788,6 +9576,8 @@ function assertC14FragmentProvenance(program) {
     const name = fn.id.name;
     if (activeFunctions.includes(name)) fail("LOCAL_CALL_RECURSIVE");
     activeFunctions.push(name);
+    const previousExportedFunction = activeExportedFunction;
+    if (exported) activeExportedFunction = name;
     if (!exported) reachedLocalFunctions.add(name);
     const environment = new Map();
     for (let index = 0; index < fn.params.length; index += 1) {
@@ -7797,9 +9587,50 @@ function assertC14FragmentProvenance(program) {
       }
     }
     const returned = evaluateStatements(fn.body.body, environment, exported);
+    if (candidateActivation && exported && stateCommitOwners.has(name)) {
+      const observation = activationStateOwners.get(name);
+      if (observation.taggedStates.size === 0) {
+        fail("STATE_PREIMAGE_NOT_EXACT");
+      }
+      if (observation.commits.length !== 1) {
+        fail("STATE_COMMIT_KEY_NOT_EXACT");
+      }
+      const [key, metadata] = observation.commits[0].arguments_;
+      if (
+        !observation.taggedStates.has(key) ||
+        key?.kind !== "state-projection"
+      ) {
+        fail("STATE_COMMIT_KEY_NOT_EXACT");
+      }
+      if (
+        metadata?.kind !== "state-metadata" ||
+        metadata.stateProjection !== key
+      ) {
+        fail("STATE_COMMIT_METADATA_NOT_EXACT");
+      }
+      const returnedStateIdentityExact =
+        returned === key ||
+        (returned?.kind === "record" &&
+          returned.stateSlots?.length === 1 &&
+          returned.stateSlots[0] === key);
+      if (!returnedStateIdentityExact) {
+        fail("STATE_COMMIT_KEY_NOT_EXACT");
+      }
+      observation.verified = true;
+    }
+    activeExportedFunction = previousExportedFunction;
     activeFunctions.pop();
     return returned;
   };
+
+  for (const [name, declaration] of moduleDeclarations) {
+    if (
+      !rootNames.has(name) &&
+      expressionContainsRequirementsAggregate(declaration.init)
+    ) {
+      fail("REQUIREMENTS_PATH_ESCAPE");
+    }
+  }
 
   for (const fn of exportedFunctions) {
     evaluateFunction(
@@ -7821,12 +9652,29 @@ function assertC14FragmentProvenance(program) {
   for (const classes of localCallerClasses.values()) {
     if (classes.has("raw")) fail("LOCAL_CALLER_UNTRUSTED");
   }
+  if (
+    candidateActivation &&
+    [...activationStateOwners.values()].some(({ verified }) => !verified)
+  ) {
+    fail("STATE_COMMIT_KEY_NOT_EXACT");
+  }
   return Object.freeze({
-    mode: "fragment-control",
+    mode: c14ProvenanceMode,
     rootBindingCount: rootNames.size,
     localFunctionCount: localFunctions.size,
     localCallerCount: localCallerClasses.size,
   });
+}
+
+function assertC14FragmentProvenance(program) {
+  return evaluateC14Provenance(program, "fragment-control");
+}
+
+function assertC14CandidateActivationProvenance(program) {
+  return evaluateC14Provenance(
+    program,
+    MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+  );
 }
 
 function auditCandidateSource(
@@ -7840,6 +9688,29 @@ function auditCandidateSource(
     return Object.freeze({
       astNodeCount: parsed.nodeCount,
       c14Provenance: assertC14FragmentProvenance(parsed.program),
+    });
+  }
+  if (c14ProvenanceMode === MAIN_C14_CANDIDATE_ACTIVATION_MODE) {
+    let fragmentRejection = null;
+    try {
+      assertC14FragmentProvenance(parsed.program);
+    } catch (error) {
+      fragmentRejection = error;
+    }
+    if (stageAudit !== null) {
+      stageAudit.c14FragmentPolicy = Object.freeze({
+        schema: MAIN_C14_PRODUCTION_POLICY_SCHEMA,
+        mode: "fragment-control",
+        candidateMode: MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+        sourceSha256: byteSha256(Buffer.from(source, "utf8")),
+        accepted: fragmentRejection === null,
+        rejection: fragmentRejection?.message ?? null,
+      });
+    }
+    if (fragmentRejection !== null) throw fragmentRejection;
+    return Object.freeze({
+      astNodeCount: parsed.nodeCount,
+      c14Provenance: assertC14CandidateActivationProvenance(parsed.program),
     });
   }
   if (stageAudit !== null) {
@@ -7873,6 +9744,7 @@ function auditCandidateSource(
   const astPolicy = assertRejectByDefaultEstreePolicy(
     parsed.program,
     parsed.nodeCount,
+    byteSha256(Buffer.from(source, "utf8")),
   );
   if (stageAudit !== null) stageAudit.expectedStage = "accepted";
   return Object.freeze({
@@ -8858,7 +10730,7 @@ const MAIN_C14_CANDIDATE_STATE_SHA256_RECORD_REJECTION =
 const EXPECTED_MAIN_C14_FRAGMENT_CONTROL_PROJECTION_SHA256 =
   "59bbaf35ca3346313d59c41e137cdfcd594a262e1b3267d147d3c72fb9f310f3";
 const EXPECTED_MAIN_C14_CANDIDATE_ACTIVATION_PROJECTION_SHA256 =
-  "444ef0c5be3177553d0a39d7a9087cbd38facb2750a1816ca6a9c549749a7a5a";
+  "6f334ee209db175dfb3e72993b0ec79ea04593bb2d644fe91059443826d68263";
 const EXPECTED_MAIN_C14_PRODUCTION_POLICY_PROJECTION_SHA256 =
   "b4ff8ae733a841e754874f0b5b78724919cdbc22a272be4cfd122ed4aaa803ca";
 const MAIN_C14_CANDIDATE_STATE_COMMIT_OWNERS = Object.freeze([
@@ -8917,6 +10789,7 @@ function mainCandidateActivationStateBody({
   metadataStateArgument = null,
   wrongCommitKey = false,
   wrongCommitMetadata = false,
+  wrongTransitionState = false,
 } = {}) {
   let body = mainStateHashProjectionBody({ preimageMutation });
   const emptyMetadata = "const metadata = deepFreeze(nullRecord([]));";
@@ -8946,6 +10819,21 @@ function mainCandidateActivationStateBody({
     const exactCommit = "stateMetadata.set(result, metadata);";
     assert.equal(body.includes(exactCommit), true);
     body = body.replace(exactCommit, "stateMetadata.set(result, result);");
+  }
+  if (wrongTransitionState) {
+    const resultStart = body.indexOf("const result = ");
+    const resultEnd = body.indexOf("; const metadata =", resultStart);
+    assert.equal(resultStart >= 0 && resultEnd > resultStart, true);
+    const resultExpression = body.slice(
+      resultStart + "const result = ".length,
+      resultEnd,
+    );
+    body = body.replace(
+      "; const metadata = stateProjectionMetadata(result);",
+      `; const wrongResult = ${resultExpression}; const transition = deepFreeze(nullRecord([["state", wrongResult]])); const metadata = stateProjectionMetadata(result);`,
+    );
+    assert.equal(body.includes("return result;"), true);
+    body = body.replace("return result;", "return transition;");
   }
   return body;
 }
@@ -8984,6 +10872,7 @@ function mainCandidateActivationSkeleton({
   reduceMetadataStateArgument = null,
   reduceWrongCommitKey = false,
   reduceWrongCommitMetadata = false,
+  reduceWrongTransitionState = false,
   metadataMutation = null,
   startupBody = "const result = deepFreeze(nullRecord([])); const metadata = deepFreeze(nullRecord([])); startupMetadata.set(result, metadata); return result;",
   verificationBody = "return null;",
@@ -9016,6 +10905,7 @@ function mainCandidateActivationSkeleton({
           metadataStateArgument: reduceMetadataStateArgument,
           wrongCommitKey: reduceWrongCommitKey,
           wrongCommitMetadata: reduceWrongCommitMetadata,
+          wrongTransitionState: reduceWrongTransitionState,
         }),
       ],
       ["createCandidateContainmentGuardianStartupV1", startupBody],
@@ -9114,6 +11004,19 @@ function mainCandidateActivationControls() {
       }),
     ),
     Object.freeze({
+      id: "candidate-local-member-extract-from-nested-mutable",
+      source: mainCandidateActivationSkeleton({
+        verificationBody:
+          'const mutable = nullRecord([["mode", []]]); return extract(mutable);',
+        extra: "function extract(value) { return value.mode; }",
+      }),
+      expectedLegacyAccepted: false,
+      expectedLegacyRejection:
+        "static gate: ESTree raw or unknown value passed to local function extract",
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: null,
+    }),
+    Object.freeze({
       id: "candidate-untagged-state-projection-metadata-argument",
       source: mainCandidateActivationSkeleton({
         reduceMetadataStateArgument: "unsignedState",
@@ -9133,6 +11036,45 @@ function mainCandidateActivationControls() {
       expectedCandidateRejection:
         MAIN_C14_CANDIDATE_STATE_COMMIT_METADATA_REJECTION,
     }),
+    Object.freeze({
+      id: "candidate-returned-transition-has-distinct-state",
+      source: mainCandidateActivationSkeleton({
+        reduceWrongTransitionState: true,
+      }),
+      expectedLegacyAccepted: false,
+      expectedLegacyRejection:
+        "static gate: ESTree private state transition must directly contain committed result reduceCandidateContainmentGuardianControlV1",
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: null,
+    }),
+    ...[
+      {
+        id: "candidate-local-summary-trusted-before-mutable",
+        verificationBody:
+          "const trusted = identity(deepFreeze(nullRecord([]))); const mutable = identity([]); return mutable;",
+        expectedLegacyRejection:
+          "static gate: ESTree raw or unknown value returned from function",
+      },
+      {
+        id: "candidate-local-summary-mutable-before-trusted",
+        verificationBody:
+          "const mutable = identity([]); const trusted = identity(deepFreeze(nullRecord([]))); return mutable;",
+        expectedLegacyRejection:
+          "static gate: ESTree raw or unknown value passed to local function identity",
+      },
+    ].map(({ id, verificationBody, expectedLegacyRejection }) =>
+      Object.freeze({
+        id,
+        source: mainCandidateActivationSkeleton({
+          verificationBody,
+          extra: "function identity(value) { return value; }",
+        }),
+        expectedLegacyAccepted: false,
+        expectedLegacyRejection,
+        expectedCandidateAccepted: false,
+        expectedCandidateRejection: null,
+      }),
+    ),
     Object.freeze({
       id: "candidate-unrelated-state-sha256-record",
       source: mainCandidateActivationSkeleton({
@@ -9458,8 +11400,8 @@ function assertMainCandidateActivationContract() {
     EXPECTED_MAIN_C14_FRAGMENT_CONTROL_PROJECTION_SHA256,
   );
   const controls = mainCandidateActivationControls();
-  assert.equal(controls.length, 24);
-  assert.equal(new Set(controls.map(({ id }) => id)).size, 24);
+  assert.equal(controls.length, 28);
+  assert.equal(new Set(controls.map(({ id }) => id)).size, 28);
   assert.deepEqual(MAIN_C14_CANDIDATE_STATE_COMMIT_OWNERS, [
     "initializeCandidateContainmentGuardianControlV1",
     "reduceCandidateContainmentGuardianControlV1",
@@ -9470,6 +11412,13 @@ function assertMainCandidateActivationContract() {
     "stateSha256",
     "eventCount",
   ]);
+  for (const { source, expectedLegacyRejection } of controls) {
+    if (expectedLegacyRejection !== undefined) {
+      assert.throws(() => auditCandidateSource(source), {
+        message: expectedLegacyRejection,
+      });
+    }
+  }
   const activationProjection = mainCandidateActivationProjection(controls);
   assert.equal(
     semanticSha256(activationProjection),
@@ -16333,6 +18282,184 @@ test("defines the provenance-preserving evaluator policy before implementation",
       rejectionStageMatched: expectedAccepted ? null : true,
       sourceParsed: true,
     })),
+  );
+});
+
+test("keeps non-scalar requirements array selections path-bound", () => {
+  const requirementsEscapeRejection = {
+    message: "static gate: ESTree requirements path escape",
+  };
+  const provenanceEscapeRejection = {
+    message: "static gate: ESTree provenance REQUIREMENTS_PATH_ESCAPE",
+  };
+  const witnessSource = provenanceRequirementsSkeleton(
+    "return deepFreeze(guardianContract.predecessors.direct.at(0));",
+  );
+  assert.throws(
+    () => auditCandidateSource(witnessSource),
+    requirementsEscapeRejection,
+  );
+  assert.throws(
+    () => auditCandidateSource(witnessSource, null, "fragment-control"),
+    provenanceEscapeRejection,
+  );
+  assert.throws(
+    () =>
+      auditCandidateSource(
+        witnessSource,
+        null,
+        MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+      ),
+    provenanceEscapeRejection,
+  );
+  assert.throws(
+    () => MAIN_C14_PRODUCTION_AUDIT_BINDING(witnessSource),
+    requirementsEscapeRejection,
+  );
+
+  const aliasSource = provenanceRequirementsSkeleton(
+    "const predecessor = guardianContract.predecessors.direct.at(0); return deepFreeze(predecessor);",
+  );
+  assert.throws(
+    () => auditCandidateSource(aliasSource),
+    requirementsEscapeRejection,
+  );
+  assert.throws(
+    () => auditCandidateSource(aliasSource, null, "fragment-control"),
+    provenanceEscapeRejection,
+  );
+
+  const containerEscapes = Object.freeze([
+    Object.freeze({
+      id: "null-record-member",
+      body: 'const wrapper = nullRecord([["mode", guardianContract.predecessors.direct.at(0)]]); return wrapper.mode;',
+    }),
+    Object.freeze({
+      id: "object-member",
+      body: "const wrapper = { mode: guardianContract.predecessors.direct.at(0) }; return wrapper.mode;",
+    }),
+    Object.freeze({
+      id: "array-member",
+      body: "const wrapper = [guardianContract.predecessors.direct.at(0)]; return wrapper.at(0);",
+    }),
+    Object.freeze({
+      id: "deep-freeze-ignored",
+      body: "const ignored = deepFreeze(guardianContract.predecessors.direct.at(0)); return null;",
+    }),
+    Object.freeze({
+      id: "malformed-null-record-ignored",
+      body: "nullRecord([guardianContract.predecessors.direct.at(0)]); return null;",
+    }),
+    Object.freeze({
+      id: "local-helper-aggregate-argument",
+      body: "consumePredecessor(guardianContract.predecessors.direct.at(0)); return null;",
+      extra: "function consumePredecessor(value) { return null; }",
+    }),
+    Object.freeze({
+      id: "local-helper-aggregate-return",
+      body: "returnPredecessor(); return null;",
+      extra:
+        "function returnPredecessor() { return guardianContract.predecessors.direct.at(0); }",
+    }),
+  ]);
+  for (const { id, body, extra = "" } of containerEscapes) {
+    const source = provenanceRequirementsSkeleton(body, extra);
+    assert.throws(
+      () => auditCandidateSource(source),
+      requirementsEscapeRejection,
+      `${id}: legacy`,
+    );
+    assert.throws(
+      () => auditCandidateSource(source, null, "fragment-control"),
+      provenanceEscapeRejection,
+      `${id}: fragment`,
+    );
+    assert.throws(
+      () =>
+        auditCandidateSource(
+          source,
+          null,
+          MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+        ),
+      provenanceEscapeRejection,
+      `${id}: activation`,
+    );
+    assert.throws(
+      () => MAIN_C14_PRODUCTION_AUDIT_BINDING(source),
+      requirementsEscapeRejection,
+      `${id}: production`,
+    );
+  }
+
+  const outOfRangeSource = provenanceRequirementsSkeleton(
+    "return guardianContract.predecessors.direct.at(999);",
+  );
+  assert.throws(
+    () => auditCandidateSource(outOfRangeSource),
+    requirementsEscapeRejection,
+  );
+  assert.throws(
+    () => auditCandidateSource(outOfRangeSource, null, "fragment-control"),
+    provenanceEscapeRejection,
+  );
+
+  const scalarLeafSource = provenanceRequirementsSkeleton(
+    "return guardianContract.predecessors.direct.at(0).sha256;",
+  );
+  assert.doesNotThrow(() => auditCandidateSource(scalarLeafSource));
+  assert.doesNotThrow(() =>
+    auditCandidateSource(scalarLeafSource, null, "fragment-control"),
+  );
+
+  const scalarContainers = Object.freeze([
+    'const wrapper = nullRecord([["mode", guardianContract.predecessors.direct.at(0).sha256]]); return wrapper.mode;',
+    "const wrapper = { mode: guardianContract.predecessors.direct.at(0).sha256 }; return wrapper.mode;",
+    "const value = guardianContract.predecessors.direct.at(0).sha256; const wrapper = [value]; return wrapper.includes(value);",
+  ]);
+  for (const body of scalarContainers) {
+    const source = provenanceRequirementsSkeleton(body);
+    assert.doesNotThrow(() => auditCandidateSource(source), body);
+    assert.doesNotThrow(() =>
+      auditCandidateSource(source, null, "fragment-control"),
+    );
+  }
+
+  const moduleAliasSource = mainCandidateActivationSkeleton({
+    extra:
+      "const predecessorAlias = guardianContract.predecessors.direct.at(0);",
+  });
+  assert.throws(() => auditCandidateSource(moduleAliasSource));
+  assert.throws(
+    () => auditCandidateSource(moduleAliasSource, null, "fragment-control"),
+    provenanceEscapeRejection,
+  );
+  assert.throws(
+    () =>
+      auditCandidateSource(
+        moduleAliasSource,
+        null,
+        MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+      ),
+    provenanceEscapeRejection,
+  );
+  assert.throws(() =>
+    MAIN_C14_PRODUCTION_AUDIT_BINDING(moduleAliasSource),
+  );
+
+  const scalarActivationSource = mainCandidateActivationSkeleton({
+    verificationBody:
+      'const wrapper = nullRecord([["mode", guardianContract.predecessors.direct.at(0).sha256]]); return wrapper.mode;',
+  });
+  assert.doesNotThrow(() => auditCandidateSource(scalarActivationSource));
+  assert.doesNotThrow(() =>
+    auditCandidateSource(
+      scalarActivationSource,
+      null,
+      MAIN_C14_CANDIDATE_ACTIVATION_MODE,
+    ),
+  );
+  assert.doesNotThrow(() =>
+    MAIN_C14_PRODUCTION_AUDIT_BINDING(scalarActivationSource),
   );
 });
 

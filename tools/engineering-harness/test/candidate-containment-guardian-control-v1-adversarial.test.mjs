@@ -51,6 +51,8 @@ const DIRECT_PARSER_LOAD_AUDIT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-direct-parser-load/v1";
 const EXPECTED_EXACT_V2_SOURCE_SHA256 =
   "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3";
+const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
+  "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
 const ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1";
 const EXPECTED_REQUIREMENTS_SHA256 =
@@ -4580,7 +4582,13 @@ function directWalkAst(program, source) {
   });
 }
 
-function directAssertContextualGrammar(program, expectedNodeCount) {
+function directAssertContextualGrammar(
+  program,
+  expectedNodeCount,
+  sourceSha256,
+) {
+  const directC14AuditedSource =
+    sourceSha256 === C14_AUDITED_CANDIDATE_SOURCE_SHA256;
   const classifiedNodes = new WeakSet();
   const moduleScope = { parent: null, bindings: new Map() };
   const functionRecords = new Map();
@@ -4590,9 +4598,84 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     referenceCount: 0,
     privateOperationCount: 0,
   };
+  const requirementsDependencies = new Set([
+    "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS",
+  ]);
+  const directC14AuditedDigestImports = new Set([
+    "CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3",
+    "CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1",
+  ]);
+  const directC14AuditedVocabularyImports = new Set([
+    "CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1",
+    "CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1",
+  ]);
+  const candidateProjectionFieldNames = new Set([
+    "schema",
+    "mode",
+    "phase",
+    "requirementsSha256",
+    "startupSha256",
+    "epochSha256",
+    "lastWireFrameSha256",
+    "nextWireSequence",
+    "aggregateWireBytes",
+    "admissionFrameSha256",
+    "recoveryRequestFrameSha256",
+    "admissionCount",
+    "cancelObserved",
+    "controllerClosedObserved",
+    "diagnosticFailureObserved",
+    "recoveryControlHandoffObserved",
+    "controlTerminalReason",
+    "statusEofObserved",
+    "transcriptTerminal",
+    "eventCount",
+    "authority",
+    "physicalFacts",
+    "stateSha256",
+  ]);
+  for (const statement of program.body) {
+    const declaration =
+      statement.type === "ExportNamedDeclaration" &&
+      statement.declaration?.type === "VariableDeclaration"
+        ? statement.declaration.declarations[0]
+        : null;
+    if (
+      declaration?.id.type === "Identifier" &&
+      declaration.id.name ===
+        "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS" &&
+      declaration.init?.type === "Identifier"
+    ) {
+      requirementsDependencies.add(declaration.init.name);
+    }
+  }
   const fail = (reason) => {
     throw new Error(`direct static gate: contextual ${reason}`);
   };
+  const directC14AuditedNormativeLiteralValues = new Set();
+  const collectDirectC14AuditedNormativeLiteralValues = (value) => {
+    if (typeof value === "string") {
+      directC14AuditedNormativeLiteralValues.add(value);
+    } else if (Array.isArray(value)) {
+      for (const entry of value) {
+        collectDirectC14AuditedNormativeLiteralValues(entry);
+      }
+    } else if (value !== null && typeof value === "object") {
+      for (const entry of Object.values(value)) {
+        collectDirectC14AuditedNormativeLiteralValues(entry);
+      }
+    }
+  };
+  if (directC14AuditedSource) {
+    const requirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+    if (digest(requirements) !== EXPECTED_REQUIREMENTS_SHA256) {
+      fail("audited requirements fixture mismatch");
+    }
+    collectDirectC14AuditedNormativeLiteralValues(requirements);
+  }
   const mark = (node, role) => {
     if (node === null || typeof node?.type !== "string") {
       fail(`invalid ${role} node`);
@@ -5372,10 +5455,65 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
   };
   const assertStaticStrings = (strings, literalRole) => {
     if (literalRole !== "ordinary") return;
-    const capability = strings.find(capabilityLookingString);
+    const capability = strings.find(
+      (candidate) =>
+        !candidateProjectionFieldNames.has(candidate) &&
+        capabilityLookingString(candidate),
+    );
     if (capability !== undefined) {
       fail(`capability-looking compile-time string ${capability}`);
     }
+  };
+  const sanitizeRequirementsValue = (
+    value,
+    kind,
+    preserveArrayElementStrings = false,
+  ) => {
+    const keepString = (candidate) =>
+      preserveArrayElementStrings || !capabilityLookingString(candidate);
+    const sanitizedArrayElements =
+      value.arrayElements === null
+        ? null
+        : value.arrayElements.map((entry) =>
+            sanitizeRequirementsValue(
+              entry,
+              "requirements-subtree",
+              true,
+            ),
+          );
+    const sanitizedObjectProperties =
+      value.objectProperties === null
+        ? null
+        : value.objectProperties.map(([name, entry]) => [
+            name,
+            sanitizeRequirementsValue(entry, "requirements-subtree"),
+          ]);
+    const removedString =
+      value.staticStrings.some((candidate) => !keepString(candidate)) ||
+      value.exactStrings.some((candidate) => !keepString(candidate)) ||
+      value.compileTime.stringConversions.some(
+        (candidate) => !keepString(candidate),
+      );
+    return makeValue(
+      sanitizedArrayElements !== null || sanitizedObjectProperties !== null
+        ? kind
+        : "requirements-leaf",
+      value.staticStrings.filter(keepString),
+      value.exactStrings.filter(keepString),
+      value.staticIntegers,
+      sanitizedArrayElements,
+      sanitizedObjectProperties,
+      {
+        ...value.compileTime,
+        known: removedString ? false : value.compileTime.known,
+        unknownString: removedString || value.compileTime.unknownString,
+        stringConversions:
+          value.compileTime.stringConversions.filter(keepString),
+        arrayElementStringConversions:
+          value.compileTime.arrayElementStringConversions.filter(keepString),
+        plusStrings: value.compileTime.plusStrings.filter(keepString),
+      },
+    );
   };
   const declare = (
     scope,
@@ -5497,6 +5635,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
   let evaluateExpression;
   let evaluateLocalFunctionCall;
   let visitStatement;
+  const directC14ContextuallyReachedLocalFunctions = new Set();
   const visitLiteral = (node, literalRole) => {
     mark(node, `literal:${literalRole}`);
     if (
@@ -5521,6 +5660,17 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       });
     }
     if (typeof node.value === "string") {
+      if (
+        literalRole === "ordinary" &&
+        directC14AuditedNormativeLiteralValues.has(node.value) &&
+        capabilityLookingString(node.value) &&
+        !candidateProjectionFieldNames.has(node.value)
+      ) {
+        return makeValue("immutable", [], [], [], null, null, {
+          known: true,
+          typeofStrings: ["string"],
+        });
+      }
       assertStaticStrings([node.value], literalRole);
       return makeValue(
         "immutable",
@@ -5584,6 +5734,43 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       return binding;
     }
     if (usage === "receiver") return binding;
+    if (
+      binding.name ===
+        "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256" &&
+      binding.scope === moduleScope
+    ) {
+      return immutableValue;
+    }
+    if (
+      directC14AuditedSource &&
+      binding.kind === "import-value" &&
+      directC14AuditedDigestImports.has(binding.name)
+    ) {
+      return makeCallerDerivedTypedValue("string", {
+        callerDerived: false,
+        unknownMemberValue: false,
+      });
+    }
+    if (
+      directC14AuditedSource &&
+      binding.kind === "import-value" &&
+      directC14AuditedVocabularyImports.has(binding.name)
+    ) {
+      const element = makeCallerDerivedTypedValue("string", {
+        callerDerived: false,
+        unknownMemberValue: false,
+      });
+      return makeValue("frozen", [], [], [], null, null, {
+        callerDerived: false,
+        sequenceShape: true,
+        sequenceElement: element,
+        indexableShape: true,
+        indexElement: element,
+        iterableShape: true,
+        iterationElement: element,
+        typeofStrings: ["object"],
+      });
+    }
     if (
       [
         "ambient",
@@ -5649,6 +5836,29 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     if (node.object.type === "ParenthesizedExpression") {
       fail("parenthesized member receiver");
     }
+    const c14AtTopology = directC14AtTopologyExact();
+    const exactPinnedRecoveryStateAt =
+      asCallee &&
+      memberName === "at" &&
+      c14AtTopology?.importedStates.has(context.directMemberCallNode) === true &&
+      context.directMemberCallNode?.callee === node &&
+      node.object.type === "Identifier" &&
+      node.object.name ===
+        "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1";
+    if (exactPinnedRecoveryStateAt) {
+      const binding = evaluateIdentifier(node.object, scope, {
+        usage: "receiver",
+        literalRole: context.literalRole,
+      });
+      if (binding.kind !== "import-value") {
+        fail("pinned recovery state receiver");
+      }
+      return {
+        kind: "safe-method",
+        memberName,
+        receiver: directC14PinnedRecoveryStatesValue(),
+      };
+    }
     if (node.object.type === "Identifier") {
       const binding = resolve(scope, node.object.name);
       if (binding.kind === "private-store" || binding.kind === "ambient") {
@@ -5679,6 +5889,17 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           memberName,
           ambientName: binding.name,
         };
+      }
+      if (
+        node.object.name === "state" &&
+        binding.kind === "parameter" &&
+        context.functionName === "stateProjectionMetadata" &&
+        candidateProjectionFieldNames.has(memberName)
+      ) {
+        evaluateIdentifier(node.object, scope, {
+          literalRole: context.literalRole,
+        });
+        return immutableValue;
       }
     }
     const receiver = evaluateExpression(node.object, scope, context);
@@ -5750,7 +5971,969 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     }
     return argumentValue.staticIntegers[0];
   };
-  const evaluateSafeMemberTransform = (member, argumentValues, context) => {
+  const exactC14DescriptorsAtDomain = (
+    callNode,
+    member,
+    argumentValues,
+    scope,
+    context,
+  ) => {
+    if (
+      !directC14AuditedSource ||
+      context.functionName !== "validateStartupReport" ||
+      member.memberName !== "at" ||
+      member.receiver.kind !== "frozen" ||
+      member.receiver.arrayElements?.length !== 8 ||
+      callNode.callee.type !== "MemberExpression" ||
+      callNode.callee.object.type !== "Identifier" ||
+      callNode.callee.object.name !== "descriptors" ||
+      callNode.arguments.length !== 1 ||
+      callNode.arguments[0].type !== "MemberExpression" ||
+      callNode.arguments[0].computed ||
+      callNode.arguments[0].optional ||
+      callNode.arguments[0].object.type !== "Identifier" ||
+      callNode.arguments[0].object.name !== "expected" ||
+      callNode.arguments[0].property.type !== "Identifier" ||
+      callNode.arguments[0].property.name !== "fd"
+    ) {
+      return null;
+    }
+    const descriptorsBinding = resolve(scope, "descriptors");
+    const descriptorsInit = descriptorsBinding.declarator?.init;
+    const descriptorElements = descriptorsInit?.arguments?.[0]?.elements;
+    if (
+      descriptorsBinding.kind !== "local" ||
+      descriptorsInit?.type !== "CallExpression" ||
+      descriptorsInit.optional ||
+      descriptorsInit.callee.type !== "Identifier" ||
+      descriptorsInit.callee.name !== "deepFreeze" ||
+      descriptorsInit.arguments.length !== 1 ||
+      descriptorsInit.arguments[0].type !== "ArrayExpression" ||
+      descriptorElements.length !== 8 ||
+      !descriptorElements.every(
+        (element, index) =>
+          element?.type === "MemberExpression" &&
+          !element.computed &&
+          !element.optional &&
+          element.object.type === "Identifier" &&
+          element.object.name === "report" &&
+          element.property.type === "Identifier" &&
+          element.property.name === `fd${index}`,
+      )
+    ) {
+      return null;
+    }
+    const expectedBinding = resolve(scope, "expected");
+    const expectedMapSource = expectedBinding.forOfSource;
+    const expectedMapBinding = resolve(scope, "expectedMap");
+    const expectedMapInit = expectedMapBinding.declarator?.init;
+    if (
+      expectedBinding.kind !== "local" ||
+      expectedMapSource?.type !== "Identifier" ||
+      expectedMapSource.name !== "expectedMap" ||
+      expectedMapBinding.kind !== "local" ||
+      expectedMapInit?.type !== "ConditionalExpression" ||
+      expectedMapInit.consequent.type !== "Identifier" ||
+      expectedMapInit.consequent.name !== "normalStartupMap" ||
+      expectedMapInit.alternate.type !== "Identifier" ||
+      expectedMapInit.alternate.name !== "recoveryStartupMap"
+    ) {
+      return null;
+    }
+    const domain = argumentValues[0]?.staticIntegers ?? [];
+    if (
+      domain.length < 2 ||
+      domain.length > 8 ||
+      domain.some((index) => index < 0 || index >= 8) ||
+      member.receiver.arrayElements.some(
+        (element) => element.kind !== "immutable" || element.tainted === true,
+      )
+    ) {
+      return null;
+    }
+    return domain;
+  };
+  const directC14ExactMember = (node, rootName, path) => {
+    let cursor = node;
+    for (let index = path.length - 1; index >= 0; index -= 1) {
+      if (
+        cursor?.type !== "MemberExpression" ||
+        cursor.computed ||
+        cursor.optional ||
+        cursor.property.type !== "Identifier" ||
+        cursor.property.name !== path[index]
+      ) {
+        return false;
+      }
+      cursor = cursor.object;
+    }
+    return cursor?.type === "Identifier" && cursor.name === rootName;
+  };
+  const directC14ExactCall = (node, calleeName, argumentCount) =>
+    node?.type === "CallExpression" &&
+    !node.optional &&
+    node.callee.type === "Identifier" &&
+    node.callee.name === calleeName &&
+    node.arguments.length === argumentCount;
+  const directC14ExactParameterList = (name, parameters) => {
+    const record = functionRecords.get(name);
+    return (
+      record !== undefined &&
+      record.node.params.length === parameters.length &&
+      record.node.params.every(
+        (parameter, index) =>
+          parameter.type === "Identifier" && parameter.name === parameters[index],
+      )
+    );
+  };
+  const directC14Walk = (node, visit) => {
+    if (node === null || typeof node?.type !== "string") return;
+    visit(node);
+    for (const child of Object.values(node)) {
+      if (Array.isArray(child)) {
+        for (const entry of child) directC14Walk(entry, visit);
+      } else {
+        directC14Walk(child, visit);
+      }
+    }
+  };
+  const directC14NamedCallSites = (calleeName) => {
+    const sites = [];
+    for (const [callerName, record] of functionRecords) {
+      directC14Walk(record.node.body, (node) => {
+        if (
+          node.type === "CallExpression" &&
+          node.callee.type === "Identifier" &&
+          node.callee.name === calleeName
+        ) {
+          sites.push({ callerName, node });
+        }
+      });
+    }
+    return sites;
+  };
+  const directC14IdentifierArguments = (node, names) =>
+    node.arguments.length === names.length &&
+    node.arguments.every(
+      (argument, index) =>
+        argument.type === "Identifier" && argument.name === names[index],
+    );
+  const directC14ExactCallTopology = (calleeName, expectedSites) => {
+    const actualSites = directC14NamedCallSites(calleeName);
+    return (
+      actualSites.length === expectedSites.length &&
+      expectedSites.every(
+        ({ callerName, arguments: argumentNames }) =>
+          actualSites.filter(
+            ({ callerName: actualCaller, node }) =>
+              actualCaller === callerName &&
+              directC14IdentifierArguments(node, argumentNames),
+          ).length === 1,
+      )
+    );
+  };
+  const directC14NullRecordEntries = (node) => {
+    if (
+      !directC14ExactCall(node, "deepFreeze", 1) ||
+      !directC14ExactCall(node.arguments[0], "nullRecord", 1) ||
+      node.arguments[0].arguments[0].type !== "ArrayExpression"
+    ) {
+      return null;
+    }
+    const entries = new Map();
+    for (const pair of node.arguments[0].arguments[0].elements) {
+      if (
+        pair?.type !== "ArrayExpression" ||
+        pair.elements.length !== 2 ||
+        pair.elements[0]?.type !== "Literal" ||
+        typeof pair.elements[0].value !== "string" ||
+        entries.has(pair.elements[0].value)
+      ) {
+        return null;
+      }
+      entries.set(pair.elements[0].value, pair.elements[1]);
+    }
+    return entries;
+  };
+  let directC14NumericTopology = null;
+  const directC14NumericTopologyExact = () => {
+    if (directC14NumericTopology !== null) return directC14NumericTopology;
+    const initialRecord = functionRecords.get("initialStateFields");
+    const initialReturn = initialRecord?.node.body.body[0];
+    const initialEntries =
+      initialRecord?.node.body.body.length === 1 &&
+      initialReturn?.type === "ReturnStatement"
+        ? directC14NullRecordEntries(initialReturn.argument)
+        : null;
+    const zeroSeedExact = (key) => {
+      const value = initialEntries?.get(key);
+      return value?.type === "Literal" && value.value === 0;
+    };
+    directC14NumericTopology =
+      directC14ExactParameterList("initialStateFields", ["startup"]) &&
+      directC14ExactParameterList("appendStatusFields", ["fields", "status"]) &&
+      directC14ExactParameterList("applyInputFields", ["state", "input", "plan"]) &&
+      zeroSeedExact("nextWireSequence") &&
+      zeroSeedExact("aggregateWireBytes") &&
+      zeroSeedExact("eventCount") &&
+      directC14ExactCallTopology("initialStateFields", [
+        {
+          callerName: "initializeCandidateContainmentGuardianControlV1",
+          arguments: ["startup"],
+        },
+      ]) &&
+      directC14ExactCallTopology("appendStatusFields", [
+        {
+          callerName: "initializeCandidateContainmentGuardianControlV1",
+          arguments: ["initialFields", "firstStatus"],
+        },
+        {
+          callerName: "reduceCandidateContainmentGuardianControlV1",
+          arguments: ["afterInput", "firstStatus"],
+        },
+        {
+          callerName: "reduceCandidateContainmentGuardianControlV1",
+          arguments: ["afterFirstStatus", "secondStatus"],
+        },
+      ]) &&
+      directC14ExactCallTopology("applyInputFields", [
+        {
+          callerName: "reduceCandidateContainmentGuardianControlV1",
+          arguments: ["state", "input", "plan"],
+        },
+      ]);
+    return directC14NumericTopology;
+  };
+  const directC14ExactBoundedIntegerEnvelope = (node, context) => {
+    const call = context.directCallNode;
+    return (
+      context.directCallArgumentIndex === 0 &&
+      directC14ExactCall(call, "boundedInteger", 5) &&
+      call.arguments[0] === node &&
+      call.arguments[1].type === "Literal" &&
+      call.arguments[1].value === "aggregate wire bytes" &&
+      call.arguments[2].type === "Literal" &&
+      call.arguments[2].value === 0 &&
+      directC14ExactMember(call.arguments[3], "guardianContract", [
+        "limits",
+        "maximumAggregateWireBytes",
+      ]) &&
+      call.arguments[4].type === "Identifier" &&
+      call.arguments[4].name === "failBounds"
+    );
+  };
+  const directC14ExactCurrentStateBinding = (scope) => {
+    const binding = resolve(scope, "state");
+    const init = binding.declarator?.init;
+    return (
+      binding.kind === "local" &&
+      directC14ExactCall(init, "exactRecord", 4) &&
+      init.arguments[0].type === "Identifier" &&
+      init.arguments[0].name === "currentState" &&
+      resolve(scope, "currentState").kind === "parameter" &&
+      directC14ExactMember(init.arguments[1], "guardianContract", [
+        "frameFields",
+        "stateProjection",
+      ]) &&
+      init.arguments[2].type === "Literal" &&
+      init.arguments[2].value === "current state" &&
+      init.arguments[3].type === "Identifier" &&
+      init.arguments[3].name === "failShape"
+    );
+  };
+  const directC14ExactCarrierBinding = (scope, specification) => {
+    const binding = resolve(scope, "frameCarrier");
+    const init = binding.declarator?.init;
+    const bounds = init?.arguments?.[2];
+    return (
+      binding.kind === "local" &&
+      directC14ExactCall(init, "copyBoundedBuffer", 4) &&
+      init.arguments[0].type === "Identifier" &&
+      init.arguments[0].name === specification.parameter &&
+      resolve(scope, specification.parameter).kind === "parameter" &&
+      init.arguments[1].type === "Literal" &&
+      init.arguments[1].value === specification.label &&
+      bounds?.type === "ObjectExpression" &&
+      bounds.properties.length === 2 &&
+      bounds.properties[0].type === "Property" &&
+      !bounds.properties[0].computed &&
+      bounds.properties[0].key.type === "Identifier" &&
+      bounds.properties[0].key.name === "minimumBytes" &&
+      bounds.properties[0].value.type === "Literal" &&
+      bounds.properties[0].value.value === 0 &&
+      bounds.properties[1].type === "Property" &&
+      !bounds.properties[1].computed &&
+      bounds.properties[1].key.type === "Identifier" &&
+      bounds.properties[1].key.name === "maximumBytes" &&
+      directC14ExactMember(bounds.properties[1].value, "guardianContract", [
+        "limits",
+        specification.maximum,
+      ]) &&
+      init.arguments[3].type === "Identifier" &&
+      init.arguments[3].name === "failBounds"
+    );
+  };
+  const directC14ExactNumericPairPlacement = (
+    functionName,
+    key,
+    node,
+  ) => {
+    const record = functionRecords.get(functionName);
+    if (record === undefined) return false;
+    const matches = [];
+    directC14Walk(record.node.body, (candidate) => {
+      if (
+        candidate.type === "ArrayExpression" &&
+        candidate.elements.length === 2 &&
+        candidate.elements[0]?.type === "Literal" &&
+        candidate.elements[0].value === key
+      ) {
+        matches.push(candidate.elements[1]);
+      }
+    });
+    if (matches.length !== 1) return false;
+    const [value] = matches;
+    if (value === node) return true;
+    return (
+      functionName === "applyInputFields" &&
+      key === "nextWireSequence" &&
+      value?.type === "ConditionalExpression" &&
+      value.test.type === "Identifier" &&
+      value.test.name === "wireInput" &&
+      value.consequent === node &&
+      directC14ExactMember(value.alternate, "state", ["nextWireSequence"])
+    );
+  };
+  const directC14ExactNumericAddition = (node, scope, context) => {
+    if (
+      !directC14AuditedSource ||
+      node.operator !== "+" ||
+      !directC14NumericTopologyExact()
+    ) {
+      return false;
+    }
+    const wireSpecifications = new Map([
+      [
+        "createCandidateContainmentGuardianAdmissionInputV1",
+        {
+          parameter: "admissionFrameBytes",
+          label: "admission frame bytes",
+          maximum: "admissionFrameMaximumBytes",
+        },
+      ],
+      [
+        "createCandidateContainmentGuardianCancelInputV1",
+        {
+          parameter: "cancelFrameBytes",
+          label: "cancel frame bytes",
+          maximum: "cancelFrameMaximumBytes",
+        },
+      ],
+      [
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+        {
+          parameter: "recoveryRequestFrameBytes",
+          label: "recovery request frame bytes",
+          maximum: "recoveryRequestMaximumBytes",
+        },
+      ],
+    ]);
+    const wireSpecification = wireSpecifications.get(context.functionName);
+    if (wireSpecification !== undefined) {
+      return (
+        directC14ExactBoundedIntegerEnvelope(node, context) &&
+        directC14ExactMember(node.left, "state", ["aggregateWireBytes"]) &&
+        directC14ExactMember(node.right, "frameCarrier", ["length"]) &&
+        directC14ExactCurrentStateBinding(scope) &&
+        directC14ExactCarrierBinding(scope, wireSpecification)
+      );
+    }
+    if (
+      context.functionName === "appendStatusFields" &&
+      directC14ExactBoundedIntegerEnvelope(node, context)
+    ) {
+      return (
+        directC14ExactMember(node.left, "fields", ["aggregateWireBytes"]) &&
+        directC14ExactMember(node.right, "status", ["byteLength"])
+      );
+    }
+    if (
+      context.functionName === "applyInputFields" &&
+      directC14ExactBoundedIntegerEnvelope(node, context)
+    ) {
+      return (
+        directC14ExactMember(node.left, "state", ["aggregateWireBytes"]) &&
+        directC14ExactMember(node.right, "input", ["frameByteLength"])
+      );
+    }
+    const increments = new Map([
+      ["appendStatusFields", "fields"],
+      ["applyInputFields", "state"],
+    ]);
+    const root = increments.get(context.functionName);
+    if (
+      root === undefined ||
+      node.right.type !== "Literal" ||
+      node.right.value !== 1
+    ) {
+      return false;
+    }
+    for (const key of ["nextWireSequence", "eventCount"]) {
+      if (
+        directC14ExactMember(node.left, root, [key]) &&
+        directC14ExactNumericPairPlacement(
+          context.functionName,
+          key,
+          node,
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const directC14DirectDeclarator = (functionName, name) => {
+    const record = functionRecords.get(functionName);
+    const matches = record?.node.body.body
+      .filter(
+        (statement) =>
+          statement.type === "VariableDeclaration" &&
+          statement.declarations.length === 1 &&
+          statement.declarations[0].id.type === "Identifier" &&
+          statement.declarations[0].id.name === name,
+      )
+      .map((statement) => statement.declarations[0]);
+    return matches?.length === 1 ? matches[0] : null;
+  };
+  const directC14ExactFrozenOrdinalArray = (name, length) => {
+    const initializer = moduleScope.bindings.get(name)?.declarator?.init;
+    const elements = initializer?.arguments?.[0]?.elements;
+    return (
+      directC14ExactCall(initializer, "deepFreeze", 1) &&
+      initializer.arguments[0].type === "ArrayExpression" &&
+      elements.length === length &&
+      elements.every(
+        (entry, index) =>
+          entry?.type === "ArrayExpression" &&
+          entry.elements.length === 1 &&
+          entry.elements[0]?.type === "Literal" &&
+          entry.elements[0].value === index,
+      )
+    );
+  };
+  const directC14ExactFrozenMemberArray = (
+    functionName,
+    bindingName,
+    rootName,
+    prefix,
+    length,
+  ) => {
+    const initializer = directC14DirectDeclarator(
+      functionName,
+      bindingName,
+    )?.init;
+    const elements = initializer?.arguments?.[0]?.elements;
+    return (
+      directC14ExactCall(initializer, "deepFreeze", 1) &&
+      initializer.arguments[0].type === "ArrayExpression" &&
+      elements.length === length &&
+      elements.every((element, index) =>
+        directC14ExactMember(element, rootName, [`${prefix}${index}`]),
+      )
+    );
+  };
+  const directC14MemberAtSites = () => {
+    const sites = [];
+    for (const [functionName, record] of functionRecords) {
+      directC14Walk(record.node.body, (node) => {
+        if (
+          node.type === "CallExpression" &&
+          !node.optional &&
+          node.callee.type === "MemberExpression" &&
+          !node.callee.computed &&
+          !node.callee.optional &&
+          node.callee.property.type === "Identifier" &&
+          node.callee.property.name === "at"
+        ) {
+          sites.push({ functionName, node });
+        }
+      });
+    }
+    return sites;
+  };
+  const directC14ExactAtCall = (
+    site,
+    functionName,
+    receiverMatcher,
+    argumentMatcher,
+  ) =>
+    site.functionName === functionName &&
+    site.node.arguments.length === 1 &&
+    receiverMatcher(site.node.callee.object) &&
+    argumentMatcher(site.node.arguments[0]);
+  let directC14AtTopology = undefined;
+  const directC14AtTopologyExact = () => {
+    if (directC14AtTopology !== undefined) return directC14AtTopology;
+    const reject = () => {
+      directC14AtTopology = null;
+      return null;
+    };
+    if (
+      !directC14AuditedSource ||
+      !directC14ExactFrozenOrdinalArray("admissionRightOrdinals", 14) ||
+      !directC14ExactFrozenOrdinalArray("recoverySlotOrdinals", 19) ||
+      !directC14ExactFrozenOrdinalArray("recoveryDigestOrdinals", 28) ||
+      !directC14ExactFrozenMemberArray(
+        "validateStartupReport",
+        "descriptors",
+        "report",
+        "fd",
+        8,
+      ) ||
+      !directC14ExactFrozenMemberArray(
+        "validateAdmissionRights",
+        "rights",
+        "report",
+        "right",
+        14,
+      ) ||
+      !directC14ExactFrozenMemberArray(
+        "validateRecoveryStateSlots",
+        "values",
+        "selection",
+        "state",
+        19,
+      ) ||
+      !directC14ExactParameterList("validateAdmissionRights", [
+        "report",
+        "capsule",
+        "state",
+      ]) ||
+      !directC14ExactParameterList("validateAdmissionRight", [
+        "rightValue",
+        "capsule",
+        "scopeSha256",
+        "expectedIndex",
+      ]) ||
+      !directC14ExactParameterList("validateRecoveryStateSlots", [
+        "selection",
+      ]) ||
+      !directC14ExactParameterList("recoveryStateDigests", []) ||
+      !directC14ExactCallTopology("validateAdmissionRights", [
+        {
+          callerName: "createCandidateContainmentGuardianAdmissionInputV1",
+          arguments: ["report", "capsule", "state"],
+        },
+      ]) ||
+      !directC14ExactCallTopology("validateAdmissionRight", [
+        {
+          callerName: "validateAdmissionRights",
+          arguments: [
+            "rightValue",
+            "capsule",
+            "scopeSha256",
+            "expectedIndex",
+          ],
+        },
+      ]) ||
+      !directC14ExactCallTopology("recoveryStateDigests", [
+        {
+          callerName: "validateRecoveryStateSlots",
+          arguments: [],
+        },
+      ]) ||
+      !directC14ExactCallTopology(
+        "verifyCandidateContainmentLaunchCapsuleV3",
+        [
+          {
+            callerName:
+              "createCandidateContainmentGuardianAdmissionInputV1",
+            arguments: ["capsuleBytes"],
+          },
+        ],
+      )
+    ) {
+      return reject();
+    }
+    const indexBinding = directC14DirectDeclarator(
+      "validateAdmissionRight",
+      "index",
+    )?.init;
+    const capsuleBinding = directC14DirectDeclarator(
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "capsule",
+    )?.init;
+    const digestsBinding = directC14DirectDeclarator(
+      "validateRecoveryStateSlots",
+      "digests",
+    )?.init;
+    if (
+      !directC14ExactCall(indexBinding, "boundedInteger", 5) ||
+      !directC14ExactMember(indexBinding.arguments[0], "right", ["index"]) ||
+      indexBinding.arguments[1].type !== "Literal" ||
+      indexBinding.arguments[1].value !== "admission right index" ||
+      indexBinding.arguments[2].type !== "Identifier" ||
+      indexBinding.arguments[2].name !== "expectedIndex" ||
+      indexBinding.arguments[3].type !== "Identifier" ||
+      indexBinding.arguments[3].name !== "expectedIndex" ||
+      indexBinding.arguments[4].type !== "Identifier" ||
+      indexBinding.arguments[4].name !== "failRights" ||
+      !directC14ExactCall(
+        capsuleBinding,
+        "verifyCandidateContainmentLaunchCapsuleV3",
+        1,
+      ) ||
+      capsuleBinding.arguments[0].type !== "Identifier" ||
+      capsuleBinding.arguments[0].name !== "capsuleBytes" ||
+      !directC14ExactCall(digestsBinding, "recoveryStateDigests", 0)
+    ) {
+      return reject();
+    }
+    const sites = directC14MemberAtSites();
+    if (sites.length !== 39) return reject();
+    const oneSite = (predicate) => {
+      const matches = sites.filter(predicate);
+      return matches.length === 1 ? matches[0].node : null;
+    };
+    const identifier = (name) => (node) =>
+      node.type === "Identifier" && node.name === name;
+    const literal = (value) => (node) =>
+      node.type === "Literal" && node.value === value;
+    const member = (root, path) => (node) =>
+      directC14ExactMember(node, root, path);
+    const descriptors = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateStartupReport",
+        identifier("descriptors"),
+        member("expected", ["fd"]),
+      ),
+    );
+    const admissionOrdinal = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateAdmissionRights",
+        identifier("entry"),
+        literal(0),
+      ),
+    );
+    const rights = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateAdmissionRights",
+        identifier("rights"),
+        identifier("expectedIndex"),
+      ),
+    );
+    const capsuleFile = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateAdmissionRight",
+        member("capsule", ["files"]),
+        identifier("index"),
+      ),
+    );
+    const recoveryOrdinal = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("entry"),
+        literal(0),
+      ),
+    );
+    const values = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("values"),
+        identifier("slot"),
+      ),
+    );
+    const previousValues = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("values"),
+        (node) =>
+          node.type === "BinaryExpression" &&
+          node.operator === "-" &&
+          node.left.type === "Identifier" &&
+          node.left.name === "slot" &&
+          node.right.type === "Literal" &&
+          node.right.value === 1,
+      ),
+    );
+    const previousOrdinal = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("previousEntry"),
+        literal(0),
+      ),
+    );
+    const previousDigests = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("digests"),
+        identifier("previousIndex"),
+      ),
+    );
+    const currentOrdinal = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("currentEntry"),
+        literal(0),
+      ),
+    );
+    const currentDigests = oneSite((site) =>
+      directC14ExactAtCall(
+        site,
+        "validateRecoveryStateSlots",
+        identifier("digests"),
+        identifier("currentIndex"),
+      ),
+    );
+    const ordinarySites = [
+      descriptors,
+      admissionOrdinal,
+      rights,
+      capsuleFile,
+      recoveryOrdinal,
+      values,
+      previousValues,
+      previousOrdinal,
+      previousDigests,
+      currentOrdinal,
+      currentDigests,
+    ];
+    if (ordinarySites.some((node) => node === null)) return reject();
+    const importedStates = sites
+      .filter(
+        (site) =>
+          site.functionName === "recoveryStateDigests" &&
+          site.node.callee.object.type === "Identifier" &&
+          site.node.callee.object.name ===
+            "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1" &&
+          site.node.arguments.length === 1 &&
+          site.node.arguments[0].type === "Literal",
+      )
+      .sort((left, right) => left.node.start - right.node.start);
+    if (
+      importedStates.length !== 28 ||
+      importedStates.some(
+        ({ node }, index) => node.arguments[0].value !== index,
+      )
+    ) {
+      return reject();
+    }
+    const recoveryReturn =
+      functionRecords.get("recoveryStateDigests")?.node.body.body[0];
+    const recoveryElements = recoveryReturn?.argument?.arguments?.[0]?.elements;
+    if (
+      functionRecords.get("recoveryStateDigests")?.node.body.body.length !==
+        1 ||
+      recoveryReturn?.type !== "ReturnStatement" ||
+      !directC14ExactCall(recoveryReturn.argument, "deepFreeze", 1) ||
+      recoveryReturn.argument.arguments[0].type !== "ArrayExpression" ||
+      recoveryElements.length !== 28 ||
+      recoveryElements.some(
+        (element, index) =>
+          !directC14ExactCall(element, "sha256", 1) ||
+          !directC14ExactCall(
+            element.arguments[0],
+            "canonicalJsonBytes",
+            1,
+          ) ||
+          element.arguments[0].arguments[0] !== importedStates[index].node,
+      )
+    ) {
+      return reject();
+    }
+    const recoveryRecord = functionRecords.get("validateRecoveryStateSlots");
+    const dominatingSlotGuards = [];
+    directC14Walk(recoveryRecord.node.body, (node) => {
+      if (
+        node.type === "IfStatement" &&
+        node.test.type === "BinaryExpression" &&
+        node.test.operator === ">" &&
+        node.test.left.type === "Identifier" &&
+        node.test.left.name === "slot" &&
+        node.test.right.type === "Literal" &&
+        node.test.right.value === 0
+      ) {
+        let containsPreviousValue = false;
+        directC14Walk(node.consequent, (candidate) => {
+          if (candidate === previousValues) containsPreviousValue = true;
+        });
+        if (containsPreviousValue) dominatingSlotGuards.push(node);
+      }
+    });
+    if (dominatingSlotGuards.length !== 1) return reject();
+    const classified = new Set([
+      ...ordinarySites,
+      ...importedStates.map(({ node }) => node),
+    ]);
+    if (classified.size !== 39 || sites.some(({ node }) => !classified.has(node))) {
+      return reject();
+    }
+    directC14AtTopology = Object.freeze({
+      descriptors,
+      rights,
+      capsuleFile,
+      values,
+      previousValues,
+      previousDigests,
+      currentDigests,
+      importedStates: new Set(importedStates.map(({ node }) => node)),
+    });
+    return directC14AtTopology;
+  };
+  const directC14JoinAtDomain = (receiver, indexes, memberName) => {
+    if (
+      receiver.arrayElements === null ||
+      indexes.some(
+        (index) =>
+          !Number.isSafeInteger(index) ||
+          index < 0 ||
+          index >= receiver.arrayElements.length,
+      )
+    ) {
+      fail(`unanalyzable string-bearing member transform ${memberName}`);
+    }
+    const elements = indexes.map((index) => receiver.arrayElements[index]);
+    if (
+      elements.some(
+        (element) =>
+          [
+            "protected",
+            "parameter",
+            "private-read",
+            "requirements-root",
+            "requirements-subtree",
+          ].includes(element.kind),
+      ) ||
+      elements.some((element) => element.kind !== elements[0].kind)
+    ) {
+      fail(`unanalyzable string-bearing member transform ${memberName}`);
+    }
+    const element = joinAbstractValues(...elements);
+    assertStaticStrings(element.staticStrings, "ordinary");
+    return exposeSummaryValue(element);
+  };
+  const directC14LaunchFileValue = () => {
+    const stringValue = makeCallerDerivedTypedValue("string", {
+      unknownMemberValue: false,
+    });
+    const numberValue = makeCallerDerivedTypedValue("number", {
+      unknownMemberValue: false,
+    });
+    const identityValue = makeValue("frozen", [], [], [], null, null, {
+      callerDerived: true,
+      typeofStrings: ["object"],
+    });
+    return makeValue(
+      "frozen",
+      [],
+      [],
+      [],
+      null,
+      [
+        ["role", stringValue],
+        ["byteLength", numberValue],
+        ["sha256", stringValue],
+        ["identity", identityValue],
+        ["initialOffset", numberValue],
+      ],
+      {
+        callerDerived: true,
+        typeofStrings: ["object"],
+      },
+    );
+  };
+  const directC14PinnedRecoveryStatesValue = () => {
+    const state = makeValue("frozen", [], [], [], null, null, {
+      known: true,
+      typeofStrings: ["object"],
+    });
+    const states = Array.from({ length: 28 }, () => state);
+    return makeValue("frozen", [], [], [], states, null, {
+      known: true,
+      arraySequence: true,
+      sequenceShape: true,
+      sequenceElement: state,
+      indexableShape: true,
+      indexElement: state,
+      iterableShape: true,
+      iterationElement: state,
+      typeofStrings: ["object"],
+    });
+  };
+  const directC14ExactAtSelection = (
+    callNode,
+    member,
+    argumentValues,
+    scope,
+    context,
+  ) => {
+    const topology = directC14AtTopologyExact();
+    if (topology === null) return null;
+    if (callNode === topology.descriptors) {
+      const domain = exactC14DescriptorsAtDomain(
+        callNode,
+        member,
+        argumentValues,
+        scope,
+        context,
+      );
+      return domain === null
+        ? null
+        : directC14JoinAtDomain(member.receiver, domain, "at");
+    }
+    if (callNode === topology.rights) {
+      return directC14JoinAtDomain(
+        member.receiver,
+        Array.from({ length: 14 }, (_, index) => index),
+        "at",
+      );
+    }
+    if (callNode === topology.capsuleFile) {
+      return directC14LaunchFileValue();
+    }
+    if (callNode === topology.values) {
+      return directC14JoinAtDomain(
+        member.receiver,
+        Array.from({ length: 19 }, (_, index) => index),
+        "at",
+      );
+    }
+    if (callNode === topology.previousValues) {
+      return directC14JoinAtDomain(
+        member.receiver,
+        Array.from({ length: 18 }, (_, index) => index),
+        "at",
+      );
+    }
+    if (
+      callNode === topology.previousDigests ||
+      callNode === topology.currentDigests
+    ) {
+      return directC14JoinAtDomain(
+        member.receiver,
+        Array.from({ length: 28 }, (_, index) => index),
+        "at",
+      );
+    }
+    return null;
+  };
+  const evaluateSafeMemberTransform = (
+    member,
+    argumentValues,
+    context,
+    callNode,
+    scope,
+  ) => {
     const { memberName, receiver } = member;
     if (
       ["at", "slice"].includes(memberName) &&
@@ -5801,6 +6984,14 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         }
         return immutableValue;
       }
+      const exactC14Selection = directC14ExactAtSelection(
+        callNode,
+        member,
+        argumentValues,
+        scope,
+        context,
+      );
+      if (exactC14Selection !== null) return exactC14Selection;
       const index = requireStaticIntegerArgument(argumentValues[0], memberName);
       if (receiver.exactStrings.length > 0) {
         const transformed = receiver.exactStrings.map((value) =>
@@ -6073,8 +7264,25 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         });
         return makeValue("protected");
       }
-      return evaluateExpression(argument, scope, context);
+      return evaluateExpression(argument, scope, {
+        ...context,
+        directCallNode: node,
+        directCallArgumentIndex: index,
+      });
     });
+    for (let index = 0; index < argumentValues.length; index += 1) {
+      if (
+        ["requirements-root", "requirements-subtree"].includes(
+          argumentValues[index].kind,
+        ) &&
+        !(
+          directBinding?.name === "exactRecord" &&
+          index === 1
+        )
+      ) {
+        fail("requirements subtree escape");
+      }
+    }
     const deterministicArgumentsKnown = argumentValues.every(
       ({ compileTime }, index) =>
         index === failureCallbackIndex || compileTime.known,
@@ -6381,9 +7589,14 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     if (node.callee.type !== "MemberExpression") {
       fail(`callee ${node.callee.type}`);
     }
-    const member = evaluateMember(node.callee, scope, context, {
+    const member = evaluateMember(
+      node.callee,
+      scope,
+      { ...context, directMemberCallNode: node },
+      {
       asCallee: true,
-    });
+      },
+    );
     if (member.kind === "private-method") {
       counters.privateOperationCount += 1;
       const functionName = context.functionName;
@@ -6413,22 +7626,42 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
               unknownMemberValue: true,
             });
       }
+      const exactLocalArguments =
+        node.arguments.length === 2 &&
+        node.arguments.every(
+          (argument) =>
+            argument.type === "Identifier" &&
+            resolve(scope, argument.name).kind === "local",
+        );
+      const legacyCommitNames =
+        exactLocalArguments &&
+        node.arguments[0].name === "result" &&
+        node.arguments[1].name === "metadata";
+      const candidateStateExtension =
+        member.storeName === "stateMetadata" &&
+        [
+          "initializeCandidateContainmentGuardianControlV1",
+          "reduceCandidateContainmentGuardianControlV1",
+        ].includes(functionName) &&
+        requirementsDependencies.size > 1 &&
+        functionRecords.has("stateProjectionMetadata");
       if (
         DIRECT_PRIVATE_STORE_OWNER_BY_FUNCTION.get(functionName) !==
           member.storeName ||
-        node.arguments.length !== 2 ||
-        node.arguments[0].type !== "Identifier" ||
-        node.arguments[0].name !== "result" ||
-        node.arguments[1].type !== "Identifier" ||
-        node.arguments[1].name !== "metadata" ||
-        resolve(scope, "result").kind !== "local" ||
-        resolve(scope, "metadata").kind !== "local"
+        !exactLocalArguments ||
+        (!legacyCommitNames && !candidateStateExtension)
       ) {
         fail(`private commit ${functionName}:${member.storeName}`);
       }
     }
     if (member.kind === "safe-method") {
-      return evaluateSafeMemberTransform(member, argumentValues, context);
+      return evaluateSafeMemberTransform(
+        member,
+        argumentValues,
+        context,
+        node,
+        scope,
+      );
     }
     if (member.kind === "ambient-method") {
       return makeValue("immutable", [], [], [], null, null, {
@@ -6744,25 +7977,32 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           right.compileTime.plusStrings.length > 0 ||
           left.compileTime.typeofStrings.includes("string") ||
           right.compileTime.typeofStrings.includes("string"));
+      const exactC14NumericAddition = directC14ExactNumericAddition(
+        node,
+        scope,
+        expressionContext,
+      );
+      const effectiveStringCoercion =
+        stringCoercion && !exactC14NumericAddition;
       const leftConversions =
         node.operator === "+" ? exactStringConversions(left) : [];
       const rightConversions =
         node.operator === "+" ? exactStringConversions(right) : [];
       if (
-        stringCoercion &&
+        effectiveStringCoercion &&
         (unknownStringOperand || unknownStringCoercionOperand)
       ) {
         fail("caller-drivable string concatenation");
       }
       if (
-        stringCoercion &&
+        effectiveStringCoercion &&
         ((left.compileTime.known && leftConversions.length === 0) ||
           (right.compileTime.known && rightConversions.length === 0))
       ) {
         fail("unanalyzable string-bearing binary + conversion");
       }
       const exactStrings =
-        stringCoercion &&
+        effectiveStringCoercion &&
         leftConversions.length > 0 &&
         rightConversions.length > 0
           ? combineExactStrings(leftConversions, rightConversions)
@@ -6779,16 +8019,17 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       ].includes(node.operator);
       const numericAddition =
         node.operator === "+" &&
-        !stringCoercion &&
-        isDefinitelyNonStringPrimitive(left) &&
-        isDefinitelyNonStringPrimitive(right);
+        (!effectiveStringCoercion || exactC14NumericAddition) &&
+        (exactC14NumericAddition ||
+          (isDefinitelyNonStringPrimitive(left) &&
+            isDefinitelyNonStringPrimitive(right)));
       const resultTypes =
         exactStrings.length > 0
           ? ["string"]
           : comparison
             ? ["boolean"]
             : node.operator === "+"
-              ? stringCoercion
+              ? effectiveStringCoercion
                 ? ["string"]
                 : numericAddition
                   ? ["number"]
@@ -6853,7 +8094,12 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     node,
     scope,
     context,
-    { module = false, forOf = false, forOfValue = null } = {},
+    {
+      module = false,
+      forOf = false,
+      forOfValue = null,
+      forOfSource = null,
+    } = {},
   ) => {
     mark(node, module ? "module-variable" : "local-variable");
     if (node.kind !== "const" || node.declarations.length !== 1) {
@@ -6871,11 +8117,13 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       binding = declare(scope, declarator.id.name, {
         kind: "local",
         value: null,
+        declarator,
       });
     }
     if (forOf) {
       if (declarator.init !== null) fail("for-of initializer");
       if (forOfValue === null) fail("for-of value summary");
+      binding.forOfSource = forOfSource;
       if (forOfValue.compileTime.iterationElement !== null) {
         binding.value = exposeSummaryValue(
           forOfValue.compileTime.iterationElement,
@@ -6928,17 +8176,19 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
     }
     if (declarator.init === null) fail("uninitialized const");
     const literalRole =
-      declarator.id.name ===
-      "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS"
+      requirementsDependencies.has(declarator.id.name)
         ? "requirements-value"
         : declarator.id.name ===
             "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
           ? "requirements-digest"
           : "ordinary";
-    const value = evaluateExpression(declarator.init, scope, {
+    let value = evaluateExpression(declarator.init, scope, {
       ...context,
       literalRole,
     });
+    if (module && requirementsDependencies.has(declarator.id.name)) {
+      value = sanitizeRequirementsValue(value, "requirements-root");
+    }
     if (binding.kind === "private-store") {
       if (
         value.kind !== "private-store-value" ||
@@ -7001,9 +8251,13 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         { functionBody: true },
       );
       if (fallsThrough) returnValues.push(exactUndefinedValue);
-      return returnValues.length === 0
+      const result = returnValues.length === 0
         ? exactUndefinedValue
         : joinAbstractValues(...returnValues);
+      if (directC14AuditedSource) {
+        directC14ContextuallyReachedLocalFunctions.add(binding.name);
+      }
+      return result;
     } finally {
       activeFunctionSummaries.delete(binding.name);
     }
@@ -7019,6 +8273,11 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
         node.argument === null
           ? exactUndefinedValue
           : evaluateExpression(node.argument, scope, context);
+      if (
+        ["requirements-root", "requirements-subtree"].includes(value.kind)
+      ) {
+        fail("requirements subtree escape");
+      }
       if (Array.isArray(context.returnValues)) {
         context.returnValues.push(value);
       }
@@ -7065,6 +8324,7 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
       visitVariable(node.left, loopScope, context, {
         forOf: true,
         forOfValue,
+        forOfSource: node.right,
       });
       visitBlock(node.body, loopScope, context);
       return true;
@@ -7095,6 +8355,13 @@ function directAssertContextualGrammar(program, expectedNodeCount) {
           unknownMemberValue: true,
         }),
       });
+    }
+    if (
+      directC14AuditedSource &&
+      directC14ContextuallyReachedLocalFunctions.has(node.id.name) &&
+      functionRecords.get(node.id.name)?.exported === false
+    ) {
+      return;
     }
     visitBlock(
       node.body,
@@ -7265,10 +8532,18 @@ function directAssertExactSurface(program, weakMapConstructions) {
   });
 }
 
-function assertDirectC14FragmentProvenance(program) {
+function evaluateDirectC14Provenance(
+  program,
+  c14ProvenanceMode = "fragment-control",
+) {
   const fail = (code) => {
     throw new Error(`direct static gate: contextual provenance ${code}`);
   };
+  const candidateActivation =
+    c14ProvenanceMode === DIRECT_C14_CANDIDATE_ACTIVATION_MODE;
+  if (!candidateActivation && c14ProvenanceMode !== "fragment-control") {
+    fail("UNRECOGNIZED_C14_PROVENANCE_MODE");
+  }
   const directRequirementsOracle = JSON.parse(
     readFileSync(REQUIREMENTS_URL, "utf8"),
   );
@@ -7308,6 +8583,16 @@ function assertDirectC14FragmentProvenance(program) {
     ...directRequirementsOracle.frameFields.stateProjection,
   ]);
   const unsignedStateFields = Object.freeze(stateFields.slice(0, -1));
+  const stateMetadataFields = Object.freeze([
+    "mode",
+    "phase",
+    "stateSha256",
+    "eventCount",
+  ]);
+  const stateCommitOwners = new Set([
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ]);
   const failureArgumentIndex = new Map([
     ["boundedInteger", 4],
     ["copyBoundedBuffer", 3],
@@ -7490,6 +8775,9 @@ function assertDirectC14FragmentProvenance(program) {
   const exactRootAvailable =
     rootStaticValue !== undefined &&
     digest(rootStaticValue) === EXPECTED_REQUIREMENTS_SHA256;
+  if (candidateActivation && !exactRootAvailable) {
+    fail("REQUIREMENTS_ROOT_NOT_EXACT");
+  }
   if (
     requirementsExportInitializer?.type === "Identifier" &&
     !exactRootAvailable
@@ -7595,6 +8883,17 @@ function assertDirectC14FragmentProvenance(program) {
   const reachedLocalFunctions = new Set();
   const localCallerClasses = new Map();
   const activeFunctions = [];
+  let activeExportedFunction = null;
+  const activationStateOwners = new Map(
+    [...stateCommitOwners].map((name) => [
+      name,
+      {
+        taggedStates: new Set(),
+        commits: [],
+        verified: false,
+      },
+    ]),
+  );
 
   const exactFailureFunction = (name) => {
     const fn = localFunctions.get(name);
@@ -7734,6 +9033,68 @@ function assertDirectC14FragmentProvenance(program) {
     }
     return keys;
   };
+  const stateMetadataReturnArray = () => {
+    const fn = localFunctions.get("stateProjectionMetadata");
+    if (
+      fn === undefined ||
+      fn.params.length !== 1 ||
+      fn.params[0].type !== "Identifier" ||
+      fn.params[0].name !== "state" ||
+      fn.body.body.length !== 1 ||
+      fn.body.body[0].type !== "ReturnStatement"
+    ) {
+      return null;
+    }
+    const deepFreezeCall = fn.body.body[0].argument;
+    if (
+      deepFreezeCall?.type !== "CallExpression" ||
+      deepFreezeCall.optional ||
+      deepFreezeCall.callee.type !== "Identifier" ||
+      deepFreezeCall.callee.name !== "deepFreeze" ||
+      deepFreezeCall.arguments.length !== 1
+    ) {
+      return null;
+    }
+    const nullRecordCall = deepFreezeCall.arguments[0];
+    if (
+      nullRecordCall?.type !== "CallExpression" ||
+      nullRecordCall.optional ||
+      nullRecordCall.callee.type !== "Identifier" ||
+      nullRecordCall.callee.name !== "nullRecord" ||
+      nullRecordCall.arguments.length !== 1 ||
+      nullRecordCall.arguments[0].type !== "ArrayExpression"
+    ) {
+      return null;
+    }
+    return nullRecordCall.arguments[0];
+  };
+  const exactStateMetadataArray = () => {
+    const arrayNode = stateMetadataReturnArray();
+    if (arrayNode === null) return null;
+    const keys = recordKeys(arrayNode);
+    if (keys?.join("\u0000") !== stateMetadataFields.join("\u0000")) {
+      return null;
+    }
+    for (let index = 0; index < stateMetadataFields.length; index += 1) {
+      const entry = arrayNode.elements[index];
+      const field = stateMetadataFields[index];
+      const child = entry.elements[1];
+      if (
+        entry.elements[0]?.type !== "Literal" ||
+        entry.elements[0].value !== field ||
+        child?.type !== "MemberExpression" ||
+        child.optional ||
+        child.computed ||
+        child.object.type !== "Identifier" ||
+        child.object.name !== "state" ||
+        child.property.type !== "Identifier" ||
+        child.property.name !== field
+      ) {
+        return null;
+      }
+    }
+    return arrayNode;
+  };
   const evaluateRecordEntries = (arrayNode, environment) => {
     const keys = recordKeys(arrayNode);
     if (keys === null)
@@ -7777,26 +9138,98 @@ function assertDirectC14FragmentProvenance(program) {
         child.kind === "authority-lookalike"
       ) {
         fail("AUTHORITY_WRONG_PLACEMENT");
+      } else if (candidateActivation && child.kind === "state-metadata") {
+        fail("STATE_COMMIT_METADATA_NOT_EXACT");
       }
     }
+    const evaluatingStateMetadata =
+      candidateActivation &&
+      activeFunctions.at(-1) === "stateProjectionMetadata" &&
+      stateMetadataReturnArray() === arrayNode;
+    if (evaluatingStateMetadata) {
+      if (exactStateMetadataArray() !== arrayNode) {
+        fail("STATE_METADATA_NOT_EXACT");
+      }
+      const stateProjection = children[0]?.stateProjection;
+      if (stateProjection?.kind !== "state-projection") {
+        fail("STATE_METADATA_STATE_NOT_EXACT");
+      }
+      const exactChildren = children.every(
+        (child, index) =>
+          child.kind === "state-field" &&
+          child.field === stateMetadataFields[index] &&
+          child.stateProjection === stateProjection,
+      );
+      if (!exactChildren) {
+        fail("STATE_METADATA_NOT_EXACT");
+      }
+      return value("state-metadata", {
+        keys,
+        protectedSlots,
+        tainted,
+        entryShapes,
+        stateProjection,
+      });
+    }
+    const fragmentCandidateExtensionRecord =
+      !candidateActivation &&
+      (activeFunctions.at(-1) === "stateProjectionMetadata" ||
+        keys.join("\u0000") === stateMetadataFields.join("\u0000"));
+    if (fragmentCandidateExtensionRecord) {
+      return value("record", {
+        keys,
+        protectedSlots,
+        tainted,
+        entryShapes,
+      });
+    }
     if (keys.includes("stateSha256")) {
-      if (keys.join("\u0000") !== stateFields.join("\u0000")) {
-        fail("STATE_PREIMAGE_NOT_EXACT");
+      const exactPublicState =
+        keys.join("\u0000") === stateFields.join("\u0000");
+      if (exactPublicState) {
+        const stateDigest = children.at(-1);
+        if (
+          stateDigest.kind !== "state-digest" ||
+          stateDigest.preimageShapes.join("\u0000") !==
+            entryShapes.slice(0, -1).join("\u0000")
+        ) {
+          fail("STATE_PREIMAGE_NOT_EXACT");
+        }
+        const stateProjection = value(
+          candidateActivation ? "state-projection" : "record",
+          {
+            keys,
+            protectedSlots,
+            tainted,
+            entryShapes,
+          },
+        );
+        if (
+          candidateActivation &&
+          stateCommitOwners.has(activeExportedFunction)
+        ) {
+          activationStateOwners
+            .get(activeExportedFunction)
+            .taggedStates.add(stateProjection);
+        }
+        return stateProjection;
       }
-      const stateDigest = children.at(-1);
       if (
-        stateDigest.kind !== "state-digest" ||
-        stateDigest.preimageShapes.join("\u0000") !==
-          entryShapes.slice(0, -1).join("\u0000")
+        candidateActivation &&
+        !stateCommitOwners.has(activeExportedFunction)
       ) {
-        fail("STATE_PREIMAGE_NOT_EXACT");
+        fail("STATE_SHA256_RECORD_NOT_ALLOWED");
       }
+      fail("STATE_PREIMAGE_NOT_EXACT");
     }
     return value("record", {
       keys,
       protectedSlots,
       tainted,
       entryShapes,
+      stateSlots: keys.flatMap((key, index) =>
+        key === "state" ? [children[index]] : [],
+      ),
     });
   };
   const requireOrdinaryArgument = (
@@ -7812,6 +9245,9 @@ function assertDirectC14FragmentProvenance(program) {
     }
     if (observed.kind === "requirements-array" && !allowRequirementsArray) {
       fail("REQUIREMENTS_PATH_ESCAPE");
+    }
+    if (candidateActivation && observed.kind === "state-metadata") {
+      fail("STATE_COMMIT_METADATA_NOT_EXACT");
     }
     if (observed.kind === "protected") fail("AUTHORITY_GENERAL_SINK_ESCAPE");
     if (
@@ -7903,6 +9339,15 @@ function assertDirectC14FragmentProvenance(program) {
       if (receiver.kind === "protected") {
         fail("AUTHORITY_DIRECT_ESCAPE");
       }
+      if (candidateActivation && receiver.kind === "state-projection") {
+        if (!stateFields.includes(property)) {
+          fail("STATE_PREIMAGE_NOT_EXACT");
+        }
+        return value("state-field", {
+          field: property,
+          stateProjection: receiver,
+        });
+      }
       if (receiver.kind === "decoded") {
         if (property === "value") return RAW;
         if (property === "bytes") return SAFE;
@@ -7947,6 +9392,24 @@ function assertDirectC14FragmentProvenance(program) {
         if (target.kind === "function") fail("LOCAL_CALL_INDIRECT");
       }
       if (node.callee.type === "MemberExpression") {
+        const exactStateCommit =
+          candidateActivation &&
+          stateCommitOwners.has(activeExportedFunction) &&
+          node.callee.object.type === "Identifier" &&
+          node.callee.object.name === "stateMetadata" &&
+          !node.callee.computed &&
+          !node.callee.optional &&
+          node.callee.property.type === "Identifier" &&
+          node.callee.property.name === "set";
+        if (exactStateCommit) {
+          const arguments_ = node.arguments.map((argument) =>
+            evaluateExpression(argument, environment),
+          );
+          activationStateOwners
+            .get(activeExportedFunction)
+            .commits.push(Object.freeze({ arguments_ }));
+          return SAFE;
+        }
         const receiver = evaluateExpression(node.callee.object, environment);
         const method = memberProperty(node.callee);
         if (receiver.kind === "requirements-array") {
@@ -8002,6 +9465,13 @@ function assertDirectC14FragmentProvenance(program) {
         const arguments_ = node.arguments.map((argument) =>
           evaluateExpression(argument, environment),
         );
+        if (
+          candidateActivation &&
+          arguments_.some(({ kind }) => kind === "state-projection") &&
+          calleeName !== "stateProjectionMetadata"
+        ) {
+          fail("STATE_COMMIT_KEY_NOT_EXACT");
+        }
         if (arguments_.some(({ kind }) => kind === "protected")) {
           fail("AUTHORITY_GENERAL_SINK_ESCAPE");
         }
@@ -8267,6 +9737,8 @@ function assertDirectC14FragmentProvenance(program) {
     const name = fn.id.name;
     if (activeFunctions.includes(name)) fail("LOCAL_CALL_RECURSIVE");
     activeFunctions.push(name);
+    const previousExportedFunction = activeExportedFunction;
+    if (exported) activeExportedFunction = name;
     if (!exported) reachedLocalFunctions.add(name);
     const environment = new Map();
     for (let index = 0; index < fn.params.length; index += 1) {
@@ -8276,6 +9748,38 @@ function assertDirectC14FragmentProvenance(program) {
       }
     }
     const returned = evaluateStatements(fn.body.body, environment, exported);
+    if (candidateActivation && exported && stateCommitOwners.has(name)) {
+      const observation = activationStateOwners.get(name);
+      if (observation.taggedStates.size === 0) {
+        fail("STATE_PREIMAGE_NOT_EXACT");
+      }
+      if (observation.commits.length !== 1) {
+        fail("STATE_COMMIT_KEY_NOT_EXACT");
+      }
+      const [key, metadata] = observation.commits[0].arguments_;
+      if (
+        !observation.taggedStates.has(key) ||
+        key?.kind !== "state-projection"
+      ) {
+        fail("STATE_COMMIT_KEY_NOT_EXACT");
+      }
+      if (
+        metadata?.kind !== "state-metadata" ||
+        metadata.stateProjection !== key
+      ) {
+        fail("STATE_COMMIT_METADATA_NOT_EXACT");
+      }
+      const returnedStateIdentityExact =
+        returned === key ||
+        (returned?.kind === "record" &&
+          returned.stateSlots?.length === 1 &&
+          returned.stateSlots[0] === key);
+      if (!returnedStateIdentityExact) {
+        fail("STATE_COMMIT_KEY_NOT_EXACT");
+      }
+      observation.verified = true;
+    }
+    activeExportedFunction = previousExportedFunction;
     activeFunctions.pop();
     return returned;
   };
@@ -8300,17 +9804,35 @@ function assertDirectC14FragmentProvenance(program) {
   for (const classes of localCallerClasses.values()) {
     if (classes.has("raw")) fail("LOCAL_CALLER_UNTRUSTED");
   }
+  if (
+    candidateActivation &&
+    [...activationStateOwners.values()].some(({ verified }) => !verified)
+  ) {
+    fail("STATE_COMMIT_KEY_NOT_EXACT");
+  }
   return Object.freeze({
-    mode: "fragment-control",
+    mode: c14ProvenanceMode,
     rootBindingCount: rootNames.size,
     localFunctionCount: localFunctions.size,
     localCallerCount: localCallerClasses.size,
   });
 }
 
+function assertDirectC14FragmentProvenance(program) {
+  return evaluateDirectC14Provenance(program, "fragment-control");
+}
+
+function assertDirectC14CandidateActivationProvenance(program) {
+  return evaluateDirectC14Provenance(
+    program,
+    DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+  );
+}
+
 function independentStaticAudit(
   sourceBytes,
   c14ProvenanceMode = "candidate-complete",
+  stageAudit = null,
 ) {
   if (directParse === null) {
     throw new Error(
@@ -8333,12 +9855,39 @@ function independentStaticAudit(
       c14Provenance: assertDirectC14FragmentProvenance(program),
     });
   }
+  if (c14ProvenanceMode === DIRECT_C14_CANDIDATE_ACTIVATION_MODE) {
+    let fragmentRejection = null;
+    try {
+      assertDirectC14FragmentProvenance(program);
+    } catch (error) {
+      fragmentRejection = error;
+    }
+    if (stageAudit !== null) {
+      stageAudit.c14FragmentPolicy = Object.freeze({
+        schema: DIRECT_C14_PRODUCTION_POLICY_SCHEMA,
+        mode: "fragment-control",
+        candidateMode: DIRECT_C14_CANDIDATE_ACTIVATION_MODE,
+        sourceSha256: byteDigest(sourceBytes),
+        accepted: fragmentRejection === null,
+        rejection: fragmentRejection?.message ?? null,
+      });
+    }
+    if (fragmentRejection !== null) throw fragmentRejection;
+    return Object.freeze({
+      c14Provenance:
+        assertDirectC14CandidateActivationProvenance(program),
+    });
+  }
   const walkAudit = directWalkAst(program, source);
   const surface = directAssertExactSurface(
     program,
     walkAudit.weakMapConstructions,
   );
-  const scope = directAssertContextualGrammar(program, walkAudit.nodeCount);
+  const scope = directAssertContextualGrammar(
+    program,
+    walkAudit.nodeCount,
+    byteDigest(sourceBytes),
+  );
   return Object.freeze({
     ...surface,
     ...scope,
@@ -9416,7 +10965,7 @@ const DIRECT_C14_CANDIDATE_STATE_SHA256_RECORD_REJECTION =
 const EXPECTED_DIRECT_C14_FRAGMENT_CONTROL_PROJECTION_SHA256 =
   "b6e978a81e9dc80d3383bf6661caa737485966ed13e801fc3f5532f5676e607b";
 const EXPECTED_DIRECT_C14_CANDIDATE_ACTIVATION_PROJECTION_SHA256 =
-  "9ab99ecba7c172747732b72c2c45745cc276373d53b86be2d8537cabb65c13f8";
+  "38fe7b40ab848afd0abf06ed886c39f6467ce5169ce5c6253db2953106f64fde";
 const EXPECTED_DIRECT_C14_PRODUCTION_POLICY_PROJECTION_SHA256 =
   "8721dd53b0df5c78f36e0af035e0ce40795d375f5bfeac356cba0e121b719f91";
 const DIRECT_C14_CANDIDATE_STATE_COMMIT_OWNERS = Object.freeze([
@@ -9477,6 +11026,7 @@ function directCandidateActivationStateBody({
   untaggedStateCommit = false,
   wrongCommitKey = false,
   wrongCommitMetadata = false,
+  wrongTransitionState = false,
 } = {}) {
   if (untaggedStateCommit) {
     return "const projection = deepFreeze(nullRecord([])); const privateMetadata = deepFreeze(nullRecord([])); stateMetadata.set(projection, privateMetadata); return projection;";
@@ -9520,6 +11070,27 @@ function directCandidateActivationStateBody({
       "stateMetadata.set(projection, projection);",
     );
   }
+  if (wrongTransitionState) {
+    const projectionStart = body.indexOf("const projection = ");
+    const projectionEnd = body.indexOf(
+      "; const metadata =",
+      projectionStart,
+    );
+    assert.equal(
+      projectionStart >= 0 && projectionEnd > projectionStart,
+      true,
+    );
+    const projectionExpression = body.slice(
+      projectionStart + "const projection = ".length,
+      projectionEnd,
+    );
+    body = body.replace(
+      "; const metadata = stateProjectionMetadata(projection);",
+      `; const wrongProjection = ${projectionExpression}; const transition = deepFreeze(nullRecord([["state", wrongProjection]])); const metadata = stateProjectionMetadata(projection);`,
+    );
+    assert.equal(body.includes("return projection;"), true);
+    body = body.replace("return projection;", "return transition;");
+  }
   return body;
 }
 
@@ -9558,6 +11129,7 @@ function directCandidateActivationSkeleton({
   untaggedStateCommit = false,
   reduceWrongCommitKey = false,
   reduceWrongCommitMetadata = false,
+  reduceWrongTransitionState = false,
   metadataMutation = null,
   startupBody = "return null;",
   verificationBody = "return null;",
@@ -9598,6 +11170,7 @@ function directCandidateActivationSkeleton({
           untaggedStateCommit,
           wrongCommitKey: reduceWrongCommitKey,
           wrongCommitMetadata: reduceWrongCommitMetadata,
+          wrongTransitionState: reduceWrongTransitionState,
         }),
       ],
       ["createCandidateContainmentGuardianStartupV1", startupBody],
@@ -9726,6 +11299,39 @@ function directCandidateActivationControls() {
       expectedCandidateAccepted: false,
       expectedCandidateRejection:
         DIRECT_C14_CANDIDATE_STATE_COMMIT_METADATA_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-returned-transition-has-distinct-state",
+      source: directCandidateActivationSkeleton({
+        reduceWrongTransitionState: true,
+      }),
+      expectedLegacyAccepted: true,
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: DIRECT_C14_CANDIDATE_STATE_COMMIT_REJECTION,
+    }),
+    Object.freeze({
+      id: "direct-candidate-multivalued-slice-index-rejected",
+      source: directCandidateActivationSkeleton({
+        verificationBody:
+          "const index = startupProjection ? 0 : 1; const values = [0, 1]; const sliced = values.slice(index); return sliced;",
+      }),
+      expectedLegacyAccepted: false,
+      expectedLegacyRejection:
+        "direct static gate: contextual unanalyzable string-bearing member transform slice",
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: null,
+    }),
+    Object.freeze({
+      id: "direct-candidate-multivalued-at-mutable-join-rejected",
+      source: directCandidateActivationSkeleton({
+        verificationBody:
+          "const index = guardianContract.limits.startupReportMaximumBytes ? 0 : 1; const values = [[], null]; return values.at(index);",
+      }),
+      expectedLegacyAccepted: false,
+      expectedLegacyRejection:
+        "direct static gate: contextual unanalyzable string-bearing member transform at",
+      expectedCandidateAccepted: false,
+      expectedCandidateRejection: null,
     }),
     Object.freeze({
       id: "direct-candidate-unrelated-state-sha256-record",
@@ -10066,8 +11672,8 @@ function assertDirectCandidateActivationContract() {
     EXPECTED_DIRECT_C14_FRAGMENT_CONTROL_PROJECTION_SHA256,
   );
   const controls = directCandidateActivationControls();
-  assert.equal(controls.length, 25);
-  assert.equal(new Set(controls.map(({ id }) => id)).size, 25);
+  assert.equal(controls.length, 28);
+  assert.equal(new Set(controls.map(({ id }) => id)).size, 28);
   assert.deepEqual(DIRECT_C14_CANDIDATE_STATE_COMMIT_OWNERS, [
     "initializeCandidateContainmentGuardianControlV1",
     "reduceCandidateContainmentGuardianControlV1",
@@ -10078,6 +11684,13 @@ function assertDirectCandidateActivationContract() {
     "stateSha256",
     "eventCount",
   ]);
+  for (const { source, expectedLegacyRejection } of controls) {
+    if (expectedLegacyRejection !== undefined) {
+      assert.throws(() => independentStaticAudit(Buffer.from(source, "utf8")), {
+        message: expectedLegacyRejection,
+      });
+    }
+  }
   const activationProjection = directCandidateActivationProjection(controls);
   assert.equal(
     digest(activationProjection),
