@@ -1,15 +1,24 @@
 #!/usr/bin/env node
 
-import { COMMANDS } from "../src/command-registry.mjs";
+import {
+  COMMANDS,
+  resolveDormantTaskV2Command,
+} from "../src/command-registry.mjs";
 import { doctorReport } from "../src/doctor.mjs";
 import { diagnoseFactory } from "../src/factory-diagnostics.mjs";
 import { verifyApplicationReceipt } from "../src/receipts/application.mjs";
 import { RouterHistory } from "../src/routing/history.mjs";
 import {
   replayTaskProgrammeReceipt,
+  replayTaskProgrammeReceiptV2,
   runTaskProgramme,
+  runTaskProgrammeV2,
 } from "../src/runtime/g12-programme.mjs";
-import { runTaskPreflight } from "../src/runtime/preflight.mjs";
+import {
+  TASK_V2_EXECUTION_GATE_REQUEST,
+  runTaskPreflight,
+  runTaskPreflightV2,
+} from "../src/runtime/preflight.mjs";
 import {
   isIgnoredRuntimePath,
   readPrivateRuntimeArtifact,
@@ -51,6 +60,24 @@ function print(value) {
 function applyVerdictExit(result) {
   if (result.final.verdict === "REJECT") process.exitCode = 3;
   if (result.final.verdict === "INCONCLUSIVE") process.exitCode = 4;
+}
+
+function applyDormantUnavailableExit(result) {
+  const keys =
+    result !== null && typeof result === "object"
+      ? Reflect.ownKeys(result)
+      : [];
+  if (
+    keys.length !== 2 ||
+    keys[0] !== "status" ||
+    keys[1] !== "reason" ||
+    !Object.isFrozen(result) ||
+    result.status !== "unavailable" ||
+    result.reason !== "native-adapter-unavailable"
+  ) {
+    throw new Error("dormant schema-v2 command did not fail closed");
+  }
+  process.exitCode = 4;
 }
 
 function publicPreflightResult(profile, preflight) {
@@ -112,6 +139,24 @@ async function dispatchRegisteredTask(profile, args) {
   return false;
 }
 
+function dispatchDormantTaskV2(args) {
+  const command = resolveDormantTaskV2Command(args[0], args[1], args[2]);
+  if (command === null) return false;
+  let result;
+  if (command.action === "preflight") {
+    result = runTaskPreflightV2(TASK_V2_EXECUTION_GATE_REQUEST, args);
+  } else if (command.action === "run") {
+    result = runTaskProgrammeV2(TASK_V2_EXECUTION_GATE_REQUEST, args);
+  } else if (command.action === "replay") {
+    result = replayTaskProgrammeReceiptV2(TASK_V2_EXECUTION_GATE_REQUEST, args);
+  } else {
+    throw new Error("dormant schema-v2 command action is not exact");
+  }
+  applyDormantUnavailableExit(result);
+  print(result);
+  return true;
+}
+
 async function main(args) {
   if (args.length === 0 || args[0] === "help" || args[0] === "--help") {
     process.stdout.write(`${help()}\n`);
@@ -124,6 +169,11 @@ async function main(args) {
   if (args[0] === "doctor" && args.length === 1) {
     print(await doctorReport());
     return;
+  }
+
+  if (args[0] === "dormant") {
+    if (dispatchDormantTaskV2(args)) return;
+    throw new Error("unknown dormant command");
   }
 
   if (registeredTaskSlugs.has(args[0])) {

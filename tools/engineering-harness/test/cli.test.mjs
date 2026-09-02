@@ -16,7 +16,33 @@ import {
 } from "../src/command-registry.mjs";
 
 const execute = promisify(execFile);
-const executable = new URL("../bin/oxigraph-engineering-harness.mjs", import.meta.url);
+const executable = new URL(
+  "../bin/oxigraph-engineering-harness.mjs",
+  import.meta.url,
+);
+const packageRoot = new URL("..", import.meta.url);
+const unavailableOutput = `${JSON.stringify(
+  {
+    status: "unavailable",
+    reason: "native-adapter-unavailable",
+  },
+  null,
+  2,
+)}\n`;
+const dormantCliFixtures = Object.freeze(
+  ["preflight", "run", "replay"].map((action) => {
+    const argv = Object.freeze(["dormant", "harness-create-exact-v2", action]);
+    return Object.freeze({
+      action,
+      argv,
+      packageScript: `dormant:harness-create-exact-v2:${action}`,
+      packageCommand: `node bin/oxigraph-engineering-harness.mjs ${argv.join(" ")}`,
+      stdout: unavailableOutput,
+      stderr: "",
+      exitCode: 4,
+    });
+  }),
+);
 
 const dormantCommandKeys = Object.freeze([
   "id",
@@ -83,7 +109,10 @@ test("canonical CLI registry exposes programme, replay, receipt, and history com
     assert.deepEqual(Object.keys(entry), ["id", "usage"]);
     assert.equal(Object.isFrozen(entry), true);
   }
-  const { stdout, stderr } = await execute(process.execPath, [executable.pathname, "help"]);
+  const { stdout, stderr } = await execute(process.execPath, [
+    executable.pathname,
+    "help",
+  ]);
   assert.equal(stderr, "");
   assert.equal(
     stdout,
@@ -140,8 +169,7 @@ test("dormant schema-v2 command literals are exact and separate from active auth
     },
     {
       id: "dormant.harness-create-exact-v2.run",
-      usage:
-        "dormant harness-create-exact-v2 run [--run-id <safe-id>]",
+      usage: "dormant harness-create-exact-v2 run [--run-id <safe-id>]",
       taskId: "harness-create-exact-v2-control",
       taskSlug: "harness-create-exact-v2",
       action: "run",
@@ -152,8 +180,7 @@ test("dormant schema-v2 command literals are exact and separate from active auth
     },
     {
       id: "dormant.harness-create-exact-v2.replay",
-      usage:
-        "dormant harness-create-exact-v2 replay --receipt <runtime-name>",
+      usage: "dormant harness-create-exact-v2 replay --receipt <runtime-name>",
       taskId: "harness-create-exact-v2-control",
       taskSlug: "harness-create-exact-v2",
       action: "replay",
@@ -165,8 +192,14 @@ test("dormant schema-v2 command literals are exact and separate from active auth
   ];
 
   assert.deepEqual(DORMANT_TASK_V2_COMMANDS, expected);
-  assert.deepEqual(dormantTaskV2CommandIds(), expected.map(({ id }) => id));
-  assert.equal(validateDormantTaskV2CommandRegistry(DORMANT_TASK_V2_COMMANDS), true);
+  assert.deepEqual(
+    dormantTaskV2CommandIds(),
+    expected.map(({ id }) => id),
+  );
+  assert.equal(
+    validateDormantTaskV2CommandRegistry(DORMANT_TASK_V2_COMMANDS),
+    true,
+  );
   assert.equal(Object.isFrozen(DORMANT_TASK_V2_COMMANDS), true);
   for (const [index, command] of DORMANT_TASK_V2_COMMANDS.entries()) {
     assert.deepEqual(Object.keys(command), dormantCommandKeys);
@@ -180,7 +213,10 @@ test("dormant schema-v2 command literals are exact and separate from active auth
 
   assert.equal(COMMANDS.length, 33);
   assert.equal(commandIds().length, 33);
-  assert.doesNotMatch(JSON.stringify(COMMANDS), /dormant|harness-create|g2\.2/u);
+  assert.doesNotMatch(
+    JSON.stringify(COMMANDS),
+    /dormant|harness-create|g2\.2/u,
+  );
   assert.doesNotMatch(JSON.stringify(DORMANT_TASK_V2_COMMANDS), /g2\.2/u);
   for (const selection of [
     ["active", "harness-create-exact-v2", "preflight"],
@@ -268,12 +304,7 @@ test("dormant schema-v2 command registry rejects hostile authority trap-free", (
     },
   });
   assert.throws(
-    () =>
-      validateDormantTaskV2CommandRegistry([
-        accessor,
-        valid[1],
-        valid[2],
-      ]),
+    () => validateDormantTaskV2CommandRegistry([accessor, valid[1], valid[2]]),
     /plain own-data record/u,
   );
   assert.equal(getterCalls, 0);
@@ -300,12 +331,7 @@ test("dormant schema-v2 command registry rejects hostile authority trap-free", (
   ]);
   for (const command of [hidden, symbolic, reordered]) {
     assert.throws(
-      () =>
-        validateDormantTaskV2CommandRegistry([
-          command,
-          valid[1],
-          valid[2],
-        ]),
+      () => validateDormantTaskV2CommandRegistry([command, valid[1], valid[2]]),
       /plain own-data record/u,
     );
   }
@@ -348,25 +374,103 @@ test("dormant schema-v2 command registry rejects hostile authority trap-free", (
   );
 
   assert.throws(() => DORMANT_TASK_V2_COMMANDS.push(valid[0]), TypeError);
-  assert.throws(
-    () => {
-      DORMANT_TASK_V2_COMMANDS[0].productAuthority = true;
-    },
-    TypeError,
-  );
+  assert.throws(() => {
+    DORMANT_TASK_V2_COMMANDS[0].productAuthority = true;
+  }, TypeError);
 });
 
 test("unknown CLI commands fail closed with the operational exit code", async () => {
+  await assert.rejects(
+    execute(process.execPath, [executable.pathname, "g1.2", "publish"]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /unknown command:/u);
+      assert.doesNotMatch(error.stderr, /ENOENT|native-adapter/u);
+      return true;
+    },
+  );
+
   for (const args of [
-    ["g1.2", "publish"],
-    ["dormant", "harness-create-exact-v2", "preflight"],
+    ["dormant", "harness-create-exact-v2", "verify"],
+    ["dormant", "g2.2", "preflight"],
+    ["dormant", "../secret-selector-input", "preflight"],
+    ["dormant", "HARNESS-CREATE-EXACT-V2", "run"],
   ]) {
     await assert.rejects(
       execute(process.execPath, [executable.pathname, ...args]),
       (error) => {
         assert.equal(error.code, 2);
-        assert.match(error.stderr, /unknown command:/u);
-        assert.doesNotMatch(error.stderr, /ENOENT|native-adapter/u);
+        assert.match(error.stderr, /unknown dormant command/u);
+        assert.doesNotMatch(
+          error.stderr,
+          /secret-selector-input|ENOENT|native-adapter/u,
+        );
+        assert.equal(error.stdout, "");
+        return true;
+      },
+    );
+  }
+});
+
+test("dormant schema-v2 CLI dispatches only to the exact unavailable gate", async () => {
+  for (const fixture of dormantCliFixtures) {
+    await assert.rejects(
+      execute(process.execPath, [executable.pathname, ...fixture.argv]),
+      (error) => {
+        assert.equal(error.code, fixture.exitCode);
+        assert.equal(error.stdout, fixture.stdout);
+        assert.equal(error.stderr, fixture.stderr);
+        assert.deepEqual(
+          JSON.parse(error.stdout),
+          JSON.parse(unavailableOutput),
+        );
+        return true;
+      },
+    );
+  }
+
+  const source = await readFile(executable, "utf8");
+  assert.match(source, /resolveDormantTaskV2Command/u);
+  assert.match(
+    source,
+    /runTaskPreflightV2\(TASK_V2_EXECUTION_GATE_REQUEST, args\)/u,
+  );
+  assert.match(
+    source,
+    /runTaskProgrammeV2\(TASK_V2_EXECUTION_GATE_REQUEST, args\)/u,
+  );
+  assert.doesNotMatch(
+    source,
+    /application-receipt-v7-replay|qualification\/|verifyApplicationReceiptV7/u,
+  );
+});
+
+test("dormant CLI gates before parsing every deferred run and replay option", async () => {
+  const oversized = "must-remain-deferred-".repeat(64);
+  for (const tail of [
+    ["run"],
+    ["run", "--unsupported", "must-remain-deferred"],
+    ["run", "--run-id", "../must-remain-deferred"],
+    ["run", "--run-id", "one", "--run-id", "two"],
+    ["run", "--run-id", oversized],
+    ["replay"],
+    ["replay", "--unsupported", "must-remain-deferred"],
+    ["replay", "--receipt", "../must-remain-deferred.json"],
+    ["replay", "--receipt", "one", "--receipt", "two"],
+    ["replay", "--receipt", oversized],
+  ]) {
+    await assert.rejects(
+      execute(process.execPath, [
+        executable.pathname,
+        "dormant",
+        "harness-create-exact-v2",
+        ...tail,
+      ]),
+      (error) => {
+        assert.equal(error.code, 4);
+        assert.equal(error.stdout, unavailableOutput);
+        assert.equal(error.stderr, "");
+        assert.doesNotMatch(error.stdout, /must-remain-deferred|\.\./u);
         return true;
       },
     );
@@ -381,12 +485,18 @@ test("unregistered and path-selected tasks fail closed before runtime", async ()
     ["g1.7", "run"],
     ["g1.7", "verify"],
   ]) {
-    await assert.rejects(execute(process.execPath, [executable.pathname, ...args]), (error) => {
-      assert.equal(error.code, 2);
-      assert.match(error.stderr, /unknown command:/u);
-      assert.doesNotMatch(error.stderr, /ENOENT|unsupported engineering task/u);
-      return true;
-    });
+    await assert.rejects(
+      execute(process.execPath, [executable.pathname, ...args]),
+      (error) => {
+        assert.equal(error.code, 2);
+        assert.match(error.stderr, /unknown command:/u);
+        assert.doesNotMatch(
+          error.stderr,
+          /ENOENT|unsupported engineering task/u,
+        );
+        return true;
+      },
+    );
   }
 });
 
@@ -401,26 +511,30 @@ test("late registered tasks use dynamic dispatch and reject malformed arguments"
       /missing --receipt/u,
     ],
   ]) {
-    await assert.rejects(execute(process.execPath, [executable.pathname, ...args]), (error) => {
-      assert.equal(error.code, 2);
-      assert.match(error.stderr, message);
-      assert.doesNotMatch(error.stderr, /ENOENT/u);
-      return true;
-    });
+    await assert.rejects(
+      execute(process.execPath, [executable.pathname, ...args]),
+      (error) => {
+        assert.equal(error.code, 2);
+        assert.match(error.stderr, message);
+        assert.doesNotMatch(error.stderr, /ENOENT/u);
+        return true;
+      },
+    );
   }
 });
 
 test("help and version aliases preserve the public CLI surface", async () => {
-  const [{ stdout: helpStdout, stderr: helpStderr }, version] = await Promise.all([
-    execute(process.execPath, [executable.pathname, "--help"]),
-    execute(process.execPath, [executable.pathname, "--version"]),
-  ]);
+  const [{ stdout: helpStdout, stderr: helpStderr }, version] =
+    await Promise.all([
+      execute(process.execPath, [executable.pathname, "--help"]),
+      execute(process.execPath, [executable.pathname, "--version"]),
+    ]);
   assert.equal(helpStderr, "");
   assert.match(helpStdout, /^Usage: oxigraph-engineering-harness <command>$/mu);
   assert.deepEqual(version, { stdout: "0.0.0\n", stderr: "" });
 });
 
-test("package scripts expose G1.4a, G1.4b, and G1.6 without pinning upstream MetaHarness ranges", async () => {
+test("package scripts expose active tasks and exact dormant gate commands without pinned MetaHarness ranges", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   );
@@ -448,11 +562,36 @@ test("package scripts expose G1.4a, G1.4b, and G1.6 without pinning upstream Met
     packageJson.scripts["g1.6:run"],
     "node bin/oxigraph-engineering-harness.mjs g1.6 run",
   );
-  assert.equal(
-    Object.keys(packageJson.scripts).some((name) => name.startsWith("dormant:")),
-    false,
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(packageJson.scripts).filter(([name]) =>
+        name.startsWith("dormant:"),
+      ),
+    ),
+    Object.fromEntries(
+      dormantCliFixtures.map(({ packageScript, packageCommand }) => [
+        packageScript,
+        packageCommand,
+      ]),
+    ),
   );
   assert.ok(
-    Object.values(packageJson.dependencies).every((version) => version === "latest"),
+    Object.values(packageJson.dependencies).every(
+      (version) => version === "latest",
+    ),
   );
+
+  for (const fixture of dormantCliFixtures) {
+    await assert.rejects(
+      execute("npm", ["run", "--silent", fixture.packageScript], {
+        cwd: packageRoot,
+      }),
+      (error) => {
+        assert.equal(error.code, fixture.exitCode);
+        assert.equal(error.stdout, fixture.stdout);
+        assert.equal(error.stderr, fixture.stderr);
+        return true;
+      },
+    );
+  }
 });
