@@ -251,6 +251,31 @@ dual-host plan. ADR-0036 remains Proposed, readiness remains exactly
 no production, runtime, filesystem, process, cgroup, qualification, promotion,
 publication, push, product, or physical authority.
 
+The preceding paragraph is the historical C16 checkpoint. ADR-0036 C17 is
+GREEN from evaluator-only RED `0bafc84dea56dd4e75fffa0546dcdcf48c2ea408`
+to integrated commit `b037ed0a77575463d9babbe4ab43d8a17f0b4032`, tree
+`64cb90bc403663436f91c268c2a3da04b76bf370`. Its stable final receipt
+`eb548452b2f59a139730d11c0eb7046a2f0f4ab9c445e895ca5a7865382fb377`
+binds four setup, 252 descriptor-alias, and 63 precedence calls: 319 monitored
+calls, all 318 receipt mutations and all 25 behavioral classes killed, and zero
+survivors. Current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass
+focused 20/20, direct 11/11, main 19/19, and combined 30/30 with zero TODOs.
+
+C18 contract, C19 compatibility, and C20 security/mutation reviews each
+independently returned APPROVE with zero blocking findings. C19 reproduced the
+four test matrices plus the 13-export import-surface check and exact unavailable
+readiness on all three runtimes. C20 kept distinct mutation denominators and killed 438/438 direct
+hostile/static, 122/122 main expansion/oracle, 134/134 private-commit/
+compatibility, 318/318 receipt, and 25/25 behavioral-class mutations, with
+byte-exact restoration and zero survivors. Their repository-memory receipts
+were read back before task closure. This evidence closes the ADR-0036 pure-ABI
+implementation and independent-review boundary for exact `b037ed0a`; C21
+reconciles local documentation and ledgers. It advances neither G2.2 nor the
+unresolved dual-host plan. ADR-0036 remains Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and no G1.7,
+production, runtime, filesystem, process, cgroup, qualification, promotion,
+publication, push, product, or physical authority is granted.
+
 ## Evidence policy
 
 This plan distinguishes three evidence grades:
@@ -1051,15 +1076,17 @@ failed. CI should run vendored and system-library lanes separately.
 The research was split into three evidence tracks and persisted in the
 repository's Ruflo memory:
 
-| Track                           | Ruflo task                  | Evidence pointer                                                                                       |
-| ------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Upstream/write architecture     | `task-1787593372180-0hjfvi` | `research/oxigraph-2026-08-24-r1-upstream-write`                                                       |
-| Apache Jena comparison          | `task-1787593372163-lmmndv` | `research/oxigraph-2026-08-24-r2-jena-gap`                                                             |
-| Eclipse RDF4J comparison        | `task-1787593372137-3j8kyo` | `research/oxigraph-2026-08-24-r3-rdf4j-gap`                                                            |
-| Exact new-file admission / G2.2 | `task-1787935934614-ibmjn1` | [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md) |
-| Guardian-control C15/C16-C21     | `task-1788042241332-xafq11` | [ADR-0036 — Guardian-control pure ABI](../adr/0036-guardian-control-pure-abi.md)                       |
-| Guardian-control C16 current     | `task-1788204847572-uh0olo` | [ADR-0036 C16 private-store record](../adr/0036-guardian-control-pure-abi.md#c16-private-store-runtime-atomicity-record-2026-09-02) |
-| Guardian-control C17-C21 pending | `task-1788204854834-82qx49` | [ADR-0036 remaining acceptance boundary](../adr/0036-guardian-control-pure-abi.md#acceptance-boundary) |
+| Track                             | Ruflo task                                                                              | Evidence pointer                                                                                                                    |
+| --------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Upstream/write architecture       | `task-1787593372180-0hjfvi`                                                             | `research/oxigraph-2026-08-24-r1-upstream-write`                                                                                    |
+| Apache Jena comparison            | `task-1787593372163-lmmndv`                                                             | `research/oxigraph-2026-08-24-r2-jena-gap`                                                                                          |
+| Eclipse RDF4J comparison          | `task-1787593372137-3j8kyo`                                                             | `research/oxigraph-2026-08-24-r3-rdf4j-gap`                                                                                         |
+| Exact new-file admission / G2.2   | `task-1787935934614-ibmjn1`                                                             | [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)                              |
+| Guardian-control C15/C16-C21      | `task-1788042241332-xafq11`                                                             | [ADR-0036 — Guardian-control pure ABI](../adr/0036-guardian-control-pure-abi.md)                                                    |
+| Guardian-control C16 history      | `task-1788204847572-uh0olo`                                                             | [ADR-0036 C16 private-store record](../adr/0036-guardian-control-pure-abi.md#c16-private-store-runtime-atomicity-record-2026-09-02) |
+| Guardian-control C17 complete     | `task-1788204854834-82qx49`                                                             | [ADR-0036 C17 acceptance record](../adr/0036-guardian-control-pure-abi.md#c17-acceptance-consolidation-record-2026-09-02)           |
+| Guardian-control C18-C20 complete | `task-1788204862237-jcs5sd` / `task-1788204868984-521i0d` / `task-1788204877088-j678ig` | [ADR-0036 independent-review record](../adr/0036-guardian-control-pure-abi.md#c18-c20-independent-review-record-2026-09-02)         |
+| Guardian-control C21 active       | `task-1788204883871-l9tsh9`                                                             | [ADR-0036 remaining acceptance boundary](../adr/0036-guardian-control-pure-abi.md#acceptance-boundary)                              |
 
 Exact recall from the three research-memory entries succeeded. The fourth and
 fifth rows are active programme task maps for prerequisite gates; they are not
@@ -1070,10 +1097,14 @@ prediction; it did not influence prioritization. The synthesis above is the
 traceable intersection of recalled local findings and current first-party
 sources.
 
-The two dated C16/C17 rows above refine that active map: C16
-implementation/evidence is complete, and its task was recorded 95%
-`in_progress` at the pre-documentation freeze pending post-integration ledger
-closure; C17 is the sole evaluator TODO, with C18-C21 pending.
+The dated rows above preserve C16 history and record the current split: C17 and
+all three independent reviews are complete; C21 local documentation/ledger
+closure is active. The GitHub-linked programme Gist and main push remain held
+because selected N3 submodule commit
+`8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
+and a fresh repository cannot fetch it by object ID (`not our ref`). This
+publication hold does not change ADR-0036's Proposed status or grant downstream
+runtime authority.
 
 The Brain search verified the persistent swarm implementation in
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts`; that source supports

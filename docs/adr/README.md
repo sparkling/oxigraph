@@ -156,6 +156,22 @@ no source, helper, fixture, package, lockfile, dependency, production, runtime,
 filesystem, process, cgroup, G1.7, G2.2, qualification, promotion, publication,
 push, or product authority.
 
+The preceding paragraph is the dated C16 record. C17 is GREEN from evaluator
+RED `0bafc84d` to integrated commit `b037ed0a`, tree `64cb90bc`. Its stable
+receipt
+`eb548452b2f59a139730d11c0eb7046a2f0f4ab9c445e895ca5a7865382fb377`
+binds 319 monitored calls, all 318 receipt mutations, all 25 behavioral
+classes, and zero survivors. Node 24.14.1, exact Node 20.0.0, and Node 20.20.2
+each pass focused 20/20, direct 11/11, main 19/19, and combined 30/30 with zero
+TODOs. Independent C18 contract, C19 compatibility, and C20 security/mutation
+reviews each returned APPROVE with zero blocking findings; their exact receipts
+were stored and read back before task closure. C21 reconciles this bounded
+engineering evidence without accepting the decision. ADR-0036 remains
+Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and no runtime,
+physical, product, G1.7, G2.2, qualification, promotion, publication, or push
+authority is added.
+
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only

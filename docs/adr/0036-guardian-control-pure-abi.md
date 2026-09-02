@@ -4,8 +4,15 @@
 - **Date**: 2026-08-30
 - Updated: 2026-09-02
 - Deciders: Oxigraph parity programme
-- Implementation status: evaluator RED in progress through the B6 static
-  closure checkpoint. Commit `7a539665` adds the
+- Implementation status: the C17 pure-ABI implementation boundary is GREEN at
+  integrated commit `b037ed0a` with zero evaluator TODOs; independent C18,
+  C19, and C20 reviews returned APPROVE with zero blocking findings, and C20's
+  separately enumerated mutation campaigns had zero survivors. C21 local
+  documentation/ledger reconciliation is active. Formal status remains
+  Proposed and readiness remains exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`. The following
+  paragraphs preserve the chronological implementation history, beginning with
+  evaluator RED through the B6 static closure checkpoint. Commit `7a539665` adds the
   reviewed source-absent, fail-closed evaluator checkpoint; commit `d3e6bd8b`
   adds source-independent exact-v2 controls for all nine byte positions, 108
   ignored-property variants, 63 hostile carriers, and the exact ten-operation
@@ -344,6 +351,18 @@
   bounded checkpoint also leaves this ADR Proposed and readiness exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
+  The preceding paragraph is the dated C16 checkpoint. C17 is now GREEN from
+  evaluator RED `0bafc84d` to integrated `b037ed0a`; direct 11/11, main 19/19,
+  combined 30/30, and focused helper 20/20 pass on Node 24.14.1, exact Node
+  20.0.0, and Node 20.20.2 with zero TODOs. Independent C18 contract, C19
+  compatibility, and C20 security/mutation reviews each returned APPROVE with
+  zero blocking findings; C20's separately enumerated mutation campaigns had
+  zero survivors. C21 records this bounded engineering closure without
+  accepting the ADR. ADR-0036 remains Proposed, readiness remains exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}`, and no
+  runtime, physical, product, qualification, promotion, publication, or push
+  authority is added.
+
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
 - **Related**:
@@ -480,10 +499,10 @@ ADR-0034-owned helper, `23d37556` updates the guardian source and the live v1
 requirements fixture, and `4620dd92` closes the evaluator evidence. The live
 identities are:
 
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `containment-exact-v2.mjs` | 12,687 | `194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e` |
-| `containment-guardian-control-v1.mjs` | 81,670 | `3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718` |
+| Artifact                                              |  Bytes | SHA-256                                                            |
+| ----------------------------------------------------- | -----: | ------------------------------------------------------------------ |
+| `containment-exact-v2.mjs`                            | 12,687 | `194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e` |
+| `containment-guardian-control-v1.mjs`                 | 81,670 | `3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718` |
 | `fixtures/0036-guardian-control-requirements-v1.json` | 14,230 | `4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` |
 
 The live fixture's canonical-JSON SHA-256 is
@@ -574,10 +593,10 @@ integrated RED-to-GREEN patch SHA-256
 `c81948744ff415d4ab72cea4a7aa51ceedfcf2da25def018e91232dfbd85bb87`.
 Only the two evaluator files changed:
 
-| Evaluator artifact | Bytes | SHA-256 | Git blob |
-| --- | ---: | --- | --- |
+| Evaluator artifact                                               |   Bytes | SHA-256                                                            | Git blob                                   |
+| ---------------------------------------------------------------- | ------: | ------------------------------------------------------------------ | ------------------------------------------ |
 | `candidate-containment-guardian-control-v1-adversarial.test.mjs` | 658,087 | `b2edf959bf2e7bd933d37c3521c495da955b1e7a4eac069361465f443de423ef` | `63fa67d7bd4fe7a2921fbc8f77c57b8e75adb010` |
-| `candidate-containment-guardian-control-v1.test.mjs` | 912,778 | `bc0b322dc5394a30fd846bd756899d77e6dfdec783108c648720ad2ba4ca2207` | `aa8253e7188a7499d840ea7eac7ed71fa3184677` |
+| `candidate-containment-guardian-control-v1.test.mjs`             | 912,778 | `bc0b322dc5394a30fd846bd756899d77e6dfdec783108c648720ad2ba4ca2207` | `aa8253e7188a7499d840ea7eac7ed71fa3184677` |
 
 The live C15 product envelope is unchanged: exact-v2 remains 12,687 bytes at
 `194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`,
@@ -660,6 +679,128 @@ ADR-0036 remains Proposed and readiness remains exactly
 production, product, runtime, filesystem, process, cgroup, G1.7, G2.2,
 qualification, promotion, publication, push, or physical authority. The
 programme's dual-host plan remains unresolved.
+
+### C17 acceptance-consolidation record (2026-09-02)
+
+The C16 record above remains historical evidence. C17 started with the
+evaluator-only RED commit
+`0bafc84dea56dd4e75fffa0546dcdcf48c2ea408`, tree
+`fa641aaa96384fcf1922eea4be74e5130566af85`, and became GREEN at integrated
+commit `b037ed0a77575463d9babbe4ab43d8a17f0b4032`, tree
+`64cb90bc403663436f91c268c2a3da04b76bf370`, whose parent is the RED commit.
+The approved pre-commit RED working-tree diff serialization is one evaluator
+file, +3,065/-13, at SHA-256
+`24cbaaf5f9f370cbe996a82a47da105edf1009103bf3bb2900737d238086914f`.
+The committed base-to-RED full-index binary diff has SHA-256
+`f15ea43c349372e804614571ccd3d05048c50db3b9a98c0db885ca53d560e691`.
+The committed RED-to-GREEN full-index binary diff replaces only the final
+aggregate runner in one hunk, +213/-1, at SHA-256
+`100108871cebdd223bcada9e6379b361b3657ddc3b6b0b6d88839b01bc501bbb`.
+The complete committed full-index C17 delta from `86879279` is +3,277/-13 in
+the same evaluator at SHA-256
+`531ef7163befd608033023a2357762b3396263e34c5ca9bca4e962d7995db101`.
+
+The frozen live artifacts are:
+
+| Artifact                   |     Bytes | SHA-256                                                            | Git blob                                   |
+| -------------------------- | --------: | ------------------------------------------------------------------ | ------------------------------------------ |
+| Main evaluator             | 1,016,600 | `52666c2545ac06d1134848d685e3e450b4375de2e0ec04048081cc334e55a302` | `022623c453e8177300e3dc843426eae6c5e84ec5` |
+| Adversarial evaluator      |   658,087 | `b2edf959bf2e7bd933d37c3521c495da955b1e7a4eac069361465f443de423ef` | `63fa67d7bd4fe7a2921fbc8f77c57b8e75adb010` |
+| Guardian-control candidate |    81,670 | `3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718` | `74a9ff5346210dd38027ac6ac89edf02050d081f` |
+| Live requirements fixture  |    14,230 | `4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` | `73aea30cfcbe4c1182e611fcbba7aece5452f761` |
+
+The fixture's canonical-JSON identity remains
+`7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`.
+The main evaluator's normalized AST contains 97,343 nodes, serializes to
+5,496,021 canonical bytes, and has SHA-256
+`09806ef6b91200c376c72d6667c88cd14aca8e5298ddf9ca4adb12438f14d579`.
+The direct evaluator and candidate normalized-AST identities remain
+`b438dbcf8fe9858b360ab63d6d2da18152da4b50844546934659f33687e52cb5`
+and `5b1b90679338eede5fef143e3d7b1c239821619364d08b23e95b0757b75371ef`.
+Exact-v2, recovery-v1, launch-capsule-v3, supervisor-control-v2, and
+supervisor-preflight-v4 remain pinned respectively at
+`194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`,
+`e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d`,
+`9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d`,
+`92cfae3b2e6b8e2ee196d7c5a21c760ae5d35d4f5335263a5ffc816fc2a80842`,
+and `747c913e60768c53bdeeec923a6ff2f1319121d743bddd8e4db663c1a03d23ff`.
+The package manifest and lockfile remain 2,400 and 24,963 bytes at SHA-256
+`393392adf0086e8ea10e76e030689bcd74cc31f934fc87141551462dd2e627a3`
+and `5076addd19b823b7669d20321dac066ddb269587b688675ac4c02d5c2b38612d`;
+Acorn remains 8.18.0. C17 changes none of those inputs.
+
+The final aggregate executes exactly four setup calls, 252 descriptor-alias
+calls, and 63 precedence calls: 319 monitored wrapper calls with four returns
+and 315 throws. It covers all 21 operation/pair cells and 18 unique precedence
+pairs. The sealed monitor kills all 318 receipt mutations and all 25 behavioral
+classes with zero survivors. The final C17 receipt identity is
+`eb548452b2f59a139730d11c0eb7046a2f0f4ab9c445e895ca5a7865382fb377`;
+it is identical on Node 24.14.1, exact Node 20.0.0, and Node 20.20.2.
+
+Each of those runtimes passes direct 11/11, main 19/19, and combined 30/30,
+with zero failures and zero TODOs. The exact-v2 helper passes 20/20 on all
+three runtimes and the official Ruflo ADR verifier passes 1/1. Independent
+GREEN review returned APPROVE with zero blocking findings. Repository evidence
+is stored at
+`programme-evidence/adr0036-c17-green-integration-b037ed0a-2026-09-02`;
+Ruflo task `task-1788204854834-82qx49` is complete.
+
+C17 changes no product source, fixture, predecessor, package, lockfile,
+dependency, or runtime registration. It does not execute G1.7 and grants no
+production, product, runtime, filesystem, process, cgroup, G1.7, G2.2,
+qualification, promotion, publication, push, or physical authority. ADR-0036
+remains Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and the
+programme's dual-host plan remains unresolved. C18-C20 independent review and
+C21 documentation/umbrella closure are separate post-integration gates and are
+not pre-claimed by this C17 record.
+
+### C18-C20 independent-review record (2026-09-02)
+
+Three independent read-only reviews recomputed their verdicts from exact
+integrated commit `b037ed0a77575463d9babbe4ab43d8a17f0b4032`, tree
+`64cb90bc403663436f91c268c2a3da04b76bf370`. All three returned APPROVE with
+zero blocking findings:
+
+- C18 contract review independently canonicalized the 10,756-byte fixture
+  value, confirmed the complete frozen requirements export and digest, 13
+  exports, all eleven positional function signatures, 17 null-prototype
+  records, 41 dense local arrays, the normal/recovery/right maps, 20 transition
+  goldens, 15 emitted-status byte goldens, 26 accepted prefixes, four atomic
+  prefixes, all-false authority, null physical facts, and exact nonclaims. Its
+  evidence key is
+  `programme-evidence/adr0036-c18-contract-review-b037ed0a-2026-09-02`.
+- C19 compatibility review reproduced focused 20/20, direct 11/11, main 19/19,
+  combined 30/30, and an import-surface check observing all 13 exports on Node
+  24.14.1, exact Node 20.0.0, and Node 20.20.2. Every test matrix had zero
+  failure, skip, cancellation, or TODO.
+  Source, fixture, predecessor, evaluator, package, lock, Acorn 8.18.0,
+  syntax, JSON, static pre-import, and one-hunk patch identities matched; owner
+  and sandbox readiness returned the same frozen
+  `{status: "unavailable", reason: "native-adapter-unavailable"}` object. Its
+  evidence key is
+  `programme-evidence/adr0036-c19-compatibility-review-b037ed0a-2026-09-02`.
+- C20 security/mutation review killed 438/438 direct hostile/static mutations,
+  122/122 main expansion/oracle mutations, 134/134 main private-commit/
+  compatibility mutations, 318/318 C17 receipt mutations, and 25/25 C17
+  behavioral classes, each as a separate denominator with zero survivors. It
+  reconfirmed B11's distinct 399-negative/11-positive/410-row inventory and
+  200-commit-mutation subset with zero negative candidate evaluations. Static
+  inspection found exactly three pinned relative imports and 13 exports, with
+  no dynamic import, evaluator/test import, `eval`, constructor gadget, ambient
+  identifier, exported-parameter callback invocation, or runtime registration.
+  Two concrete evaluator mutations were rejected and restored byte-exactly;
+  the isolated detached worktree and index finished clean. Its evidence key is
+  `programme-evidence/adr0036-c20-security-mutation-review-b037ed0a-2026-09-02`.
+
+No review ran G1.7 or left or integrated a change to a sealed artifact. C18 task
+`task-1788204862237-jcs5sd`, C19 task `task-1788204868984-521i0d`, and C20 task
+`task-1788204877088-j678ig` are complete after exact memory read-back. These
+reviews close the independent engineering-review portion of the acceptance
+boundary only. They do not accept this Proposed ADR, register a runtime owner,
+establish a physical fact, make readiness available, or grant product,
+production, G1.7, G2.2, qualification, promotion, publication, or push
+authority.
 
 ### Bounded input representation
 
@@ -1391,15 +1532,15 @@ application output, cleanup, journal fact, cgroup fact, or recovery completion.
 
 The complete validation failure vocabulary is:
 
-| Error message        | Meaning                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `CONTROL_BOUNDS`     | Pre-decode byte ceiling, epoch length, count, slot, or aggregate ceiling                                            |
+| Error message        | Meaning                                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CONTROL_BOUNDS`     | Pre-decode byte ceiling, epoch length, count, slot, or aggregate ceiling                                                                     |
 | `CONTROL_SHAPE`      | Intrinsic-Uint8 brand, local prototype, own-length, backing readability/liveness/sharing, UTF-8, JSONL, canonical, or record-field violation |
-| `CONTROL_STARTUP`    | Mode, FD, role, kind, access, direction, flag, socket, lock, EOF, or startup alias violation                        |
-| `CONTROL_FRAME`      | Schema, action, carrier, structural sequence, truncation, or forbidden ancillary violation                          |
-| `CONTROL_RIGHTS`     | Control-message count/type, right count/order/role/kind/access/flag/alias violation                                 |
-| `CONTROL_BINDING`    | Requirements, startup, epoch, capsule, recovery selection, predecessor, previous-frame, or state binding mismatch   |
-| `CONTROL_TRANSITION` | Illegal prefix, replay, reorder, second admission, recovery admission, or post-close/terminal input                 |
+| `CONTROL_STARTUP`    | Mode, FD, role, kind, access, direction, flag, socket, lock, EOF, or startup alias violation                                                 |
+| `CONTROL_FRAME`      | Schema, action, carrier, structural sequence, truncation, or forbidden ancillary violation                                                   |
+| `CONTROL_RIGHTS`     | Control-message count/type, right count/order/role/kind/access/flag/alias violation                                                          |
+| `CONTROL_BINDING`    | Requirements, startup, epoch, capsule, recovery selection, predecessor, previous-frame, or state binding mismatch                            |
+| `CONTROL_TRANSITION` | Illegal prefix, replay, reorder, second admission, recovery admission, or post-close/terminal input                                          |
 
 Each thrown error's message is exactly one code with no dynamic detail.
 Structural sequence range or type errors are `CONTROL_FRAME`; a structurally
@@ -1684,6 +1825,20 @@ three-entry registration inventory has zero registration TODOs, while C17 final
 aggregate remains the sole evaluator TODO outside that registration. C18-C20
 independent reviews and C21 documentation/umbrella closure remain pending, so
 the complete ADR-0036 programme is still not closed.
+
+The two paragraphs above are the preserved pre-C17 acceptance history. C17 is
+now GREEN at integrated commit `b037ed0a` with direct 11/11, main 19/19, and
+combined 30/30 on Node 24.14.1, exact Node 20.0.0, and Node 20.20.2; the final
+aggregate has zero TODOs. C18, C19, and C20 independently returned APPROVE with
+zero blocking findings and their exact receipts were stored and read back.
+Every implementation and independent-review item in this pure-ABI acceptance
+boundary is therefore satisfied for that exact source state. C21 reconciles
+the documentation and ledgers without changing formal status. ADR-0036 remains
+Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. This bounded
+engineering closure permits only the separately gated ADR-0037 contract work;
+it grants no filesystem-backed owner, product, production, G1.7, G2.2,
+qualification, promotion, publication, push, or physical authority.
 
 ## Consequences
 

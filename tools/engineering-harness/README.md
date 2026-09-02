@@ -771,5 +771,54 @@ helper, fixture, package, lockfile, dependency, runtime, filesystem, process,
 cgroup, G1.7, G2.2, qualification, promotion, publication, push, product, or
 physical authority changed, and the dual-host plan remains unresolved.
 
+### ADR-0036 C17-C20 checkpoint — 2026-09-02
+
+The C16 section above remains historical evidence. C17 started at evaluator
+RED `0bafc84dea56dd4e75fffa0546dcdcf48c2ea408` and is GREEN at integrated
+commit `b037ed0a77575463d9babbe4ab43d8a17f0b4032`, tree
+`64cb90bc403663436f91c268c2a3da04b76bf370`. The approved pre-commit RED
+working-tree diff serialization is
+`24cbaaf5f9f370cbe996a82a47da105edf1009103bf3bb2900737d238086914f`;
+the committed base-to-RED full-index binary diff is
+`f15ea43c349372e804614571ccd3d05048c50db3b9a98c0db885ca53d560e691`.
+The committed RED-to-GREEN full-index binary diff is
+`100108871cebdd223bcada9e6379b361b3657ddc3b6b0b6d88839b01bc501bbb`
+and is one evaluator hunk, +213/-1. The complete committed full-index C17
+delta is one evaluator file, +3,277/-13, at
+`531ef7163befd608033023a2357762b3396263e34c5ca9bca4e962d7995db101`.
+
+The main evaluator is 1,016,600 bytes at SHA-256
+`52666c2545ac06d1134848d685e3e450b4375de2e0ec04048081cc334e55a302`
+and Git blob `022623c453e8177300e3dc843426eae6c5e84ec5`. Its normalized AST has
+97,343 nodes and identity
+`09806ef6b91200c376c72d6667c88cd14aca8e5298ddf9ca4adb12438f14d579`.
+The adversarial evaluator, candidate, live fixture, predecessors, package,
+lockfile, dependency, and registration identities are unchanged from C16.
+
+The final aggregate performs exactly four setup, 252 descriptor-alias, and 63
+precedence calls: 319 monitored calls with four returns and 315 throws. It
+kills all 318 receipt mutations and all 25 behavioral classes with zero
+survivors. The stable receipt identity is
+`eb548452b2f59a139730d11c0eb7046a2f0f4ab9c445e895ca5a7865382fb377`.
+
+Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass focused 20/20,
+direct 11/11, main 19/19, and combined 30/30 with zero failures or TODOs; the
+official ADR verifier passes 1/1. Independent C18 contract, C19 compatibility,
+and C20 security/mutation reviews each returned APPROVE with zero blocking
+findings. C20 kept its denominators separate and killed 438/438 direct
+hostile/static, 122/122 main expansion/oracle, 134/134 private-commit/
+compatibility, 318/318 receipt, and 25/25 behavioral-class mutations, with
+byte-exact restoration and zero survivors.
+
+Evidence is stored and read back under
+`programme-evidence/adr0036-c17-green-integration-b037ed0a-2026-09-02`,
+`programme-evidence/adr0036-c18-contract-review-b037ed0a-2026-09-02`,
+`programme-evidence/adr0036-c19-compatibility-review-b037ed0a-2026-09-02`, and
+`programme-evidence/adr0036-c20-security-mutation-review-b037ed0a-2026-09-02`.
+No G1.7 command ran. ADR-0036 remains Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. This checkpoint
+grants no product, runtime, filesystem, process, cgroup, G2.2, qualification,
+promotion, publication, push, or physical authority.
+
 The package is local-only. Presence of this directory is not an engineering
 readiness, product-correctness, semantic-qualification, or promotion claim.

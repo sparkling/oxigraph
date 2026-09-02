@@ -464,6 +464,28 @@ no source, helper, fixture, package, lockfile, dependency, runtime registration,
 or runtime, filesystem, process, cgroup, G1.7, G2.2, production, product,
 qualification, promotion, publication, push, or physical authority.
 
+The preceding paragraph is the historical C16 checkpoint. ADR-0036 C17 is now
+GREEN from evaluator-only RED `0bafc84d` to integrated commit `b037ed0a`, tree
+`64cb90bc`. Its final aggregate executes four setup, 252 descriptor-alias, and
+63 precedence calls: 319 monitored calls, with every one of 318 receipt
+mutations and 25 behavioral classes killed and zero survivors. The stable
+receipt identity is
+`eb548452b2f59a139730d11c0eb7046a2f0f4ab9c445e895ca5a7865382fb377`.
+Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass focused 20/20,
+direct 11/11, main 19/19, and combined 30/30 with zero TODOs; the official ADR
+verifier passes 1/1. C18 contract, C19 compatibility, and C20
+security/mutation review each returned APPROVE with zero blocking findings;
+C20's separately enumerated mutation campaigns had zero survivors. Their exact
+repository-memory receipts were read back before task closure. C21 records the
+bounded engineering closure while external Gist
+and push publication remain held because pinned N3 commit
+`8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream
+ref and a fresh repository cannot fetch it by object ID (`not our ref`).
+ADR-0036 remains Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and this
+evaluator evidence grants no product, runtime, G1.7, G2.2, qualification,
+promotion, publication, push, or physical authority.
+
 [ADR-0035 — Durable native containment guardian and crash recovery](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 separates the remaining stable guardian/reaper and crash-recovery design from
 the broader admission gate. It requires an intent-first write-once journal,
@@ -626,6 +648,20 @@ The ADRs explain the principal boundaries:
   Proposed, readiness stays exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`, and neither
   authority nor the unresolved dual-host plan advances.
+
+  That C16 paragraph is also historical. C17 is integrated at `b037ed0a` with
+  zero evaluator TODOs: all three Node runtimes pass direct 11/11, main 19/19,
+  combined 30/30, and the focused helper 20/20. The final aggregate receipt
+  `eb548452b2f59a139730d11c0eb7046a2f0f4ab9c445e895ca5a7865382fb377`
+  binds 319 monitored calls, 318 killed receipt mutations, 25 killed behavioral
+  classes, and zero survivors. C18 contract, C19 compatibility, and C20
+  security/mutation review are complete with APPROVE verdicts and zero blocking
+  findings. C21 reconciles the local documentation and ledgers; Gist update and
+  main push remain externally held while selected N3 submodule commit
+  `8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
+  and a fresh repository cannot fetch it by object ID. The decision remains
+  Proposed and gains no readiness, product, G1.7, qualification, promotion,
+  publication, push, or physical authority.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear
