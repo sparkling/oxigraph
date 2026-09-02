@@ -431,6 +431,21 @@ v7/replay, evaluator/profile/CLI registration, the complete ADR-0034 gate, and
 G2.2 remain open, so no new product module or promotion authority is admitted
 by this checkpoint.
 
+The dated 2026-09-02 ADR-0036 C15 checkpoint is now GREEN. ADR-0034 helper
+commit `41dd2508` advances `containment-exact-v2.mjs` to the additive 19-export
+surface; guardian/fixture commit `23d37556` implements category-aware byte
+normalization and launch-error translation; evaluator commit `4620dd92` proves
+the hostile-input closure. On Node 24.14.1, exact Node 20.0.0, and Node 20.20.2,
+the direct lane passes 11/11, the main lane reports 19 total / 17 pass / zero
+fail / two TODO, the helper lane passes 20/20, and the ADR verifier passes 1/1.
+The same v1 requirements-fixture path is now the live C15 fixture; historical
+C14 is preserved only by evaluator-private reconstruction. Independent review
+returned APPROVE for this exact scope. C16 private-store, C17 final aggregate,
+C18-C20 independent reviews, and C21 documentation/umbrella closure remain
+open. ADR-0036 remains Proposed, production readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and C15 changes
+no package, lockfile, dependency, runtime registration, or authority.
+
 [ADR-0035 — Durable native containment guardian and crash recovery](./docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 separates the remaining stable guardian/reaper and crash-recovery design from
 the broader admission gate. It requires an intent-first write-once journal,
@@ -570,6 +585,16 @@ The ADRs explain the principal boundaries:
   controls; 133 semantic negatives remain. The production source remains
   deliberately absent, ADR-0036 remains Proposed, and readiness remains
   `{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
+  That paragraph is the preserved historical C14 checkpoint. The dated live
+  C15 checkpoint is integrated through `41dd2508`, `23d37556`, and `4620dd92`:
+  byte-shape/bounds precedence and launch-error translation are GREEN across
+  Node 24.14.1, 20.0.0, and 20.20.2, with direct 11/11 and main 17 pass, zero
+  fail, two TODO. Those TODOs are C16 private-store and C17 final aggregate;
+  C18-C21 remain pending. The same v1 fixture path advances to C15 while the C14
+  value is reconstructed privately. The decision stays Proposed, readiness and
+  authority stay unchanged, and the unresolved dual-host plan is not advanced
+  by this evidence.
 
 The [normative requirements inventory](https://sparkling.github.io/oxigraph/research/normative-requirements.json)
 keeps broad claims honest: it records open, blocked, and draft-unclear

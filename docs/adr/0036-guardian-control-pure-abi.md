@@ -328,6 +328,13 @@
   incomplete. Production containment readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`.
 
+  The preceding implementation-status paragraphs are preserved as the
+  chronological B1-B6 and C14 record. On 2026-09-02, C15 became GREEN through
+  helper commit `41dd2508`, guardian/fixture commit `23d37556`, and evaluator
+  commit `4620dd92`. The independent C15 verdict is APPROVE. This newer bounded
+  checkpoint does not change this ADR's Proposed status or the readiness value
+  above.
+
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
 - **Related**:
@@ -383,6 +390,15 @@ source hashes are respectively
 `747c913e60768c53bdeeec923a6ff2f1319121d743bddd8e4db663c1a03d23ff`.
 Predecessor drift requires explicit ADR review and never an automatic hash
 refresh.
+
+For the live C15 path, the exact-v2 row above is retained as the historical C14
+envelope. The current `containment-exact-v2.mjs` is 12,687 bytes with SHA-256
+`194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`.
+The recovery-v1 and launch-capsule-v3 predecessor identities remain unchanged.
+The same committed
+[`fixtures/0036-guardian-control-requirements-v1.json`](fixtures/0036-guardian-control-requirements-v1.json)
+path advances to the live C15 requirements value; the evaluator preserves the
+historical C14 fixture only through private reconstruction.
 
 ### C15 shared-byte-helper prerequisite
 
@@ -446,6 +462,98 @@ refresh or evidence rebaseline. Package manifests and lockfiles, readiness,
 runtime registration, authority, qualification, promotion, and publication
 remain unchanged. This prerequisite records no C15 implementation or
 completion claim.
+
+### C15 implementation record (2026-09-02)
+
+The prerequisite text above is the preserved pre-implementation contract. Its
+reviewed implementation landed as three integrated commits: `41dd2508` adds the
+ADR-0034-owned helper, `23d37556` updates the guardian source and the live v1
+requirements fixture, and `4620dd92` closes the evaluator evidence. The live
+identities are:
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `containment-exact-v2.mjs` | 12,687 | `194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e` |
+| `containment-guardian-control-v1.mjs` | 81,670 | `3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718` |
+| `fixtures/0036-guardian-control-requirements-v1.json` | 14,230 | `4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` |
+
+The live fixture's canonical-JSON SHA-256 is
+`7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`.
+The v1 path is therefore the live C15 fixture, not a C14 fixture carrying a
+silent refresh. Historical C14 is reconstructed privately inside the evaluator
+and remains bound to integrated commit `c333f8c5`: exact-v2 was 10,833 bytes at
+`2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`,
+guardian-control was 81,189 bytes at
+`505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d`,
+and the fixture was 14,213 bytes with raw SHA-256
+`968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082`
+and canonical-JSON SHA-256
+`0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`.
+The historical direct/adversarial evaluator SHA-256 was
+`53cbb652fe89a3efdeccaa47e80855dd06a4402eeb7bececa6c15f597a529fc1`;
+the historical main evaluator SHA-256 was
+`58ff5e7f94a384a1e537b34cb042a0d4627f695389eb44f81c23cec08e727c27`.
+Its three-runtime C14 matrix was direct 11 pass and main 15 pass, zero fail,
+three TODO.
+
+The C15 RED-to-GREEN receipts are chronological and are not relabelled. Hostile
+input RED `e1e8e4ce` produced direct 11 pass and main 15 pass, one intentional
+failure, and two TODO; the intentional mismatch expected `CONTROL_SHAPE` and
+observed `CONTROL_BOUNDS`. Launch-translation RED `a3d57a38` retained direct 11
+pass and produced main 19 total, 15 pass, two intentional failures, and two
+TODO; its added mismatch expected `CONTROL_BINDING` and observed the predecessor
+error. Final evaluator commit `4620dd92` is GREEN on current Node 24.14.1, exact
+Node 20.0.0, and Node 20.20.2: direct is 11/11, main is 19 total / 17 pass / zero
+fail / two TODO, and combined is 30 total / 28 pass / zero fail / two TODO. The
+helper suite is 20/20 and the ADR verifier is 1/1. The final main evaluator
+SHA-256 is
+`141dc5940080ce383b3de8f9f857243e9316fb272597d80a58999cd22862cedf`;
+the final adversarial evaluator SHA-256 is
+`86dc511d5188d95586aead3834484d552da02af2e4bcca55b8a98fedf03896ce`.
+Independent review returned APPROVE for this exact C15 scope.
+
+The source inverse receipt records one launch-wrapper declaration removed, one
+admission verifier-call reversal, five normalization declaration blocks moved,
+seven normalization helper calls moved, two startup helper calls unmoved, nine
+fifth `failShape` arguments removed, eleven helper-name reversals, one exact-v2
+digest reversal, and two requirements-digest reversals. The fixture inverse
+changes exactly one exact-v2 SHA value and one helper import name. Its receipt
+has no shared non-primitive references and uses closure-private brands.
+
+The AST receipt proves exactly nine direct five-argument
+`copyBoundedBufferByFailureCategory` calls: Startup 2, Admission 2, Cancel 1,
+RecoveryRequest 1, Diagnostic 2, and Status 1. The seven non-startup
+normalizations dominate private brand/store lookup; the two startup
+normalizations dominate decode. One private, unexported
+`verifyAdmissionLaunchCapsuleV3` wrapper has a `try` containing only the
+predecessor return, a `catch` with no binding and only `failBinding()`, no
+`finally`, and the sole Admission call; the raw verifier occurs only inside
+that wrapper.
+
+The separate live C15 runtime-oracle identity is
+`57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5`;
+historical C12 and C14 oracle identities remain unchanged. The C15 AST
+projection is
+`36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53`
+and the evaluator registration-inventory identity is
+`27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d`.
+That evaluator inventory remains exactly three entries. Its two TODOs are the
+C16 private-store slice (`task-1788204847572-uh0olo`) and C17 final aggregate
+(`task-1788204854834-82qx49`), not runtime registrations. Independent C18-C20
+reviews (`task-1788204862237-jcs5sd`, `task-1788204868984-521i0d`, and
+`task-1788204877088-j678ig`) and C21 documentation/umbrella closure
+(`task-1788204883871-l9tsh9`) remain pending under umbrella task
+`task-1788042241332-xafq11`; C15 is `task-1788204841083-htz7p5` and its helper
+is `task-1788286308271-uvhpg1`.
+
+The existing 18 exact-v2 exports remain unchanged and the helper is the
+additive 19th. All nine incumbent importer source identities remain unchanged.
+No package, lockfile, dependency, registry, production runtime, or readiness
+change is part of C15. ADR-0036 remains Proposed; readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. C15 grants no
+runtime, G1.7, G2.2, qualification, promotion, publication, push, or physical
+authority. The programme's dual-host plan remains unresolved and receives no
+evidence or authority from this checkpoint.
 
 ### Bounded input representation
 
@@ -1217,6 +1325,14 @@ SHA-256 is
 `0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`,
 which is the exact exported requirements digest.
 
+That digest is the preserved C14 value. As of the 2026-09-02 C15 checkpoint,
+the same v1 fixture path is 14,230 bytes with raw SHA-256
+`4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd`
+and canonical-JSON SHA-256
+`7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`.
+The 14,213-byte C14 fixture remains available only through evaluator-private
+reconstruction; no second historical fixture path is committed.
+
 The fixture's normal startup-map digest is
 `1f2bcfca0089977fc1c5fdde2bfcfa6eed671e839a2daee87b5c19d3c2b4fffb`,
 its recovery-only map digest is
@@ -1322,6 +1438,12 @@ The exact import allowlist is:
 | `./containment-exact-v2.mjs`             | `boundedInteger`, `canonicalJsonBytes`, `canonicalJsonLine`, `copyBoundedBuffer`, `decodeCanonicalBase64`, `decodeCanonicalJsonLine`, `deepFreeze`, `exactBoolean`, `exactDigest`, `exactRecord`, `frozenCopyOnReadBytes`, `nullRecord`, `sha256`                                                                                                                              |
 | `./containment-launch-capsule-v3.mjs`    | `CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_SHA256_V3`, `CANDIDATE_CONTAINMENT_LAUNCH_REQUIREMENTS_V3`, `verifyCandidateContainmentLaunchCapsuleV3`                                                                                                                                                                                                                             |
 | `./containment-guardian-recovery-v1.mjs` | `CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1`, `CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1`, `CANDIDATE_CONTAINMENT_RECOVERY_PLAN_STATUSES_V1`, `CANDIDATE_CONTAINMENT_RECOVERY_QUARANTINE_REASONS_V1`, `CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1`, `CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1`, `CANDIDATE_CONTAINMENT_RECOVERY_SOURCE_LOCATIONS_V1` |
+
+The table records the historical C14 allowlist. The live C15 projection changes
+only the exact-v2 import name from `copyBoundedBuffer` to
+`copyBoundedBufferByFailureCategory`; every other named import, specifier, and
+predecessor remains unchanged. The live projection is bound by AST SHA-256
+`36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53`.
 
 Production source may reference only the ambient language intrinsics `Array`,
 `Boolean`, `Error`, `Number`, `Object`, `Reflect`, `Set`, `String`, and
@@ -1444,6 +1566,12 @@ Implementation requires:
 
 Passing this boundary permits ADR-0037 work only. It grants no permission to
 start a filesystem-backed manager or guardian owner.
+
+The 2026-09-02 C15 byte-semantics portion of this boundary is implemented and
+GREEN. The C16 private-store and C17 final-aggregate evaluator entries remain
+TODO; C18-C20 independent review and C21 documentation/umbrella closure remain
+pending. Accordingly, this acceptance list is not a claim that the complete
+ADR-0036 programme is closed.
 
 ## Consequences
 

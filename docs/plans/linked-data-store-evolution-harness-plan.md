@@ -3,7 +3,7 @@
 - Status: active execution plan; G2.1 implemented; unattended Dream Machine
   activation blocked
 - Date: 2026-08-24
-- Updated: 2026-08-29
+- Updated: 2026-09-02
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -13,7 +13,7 @@
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
 - Current engineering control checkpoint:
-  `040f33438693d3e3f64f8052a849b1c84caa58d8`
+  `4620dd92273c06e997a55a2204a01d311f3027de`
 - Current product checkpoint:
   `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
 - Semantic Builder handover reviewed against:
@@ -26,6 +26,8 @@
   [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)
 - Durable containment guardian decision:
   [ADR-0035 — Durable native containment guardian and crash recovery](../adr/0035-durable-native-containment-guardian-and-recovery.md)
+- Guardian-control pure-ABI decision:
+  [ADR-0036 — Guardian-control pure ABI](../adr/0036-guardian-control-pure-abi.md)
 - Durable statefs/syscalls decision:
   [ADR-0037 — Durable containment statefs and manager protocol](../adr/0037-durable-containment-statefs-and-manager-protocol.md)
 - Native process-mechanics decision:
@@ -1124,12 +1126,19 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | ADR-0035 native guardian/recovery          | `task-1788002473147-nsat6x`                                                                                                                         | In progress at 75% after `040f3343`: local cancel-only executable-preflight and its fault/cleanup fixture are verified. Filesystem journal mechanics, stable guardian/reaper, recovery mutation, delegated-cgroup qualification, and the physical adapter remain open; all production, G1.7, G2.2, qualification, promotion, and publication authority remains false                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ADR-0036 static closure B1-B4              | `task-1788114064268-vaigzl` / `task-1788114067364-wayobg` / `task-1788114070512-idkfkr` / `task-1788114073570-iba1gr`                               | Historical B1-B4 checkpoint through integrated commits `d971bfa4`, `86320201`, `99649146`, and `05bbd8bb`: 124/330 semantic negatives were frozen; `protectedAliases`, `indirectCalls`, `reflectComputed`, `bindingMemberWrites`, `untrustedSinks`, `rawEscapes`, and `literalMisuse` were closed. The frozen corpus was 69 foundation negatives + 124 semantic negatives + 11 positives = 204 controls, leaving 206 semantic negatives. Exact pins, targeted mutation kills, import purity, and relevant current-Node/Node-20 matrices were independently reviewed. The candidate source remained absent, ADR-0036 remained Proposed, and the checkpoint granted no runtime, G1.7, qualification, promotion, or publication authority. Readiness was unavailable at this B4 stage. |
 | ADR-0036 static closure B5-B6              | `task-1788114078142-rs6kqz` / `task-1788114083136-y7f5jl`                                                                                           | Current checkpoint through integrated commits `61122498` and `2f9e51ed`: 197/330 semantic negatives are frozen; every semantic bucket except `commitMutations` is closed, and that bucket is now 67/200. The full frozen corpus is 69 foundation negatives + 197 semantic negatives + 11 positives = 277 controls, leaving 133 semantic negatives. The candidate source remains absent, ADR-0036 remains Proposed, readiness remains exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`, and the checkpoints grant no runtime, G1.7, qualification, promotion, or publication authority.                                                                                                                                                                       |
+| ADR-0036 C12-C14 implementation history    | `task-1788042241332-xafq11`                                                                                                                         | Historical checkpoint through integrated commit `c333f8c5`: the private evaluator closes the C12 runtime oracle, C13 source lift, and C14 candidate activation while preserving exact-v2 10,833-byte SHA `2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`, guardian 81,189-byte SHA `505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d`, and fixture 14,213-byte raw/canonical hashes `968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082` / `0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`. All three runtimes passed direct 11 and main 15 with zero failures and three TODOs. This row is history, not the live C15 artifact envelope. |
+| ADR-0036 C15 byte semantics                | `task-1788204841083-htz7p5` / `task-1788286308271-uvhpg1`                                                                                           | Current GREEN checkpoint through helper `41dd2508`, guardian/fixture `23d37556`, and evaluator `4620dd92`. The same v1 fixture path advances live C15 at raw/canonical hashes `4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` / `7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`; historical C14 is evaluator-private reconstruction. Node 24.14.1, 20.0.0, and 20.20.2 each pass direct 11/11, main 19 total / 17 pass / zero fail / two TODO, helper 20/20, and ADR verifier 1/1. Independent verdict: APPROVE. Live runtime-oracle, AST, and three-entry registration identities are `57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5`, `36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53`, and `27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d`. ADR-0036 stays Proposed and authority-null. |
+| ADR-0036 C16-C21 remaining closure         | `task-1788204847572-uh0olo` / `task-1788204854834-82qx49` / `task-1788204862237-jcs5sd` / `task-1788204868984-521i0d` / `task-1788204877088-j678ig` / `task-1788204883871-l9tsh9` | C16 private-store and C17 final aggregate are the two remaining evaluator TODOs. C18-C20 independent reviews and C21 documentation/umbrella closure remain pending. No task in this tail has runtime, G1.7, G2.2, qualification, promotion, publication, or push authority. Readiness remains exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`. |
 
 B5 killed six weakening probes and accepted four false-positive probes. B6
 killed and byte-exactly restored five operator-specific mutants, and 194 of
 197 semantic controls reach ESTree. Exact pins, import purity, and the
 direct/main/combined matrices on current Node 24.14.1, Node 20.0.0, and Node
 20.20.2 were independently reviewed.
+
+The programme's dual-host plan remains unresolved. The C15 GREEN evidence does
+not settle its documentation/versioning corrections and grants it no runtime,
+qualification, or publication authority.
 
 The three G1.7 reviews ran under reviewer swarm
 `swarm-1787778496656-aq8q1c`. They are adversarial control review, not product

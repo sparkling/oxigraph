@@ -5,7 +5,7 @@
   outcomes/lookup and G1.4b simulated storage-call fault safety; G1.7
   qualification and G2.2-G2.3c remain open
 - Date: 2026-08-24
-- Updated: 2026-08-29
+- Updated: 2026-09-02
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Current audited upstream head: `ec68e3ddb2e73470ae5940c44709e041762afa41`
@@ -38,11 +38,15 @@
   `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
 - ADR-0035 local executable-preflight checkpoint:
   `040f33438693d3e3f64f8052a849b1c84caa58d8`
+- ADR-0036 C15 guardian-control checkpoint:
+  `4620dd92273c06e997a55a2204a01d311f3027de`
 - Architecture decision: [ADR-0016 — Backend-neutral transactional RDF writes](../adr/0016-backend-neutral-transactional-writes.md)
 - Exact new-file admission decision:
   [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)
 - Durable containment guardian decision:
   [ADR-0035 — Durable native containment guardian and crash recovery](../adr/0035-durable-native-containment-guardian-and-recovery.md)
+- Guardian-control pure-ABI decision:
+  [ADR-0036 — Guardian-control pure ABI](../adr/0036-guardian-control-pure-abi.md)
 - Durable statefs/syscalls decision:
   [ADR-0037 — Durable containment statefs and manager protocol](../adr/0037-durable-containment-statefs-and-manager-protocol.md)
 - Native process-mechanics decision:
@@ -202,6 +206,25 @@ performs no candidate/evaluator Git, submodule, process, provider, `ACCEPT`,
 `REJECT`, receipt-emission, or Router-quality work; a later check remains
 defense in depth. The qualified protocol would remain cancel-only, so G2.2 also
 requires a separately ratified commit-capable successor.
+
+The dated 2026-09-02 ADR-0036 C15 checkpoint is GREEN through helper
+`41dd2508`, guardian/fixture `23d37556`, and evaluator `4620dd92`. The live
+exact-v2 helper, guardian, and v1 fixture identities are respectively
+`194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`,
+`3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718`,
+and raw/canonical
+`4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd` /
+`7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`.
+The same committed v1 fixture path advances live C15; historical C14 is
+preserved only through evaluator-private reconstruction. Current Node 24.14.1,
+exact Node 20.0.0, and Node 20.20.2 each pass direct 11/11, main 17 pass / zero
+fail / two TODO, helper 20/20, and ADR verifier 1/1; independent review returned
+APPROVE. The two TODOs are C16 private-store and C17 final aggregate, with
+C18-C21 pending. This advances neither G2.2 nor the unresolved dual-host plan.
+ADR-0036 remains Proposed, readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and no
+dependency, production runtime, qualification, promotion, publication, push,
+or physical authority changes.
 
 ## Evidence policy
 
@@ -1009,10 +1032,11 @@ repository's Ruflo memory:
 | Apache Jena comparison          | `task-1787593372163-lmmndv` | `research/oxigraph-2026-08-24-r2-jena-gap`                                                             |
 | Eclipse RDF4J comparison        | `task-1787593372137-3j8kyo` | `research/oxigraph-2026-08-24-r3-rdf4j-gap`                                                            |
 | Exact new-file admission / G2.2 | `task-1787935934614-ibmjn1` | [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md) |
+| Guardian-control C15/C16-C21     | `task-1788042241332-xafq11` | [ADR-0036 — Guardian-control pure ABI](../adr/0036-guardian-control-pure-abi.md)                       |
 
-Exact recall from the three research-memory entries succeeded. The fourth row
-is the active programme task map for the prerequisite gate; it is not a
-research-memory claim. Ruflo's higher-level
+Exact recall from the three research-memory entries succeeded. The fourth and
+fifth rows are active programme task maps for prerequisite gates; they are not
+research-memory claims. Ruflo's higher-level
 `ContextSynthesizer` reported unavailable, so it was not used as evidence. The
 neural predictor had real embeddings but no stored patterns and returned no
 prediction; it did not influence prioritization. The synthesis above is the

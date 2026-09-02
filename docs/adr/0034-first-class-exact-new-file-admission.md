@@ -229,6 +229,24 @@ readiness transition, runtime registration, qualification, authority,
 promotion, or publication. All such state remains unchanged until exact
 re-pinned evidence is separately reviewed.
 
+#### 2026-09-02 shared-helper implementation checkpoint
+
+Commit `41dd2508` implements the additive helper specified above. The live
+`containment-exact-v2.mjs` is now 12,687 bytes with SHA-256
+`194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`.
+The 18 exports listed above remain unchanged and the new helper is the additive
+19th export. All nine incumbent importer source identities in the table above
+remain unchanged; ADR-0036 is the only consumer changed by its separately
+reviewed C15 slice.
+
+The helper-focused matrix passes 20/20 on current Node 24.14.1, exact Node
+20.0.0, and Node 20.20.2. This implementation changes no package manifest,
+lockfile, dependency, registry, readiness value, runtime surface, or authority.
+It neither qualifies nor promotes the helper or any downstream consumer. The
+earlier 10,833-byte source identity
+`2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`
+remains the historical C14 envelope; it is not the live C15 source identity.
+
 ### Exact scope and mutable baselines
 
 Schema v2 keeps `scope.mutableExact` as the total byte-exact candidate path
@@ -631,6 +649,14 @@ The committed implementation sequence is:
   validation, cgroup facts, FD-6 execution binding, durable guardian state,
   pidfd/waitid reap, physical/final eligibility, and every authority remain
   null or false. The fixture is not registered as the physical adapter.
+- `41dd2508` implements the ADR-0034-owned additive
+  `copyBoundedBufferByFailureCategory` export. The exact-v2 source advances to
+  12,687 bytes and SHA-256
+  `194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`;
+  its original 18 exports and all nine incumbent importer source identities
+  remain unchanged. The helper-focused matrix passes 20/20 on Node 24.14.1,
+  20.0.0, and 20.20.2, with no package, lock, dependency, registry, readiness,
+  runtime, or authority change.
 
 The current preflight-focused suite passes 47/47 and the complete top-level
 non-G1.7 harness suite, excluding the separately run committed-clean identity

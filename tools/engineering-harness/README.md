@@ -257,6 +257,81 @@ owner, and production readiness remain incomplete; readiness is still exactly
 This is evaluator evidence only. It makes no production, semantic
 qualification, promotion, G1.7, publication, or task-profile claim.
 
+### ADR-0036 C15 checkpoint — 2026-09-02
+
+The source-hard-stop narrative above is the preserved historical C14 record.
+C15 is integrated and GREEN through helper commit `41dd2508`, guardian/fixture
+commit `23d37556`, and evaluator commit `4620dd92`. The live artifact identities
+are:
+
+- `containment-exact-v2.mjs`: 12,687 bytes, SHA-256
+  `194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e`;
+- `containment-guardian-control-v1.mjs`: 81,670 bytes, SHA-256
+  `3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718`;
+- `0036-guardian-control-requirements-v1.json`: 14,230 bytes, raw SHA-256
+  `4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd`
+  and canonical-JSON SHA-256
+  `7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`.
+
+The committed v1 fixture path now advances the live C15 contract. Historical
+C14 remains privately reconstructed in the evaluator at integrated commit
+`c333f8c5`: exact-v2 was 10,833 bytes at
+`2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`,
+guardian-control was 81,189 bytes at
+`505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d`,
+and the fixture was 14,213 bytes with raw/canonical hashes
+`968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082` /
+`0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`.
+The C14 direct/adversarial and main evaluator hashes were respectively
+`53cbb652fe89a3efdeccaa47e80855dd06a4402eeb7bececa6c15f597a529fc1`
+and `58ff5e7f94a384a1e537b34cb042a0d4627f695389eb44f81c23cec08e727c27`;
+all three runtimes passed direct 11 and main 15 with zero failures and three
+TODOs.
+
+The hostile-input RED at `e1e8e4ce` passed direct 11 and recorded main 15 pass,
+one expected failure, and two TODO because `CONTROL_SHAPE` observed
+`CONTROL_BOUNDS`. Launch RED `a3d57a38` kept direct 11 and recorded main 19
+total / 15 pass / two expected failures / two TODO; the added control expected
+`CONTROL_BINDING` and observed the predecessor error. Final `4620dd92` passes on
+current Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 with direct 11/11,
+main 19 total / 17 pass / zero fail / two TODO, combined 30 total / 28 pass /
+zero fail / two TODO, helper 20/20, and ADR verifier 1/1. The final main and
+adversarial evaluator SHA-256 values are
+`141dc5940080ce383b3de8f9f857243e9316fb272597d80a58999cd22862cedf`
+and `86dc511d5188d95586aead3834484d552da02af2e4bcca55b8a98fedf03896ce`.
+Independent review returned APPROVE for this exact slice.
+
+The source inverse receipt binds one launch-wrapper removal, one admission
+verifier-call reversal, five moved normalization declarations, seven moved
+normalization calls, two unmoved startup calls, nine removed fifth
+`failShape` arguments, eleven helper-name reversals, one exact-v2 digest
+reversal, and two requirements-digest reversals. The fixture inverse binds
+exactly one exact-v2 SHA replacement and one helper import-name replacement,
+with closure-private brands and no shared non-primitive references.
+
+AST identity
+`36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53`
+proves nine direct five-argument helper calls: Startup 2, Admission 2, Cancel 1,
+RecoveryRequest 1, Diagnostic 2, and Status 1. Seven non-startup normalizations
+precede private brand/store lookup; two startup normalizations precede decode.
+The private unexported launch wrapper contains only the predecessor return in
+its `try`, only `failBinding()` in its binding-free `catch`, no `finally`, and
+the sole Admission call; only that wrapper calls the raw verifier. The separate
+live runtime-oracle identity is
+`57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5`
+and the three-entry evaluator registration inventory is
+`27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d`.
+
+Those three entries retain two TODOs: C16 private-store and C17 final aggregate.
+C18-C20 independent review and C21 documentation/umbrella closure remain
+pending. The existing 18 exact-v2 exports and nine incumbent importer source
+identities remain unchanged; the helper is the additive 19th export. No
+package, lockfile, dependency, runtime registry, readiness, or authority changed.
+ADR-0036 remains Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. This checkpoint
+grants no runtime, G1.7, G2.2, qualification, promotion, publication, or push
+authority, and it does not resolve the programme's dual-host plan.
+
 This checkpoint is not a registered task profile or production containment
 owner. A descendant can escape a POSIX process group, numeric process-group
 reuse is not identity-bearing, and pre/post verification detects but cannot
@@ -635,6 +710,10 @@ host interfaces valid, `mcpRegistered: false`, and the latest-policy lock
 resolving AVO 0.1.4, Darwin 0.9.3, Harness 0.2.0, Router 0.4.0, and MetaHarness
 0.4.8. Those versions are lock evidence, not a promise that future `latest`
 tags will remain unchanged.
+
+The `npm test` totals above are the preserved pre-C15 broad checkpoint; they are
+not relabelled by the focused C15 GREEN result. The dated C15 matrix is the
+explicit three-runtime direct/main/helper/ADR-verifier matrix recorded above.
 
 The package is local-only. Presence of this directory is not an engineering
 readiness, product-correctness, semantic-qualification, or promotion claim.
