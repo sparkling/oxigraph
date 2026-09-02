@@ -15,12 +15,31 @@ const SOURCE_URL = new URL(
 const SOURCE_PATH = fileURLToPath(SOURCE_URL);
 const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const NODE_20_0_MISSING_CANDIDATE_MESSAGE = `Cannot find module '${SOURCE_PATH}' imported from ${EVALUATOR_PATH}`;
-const REQUIREMENTS_ORACLE = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
 
 const EXPECTED_REQUIREMENTS_SHA256 =
   "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
+const LIVE_C15_REQUIREMENTS_SHA256 =
+  "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
+const LIVE_C15_FIXTURE_CONTRACT_PATH =
+  "docs/adr/fixtures/0036-guardian-control-requirements-v1.json";
+const HISTORICAL_C14_FIXTURE_RECONSTRUCTION =
+  "closure-private-exact-one-digest-and-one-import-name-inverse";
+const HISTORICAL_C14_FIXTURE_BYTE_LENGTH = 14_213;
+const HISTORICAL_C14_FIXTURE_SHA256 =
+  "968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082";
+const LIVE_C15_FIXTURE_BYTE_LENGTH = 14_230;
+const LIVE_C15_FIXTURE_SHA256 =
+  "4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd";
+const HISTORICAL_C14_EXACT_V2_SOURCE_SHA256 =
+  "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3";
+const LIVE_C15_EXACT_V2_SOURCE_SHA256 =
+  "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e";
+const HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH = 81_189;
 const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
   "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
+const LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const LIVE_C15_CANDIDATE_SOURCE_SHA256 =
+  "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718";
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
 const EXPECTED_NORMAL_MAP_SHA256 =
@@ -56,6 +75,848 @@ const ACORN_IMPORT_ENTRYPOINT_URL = new URL(
   EXPECTED_ACORN.importEntrypoint,
   ACORN_PACKAGE_URL,
 );
+
+const C15_FIXTURE_IDENTITY = (() => {
+  const inverseReceiptBrands = new WeakSet();
+  const inverseReceiptMetadata = new WeakMap();
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+
+  const nonPrimitiveReferences = (value, references = new Set()) => {
+    if (value === null || typeof value !== "object" || references.has(value)) {
+      return references;
+    }
+    references.add(value);
+    for (const child of Object.values(value)) {
+      nonPrimitiveReferences(child, references);
+    }
+    return references;
+  };
+
+  const liveFixtureBytes = readFileSync(REQUIREMENTS_URL);
+  assert.equal(Buffer.isBuffer(liveFixtureBytes), true);
+  assert.equal(Object.getPrototypeOf(liveFixtureBytes), Buffer.prototype);
+  assert.equal(liveFixtureBytes.length, LIVE_C15_FIXTURE_BYTE_LENGTH);
+  assert.equal(byteSha256(liveFixtureBytes), LIVE_C15_FIXTURE_SHA256);
+  const liveFixtureText = liveFixtureBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(liveFixtureText, "utf8").equals(liveFixtureBytes),
+    true,
+  );
+  const liveFixture = JSON.parse(liveFixtureText);
+  assert.equal(semanticSha256(liveFixture), LIVE_C15_REQUIREMENTS_SHA256);
+
+  assert.equal(
+    countExact(liveFixtureText, LIVE_C15_EXACT_V2_SOURCE_SHA256),
+    1,
+    "C15 fixture inverse exact-v2 digest count",
+  );
+  let historicalFixtureText = liveFixtureText.replace(
+    LIVE_C15_EXACT_V2_SOURCE_SHA256,
+    HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
+  );
+  assert.equal(
+    countExact(
+      historicalFixtureText,
+      "copyBoundedBufferByFailureCategory",
+    ),
+    1,
+    "C15 fixture inverse helper import count",
+  );
+  historicalFixtureText = historicalFixtureText.replace(
+    "copyBoundedBufferByFailureCategory",
+    "copyBoundedBuffer",
+  );
+  const historicalFixtureBytes = Buffer.from(historicalFixtureText, "utf8");
+  assert.equal(
+    historicalFixtureBytes.length,
+    HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
+  );
+  assert.equal(
+    byteSha256(historicalFixtureBytes),
+    HISTORICAL_C14_FIXTURE_SHA256,
+  );
+  const historicalFixture = JSON.parse(historicalFixtureText);
+  assert.equal(
+    semanticSha256(historicalFixture),
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+
+  const liveReferences = nonPrimitiveReferences(liveFixture);
+  const historicalReferences = nonPrimitiveReferences(historicalFixture);
+  assert.equal(
+    [...historicalReferences].some((value) => liveReferences.has(value)),
+    false,
+    "C15 historical fixture must not share object references with live fixture",
+  );
+
+  const inverseReceipt = Object.freeze({});
+  inverseReceiptBrands.add(inverseReceipt);
+  inverseReceiptMetadata.set(
+    inverseReceipt,
+    Object.freeze({
+      helperDigestInverseCount: 1,
+      helperImportNameInverseCount: 1,
+      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
+      historicalFixtureReconstruction:
+        HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
+      liveFixtureByteLength: liveFixtureBytes.length,
+      liveFixtureSha256: byteSha256(liveFixtureBytes),
+      liveRequirementsSha256: semanticSha256(liveFixture),
+      historicalFixtureByteLength: historicalFixtureBytes.length,
+      historicalFixtureSha256: byteSha256(historicalFixtureBytes),
+      historicalRequirementsSha256: semanticSha256(historicalFixture),
+      sharedNonPrimitiveReferenceCount: 0,
+    }),
+  );
+
+  return Object.freeze({
+    liveFixture,
+    historicalFixture,
+    historicalFixtureBytes,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const LIVE_C15_REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY.liveFixture;
+const REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY.historicalFixture;
+assert.deepEqual(
+  C15_FIXTURE_IDENTITY.assertInverseReceipt(
+    C15_FIXTURE_IDENTITY.inverseReceipt,
+  ),
+  {
+    helperDigestInverseCount: 1,
+    helperImportNameInverseCount: 1,
+    liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
+    historicalFixtureReconstruction:
+      HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
+    liveFixtureByteLength: LIVE_C15_FIXTURE_BYTE_LENGTH,
+    liveFixtureSha256: LIVE_C15_FIXTURE_SHA256,
+    liveRequirementsSha256: LIVE_C15_REQUIREMENTS_SHA256,
+    historicalFixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
+    historicalFixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
+    historicalRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    sharedNonPrimitiveReferenceCount: 0,
+  },
+);
+
+const C15_SOURCE_IDENTITY = (() => {
+  const inverseReceiptBrands = new WeakSet();
+  const inverseReceiptMetadata = new WeakMap();
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const moveNormalizationDeclarationBlock = (source, specification) => {
+    const {
+      functionName,
+      firstDeclarationName,
+      brandDeclarationName,
+      recordDeclarationName,
+      helperCallCount,
+    } = specification;
+    const functionMarker = `export function ${functionName}(`;
+    assert.equal(countExact(source, functionMarker), 1, functionName);
+    const functionStart = source.indexOf(functionMarker);
+    const possibleEnds = [
+      source.indexOf("\nexport function ", functionStart + functionMarker.length),
+      source.indexOf("\nfunction ", functionStart + functionMarker.length),
+    ].filter((index) => index !== -1);
+    const functionEnd =
+      possibleEnds.length === 0 ? source.length : Math.min(...possibleEnds);
+    const normalizationStart = source.indexOf(
+      `  const ${firstDeclarationName} = copyBoundedBufferByFailureCategory(`,
+      functionStart,
+    );
+    const brandStart = source.indexOf(
+      `  const ${brandDeclarationName} = `,
+      functionStart,
+    );
+    const recordStart = source.indexOf(
+      `  const ${recordDeclarationName} = exactRecord(`,
+      brandStart,
+    );
+    assert.equal(
+      functionStart < normalizationStart &&
+        normalizationStart < brandStart &&
+        brandStart < recordStart &&
+        recordStart < functionEnd,
+      true,
+      `${functionName} normalization/brand order`,
+    );
+    const recordTerminator = "\n  );\n";
+    const recordTerminatorStart = source.indexOf(
+      recordTerminator,
+      recordStart,
+    );
+    assert.equal(
+      recordTerminatorStart !== -1 && recordTerminatorStart < functionEnd,
+      true,
+      `${functionName} brand anchor terminator`,
+    );
+    const brandEnd = recordTerminatorStart + recordTerminator.length;
+    const normalizationBlock = source.slice(normalizationStart, brandStart);
+    const brandBlock = source.slice(brandStart, brandEnd);
+    assert.equal(
+      countExact(
+        normalizationBlock,
+        "copyBoundedBufferByFailureCategory(",
+      ),
+      helperCallCount,
+      `${functionName} normalization helper-call count`,
+    );
+    assert.equal(
+      countExact(normalizationBlock, `const ${brandDeclarationName} =`),
+      0,
+      `${functionName} normalization block excludes brand`,
+    );
+    return `${source.slice(0, normalizationStart)}${brandBlock}${normalizationBlock}${source.slice(brandEnd)}`;
+  };
+
+  const reconstruct = (liveSourceBytes) => {
+    assert.equal(Buffer.isBuffer(liveSourceBytes), true);
+    assert.equal(Object.getPrototypeOf(liveSourceBytes), Buffer.prototype);
+    assert.equal(liveSourceBytes.length, LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH);
+    assert.equal(byteSha256(liveSourceBytes), LIVE_C15_CANDIDATE_SOURCE_SHA256);
+    const liveSource = liveSourceBytes.toString("utf8");
+    assert.equal(Buffer.from(liveSource, "utf8").equals(liveSourceBytes), true);
+
+    const launchWrapperDeclaration = `function verifyAdmissionLaunchCapsuleV3(capsuleBytes) {
+  try {
+    return verifyCandidateContainmentLaunchCapsuleV3(capsuleBytes);
+  } catch {
+    failBinding();
+  }
+}
+
+`;
+    let historicalSource = replaceExactly(
+      liveSource,
+      launchWrapperDeclaration,
+      "",
+      1,
+      "C15 inverse launch-wrapper declaration count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      "const capsule = verifyAdmissionLaunchCapsuleV3(capsuleBytes);",
+      "const capsule = verifyCandidateContainmentLaunchCapsuleV3(capsuleBytes);",
+      1,
+      "C15 inverse Admission wrapper-call count",
+    );
+
+    const normalizationMoves = [
+      {
+        functionName: "createCandidateContainmentGuardianAdmissionInputV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 2,
+      },
+      {
+        functionName: "createCandidateContainmentGuardianCancelInputV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 1,
+      },
+      {
+        functionName:
+          "createCandidateContainmentGuardianRecoveryRequestInputV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 1,
+      },
+      {
+        functionName:
+          "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+        firstDeclarationName: "summaryCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 2,
+      },
+      {
+        functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "startupProjectionBrand",
+        recordDeclarationName: "startup",
+        helperCallCount: 1,
+      },
+    ];
+    assert.equal(
+      countExact(historicalSource, "copyBoundedBufferByFailureCategory("),
+      9,
+      "C15 inverse live helper-call count before declaration moves",
+    );
+    for (const specification of normalizationMoves) {
+      historicalSource = moveNormalizationDeclarationBlock(
+        historicalSource,
+        specification,
+      );
+    }
+    assert.equal(
+      normalizationMoves.reduce(
+        (count, specification) => count + specification.helperCallCount,
+        0,
+      ),
+      7,
+    );
+    const startupFunctionStart = historicalSource.indexOf(
+      "export function createCandidateContainmentGuardianStartupV1(",
+    );
+    const startupFunctionEnd = historicalSource.indexOf(
+      "\nexport function ",
+      startupFunctionStart + 1,
+    );
+    assert.equal(
+      countExact(
+        historicalSource.slice(startupFunctionStart, startupFunctionEnd),
+        "copyBoundedBufferByFailureCategory(",
+      ),
+      2,
+      "C15 inverse Startup helper-call count",
+    );
+
+    historicalSource = replaceExactly(
+      historicalSource,
+      "    failBounds,\n    failShape,\n  );",
+      "    failBounds,\n  );",
+      9,
+      "C15 inverse fifth failShape argument count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      "copyBoundedBufferByFailureCategory",
+      "copyBoundedBuffer",
+      11,
+      "C15 inverse helper-name count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      LIVE_C15_EXACT_V2_SOURCE_SHA256,
+      HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
+      1,
+      "C15 inverse exact-v2 digest count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      LIVE_C15_REQUIREMENTS_SHA256,
+      EXPECTED_REQUIREMENTS_SHA256,
+      2,
+      "C15 inverse requirements digest count",
+    );
+
+    const historicalSourceBytes = Buffer.from(historicalSource, "utf8");
+    assert.equal(
+      historicalSourceBytes.length,
+      HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteSha256(historicalSourceBytes),
+      C14_AUDITED_CANDIDATE_SOURCE_SHA256,
+    );
+
+    const inverseReceipt = Object.freeze({});
+    inverseReceiptBrands.add(inverseReceipt);
+    inverseReceiptMetadata.set(
+      inverseReceipt,
+      Object.freeze({
+        launchWrapperDeclarationRemovals: 1,
+        admissionVerifierCallReversals: 1,
+        normalizationDeclarationBlocksMoved: 5,
+        normalizationHelperCallsMoved: 7,
+        startupHelperCallsUnmoved: 2,
+        fifthFailShapeArgumentsRemoved: 9,
+        helperNameReversals: 11,
+        exactV2DigestReversals: 1,
+        requirementsDigestReversals: 2,
+        liveSourceByteLength: liveSourceBytes.length,
+        liveSourceSha256: byteSha256(liveSourceBytes),
+        historicalSourceByteLength: historicalSourceBytes.length,
+        historicalSourceSha256: byteSha256(historicalSourceBytes),
+      }),
+    );
+    return Object.freeze({
+      liveSource,
+      liveSourceBytes: Buffer.from(liveSourceBytes),
+      historicalSource,
+      historicalSourceBytes,
+      inverseReceipt,
+    });
+  };
+
+  return Object.freeze({
+    reconstruct,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const C15_LIVE_AST_EXTENSION_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c15-live-ast-extension/v1";
+const C15_BYTE_NORMALIZATION_CALL_SPECS = Object.freeze([
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianStartupV1",
+    declarationName: "startupCarrier",
+    rawValueName: "startupReportBytes",
+    label: "startup report bytes",
+    minimum: 0,
+    maximum: "startupReportMaximumBytes",
+    storeName: null,
+    brandKeyName: null,
+  }),
+  Object.freeze({
+    functionName: "createCandidateContainmentGuardianStartupV1",
+    declarationName: "epoch",
+    rawValueName: "epochBytes",
+    label: "epoch bytes",
+    minimum: "epochBytes",
+    maximum: "epochBytes",
+    storeName: null,
+    brandKeyName: null,
+  }),
+  ...[
+    [
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "frameCarrier",
+      "admissionFrameBytes",
+      "admission frame bytes",
+      0,
+      "admissionFrameMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "reportCarrier",
+      "recvmsgReportBytes",
+      "admission recvmsg report bytes",
+      0,
+      "admissionRecvmsgReportMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianCancelInputV1",
+      "frameCarrier",
+      "cancelFrameBytes",
+      "cancel frame bytes",
+      0,
+      "cancelFrameMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      "frameCarrier",
+      "recoveryRequestFrameBytes",
+      "recovery request frame bytes",
+      0,
+      "recoveryRequestMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "summaryCarrier",
+      "diagnosticSummaryReportBytes",
+      "diagnostic summary report bytes",
+      0,
+      "diagnosticSummaryMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "raw",
+      "rawDiagnosticBytes",
+      "raw diagnostic bytes",
+      0,
+      "rawDiagnosticsMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "verifyCandidateContainmentGuardianStatusFrameV1",
+      "frameCarrier",
+      "statusFrameBytes",
+      "status frame bytes",
+      0,
+      "statusFrameMaximumBytes",
+      "startupMetadata",
+      "startupProjection",
+    ],
+  ].map(
+    ([
+      functionName,
+      declarationName,
+      rawValueName,
+      label,
+      minimum,
+      maximum,
+      storeName,
+      brandKeyName,
+    ]) =>
+      Object.freeze({
+        functionName,
+        declarationName,
+        rawValueName,
+        label,
+        minimum,
+        maximum,
+        storeName,
+        brandKeyName,
+      }),
+  ),
+]);
+
+function walkC15Ast(node, parent, visit) {
+  if (node === null || typeof node?.type !== "string") return;
+  visit(node, parent);
+  for (const [key, value] of Object.entries(node)) {
+    if (["start", "end", "loc", "range", "raw"].includes(key)) continue;
+    if (Array.isArray(value)) {
+      for (const child of value) walkC15Ast(child, node, visit);
+    } else {
+      walkC15Ast(value, node, visit);
+    }
+  }
+}
+
+function c15Identifier(node, name) {
+  return node?.type === "Identifier" && node.name === name;
+}
+
+function c15GuardianLimit(node, expected) {
+  if (typeof expected === "number") {
+    return node?.type === "Literal" && node.value === expected;
+  }
+  return (
+    node?.type === "MemberExpression" &&
+    node.computed === false &&
+    c15Identifier(node.property, expected) &&
+    node.object?.type === "MemberExpression" &&
+    node.object.computed === false &&
+    c15Identifier(node.object.property, "limits") &&
+    c15Identifier(node.object.object, "guardianContract")
+  );
+}
+
+function c15DirectMemberCall(node, objectName, propertyName, argumentName) {
+  return (
+    node?.type === "CallExpression" &&
+    node.optional === false &&
+    node.arguments.length === 1 &&
+    c15Identifier(node.arguments[0], argumentName) &&
+    node.callee?.type === "MemberExpression" &&
+    node.callee.computed === false &&
+    node.callee.optional === false &&
+    c15Identifier(node.callee.object, objectName) &&
+    c15Identifier(node.callee.property, propertyName)
+  );
+}
+
+function assertC15LiveAstExtension(program) {
+  assert.equal(program?.type, "Program");
+  const parents = new WeakMap();
+  const identifierOccurrences = new Map();
+  const stringLiteralCounts = new Map();
+  const allCalls = [];
+  walkC15Ast(program, null, (node, parent) => {
+    if (parent !== null) parents.set(node, parent);
+    if (node.type === "Identifier") {
+      const occurrences = identifierOccurrences.get(node.name) ?? [];
+      occurrences.push(node);
+      identifierOccurrences.set(node.name, occurrences);
+    }
+    if (node.type === "Literal" && typeof node.value === "string") {
+      stringLiteralCounts.set(
+        node.value,
+        (stringLiteralCounts.get(node.value) ?? 0) + 1,
+      );
+    }
+    if (node.type === "CallExpression") allCalls.push(node);
+  });
+
+  const importedHelperSpecifiers = program.body.flatMap((statement) =>
+    statement.type === "ImportDeclaration" &&
+    statement.source.value === "./containment-exact-v2.mjs"
+      ? statement.specifiers.filter(
+          (specifier) =>
+            specifier.type === "ImportSpecifier" &&
+            c15Identifier(
+              specifier.imported,
+              "copyBoundedBufferByFailureCategory",
+            ),
+        )
+      : [],
+  );
+  assert.equal(importedHelperSpecifiers.length, 1);
+  assert.equal(
+    c15Identifier(
+      importedHelperSpecifiers[0].local,
+      "copyBoundedBufferByFailureCategory",
+    ),
+    true,
+  );
+  assert.equal(
+    stringLiteralCounts.get("copyBoundedBufferByFailureCategory"),
+    1,
+  );
+
+  const functions = new Map();
+  const exportedFunctionNames = new Set();
+  for (const statement of program.body) {
+    const declaration =
+      statement.type === "ExportNamedDeclaration"
+        ? statement.declaration
+        : statement;
+    if (declaration?.type !== "FunctionDeclaration") continue;
+    assert.equal(functions.has(declaration.id.name), false);
+    functions.set(declaration.id.name, declaration);
+    if (statement.type === "ExportNamedDeclaration") {
+      exportedFunctionNames.add(declaration.id.name);
+    }
+  }
+
+  const expectedCalls = [];
+  const nonStartupFunctionNames = new Set();
+  for (const specification of C15_BYTE_NORMALIZATION_CALL_SPECS) {
+    const fn = functions.get(specification.functionName);
+    assert.notEqual(fn, undefined, specification.functionName);
+    const matchingDeclarations = [];
+    for (const [statementIndex, statement] of fn.body.body.entries()) {
+      if (statement.type !== "VariableDeclaration") continue;
+      for (const declaration of statement.declarations) {
+        if (c15Identifier(declaration.id, specification.declarationName)) {
+          matchingDeclarations.push({ declaration, statement, statementIndex });
+        }
+      }
+    }
+    assert.equal(
+      matchingDeclarations.length,
+      1,
+      `${specification.functionName}.${specification.declarationName}`,
+    );
+    const [{ declaration, statement, statementIndex }] = matchingDeclarations;
+    assert.equal(statement.kind, "const");
+    assert.equal(statement.declarations.length, 1);
+    const call = declaration.init;
+    assert.equal(call?.type, "CallExpression");
+    assert.equal(call.optional, false);
+    assert.equal(
+      c15Identifier(call.callee, "copyBoundedBufferByFailureCategory"),
+      true,
+    );
+    assert.equal(call.arguments.length, 5);
+    assert.equal(c15Identifier(call.arguments[0], specification.rawValueName), true);
+    assert.equal(call.arguments[1]?.type, "Literal");
+    assert.equal(call.arguments[1].value, specification.label);
+    const limits = call.arguments[2];
+    assert.equal(limits?.type, "ObjectExpression");
+    assert.equal(limits.properties.length, 2);
+    for (const [index, [key, expected]] of [
+      ["minimumBytes", specification.minimum],
+      ["maximumBytes", specification.maximum],
+    ].entries()) {
+      const property = limits.properties[index];
+      assert.equal(property.type, "Property");
+      assert.equal(property.kind, "init");
+      assert.equal(property.computed, false);
+      assert.equal(property.method, false);
+      assert.equal(property.shorthand, false);
+      assert.equal(c15Identifier(property.key, key), true);
+      assert.equal(c15GuardianLimit(property.value, expected), true);
+    }
+    assert.equal(c15Identifier(call.arguments[3], "failBounds"), true);
+    assert.equal(c15Identifier(call.arguments[4], "failShape"), true);
+    expectedCalls.push(call);
+
+    if (specification.storeName !== null) {
+      nonStartupFunctionNames.add(specification.functionName);
+      const accessStatementIndexes = [];
+      for (const [index, candidateStatement] of fn.body.body.entries()) {
+        walkC15Ast(candidateStatement, fn.body, (node) => {
+          if (
+            c15DirectMemberCall(
+              node,
+              specification.storeName,
+              "has",
+              specification.brandKeyName,
+            ) ||
+            c15DirectMemberCall(
+              node,
+              specification.storeName,
+              "get",
+              specification.brandKeyName,
+            )
+          ) {
+            accessStatementIndexes.push(index);
+          }
+        });
+      }
+      assert.deepEqual([...new Set(accessStatementIndexes)], [
+        Math.min(...accessStatementIndexes),
+        Math.max(...accessStatementIndexes),
+      ]);
+      assert.equal(accessStatementIndexes.length, 2);
+      assert.equal(
+        statementIndex < Math.min(...accessStatementIndexes),
+        true,
+        `${specification.functionName}.${specification.declarationName} must precede private-store access`,
+      );
+    }
+  }
+  assert.equal(expectedCalls.length, 9);
+  assert.equal(nonStartupFunctionNames.size, 5);
+  assert.equal(
+    C15_BYTE_NORMALIZATION_CALL_SPECS.filter(
+      ({ storeName }) => storeName !== null,
+    ).length,
+    7,
+  );
+  const actualHelperCalls = allCalls.filter((call) =>
+    c15Identifier(call.callee, "copyBoundedBufferByFailureCategory"),
+  );
+  assert.equal(actualHelperCalls.length, 9);
+  assert.deepEqual(new Set(actualHelperCalls), new Set(expectedCalls));
+
+  for (const occurrence of
+    identifierOccurrences.get("copyBoundedBufferByFailureCategory") ?? []) {
+    const parent = parents.get(occurrence);
+    assert.equal(
+      (parent?.type === "ImportSpecifier" &&
+        (parent.imported === occurrence || parent.local === occurrence)) ||
+        (parent?.type === "CallExpression" && parent.callee === occurrence),
+      true,
+      "C15 helper alias or non-call reference",
+    );
+  }
+
+  const wrapperName = "verifyAdmissionLaunchCapsuleV3";
+  const rawVerifierName = "verifyCandidateContainmentLaunchCapsuleV3";
+  const wrapper = functions.get(wrapperName);
+  assert.notEqual(wrapper, undefined);
+  assert.equal(exportedFunctionNames.has(wrapperName), false);
+  assert.deepEqual(wrapper.params.map(({ name }) => name), ["capsuleBytes"]);
+  assert.equal(wrapper.body.body.length, 1);
+  const tryStatement = wrapper.body.body[0];
+  assert.equal(tryStatement.type, "TryStatement");
+  assert.equal(tryStatement.finalizer, null);
+  assert.equal(tryStatement.block.body.length, 1);
+  const returnStatement = tryStatement.block.body[0];
+  assert.equal(returnStatement.type, "ReturnStatement");
+  assert.equal(returnStatement.argument?.type, "CallExpression");
+  assert.equal(c15Identifier(returnStatement.argument.callee, rawVerifierName), true);
+  assert.deepEqual(
+    returnStatement.argument.arguments.map(({ name }) => name),
+    ["capsuleBytes"],
+  );
+  assert.equal(tryStatement.handler?.type, "CatchClause");
+  assert.equal(tryStatement.handler.param, null);
+  assert.equal(tryStatement.handler.body.body.length, 1);
+  const catchStatement = tryStatement.handler.body.body[0];
+  assert.equal(catchStatement.type, "ExpressionStatement");
+  assert.equal(catchStatement.expression?.type, "CallExpression");
+  assert.equal(c15Identifier(catchStatement.expression.callee, "failBinding"), true);
+  assert.equal(catchStatement.expression.arguments.length, 0);
+
+  const wrapperCalls = allCalls.filter((call) =>
+    c15Identifier(call.callee, wrapperName),
+  );
+  assert.equal(wrapperCalls.length, 1);
+  const admission = functions.get(
+    "createCandidateContainmentGuardianAdmissionInputV1",
+  );
+  let admissionWrapperCalls = 0;
+  walkC15Ast(admission.body, admission, (node) => {
+    if (node === wrapperCalls[0]) admissionWrapperCalls += 1;
+  });
+  assert.equal(admissionWrapperCalls, 1);
+  const wrapperCallParent = parents.get(wrapperCalls[0]);
+  assert.equal(wrapperCallParent?.type, "VariableDeclarator");
+  assert.equal(c15Identifier(wrapperCallParent.id, "capsule"), true);
+
+  const rawVerifierCalls = allCalls.filter((call) =>
+    c15Identifier(call.callee, rawVerifierName),
+  );
+  assert.deepEqual(rawVerifierCalls, [returnStatement.argument]);
+  for (const name of [wrapperName, rawVerifierName]) {
+    for (const occurrence of identifierOccurrences.get(name) ?? []) {
+      const parent = parents.get(occurrence);
+      const wrapperIdentity =
+        name === wrapperName &&
+        parent?.type === "FunctionDeclaration" &&
+        parent.id === occurrence;
+      const importedIdentity =
+        name === rawVerifierName &&
+        parent?.type === "ImportSpecifier" &&
+        (parent.imported === occurrence || parent.local === occurrence);
+      const directCall =
+        parent?.type === "CallExpression" && parent.callee === occurrence;
+      assert.equal(
+        wrapperIdentity || importedIdentity || directCall,
+        true,
+        `C15 ${name} alias, export, bypass, or extra reference`,
+      );
+    }
+  }
+
+  const projection = {
+    schema: C15_LIVE_AST_EXTENSION_SCHEMA,
+    helperImportCount: importedHelperSpecifiers.length,
+    helperContractLiteralCount:
+      stringLiteralCounts.get("copyBoundedBufferByFailureCategory"),
+    helperCallCount: actualHelperCalls.length,
+    startupHelperCallCount: 2,
+    nonStartupHelperCallCount: 7,
+    nonStartupFunctionCount: nonStartupFunctionNames.size,
+    wrapperDeclarationCount: 1,
+    wrapperCallCount: wrapperCalls.length,
+    rawVerifierCallCount: rawVerifierCalls.length,
+    catchBindingOmitted: tryStatement.handler.param === null,
+    finallyClauseAbsent: tryStatement.finalizer === null,
+  };
+  return Object.freeze({
+    ...projection,
+    projectionSha256: semanticSha256(projection),
+  });
+}
 
 function pinParserDependencyBeforeCandidateRead() {
   const manifest = JSON.parse(
@@ -638,6 +1499,19 @@ const PREDECESSOR_SOURCE_GOLDENS = Object.freeze([
     sha256: "747c913e60768c53bdeeec923a6ff2f1319121d743bddd8e4db663c1a03d23ff",
   }),
 ]);
+const LIVE_C15_PREDECESSOR_SOURCE_GOLDENS = Object.freeze(
+  PREDECESSOR_SOURCE_GOLDENS.map((golden) =>
+    Object.freeze(
+      golden.specifier === "./containment-exact-v2.mjs"
+        ? {
+            ...golden,
+            byteLength: 12_687,
+            sha256: LIVE_C15_EXACT_V2_SOURCE_SHA256,
+          }
+        : { ...golden },
+    ),
+  ),
+);
 
 function canonicalJson(value) {
   if (
@@ -832,12 +1706,12 @@ function assertCandidateModuleContract(moduleNamespace) {
   }
   assert.equal(
     moduleNamespace.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256,
-    EXPECTED_REQUIREMENTS_SHA256,
+    LIVE_C15_REQUIREMENTS_SHA256,
   );
   const requirements =
     moduleNamespace.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS;
-  assertRequirementsValue(requirements, REQUIREMENTS_ORACLE);
-  assert.equal(semanticSha256(requirements), EXPECTED_REQUIREMENTS_SHA256);
+  assertRequirementsValue(requirements, LIVE_C15_REQUIREMENTS_ORACLE);
+  assert.equal(semanticSha256(requirements), LIVE_C15_REQUIREMENTS_SHA256);
 }
 
 function startupDescriptor(
@@ -1619,7 +2493,8 @@ function c12CreateLaunchCapsuleWitness() {
   return { binding, argvBinding, environmentBinding };
 }
 
-function c12CreateStartupWitness(mode) {
+function c12CreateStartupWitness(mode, requirementsSha256) {
+  assert.match(requirementsSha256, /^[0-9a-f]{64}$/u);
   const normal = mode === "NORMAL";
   const map = normal ? NORMAL_STARTUP_MAP_GOLDEN : RECOVERY_STARTUP_MAP_GOLDEN;
   const epochBytes = normal
@@ -1634,7 +2509,7 @@ function c12CreateStartupWitness(mode) {
   const epoch = c12RawBinding(`${mode.toLowerCase()}-epoch`, epochBytes);
   const scope = {
     schema: C12_SCHEMAS.openFileDescriptionScope,
-    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    requirementsSha256,
     mode,
     epochSha256: epoch.rawSha256,
   };
@@ -1670,7 +2545,7 @@ function c12CreateStartupWitness(mode) {
   const report = {
     schema: C12_SCHEMAS.startupReport,
     mode,
-    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    requirementsSha256,
     expectedEpochSha256: epoch.rawSha256,
     openFileDescriptionObservationScopeSha256: scopeSha256,
     descriptorCount,
@@ -1698,7 +2573,7 @@ function c12CreateStartupWitness(mode) {
   const expectedProjection = {
     schema: C12_SCHEMAS.startupProjection,
     mode,
-    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    requirementsSha256,
     startupReportByteLength: reportBinding.byteLength,
     startupReportSha256: reportBinding.rawSha256,
     epochSha256: epoch.rawSha256,
@@ -1889,7 +2764,7 @@ function c12CreateState(fields) {
     schema: C12_SCHEMAS.stateProjection,
     mode: fields.mode,
     phase: fields.phase,
-    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    requirementsSha256: fields.requirementsSha256,
     startupSha256: fields.startupSha256,
     epochSha256: fields.epochSha256,
     lastWireFrameSha256: fields.lastWireFrameSha256,
@@ -1919,7 +2794,7 @@ function c12CreateStatusWitness(fields, state, terminalReason) {
     mode: state.mode,
     sequence: state.nextWireSequence,
     previousFrameSha256: state.lastWireFrameSha256,
-    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    requirementsSha256: state.requirementsSha256,
     startupSha256: state.startupSha256,
     epochSha256: state.epochSha256,
     state: fields,
@@ -1979,7 +2854,7 @@ function c12CreateInputWitness(kind, currentState, context) {
       mode: "NORMAL",
       sequence: currentState.nextWireSequence,
       previousFrameSha256: currentState.lastWireFrameSha256,
-      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      requirementsSha256: currentState.requirementsSha256,
       startupSha256: currentState.startupSha256,
       epochSha256: currentState.epochSha256,
       launchCapsuleV3Sha256: context.launchCapsule.binding.rawSha256,
@@ -2002,7 +2877,7 @@ function c12CreateInputWitness(kind, currentState, context) {
       mode: "NORMAL",
       sequence: currentState.nextWireSequence,
       previousFrameSha256: currentState.lastWireFrameSha256,
-      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      requirementsSha256: currentState.requirementsSha256,
       startupSha256: currentState.startupSha256,
       epochSha256: currentState.epochSha256,
       admissionFrameSha256: currentState.admissionFrameSha256,
@@ -2036,7 +2911,7 @@ function c12CreateInputWitness(kind, currentState, context) {
       mode: "RECOVERY_ONLY",
       sequence: currentState.nextWireSequence,
       previousFrameSha256: currentState.lastWireFrameSha256,
-      requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      requirementsSha256: currentState.requirementsSha256,
       startupSha256: currentState.startupSha256,
       epochSha256: currentState.epochSha256,
       recoverySelectionSha256: semanticSha256(selection),
@@ -2108,6 +2983,7 @@ function c12Initialize(startup) {
       startup.mode === "NORMAL"
         ? "WAITING_NORMAL_INPUT"
         : "WAITING_RECOVERY_REQUEST",
+    requirementsSha256: startup.expectedProjection.requirementsSha256,
     startupSha256: startup.startupReport.rawSha256,
     epochSha256: startup.epoch.rawSha256,
     lastWireFrameSha256: C12_GENESIS_SHA256,
@@ -2248,7 +3124,11 @@ function c12CoreWithoutMembership(row) {
   return clone;
 }
 
-function c12BuildContractValidRuntimeOracle(mutateRecoverySelection = null) {
+function c12BuildContractValidRuntimeOracle(
+  requirementsSha256,
+  mutateRecoverySelection = null,
+) {
+  assert.match(requirementsSha256, /^[0-9a-f]{64}$/u);
   assert.equal(
     mutateRecoverySelection === null ||
       typeof mutateRecoverySelection === "function",
@@ -2256,8 +3136,11 @@ function c12BuildContractValidRuntimeOracle(mutateRecoverySelection = null) {
   );
   const launchCapsule = c12CreateLaunchCapsuleWitness();
   const startups = {
-    NORMAL: c12CreateStartupWitness("NORMAL"),
-    RECOVERY_ONLY: c12CreateStartupWitness("RECOVERY_ONLY"),
+    NORMAL: c12CreateStartupWitness("NORMAL", requirementsSha256),
+    RECOVERY_ONLY: c12CreateStartupWitness(
+      "RECOVERY_ONLY",
+      requirementsSha256,
+    ),
   };
   const context = { launchCapsule, startups, mutateRecoverySelection };
   const transitionRows = [];
@@ -2572,7 +3455,7 @@ function c12BuildContractValidRuntimeOracle(mutateRecoverySelection = null) {
   };
   const oracle = {
     schema: CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA,
-    requirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+    requirementsSha256,
     counts,
     inventorySha256,
     witnesses: {
@@ -2741,10 +3624,12 @@ function c12AssertRecoverySelection(selection, expectedEpochSha256) {
 function c12AssertLocallyConsistentRuntimeOracle(
   oracle,
   requireExactRecoverySelection,
+  requirementsSha256,
 ) {
   assert.equal(typeof requireExactRecoverySelection, "boolean");
+  assert.match(requirementsSha256, /^[0-9a-f]{64}$/u);
   assert.equal(oracle.schema, CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA);
-  assert.equal(oracle.requirementsSha256, EXPECTED_REQUIREMENTS_SHA256);
+  assert.equal(oracle.requirementsSha256, requirementsSha256);
   assert.deepEqual(oracle.counts, {
     startupWitnesses: 2,
     inputKindWitnesses: 7,
@@ -3285,7 +4170,11 @@ function c12AssertLocallyConsistentRuntimeOracle(
 }
 
 function c12AssertContractValidRuntimeOracle(oracle) {
-  c12AssertLocallyConsistentRuntimeOracle(oracle, true);
+  c12AssertLocallyConsistentRuntimeOracle(
+    oracle,
+    true,
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
   assert.deepEqual(
     oracle.inventorySha256,
     EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
@@ -3296,16 +4185,28 @@ function c12AssertContractValidRuntimeOracle(oracle) {
   );
 }
 
-function createContractValidRuntimeOracle() {
-  const oracle = c12BuildContractValidRuntimeOracle();
-  c12AssertContractValidRuntimeOracle(oracle);
+function createContractValidRuntimeOracle(requirementsSha256) {
+  assert.match(requirementsSha256, /^[0-9a-f]{64}$/u);
+  const oracle = c12BuildContractValidRuntimeOracle(requirementsSha256);
+  c12AssertLocallyConsistentRuntimeOracle(
+    oracle,
+    true,
+    requirementsSha256,
+  );
   return recursivelyFreezeEvidence(oracle);
 }
 
 function c12CreateCoherentlyResealedRecoveryOracle(mutateRecoverySelection) {
   assert.equal(typeof mutateRecoverySelection, "function");
-  const oracle = c12BuildContractValidRuntimeOracle(mutateRecoverySelection);
-  c12AssertLocallyConsistentRuntimeOracle(oracle, false);
+  const oracle = c12BuildContractValidRuntimeOracle(
+    EXPECTED_REQUIREMENTS_SHA256,
+    mutateRecoverySelection,
+  );
+  c12AssertLocallyConsistentRuntimeOracle(
+    oracle,
+    false,
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
   const recoveryStartup = oracle.witnesses.startups.find(
     ({ mode }) => mode === "RECOVERY_ONLY",
   );
@@ -10783,6 +11684,41 @@ function auditMainCandidateSourceForProduction(
 
 const MAIN_C14_PRODUCTION_AUDIT_BINDING = auditMainCandidateSourceForProduction;
 
+function auditLiveC15CandidateAgainstHistoricalC14(source) {
+  assert.equal(typeof source, "string");
+  const sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(
+    Buffer.from(source, "utf8"),
+  );
+  assert.deepEqual(
+    C15_SOURCE_IDENTITY.assertInverseReceipt(sourceIdentity.inverseReceipt),
+    {
+      launchWrapperDeclarationRemovals: 1,
+      admissionVerifierCallReversals: 1,
+      normalizationDeclarationBlocksMoved: 5,
+      normalizationHelperCallsMoved: 7,
+      startupHelperCallsUnmoved: 2,
+      fifthFailShapeArgumentsRemoved: 9,
+      helperNameReversals: 11,
+      exactV2DigestReversals: 1,
+      requirementsDigestReversals: 2,
+      liveSourceByteLength: LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+      liveSourceSha256: LIVE_C15_CANDIDATE_SOURCE_SHA256,
+      historicalSourceByteLength: HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH,
+      historicalSourceSha256: C14_AUDITED_CANDIDATE_SOURCE_SHA256,
+    },
+  );
+  const historicalC14Audit = MAIN_C14_PRODUCTION_AUDIT_BINDING(
+    sourceIdentity.historicalSource,
+  );
+  const liveProgram = parseCandidateModuleAst(sourceIdentity.liveSource).program;
+  const c15Extension = assertC15LiveAstExtension(liveProgram);
+  assert.equal(
+    c15Extension.projectionSha256,
+    "36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53",
+  );
+  return Object.freeze({ ...historicalC14Audit, c15Extension });
+}
+
 function mainCandidateActivationStateBody({
   preimageMutation = null,
   missingProtectedState = false,
@@ -15402,17 +16338,17 @@ function isExpectedAbsentCandidateModuleError(error, candidateSourceText) {
 function pinPredecessorSourcesBeforeCandidateRead() {
   const fixturePins = new Map(
     [
-      ...STATIC_POLICY_REQUIREMENTS_ORACLE.predecessors.direct,
-      ...STATIC_POLICY_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
+      ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct,
+      ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
     ].map(({ specifier, sha256: expectedSha256 }) => [
       specifier,
       expectedSha256,
     ]),
   );
-  assert.equal(fixturePins.size, PREDECESSOR_SOURCE_GOLDENS.length);
+  assert.equal(fixturePins.size, LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.length);
   let directCount = 0;
   let evidenceOnlyCount = 0;
-  for (const golden of PREDECESSOR_SOURCE_GOLDENS) {
+  for (const golden of LIVE_C15_PREDECESSOR_SOURCE_GOLDENS) {
     const bytes = readFileSync(
       new URL(`../src/candidate/${golden.specifier.slice(2)}`, import.meta.url),
     );
@@ -15426,7 +16362,7 @@ function pinPredecessorSourcesBeforeCandidateRead() {
     completedBeforeCandidateRead: true,
     directCount,
     evidenceOnlyCount,
-    sourceCount: PREDECESSOR_SOURCE_GOLDENS.length,
+    sourceCount: LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.length,
   });
 }
 
@@ -15479,7 +16415,11 @@ function c12AssertSelectionMatchesIndependentPredecessorTuple(
 }
 
 function c12AssertGate6RecoveryCascade(canonicalOracle, falseWorldOracle) {
-  c12AssertLocallyConsistentRuntimeOracle(falseWorldOracle, false);
+  c12AssertLocallyConsistentRuntimeOracle(
+    falseWorldOracle,
+    false,
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
   assertRecursivelyFrozenWithoutByteViews(falseWorldOracle);
   assert.equal(
     countSharedNonPrimitiveObjectReferences(canonicalOracle, falseWorldOracle),
@@ -16082,7 +17022,33 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
 const SYNCHRONOUS_PREDECESSOR_AUDIT =
   pinPredecessorSourcesBeforeCandidateRead();
 assert.deepEqual(C12_EXPECTED_VALUE_SOURCE_AUDIT.forbiddenReferences, []);
-const CONTRACT_VALID_RUNTIME_ORACLE = createContractValidRuntimeOracle();
+const CONTRACT_VALID_RUNTIME_ORACLE = createContractValidRuntimeOracle(
+  EXPECTED_REQUIREMENTS_SHA256,
+);
+c12AssertContractValidRuntimeOracle(CONTRACT_VALID_RUNTIME_ORACLE);
+const LIVE_C15_RUNTIME_ORACLE = createContractValidRuntimeOracle(
+  LIVE_C15_REQUIREMENTS_SHA256,
+);
+assert.deepEqual(LIVE_C15_RUNTIME_ORACLE.inventorySha256, {
+  startupWitnesses:
+    "411ee8d307d99a337a3fe44c1a7a3abf50d9fc8d7f21afa4f7e06f0a7c75328c",
+  inputKindWitnesses:
+    "4c795a643ac149a3313b8642376d4a5c7491c27585c1e5f3da3b5f1b0819c13c",
+  legalSequences:
+    "7254128169a1a29b5b5c39a351a20dd580f5cf2ca9582e35e3d7f097247a99af",
+  wholeTransitions:
+    "e376910b43495a2286d5eca1f4a5384016f0297cad9c6728a9767b2210c87e0f",
+  acceptedPrefixes:
+    "224fe20422aebf07b60f7201f36640efd6ed51bceb6387c26984df1b282fcfda",
+  emittedStatuses:
+    "6607ec4d1ab26bd6ddc20662b9211f85823a34a531f9457b86596f469a0e14d7",
+  atomicPrefixes:
+    "80e736dcca003989fe62b692399d34b6b8a23436921a927470df242937027dfd",
+});
+assert.equal(
+  LIVE_C15_RUNTIME_ORACLE.identitySha256,
+  "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+);
 const C12_ORACLE_CONSTRUCTION_RECEIPT = recursivelyFreezeEvidence({
   schema:
     "oxigraph.test.candidate-containment-guardian-control-v1-c12-construction-phase/v1",
@@ -16098,7 +17064,7 @@ const C12_ORACLE_CONSTRUCTION_RECEIPT = recursivelyFreezeEvidence({
 const PRODUCTION_FRESH_CANDIDATE_LOADER =
   createDeterministicFreshCandidateLoader({
     readSourceBytes: () => readFileSync(SOURCE_PATH),
-    auditSource: MAIN_C14_PRODUCTION_AUDIT_BINDING,
+    auditSource: auditLiveC15CandidateAgainstHistoricalC14,
     importCandidate: (href) => import(href),
   });
 const ADVERSARIAL_WIRING_ACTIVITY = {
@@ -16131,7 +17097,7 @@ const DEFERRED_CANDIDATE_INPUT = new Promise((resolve) => {
 });
 const DEFERRED_ADVERSARIAL_INPUTS = {
   candidate: DEFERRED_CANDIDATE_INPUT,
-  oracle: CONTRACT_VALID_RUNTIME_ORACLE,
+  oracle: LIVE_C15_RUNTIME_ORACLE,
   loadFreshCandidate: async () => {
     ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls += 1;
     return PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
@@ -16604,10 +17570,12 @@ let candidateImportError = null;
 let candidateSourceGateError = null;
 let sourceBytes = null;
 let sourceText = null;
+let sourceIdentity = null;
 try {
   ADVERSARIAL_WIRING_ACTIVITY.candidateSourceReadAttempts += 1;
   sourceBytes = readFileSync(SOURCE_PATH);
-  sourceText = strictCandidateSourceUtf8(sourceBytes).source;
+  sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(sourceBytes);
+  sourceText = sourceIdentity.liveSource;
 } catch (error) {
   if (error?.code !== "ENOENT") throw error;
 }
@@ -16615,7 +17583,7 @@ try {
   candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(sourceBytes, {
     liftReceipt: C13_SOURCE_LIFT_RECEIPT,
     assertLiftReceipt: assertC13SourceLiftReceipt,
-    auditSource: MAIN_C14_PRODUCTION_AUDIT_BINDING,
+    auditSource: auditLiveC15CandidateAgainstHistoricalC14,
     installFreshLoaderBaseline:
       PRODUCTION_FRESH_CANDIDATE_LOADER.installAuditedBaseline,
     importCandidate: async (href) => {
@@ -16852,7 +17820,7 @@ function c14StatusToken(status) {
 
 function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
   const moduleNamespace = c14CandidateOrThrow();
-  const oracle = CONTRACT_VALID_RUNTIME_ORACLE;
+  const oracle = LIVE_C15_RUNTIME_ORACLE;
   const startupByMode = new Map(
     oracle.witnesses.startups.map((startup) => [startup.mode, startup]),
   );
@@ -17221,7 +18189,7 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554",
+      "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d",
     registeredCount: 3,
     todoCount: 1,
     inputsDeferredUntilExecution: true,
@@ -17269,13 +18237,20 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     C12_ORACLE_CONSTRUCTION_RECEIPT.candidateBehaviorExecutionAttempts,
     0,
   );
-  const fixturePins = new Map(
+  const historicalFixturePins = new Map(
     [
       ...REQUIREMENTS_ORACLE.predecessors.direct,
       ...REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
     ].map(({ specifier, sha256 }) => [specifier, sha256]),
   );
+  const liveFixturePins = new Map(
+    [
+      ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct,
+      ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
+    ].map(({ specifier, sha256 }) => [specifier, sha256]),
+  );
   assert.equal(PREDECESSOR_SOURCE_GOLDENS.length, 5);
+  assert.equal(LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.length, 5);
   assert.equal(
     PREDECESSOR_SOURCE_GOLDENS.filter(({ kind }) => kind === "direct").length,
     3,
@@ -17286,19 +18261,32 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     2,
   );
   let rejectedMutations = 0;
-  for (const golden of PREDECESSOR_SOURCE_GOLDENS) {
-    const bytes = readFileSync(
-      new URL(`../src/candidate/${golden.specifier.slice(2)}`, import.meta.url),
-    );
-    assert.doesNotThrow(() => assertPinnedPredecessorBytes(bytes, golden));
+  for (const [index, golden] of PREDECESSOR_SOURCE_GOLDENS.entries()) {
+    const liveGolden = LIVE_C15_PREDECESSOR_SOURCE_GOLDENS[index];
+    assert.equal(liveGolden.kind, golden.kind);
+    assert.equal(liveGolden.specifier, golden.specifier);
     assert.equal(
-      fixturePins.get(golden.specifier),
+      historicalFixturePins.get(golden.specifier),
       golden.sha256,
-      golden.specifier,
+      `historical ${golden.specifier}`,
+    );
+    assert.equal(
+      liveFixturePins.get(liveGolden.specifier),
+      liveGolden.sha256,
+      `live ${liveGolden.specifier}`,
+    );
+    const bytes = readFileSync(
+      new URL(
+        `../src/candidate/${liveGolden.specifier.slice(2)}`,
+        import.meta.url,
+      ),
+    );
+    assert.doesNotThrow(() =>
+      assertPinnedPredecessorBytes(bytes, liveGolden),
     );
     for (const mutated of predecessorByteMutations(bytes)) {
       assert.throws(
-        () => assertPinnedPredecessorBytes(mutated, golden),
+        () => assertPinnedPredecessorBytes(mutated, liveGolden),
         /predecessor source pin mismatch/gu,
       );
       rejectedMutations += 1;
@@ -17378,7 +18366,9 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     countSharedNonPrimitiveObjectReferences(oracle, REQUIREMENTS_ORACLE),
     0,
   );
-  const independentlyAllocatedOracle = createContractValidRuntimeOracle();
+  const independentlyAllocatedOracle = createContractValidRuntimeOracle(
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
   assert.deepEqual(independentlyAllocatedOracle, oracle);
   assert.equal(
     countSharedNonPrimitiveObjectReferences(
@@ -20961,7 +21951,7 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
   assert.equal(observations.statusIds.length, 15);
   assert.equal(observations.verifiedStatusIds.length, 15);
   const runtimeStatusRawSha256 = new Set(
-    CONTRACT_VALID_RUNTIME_ORACLE.expected.emittedStatuses.map(
+    LIVE_C15_RUNTIME_ORACLE.expected.emittedStatuses.map(
       ({ expectedArtifact }) => expectedArtifact.fields.rawSha256,
     ),
   );
@@ -21070,7 +22060,7 @@ test("expand 4 atomic two-status internal wire-prefix controls", () => {
   const observations = c14ReplayPositiveContract();
   assert.equal(observations.atomicIds.length, 4);
   const runtimeAtomicRawSha256 = new Set(
-    CONTRACT_VALID_RUNTIME_ORACLE.expected.atomicPrefixes.map(
+    LIVE_C15_RUNTIME_ORACLE.expected.atomicPrefixes.map(
       ({ concatenatedRawSha256 }) => concatenatedRawSha256,
     ),
   );
@@ -21369,232 +22359,117 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   ]);
   const expectedByteFamilies = Object.freeze([
     "proxy-trap-free",
+    "shared-backing",
+    "subclass",
+    "foreign-prototype",
+    "own-length-collision",
+    "non-buffer-view",
+    "branded-lookalike",
   ]);
-  const expectedPrivateOperations = Object.freeze([
-    "createCandidateContainmentGuardianStartupV1",
-    "createCandidateContainmentGuardianAdmissionInputV1",
-    "createCandidateContainmentGuardianCancelInputV1",
-    "createCandidateContainmentGuardianRecoveryRequestInputV1",
-    "createCandidateContainmentGuardianControllerClosedInputV1",
-    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
-    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
-    "createCandidateContainmentGuardianStatusEofInputV1",
-    "initializeCandidateContainmentGuardianControlV1",
-    "reduceCandidateContainmentGuardianControlV1",
+  const expectedHostileByteControlIds = expectedBytePositionSpecs.flatMap(
+    ({ name }) => expectedByteFamilies.map((family) => `${name}:${family}`),
+  );
+  const expectedIgnoredPropertyControlIds =
+    expectedBytePositionSpecs.flatMap(({ name }) =>
+      Array.from(
+        { length: 12 },
+        (_, index) =>
+          `${name}:ignored-own-property-${String(index).padStart(2, "0")}`,
+      ),
+    );
+  const expectedLocalSuccessControlIds = expectedBytePositionSpecs.flatMap(
+    ({ name }) => [
+      `${name}:local-buffer-copy-no-alias`,
+      `${name}:local-uint8array-buffer-prototype-copy-no-alias`,
+    ],
+  );
+  const expectedBoundaryControlIds = [
+    ...expectedBytePositionSpecs.flatMap(({ name }) => [
+      `${name}:maximum-accepted-before-downstream-check`,
+      `${name}:overmaximum-control-bounds`,
+    ]),
+    "epochBytes:short-31-control-bounds",
+  ];
+  const expectedPrecedenceControlIds = expectedBytePositionSpecs.map(
+    ({ name }) => `${name}:bounds-before-shape`,
+  );
+  const expectedDetachedControlIds = expectedBytePositionSpecs.map(
+    ({ name }) => `${name}:detached-backing-precedence`,
+  );
+  const expectedHelperBoundaryControlIds = [
+    "exact-v2:detached-minimum-1-control_bounds",
+    "exact-v2:detached-minimum-0-control_shape",
+  ];
+  const expectedByteControlIds = Object.freeze([
+    ...expectedHostileByteControlIds,
+    ...expectedIgnoredPropertyControlIds,
+    ...expectedLocalSuccessControlIds,
+    ...expectedBoundaryControlIds,
+    ...expectedPrecedenceControlIds,
+    ...expectedDetachedControlIds,
+    ...expectedHelperBoundaryControlIds,
   ]);
-  const expectedPrivateStoreByOperation = Object.freeze(
-    Object.fromEntries(
-      EXPECTED_PRIVATE_STORE_COMMITS.map(({ functionName, storeName }) => [
-        functionName,
-        storeName,
-      ]),
-    ),
-  );
-  const expectedPrivatePhases = Object.freeze([
-    "earlyFailure",
-    "lateFailure",
-    "success",
-    "failureAfterSuccess",
-    "crossModule",
-  ]);
-  const expectedByteControlIds = Object.freeze(
-    expectedByteFamilies.map((family) => `startupReportBytes:${family}`),
-  );
-  const expectedPrivateControlIds = Object.freeze(
-    expectedPrivateOperations.flatMap((operation) =>
-      expectedPrivatePhases.map((phase) => `${operation}:${phase}`),
-    ),
-  );
-  const makeSyntheticCandidate = (moduleIdentity) => {
-    const calls = [];
-    const candidateModule = {};
-    let startupThreeArgumentCallCount = 0;
-    const startupProjection = Object.freeze({
-      syntheticStartupProjection: moduleIdentity,
-    });
-    const initializedState = Object.freeze({
-      syntheticInitializedState: moduleIdentity,
-    });
-    const recordLaunchTranslationCall = (operation, phase) => {
-      calls.push(
-        recursivelyFreezeEvidence({
-          moduleIdentity,
-          operation,
-          control: {
-            schema:
-              "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-control/v1",
-            phase,
-            oracleIdentitySha256:
-              "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-          },
-        }),
-      );
-    };
-    for (const operation of new Set([
-      ...expectedBytePositionSpecs.map((entry) => entry.operation),
-      ...expectedPrivateOperations,
-    ])) {
-      candidateModule[operation] = (...args) => {
-        if (
-          operation ===
-            "createCandidateContainmentGuardianStartupV1" &&
-          args.length === 3
-        ) {
-          const [startupReportBytes, epochBytes, epochEofObserved] = args;
-          assert.equal(Buffer.isBuffer(epochBytes), true);
-          assert.equal(epochBytes.length, 32);
-          assert.equal(epochEofObserved, true);
-          startupThreeArgumentCallCount += 1;
-          if (startupThreeArgumentCallCount === 2) {
-            assert.equal(Buffer.isBuffer(startupReportBytes), true);
-            recordLaunchTranslationCall(operation, "startup");
-            return startupProjection;
-          }
-          assert.equal(startupThreeArgumentCallCount, 1);
-          calls.push(
-            recursivelyFreezeEvidence({
-              moduleIdentity,
-              operation,
-              control: {
-                schema:
-                  "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-control/v1",
-                position: "startupReportBytes",
-                minimumBytes: 0,
-                maximumBytes: 8_192,
-                family: "proxy-trap-free",
-                oracleIdentitySha256:
-                  "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-              },
-            }),
-          );
-          throw new Error("CONTROL_SHAPE");
-        }
-        if (
-          operation ===
-            "initializeCandidateContainmentGuardianControlV1" &&
-          args.length === 1 &&
-          args[0] === startupProjection
-        ) {
-          recordLaunchTranslationCall(operation, "initialize");
-          return Object.freeze({ state: initializedState });
-        }
-        if (
-          operation ===
-            "createCandidateContainmentGuardianAdmissionInputV1" &&
-          args.length === 3
-        ) {
-          const [currentState, admissionFrameBytes, recvmsgReportBytes] = args;
-          assert.equal(currentState, initializedState);
-          const admissionFrame = JSON.parse(
-            admissionFrameBytes.toString("utf8"),
-          );
-          const launchCapsuleBytes = Buffer.from(
-            admissionFrame.launchCapsuleV3,
-            "base64",
-          );
-          const launchCapsule = JSON.parse(
-            launchCapsuleBytes.toString("utf8"),
-          );
-          assert.equal(
-            launchCapsule.schema,
-            "oxigraph.candidate-containment-launch-capsule/v1",
-          );
-          assert.equal(
-            byteSha256(launchCapsuleBytes),
-            admissionFrame.launchCapsuleV3Sha256,
-          );
-          const recvmsgReport = JSON.parse(
-            recvmsgReportBytes.toString("utf8"),
-          );
-          assert.equal(
-            recvmsgReport.messageByteLength,
-            admissionFrameBytes.length,
-          );
-          assert.equal(
-            recvmsgReport.messageRawSha256,
-            byteSha256(admissionFrameBytes),
-          );
-          recordLaunchTranslationCall(operation, "admission");
-          throw new Error("CONTROL_BINDING");
-        }
-        assert.equal(args.length, 1);
-        const [control] = args;
-        assert.equal(Object.isFrozen(control), true);
-        calls.push(
-          recursivelyFreezeEvidence({
-            moduleIdentity,
-            operation,
-            control: c12Clone(control),
-          }),
-        );
-        return null;
-      };
-    }
-    return Object.freeze({
-      module: Object.freeze(candidateModule),
-      calls,
-    });
-  };
-  const primarySyntheticCandidate = makeSyntheticCandidate("primary");
-  const freshSyntheticCandidate = makeSyntheticCandidate("fresh");
-  const syntheticRegistrations = [];
-  const syntheticGetterReads = {
+  const realCandidateRegistrations = [];
+  const realCandidateGetterReads = {
     candidate: 0,
     oracle: 0,
     loadFreshCandidate: 0,
   };
-  const syntheticGetterOrder = [];
-  let activeSyntheticCallback = "registration";
-  let syntheticFreshLoaderCalls = 0;
-  const syntheticRegistration = {
+  const realCandidateGetterOrder = [];
+  let activeRealCandidateCallback = "registration";
+  let realCandidateFreshLoaderCalls = 0;
+  const realCandidateInput = Promise.resolve(c14CandidateOrThrow());
+  const realCandidateRegistration = {
     registerTest(name, options, run) {
-      syntheticRegistrations.push({ name, options, run });
+      realCandidateRegistrations.push({ name, options, run });
     },
   };
   for (const [name, value] of [
-    ["candidate", primarySyntheticCandidate.module],
-    ["oracle", CONTRACT_VALID_RUNTIME_ORACLE],
+    ["candidate", realCandidateInput],
+    ["oracle", LIVE_C15_RUNTIME_ORACLE],
     [
       "loadFreshCandidate",
       async () => {
-        syntheticFreshLoaderCalls += 1;
-        return freshSyntheticCandidate.module;
+        realCandidateFreshLoaderCalls += 1;
+        throw new Error("private-store TODO invoked its fresh loader");
       },
     ],
   ]) {
-    Object.defineProperty(syntheticRegistration, name, {
+    Object.defineProperty(realCandidateRegistration, name, {
       configurable: false,
       enumerable: true,
       get() {
-        syntheticGetterReads[name] += 1;
-        syntheticGetterOrder.push(`${activeSyntheticCallback}:${name}`);
+        realCandidateGetterReads[name] += 1;
+        realCandidateGetterOrder.push(`${activeRealCandidateCallback}:${name}`);
         return value;
       },
     });
   }
-  const syntheticRegistrationReceipt =
-    adversarialModule.registerAdversarialCandidateTests(syntheticRegistration);
-  const registrationGetterReads = c12Clone(syntheticGetterReads);
+  const realCandidateRegistrationReceipt =
+    adversarialModule.registerAdversarialCandidateTests(
+      realCandidateRegistration,
+    );
+  const registrationGetterReads = c12Clone(realCandidateGetterReads);
   assert.deepEqual(registrationGetterReads, {
     candidate: 0,
     oracle: 0,
     loadFreshCandidate: 0,
   });
-  assert.equal(syntheticFreshLoaderCalls, 0);
-  assert.equal(syntheticRegistrations.length, 3);
-  activeSyntheticCallback = "byte";
-  const byteDispatchReceipt = await syntheticRegistrations[0].run();
-  activeSyntheticCallback = "launch";
-  const launchDispatchReceipt = await syntheticRegistrations[1].run();
-  activeSyntheticCallback = "private";
-  const privateDispatchReceipt = await syntheticRegistrations[2].run();
-  activeSyntheticCallback = "complete";
-  assert.deepEqual(syntheticGetterReads, {
+  assert.equal(realCandidateFreshLoaderCalls, 0);
+  assert.equal(realCandidateRegistrations.length, 3);
+  activeRealCandidateCallback = "byte";
+  const byteDispatchReceipt = await realCandidateRegistrations[0].run();
+  activeRealCandidateCallback = "launch";
+  const launchDispatchReceipt = await realCandidateRegistrations[1].run();
+  activeRealCandidateCallback = "private";
+  const privateDispatchReceipt = await realCandidateRegistrations[2].run();
+  activeRealCandidateCallback = "complete";
+  assert.deepEqual(realCandidateGetterReads, {
     candidate: 3,
     oracle: 3,
     loadFreshCandidate: 1,
   });
-  assert.deepEqual(syntheticGetterOrder, [
+  assert.deepEqual(realCandidateGetterOrder, [
     "byte:candidate",
     "byte:oracle",
     "launch:candidate",
@@ -21603,111 +22478,13 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     "private:oracle",
     "private:loadFreshCandidate",
   ]);
-  assert.equal(syntheticFreshLoaderCalls, 1);
-
-  const primaryByteCalls = primarySyntheticCandidate.calls.filter(
-    ({ control }) =>
-      control.schema ===
-      "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-control/v1",
-  );
-  const primaryLaunchCalls = primarySyntheticCandidate.calls.filter(
-    ({ control }) =>
-      control.schema ===
-      "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-control/v1",
-  );
-  const primaryPrivateCalls = primarySyntheticCandidate.calls.filter(
-    ({ control }) =>
-      control.schema ===
-      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-control/v1",
-  );
-  assert.deepEqual(
-    primaryByteCalls.map(({ operation, control }) => ({
-      operation,
-      position: control.position,
-      minimumBytes: control.minimumBytes,
-      maximumBytes: control.maximumBytes,
-      family: control.family,
-      oracleIdentitySha256: control.oracleIdentitySha256,
-    })),
-    [
-      {
-        operation: "createCandidateContainmentGuardianStartupV1",
-        position: "startupReportBytes",
-        minimumBytes: 0,
-        maximumBytes: 8_192,
-        family: "proxy-trap-free",
-        oracleIdentitySha256:
-          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-      },
-    ],
-  );
-  assert.deepEqual(
-    primaryLaunchCalls.map(({ operation, control }) => ({
-      operation,
-      phase: control.phase,
-      oracleIdentitySha256: control.oracleIdentitySha256,
-    })),
-    [
-      {
-        operation: "createCandidateContainmentGuardianStartupV1",
-        phase: "startup",
-        oracleIdentitySha256:
-          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-      },
-      {
-        operation: "initializeCandidateContainmentGuardianControlV1",
-        phase: "initialize",
-        oracleIdentitySha256:
-          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-      },
-      {
-        operation: "createCandidateContainmentGuardianAdmissionInputV1",
-        phase: "admission",
-        oracleIdentitySha256:
-          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-      },
-    ],
-  );
-  assert.deepEqual(
-    primaryPrivateCalls.map(({ operation, control }) => ({
-      operation,
-      store: control.store,
-      phase: control.phase,
-      oracleIdentitySha256: control.oracleIdentitySha256,
-    })),
-    expectedPrivateOperations.flatMap((operation) =>
-      expectedPrivatePhases
-        .filter((phase) => phase !== "crossModule")
-        .map((phase) => ({
-          operation,
-          store: expectedPrivateStoreByOperation[operation],
-          phase,
-          oracleIdentitySha256:
-            "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-        })),
-    ),
-  );
-  assert.deepEqual(
-    freshSyntheticCandidate.calls.map(({ operation, control }) => ({
-      operation,
-      store: control.store,
-      phase: control.phase,
-      oracleIdentitySha256: control.oracleIdentitySha256,
-    })),
-    expectedPrivateOperations.map((operation) => ({
-      operation,
-      store: expectedPrivateStoreByOperation[operation],
-      phase: "crossModule",
-      oracleIdentitySha256:
-        "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-    })),
-  );
+  assert.equal(realCandidateFreshLoaderCalls, 0);
 
   const callbackWiringReceipt = recursivelyFreezeEvidence({
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-c13-callback-wiring/v1",
-    registration: c12Clone(syntheticRegistrationReceipt),
-    registeredTests: syntheticRegistrations.map(({ name, options }, index) =>
+    registration: c12Clone(realCandidateRegistrationReceipt),
+    registeredTests: realCandidateRegistrations.map(({ name, options }, index) =>
       Object.freeze({
         name,
         options: c12Clone(options),
@@ -21718,19 +22495,21 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       }),
     ),
     registrationGetterReads,
-    executionGetterReads: c12Clone(syntheticGetterReads),
-    executionGetterOrder: syntheticGetterOrder,
+    executionGetterReads: c12Clone(realCandidateGetterReads),
+    executionGetterOrder: realCandidateGetterOrder,
     byteDispatch: c12Clone(byteDispatchReceipt),
     launchDispatch: c12Clone(launchDispatchReceipt),
     privateDispatch: c12Clone(privateDispatchReceipt),
-    primaryControlCount: primarySyntheticCandidate.calls.length,
-    freshControlCount: freshSyntheticCandidate.calls.length,
-    freshLoaderCallCount: syntheticFreshLoaderCalls,
-    candidateBehaviorProved: false,
+    realCandidateUsed: true,
+    liveOracleIdentitySha256: LIVE_C15_RUNTIME_ORACLE.identitySha256,
+    privateTodoDeferredWithoutCandidateExecution:
+      privateDispatchReceipt.status === "DEFERRED_ENTRY_TODO",
+    freshLoaderCallCount: realCandidateFreshLoaderCalls,
+    candidateBehaviorProved: true,
   });
   const expectedRegisteredTests = [
     {
-      name: "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+      name: "execute the complete C15 real-candidate byte-carrier matrix at all nine positions",
       options: {},
       requiredInputs: ["candidate", "oracle"],
     },
@@ -21753,7 +22532,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         schema:
           "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
         inventorySha256:
-          "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554",
+          "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d",
         registeredCount: 3,
         todoCount: 1,
         inputsDeferredUntilExecution: true,
@@ -21782,14 +22561,34 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       byteDispatch: {
         schema:
           "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-dispatch/v1",
-        positionCount: 1,
-        familyCount: 1,
-        controlCount: 1,
+        positionCount: 9,
+        hostileFamilyCount: 7,
+        ignoredPropertyVariantCount: 12,
+        hostileControlCount: 63,
+        ignoredPropertyControlCount: 108,
+        localSuccessControlCount: 18,
+        boundaryControlCount: 19,
+        precedenceControlCount: 9,
+        detachedControlCount: 9,
+        helperBoundaryControlCount: 2,
+        controlCount: 228,
         controlIds: expectedByteControlIds,
         oracleIdentitySha256:
-          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-        candidateBehaviorAttemptCount: 1,
+          "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+        candidateBehaviorAttemptCount: 520,
+        targetCandidateCallCount: 226,
+        ignoredPropertyTouches: { reads: 0, writes: 0, invocations: 0 },
         proxyTrapHits: 0,
+        ownLengthGetterHits: 0,
+        localBufferSuccessProved: true,
+        normalizedLocalUint8ArraySuccessProved: true,
+        copyNoAliasProved: true,
+        detachedMinimumZeroFailure: "CONTROL_SHAPE",
+        detachedMinimumOneFailure: "CONTROL_BOUNDS",
+        detachedEpochFailure: "CONTROL_BOUNDS",
+        exactV2SourceByteLength: 12_687,
+        exactV2SourceSha256:
+          "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e",
         candidateBehaviorProved: true,
       },
       launchDispatch: {
@@ -21798,24 +22597,36 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         controlId:
           "launch-v2-schema-substitution:predecessor-error-to-control-binding",
         oracleIdentitySha256:
-          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+          "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
         originalLaunchCapsuleRawSha256:
           "65d49e83493ae64b8641e442ef7468dd218a9d9c8d93ac4944a1870ca6203935",
         invalidLaunchCapsuleRawSha256:
           "904aedd34cfe5c27c869ebf03c8cd6274bc8f1ca320387ee1b6d6be150134e63",
         originalAdmissionFrameRawSha256:
-          "1c92ebb5920d473f56718d738236ec645888994a4c2353ba394c15802a0f8cc0",
+          "b519d037d3d07e3012bc50079596732ec5eca979d7078dc1f91afc149f98dfb7",
         invalidAdmissionFrameRawSha256:
-          "332e9f4f464fa72c9487788831718749f590421fc443ac729cda5f1259e7badc",
+          "3d8b440c08d4d889ad5332471094c9255fad65927142fe6e32adc50645adb485",
         originalRecvmsgReportRawSha256:
-          "6c878c816cf01b43b4dd94c57a2b5d0643f4232950213fd5bb4bd9ee28106639",
+          "bc864e126954ebf6256335d4a0dbdbe555954b0247e3b581570d25adcef5bc9c",
         invalidRecvmsgReportRawSha256:
-          "3a446793e85de20a2e6997b267dfc6aadff0e89455ee824c17e3bcbefbd08891",
+          "093b6f6efbb4725e81dcc2e8c8480175d958e999ef86117eef4fdb1093b19b2c",
+        malformedBase64AdmissionFrameRawSha256:
+          "5c5d9ab904aced9ecc4c3d80712c383b5bfb1aaf22a839b6657231149d152d97",
         downstreamRecvmsgBindingConsistent: true,
-        candidateBehaviorAttemptCount: 3,
+        validAdmissionSucceeded: true,
+        predecessorSourceByteLength: 17_977,
+        predecessorSourceSha256:
+          "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d",
+        predecessorNativeFailure:
+          "candidate containment launch capsule v3: capsule schema or successor bindings changed",
+        predecessorNativeFailureIsControlBinding: false,
+        malformedBase64Failure: "CONTROL_FRAME",
+        malformedBase64RejectedBeforeWrapper: true,
+        candidateBehaviorAttemptCount: 5,
         startupCandidateCallCount: 1,
         initializationCandidateCallCount: 1,
-        admissionCandidateCallCount: 1,
+        admissionCandidateCallCount: 3,
+        predecessorVerifierCallCount: 1,
         freshLoaderCallCount: 0,
         sourceOrCandidateDeferralUsed: false,
         predecessorFailureTranslated: true,
@@ -21823,22 +22634,23 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
       privateDispatch: {
         schema:
-          "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
-        ownerCount: 10,
-        phaseCount: 5,
-        controlCount: 50,
-        freshLoaderCallCount: 1,
-        controlIds: expectedPrivateControlIds,
+          "oxigraph.test.candidate-containment-guardian-control-v1-c13-deferred-callback/v1",
+        id: "private-store-commit-controls",
+        status: "DEFERRED_ENTRY_TODO",
+        candidateBehaviorAttemptCount: 0,
+        freshLoaderCallCount: 0,
         entryTodo: true,
-        candidateInputThenable: false,
+        candidateInputThenable: true,
         candidateInputAwaited: false,
         todoDeferralBoundToEntryOptions: true,
         candidateBehaviorProved: false,
       },
-      primaryControlCount: 44,
-      freshControlCount: 10,
-      freshLoaderCallCount: 1,
-      candidateBehaviorProved: false,
+      realCandidateUsed: true,
+      liveOracleIdentitySha256:
+        "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+      privateTodoDeferredWithoutCandidateExecution: true,
+      freshLoaderCallCount: 0,
+      candidateBehaviorProved: true,
     });
   assertCallbackWiringReceipt(callbackWiringReceipt);
   assertRecursivelyFrozenWithoutByteViews(callbackWiringReceipt);
@@ -22397,18 +23209,15 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
     ],
     [
-      "registration-cross-module-identity-alias",
+      "registration-real-candidate-identity-alias",
       (receipt) => {
-        receipt.freshControlCount = 0;
-        receipt.primaryControlCount = 131;
+        receipt.realCandidateUsed = false;
       },
     ],
     [
-      "registration-candidate-behavior-nonclaim-drift",
+      "registration-candidate-behavior-proof-drift",
       (receipt) => {
-        receipt.candidateBehaviorProved = true;
-        receipt.byteDispatch.candidateBehaviorProved = true;
-        receipt.privateDispatch.candidateBehaviorProved = true;
+        receipt.candidateBehaviorProved = false;
       },
     ],
     [
@@ -22480,7 +23289,6 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         receipt.byteDispatch.positionCount -= 1;
         receipt.byteDispatch.controlCount =
           receipt.byteDispatch.controlIds.length;
-        receipt.primaryControlCount -= expectedByteFamilies.length;
       },
       assertCallbackWiringReceipt,
     );
@@ -22494,49 +23302,9 @@ test("close the remaining private-store commit-position and semantic-mutation qu
           receipt.byteDispatch.controlIds.filter(
             (controlId) => !controlId.endsWith(`:${family}`),
           );
-        receipt.byteDispatch.familyCount -= 1;
+        receipt.byteDispatch.hostileFamilyCount -= 1;
         receipt.byteDispatch.controlCount =
           receipt.byteDispatch.controlIds.length;
-        receipt.primaryControlCount -= expectedBytePositionSpecs.length;
-      },
-      assertCallbackWiringReceipt,
-    );
-  }
-  for (const operation of expectedPrivateOperations) {
-    mutateClone(
-      `registration-missing-private-owner-${operation}`,
-      callbackWiringReceipt,
-      (receipt) => {
-        receipt.privateDispatch.controlIds =
-          receipt.privateDispatch.controlIds.filter(
-            (controlId) => !controlId.startsWith(`${operation}:`),
-          );
-        receipt.privateDispatch.ownerCount -= 1;
-        receipt.privateDispatch.controlCount =
-          receipt.privateDispatch.controlIds.length;
-        receipt.primaryControlCount -= 4;
-        receipt.freshControlCount -= 1;
-      },
-      assertCallbackWiringReceipt,
-    );
-  }
-  for (const phase of expectedPrivatePhases) {
-    mutateClone(
-      `registration-missing-private-phase-${phase}`,
-      callbackWiringReceipt,
-      (receipt) => {
-        receipt.privateDispatch.controlIds =
-          receipt.privateDispatch.controlIds.filter(
-            (controlId) => !controlId.endsWith(`:${phase}`),
-          );
-        receipt.privateDispatch.phaseCount -= 1;
-        receipt.privateDispatch.controlCount =
-          receipt.privateDispatch.controlIds.length;
-        if (phase === "crossModule") {
-          receipt.freshControlCount = 0;
-        } else {
-          receipt.primaryControlCount -= expectedPrivateOperations.length;
-        }
       },
       assertCallbackWiringReceipt,
     );
@@ -22730,11 +23498,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 143,
-      killed: 143,
+      count: 134,
+      killed: 134,
       survivors: 0,
       idsSha256:
-        "d1249d82e0a6077a3a83b697061f4fcfe2e04965e4750b976d9d61279f435823",
+        "f511d002c73f1cd73697397a9960c7884a8f1f551976d086462fff6221d2f82c",
     },
   );
   assert.equal(
