@@ -2,7 +2,7 @@ import {
   boundedInteger,
   canonicalJsonBytes,
   canonicalJsonLine,
-  copyBoundedBuffer,
+  copyBoundedBufferByFailureCategory,
   decodeCanonicalBase64,
   decodeCanonicalJsonLine,
   deepFreeze,
@@ -49,7 +49,7 @@ const guardianContract = deepFreeze(
               ["specifier", "./containment-exact-v2.mjs"],
               [
                 "sha256",
-                "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+                "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e",
               ],
               ["requirementsSha256", null],
               [
@@ -58,7 +58,7 @@ const guardianContract = deepFreeze(
                   "boundedInteger",
                   "canonicalJsonBytes",
                   "canonicalJsonLine",
-                  "copyBoundedBuffer",
+                  "copyBoundedBufferByFailureCategory",
                   "decodeCanonicalBase64",
                   "decodeCanonicalJsonLine",
                   "deepFreeze",
@@ -773,7 +773,7 @@ export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS =
   guardianContract;
 
 export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256 =
-  "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
+  "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
 
 const normalStartupMap = deepFreeze([
   nullRecord([
@@ -1047,14 +1047,14 @@ const recoveryDigestOrdinals = deepFreeze([
 ]);
 
 const guardianRequirementsSha256 =
-  "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
+  "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
 
 export function createCandidateContainmentGuardianStartupV1(
   startupReportBytes,
   epochBytes,
   epochEofObserved,
 ) {
-  const startupCarrier = copyBoundedBuffer(
+  const startupCarrier = copyBoundedBufferByFailureCategory(
     startupReportBytes,
     "startup report bytes",
     {
@@ -1062,8 +1062,9 @@ export function createCandidateContainmentGuardianStartupV1(
       maximumBytes: guardianContract.limits.startupReportMaximumBytes,
     },
     failBounds,
+    failShape,
   );
-  const epoch = copyBoundedBuffer(
+  const epoch = copyBoundedBufferByFailureCategory(
     epochBytes,
     "epoch bytes",
     {
@@ -1071,6 +1072,7 @@ export function createCandidateContainmentGuardianStartupV1(
       maximumBytes: guardianContract.limits.epochBytes,
     },
     failBounds,
+    failShape,
   );
   const decoded = decodeCanonicalJsonLine(
     startupCarrier,
@@ -1115,6 +1117,26 @@ export function createCandidateContainmentGuardianAdmissionInputV1(
   admissionFrameBytes,
   recvmsgReportBytes,
 ) {
+  const frameCarrier = copyBoundedBufferByFailureCategory(
+    admissionFrameBytes,
+    "admission frame bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.admissionFrameMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
+  const reportCarrier = copyBoundedBufferByFailureCategory(
+    recvmsgReportBytes,
+    "admission recvmsg report bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.admissionRecvmsgReportMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
   const currentStateBrand = stateMetadata.has(currentState);
   exactBoolean(currentStateBrand, true, "current state brand", failBinding);
   const currentStatePrivateProjection = stateMetadata.get(currentState);
@@ -1123,24 +1145,6 @@ export function createCandidateContainmentGuardianAdmissionInputV1(
     guardianContract.frameFields.stateProjection,
     "current state",
     failShape,
-  );
-  const frameCarrier = copyBoundedBuffer(
-    admissionFrameBytes,
-    "admission frame bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.admissionFrameMaximumBytes,
-    },
-    failBounds,
-  );
-  const reportCarrier = copyBoundedBuffer(
-    recvmsgReportBytes,
-    "admission recvmsg report bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.admissionRecvmsgReportMaximumBytes,
-    },
-    failBounds,
   );
   boundedInteger(
     state.aggregateWireBytes + frameCarrier.length,
@@ -1168,7 +1172,7 @@ export function createCandidateContainmentGuardianAdmissionInputV1(
     65536,
     failFrame,
   );
-  const capsule = verifyCandidateContainmentLaunchCapsuleV3(capsuleBytes);
+  const capsule = verifyAdmissionLaunchCapsuleV3(capsuleBytes);
   const decodedReport = decodeCanonicalJsonLine(
     reportCarrier,
     "admission recvmsg report bytes",
@@ -1204,6 +1208,16 @@ export function createCandidateContainmentGuardianCancelInputV1(
   controlTruncated,
   controlMessageCount,
 ) {
+  const frameCarrier = copyBoundedBufferByFailureCategory(
+    cancelFrameBytes,
+    "cancel frame bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.cancelFrameMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
   const currentStateBrand = stateMetadata.has(currentState);
   exactBoolean(currentStateBrand, true, "current state brand", failBinding);
   const currentStatePrivateProjection = stateMetadata.get(currentState);
@@ -1212,15 +1226,6 @@ export function createCandidateContainmentGuardianCancelInputV1(
     guardianContract.frameFields.stateProjection,
     "current state",
     failShape,
-  );
-  const frameCarrier = copyBoundedBuffer(
-    cancelFrameBytes,
-    "cancel frame bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.cancelFrameMaximumBytes,
-    },
-    failBounds,
   );
   boundedInteger(
     state.aggregateWireBytes + frameCarrier.length,
@@ -1270,6 +1275,16 @@ export function createCandidateContainmentGuardianRecoveryRequestInputV1(
   recoveryRequestFrameBytes,
   requestEofObserved,
 ) {
+  const frameCarrier = copyBoundedBufferByFailureCategory(
+    recoveryRequestFrameBytes,
+    "recovery request frame bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.recoveryRequestMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
   const currentStateBrand = stateMetadata.has(currentState);
   exactBoolean(currentStateBrand, true, "current state brand", failBinding);
   const currentStatePrivateProjection = stateMetadata.get(currentState);
@@ -1278,15 +1293,6 @@ export function createCandidateContainmentGuardianRecoveryRequestInputV1(
     guardianContract.frameFields.stateProjection,
     "current state",
     failShape,
-  );
-  const frameCarrier = copyBoundedBuffer(
-    recoveryRequestFrameBytes,
-    "recovery request frame bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.recoveryRequestMaximumBytes,
-    },
-    failBounds,
   );
   boundedInteger(
     state.aggregateWireBytes + frameCarrier.length,
@@ -1365,6 +1371,26 @@ export function createCandidateContainmentGuardianDiagnosticFailureInputV1(
   diagnosticSummaryReportBytes,
   rawDiagnosticBytes,
 ) {
+  const summaryCarrier = copyBoundedBufferByFailureCategory(
+    diagnosticSummaryReportBytes,
+    "diagnostic summary report bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.diagnosticSummaryMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
+  const raw = copyBoundedBufferByFailureCategory(
+    rawDiagnosticBytes,
+    "raw diagnostic bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.rawDiagnosticsMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
   const currentStateBrand = stateMetadata.has(currentState);
   exactBoolean(currentStateBrand, true, "current state brand", failBinding);
   const currentStatePrivateProjection = stateMetadata.get(currentState);
@@ -1373,24 +1399,6 @@ export function createCandidateContainmentGuardianDiagnosticFailureInputV1(
     guardianContract.frameFields.stateProjection,
     "current state",
     failShape,
-  );
-  const summaryCarrier = copyBoundedBuffer(
-    diagnosticSummaryReportBytes,
-    "diagnostic summary report bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.diagnosticSummaryMaximumBytes,
-    },
-    failBounds,
-  );
-  const raw = copyBoundedBuffer(
-    rawDiagnosticBytes,
-    "raw diagnostic bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.rawDiagnosticsMaximumBytes,
-    },
-    failBounds,
   );
   const decodedSummary = decodeCanonicalJsonLine(
     summaryCarrier,
@@ -1578,6 +1586,16 @@ export function verifyCandidateContainmentGuardianStatusFrameV1(
   startupProjection,
   statusFrameBytes,
 ) {
+  const frameCarrier = copyBoundedBufferByFailureCategory(
+    statusFrameBytes,
+    "status frame bytes",
+    {
+      minimumBytes: 0,
+      maximumBytes: guardianContract.limits.statusFrameMaximumBytes,
+    },
+    failBounds,
+    failShape,
+  );
   const startupProjectionBrand = startupMetadata.has(startupProjection);
   exactBoolean(
     startupProjectionBrand,
@@ -1591,15 +1609,6 @@ export function verifyCandidateContainmentGuardianStatusFrameV1(
     guardianContract.frameFields.startupProjection,
     "startup projection",
     failShape,
-  );
-  const frameCarrier = copyBoundedBuffer(
-    statusFrameBytes,
-    "status frame bytes",
-    {
-      minimumBytes: 0,
-      maximumBytes: guardianContract.limits.statusFrameMaximumBytes,
-    },
-    failBounds,
   );
   const decodedFrame = decodeCanonicalJsonLine(
     frameCarrier,
@@ -1641,6 +1650,14 @@ function failFrame() {
 
 function failRights() {
   throw new Error("CONTROL_RIGHTS");
+}
+
+function verifyAdmissionLaunchCapsuleV3(capsuleBytes) {
+  try {
+    return verifyCandidateContainmentLaunchCapsuleV3(capsuleBytes);
+  } catch {
+    failBinding();
+  }
 }
 
 function failBinding() {

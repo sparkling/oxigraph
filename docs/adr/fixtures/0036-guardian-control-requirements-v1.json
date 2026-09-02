@@ -5,13 +5,13 @@
     "direct": [
       {
         "specifier": "./containment-exact-v2.mjs",
-        "sha256": "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+        "sha256": "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e",
         "requirementsSha256": null,
         "imports": [
           "boundedInteger",
           "canonicalJsonBytes",
           "canonicalJsonLine",
-          "copyBoundedBuffer",
+          "copyBoundedBufferByFailureCategory",
           "decodeCanonicalBase64",
           "decodeCanonicalJsonLine",
           "deepFreeze",
