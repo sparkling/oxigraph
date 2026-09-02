@@ -9,7 +9,13 @@ import {
 import { canonicalSha256, routingEmbedding } from "../src/routing/features.mjs";
 import { QualityFirstRouter } from "../src/routing/quality-router.mjs";
 import { NativeWorkerPool } from "../src/runtime/native-pool.mjs";
-import { createG12ProgrammeForTesting } from "../src/runtime/g12-programme.mjs";
+import {
+  createG12ProgrammeForTesting,
+  createTaskV2GateFirstCommandsForTesting,
+  replayTaskProgrammeReceiptV2,
+  runTaskProgrammeV2,
+} from "../src/runtime/g12-programme.mjs";
+import { TASK_V2_EXECUTION_GATE_REQUEST } from "../src/runtime/preflight.mjs";
 import { g12Profile } from "../src/task-profile.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -772,4 +778,67 @@ test("exit-zero output rejection is classified once per lane without host retry"
   assert.equal(rejected.length, 2);
   assert.ok(rejected.every(({ failureCode }) => failureCode === "patch-policy-invalid"));
   assert.ok(rejected.every(({ executionId }) => /candidate:/u.test(executionId)));
+});
+
+test("schema-v2 run and replay gate before deferred option inspection", () => {
+  for (const command of [runTaskProgrammeV2, replayTaskProgrammeReceiptV2]) {
+    let optionTraps = 0;
+    const deferredOptions = new Proxy(
+      {},
+      {
+        get() {
+          optionTraps += 1;
+          throw new Error("deferred programme options were inspected");
+        },
+        has() {
+          optionTraps += 1;
+          throw new Error("deferred programme options were inspected");
+        },
+        ownKeys() {
+          optionTraps += 1;
+          throw new Error("deferred programme options were inspected");
+        },
+      },
+    );
+    assert.deepEqual(
+      command(TASK_V2_EXECUTION_GATE_REQUEST, deferredOptions),
+      {
+        status: "unavailable",
+        reason: "native-adapter-unavailable",
+      },
+    );
+    assert.equal(optionTraps, 0);
+  }
+});
+
+test("schema-v2 gate-first commands reach none of their downstream effects", () => {
+  let readinessCalls = 0;
+  const effects = [];
+  const commands = createTaskV2GateFirstCommandsForTesting({
+    readiness() {
+      readinessCalls += 1;
+      return Object.freeze({
+        status: "unavailable",
+        reason: "native-adapter-unavailable",
+      });
+    },
+    preflight() {
+      effects.push("contract-or-git");
+    },
+    programme() {
+      effects.push("provider-router-receipt");
+    },
+    replay() {
+      effects.push("receipt-read-or-history");
+    },
+  });
+
+  for (const command of [commands.preflight, commands.run, commands.replay]) {
+    assert.deepEqual(command(TASK_V2_EXECUTION_GATE_REQUEST, null), {
+      status: "unavailable",
+      reason: "native-adapter-unavailable",
+    });
+  }
+  assert.equal(readinessCalls, 3);
+  assert.deepEqual(effects, []);
 });

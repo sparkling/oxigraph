@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createTaskV2ExecutionGateForTesting,
   runG12Preflight,
   runTaskPreflight,
+  runTaskPreflightV2,
+  TASK_V2_EXECUTION_GATE_REQUEST,
 } from "../src/runtime/preflight.mjs";
+import { TaskV2Failure } from "../src/policy/task-v2-failures.mjs";
 import { g12Profile } from "../src/task-profile.mjs";
 
 const digest = "a".repeat(64);
@@ -368,4 +372,128 @@ test("preflight disposes after preparation failures without invoking the verifie
     state.calls.map(([name]) => name),
     ["contract", "control", "reconstruct", "submodules", "snapshot", "dispose"],
   );
+});
+
+test("schema-v2 preflight returns the exact unavailable gate before options", () => {
+  let optionTraps = 0;
+  const deferredOptions = new Proxy(
+    {},
+    {
+      get() {
+        optionTraps += 1;
+        throw new Error("deferred preflight options were inspected");
+      },
+      has() {
+        optionTraps += 1;
+        throw new Error("deferred preflight options were inspected");
+      },
+      ownKeys() {
+        optionTraps += 1;
+        throw new Error("deferred preflight options were inspected");
+      },
+    },
+  );
+
+  const result = runTaskPreflightV2(
+    TASK_V2_EXECUTION_GATE_REQUEST,
+    deferredOptions,
+  );
+  assert.deepEqual(result, {
+    status: "unavailable",
+    reason: "native-adapter-unavailable",
+  });
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(optionTraps, 0);
+});
+
+test("schema-v2 execution gate rejects hostile requests before readiness", () => {
+  let readinessCalls = 0;
+  const gate = createTaskV2ExecutionGateForTesting(() => {
+    readinessCalls += 1;
+    return Object.freeze({
+      status: "unavailable",
+      reason: "native-adapter-unavailable",
+    });
+  });
+  let proxyTraps = 0;
+  const hostile = new Proxy(
+    {},
+    {
+      getOwnPropertyDescriptor() {
+        proxyTraps += 1;
+        throw new Error("gate request trap");
+      },
+      ownKeys() {
+        proxyTraps += 1;
+        throw new Error("gate request trap");
+      },
+    },
+  );
+  const accessor = {};
+  let getterCalls = 0;
+  Object.defineProperty(accessor, "contractSchemaVersion", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 2;
+    },
+  });
+  Object.defineProperty(accessor, "executionGate", {
+    enumerable: true,
+    value: "native-containment-qualification-v1",
+  });
+
+  for (const request of [
+    hostile,
+    accessor,
+    {},
+    {
+      executionGate: "native-containment-qualification-v1",
+      contractSchemaVersion: 2,
+    },
+    {
+      contractSchemaVersion: 2,
+      executionGate: "native-containment-qualification-v1",
+      extra: true,
+    },
+  ]) {
+    assert.throws(() => gate(request), (error) => {
+      assert.equal(error instanceof TaskV2Failure, true);
+      assert.equal(error.code, "ERR_CONTRACT_SCHEMA_OR_KEYS");
+      assert.equal(error.terminal, true);
+      assert.equal(error.retryAllowed, false);
+      return true;
+    });
+  }
+  assert.equal(proxyTraps, 0);
+  assert.equal(getterCalls, 0);
+  assert.equal(readinessCalls, 0);
+});
+
+test("schema-v2 execution gate makes one bounded readiness attempt", () => {
+  for (const readiness of [
+    () => Object.freeze({ status: "verified", reason: "test-only" }),
+    () => Object.freeze({ status: "unproved", reason: "invalid-proof" }),
+    () => ({ status: "unavailable", reason: "native-adapter-unavailable" }),
+    () => {
+      throw new Error("private readiness failure");
+    },
+  ]) {
+    let calls = 0;
+    const gate = createTaskV2ExecutionGateForTesting(() => {
+      calls += 1;
+      return readiness();
+    });
+    assert.throws(() => gate(TASK_V2_EXECUTION_GATE_REQUEST), (error) => {
+      assert.equal(error instanceof TaskV2Failure, true);
+      assert.equal(error.terminal, true);
+      assert.equal(error.retryAllowed, false);
+      assert.doesNotMatch(
+        `${error.stack}\n${JSON.stringify(error)}`,
+        /private readiness/u,
+      );
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
 });

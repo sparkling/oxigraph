@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { types as utilTypes } from "node:util";
 
 import { disposeCandidate, reconstructCandidate } from "../candidate/reconstruct.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
@@ -36,7 +37,11 @@ import {
   upstreamRoleOutputs,
 } from "./lifecycle.mjs";
 import { NativeWorkerPool } from "./native-pool.mjs";
-import { runTaskPreflight } from "./preflight.mjs";
+import {
+  createTaskV2ExecutionGateForTesting,
+  runTaskPreflight,
+  runTaskPreflightV2,
+} from "./preflight.mjs";
 import {
   isIgnoredRuntimePath,
   readPrivateRuntimeArtifact,
@@ -869,6 +874,11 @@ export async function runTaskProgramme(options = {}) {
   });
 }
 
+/** Dormant schema-v2 run surface; no deferred programme input is inspected. */
+export function runTaskProgrammeV2(gateRequest, deferredOptions) {
+  return runTaskPreflightV2(gateRequest, deferredOptions);
+}
+
 export function runG12Programme(options = {}) {
   return runTaskProgramme({ ...options, taskId: g12Profile.id });
 }
@@ -912,6 +922,63 @@ export function createG12ProgrammeForTesting(overrides) {
   }
   const operations = Object.freeze({ ...defaultOperations(), ...overrides });
   return (options = {}) => executeProgramme(options, operations);
+}
+
+function snapshotTaskV2GateFirstOperations(value) {
+  const expectedKeys = Object.freeze([
+    "readiness",
+    "preflight",
+    "programme",
+    "replay",
+  ]);
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    utilTypes.isProxy(value) ||
+    Array.isArray(value) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+  ) {
+    throw new TypeError("test engineering task v2 operations must be a plain record");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  if (
+    keys.length !== expectedKeys.length ||
+    keys.some((key, index) => key !== expectedKeys[index]) ||
+    expectedKeys.some((key) => {
+      const descriptor = descriptors[key];
+      return !(
+        descriptor !== undefined &&
+        "value" in descriptor &&
+        descriptor.enumerable === true &&
+        typeof descriptor.value === "function" &&
+        !utilTypes.isProxy(descriptor.value)
+      );
+    })
+  ) {
+    throw new TypeError(
+      "test engineering task v2 operations must be exact ordered own functions",
+    );
+  }
+  return Object.freeze(
+    Object.fromEntries(expectedKeys.map((key) => [key, descriptors[key].value])),
+  );
+}
+
+/** Test-only proof that all three deferred command effects sit behind the gate. */
+export function createTaskV2GateFirstCommandsForTesting(operationsValue) {
+  const operations = snapshotTaskV2GateFirstOperations(operationsValue);
+  const gate = createTaskV2ExecutionGateForTesting(operations.readiness);
+  const gateFirst = (operation) => (gateRequest, deferredOptions) => {
+    const readiness = gate(gateRequest);
+    if (readiness.status === "unavailable") return readiness;
+    return operation(deferredOptions);
+  };
+  return Object.freeze({
+    preflight: gateFirst(operations.preflight),
+    run: gateFirst(operations.programme),
+    replay: gateFirst(operations.replay),
+  });
 }
 
 /** Replay one private receipt against a fresh red preflight and current control. */
@@ -961,6 +1028,11 @@ export async function replayTaskProgrammeReceipt(options = {}) {
     receiptSha256: receipt.receiptSha256,
     admittedOutcomes: admission.outcomeCount,
   });
+}
+
+/** Dormant schema-v2 replay surface; no receipt or deferred input is read. */
+export function replayTaskProgrammeReceiptV2(gateRequest, deferredOptions) {
+  return runTaskPreflightV2(gateRequest, deferredOptions);
 }
 
 export function replayG12ProgrammeReceipt(options) {

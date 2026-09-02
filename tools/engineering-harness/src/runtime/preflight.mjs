@@ -1,9 +1,17 @@
+import { types as utilTypes } from "node:util";
+
+import { candidateContainmentOwnerV2Readiness } from "../candidate/containment-owner-v2.mjs";
 import { reconstructEvaluator, disposeCandidate } from "../candidate/reconstruct.mjs";
 import { normalizeCommandFailureDiagnostic } from "../candidate/failure-diagnostic.mjs";
 import { materializeFrozenSubmodules } from "../candidate/submodules.mjs";
 import { verifyRedBaseline } from "../candidate/verifier.mjs";
 import { resolveTaskContract } from "../contract.mjs";
 import { repositoryRoot } from "../paths.mjs";
+import {
+  isTaskV2Failure,
+  taskV2Failure,
+  withTaskV2FailureBoundary,
+} from "../policy/task-v2-failures.mjs";
 import {
   g12Profile,
   g13Profile,
@@ -29,6 +37,133 @@ const commandNames = new Set([
 ]);
 const commandDispositions = new Set(["completed", "timed-out", "output-limit"]);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
+const taskV2GateRequestKeys = Object.freeze([
+  "contractSchemaVersion",
+  "executionGate",
+]);
+const taskV2ReadinessKeys = Object.freeze(["status", "reason"]);
+const taskV2Unavailable = Object.freeze({
+  status: "unavailable",
+  reason: "native-adapter-unavailable",
+});
+
+export const TASK_V2_EXECUTION_GATE_REQUEST = Object.freeze({
+  contractSchemaVersion: 2,
+  executionGate: "native-containment-qualification-v1",
+});
+
+function taskV2OwnDataRecord(value, expectedKeys, code, label) {
+  try {
+    if (
+      value === null ||
+      typeof value !== "object" ||
+      utilTypes.isProxy(value) ||
+      Array.isArray(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
+      throw taskV2Failure(code, `${label} must be a plain own-data record`);
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (
+      keys.length !== expectedKeys.length ||
+      keys.some((key, index) => key !== expectedKeys[index]) ||
+      expectedKeys.some((key) => {
+        const descriptor = descriptors[key];
+        return !(
+          descriptor !== undefined &&
+          "value" in descriptor &&
+          descriptor.enumerable === true &&
+          descriptor.get === undefined &&
+          descriptor.set === undefined
+        );
+      })
+    ) {
+      throw taskV2Failure(code, `${label} fields are not exact ordered own data`);
+    }
+    return Object.fromEntries(
+      expectedKeys.map((key) => [key, descriptors[key].value]),
+    );
+  } catch (error) {
+    if (isTaskV2Failure(error)) throw error;
+    throw taskV2Failure(code, error);
+  }
+}
+
+function validateTaskV2GateRequest(value) {
+  const request = taskV2OwnDataRecord(
+    value,
+    taskV2GateRequestKeys,
+    "ERR_CONTRACT_SCHEMA_OR_KEYS",
+    "engineering task v2 execution gate request",
+  );
+  if (
+    request.contractSchemaVersion !== 2 ||
+    request.executionGate !== "native-containment-qualification-v1"
+  ) {
+    throw taskV2Failure(
+      "ERR_CONTRACT_SCHEMA_OR_KEYS",
+      "engineering task v2 execution gate request values are invalid",
+    );
+  }
+}
+
+function projectTaskV2Readiness(value) {
+  const result = taskV2OwnDataRecord(
+    value,
+    taskV2ReadinessKeys,
+    "ERR_RECONSTRUCTION",
+    "engineering task v2 containment readiness",
+  );
+  if (
+    !Object.isFrozen(value) ||
+    result.status !== taskV2Unavailable.status ||
+    result.reason !== taskV2Unavailable.reason
+  ) {
+    throw taskV2Failure(
+      "ERR_RECONSTRUCTION",
+      "engineering task v2 containment readiness is not the fixed dormant result",
+    );
+  }
+  return taskV2Unavailable;
+}
+
+function createTaskV2ExecutionGate(readiness) {
+  if (typeof readiness !== "function" || utilTypes.isProxy(readiness)) {
+    throw taskV2Failure(
+      "ERR_RECONSTRUCTION",
+      "engineering task v2 containment readiness operation is invalid",
+    );
+  }
+  return (request) =>
+    withTaskV2FailureBoundary(() => {
+      validateTaskV2GateRequest(request);
+      let result;
+      try {
+        result = readiness();
+      } catch (error) {
+        throw taskV2Failure("ERR_RECONSTRUCTION", error);
+      }
+      return projectTaskV2Readiness(result);
+    });
+}
+
+const runProductionTaskV2ExecutionGate = createTaskV2ExecutionGate(
+  candidateContainmentOwnerV2Readiness,
+);
+
+/** Test-only seam for proving the dormant v2 gate without filesystem access. */
+export function createTaskV2ExecutionGateForTesting(readiness) {
+  return createTaskV2ExecutionGate(readiness);
+}
+
+/**
+ * Schema-v2 preflight remains dormant until ADR-0039 proves the native owner.
+ * The gate is deliberately evaluated before the deferred options are touched.
+ */
+export function runTaskPreflightV2(gateRequest, deferredOptions) {
+  return runProductionTaskV2ExecutionGate(gateRequest);
+}
 
 function commandOutput(command) {
   return `${command?.stdoutTail ?? ""}\n${command?.stderrTail ?? ""}`;
