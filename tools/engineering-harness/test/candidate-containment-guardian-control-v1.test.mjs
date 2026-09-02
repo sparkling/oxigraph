@@ -17221,8 +17221,8 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56",
-    registeredCount: 2,
+      "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554",
+    registeredCount: 3,
     todoCount: 1,
     inputsDeferredUntilExecution: true,
     privateStoreTodoDeferralBoundToEntryOptions: true,
@@ -17258,7 +17258,7 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
       oracle: ADVERSARIAL_WIRING_ACTIVITY.oracleInputReads,
       loadFreshCandidate: ADVERSARIAL_WIRING_ACTIVITY.freshLoaderInputReads,
     },
-    { candidate: 2, oracle: 2, loadFreshCandidate: 1 },
+    { candidate: 3, oracle: 3, loadFreshCandidate: 1 },
   );
   assert.equal(ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls, 0);
   assert.equal(
@@ -21408,6 +21408,28 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   const makeSyntheticCandidate = (moduleIdentity) => {
     const calls = [];
     const candidateModule = {};
+    let startupThreeArgumentCallCount = 0;
+    const startupProjection = Object.freeze({
+      syntheticStartupProjection: moduleIdentity,
+    });
+    const initializedState = Object.freeze({
+      syntheticInitializedState: moduleIdentity,
+    });
+    const recordLaunchTranslationCall = (operation, phase) => {
+      calls.push(
+        recursivelyFreezeEvidence({
+          moduleIdentity,
+          operation,
+          control: {
+            schema:
+              "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-control/v1",
+            phase,
+            oracleIdentitySha256:
+              "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+          },
+        }),
+      );
+    };
     for (const operation of new Set([
       ...expectedBytePositionSpecs.map((entry) => entry.operation),
       ...expectedPrivateOperations,
@@ -21418,10 +21440,17 @@ test("close the remaining private-store commit-position and semantic-mutation qu
             "createCandidateContainmentGuardianStartupV1" &&
           args.length === 3
         ) {
-          const [, epochBytes, epochEofObserved] = args;
+          const [startupReportBytes, epochBytes, epochEofObserved] = args;
           assert.equal(Buffer.isBuffer(epochBytes), true);
           assert.equal(epochBytes.length, 32);
           assert.equal(epochEofObserved, true);
+          startupThreeArgumentCallCount += 1;
+          if (startupThreeArgumentCallCount === 2) {
+            assert.equal(Buffer.isBuffer(startupReportBytes), true);
+            recordLaunchTranslationCall(operation, "startup");
+            return startupProjection;
+          }
+          assert.equal(startupThreeArgumentCallCount, 1);
           calls.push(
             recursivelyFreezeEvidence({
               moduleIdentity,
@@ -21439,6 +21468,54 @@ test("close the remaining private-store commit-position and semantic-mutation qu
             }),
           );
           throw new Error("CONTROL_SHAPE");
+        }
+        if (
+          operation ===
+            "initializeCandidateContainmentGuardianControlV1" &&
+          args.length === 1 &&
+          args[0] === startupProjection
+        ) {
+          recordLaunchTranslationCall(operation, "initialize");
+          return Object.freeze({ state: initializedState });
+        }
+        if (
+          operation ===
+            "createCandidateContainmentGuardianAdmissionInputV1" &&
+          args.length === 3
+        ) {
+          const [currentState, admissionFrameBytes, recvmsgReportBytes] = args;
+          assert.equal(currentState, initializedState);
+          const admissionFrame = JSON.parse(
+            admissionFrameBytes.toString("utf8"),
+          );
+          const launchCapsuleBytes = Buffer.from(
+            admissionFrame.launchCapsuleV3,
+            "base64",
+          );
+          const launchCapsule = JSON.parse(
+            launchCapsuleBytes.toString("utf8"),
+          );
+          assert.equal(
+            launchCapsule.schema,
+            "oxigraph.candidate-containment-launch-capsule/v1",
+          );
+          assert.equal(
+            byteSha256(launchCapsuleBytes),
+            admissionFrame.launchCapsuleV3Sha256,
+          );
+          const recvmsgReport = JSON.parse(
+            recvmsgReportBytes.toString("utf8"),
+          );
+          assert.equal(
+            recvmsgReport.messageByteLength,
+            admissionFrameBytes.length,
+          );
+          assert.equal(
+            recvmsgReport.messageRawSha256,
+            byteSha256(admissionFrameBytes),
+          );
+          recordLaunchTranslationCall(operation, "admission");
+          throw new Error("CONTROL_BINDING");
         }
         assert.equal(args.length, 1);
         const [control] = args;
@@ -21504,20 +21581,24 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     loadFreshCandidate: 0,
   });
   assert.equal(syntheticFreshLoaderCalls, 0);
-  assert.equal(syntheticRegistrations.length, 2);
+  assert.equal(syntheticRegistrations.length, 3);
   activeSyntheticCallback = "byte";
   const byteDispatchReceipt = await syntheticRegistrations[0].run();
+  activeSyntheticCallback = "launch";
+  const launchDispatchReceipt = await syntheticRegistrations[1].run();
   activeSyntheticCallback = "private";
-  const privateDispatchReceipt = await syntheticRegistrations[1].run();
+  const privateDispatchReceipt = await syntheticRegistrations[2].run();
   activeSyntheticCallback = "complete";
   assert.deepEqual(syntheticGetterReads, {
-    candidate: 2,
-    oracle: 2,
+    candidate: 3,
+    oracle: 3,
     loadFreshCandidate: 1,
   });
   assert.deepEqual(syntheticGetterOrder, [
     "byte:candidate",
     "byte:oracle",
+    "launch:candidate",
+    "launch:oracle",
     "private:candidate",
     "private:oracle",
     "private:loadFreshCandidate",
@@ -21528,6 +21609,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     ({ control }) =>
       control.schema ===
       "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-control/v1",
+  );
+  const primaryLaunchCalls = primarySyntheticCandidate.calls.filter(
+    ({ control }) =>
+      control.schema ===
+      "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-control/v1",
   );
   const primaryPrivateCalls = primarySyntheticCandidate.calls.filter(
     ({ control }) =>
@@ -21550,6 +21636,33 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         minimumBytes: 0,
         maximumBytes: 8_192,
         family: "proxy-trap-free",
+        oracleIdentitySha256:
+          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+      },
+    ],
+  );
+  assert.deepEqual(
+    primaryLaunchCalls.map(({ operation, control }) => ({
+      operation,
+      phase: control.phase,
+      oracleIdentitySha256: control.oracleIdentitySha256,
+    })),
+    [
+      {
+        operation: "createCandidateContainmentGuardianStartupV1",
+        phase: "startup",
+        oracleIdentitySha256:
+          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+      },
+      {
+        operation: "initializeCandidateContainmentGuardianControlV1",
+        phase: "initialize",
+        oracleIdentitySha256:
+          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+      },
+      {
+        operation: "createCandidateContainmentGuardianAdmissionInputV1",
+        phase: "admission",
         oracleIdentitySha256:
           "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
       },
@@ -21599,7 +21712,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         name,
         options: c12Clone(options),
         requiredInputs:
-          index === 0
+          index < 2
             ? ["candidate", "oracle"]
             : ["candidate", "oracle", "loadFreshCandidate"],
       }),
@@ -21608,6 +21721,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     executionGetterReads: c12Clone(syntheticGetterReads),
     executionGetterOrder: syntheticGetterOrder,
     byteDispatch: c12Clone(byteDispatchReceipt),
+    launchDispatch: c12Clone(launchDispatchReceipt),
     privateDispatch: c12Clone(privateDispatchReceipt),
     primaryControlCount: primarySyntheticCandidate.calls.length,
     freshControlCount: freshSyntheticCandidate.calls.length,
@@ -21617,6 +21731,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   const expectedRegisteredTests = [
     {
       name: "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+      options: {},
+      requiredInputs: ["candidate", "oracle"],
+    },
+    {
+      name: "translate launch-capsule v1 schema substitution failures to CONTROL_BINDING after valid NORMAL startup and initialization",
       options: {},
       requiredInputs: ["candidate", "oracle"],
     },
@@ -21634,8 +21753,8 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         schema:
           "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
         inventorySha256:
-          "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56",
-        registeredCount: 2,
+          "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554",
+        registeredCount: 3,
         todoCount: 1,
         inputsDeferredUntilExecution: true,
         privateStoreTodoDeferralBoundToEntryOptions: true,
@@ -21647,13 +21766,15 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         loadFreshCandidate: 0,
       },
       executionGetterReads: {
-        candidate: 2,
-        oracle: 2,
+        candidate: 3,
+        oracle: 3,
         loadFreshCandidate: 1,
       },
       executionGetterOrder: [
         "byte:candidate",
         "byte:oracle",
+        "launch:candidate",
+        "launch:oracle",
         "private:candidate",
         "private:oracle",
         "private:loadFreshCandidate",
@@ -21671,6 +21792,35 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         proxyTrapHits: 0,
         candidateBehaviorProved: true,
       },
+      launchDispatch: {
+        schema:
+          "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-dispatch/v1",
+        controlId:
+          "launch-v2-schema-substitution:predecessor-error-to-control-binding",
+        oracleIdentitySha256:
+          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+        originalLaunchCapsuleRawSha256:
+          "65d49e83493ae64b8641e442ef7468dd218a9d9c8d93ac4944a1870ca6203935",
+        invalidLaunchCapsuleRawSha256:
+          "904aedd34cfe5c27c869ebf03c8cd6274bc8f1ca320387ee1b6d6be150134e63",
+        originalAdmissionFrameRawSha256:
+          "1c92ebb5920d473f56718d738236ec645888994a4c2353ba394c15802a0f8cc0",
+        invalidAdmissionFrameRawSha256:
+          "332e9f4f464fa72c9487788831718749f590421fc443ac729cda5f1259e7badc",
+        originalRecvmsgReportRawSha256:
+          "6c878c816cf01b43b4dd94c57a2b5d0643f4232950213fd5bb4bd9ee28106639",
+        invalidRecvmsgReportRawSha256:
+          "3a446793e85de20a2e6997b267dfc6aadff0e89455ee824c17e3bcbefbd08891",
+        downstreamRecvmsgBindingConsistent: true,
+        candidateBehaviorAttemptCount: 3,
+        startupCandidateCallCount: 1,
+        initializationCandidateCallCount: 1,
+        admissionCandidateCallCount: 1,
+        freshLoaderCallCount: 0,
+        sourceOrCandidateDeferralUsed: false,
+        predecessorFailureTranslated: true,
+        candidateBehaviorProved: true,
+      },
       privateDispatch: {
         schema:
           "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
@@ -21685,7 +21835,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         todoDeferralBoundToEntryOptions: true,
         candidateBehaviorProved: false,
       },
-      primaryControlCount: 41,
+      primaryControlCount: 44,
       freshControlCount: 10,
       freshLoaderCallCount: 1,
       candidateBehaviorProved: false,
@@ -22151,7 +22301,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     [
       "registration-count-drift",
       (receipt) => {
-        receipt.registration.registeredCount = 1;
+        receipt.registration.registeredCount = 2;
       },
     ],
     [
@@ -22180,9 +22330,21 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
     ],
     [
-      "registration-required-input-drift",
+      "registration-launch-options-deferral-drift",
+      (receipt) => {
+        receipt.registeredTests[1].options.todo = true;
+      },
+    ],
+    [
+      "registration-launch-required-input-drift",
       (receipt) => {
         receipt.registeredTests[1].requiredInputs.pop();
+      },
+    ],
+    [
+      "registration-private-required-input-drift",
+      (receipt) => {
+        receipt.registeredTests[2].requiredInputs.pop();
       },
     ],
     [
@@ -22206,13 +22368,13 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     [
       "execution-repeated-candidate-getter",
       (receipt) => {
-        receipt.executionGetterReads.candidate = 3;
+        receipt.executionGetterReads.candidate = 4;
       },
     ],
     [
       "execution-repeated-oracle-getter",
       (receipt) => {
-        receipt.executionGetterReads.oracle = 3;
+        receipt.executionGetterReads.oracle = 4;
       },
     ],
     [
@@ -22247,6 +22409,60 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         receipt.candidateBehaviorProved = true;
         receipt.byteDispatch.candidateBehaviorProved = true;
         receipt.privateDispatch.candidateBehaviorProved = true;
+      },
+    ],
+    [
+      "registration-launch-dispatch-control-id-drift",
+      (receipt) => {
+        receipt.launchDispatch.controlId += "-drift";
+      },
+    ],
+    [
+      "registration-launch-invalid-capsule-digest-drift",
+      (receipt) => {
+        receipt.launchDispatch.invalidLaunchCapsuleRawSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "registration-launch-invalid-admission-digest-drift",
+      (receipt) => {
+        receipt.launchDispatch.invalidAdmissionFrameRawSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "registration-launch-invalid-recvmsg-digest-drift",
+      (receipt) => {
+        receipt.launchDispatch.invalidRecvmsgReportRawSha256 = "0".repeat(64);
+      },
+    ],
+    [
+      "registration-launch-downstream-binding-drift",
+      (receipt) => {
+        receipt.launchDispatch.downstreamRecvmsgBindingConsistent = false;
+      },
+    ],
+    [
+      "registration-launch-attempt-count-drift",
+      (receipt) => {
+        receipt.launchDispatch.candidateBehaviorAttemptCount = 2;
+      },
+    ],
+    [
+      "registration-launch-source-deferral-drift",
+      (receipt) => {
+        receipt.launchDispatch.sourceOrCandidateDeferralUsed = true;
+      },
+    ],
+    [
+      "registration-launch-translation-drift",
+      (receipt) => {
+        receipt.launchDispatch.predecessorFailureTranslated = false;
+      },
+    ],
+    [
+      "registration-launch-candidate-behavior-drift",
+      (receipt) => {
+        receipt.launchDispatch.candidateBehaviorProved = false;
       },
     ],
   ]) {
@@ -22514,11 +22730,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 132,
-      killed: 132,
+      count: 143,
+      killed: 143,
       survivors: 0,
       idsSha256:
-        "1d16a37cec6e3151957c3f9223a2ea48d3bd41ee8fbef53245a5f9a1b6f8a215",
+        "d1249d82e0a6077a3a83b697061f4fcfe2e04965e4750b976d9d61279f435823",
     },
   );
   assert.equal(
