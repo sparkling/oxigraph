@@ -4,7 +4,8 @@
 - **Date**: 2026-08-28
 - Updated: 2026-09-02
 - Deciders: Oxigraph parity programme
-- Implementation status: partially implemented and deliberately unregistered.
+- Implementation status: partially implemented with a separate dormant,
+  non-product schema-v2 registration.
   Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 byte compatibility and
   add the v2 path, tree, contract, reconstruction, worker-context, schema,
   assembly, and output-validation primitives. Commit `54a056e0` adds the exact-
@@ -51,17 +52,28 @@
   cgroup evidence, pidfd/waitid evidence, physical eligibility, or authority.
   Its focused suite passes 47/47, the top-level non-G1.7 suite excluding the
   separate committed-clean identity control passes 495/495, and that identity
-  control passes 2/2 on both current Node and Node 20. The broader exact-create
-  task remains 92% in progress; ADR-0035's separate native task is 75% in
-  progress. Committed schema-v1 fixtures remain byte-identical. Production
-  containment remains fixed unavailable: the filesystem-backed native
-  guardian/reaper, recovery mutation, race-free exec and pidfd/waitid binding,
-  interactive native adapter, and full path-executed runtime-closure proof,
-  application receipt v7/replay, evaluator reconstruction, profile/CLI
-  registration, the early qualification gate, and the complete gate are not
-  implemented. Schema-v1 remains the only registered task contract, and G2.2
-  may not admit a new product module until the complete v2 gate, current host
-  qualification, and a separately ratified commit-capable successor all pass
+  control passes 2/2 on both current Node and Node 20. Commit `fd9e4d05` then
+  adds the ADR-owned early qualification gate; it is the first executable v2
+  action and returns the fixed unavailable result before candidate/evaluator
+  Git, submodule, process, provider, receipt, acceptance, rejection, or Router
+  work. Commits `c9cb6423`, `997ad287`, and `dfd6d92d` freeze the exact
+  baseline/evaluator/reference chain. Commit `f9ab7c72` adds a separate frozen
+  dormant-v2 profile registry, its exact raw contract, production worker-
+  context binding, and reconstruction evidence without adding the identity to
+  the active v1 registry or CLI. The raw contract SHA-256 is
+  `58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`;
+  its canonical SHA-256 is
+  `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
+  The broader exact-create task is 97% in progress; ADR-0035's separate native
+  task is 75% in progress. Committed schema-v1 fixtures remain byte-identical,
+  and their active registry remains exactly nine tasks and 33 commands.
+  Production containment remains fixed unavailable: the filesystem-backed
+  native guardian/reaper, recovery mutation, race-free exec and pidfd/waitid
+  binding, interactive native adapter, and full path-executed runtime-closure
+  proof, application receipt v7/replay, dormant v2 command/CLI/package
+  dispatch, and the complete gate are not implemented. G2.2 may not admit a
+  new product module until the complete v2 gate, current host qualification,
+  and a separately ratified commit-capable successor all pass
 - Programme task: `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
@@ -430,11 +442,13 @@ The exact dormant v2 implementation surface belongs to this ADR:
 - `tools/engineering-harness/src/contract-v2.mjs`;
 - `tools/engineering-harness/src/runtime/preflight.mjs`;
 - `tools/engineering-harness/src/runtime/g12-programme.mjs`;
+- `tools/engineering-harness/src/runtime/task-context-v2.mjs`;
 - `tools/engineering-harness/src/candidate/reconstruct-v2.mjs`;
 - `tools/engineering-harness/src/task-profile.mjs`;
 - `tools/engineering-harness/src/command-registry.mjs`;
-- `tools/engineering-harness/bin/oxigraph-engineering-harness.mjs`; and
-- `tools/engineering-harness/package.json`.
+- `tools/engineering-harness/bin/oxigraph-engineering-harness.mjs`;
+- `tools/engineering-harness/package.json`; and
+- `tools/engineering-harness/tasks/v2/harness-create-exact-v2/contract.json`.
 
 Focused evidence belongs in these existing paths:
 
@@ -445,12 +459,13 @@ Focused evidence belongs in these existing paths:
 - `tools/engineering-harness/test/preflight.test.mjs`;
 - `tools/engineering-harness/test/g12-programme.test.mjs`;
 - `tools/engineering-harness/test/candidate-reconstruction-v2.test.mjs`;
+- `tools/engineering-harness/test/task-context-v2.test.mjs`;
 - `tools/engineering-harness/test/task-profile.test.mjs`; and
 - `tools/engineering-harness/test/cli.test.mjs`.
 
-The future implementation must freeze their exact v2 fixtures before
-registration and prove that every unavailable-gate path reaches none of the
-forbidden effects above.
+The remaining implementation must freeze the receipt/command/CLI fixtures
+before dormant dispatch registration and continue to prove that every
+unavailable-gate path reaches none of the forbidden effects above.
 
 ### Bounded failure behavior
 
@@ -567,7 +582,7 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 92%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 97%.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -656,19 +671,37 @@ The committed implementation sequence is:
   its original 18 exports and all nine incumbent importer source identities
   remain unchanged. The helper-focused matrix passes 20/20 on Node 24.14.1,
   20.0.0, and 20.20.2, with no package, lock, dependency, registry, readiness,
-  runtime, or authority change.
+  runtime, or authority change; and
+- `fd9e4d05` adds the exact schema-v2 gate request and makes the unavailable
+  native-qualification check the first executable action of v2 preflight, run,
+  and replay. It performs one readiness attempt and no downstream effect;
+- `c9cb6423`, `997ad287`, and `dfd6d92d` freeze the exact-create baseline,
+  unique-E0583 evaluator, and one-`A`/one-`M` green reference chain. The
+  baseline-to-evaluator and evaluator-to-reference patch SHA-256 values are
+  `46433385d66880f8ae902a1bde2ddc1a210e857b5c29acb8d28c266bc66206d2`
+  and
+  `e2a2ad5e9207468b3c1beeb6634b3a29987066bd61a1403b774f68f44a9a0ff9`;
+  and
+- `f9ab7c72` registers only the separate dormant schema-v2 control profile and
+  exact contract, binds the production v2 worker context to its raw digest and
+  source allowlist, and reconstructs the frozen reference tree. It leaves the
+  nine active v1 profiles and 33-command surface unchanged and grants no
+  product, provider, qualification, promotion, or publication authority.
 
-The current preflight-focused suite passes 47/47 and the complete top-level
-non-G1.7 harness suite, excluding the separately run committed-clean identity
-control, passes 495/495 on both the current Node runtime and Node 20. The clean
-committed-code identity control passes 2/2 on both runtimes. Two fresh
-independent native-fixture and contract/security audits returned GO after the
-frame-bound, cleanup-deadline, held-executable, descriptor-inventory,
-post-reap, and fault-matrix gaps were closed. Their GO is only for this narrow
-Proposed, unregistered, authority-null checkpoint; production activation
-remains NO-GO.
-Only the new preflight execution copy was executed; the frozen predecessor
-artifact was not. No live G1.7 control, provider,
+For the `f9ab7c72` checkpoint, the six-file focused matrix passes 87/87 on
+Node 24; the exact four-file profile/contract/reconstruction/context matrix
+passes 55/55 on Node 20.0.0 and Node 20.20.2; and the complete top-level
+non-G1.7 harness suite, excluding the committed-clean identity control, passes
+694/694 on Node 24 and Node 20.20.2. Agentic-QE 3.13.12 independently executes
+the four-file matrix at 55/55. The real Cargo oracle fails only the evaluator
+with exit 101 and one `E0583`, then passes the reference with 3/3 tests. Fresh
+independent contract, compatibility, and hostile-input reviews returned
+APPROVE for this narrow Proposed, dormant, authority-null checkpoint;
+production activation remains NO-GO.
+At the earlier `040f3343` checkpoint only the new preflight execution copy was
+executed; the frozen predecessor artifact was not. The `f9ab7c72` checkpoint
+also executed only the exact evaluator/reference Cargo test oracle, not a
+native containment path. No live G1.7 control, provider,
 benchmark, qualification, or promotion path was run for this checkpoint. The
 full suite's already-
 recorded deliberate G1.7 sealed-subject freshness failure is not relabelled
@@ -694,8 +727,8 @@ the remaining output and runtime-closure proof.
 ADR-0035 owns the stable guardian/reaper, intent-first write-once journal,
 restart reconciliation, and executable cancel-only preflight decisions within
 that boundary; it does not relax this ADR's gate.
-Application receipt v7/replay, evaluator
-reconstruction, profile and CLI dispatch, and the frozen G2.2 profile follow.
+Application receipt v7/replay, dormant command/CLI/package dispatch, and the
+frozen G2.2 profile follow.
 Schema-v1 compatibility remains visible
 in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),
 [`paths.mjs`](../../tools/engineering-harness/src/policy/paths.mjs),
@@ -704,5 +737,6 @@ and [`task-context.mjs`](../../tools/engineering-harness/src/runtime/task-contex
 the unregistered boundary is implemented separately in the corresponding
 `*-v2` modules. The [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md)
 places this task before G2.2. Until its acceptance boundary is implemented,
-schema v1 remains the only registered engineering contract and file creation
+schema v1 remains the only active command/CLI engineering-contract family;
+the separate dormant v2 control cannot execute, and product file creation
 remains forbidden.

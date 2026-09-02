@@ -181,13 +181,31 @@ local-only, unregistered as MCP, and without promotion authority.
 Follow-up commits `13352ff9` and `c2497225` register and evaluator-separate
 G1.4a. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind the corrected
 G1.4b evaluator without rewriting either historical registry checkpoint. The
-current fail-closed registry therefore contains nine tasks and 33 commands.
+active fail-closed v1 registry therefore contains nine tasks and 33 commands.
 After G2.1, the full package suite contains 667 tests: 663 pass, one fails, and
 three intentional host-gated tests are skipped. The sole failure is the
 deliberate sealed-subject freshness gate detecting the newly committed G2.1
 product paths; it is not a helper/request regression or current-HEAD
 qualification. The doctor retains the same native-only, local-only,
 non-promoting boundary.
+
+ADR-0034's exact-create control now has an additive, still-dormant schema-v2
+surface. Commit `fd9e4d05` makes the unavailable native-qualification check the
+first executable v2 action; commits `c9cb6423`, `997ad287`, and `dfd6d92d`
+freeze its baseline, unique-`E0583` evaluator, and one-`A`/one-`M` reference;
+and commit `f9ab7c72` adds the separate frozen v2 profile, raw contract,
+production worker-context binding, and exact reference reconstruction. It does
+not add the task to the active v1 registry or 33-command CLI. The raw contract
+SHA-256 is
+`58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`;
+its canonical SHA-256 is
+`f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
+Focused tests pass 87/87 on Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the
+top-level non-G1.7 suite passes 694/694 on Node 24 and Node 20.20.2. The real
+Cargo oracle observes evaluator exit 101 with one `E0583`, then 3/3 passing
+reference tests. Application receipt v7, dormant command/CLI/package dispatch,
+current host qualification, and the complete gate remain open, so this is no
+G2.2 or product authority.
 
 Follow-on harness commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate
@@ -427,9 +445,10 @@ pidfd/waitid reap, semantic retained-file validation, FD-6 execution binding,
 physical containment, or the full runtime closure. Production stays fixed
 `{status: "unavailable", reason: "native-adapter-unavailable"}` until those
 gates and the exact path-executed runtime closure exist. Application receipt
-v7/replay, evaluator/profile/CLI registration, the complete ADR-0034 gate, and
-G2.2 remain open, so no new product module or promotion authority is admitted
-by this checkpoint.
+v7/replay, dormant command/CLI/package dispatch, the complete ADR-0034 gate,
+and G2.2 remain open. The later `f9ab7c72` checkpoint implements only the
+separate dormant profile, contract, worker context, and reconstruction, so no
+new product module or promotion authority is admitted.
 
 The dated 2026-09-02 ADR-0036 C15 checkpoint is now GREEN. ADR-0034 helper
 commit `41dd2508` advances `containment-exact-v2.mjs` to the additive 19-export
@@ -504,7 +523,9 @@ must link that object unchanged and owns only manager/guardian/trampoline
 process/cgroup/exec mechanics. ADR-0034 owns dormant application receipt v7,
 schema-v2 reconstruction/dispatch/profile literals, and the early exact
 `executionGate: "native-containment-qualification-v1"` for
-`contractSchemaVersion: 2`.
+`contractSchemaVersion: 2`. Its early gate, separate dormant profile, exact
+contract, worker context, and reconstruction are implemented; receipt v7 and
+command/CLI/package dispatch are not.
 [ADR-0039](./docs/adr/0039-delegated-host-containment-qualification-and-readiness.md)
 consumes those bytes unchanged and owns only current-host qualification,
 receipt binding/activation, and path-executed runtime closure. While readiness
@@ -610,8 +631,9 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0039; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Twenty-one decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 92%
-  in-progress harness controls remain unregistered until their full v2
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 97%
+  in-progress controls include a separate dormant v2 profile and contract, but
+  no v2 command/CLI/package registration or receipt-v7 admission until the full
   acceptance gate closes. ADR-0035 separately governs the implemented pure
   journal contract and the still-unimplemented durable native guardian,
   recovery, and executable-preflight boundary. ADR-0036 through ADR-0039 split

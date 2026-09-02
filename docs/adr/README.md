@@ -98,12 +98,13 @@ passes 47/47 and the top-level non-G1.7 suite, excluding the separate
 committed-clean identity control, passes 495/495 on current Node and Node 20;
 the identity control passes 2/2 on both after commit, and two fresh reviews
 are GO. ADR-0035 task `task-1788002473147-nsat6x` is 75% in progress for this
-checkpoint; the broader exact-admission task remains 92%. Filesystem-backed
-guardian/reaper durability and recovery, delegated-cgroup evidence,
-pidfd/waitid and race-free exec binding, the physical native adapter and full
-runtime-closure proof, ADR-0034's application receipt v7/replay and
-evaluator/profile/CLI pre-registration, ADR-0039's qualification/activation
-gate, a later commit-capable successor, and G2.2 remain open. ADR-0035 separates
+checkpoint; the broader exact-admission task is now 97% after the exact early
+gate, frozen evaluator/reference chain, and separate dormant-v2 registration.
+Filesystem-backed guardian/reaper durability and recovery, delegated-cgroup
+evidence, pidfd/waitid and race-free exec binding, the physical native adapter
+and full runtime-closure proof, ADR-0034's application receipt v7/replay and
+dormant command/CLI/package dispatch, ADR-0039's qualification/activation gate,
+a later commit-capable successor, and G2.2 remain open. ADR-0035 separates
 those native concerns from ADR-0034's broader admission gate. ADR-0036 through
 ADR-0039 decompose the remaining control ABI, statefs/manager, native
 executable, and delegated-host readiness work without changing the current
@@ -250,10 +251,16 @@ assembly, and worker-output controls. Commit `54a056e0` adds exact stdin,
 retained-descriptor provider/schema/Git verification, original-process-group
 quiescence, and unsafe-root retention. Commit `11e72201` adds the opaque
 candidate/verifier lifecycle but keeps the structural closure evidence
-explicitly unproved and production unavailable. Independent audits returned GO
-only for the Proposed, unregistered structural infrastructure and NO-GO for
-activation. It grants no product, qualification, or promotion authority and
-cannot admit G2.2's new module.
+explicitly unproved and production unavailable. Commit `fd9e4d05` adds the
+first-action unavailable qualification gate; `c9cb6423`, `997ad287`, and
+`dfd6d92d` freeze the exact baseline/evaluator/reference chain; and `f9ab7c72`
+adds the separate dormant-v2 profile, raw contract, production worker context,
+and reference reconstruction. The active v1 registry remains nine tasks and
+33 commands. Focused matrices pass 87/87 on Node 24 and 55/55 on Node 20.0.0
+and 20.20.2; the top-level non-G1.7 suite passes 694/694 on Node 24 and Node
+20.20.2. Independent audits returned GO only for the Proposed, dormant
+authority-null infrastructure and NO-GO for activation. It grants no product,
+qualification, or promotion authority and cannot admit G2.2's new module.
 
 Audited two-parent merge `e9d2db1b` records upstream `ec68e3dd` as an ancestor
 while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,

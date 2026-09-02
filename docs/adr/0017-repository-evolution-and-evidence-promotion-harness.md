@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-30
+- Updated: 2026-09-02
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -185,8 +185,8 @@
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
-  producing the current exact nine-task/33-command surface. After G2.1, the
-  package suite contains 667 tests: 663 pass, the deliberate sealed-subject
+  producing the current exact active nine-task/33-command surface. After G2.1,
+  the package suite contains 667 tests: 663 pass, the deliberate sealed-subject
   freshness gate is the sole failure after detecting G2.1 product paths, and
   three intentional host-gated tests skip. This is not a helper/request
   regression or current-HEAD qualification; doctor evidence remains
@@ -257,14 +257,22 @@
   mint the production report brand: pidfd/waitid reap, filesystem-backed
   guardian/reaper durability and recovery, delegated-cgroup evidence,
   semantic retained-file validation, FD-6 execution binding, and every
-  physical/final authority remain absent, null, or false. The physical native
-  adapter and full path-executed runtime closure, receipt v7/replay, evaluator
-  reconstruction, registry/CLI activation, and G2.2 remain open; ADR-0034 stays
-  Proposed and unregistered. ADR-0034 owns those dormant receipt-v7/schema-v2
-  registration bytes and their early qualification gate; ADR-0039 consumes
-  them unchanged and owns only current-host qualification, activation binding,
-  and path-executed runtime closure. ADR-0037 owns the bounded statefs-syscalls
-  object that ADR-0038 must link unchanged
+  physical/final authority remain absent, null, or false. Commit `fd9e4d05`
+  adds ADR-0034's exact early unavailable gate; `c9cb6423`, `997ad287`, and
+  `dfd6d92d` freeze its baseline/evaluator/reference chain; and `f9ab7c72`
+  adds a separate dormant-v2 profile registry, exact contract, production
+  worker-context binding, and reference reconstruction. Its focused matrix
+  passes 87/87 on Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the top-level
+  non-G1.7 suite passes 694/694 on Node 24 and Node 20.20.2. The active v1
+  registry and 33-command CLI are unchanged. The physical native adapter and
+  full path-executed runtime closure, receipt v7/replay, dormant v2
+  command/CLI/package dispatch, and G2.2 remain open; ADR-0034 stays Proposed
+  and its v2 registration stays dormant, non-product, and non-executable.
+  ADR-0034 owns those dormant receipt-v7/schema-v2 bytes and their early
+  qualification gate; ADR-0039 consumes them unchanged and owns only current-
+  host qualification, activation binding, and path-executed runtime closure.
+  ADR-0037 owns the bounded statefs-syscalls object that ADR-0038 must link
+  unchanged
 - **Related**:
   [ADR-0004 — MetaHarness and Darwin qualification](0004-metaharness-darwin-qualification.md),
   [ADR-0005 — Agentic-QE integration](0005-agentic-qe-integration.md),
@@ -605,15 +613,15 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-92% after unregistered launch/bootstrap contract commit `7191ddde`, pure
-guardian-journal contract commit `ab668ddd`, and the test-local authority-null
-preflight execution checkpoint `040f3343`. ADR-0035's separate Ruflo task
-`task-1788002473147-nsat6x` is 75% in progress. The filesystem-backed stable
-guardian/reaper, recovery mutation, race-free exec plus pidfd/waitid evidence,
-interactive physical cgroup adapter and full runtime-closure proof, receipt
-v7/replay, evaluator reconstruction, profile/CLI registration, the complete
-acceptance gate, and G2.2 remain open. ADR-0034 and ADR-0035 add no product
-G-identifier.
+97% after the historical launch/bootstrap and guardian/preflight checkpoints,
+the exact early-gate commit `fd9e4d05`, fixture chain
+`c9cb6423`/`997ad287`/`dfd6d92d`, and separate dormant-v2 registration commit
+`f9ab7c72`. ADR-0035's separate Ruflo task `task-1788002473147-nsat6x` is 75%
+in progress. The filesystem-backed stable guardian/reaper, recovery mutation,
+race-free exec plus pidfd/waitid evidence, interactive physical cgroup adapter
+and full runtime-closure proof, receipt v7/replay, dormant v2
+command/CLI/package dispatch, the complete acceptance gate, and G2.2 remain
+open. ADR-0034 and ADR-0035 add no product G-identifier.
 
 The remaining containment gates have one-way ownership. ADR-0037 owns the sole
 statefs policy/oracle and a tiny separately attested Linux x86-64

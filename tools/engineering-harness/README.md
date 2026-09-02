@@ -22,7 +22,8 @@ evaluator remains the sealed reconstruction stage's authority. Same-host retry,
 circuit-breaking, and cancellation remain unchanged.
 
 [ADR-0034 — First-class exact new-file admission](../../docs/adr/0034-first-class-exact-new-file-admission.md) is now
-partially implemented but deliberately unregistered. Commits `78b2cf99`
+partially implemented with a separate dormant, non-product schema-v2
+registration. Commits `78b2cf99`
 through `65fb0e7a` preserve every schema-v1 byte while adding the exact v2 path,
 tree, contract, reconstruction, task-context, schema, patch-assembly, and
 worker-output primitives. Commit `54a056e0` adds exact stdin capture and the
@@ -108,6 +109,26 @@ independent reviews are GO for this bounded scope. The fixture deliberately
 does not claim pidfd/waitid reap, semantic retained-file validation, cgroup or
 guardian durability, FD-6 execution binding, production containment, G1.7,
 qualification, or promotion.
+
+Commit `fd9e4d05` adds ADR-0034's exact early v2 execution gate. Preflight,
+run, and replay attempt the fixed native qualification exactly once before any
+workspace preparation or downstream effect and remain unavailable. Commits
+`c9cb6423`, `997ad287`, and `dfd6d92d` freeze the baseline, unique-`E0583`
+evaluator, and one-`A`/one-`M` green reference. Commit `f9ab7c72` adds a
+separate, exact, deeply frozen dormant-v2 profile registry; the raw contract at
+`tasks/v2/harness-create-exact-v2/contract.json`; production worker-context
+binding; and exact reference reconstruction. The raw and canonical contract
+SHA-256 values are
+`58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`
+and
+`f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
+The six-file focused matrix passes 87/87 on Node 24; the exact four-file matrix
+passes 55/55 on Node 20.0.0 and Node 20.20.2; the top-level non-G1.7 suite
+passes 694/694 on Node 24 and Node 20.20.2; and the real Cargo oracle observes
+one evaluator `E0583` followed by 3/3 reference tests. The v1 registry remains
+exactly nine tasks and 33 commands. Receipt v7, v2 command/CLI/package
+dispatch, host qualification, G2.2, product, promotion, and publication remain
+absent.
 
 [ADR-0035 — Durable native containment guardian and crash recovery](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,
@@ -349,10 +370,11 @@ brand. Production remains fixed `unavailable` until the guardian and
 interactive native supervisor/adapter exist. Those mechanics and the full
 runtime-closure proof,
 application receipt v7/replay,
-evaluator reconstruction, profile/CLI dispatch, and G2.2 remain mandatory later
-gates. Production stays fixed unavailable, schema v1 remains the only
-executable registry surface, and no candidate-created product module is
-admitted yet.
+dormant command/CLI/package dispatch, and G2.2 remain mandatory later gates.
+Exact evaluator/reference reconstruction and the separate dormant-v2 profile
+now exist in `f9ab7c72`, but production stays fixed unavailable, schema v1
+remains the only executable registry surface, and no candidate-created product
+module is admitted yet.
 
 Current activation boundary:
 
@@ -522,7 +544,8 @@ Current activation boundary:
 - no MCP server is registered until one canonical command registry is exercised
   through both the CLI and real JSON-RPC tests.
 
-The committed control surface is now generated from one fail-closed registry.
+The active committed control surface is generated from one fail-closed v1
+registry.
 `engineeringTaskRegistry` is the sole ordered identity authority for these
 exact task IDs:
 
@@ -545,6 +568,14 @@ identities are rejected before filesystem, runtime, verifier, or receipt I/O.
 The exported per-G1 profiles, contract-path constants, and named wrappers are
 compatibility shims over that generic task API, not parallel dispatch
 authorities.
+
+`dormantEngineeringTaskV2Registry` is a separate one-entry control namespace
+for `harness-create-exact-v2-control`. It derives only
+`tasks/v2/harness-create-exact-v2/contract.json`, is exact-digest-bound,
+deeply frozen, and rejects every v1 or G2.2 identity. It is not consulted by
+the active registry, command generator, or CLI; its production context can be
+constructed only for the exact dormant contract, behind the unavailable early
+qualification gate.
 
 The same registry generates the task portion of an exact ordered 33-command
 CLI surface. The CLI resolves a slug to its registered `taskId` and dispatches
