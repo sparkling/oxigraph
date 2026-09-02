@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
+  lstat,
   readFile,
   rm,
   symlink,
@@ -31,9 +32,28 @@ import {
   isTaskV2Failure,
   TaskV2Failure,
 } from "../src/policy/task-v2-failures.mjs";
+import { repositoryRoot } from "../src/paths.mjs";
 import { canonicalJson } from "../src/routing/features.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const exactCreateBaselineCommit = "c9cb6423faf9b510bd6e19bf94cce9ab2803bda9";
+const exactCreateEvaluatorCommit = "997ad287fe089c8d791e0b733caae6240602de8f";
+const exactCreateEvaluatorTree = "a5ae6b11fcfe0ae085c0e1b6d7eba18d70572f99";
+const exactCreateEvaluatorPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs";
+const exactCreateCreatedPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs";
+const exactCreatePresentPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs";
+const exactCreateContractPath = join(
+  repositoryRoot,
+  "tools",
+  "engineering-harness",
+  "tasks",
+  "v2",
+  "harness-create-exact-v2",
+  "contract.json",
+);
 
 function failureCode(code) {
   return (error) => {
@@ -498,6 +518,96 @@ test("raw v2 contract parsing owns exact bytes and binds raw and canonical ident
   assert.equal(
     parseTaskContractBytesV2(boundary).contractSha256,
     sha256(boundary),
+  );
+});
+
+test("exact-create dormant contract binds the frozen evaluator and unique missing module", async (t) => {
+  const contractFile = await lstat(exactCreateContractPath);
+  assert.equal(contractFile.isFile(), true);
+  assert.equal(contractFile.isSymbolicLink(), false);
+  assert.equal(contractFile.mode & 0o170000, 0o100000);
+  const raw = await readFile(exactCreateContractPath);
+  assert.equal(
+    sha256(raw),
+    "58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad",
+  );
+  const parsed = parseTaskContractBytesV2(raw);
+  assert.equal(parsed.contractSha256, sha256(raw));
+  assert.equal(parsed.contract.id, "harness-create-exact-v2-control");
+  assert.equal(parsed.contract.schemaVersion, 2);
+  assert.equal(parsed.contract.baseline.commit, exactCreateBaselineCommit);
+  assert.equal(parsed.contract.evaluator.commit, exactCreateEvaluatorCommit);
+  assert.equal(parsed.contract.evaluator.parent, exactCreateBaselineCommit);
+  assert.equal(parsed.contract.evaluator.tree, exactCreateEvaluatorTree);
+  assert.equal(parsed.contract.evaluator.path, exactCreateEvaluatorPath);
+  assert.deepEqual(parsed.contract.scope.mutableExact, [
+    exactCreateCreatedPath,
+    exactCreatePresentPath,
+  ]);
+  assert.deepEqual(parsed.contract.scope.createExact, [exactCreateCreatedPath]);
+  assert.equal(parsed.contract.localOnly, true);
+  assert.equal(parsed.contract.promotionAuthority, false);
+  assert.equal(parsed.contract.initialRed.commandRole, "public");
+  assert.equal(parsed.contract.initialRed.exitCode, 101);
+  assert.equal(parsed.contract.initialRed.rustcCode, "E0583");
+  assert.equal(parsed.contract.initialRed.rustcErrorCount, 1);
+  assert.equal(parsed.contract.success.publicPassed, 3);
+
+  const root = await mkdtemp(join(tmpdir(), "oxigraph-exact-create-contract-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = await createGitHome(root);
+  const verified = await verifyTaskContractRepositoryV2(parsed.contract, {
+    repoRoot: repositoryRoot,
+    home,
+  });
+  assert.deepEqual(
+    verified.mutableBaselines.map(({ path, state }) => ({ path, state })),
+    [
+      { path: exactCreateCreatedPath, state: "absent" },
+      { path: exactCreatePresentPath, state: "present" },
+    ],
+  );
+
+  const evaluatorTree = await loadTreeV2({
+    workspace: repositoryRoot,
+    home,
+    tree: exactCreateEvaluatorTree,
+  });
+  assert.equal(
+    treeEntryAtPath(evaluatorTree, exactCreateCreatedPath),
+    undefined,
+  );
+  const evaluatorEntry = treeEntryAtPath(
+    evaluatorTree,
+    exactCreateEvaluatorPath,
+  );
+  const presentEntry = treeEntryAtPath(evaluatorTree, exactCreatePresentPath);
+  assert.deepEqual(
+    [evaluatorEntry.mode, evaluatorEntry.type, evaluatorEntry.oid],
+    ["100644", "blob", parsed.contract.evaluator.blob],
+  );
+  assert.deepEqual(
+    [presentEntry.mode, presentEntry.type, presentEntry.oid],
+    ["100644", "blob", "f84c77471cb73df8905041738b6973113a51473a"],
+  );
+  const evaluatorSource = (
+    await readBlobByOid({
+      workspace: repositoryRoot,
+      home,
+      oid: evaluatorEntry.oid,
+    })
+  ).toString("utf8");
+  assert.equal(
+    evaluatorSource.match(
+      /^mod engineering_harness_exact_create_v2_created;$/gmu,
+    )?.length,
+    1,
+  );
+  assert.equal(
+    evaluatorSource.match(
+      /^mod engineering_harness_exact_create_v2_present;$/gmu,
+    )?.length,
+    1,
   );
 });
 

@@ -1,9 +1,288 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { types as utilTypes } from "node:util";
 
 import { harnessRoot, isContained } from "./paths.mjs";
+import { asciiFoldPathV2, validateTaskV2Path } from "./policy/paths-v2.mjs";
 
-const TASK_ID = /^g(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)[a-z]?)+-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const TASK_ID =
+  /^g(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)[a-z]?)+-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const TASK_SLUG = /^g(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)[a-z]?)+$/u;
+const DORMANT_TASK_V2_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+const DORMANT_TASK_V2_ID_BYTES_CEILING = 128;
+const DORMANT_TASK_V2_PATH_BYTES_CEILING = 4 * 1024;
+const SHA256 = /^[0-9a-f]{64}$/u;
+const DORMANT_TASK_V2_DECLARATION_KEYS = Object.freeze([
+  "id",
+  "slug",
+  "label",
+  "decision",
+  "taskClass",
+  "registrationMode",
+  "taskSchemaVersion",
+  "executionGate",
+  "productAuthority",
+  "contractRawSha256",
+  "sourceAllowlist",
+]);
+const HARNESS_CREATE_EXACT_V2_SOURCE_ALLOWLIST = Object.freeze([
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs",
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs",
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs",
+]);
+
+function exactOwnDataRecord(value, expectedKeys, label) {
+  let descriptors;
+  try {
+    if (
+      value === null ||
+      typeof value !== "object" ||
+      utilTypes.isProxy(value) ||
+      Array.isArray(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
+      throw new Error(`${label} must be a plain own-data record`);
+    }
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === `${label} must be a plain own-data record`
+    ) {
+      throw error;
+    }
+    throw new Error(`${label} must be a plain own-data record`);
+  }
+  const actualKeys = Reflect.ownKeys(descriptors);
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some(
+      (key, index) =>
+        typeof key !== "string" ||
+        key !== expectedKeys[index] ||
+        !("value" in descriptors[key]) ||
+        descriptors[key].enumerable !== true,
+    )
+  ) {
+    throw new Error(`${label} must be an exact ordered plain own-data record`);
+  }
+  return Object.fromEntries(
+    expectedKeys.map((key) => [key, descriptors[key].value]),
+  );
+}
+
+function exactOwnDataArray(value, maximum, label) {
+  let descriptors;
+  try {
+    if (
+      utilTypes.isProxy(value) ||
+      !Array.isArray(value) ||
+      Object.getPrototypeOf(value) !== Array.prototype
+    ) {
+      throw new Error(`${label} must be a bounded plain dense array`);
+    }
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === `${label} must be a bounded plain dense array`
+    ) {
+      throw error;
+    }
+    throw new Error(`${label} must be a bounded plain dense array`);
+  }
+  const lengthDescriptor = descriptors.length;
+  const length =
+    lengthDescriptor !== undefined && "value" in lengthDescriptor
+      ? lengthDescriptor.value
+      : undefined;
+  if (!Number.isSafeInteger(length) || length < 0 || length > maximum) {
+    throw new Error(`${label} must be a bounded plain dense array`);
+  }
+  const expectedKeys = [
+    ...Array.from({ length }, (_, index) => String(index)),
+    "length",
+  ];
+  const actualKeys = Reflect.ownKeys(descriptors);
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some(
+      (key, index) => typeof key !== "string" || key !== expectedKeys[index],
+    )
+  ) {
+    throw new Error(`${label} must be a bounded plain dense array`);
+  }
+  const captured = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true
+    ) {
+      throw new Error(`${label} must be a bounded plain dense array`);
+    }
+    captured.push(descriptor.value);
+  }
+  return captured;
+}
+
+function componentRelated(left, right) {
+  return (
+    left === right ||
+    left.startsWith(`${right}/`) ||
+    right.startsWith(`${left}/`)
+  );
+}
+
+function exactDormantSourceAllowlist(value) {
+  const captured = exactOwnDataArray(value, 256, "sourceAllowlist");
+  if (captured.length === 0) {
+    throw new Error("sourceAllowlist must not be empty");
+  }
+  const paths = captured.map((path, index) => {
+    if (
+      typeof path !== "string" ||
+      path.length > DORMANT_TASK_V2_PATH_BYTES_CEILING ||
+      Buffer.byteLength(path, "utf8") > DORMANT_TASK_V2_PATH_BYTES_CEILING
+    ) {
+      throw new Error(`sourceAllowlist[${index}] exceeds its byte ceiling`);
+    }
+    return validateTaskV2Path(path, `sourceAllowlist[${index}]`);
+  });
+  for (let index = 1; index < paths.length; index += 1) {
+    if (
+      Buffer.compare(
+        Buffer.from(paths[index - 1], "ascii"),
+        Buffer.from(paths[index], "ascii"),
+      ) >= 0
+    ) {
+      throw new Error("sourceAllowlist must use canonical byte order");
+    }
+  }
+  for (let leftIndex = 0; leftIndex < paths.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < paths.length;
+      rightIndex += 1
+    ) {
+      if (
+        componentRelated(paths[leftIndex], paths[rightIndex]) ||
+        componentRelated(
+          asciiFoldPathV2(paths[leftIndex]),
+          asciiFoldPathV2(paths[rightIndex]),
+        )
+      ) {
+        throw new Error("sourceAllowlist has a portable path collision");
+      }
+    }
+  }
+  if (
+    paths.length !== HARNESS_CREATE_EXACT_V2_SOURCE_ALLOWLIST.length ||
+    paths.some(
+      (path, index) => path !== HARNESS_CREATE_EXACT_V2_SOURCE_ALLOWLIST[index],
+    )
+  ) {
+    throw new Error(
+      "sourceAllowlist must equal the exact dormant control surface",
+    );
+  }
+  return Object.freeze(paths);
+}
+
+export function buildDormantEngineeringTaskV2Registry(declarations) {
+  const capturedDeclarations = exactOwnDataArray(
+    declarations,
+    64,
+    "dormant engineering task v2 registry",
+  );
+  if (capturedDeclarations.length === 0) {
+    throw new Error("dormant engineering task v2 registry must not be empty");
+  }
+  const ids = new Set();
+  const slugs = new Set();
+  const contractPaths = new Set();
+  const registry = capturedDeclarations.map((value) => {
+    const declaration = exactOwnDataRecord(
+      value,
+      DORMANT_TASK_V2_DECLARATION_KEYS,
+      "dormant engineering task v2 declaration",
+    );
+    const { id, slug } = declaration;
+    if (
+      typeof id !== "string" ||
+      id.length > DORMANT_TASK_V2_ID_BYTES_CEILING ||
+      !DORMANT_TASK_V2_ID.test(id)
+    ) {
+      throw new Error("dormant engineering task v2 id must be canonical");
+    }
+    if (
+      typeof slug !== "string" ||
+      slug.length > DORMANT_TASK_V2_ID_BYTES_CEILING ||
+      !DORMANT_TASK_V2_ID.test(slug)
+    ) {
+      throw new Error("dormant engineering task v2 slug must be canonical");
+    }
+    if (!id.startsWith(`${slug}-`)) {
+      throw new Error(
+        `dormant engineering task v2 id must be prefixed by its slug: ${id}`,
+      );
+    }
+    if (ids.has(id)) {
+      throw new Error(`duplicate dormant engineering task v2 id: ${id}`);
+    }
+    if (slugs.has(slug)) {
+      throw new Error(`duplicate dormant engineering task v2 slug: ${slug}`);
+    }
+    if (
+      id !== "harness-create-exact-v2-control" ||
+      slug !== "harness-create-exact-v2" ||
+      declaration.label !== "HARNESS-CREATE-EXACT V2" ||
+      declaration.decision !== "ADR-0034" ||
+      declaration.taskClass !== "harness-exact-create-control" ||
+      declaration.registrationMode !== "dormant-control" ||
+      declaration.taskSchemaVersion !== 2 ||
+      declaration.executionGate !== "native-containment-qualification-v1" ||
+      declaration.productAuthority !== false
+    ) {
+      throw new Error("dormant engineering task v2 authority must be exact");
+    }
+    if (
+      typeof declaration.contractRawSha256 !== "string" ||
+      !SHA256.test(declaration.contractRawSha256) ||
+      declaration.contractRawSha256 !==
+        "58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad"
+    ) {
+      throw new Error(
+        "dormant engineering task v2 contract digest must be canonical",
+      );
+    }
+    const sourceAllowlist = exactDormantSourceAllowlist(
+      declaration.sourceAllowlist,
+    );
+    const canonicalRelativePath = join("tasks", "v2", slug, "contract.json");
+    const contractPath = join(harnessRoot, canonicalRelativePath);
+    if (
+      !isAbsolute(contractPath) ||
+      resolve(contractPath) !== contractPath ||
+      !isContained(harnessRoot, contractPath) ||
+      relative(harnessRoot, contractPath) !== canonicalRelativePath
+    ) {
+      throw new Error(
+        `dormant engineering task v2 contract path is not canonical: ${id}`,
+      );
+    }
+    if (contractPaths.has(contractPath)) {
+      throw new Error(
+        `duplicate dormant engineering task v2 contract path: ${contractPath}`,
+      );
+    }
+    ids.add(id);
+    slugs.add(slug);
+    contractPaths.add(contractPath);
+    return Object.freeze({ ...declaration, sourceAllowlist, contractPath });
+  });
+  return Object.freeze(registry);
+}
 
 export function buildEngineeringTaskRegistry(declarations) {
   if (!Array.isArray(declarations) || declarations.length === 0) {
@@ -43,9 +322,12 @@ export function buildEngineeringTaskRegistry(declarations) {
       throw new Error("engineering task slug must be canonical");
     }
     if (ids.has(id)) throw new Error(`duplicate engineering task id: ${id}`);
-    if (slugs.has(slug)) throw new Error(`duplicate engineering task slug: ${slug}`);
+    if (slugs.has(slug))
+      throw new Error(`duplicate engineering task slug: ${slug}`);
     if (!id.startsWith(`${slug}-`)) {
-      throw new Error(`engineering task id must be prefixed by its slug: ${id}`);
+      throw new Error(
+        `engineering task id must be prefixed by its slug: ${id}`,
+      );
     }
 
     const taskGroup = slug.slice(0, slug.indexOf("."));
@@ -65,7 +347,9 @@ export function buildEngineeringTaskRegistry(declarations) {
       throw new Error(`engineering task contract path is not canonical: ${id}`);
     }
     if (contractPaths.has(contractPath)) {
-      throw new Error(`duplicate engineering task contract path: ${contractPath}`);
+      throw new Error(
+        `duplicate engineering task contract path: ${contractPath}`,
+      );
     }
 
     ids.add(id);
@@ -300,15 +584,48 @@ export const engineeringTaskRegistry = buildEngineeringTaskRegistry([
   },
 ]);
 
+export const dormantEngineeringTaskV2Registry =
+  buildDormantEngineeringTaskV2Registry([
+    {
+      id: "harness-create-exact-v2-control",
+      slug: "harness-create-exact-v2",
+      label: "HARNESS-CREATE-EXACT V2",
+      decision: "ADR-0034",
+      taskClass: "harness-exact-create-control",
+      registrationMode: "dormant-control",
+      taskSchemaVersion: 2,
+      executionGate: "native-containment-qualification-v1",
+      productAuthority: false,
+      contractRawSha256:
+        "58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad",
+      sourceAllowlist: [
+        "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs",
+        "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs",
+        "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs",
+      ],
+    },
+  ]);
+
 const profiles = Object.freeze(
   Object.fromEntries(engineeringTaskRegistry.map((entry) => [entry.id, entry])),
 );
 const profilesBySlug = Object.freeze(
-  Object.fromEntries(engineeringTaskRegistry.map((entry) => [entry.slug, entry])),
+  Object.fromEntries(
+    engineeringTaskRegistry.map((entry) => [entry.slug, entry]),
+  ),
+);
+const dormantProfilesV2 = new Map(
+  dormantEngineeringTaskV2Registry.map((entry) => [entry.id, entry]),
+);
+const dormantProfilesV2BySlug = new Map(
+  dormantEngineeringTaskV2Registry.map((entry) => [entry.slug, entry]),
 );
 
 export const engineeringTaskIds = Object.freeze(
   engineeringTaskRegistry.map(({ id }) => id),
+);
+export const dormantEngineeringTaskV2Ids = Object.freeze(
+  dormantEngineeringTaskV2Registry.map(({ id }) => id),
 );
 
 export function taskProfile(value) {
@@ -321,7 +638,11 @@ export function taskProfile(value) {
           Object.hasOwn(value, "id")
         ? value.id
         : undefined;
-  if (typeof id !== "string" || !TASK_ID.test(id) || !Object.hasOwn(profiles, id)) {
+  if (
+    typeof id !== "string" ||
+    !TASK_ID.test(id) ||
+    !Object.hasOwn(profiles, id)
+  ) {
     throw new Error(`unsupported engineering task: ${id ?? "<missing>"}`);
   }
   return profiles[id];
@@ -333,9 +654,61 @@ export function taskProfileBySlug(slug) {
     !TASK_SLUG.test(slug) ||
     !Object.hasOwn(profilesBySlug, slug)
   ) {
-    throw new Error(`unsupported engineering task slug: ${slug ?? "<missing>"}`);
+    throw new Error(
+      `unsupported engineering task slug: ${slug ?? "<missing>"}`,
+    );
   }
   return profilesBySlug[slug];
+}
+
+function dormantTaskV2LookupId(value) {
+  if (typeof value === "string") return value;
+  if (value === null || typeof value !== "object") return undefined;
+  try {
+    if (
+      utilTypes.isProxy(value) ||
+      Array.isArray(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
+      return undefined;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, "id");
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true
+    ) {
+      return undefined;
+    }
+    return descriptor.value;
+  } catch {
+    return undefined;
+  }
+}
+
+export function taskV2Profile(value) {
+  const id = dormantTaskV2LookupId(value);
+  if (
+    typeof id !== "string" ||
+    id.length > DORMANT_TASK_V2_ID_BYTES_CEILING ||
+    !DORMANT_TASK_V2_ID.test(id) ||
+    !dormantProfilesV2.has(id)
+  ) {
+    throw new Error("unsupported dormant engineering task v2");
+  }
+  return dormantProfilesV2.get(id);
+}
+
+export function taskV2ProfileBySlug(slug) {
+  if (
+    typeof slug !== "string" ||
+    slug.length > DORMANT_TASK_V2_ID_BYTES_CEILING ||
+    !DORMANT_TASK_V2_ID.test(slug) ||
+    !dormantProfilesV2BySlug.has(slug)
+  ) {
+    throw new Error("unsupported dormant engineering task v2 slug");
+  }
+  return dormantProfilesV2BySlug.get(slug);
 }
 
 export const g12Profile = profiles["g1.2-rocksdb-serialized-writers"];
@@ -347,4 +720,7 @@ export const g15Profile = profiles["g1.5-unified-egress-policy"];
 export const g15bProfile = profiles["g1.5b-update-cancellation"];
 export const g15cProfile = profiles["g1.5c-negotiated-update"];
 export const g16Profile = profiles["g1.6-runtime-derived-service-claims"];
+export const harnessCreateExactV2Profile = dormantProfilesV2.get(
+  "harness-create-exact-v2-control",
+);
 export const engineeringTaskProfiles = profiles;

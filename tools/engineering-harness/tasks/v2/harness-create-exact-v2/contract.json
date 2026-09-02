@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 2,
+  "id": "harness-create-exact-v2-control",
+  "programme": "linked-data-store",
+  "decision": "ADR-0034",
+  "objective": "Prove exact schema-v2 new-file admission with one test-only added module and one test-only modified module, without granting product authority.",
+  "localOnly": true,
+  "promotionAuthority": false,
+  "routing": {
+    "pairedCalibration": true,
+    "forbidOpenRouter": true,
+    "providers": [
+      {
+        "provider": "codex",
+        "transport": "native",
+        "model": "gpt-5.6-sol"
+      },
+      {
+        "provider": "claude",
+        "transport": "native",
+        "model": "opus"
+      }
+    ]
+  },
+  "baseline": {
+    "commit": "c9cb6423faf9b510bd6e19bf94cce9ab2803bda9",
+    "tree": "4ee24b4e0c89ad805c20682de95544b07284ddbc"
+  },
+  "evaluator": {
+    "commit": "997ad287fe089c8d791e0b733caae6240602de8f",
+    "parent": "c9cb6423faf9b510bd6e19bf94cce9ab2803bda9",
+    "tree": "a5ae6b11fcfe0ae085c0e1b6d7eba18d70572f99",
+    "path": "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs",
+    "changeStatus": "A",
+    "blob": "05f952c6e5b486e7771d9802b66f8066f0d4ff73",
+    "contentSha256": "5147b408d914a58f281c652a466b1e14dcf8fc3146a2419701ecefc96aac6663",
+    "patchSha256": "46433385d66880f8ae902a1bde2ddc1a210e857b5c29acb8d28c266bc66206d2"
+  },
+  "protectedInputs": {
+    "manifestAlgorithm": "git-ls-tree-r-z-sort-nul-sha256-v1",
+    "mutableBaselines": [
+      {
+        "path": "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs",
+        "state": "absent",
+        "baseline": {
+          "state": "absent"
+        },
+        "evaluator": {
+          "state": "absent"
+        }
+      },
+      {
+        "path": "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs",
+        "state": "present",
+        "baseline": {
+          "state": "present",
+          "mode": "100644",
+          "type": "blob",
+          "objectId": "f84c77471cb73df8905041738b6973113a51473a",
+          "contentSha256": "3e9c83b1c0601a30f3fb06f172435d1fbc9ddf1c287a31a1798a1d0e5a802c24"
+        },
+        "evaluator": {
+          "state": "present",
+          "mode": "100644",
+          "type": "blob",
+          "objectId": "f84c77471cb73df8905041738b6973113a51473a",
+          "contentSha256": "3e9c83b1c0601a30f3fb06f172435d1fbc9ddf1c287a31a1798a1d0e5a802c24"
+        }
+      }
+    ],
+    "baselineManifest": {
+      "entries": 1653,
+      "fullSha256": "6eaefaeaba9ad04693b8cde1fc0b31b4672728b471c411b30327bec9e8dc47e1",
+      "protectedEntries": 1652,
+      "protectedSha256": "aa581c7cd4a463756c7fe70715f7d145eff12745e8887486d7c7bd7884ca75d6"
+    },
+    "evaluatorManifest": {
+      "entries": 1654,
+      "fullSha256": "5f0f9d68c8724edfa760f58f87e04ddf580b1b11ff7d7fba18c6637ffca1714d",
+      "protectedEntries": 1653,
+      "protectedSha256": "8817b0613e91c18d104f6aaa10f4935aa4695bfd73cdb5041fff122c6dbe0fe9"
+    },
+    "submodules": [
+      {
+        "path": "bench/bsbm-tools",
+        "commit": "59d0a8a605b26f21506789fa1a713beb5abf1cab",
+        "tree": "afd1d236a7cdea7773da436fc7fe71e28e4df137"
+      },
+      {
+        "path": "cli/templates/yasgui",
+        "commit": "05a7ac428edeab35e40f66cafe0589ac9d224ee6",
+        "tree": "84c72c5bced4d33c566a915aa7bb126d9220fe84"
+      },
+      {
+        "path": "oxrocksdb-sys/lz4",
+        "commit": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
+        "tree": "1ff35e0f086e3b431ea0efd001eb5c6254561953"
+      },
+      {
+        "path": "oxrocksdb-sys/rocksdb",
+        "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+        "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac"
+      },
+      {
+        "path": "testsuite/N3",
+        "commit": "8a9ea8ed42ae0487b20803f5687017980bbe8e37",
+        "tree": "f27062aad2b1a6e39844a4ac725b373ba6faff35"
+      },
+      {
+        "path": "testsuite/json-ld-api",
+        "commit": "92f07705a0c0ac27aa9bc6fe1322dcc9fad0114d",
+        "tree": "4743fe3648743290828801c16eda27ae22080780"
+      },
+      {
+        "path": "testsuite/json-ld-streaming",
+        "commit": "64e6fea9eee3cf5d80468810552f50f6c487925f",
+        "tree": "4cd21becfec10f6c9b7879237abd2533cef0c126"
+      },
+      {
+        "path": "testsuite/rdf-canon",
+        "commit": "15619df2fda7a4ca88308733789b6774517f9638",
+        "tree": "f498bb81f9ff8e81768a0a8f1a42a7929467c2e8"
+      },
+      {
+        "path": "testsuite/rdf-tests",
+        "commit": "3d0b0613d0177d25aad7ec60e88df2338f461516",
+        "tree": "ba4f7065440b241580b0a64b834baad52be48b09"
+      }
+    ]
+  },
+  "scope": {
+    "mutableExact": [
+      "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs",
+      "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs"
+    ],
+    "createExact": [
+      "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs"
+    ],
+    "mutablePrefixes": [],
+    "blockedExact": [
+      "AGENTS.md",
+      "Cargo.lock",
+      "Cargo.toml",
+      "README.md",
+      "lib/oxigraph/Cargo.toml",
+      "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs"
+    ],
+    "blockedPrefixes": [
+      "bench",
+      "cli",
+      "docs",
+      "js",
+      "lib/oxigraph/benches",
+      "lib/oxigraph/src",
+      "oxrocksdb-sys",
+      "python",
+      "testsuite",
+      "tools"
+    ],
+    "allowCreate": true,
+    "allowDelete": false,
+    "allowRename": false,
+    "allowModeChange": false,
+    "allowSymlink": false,
+    "allowSubmoduleChange": false
+  },
+  "verificationSequence": [
+    "format",
+    "build",
+    "public"
+  ],
+  "commands": {
+    "format": {
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check",
+        "--config",
+        "skip_children=true"
+      ],
+      "timeoutMs": 120000
+    },
+    "build": {
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "oxigraph",
+        "--no-default-features",
+        "--no-run",
+        "--test",
+        "engineering_harness_exact_create_v2_present"
+      ],
+      "timeoutMs": 420000
+    },
+    "public": {
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "oxigraph",
+        "--no-default-features",
+        "--test",
+        "engineering_harness_exact_create_v2"
+      ],
+      "timeoutMs": 180000
+    }
+  },
+  "ceilings": {
+    "maxPatchBytes": 32768,
+    "maxChangedFiles": 2,
+    "maxChangedLines": 64,
+    "maxWorkerOutputBytes": 262144,
+    "maxBuildOutputBytes": 8388608,
+    "maxTestOutputBytesPerCommand": 2097152,
+    "maxTotalVerifierWallMs": 900000,
+    "maxResidentBytes": 8589934592,
+    "maxVerifierDiskBytes": 17179869184,
+    "cargoBuildJobs": 2,
+    "maxRepairCycles": 1,
+    "maxCritiqueRounds": 1,
+    "networkDuringVerification": false
+  },
+  "initialRed": {
+    "kind": "compiler",
+    "commandRole": "public",
+    "exitCode": 101,
+    "rustcCode": "E0583",
+    "rustcErrorCount": 1,
+    "primaryPath": "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs",
+    "requiredExports": [
+      "engineering_harness_exact_create_v2_created"
+    ],
+    "requiredSubstrings": [
+      "error[E0583]: file not found for module `engineering_harness_exact_create_v2_created`",
+      "could not compile `oxigraph` (test \"engineering_harness_exact_create_v2\") due to 1 previous error"
+    ],
+    "forbiddenSubstrings": [
+      "no test target named",
+      "linking with",
+      "timed out",
+      "No space left on device",
+      "attempting to make an HTTP request",
+      "failed to download"
+    ]
+  },
+  "success": {
+    "publicPassed": 3
+  }
+}

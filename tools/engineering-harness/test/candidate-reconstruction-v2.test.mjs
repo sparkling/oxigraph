@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -31,6 +39,8 @@ import {
   readBlobByOid,
   treeEntryAtPath,
 } from "../src/candidate/tree-v2.mjs";
+import { parseTaskContractBytesV2 } from "../src/contract-v2.mjs";
+import { repositoryRoot } from "../src/paths.mjs";
 import { gitBlobObjectIdV2 } from "../src/policy/paths-v2.mjs";
 import { TaskV2Failure } from "../src/policy/task-v2-failures.mjs";
 import { canonicalJson } from "../src/routing/features.mjs";
@@ -43,6 +53,22 @@ const fixtureIdentity = Object.freeze({
   GIT_COMMITTER_EMAIL: "fixture@localhost",
   GIT_COMMITTER_NAME: "Fixture",
 });
+const exactCreateEvaluatorCommit = "997ad287fe089c8d791e0b733caae6240602de8f";
+const exactCreateReferenceCommit = "dfd6d92d986306632bac795e41cf488de8422010";
+const exactCreateReferenceTree = "6598028f83af0d73151a8a7ce642c2e73d18f6b8";
+const exactCreateCreatedPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs";
+const exactCreatePresentPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs";
+const exactCreateContractPath = join(
+  repositoryRoot,
+  "tools",
+  "engineering-harness",
+  "tasks",
+  "v2",
+  "harness-create-exact-v2",
+  "contract.json",
+);
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -881,6 +907,106 @@ test("v2 mixed reconstruction emits canonical M/A status and is deterministic", 
     await Promise.all(
       candidates.map((candidate) => disposeCandidateV2(candidate)),
     );
+  }
+});
+
+test("exact-create dormant reference reconstructs the frozen A/M tree", async (t) => {
+  const rawContract = await readFile(exactCreateContractPath);
+  const parsed = parseTaskContractBytesV2(rawContract);
+  const root = await mkdtemp(
+    join(tmpdir(), "oxigraph-exact-create-reference-"),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = await createGitHome(root);
+  assert.equal(
+    (
+      await runGit({
+        args: ["rev-list", "--parents", "-n", "1", exactCreateReferenceCommit],
+        cwd: repositoryRoot,
+        home,
+      })
+    ).trim(),
+    `${exactCreateReferenceCommit} ${exactCreateEvaluatorCommit}`,
+  );
+  assert.equal(
+    (
+      await runGit({
+        args: ["rev-parse", `${exactCreateReferenceCommit}^{tree}`],
+        cwd: repositoryRoot,
+        home,
+      })
+    ).trim(),
+    exactCreateReferenceTree,
+  );
+  assert.deepEqual(
+    (
+      await runGit({
+        args: [
+          "diff",
+          "--name-status",
+          exactCreateEvaluatorCommit,
+          exactCreateReferenceCommit,
+          "--",
+        ],
+        cwd: repositoryRoot,
+        home,
+      })
+    )
+      .trim()
+      .split("\n"),
+    [`A\t${exactCreateCreatedPath}`, `M\t${exactCreatePresentPath}`],
+  );
+  const patch = await runGitBytes({
+    args: [
+      "diff",
+      "--binary",
+      "--full-index",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--no-renames",
+      exactCreateEvaluatorCommit,
+      exactCreateReferenceCommit,
+      "--",
+    ],
+    cwd: repositoryRoot,
+    home,
+    maxOutputBytes: parsed.contract.ceilings.maxPatchBytes,
+  });
+  assert.equal(
+    sha256(patch),
+    "e2a2ad5e9207468b3c1beeb6634b3a29987066bd61a1403b774f68f44a9a0ff9",
+  );
+
+  const candidate = await reconstructCandidateV2FromBytes({
+    repositoryRoot,
+    contractBytes: rawContract,
+    patch: patch.toString("utf8"),
+  });
+  try {
+    assert.equal(candidate.schemaVersion, 2);
+    assert.equal(candidate.contractSha256, parsed.contractSha256);
+    assert.equal(candidate.tree, exactCreateReferenceTree);
+    assert.deepEqual(candidate.pathStatuses, [
+      { path: exactCreateCreatedPath, status: "A" },
+      { path: exactCreatePresentPath, status: "M" },
+    ]);
+    assert.deepEqual(candidate.createdBlobs, [
+      {
+        path: exactCreateCreatedPath,
+        mode: "100644",
+        type: "blob",
+        objectId: "90bcd15e93de84dffd70aa1707daa88a7e841b89",
+        contentSha256:
+          "b90ab3230a17b0a99ef53f0e2a34d1bafec6ecaea0af5d184920782793f9c489",
+      },
+    ]);
+    assert.deepEqual(candidate.manifests.protected, {
+      entries:
+        parsed.contract.protectedInputs.evaluatorManifest.protectedEntries,
+      sha256: parsed.contract.protectedInputs.evaluatorManifest.protectedSha256,
+    });
+  } finally {
+    await disposeCandidateV2(candidate);
   }
 });
 

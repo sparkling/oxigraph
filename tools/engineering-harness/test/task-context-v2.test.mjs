@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -10,11 +10,15 @@ import {
   loadTreeV2,
   parseTreeBytes,
   projectTreeManifestV2,
+  readBlobByOid as readGitBlobByOid,
   treeEntryAtPath,
 } from "../src/candidate/tree-v2.mjs";
 import { createGitHome, runGit } from "../src/candidate/git.mjs";
+import { parseTaskContractBytesV2 } from "../src/contract-v2.mjs";
+import { repositoryRoot } from "../src/paths.mjs";
 import { TaskV2Failure } from "../src/policy/task-v2-failures.mjs";
 import { canonicalJson } from "../src/routing/features.mjs";
+import { harnessCreateExactV2Profile } from "../src/task-profile.mjs";
 import {
   TASK_V2_SOURCE_FILE_BYTES_CEILING,
   TASK_V2_SOURCE_FILE_COUNT_CEILING,
@@ -31,6 +35,12 @@ const SUPPORT = "lib/oxigraph/src/support_v2.rs";
 const SHA1_WIDTH = 40;
 const controllersByContractBytes = new WeakMap();
 const testTreeObjectIdentities = new WeakMap();
+const exactCreateEvaluatorPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2.rs";
+const exactCreateCreatedPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_created.rs";
+const exactCreatePresentPath =
+  "lib/oxigraph/tests/engineering_harness_exact_create_v2_present.rs";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -571,6 +581,90 @@ test("full contract, evaluator manifest, raw bytes, and profile authority are in
       }),
     sourceFault,
   );
+});
+
+test("production v2 authority binds the exact dormant source projection", async (t) => {
+  const rawContract = await readFile(harnessCreateExactV2Profile.contractPath);
+  assert.equal(
+    sha256(rawContract),
+    harnessCreateExactV2Profile.contractRawSha256,
+  );
+  const parsed = parseTaskContractBytesV2(rawContract);
+  const root = await mkdtemp(
+    join(tmpdir(), "oxigraph-registered-task-context-v2-"),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = await createGitHome(root);
+  const evaluatorTree = await loadTreeV2({
+    workspace: repositoryRoot,
+    home,
+    tree: parsed.contract.evaluator.tree,
+  });
+  const calls = [];
+  const readExactBlob = async (request) => {
+    calls.push(request);
+    return readGitBlobByOid({
+      workspace: repositoryRoot,
+      home,
+      oid: request.oid,
+      maxOutputBytes: request.maxOutputBytes,
+    });
+  };
+  const context = await createRegisteredTaskV2Context({
+    contractBytes: rawContract,
+    evaluatorTree,
+    readBlobByOid: readExactBlob,
+  });
+  assert.deepEqual(
+    context.sourceSnapshot.files.map(({ path }) => path),
+    [exactCreateEvaluatorPath, exactCreatePresentPath],
+  );
+  assert.equal(
+    context.sourceSnapshot.files.some(
+      ({ path }) => path === exactCreateCreatedPath,
+    ),
+    false,
+  );
+  assert.deepEqual(context.creationInstructions, [
+    {
+      path: exactCreateCreatedPath,
+      baselineState: "absent",
+      requiredStatus: "A",
+      finalMode: "100644",
+      finalType: "blob",
+      maxPatchBytes: 32_768,
+    },
+  ]);
+  assert.equal(calls.length, 2);
+  assert.equal(
+    calls.some((call) => Object.hasOwn(call, "path")),
+    false,
+  );
+  assertDeepFrozen(context);
+  const sealed = assertSealedTaskV2WorkerContext({
+    context,
+    contractBytes: rawContract,
+  });
+  assert.equal(sealed.context, context);
+  assert.equal(sealed.contractSha256, parsed.contractSha256);
+
+  const alteredRawContract = Buffer.concat([
+    rawContract,
+    Buffer.from(" ", "ascii"),
+  ]);
+  const mismatchCalls = [];
+  await assert.rejects(
+    createRegisteredTaskV2Context({
+      contractBytes: alteredRawContract,
+      evaluatorTree,
+      readBlobByOid: async (request) => {
+        mismatchCalls.push(request);
+        return Buffer.alloc(0);
+      },
+    }),
+    sourceFault,
+  );
+  assert.equal(mismatchCalls.length, 0);
 });
 
 test("production authority rejects legacy task-id reuse before any source read", async (t) => {

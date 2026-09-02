@@ -15,7 +15,7 @@ import {
   treeEntryAtPath,
 } from "../candidate/tree-v2.mjs";
 import { canonicalJson } from "../routing/features.mjs";
-import { taskProfile } from "../task-profile.mjs";
+import { taskV2Profile } from "../task-profile.mjs";
 
 export const TASK_V2_SOURCE_SNAPSHOT_ALGORITHM =
   "sha256-length-framed-path-content-v2";
@@ -843,7 +843,7 @@ function creationInstructionsFromCache(value, expected) {
 
 function registeredSourceAllowlist(authority) {
   try {
-    const profile = taskProfile(authority.contract);
+    const profile = taskV2Profile(authority.contract);
     if (
       profile.taskSchemaVersion !== 2 ||
       profile.contractRawSha256 !== authority.contractSha256
