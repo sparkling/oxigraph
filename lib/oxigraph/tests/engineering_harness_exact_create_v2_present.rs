@@ -1,6 +1,6 @@
-pub const PRESENT_MARKER: &str = "baseline-present";
+pub const PRESENT_MARKER: &str = "modified-present";
 
 #[test]
-fn present_control_starts_at_the_frozen_baseline() {
-    assert_eq!(PRESENT_MARKER, "baseline-present");
+fn present_control_matches_the_green_reference() {
+    assert_eq!(PRESENT_MARKER, "modified-present");
 }
