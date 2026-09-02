@@ -737,12 +737,12 @@ const EXPECTED_DIRECT_FUNCTION_SIGNATURES = Object.freeze(
 const ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1";
 const EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256 =
-  "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e";
+  "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56";
 const ADVERSARIAL_CANDIDATE_TEST_INVENTORY = Object.freeze([
   Object.freeze({
     id: "byte-position-carrier-controls",
-    name: "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
-    options: Object.freeze({ todo: true }),
+    name: "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+    options: Object.freeze({}),
     requiredInputs: Object.freeze(["candidate", "oracle"]),
   }),
   Object.freeze({
@@ -768,16 +768,17 @@ function adversarialCandidateTestInventoryProjection(inventory) {
 function validateAdversarialCandidateTestInventory() {
   assert.equal(Object.isFrozen(ADVERSARIAL_CANDIDATE_TEST_INVENTORY), true);
   assert.equal(ADVERSARIAL_CANDIDATE_TEST_INVENTORY.length, 2);
+  const expectedOptions = [{}, { todo: true }];
   const ids = [];
   const names = [];
-  for (const entry of ADVERSARIAL_CANDIDATE_TEST_INVENTORY) {
+  for (const [index, entry] of ADVERSARIAL_CANDIDATE_TEST_INVENTORY.entries()) {
     assert.equal(Object.isFrozen(entry), true);
     assert.equal(typeof entry.id, "string");
     assert.notEqual(entry.id.length, 0);
     assert.equal(typeof entry.name, "string");
     assert.notEqual(entry.name.length, 0);
     assert.equal(Object.isFrozen(entry.options), true);
-    assert.deepEqual(entry.options, { todo: true });
+    assert.deepEqual(entry.options, expectedOptions[index]);
     assert.equal(Object.isFrozen(entry.requiredInputs), true);
     assert.equal(entry.requiredInputs.length > 0, true);
     assert.equal(
@@ -809,7 +810,7 @@ function validateAdversarialCandidateTestInventory() {
     EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256,
   );
   const todoCount = projection.filter(({ options }) => options.todo).length;
-  assert.equal(todoCount, 2);
+  assert.equal(todoCount, 1);
   return Object.freeze({
     inventory: ADVERSARIAL_CANDIDATE_TEST_INVENTORY,
     inventorySha256,
@@ -833,6 +834,10 @@ function assertCandidateTestInputsAtExecution(captured, requiredInputs) {
 
 const C13_DEFERRED_CALLBACK_RESULT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-c13-deferred-callback/v1";
+const C15_BYTE_POSITION_DISPATCH_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-dispatch/v1";
+const C15_FIRST_BYTE_POSITION_CONTROL_ID =
+  "startupReportBytes:proxy-trap-free";
 const C13_BYTE_POSITION_OPERATION = Object.freeze({
   startupReportBytes: "createCandidateContainmentGuardianStartupV1",
   epochBytes: "createCandidateContainmentGuardianStartupV1",
@@ -877,7 +882,8 @@ function c13DeferredCallbackResult(id) {
   });
 }
 
-function c13RunBytePositionCandidateControls({ candidate, oracle }) {
+async function c13RunBytePositionCandidateControls({ candidate, oracle }) {
+  candidate = await candidate;
   if (candidate === null) {
     return c13DeferredCallbackResult("byte-position-carrier-controls");
   }
@@ -886,42 +892,113 @@ function c13RunBytePositionCandidateControls({ candidate, oracle }) {
   const oracleIdentitySha256 =
     oracle.identitySha256 ?? oracle.requirementsSha256 ?? null;
   assert.match(oracleIdentitySha256, /^[0-9a-f]{64}$/u);
-  const controlIds = [];
-  for (const spec of BYTE_POSITION_SPECS) {
-    const operation = C13_BYTE_POSITION_OPERATION[spec.name];
-    assert.equal(typeof candidate[operation], "function", operation);
-    for (const family of C13_BYTE_POSITION_CASES) {
-      const control = Object.freeze({
-        schema:
-          "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-control/v1",
-        position: spec.name,
-        minimumBytes: spec.minimumBytes,
-        maximumBytes: spec.maximumBytes,
-        family,
-        oracleIdentitySha256,
-      });
-      candidate[operation](control);
-      controlIds.push(`${spec.name}:${family}`);
-    }
+  assert.equal(Object.isFrozen(oracle), true);
+  const normalStartup = oracle.witnesses.startups.find(
+    ({ mode }) => mode === "NORMAL",
+  );
+  assert.notEqual(normalStartup, undefined);
+  assert.equal(Object.isFrozen(normalStartup), true);
+  assert.equal(Object.isFrozen(normalStartup.startupReport), true);
+  assert.equal(Object.isFrozen(normalStartup.epoch), true);
+  const startupReportBytes = Buffer.from(
+    normalStartup.startupReport.bytesHex,
+    "hex",
+  );
+  const epochBytes = Buffer.from(normalStartup.epoch.bytesHex, "hex");
+  assert.equal(
+    startupReportBytes.length,
+    normalStartup.startupReport.byteLength,
+  );
+  assert.equal(
+    byteDigest(startupReportBytes),
+    normalStartup.startupReport.rawSha256,
+  );
+  assert.equal(epochBytes.length, 32);
+  assert.equal(byteDigest(epochBytes), normalStartup.epoch.rawSha256);
+
+  const trapped = trapEveryObjectOperation(
+    startupReportBytes,
+    C15_FIRST_BYTE_POSITION_CONTROL_ID,
+  );
+  let observedError = null;
+  let candidateBehaviorAttemptCount = 0;
+  try {
+    candidateBehaviorAttemptCount += 1;
+    candidate.createCandidateContainmentGuardianStartupV1(
+      trapped.value,
+      epochBytes,
+      normalStartup.epochEofObserved,
+    );
+  } catch (error) {
+    observedError = error;
   }
-  assert.equal(controlIds.length, 81);
-  assert.equal(new Set(controlIds).size, 81);
+  assert.notEqual(
+    observedError,
+    null,
+    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} must reject`,
+  );
+  assert.notEqual(
+    observedError,
+    trapped.sentinel,
+    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} invoked a Proxy trap`,
+  );
+  assert.equal(
+    trapped.state.hits,
+    0,
+    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} must be trap-free`,
+  );
+  assert.equal(
+    observedError?.message,
+    "CONTROL_SHAPE",
+    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} expected CONTROL_SHAPE but observed ${observedError?.message}`,
+  );
+  const controlIds = Object.freeze([C15_FIRST_BYTE_POSITION_CONTROL_ID]);
   return Object.freeze({
-    schema:
-      "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-dispatch/v1",
-    positionCount: BYTE_POSITION_SPECS.length,
-    familyCount: C13_BYTE_POSITION_CASES.length,
+    schema: C15_BYTE_POSITION_DISPATCH_SCHEMA,
+    positionCount: 1,
+    familyCount: 1,
     controlCount: controlIds.length,
-    controlIds: Object.freeze(controlIds),
+    controlIds,
+    oracleIdentitySha256,
+    candidateBehaviorAttemptCount,
+    proxyTrapHits: trapped.state.hits,
+    candidateBehaviorProved: true,
+  });
+}
+
+function c13CandidateInputThenable(candidate) {
+  return (
+    candidate !== null &&
+    (typeof candidate === "object" || typeof candidate === "function") &&
+    typeof candidate.then === "function"
+  );
+}
+
+function c13PrivateStoreTodoDeferredCallbackResult() {
+  return Object.freeze({
+    schema: C13_DEFERRED_CALLBACK_RESULT_SCHEMA,
+    id: "private-store-commit-controls",
+    status: "DEFERRED_ENTRY_TODO",
+    candidateBehaviorAttemptCount: 0,
+    freshLoaderCallCount: 0,
+    entryTodo: true,
+    candidateInputThenable: true,
+    candidateInputAwaited: false,
+    todoDeferralBoundToEntryOptions: true,
     candidateBehaviorProved: false,
   });
 }
 
-async function c13RunPrivateStoreCandidateControls({
-  candidate,
-  oracle,
-  loadFreshCandidate,
-}) {
+async function c13RunPrivateStoreCandidateControls(
+  { candidate, oracle, loadFreshCandidate },
+  { entryTodo },
+) {
+  assert.equal(typeof entryTodo, "boolean");
+  const candidateInputThenable = c13CandidateInputThenable(candidate);
+  if (entryTodo && candidateInputThenable) {
+    return c13PrivateStoreTodoDeferredCallbackResult();
+  }
+  candidate = await candidate;
   if (candidate === null) {
     return c13DeferredCallbackResult("private-store-commit-controls");
   }
@@ -963,6 +1040,10 @@ async function c13RunPrivateStoreCandidateControls({
     controlCount: controlIds.length,
     freshLoaderCallCount: 1,
     controlIds: Object.freeze(controlIds),
+    entryTodo,
+    candidateInputThenable,
+    candidateInputAwaited: candidateInputThenable,
+    todoDeferralBoundToEntryOptions: true,
     candidateBehaviorProved: false,
   });
 }
@@ -1001,7 +1082,9 @@ export function registerAdversarialCandidateTests(registration) {
         return c13RunBytePositionCandidateControls(captured);
       }
       if (entry.id === "private-store-commit-controls") {
-        return c13RunPrivateStoreCandidateControls(captured);
+        return c13RunPrivateStoreCandidateControls(captured, {
+          entryTodo: entry.options.todo === true,
+        });
       }
       throw new Error(`unknown adversarial candidate test id: ${entry.id}`);
     });
@@ -1014,6 +1097,7 @@ export function registerAdversarialCandidateTests(registration) {
     registeredCount,
     todoCount,
     inputsDeferredUntilExecution: true,
+    privateStoreTodoDeferralBoundToEntryOptions: true,
   });
 }
 
@@ -12433,7 +12517,7 @@ test("rejects every hostile byte-carrier class trap-free at all positions", () =
   });
 });
 
-test("freezes the 10-operation private-store evaluator design without claiming candidate execution", () => {
+test("freezes the 10-operation private-store evaluator design without claiming candidate execution", async () => {
   assert.deepEqual(
     PRIVATE_STORE_COMMIT_CONTROL_PLAN.map(({ store }) => store),
     ["startupMetadata", "inputMetadata", "stateMetadata"],
@@ -12486,7 +12570,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   assert.equal(Object.isFrozen(PRIVATE_STORE_COMMIT_CONTROL_PLAN), true);
 
   const expectedCandidateTestNames = [
-    "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
+    "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
     "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
   ];
   assert.deepEqual(
@@ -12497,8 +12581,11 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   for (const entry of ADVERSARIAL_CANDIDATE_TEST_INVENTORY) {
     assert.equal(Object.isFrozen(entry), true);
     assert.equal(Object.isFrozen(entry.options), true);
-    assert.deepEqual(entry.options, { todo: true });
   }
+  assert.deepEqual(
+    ADVERSARIAL_CANDIDATE_TEST_INVENTORY.map(({ options }) => options),
+    [{}, { todo: true }],
+  );
 
   const accesses = { candidate: 0, oracle: 0, loadFreshCandidate: 0 };
   const registrations = [];
@@ -12529,7 +12616,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   );
   assert.deepEqual(
     registrations.map(({ options }) => options),
-    [{ todo: true }, { todo: true }],
+    [{}, { todo: true }],
   );
   assert.equal(
     registrations.every(({ run }) => typeof run === "function"),
@@ -12539,12 +12626,98 @@ test("freezes the 10-operation private-store evaluator design without claiming c
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e",
+      "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56",
     registeredCount: 2,
-    todoCount: 2,
+    todoCount: 1,
     inputsDeferredUntilExecution: true,
+    privateStoreTodoDeferralBoundToEntryOptions: true,
   });
   assert.equal(Object.isFrozen(receipt), true);
+
+  const activationOracle = Object.freeze({
+    identitySha256: "a".repeat(64),
+  });
+  const makePrivateControlCandidate = (calls) =>
+    Object.freeze(
+      Object.fromEntries(
+        expectedOperations.map((operation) => [
+          operation,
+          (control) => {
+            assert.equal(Object.isFrozen(control), true);
+            calls.push(`${operation}:${control.phase}`);
+          },
+        ]),
+      ),
+    );
+  let todoLoaderCalls = 0;
+  const unresolvedCandidate = new Promise(() => {});
+  const todoDeferred = await c13RunPrivateStoreCandidateControls(
+    {
+      candidate: unresolvedCandidate,
+      oracle: activationOracle,
+      loadFreshCandidate: async () => {
+        todoLoaderCalls += 1;
+        throw new Error("private-store TODO invoked its fresh loader");
+      },
+    },
+    { entryTodo: true },
+  );
+  assert.deepEqual(todoDeferred, {
+    schema: C13_DEFERRED_CALLBACK_RESULT_SCHEMA,
+    id: "private-store-commit-controls",
+    status: "DEFERRED_ENTRY_TODO",
+    candidateBehaviorAttemptCount: 0,
+    freshLoaderCallCount: 0,
+    entryTodo: true,
+    candidateInputThenable: true,
+    candidateInputAwaited: false,
+    todoDeferralBoundToEntryOptions: true,
+    candidateBehaviorProved: false,
+  });
+  assert.equal(todoLoaderCalls, 0);
+
+  const primaryActivationCalls = [];
+  const freshActivationCalls = [];
+  let activeLoaderCalls = 0;
+  const activated = await c13RunPrivateStoreCandidateControls(
+    {
+      candidate: Promise.resolve(
+        makePrivateControlCandidate(primaryActivationCalls),
+      ),
+      oracle: activationOracle,
+      loadFreshCandidate: async () => {
+        activeLoaderCalls += 1;
+        return makePrivateControlCandidate(freshActivationCalls);
+      },
+    },
+    { entryTodo: false },
+  );
+  const expectedPrivateControlIds = expectedOperations.flatMap((operation) =>
+    phases.map((phase) => `${operation}:${phase}`),
+  );
+  assert.deepEqual(activated, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
+    ownerCount: 10,
+    phaseCount: 5,
+    controlCount: 50,
+    freshLoaderCallCount: 1,
+    controlIds: expectedPrivateControlIds,
+    entryTodo: false,
+    candidateInputThenable: true,
+    candidateInputAwaited: true,
+    todoDeferralBoundToEntryOptions: true,
+    candidateBehaviorProved: false,
+  });
+  assert.deepEqual(
+    primaryActivationCalls,
+    expectedPrivateControlIds.filter((id) => !id.endsWith(":crossModule")),
+  );
+  assert.deepEqual(
+    freshActivationCalls,
+    expectedPrivateControlIds.filter((id) => id.endsWith(":crossModule")),
+  );
+  assert.equal(activeLoaderCalls, 1);
 
   assert.equal(isDirectEntry(import.meta.url, undefined), false);
   assert.equal(isDirectEntry(import.meta.url, ""), false);

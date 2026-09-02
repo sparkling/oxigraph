@@ -16125,8 +16125,12 @@ const SOURCE_INDEPENDENT_MATERIALIZED_STATUS_ORACLE =
   adversarialModule.createSourceIndependentMaterializedStatusOracle(
     REQUIREMENTS_ORACLE,
   );
+let resolveDeferredCandidateInput;
+const DEFERRED_CANDIDATE_INPUT = new Promise((resolve) => {
+  resolveDeferredCandidateInput = resolve;
+});
 const DEFERRED_ADVERSARIAL_INPUTS = {
-  candidate: null,
+  candidate: DEFERRED_CANDIDATE_INPUT,
   oracle: CONTRACT_VALID_RUNTIME_ORACLE,
   loadFreshCandidate: async () => {
     ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls += 1;
@@ -16631,7 +16635,7 @@ try {
     throw error;
   }
 }
-DEFERRED_ADVERSARIAL_INPUTS.candidate = candidate;
+resolveDeferredCandidateInput(candidate);
 
 function c14CandidateOrThrow() {
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
@@ -17217,10 +17221,11 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e",
+      "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56",
     registeredCount: 2,
-    todoCount: 2,
+    todoCount: 1,
     inputsDeferredUntilExecution: true,
+    privateStoreTodoDeferralBoundToEntryOptions: true,
   });
   assert.equal(Object.isFrozen(ADVERSARIAL_REGISTRATION_RECEIPT), true);
   assert.equal(Object.isFrozen(SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE), true);
@@ -21363,15 +21368,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     }),
   ]);
   const expectedByteFamilies = Object.freeze([
-    "minimum",
-    "maximum",
-    "own-length-collision",
-    "subclass",
-    "foreign-prototype",
-    "shared-backing",
-    "bounds-before-shape",
     "proxy-trap-free",
-    "non-buffer",
   ]);
   const expectedPrivateOperations = Object.freeze([
     "createCandidateContainmentGuardianStartupV1",
@@ -21401,9 +21398,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     "crossModule",
   ]);
   const expectedByteControlIds = Object.freeze(
-    expectedBytePositionSpecs.flatMap(({ name }) =>
-      expectedByteFamilies.map((family) => `${name}:${family}`),
-    ),
+    expectedByteFamilies.map((family) => `startupReportBytes:${family}`),
   );
   const expectedPrivateControlIds = Object.freeze(
     expectedPrivateOperations.flatMap((operation) =>
@@ -21417,7 +21412,36 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       ...expectedBytePositionSpecs.map((entry) => entry.operation),
       ...expectedPrivateOperations,
     ])) {
-      candidateModule[operation] = (control) => {
+      candidateModule[operation] = (...args) => {
+        if (
+          operation ===
+            "createCandidateContainmentGuardianStartupV1" &&
+          args.length === 3
+        ) {
+          const [, epochBytes, epochEofObserved] = args;
+          assert.equal(Buffer.isBuffer(epochBytes), true);
+          assert.equal(epochBytes.length, 32);
+          assert.equal(epochEofObserved, true);
+          calls.push(
+            recursivelyFreezeEvidence({
+              moduleIdentity,
+              operation,
+              control: {
+                schema:
+                  "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-control/v1",
+                position: "startupReportBytes",
+                minimumBytes: 0,
+                maximumBytes: 8_192,
+                family: "proxy-trap-free",
+                oracleIdentitySha256:
+                  "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+              },
+            }),
+          );
+          throw new Error("CONTROL_SHAPE");
+        }
+        assert.equal(args.length, 1);
+        const [control] = args;
         assert.equal(Object.isFrozen(control), true);
         calls.push(
           recursivelyFreezeEvidence({
@@ -21503,7 +21527,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   const primaryByteCalls = primarySyntheticCandidate.calls.filter(
     ({ control }) =>
       control.schema ===
-      "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-control/v1",
+      "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-control/v1",
   );
   const primaryPrivateCalls = primarySyntheticCandidate.calls.filter(
     ({ control }) =>
@@ -21519,17 +21543,17 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       family: control.family,
       oracleIdentitySha256: control.oracleIdentitySha256,
     })),
-    expectedBytePositionSpecs.flatMap((spec) =>
-      expectedByteFamilies.map((family) => ({
-        operation: spec.operation,
-        position: spec.name,
-        minimumBytes: spec.minimumBytes,
-        maximumBytes: spec.maximumBytes,
-        family,
+    [
+      {
+        operation: "createCandidateContainmentGuardianStartupV1",
+        position: "startupReportBytes",
+        minimumBytes: 0,
+        maximumBytes: 8_192,
+        family: "proxy-trap-free",
         oracleIdentitySha256:
           "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
-      })),
-    ),
+      },
+    ],
   );
   assert.deepEqual(
     primaryPrivateCalls.map(({ operation, control }) => ({
@@ -21592,8 +21616,8 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   });
   const expectedRegisteredTests = [
     {
-      name: "connect the source-independent 9-position matrices to the candidate after static-audit closure, including over-byte collisions with own-length, subclass, foreign-prototype, and shared backing under CONTROL_BOUNDS-before-CONTROL_SHAPE while Proxy and non-Buffer carriers reject immediately trap-free",
-      options: { todo: true },
+      name: "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+      options: {},
       requiredInputs: ["candidate", "oracle"],
     },
     {
@@ -21610,10 +21634,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         schema:
           "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
         inventorySha256:
-          "f448be91b5a4bb086e93e4ef529428bd0d509c14fd532e75e02ea1a256c0cb3e",
+          "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56",
         registeredCount: 2,
-        todoCount: 2,
+        todoCount: 1,
         inputsDeferredUntilExecution: true,
+        privateStoreTodoDeferralBoundToEntryOptions: true,
       },
       registeredTests: expectedRegisteredTests,
       registrationGetterReads: {
@@ -21635,12 +21660,16 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       ],
       byteDispatch: {
         schema:
-          "oxigraph.test.candidate-containment-guardian-control-v1-c13-byte-position-dispatch/v1",
-        positionCount: 9,
-        familyCount: 9,
-        controlCount: 81,
+          "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-dispatch/v1",
+        positionCount: 1,
+        familyCount: 1,
+        controlCount: 1,
         controlIds: expectedByteControlIds,
-        candidateBehaviorProved: false,
+        oracleIdentitySha256:
+          "2cf8c8a34e95af2b3211b1a4218f09ef32b17fd738991e0381690b9dada0e1c0",
+        candidateBehaviorAttemptCount: 1,
+        proxyTrapHits: 0,
+        candidateBehaviorProved: true,
       },
       privateDispatch: {
         schema:
@@ -21650,9 +21679,13 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         controlCount: 50,
         freshLoaderCallCount: 1,
         controlIds: expectedPrivateControlIds,
+        entryTodo: true,
+        candidateInputThenable: false,
+        candidateInputAwaited: false,
+        todoDeferralBoundToEntryOptions: true,
         candidateBehaviorProved: false,
       },
-      primaryControlCount: 121,
+      primaryControlCount: 41,
       freshControlCount: 10,
       freshLoaderCallCount: 1,
       candidateBehaviorProved: false,
@@ -22124,7 +22157,14 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     [
       "registration-todo-count-drift",
       (receipt) => {
-        receipt.registration.todoCount = 1;
+        receipt.registration.todoCount = 0;
+      },
+    ],
+    [
+      "registration-private-store-todo-deferral-coupling-drift",
+      (receipt) => {
+        receipt.registration.privateStoreTodoDeferralBoundToEntryOptions =
+          false;
       },
     ],
     [
@@ -22136,7 +22176,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     [
       "registration-options-drift",
       (receipt) => {
-        receipt.registeredTests[0].options.todo = false;
+        receipt.registeredTests[0].options.todo = true;
       },
     ],
     [
@@ -22474,11 +22514,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       idsSha256: mutationReceipt.idsSha256,
     },
     {
-      count: 139,
-      killed: 139,
+      count: 132,
+      killed: 132,
       survivors: 0,
       idsSha256:
-        "c28632ae1090b75a0ab33c79fdde6e9917987caaf4bc05e581594221c7eba8b9",
+        "1d16a37cec6e3151957c3f9223a2ea48d3bd41ee8fbef53245a5f9a1b6f8a215",
     },
   );
   assert.equal(
