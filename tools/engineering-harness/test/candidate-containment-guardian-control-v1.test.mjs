@@ -17824,6 +17824,9 @@ function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
   const startupByMode = new Map(
     oracle.witnesses.startups.map((startup) => [startup.mode, startup]),
   );
+  const modeIds = new Set();
+  const inputKindIds = new Set();
+  const sequenceIds = new Set();
   const transitionIds = new Set();
   const prefixIds = new Set();
   const statusIds = new Set();
@@ -17868,6 +17871,7 @@ function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
       expectedTransition.expectedProjection,
       `${sequence.id} initialize`,
     );
+    modeIds.add(sequence.mode);
     transitionIds.add(expectedTransition.id);
     let currentState = transition.state;
     const symbols = [];
@@ -17984,6 +17988,7 @@ function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
         expectedTransition.expectedProjection,
         `${sequence.id} ${operation}`,
       );
+      inputKindIds.add(witness.kind);
       transitionIds.add(expectedTransition.id);
       currentState = transition.state;
       symbols.push(operation);
@@ -18034,23 +18039,80 @@ function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
       sequence.expectedTerminalState,
       `${sequence.id} terminal state`,
     );
+    sequenceIds.add(sequence.id);
   }
 
+  assert.equal(modeIds.size, 2);
+  assert.equal(inputKindIds.size, 7);
+  assert.equal(sequenceIds.size, 8);
   assert.equal(transitionIds.size, 20);
   assert.equal(prefixIds.size, 26);
   assert.equal(statusIds.size, 15);
   assert.equal(verifiedStatusIds.size, verifyStatuses ? 15 : 0);
   assert.equal(atomicIds.size, 4);
+  const inOracleOrder = (values, observed, label) => {
+    const ordered = [...new Set(values)];
+    assert.equal(ordered.length, observed.size, label);
+    assert.equal(ordered.every((value) => observed.has(value)), true, label);
+    return Object.freeze(ordered);
+  };
   return Object.freeze({
-    transitionIds: Object.freeze([...transitionIds]),
-    prefixIds: Object.freeze([...prefixIds]),
-    statusIds: Object.freeze([...statusIds]),
-    verifiedStatusIds: Object.freeze([...verifiedStatusIds]),
-    statusRawSha256: Object.freeze([...statusRawSha256]),
-    atomicIds: Object.freeze([...atomicIds]),
-    atomicConcatenatedRawSha256: Object.freeze([
-      ...atomicConcatenatedRawSha256,
-    ]),
+    modeIds: inOracleOrder(
+      oracle.expected.legalSequences.map(({ mode }) => mode),
+      modeIds,
+      "replay mode order",
+    ),
+    inputKindIds: inOracleOrder(
+      oracle.witnesses.inputKinds.map(({ kind }) => kind),
+      inputKindIds,
+      "replay input-kind order",
+    ),
+    sequenceIds: inOracleOrder(
+      oracle.expected.legalSequences.map(({ id }) => id),
+      sequenceIds,
+      "replay sequence order",
+    ),
+    transitionIds: inOracleOrder(
+      oracle.expected.wholeTransitions.map(({ id }) => id),
+      transitionIds,
+      "replay transition order",
+    ),
+    prefixIds: inOracleOrder(
+      oracle.expected.acceptedPrefixes.map(({ id }) => id),
+      prefixIds,
+      "replay prefix order",
+    ),
+    statusIds: inOracleOrder(
+      oracle.expected.emittedStatuses.map(({ id }) => id),
+      statusIds,
+      "replay status order",
+    ),
+    verifiedStatusIds: verifyStatuses
+      ? inOracleOrder(
+          oracle.expected.emittedStatuses.map(({ id }) => id),
+          verifiedStatusIds,
+          "replay verified-status order",
+        )
+      : Object.freeze([]),
+    statusRawSha256: inOracleOrder(
+      oracle.expected.emittedStatuses.map(
+        ({ expectedArtifact }) => expectedArtifact.fields.rawSha256,
+      ),
+      statusRawSha256,
+      "replay status digest order",
+    ),
+    atomicIds: inOracleOrder(
+      oracle.expected.atomicPrefixes.map(({ id }) => id),
+      atomicIds,
+      "replay atomic order",
+    ),
+    atomicConcatenatedRawSha256: inOracleOrder(
+      oracle.expected.atomicPrefixes.map(
+        ({ concatenatedRawSha256 }) => concatenatedRawSha256,
+      ),
+      atomicConcatenatedRawSha256,
+      "replay atomic digest order",
+    ),
   });
 }
 
@@ -22525,6 +22587,14 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   activeRealCandidateCallback = "private";
   const privateDispatchReceipt = await realCandidateRegistrations[2].run();
   activeRealCandidateCallback = "complete";
+  assert.equal(
+    semanticSha256(byteDispatchReceipt),
+    "e164e4cc96a6129d9cb74ff234975e7f6b40928f7839467355465a98c1a1b35c",
+  );
+  assert.equal(
+    semanticSha256(privateDispatchReceipt),
+    "914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa",
+  );
   assert.deepEqual(realCandidateGetterReads, {
     candidate: 3,
     oracle: 3,
@@ -23793,8 +23863,2990 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   );
   assertRecursivelyFrozenWithoutByteViews(mutationReceipt);
 });
+const C17_FINAL_AGGREGATE_RUNNER = null;
+const C17_STARTUP_OPERATION =
+  "createCandidateContainmentGuardianStartupV1";
+const C17_INITIALIZE_OPERATION =
+  "initializeCandidateContainmentGuardianControlV1";
+const C17_ADMISSION_OPERATION =
+  "createCandidateContainmentGuardianAdmissionInputV1";
+
+function c17AssertSha256(value, label) {
+  assert.match(value, /^[0-9a-f]{64}$/u, label);
+}
+
+function c17CaptureBytes(value, label) {
+  assert.notEqual(value, null, label);
+  const prototype = Object.getPrototypeOf(value);
+  const carrierKind = prototype === Buffer.prototype
+    ? "BUFFER"
+    : prototype === Uint8Array.prototype
+      ? "UINT8_ARRAY"
+      : null;
+  assert.notEqual(carrierKind, null, label);
+  assert.equal(ArrayBuffer.isView(value), true, label);
+  assert.equal(value.buffer instanceof ArrayBuffer, true, label);
+  assert.equal(Object.getPrototypeOf(value.buffer), ArrayBuffer.prototype);
+  assert.equal(Object.getOwnPropertyDescriptor(value, "length"), undefined);
+  const copy = Buffer.from(value);
+  return recursivelyFreezeEvidence({
+    carrierKind,
+    byteLength: copy.length,
+    rawSha256: byteSha256(copy),
+    bytesHex: copy.toString("hex"),
+  });
+}
+
+function c17CapturePostcondition(operation, args, preimage) {
+  let byteArguments;
+  if (operation === C17_STARTUP_OPERATION) {
+    byteArguments = [
+      [0, args[0], preimage.startupReport],
+      [1, args[1], preimage.epoch],
+    ];
+  } else if (operation === C17_ADMISSION_OPERATION) {
+    byteArguments = [
+      [1, args[1], preimage.admissionFrame],
+      [2, args[2], preimage.admissionRecvmsgReport],
+    ];
+  } else {
+    assert.equal(operation, C17_INITIALIZE_OPERATION);
+    byteArguments = [];
+  }
+  return recursivelyFreezeEvidence({
+    byteArguments: byteArguments.map(([argumentIndex, value, before]) => {
+      const after = c17CaptureBytes(
+        value,
+        "C17 post-call byte argument " + argumentIndex,
+      );
+      assert.deepEqual(after, before);
+      return {
+        argumentIndex,
+        carrierKind: after.carrierKind,
+        byteLength: after.byteLength,
+        rawSha256: after.rawSha256,
+        unchanged: true,
+      };
+    }),
+  });
+}
+
+function c17CaptureThrow(error) {
+  assert.notEqual(error, null);
+  assert.equal(Object.getPrototypeOf(error), Error.prototype);
+  assert.equal(typeof error.name, "string");
+  assert.equal(typeof error.message, "string");
+  return recursivelyFreezeEvidence({
+    kind: "THROW",
+    immediatePrototype: "Error.prototype",
+    errorName: error.name,
+    errorMessage: error.message,
+    causePresent: Object.hasOwn(error, "cause"),
+  });
+}
+
+function c17CaptureState(value) {
+  assert.notEqual(value, null);
+  assert.equal(Object.isFrozen(value), true);
+  assert.equal(Object.getPrototypeOf(value), null);
+  const ownKeys = Reflect.ownKeys(value);
+  assert.equal(ownKeys.every((key) => typeof key === "string"), true);
+  for (const key of ownKeys) {
+    assert.deepEqual(Object.getOwnPropertyDescriptor(value, key), {
+      value: value[key],
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+  }
+  return recursivelyFreezeEvidence({
+    nullPrototype: true,
+    ownKeys,
+    valueSha256: semanticSha256(c12Clone(value)),
+    schema: value.schema,
+    mode: value.mode,
+    phase: value.phase,
+    stateSha256: value.stateSha256,
+    nextWireSequence: value.nextWireSequence,
+    aggregateWireBytes: value.aggregateWireBytes,
+  });
+}
+
+function c17ResultProjection(operation, value) {
+  if (operation !== C17_INITIALIZE_OPERATION) {
+    return c12Clone(value);
+  }
+  return {
+    schema: value.schema,
+    state: c12Clone(value.state),
+    statusFrameCount: value.statusFrameCount,
+    statuses: [value.statusFrame0, value.statusFrame1]
+      .slice(0, value.statusFrameCount)
+      .map((status) => {
+        const bytes = c17CaptureBytes(
+          status.bytes,
+          "C17 initialize status bytes",
+        );
+        assert.equal(bytes.carrierKind, "BUFFER");
+        assert.equal(bytes.byteLength, status.byteLength);
+        assert.equal(bytes.rawSha256, status.rawSha256);
+        return {
+          schema: status.schema,
+          mode: status.mode,
+          sequence: status.sequence,
+          byteLength: status.byteLength,
+          rawSha256: status.rawSha256,
+          bytesHex: bytes.bytesHex,
+          state: status.state,
+          terminalReason: status.terminalReason,
+        };
+      }),
+  };
+}
+
+function createC17MonitoredCandidateNamespace(moduleNamespace) {
+  const captures = [];
+  const privateOrigins = new WeakMap();
+  let sealed = false;
+  const startupTarget =
+    moduleNamespace.createCandidateContainmentGuardianStartupV1;
+  const initializeTarget =
+    moduleNamespace.initializeCandidateContainmentGuardianControlV1;
+  const admissionTarget =
+    moduleNamespace.createCandidateContainmentGuardianAdmissionInputV1;
+  assert.equal(typeof startupTarget, "function");
+  assert.equal(typeof initializeTarget, "function");
+  assert.equal(typeof admissionTarget, "function");
+
+  const exactPrivateOrigin = (value, expected, label) => {
+    assert.notEqual(value, null, label);
+    assert.equal(
+      typeof value === "object" || typeof value === "function",
+      true,
+      label,
+    );
+    const origin = privateOrigins.get(value);
+    assert.notEqual(origin, undefined, label);
+    assert.deepEqual(origin, expected, label);
+    return origin;
+  };
+
+  const invoke = (operation, preimage, target, args) => {
+    assert.equal(sealed, false, "C17 monitor is sealed");
+    assert.equal(captures.length < 319, true, "C17 call budget exhausted");
+    const ordinal = captures.length;
+    let result;
+    let thrown = null;
+    try {
+      result = Reflect.apply(target, undefined, args);
+    } catch (error) {
+      thrown = error;
+    }
+    const postcondition = c17CapturePostcondition(operation, args, preimage);
+    let outcome;
+    if (thrown === null) {
+      const projection = recursivelyFreezeEvidence(
+        c17ResultProjection(operation, result),
+      );
+      outcome = recursivelyFreezeEvidence({
+        kind: "RETURN",
+        projection,
+        projectionSha256: semanticSha256(projection),
+      });
+    } else {
+      outcome = c17CaptureThrow(thrown);
+    }
+    captures.push(
+      recursivelyFreezeEvidence({
+        ordinal,
+        operation,
+        preimage,
+        postcondition,
+        outcome,
+      }),
+    );
+    if (captures.length === 319) sealed = true;
+    if (thrown !== null) throw thrown;
+    assert.notEqual(result, null);
+    assert.equal(typeof result, "object");
+    assert.equal(typeof result.then === "function", false);
+    const resultOrigin = Object.freeze({
+      operation,
+      ordinal,
+      role: "RESULT",
+    });
+    privateOrigins.set(result, resultOrigin);
+    if (
+      operation === C17_INITIALIZE_OPERATION &&
+      result.state !== null &&
+      typeof result.state === "object"
+    ) {
+      privateOrigins.set(
+        result.state,
+        Object.freeze({
+          operation,
+          ordinal,
+          role: "STATE",
+        }),
+      );
+    }
+    return result;
+  };
+
+  const monitoredStartup = (startupReportBytes, epochBytes, epochEofObserved) =>
+    invoke(
+      C17_STARTUP_OPERATION,
+      recursivelyFreezeEvidence({
+        startupReport: c17CaptureBytes(
+          startupReportBytes,
+          "C17 startup report",
+        ),
+        epoch: c17CaptureBytes(epochBytes, "C17 epoch"),
+        epochEofObserved,
+      }),
+      startupTarget,
+      [startupReportBytes, epochBytes, epochEofObserved],
+    );
+  const monitoredInitialize = (startupProjection) =>
+    invoke(
+      C17_INITIALIZE_OPERATION,
+      recursivelyFreezeEvidence({
+        startupProjection: c12Clone(startupProjection),
+        startupProjectionOrigin: exactPrivateOrigin(
+          startupProjection,
+          {
+            operation: C17_STARTUP_OPERATION,
+            ordinal: 0,
+            role: "RESULT",
+          },
+          "C17 initialize startup projection origin",
+        ),
+      }),
+      initializeTarget,
+      [startupProjection],
+    );
+  const monitoredAdmission = (
+    currentState,
+    admissionFrameBytes,
+    recvmsgReportBytes,
+  ) =>
+    invoke(
+      C17_ADMISSION_OPERATION,
+      recursivelyFreezeEvidence({
+        currentState: c17CaptureState(currentState),
+        currentStateOrigin: exactPrivateOrigin(
+          currentState,
+          {
+            operation: C17_INITIALIZE_OPERATION,
+            ordinal: 1,
+            role: "STATE",
+          },
+          "C17 admission current-state origin",
+        ),
+        admissionFrame: c17CaptureBytes(
+          admissionFrameBytes,
+          "C17 admission frame",
+        ),
+        admissionRecvmsgReport: c17CaptureBytes(
+          recvmsgReportBytes,
+          "C17 admission recvmsg report",
+        ),
+      }),
+      admissionTarget,
+      [currentState, admissionFrameBytes, recvmsgReportBytes],
+    );
+
+  Object.freeze(monitoredStartup);
+  Object.freeze(monitoredInitialize);
+  Object.freeze(monitoredAdmission);
+  const namespace = Object.freeze({
+    createCandidateContainmentGuardianStartupV1: monitoredStartup,
+    initializeCandidateContainmentGuardianControlV1: monitoredInitialize,
+    createCandidateContainmentGuardianAdmissionInputV1: monitoredAdmission,
+  });
+
+  return Object.freeze({
+    namespace,
+    sealAndSnapshot() {
+      if (!sealed) sealed = true;
+      return recursivelyFreezeEvidence(c12Clone(captures));
+    },
+  });
+}
+
+function c17VerifyCapturedBytes(binding, label) {
+  assert.deepEqual(Object.keys(binding), [
+    "carrierKind",
+    "byteLength",
+    "rawSha256",
+    "bytesHex",
+  ]);
+  assert.equal(
+    ["BUFFER", "UINT8_ARRAY"].includes(binding.carrierKind),
+    true,
+    label,
+  );
+  assert.equal(typeof binding.bytesHex, "string", label);
+  assert.match(binding.bytesHex, /^(?:[0-9a-f]{2})*$/u, label);
+  c17AssertSha256(binding.rawSha256, label + " digest");
+  const bytes = Buffer.from(binding.bytesHex, "hex");
+  assert.equal(bytes.length, binding.byteLength, label);
+  assert.equal(byteSha256(bytes), binding.rawSha256, label);
+  return bytes;
+}
+
+function c17DecodeCapturedJsonl(binding, label) {
+  const bytes = c17VerifyCapturedBytes(binding, label);
+  const text = bytes.toString("utf8");
+  assert.equal(Buffer.from(text, "utf8").equals(bytes), true, label);
+  assert.equal(text.endsWith("\n"), true, label);
+  assert.equal(text.slice(0, -1).includes("\n"), false, label);
+  assert.equal(text.includes("\r"), false, label);
+  const value = JSON.parse(text.slice(0, -1));
+  assert.equal(text, canonicalJson(value) + "\n", label);
+  return value;
+}
+
+function c17CapturedByteProjection(binding, label) {
+  const bytes = c17VerifyCapturedBytes(binding, label);
+  const text = bytes.toString("utf8");
+  let canonicalValue = null;
+  let canonicalJsonLine = false;
+  if (
+    Buffer.from(text, "utf8").equals(bytes) &&
+    text.endsWith("\n") &&
+    !text.slice(0, -1).includes("\n") &&
+    !text.includes("\r")
+  ) {
+    try {
+      const parsed = JSON.parse(text.slice(0, -1));
+      if (text === canonicalJson(parsed) + "\n") {
+        canonicalValue = parsed;
+        canonicalJsonLine = true;
+      }
+    } catch {
+      canonicalValue = null;
+    }
+  }
+  return {
+    carrierKind: binding.carrierKind,
+    byteLength: binding.byteLength,
+    rawSha256: binding.rawSha256,
+    bytesHex: binding.bytesHex,
+    canonicalJsonLine,
+    canonicalValue,
+  };
+}
+
+function c17FailureInvocationProjection(capture) {
+  if (capture.operation === C17_STARTUP_OPERATION) {
+    return {
+      startupReport: c17CapturedByteProjection(
+        capture.preimage.startupReport,
+        "C17 failure startup report",
+      ),
+      epoch: c17CapturedByteProjection(
+        capture.preimage.epoch,
+        "C17 failure epoch",
+      ),
+      epochEofObserved: capture.preimage.epochEofObserved,
+    };
+  }
+  assert.equal(capture.operation, C17_ADMISSION_OPERATION);
+  return {
+    currentState: c12Clone(capture.preimage.currentState),
+    admissionFrame: c17CapturedByteProjection(
+      capture.preimage.admissionFrame,
+      "C17 failure admission frame",
+    ),
+    admissionRecvmsgReport: c17CapturedByteProjection(
+      capture.preimage.admissionRecvmsgReport,
+      "C17 failure admission report",
+    ),
+  };
+}
+
+function c17SemanticInvocation(capture) {
+  if (capture.operation === C17_STARTUP_OPERATION) {
+    return {
+      startupReport: c17DecodeCapturedJsonl(
+        capture.preimage.startupReport,
+        "C17 captured startup report",
+      ),
+      startupReportCarrierKind:
+        capture.preimage.startupReport.carrierKind,
+      epochBytesHex: c17VerifyCapturedBytes(
+        capture.preimage.epoch,
+        "C17 captured epoch",
+      ).toString("hex"),
+      epochCarrierKind: capture.preimage.epoch.carrierKind,
+      epochEofObserved: capture.preimage.epochEofObserved,
+    };
+  }
+  assert.equal(capture.operation, C17_ADMISSION_OPERATION);
+  return {
+    currentState: c12Clone(capture.preimage.currentState),
+    admissionFrame: c17DecodeCapturedJsonl(
+      capture.preimage.admissionFrame,
+      "C17 captured admission frame",
+    ),
+    admissionFrameCarrierKind:
+      capture.preimage.admissionFrame.carrierKind,
+    admissionRecvmsgReport: c17DecodeCapturedJsonl(
+      capture.preimage.admissionRecvmsgReport,
+      "C17 captured admission recvmsg report",
+    ),
+    admissionRecvmsgReportCarrierKind:
+      capture.preimage.admissionRecvmsgReport.carrierKind,
+  };
+}
+
+function c17TargetPreimageSha256(capture) {
+  return semanticSha256({
+    ordinal: capture.ordinal,
+    operation: capture.operation,
+    arguments: capture.preimage,
+  });
+}
+
+function c17TargetObservationSha256(capture) {
+  return semanticSha256({
+    ordinal: capture.ordinal,
+    operation: capture.operation,
+    preimageSha256: c17TargetPreimageSha256(capture),
+    outcome: capture.outcome,
+  });
+}
+
+function c17ChangedPaths(left, right, path = "") {
+  if (Object.is(left, right)) return [];
+  const leftObject = left !== null && typeof left === "object";
+  const rightObject = right !== null && typeof right === "object";
+  if (!leftObject || !rightObject || Array.isArray(left) !== Array.isArray(right)) {
+    return [path || "$"];
+  }
+  if (Array.isArray(left)) {
+    if (left.length !== right.length) return [path || "$"];
+    return left.flatMap((value, index) =>
+      c17ChangedPaths(value, right[index], path + "[" + index + "]"),
+    );
+  }
+  const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+  return keys.flatMap((key) => {
+    const childPath = path.length === 0 ? key : path + "." + key;
+    if (!Object.hasOwn(left, key) || !Object.hasOwn(right, key)) {
+      return [childPath];
+    }
+    return c17ChangedPaths(left[key], right[key], childPath);
+  });
+}
+
+function c17AssertCaptureShape(capture, ordinal) {
+  assert.deepEqual(Object.keys(capture), [
+    "ordinal",
+    "operation",
+    "preimage",
+    "postcondition",
+    "outcome",
+  ]);
+  assert.equal(capture.ordinal, ordinal);
+  assert.equal(
+    [
+      C17_STARTUP_OPERATION,
+      C17_INITIALIZE_OPERATION,
+      C17_ADMISSION_OPERATION,
+    ].includes(capture.operation),
+    true,
+  );
+  assert.equal(Object.isFrozen(capture), true);
+  assert.equal(Object.isFrozen(capture.preimage), true);
+  assert.equal(Object.isFrozen(capture.postcondition), true);
+  assert.equal(Object.isFrozen(capture.outcome), true);
+  assert.equal(
+    capture.postcondition.byteArguments.every(
+      ({ unchanged }) => unchanged,
+    ),
+    true,
+  );
+}
+
+function c17CreateLiveBaselines(monitoredNamespace) {
+  const oracle = LIVE_C15_RUNTIME_ORACLE;
+  const normalWitness = oracle.witnesses.startups.find(
+    ({ mode }) => mode === "NORMAL",
+  );
+  const recoveryWitness = oracle.witnesses.startups.find(
+    ({ mode }) => mode === "RECOVERY_ONLY",
+  );
+  const admissionWitness = oracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "ADMIT",
+  );
+  assert.notEqual(normalWitness, undefined);
+  assert.notEqual(recoveryWitness, undefined);
+  assert.notEqual(admissionWitness, undefined);
+
+  const normalStartup =
+    monitoredNamespace.createCandidateContainmentGuardianStartupV1(
+      c14BindingBytes(normalWitness.startupReport),
+      c14BindingBytes(normalWitness.epoch),
+      normalWitness.epochEofObserved,
+    );
+  c14AssertFrozenProjection(
+    normalStartup,
+    normalWitness.expectedProjection,
+    "C17 NORMAL startup baseline",
+  );
+
+  const normalTransition =
+    monitoredNamespace.initializeCandidateContainmentGuardianControlV1(
+      normalStartup,
+    );
+  const expectedInitialization = oracle.expected.wholeTransitions.find(
+    (entry) =>
+      entry.operation === "INITIALIZE" && entry.mode === "NORMAL",
+  );
+  assert.notEqual(expectedInitialization, undefined);
+  c14AssertTransition(
+    normalTransition,
+    expectedInitialization.expectedProjection,
+    "C17 NORMAL initialization baseline",
+  );
+
+  const recoveryStartup =
+    monitoredNamespace.createCandidateContainmentGuardianStartupV1(
+      c14BindingBytes(recoveryWitness.startupReport),
+      c14BindingBytes(recoveryWitness.epoch),
+      recoveryWitness.epochEofObserved,
+    );
+  c14AssertFrozenProjection(
+    recoveryStartup,
+    recoveryWitness.expectedProjection,
+    "C17 RECOVERY_ONLY startup baseline",
+  );
+
+  const admissionInput =
+    monitoredNamespace.createCandidateContainmentGuardianAdmissionInputV1(
+      normalTransition.state,
+      c14BindingBytes(admissionWitness.frame),
+      c14BindingBytes(admissionWitness.auxiliary),
+    );
+  c14AssertFrozenProjection(
+    admissionInput,
+    admissionWitness.expectedProjection,
+    "C17 ADMIT baseline",
+  );
+
+  return recursivelyFreezeEvidence({
+    normalStartup: {
+      mode: "NORMAL",
+      startupReportBytesHex: normalWitness.startupReport.bytesHex,
+      epochBytesHex: normalWitness.epoch.bytesHex,
+      epochEofObserved: normalWitness.epochEofObserved,
+      resultProjectionSha256: semanticSha256(c12Clone(normalStartup)),
+    },
+    recoveryStartup: {
+      mode: "RECOVERY_ONLY",
+      startupReportBytesHex: recoveryWitness.startupReport.bytesHex,
+      epochBytesHex: recoveryWitness.epoch.bytesHex,
+      epochEofObserved: recoveryWitness.epochEofObserved,
+      resultProjectionSha256: semanticSha256(c12Clone(recoveryStartup)),
+    },
+    initialize: {
+      startupProjectionSha256: semanticSha256(c12Clone(normalStartup)),
+      currentState: normalTransition.state,
+      resultProjectionSha256: semanticSha256(
+        c17ResultProjection(C17_INITIALIZE_OPERATION, normalTransition),
+      ),
+    },
+    admission: {
+      currentState: normalTransition.state,
+      admissionFrameBytesHex: admissionWitness.frame.bytesHex,
+      admissionRecvmsgReportBytesHex: admissionWitness.auxiliary.bytesHex,
+      resultProjectionSha256: semanticSha256(c12Clone(admissionInput)),
+    },
+  });
+}
+
+function c17AssertSetupCaptures(captures, baselines) {
+  assertRecursivelyFrozenWithoutByteViews(captures);
+  assert.equal(captures.length >= 4, true);
+  const expectedOperations = [
+    C17_STARTUP_OPERATION,
+    C17_INITIALIZE_OPERATION,
+    C17_STARTUP_OPERATION,
+    C17_ADMISSION_OPERATION,
+  ];
+  for (let index = 0; index < 4; index += 1) {
+    c17AssertCaptureShape(captures[index], index);
+    assert.equal(captures[index].operation, expectedOperations[index]);
+    assert.equal(captures[index].outcome.kind, "RETURN");
+  }
+  assert.equal(
+    captures[0].preimage.startupReport.bytesHex,
+    baselines.normalStartup.startupReportBytesHex,
+  );
+  assert.equal(
+    captures[0].preimage.epoch.bytesHex,
+    baselines.normalStartup.epochBytesHex,
+  );
+  assert.equal(
+    captures[0].outcome.projectionSha256,
+    baselines.normalStartup.resultProjectionSha256,
+  );
+  assert.equal(
+    captures[0].preimage.epochEofObserved,
+    baselines.normalStartup.epochEofObserved,
+  );
+  assert.equal(
+    captures[2].preimage.startupReport.bytesHex,
+    baselines.recoveryStartup.startupReportBytesHex,
+  );
+  assert.equal(
+    captures[2].preimage.epoch.bytesHex,
+    baselines.recoveryStartup.epochBytesHex,
+  );
+  assert.equal(
+    captures[2].preimage.epochEofObserved,
+    baselines.recoveryStartup.epochEofObserved,
+  );
+  assert.equal(
+    captures[2].outcome.projectionSha256,
+    baselines.recoveryStartup.resultProjectionSha256,
+  );
+  assert.equal(
+    captures[1].outcome.projectionSha256,
+    baselines.initialize.resultProjectionSha256,
+  );
+  assert.equal(
+    semanticSha256(captures[1].preimage.startupProjection),
+    baselines.initialize.startupProjectionSha256,
+  );
+  assert.deepEqual(captures[1].preimage.startupProjectionOrigin, {
+    operation: C17_STARTUP_OPERATION,
+    ordinal: 0,
+    role: "RESULT",
+  });
+  assert.equal(
+    captures[3].preimage.admissionFrame.bytesHex,
+    baselines.admission.admissionFrameBytesHex,
+  );
+  assert.equal(
+    captures[3].preimage.admissionRecvmsgReport.bytesHex,
+    baselines.admission.admissionRecvmsgReportBytesHex,
+  );
+  assert.deepEqual(
+    captures[3].preimage.currentState,
+    c17CaptureState(baselines.admission.currentState),
+  );
+  assert.deepEqual(captures[3].preimage.currentStateOrigin, {
+    operation: C17_INITIALIZE_OPERATION,
+    ordinal: 1,
+    role: "STATE",
+  });
+  assert.equal(
+    captures[3].outcome.projectionSha256,
+    baselines.admission.resultProjectionSha256,
+  );
+}
+
+function c17DescriptorClass(slot) {
+  const match = /^(fd|right)(\d+)$/u.exec(slot);
+  assert.notEqual(match, null, slot);
+  const ordinal = Number(match[2]);
+  return match[1] === "right" ? ordinal + 8 : ordinal;
+}
+
+function c17DecodeBaselineHexJsonl(bytesHex, label) {
+  assert.match(bytesHex, /^(?:[0-9a-f]{2})+$/u, label);
+  const bytes = Buffer.from(bytesHex, "hex");
+  const text = bytes.toString("utf8");
+  assert.equal(Buffer.from(text, "utf8").equals(bytes), true, label);
+  assert.equal(text.endsWith("\n"), true, label);
+  assert.equal(text.slice(0, -1).includes("\n"), false, label);
+  const value = JSON.parse(text.slice(0, -1));
+  assert.equal(text, canonicalJson(value) + "\n", label);
+  return value;
+}
+
+function c17LiveDescriptorSlots(report, prefix, count, label) {
+  const reportKeys = Object.keys(report);
+  assert.deepEqual(reportKeys, [...reportKeys].sort(), label + " key order");
+  const encounteredSlots = reportKeys.filter((key) =>
+    new RegExp("^" + prefix + "[0-9]+$", "u").test(key),
+  );
+  const slots = Array.from(
+    { length: count },
+    (_, index) => prefix + index,
+  );
+  const activeSlots = encounteredSlots.filter(
+    (slot) => report[slot] !== null,
+  );
+  assert.deepEqual(activeSlots, [...slots].sort(), label);
+  assert.equal(
+    encounteredSlots
+      .filter((slot) => !activeSlots.includes(slot))
+      .every((slot) => report[slot] === null),
+    true,
+    label + " null padding",
+  );
+  const identities = [];
+  for (const slot of slots) {
+    const descriptor = report[slot];
+    assert.notEqual(descriptor, null, label + " " + slot);
+    assert.equal(
+      descriptor.openFileDescriptionClass,
+      c17DescriptorClass(slot),
+      label + " " + slot,
+    );
+    c17AssertSha256(
+      descriptor.openFileDescriptionIdentitySha256,
+      label + " " + slot + " identity",
+    );
+    identities.push(descriptor.openFileDescriptionIdentitySha256);
+  }
+  assert.equal(new Set(identities).size, identities.length, label);
+  return Object.freeze({ slots: Object.freeze(slots), identities });
+}
+
+function c17CreateLiveDescriptorAliasDesigns(baselines) {
+  const normalReport = c17DecodeBaselineHexJsonl(
+    baselines.normalStartup.startupReportBytesHex,
+    "C17 live NORMAL startup topology",
+  );
+  const recoveryReport = c17DecodeBaselineHexJsonl(
+    baselines.recoveryStartup.startupReportBytesHex,
+    "C17 live RECOVERY startup topology",
+  );
+  const admissionReport = c17DecodeBaselineHexJsonl(
+    baselines.admission.admissionRecvmsgReportBytesHex,
+    "C17 live admission topology",
+  );
+  const normalCount = LIVE_C15_REQUIREMENTS_ORACLE.startupMaps
+    .normalDescriptorCount;
+  const recoveryCount = LIVE_C15_REQUIREMENTS_ORACLE.startupMaps
+    .recoveryOnlyDescriptorCount;
+  const rightCount = LIVE_C15_REQUIREMENTS_ORACLE.admissionRights.count;
+  assert.deepEqual(
+    { normalCount, recoveryCount, rightCount },
+    { normalCount: 8, recoveryCount: 7, rightCount: 14 },
+  );
+  const normal = c17LiveDescriptorSlots(
+    normalReport,
+    "fd",
+    normalCount,
+    "C17 NORMAL descriptors",
+  );
+  c17LiveDescriptorSlots(
+    recoveryReport,
+    "fd",
+    recoveryCount,
+    "C17 RECOVERY descriptors",
+  );
+  const admission = c17LiveDescriptorSlots(
+    admissionReport,
+    "right",
+    rightCount,
+    "C17 admission rights",
+  );
+  assert.equal(
+    normal.identities.some((identity) =>
+      admission.identities.includes(identity),
+    ),
+    false,
+  );
+
+  const designs = [];
+  const add = (family, mode, leftSlot, rightSlot) => {
+    designs.push({
+      id:
+        "descriptor-alias:" +
+        family +
+        ":" +
+        leftSlot +
+        ":" +
+        rightSlot,
+      family,
+      mode,
+      leftSlot,
+      rightSlot,
+    });
+  };
+  for (let left = 0; left < rightCount; left += 1) {
+    for (let right = left + 1; right < rightCount; right += 1) {
+      add(
+        "ADMISSION_RIGHT_PAIR",
+        "NORMAL",
+        "right" + left,
+        "right" + right,
+      );
+    }
+  }
+  for (let right = 0; right < rightCount; right += 1) {
+    for (let startup = 0; startup < normalCount; startup += 1) {
+      add(
+        "ADMISSION_RIGHT_TO_NORMAL_STARTUP",
+        "NORMAL",
+        "right" + right,
+        "fd" + startup,
+      );
+    }
+  }
+  for (let left = 0; left < normalCount; left += 1) {
+    for (let right = left + 1; right < normalCount; right += 1) {
+      add("NORMAL_STARTUP_PAIR", "NORMAL", "fd" + left, "fd" + right);
+    }
+  }
+  for (let left = 0; left < recoveryCount; left += 1) {
+    for (let right = left + 1; right < recoveryCount; right += 1) {
+      add(
+        "RECOVERY_STARTUP_PAIR",
+        "RECOVERY_ONLY",
+        "fd" + left,
+        "fd" + right,
+      );
+    }
+  }
+  const frozen = recursivelyFreezeEvidence(designs);
+  assert.equal(frozen.length, 252);
+  assert.deepEqual(
+    frozen,
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.registries
+      .descriptorAliasControls,
+  );
+  assert.equal(
+    semanticSha256(frozen),
+    "30129d8d237f720fea41a8730d561e4dd615f35da565e5807e54aebb0c2ab9da",
+  );
+  return frozen;
+}
+
+function c17DescriptorAliasExpectation(design) {
+  let donorSlot = design.leftSlot;
+  let receiverSlot = design.rightSlot;
+  let donorScope;
+  let receiverScope;
+  let donorBaseline = design.mode === "RECOVERY_ONLY"
+    ? "RECOVERY_STARTUP"
+    : "NORMAL_STARTUP";
+  let dispatchOperation = C17_STARTUP_OPERATION;
+  let expectedError = "CONTROL_STARTUP";
+  if (design.family === "ADMISSION_RIGHT_PAIR") {
+    donorScope = "admissionRecvmsgReport";
+    receiverScope = "admissionRecvmsgReport";
+    donorBaseline = "ADMISSION";
+    dispatchOperation = C17_ADMISSION_OPERATION;
+    expectedError = "CONTROL_RIGHTS";
+  } else if (design.family === "ADMISSION_RIGHT_TO_NORMAL_STARTUP") {
+    donorSlot = design.rightSlot;
+    receiverSlot = design.leftSlot;
+    donorScope = "startupReport";
+    receiverScope = "admissionRecvmsgReport";
+    donorBaseline = "NORMAL_STARTUP";
+    dispatchOperation = C17_ADMISSION_OPERATION;
+    expectedError = "CONTROL_RIGHTS";
+  } else {
+    assert.equal(
+      ["NORMAL_STARTUP_PAIR", "RECOVERY_STARTUP_PAIR"].includes(
+        design.family,
+      ),
+      true,
+    );
+    donorScope = "startupReport";
+    receiverScope = "startupReport";
+  }
+  const donorRoot = donorScope + "." + donorSlot;
+  const receiverRoot = receiverScope + "." + receiverSlot;
+  return Object.freeze({
+    donorSlot,
+    receiverSlot,
+    donorBaseline,
+    donorPaths: Object.freeze([
+      donorRoot + ".openFileDescriptionClass",
+      donorRoot + ".openFileDescriptionIdentitySha256",
+    ]),
+    changedPaths: Object.freeze([
+      receiverRoot + ".openFileDescriptionClass",
+      receiverRoot + ".openFileDescriptionIdentitySha256",
+    ]),
+    dispatchOperation,
+    expectedError,
+  });
+}
+
+function c17ReportForAlias(semanticInvocation) {
+  return semanticInvocation.startupReport ??
+    semanticInvocation.admissionRecvmsgReport;
+}
+
+function c17AdmissionResealStatus(capture) {
+  assert.equal(capture.operation, C17_ADMISSION_OPERATION);
+  const frameBytes = c17VerifyCapturedBytes(
+    capture.preimage.admissionFrame,
+    "C17 resealed admission frame",
+  );
+  const reportProjection = c17CapturedByteProjection(
+    capture.preimage.admissionRecvmsgReport,
+    "C17 resealed admission report",
+  );
+  if (!reportProjection.canonicalJsonLine) return false;
+  const report = reportProjection.canonicalValue;
+  assert.equal(report.messageByteLength, frameBytes.length);
+  assert.equal(report.messageRawSha256, byteSha256(frameBytes));
+  return true;
+}
+
+function c17AssertAdmissionResealed(capture) {
+  assert.equal(c17AdmissionResealStatus(capture), true);
+}
+
+function c17DeriveAliasEvidence(captures, designs) {
+  assertRecursivelyFrozenWithoutByteViews(designs);
+  assert.equal(designs.length, 252);
+  for (const design of designs) {
+    assert.deepEqual(Object.keys(design), [
+      "id",
+      "family",
+      "mode",
+      "leftSlot",
+      "rightSlot",
+    ]);
+  }
+  assert.deepEqual(
+    designs.map(({ id }) => id),
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.registries
+      .descriptorAliasControls.map(({ id }) => id),
+  );
+  const familyCounts = Object.fromEntries(
+    [
+      "ADMISSION_RIGHT_PAIR",
+      "ADMISSION_RIGHT_TO_NORMAL_STARTUP",
+      "NORMAL_STARTUP_PAIR",
+      "RECOVERY_STARTUP_PAIR",
+    ].map((family) => [
+      family,
+      designs.filter((design) => design.family === family).length,
+    ]),
+  );
+  assert.deepEqual(familyCounts, {
+    ADMISSION_RIGHT_PAIR: 91,
+    ADMISSION_RIGHT_TO_NORMAL_STARTUP: 112,
+    NORMAL_STARTUP_PAIR: 28,
+    RECOVERY_STARTUP_PAIR: 21,
+  });
+  assert.deepEqual(designs.map(({ family }) => family), [
+    ...Array(91).fill("ADMISSION_RIGHT_PAIR"),
+    ...Array(112).fill("ADMISSION_RIGHT_TO_NORMAL_STARTUP"),
+    ...Array(28).fill("NORMAL_STARTUP_PAIR"),
+    ...Array(21).fill("RECOVERY_STARTUP_PAIR"),
+  ]);
+  assert.deepEqual(
+    designs.map(({ mode }) => mode),
+    [
+      ...Array(231).fill("NORMAL"),
+      ...Array(21).fill("RECOVERY_ONLY"),
+    ],
+  );
+
+  return recursivelyFreezeEvidence(
+    designs.map((design, index) => {
+      const call = captures[4 + index];
+      c17AssertCaptureShape(call, 4 + index);
+      const expected = c17DescriptorAliasExpectation(design);
+      assert.equal(call.operation, expected.dispatchOperation);
+      assert.deepEqual(call.outcome, {
+        kind: "THROW",
+        immediatePrototype: "Error.prototype",
+        errorName: "Error",
+        errorMessage: expected.expectedError,
+        causePresent: false,
+      });
+
+      const baseCapture =
+        call.operation === C17_ADMISSION_OPERATION
+          ? captures[3]
+          : design.mode === "RECOVERY_ONLY"
+            ? captures[2]
+            : captures[0];
+      const donorCapture =
+        expected.donorBaseline === "ADMISSION"
+          ? captures[3]
+          : expected.donorBaseline === "RECOVERY_STARTUP"
+            ? captures[2]
+            : captures[0];
+      if (call.operation === C17_ADMISSION_OPERATION) {
+        c17AssertAdmissionResealed(baseCapture);
+        c17AssertAdmissionResealed(call);
+      }
+      const baseInvocation = c17SemanticInvocation(baseCapture);
+      const mutantInvocation = c17SemanticInvocation(call);
+      const donorInvocation = c17SemanticInvocation(donorCapture);
+      const changedPaths = c17ChangedPaths(baseInvocation, mutantInvocation);
+      assert.deepEqual(changedPaths, expected.changedPaths);
+
+      const baseReport = c17ReportForAlias(baseInvocation);
+      const mutantReport = c17ReportForAlias(mutantInvocation);
+      const donorReport = c17ReportForAlias(donorInvocation);
+      const donor = donorReport[expected.donorSlot];
+      const receiverBefore = baseReport[expected.receiverSlot];
+      const receiverAfter = mutantReport[expected.receiverSlot];
+      assert.notEqual(donor, undefined);
+      assert.notEqual(receiverBefore, undefined);
+      assert.notEqual(receiverAfter, undefined);
+      assert.equal(
+        donor.openFileDescriptionClass,
+        c17DescriptorClass(expected.donorSlot),
+      );
+      assert.equal(
+        receiverBefore.openFileDescriptionClass,
+        c17DescriptorClass(expected.receiverSlot),
+      );
+      assert.notEqual(
+        donor.openFileDescriptionClass,
+        receiverBefore.openFileDescriptionClass,
+      );
+      c17AssertSha256(
+        donor.openFileDescriptionIdentitySha256,
+        design.id + " donor identity",
+      );
+      c17AssertSha256(
+        receiverBefore.openFileDescriptionIdentitySha256,
+        design.id + " receiver identity",
+      );
+      assert.notEqual(
+        donor.openFileDescriptionIdentitySha256,
+        receiverBefore.openFileDescriptionIdentitySha256,
+      );
+      assert.equal(
+        receiverAfter.openFileDescriptionClass,
+        donor.openFileDescriptionClass,
+      );
+      assert.equal(
+        receiverAfter.openFileDescriptionIdentitySha256,
+        donor.openFileDescriptionIdentitySha256,
+      );
+
+      const basePreimageSha256 = c17TargetPreimageSha256(baseCapture);
+      const mutantPreimageSha256 = c17TargetPreimageSha256(call);
+      assert.notEqual(basePreimageSha256, mutantPreimageSha256);
+      return {
+        id: design.id,
+        family: design.family,
+        mode: design.mode,
+        leftSlot: design.leftSlot,
+        rightSlot: design.rightSlot,
+        donorSlot: expected.donorSlot,
+        receiverSlot: expected.receiverSlot,
+        donorBaseline: expected.donorBaseline,
+        donorPaths: expected.donorPaths,
+        changedPaths,
+        dispatchOperation: call.operation,
+        callOrdinal: call.ordinal,
+        basePreimageSha256,
+        mutantPreimageSha256,
+        mutantObservationSha256: c17TargetObservationSha256(call),
+        observedError: call.outcome.errorMessage,
+      };
+    }),
+  );
+}
+
+function c17FailureWitnessId(operation, earlier, later, code) {
+  const other = code === earlier ? later : earlier;
+  if (operation === C17_STARTUP_OPERATION) {
+    if (code === "CONTROL_BOUNDS") {
+      return other === "CONTROL_SHAPE"
+        ? "STARTUP_REPORT_BUFFER_LENGTH_8193"
+        : "EPOCH_BUFFER_LENGTH_33";
+    }
+    if (code === "CONTROL_SHAPE") {
+      return "EPOCH_UINT8_ARRAY_LENGTH_32";
+    }
+    if (code === "CONTROL_STARTUP") return "EPOCH_EOF_FALSE";
+    assert.equal(code, "CONTROL_BINDING");
+    return "STARTUP_REPORT_REQUIREMENTS_SHA256_ZERO";
+  }
+  assert.equal(operation, C17_ADMISSION_OPERATION);
+  if (code === "CONTROL_BOUNDS") {
+    return ["CONTROL_SHAPE", "CONTROL_RIGHTS"].includes(other)
+      ? "ADMISSION_FRAME_BUFFER_LENGTH_131073"
+      : "ADMISSION_REPORT_BUFFER_LENGTH_16385";
+  }
+  if (code === "CONTROL_SHAPE") {
+    return [
+      "CONTROL_BOUNDS",
+      "CONTROL_FRAME",
+      "CONTROL_BINDING",
+    ].includes(other)
+      ? "ADMISSION_REPORT_UINT8_ARRAY"
+      : "ADMISSION_FRAME_UINT8_ARRAY";
+  }
+  if (code === "CONTROL_FRAME") return "ADMISSION_FRAME_ACTION_CANCEL";
+  if (code === "CONTROL_RIGHTS") return "ADMISSION_REPORT_RIGHTS_COUNT_13";
+  if (code === "CONTROL_BINDING") {
+    return "ADMISSION_FRAME_REQUIREMENTS_SHA256_ZERO";
+  }
+  assert.equal(code, "CONTROL_TRANSITION");
+  return "ADMISSION_FRAME_SEQUENCE_PLUS_ONE";
+}
+
+function c17ExpectedFailurePrecedenceCells() {
+  const liveFailurePrecedence = LIVE_C15_REQUIREMENTS_ORACLE.vocabularies
+    .failurePrecedence;
+  assert.deepEqual(liveFailurePrecedence, [
+    "CONTROL_BOUNDS",
+    "CONTROL_SHAPE",
+    "CONTROL_STARTUP",
+    "CONTROL_FRAME",
+    "CONTROL_RIGHTS",
+    "CONTROL_BINDING",
+    "CONTROL_TRANSITION",
+  ]);
+  const applicability = recursivelyFreezeEvidence([
+    {
+      operation: C17_STARTUP_OPERATION,
+      codes: liveFailurePrecedence.filter((code) =>
+        [
+          "CONTROL_BOUNDS",
+          "CONTROL_SHAPE",
+          "CONTROL_STARTUP",
+          "CONTROL_BINDING",
+        ].includes(code),
+      ),
+    },
+    {
+      operation: C17_ADMISSION_OPERATION,
+      codes: liveFailurePrecedence.filter((code) =>
+        [
+          "CONTROL_BOUNDS",
+          "CONTROL_SHAPE",
+          "CONTROL_FRAME",
+          "CONTROL_RIGHTS",
+          "CONTROL_BINDING",
+          "CONTROL_TRANSITION",
+        ].includes(code),
+      ),
+    },
+  ]);
+  assert.deepEqual(
+    applicability.map(({ operation, codes }) => ({ operation, codes })),
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.failurePrecedenceFoundation
+      .constructorApplicability.map(({ operation, codes }) => ({
+        operation,
+        codes,
+      })),
+  );
+  assert.deepEqual(
+    applicability.map(({ operation, codes }) => ({ operation, codes })),
+    [
+      {
+        operation: C17_STARTUP_OPERATION,
+        codes: [
+          "CONTROL_BOUNDS",
+          "CONTROL_SHAPE",
+          "CONTROL_STARTUP",
+          "CONTROL_BINDING",
+        ],
+      },
+      {
+        operation: C17_ADMISSION_OPERATION,
+        codes: [
+          "CONTROL_BOUNDS",
+          "CONTROL_SHAPE",
+          "CONTROL_FRAME",
+          "CONTROL_RIGHTS",
+          "CONTROL_BINDING",
+          "CONTROL_TRANSITION",
+        ],
+      },
+    ],
+  );
+  const cells = [];
+  for (const operationApplicability of applicability) {
+    for (
+      let left = 0;
+      left < operationApplicability.codes.length;
+      left += 1
+    ) {
+      for (
+        let right = left + 1;
+        right < operationApplicability.codes.length;
+        right += 1
+      ) {
+        const earlier = operationApplicability.codes[left];
+        const later = operationApplicability.codes[right];
+        const pairId = earlier + "-before-" + later;
+        const ordinal = String(cells.length).padStart(2, "0");
+        cells.push(
+          Object.freeze({
+            cellId:
+              "failure-precedence-cell-" +
+              ordinal +
+              ":" +
+              operationApplicability.operation +
+              ":" +
+              pairId,
+            pairId,
+            witnessOperation: operationApplicability.operation,
+            earlier,
+            later,
+            earlierWitness: c17FailureWitnessId(
+              operationApplicability.operation,
+              earlier,
+              later,
+              earlier,
+            ),
+            laterWitness: c17FailureWitnessId(
+              operationApplicability.operation,
+              earlier,
+              later,
+              later,
+            ),
+          }),
+        );
+      }
+    }
+  }
+  return Object.freeze(cells);
+}
+
+function c17FaultPaths(paths) {
+  return paths.filter(
+    (path) =>
+      path !==
+        "admissionRecvmsgReport.canonicalValue.messageByteLength" &&
+      path !==
+        "admissionRecvmsgReport.canonicalValue.messageRawSha256",
+  );
+}
+
+function c17CanonicalByteProjection(carrierKind, value) {
+  const bytes = Buffer.from(canonicalJson(value) + "\n", "utf8");
+  return {
+    carrierKind,
+    byteLength: bytes.length,
+    rawSha256: byteSha256(bytes),
+    bytesHex: bytes.toString("hex"),
+    canonicalJsonLine: true,
+    canonicalValue: c12Clone(value),
+  };
+}
+
+function c17ExpectedAdmissionSemanticFrameMutation(
+  baseline,
+  mutateFrame,
+) {
+  assert.equal(baseline.admissionFrame.canonicalJsonLine, true);
+  assert.equal(
+    baseline.admissionRecvmsgReport.canonicalJsonLine,
+    true,
+  );
+  const frameValue = c12Clone(baseline.admissionFrame.canonicalValue);
+  mutateFrame(frameValue);
+  const frame = c17CanonicalByteProjection(
+    baseline.admissionFrame.carrierKind,
+    frameValue,
+  );
+  const reportValue = c12Clone(
+    baseline.admissionRecvmsgReport.canonicalValue,
+  );
+  reportValue.messageByteLength = frame.byteLength;
+  reportValue.messageRawSha256 = frame.rawSha256;
+  return {
+    currentState: c12Clone(baseline.currentState),
+    admissionFrame: frame,
+    admissionRecvmsgReport: c17CanonicalByteProjection(
+      baseline.admissionRecvmsgReport.carrierKind,
+      reportValue,
+    ),
+  };
+}
+
+function c17AssertFailureWitnessPresent(baseline, candidate, witness) {
+  if (witness === "STARTUP_REPORT_BUFFER_LENGTH_8193") {
+    assert.equal(candidate.startupReport.carrierKind, "BUFFER");
+    assert.equal(candidate.startupReport.byteLength, 8193);
+    return;
+  }
+  if (witness === "EPOCH_BUFFER_LENGTH_33") {
+    assert.equal(candidate.epoch.carrierKind, "BUFFER");
+    assert.equal(candidate.epoch.byteLength, 33);
+    return;
+  }
+  if (witness === "EPOCH_UINT8_ARRAY_LENGTH_32") {
+    assert.equal(candidate.epoch.carrierKind, "UINT8_ARRAY");
+    assert.equal(candidate.epoch.byteLength, 32);
+    assert.equal(candidate.epoch.bytesHex, baseline.epoch.bytesHex);
+    return;
+  }
+  if (witness === "EPOCH_EOF_FALSE") {
+    assert.equal(candidate.epochEofObserved, false);
+    return;
+  }
+  if (witness === "STARTUP_REPORT_REQUIREMENTS_SHA256_ZERO") {
+    assert.equal(candidate.startupReport.canonicalJsonLine, true);
+    assert.equal(
+      candidate.startupReport.canonicalValue.requirementsSha256,
+      "0".repeat(64),
+    );
+    return;
+  }
+  if (witness === "ADMISSION_FRAME_BUFFER_LENGTH_131073") {
+    assert.equal(candidate.admissionFrame.carrierKind, "BUFFER");
+    assert.equal(candidate.admissionFrame.byteLength, 131073);
+    return;
+  }
+  if (witness === "ADMISSION_REPORT_BUFFER_LENGTH_16385") {
+    assert.equal(candidate.admissionRecvmsgReport.carrierKind, "BUFFER");
+    assert.equal(candidate.admissionRecvmsgReport.byteLength, 16385);
+    return;
+  }
+  if (witness === "ADMISSION_REPORT_UINT8_ARRAY") {
+    assert.equal(
+      candidate.admissionRecvmsgReport.carrierKind,
+      "UINT8_ARRAY",
+    );
+    return;
+  }
+  if (witness === "ADMISSION_FRAME_UINT8_ARRAY") {
+    assert.equal(candidate.admissionFrame.carrierKind, "UINT8_ARRAY");
+    return;
+  }
+  assert.equal(candidate.admissionFrame.canonicalJsonLine, true);
+  if (witness === "ADMISSION_FRAME_ACTION_CANCEL") {
+    assert.equal(candidate.admissionFrame.canonicalValue.action, "CANCEL");
+  } else if (witness === "ADMISSION_REPORT_RIGHTS_COUNT_13") {
+    assert.equal(
+      candidate.admissionRecvmsgReport.canonicalValue.rightsCount,
+      13,
+    );
+  } else if (
+    witness === "ADMISSION_FRAME_REQUIREMENTS_SHA256_ZERO"
+  ) {
+    assert.equal(
+      candidate.admissionFrame.canonicalValue.requirementsSha256,
+      "0".repeat(64),
+    );
+  } else {
+    assert.equal(witness, "ADMISSION_FRAME_SEQUENCE_PLUS_ONE");
+    assert.equal(
+      candidate.admissionFrame.canonicalValue.sequence,
+      baseline.admissionFrame.canonicalValue.sequence + 1,
+    );
+  }
+}
+
+function c17AssertExactSingleFailureWitness(
+  baseline,
+  candidate,
+  witness,
+) {
+  c17AssertFailureWitnessPresent(baseline, candidate, witness);
+  if (witness === "STARTUP_REPORT_BUFFER_LENGTH_8193") {
+    assert.deepEqual(candidate.epoch, baseline.epoch);
+    assert.equal(candidate.epochEofObserved, baseline.epochEofObserved);
+    return;
+  }
+  if (witness === "EPOCH_BUFFER_LENGTH_33") {
+    assert.deepEqual(candidate.startupReport, baseline.startupReport);
+    assert.equal(candidate.epochEofObserved, baseline.epochEofObserved);
+    return;
+  }
+  if (witness === "EPOCH_UINT8_ARRAY_LENGTH_32") {
+    assert.deepEqual(candidate.startupReport, baseline.startupReport);
+    assert.equal(candidate.epochEofObserved, baseline.epochEofObserved);
+    assert.deepEqual(
+      { ...candidate.epoch, carrierKind: baseline.epoch.carrierKind },
+      baseline.epoch,
+    );
+    return;
+  }
+  if (witness === "EPOCH_EOF_FALSE") {
+    assert.deepEqual(candidate.startupReport, baseline.startupReport);
+    assert.deepEqual(candidate.epoch, baseline.epoch);
+    return;
+  }
+  if (witness === "STARTUP_REPORT_REQUIREMENTS_SHA256_ZERO") {
+    const reportValue = c12Clone(baseline.startupReport.canonicalValue);
+    reportValue.requirementsSha256 = "0".repeat(64);
+    assert.deepEqual(
+      candidate.startupReport,
+      c17CanonicalByteProjection(
+        baseline.startupReport.carrierKind,
+        reportValue,
+      ),
+    );
+    assert.deepEqual(candidate.epoch, baseline.epoch);
+    assert.equal(candidate.epochEofObserved, baseline.epochEofObserved);
+    return;
+  }
+
+  assert.deepEqual(candidate.currentState, baseline.currentState);
+  if (witness === "ADMISSION_FRAME_BUFFER_LENGTH_131073") {
+    assert.equal(candidate.admissionRecvmsgReport.canonicalJsonLine, true);
+    const reportValue = c12Clone(
+      baseline.admissionRecvmsgReport.canonicalValue,
+    );
+    reportValue.messageByteLength = candidate.admissionFrame.byteLength;
+    reportValue.messageRawSha256 = candidate.admissionFrame.rawSha256;
+    assert.deepEqual(
+      candidate.admissionRecvmsgReport,
+      c17CanonicalByteProjection(
+        baseline.admissionRecvmsgReport.carrierKind,
+        reportValue,
+      ),
+    );
+    return;
+  }
+  if (witness === "ADMISSION_REPORT_BUFFER_LENGTH_16385") {
+    assert.deepEqual(candidate.admissionFrame, baseline.admissionFrame);
+    return;
+  }
+  if (witness === "ADMISSION_REPORT_UINT8_ARRAY") {
+    assert.deepEqual(candidate.admissionFrame, baseline.admissionFrame);
+    assert.deepEqual(
+      {
+        ...candidate.admissionRecvmsgReport,
+        carrierKind: baseline.admissionRecvmsgReport.carrierKind,
+      },
+      baseline.admissionRecvmsgReport,
+    );
+    return;
+  }
+  if (witness === "ADMISSION_FRAME_UINT8_ARRAY") {
+    assert.deepEqual(
+      {
+        ...candidate.admissionFrame,
+        carrierKind: baseline.admissionFrame.carrierKind,
+      },
+      baseline.admissionFrame,
+    );
+    assert.deepEqual(
+      candidate.admissionRecvmsgReport,
+      baseline.admissionRecvmsgReport,
+    );
+    return;
+  }
+  if (witness === "ADMISSION_REPORT_RIGHTS_COUNT_13") {
+    const reportValue = c12Clone(
+      baseline.admissionRecvmsgReport.canonicalValue,
+    );
+    reportValue.rightsCount = 13;
+    assert.deepEqual(candidate.admissionFrame, baseline.admissionFrame);
+    assert.deepEqual(
+      candidate.admissionRecvmsgReport,
+      c17CanonicalByteProjection(
+        baseline.admissionRecvmsgReport.carrierKind,
+        reportValue,
+      ),
+    );
+    return;
+  }
+  let mutateFrame;
+  if (witness === "ADMISSION_FRAME_ACTION_CANCEL") {
+    mutateFrame = (value) => {
+      value.action = "CANCEL";
+    };
+  } else if (
+    witness === "ADMISSION_FRAME_REQUIREMENTS_SHA256_ZERO"
+  ) {
+    mutateFrame = (value) => {
+      value.requirementsSha256 = "0".repeat(64);
+    };
+  } else {
+    assert.equal(witness, "ADMISSION_FRAME_SEQUENCE_PLUS_ONE");
+    mutateFrame = (value) => {
+      value.sequence += 1;
+    };
+  }
+  assert.deepEqual(
+    candidate,
+    c17ExpectedAdmissionSemanticFrameMutation(baseline, mutateFrame),
+  );
+}
+
+function c17DeriveFailurePrecedenceEvidence(captures, cells) {
+  assertRecursivelyFrozenWithoutByteViews(cells);
+  assert.equal(cells.length, 21);
+  const pairCounts = new Map();
+  for (const cell of cells) {
+    pairCounts.set(cell.pairId, (pairCounts.get(cell.pairId) ?? 0) + 1);
+  }
+  assert.equal(pairCounts.size, 18);
+  assert.deepEqual(
+    [...pairCounts.keys()].sort(),
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.registries
+      .constructibleFailurePrecedencePairs.map(({ id }) => id)
+      .sort(),
+  );
+  assert.deepEqual(
+    [...pairCounts.entries()]
+      .filter(([, count]) => count === 2)
+      .map(([pairId]) => pairId),
+    [
+      "CONTROL_BOUNDS-before-CONTROL_SHAPE",
+      "CONTROL_BOUNDS-before-CONTROL_BINDING",
+      "CONTROL_SHAPE-before-CONTROL_BINDING",
+    ],
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      [C17_STARTUP_OPERATION, C17_ADMISSION_OPERATION].map((operation) => [
+        operation,
+        cells.filter(({ witnessOperation }) => witnessOperation === operation)
+          .length,
+      ]),
+    ),
+    {
+      [C17_STARTUP_OPERATION]: 6,
+      [C17_ADMISSION_OPERATION]: 15,
+    },
+  );
+
+  return recursivelyFreezeEvidence(
+    cells.map((cell, index) => {
+      const baseCapture =
+        cell.witnessOperation === C17_STARTUP_OPERATION
+          ? captures[0]
+          : captures[3];
+      const candidateCaptures = captures.slice(
+        256 + index * 3,
+        256 + index * 3 + 3,
+      );
+      assert.equal(candidateCaptures.length, 3);
+      const expectedErrors = [cell.earlier, cell.later, cell.earlier];
+      const faultSets = ["EARLIER_ONLY", "LATER_ONLY", "DUAL_FAULT"];
+      for (const [outcomeIndex, capture] of candidateCaptures.entries()) {
+        c17AssertCaptureShape(capture, 256 + index * 3 + outcomeIndex);
+        assert.equal(capture.operation, cell.witnessOperation);
+        assert.deepEqual(capture.outcome, {
+          kind: "THROW",
+          immediatePrototype: "Error.prototype",
+          errorName: "Error",
+          errorMessage: expectedErrors[outcomeIndex],
+          causePresent: false,
+        });
+      }
+
+      if (cell.witnessOperation === C17_ADMISSION_OPERATION) {
+        c17AssertAdmissionResealed(baseCapture);
+        for (const capture of candidateCaptures) {
+          const resealed = c17AdmissionResealStatus(capture);
+          if (!resealed) {
+            assert.equal(
+              capture.preimage.admissionRecvmsgReport.byteLength >
+                LIVE_C15_REQUIREMENTS_ORACLE.limits
+                  .admissionRecvmsgReportMaximumBytes,
+              true,
+            );
+          }
+        }
+      }
+
+      const baseInvocation = c17FailureInvocationProjection(baseCapture);
+      const candidateInvocations = candidateCaptures.map((capture) =>
+        c17FailureInvocationProjection(capture),
+      );
+      c17AssertExactSingleFailureWitness(
+        baseInvocation,
+        candidateInvocations[0],
+        cell.earlierWitness,
+      );
+      c17AssertExactSingleFailureWitness(
+        baseInvocation,
+        candidateInvocations[1],
+        cell.laterWitness,
+      );
+      c17AssertFailureWitnessPresent(
+        baseInvocation,
+        candidateInvocations[2],
+        cell.earlierWitness,
+      );
+      c17AssertFailureWitnessPresent(
+        baseInvocation,
+        candidateInvocations[2],
+        cell.laterWitness,
+      );
+      const preimageSha256 = [
+        c17TargetPreimageSha256(baseCapture),
+        ...candidateCaptures.map((capture) =>
+          c17TargetPreimageSha256(capture),
+        ),
+      ];
+      assert.equal(new Set(preimageSha256).size, 4);
+      const changedPathSets = candidateInvocations.map((value) =>
+        c17ChangedPaths(baseInvocation, value),
+      );
+      assert.equal(changedPathSets.every((paths) => paths.length > 0), true);
+      assert.notDeepEqual(changedPathSets[2], changedPathSets[0]);
+      assert.notDeepEqual(changedPathSets[2], changedPathSets[1]);
+      const earlierFaultPaths = c17FaultPaths(changedPathSets[0]);
+      const laterFaultPaths = c17FaultPaths(changedPathSets[1]);
+      const dualFaultPathList = c17FaultPaths(changedPathSets[2]);
+      const dualFaultPaths = new Set(dualFaultPathList);
+      assert.equal(earlierFaultPaths.length > 0, true);
+      assert.equal(laterFaultPaths.length > 0, true);
+      assert.equal(
+        earlierFaultPaths.some((path) => dualFaultPaths.has(path)),
+        true,
+      );
+      assert.equal(
+        laterFaultPaths.some((path) => dualFaultPaths.has(path)),
+        true,
+      );
+      assert.deepEqual(
+        [...dualFaultPaths].sort(),
+        [...new Set([...earlierFaultPaths, ...laterFaultPaths])].sort(),
+      );
+      const permittedRoots =
+        cell.witnessOperation === C17_STARTUP_OPERATION
+          ? ["startupReport", "epoch", "epochEofObserved"]
+          : ["admissionFrame", "admissionRecvmsgReport"];
+      assert.equal(
+        changedPathSets
+          .flat()
+          .every((path) =>
+            permittedRoots.some(
+              (root) => path === root || path.startsWith(root + "."),
+            ),
+          ),
+        true,
+      );
+
+      return {
+        cellId: cell.cellId,
+        pairId: cell.pairId,
+        witnessOperation: cell.witnessOperation,
+        earlier: cell.earlier,
+        later: cell.later,
+        earlierWitness: cell.earlierWitness,
+        laterWitness: cell.laterWitness,
+        faultSets,
+        callOrdinals: candidateCaptures.map(({ ordinal }) => ordinal),
+        basePreimageSha256: preimageSha256[0],
+        earlierOnlyPreimageSha256: preimageSha256[1],
+        laterOnlyPreimageSha256: preimageSha256[2],
+        dualFaultPreimageSha256: preimageSha256[3],
+        observationSha256: candidateCaptures.map((capture) =>
+          c17TargetObservationSha256(capture),
+        ),
+        earlierOnlyChangedPaths: changedPathSets[0],
+        laterOnlyChangedPaths: changedPathSets[1],
+        dualFaultChangedPaths: changedPathSets[2],
+        observedErrors: candidateCaptures.map(
+          ({ outcome }) => outcome.errorMessage,
+        ),
+        admissionBindingCheckedForEveryCanonicalReport:
+          cell.witnessOperation === C17_ADMISSION_OPERATION,
+      };
+    }),
+  );
+}
+
+function c17C15ByteDispatchPriorEvidence() {
+  const limits = LIVE_C15_REQUIREMENTS_ORACLE.limits;
+  const positions = recursivelyFreezeEvidence([
+    {
+      name: "startupReportBytes",
+      operation: C17_STARTUP_OPERATION,
+      minimumBytes: 0,
+      maximumBytes: limits.startupReportMaximumBytes,
+    },
+    {
+      name: "epochBytes",
+      operation: C17_STARTUP_OPERATION,
+      minimumBytes: limits.epochBytes,
+      maximumBytes: limits.epochBytes,
+    },
+    {
+      name: "admissionFrameBytes",
+      operation: C17_ADMISSION_OPERATION,
+      minimumBytes: 0,
+      maximumBytes: limits.admissionFrameMaximumBytes,
+    },
+    {
+      name: "recvmsgReportBytes",
+      operation: C17_ADMISSION_OPERATION,
+      minimumBytes: 0,
+      maximumBytes: limits.admissionRecvmsgReportMaximumBytes,
+    },
+    {
+      name: "cancelFrameBytes",
+      operation: "createCandidateContainmentGuardianCancelInputV1",
+      minimumBytes: 0,
+      maximumBytes: limits.cancelFrameMaximumBytes,
+    },
+    {
+      name: "recoveryRequestFrameBytes",
+      operation:
+        "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      minimumBytes: 0,
+      maximumBytes: limits.recoveryRequestMaximumBytes,
+    },
+    {
+      name: "diagnosticSummaryReportBytes",
+      operation:
+        "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      minimumBytes: 0,
+      maximumBytes: limits.diagnosticSummaryMaximumBytes,
+    },
+    {
+      name: "rawDiagnosticBytes",
+      operation:
+        "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      minimumBytes: 0,
+      maximumBytes: limits.rawDiagnosticsMaximumBytes,
+    },
+    {
+      name: "statusFrameBytes",
+      operation: "verifyCandidateContainmentGuardianStatusFrameV1",
+      minimumBytes: 0,
+      maximumBytes: limits.statusFrameMaximumBytes,
+    },
+  ]);
+  assert.equal(positions.length, 9);
+  const positionNamesSha256 = semanticSha256(
+    positions.map(({ name }) => name),
+  );
+  assert.equal(
+    positionNamesSha256,
+    "3b801062c49a2934f6245a8790728e2fade5745449ffeb30a4e717fbb509bf82",
+  );
+  assert.equal(
+    semanticSha256(positions),
+    "c40f445ddb7434fb07797e00c17cce6f03a8af003e2b11299b72309ea22d477c",
+  );
+  const hostileFamilies = [
+    "proxy-trap-free",
+    "shared-backing",
+    "subclass",
+    "foreign-prototype",
+    "own-length-collision",
+    "non-buffer-view",
+    "branded-lookalike",
+  ];
+  const hostileControlIds = positions.flatMap(({ name }) =>
+    hostileFamilies.map((family) => name + ":" + family),
+  );
+  const ignoredPropertyControlIds = positions.flatMap(({ name }) =>
+    Array.from(
+      { length: 12 },
+      (_, index) =>
+        name +
+        ":ignored-own-property-" +
+        String(index).padStart(2, "0"),
+    ),
+  );
+  const localSuccessControlIds = positions.flatMap(({ name }) => [
+    name + ":local-buffer-copy-no-alias",
+    name + ":local-uint8array-buffer-prototype-copy-no-alias",
+  ]);
+  const boundaryControlIds = [
+    ...positions.flatMap(({ name }) => [
+      name + ":maximum-accepted-before-downstream-check",
+      name + ":overmaximum-control-bounds",
+    ]),
+    "epochBytes:short-31-control-bounds",
+  ];
+  const precedenceControlIds = positions.map(
+    ({ name }) => name + ":bounds-before-shape",
+  );
+  const detachedControlIds = positions.map(
+    ({ name }) => name + ":detached-backing-precedence",
+  );
+  const helperBoundaryControlIds = [
+    "exact-v2:detached-minimum-1-control_bounds",
+    "exact-v2:detached-minimum-0-control_shape",
+  ];
+  const controlIds = recursivelyFreezeEvidence([
+    ...hostileControlIds,
+    ...ignoredPropertyControlIds,
+    ...localSuccessControlIds,
+    ...boundaryControlIds,
+    ...precedenceControlIds,
+    ...detachedControlIds,
+    ...helperBoundaryControlIds,
+  ]);
+  assert.equal(controlIds.length, 228);
+  assert.equal(new Set(controlIds).size, 228);
+  assert.equal(
+    semanticSha256(controlIds),
+    "b5322e96d8b9bd647fde4518b91a4452c92dacb34b7826d0132932ed4b6fdf0d",
+  );
+  const reconstructedReceipt = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-dispatch/v1",
+    positionCount: positions.length,
+    hostileFamilyCount: hostileFamilies.length,
+    ignoredPropertyVariantCount: 12,
+    hostileControlCount: hostileControlIds.length,
+    ignoredPropertyControlCount: ignoredPropertyControlIds.length,
+    localSuccessControlCount: localSuccessControlIds.length,
+    boundaryControlCount: boundaryControlIds.length,
+    precedenceControlCount: precedenceControlIds.length,
+    detachedControlCount: detachedControlIds.length,
+    helperBoundaryControlCount: helperBoundaryControlIds.length,
+    controlCount: controlIds.length,
+    controlIds,
+    oracleIdentitySha256:
+      "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+    candidateBehaviorAttemptCount: 520,
+    targetCandidateCallCount: 226,
+    ignoredPropertyTouches: { reads: 0, writes: 0, invocations: 0 },
+    proxyTrapHits: 0,
+    ownLengthGetterHits: 0,
+    localBufferSuccessProved: true,
+    normalizedLocalUint8ArraySuccessProved: true,
+    copyNoAliasProved: true,
+    detachedMinimumZeroFailure: "CONTROL_SHAPE",
+    detachedMinimumOneFailure: "CONTROL_BOUNDS",
+    detachedEpochFailure: "CONTROL_BOUNDS",
+    exactV2SourceByteLength: 12_687,
+    exactV2SourceSha256:
+      "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e",
+    candidateBehaviorProved: true,
+  });
+  const receiptIdentitySha256 = semanticSha256(reconstructedReceipt);
+  assert.equal(
+    receiptIdentitySha256,
+    "e164e4cc96a6129d9cb74ff234975e7f6b40928f7839467355465a98c1a1b35c",
+  );
+  return recursivelyFreezeEvidence({
+    priorSlice: "C15_BYTE_POSITION_DISPATCH",
+    evidenceKind: "PRIOR_RUNTIME_RECEIPT",
+    observedByC17Monitor: false,
+    observedByC17Callback: false,
+    validatedByPriorC15Callback: true,
+    requiresExternalFullSuiteBinding: true,
+    receiptIdentitySha256,
+    positionCount: 9,
+    controlCount: 228,
+    positions,
+    positionNamesSha256,
+    positionsSha256: semanticSha256(positions),
+    controlIdsSha256: semanticSha256(controlIds),
+  });
+}
+
+function c17C16ControlProjection() {
+  const operations = [
+    "createCandidateContainmentGuardianStartupV1",
+    "createCandidateContainmentGuardianAdmissionInputV1",
+    "createCandidateContainmentGuardianCancelInputV1",
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    "createCandidateContainmentGuardianStatusEofInputV1",
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ];
+  const phases = [
+    "earlyFailure",
+    "lateFailure",
+    "success",
+    "failureAfterSuccess",
+    "crossModule",
+  ];
+  const ids = operations.flatMap((operation) =>
+    phases.map((phase) => operation + ":" + phase),
+  );
+  assert.deepEqual(
+    LIVE_C15_REQUIREMENTS_ORACLE.privateStateStores,
+    ["startupMetadata", "inputMetadata", "stateMetadata"],
+  );
+  assert.equal(operations.length, 10);
+  assert.equal(phases.length, 5);
+  assert.equal(ids.length, 50);
+  assert.equal(new Set(ids).size, 50);
+  const ownerOperationsSha256 = semanticSha256(operations);
+  assert.equal(
+    ownerOperationsSha256,
+    "828671fb22e3cb674daa99d972b87250cf059da5e0524d8b725407f66f0748b1",
+  );
+  const phasesSha256 = semanticSha256(phases);
+  assert.equal(
+    phasesSha256,
+    "c7c768bdabe36cc08a7bcafdfc4046c3647a4fa13b77fcdc6a1d1891bdd178f9",
+  );
+  const controlIdsSha256 = semanticSha256(ids);
+  assert.equal(
+    controlIdsSha256,
+    "fcecf21e42d79a9a8f40d0514c1c2f2cdbf77b9af2dd64630347053f81eea364",
+  );
+  return recursivelyFreezeEvidence({
+    evidenceKind: "PRIOR_RUNTIME_RECEIPT",
+    requiredPriorReceiptIdentitySha256:
+      "914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa",
+    observedByC17Monitor: false,
+    observedByC17Callback: false,
+    validatedByPriorC16Callback: true,
+    requiresExternalFullSuiteBinding: true,
+    storeCount: 3,
+    ownerCount: operations.length,
+    phaseCount: phases.length,
+    primaryControlCount: 40,
+    freshInstanceControlCount: 10,
+    controlCount: ids.length,
+    phaseCounts: {
+      earlyFailure: 10,
+      lateFailure: 10,
+      success: 10,
+      failureAfterSuccess: 10,
+      crossModule: 10,
+    },
+    storeOwnerCounts: {
+      startupMetadata: 1,
+      inputMetadata: 7,
+      stateMetadata: 2,
+    },
+    storeControlCounts: {
+      startupMetadata: 5,
+      inputMetadata: 35,
+      stateMetadata: 10,
+    },
+    candidateBehaviorAttemptCount: 274,
+    candidateBehaviorSuccessCount: 224,
+    candidateBehaviorRejectionCount: 50,
+    ownerTargetAttemptCount: 70,
+    ownerTargetSuccessCount: 30,
+    ownerTargetRejectionCount: 40,
+    ownerOperationsSha256,
+    phasesSha256,
+    independentlyDerivedControlIdsSha256: controlIdsSha256,
+  });
+}
+
+function c17ContinuityEvidence() {
+  const c13Compatibility = recursivelyFreezeEvidence(
+    c12Clone(C13_COMPATIBILITY_RECEIPT),
+  );
+  assertC13CompatibilityReceipt(c13Compatibility);
+  assertRecursivelyFrozenWithoutByteViews(c13Compatibility);
+  const c13CompatibilitySha256 = semanticSha256(c13Compatibility);
+  assert.equal(
+    c13CompatibilitySha256,
+    "d108b1aee8a35d1b8bd3016a1e38e5043f73c2bbe407b01607fc31017474fa5b",
+  );
+  const evidence = recursivelyFreezeEvidence({
+    b11: {
+      counts: c12Clone(B11_STATIC_CLOSURE_RECEIPT.counts),
+      aggregates: c12Clone(B11_STATIC_CLOSURE_RECEIPT.aggregates),
+    },
+    registrationInventorySha256:
+      ADVERSARIAL_REGISTRATION_RECEIPT.inventorySha256,
+    c13Compatibility,
+    c13CompatibilitySha256,
+    c15ByteDispatch: c17C15ByteDispatchPriorEvidence(),
+    c16: c17C16ControlProjection(),
+  });
+  assert.deepEqual(evidence, {
+    b11: {
+      counts: {
+        foundation: 69,
+        semantic: 330,
+        negative: 399,
+        positive: 11,
+        total: 410,
+        commitMutationSubset: 200,
+        negativeEvaluationAttempts: 0,
+      },
+      aggregates: {
+        orderedAll:
+          "edb195e300e6f23dc3ce6fb62ed1084672afb0a682dc3c8a523ba59f630678ec",
+        orderedSemantic:
+          "d7226935eca7a7fc5ee362402d5e776ccd53a94ad8f8df12057bd287ff3fdb67",
+        bucket:
+          "de9a4c9b86e3de6f0efea05c856b9e4ea1bbe478092fddac22bd69144fad522c",
+        commitIds:
+          "f63ed0c1d6f16e26bf5c18eddb85a1a1a437584e8385e91a255da6f729a7b43b",
+      },
+    },
+    registrationInventorySha256:
+      "b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9",
+    c13Compatibility,
+    c13CompatibilitySha256:
+      "d108b1aee8a35d1b8bd3016a1e38e5043f73c2bbe407b01607fc31017474fa5b",
+    c15ByteDispatch: c17C15ByteDispatchPriorEvidence(),
+    c16: c17C16ControlProjection(),
+  });
+  return evidence;
+}
+
+function c17AssertExactIdCoverage(actual, expected, label) {
+  assert.equal(Array.isArray(actual), true, label);
+  assert.equal(new Set(actual).size, actual.length, label);
+  assert.equal(new Set(expected).size, expected.length, label);
+  assert.deepEqual(new Set(actual), new Set(expected), label);
+  assert.deepEqual(actual, expected, label + " order");
+}
+
+function c17PositiveReplayEvidence(observations) {
+  assertRecursivelyFrozenWithoutByteViews(observations);
+  const oracle = LIVE_C15_RUNTIME_ORACLE;
+  const expectedModeIds = [...new Set(
+    oracle.expected.legalSequences.map(({ mode }) => mode),
+  )];
+  const expectedInputKindIds = oracle.witnesses.inputKinds.map(
+    ({ kind }) => kind,
+  );
+  const expectedSequenceIds = oracle.expected.legalSequences.map(
+    ({ id }) => id,
+  );
+  const expectedTransitionIds = oracle.expected.wholeTransitions.map(
+    ({ id }) => id,
+  );
+  const expectedPrefixIds = oracle.expected.acceptedPrefixes.map(
+    ({ id }) => id,
+  );
+  const expectedStatusIds = oracle.expected.emittedStatuses.map(
+    ({ id }) => id,
+  );
+  const expectedAtomicIds = oracle.expected.atomicPrefixes.map(
+    ({ id }) => id,
+  );
+  c17AssertExactIdCoverage(
+    observations.modeIds,
+    expectedModeIds,
+    "C17 replay modes",
+  );
+  c17AssertExactIdCoverage(
+    observations.inputKindIds,
+    expectedInputKindIds,
+    "C17 replay input kinds",
+  );
+  c17AssertExactIdCoverage(
+    observations.sequenceIds,
+    expectedSequenceIds,
+    "C17 replay legal sequences",
+  );
+  c17AssertExactIdCoverage(
+    observations.transitionIds,
+    expectedTransitionIds,
+    "C17 replay transitions",
+  );
+  c17AssertExactIdCoverage(
+    observations.prefixIds,
+    expectedPrefixIds,
+    "C17 replay prefixes",
+  );
+  c17AssertExactIdCoverage(
+    observations.statusIds,
+    expectedStatusIds,
+    "C17 replay statuses",
+  );
+  c17AssertExactIdCoverage(
+    observations.verifiedStatusIds,
+    expectedStatusIds,
+    "C17 replay verified statuses",
+  );
+  c17AssertExactIdCoverage(
+    observations.atomicIds,
+    expectedAtomicIds,
+    "C17 replay atomic prefixes",
+  );
+  const expectedStatusRawSha256 = oracle.expected.emittedStatuses.map(
+    ({ expectedArtifact }) => expectedArtifact.fields.rawSha256,
+  );
+  const expectedAtomicConcatenatedRawSha256 =
+    oracle.expected.atomicPrefixes.map(
+      ({ concatenatedRawSha256 }) => concatenatedRawSha256,
+    );
+  c17AssertExactIdCoverage(
+    observations.statusRawSha256,
+    expectedStatusRawSha256,
+    "C17 replay status raw digests",
+  );
+  c17AssertExactIdCoverage(
+    observations.atomicConcatenatedRawSha256,
+    expectedAtomicConcatenatedRawSha256,
+    "C17 replay atomic raw digests",
+  );
+  for (const digest of [
+    ...observations.statusRawSha256,
+    ...observations.atomicConcatenatedRawSha256,
+  ]) {
+    c17AssertSha256(digest, "C17 replay raw digest");
+  }
+
+  const prefixWireFrameRawSha256 = oracle.expected.acceptedPrefixes.map(
+    ({ id, wireFrameSha256 }) => ({
+      id,
+      rawSha256: c12Clone(wireFrameSha256),
+    }),
+  );
+  const transitionStatusRawSha256 = oracle.expected.wholeTransitions.map(
+    ({ id, expectedProjection }) => ({
+      id,
+      rawSha256: Array.from(
+        { length: expectedProjection.statusFrameCount },
+        (_, index) =>
+          expectedProjection["statusFrame" + index].fields.rawSha256,
+      ),
+    }),
+  );
+  const recoveryWitness = oracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "RECOVERY_REQUEST",
+  );
+  assert.notEqual(recoveryWitness, undefined);
+  const recoveryTransitions = oracle.expected.wholeTransitions.filter(
+    ({ operation }) => operation === "RECOVERY_REQUEST",
+  );
+  assert.equal(recoveryTransitions.length, 1);
+  assert.equal(
+    recoveryTransitions[0].inputWitness.kind,
+    "RECOVERY_REQUEST",
+  );
+  const recoverySequenceIds = oracle.expected.legalSequences
+    .filter(({ operations }) => operations.includes("RECOVERY_REQUEST"))
+    .map(({ id }) => id);
+  assert.equal(recoverySequenceIds.length > 0, true);
+  const recoveryStatuses = oracle.expected.emittedStatuses.filter(
+    ({ prefix, sourceSequences }) =>
+      prefix.includes("RECOVERY_REQUEST") &&
+      sourceSequences.some((id) => recoverySequenceIds.includes(id)),
+  );
+  assert.equal(recoveryStatuses.length > 0, true);
+  assert.equal(
+    observations.transitionIds.includes(recoveryTransitions[0].id),
+    true,
+  );
+  assert.equal(
+    recoveryStatuses.every(({ id }) =>
+      observations.verifiedStatusIds.includes(id),
+    ),
+    true,
+  );
+  const recoveryRequestReducerStatusBinding = recursivelyFreezeEvidence({
+    inputKindId: recoveryWitness.kind,
+    inputFrameRawSha256: recoveryWitness.frame.rawSha256,
+    reducerOperation: recoveryTransitions[0].operation,
+    transitionId: recoveryTransitions[0].id,
+    transitionProjectionSha256: semanticSha256(
+      recoveryTransitions[0].expectedProjection,
+    ),
+    sequenceIds: recoverySequenceIds,
+    statusIds: recoveryStatuses.map(({ id }) => id),
+    verifiedStatusIds: recoveryStatuses.map(({ id }) => id),
+    statusRawSha256: recoveryStatuses.map(
+      ({ expectedArtifact }) => expectedArtifact.fields.rawSha256,
+    ),
+  });
+  c17AssertSha256(
+    recoveryRequestReducerStatusBinding.inputFrameRawSha256,
+    "C17 recovery request frame digest",
+  );
+
+  const identityFree = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c17-positive-replay/v1",
+    verifyStatuses: true,
+    counts: {
+      modes: observations.modeIds.length,
+      inputKinds: observations.inputKindIds.length,
+      legalSequences: observations.sequenceIds.length,
+      transitions: observations.transitionIds.length,
+      prefixes: observations.prefixIds.length,
+      statuses: observations.statusIds.length,
+      verifiedStatuses: observations.verifiedStatusIds.length,
+      atomicPrefixes: observations.atomicIds.length,
+    },
+    modeIds: c12Clone(observations.modeIds),
+    inputKindIds: c12Clone(observations.inputKindIds),
+    sequenceIds: c12Clone(observations.sequenceIds),
+    transitionIds: c12Clone(observations.transitionIds),
+    prefixIds: c12Clone(observations.prefixIds),
+    statusIds: c12Clone(observations.statusIds),
+    verifiedStatusIds: c12Clone(observations.verifiedStatusIds),
+    atomicPrefixIds: c12Clone(observations.atomicIds),
+    statusRawSha256: c12Clone(observations.statusRawSha256),
+    atomicConcatenatedRawSha256: c12Clone(
+      observations.atomicConcatenatedRawSha256,
+    ),
+    prefixWireFrameRawSha256,
+    transitionStatusRawSha256,
+    recoveryRequestReducerStatusBinding,
+    liveOracleIdentitySha256: oracle.identitySha256,
+  });
+  assert.deepEqual(identityFree.counts, {
+    modes: 2,
+    inputKinds: 7,
+    legalSequences: 8,
+    transitions: 20,
+    prefixes: 26,
+    statuses: 15,
+    verifiedStatuses: 15,
+    atomicPrefixes: 4,
+  });
+  const evidence = recursivelyFreezeEvidence({
+    ...identityFree,
+    identitySha256: semanticSha256(identityFree),
+  });
+  assertRecursivelyFrozenWithoutByteViews(evidence);
+  return evidence;
+}
+
+function c17ClaimBoundary() {
+  const authority = c12Clone(LIVE_C15_REQUIREMENTS_ORACLE.authority);
+  const physicalFacts = c12Clone(
+    LIVE_C15_REQUIREMENTS_ORACLE.physicalFacts,
+  );
+  const nonclaims = c12Clone(LIVE_C15_REQUIREMENTS_ORACLE.nonclaims);
+  const readiness = candidateContainmentOwnerV2Readiness();
+  const candidateRequirements = c14CandidateOrThrow()
+    .CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS;
+  for (const comparison of [
+    LIVE_C15_RUNTIME_ORACLE,
+    candidateRequirements,
+  ]) {
+    assert.equal(
+      semanticSha256(comparison.authority),
+      semanticSha256(authority),
+    );
+    assert.equal(
+      semanticSha256(comparison.physicalFacts),
+      semanticSha256(physicalFacts),
+    );
+    assert.equal(
+      semanticSha256(comparison.nonclaims),
+      semanticSha256(nonclaims),
+    );
+  }
+  const boundary = recursivelyFreezeEvidence({
+    authority,
+    physicalFacts,
+    nonclaims,
+    readiness,
+    identities: {
+      authoritySha256: semanticSha256(authority),
+      physicalFactsSha256: semanticSha256(physicalFacts),
+      nonclaimsSha256: semanticSha256(nonclaims),
+      readinessSha256: semanticSha256(readiness),
+    },
+    agreeingIndependentSources: 3,
+  });
+  assert.deepEqual(boundary, {
+    authority: {
+      transportAuthority: false,
+      descriptorAuthority: false,
+      filesystemAuthority: false,
+      cgroupAuthority: false,
+      processAuthority: false,
+      recoveryAuthority: false,
+      runtimeAuthority: false,
+    },
+    physicalFacts: {
+      socketTransfer: null,
+      descriptorInventory: null,
+      epochOrigin: null,
+      guardianExecution: null,
+      recoveryExecution: null,
+      cleanup: null,
+    },
+    nonclaims: {
+      socketTransferProved: false,
+      descriptorFactsProved: false,
+      epochOriginProved: false,
+      recoveryBrandProvenanceProved: false,
+      runtimeSerializationProved: false,
+      guardianExecutionProved: false,
+      recoveryExecutionProved: false,
+      cleanupProved: false,
+      runtimeRegistrationProved: false,
+      productionReadinessProved: false,
+    },
+    readiness: {
+      status: "unavailable",
+      reason: "native-adapter-unavailable",
+    },
+    identities: {
+      authoritySha256:
+        "a640a894ca97c9bd03c4893f8c26717d86e29064fee593811421f18e66b07968",
+      physicalFactsSha256:
+        "d0e231c351a8f5a049c636ef402e371a12e8cdce884bef6ca1c33955d0ebca26",
+      nonclaimsSha256:
+        "ef25324fb36b64417bac18c41cf3d5f8eb5d86d4cbb5af07745d80daeb616dcb",
+      readinessSha256:
+        "0429e293800cfa4c7f8fd23da2987e56ed019f9e7812dc47740f6da3be2ad48d",
+    },
+    agreeingIndependentSources: 3,
+  });
+  return boundary;
+}
+
+function c17JsonPointerToken(value) {
+  return value.replaceAll("~", "~0").replaceAll("/", "~1");
+}
+
+function c17JsonPointerDiff(left, right, pointer = "") {
+  if (Object.is(left, right)) return [];
+  const leftObject = left !== null && typeof left === "object";
+  const rightObject = right !== null && typeof right === "object";
+  if (!leftObject || !rightObject || Array.isArray(left) !== Array.isArray(right)) {
+    return [pointer || "/"];
+  }
+  if (Array.isArray(left)) {
+    if (left.length !== right.length) return [pointer || "/"];
+    return left.flatMap((value, index) =>
+      c17JsonPointerDiff(value, right[index], pointer + "/" + index),
+    );
+  }
+  const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+  return keys.flatMap((key) => {
+    const childPointer = pointer + "/" + c17JsonPointerToken(key);
+    if (!Object.hasOwn(left, key) || !Object.hasOwn(right, key)) {
+      return [childPointer];
+    }
+    return c17JsonPointerDiff(left[key], right[key], childPointer);
+  });
+}
+
+function c17TopologyProjection(requirements) {
+  const vocabularyKeys = [
+    "failureCodes",
+    "failurePrecedence",
+    "descriptorKinds",
+    "accessModes",
+    "statusFlags",
+    "directions",
+    "controlLevel",
+    "controlType",
+    "receivedRightsCloseOnExec",
+    "openFileDescriptionNonAliasMethod",
+  ];
+  return {
+    modes: requirements.modes,
+    startupMaps: requirements.startupMaps,
+    admissionRights: requirements.admissionRights,
+    schemas: requirements.schemas,
+    limits: requirements.limits,
+    frameFields: requirements.frameFields,
+    vocabularies: Object.fromEntries(
+      vocabularyKeys.map((key) => [key, requirements.vocabularies[key]]),
+    ),
+  };
+}
+
+function c17RuntimeBridgeEvidence() {
+  const changedPointers = c17JsonPointerDiff(
+    REQUIREMENTS_ORACLE,
+    LIVE_C15_REQUIREMENTS_ORACLE,
+  );
+  assert.deepEqual(changedPointers, [
+    "/predecessors/direct/0/imports/3",
+    "/predecessors/direct/0/sha256",
+  ]);
+  assert.equal(
+    REQUIREMENTS_ORACLE.predecessors.direct[0].sha256,
+    "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+  );
+  assert.equal(
+    LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct[0].sha256,
+    "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e",
+  );
+  assert.equal(
+    REQUIREMENTS_ORACLE.predecessors.direct[0].imports[3],
+    "copyBoundedBuffer",
+  );
+  assert.equal(
+    LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct[0].imports[3],
+    "copyBoundedBufferByFailureCategory",
+  );
+  const historicalTopology = c17TopologyProjection(
+    REQUIREMENTS_ORACLE,
+  );
+  const liveTopology = c17TopologyProjection(LIVE_C15_REQUIREMENTS_ORACLE);
+  assert.deepEqual(historicalTopology, liveTopology);
+  assert.equal(
+    Buffer.byteLength(canonicalJson(historicalTopology), "utf8"),
+    6216,
+  );
+  assert.equal(Buffer.byteLength(canonicalJson(liveTopology), "utf8"), 6216);
+  const historicalTopologySha256 = semanticSha256(historicalTopology);
+  const liveTopologySha256 = semanticSha256(liveTopology);
+  assert.equal(
+    historicalTopologySha256,
+    "2e089766b58b8fafae784ddf109f91f9a4af4ee682c0bb69020bcdfb1ef9f6e3",
+  );
+  assert.equal(liveTopologySha256, historicalTopologySha256);
+  return recursivelyFreezeEvidence({
+    historicalDesignRequirementsSha256:
+      "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499",
+    liveRuntimeRequirementsSha256:
+      "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8",
+    changedPointers,
+    topologyCanonicalByteLength: 6216,
+    historicalTopologySha256,
+    liveTopologySha256,
+    historicalDesignRole: "TOPOLOGY_DESIGN_ONLY",
+    liveRuntimeRole: "PREIMAGE_AND_OUTCOME_EVIDENCE",
+    historicalRuntimeSubstitutionCount: 0,
+  });
+}
+
+function c17AssertPinnedRuntimeBridge() {
+  assert.notEqual(sourceBytes, null);
+  assert.equal(
+    byteSha256(sourceBytes),
+    "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+  );
+  assert.equal(
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.requirementsSha256,
+    "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499",
+  );
+  assert.equal(
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.inventorySha256
+      .descriptorAliasControls,
+    "30129d8d237f720fea41a8730d561e4dd615f35da565e5807e54aebb0c2ab9da",
+  );
+  assert.equal(
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.inventorySha256
+      .constructibleFailurePrecedencePairs,
+    "51fb17d1ff193dc37db2b16be60251c7bc745f479f0a8ee980ee24bc0caa0762",
+  );
+  assert.equal(
+    LIVE_C15_RUNTIME_ORACLE.requirementsSha256,
+    "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8",
+  );
+  assert.equal(
+    LIVE_C15_RUNTIME_ORACLE.identitySha256,
+    "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+  );
+  assert.notEqual(
+    SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.requirementsSha256,
+    LIVE_C15_RUNTIME_ORACLE.requirementsSha256,
+  );
+  return c17RuntimeBridgeEvidence();
+}
+
+function c17MonitorEvidence(captures) {
+  assert.equal(captures.length, 319);
+  for (const capture of captures) {
+    c17AssertCaptureShape(capture, capture.ordinal);
+    if (capture.operation === C17_ADMISSION_OPERATION) {
+      assert.deepEqual(capture.preimage.currentStateOrigin, {
+        operation: C17_INITIALIZE_OPERATION,
+        ordinal: 1,
+        role: "STATE",
+      });
+    }
+  }
+  const operations = Object.fromEntries(
+    [
+      C17_STARTUP_OPERATION,
+      C17_INITIALIZE_OPERATION,
+      C17_ADMISSION_OPERATION,
+    ].map((operation) => {
+      const matching = captures.filter(
+        (capture) => capture.operation === operation,
+      );
+      return [
+        operation,
+        {
+          calls: matching.length,
+          returns: matching.filter(({ outcome }) => outcome.kind === "RETURN")
+            .length,
+          throws: matching.filter(({ outcome }) => outcome.kind === "THROW")
+            .length,
+        },
+      ];
+    }),
+  );
+  const wrapperAggregate = {
+    calls: captures.length,
+    returns: captures.filter(({ outcome }) => outcome.kind === "RETURN").length,
+    throws: captures.filter(({ outcome }) => outcome.kind === "THROW").length,
+  };
+  const receiptPreimageObservations = captures.filter(
+    ({ operation }) => operation !== C17_INITIALIZE_OPERATION,
+  );
+  const receiptPreimages = {
+    calls: receiptPreimageObservations.length,
+    returns: receiptPreimageObservations.filter(
+      ({ outcome }) => outcome.kind === "RETURN",
+    ).length,
+    throws: receiptPreimageObservations.filter(
+      ({ outcome }) => outcome.kind === "THROW",
+    ).length,
+  };
+  const failureVocabulary = [
+    "CONTROL_BOUNDS",
+    "CONTROL_SHAPE",
+    "CONTROL_STARTUP",
+    "CONTROL_FRAME",
+    "CONTROL_RIGHTS",
+    "CONTROL_BINDING",
+    "CONTROL_TRANSITION",
+  ];
+  const negativeErrors = Object.fromEntries(
+    failureVocabulary.map((errorMessage) => [
+      errorMessage,
+      captures.filter(
+        ({ outcome }) =>
+          outcome.kind === "THROW" &&
+          outcome.errorMessage === errorMessage,
+      ).length,
+    ]),
+  );
+  const precedenceCaptures = captures.slice(256);
+  assert.equal(precedenceCaptures.length, 63);
+  const precedenceNegativeErrors = Object.fromEntries(
+    failureVocabulary.map((errorMessage) => [
+      errorMessage,
+      precedenceCaptures.filter(
+        ({ outcome }) =>
+          outcome.kind === "THROW" &&
+          outcome.errorMessage === errorMessage,
+      ).length,
+    ]),
+  );
+  const evidence = recursivelyFreezeEvidence({
+    operations,
+    wrapperAggregate,
+    receiptPreimages,
+    negativeErrors,
+    precedenceNegativeErrors,
+  });
+  assert.deepEqual(evidence, {
+    operations: {
+      [C17_STARTUP_OPERATION]: { calls: 69, returns: 2, throws: 67 },
+      [C17_INITIALIZE_OPERATION]: { calls: 1, returns: 1, throws: 0 },
+      [C17_ADMISSION_OPERATION]: { calls: 249, returns: 1, throws: 248 },
+    },
+    wrapperAggregate: { calls: 319, returns: 4, throws: 315 },
+    receiptPreimages: { calls: 318, returns: 3, throws: 315 },
+    negativeErrors: {
+      CONTROL_BOUNDS: 16,
+      CONTROL_SHAPE: 14,
+      CONTROL_STARTUP: 53,
+      CONTROL_FRAME: 8,
+      CONTROL_RIGHTS: 210,
+      CONTROL_BINDING: 9,
+      CONTROL_TRANSITION: 5,
+    },
+    precedenceNegativeErrors: {
+      CONTROL_BOUNDS: 16,
+      CONTROL_SHAPE: 14,
+      CONTROL_STARTUP: 4,
+      CONTROL_FRAME: 8,
+      CONTROL_RIGHTS: 7,
+      CONTROL_BINDING: 9,
+      CONTROL_TRANSITION: 5,
+    },
+  });
+  return evidence;
+}
+
+function c17TargetBaselineEvidence(captures) {
+  const specifications = [
+    {
+      id: "target-baseline:NORMAL_STARTUP",
+      callOrdinal: 0,
+      operation: C17_STARTUP_OPERATION,
+    },
+    {
+      id: "target-baseline:RECOVERY_ONLY_STARTUP",
+      callOrdinal: 2,
+      operation: C17_STARTUP_OPERATION,
+    },
+    {
+      id: "target-baseline:NORMAL_ADMISSION",
+      callOrdinal: 3,
+      operation: C17_ADMISSION_OPERATION,
+    },
+  ];
+  return recursivelyFreezeEvidence(
+    specifications.map((specification) => {
+      const capture = captures[specification.callOrdinal];
+      c17AssertCaptureShape(capture, specification.callOrdinal);
+      assert.equal(capture.operation, specification.operation);
+      assert.equal(capture.outcome.kind, "RETURN");
+      const preimageSha256 = c17TargetPreimageSha256(capture);
+      c17AssertSha256(
+        preimageSha256,
+        specification.id + " preimage digest",
+      );
+      c17AssertSha256(
+        capture.outcome.projectionSha256,
+        specification.id + " result digest",
+      );
+      return {
+        ...specification,
+        preimageSha256,
+        observationSha256: c17TargetObservationSha256(capture),
+        resultProjectionSha256: capture.outcome.projectionSha256,
+      };
+    }),
+  );
+}
+
+function c17CompactMutationRows(
+  targetBaselines,
+  descriptorAliases,
+  precedenceCells,
+) {
+  const rows = [];
+  for (const baseline of targetBaselines) {
+    rows.push({
+      id: "receipt-preimage:" + baseline.id,
+      kind: "TARGET_BASELINE",
+      preimageSha256: baseline.preimageSha256,
+      observationSha256: baseline.observationSha256,
+    });
+  }
+  for (const alias of descriptorAliases) {
+    rows.push({
+      id: "receipt-preimage:" + alias.id,
+      kind: "DESCRIPTOR_ALIAS",
+      preimageSha256: alias.mutantPreimageSha256,
+      observationSha256: alias.mutantObservationSha256,
+    });
+  }
+  const precedenceBindings = [
+    ["EARLIER_ONLY", "earlierOnlyPreimageSha256"],
+    ["LATER_ONLY", "laterOnlyPreimageSha256"],
+    ["DUAL_FAULT", "dualFaultPreimageSha256"],
+  ];
+  for (const cell of precedenceCells) {
+    for (const [observationIndex, [faultSet, digestKey]] of
+      precedenceBindings.entries()) {
+      rows.push({
+        id: "receipt-preimage:" + cell.cellId + ":" + faultSet,
+        kind: "FAILURE_PRECEDENCE",
+        preimageSha256: cell[digestKey],
+        observationSha256: cell.observationSha256[observationIndex],
+      });
+    }
+  }
+  return recursivelyFreezeEvidence(rows);
+}
+
+function c17MutatedSha256(value) {
+  c17AssertSha256(value, "C17 mutation source digest");
+  return (value[0] === "0" ? "1" : "0") + value.slice(1);
+}
+
+function c17AssertCompactMutationRow(actual, expected) {
+  assert.deepEqual(Object.keys(actual), [
+    "id",
+    "kind",
+    "preimageSha256",
+    "observationSha256",
+  ]);
+  c17AssertSha256(actual.preimageSha256, actual.id + " preimage digest");
+  c17AssertSha256(
+    actual.observationSha256,
+    actual.id + " observation digest",
+  );
+  assert.deepEqual(actual, expected);
+}
+
+function c17ReceiptPreimageMutationSensitivity(
+  targetBaselines,
+  descriptorAliases,
+  precedenceCells,
+) {
+  const rows = c17CompactMutationRows(
+    targetBaselines,
+    descriptorAliases,
+    precedenceCells,
+  );
+  assert.equal(rows.length, 318);
+  assert.equal(new Set(rows.map(({ id }) => id)).size, 318);
+  assert.deepEqual(
+    Object.fromEntries(
+      ["TARGET_BASELINE", "DESCRIPTOR_ALIAS", "FAILURE_PRECEDENCE"].map(
+        (kind) => [kind, rows.filter((row) => row.kind === kind).length],
+      ),
+    ),
+    {
+      TARGET_BASELINE: 3,
+      DESCRIPTOR_ALIAS: 252,
+      FAILURE_PRECEDENCE: 63,
+    },
+  );
+
+  let killed = 0;
+  for (const row of rows) {
+    const mutant = Object.freeze({
+      ...row,
+      preimageSha256: c17MutatedSha256(row.preimageSha256),
+    });
+    assert.notEqual(mutant.preimageSha256, row.preimageSha256);
+    assert.throws(
+      () => c17AssertCompactMutationRow(mutant, row),
+      { name: "AssertionError" },
+      row.id,
+    );
+    killed += 1;
+  }
+  const evidence = recursivelyFreezeEvidence({
+    scope: "EVALUATOR_COMPACT_RECEIPT_PREIMAGE_BINDING",
+    counts: {
+      targetBaselines: 3,
+      descriptorAliasObservations: 252,
+      failurePrecedenceObservations: 63,
+      total: rows.length,
+      killed,
+      survivors: rows.length - killed,
+    },
+    initializerSetupExcluded: true,
+    productionSourceMutationExecuted: false,
+    b11Separation: {
+      staticCommitMutationSubsetCount: 200,
+      denominatorsCombined: false,
+    },
+    mutationIdsSha256: semanticSha256(rows.map(({ id }) => id)),
+    observationRowsSha256: semanticSha256(rows),
+  });
+  assert.deepEqual(
+    {
+      total: evidence.counts.total,
+      killed: evidence.counts.killed,
+      survivors: evidence.counts.survivors,
+      initializerSetupExcluded: evidence.initializerSetupExcluded,
+      productionSourceMutationExecuted:
+        evidence.productionSourceMutationExecuted,
+      b11Separation: evidence.b11Separation,
+    },
+    {
+      total: 318,
+      killed: 318,
+      survivors: 0,
+      initializerSetupExcluded: true,
+      productionSourceMutationExecuted: false,
+      b11Separation: {
+        staticCommitMutationSubsetCount: 200,
+        denominatorsCombined: false,
+      },
+    },
+  );
+  return evidence;
+}
+
+function c17BehavioralMutantClassCoverage(
+  descriptorAliases,
+  precedenceCells,
+) {
+  const aliasFamilies = [
+    "ADMISSION_RIGHT_PAIR",
+    "ADMISSION_RIGHT_TO_NORMAL_STARTUP",
+    "NORMAL_STARTUP_PAIR",
+    "RECOVERY_STARTUP_PAIR",
+  ];
+  const classes = aliasFamilies.map((family) => {
+    const rows = descriptorAliases.filter((row) => row.family === family);
+    assert.equal(rows.length > 0, true);
+    assert.equal(
+      rows.every(({ observedError }) =>
+        family.startsWith("ADMISSION_")
+          ? observedError === "CONTROL_RIGHTS"
+          : observedError === "CONTROL_STARTUP"),
+      true,
+    );
+    return {
+      id: "behavioral-mutant:reported-alias-accepted:" + family,
+      kind: "DESCRIPTOR_ALIAS_FAMILY",
+      observationCount: rows.length,
+      killed: true,
+    };
+  });
+  for (const cell of precedenceCells) {
+    assert.deepEqual(cell.observedErrors, [
+      cell.earlier,
+      cell.later,
+      cell.earlier,
+    ]);
+    assert.notEqual(cell.earlier, cell.later);
+    classes.push({
+      id: "behavioral-mutant:precedence-inverted:" + cell.cellId,
+      kind: "CONSTRUCTOR_SCOPED_PRECEDENCE_INVERSION",
+      observationCount: 3,
+      killed: cell.observedErrors[2] === cell.earlier,
+    });
+  }
+  assert.equal(classes.length, 25);
+  assert.equal(new Set(classes.map(({ id }) => id)).size, 25);
+  assert.equal(classes.every(({ killed: isKilled }) => isKilled), true);
+  const frozenClasses = recursivelyFreezeEvidence(classes);
+  const evidence = recursivelyFreezeEvidence({
+    scope: "BEHAVIORAL_MUTANT_CLASS_COVERAGE",
+    counts: {
+      descriptorAliasFamilies: 4,
+      constructorScopedPrecedenceInversions: 21,
+      total: frozenClasses.length,
+      killed: frozenClasses.filter(({ killed: isKilled }) => isKilled).length,
+      survivors: frozenClasses.filter(({ killed: isKilled }) => !isKilled)
+        .length,
+    },
+    classes: frozenClasses,
+    classIdsSha256: semanticSha256(frozenClasses.map(({ id }) => id)),
+    productionSourceMutationExecuted: false,
+  });
+  assert.deepEqual(evidence.counts, {
+    descriptorAliasFamilies: 4,
+    constructorScopedPrecedenceInversions: 21,
+    total: 25,
+    killed: 25,
+    survivors: 0,
+  });
+  return evidence;
+}
+
+function c17ExpectedRuntimeReceipt(
+  captures,
+  baselines,
+  descriptorAliasDesigns,
+  failurePrecedenceCellDesigns,
+  positiveReplayEvidence,
+) {
+  assertRecursivelyFrozenWithoutByteViews(captures);
+  assertRecursivelyFrozenWithoutByteViews(positiveReplayEvidence);
+  const replayIdentityFree = Object.fromEntries(
+    Object.entries(positiveReplayEvidence).filter(
+      ([key]) => key !== "identitySha256",
+    ),
+  );
+  assert.equal(
+    positiveReplayEvidence.identitySha256,
+    semanticSha256(replayIdentityFree),
+  );
+  c17AssertSetupCaptures(captures, baselines);
+  const runtimeBridge = c17AssertPinnedRuntimeBridge();
+  const targetBaselineEvidence = c17TargetBaselineEvidence(captures);
+  const descriptorAliasEvidence = c17DeriveAliasEvidence(
+    captures,
+    descriptorAliasDesigns,
+  );
+  const failurePrecedenceEvidence = c17DeriveFailurePrecedenceEvidence(
+    captures,
+    failurePrecedenceCellDesigns,
+  );
+  const receiptPreimageMutationSensitivity =
+    c17ReceiptPreimageMutationSensitivity(
+      targetBaselineEvidence,
+      descriptorAliasEvidence,
+      failurePrecedenceEvidence,
+    );
+  const behavioralMutantClassCoverage =
+    c17BehavioralMutantClassCoverage(
+      descriptorAliasEvidence,
+      failurePrecedenceEvidence,
+    );
+  const identityFree = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c17-final-aggregate-runtime/v1",
+    scope:
+      "EVALUATOR_RUNTIME_CONSOLIDATION_WITH_POSITIVE_REPLAY_C17_MONITOR_AND_PRIOR_RECEIPTS",
+    candidateSourceSha256:
+      "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+    runtimeOracleIdentitySha256:
+      "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+    runtimeBridge,
+    baselineEvidence: {
+      targetObservations: targetBaselineEvidence,
+      initializeSetup: {
+        callOrdinal: 1,
+        operation: C17_INITIALIZE_OPERATION,
+        preimageSha256: semanticSha256(
+          captures[1].preimage.startupProjection,
+        ),
+        resultProjectionSha256: captures[1].outcome.projectionSha256,
+        excludedFromReceiptPreimageMutationSensitivity: true,
+      },
+    },
+    descriptorAliasEvidence,
+    failurePrecedenceEvidence,
+    monitorEvidence: c17MonitorEvidence(captures),
+    receiptPreimageMutationSensitivity,
+    behavioralMutantClassCoverage,
+    positiveReplayEvidence,
+    continuity: c17ContinuityEvidence(),
+    claimBoundary: c17ClaimBoundary(),
+  });
+  return recursivelyFreezeEvidence({
+    ...identityFree,
+    identitySha256: semanticSha256(identityFree),
+  });
+}
+
+function assertC17FinalAggregateRuntimeEvidence(
+  captures,
+  baselines,
+  descriptorAliasDesigns,
+  failurePrecedenceCellDesigns,
+  positiveReplayEvidence,
+) {
+  const receipt = c17ExpectedRuntimeReceipt(
+    captures,
+    baselines,
+    descriptorAliasDesigns,
+    failurePrecedenceCellDesigns,
+    positiveReplayEvidence,
+  );
+  assertRecursivelyFrozenWithoutByteViews(receipt);
+  const identityFree = Object.fromEntries(
+    Object.entries(receipt).filter(([key]) => key !== "identitySha256"),
+  );
+  assert.equal(receipt.identitySha256, semanticSha256(identityFree));
+  return receipt;
+}
+
 test(
   "complete all remaining ADR-0036 acceptance groups: 252 descriptor aliases; every bound, error-precedence rule, and frame field; transition, status-byte, and prefix goldens; recovery binding; WeakMap failure atomicity; and the complete Node 20 and non-G1.7 matrix",
-  { todo: true },
-  () => {},
+  async () => {
+    c17AssertPinnedRuntimeBridge();
+    const continuity = c17ContinuityEvidence();
+    assert.notEqual(continuity, null);
+    const claimBoundary = c17ClaimBoundary();
+    assert.notEqual(claimBoundary, null);
+    const positiveReplayEvidence = c17PositiveReplayEvidence(
+      c14ReplayPositiveContract({ verifyStatuses: true }),
+    );
+    assert.notEqual(positiveReplayEvidence, null);
+
+    const monitor = createC17MonitoredCandidateNamespace(
+      c14CandidateOrThrow(),
+    );
+    const liveBaselines = c17CreateLiveBaselines(monitor.namespace);
+    const descriptorAliasDesigns =
+      c17CreateLiveDescriptorAliasDesigns(liveBaselines);
+    const failurePrecedenceCellDesigns = recursivelyFreezeEvidence(
+      c12Clone(c17ExpectedFailurePrecedenceCells()),
+    );
+    const runnerInput = Object.freeze({
+      monitoredCandidate: monitor.namespace,
+      liveBaselines,
+      descriptorAliasDesigns,
+      failurePrecedenceCellDesigns,
+    });
+
+    const runnerAvailable =
+      typeof C17_FINAL_AGGREGATE_RUNNER === "function";
+    const runnerCompletion = runnerAvailable
+      ? await C17_FINAL_AGGREGATE_RUNNER(runnerInput)
+      : null;
+    const captures = monitor.sealAndSnapshot();
+    c17AssertSetupCaptures(captures, liveBaselines);
+    if (!runnerAvailable) {
+      assert.equal(captures.length, 4);
+    }
+    assert.notEqual(
+      runnerCompletion,
+      null,
+      "C17 final aggregate monitored runner is not implemented",
+    );
+    assert.equal(
+      runnerCompletion,
+      undefined,
+      "C17 final aggregate runner must return no receipt or counters",
+    );
+    const receipt = assertC17FinalAggregateRuntimeEvidence(
+      captures,
+      liveBaselines,
+      descriptorAliasDesigns,
+      failurePrecedenceCellDesigns,
+      positiveReplayEvidence,
+    );
+    assert.notEqual(receipt, null);
+  },
 );
