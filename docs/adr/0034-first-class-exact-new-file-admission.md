@@ -64,14 +64,17 @@
   `58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`;
   its canonical SHA-256 is
   `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
-  The broader exact-create task is 97% in progress; ADR-0035's separate native
+  Commit `99f94fac` freezes a separate three-record dormant command-literal
+  registry and exact bounded resolver. Those records remain disconnected from
+  executable CLI dispatch, help, doctor, package scripts, and provider routing.
+  The broader exact-create task is 98% in progress; ADR-0035's separate native
   task is 75% in progress. Committed schema-v1 fixtures remain byte-identical,
   and their active registry remains exactly nine tasks and 33 commands.
   Production containment remains fixed unavailable: the filesystem-backed
   native guardian/reaper, recovery mutation, race-free exec and pidfd/waitid
   binding, interactive native adapter, and full path-executed runtime-closure
-  proof, application receipt v7/replay, dormant v2 command/CLI/package
-  dispatch, and the complete gate are not implemented. G2.2 may not admit a
+  proof, application receipt v7/replay, dormant v2 CLI/package wiring, and the
+  complete gate are not implemented. G2.2 may not admit a
   new product module until the complete v2 gate, current host qualification,
   and a separately ratified commit-capable successor all pass
 - Programme task: `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`)
@@ -463,9 +466,11 @@ Focused evidence belongs in these existing paths:
 - `tools/engineering-harness/test/task-profile.test.mjs`; and
 - `tools/engineering-harness/test/cli.test.mjs`.
 
-The remaining implementation must freeze the receipt/command/CLI fixtures
-before dormant dispatch registration and continue to prove that every
-unavailable-gate path reaches none of the forbidden effects above.
+The exact dormant command literals are frozen in `99f94fac`, outside the active
+33-command authority. The remaining implementation must freeze receipt-v7 and
+CLI/package fixtures before executable dormant dispatch registration and
+continue to prove that every unavailable-gate path reaches none of the
+forbidden effects above.
 
 ### Bounded failure behavior
 
@@ -582,7 +587,7 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 97%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 98%.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -686,7 +691,12 @@ The committed implementation sequence is:
   exact contract, binds the production v2 worker context to its raw digest and
   source allowlist, and reconstructs the frozen reference tree. It leaves the
   nine active v1 profiles and 33-command surface unchanged and grants no
-  product, provider, qualification, promotion, or publication authority.
+  product, provider, qualification, promotion, or publication authority; and
+- `99f94fac` freezes exactly three ordered
+  `dormant.harness-create-exact-v2.{preflight,run,replay}` records with exact
+  v2 task, schema, gate, registration, and authority-null bindings. Their
+  bounded trap-free validator and pure resolver cannot dispatch work; active
+  CLI/help/doctor/package/provider surfaces remain unchanged at 33 commands.
 
 For the `f9ab7c72` checkpoint, the six-file focused matrix passes 87/87 on
 Node 24; the exact four-file profile/contract/reconstruction/context matrix
@@ -698,6 +708,12 @@ with exit 101 and one `E0583`, then passes the reference with 3/3 tests. Fresh
 independent contract, compatibility, and hostile-input reviews returned
 APPROVE for this narrow Proposed, dormant, authority-null checkpoint;
 production activation remains NO-GO.
+For the separate `99f94fac` literal checkpoint, the focused seven-file matrix
+passes 64/64 on Node 24, Node 20.0.0, and Node 20.20.2; the complete top-level
+non-G1.7 matrix excluding committed-clean identity passes 696/696 on Node 24;
+and Agentic-QE 3.13.12 executes the focused CLI file at 9/9. A fresh hostile
+review returned APPROVE. No dormant CLI or package dispatch, receipt, provider,
+qualification, promotion, or publication path was reached.
 At the earlier `040f3343` checkpoint only the new preflight execution copy was
 executed; the frozen predecessor artifact was not. The `f9ab7c72` checkpoint
 also executed only the exact evaluator/reference Cargo test oracle, not a
@@ -727,8 +743,9 @@ the remaining output and runtime-closure proof.
 ADR-0035 owns the stable guardian/reaper, intent-first write-once journal,
 restart reconciliation, and executable cancel-only preflight decisions within
 that boundary; it does not relax this ADR's gate.
-Application receipt v7/replay, dormant command/CLI/package dispatch, and the
-frozen G2.2 profile follow.
+Application receipt v7/replay, dormant CLI/package wiring, and the frozen G2.2
+profile follow. The dormant command literals are already frozen but remain
+non-executable.
 Schema-v1 compatibility remains visible
 in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),
 [`paths.mjs`](../../tools/engineering-harness/src/policy/paths.mjs),

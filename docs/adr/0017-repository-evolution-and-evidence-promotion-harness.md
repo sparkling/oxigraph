@@ -261,12 +261,14 @@
   adds ADR-0034's exact early unavailable gate; `c9cb6423`, `997ad287`, and
   `dfd6d92d` freeze its baseline/evaluator/reference chain; and `f9ab7c72`
   adds a separate dormant-v2 profile registry, exact contract, production
-  worker-context binding, and reference reconstruction. Its focused matrix
+  worker-context binding, and reference reconstruction. Commit `99f94fac`
+  freezes a separate three-command dormant literal registry and pure resolver
+  without making either executable. Its focused matrix
   passes 87/87 on Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the top-level
   non-G1.7 suite passes 694/694 on Node 24 and Node 20.20.2. The active v1
   registry and 33-command CLI are unchanged. The physical native adapter and
-  full path-executed runtime closure, receipt v7/replay, dormant v2
-  command/CLI/package dispatch, and G2.2 remain open; ADR-0034 stays Proposed
+  full path-executed runtime closure, receipt v7/replay, dormant v2 CLI/package
+  wiring, and G2.2 remain open; ADR-0034 stays Proposed
   and its v2 registration stays dormant, non-product, and non-executable.
   ADR-0034 owns those dormant receipt-v7/schema-v2 bytes and their early
   qualification gate; ADR-0039 consumes them unchanged and owns only current-
@@ -613,14 +615,16 @@ closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-97% after the historical launch/bootstrap and guardian/preflight checkpoints,
+98% after the historical launch/bootstrap and guardian/preflight checkpoints,
 the exact early-gate commit `fd9e4d05`, fixture chain
 `c9cb6423`/`997ad287`/`dfd6d92d`, and separate dormant-v2 registration commit
-`f9ab7c72`. ADR-0035's separate Ruflo task `task-1788002473147-nsat6x` is 75%
-in progress. The filesystem-backed stable guardian/reaper, recovery mutation,
+`f9ab7c72`. Commit `99f94fac` additionally freezes the three dormant command
+literals without CLI/package reachability. ADR-0035's separate Ruflo task
+`task-1788002473147-nsat6x` is 75% in progress. The filesystem-backed stable
+guardian/reaper, recovery mutation,
 race-free exec plus pidfd/waitid evidence, interactive physical cgroup adapter
-and full runtime-closure proof, receipt v7/replay, dormant v2
-command/CLI/package dispatch, the complete acceptance gate, and G2.2 remain
+and full runtime-closure proof, receipt v7/replay, dormant v2 CLI/package
+wiring, the complete acceptance gate, and G2.2 remain
 open. ADR-0034 and ADR-0035 add no product G-identifier.
 
 The remaining containment gates have one-way ownership. ADR-0037 owns the sole

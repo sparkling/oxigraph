@@ -195,17 +195,22 @@ first executable v2 action; commits `c9cb6423`, `997ad287`, and `dfd6d92d`
 freeze its baseline, unique-`E0583` evaluator, and one-`A`/one-`M` reference;
 and commit `f9ab7c72` adds the separate frozen v2 profile, raw contract,
 production worker-context binding, and exact reference reconstruction. It does
-not add the task to the active v1 registry or 33-command CLI. The raw contract
-SHA-256 is
+not add the task to the active v1 registry or 33-command CLI. Commit
+`99f94fac` additionally freezes a separate three-entry, authority-null dormant
+command-literal registry and exact resolver; the executable CLI, help, doctor,
+package scripts, provider routing, and active registry still cannot reach it.
+The raw contract SHA-256 is
 `58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`;
 its canonical SHA-256 is
 `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
 Focused tests pass 87/87 on Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the
 top-level non-G1.7 suite passes 694/694 on Node 24 and Node 20.20.2. The real
 Cargo oracle observes evaluator exit 101 with one `E0583`, then 3/3 passing
-reference tests. Application receipt v7, dormant command/CLI/package dispatch,
-current host qualification, and the complete gate remain open, so this is no
-G2.2 or product authority.
+reference tests. The command-literal slice additionally passes 696/696
+top-level non-G1.7 tests on Node 24, 64/64 focused tests on Node 20.0.0 and
+20.20.2, and 9/9 through Agentic-QE 3.13.12. Application receipt v7/replay,
+dormant CLI/package wiring, current host qualification, and the complete gate
+remain open, so this is no G2.2 or product authority.
 
 Follow-on harness commit
 `afe30c7de7e3df6e72a0a855d83efc612339f261` closes the separate
@@ -445,7 +450,7 @@ pidfd/waitid reap, semantic retained-file validation, FD-6 execution binding,
 physical containment, or the full runtime closure. Production stays fixed
 `{status: "unavailable", reason: "native-adapter-unavailable"}` until those
 gates and the exact path-executed runtime closure exist. Application receipt
-v7/replay, dormant command/CLI/package dispatch, the complete ADR-0034 gate,
+v7/replay, dormant CLI/package wiring, the complete ADR-0034 gate,
 and G2.2 remain open. The later `f9ab7c72` checkpoint implements only the
 separate dormant profile, contract, worker context, and reconstruction, so no
 new product module or promotion authority is admitted.
@@ -524,8 +529,8 @@ process/cgroup/exec mechanics. ADR-0034 owns dormant application receipt v7,
 schema-v2 reconstruction/dispatch/profile literals, and the early exact
 `executionGate: "native-containment-qualification-v1"` for
 `contractSchemaVersion: 2`. Its early gate, separate dormant profile, exact
-contract, worker context, and reconstruction are implemented; receipt v7 and
-command/CLI/package dispatch are not.
+contract, worker context, reconstruction, and separate command literals are
+implemented; receipt v7/replay and executable CLI/package wiring are not.
 [ADR-0039](./docs/adr/0039-delegated-host-containment-qualification-and-readiness.md)
 consumes those bytes unchanged and owns only current-host qualification,
 receipt binding/activation, and path-executed runtime closure. While readiness
@@ -631,10 +636,11 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0039; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Twenty-one decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 97%
-  in-progress controls include a separate dormant v2 profile and contract, but
-  no v2 command/CLI/package registration or receipt-v7 admission until the full
-  acceptance gate closes. ADR-0035 separately governs the implemented pure
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 98%
+  in-progress controls include a separate dormant v2 profile, contract, and
+  frozen three-command literal registry, but no executable v2 CLI/package
+  registration or receipt-v7 admission until the full acceptance gate closes.
+  ADR-0035 separately governs the implemented pure
   journal contract and the still-unimplemented durable native guardian,
   recovery, and executable-preflight boundary. ADR-0036 through ADR-0039 split
   the pure ABI, statefs/syscalls, native process mechanics, and isolated-host

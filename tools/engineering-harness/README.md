@@ -122,13 +122,20 @@ SHA-256 values are
 `58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`
 and
 `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
+Commit `99f94fac` freezes the three exact
+`dormant.harness-create-exact-v2.{preflight,run,replay}` command records and a
+bounded pure resolver in a separate authority-null registry. It does not add
+them to executable CLI dispatch, help, doctor, package scripts, or provider
+routing.
 The six-file focused matrix passes 87/87 on Node 24; the exact four-file matrix
 passes 55/55 on Node 20.0.0 and Node 20.20.2; the top-level non-G1.7 suite
 passes 694/694 on Node 24 and Node 20.20.2; and the real Cargo oracle observes
 one evaluator `E0583` followed by 3/3 reference tests. The v1 registry remains
-exactly nine tasks and 33 commands. Receipt v7, v2 command/CLI/package
-dispatch, host qualification, G2.2, product, promotion, and publication remain
-absent.
+exactly nine tasks and 33 commands. The new command-literal slice passes
+696/696 top-level non-G1.7 tests on Node 24, 64/64 focused tests on Node 20.0.0
+and 20.20.2, and 9/9 through Agentic-QE 3.13.12. Receipt v7/replay, dormant
+CLI/package wiring, host qualification, G2.2, product, promotion, and
+publication remain absent.
 
 [ADR-0035 — Durable native containment guardian and crash recovery](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,
@@ -370,11 +377,11 @@ brand. Production remains fixed `unavailable` until the guardian and
 interactive native supervisor/adapter exist. Those mechanics and the full
 runtime-closure proof,
 application receipt v7/replay,
-dormant command/CLI/package dispatch, and G2.2 remain mandatory later gates.
+dormant CLI/package wiring, and G2.2 remain mandatory later gates.
 Exact evaluator/reference reconstruction and the separate dormant-v2 profile
-now exist in `f9ab7c72`, but production stays fixed unavailable, schema v1
-remains the only executable registry surface, and no candidate-created product
-module is admitted yet.
+exist in `f9ab7c72`; the separate dormant command literals exist in `99f94fac`.
+Production stays fixed unavailable, schema v1 remains the only executable
+registry surface, and no candidate-created product module is admitted yet.
 
 Current activation boundary:
 
