@@ -23863,7 +23863,219 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   );
   assertRecursivelyFrozenWithoutByteViews(mutationReceipt);
 });
-const C17_FINAL_AGGREGATE_RUNNER = null;
+const C17_FINAL_AGGREGATE_RUNNER = ({
+  monitoredCandidate,
+  liveBaselines,
+  descriptorAliasDesigns,
+  failurePrecedenceCellDesigns,
+}) => {
+  const startup =
+    monitoredCandidate.createCandidateContainmentGuardianStartupV1;
+  const admission =
+    monitoredCandidate.createCandidateContainmentGuardianAdmissionInputV1;
+  assert.equal(typeof startup, "function");
+  assert.equal(typeof admission, "function");
+
+  const jsonlBytes = (value) =>
+    Buffer.from(canonicalJson(value) + "\n", "utf8");
+  const bytesFromHex = (bytesHex) => Buffer.from(bytesHex, "hex");
+  const expectedCandidateThrow = (expectedMessage, invoke) => {
+    try {
+      invoke();
+    } catch (error) {
+      if (
+        Object.getPrototypeOf(error) !== Error.prototype ||
+        error.name !== "Error" ||
+        error.message !== expectedMessage ||
+        Object.hasOwn(error, "cause")
+      ) {
+        throw error;
+      }
+      return;
+    }
+    assert.fail("C17 candidate call did not throw " + expectedMessage);
+  };
+  const copyDescriptorIdentity = (donor, receiver) => {
+    assert.notEqual(donor, null);
+    assert.notEqual(receiver, null);
+    receiver.openFileDescriptionClass = donor.openFileDescriptionClass;
+    receiver.openFileDescriptionIdentitySha256 =
+      donor.openFileDescriptionIdentitySha256;
+  };
+
+  const normalStartupReport = c17DecodeBaselineHexJsonl(
+    liveBaselines.normalStartup.startupReportBytesHex,
+    "C17 runner NORMAL startup report",
+  );
+  const recoveryStartupReport = c17DecodeBaselineHexJsonl(
+    liveBaselines.recoveryStartup.startupReportBytesHex,
+    "C17 runner RECOVERY startup report",
+  );
+  const admissionFrame = c17DecodeBaselineHexJsonl(
+    liveBaselines.admission.admissionFrameBytesHex,
+    "C17 runner admission frame",
+  );
+  const admissionReport = c17DecodeBaselineHexJsonl(
+    liveBaselines.admission.admissionRecvmsgReportBytesHex,
+    "C17 runner admission report",
+  );
+
+  for (const design of descriptorAliasDesigns) {
+    if (
+      design.family === "ADMISSION_RIGHT_PAIR" ||
+      design.family === "ADMISSION_RIGHT_TO_NORMAL_STARTUP"
+    ) {
+      const report = c12Clone(admissionReport);
+      const donor =
+        design.family === "ADMISSION_RIGHT_PAIR"
+          ? report[design.leftSlot]
+          : normalStartupReport[design.rightSlot];
+      const receiver =
+        design.family === "ADMISSION_RIGHT_PAIR"
+          ? report[design.rightSlot]
+          : report[design.leftSlot];
+      copyDescriptorIdentity(donor, receiver);
+      expectedCandidateThrow("CONTROL_RIGHTS", () =>
+        admission(
+          liveBaselines.admission.currentState,
+          bytesFromHex(liveBaselines.admission.admissionFrameBytesHex),
+          jsonlBytes(report),
+        ),
+      );
+      continue;
+    }
+
+    assert.equal(
+      ["NORMAL_STARTUP_PAIR", "RECOVERY_STARTUP_PAIR"].includes(
+        design.family,
+      ),
+      true,
+    );
+    const baseline =
+      design.family === "RECOVERY_STARTUP_PAIR"
+        ? liveBaselines.recoveryStartup
+        : liveBaselines.normalStartup;
+    const report = c12Clone(
+      design.family === "RECOVERY_STARTUP_PAIR"
+        ? recoveryStartupReport
+        : normalStartupReport,
+    );
+    copyDescriptorIdentity(report[design.leftSlot], report[design.rightSlot]);
+    expectedCandidateThrow("CONTROL_STARTUP", () =>
+      startup(
+        jsonlBytes(report),
+        bytesFromHex(baseline.epochBytesHex),
+        baseline.epochEofObserved,
+      ),
+    );
+  }
+
+  const startupArguments = (witnesses) => {
+    const report = c12Clone(normalStartupReport);
+    let reportBytes = null;
+    let epochBytes = bytesFromHex(
+      liveBaselines.normalStartup.epochBytesHex,
+    );
+    let epochEofObserved =
+      liveBaselines.normalStartup.epochEofObserved;
+    for (const witness of witnesses) {
+      if (witness === "STARTUP_REPORT_BUFFER_LENGTH_8193") {
+        reportBytes = Buffer.alloc(8_193, 0x61);
+      } else if (witness === "EPOCH_BUFFER_LENGTH_33") {
+        epochBytes = Buffer.alloc(33, 0x45);
+      } else if (witness === "EPOCH_UINT8_ARRAY_LENGTH_32") {
+        epochBytes = new Uint8Array(
+          bytesFromHex(liveBaselines.normalStartup.epochBytesHex),
+        );
+      } else if (witness === "EPOCH_EOF_FALSE") {
+        epochEofObserved = false;
+      } else {
+        assert.equal(
+          witness,
+          "STARTUP_REPORT_REQUIREMENTS_SHA256_ZERO",
+        );
+        report.requirementsSha256 = "0".repeat(64);
+      }
+    }
+    return [
+      reportBytes ?? jsonlBytes(report),
+      epochBytes,
+      epochEofObserved,
+    ];
+  };
+
+  const admissionArguments = (witnesses) => {
+    const frame = c12Clone(admissionFrame);
+    const report = c12Clone(admissionReport);
+    let frameBytes = null;
+    let reportBytes = null;
+    let frameUint8Array = false;
+    let reportUint8Array = false;
+    for (const witness of witnesses) {
+      if (witness === "ADMISSION_FRAME_BUFFER_LENGTH_131073") {
+        frame.launchCapsuleV3 = "";
+        const paddingLength = 131_073 - jsonlBytes(frame).length;
+        assert.equal(paddingLength > 0, true);
+        frame.launchCapsuleV3 = "A".repeat(paddingLength);
+        frameBytes = jsonlBytes(frame);
+        assert.equal(frameBytes.length, 131_073);
+      } else if (witness === "ADMISSION_REPORT_BUFFER_LENGTH_16385") {
+        reportBytes = Buffer.alloc(16_385, 0x61);
+      } else if (witness === "ADMISSION_REPORT_UINT8_ARRAY") {
+        reportUint8Array = true;
+      } else if (witness === "ADMISSION_FRAME_UINT8_ARRAY") {
+        frameUint8Array = true;
+      } else if (witness === "ADMISSION_FRAME_ACTION_CANCEL") {
+        frame.action = "CANCEL";
+      } else if (witness === "ADMISSION_REPORT_RIGHTS_COUNT_13") {
+        report.rightsCount = 13;
+      } else if (
+        witness === "ADMISSION_FRAME_REQUIREMENTS_SHA256_ZERO"
+      ) {
+        frame.requirementsSha256 = "0".repeat(64);
+      } else {
+        assert.equal(witness, "ADMISSION_FRAME_SEQUENCE_PLUS_ONE");
+        frame.sequence += 1;
+      }
+    }
+
+    const actualFrameBytes = frameBytes ?? jsonlBytes(frame);
+    if (reportBytes === null) {
+      report.messageByteLength = actualFrameBytes.length;
+      report.messageRawSha256 = byteSha256(actualFrameBytes);
+      reportBytes = jsonlBytes(report);
+    }
+    return [
+      liveBaselines.admission.currentState,
+      frameUint8Array
+        ? new Uint8Array(actualFrameBytes)
+        : Buffer.from(actualFrameBytes),
+      reportUint8Array
+        ? new Uint8Array(reportBytes)
+        : Buffer.from(reportBytes),
+    ];
+  };
+
+  for (const cell of failurePrecedenceCellDesigns) {
+    const invocations = [
+      [[cell.earlierWitness], cell.earlier],
+      [[cell.laterWitness], cell.later],
+      [[cell.earlierWitness, cell.laterWitness], cell.earlier],
+    ];
+    for (const [witnesses, expectedMessage] of invocations) {
+      if (cell.witnessOperation === C17_STARTUP_OPERATION) {
+        expectedCandidateThrow(expectedMessage, () =>
+          startup(...startupArguments(witnesses)),
+        );
+      } else {
+        assert.equal(cell.witnessOperation, C17_ADMISSION_OPERATION);
+        expectedCandidateThrow(expectedMessage, () =>
+          admission(...admissionArguments(witnesses)),
+        );
+      }
+    }
+  }
+};
 const C17_STARTUP_OPERATION =
   "createCandidateContainmentGuardianStartupV1";
 const C17_INITIALIZE_OPERATION =
