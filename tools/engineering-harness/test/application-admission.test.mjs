@@ -6,8 +6,11 @@ import { ReceiptLog } from "@metaharness/harness";
 
 import {
   createApplicationReceipt,
+  createApplicationReceiptV7,
   serializeApplicationReceipt,
+  serializeApplicationReceiptV7,
   verifyApplicationReceipt,
+  verifyApplicationReceiptV7,
 } from "../src/receipts/application.mjs";
 import { canonicalSha256, routingEmbedding } from "../src/routing/features.mjs";
 import { RouterHistory } from "../src/routing/history.mjs";
@@ -15,13 +18,140 @@ import {
   admitApplicationReceipt,
   verifyPinnedApplicationReceipt,
 } from "../src/runtime/application-admission.mjs";
-import {
-  isIgnoredRuntimePath,
-  runtimePath,
-} from "../src/runtime/storage.mjs";
+import { isIgnoredRuntimePath, runtimePath } from "../src/runtime/storage.mjs";
+import { harnessCreateExactV2Profile } from "../src/task-profile.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const gitObject = (value) => createHash("sha1").update(value).digest("hex");
+const gitBlobObject = (content) => {
+  const bytes = Buffer.from(content, "utf8");
+  return createHash("sha1")
+    .update(Buffer.from(`blob ${bytes.length}\0`, "ascii"))
+    .update(bytes)
+    .digest("hex");
+};
+const workerV2RequestSchema = "oxigraph.engineering-native-worker-request/v2";
+const admissionWorkerContext = Object.freeze({
+  fixture: "v7-admission-worker-context",
+});
+
+function workerV2Envelope(
+  item,
+  taskV2,
+  {
+    modificationPatch = null,
+    creations = [],
+    finalPatch = null,
+    candidateProjection = null,
+  } = {},
+) {
+  const summary = `worker-v2 ${item.role} admission fixture`;
+  const providerOutputV2 = {
+    summary,
+    patch: modificationPatch,
+    creations,
+    findings: [],
+    verdict: item.status,
+  };
+  const taskJson = JSON.stringify({
+    schemaVersion: 2,
+    role: item.role,
+    directive: `execute exact ${item.id}`,
+    context: admissionWorkerContext,
+    roleInput: { invocationId: item.id },
+  });
+  const taskSha256 = sha256(taskJson);
+  const requestSha256 = sha256(
+    Buffer.concat([
+      Buffer.from(`${workerV2RequestSchema}\0`, "ascii"),
+      Buffer.from(taskV2.contractSha256, "ascii"),
+      Buffer.from(taskSha256, "ascii"),
+      Buffer.from(`${item.provider}\0${item.model}\0${item.role}`, "utf8"),
+    ]),
+  );
+  return {
+    id: item.id,
+    routingId: item.routingId,
+    sequence: item.sequence,
+    executionId: item.executionId,
+    taskJson,
+    request: { schema: workerV2RequestSchema, requestSha256 },
+    result: {
+      provider: item.provider,
+      model: item.model,
+      role: item.role,
+      status: item.status,
+      output: {
+        summary,
+        patch: finalPatch,
+        findings: [],
+        verdict: item.status,
+      },
+      providerOutputV2,
+      candidateProjection,
+      outcome: {
+        disposition: "completed",
+        firstTerminalReason: "completed",
+        spawned: true,
+        noChild: false,
+        exitCode: 0,
+        signal: null,
+        closeCode: 0,
+        closeSignal: null,
+        statusAgreement: true,
+        reaped: true,
+        directChildCleanupSafe: true,
+        processGroupQuiescent: true,
+        exitObserved: true,
+        closeObserved: true,
+        stdoutEof: true,
+        stderrEof: true,
+        stdinComplete: true,
+        captureComplete: true,
+        outputTruncated: false,
+        durationMs: item.process.durationMs,
+        stdoutSha256: item.process.stdoutSha256,
+        stderrSha256: item.process.stderrSha256,
+        terminationErrorCount: 0,
+        processErrorCount: 0,
+      },
+      invocation: {
+        executableAttestation: {
+          provider: item.provider,
+          transport: "inherited-readonly-fd-v1",
+          childFd: 3,
+          sha256: item.executableAttestation.sha256,
+          size: item.executableAttestation.size,
+          mode: item.executableAttestation.mode,
+          uid: item.executableAttestation.uid,
+          gid: item.executableAttestation.gid,
+        },
+        argsNormalization: "execution-root-token-v1",
+        argsSha256: sha256(`${item.id}:args`),
+        environmentSha256: sha256(`${item.id}:environment`),
+        workerSchemaVersion: 2,
+        timeoutMs: 120_000,
+        maxOutputBytes: 262_144,
+        contractSha256: taskV2.contractSha256,
+        contextTaskSha256: taskV2.taskContext.taskSha256,
+        requestSha256,
+        taskSha256,
+        promptSha256: item.promptSha256,
+        outputSchemaSha256: sha256(`${item.provider}:worker-v2-output-schema`),
+        outputSchemaTransport:
+          item.provider === "codex"
+            ? "inherited-readonly-fd-v1"
+            : "argv-utf8-v1",
+        outputSchemaChildFd: item.provider === "codex" ? 4 : null,
+        providerOutputSha256: sha256(JSON.stringify(providerOutputV2)),
+        modificationPatchSha256:
+          modificationPatch === null ? null : sha256(modificationPatch),
+        creationsSha256: sha256(JSON.stringify(creations)),
+        finalPatchSha256: finalPatch === null ? null : sha256(finalPatch),
+      },
+    },
+  };
+}
 
 function preflight() {
   const models = { codex: "gpt-5.6-sol", claude: "opus" };
@@ -32,7 +162,10 @@ function preflight() {
         { provider: "claude", model: models.claude, transport: "native" },
       ],
     },
-    baseline: { commit: gitObject("baseline"), tree: gitObject("baseline-tree") },
+    baseline: {
+      commit: gitObject("baseline"),
+      tree: gitObject("baseline-tree"),
+    },
     evaluator: {
       commit: gitObject("evaluator"),
       tree: gitObject("evaluator-tree"),
@@ -103,7 +236,16 @@ function routeRecord(workerRole, run, control, contract) {
   };
 }
 
-function invocation({ id, route, sequence, provider, role, model, host, patch }) {
+function invocation({
+  id,
+  route,
+  sequence,
+  provider,
+  role,
+  model,
+  host,
+  patch,
+}) {
   return {
     id,
     routingId: route.id,
@@ -171,7 +313,10 @@ function rejectedReceipt(frozen) {
   const control = {
     harnessSha256: frozen.control.harnessSha256,
     providerModels: Object.fromEntries(
-      frozen.contract.routing.providers.map(({ provider, model }) => [provider, model]),
+      frozen.contract.routing.providers.map(({ provider, model }) => [
+        provider,
+        model,
+      ]),
     ),
   };
   const contract = {
@@ -187,7 +332,8 @@ function rejectedReceipt(frozen) {
     implementation: "codex",
   };
   const routes = roles.map((role) => routeRecord(role, run, control, contract));
-  const patch = "diff --git a/lib.rs b/lib.rs\n--- a/lib.rs\n+++ b/lib.rs\n@@ -1 +1 @@\n-old\n+new\n";
+  const patch =
+    "diff --git a/lib.rs b/lib.rs\n--- a/lib.rs\n+++ b/lib.rs\n@@ -1 +1 @@\n-old\n+new\n";
   const invocations = roles.map((role, index) => {
     const provider = providersByRole[role];
     return invocation({
@@ -197,7 +343,9 @@ function rejectedReceipt(frozen) {
       provider,
       role,
       model: control.providerModels[provider],
-      host: frozen.control.nativeHosts.find((item) => item.provider === provider),
+      host: frozen.control.nativeHosts.find(
+        (item) => item.provider === provider,
+      ),
       patch: role === "implementation" ? patch : null,
     });
   });
@@ -213,7 +361,10 @@ function rejectedReceipt(frozen) {
     roles,
     providersByRole,
     modelsByRole: Object.fromEntries(
-      roles.map((role) => [role, control.providerModels[providersByRole[role]]]),
+      roles.map((role) => [
+        role,
+        control.providerModels[providersByRole[role]],
+      ]),
     ),
     invocationIds: invocations.map(({ id }) => id),
     upstreamReceipts: upstream(
@@ -247,7 +398,13 @@ function rejectedReceipt(frozen) {
           stderrTail: "format rejected",
         },
       ],
-      artifacts: [{ name: "verifier-session-result.json", sha256: sha256("result"), bytes: 10 }],
+      artifacts: [
+        {
+          name: "verifier-session-result.json",
+          sha256: sha256("result"),
+          bytes: 10,
+        },
+      ],
       durationMs: 1,
       candidateTree: candidate.tree,
       protectedManifest,
@@ -265,7 +422,10 @@ function rejectedReceipt(frozen) {
     reviews: [],
     candidateRejections: [],
     selectedCandidate: null,
-    final: { verdict: "REJECT", reason: "candidate failed the frozen verifier" },
+    final: {
+      verdict: "REJECT",
+      reason: "candidate failed the frozen verifier",
+    },
     events: [
       ...routes.map(({ id }) => ({ kind: "routing", id })),
       ...invocations.map(({ id }) => ({ kind: "native-invocation", id })),
@@ -297,8 +457,11 @@ function legacyReceipt(current, schema) {
   let previousSha256 = "0".repeat(64);
   for (let index = 0; index < receipt.events.length; index += 1) {
     const event = receipt.events[index];
-    const record = collections[event.kind]?.find(({ id }) => id === event.id) ??
-      (event.kind === "selected-candidate" ? receipt.selectedCandidate : receipt.final);
+    const record =
+      collections[event.kind]?.find(({ id }) => id === event.id) ??
+      (event.kind === "selected-candidate"
+        ? receipt.selectedCandidate
+        : receipt.final);
     const body = {
       sequence: index + 1,
       previousSha256,
@@ -321,19 +484,302 @@ function legacyReceipt(current, schema) {
   return receipt;
 }
 
+function dormantV7Receipt() {
+  const profile = harnessCreateExactV2Profile;
+  const baseline = {
+    commit: gitObject("v7-baseline"),
+    tree: gitObject("v7-baseline-tree"),
+  };
+  const evaluator = {
+    commit: gitObject("v7-evaluator"),
+    tree: gitObject("v7-evaluator-tree"),
+    patchSha256: sha256("v7-evaluator-patch"),
+  };
+  const patch = "diff --git a/created.rs b/created.rs\nnew file mode 100644\n";
+  const candidate = {
+    commit: gitObject("v7-candidate"),
+    tree: gitObject("v7-candidate-tree"),
+    protectedManifest: { entries: 9, sha256: sha256("v7-protected") },
+  };
+  const frozen = preflight();
+  const control = {
+    harnessSha256: frozen.control.harnessSha256,
+    providerModels: { codex: "gpt-5.6-sol", claude: "opus" },
+  };
+  const contract = {
+    sha256: profile.contractRawSha256,
+    baseline,
+    evaluator,
+    success: { publicPassed: 3 },
+  };
+  const run = {
+    id: "dormant-v7-admission-run",
+    taskId: profile.id,
+    taskClass: profile.taskClass,
+    startedAt: "2026-09-02T10:00:00.000Z",
+    completedAt: "2026-09-02T10:00:01.000Z",
+  };
+  const roles = ["architecture", "critique", "implementation"];
+  const providersByRole = {
+    architecture: "codex",
+    critique: "claude",
+    implementation: "codex",
+  };
+  const routing = roles.map((role) =>
+    routeRecord(role, run, control, contract),
+  );
+  const reviewRoute = routeRecord("review", run, control, contract);
+  routing.push(reviewRoute);
+  const nativeInvocations = roles.map((role, index) => {
+    const provider = providersByRole[role];
+    return invocation({
+      id: `v7-invocation-${role}`,
+      route: routing[index],
+      sequence: index + 1,
+      provider,
+      role,
+      model: control.providerModels[provider],
+      host: frozen.control.nativeHosts.find(
+        (item) => item.provider === provider,
+      ),
+      patch: role === "implementation" ? patch : null,
+    });
+  });
+  const reviewInvocation = invocation({
+    id: "v7-invocation-review",
+    route: reviewRoute,
+    sequence: nativeInvocations.length + 1,
+    provider: "claude",
+    role: "review",
+    model: control.providerModels.claude,
+    host: frozen.control.nativeHosts.find((item) => item.provider === "claude"),
+    patch: null,
+  });
+  const commands = ["format", "build", "public"].map((name) => ({
+    name,
+    logicalArgv: ["cargo", name],
+    sandboxArgv: ["--unshare-net", "--", "cargo", name],
+    network: "isolated",
+    workspace: "read-only",
+    exitCode: 0,
+    signal: null,
+    disposition: "completed",
+    durationMs: 1,
+    stdoutSha256: sha256(`v7-${name}-stdout`),
+    stderrSha256: sha256(`v7-${name}-stderr`),
+    stdoutTail: name === "public" ? "test result: ok. 3 passed; 0 failed;" : "",
+    stderrTail: "",
+  }));
+  const attempt = {
+    id: "v7-attempt-1",
+    parentAttemptId: null,
+    roles,
+    providersByRole,
+    modelsByRole: Object.fromEntries(
+      roles.map((role) => [
+        role,
+        control.providerModels[providersByRole[role]],
+      ]),
+    ),
+    invocationIds: nativeInvocations.map(({ id }) => id),
+    upstreamReceipts: upstream(
+      "v7-upstream-attempt",
+      roles.map((role) => ({
+        role,
+        provider: providersByRole[role],
+        model: control.providerModels[providersByRole[role]],
+      })),
+    ),
+    patch,
+    patchSha256: sha256(patch),
+    candidate,
+    verifier: {
+      verdict: "ACCEPT",
+      stage: "complete",
+      commands,
+      artifacts: [
+        { name: "v7-result.json", sha256: sha256("v7-result"), bytes: 1 },
+      ],
+      durationMs: 1,
+      candidateTree: candidate.tree,
+      protectedManifest: candidate.protectedManifest,
+    },
+    repairCycle: 0,
+    disposition: "ACCEPT",
+  };
+  const createdPath = "lib/oxigraph/tests/v7_created.rs";
+  const presentPath = "lib/oxigraph/tests/v7_present.rs";
+  const createdContent = 'pub const V7_CREATED: &str = "exact";\n';
+  const createdBlob = {
+    path: createdPath,
+    mode: "100644",
+    type: "blob",
+    objectId: gitBlobObject(createdContent),
+    contentSha256: sha256(createdContent),
+  };
+  const candidateProjection = {
+    paths: [createdPath, presentPath],
+    pathStatuses: [
+      { path: createdPath, status: "A" },
+      { path: presentPath, status: "M" },
+    ],
+    createdBlobs: [createdBlob],
+    changedLines: 2,
+  };
+  const taskV2 = {
+    id: profile.id,
+    slug: profile.slug,
+    contractSchemaVersion: 2,
+    executionGate: profile.executionGate,
+    registrationMode: profile.registrationMode,
+    productAuthority: false,
+    contractSha256: profile.contractRawSha256,
+    canonicalContractSha256: sha256("v7-canonical-contract"),
+    verificationSequence: ["format", "build", "public"],
+    taskContext: {
+      schemaVersion: 2,
+      taskSha256: sha256(JSON.stringify(admissionWorkerContext)),
+      sourceSnapshotSha256: sha256("v7-source-snapshot"),
+      creationInstructionsSha256: sha256("v7-creation-instructions"),
+    },
+    repository: {
+      schema: "oxigraph.engineering-task-contract-repository/v2",
+      objectFormat: "sha1",
+      baseline,
+      evaluator: {
+        commit: evaluator.commit,
+        tree: evaluator.tree,
+        parent: baseline.commit,
+        path: "lib/oxigraph/tests/v7_evaluator.rs",
+        changeStatus: "A",
+        blob: gitObject("v7-evaluator-blob"),
+      },
+      mutableBaselines: [
+        { path: createdPath, state: "absent" },
+        {
+          path: presentPath,
+          state: "present",
+          objectId: gitObject("v7-present"),
+        },
+      ],
+      baselineManifest: {
+        entries: 10,
+        fullSha256: sha256("v7-baseline-full"),
+        protectedEntries: 9,
+        protectedSha256: sha256("v7-baseline-protected"),
+      },
+      evaluatorManifest: {
+        entries: 10,
+        fullSha256: sha256("v7-evaluator-full"),
+        protectedEntries: 9,
+        protectedSha256: candidate.protectedManifest.sha256,
+      },
+    },
+    candidate: {
+      schemaVersion: 2,
+      contractSha256: profile.contractRawSha256,
+      evaluatorPatchSha256: evaluator.patchSha256,
+      patchSha256: attempt.patchSha256,
+      commit: candidate.commit,
+      tree: candidate.tree,
+      pathStatuses: [
+        { path: createdPath, status: "A" },
+        { path: presentPath, status: "M" },
+      ],
+      createdBlobs: [createdBlob],
+      manifests: {
+        full: { entries: 11, sha256: sha256("v7-candidate-full") },
+        protected: candidate.protectedManifest,
+      },
+    },
+  };
+  const workerInvocations = nativeInvocations.map((item) =>
+    workerV2Envelope(
+      item,
+      taskV2,
+      item.role === "implementation"
+        ? {
+            modificationPatch: patch,
+            creations: [{ path: createdPath, content: createdContent }],
+            finalPatch: patch,
+            candidateProjection,
+          }
+        : {},
+    ),
+  );
+  const workerReviewInvocation = workerV2Envelope(reviewInvocation, taskV2);
+  const review = {
+    id: "v7-review-1",
+    attemptId: attempt.id,
+    provider: "claude",
+    model: control.providerModels.claude,
+    invocationId: reviewInvocation.id,
+    upstreamReceipts: upstream("v7-upstream-review", [
+      {
+        role: "review",
+        provider: "claude",
+        model: control.providerModels.claude,
+      },
+    ]),
+    candidateSha256: attempt.patchSha256,
+    outputSha256: workerReviewInvocation.result.invocation.providerOutputSha256,
+    disposition: "ACCEPT",
+  };
+  return createApplicationReceiptV7({
+    run,
+    control,
+    contract,
+    taskV2,
+    routing,
+    nativeInvocations: [...workerInvocations, workerReviewInvocation],
+    attempts: [attempt],
+    reviews: [review],
+    candidateRejections: [],
+    selectedCandidate: {
+      attemptId: attempt.id,
+      patchSha256: attempt.patchSha256,
+      commit: candidate.commit,
+      tree: candidate.tree,
+    },
+    final: { verdict: "ACCEPT", reason: "dormant exact v2 evidence" },
+    events: [
+      ...routing.map(({ id }) => ({ kind: "routing", id })),
+      ...workerInvocations.map(({ id }) => ({
+        kind: "native-invocation",
+        id,
+      })),
+      { kind: "attempt", id: attempt.id },
+      { kind: "native-invocation", id: workerReviewInvocation.id },
+      { kind: "review", id: review.id },
+      { kind: "selected-candidate", id: attempt.id },
+      { kind: "final", id: run.id },
+    ],
+  });
+}
+
 test("pinned application admission is atomic and exact replay is idempotent", async (t) => {
   const frozen = preflight();
   const current = rejectedReceipt(frozen);
   assert.equal(current.schema, "oxigraph.engineering-application-receipt/v6");
   const bytes = serializeApplicationReceipt(current);
-  const path = await runtimePath(`admission-history-${process.pid}-${Date.now()}.jsonl`);
+  const path = await runtimePath(
+    `admission-history-${process.pid}-${Date.now()}.jsonl`,
+  );
   t.after(() => rm(path, { force: true }));
   const history = await RouterHistory.open({ path, isIgnoredRuntimePath });
 
-  const first = await admitApplicationReceipt({ receiptBytes: bytes, preflight: frozen, history });
+  const first = await admitApplicationReceipt({
+    receiptBytes: bytes,
+    preflight: frozen,
+    history,
+  });
   assert.equal(first.outcomeCount, 3);
   assert.equal(history.snapshot().length, 3);
-  const replayed = await admitApplicationReceipt({ receiptBytes: bytes, preflight: frozen, history });
+  const replayed = await admitApplicationReceipt({
+    receiptBytes: bytes,
+    preflight: frozen,
+    history,
+  });
   assert.equal(replayed.outcomeCount, 3);
   assert.equal(history.snapshot().length, 3);
   assert.deepEqual(
@@ -403,9 +849,59 @@ test("legacy replay is rejected before RouterHistory mutation", async () => {
     const legacy = legacyReceipt(rejectedReceipt(frozen), schema);
     const bytes = serializeApplicationReceipt(legacy);
     await assert.rejects(
-      admitApplicationReceipt({ receiptBytes: bytes, preflight: frozen, history }),
+      admitApplicationReceipt({
+        receiptBytes: bytes,
+        preflight: frozen,
+        history,
+      }),
       /replay-only/u,
     );
   }
+  assert.equal(historyCalls, 0);
+});
+
+test("dormant v7 evidence cannot reach generic admission, hosts, or RouterHistory", async () => {
+  const receipt = dormantV7Receipt();
+  const bytes = serializeApplicationReceiptV7(receipt);
+  assert.equal(verifyApplicationReceiptV7(bytes).ok, true);
+  assert.equal(verifyApplicationReceipt(bytes).ok, false);
+
+  let preflightTraps = 0;
+  const hostilePreflight = new Proxy(
+    {},
+    {
+      get() {
+        preflightTraps += 1;
+        throw new Error(
+          "generic admission inspected dormant preflight authority",
+        );
+      },
+    },
+  );
+  let historyCalls = 0;
+  const history = {
+    appendBatch: async () => {
+      historyCalls += 1;
+      return [];
+    },
+    reload: async () => {
+      historyCalls += 1;
+      return [];
+    },
+  };
+
+  assert.throws(
+    () => verifyPinnedApplicationReceipt(bytes, hostilePreflight),
+    /invalid application receipt: unsupported application receipt schema/u,
+  );
+  await assert.rejects(
+    admitApplicationReceipt({
+      receiptBytes: bytes,
+      preflight: hostilePreflight,
+      history,
+    }),
+    /invalid application receipt: unsupported application receipt schema/u,
+  );
+  assert.equal(preflightTraps, 0);
   assert.equal(historyCalls, 0);
 });

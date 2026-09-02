@@ -6,6 +6,8 @@ import { gunzipSync } from "node:zlib";
 
 import {
   APPLICATION_RECEIPT_SCHEMA,
+  replayApplicationReceipt,
+  serializeApplicationReceipt,
   verifyApplicationReceipt,
 } from "../src/receipts/application.mjs";
 import { validateCandidatePatch } from "../src/policy/paths.mjs";
@@ -99,7 +101,8 @@ test("the committed G1.4b application-receipt-v6 fixture remains exact and repla
     "6273c29d7221d820ac6e46bc784deca5867045aa3704470e269f862a459d3205",
   );
 
-  const verification = verifyApplicationReceipt(receiptBytes.toString("utf8"));
+  const receiptText = receiptBytes.toString("utf8");
+  const verification = verifyApplicationReceipt(receiptText);
   assert.equal(verification.ok, true, verification.reason);
   assert.equal(
     APPLICATION_RECEIPT_SCHEMA,
@@ -109,5 +112,12 @@ test("the committed G1.4b application-receipt-v6 fixture remains exact and repla
   assert.equal(
     verification.receiptSha256,
     "d4a54f90ab4edbbb86ee7b76a984ad97032e5e8abb3d884583c90ec3ed6c03ad",
+  );
+  const replayed = replayApplicationReceipt(receiptText);
+  assert.equal(replayed.schema, APPLICATION_RECEIPT_SCHEMA);
+  assert.equal(serializeApplicationReceipt(replayed), receiptText);
+  assert.equal(
+    APPLICATION_RECEIPT_SCHEMA,
+    "oxigraph.engineering-application-receipt/v6",
   );
 });

@@ -20,6 +20,7 @@ import {
   taskV2Failure,
   withTaskV2FailureBoundary,
 } from "../policy/task-v2-failures.mjs";
+import { evaluateWorkerProcessProofV2 } from "../policy/worker-process-proof-v2.mjs";
 import { validateWorkerRole } from "../policy/authority.mjs";
 import { validateWorkerOutputV2 } from "../policy/worker-output-v2.mjs";
 import { assertSealedTaskV2WorkerContext } from "../runtime/task-context-v2.mjs";
@@ -1090,41 +1091,12 @@ function capturedProcessOutcome(outcome, maximumBytes, trustedRawOutcome) {
     captured.processErrors,
     "native provider process errors",
   );
-  const noChildProof =
-    captured.noChild === true &&
-    captured.spawned === false &&
-    captured.reaped === false &&
-    captured.directChildCleanupSafe === true &&
-    captured.processGroupQuiescent === true;
-  const directReapedProof =
-    captured.reaped === true &&
-    captured.spawned === true &&
-    captured.noChild === false &&
-    captured.statusAgreement === true &&
-    captured.exitObserved === true &&
-    captured.closeObserved === true &&
-    captured.stdoutEof === true &&
-    captured.stderrEof === true &&
-    captured.directChildCleanupSafe === true &&
-    captured.exitCode === captured.closeCode &&
-    captured.signal === captured.closeSignal;
-  const reapedCleanupProof =
-    directReapedProof && captured.processGroupQuiescent === true;
-  if (
-    (captured.noChild && !noChildProof) ||
-    (captured.reaped && !directReapedProof) ||
-    (captured.statusAgreement &&
-      (!captured.exitObserved ||
-        !captured.closeObserved ||
-        captured.exitCode !== captured.closeCode ||
-        captured.signal !== captured.closeSignal)) ||
-    (captured.captureComplete &&
-      (!reapedCleanupProof ||
-        !captured.stdinComplete ||
-        captured.outputTruncated ||
-        terminationErrorCount !== 0 ||
-        processErrorCount !== 0))
-  ) {
+  const processProof = evaluateWorkerProcessProofV2(
+    captured,
+    terminationErrorCount,
+    processErrorCount,
+  );
+  if (!processProof.coherent) {
     fail(
       "ERR_INTERNAL_FAIL_CLOSED",
       "native provider process proofs are inconsistent",
@@ -1159,7 +1131,7 @@ function capturedProcessOutcome(outcome, maximumBytes, trustedRawOutcome) {
   return Object.freeze({
     stdoutBytes,
     evidence,
-    cleanupSafe: noChildProof || reapedCleanupProof,
+    cleanupSafe: processProof.cleanupSafe,
   });
 }
 
@@ -1317,6 +1289,7 @@ async function runRequestCore(
   requestStore,
   processRunner,
   patchParser,
+  beforePinnedExecution,
 ) {
   const authority = requestStore.get(request);
   if (authority === undefined) {
@@ -1353,6 +1326,7 @@ async function runRequestCore(
     let execution;
     let publicInvocation;
     try {
+      if (beforePinnedExecution !== undefined) beforePinnedExecution();
       execution = createPinnedExecution(invocation, authority.provider);
       publicInvocation = invocationEvidence(authority, execution, outputRoot);
     } catch (error) {
@@ -1571,9 +1545,16 @@ function runRequestWithController(
   requestStore,
   processRunner,
   patchParser,
+  beforePinnedExecution,
 ) {
   return withTaskV2FailureBoundary(() =>
-    runRequestCore(request, requestStore, processRunner, patchParser),
+    runRequestCore(
+      request,
+      requestStore,
+      processRunner,
+      patchParser,
+      beforePinnedExecution,
+    ),
   );
 }
 
@@ -1591,6 +1572,7 @@ export function runNativeWorkerV2(request) {
     productionRequests,
     runBoundedProcessBytes,
     parseCandidatePatchWithGit,
+    undefined,
   );
 }
 
@@ -1598,11 +1580,14 @@ export function createNativeWorkerV2ControllerForTesting({
   assertContext,
   processRunner,
   patchParser,
+  beforePinnedExecution,
 }) {
   if (
     typeof assertContext !== "function" ||
     typeof processRunner !== "function" ||
-    (patchParser !== undefined && typeof patchParser !== "function")
+    (patchParser !== undefined && typeof patchParser !== "function") ||
+    (beforePinnedExecution !== undefined &&
+      typeof beforePinnedExecution !== "function")
   ) {
     throw new TypeError("v2 worker test controller requires fixed functions");
   }
@@ -1617,6 +1602,7 @@ export function createNativeWorkerV2ControllerForTesting({
         requests,
         processRunner,
         selectedPatchParser,
+        beforePinnedExecution,
       ),
   });
 }

@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import test from "node:test";
 import { ReceiptLog } from "@metaharness/harness";
 import {
   applicationReceiptQualityOutcomes,
   createApplicationReceipt,
+  createApplicationReceiptV7,
   replayApplicationReceipt,
+  serializeApplicationReceiptV7,
   serializeApplicationReceipt,
   verifyApplicationReceipt,
+  verifyApplicationReceiptV7,
   verifyApplicationReceiptOutcome,
 } from "../src/receipts/application.mjs";
 import {
@@ -16,9 +21,468 @@ import {
   routingEmbedding,
 } from "../src/routing/features.mjs";
 import { directApplicationBinding } from "../src/routing/history.mjs";
+import { assembleCandidatePatchV2 } from "../src/policy/paths-v2.mjs";
+import { createNativeWorkerV2ControllerForTesting } from "../src/native/worker-v2.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const oid = (value) => createHash("sha1").update(value).digest("hex");
+const workerV2RequestSchema = "oxigraph.engineering-native-worker-request/v2";
+const workerV2Context = Object.freeze({ fixture: "v7-worker-context" });
+
+function workerV2TaskJson(invocation) {
+  return JSON.stringify({
+    schemaVersion: 2,
+    role: invocation.role,
+    directive: `execute exact ${invocation.id}`,
+    context: workerV2Context,
+    roleInput: { invocationId: invocation.id },
+  });
+}
+
+function workerV2Envelope(
+  invocation,
+  taskV2,
+  {
+    modificationPatch = null,
+    creations = [],
+    finalPatch = null,
+    candidateProjection = null,
+  } = {},
+) {
+  const summary = `worker-v2 ${invocation.role} fixture`;
+  const providerOutputV2 = {
+    summary,
+    patch: modificationPatch,
+    creations,
+    findings: [],
+    verdict: invocation.status,
+  };
+  const taskJson = workerV2TaskJson(invocation);
+  const taskSha256 = sha(taskJson);
+  const requestSha256 = sha(
+    Buffer.concat([
+      Buffer.from(`${workerV2RequestSchema}\0`, "ascii"),
+      Buffer.from(taskV2.contractSha256, "ascii"),
+      Buffer.from(taskSha256, "ascii"),
+      Buffer.from(
+        `${invocation.provider}\0${invocation.model}\0${invocation.role}`,
+        "utf8",
+      ),
+    ]),
+  );
+  const executableAttestation = invocation.executableAttestation;
+  return {
+    id: invocation.id,
+    routingId: invocation.routingId,
+    sequence: invocation.sequence,
+    executionId: invocation.executionId,
+    taskJson,
+    request: {
+      schema: workerV2RequestSchema,
+      requestSha256,
+    },
+    result: {
+      provider: invocation.provider,
+      model: invocation.model,
+      role: invocation.role,
+      status: invocation.status,
+      output: {
+        summary,
+        patch: finalPatch,
+        findings: [],
+        verdict: invocation.status,
+      },
+      providerOutputV2,
+      candidateProjection:
+        candidateProjection === null
+          ? null
+          : structuredClone(candidateProjection),
+      outcome: {
+        disposition: "completed",
+        firstTerminalReason: "completed",
+        spawned: true,
+        noChild: false,
+        exitCode: 0,
+        signal: null,
+        closeCode: 0,
+        closeSignal: null,
+        statusAgreement: true,
+        reaped: true,
+        directChildCleanupSafe: true,
+        processGroupQuiescent: true,
+        exitObserved: true,
+        closeObserved: true,
+        stdoutEof: true,
+        stderrEof: true,
+        stdinComplete: true,
+        captureComplete: true,
+        outputTruncated: false,
+        durationMs: invocation.process.durationMs,
+        stdoutSha256: invocation.process.stdoutSha256,
+        stderrSha256: invocation.process.stderrSha256,
+        terminationErrorCount: 0,
+        processErrorCount: 0,
+      },
+      invocation: {
+        executableAttestation: {
+          provider: invocation.provider,
+          transport: "inherited-readonly-fd-v1",
+          childFd: 3,
+          sha256: executableAttestation.sha256,
+          size: executableAttestation.size,
+          mode: executableAttestation.mode,
+          uid: executableAttestation.uid,
+          gid: executableAttestation.gid,
+        },
+        argsNormalization: "execution-root-token-v1",
+        argsSha256: sha(`${invocation.id}:args`),
+        environmentSha256: sha(`${invocation.id}:environment`),
+        workerSchemaVersion: 2,
+        timeoutMs: 120_000,
+        maxOutputBytes: 262_144,
+        contractSha256: taskV2.contractSha256,
+        contextTaskSha256: taskV2.taskContext.taskSha256,
+        requestSha256,
+        taskSha256,
+        promptSha256: invocation.promptSha256,
+        outputSchemaSha256: sha(
+          `${invocation.provider}:worker-v2-output-schema`,
+        ),
+        outputSchemaTransport:
+          invocation.provider === "codex"
+            ? "inherited-readonly-fd-v1"
+            : "argv-utf8-v1",
+        outputSchemaChildFd: invocation.provider === "codex" ? 4 : null,
+        providerOutputSha256: sha(JSON.stringify(providerOutputV2)),
+        modificationPatchSha256:
+          modificationPatch === null ? null : sha(modificationPatch),
+        creationsSha256: sha(JSON.stringify(creations)),
+        finalPatchSha256: finalPatch === null ? null : sha(finalPatch),
+      },
+    },
+  };
+}
+
+function completedWorkerV2Outcome() {
+  return Object.freeze({
+    disposition: "completed",
+    firstTerminalReason: "completed",
+    syntheticTestOnly: false,
+    spawned: true,
+    noChild: false,
+    exitCode: 0,
+    signal: null,
+    closeCode: 0,
+    closeSignal: null,
+    statusAgreement: true,
+    reaped: true,
+    directChildCleanupSafe: true,
+    processGroupQuiescent: true,
+    exitObserved: true,
+    closeObserved: true,
+    stdoutEof: true,
+    stderrEof: true,
+    stdinComplete: true,
+    captureComplete: true,
+    outputTruncated: false,
+    durationMs: 1,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    terminationErrors: Object.freeze([]),
+    processErrors: Object.freeze([]),
+  });
+}
+
+function v7Draft() {
+  const base = draft();
+  const raw = JSON.parse(
+    readFileSync("tasks/v2/harness-create-exact-v2/contract.json", "utf8"),
+  );
+  const rawBytes = readFileSync(
+    "tasks/v2/harness-create-exact-v2/contract.json",
+  );
+  const taskId = "harness-create-exact-v2-control";
+  const present = raw.protectedInputs.mutableBaselines.find(
+    (x) => x.state === "present",
+  );
+  const absent = raw.protectedInputs.mutableBaselines.find(
+    (x) => x.state === "absent",
+  );
+  const creationContent =
+    'pub const CREATED_MARKER: &str = "created-exactly";\n\n' +
+    "#[test]\n" +
+    "fn created_control_matches_the_green_reference() {\n" +
+    '    assert_eq!(CREATED_MARKER, "created-exactly");\n' +
+    "}\n";
+  const modificationPatch =
+    `diff --git a/${present.path} b/${present.path}\n` +
+    "index f84c77471cb73df8905041738b6973113a51473a..07be8a3a5fd66551d00bd5272ba85da5295e9222 100644\n" +
+    `--- a/${present.path}\n` +
+    `+++ b/${present.path}\n` +
+    "@@ -1,6 +1,6 @@\n" +
+    '-pub const PRESENT_MARKER: &str = "baseline-present";\n' +
+    '+pub const PRESENT_MARKER: &str = "modified-present";\n' +
+    " \n" +
+    " #[test]\n" +
+    "-fn present_control_starts_at_the_frozen_baseline() {\n" +
+    '-    assert_eq!(PRESENT_MARKER, "baseline-present");\n' +
+    "+fn present_control_matches_the_green_reference() {\n" +
+    '+    assert_eq!(PRESENT_MARKER, "modified-present");\n' +
+    " }\n";
+  const assembled = assembleCandidatePatchV2(raw, modificationPatch, [
+    { path: absent.path, content: creationContent },
+  ]);
+  const patchSha256 = sha(assembled.patch);
+  base.attempts[0].patch = assembled.patch;
+  base.attempts[0].patchSha256 = patchSha256;
+  base.selectedCandidate.patchSha256 = patchSha256;
+  base.reviews[0].candidateSha256 = patchSha256;
+  for (const invocation of base.nativeInvocations) {
+    invocation.patchSha256 =
+      invocation.role === "implementation" ? patchSha256 : null;
+  }
+  const taskV2 = {
+    id: taskId,
+    slug: "harness-create-exact-v2",
+    contractSchemaVersion: 2,
+    executionGate: "native-containment-qualification-v1",
+    registrationMode: "dormant-control",
+    productAuthority: false,
+    contractSha256:
+      "58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad",
+    canonicalContractSha256: canonicalSha256(raw),
+    verificationSequence: raw.verificationSequence,
+    taskContext: {
+      schemaVersion: 2,
+      taskSha256: sha(JSON.stringify(workerV2Context)),
+      sourceSnapshotSha256: sha("snapshot"),
+      creationInstructionsSha256: sha("instructions"),
+    },
+    repository: {
+      schema: "oxigraph.engineering-task-contract-repository/v2",
+      objectFormat: "sha1",
+      baseline: raw.baseline,
+      evaluator: {
+        commit: raw.evaluator.commit,
+        tree: raw.evaluator.tree,
+        parent: raw.evaluator.parent,
+        path: raw.evaluator.path,
+        changeStatus: raw.evaluator.changeStatus,
+        blob: raw.evaluator.blob,
+      },
+      mutableBaselines: raw.protectedInputs.mutableBaselines.map((x) => ({
+        path: x.path,
+        state: x.baseline.state,
+        ...(x.baseline.state === "present"
+          ? { objectId: x.baseline.objectId }
+          : {}),
+      })),
+      baselineManifest: raw.protectedInputs.baselineManifest,
+      evaluatorManifest: {
+        ...raw.protectedInputs.evaluatorManifest,
+        protectedSha256: sha("protected-manifest"),
+      },
+    },
+    candidate: {
+      schemaVersion: 2,
+      contractSha256:
+        "58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad",
+      evaluatorPatchSha256: raw.evaluator.patchSha256,
+      patchSha256,
+      commit: base.attempts[0].candidate.commit,
+      tree: base.attempts[0].candidate.tree,
+      pathStatuses: structuredClone(assembled.projection.pathStatuses),
+      createdBlobs: structuredClone(assembled.projection.createdBlobs),
+      manifests: {
+        full: { entries: 1655, sha256: sha("full") },
+        protected: { entries: 1653, sha256: sha("protected-manifest") },
+      },
+    },
+  };
+  base.nativeInvocations = base.nativeInvocations.map((invocation) =>
+    workerV2Envelope(
+      invocation,
+      taskV2,
+      invocation.role === "implementation"
+        ? {
+            modificationPatch,
+            creations: [{ path: absent.path, content: creationContent }],
+            finalPatch: assembled.patch,
+            candidateProjection: assembled.projection,
+          }
+        : {},
+    ),
+  );
+  const reviewInvocation = base.nativeInvocations.find(
+    ({ result }) => result.role === "review",
+  );
+  base.reviews[0].outputSha256 =
+    reviewInvocation.result.invocation.providerOutputSha256;
+  base.run.taskId = taskId;
+  base.run.taskClass = "harness-exact-create-control";
+  base.contract.sha256 = taskV2.contractSha256;
+  base.contract.baseline = raw.baseline;
+  base.contract.evaluator = {
+    commit: raw.evaluator.commit,
+    tree: raw.evaluator.tree,
+    patchSha256: raw.evaluator.patchSha256,
+  };
+  base.contract.success = { publicPassed: 3 };
+  for (const route of base.routing) {
+    route.context.taskId = taskId;
+    route.context.taskClass = base.run.taskClass;
+    route.context.contractSha256 = taskV2.contractSha256;
+    route.context.evaluatorSha256 = raw.evaluator.patchSha256;
+    route.decision.embedding = [...routingEmbedding(route.context)];
+    route.decision.fingerprintSha256 = canonicalSha256({
+      contractSha256: taskV2.contractSha256,
+      evaluatorSha256: raw.evaluator.patchSha256,
+      harnessSha256: base.control.harnessSha256,
+      models: base.control.providerModels,
+    });
+  }
+  base.attempts[0].verifier.commands = base.attempts[0].verifier.commands.slice(
+    0,
+    3,
+  );
+  base.attempts[0].verifier.commands[2].stdoutTail =
+    "test result: ok. 3 passed; 0 failed;";
+  base.attempts[0].candidate.protectedManifest = {
+    entries: 1653,
+    sha256: sha("protected-manifest"),
+  };
+  base.attempts[0].verifier.protectedManifest =
+    base.attempts[0].candidate.protectedManifest;
+  base.taskV2 = taskV2;
+  return base;
+}
+
+async function actualWorkerV2FailureFixture(shape) {
+  const source = v7Draft();
+  const rawBytes = readFileSync(
+    "tasks/v2/harness-create-exact-v2/contract.json",
+  );
+  const raw = JSON.parse(rawBytes.toString("utf8"));
+  const role =
+    shape === "provider-output/success/no-final"
+      ? "implementation"
+      : "architecture";
+  const taskJson = JSON.stringify({
+    schemaVersion: 2,
+    role,
+    directive: `exercise exact worker-v2 ${shape} failure evidence`,
+    context: workerV2Context,
+    roleInput: { failureShape: shape },
+  });
+  const task = JSON.parse(taskJson);
+  const contextTaskBytes = Buffer.from(JSON.stringify(workerV2Context), "utf8");
+  const implementationOutput = source.nativeInvocations.find(
+    ({ result }) => result.role === "implementation",
+  ).result.providerOutputV2;
+  const inconclusiveOutput = {
+    summary: "worker declined the exact request",
+    patch: null,
+    creations: [],
+    findings: [],
+    verdict: "INCONCLUSIVE",
+  };
+  let beforePinnedExecution;
+  let patchParser;
+  let processRunner;
+  switch (shape) {
+    case "null/null":
+      beforePinnedExecution = () => {
+        throw new Error("fixture failure before pinned execution");
+      };
+      processRunner = () => {
+        throw new Error("unreachable process runner");
+      };
+      break;
+    case "base/null":
+      processRunner = () => {
+        throw new Error("fixture process-runner failure");
+      };
+      break;
+    case "base/non-success":
+      processRunner = () =>
+        Object.freeze({
+          ...completedWorkerV2Outcome(),
+          exitCode: 1,
+          closeCode: 1,
+        });
+      break;
+    case "base/success/no-provider-output":
+      processRunner = () => completedWorkerV2Outcome();
+      break;
+    case "provider-output/success/no-final":
+      processRunner = async ({ args }) => {
+        const outputPath = args[args.indexOf("--output-last-message") + 1];
+        await writeFile(
+          outputPath,
+          JSON.stringify(implementationOutput),
+          "utf8",
+        );
+        return completedWorkerV2Outcome();
+      };
+      patchParser = () => {
+        throw new Error("fixture patch-parser failure");
+      };
+      break;
+    case "complete/success/final-null":
+      processRunner = async ({ args }) => {
+        const outputPath = args[args.indexOf("--output-last-message") + 1];
+        await writeFile(outputPath, JSON.stringify(inconclusiveOutput), "utf8");
+        return completedWorkerV2Outcome();
+      };
+      break;
+    default:
+      throw new Error(`unknown worker-v2 failure fixture: ${shape}`);
+  }
+  const controller = createNativeWorkerV2ControllerForTesting({
+    assertContext: ({ context: observed, contractBytes }) => {
+      assert.equal(observed, workerV2Context);
+      assert.equal(sha(contractBytes), source.taskV2.contractSha256);
+      return Object.freeze({
+        context: workerV2Context,
+        contract: raw,
+        contractSha256: source.taskV2.contractSha256,
+        taskBytes: contextTaskBytes,
+        taskSha256: sha(contextTaskBytes),
+      });
+    },
+    processRunner,
+    patchParser,
+    beforePinnedExecution,
+  });
+  const request = controller.createRequest({
+    context: workerV2Context,
+    contractBytes: Buffer.from(rawBytes),
+    provider: "codex",
+    role,
+    directive: task.directive,
+    roleInput: task.roleInput,
+  });
+  const result = await controller.run(request);
+  assert.equal(result.status, "INCONCLUSIVE");
+  return { source, role, taskJson, request, result };
+}
+
+function appendActualWorkerV2Failure(draft, fixture, suffix = "fixture") {
+  const route = draft.routing.find(({ role }) => role === fixture.role);
+  assert.notEqual(route, undefined);
+  const id = `actual-worker-v2-failure-${suffix}`;
+  draft.nativeInvocations.push({
+    id,
+    routingId: route.id,
+    sequence: draft.nativeInvocations.length + 1,
+    executionId: `${id}-execution`,
+    taskJson: fixture.taskJson,
+    request: fixture.request,
+    result: fixture.result,
+  });
+  draft.events.splice(-2, 0, { kind: "native-invocation", id });
+  return draft;
+}
 
 function upstream(runId, assignments, verdict = "pass") {
   const log = new ReceiptLog();
@@ -237,7 +701,13 @@ function draft() {
   };
   const routeRoles = ["architecture", "critique", "implementation", "review"];
   const routing = routeRoles.map((workerRole) => {
-    const context = routingContext(run.taskId, run, control, contract, workerRole);
+    const context = routingContext(
+      run.taskId,
+      run,
+      control,
+      contract,
+      workerRole,
+    );
     return {
       id: `route-${workerRole}`,
       role: workerRole,
@@ -255,10 +725,39 @@ function draft() {
     "",
   ].join("\n");
   const nativeInvocations = [
-    invocation("invoke-architecture", "route-architecture", 1, "codex", "architecture", control.providerModels.codex),
-    invocation("invoke-critique", "route-critique", 2, "claude", "critique", control.providerModels.claude),
-    invocation("invoke-implementation", "route-implementation", 3, "codex", "implementation", control.providerModels.codex, { patch }),
-    invocation("invoke-review", "route-review", 4, "claude", "review", control.providerModels.claude),
+    invocation(
+      "invoke-architecture",
+      "route-architecture",
+      1,
+      "codex",
+      "architecture",
+      control.providerModels.codex,
+    ),
+    invocation(
+      "invoke-critique",
+      "route-critique",
+      2,
+      "claude",
+      "critique",
+      control.providerModels.claude,
+    ),
+    invocation(
+      "invoke-implementation",
+      "route-implementation",
+      3,
+      "codex",
+      "implementation",
+      control.providerModels.codex,
+      { patch },
+    ),
+    invocation(
+      "invoke-review",
+      "route-review",
+      4,
+      "claude",
+      "review",
+      control.providerModels.claude,
+    ),
   ];
   const patchSha256 = sha(patch);
   const protectedManifest = { entries: 12, sha256: sha("protected-manifest") };
@@ -287,23 +786,42 @@ function draft() {
         "invoke-critique",
         "invoke-implementation",
       ],
-      upstreamReceipts: upstream(
-        "candidate-upstream-1",
-        [
-          { role: "architecture", provider: "codex", model: control.providerModels.codex },
-          { role: "critique", provider: "claude", model: control.providerModels.claude },
-          { role: "implementation", provider: "codex", model: control.providerModels.codex },
-        ],
-      ),
+      upstreamReceipts: upstream("candidate-upstream-1", [
+        {
+          role: "architecture",
+          provider: "codex",
+          model: control.providerModels.codex,
+        },
+        {
+          role: "critique",
+          provider: "claude",
+          model: control.providerModels.claude,
+        },
+        {
+          role: "implementation",
+          provider: "codex",
+          model: control.providerModels.codex,
+        },
+      ]),
       patch,
       patchSha256,
       candidate,
       verifier: {
         verdict: "ACCEPT",
         stage: "complete",
-        commands: ["format", "build", "public", "independent", "regression"].map(command),
+        commands: [
+          "format",
+          "build",
+          "public",
+          "independent",
+          "regression",
+        ].map(command),
         artifacts: [
-          { name: "concurrent_histories-deadbeef", sha256: sha("artifact"), bytes: 8192 },
+          {
+            name: "concurrent_histories-deadbeef",
+            sha256: sha("artifact"),
+            bytes: 8192,
+          },
         ],
         durationMs: 10,
         candidateTree: candidate.tree,
@@ -320,12 +838,13 @@ function draft() {
       provider: "claude",
       model: control.providerModels.claude,
       invocationId: "invoke-review",
-      upstreamReceipts: upstream(
-        "review-upstream-1",
-        [
-          { role: "review", provider: "claude", model: control.providerModels.claude },
-        ],
-      ),
+      upstreamReceipts: upstream("review-upstream-1", [
+        {
+          role: "review",
+          provider: "claude",
+          model: control.providerModels.claude,
+        },
+      ]),
       candidateSha256: patchSha256,
       outputSha256: nativeInvocations[3].outputSha256,
       disposition: "ACCEPT",
@@ -337,7 +856,10 @@ function draft() {
     commit: candidate.commit,
     tree: candidate.tree,
   };
-  const final = { verdict: "ACCEPT", reason: "all frozen application gates passed" };
+  const final = {
+    verdict: "ACCEPT",
+    reason: "all frozen application gates passed",
+  };
   const events = [
     { kind: "routing", id: "route-architecture" },
     { kind: "native-invocation", id: "invoke-architecture" },
@@ -431,14 +953,8 @@ function sevenStageDraft({ compatibilityOutputPassed = 1 } = {}) {
   const service = command("service");
   service.stdoutTail = "test result: ok. 17 passed; 0 failed;";
   const compatibility = command("compatibility");
-  compatibility.stdoutTail =
-    `test result: ok. ${compatibilityOutputPassed} passed; 0 failed;`;
-  value.attempts[0].verifier.commands.splice(
-    3,
-    0,
-    service,
-    compatibility,
-  );
+  compatibility.stdoutTail = `test result: ok. ${compatibilityOutputPassed} passed; 0 failed;`;
+  value.attempts[0].verifier.commands.splice(3, 0, service, compatibility);
   return value;
 }
 
@@ -496,12 +1012,18 @@ function qualityOutcomeFor(
   const review = receipt.reviews.find(({ id }) => id === reviewId);
   const workerRole =
     review === undefined
-      ? role ?? (attempt.repairCycle === 0 ? "implementation" : "repair")
+      ? (role ?? (attempt.repairCycle === 0 ? "implementation" : "repair"))
       : "review";
-  const invocationId = review?.invocationId ?? attempt.invocationIds.find((id) =>
-    receipt.nativeInvocations.find((item) => item.id === id)?.role === workerRole,
+  const invocationId =
+    review?.invocationId ??
+    attempt.invocationIds.find(
+      (id) =>
+        receipt.nativeInvocations.find((item) => item.id === id)?.role ===
+        workerRole,
+    );
+  const invocation = receipt.nativeInvocations.find(
+    ({ id }) => id === invocationId,
   );
-  const invocation = receipt.nativeInvocations.find(({ id }) => id === invocationId);
   const route = receipt.routing.find(({ id }) => id === invocation.routingId);
   const outcome = {
     taskId: route.context.taskId,
@@ -601,7 +1123,13 @@ function addRejectedRepair(
       { patch },
     ),
   );
-  const commands = ["format", "build", "public", "independent", "regression"].map(command);
+  const commands = [
+    "format",
+    "build",
+    "public",
+    "independent",
+    "regression",
+  ].map(command);
   commands.at(-1).exitCode = 1;
   const protectedManifest = {
     entries: 12,
@@ -661,7 +1189,10 @@ test("application receipt has an exact deterministic round trip and quality bind
   const serialized = serializeApplicationReceipt(left);
   assert.equal(serialized.match(/"schema":/g)?.length, 1);
   assert.equal(serialized, serializeApplicationReceipt(right));
-  assert.equal(serializeApplicationReceipt(replayApplicationReceipt(serialized)), serialized);
+  assert.equal(
+    serializeApplicationReceipt(replayApplicationReceipt(serialized)),
+    serialized,
+  );
   const verified = verifyApplicationReceipt(serialized);
   assert.equal(verified.ok, true);
   assert.equal(verified.entryCount, 12);
@@ -692,10 +1223,7 @@ test("application receipt has an exact deterministic round trip and quality bind
 
   for (const workerRole of ["architecture", "critique", "implementation"]) {
     const outcome = qualityOutcomeFor(left, { role: workerRole, quality: 1 });
-    const binding = verifyApplicationReceiptOutcome(
-      serialized,
-      outcome,
-    );
+    const binding = verifyApplicationReceiptOutcome(serialized, outcome);
     assert.equal(binding.verified, true, workerRole);
     assert.deepEqual(binding.binding, directApplicationBinding(outcome));
     assert.equal(binding.bindingSha256, canonicalSha256(binding.binding));
@@ -719,21 +1247,26 @@ test("v6 receipts seal candidate-specific reconstruction rejection evidence with
       id: "candidate-rejection-1",
       candidateId: "candidate-execution",
       invocationId: "invoke-implementation",
-      patchSha256: sha([
-        "diff --git a/lib.rs b/lib.rs",
-        "--- a/lib.rs",
-        "+++ b/lib.rs",
-        "@@ -1 +1 @@",
-        "-old",
-        "+new",
-        "",
-      ].join("\n")),
+      patchSha256: sha(
+        [
+          "diff --git a/lib.rs b/lib.rs",
+          "--- a/lib.rs",
+          "+++ b/lib.rs",
+          "@@ -1 +1 @@",
+          "-old",
+          "+new",
+          "",
+        ].join("\n"),
+      ),
       phase: "reconstruction",
       failureCode: "candidate-reconstruction-failed",
       failureDetailSha256: sha("bounded canonical reconstruction failure"),
     },
   ]);
-  assert.equal(serializeApplicationReceipt(left), serializeApplicationReceipt(right));
+  assert.equal(
+    serializeApplicationReceipt(left),
+    serializeApplicationReceipt(right),
+  );
   assert.equal(verifyApplicationReceipt(left).ok, true);
   assert.deepEqual(applicationReceiptQualityOutcomes(left), []);
   assert.equal(
@@ -743,7 +1276,14 @@ test("v6 receipts seal candidate-specific reconstruction rejection evidence with
 });
 
 test("candidate rejection schema is exact, bounded, and pair-classified", () => {
-  for (const field of ["error", "message", "stdout", "stderr", "path", "candidateTree"]) {
+  for (const field of [
+    "error",
+    "message",
+    "stdout",
+    "stderr",
+    "path",
+    "candidateTree",
+  ]) {
     const value = reconstructionRejectionDraft();
     value.candidateRejections[0][field] = `private-${field}`;
     assert.throws(
@@ -906,7 +1446,9 @@ test("v6 accounts for every successful patch invocation and orders rejection eve
     ),
   );
   const rejection = afterSelection.events.splice(
-    afterSelection.events.findIndex(({ kind }) => kind === "candidate-rejection"),
+    afterSelection.events.findIndex(
+      ({ kind }) => kind === "candidate-rejection",
+    ),
     1,
   )[0];
   afterSelection.events.splice(-1, 0, rejection);
@@ -954,22 +1496,26 @@ test("parallel rejection lanes remain distinct even for identical patch bytes", 
   const receipt = createApplicationReceipt(value);
   assert.equal(receipt.candidateRejections.length, 2);
   assert.equal(
-    new Set(receipt.candidateRejections.map(({ patchSha256 }) => patchSha256)).size,
+    new Set(receipt.candidateRejections.map(({ patchSha256 }) => patchSha256))
+      .size,
     1,
   );
   assert.equal(
-    new Set(receipt.candidateRejections.map(({ invocationId }) => invocationId)).size,
+    new Set(receipt.candidateRejections.map(({ invocationId }) => invocationId))
+      .size,
     2,
   );
   assert.equal(
-    new Set(receipt.candidateRejections.map(({ candidateId }) => candidateId)).size,
+    new Set(receipt.candidateRejections.map(({ candidateId }) => candidateId))
+      .size,
     2,
   );
 
   const omitted = JSON.parse(serializeApplicationReceipt(receipt));
   omitted.candidateRejections.pop();
   omitted.events = omitted.events.filter(
-    ({ kind, id }) => kind !== "candidate-rejection" || id !== secondRejection.id,
+    ({ kind, id }) =>
+      kind !== "candidate-rejection" || id !== secondRejection.id,
   );
   resealTamperedReceipt(omitted);
   const omittedResult = verifyApplicationReceipt(omitted);
@@ -978,7 +1524,9 @@ test("parallel rejection lanes remain distinct even for identical patch bytes", 
 });
 
 test("candidate rejection evidence never authorizes Router quality", () => {
-  const rejectionOnly = createApplicationReceipt(reconstructionRejectionDraft());
+  const rejectionOnly = createApplicationReceipt(
+    reconstructionRejectionDraft(),
+  );
   for (const quality of [0, 1]) {
     assert.equal(
       verifyApplicationReceiptOutcome(
@@ -990,7 +1538,8 @@ test("candidate rejection evidence never authorizes Router quality", () => {
   }
 
   const mixed = draft();
-  const rejectedPatch = "diff --git a/rejected.rs b/rejected.rs\n--- a/rejected.rs\n+++ b/rejected.rs\n";
+  const rejectedPatch =
+    "diff --git a/rejected.rs b/rejected.rs\n--- a/rejected.rs\n+++ b/rejected.rs\n";
   const rejectedInvocation = invocation(
     "invoke-rejected-implementation",
     "route-implementation",
@@ -1022,7 +1571,8 @@ test("candidate rejection evidence never authorizes Router quality", () => {
   assert.equal(outcomes.length, 4);
   assert.equal(
     outcomes.some(
-      ({ outcome }) => outcome.candidateSha256 === rejectedInvocation.patchSha256,
+      ({ outcome }) =>
+        outcome.candidateSha256 === rejectedInvocation.patchSha256,
     ),
     false,
   );
@@ -1035,23 +1585,38 @@ test("legacy v1 through v5 receipts replay byte-for-byte without v6 fields", () 
   const frozenLegacyFixtures = new Map([
     [
       "oxigraph.engineering-application-receipt/v1",
-      ["0b7d3695e374a007d4ea93bb0d2b536cec1bc9ac3c2426b276a51f897193b94c", 21001],
+      [
+        "0b7d3695e374a007d4ea93bb0d2b536cec1bc9ac3c2426b276a51f897193b94c",
+        21001,
+      ],
     ],
     [
       "oxigraph.engineering-application-receipt/v2",
-      ["a6f2854f2f9aa706ed982ffae1c4dde72e464f307fc8bda6f01b658ff7ee5309", 21142],
+      [
+        "a6f2854f2f9aa706ed982ffae1c4dde72e464f307fc8bda6f01b658ff7ee5309",
+        21142,
+      ],
     ],
     [
       "oxigraph.engineering-application-receipt/v3",
-      ["f647421dbdb2d99e03c03029a072061b8906229d89b98007423450bf01e6c550", 21142],
+      [
+        "f647421dbdb2d99e03c03029a072061b8906229d89b98007423450bf01e6c550",
+        21142,
+      ],
     ],
     [
       "oxigraph.engineering-application-receipt/v4",
-      ["847a2509d2e348a721678a484b285e8a40e69d5e1df97f757ea02c58dbb17eab", 21142],
+      [
+        "847a2509d2e348a721678a484b285e8a40e69d5e1df97f757ea02c58dbb17eab",
+        21142,
+      ],
     ],
     [
       "oxigraph.engineering-application-receipt/v5",
-      ["b3fb59d79311a4a9714d3a5ace8425c506106cf2d4b0e4f4b6930fe9e3206c49", 21142],
+      [
+        "b3fb59d79311a4a9714d3a5ace8425c506106cf2d4b0e4f4b6930fe9e3206c49",
+        21142,
+      ],
     ],
   ]);
   for (const schema of [
@@ -1124,7 +1689,10 @@ test("application receipts admit an optional frozen service evaluator without in
     historicalBytes,
   );
 
-  assert.equal(verifyApplicationReceipt(createApplicationReceipt(draft())).ok, true);
+  assert.equal(
+    verifyApplicationReceipt(createApplicationReceipt(draft())).ok,
+    true,
+  );
 });
 
 test("v6 and legacy v5 receipts bind the seven-stage compatibility gate and reject vacuous success", () => {
@@ -1154,7 +1722,10 @@ test("v6 and legacy v5 receipts bind the seven-stage compatibility gate and reje
   assert.equal(verifyApplicationReceipt(historicalV5).ok, true);
 
   assert.throws(
-    () => createApplicationReceipt(sevenStageDraft({ compatibilityOutputPassed: 0 })),
+    () =>
+      createApplicationReceipt(
+        sevenStageDraft({ compatibilityOutputPassed: 0 }),
+      ),
     /ACCEPT without full successful verification/u,
   );
 
@@ -1233,7 +1804,10 @@ test("v6 through v3 receipts retain hash-bound rejected critique diagnostics whi
     summary,
     findings,
   });
-  assert.equal(Object.isFrozen(receipt.nativeInvocations[1].critiqueDiagnostic), true);
+  assert.equal(
+    Object.isFrozen(receipt.nativeInvocations[1].critiqueDiagnostic),
+    true,
+  );
 
   const legacyV4 = JSON.parse(serializeApplicationReceipt(receipt));
   relabelLegacyReceipt(legacyV4, "oxigraph.engineering-application-receipt/v4");
@@ -1299,11 +1873,14 @@ test("v6 through v4 receipts retain only hash-bound rejected review diagnostics"
   const value = rejectedReviewDraft();
   const receipt = createApplicationReceipt(value);
   const review = receipt.nativeInvocations[3];
-  assert.deepEqual(review.reviewDiagnostic, value.nativeInvocations[3].reviewDiagnostic);
+  assert.deepEqual(
+    review.reviewDiagnostic,
+    value.nativeInvocations[3].reviewDiagnostic,
+  );
   assert.equal(Object.isFrozen(review.reviewDiagnostic), true);
   assert.deepEqual(
-    replayApplicationReceipt(serializeApplicationReceipt(receipt)).nativeInvocations[3]
-      .reviewDiagnostic,
+    replayApplicationReceipt(serializeApplicationReceipt(receipt))
+      .nativeInvocations[3].reviewDiagnostic,
     review.reviewDiagnostic,
   );
 
@@ -1350,7 +1927,8 @@ test("v6 through v4 receipts retain only hash-bound rejected review diagnostics"
   );
 
   const tampered = JSON.parse(serializeApplicationReceipt(receipt));
-  tampered.nativeInvocations[3].reviewDiagnostic.findings[0] = "Different finding.";
+  tampered.nativeInvocations[3].reviewDiagnostic.findings[0] =
+    "Different finding.";
   resealTamperedReceipt(tampered);
   const tamperedResult = verifyApplicationReceipt(tampered);
   assert.equal(tamperedResult.ok, false);
@@ -1365,7 +1943,9 @@ test("v6 through v4 receipts retain only hash-bound rejected review diagnostics"
     );
   }
 
-  const legacyV3WithDiagnostic = JSON.parse(serializeApplicationReceipt(receipt));
+  const legacyV3WithDiagnostic = JSON.parse(
+    serializeApplicationReceipt(receipt),
+  );
   relabelLegacyReceipt(
     legacyV3WithDiagnostic,
     "oxigraph.engineering-application-receipt/v3",
@@ -1379,7 +1959,10 @@ test("v6 through v4 receipts retain only hash-bound rejected review diagnostics"
   resealTamperedReceipt(tamperedLegacyV3);
   const tamperedLegacyV3Result = verifyApplicationReceipt(tamperedLegacyV3);
   assert.equal(tamperedLegacyV3Result.ok, false);
-  assert.match(tamperedLegacyV3Result.reason, /output hash|review diagnostic/iu);
+  assert.match(
+    tamperedLegacyV3Result.reason,
+    /output hash|review diagnostic/iu,
+  );
 
   const historicalV3 = structuredClone(legacyV3WithDiagnostic);
   delete historicalV3.nativeInvocations[3].reviewDiagnostic;
@@ -1388,7 +1971,10 @@ test("v6 through v4 receipts retain only hash-bound rejected review diagnostics"
   assert.equal(historicalV3Result.ok, true);
   assert.equal(historicalV3Result.receipt.schema, historicalV3.schema);
   assert.equal(
-    Object.hasOwn(historicalV3Result.receipt.nativeInvocations[3], "reviewDiagnostic"),
+    Object.hasOwn(
+      historicalV3Result.receipt.nativeInvocations[3],
+      "reviewDiagnostic",
+    ),
     false,
   );
   assert.equal(
@@ -1405,7 +1991,9 @@ test("v6 through v4 receipts retain only hash-bound rejected review diagnostics"
 });
 
 test("single-field tampering and unknown fields fail closed", () => {
-  const tampered = JSON.parse(serializeApplicationReceipt(createApplicationReceipt(draft())));
+  const tampered = JSON.parse(
+    serializeApplicationReceipt(createApplicationReceipt(draft())),
+  );
   tampered.attempts[0].verifier.commands[2].exitCode = 1;
   const result = verifyApplicationReceipt(tampered);
   assert.equal(result.ok, false);
@@ -1426,7 +2014,10 @@ test("single-field tampering and unknown fields fail closed", () => {
 
   const unknown = draft();
   unknown.control.transport = "native";
-  assert.throws(() => createApplicationReceipt(unknown), /unknown field: transport/);
+  assert.throws(
+    () => createApplicationReceipt(unknown),
+    /unknown field: transport/,
+  );
 
   const missingExecution = draft();
   delete missingExecution.nativeInvocations[0].executionId;
@@ -1444,12 +2035,18 @@ test("single-field tampering and unknown fields fail closed", () => {
 });
 
 test("outer receipt rejects a valid-prefix upstream ReceiptLog attack even after resealing", () => {
-  const receipt = JSON.parse(serializeApplicationReceipt(createApplicationReceipt(draft())));
+  const receipt = JSON.parse(
+    serializeApplicationReceipt(createApplicationReceipt(draft())),
+  );
   const wrapper = receipt.attempts[0].upstreamReceipts;
   const parsed = JSON.parse(wrapper.serialized);
   parsed.receipts.pop();
   const prefix = ReceiptLog.fromJSON(parsed);
-  assert.deepEqual(prefix.verify(), { ok: true }, "the upstream prefix alone is valid");
+  assert.deepEqual(
+    prefix.verify(),
+    { ok: true },
+    "the upstream prefix alone is valid",
+  );
   wrapper.serialized = prefix.export();
   wrapper.serializedSha256 = sha(wrapper.serialized);
   wrapper.entryCount = prefix.length;
@@ -1458,7 +2055,10 @@ test("outer receipt rejects a valid-prefix upstream ReceiptLog attack even after
 
   const result = verifyApplicationReceipt(receipt);
   assert.equal(result.ok, false);
-  assert.match(result.reason, /one upstream receipt per declared role|exact receipt count/i);
+  assert.match(
+    result.reason,
+    /one upstream receipt per declared role|exact receipt count/i,
+  );
 
   const applicationPrefix = JSON.parse(
     serializeApplicationReceipt(createApplicationReceipt(draft())),
@@ -1471,10 +2071,15 @@ test("outer receipt rejects a valid-prefix upstream ReceiptLog attack even after
 });
 
 test("reordered entries fail even when an attacker recomputes every public hash", () => {
-  const receipt = JSON.parse(serializeApplicationReceipt(createApplicationReceipt(draft())));
-  const attemptIndex = receipt.events.findIndex(({ kind }) => kind === "attempt");
+  const receipt = JSON.parse(
+    serializeApplicationReceipt(createApplicationReceipt(draft())),
+  );
+  const attemptIndex = receipt.events.findIndex(
+    ({ kind }) => kind === "attempt",
+  );
   const invocationIndex = receipt.events.findIndex(
-    ({ kind, id }) => kind === "native-invocation" && id === "invoke-implementation",
+    ({ kind, id }) =>
+      kind === "native-invocation" && id === "invoke-implementation",
   );
   [receipt.events[attemptIndex], receipt.events[invocationIndex]] = [
     receipt.events[invocationIndex],
@@ -1498,9 +2103,13 @@ test("ACCEPT is impossible without complete verification and independent review"
   selfApproved.reviews[0].provider = "codex";
   selfApproved.reviews[0].model = selfApproved.control.providerModels.codex;
   selfApproved.nativeInvocations[3].provider = "codex";
-  selfApproved.nativeInvocations[3].model = selfApproved.control.providerModels.codex;
+  selfApproved.nativeInvocations[3].model =
+    selfApproved.control.providerModels.codex;
   selfApproved.nativeInvocations[3].executable = "/usr/bin/codex";
-  selfApproved.nativeInvocations[3].args = ["--model", selfApproved.control.providerModels.codex];
+  selfApproved.nativeInvocations[3].args = [
+    "--model",
+    selfApproved.control.providerModels.codex,
+  ];
   selfApproved.nativeInvocations[3].executableAttestation = {
     provider: "codex",
     discoveredPath: "/usr/bin/codex",
@@ -1511,16 +2120,13 @@ test("ACCEPT is impossible without complete verification and independent review"
     uid: 0,
     gid: 0,
   };
-  selfApproved.reviews[0].upstreamReceipts = upstream(
-    "review-upstream-1",
-    [
-      {
-        role: "review",
-        provider: "codex",
-        model: selfApproved.control.providerModels.codex,
-      },
-    ],
-  );
+  selfApproved.reviews[0].upstreamReceipts = upstream("review-upstream-1", [
+    {
+      role: "review",
+      provider: "codex",
+      model: selfApproved.control.providerModels.codex,
+    },
+  ]);
   assert.throws(
     () => createApplicationReceipt(selfApproved),
     /independent cross-vendor review/,
@@ -1543,7 +2149,10 @@ test("routed decisions bind probability, complete context, and contract fingerpr
   const receipt = createApplicationReceipt(value);
   const outcomes = applicationReceiptQualityOutcomes(receipt);
   assert.equal(outcomes.length, 4);
-  assert.equal(outcomes.every(({ outcome }) => outcome.mode === "routed"), true);
+  assert.equal(
+    outcomes.every(({ outcome }) => outcome.mode === "routed"),
+    true,
+  );
   assert.equal(
     outcomes.every(({ outcome }) => outcome.predictedQuality === 0.8),
     true,
@@ -1743,4 +2352,516 @@ test("partial DAG failure retains unused routes and every unreferenced evidence 
       assert.equal(verifyApplicationReceipt(tampered).ok, false);
     }
   }
+});
+
+test("v7 exact profile is deterministic, frozen, and isolated from generic APIs", () => {
+  const left = createApplicationReceiptV7(v7Draft());
+  const right = createApplicationReceiptV7(v7Draft());
+  assert.equal(left.schema, "oxigraph.engineering-application-receipt/v7");
+  assert.deepEqual(Object.keys(left), [
+    "schema",
+    "run",
+    "control",
+    "contract",
+    "taskV2",
+    "routing",
+    "nativeInvocations",
+    "attempts",
+    "reviews",
+    "candidateRejections",
+    "selectedCandidate",
+    "final",
+    "events",
+    "chain",
+    "receiptSha256",
+  ]);
+  assert.deepEqual(Object.keys(left.taskV2), [
+    "id",
+    "slug",
+    "contractSchemaVersion",
+    "executionGate",
+    "registrationMode",
+    "productAuthority",
+    "contractSha256",
+    "canonicalContractSha256",
+    "verificationSequence",
+    "taskContext",
+    "repository",
+    "candidate",
+  ]);
+  assert.equal(
+    serializeApplicationReceiptV7(left),
+    serializeApplicationReceiptV7(right),
+  );
+  assert.equal(
+    verifyApplicationReceiptV7(serializeApplicationReceiptV7(left)).ok,
+    true,
+  );
+  assert.equal(Object.isFrozen(left), true);
+  assert.equal(Object.isFrozen(left.taskV2), true);
+  assert.equal(Object.isFrozen(left.taskV2.candidate), true);
+  assert.ok(
+    left.nativeInvocations.every(
+      (invocation) =>
+        invocation.workerV2.workerSchemaVersion === 2 &&
+        invocation.workerV2.contractSha256 === left.taskV2.contractSha256 &&
+        invocation.workerV2.contextTaskSha256 ===
+          left.taskV2.taskContext.taskSha256,
+    ),
+  );
+  const source = v7Draft();
+  const sourceReceipt = createApplicationReceiptV7(source);
+  source.run.taskId = "mutated";
+  source.taskV2.candidate.pathStatuses[0].status = "M";
+  assert.equal(sourceReceipt.run.taskId, "harness-create-exact-v2-control");
+  assert.equal(
+    verifyApplicationReceipt(serializeApplicationReceiptV7(left)).ok,
+    false,
+  );
+  assert.throws(
+    () =>
+      applicationReceiptQualityOutcomes(serializeApplicationReceiptV7(left)),
+    /invalid application receipt/,
+  );
+});
+
+test("v7 consumes an actual worker-v2 test-controller result", async () => {
+  const source = v7Draft();
+  const rawBytes = readFileSync(
+    "tasks/v2/harness-create-exact-v2/contract.json",
+  );
+  const raw = JSON.parse(rawBytes.toString("utf8"));
+  const index = source.nativeInvocations.findIndex(
+    ({ result }) => result.role === "implementation",
+  );
+  const synthetic = source.nativeInvocations[index];
+  const workerTask = JSON.parse(synthetic.taskJson);
+  const context = workerV2Context;
+  const contextTaskBytes = Buffer.from(JSON.stringify(context), "utf8");
+  const controller = createNativeWorkerV2ControllerForTesting({
+    assertContext: ({ context: observed, contractBytes }) => {
+      assert.equal(observed, context);
+      assert.equal(sha(contractBytes), source.taskV2.contractSha256);
+      return Object.freeze({
+        context,
+        contract: raw,
+        contractSha256: source.taskV2.contractSha256,
+        taskBytes: contextTaskBytes,
+        taskSha256: sha(contextTaskBytes),
+      });
+    },
+    processRunner: async ({ args }) => {
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(
+        outputPath,
+        JSON.stringify(synthetic.result.providerOutputV2),
+        "utf8",
+      );
+      return completedWorkerV2Outcome();
+    },
+    patchParser: async ({ patch }) => {
+      assert.equal(patch, synthetic.result.output.patch);
+    },
+  });
+  const request = controller.createRequest({
+    context,
+    contractBytes: Buffer.from(rawBytes),
+    provider: "codex",
+    role: "implementation",
+    directive: workerTask.directive,
+    roleInput: workerTask.roleInput,
+  });
+  const result = await controller.run(request);
+  assert.equal(result.status, "ACCEPT");
+  source.nativeInvocations[index] = {
+    id: synthetic.id,
+    routingId: synthetic.routingId,
+    sequence: synthetic.sequence,
+    executionId: synthetic.executionId,
+    taskJson: synthetic.taskJson,
+    request,
+    result,
+  };
+
+  const receipt = createApplicationReceiptV7(source);
+  const observed = receipt.nativeInvocations[index];
+  assert.equal(observed.workerV2.requestSha256, request.requestSha256);
+  assert.equal(
+    observed.workerV2.finalPatchSha256,
+    source.attempts[0].patchSha256,
+  );
+  assert.equal(
+    canonicalJson(observed.candidateProjection.pathStatuses),
+    canonicalJson(source.taskV2.candidate.pathStatuses),
+  );
+  assert.deepEqual(Object.keys(observed.workerV2.executableAttestation), [
+    "provider",
+    "transport",
+    "childFd",
+    "sha256",
+    "size",
+    "mode",
+    "uid",
+    "gid",
+  ]);
+  assert.equal(Object.hasOwn(observed, "executable"), false);
+  assert.equal(Object.hasOwn(observed, "args"), false);
+  assert.doesNotMatch(JSON.stringify(observed), /\/(?:home|usr)\//u);
+});
+
+test("v7 retains every actual worker-v2 failure evidence shape", async () => {
+  const shapes = [
+    {
+      name: "null/null",
+      process: false,
+      worker: null,
+    },
+    {
+      name: "base/null",
+      process: false,
+      worker: "base",
+    },
+    {
+      name: "base/non-success",
+      process: true,
+      worker: "base",
+      successfulProcess: false,
+    },
+    {
+      name: "base/success/no-provider-output",
+      process: true,
+      worker: "base",
+      successfulProcess: true,
+    },
+    {
+      name: "provider-output/success/no-final",
+      process: true,
+      worker: "provider-output",
+      successfulProcess: true,
+    },
+    {
+      name: "complete/success/final-null",
+      process: true,
+      worker: "complete",
+      successfulProcess: true,
+    },
+  ];
+  for (const shape of shapes) {
+    const fixture = await actualWorkerV2FailureFixture(shape.name);
+    const { result } = fixture;
+    assert.equal(result.outcome !== null, shape.process, shape.name);
+    assert.equal(result.invocation === null, shape.worker === null, shape.name);
+    if (shape.process) {
+      assert.equal(
+        result.outcome.exitCode === 0,
+        shape.successfulProcess,
+        shape.name,
+      );
+    }
+    if (shape.worker !== null) {
+      assert.equal(
+        Object.hasOwn(result.invocation, "providerOutputSha256"),
+        shape.worker !== "base",
+        shape.name,
+      );
+      assert.equal(
+        Object.hasOwn(result.invocation, "finalPatchSha256"),
+        shape.worker === "complete",
+        shape.name,
+      );
+      if (shape.worker === "complete") {
+        assert.equal(result.invocation.finalPatchSha256, null, shape.name);
+      }
+    }
+
+    const receipt = createApplicationReceiptV7(
+      appendActualWorkerV2Failure(
+        fixture.source,
+        fixture,
+        shape.name.replaceAll("/", "-"),
+      ),
+    );
+    const observed = receipt.nativeInvocations.at(-1);
+    assert.equal(observed.status, "INCONCLUSIVE", shape.name);
+    assert.equal(observed.outputSha256, null, shape.name);
+    assert.equal(observed.patchSha256, null, shape.name);
+    assert.equal(observed.candidateProjection, null, shape.name);
+    assert.equal(observed.failure.code, result.failure.code, shape.name);
+    assert.equal(
+      observed.failure.detailSha256,
+      result.failure.detailSha256,
+      shape.name,
+    );
+    assert.equal(
+      verifyApplicationReceiptV7(serializeApplicationReceiptV7(receipt)).ok,
+      true,
+      shape.name,
+    );
+  }
+});
+
+test("v7 rejects untrusted failure projections and impossible process proofs", async () => {
+  const fixture = await actualWorkerV2FailureFixture(
+    "base/success/no-provider-output",
+  );
+  const { result } = fixture;
+  const publicFailure = {
+    code: result.failure.code,
+    publicMessage: result.failure.publicMessage,
+    terminal: result.failure.terminal,
+    retryAllowed: result.failure.retryAllowed,
+    detailSha256: result.failure.detailSha256,
+  };
+  for (const mutate of [
+    () => {},
+    (failureResult) => {
+      failureResult.failure.code = "NOT_A_TASK_V2_FAILURE";
+    },
+    (failureResult) => {
+      failureResult.failure.detailSha256 = "not-a-digest";
+    },
+    (failureResult) => {
+      failureResult.invocation = null;
+    },
+    (failureResult) => {
+      failureResult.failure.extra = true;
+    },
+  ]) {
+    const failureResult = {
+      provider: result.provider,
+      model: result.model,
+      role: result.role,
+      status: result.status,
+      outcome: result.outcome,
+      invocation: result.invocation,
+      failure: { ...publicFailure },
+    };
+    mutate(failureResult);
+    assert.throws(() =>
+      createApplicationReceiptV7(
+        appendActualWorkerV2Failure(
+          v7Draft(),
+          { ...fixture, result: failureResult },
+          "untrusted",
+        ),
+      ),
+    );
+  }
+
+  const contradictions = [
+    ["no-child and spawned", (process) => (process.noChild = true)],
+    ["reaped without exit", (process) => (process.exitObserved = false)],
+    ["reaped without close", (process) => (process.closeObserved = false)],
+    [
+      "reaped without agreement",
+      (process) => (process.statusAgreement = false),
+    ],
+    ["status mismatch", (process) => (process.closeCode = 1)],
+    [
+      "complete truncated capture",
+      (process) => (process.outputTruncated = true),
+    ],
+    [
+      "complete capture with termination error",
+      (process) => (process.terminationErrorCount = 1),
+    ],
+    [
+      "complete capture with process error",
+      (process) => (process.processErrorCount = 1),
+    ],
+  ];
+  const validReceipt = createApplicationReceiptV7(
+    appendActualWorkerV2Failure(v7Draft(), fixture, "valid-process-proof"),
+  );
+  for (const [name, mutate] of contradictions) {
+    const failureResult = {
+      ...result,
+      outcome: { ...result.outcome },
+      failure: result.failure,
+    };
+    mutate(failureResult.outcome);
+    assert.throws(
+      () =>
+        createApplicationReceiptV7(
+          appendActualWorkerV2Failure(
+            v7Draft(),
+            { ...fixture, result: failureResult },
+            "impossible-process-proof",
+          ),
+        ),
+      /inconsistent worker-v2 process proofs/,
+      name,
+    );
+
+    const resealed = JSON.parse(serializeApplicationReceiptV7(validReceipt));
+    mutate(resealed.nativeInvocations.at(-1).process);
+    resealTamperedReceipt(resealed);
+    assert.equal(verifyApplicationReceiptV7(resealed).ok, false, name);
+  }
+});
+
+test("v7 rejects profile, task-v2, and hostile-shape tampering", () => {
+  for (const mutate of [
+    (x) => {
+      x.taskV2.productAuthority = "product";
+    },
+    (x) => {
+      x.taskV2.candidate.patchSha256 = sha("wrong");
+    },
+    (x) => {
+      x.taskV2.candidate.pathStatuses[0].status = "M";
+    },
+    (x) => {
+      x.taskV2.candidate.pathStatuses.pop();
+    },
+    (x) => {
+      x.nativeInvocations[0].result.invocation.workerSchemaVersion = 1;
+    },
+    (x) => {
+      x.nativeInvocations[0].result.invocation.contractSha256 =
+        sha("wrong contract");
+    },
+    (x) => {
+      x.nativeInvocations[0].result.invocation.contextTaskSha256 =
+        sha("wrong context");
+    },
+    (x) => {
+      delete x.nativeInvocations[0].result.invocation.requestSha256;
+    },
+    (x) => {
+      x.nativeInvocations[0].result.provider = "claude";
+    },
+    (x) => {
+      x.nativeInvocations[0].result.model = "opus";
+    },
+    (x) => {
+      x.nativeInvocations[0].result.role = "review";
+    },
+    (x) => {
+      x.nativeInvocations[0].result.invocation.taskSha256 = sha("wrong task");
+    },
+    (x) => {
+      const invocation = x.nativeInvocations[0];
+      const replacementTaskSha256 = sha("coordinated replacement task");
+      const replacementRequestSha256 = sha(
+        Buffer.concat([
+          Buffer.from(`${workerV2RequestSchema}\0`, "ascii"),
+          Buffer.from(x.taskV2.contractSha256, "ascii"),
+          Buffer.from(replacementTaskSha256, "ascii"),
+          Buffer.from(
+            `${invocation.result.provider}\0${invocation.result.model}\0${invocation.result.role}`,
+            "utf8",
+          ),
+        ]),
+      );
+      invocation.result.invocation.taskSha256 = replacementTaskSha256;
+      invocation.result.invocation.requestSha256 = replacementRequestSha256;
+      invocation.request.requestSha256 = replacementRequestSha256;
+    },
+    (x) => {
+      const invocation = x.nativeInvocations[0];
+      const task = JSON.parse(invocation.taskJson);
+      task.context = { fixture: "substituted-context" };
+      invocation.taskJson = JSON.stringify(task);
+    },
+    (x) => {
+      x.nativeInvocations[0].request.requestSha256 = sha("wrong request");
+    },
+    (x) => {
+      x.nativeInvocations.find(
+        ({ result }) => result.role === "implementation",
+      ).result.invocation.finalPatchSha256 = sha("wrong final patch");
+    },
+    (x) => {
+      x.nativeInvocations.find(
+        ({ result }) => result.role === "implementation",
+      ).result.candidateProjection.pathStatuses[0].status = "M";
+    },
+  ])
+    assert.throws(() =>
+      createApplicationReceiptV7(
+        (() => {
+          const x = v7Draft();
+          mutate(x);
+          return x;
+        })(),
+      ),
+    );
+  const accessorDraft = v7Draft();
+  let accessed = 0;
+  Object.defineProperty(accessorDraft.taskV2, "id", {
+    enumerable: true,
+    get() {
+      accessed += 1;
+      return "harness-create-exact-v2-control";
+    },
+  });
+  assert.equal(verifyApplicationReceiptV7(accessorDraft).ok, false);
+  assert.equal(accessed, 0);
+  const proxyDraft = v7Draft();
+  proxyDraft.taskV2 = new Proxy(proxyDraft.taskV2, {
+    get() {
+      throw new Error("must not read proxy");
+    },
+  });
+  assert.equal(verifyApplicationReceiptV7(proxyDraft).ok, false);
+  const sparseDraft = v7Draft();
+  sparseDraft.taskV2.candidate.pathStatuses = new Array(2);
+  assert.equal(verifyApplicationReceiptV7(sparseDraft).ok, false);
+  const subclassDraft = v7Draft();
+  subclassDraft.taskV2.verificationSequence = new (class extends Array {})(
+    "format",
+    "build",
+    "public",
+  );
+  assert.equal(verifyApplicationReceiptV7(subclassDraft).ok, false);
+  const receiptLogDraft = v7Draft();
+  const receiptLog = ReceiptLog.fromJSON({
+    receipts: receiptLogDraft.attempts[0].upstreamReceipts,
+  });
+  let receiptLogCalls = 0;
+  Object.defineProperty(receiptLog, "verify", {
+    enumerable: true,
+    value() {
+      receiptLogCalls += 1;
+      throw new Error("must not call an overridden ReceiptLog method");
+    },
+  });
+  receiptLogDraft.attempts[0].upstreamReceipts = receiptLog;
+  assert.throws(() => createApplicationReceiptV7(receiptLogDraft));
+  assert.equal(receiptLogCalls, 0);
+  const receipt = createApplicationReceiptV7(v7Draft());
+  for (const mutate of [
+    (x) => {
+      x.taskV2.productAuthority = "product";
+    },
+    (x) => {
+      x.taskV2.canonicalContractSha256 = sha("wrong");
+    },
+    (x) => {
+      x.taskV2.candidate.patchSha256 = sha("wrong");
+    },
+    (x) => {
+      x.taskV2.candidate.pathStatuses[0].status = "M";
+    },
+    (x) => {
+      x.taskV2.candidate = new Proxy(x.taskV2.candidate, {});
+    },
+  ]) {
+    const tampered = JSON.parse(serializeApplicationReceiptV7(receipt));
+    mutate(tampered);
+    assert.equal(verifyApplicationReceiptV7(tampered).ok, false);
+  }
+  const unknown = JSON.parse(serializeApplicationReceiptV7(receipt));
+  unknown.taskV2.extra = true;
+  assert.equal(verifyApplicationReceiptV7(unknown).ok, false);
+  const resealed = JSON.parse(serializeApplicationReceiptV7(receipt));
+  resealed.taskV2.candidate.patchSha256 = sha("wrong");
+  resealed.receiptSha256 = canonicalSha256(
+    Object.fromEntries(
+      Object.entries(resealed).filter(([key]) => key !== "receiptSha256"),
+    ),
+  );
+  assert.equal(verifyApplicationReceiptV7(resealed).ok, false);
+  // canonicalContractSha256 is a recorded identity; exact replay authenticates it.
 });
