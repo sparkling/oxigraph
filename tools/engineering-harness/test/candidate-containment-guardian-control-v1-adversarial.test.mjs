@@ -18,6 +18,11 @@ const EXACT_V2_URL = new URL(
   "../src/candidate/containment-exact-v2.mjs",
   import.meta.url,
 );
+const LAUNCH_CAPSULE_V3_URL = new URL(
+  "../src/candidate/containment-launch-capsule-v3.mjs",
+  import.meta.url,
+);
+const DIRECT_ENTRY = isDirectEntry(import.meta.url, process.argv[1]);
 const HARNESS_PACKAGE_URL = new URL("../package.json", import.meta.url);
 const HARNESS_LOCK_URL = new URL("../package-lock.json", import.meta.url);
 const ACORN_PACKAGE_URL = new URL(
@@ -50,15 +55,842 @@ const DIRECT_ACORN_PARSE_OPTIONS = Object.freeze({
 const DIRECT_PARSER_LOAD_AUDIT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-direct-parser-load/v1";
 const EXPECTED_EXACT_V2_SOURCE_SHA256 =
+  "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e";
+const HISTORICAL_C14_EXACT_V2_SOURCE_SHA256 =
   "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3";
+const LIVE_C15_EXACT_V2_SOURCE_BYTE_LENGTH = 12_687;
+const LAUNCH_CAPSULE_V3_SOURCE_BYTE_LENGTH = 17_977;
+const LAUNCH_CAPSULE_V3_SOURCE_SHA256 =
+  "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d";
+const HISTORICAL_C14_FIXTURE_BYTE_LENGTH = 14_213;
+const HISTORICAL_C14_FIXTURE_SHA256 =
+  "968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082";
+const LIVE_C15_FIXTURE_BYTE_LENGTH = 14_230;
+const LIVE_C15_FIXTURE_SHA256 =
+  "4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd";
+const LIVE_C15_REQUIREMENTS_SHA256 =
+  "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
+const LIVE_C15_FIXTURE_CONTRACT_PATH =
+  "docs/adr/fixtures/0036-guardian-control-requirements-v1.json";
+const HISTORICAL_C14_FIXTURE_RECONSTRUCTION =
+  "closure-private-exact-one-digest-and-one-import-name-inverse";
+const HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH = 81_189;
 const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
   "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
+const LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const LIVE_C15_CANDIDATE_SOURCE_SHA256 =
+  "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718";
 const ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1";
 const EXPECTED_REQUIREMENTS_SHA256 =
   "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
+
+const C15_FIXTURE_IDENTITY = (() => {
+  if (!DIRECT_ENTRY) return null;
+  const inverseReceiptBrands = new WeakSet();
+  const inverseReceiptMetadata = new WeakMap();
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+
+  const nonPrimitiveReferences = (value, references = new Set()) => {
+    if (value === null || typeof value !== "object" || references.has(value)) {
+      return references;
+    }
+    references.add(value);
+    for (const child of Object.values(value)) {
+      nonPrimitiveReferences(child, references);
+    }
+    return references;
+  };
+
+  const liveFixtureBytes = readFileSync(REQUIREMENTS_URL);
+  assert.equal(Buffer.isBuffer(liveFixtureBytes), true);
+  assert.equal(Object.getPrototypeOf(liveFixtureBytes), Buffer.prototype);
+  assert.equal(liveFixtureBytes.length, LIVE_C15_FIXTURE_BYTE_LENGTH);
+  assert.equal(byteDigest(liveFixtureBytes), LIVE_C15_FIXTURE_SHA256);
+  const liveFixtureText = liveFixtureBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(liveFixtureText, "utf8").equals(liveFixtureBytes),
+    true,
+  );
+  const liveFixture = JSON.parse(liveFixtureText);
+  assert.equal(digest(liveFixture), LIVE_C15_REQUIREMENTS_SHA256);
+
+  assert.equal(
+    countExact(liveFixtureText, EXPECTED_EXACT_V2_SOURCE_SHA256),
+    1,
+    "C15 fixture inverse exact-v2 digest count",
+  );
+  let historicalFixtureText = liveFixtureText.replace(
+    EXPECTED_EXACT_V2_SOURCE_SHA256,
+    HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
+  );
+  assert.equal(
+    countExact(
+      historicalFixtureText,
+      "copyBoundedBufferByFailureCategory",
+    ),
+    1,
+    "C15 fixture inverse helper import count",
+  );
+  historicalFixtureText = historicalFixtureText.replace(
+    "copyBoundedBufferByFailureCategory",
+    "copyBoundedBuffer",
+  );
+  const historicalFixtureBytes = Buffer.from(historicalFixtureText, "utf8");
+  assert.equal(
+    historicalFixtureBytes.length,
+    HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
+  );
+  assert.equal(
+    byteDigest(historicalFixtureBytes),
+    HISTORICAL_C14_FIXTURE_SHA256,
+  );
+  const historicalFixture = JSON.parse(historicalFixtureText);
+  assert.equal(digest(historicalFixture), EXPECTED_REQUIREMENTS_SHA256);
+
+  const liveReferences = nonPrimitiveReferences(liveFixture);
+  const historicalReferences = nonPrimitiveReferences(historicalFixture);
+  assert.equal(
+    [...historicalReferences].some((value) => liveReferences.has(value)),
+    false,
+    "C15 historical fixture must not share object references with live fixture",
+  );
+
+  const inverseReceipt = Object.freeze({});
+  inverseReceiptBrands.add(inverseReceipt);
+  inverseReceiptMetadata.set(
+    inverseReceipt,
+    Object.freeze({
+      helperDigestInverseCount: 1,
+      helperImportNameInverseCount: 1,
+      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
+      historicalFixtureReconstruction:
+        HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
+      liveFixtureByteLength: liveFixtureBytes.length,
+      liveFixtureSha256: byteDigest(liveFixtureBytes),
+      liveRequirementsSha256: digest(liveFixture),
+      historicalFixtureByteLength: historicalFixtureBytes.length,
+      historicalFixtureSha256: byteDigest(historicalFixtureBytes),
+      historicalRequirementsSha256: digest(historicalFixture),
+      sharedNonPrimitiveReferenceCount: 0,
+    }),
+  );
+
+  return Object.freeze({
+    liveFixture,
+    historicalFixture,
+    historicalFixtureBytes,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const LIVE_C15_REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY?.liveFixture ?? null;
+const HISTORICAL_C14_REQUIREMENTS_ORACLE =
+  C15_FIXTURE_IDENTITY?.historicalFixture ?? null;
+if (DIRECT_ENTRY) {
+  assert.deepEqual(
+    C15_FIXTURE_IDENTITY.assertInverseReceipt(
+      C15_FIXTURE_IDENTITY.inverseReceipt,
+    ),
+    {
+      helperDigestInverseCount: 1,
+      helperImportNameInverseCount: 1,
+      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
+      historicalFixtureReconstruction:
+        HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
+      liveFixtureByteLength: LIVE_C15_FIXTURE_BYTE_LENGTH,
+      liveFixtureSha256: LIVE_C15_FIXTURE_SHA256,
+      liveRequirementsSha256: LIVE_C15_REQUIREMENTS_SHA256,
+      historicalFixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
+      historicalFixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
+      historicalRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      sharedNonPrimitiveReferenceCount: 0,
+    },
+  );
+}
+
+const C15_SOURCE_IDENTITY = (() => {
+  const inverseReceiptBrands = new WeakSet();
+  const inverseReceiptMetadata = new WeakMap();
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const moveNormalizationDeclarationBlock = (source, specification) => {
+    const {
+      functionName,
+      firstDeclarationName,
+      brandDeclarationName,
+      recordDeclarationName,
+      helperCallCount,
+    } = specification;
+    const functionMarker = `export function ${functionName}(`;
+    assert.equal(countExact(source, functionMarker), 1, functionName);
+    const functionStart = source.indexOf(functionMarker);
+    const possibleEnds = [
+      source.indexOf("\nexport function ", functionStart + functionMarker.length),
+      source.indexOf("\nfunction ", functionStart + functionMarker.length),
+    ].filter((index) => index !== -1);
+    const functionEnd =
+      possibleEnds.length === 0 ? source.length : Math.min(...possibleEnds);
+    const normalizationStart = source.indexOf(
+      `  const ${firstDeclarationName} = copyBoundedBufferByFailureCategory(`,
+      functionStart,
+    );
+    const brandStart = source.indexOf(
+      `  const ${brandDeclarationName} = `,
+      functionStart,
+    );
+    const recordStart = source.indexOf(
+      `  const ${recordDeclarationName} = exactRecord(`,
+      brandStart,
+    );
+    assert.equal(
+      functionStart < normalizationStart &&
+        normalizationStart < brandStart &&
+        brandStart < recordStart &&
+        recordStart < functionEnd,
+      true,
+      `${functionName} normalization/brand order`,
+    );
+    const recordTerminator = "\n  );\n";
+    const recordTerminatorStart = source.indexOf(
+      recordTerminator,
+      recordStart,
+    );
+    assert.equal(
+      recordTerminatorStart !== -1 && recordTerminatorStart < functionEnd,
+      true,
+      `${functionName} brand anchor terminator`,
+    );
+    const brandEnd = recordTerminatorStart + recordTerminator.length;
+    const normalizationBlock = source.slice(normalizationStart, brandStart);
+    const brandBlock = source.slice(brandStart, brandEnd);
+    assert.equal(
+      countExact(
+        normalizationBlock,
+        "copyBoundedBufferByFailureCategory(",
+      ),
+      helperCallCount,
+      `${functionName} normalization helper-call count`,
+    );
+    return `${source.slice(0, normalizationStart)}${brandBlock}${normalizationBlock}${source.slice(brandEnd)}`;
+  };
+
+  const reconstruct = (liveSourceBytes) => {
+    assert.equal(Buffer.isBuffer(liveSourceBytes), true);
+    assert.equal(Object.getPrototypeOf(liveSourceBytes), Buffer.prototype);
+    assert.equal(liveSourceBytes.length, LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH);
+    assert.equal(byteDigest(liveSourceBytes), LIVE_C15_CANDIDATE_SOURCE_SHA256);
+    const liveSource = liveSourceBytes.toString("utf8");
+    assert.equal(Buffer.from(liveSource, "utf8").equals(liveSourceBytes), true);
+
+    const launchWrapperDeclaration = `function verifyAdmissionLaunchCapsuleV3(capsuleBytes) {
+  try {
+    return verifyCandidateContainmentLaunchCapsuleV3(capsuleBytes);
+  } catch {
+    failBinding();
+  }
+}
+
+`;
+    let historicalSource = replaceExactly(
+      liveSource,
+      launchWrapperDeclaration,
+      "",
+      1,
+      "C15 inverse launch-wrapper declaration count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      "const capsule = verifyAdmissionLaunchCapsuleV3(capsuleBytes);",
+      "const capsule = verifyCandidateContainmentLaunchCapsuleV3(capsuleBytes);",
+      1,
+      "C15 inverse Admission wrapper-call count",
+    );
+
+    const normalizationMoves = [
+      {
+        functionName: "createCandidateContainmentGuardianAdmissionInputV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 2,
+      },
+      {
+        functionName: "createCandidateContainmentGuardianCancelInputV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 1,
+      },
+      {
+        functionName:
+          "createCandidateContainmentGuardianRecoveryRequestInputV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 1,
+      },
+      {
+        functionName:
+          "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+        firstDeclarationName: "summaryCarrier",
+        brandDeclarationName: "currentStateBrand",
+        recordDeclarationName: "state",
+        helperCallCount: 2,
+      },
+      {
+        functionName: "verifyCandidateContainmentGuardianStatusFrameV1",
+        firstDeclarationName: "frameCarrier",
+        brandDeclarationName: "startupProjectionBrand",
+        recordDeclarationName: "startup",
+        helperCallCount: 1,
+      },
+    ];
+    assert.equal(
+      countExact(historicalSource, "copyBoundedBufferByFailureCategory("),
+      9,
+      "C15 inverse live helper-call count before declaration moves",
+    );
+    for (const specification of normalizationMoves) {
+      historicalSource = moveNormalizationDeclarationBlock(
+        historicalSource,
+        specification,
+      );
+    }
+    assert.equal(
+      normalizationMoves.reduce(
+        (count, specification) => count + specification.helperCallCount,
+        0,
+      ),
+      7,
+    );
+    const startupFunctionStart = historicalSource.indexOf(
+      "export function createCandidateContainmentGuardianStartupV1(",
+    );
+    const startupFunctionEnd = historicalSource.indexOf(
+      "\nexport function ",
+      startupFunctionStart + 1,
+    );
+    assert.equal(
+      countExact(
+        historicalSource.slice(startupFunctionStart, startupFunctionEnd),
+        "copyBoundedBufferByFailureCategory(",
+      ),
+      2,
+      "C15 inverse Startup helper-call count",
+    );
+
+    historicalSource = replaceExactly(
+      historicalSource,
+      "    failBounds,\n    failShape,\n  );",
+      "    failBounds,\n  );",
+      9,
+      "C15 inverse fifth failShape argument count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      "copyBoundedBufferByFailureCategory",
+      "copyBoundedBuffer",
+      11,
+      "C15 inverse helper-name count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      EXPECTED_EXACT_V2_SOURCE_SHA256,
+      HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
+      1,
+      "C15 inverse exact-v2 digest count",
+    );
+    historicalSource = replaceExactly(
+      historicalSource,
+      LIVE_C15_REQUIREMENTS_SHA256,
+      EXPECTED_REQUIREMENTS_SHA256,
+      2,
+      "C15 inverse requirements digest count",
+    );
+
+    const historicalSourceBytes = Buffer.from(historicalSource, "utf8");
+    assert.equal(
+      historicalSourceBytes.length,
+      HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteDigest(historicalSourceBytes),
+      C14_AUDITED_CANDIDATE_SOURCE_SHA256,
+    );
+    const inverseReceipt = Object.freeze({});
+    inverseReceiptBrands.add(inverseReceipt);
+    inverseReceiptMetadata.set(
+      inverseReceipt,
+      Object.freeze({
+        launchWrapperDeclarationRemovals: 1,
+        admissionVerifierCallReversals: 1,
+        normalizationDeclarationBlocksMoved: 5,
+        normalizationHelperCallsMoved: 7,
+        startupHelperCallsUnmoved: 2,
+        fifthFailShapeArgumentsRemoved: 9,
+        helperNameReversals: 11,
+        exactV2DigestReversals: 1,
+        requirementsDigestReversals: 2,
+        liveSourceByteLength: liveSourceBytes.length,
+        liveSourceSha256: byteDigest(liveSourceBytes),
+        historicalSourceByteLength: historicalSourceBytes.length,
+        historicalSourceSha256: byteDigest(historicalSourceBytes),
+      }),
+    );
+    return Object.freeze({
+      liveSource,
+      historicalSource,
+      historicalSourceBytes,
+      inverseReceipt,
+    });
+  };
+
+  return Object.freeze({
+    reconstruct,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+function directHistoricalC14Requirements() {
+  assert.equal(DIRECT_ENTRY, true);
+  assert.notEqual(C15_FIXTURE_IDENTITY, null);
+  return JSON.parse(
+    C15_FIXTURE_IDENTITY.historicalFixtureBytes.toString("utf8"),
+  );
+}
+
+const DIRECT_C15_LIVE_AST_EXTENSION_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c15-live-ast-extension/v1";
+const DIRECT_C15_BYTE_NORMALIZATION_CALL_SPECS = Object.freeze(
+  [
+    [
+      "createCandidateContainmentGuardianStartupV1",
+      "startupCarrier",
+      "startupReportBytes",
+      "startup report bytes",
+      0,
+      "startupReportMaximumBytes",
+      null,
+      null,
+    ],
+    [
+      "createCandidateContainmentGuardianStartupV1",
+      "epoch",
+      "epochBytes",
+      "epoch bytes",
+      "epochBytes",
+      "epochBytes",
+      null,
+      null,
+    ],
+    [
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "frameCarrier",
+      "admissionFrameBytes",
+      "admission frame bytes",
+      0,
+      "admissionFrameMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianAdmissionInputV1",
+      "reportCarrier",
+      "recvmsgReportBytes",
+      "admission recvmsg report bytes",
+      0,
+      "admissionRecvmsgReportMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianCancelInputV1",
+      "frameCarrier",
+      "cancelFrameBytes",
+      "cancel frame bytes",
+      0,
+      "cancelFrameMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianRecoveryRequestInputV1",
+      "frameCarrier",
+      "recoveryRequestFrameBytes",
+      "recovery request frame bytes",
+      0,
+      "recoveryRequestMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "summaryCarrier",
+      "diagnosticSummaryReportBytes",
+      "diagnostic summary report bytes",
+      0,
+      "diagnosticSummaryMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+      "raw",
+      "rawDiagnosticBytes",
+      "raw diagnostic bytes",
+      0,
+      "rawDiagnosticsMaximumBytes",
+      "stateMetadata",
+      "currentState",
+    ],
+    [
+      "verifyCandidateContainmentGuardianStatusFrameV1",
+      "frameCarrier",
+      "statusFrameBytes",
+      "status frame bytes",
+      0,
+      "statusFrameMaximumBytes",
+      "startupMetadata",
+      "startupProjection",
+    ],
+  ].map(
+    ([
+      functionName,
+      declarationName,
+      rawValueName,
+      label,
+      minimum,
+      maximum,
+      storeName,
+      brandKeyName,
+    ]) =>
+      Object.freeze({
+        functionName,
+        declarationName,
+        rawValueName,
+        label,
+        minimum,
+        maximum,
+        storeName,
+        brandKeyName,
+      }),
+  ),
+);
+
+function directWalkC15Ast(node, parent, visit) {
+  if (node === null || typeof node?.type !== "string") return;
+  visit(node, parent);
+  for (const [key, value] of Object.entries(node)) {
+    if (["start", "end", "loc", "range", "raw"].includes(key)) continue;
+    if (Array.isArray(value)) {
+      for (const child of value) directWalkC15Ast(child, node, visit);
+    } else {
+      directWalkC15Ast(value, node, visit);
+    }
+  }
+}
+
+function directC15Identifier(node, name) {
+  return node?.type === "Identifier" && node.name === name;
+}
+
+function directC15GuardianLimit(node, expected) {
+  if (typeof expected === "number") {
+    return node?.type === "Literal" && node.value === expected;
+  }
+  return (
+    node?.type === "MemberExpression" &&
+    node.computed === false &&
+    directC15Identifier(node.property, expected) &&
+    node.object?.type === "MemberExpression" &&
+    node.object.computed === false &&
+    directC15Identifier(node.object.property, "limits") &&
+    directC15Identifier(node.object.object, "guardianContract")
+  );
+}
+
+function directC15PrivateStoreCall(
+  node,
+  storeName,
+  methodName,
+  keyName,
+) {
+  return (
+    node?.type === "CallExpression" &&
+    node.optional === false &&
+    node.arguments.length === 1 &&
+    directC15Identifier(node.arguments[0], keyName) &&
+    node.callee?.type === "MemberExpression" &&
+    node.callee.computed === false &&
+    node.callee.optional === false &&
+    directC15Identifier(node.callee.object, storeName) &&
+    directC15Identifier(node.callee.property, methodName)
+  );
+}
+
+function directAssertC15LiveAstExtension(program) {
+  assert.equal(program?.type, "Program");
+  const parents = new WeakMap();
+  const identifiers = new Map();
+  const stringLiterals = new Map();
+  const calls = [];
+  directWalkC15Ast(program, null, (node, parent) => {
+    if (parent !== null) parents.set(node, parent);
+    if (node.type === "Identifier") {
+      const occurrences = identifiers.get(node.name) ?? [];
+      occurrences.push(node);
+      identifiers.set(node.name, occurrences);
+    } else if (node.type === "Literal" && typeof node.value === "string") {
+      stringLiterals.set(
+        node.value,
+        (stringLiterals.get(node.value) ?? 0) + 1,
+      );
+    } else if (node.type === "CallExpression") {
+      calls.push(node);
+    }
+  });
+
+  const helperName = "copyBoundedBufferByFailureCategory";
+  const helperSpecifiers = program.body.flatMap((statement) =>
+    statement.type === "ImportDeclaration" &&
+    statement.source.value === "./containment-exact-v2.mjs"
+      ? statement.specifiers.filter(
+          (specifier) =>
+            specifier.type === "ImportSpecifier" &&
+            directC15Identifier(specifier.imported, helperName),
+        )
+      : [],
+  );
+  assert.equal(helperSpecifiers.length, 1);
+  assert.equal(directC15Identifier(helperSpecifiers[0].local, helperName), true);
+  assert.equal(stringLiterals.get(helperName), 1);
+
+  const functions = new Map();
+  const exportedFunctions = new Set();
+  for (const statement of program.body) {
+    const declaration =
+      statement.type === "ExportNamedDeclaration"
+        ? statement.declaration
+        : statement;
+    if (declaration?.type !== "FunctionDeclaration") continue;
+    assert.equal(functions.has(declaration.id.name), false);
+    functions.set(declaration.id.name, declaration);
+    if (statement.type === "ExportNamedDeclaration") {
+      exportedFunctions.add(declaration.id.name);
+    }
+  }
+
+  const expectedCalls = [];
+  for (const specification of DIRECT_C15_BYTE_NORMALIZATION_CALL_SPECS) {
+    const fn = functions.get(specification.functionName);
+    assert.notEqual(fn, undefined);
+    const matches = [];
+    for (const [statementIndex, statement] of fn.body.body.entries()) {
+      if (statement.type !== "VariableDeclaration") continue;
+      for (const declaration of statement.declarations) {
+        if (directC15Identifier(declaration.id, specification.declarationName)) {
+          matches.push({ declaration, statement, statementIndex });
+        }
+      }
+    }
+    assert.equal(matches.length, 1);
+    const [{ declaration, statement, statementIndex }] = matches;
+    assert.equal(statement.kind, "const");
+    assert.equal(statement.declarations.length, 1);
+    const call = declaration.init;
+    assert.equal(call?.type, "CallExpression");
+    assert.equal(call.optional, false);
+    assert.equal(directC15Identifier(call.callee, helperName), true);
+    assert.equal(call.arguments.length, 5);
+    assert.equal(
+      directC15Identifier(call.arguments[0], specification.rawValueName),
+      true,
+    );
+    assert.equal(call.arguments[1]?.type, "Literal");
+    assert.equal(call.arguments[1].value, specification.label);
+    const limits = call.arguments[2];
+    assert.equal(limits?.type, "ObjectExpression");
+    assert.equal(limits.properties.length, 2);
+    for (const [index, [key, expected]] of [
+      ["minimumBytes", specification.minimum],
+      ["maximumBytes", specification.maximum],
+    ].entries()) {
+      const property = limits.properties[index];
+      assert.equal(property.type, "Property");
+      assert.equal(property.kind, "init");
+      assert.equal(property.computed, false);
+      assert.equal(property.method, false);
+      assert.equal(property.shorthand, false);
+      assert.equal(directC15Identifier(property.key, key), true);
+      assert.equal(directC15GuardianLimit(property.value, expected), true);
+    }
+    assert.equal(directC15Identifier(call.arguments[3], "failBounds"), true);
+    assert.equal(directC15Identifier(call.arguments[4], "failShape"), true);
+    expectedCalls.push(call);
+
+    if (specification.storeName !== null) {
+      const accessIndexes = [];
+      for (const [index, candidateStatement] of fn.body.body.entries()) {
+        directWalkC15Ast(candidateStatement, fn.body, (node) => {
+          if (
+            directC15PrivateStoreCall(
+              node,
+              specification.storeName,
+              "has",
+              specification.brandKeyName,
+            ) ||
+            directC15PrivateStoreCall(
+              node,
+              specification.storeName,
+              "get",
+              specification.brandKeyName,
+            )
+          ) {
+            accessIndexes.push(index);
+          }
+        });
+      }
+      assert.equal(accessIndexes.length, 2);
+      assert.equal(statementIndex < Math.min(...accessIndexes), true);
+    }
+  }
+  const helperCalls = calls.filter((call) =>
+    directC15Identifier(call.callee, helperName),
+  );
+  assert.equal(helperCalls.length, 9);
+  assert.deepEqual(new Set(helperCalls), new Set(expectedCalls));
+  for (const occurrence of identifiers.get(helperName) ?? []) {
+    const parent = parents.get(occurrence);
+    assert.equal(
+      (parent?.type === "ImportSpecifier" &&
+        (parent.imported === occurrence || parent.local === occurrence)) ||
+        (parent?.type === "CallExpression" && parent.callee === occurrence),
+      true,
+    );
+  }
+
+  const wrapperName = "verifyAdmissionLaunchCapsuleV3";
+  const rawVerifierName = "verifyCandidateContainmentLaunchCapsuleV3";
+  const wrapper = functions.get(wrapperName);
+  assert.notEqual(wrapper, undefined);
+  assert.equal(exportedFunctions.has(wrapperName), false);
+  assert.deepEqual(wrapper.params.map(({ name }) => name), ["capsuleBytes"]);
+  assert.equal(wrapper.body.body.length, 1);
+  const tryStatement = wrapper.body.body[0];
+  assert.equal(tryStatement.type, "TryStatement");
+  assert.equal(tryStatement.finalizer, null);
+  assert.equal(tryStatement.block.body.length, 1);
+  const returned = tryStatement.block.body[0];
+  assert.equal(returned.type, "ReturnStatement");
+  assert.equal(returned.argument?.type, "CallExpression");
+  assert.equal(directC15Identifier(returned.argument.callee, rawVerifierName), true);
+  assert.deepEqual(returned.argument.arguments.map(({ name }) => name), [
+    "capsuleBytes",
+  ]);
+  assert.equal(tryStatement.handler?.type, "CatchClause");
+  assert.equal(tryStatement.handler.param, null);
+  assert.equal(tryStatement.handler.body.body.length, 1);
+  const caught = tryStatement.handler.body.body[0];
+  assert.equal(caught.type, "ExpressionStatement");
+  assert.equal(caught.expression?.type, "CallExpression");
+  assert.equal(directC15Identifier(caught.expression.callee, "failBinding"), true);
+  assert.equal(caught.expression.arguments.length, 0);
+
+  const wrapperCalls = calls.filter((call) =>
+    directC15Identifier(call.callee, wrapperName),
+  );
+  const rawVerifierCalls = calls.filter((call) =>
+    directC15Identifier(call.callee, rawVerifierName),
+  );
+  assert.equal(wrapperCalls.length, 1);
+  assert.deepEqual(rawVerifierCalls, [returned.argument]);
+  const admission = functions.get(
+    "createCandidateContainmentGuardianAdmissionInputV1",
+  );
+  let admissionWrapperCalls = 0;
+  directWalkC15Ast(admission.body, admission, (node) => {
+    if (node === wrapperCalls[0]) admissionWrapperCalls += 1;
+  });
+  assert.equal(admissionWrapperCalls, 1);
+  const wrapperParent = parents.get(wrapperCalls[0]);
+  assert.equal(wrapperParent?.type, "VariableDeclarator");
+  assert.equal(directC15Identifier(wrapperParent.id, "capsule"), true);
+
+  for (const name of [wrapperName, rawVerifierName]) {
+    for (const occurrence of identifiers.get(name) ?? []) {
+      const parent = parents.get(occurrence);
+      const declarationIdentity =
+        name === wrapperName &&
+        parent?.type === "FunctionDeclaration" &&
+        parent.id === occurrence;
+      const importIdentity =
+        name === rawVerifierName &&
+        parent?.type === "ImportSpecifier" &&
+        (parent.imported === occurrence || parent.local === occurrence);
+      const directCall =
+        parent?.type === "CallExpression" && parent.callee === occurrence;
+      assert.equal(declarationIdentity || importIdentity || directCall, true);
+    }
+  }
+
+  const projection = {
+    schema: DIRECT_C15_LIVE_AST_EXTENSION_SCHEMA,
+    helperImportCount: helperSpecifiers.length,
+    helperContractLiteralCount: stringLiterals.get(helperName),
+    helperCallCount: helperCalls.length,
+    startupHelperCallCount: 2,
+    nonStartupHelperCallCount: 7,
+    nonStartupFunctionCount: 5,
+    wrapperDeclarationCount: 1,
+    wrapperCallCount: wrapperCalls.length,
+    rawVerifierCallCount: rawVerifierCalls.length,
+    catchBindingOmitted: tryStatement.handler.param === null,
+    finallyClauseAbsent: tryStatement.finalizer === null,
+  };
+  return Object.freeze({ ...projection, projectionSha256: digest(projection) });
+}
+
 const SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-oracle-design/v1";
 const EXPECTED_SOURCE_INDEPENDENT_ORACLE_COUNTS = Object.freeze({
@@ -737,11 +1569,11 @@ const EXPECTED_DIRECT_FUNCTION_SIGNATURES = Object.freeze(
 const ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1";
 const EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256 =
-  "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554";
+  "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d";
 const ADVERSARIAL_CANDIDATE_TEST_INVENTORY = Object.freeze([
   Object.freeze({
     id: "byte-position-carrier-controls",
-    name: "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+    name: "execute the complete C15 real-candidate byte-carrier matrix at all nine positions",
     options: Object.freeze({}),
     requiredInputs: Object.freeze(["candidate", "oracle"]),
   }),
@@ -842,8 +1674,15 @@ const C13_DEFERRED_CALLBACK_RESULT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-c13-deferred-callback/v1";
 const C15_BYTE_POSITION_DISPATCH_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-dispatch/v1";
-const C15_FIRST_BYTE_POSITION_CONTROL_ID =
-  "startupReportBytes:proxy-trap-free";
+const C15_HOSTILE_CARRIER_FAMILIES = Object.freeze([
+  "proxy-trap-free",
+  "shared-backing",
+  "subclass",
+  "foreign-prototype",
+  "own-length-collision",
+  "non-buffer-view",
+  "branded-lookalike",
+]);
 const C15_LAUNCH_TRANSLATION_DISPATCH_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-dispatch/v1";
 const C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID =
@@ -892,7 +1731,366 @@ function c13DeferredCallbackResult(id) {
   });
 }
 
-async function c13RunBytePositionCandidateControls({ candidate, oracle }) {
+function c15ExpectedError(invoke, expectedMessage, label, sentinel = null) {
+  let observedError = null;
+  try {
+    invoke();
+  } catch (error) {
+    observedError = error;
+  }
+  assert.notEqual(observedError, null, `${label} must reject`);
+  if (sentinel !== null) {
+    assert.notEqual(observedError, sentinel, `${label} invoked a forbidden trap`);
+  }
+  assert.equal(
+    observedError?.message,
+    expectedMessage,
+    `${label} expected ${expectedMessage} but observed ${observedError?.message}`,
+  );
+  return observedError;
+}
+
+function c15BytePositionRuntime(candidate, oracle, activity) {
+  const startupByMode = new Map(
+    oracle.witnesses.startups.map((startup) => [startup.mode, startup]),
+  );
+  const inputByKind = new Map(
+    oracle.witnesses.inputKinds.map((input) => [input.kind, input]),
+  );
+  const normalStartup = startupByMode.get("NORMAL");
+  const recoveryStartup = startupByMode.get("RECOVERY_ONLY");
+  const admission = inputByKind.get("ADMIT");
+  const cancel = inputByKind.get("CANCEL");
+  const recoveryRequest = inputByKind.get("RECOVERY_REQUEST");
+  const diagnostic = inputByKind.get("DIAGNOSTIC_FAILURE");
+  for (const [label, value] of [
+    ["NORMAL startup", normalStartup],
+    ["RECOVERY_ONLY startup", recoveryStartup],
+    ["ADMIT input", admission],
+    ["CANCEL input", cancel],
+    ["RECOVERY_REQUEST input", recoveryRequest],
+    ["DIAGNOSTIC_FAILURE input", diagnostic],
+  ]) {
+    assert.notEqual(value, undefined, label);
+    assert.equal(Object.isFrozen(value), true, label);
+  }
+  const status = oracle.expected.emittedStatuses.find(
+    ({ frame }) =>
+      frame.mode === "NORMAL" &&
+      frame.startupSha256 === normalStartup.startupReport.rawSha256,
+  );
+  assert.notEqual(status, undefined, "NORMAL status witness");
+  assert.equal(Object.isFrozen(status), true);
+
+  const bytes = Object.freeze({
+    startupReportBytes: c15BindingBytes(
+      normalStartup.startupReport,
+      "C15 NORMAL startup report",
+    ),
+    epochBytes: c15BindingBytes(normalStartup.epoch, "C15 NORMAL epoch"),
+    admissionFrameBytes: c15BindingBytes(
+      admission.frame,
+      "C15 admission frame",
+    ),
+    recvmsgReportBytes: c15BindingBytes(
+      admission.auxiliary,
+      "C15 admission recvmsg report",
+    ),
+    cancelFrameBytes: c15BindingBytes(cancel.frame, "C15 cancel frame"),
+    recoveryRequestFrameBytes: c15BindingBytes(
+      recoveryRequest.frame,
+      "C15 recovery request frame",
+    ),
+    diagnosticSummaryReportBytes: c15BindingBytes(
+      diagnostic.frame,
+      "C15 diagnostic summary report",
+    ),
+    rawDiagnosticBytes: c15BindingBytes(
+      diagnostic.auxiliary,
+      "C15 raw diagnostic",
+    ),
+    statusFrameBytes: c15BindingBytes(status.binding, "C15 status frame"),
+  });
+
+  const call = (operation, args, targetCall = false) => {
+    assert.equal(typeof candidate[operation], "function", operation);
+    activity.candidateCallCount += 1;
+    if (targetCall) activity.targetCallCount += 1;
+    return candidate[operation](...args);
+  };
+
+  const createStartup = (witness) =>
+    call("createCandidateContainmentGuardianStartupV1", [
+      c15BindingBytes(witness.startupReport, `${witness.mode} startup report`),
+      c15BindingBytes(witness.epoch, `${witness.mode} epoch`),
+      witness.epochEofObserved,
+    ]);
+  const initialize = (startup) =>
+    call("initializeCandidateContainmentGuardianControlV1", [startup]);
+  const initialState = (mode) => {
+    const witness = startupByMode.get(mode);
+    assert.notEqual(witness, undefined, mode);
+    const startup = createStartup(witness);
+    const initialized = initialize(startup);
+    assert.notEqual(initialized, null, `${mode} initialization`);
+    assert.notEqual(initialized.state, null, `${mode} initialized state`);
+    return Object.freeze({ startup, state: initialized.state });
+  };
+  const unbranded = Object.freeze({});
+
+  const invoke = (position, carrier, { positive = false } = {}) => {
+    assert.equal(BYTE_POSITIONS.includes(position), true, position);
+    if (position === "startupReportBytes" || position === "epochBytes") {
+      const startup = call(
+        "createCandidateContainmentGuardianStartupV1",
+        [
+          position === "startupReportBytes"
+            ? carrier
+            : Buffer.from(bytes.startupReportBytes),
+          position === "epochBytes" ? carrier : Buffer.from(bytes.epochBytes),
+          normalStartup.epochEofObserved,
+        ],
+        true,
+      );
+      if (!positive) return null;
+      assert.deepEqual(c15JsonClone(startup), normalStartup.expectedProjection);
+      return Object.freeze({
+        verifyAfterMutation() {
+          const initialized = initialize(startup);
+          const expected = oracle.expected.wholeTransitions.find(
+            (entry) =>
+              entry.operation === "INITIALIZE" && entry.mode === "NORMAL",
+          );
+          assert.notEqual(expected, undefined);
+          assert.equal(
+            initialized.state.stateSha256,
+            expected.expectedProjection.state.stateSha256,
+          );
+        },
+      });
+    }
+
+    if (position === "statusFrameBytes") {
+      const startup = positive ? createStartup(normalStartup) : unbranded;
+      const artifact = call(
+        "verifyCandidateContainmentGuardianStatusFrameV1",
+        [startup, carrier],
+        true,
+      );
+      if (!positive) return null;
+      assert.equal(
+        artifact.rawSha256,
+        status.expectedArtifact.fields.rawSha256,
+      );
+      assert.equal(
+        artifact.bytes.toString("hex"),
+        status.expectedArtifact.bytesHex,
+      );
+      return Object.freeze({
+        verifyAfterMutation() {
+          assert.equal(
+            artifact.bytes.toString("hex"),
+            status.expectedArtifact.bytesHex,
+          );
+        },
+      });
+    }
+
+    let witness;
+    let operation;
+    let mode = "NORMAL";
+    let args;
+    if (
+      position === "admissionFrameBytes" ||
+      position === "recvmsgReportBytes"
+    ) {
+      witness = admission;
+      operation = "createCandidateContainmentGuardianAdmissionInputV1";
+      const state = positive ? initialState(mode).state : unbranded;
+      args = [
+        state,
+        position === "admissionFrameBytes"
+          ? carrier
+          : Buffer.from(bytes.admissionFrameBytes),
+        position === "recvmsgReportBytes"
+          ? carrier
+          : Buffer.from(bytes.recvmsgReportBytes),
+      ];
+    } else if (position === "cancelFrameBytes") {
+      witness = cancel;
+      operation = "createCandidateContainmentGuardianCancelInputV1";
+      const state = positive ? initialState(mode).state : unbranded;
+      args = [
+        state,
+        carrier,
+        witness.scalarArguments.messageTruncated,
+        witness.scalarArguments.controlTruncated,
+        witness.scalarArguments.controlMessageCount,
+      ];
+    } else if (position === "recoveryRequestFrameBytes") {
+      witness = recoveryRequest;
+      operation =
+        "createCandidateContainmentGuardianRecoveryRequestInputV1";
+      mode = "RECOVERY_ONLY";
+      const state = positive ? initialState(mode).state : unbranded;
+      args = [state, carrier, witness.scalarArguments.requestEofObserved];
+    } else {
+      assert.equal(
+        position === "diagnosticSummaryReportBytes" ||
+          position === "rawDiagnosticBytes",
+        true,
+        position,
+      );
+      witness = diagnostic;
+      operation =
+        "createCandidateContainmentGuardianDiagnosticFailureInputV1";
+      const state = positive ? initialState(mode).state : unbranded;
+      args = [
+        state,
+        position === "diagnosticSummaryReportBytes"
+          ? carrier
+          : Buffer.from(bytes.diagnosticSummaryReportBytes),
+        position === "rawDiagnosticBytes"
+          ? carrier
+          : Buffer.from(bytes.rawDiagnosticBytes),
+      ];
+    }
+    const state = args[0];
+    const input = call(operation, args, true);
+    if (!positive) return null;
+    assert.deepEqual(c15JsonClone(input), witness.expectedProjection);
+    return Object.freeze({
+      verifyAfterMutation() {
+        const transition = call(
+          "reduceCandidateContainmentGuardianControlV1",
+          [state, input],
+        );
+        const expected = oracle.expected.wholeTransitions.find(
+          (entry) =>
+            entry.operation === witness.kind &&
+            entry.beforeStateSha256 === state.stateSha256 &&
+            entry.inputWitness?.frame?.rawSha256 ===
+              witness.frame?.rawSha256,
+        );
+        assert.notEqual(expected, undefined, witness.kind);
+        assert.equal(
+          transition.state.stateSha256,
+          expected.expectedProjection.state.stateSha256,
+          witness.kind,
+        );
+        assert.equal(
+          transition.statusFrameCount,
+          expected.expectedProjection.statusFrameCount,
+          witness.kind,
+        );
+      },
+    });
+  };
+
+  return Object.freeze({ bytes, invoke });
+}
+
+function c15DecoratedCarrier(source, variant, touches, label) {
+  const carrier = Buffer.from(source);
+  const callable = new Proxy(() => null, {
+    apply() {
+      touches.invocations += 1;
+      return null;
+    },
+  });
+  const key =
+    variant.keyKind === "string" ? `extra-${label}` : Symbol(label);
+  const descriptor = { configurable: true, enumerable: variant.enumerable };
+  if (variant.descriptorKind === "getter") {
+    descriptor.get = () => {
+      touches.reads += 1;
+      return callable;
+    };
+  } else if (variant.descriptorKind === "setter") {
+    descriptor.set = () => {
+      touches.writes += 1;
+    };
+  } else {
+    descriptor.value = callable;
+    descriptor.writable = true;
+  }
+  Object.defineProperty(carrier, key, descriptor);
+  return Object.freeze({ carrier, key, descriptor });
+}
+
+function c15MutateFirstByte(carrier, originalBytes, label) {
+  assert.equal(originalBytes.length > 0, true, label);
+  const originalFirstByte = originalBytes[0];
+  carrier[0] = originalFirstByte ^ 0xff;
+  assert.notEqual(carrier[0], originalFirstByte, label);
+}
+
+function c15HostileCarriers(source, position, totals) {
+  class LocalBufferSubclass extends Buffer {}
+  const trapped = trapEveryObjectOperation(Buffer.from(source), position);
+
+  const shared = Buffer.from(new SharedArrayBuffer(source.length));
+  shared.set(source);
+
+  const subclass = Buffer.from(source);
+  Object.setPrototypeOf(subclass, LocalBufferSubclass.prototype);
+
+  const foreignPrototype = runInNewContext("Object.create(bufferPrototype)", {
+    bufferPrototype: Buffer.prototype,
+  });
+  const foreign = Buffer.from(source);
+  Object.setPrototypeOf(foreign, foreignPrototype);
+
+  const ownLength = Buffer.from(source);
+  const ownLengthSentinel = new Error(`${position}: own length getter ran`);
+  Object.defineProperty(ownLength, "length", {
+    configurable: true,
+    get() {
+      totals.ownLengthGetterHits += 1;
+      throw ownLengthSentinel;
+    },
+  });
+
+  const brandedLookalike = Object.create(Buffer.prototype);
+  Object.defineProperty(brandedLookalike, "_isBuffer", {
+    configurable: true,
+    enumerable: true,
+    value: true,
+  });
+
+  return Object.freeze([
+    Object.freeze({
+      family: "proxy-trap-free",
+      carrier: trapped.value,
+      sentinel: trapped.sentinel,
+      trapState: trapped.state,
+    }),
+    Object.freeze({ family: "shared-backing", carrier: shared }),
+    Object.freeze({ family: "subclass", carrier: subclass }),
+    Object.freeze({ family: "foreign-prototype", carrier: foreign }),
+    Object.freeze({
+      family: "own-length-collision",
+      carrier: ownLength,
+      sentinel: ownLengthSentinel,
+    }),
+    Object.freeze({
+      family: "non-buffer-view",
+      carrier: new Uint8Array(source),
+    }),
+    Object.freeze({ family: "branded-lookalike", carrier: brandedLookalike }),
+  ]);
+}
+
+function c15DetachedBuffer(source) {
+  const backing = new ArrayBuffer(source.length);
+  const carrier = Buffer.from(backing);
+  carrier.set(source);
+  structuredClone(backing, { transfer: [backing] });
+  assert.equal(backing.byteLength, 0);
+  return carrier;
+}
+
+async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
   candidate = await candidate;
   if (candidate === null) {
     return c13DeferredCallbackResult("byte-position-carrier-controls");
@@ -903,75 +2101,257 @@ async function c13RunBytePositionCandidateControls({ candidate, oracle }) {
     oracle.identitySha256 ?? oracle.requirementsSha256 ?? null;
   assert.match(oracleIdentitySha256, /^[0-9a-f]{64}$/u);
   assert.equal(Object.isFrozen(oracle), true);
-  const normalStartup = oracle.witnesses.startups.find(
-    ({ mode }) => mode === "NORMAL",
-  );
-  assert.notEqual(normalStartup, undefined);
-  assert.equal(Object.isFrozen(normalStartup), true);
-  assert.equal(Object.isFrozen(normalStartup.startupReport), true);
-  assert.equal(Object.isFrozen(normalStartup.epoch), true);
-  const startupReportBytes = Buffer.from(
-    normalStartup.startupReport.bytesHex,
-    "hex",
-  );
-  const epochBytes = Buffer.from(normalStartup.epoch.bytesHex, "hex");
-  assert.equal(
-    startupReportBytes.length,
-    normalStartup.startupReport.byteLength,
-  );
-  assert.equal(
-    byteDigest(startupReportBytes),
-    normalStartup.startupReport.rawSha256,
-  );
-  assert.equal(epochBytes.length, 32);
-  assert.equal(byteDigest(epochBytes), normalStartup.epoch.rawSha256);
+  assert.equal(oracle.requirementsSha256, LIVE_C15_REQUIREMENTS_SHA256);
+  assert.equal(oracleIdentitySha256, oracle.identitySha256);
+  const activity = {
+    candidateCallCount: 0,
+    targetCallCount: 0,
+    proxyTrapHits: 0,
+    ownLengthGetterHits: 0,
+  };
+  const runtime = c15BytePositionRuntime(candidate, oracle, activity);
+  const hostileControlIds = [];
+  const ignoredPropertyControlIds = [];
+  const localSuccessControlIds = [];
+  const boundaryControlIds = [];
+  const precedenceControlIds = [];
+  const detachedControlIds = [];
+  const helperBoundaryControlIds = [];
+  const touches = { reads: 0, writes: 0, invocations: 0 };
 
-  const trapped = trapEveryObjectOperation(
-    startupReportBytes,
-    C15_FIRST_BYTE_POSITION_CONTROL_ID,
-  );
-  let observedError = null;
-  let candidateBehaviorAttemptCount = 0;
-  try {
-    candidateBehaviorAttemptCount += 1;
-    candidate.createCandidateContainmentGuardianStartupV1(
-      trapped.value,
-      epochBytes,
-      normalStartup.epochEofObserved,
+  assert.deepEqual(C15_HOSTILE_CARRIER_FAMILIES, [
+    "proxy-trap-free",
+    "shared-backing",
+    "subclass",
+    "foreign-prototype",
+    "own-length-collision",
+    "non-buffer-view",
+    "branded-lookalike",
+  ]);
+  assert.equal(IGNORED_PROPERTY_VARIANTS.length, 12);
+
+  for (const spec of BYTE_POSITION_SPECS) {
+    const source = runtime.bytes[spec.name];
+    assert.equal(Buffer.isBuffer(source), true, spec.name);
+
+    const hostileCarriers = c15HostileCarriers(source, spec.name, activity);
+    assert.equal(hostileCarriers.length, 7, spec.name);
+    assert.deepEqual(
+      hostileCarriers.map(({ family }) => family),
+      C15_HOSTILE_CARRIER_FAMILIES,
+      spec.name,
     );
-  } catch (error) {
-    observedError = error;
+    for (const { family, carrier, sentinel = null, trapState = null } of
+      hostileCarriers) {
+      const id = `${spec.name}:${family}`;
+      c15ExpectedError(
+        () => runtime.invoke(spec.name, carrier),
+        "CONTROL_SHAPE",
+        id,
+        sentinel,
+      );
+      if (trapState !== null) {
+        assert.equal(trapState.hits, 0, id);
+        activity.proxyTrapHits += trapState.hits;
+      }
+      hostileControlIds.push(id);
+    }
+
+    for (const [variantIndex, variant] of
+      IGNORED_PROPERTY_VARIANTS.entries()) {
+      const id = `${spec.name}:ignored-own-property-${String(
+        variantIndex,
+      ).padStart(2, "0")}`;
+      const decorated = c15DecoratedCarrier(source, variant, touches, id);
+      const descriptorBefore = Object.getOwnPropertyDescriptor(
+        decorated.carrier,
+        decorated.key,
+      );
+      const success = runtime.invoke(spec.name, decorated.carrier, {
+        positive: true,
+      });
+      c15MutateFirstByte(decorated.carrier, source, id);
+      success.verifyAfterMutation();
+      assert.deepEqual(
+        Object.getOwnPropertyDescriptor(decorated.carrier, decorated.key),
+        descriptorBefore,
+        id,
+      );
+      ignoredPropertyControlIds.push(id);
+    }
+
+    const localBufferId = `${spec.name}:local-buffer-copy-no-alias`;
+    const localBuffer = Buffer.from(source);
+    const localBufferSuccess = runtime.invoke(spec.name, localBuffer, {
+      positive: true,
+    });
+    c15MutateFirstByte(localBuffer, source, localBufferId);
+    localBufferSuccess.verifyAfterMutation();
+    localSuccessControlIds.push(localBufferId);
+
+    const normalizedViewId =
+      `${spec.name}:local-uint8array-buffer-prototype-copy-no-alias`;
+    const normalizedView = new Uint8Array(source);
+    assert.equal(Object.getPrototypeOf(normalizedView), Uint8Array.prototype);
+    assert.equal(Buffer.isBuffer(normalizedView), false);
+    Object.setPrototypeOf(normalizedView, Buffer.prototype);
+    assert.equal(Object.getPrototypeOf(normalizedView), Buffer.prototype);
+    assert.equal(normalizedView instanceof Uint8Array, true);
+    const normalizedViewSuccess = runtime.invoke(spec.name, normalizedView, {
+      positive: true,
+    });
+    c15MutateFirstByte(normalizedView, source, normalizedViewId);
+    normalizedViewSuccess.verifyAfterMutation();
+    localSuccessControlIds.push(normalizedViewId);
+
+    const maximumId = `${spec.name}:maximum-accepted-before-downstream-check`;
+    let maximumError = null;
+    try {
+      runtime.invoke(
+        spec.name,
+        Buffer.alloc(spec.maximumBytes, 0x61),
+      );
+    } catch (error) {
+      maximumError = error;
+    }
+    assert.notEqual(maximumError?.message, "CONTROL_BOUNDS", maximumId);
+    boundaryControlIds.push(maximumId);
+
+    const overMaximumId = `${spec.name}:overmaximum-control-bounds`;
+    c15ExpectedError(
+      () =>
+        runtime.invoke(
+          spec.name,
+          Buffer.alloc(spec.maximumBytes + 1, 0x61),
+        ),
+      "CONTROL_BOUNDS",
+      overMaximumId,
+    );
+    boundaryControlIds.push(overMaximumId);
+
+    const boundsBeforeShapeId = `${spec.name}:bounds-before-shape`;
+    const boundsBeforeShape = Buffer.alloc(spec.maximumBytes + 1, 0x62);
+    class OversizedBufferSubclass extends Buffer {}
+    Object.setPrototypeOf(
+      boundsBeforeShape,
+      OversizedBufferSubclass.prototype,
+    );
+    c15ExpectedError(
+      () => runtime.invoke(spec.name, boundsBeforeShape),
+      "CONTROL_BOUNDS",
+      boundsBeforeShapeId,
+    );
+    precedenceControlIds.push(boundsBeforeShapeId);
+
+    const detachedId = `${spec.name}:detached-backing-precedence`;
+    const detached = c15DetachedBuffer(source);
+    c15ExpectedError(
+      () => runtime.invoke(spec.name, detached),
+      spec.minimumBytes === 0 ? "CONTROL_SHAPE" : "CONTROL_BOUNDS",
+      detachedId,
+    );
+    detachedControlIds.push(detachedId);
   }
-  assert.notEqual(
-    observedError,
-    null,
-    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} must reject`,
+
+  const shortEpochId = "epochBytes:short-31-control-bounds";
+  c15ExpectedError(
+    () => runtime.invoke("epochBytes", Buffer.alloc(31, 0x45)),
+    "CONTROL_BOUNDS",
+    shortEpochId,
   );
-  assert.notEqual(
-    observedError,
-    trapped.sentinel,
-    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} invoked a Proxy trap`,
-  );
+  boundaryControlIds.push(shortEpochId);
+
+  const exactV2SourceBytes = readFileSync(EXACT_V2_URL);
+  assert.equal(exactV2SourceBytes.length, LIVE_C15_EXACT_V2_SOURCE_BYTE_LENGTH);
+  assert.equal(byteDigest(exactV2SourceBytes), EXPECTED_EXACT_V2_SOURCE_SHA256);
+  const exactV2 = await import(EXACT_V2_URL.href);
   assert.equal(
-    trapped.state.hits,
-    0,
-    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} must be trap-free`,
+    typeof exactV2.copyBoundedBufferByFailureCategory,
+    "function",
   );
-  assert.equal(
-    observedError?.message,
-    "CONTROL_SHAPE",
-    `${C15_FIRST_BYTE_POSITION_CONTROL_ID} expected CONTROL_SHAPE but observed ${observedError?.message}`,
+  const runDetachedHelperBoundary = (minimumBytes, expectedMessage) => {
+    const id =
+      `exact-v2:detached-minimum-${minimumBytes}-${expectedMessage.toLowerCase()}`;
+    const detached = c15DetachedBuffer(Buffer.from([0x45]));
+    c15ExpectedError(
+      () =>
+        exactV2.copyBoundedBufferByFailureCategory(
+          detached,
+          "C15 detached boundary carrier",
+          { minimumBytes, maximumBytes: 1 },
+          () => {
+            throw new Error("CONTROL_BOUNDS");
+          },
+          () => {
+            throw new Error("CONTROL_SHAPE");
+          },
+        ),
+      expectedMessage,
+      id,
+    );
+    helperBoundaryControlIds.push(id);
+  };
+  runDetachedHelperBoundary(1, "CONTROL_BOUNDS");
+  runDetachedHelperBoundary(0, "CONTROL_SHAPE");
+
+  assert.equal(hostileControlIds.length, 63);
+  assert.equal(new Set(hostileControlIds).size, 63);
+  assert.equal(ignoredPropertyControlIds.length, 108);
+  assert.equal(new Set(ignoredPropertyControlIds).size, 108);
+  assert.equal(localSuccessControlIds.length, 18);
+  assert.equal(new Set(localSuccessControlIds).size, 18);
+  assert.equal(boundaryControlIds.length, 19);
+  assert.equal(new Set(boundaryControlIds).size, 19);
+  assert.equal(precedenceControlIds.length, 9);
+  assert.equal(detachedControlIds.length, 9);
+  assert.equal(helperBoundaryControlIds.length, 2);
+  assert.deepEqual(touches, { reads: 0, writes: 0, invocations: 0 });
+  assert.deepEqual(
+    {
+      proxyTrapHits: activity.proxyTrapHits,
+      ownLengthGetterHits: activity.ownLengthGetterHits,
+    },
+    { proxyTrapHits: 0, ownLengthGetterHits: 0 },
   );
-  const controlIds = Object.freeze([C15_FIRST_BYTE_POSITION_CONTROL_ID]);
+  const controlIds = Object.freeze([
+    ...hostileControlIds,
+    ...ignoredPropertyControlIds,
+    ...localSuccessControlIds,
+    ...boundaryControlIds,
+    ...precedenceControlIds,
+    ...detachedControlIds,
+    ...helperBoundaryControlIds,
+  ]);
+  assert.equal(controlIds.length, 228);
+  assert.equal(new Set(controlIds).size, controlIds.length);
   return Object.freeze({
     schema: C15_BYTE_POSITION_DISPATCH_SCHEMA,
-    positionCount: 1,
-    familyCount: 1,
+    positionCount: BYTE_POSITION_SPECS.length,
+    hostileFamilyCount: C15_HOSTILE_CARRIER_FAMILIES.length,
+    ignoredPropertyVariantCount: IGNORED_PROPERTY_VARIANTS.length,
+    hostileControlCount: hostileControlIds.length,
+    ignoredPropertyControlCount: ignoredPropertyControlIds.length,
+    localSuccessControlCount: localSuccessControlIds.length,
+    boundaryControlCount: boundaryControlIds.length,
+    precedenceControlCount: precedenceControlIds.length,
+    detachedControlCount: detachedControlIds.length,
+    helperBoundaryControlCount: helperBoundaryControlIds.length,
     controlCount: controlIds.length,
     controlIds,
     oracleIdentitySha256,
-    candidateBehaviorAttemptCount,
-    proxyTrapHits: trapped.state.hits,
+    candidateBehaviorAttemptCount: activity.candidateCallCount,
+    targetCandidateCallCount: activity.targetCallCount,
+    ignoredPropertyTouches: Object.freeze({ ...touches }),
+    proxyTrapHits: activity.proxyTrapHits,
+    ownLengthGetterHits: activity.ownLengthGetterHits,
+    localBufferSuccessProved: true,
+    normalizedLocalUint8ArraySuccessProved: true,
+    copyNoAliasProved: true,
+    detachedMinimumZeroFailure: "CONTROL_SHAPE",
+    detachedMinimumOneFailure: "CONTROL_BOUNDS",
+    detachedEpochFailure: "CONTROL_BOUNDS",
+    exactV2SourceByteLength: exactV2SourceBytes.length,
+    exactV2SourceSha256: byteDigest(exactV2SourceBytes),
     candidateBehaviorProved: true,
   });
 }
@@ -1119,6 +2499,56 @@ async function c15RunLaunchVerifierErrorTranslationControl({
     invalidAdmissionFrameRawSha256,
   );
 
+  const malformedBase64AdmissionFrame = c15JsonClone(
+    admissionWitness.frame.value,
+  );
+  malformedBase64AdmissionFrame.launchCapsuleV3 = "***not-canonical-base64***";
+  const malformedBase64AdmissionFrameBytes = c15CanonicalJsonlBytes(
+    malformedBase64AdmissionFrame,
+  );
+  const malformedBase64AdmissionFrameRawSha256 = byteDigest(
+    malformedBase64AdmissionFrameBytes,
+  );
+  assert.notEqual(
+    malformedBase64AdmissionFrameRawSha256,
+    admissionWitness.frame.rawSha256,
+  );
+  assert.equal(malformedBase64AdmissionFrameBytes.length <= 131_072, true);
+
+  const predecessorSourceBytes = readFileSync(LAUNCH_CAPSULE_V3_URL);
+  assert.equal(
+    predecessorSourceBytes.length,
+    LAUNCH_CAPSULE_V3_SOURCE_BYTE_LENGTH,
+  );
+  assert.equal(
+    byteDigest(predecessorSourceBytes),
+    LAUNCH_CAPSULE_V3_SOURCE_SHA256,
+  );
+  const predecessor = await import(LAUNCH_CAPSULE_V3_URL.href);
+  assert.equal(
+    typeof predecessor.verifyCandidateContainmentLaunchCapsuleV3,
+    "function",
+  );
+
+  let predecessorObservedError = null;
+  try {
+    predecessor.verifyCandidateContainmentLaunchCapsuleV3(
+      invalidLaunchCapsuleBytes,
+    );
+  } catch (error) {
+    predecessorObservedError = error;
+  }
+  assert.notEqual(
+    predecessorObservedError,
+    null,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} predecessor must reject`,
+  );
+  assert.notEqual(
+    predecessorObservedError?.message,
+    "CONTROL_BINDING",
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} predecessor rejection must remain native`,
+  );
+
   let candidateBehaviorAttemptCount = 0;
   candidateBehaviorAttemptCount += 1;
   const startupProjection =
@@ -1132,9 +2562,27 @@ async function c15RunLaunchVerifierErrorTranslationControl({
   const initialized =
     candidate.initializeCandidateContainmentGuardianControlV1(
       startupProjection,
-    );
+  );
   assert.notEqual(initialized, null);
   assert.notEqual(initialized.state, null);
+
+  candidateBehaviorAttemptCount += 1;
+  const validAdmission =
+    candidate.createCandidateContainmentGuardianAdmissionInputV1(
+      initialized.state,
+      originalAdmissionFrameBytes,
+      originalRecvmsgReportBytes,
+    );
+  assert.notEqual(validAdmission, null);
+  assert.equal(validAdmission.kind, "ADMIT");
+  assert.equal(
+    validAdmission.frameSha256,
+    admissionWitness.frame.rawSha256,
+  );
+  assert.equal(
+    validAdmission.auxiliarySha256,
+    admissionWitness.auxiliary.rawSha256,
+  );
 
   let observedError = null;
   candidateBehaviorAttemptCount += 1;
@@ -1147,7 +2595,6 @@ async function c15RunLaunchVerifierErrorTranslationControl({
   } catch (error) {
     observedError = error;
   }
-  assert.equal(candidateBehaviorAttemptCount, 3);
   assert.notEqual(
     observedError,
     null,
@@ -1159,6 +2606,29 @@ async function c15RunLaunchVerifierErrorTranslationControl({
     `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} expected CONTROL_BINDING but observed predecessor error ${observedError?.message}`,
   );
 
+  let malformedBase64ObservedError = null;
+  candidateBehaviorAttemptCount += 1;
+  try {
+    candidate.createCandidateContainmentGuardianAdmissionInputV1(
+      initialized.state,
+      malformedBase64AdmissionFrameBytes,
+      originalRecvmsgReportBytes,
+    );
+  } catch (error) {
+    malformedBase64ObservedError = error;
+  }
+  assert.notEqual(
+    malformedBase64ObservedError,
+    null,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} malformed base64 must reject`,
+  );
+  assert.equal(
+    malformedBase64ObservedError?.message,
+    "CONTROL_FRAME",
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} malformed base64 must fail before wrapper entry`,
+  );
+  assert.equal(candidateBehaviorAttemptCount, 5);
+
   return Object.freeze({
     schema: C15_LAUNCH_TRANSLATION_DISPATCH_SCHEMA,
     controlId: C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID,
@@ -1169,11 +2639,21 @@ async function c15RunLaunchVerifierErrorTranslationControl({
     invalidAdmissionFrameRawSha256,
     originalRecvmsgReportRawSha256: admissionWitness.auxiliary.rawSha256,
     invalidRecvmsgReportRawSha256,
+    malformedBase64AdmissionFrameRawSha256,
     downstreamRecvmsgBindingConsistent: true,
+    validAdmissionSucceeded: true,
+    predecessorSourceByteLength: predecessorSourceBytes.length,
+    predecessorSourceSha256: byteDigest(predecessorSourceBytes),
+    predecessorNativeFailure:
+      String(predecessorObservedError.message).split("\n", 1)[0],
+    predecessorNativeFailureIsControlBinding: false,
+    malformedBase64Failure: malformedBase64ObservedError.message,
+    malformedBase64RejectedBeforeWrapper: true,
     candidateBehaviorAttemptCount,
     startupCandidateCallCount: 1,
     initializationCandidateCallCount: 1,
-    admissionCandidateCallCount: 1,
+    admissionCandidateCallCount: 3,
+    predecessorVerifierCallCount: 1,
     freshLoaderCallCount: 0,
     sourceOrCandidateDeferralUsed: false,
     predecessorFailureTranslated: true,
@@ -1294,7 +2774,7 @@ export function registerAdversarialCandidateTests(registration) {
       );
       assertCandidateTestInputsAtExecution(captured, entry.requiredInputs);
       if (entry.id === "byte-position-carrier-controls") {
-        return c13RunBytePositionCandidateControls(captured);
+        return c15RunBytePositionCandidateControls(captured);
       }
       if (entry.id === "launch-verifier-error-translation") {
         return c15RunLaunchVerifierErrorTranslationControl(captured);
@@ -1362,6 +2842,11 @@ async function loadExactV2ForAdversarialEntry({
 
   let sequence = 0;
   const exactV2SourceBytes = readExactV2Source();
+  assert.equal(
+    exactV2SourceBytes.length,
+    LIVE_C15_EXACT_V2_SOURCE_BYTE_LENGTH,
+    "adversarial exact-v2 source pin mismatch",
+  );
   const observedSourceSha256 = createHash("sha256")
     .update(exactV2SourceBytes)
     .digest("hex");
@@ -1503,7 +2988,6 @@ async function loadDirectParserForAdversarialEntry({
   });
 }
 
-const DIRECT_ENTRY = isDirectEntry(import.meta.url, process.argv[1]);
 const DIRECT_PARSER_LOAD = await loadDirectParserForAdversarialEntry({
   directEntry: DIRECT_ENTRY,
 });
@@ -4972,7 +6456,7 @@ function directAssertContextualGrammar(
     }
   };
   if (directC14AuditedSource) {
-    const requirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+    const requirements = directHistoricalC14Requirements();
     if (digest(requirements) !== EXPECTED_REQUIREMENTS_SHA256) {
       fail("audited requirements fixture mismatch");
     }
@@ -8846,9 +10330,7 @@ function evaluateDirectC14Provenance(
   if (!candidateActivation && c14ProvenanceMode !== "fragment-control") {
     fail("UNRECOGNIZED_C14_PROVENANCE_MODE");
   }
-  const directRequirementsOracle = JSON.parse(
-    readFileSync(REQUIREMENTS_URL, "utf8"),
-  );
+  const directRequirementsOracle = directHistoricalC14Requirements();
   if (digest(directRequirementsOracle) !== EXPECTED_REQUIREMENTS_SHA256) {
     fail("REQUIREMENTS_ROOT_NOT_EXACT");
   }
@@ -10332,7 +11814,7 @@ function directProvenanceRequirementsSkeleton(
     "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
   const requirementsDigestName =
     "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256";
-  const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+  const pinnedRequirements = directHistoricalC14Requirements();
   assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
   const inlineDeclaration = `export const ${requirementsName} = 0;`;
   const rootedDeclaration = `const guardianContract = deepFreeze(${directNullRecordSource(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
@@ -10854,7 +12336,7 @@ function directFrozenSourceShapePolicyControls() {
 }
 
 function directProvenancePolicyControls() {
-  const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+  const pinnedRequirements = directHistoricalC14Requirements();
   assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
   const unverifiedAuthority =
     'deepFreeze(nullRecord([["transportAuthority", false], ["descriptorAuthority", false], ["filesystemAuthority", false], ["cgroupAuthority", false], ["processAuthority", false], ["recoveryAuthority", false], ["runtimeAuthority", false]]))';
@@ -11441,7 +12923,7 @@ function directCandidateActivationSkeleton({
     "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS";
   const requirementsDigestName =
     "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256";
-  const pinnedRequirements = JSON.parse(readFileSync(REQUIREMENTS_URL, "utf8"));
+  const pinnedRequirements = directHistoricalC14Requirements();
   assert.equal(digest(pinnedRequirements), EXPECTED_REQUIREMENTS_SHA256);
   const inlineDeclaration = `export const ${requirementsName} = 0;`;
   const rootedDeclaration = `const guardianContract = deepFreeze(${directNullRecordSource(pinnedRequirements)});\nexport const ${requirementsName} = guardianContract;`;
@@ -12126,6 +13608,7 @@ const STATIC_CONTROLS = DIRECT_ENTRY ? sourceIndependentStaticControls() : null;
 let candidateSourceGateError = null;
 let sourceBytes = null;
 let sourceAudit = null;
+let sourceIdentity = null;
 const DIRECT_CANDIDATE_ACTIVITY = {
   sourceReads: 0,
   sourceAudits: 0,
@@ -12136,12 +13619,25 @@ if (DIRECT_ENTRY) {
   try {
     DIRECT_CANDIDATE_ACTIVITY.sourceReads += 1;
     sourceBytes = readFileSync(SOURCE_PATH);
+    sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(sourceBytes);
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
   if (sourceBytes !== null) {
     try {
-      sourceAudit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(sourceBytes);
+      const historicalC14Audit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(
+        sourceIdentity.historicalSourceBytes,
+      );
+      const liveProgram = directParse(
+        sourceIdentity.liveSource,
+        DIRECT_ACORN_PARSE_OPTIONS,
+      );
+      const c15Extension = directAssertC15LiveAstExtension(liveProgram);
+      assert.equal(
+        c15Extension.projectionSha256,
+        "36af5ac510fda80a291ba09c32f35495d2268898cf97994963ea15049be06b53",
+      );
+      sourceAudit = Object.freeze({ ...historicalC14Audit, c15Extension });
       DIRECT_CANDIDATE_ACTIVITY.sourceAudits += 1;
     } catch (error) {
       candidateSourceGateError = error;
@@ -12150,7 +13646,8 @@ if (DIRECT_ENTRY) {
 }
 
 test("independently verifies the fixture digest in the adversarial lane", () => {
-  const fixtureText = readFileSync(REQUIREMENTS_URL, "utf8");
+  const fixtureText =
+    C15_FIXTURE_IDENTITY.historicalFixtureBytes.toString("utf8");
   const fixture = JSON.parse(fixtureText);
   assert.equal(digest(fixture), EXPECTED_REQUIREMENTS_SHA256);
   assert.equal(
@@ -12389,10 +13886,8 @@ test("keeps its own pre-import gate green with zero evaluation attempts", async 
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1",
     mode: "DIRECT_ENTRY",
-    expectedSourceSha256:
-      "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
-    observedSourceSha256:
-      "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+    expectedSourceSha256: EXPECTED_EXACT_V2_SOURCE_SHA256,
+    observedSourceSha256: EXPECTED_EXACT_V2_SOURCE_SHA256,
     sourceReadCount: 1,
     sourcePinSequence: 1,
     moduleLoadAttemptCount: 1,
@@ -12419,8 +13914,7 @@ test("keeps its own pre-import gate green with zero evaluation attempts", async 
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1",
     mode: "IMPORTED",
-    expectedSourceSha256:
-      "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+    expectedSourceSha256: EXPECTED_EXACT_V2_SOURCE_SHA256,
     observedSourceSha256: null,
     sourceReadCount: 0,
     sourcePinSequence: null,
@@ -12788,7 +14282,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   assert.equal(Object.isFrozen(PRIVATE_STORE_COMMIT_CONTROL_PLAN), true);
 
   const expectedCandidateTestNames = [
-    "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+    "execute the complete C15 real-candidate byte-carrier matrix at all nine positions",
     "translate launch-capsule v1 schema substitution failures to CONTROL_BINDING after valid NORMAL startup and initialization",
     "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
   ];
@@ -12845,7 +14339,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554",
+      "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d",
     registeredCount: 3,
     todoCount: 1,
     inputsDeferredUntilExecution: true,
@@ -12955,14 +14449,23 @@ test("freezes the 10-operation private-store evaluator design without claiming c
       const admissionFrame = JSON.parse(
         admissionFrameBytes.toString("utf8"),
       );
+      if (
+        admissionFrame.launchCapsuleV3 === "***not-canonical-base64***"
+      ) {
+        directActivationCalls.push("admission-malformed-base64");
+        throw new Error("CONTROL_FRAME");
+      }
       const launchCapsuleBytes = Buffer.from(
         admissionFrame.launchCapsuleV3,
         "base64",
       );
       const launchCapsule = JSON.parse(launchCapsuleBytes.toString("utf8"));
       assert.equal(
-        launchCapsule.schema,
-        "oxigraph.candidate-containment-launch-capsule/v1",
+        [
+          "oxigraph.candidate-containment-launch-capsule/v1",
+          "oxigraph.candidate-containment-launch-capsule/v2",
+        ].includes(launchCapsule.schema),
+        true,
       );
       assert.equal(
         byteDigest(launchCapsuleBytes),
@@ -12976,7 +14479,18 @@ test("freezes the 10-operation private-store evaluator design without claiming c
         recvmsgReport.messageRawSha256,
         byteDigest(admissionFrameBytes),
       );
-      directActivationCalls.push("admission");
+      if (
+        launchCapsule.schema ===
+        "oxigraph.candidate-containment-launch-capsule/v2"
+      ) {
+        directActivationCalls.push("admission-valid");
+        return Object.freeze({
+          kind: "ADMIT",
+          frameSha256: byteDigest(admissionFrameBytes),
+          auxiliarySha256: byteDigest(recvmsgReportBytes),
+        });
+      }
+      directActivationCalls.push("admission-invalid-schema");
       throw new Error("CONTROL_BINDING");
     },
   });
@@ -13005,7 +14519,9 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   assert.deepEqual(directActivationCalls, [
     "startup",
     "initialize",
-    "admission",
+    "admission-valid",
+    "admission-invalid-schema",
+    "admission-malformed-base64",
   ]);
   assert.equal(directActivationLoaderCalls, 0);
   assert.deepEqual(directLaunchTranslationReceipt, {
@@ -13026,11 +14542,23 @@ test("freezes the 10-operation private-store evaluator design without claiming c
       "08ee9017f91f7913ae63f4425933ca31301b3489b02f2cf36c82b552a70c007f",
     invalidRecvmsgReportRawSha256:
       "5ba7825eabb66862c2dd4ff64473fcbfa16bef82029d258b0f03c2025e54482c",
+    malformedBase64AdmissionFrameRawSha256:
+      "a1a426acb13d035e995bf30c17967bebf8c01bf1e4b9c4aadd7b354b39a3fab5",
     downstreamRecvmsgBindingConsistent: true,
-    candidateBehaviorAttemptCount: 3,
+    validAdmissionSucceeded: true,
+    predecessorSourceByteLength: 17_977,
+    predecessorSourceSha256:
+      "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d",
+    predecessorNativeFailure:
+      "candidate containment launch capsule v3: capsule body fields are not exact enumerable own data",
+    predecessorNativeFailureIsControlBinding: false,
+    malformedBase64Failure: "CONTROL_FRAME",
+    malformedBase64RejectedBeforeWrapper: true,
+    candidateBehaviorAttemptCount: 5,
     startupCandidateCallCount: 1,
     initializationCandidateCallCount: 1,
-    admissionCandidateCallCount: 1,
+    admissionCandidateCallCount: 3,
+    predecessorVerifierCallCount: 1,
     freshLoaderCallCount: 0,
     sourceOrCandidateDeferralUsed: false,
     predecessorFailureTranslated: true,
