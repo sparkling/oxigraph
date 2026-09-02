@@ -22446,6 +22446,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   const realCandidateGetterOrder = [];
   let activeRealCandidateCallback = "registration";
   let realCandidateFreshLoaderCalls = 0;
+  let realCandidateFreshLoaderAudit = null;
   const realCandidateInput = Promise.resolve(c14CandidateOrThrow());
   const realCandidateRegistration = {
     registerTest(name, options, run) {
@@ -22459,7 +22460,39 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       "loadFreshCandidate",
       async () => {
         realCandidateFreshLoaderCalls += 1;
-        return PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
+        const successfulOrdinalBefore =
+          PRODUCTION_FRESH_CANDIDATE_LOADER.successfulOrdinal();
+        const loaded =
+          await PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
+        const loadReceipt = PRODUCTION_FRESH_CANDIDATE_LOADER.lastLoadReceipt();
+        assert.notEqual(loadReceipt, null);
+        assert.equal(loadReceipt.sourceSha256, LIVE_C15_CANDIDATE_SOURCE_SHA256);
+        assert.equal(loadReceipt.ordinal, successfulOrdinalBefore + 1);
+        assert.equal(
+          PRODUCTION_FRESH_CANDIDATE_LOADER.successfulOrdinal(),
+          successfulOrdinalBefore + 1,
+        );
+        assertCanonicalFreshCandidateUrl(
+          loadReceipt.url,
+          LIVE_C15_CANDIDATE_SOURCE_SHA256,
+          loadReceipt.ordinal,
+        );
+        realCandidateFreshLoaderAudit = recursivelyFreezeEvidence({
+          schema:
+            "oxigraph.test.candidate-containment-guardian-control-v1-c16-fresh-loader-audit/v1",
+          readSequence: loadReceipt.readSequence,
+          pinSequence: loadReceipt.pinSequence,
+          decodeSequence: loadReceipt.decodeSequence,
+          auditSequence: loadReceipt.auditSequence,
+          importSequence: loadReceipt.importSequence,
+          successfulOrdinalAdvance: loadReceipt.ordinal - successfulOrdinalBefore,
+          sourceSha256: loadReceipt.sourceSha256,
+          sourceUrl: SOURCE_URL.href,
+          canonicalSourceSha256ThenPaddedOrdinalQuery: true,
+          ordered: loadReceipt.ordered,
+          fullMainAuditAppliedBeforeImport: true,
+        });
+        return loaded;
       },
     ],
   ]) {
@@ -22490,14 +22523,8 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   activeRealCandidateCallback = "launch";
   const launchDispatchReceipt = await realCandidateRegistrations[1].run();
   activeRealCandidateCallback = "private";
-  let privateDispatchRejection = null;
-  try {
-    await realCandidateRegistrations[2].run();
-  } catch (error) {
-    privateDispatchRejection = error;
-  }
+  const privateDispatchReceipt = await realCandidateRegistrations[2].run();
   activeRealCandidateCallback = "complete";
-  assert.equal(privateDispatchRejection?.message, "CONTROL_SHAPE");
   assert.deepEqual(realCandidateGetterReads, {
     candidate: 3,
     oracle: 3,
@@ -22513,26 +22540,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     "private:loadFreshCandidate",
   ]);
   assert.equal(realCandidateFreshLoaderCalls, 1);
-
-  const privateDispatchReceipt = recursivelyFreezeEvidence({
-    schema:
-      "oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-red/v1",
-    entryTodo: realCandidateRegistrations[2].options.todo === true,
-    candidateInputThenable:
-      typeof realCandidateInput?.then === "function",
-    candidateInputAwaited: true,
-    freshLoaderCallCount: realCandidateFreshLoaderCalls,
-    operationCount: expectedPrivateOperations.length,
-    phaseCount: expectedPrivatePhases.length,
-    plannedControlCount: expectedPrivateControlIds.length,
-    plannedControlIds: expectedPrivateControlIds,
-    attemptedControlCount: 1,
-    firstAttemptedControlId: expectedPrivateControlIds[0],
-    observedFailure: privateDispatchRejection.message,
-    syntheticRunnerRejectedBeforeRealC16Controls: true,
-    realC16RunnerImplemented: false,
-    candidateBehaviorProved: false,
-  });
+  assert.notEqual(realCandidateFreshLoaderAudit, null);
 
   const callbackWiringReceipt = recursivelyFreezeEvidence({
     schema:
@@ -22554,6 +22562,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     byteDispatch: c12Clone(byteDispatchReceipt),
     launchDispatch: c12Clone(launchDispatchReceipt),
     privateDispatch: c12Clone(privateDispatchReceipt),
+    privateFreshLoaderAudit: c12Clone(realCandidateFreshLoaderAudit),
     realCandidateUsed: true,
     liveOracleIdentitySha256: LIVE_C15_RUNTIME_ORACLE.identitySha256,
     privateTodoDeferredWithoutCandidateExecution:
@@ -22688,22 +22697,216 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
       privateDispatch: {
         schema:
-          "oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-red/v1",
+          "oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-dispatch/v1",
+        storeCount: 3,
+        ownerCount: 10,
+        phaseCount: 5,
+        primaryControlCount: 40,
+        freshInstanceControlCount: 10,
+        controlCount: 50,
+        controlIds: expectedPrivateControlIds,
+        ownerOperations: expectedPrivateOperations,
+        phaseCounts: {
+          earlyFailure: 10,
+          lateFailure: 10,
+          success: 10,
+          failureAfterSuccess: 10,
+          crossModule: 10,
+        },
+        storeOwnerCounts: {
+          startupMetadata: 1,
+          inputMetadata: 7,
+          stateMetadata: 2,
+        },
+        storeControlCounts: {
+          startupMetadata: 5,
+          inputMetadata: 35,
+          stateMetadata: 10,
+        },
+        candidateBehaviorAttemptCount: 274,
+        candidateBehaviorSuccessCount: 224,
+        candidateBehaviorRejectionCount: 50,
+        primaryCandidateCallCount: 246,
+        freshCandidateCallCount: 28,
+        setupCandidateCallCount: 168,
+        downstreamCandidateCallCount: 36,
+        ownerTargetAttemptCount: 70,
+        ownerTargetSuccessCount: 30,
+        ownerTargetRejectionCount: 40,
+        primaryOwnerTargetAttemptCount: 60,
+        freshOwnerTargetAttemptCount: 10,
+        successfulOwnerResultCount: 40,
+        distinctAllocationPairCount: 10,
+        downstreamUsabilityCount: 20,
+        priorBrandPreservationCount: 10,
+        structuralCloneRejectionCount: 10,
+        crossModuleRejectionCount: 10,
+        freshLoaderCallCount: 1,
+        freshCandidateDistinct: true,
+        freshModuleLoadPolicy:
+          "main-evaluator-read-pin-decode-full-audit-import",
+        freshModuleReauditDelegatedToMainEvaluator: true,
+        oracleIdentitySha256:
+          "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
         entryTodo: false,
         candidateInputThenable: true,
         candidateInputAwaited: true,
-        freshLoaderCallCount: 1,
-        operationCount: 10,
-        phaseCount: 5,
-        plannedControlCount: 50,
-        plannedControlIds: expectedPrivateControlIds,
-        attemptedControlCount: 1,
-        firstAttemptedControlId:
-          "createCandidateContainmentGuardianStartupV1:earlyFailure",
-        observedFailure: "CONTROL_SHAPE",
-        syntheticRunnerRejectedBeforeRealC16Controls: true,
-        realC16RunnerImplemented: false,
-        candidateBehaviorProved: false,
+        todoDeferralBoundToEntryOptions: true,
+        lateFailureBoundaries: [
+          {
+            operation: "createCandidateContainmentGuardianStartupV1",
+            boundary: "final-startup-binding-after-all-descriptor-validation",
+            collapsed: false,
+          },
+          {
+            operation: "createCandidateContainmentGuardianAdmissionInputV1",
+            boundary:
+              "sequence-transition-after-frame-rights-launch-and-state-bindings",
+            collapsed: false,
+          },
+          {
+            operation: "createCandidateContainmentGuardianCancelInputV1",
+            boundary:
+              "sequence-transition-after-frame-scalar-and-state-bindings",
+            collapsed: false,
+          },
+          {
+            operation:
+              "createCandidateContainmentGuardianRecoveryRequestInputV1",
+            boundary:
+              "sequence-transition-after-selection-and-state-bindings",
+            collapsed: false,
+          },
+          {
+            operation:
+              "createCandidateContainmentGuardianControllerClosedInputV1",
+            boundary:
+              "collapsed-to-current-state-brand-no-later-injectable-fallible-step",
+            collapsed: true,
+          },
+          {
+            operation:
+              "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+            boundary: "raw-diagnostic-binding-after-summary-structure",
+            collapsed: false,
+          },
+          {
+            operation:
+              "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+            boundary:
+              "collapsed-to-current-state-brand-no-later-injectable-fallible-step",
+            collapsed: true,
+          },
+          {
+            operation: "createCandidateContainmentGuardianStatusEofInputV1",
+            boundary:
+              "collapsed-to-current-state-brand-no-later-injectable-fallible-step",
+            collapsed: true,
+          },
+          {
+            operation: "initializeCandidateContainmentGuardianControlV1",
+            boundary:
+              "collapsed-to-startup-brand-no-later-injectable-fallible-step",
+            collapsed: true,
+          },
+          {
+            operation: "reduceCandidateContainmentGuardianControlV1",
+            boundary:
+              "reduction-plan-after-state-input-and-public-digest-bindings",
+            collapsed: false,
+          },
+        ],
+        collapsedLateFailureBoundaryCount: 4,
+        runtimeMutantCoverage: [
+          {
+            mutant: "missing-or-wrong-private-set",
+            evidence: "same-module-success-and-downstream-brand-usability",
+          },
+          {
+            mutant: "wrong-private-store-or-key",
+            evidence:
+              "owner-specific-downstream-and-cross-module-brand-isolation",
+          },
+          {
+            mutant: "store-reset-after-failure",
+            evidence:
+              "prior-success-brand-remains-usable-after-late-failure",
+          },
+          {
+            mutant: "structural-clone-accepted",
+            evidence:
+              "exact-public-projection-clone-rejected-as-control-binding",
+          },
+          {
+            mutant: "global-shared-private-store",
+            evidence: "fresh-module-rejects-primary-module-brands",
+          },
+          {
+            mutant: "missing-reduce-state-check",
+            evidence:
+              "reduce-rejects-structural-state-clone-before-input-use",
+          },
+          {
+            mutant: "missing-reduce-input-check",
+            evidence:
+              "input-owner-cross-module-controls-use-fresh-state-with-primary-input",
+          },
+          {
+            mutant: "public-digest-only-authority",
+            evidence:
+              "same-digest-structural-clones-and-cross-module-values-remain-unbranded",
+          },
+        ],
+        staticComplementCoverage: [
+          {
+            mutant: "wrong-private-metadata",
+            evidence:
+              "static-exact-store-key-metadata-provenance;private-metadata-is-not-publicly-readable",
+          },
+          {
+            mutant: "failed-call-object-branded-by-early-commit",
+            evidence:
+              "static-tail-and-dominance-proof;abandoned-weakmap-keys-are-not-enumerable",
+          },
+          {
+            mutant: "unreachable-or-early-private-commit",
+            evidence:
+              "static-direct-body-tail-and-dominance-proof-complemented-by-runtime-failure-atomicity",
+          },
+        ],
+        weakMapEvidence: {
+          sameModuleDownstreamBrandUsabilityProved: true,
+          failureAfterSuccessPreservesPriorBrand: true,
+          structuralCloneRejectedAsControlBinding: true,
+          crossModuleStartupInputStateIsolationProved: true,
+          reduceStateBrandCheckProved: true,
+          reduceInputBrandCheckProved: true,
+          publicDigestOnlyAuthorityRejected: true,
+        },
+        evidenceBoundary: {
+          runtimeComplementsStaticTailAndDominance: true,
+          abandonedWeakMapKeysCannotBeEnumerated: true,
+          abandonedWeakMapKeysDirectlyObserved: false,
+          noClaimFromWeakMapKeyEnumeration: true,
+        },
+        realC16RunnerImplemented: true,
+        candidateBehaviorProved: true,
+      },
+      privateFreshLoaderAudit: {
+        schema:
+          "oxigraph.test.candidate-containment-guardian-control-v1-c16-fresh-loader-audit/v1",
+        readSequence: 1,
+        pinSequence: 2,
+        decodeSequence: 3,
+        auditSequence: 4,
+        importSequence: 5,
+        successfulOrdinalAdvance: 1,
+        sourceSha256:
+          "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+        sourceUrl: SOURCE_URL.href,
+        canonicalSourceSha256ThenPaddedOrdinalQuery: true,
+        ordered: true,
+        fullMainAuditAppliedBeforeImport: true,
       },
       realCandidateUsed: true,
       liveOracleIdentitySha256:

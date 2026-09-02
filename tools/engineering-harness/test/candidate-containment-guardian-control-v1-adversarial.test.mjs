@@ -2684,7 +2684,937 @@ function c13PrivateStoreTodoDeferredCallbackResult() {
   });
 }
 
-async function c13RunPrivateStoreCandidateControls(
+const C16_PRIVATE_STORE_DISPATCH_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-dispatch/v1";
+const C16_PRIVATE_STORE_INPUT_OPERATION_BY_KIND = Object.freeze({
+  ADMIT: "createCandidateContainmentGuardianAdmissionInputV1",
+  CANCEL: "createCandidateContainmentGuardianCancelInputV1",
+  RECOVERY_REQUEST:
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+  CONTROLLER_CLOSED:
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+  DIAGNOSTIC_FAILURE:
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+  RECOVERY_CONTROL_HANDOFF:
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+  STATUS_EOF: "createCandidateContainmentGuardianStatusEofInputV1",
+});
+const C16_PRIVATE_STORE_LATE_FAILURE_BOUNDARIES = Object.freeze([
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianStartupV1",
+    boundary: "final-startup-binding-after-all-descriptor-validation",
+    collapsed: false,
+  }),
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianAdmissionInputV1",
+    boundary:
+      "sequence-transition-after-frame-rights-launch-and-state-bindings",
+    collapsed: false,
+  }),
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianCancelInputV1",
+    boundary:
+      "sequence-transition-after-frame-scalar-and-state-bindings",
+    collapsed: false,
+  }),
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    boundary:
+      "sequence-transition-after-selection-and-state-bindings",
+    collapsed: false,
+  }),
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianControllerClosedInputV1",
+    boundary:
+      "collapsed-to-current-state-brand-no-later-injectable-fallible-step",
+    collapsed: true,
+  }),
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    boundary: "raw-diagnostic-binding-after-summary-structure",
+    collapsed: false,
+  }),
+  Object.freeze({
+    operation:
+      "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    boundary:
+      "collapsed-to-current-state-brand-no-later-injectable-fallible-step",
+    collapsed: true,
+  }),
+  Object.freeze({
+    operation: "createCandidateContainmentGuardianStatusEofInputV1",
+    boundary:
+      "collapsed-to-current-state-brand-no-later-injectable-fallible-step",
+    collapsed: true,
+  }),
+  Object.freeze({
+    operation: "initializeCandidateContainmentGuardianControlV1",
+    boundary:
+      "collapsed-to-startup-brand-no-later-injectable-fallible-step",
+    collapsed: true,
+  }),
+  Object.freeze({
+    operation: "reduceCandidateContainmentGuardianControlV1",
+    boundary: "reduction-plan-after-state-input-and-public-digest-bindings",
+    collapsed: false,
+  }),
+]);
+const C16_PRIVATE_STORE_MUTANT_COVERAGE = Object.freeze([
+  Object.freeze({
+    mutant: "missing-or-wrong-private-set",
+    evidence: "same-module-success-and-downstream-brand-usability",
+  }),
+  Object.freeze({
+    mutant: "wrong-private-store-or-key",
+    evidence: "owner-specific-downstream-and-cross-module-brand-isolation",
+  }),
+  Object.freeze({
+    mutant: "store-reset-after-failure",
+    evidence: "prior-success-brand-remains-usable-after-late-failure",
+  }),
+  Object.freeze({
+    mutant: "structural-clone-accepted",
+    evidence: "exact-public-projection-clone-rejected-as-control-binding",
+  }),
+  Object.freeze({
+    mutant: "global-shared-private-store",
+    evidence: "fresh-module-rejects-primary-module-brands",
+  }),
+  Object.freeze({
+    mutant: "missing-reduce-state-check",
+    evidence: "reduce-rejects-structural-state-clone-before-input-use",
+  }),
+  Object.freeze({
+    mutant: "missing-reduce-input-check",
+    evidence:
+      "input-owner-cross-module-controls-use-fresh-state-with-primary-input",
+  }),
+  Object.freeze({
+    mutant: "public-digest-only-authority",
+    evidence:
+      "same-digest-structural-clones-and-cross-module-values-remain-unbranded",
+  }),
+]);
+const C16_PRIVATE_STORE_STATIC_COMPLEMENTS = Object.freeze([
+  Object.freeze({
+    mutant: "wrong-private-metadata",
+    evidence:
+      "static-exact-store-key-metadata-provenance;private-metadata-is-not-publicly-readable",
+  }),
+  Object.freeze({
+    mutant: "failed-call-object-branded-by-early-commit",
+    evidence:
+      "static-tail-and-dominance-proof;abandoned-weakmap-keys-are-not-enumerable",
+  }),
+  Object.freeze({
+    mutant: "unreachable-or-early-private-commit",
+    evidence:
+      "static-direct-body-tail-and-dominance-proof-complemented-by-runtime-failure-atomicity",
+  }),
+]);
+
+function c16AssertFrozenRecordProjection(actual, expected, label) {
+  if (expected === null || typeof expected !== "object") {
+    assert.deepEqual(actual, expected, label);
+    return;
+  }
+  assert.notEqual(actual, null, label);
+  assert.equal(typeof actual, "object", label);
+  assert.equal(Array.isArray(actual), Array.isArray(expected), label);
+  assert.equal(Object.isFrozen(actual), true, `${label} must be frozen`);
+  if (Array.isArray(expected)) {
+    assert.equal(Object.getPrototypeOf(actual), Array.prototype, label);
+    assert.equal(actual.length, expected.length, label);
+    for (let index = 0; index < expected.length; index += 1) {
+      c16AssertFrozenRecordProjection(
+        actual[index],
+        expected[index],
+        `${label}[${index}]`,
+      );
+    }
+    return;
+  }
+  assert.equal(Object.getPrototypeOf(actual), null, `${label} prototype`);
+  assert.deepEqual(Object.keys(actual), Object.keys(expected), `${label} keys`);
+  for (const key of Object.keys(expected)) {
+    c16AssertFrozenRecordProjection(
+      actual[key],
+      expected[key],
+      `${label}.${key}`,
+    );
+  }
+}
+
+function c16AssertStatusArtifact(actual, expected, label) {
+  assert.notEqual(actual, null, label);
+  assert.equal(typeof actual, "object", label);
+  assert.equal(Object.getPrototypeOf(actual), null, `${label} prototype`);
+  assert.equal(Object.isFrozen(actual), true, `${label} must be frozen`);
+  assert.deepEqual(Reflect.ownKeys(actual), expected.ownKeys, `${label} keys`);
+  const bytesDescriptor = Object.getOwnPropertyDescriptor(actual, "bytes");
+  assert.notEqual(bytesDescriptor, undefined, `${label}.bytes descriptor`);
+  assert.equal(typeof bytesDescriptor.get, "function", label);
+  assert.equal(bytesDescriptor.set, undefined, label);
+  assert.equal(bytesDescriptor.enumerable, true, label);
+  assert.equal(bytesDescriptor.configurable, false, label);
+  const firstBytes = actual.bytes;
+  const secondBytes = actual.bytes;
+  assert.equal(Buffer.isBuffer(firstBytes), true, label);
+  assert.equal(Buffer.isBuffer(secondBytes), true, label);
+  assert.equal(Object.getPrototypeOf(firstBytes), Buffer.prototype, label);
+  assert.equal(Object.getPrototypeOf(secondBytes), Buffer.prototype, label);
+  assert.notEqual(firstBytes, secondBytes, `${label} copy-on-read allocation`);
+  assert.equal(firstBytes.toString("hex"), expected.bytesHex, label);
+  assert.equal(secondBytes.toString("hex"), expected.bytesHex, label);
+  if (firstBytes.length > 0) firstBytes[0] ^= 0xff;
+  assert.equal(secondBytes.toString("hex"), expected.bytesHex, label);
+  assert.equal(actual.bytes.toString("hex"), expected.bytesHex, label);
+  for (const [key, value] of Object.entries(expected.fields)) {
+    const descriptor = Object.getOwnPropertyDescriptor(actual, key);
+    assert.notEqual(descriptor, undefined, `${label}.${key} descriptor`);
+    assert.equal(Object.hasOwn(descriptor, "value"), true, label);
+    assert.equal(descriptor.enumerable, true, label);
+    assert.equal(descriptor.configurable, false, label);
+    assert.equal(descriptor.writable, false, label);
+    c16AssertFrozenRecordProjection(actual[key], value, `${label}.${key}`);
+  }
+}
+
+function c16AssertTransitionProjection(actual, expected, label) {
+  assert.notEqual(actual, null, label);
+  assert.equal(typeof actual, "object", label);
+  assert.equal(Object.getPrototypeOf(actual), null, `${label} prototype`);
+  assert.equal(Object.isFrozen(actual), true, `${label} must be frozen`);
+  assert.deepEqual(Object.keys(actual), Object.keys(expected), `${label} keys`);
+  assert.equal(actual.schema, expected.schema, `${label}.schema`);
+  assert.equal(
+    actual.statusFrameCount,
+    expected.statusFrameCount,
+    `${label}.statusFrameCount`,
+  );
+  c16AssertFrozenRecordProjection(
+    actual.state,
+    expected.state,
+    `${label}.state`,
+  );
+  for (const key of ["statusFrame0", "statusFrame1"]) {
+    if (expected[key] === null) {
+      assert.equal(actual[key], null, `${label}.${key}`);
+    } else {
+      c16AssertStatusArtifact(actual[key], expected[key], `${label}.${key}`);
+    }
+  }
+}
+
+function c16PrivateStoreOwnerSpecs() {
+  const lateBoundaryByOperation = new Map(
+    C16_PRIVATE_STORE_LATE_FAILURE_BOUNDARIES.map((entry) => [
+      entry.operation,
+      entry,
+    ]),
+  );
+  const kindByOperation = new Map(
+    Object.entries(C16_PRIVATE_STORE_INPUT_OPERATION_BY_KIND).map(
+      ([kind, operation]) => [operation, kind],
+    ),
+  );
+  const specs = PRIVATE_STORE_COMMIT_CONTROL_PLAN.flatMap(({ store, operations }) =>
+    operations.map((operation) =>
+      Object.freeze({
+        store,
+        operation,
+        kind: kindByOperation.get(operation) ?? null,
+        lateFailureBoundary: lateBoundaryByOperation.get(operation),
+      }),
+    ),
+  );
+  assert.equal(specs.length, 10);
+  assert.equal(new Set(specs.map(({ operation }) => operation)).size, 10);
+  assert.equal(
+    specs.every(({ lateFailureBoundary }) => lateFailureBoundary !== undefined),
+    true,
+  );
+  return Object.freeze(specs);
+}
+
+function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
+  assert.equal(typeof candidate, "object");
+  assert.equal(typeof freshCandidate, "object");
+  assert.notEqual(freshCandidate, candidate);
+  assert.notEqual(oracle, null);
+  assert.equal(typeof oracle, "object");
+  assert.equal(Object.isFrozen(oracle), true);
+  assert.match(oracle.identitySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(Object.isFrozen(oracle.witnesses), true);
+  assert.equal(Object.isFrozen(oracle.expected), true);
+
+  const ownerSpecs = c16PrivateStoreOwnerSpecs();
+  const startupByMode = new Map(
+    oracle.witnesses.startups.map((witness) => [witness.mode, witness]),
+  );
+  const inputByKind = new Map(
+    oracle.witnesses.inputKinds.map((witness) => [witness.kind, witness]),
+  );
+  const transitionByResultStateSha256 = new Map(
+    oracle.expected.wholeTransitions.map((transition) => [
+      transition.expectedProjection.state.stateSha256,
+      transition,
+    ]),
+  );
+  assert.deepEqual([...startupByMode.keys()], ["NORMAL", "RECOVERY_ONLY"]);
+  assert.deepEqual([...inputByKind.keys()], [
+    "ADMIT",
+    "CANCEL",
+    "RECOVERY_REQUEST",
+    "CONTROLLER_CLOSED",
+    "DIAGNOSTIC_FAILURE",
+    "RECOVERY_CONTROL_HANDOFF",
+    "STATUS_EOF",
+  ]);
+
+  const activity = {
+    candidateBehaviorAttemptCount: 0,
+    candidateBehaviorSuccessCount: 0,
+    candidateBehaviorRejectionCount: 0,
+    primaryCandidateCallCount: 0,
+    freshCandidateCallCount: 0,
+    setupCandidateCallCount: 0,
+    downstreamCandidateCallCount: 0,
+    ownerTargetAttemptCount: 0,
+    ownerTargetSuccessCount: 0,
+    ownerTargetRejectionCount: 0,
+    primaryOwnerTargetAttemptCount: 0,
+    freshOwnerTargetAttemptCount: 0,
+  };
+
+  const call = (
+    moduleInstance,
+    operation,
+    args,
+    { role = "setup", target = false } = {},
+  ) => {
+    assert.equal(
+      moduleInstance === candidate || moduleInstance === freshCandidate,
+      true,
+      `${operation} module identity`,
+    );
+    assert.equal(typeof moduleInstance[operation], "function", operation);
+    assert.equal(["setup", "downstream", "target"].includes(role), true);
+    activity.candidateBehaviorAttemptCount += 1;
+    if (moduleInstance === candidate) {
+      activity.primaryCandidateCallCount += 1;
+    } else {
+      activity.freshCandidateCallCount += 1;
+    }
+    if (role === "setup") activity.setupCandidateCallCount += 1;
+    if (role === "downstream") activity.downstreamCandidateCallCount += 1;
+    if (target) {
+      assert.equal(role, "target");
+      activity.ownerTargetAttemptCount += 1;
+      if (moduleInstance === candidate) {
+        activity.primaryOwnerTargetAttemptCount += 1;
+      } else {
+        activity.freshOwnerTargetAttemptCount += 1;
+      }
+    }
+    try {
+      const result = moduleInstance[operation](...args);
+      activity.candidateBehaviorSuccessCount += 1;
+      if (target) activity.ownerTargetSuccessCount += 1;
+      return result;
+    } catch (error) {
+      activity.candidateBehaviorRejectionCount += 1;
+      if (target) activity.ownerTargetRejectionCount += 1;
+      throw error;
+    }
+  };
+
+  const expectError = (
+    moduleInstance,
+    operation,
+    args,
+    expectedMessage,
+    label,
+    options = { role: "target", target: true },
+  ) =>
+    c15ExpectedError(
+      () => call(moduleInstance, operation, args, options),
+      expectedMessage,
+      label,
+    );
+
+  const createStartup = (
+    moduleInstance,
+    witness,
+    options = { role: "setup", target: false },
+  ) => {
+    const result = call(
+      moduleInstance,
+      "createCandidateContainmentGuardianStartupV1",
+      [
+        c15BindingBytes(witness.startupReport, `${witness.mode} startup`),
+        c15BindingBytes(witness.epoch, `${witness.mode} epoch`),
+        witness.epochEofObserved,
+      ],
+      options,
+    );
+    c16AssertFrozenRecordProjection(
+      result,
+      witness.expectedProjection,
+      `${witness.mode} startup projection`,
+    );
+    return result;
+  };
+
+  const inputArgs = (witness, currentState) => {
+    if (witness.kind === "ADMIT") {
+      return [
+        currentState,
+        c15BindingBytes(witness.frame, "C16 admission frame"),
+        c15BindingBytes(witness.auxiliary, "C16 admission report"),
+      ];
+    }
+    if (witness.kind === "CANCEL") {
+      return [
+        currentState,
+        c15BindingBytes(witness.frame, "C16 cancel frame"),
+        witness.scalarArguments.messageTruncated,
+        witness.scalarArguments.controlTruncated,
+        witness.scalarArguments.controlMessageCount,
+      ];
+    }
+    if (witness.kind === "RECOVERY_REQUEST") {
+      return [
+        currentState,
+        c15BindingBytes(witness.frame, "C16 recovery request frame"),
+        witness.scalarArguments.requestEofObserved,
+      ];
+    }
+    if (witness.kind === "DIAGNOSTIC_FAILURE") {
+      return [
+        currentState,
+        c15BindingBytes(witness.frame, "C16 diagnostic summary"),
+        c15BindingBytes(witness.auxiliary, "C16 raw diagnostic"),
+      ];
+    }
+    assert.equal(
+      ["CONTROLLER_CLOSED", "RECOVERY_CONTROL_HANDOFF", "STATUS_EOF"].includes(
+        witness.kind,
+      ),
+      true,
+      witness.kind,
+    );
+    return [currentState];
+  };
+
+  const createInput = (
+    moduleInstance,
+    witness,
+    currentState,
+    options = { role: "setup", target: false },
+  ) => {
+    const operation = C16_PRIVATE_STORE_INPUT_OPERATION_BY_KIND[witness.kind];
+    assert.equal(typeof operation, "string", witness.kind);
+    const result = call(
+      moduleInstance,
+      operation,
+      inputArgs(witness, currentState),
+      options,
+    );
+    c16AssertFrozenRecordProjection(
+      result,
+      witness.expectedProjection,
+      `${witness.kind} input projection`,
+    );
+    return result;
+  };
+
+  const initializationTransition = (mode) => {
+    const matches = oracle.expected.wholeTransitions.filter(
+      (transition) =>
+        transition.operation === "INITIALIZE" && transition.mode === mode,
+    );
+    assert.equal(matches.length, 1, `${mode} initialization transition`);
+    return matches[0];
+  };
+
+  const transitionForInputWitness = (witness) => {
+    const matches = oracle.expected.wholeTransitions.filter(
+      (transition) =>
+        transition.operation === witness.kind &&
+        transition.beforeStateSha256 === witness.boundStateSha256 &&
+        digest(transition.inputWitness.expectedProjection) ===
+          digest(witness.expectedProjection),
+    );
+    assert.equal(matches.length, 1, `${witness.kind} transition witness`);
+    return matches[0];
+  };
+
+  const materializeState = (moduleInstance, stateSha256, stack = new Set()) => {
+    assert.match(stateSha256, /^[0-9a-f]{64}$/u);
+    assert.equal(stack.has(stateSha256), false, "C16 state witness cycle");
+    stack.add(stateSha256);
+    const transition = transitionByResultStateSha256.get(stateSha256);
+    assert.notEqual(transition, undefined, `C16 state ${stateSha256}`);
+    let result;
+    if (transition.operation === "INITIALIZE") {
+      const startupWitness = startupByMode.get(transition.mode);
+      const startup = createStartup(moduleInstance, startupWitness);
+      result = call(
+        moduleInstance,
+        "initializeCandidateContainmentGuardianControlV1",
+        [startup],
+      );
+    } else {
+      const beforeState = materializeState(
+        moduleInstance,
+        transition.beforeStateSha256,
+        stack,
+      );
+      const input = createInput(
+        moduleInstance,
+        transition.inputWitness,
+        beforeState,
+      );
+      result = call(
+        moduleInstance,
+        "reduceCandidateContainmentGuardianControlV1",
+        [beforeState, input],
+      );
+    }
+    stack.delete(stateSha256);
+    c16AssertTransitionProjection(
+      result,
+      transition.expectedProjection,
+      `materialized ${transition.id}`,
+    );
+    return result.state;
+  };
+
+  const assertOwnerProjection = (context, label) => {
+    if (context.ownerType === "startup" || context.ownerType === "input") {
+      c16AssertFrozenRecordProjection(context.output, context.expected, label);
+    } else {
+      c16AssertTransitionProjection(context.output, context.expected, label);
+    }
+  };
+
+  const makeSuccess = (
+    spec,
+    moduleInstance,
+    options = { role: "target", target: true },
+  ) => {
+    if (spec.operation === "createCandidateContainmentGuardianStartupV1") {
+      const witness = startupByMode.get("NORMAL");
+      const output = createStartup(moduleInstance, witness, options);
+      const context = {
+        ownerType: "startup",
+        spec,
+        output,
+        key: output,
+        expected: witness.expectedProjection,
+        witness,
+        expectedDownstream: initializationTransition("NORMAL"),
+      };
+      assertOwnerProjection(context, `${spec.operation} success`);
+      return context;
+    }
+    if (spec.kind !== null) {
+      const witness = inputByKind.get(spec.kind);
+      assert.notEqual(witness, undefined, spec.kind);
+      const state = materializeState(
+        moduleInstance,
+        witness.boundStateSha256,
+      );
+      const output = createInput(moduleInstance, witness, state, options);
+      const context = {
+        ownerType: "input",
+        spec,
+        output,
+        key: output,
+        expected: witness.expectedProjection,
+        witness,
+        state,
+        expectedDownstream: transitionForInputWitness(witness),
+      };
+      assertOwnerProjection(context, `${spec.operation} success`);
+      return context;
+    }
+    if (
+      spec.operation === "initializeCandidateContainmentGuardianControlV1"
+    ) {
+      const witness = startupByMode.get("NORMAL");
+      const startup = createStartup(moduleInstance, witness);
+      const expected = initializationTransition("NORMAL").expectedProjection;
+      const output = call(moduleInstance, spec.operation, [startup], options);
+      const context = {
+        ownerType: "state",
+        spec,
+        output,
+        key: output.state,
+        expected,
+      };
+      assertOwnerProjection(context, `${spec.operation} success`);
+      return context;
+    }
+    assert.equal(
+      spec.operation,
+      "reduceCandidateContainmentGuardianControlV1",
+    );
+    const transition = oracle.expected.wholeTransitions.find(
+      (entry) => entry.operation === "ADMIT",
+    );
+    assert.notEqual(transition, undefined, "C16 ADMIT transition");
+    const state = materializeState(
+      moduleInstance,
+      transition.beforeStateSha256,
+    );
+    const input = createInput(
+      moduleInstance,
+      transition.inputWitness,
+      state,
+    );
+    const output = call(moduleInstance, spec.operation, [state, input], options);
+    const context = {
+      ownerType: "state",
+      spec,
+      output,
+      key: output.state,
+      expected: transition.expectedProjection,
+    };
+    assertOwnerProjection(context, `${spec.operation} success`);
+    return context;
+  };
+
+  const nextControllerClosedTransition = (stateSha256) => {
+    const matches = oracle.expected.wholeTransitions.filter(
+      (transition) =>
+        transition.operation === "CONTROLLER_CLOSED" &&
+        transition.beforeStateSha256 === stateSha256,
+    );
+    assert.equal(matches.length, 1, "C16 downstream controller close");
+    return matches[0];
+  };
+
+  let downstreamUsabilityCount = 0;
+  const assertDownstreamUsability = (context) => {
+    if (context.ownerType === "startup") {
+      const transition = call(
+        candidate,
+        "initializeCandidateContainmentGuardianControlV1",
+        [context.key],
+        { role: "downstream", target: false },
+      );
+      c16AssertTransitionProjection(
+        transition,
+        context.expectedDownstream.expectedProjection,
+        `${context.spec.operation} downstream initialization`,
+      );
+    } else if (context.ownerType === "input") {
+      const transition = call(
+        candidate,
+        "reduceCandidateContainmentGuardianControlV1",
+        [context.state, context.key],
+        { role: "downstream", target: false },
+      );
+      c16AssertTransitionProjection(
+        transition,
+        context.expectedDownstream.expectedProjection,
+        `${context.spec.operation} downstream reduction`,
+      );
+    } else {
+      const next = nextControllerClosedTransition(context.key.stateSha256);
+      const input = createInput(candidate, next.inputWitness, context.key, {
+        role: "downstream",
+        target: false,
+      });
+      const transition = call(
+        candidate,
+        "reduceCandidateContainmentGuardianControlV1",
+        [context.key, input],
+        { role: "downstream", target: false },
+      );
+      c16AssertTransitionProjection(
+        transition,
+        next.expectedProjection,
+        `${context.spec.operation} downstream state reduction`,
+      );
+    }
+    downstreamUsabilityCount += 1;
+  };
+
+  let structuralCloneRejectionCount = 0;
+  const assertStructuralCloneRejected = (context) => {
+    const clone = c15JsonClone(context.key);
+    if (context.ownerType === "startup") {
+      expectError(
+        candidate,
+        "initializeCandidateContainmentGuardianControlV1",
+        [clone],
+        "CONTROL_BINDING",
+        `${context.spec.operation} structural startup clone`,
+        { role: "downstream", target: false },
+      );
+    } else if (context.ownerType === "input") {
+      expectError(
+        candidate,
+        "reduceCandidateContainmentGuardianControlV1",
+        [context.state, clone],
+        "CONTROL_BINDING",
+        `${context.spec.operation} structural input clone`,
+        { role: "downstream", target: false },
+      );
+    } else {
+      const next = nextControllerClosedTransition(context.key.stateSha256);
+      const input = createInput(candidate, next.inputWitness, context.key, {
+        role: "downstream",
+        target: false,
+      });
+      expectError(
+        candidate,
+        "reduceCandidateContainmentGuardianControlV1",
+        [clone, input],
+        "CONTROL_BINDING",
+        `${context.spec.operation} structural state clone`,
+        { role: "downstream", target: false },
+      );
+    }
+    structuralCloneRejectionCount += 1;
+  };
+
+  const runEarlyFailure = (spec) => {
+    if (spec.operation === "createCandidateContainmentGuardianStartupV1") {
+      const witness = startupByMode.get("NORMAL");
+      return expectError(
+        candidate,
+        spec.operation,
+        [Object.freeze({}), c15BindingBytes(witness.epoch, "C16 epoch"), true],
+        "CONTROL_SHAPE",
+        `${spec.operation}:earlyFailure`,
+      );
+    }
+    if (spec.kind !== null) {
+      const witness = inputByKind.get(spec.kind);
+      if (
+        ["CONTROLLER_CLOSED", "RECOVERY_CONTROL_HANDOFF", "STATUS_EOF"].includes(
+          spec.kind,
+        )
+      ) {
+        return expectError(
+          candidate,
+          spec.operation,
+          [Object.freeze({})],
+          "CONTROL_BINDING",
+          `${spec.operation}:earlyFailure`,
+        );
+      }
+      const state = materializeState(candidate, witness.boundStateSha256);
+      const args = inputArgs(witness, state);
+      args[1] = Object.freeze({});
+      return expectError(
+        candidate,
+        spec.operation,
+        args,
+        "CONTROL_SHAPE",
+        `${spec.operation}:earlyFailure`,
+      );
+    }
+    if (
+      spec.operation === "initializeCandidateContainmentGuardianControlV1"
+    ) {
+      return expectError(
+        candidate,
+        spec.operation,
+        [Object.freeze({})],
+        "CONTROL_BINDING",
+        `${spec.operation}:earlyFailure`,
+      );
+    }
+    return expectError(
+      candidate,
+      spec.operation,
+      [Object.freeze({}), Object.freeze({})],
+      "CONTROL_BINDING",
+      `${spec.operation}:earlyFailure`,
+    );
+  };
+
+  const runLateFailure = (spec) => {
+    if (spec.operation === "createCandidateContainmentGuardianStartupV1") {
+      const witness = startupByMode.get("NORMAL");
+      const report = c15JsonClone(witness.startupReport.value);
+      report.expectedEpochSha256 = "f".repeat(64);
+      return expectError(
+        candidate,
+        spec.operation,
+        [
+          c15CanonicalJsonlBytes(report),
+          c15BindingBytes(witness.epoch, "C16 epoch"),
+          witness.epochEofObserved,
+        ],
+        "CONTROL_BINDING",
+        `${spec.operation}:lateFailure`,
+      );
+    }
+    if (spec.kind !== null) {
+      const witness = inputByKind.get(spec.kind);
+      const state = materializeState(candidate, witness.boundStateSha256);
+      if (
+        ["CONTROLLER_CLOSED", "RECOVERY_CONTROL_HANDOFF", "STATUS_EOF"].includes(
+          spec.kind,
+        )
+      ) {
+        return expectError(
+          candidate,
+          spec.operation,
+          [c15JsonClone(state)],
+          "CONTROL_BINDING",
+          `${spec.operation}:lateFailure`,
+        );
+      }
+      if (spec.kind === "DIAGNOSTIC_FAILURE") {
+        const summary = c15JsonClone(witness.frame.value);
+        summary.rawSha256 = "f".repeat(64);
+        return expectError(
+          candidate,
+          spec.operation,
+          [
+            state,
+            c15CanonicalJsonlBytes(summary),
+            c15BindingBytes(witness.auxiliary, "C16 raw diagnostic"),
+          ],
+          "CONTROL_BINDING",
+          `${spec.operation}:lateFailure`,
+        );
+      }
+      const frame = c15JsonClone(witness.frame.value);
+      frame.sequence += 1;
+      const frameBytes = c15CanonicalJsonlBytes(frame);
+      if (spec.kind === "ADMIT") {
+        const report = c15JsonClone(witness.auxiliary.value);
+        report.messageByteLength = frameBytes.length;
+        report.messageRawSha256 = byteDigest(frameBytes);
+        return expectError(
+          candidate,
+          spec.operation,
+          [state, frameBytes, c15CanonicalJsonlBytes(report)],
+          "CONTROL_TRANSITION",
+          `${spec.operation}:lateFailure`,
+        );
+      }
+      if (spec.kind === "CANCEL") {
+        return expectError(
+          candidate,
+          spec.operation,
+          [
+            state,
+            frameBytes,
+            witness.scalarArguments.messageTruncated,
+            witness.scalarArguments.controlTruncated,
+            witness.scalarArguments.controlMessageCount,
+          ],
+          "CONTROL_TRANSITION",
+          `${spec.operation}:lateFailure`,
+        );
+      }
+      assert.equal(spec.kind, "RECOVERY_REQUEST");
+      return expectError(
+        candidate,
+        spec.operation,
+        [state, frameBytes, witness.scalarArguments.requestEofObserved],
+        "CONTROL_TRANSITION",
+        `${spec.operation}:lateFailure`,
+      );
+    }
+    if (
+      spec.operation === "initializeCandidateContainmentGuardianControlV1"
+    ) {
+      const startup = createStartup(candidate, startupByMode.get("NORMAL"));
+      return expectError(
+        candidate,
+        spec.operation,
+        [c15JsonClone(startup)],
+        "CONTROL_BINDING",
+        `${spec.operation}:lateFailure`,
+      );
+    }
+    const initial = initializationTransition("NORMAL");
+    const state = materializeState(
+      candidate,
+      initial.expectedProjection.state.stateSha256,
+    );
+    const statusEofInput = call(
+      candidate,
+      "createCandidateContainmentGuardianStatusEofInputV1",
+      [state],
+    );
+    return expectError(
+      candidate,
+      spec.operation,
+      [state, statusEofInput],
+      "CONTROL_TRANSITION",
+      `${spec.operation}:lateFailure`,
+    );
+  };
+
+  let crossModuleRejectionCount = 0;
+  const runCrossModule = (spec) => {
+    const context = makeSuccess(spec, candidate, {
+      role: "setup",
+      target: false,
+    });
+    if (context.ownerType === "startup") {
+      expectError(
+        freshCandidate,
+        "initializeCandidateContainmentGuardianControlV1",
+        [context.key],
+        "CONTROL_BINDING",
+        `${spec.operation}:crossModule`,
+      );
+    } else if (context.ownerType === "input") {
+      const freshState = materializeState(
+        freshCandidate,
+        context.witness.boundStateSha256,
+      );
+      assert.equal(freshState.stateSha256, context.state.stateSha256);
+      expectError(
+        freshCandidate,
+        "reduceCandidateContainmentGuardianControlV1",
+        [freshState, context.key],
+        "CONTROL_BINDING",
+        `${spec.operation}:crossModule`,
+      );
+    } else {
+      expectError(
+        freshCandidate,
+        "createCandidateContainmentGuardianControllerClosedInputV1",
+        [context.key],
+        "CONTROL_BINDING",
+        `${spec.operation}:crossModule`,
+      );
+    }
+    crossModuleRejectionCount += 1;
+  };
+
+  return Object.freeze({
+    ownerSpecs,
+    activity,
+    makeSuccess,
+    runEarlyFailure,
+    runLateFailure,
+    runCrossModule,
+    assertDownstreamUsability,
+    assertStructuralCloneRejected,
+    observations: () =>
+      Object.freeze({
+        downstreamUsabilityCount,
+        structuralCloneRejectionCount,
+        crossModuleRejectionCount,
+      }),
+  });
+}
+
+async function c16RunPrivateStoreCandidateControls(
   { candidate, oracle, loadFreshCandidate },
   { entryTodo },
 ) {
@@ -2697,49 +3627,172 @@ async function c13RunPrivateStoreCandidateControls(
   if (candidate === null) {
     return c13DeferredCallbackResult("private-store-commit-controls");
   }
+  assert.equal(entryTodo, false);
+  assert.equal(candidateInputThenable, true);
   assert.equal(typeof candidate, "object");
   assert.notEqual(oracle, null);
+  assert.equal(Object.isFrozen(oracle), true);
   assert.equal(typeof loadFreshCandidate, "function");
+  let freshLoaderCallCount = 0;
+  freshLoaderCallCount += 1;
   const freshCandidate = await loadFreshCandidate();
   assert.equal(typeof freshCandidate, "object");
   assert.notEqual(freshCandidate, candidate);
+
+  const runtime = c16PrivateStoreRuntime(candidate, freshCandidate, oracle);
   const controlIds = [];
-  for (const entry of PRIVATE_STORE_COMMIT_CONTROL_PLAN) {
-    for (const operation of entry.operations) {
-      for (const phase of C13_PRIVATE_STORE_PHASES) {
-        const moduleInstance =
-          phase === "crossModule" ? freshCandidate : candidate;
-        assert.equal(typeof moduleInstance[operation], "function", operation);
-        moduleInstance[operation](
-          Object.freeze({
-            schema:
-              "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-control/v1",
-            store: entry.store,
-            operation,
-            phase,
-            oracleIdentitySha256:
-              oracle.identitySha256 ?? oracle.requirementsSha256 ?? null,
-          }),
-        );
-        controlIds.push(`${operation}:${phase}`);
-      }
-    }
+  let distinctAllocationPairCount = 0;
+  let priorBrandPreservationCount = 0;
+  let successfulOwnerResultCount = 0;
+  for (const spec of runtime.ownerSpecs) {
+    runtime.runEarlyFailure(spec);
+    controlIds.push(`${spec.operation}:earlyFailure`);
+
+    runtime.runLateFailure(spec);
+    controlIds.push(`${spec.operation}:lateFailure`);
+
+    const first = runtime.makeSuccess(spec, candidate);
+    const second = runtime.makeSuccess(spec, candidate);
+    successfulOwnerResultCount += 2;
+    assert.notEqual(first.output, second.output, `${spec.operation} output`);
+    assert.notEqual(first.key, second.key, `${spec.operation} private key`);
+    assert.deepEqual(c15JsonClone(first.key), c15JsonClone(second.key));
+    runtime.assertDownstreamUsability(first);
+    distinctAllocationPairCount += 1;
+    controlIds.push(`${spec.operation}:success`);
+
+    const retained = runtime.makeSuccess(spec, candidate);
+    successfulOwnerResultCount += 1;
+    runtime.runLateFailure(spec);
+    runtime.assertDownstreamUsability(retained);
+    runtime.assertStructuralCloneRejected(retained);
+    priorBrandPreservationCount += 1;
+    controlIds.push(`${spec.operation}:failureAfterSuccess`);
+
+    runtime.runCrossModule(spec);
+    successfulOwnerResultCount += 1;
+    controlIds.push(`${spec.operation}:crossModule`);
   }
   assert.equal(controlIds.length, 50);
   assert.equal(new Set(controlIds).size, 50);
-  return Object.freeze({
-    schema:
-      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
+  assert.equal(freshLoaderCallCount, 1);
+  assert.equal(distinctAllocationPairCount, 10);
+  assert.equal(priorBrandPreservationCount, 10);
+  assert.equal(successfulOwnerResultCount, 40);
+  assert.deepEqual(runtime.observations(), {
+    downstreamUsabilityCount: 20,
+    structuralCloneRejectionCount: 10,
+    crossModuleRejectionCount: 10,
+  });
+  assert.equal(runtime.activity.ownerTargetAttemptCount, 70);
+  assert.equal(runtime.activity.ownerTargetSuccessCount, 30);
+  assert.equal(runtime.activity.ownerTargetRejectionCount, 40);
+  assert.equal(runtime.activity.primaryOwnerTargetAttemptCount, 60);
+  assert.equal(runtime.activity.freshOwnerTargetAttemptCount, 10);
+  assert.equal(
+    runtime.activity.candidateBehaviorAttemptCount,
+    runtime.activity.candidateBehaviorSuccessCount +
+      runtime.activity.candidateBehaviorRejectionCount,
+  );
+  assert.equal(
+    runtime.activity.candidateBehaviorAttemptCount,
+    runtime.activity.primaryCandidateCallCount +
+      runtime.activity.freshCandidateCallCount,
+  );
+  const phaseCounts = Object.fromEntries(
+    C13_PRIVATE_STORE_PHASES.map((phase) => [
+      phase,
+      controlIds.filter((id) => id.endsWith(`:${phase}`)).length,
+    ]),
+  );
+  assert.deepEqual(phaseCounts, {
+    earlyFailure: 10,
+    lateFailure: 10,
+    success: 10,
+    failureAfterSuccess: 10,
+    crossModule: 10,
+  });
+  return recursivelyFreezeStatusOracleValue({
+    schema: C16_PRIVATE_STORE_DISPATCH_SCHEMA,
+    storeCount: 3,
     ownerCount: 10,
     phaseCount: 5,
+    primaryControlCount: 40,
+    freshInstanceControlCount: 10,
     controlCount: controlIds.length,
-    freshLoaderCallCount: 1,
-    controlIds: Object.freeze(controlIds),
+    controlIds,
+    ownerOperations: runtime.ownerSpecs.map(({ operation }) => operation),
+    phaseCounts,
+    storeOwnerCounts: {
+      startupMetadata: 1,
+      inputMetadata: 7,
+      stateMetadata: 2,
+    },
+    storeControlCounts: {
+      startupMetadata: 5,
+      inputMetadata: 35,
+      stateMetadata: 10,
+    },
+    candidateBehaviorAttemptCount:
+      runtime.activity.candidateBehaviorAttemptCount,
+    candidateBehaviorSuccessCount:
+      runtime.activity.candidateBehaviorSuccessCount,
+    candidateBehaviorRejectionCount:
+      runtime.activity.candidateBehaviorRejectionCount,
+    primaryCandidateCallCount: runtime.activity.primaryCandidateCallCount,
+    freshCandidateCallCount: runtime.activity.freshCandidateCallCount,
+    setupCandidateCallCount: runtime.activity.setupCandidateCallCount,
+    downstreamCandidateCallCount:
+      runtime.activity.downstreamCandidateCallCount,
+    ownerTargetAttemptCount: runtime.activity.ownerTargetAttemptCount,
+    ownerTargetSuccessCount: runtime.activity.ownerTargetSuccessCount,
+    ownerTargetRejectionCount: runtime.activity.ownerTargetRejectionCount,
+    primaryOwnerTargetAttemptCount:
+      runtime.activity.primaryOwnerTargetAttemptCount,
+    freshOwnerTargetAttemptCount:
+      runtime.activity.freshOwnerTargetAttemptCount,
+    successfulOwnerResultCount,
+    distinctAllocationPairCount,
+    downstreamUsabilityCount: runtime.observations().downstreamUsabilityCount,
+    priorBrandPreservationCount,
+    structuralCloneRejectionCount:
+      runtime.observations().structuralCloneRejectionCount,
+    crossModuleRejectionCount:
+      runtime.observations().crossModuleRejectionCount,
+    freshLoaderCallCount,
+    freshCandidateDistinct: true,
+    freshModuleLoadPolicy:
+      "main-evaluator-read-pin-decode-full-audit-import",
+    freshModuleReauditDelegatedToMainEvaluator: true,
+    oracleIdentitySha256: oracle.identitySha256,
     entryTodo,
     candidateInputThenable,
-    candidateInputAwaited: candidateInputThenable,
+    candidateInputAwaited: true,
     todoDeferralBoundToEntryOptions: true,
-    candidateBehaviorProved: false,
+    lateFailureBoundaries: C16_PRIVATE_STORE_LATE_FAILURE_BOUNDARIES,
+    collapsedLateFailureBoundaryCount:
+      C16_PRIVATE_STORE_LATE_FAILURE_BOUNDARIES.filter(
+        ({ collapsed }) => collapsed,
+      ).length,
+    runtimeMutantCoverage: C16_PRIVATE_STORE_MUTANT_COVERAGE,
+    staticComplementCoverage: C16_PRIVATE_STORE_STATIC_COMPLEMENTS,
+    weakMapEvidence: {
+      sameModuleDownstreamBrandUsabilityProved: true,
+      failureAfterSuccessPreservesPriorBrand: true,
+      structuralCloneRejectedAsControlBinding: true,
+      crossModuleStartupInputStateIsolationProved: true,
+      reduceStateBrandCheckProved: true,
+      reduceInputBrandCheckProved: true,
+      publicDigestOnlyAuthorityRejected: true,
+    },
+    evidenceBoundary: {
+      runtimeComplementsStaticTailAndDominance: true,
+      abandonedWeakMapKeysCannotBeEnumerated: true,
+      abandonedWeakMapKeysDirectlyObserved: false,
+      noClaimFromWeakMapKeyEnumeration: true,
+    },
+    realC16RunnerImplemented: true,
+    candidateBehaviorProved: true,
   });
 }
 
@@ -2780,7 +3833,7 @@ export function registerAdversarialCandidateTests(registration) {
         return c15RunLaunchVerifierErrorTranslationControl(captured);
       }
       if (entry.id === "private-store-commit-controls") {
-        return c13RunPrivateStoreCandidateControls(captured, {
+        return c16RunPrivateStoreCandidateControls(captured, {
           entryTodo: entry.options.todo === true,
         });
       }
@@ -14569,21 +15622,9 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   const activationOracle = Object.freeze({
     identitySha256: "a".repeat(64),
   });
-  const makePrivateControlCandidate = (calls) =>
-    Object.freeze(
-      Object.fromEntries(
-        expectedOperations.map((operation) => [
-          operation,
-          (control) => {
-            assert.equal(Object.isFrozen(control), true);
-            calls.push(`${operation}:${control.phase}`);
-          },
-        ]),
-      ),
-    );
   let todoLoaderCalls = 0;
   const unresolvedCandidate = new Promise(() => {});
-  const todoDeferred = await c13RunPrivateStoreCandidateControls(
+  const todoDeferred = await c16RunPrivateStoreCandidateControls(
     {
       candidate: unresolvedCandidate,
       oracle: activationOracle,
@@ -14608,47 +15649,24 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   });
   assert.equal(todoLoaderCalls, 0);
 
-  const primaryActivationCalls = [];
-  const freshActivationCalls = [];
   let activeLoaderCalls = 0;
-  const activated = await c13RunPrivateStoreCandidateControls(
-    {
-      candidate: Promise.resolve(
-        makePrivateControlCandidate(primaryActivationCalls),
-      ),
-      oracle: activationOracle,
-      loadFreshCandidate: async () => {
-        activeLoaderCalls += 1;
-        return makePrivateControlCandidate(freshActivationCalls);
+  let incompleteOracleRejection = null;
+  try {
+    await c16RunPrivateStoreCandidateControls(
+      {
+        candidate: Promise.resolve(Object.freeze({ primary: true })),
+        oracle: activationOracle,
+        loadFreshCandidate: async () => {
+          activeLoaderCalls += 1;
+          return Object.freeze({ fresh: true });
+        },
       },
-    },
-    { entryTodo: false },
-  );
-  const expectedPrivateControlIds = expectedOperations.flatMap((operation) =>
-    phases.map((phase) => `${operation}:${phase}`),
-  );
-  assert.deepEqual(activated, {
-    schema:
-      "oxigraph.test.candidate-containment-guardian-control-v1-c13-private-store-dispatch/v1",
-    ownerCount: 10,
-    phaseCount: 5,
-    controlCount: 50,
-    freshLoaderCallCount: 1,
-    controlIds: expectedPrivateControlIds,
-    entryTodo: false,
-    candidateInputThenable: true,
-    candidateInputAwaited: true,
-    todoDeferralBoundToEntryOptions: true,
-    candidateBehaviorProved: false,
-  });
-  assert.deepEqual(
-    primaryActivationCalls,
-    expectedPrivateControlIds.filter((id) => !id.endsWith(":crossModule")),
-  );
-  assert.deepEqual(
-    freshActivationCalls,
-    expectedPrivateControlIds.filter((id) => id.endsWith(":crossModule")),
-  );
+      { entryTodo: false },
+    );
+  } catch (error) {
+    incompleteOracleRejection = error;
+  }
+  assert.notEqual(incompleteOracleRejection, null);
   assert.equal(activeLoaderCalls, 1);
 
   assert.equal(isDirectEntry(import.meta.url, undefined), false);
