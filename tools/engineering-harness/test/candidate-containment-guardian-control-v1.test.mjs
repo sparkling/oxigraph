@@ -18189,9 +18189,9 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d",
+      "b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9",
     registeredCount: 3,
-    todoCount: 1,
+    todoCount: 0,
     inputsDeferredUntilExecution: true,
     privateStoreTodoDeferralBoundToEntryOptions: true,
   });
@@ -18228,7 +18228,7 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
     },
     { candidate: 3, oracle: 3, loadFreshCandidate: 1 },
   );
-  assert.equal(ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls, 0);
+  assert.equal(ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls, 1);
   assert.equal(
     C12_ORACLE_CONSTRUCTION_RECEIPT.candidateModuleEvaluationCompletions,
     0,
@@ -22409,6 +22409,34 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     ...expectedDetachedControlIds,
     ...expectedHelperBoundaryControlIds,
   ]);
+  const expectedPrivateOperations = Object.freeze([
+    "createCandidateContainmentGuardianStartupV1",
+    "createCandidateContainmentGuardianAdmissionInputV1",
+    "createCandidateContainmentGuardianCancelInputV1",
+    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+    "createCandidateContainmentGuardianControllerClosedInputV1",
+    "createCandidateContainmentGuardianDiagnosticFailureInputV1",
+    "createCandidateContainmentGuardianRecoveryControlHandoffInputV1",
+    "createCandidateContainmentGuardianStatusEofInputV1",
+    "initializeCandidateContainmentGuardianControlV1",
+    "reduceCandidateContainmentGuardianControlV1",
+  ]);
+  const expectedPrivatePhases = Object.freeze([
+    "earlyFailure",
+    "lateFailure",
+    "success",
+    "failureAfterSuccess",
+    "crossModule",
+  ]);
+  const expectedPrivateControlIds = Object.freeze(
+    expectedPrivateOperations.flatMap((operation) =>
+      expectedPrivatePhases.map((phase) => `${operation}:${phase}`),
+    ),
+  );
+  assert.equal(expectedPrivateOperations.length, 10);
+  assert.equal(expectedPrivatePhases.length, 5);
+  assert.equal(expectedPrivateControlIds.length, 50);
+  assert.equal(new Set(expectedPrivateControlIds).size, 50);
   const realCandidateRegistrations = [];
   const realCandidateGetterReads = {
     candidate: 0,
@@ -22431,7 +22459,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       "loadFreshCandidate",
       async () => {
         realCandidateFreshLoaderCalls += 1;
-        throw new Error("private-store TODO invoked its fresh loader");
+        return PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
       },
     ],
   ]) {
@@ -22462,8 +22490,14 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   activeRealCandidateCallback = "launch";
   const launchDispatchReceipt = await realCandidateRegistrations[1].run();
   activeRealCandidateCallback = "private";
-  const privateDispatchReceipt = await realCandidateRegistrations[2].run();
+  let privateDispatchRejection = null;
+  try {
+    await realCandidateRegistrations[2].run();
+  } catch (error) {
+    privateDispatchRejection = error;
+  }
   activeRealCandidateCallback = "complete";
+  assert.equal(privateDispatchRejection?.message, "CONTROL_SHAPE");
   assert.deepEqual(realCandidateGetterReads, {
     candidate: 3,
     oracle: 3,
@@ -22478,7 +22512,27 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     "private:oracle",
     "private:loadFreshCandidate",
   ]);
-  assert.equal(realCandidateFreshLoaderCalls, 0);
+  assert.equal(realCandidateFreshLoaderCalls, 1);
+
+  const privateDispatchReceipt = recursivelyFreezeEvidence({
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-red/v1",
+    entryTodo: realCandidateRegistrations[2].options.todo === true,
+    candidateInputThenable:
+      typeof realCandidateInput?.then === "function",
+    candidateInputAwaited: true,
+    freshLoaderCallCount: realCandidateFreshLoaderCalls,
+    operationCount: expectedPrivateOperations.length,
+    phaseCount: expectedPrivatePhases.length,
+    plannedControlCount: expectedPrivateControlIds.length,
+    plannedControlIds: expectedPrivateControlIds,
+    attemptedControlCount: 1,
+    firstAttemptedControlId: expectedPrivateControlIds[0],
+    observedFailure: privateDispatchRejection.message,
+    syntheticRunnerRejectedBeforeRealC16Controls: true,
+    realC16RunnerImplemented: false,
+    candidateBehaviorProved: false,
+  });
 
   const callbackWiringReceipt = recursivelyFreezeEvidence({
     schema:
@@ -22520,7 +22574,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     },
     {
       name: "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
-      options: { todo: true },
+      options: {},
       requiredInputs: ["candidate", "oracle", "loadFreshCandidate"],
     },
   ];
@@ -22532,9 +22586,9 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         schema:
           "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
         inventorySha256:
-          "27bf3186c47c62085e1d00ebf638906a7a6a4c17aae363d67127a6c76e0b733d",
+          "b91336686a76ed8b28d2b68dbc4f6739d60486a1ea03d30797d6980bcb5c04c9",
         registeredCount: 3,
-        todoCount: 1,
+        todoCount: 0,
         inputsDeferredUntilExecution: true,
         privateStoreTodoDeferralBoundToEntryOptions: true,
       },
@@ -22634,22 +22688,28 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
       privateDispatch: {
         schema:
-          "oxigraph.test.candidate-containment-guardian-control-v1-c13-deferred-callback/v1",
-        id: "private-store-commit-controls",
-        status: "DEFERRED_ENTRY_TODO",
-        candidateBehaviorAttemptCount: 0,
-        freshLoaderCallCount: 0,
-        entryTodo: true,
+          "oxigraph.test.candidate-containment-guardian-control-v1-c16-private-store-red/v1",
+        entryTodo: false,
         candidateInputThenable: true,
-        candidateInputAwaited: false,
-        todoDeferralBoundToEntryOptions: true,
+        candidateInputAwaited: true,
+        freshLoaderCallCount: 1,
+        operationCount: 10,
+        phaseCount: 5,
+        plannedControlCount: 50,
+        plannedControlIds: expectedPrivateControlIds,
+        attemptedControlCount: 1,
+        firstAttemptedControlId:
+          "createCandidateContainmentGuardianStartupV1:earlyFailure",
+        observedFailure: "CONTROL_SHAPE",
+        syntheticRunnerRejectedBeforeRealC16Controls: true,
+        realC16RunnerImplemented: false,
         candidateBehaviorProved: false,
       },
       realCandidateUsed: true,
       liveOracleIdentitySha256:
         "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
-      privateTodoDeferredWithoutCandidateExecution: true,
-      freshLoaderCallCount: 0,
+      privateTodoDeferredWithoutCandidateExecution: false,
+      freshLoaderCallCount: 1,
       candidateBehaviorProved: true,
     });
   assertCallbackWiringReceipt(callbackWiringReceipt);
@@ -23119,7 +23179,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     [
       "registration-todo-count-drift",
       (receipt) => {
-        receipt.registration.todoCount = 0;
+        receipt.registration.todoCount = 1;
       },
     ],
     [
