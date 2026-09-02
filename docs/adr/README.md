@@ -117,6 +117,23 @@ source remains absent, readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and this
 evidence does not change ADR-0036's Proposed status. Twenty-one decisions in
 this range remain Proposed.
+
+The preceding ADR-0036 paragraph is the preserved historical C14 checkpoint.
+The dated 2026-09-02 C15 checkpoint is GREEN at helper commit `41dd2508`,
+guardian/fixture commit `23d37556`, and evaluator commit `4620dd92`. The live
+v1 fixture path now carries raw SHA-256
+`4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd`
+and canonical-JSON SHA-256
+`7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8`;
+historical C14 is preserved only by evaluator-private reconstruction. Current
+Node 24.14.1, exact Node 20.0.0, and Node 20.20.2 each pass direct 11/11 and main
+17 pass / zero fail / two TODO. Independent review returned APPROVE. C16
+private-store and C17 final aggregate are those two TODOs; C18-C21 remain
+pending. ADR-0036 stays Proposed, readiness stays exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`, and the slice
+adds no dependency, runtime registration, production authority, qualification,
+promotion, or publication permission.
+
 ADR-0017's post-G1.6 canonical-registry and candidate-rejection evidence
 controls are implemented in commits `4a15caa0` and `afe30c7d`; the current
 G1.4b-aware registry has nine tasks and 33 commands. These remain local-only
