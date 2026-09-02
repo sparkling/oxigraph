@@ -737,11 +737,17 @@ const EXPECTED_DIRECT_FUNCTION_SIGNATURES = Object.freeze(
 const ADVERSARIAL_CANDIDATE_REGISTRATION_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1";
 const EXPECTED_ADVERSARIAL_CANDIDATE_TEST_INVENTORY_SHA256 =
-  "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56";
+  "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554";
 const ADVERSARIAL_CANDIDATE_TEST_INVENTORY = Object.freeze([
   Object.freeze({
     id: "byte-position-carrier-controls",
     name: "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+    options: Object.freeze({}),
+    requiredInputs: Object.freeze(["candidate", "oracle"]),
+  }),
+  Object.freeze({
+    id: "launch-verifier-error-translation",
+    name: "translate launch-capsule v1 schema substitution failures to CONTROL_BINDING after valid NORMAL startup and initialization",
     options: Object.freeze({}),
     requiredInputs: Object.freeze(["candidate", "oracle"]),
   }),
@@ -767,8 +773,8 @@ function adversarialCandidateTestInventoryProjection(inventory) {
 
 function validateAdversarialCandidateTestInventory() {
   assert.equal(Object.isFrozen(ADVERSARIAL_CANDIDATE_TEST_INVENTORY), true);
-  assert.equal(ADVERSARIAL_CANDIDATE_TEST_INVENTORY.length, 2);
-  const expectedOptions = [{}, { todo: true }];
+  assert.equal(ADVERSARIAL_CANDIDATE_TEST_INVENTORY.length, 3);
+  const expectedOptions = [{}, {}, { todo: true }];
   const ids = [];
   const names = [];
   for (const [index, entry] of ADVERSARIAL_CANDIDATE_TEST_INVENTORY.entries()) {
@@ -838,6 +844,10 @@ const C15_BYTE_POSITION_DISPATCH_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-c15-byte-position-dispatch/v1";
 const C15_FIRST_BYTE_POSITION_CONTROL_ID =
   "startupReportBytes:proxy-trap-free";
+const C15_LAUNCH_TRANSLATION_DISPATCH_SCHEMA =
+  "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-dispatch/v1";
+const C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID =
+  "launch-v2-schema-substitution:predecessor-error-to-control-binding";
 const C13_BYTE_POSITION_OPERATION = Object.freeze({
   startupReportBytes: "createCandidateContainmentGuardianStartupV1",
   epochBytes: "createCandidateContainmentGuardianStartupV1",
@@ -966,6 +976,211 @@ async function c13RunBytePositionCandidateControls({ candidate, oracle }) {
   });
 }
 
+function c15JsonClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function c15BindingBytes(binding, label) {
+  assert.notEqual(binding, null, label);
+  assert.equal(typeof binding, "object", label);
+  assert.match(binding.bytesHex, /^(?:[0-9a-f]{2})+$/u, label);
+  const bytes = Buffer.from(binding.bytesHex, "hex");
+  assert.equal(bytes.length, binding.byteLength, label);
+  assert.equal(byteDigest(bytes), binding.rawSha256, label);
+  return bytes;
+}
+
+function c15CanonicalJsonlBytes(value) {
+  return Buffer.from(`${canonicalJson(value)}\n`, "utf8");
+}
+
+async function c15RunLaunchVerifierErrorTranslationControl({
+  candidate,
+  oracle,
+}) {
+  candidate = await candidate;
+  assert.notEqual(
+    candidate,
+    null,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} may not defer an active candidate`,
+  );
+  assert.equal(typeof candidate, "object");
+  assert.notEqual(oracle, null);
+  assert.equal(Object.isFrozen(oracle), true);
+  const oracleIdentitySha256 = oracle.identitySha256;
+  assert.match(oracleIdentitySha256, /^[0-9a-f]{64}$/u);
+
+  const normalStartup = oracle.witnesses.startups.find(
+    ({ mode }) => mode === "NORMAL",
+  );
+  const admissionWitness = oracle.witnesses.inputKinds.find(
+    ({ kind }) => kind === "ADMIT",
+  );
+  const launchBinding = oracle.witnesses.launchCapsuleV3.binding;
+  assert.notEqual(normalStartup, undefined);
+  assert.notEqual(admissionWitness, undefined);
+  assert.equal(Object.isFrozen(normalStartup), true);
+  assert.equal(Object.isFrozen(admissionWitness), true);
+  assert.equal(Object.isFrozen(launchBinding), true);
+
+  const startupReportBytes = c15BindingBytes(
+    normalStartup.startupReport,
+    "C15 NORMAL startup report binding",
+  );
+  const epochBytes = c15BindingBytes(
+    normalStartup.epoch,
+    "C15 NORMAL epoch binding",
+  );
+  const originalLaunchCapsuleBytes = c15BindingBytes(
+    launchBinding,
+    "C15 launch-capsule binding",
+  );
+  const originalAdmissionFrameBytes = c15BindingBytes(
+    admissionWitness.frame,
+    "C15 admission-frame binding",
+  );
+  const originalRecvmsgReportBytes = c15BindingBytes(
+    admissionWitness.auxiliary,
+    "C15 admission recvmsg binding",
+  );
+  assert.equal(epochBytes.length, 32);
+  assert.equal(normalStartup.epochEofObserved, true);
+  assert.equal(
+    launchBinding.value.schema,
+    "oxigraph.candidate-containment-launch-capsule/v2",
+  );
+  assert.equal(
+    admissionWitness.frame.value.launchCapsuleV3,
+    originalLaunchCapsuleBytes.toString("base64"),
+  );
+  assert.equal(
+    admissionWitness.frame.value.launchCapsuleV3Sha256,
+    launchBinding.rawSha256,
+  );
+  assert.equal(
+    admissionWitness.auxiliary.value.messageByteLength,
+    originalAdmissionFrameBytes.length,
+  );
+  assert.equal(
+    admissionWitness.auxiliary.value.messageRawSha256,
+    admissionWitness.frame.rawSha256,
+  );
+
+  const invalidLaunchCapsule = c15JsonClone(launchBinding.value);
+  invalidLaunchCapsule.schema =
+    "oxigraph.candidate-containment-launch-capsule/v1";
+  const invalidLaunchCapsuleBytes =
+    c15CanonicalJsonlBytes(invalidLaunchCapsule);
+  const invalidLaunchCapsuleRawSha256 = byteDigest(invalidLaunchCapsuleBytes);
+  assert.notEqual(
+    invalidLaunchCapsuleRawSha256,
+    launchBinding.rawSha256,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} must reseal the capsule`,
+  );
+
+  const invalidAdmissionFrame = c15JsonClone(admissionWitness.frame.value);
+  invalidAdmissionFrame.launchCapsuleV3 =
+    invalidLaunchCapsuleBytes.toString("base64");
+  invalidAdmissionFrame.launchCapsuleV3Sha256 =
+    invalidLaunchCapsuleRawSha256;
+  const invalidAdmissionFrameBytes =
+    c15CanonicalJsonlBytes(invalidAdmissionFrame);
+  const invalidAdmissionFrameRawSha256 = byteDigest(
+    invalidAdmissionFrameBytes,
+  );
+  assert.notEqual(
+    invalidAdmissionFrameRawSha256,
+    admissionWitness.frame.rawSha256,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} must reseal the admission frame`,
+  );
+  assert.equal(invalidAdmissionFrameBytes.length <= 131_072, true);
+  const invalidRecvmsgReport = c15JsonClone(
+    admissionWitness.auxiliary.value,
+  );
+  invalidRecvmsgReport.messageByteLength = invalidAdmissionFrameBytes.length;
+  invalidRecvmsgReport.messageRawSha256 = invalidAdmissionFrameRawSha256;
+  const invalidRecvmsgReportBytes =
+    c15CanonicalJsonlBytes(invalidRecvmsgReport);
+  const invalidRecvmsgReportRawSha256 = byteDigest(
+    invalidRecvmsgReportBytes,
+  );
+  assert.equal(invalidRecvmsgReportBytes.length <= 16_384, true);
+  assert.notEqual(
+    invalidRecvmsgReportRawSha256,
+    admissionWitness.auxiliary.rawSha256,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} must reseal the recvmsg report`,
+  );
+  assert.equal(
+    invalidRecvmsgReport.messageByteLength,
+    invalidAdmissionFrameBytes.length,
+  );
+  assert.equal(
+    invalidRecvmsgReport.messageRawSha256,
+    invalidAdmissionFrameRawSha256,
+  );
+
+  let candidateBehaviorAttemptCount = 0;
+  candidateBehaviorAttemptCount += 1;
+  const startupProjection =
+    candidate.createCandidateContainmentGuardianStartupV1(
+      startupReportBytes,
+      epochBytes,
+      normalStartup.epochEofObserved,
+    );
+  assert.notEqual(startupProjection, null);
+  candidateBehaviorAttemptCount += 1;
+  const initialized =
+    candidate.initializeCandidateContainmentGuardianControlV1(
+      startupProjection,
+    );
+  assert.notEqual(initialized, null);
+  assert.notEqual(initialized.state, null);
+
+  let observedError = null;
+  candidateBehaviorAttemptCount += 1;
+  try {
+    candidate.createCandidateContainmentGuardianAdmissionInputV1(
+      initialized.state,
+      invalidAdmissionFrameBytes,
+      invalidRecvmsgReportBytes,
+    );
+  } catch (error) {
+    observedError = error;
+  }
+  assert.equal(candidateBehaviorAttemptCount, 3);
+  assert.notEqual(
+    observedError,
+    null,
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} must reject`,
+  );
+  assert.equal(
+    observedError?.message,
+    "CONTROL_BINDING",
+    `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} expected CONTROL_BINDING but observed predecessor error ${observedError?.message}`,
+  );
+
+  return Object.freeze({
+    schema: C15_LAUNCH_TRANSLATION_DISPATCH_SCHEMA,
+    controlId: C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID,
+    oracleIdentitySha256,
+    originalLaunchCapsuleRawSha256: launchBinding.rawSha256,
+    invalidLaunchCapsuleRawSha256,
+    originalAdmissionFrameRawSha256: admissionWitness.frame.rawSha256,
+    invalidAdmissionFrameRawSha256,
+    originalRecvmsgReportRawSha256: admissionWitness.auxiliary.rawSha256,
+    invalidRecvmsgReportRawSha256,
+    downstreamRecvmsgBindingConsistent: true,
+    candidateBehaviorAttemptCount,
+    startupCandidateCallCount: 1,
+    initializationCandidateCallCount: 1,
+    admissionCandidateCallCount: 1,
+    freshLoaderCallCount: 0,
+    sourceOrCandidateDeferralUsed: false,
+    predecessorFailureTranslated: true,
+    candidateBehaviorProved: true,
+  });
+}
+
 function c13CandidateInputThenable(candidate) {
   return (
     candidate !== null &&
@@ -1080,6 +1295,9 @@ export function registerAdversarialCandidateTests(registration) {
       assertCandidateTestInputsAtExecution(captured, entry.requiredInputs);
       if (entry.id === "byte-position-carrier-controls") {
         return c13RunBytePositionCandidateControls(captured);
+      }
+      if (entry.id === "launch-verifier-error-translation") {
+        return c15RunLaunchVerifierErrorTranslationControl(captured);
       }
       if (entry.id === "private-store-commit-controls") {
         return c13RunPrivateStoreCandidateControls(captured, {
@@ -12571,6 +12789,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
 
   const expectedCandidateTestNames = [
     "reject startupReportBytes Proxy carriers as CONTROL_SHAPE without invoking traps before expanding the remaining C15 byte-position matrix",
+    "translate launch-capsule v1 schema substitution failures to CONTROL_BINDING after valid NORMAL startup and initialization",
     "execute early, late, success, failure-after-success, and cross-module commit controls for every one of the 10 listed private-store mutating exports after static-audit closure",
   ];
   assert.deepEqual(
@@ -12584,7 +12803,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   }
   assert.deepEqual(
     ADVERSARIAL_CANDIDATE_TEST_INVENTORY.map(({ options }) => options),
-    [{}, { todo: true }],
+    [{}, {}, { todo: true }],
   );
 
   const accesses = { candidate: 0, oracle: 0, loadFreshCandidate: 0 };
@@ -12616,7 +12835,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   );
   assert.deepEqual(
     registrations.map(({ options }) => options),
-    [{}, { todo: true }],
+    [{}, {}, { todo: true }],
   );
   assert.equal(
     registrations.every(({ run }) => typeof run === "function"),
@@ -12626,13 +12845,198 @@ test("freezes the 10-operation private-store evaluator design without claiming c
     schema:
       "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-registration/v1",
     inventorySha256:
-      "ae7d22e851174821c503b6c36a2b750c4194773782cde4e425a2ffce647c9d56",
-    registeredCount: 2,
+      "d251b9fb8f61acee37a59f9d2a1e70a85bc9c85e7bf99bd63632114822214554",
+    registeredCount: 3,
     todoCount: 1,
     inputsDeferredUntilExecution: true,
     privateStoreTodoDeferralBoundToEntryOptions: true,
   });
   assert.equal(Object.isFrozen(receipt), true);
+
+  const directJsonlBinding = (id, value) => {
+    const bytes = c15CanonicalJsonlBytes(value);
+    return {
+      id,
+      value: c15JsonClone(value),
+      bytesHex: bytes.toString("hex"),
+      byteLength: bytes.length,
+      rawSha256: byteDigest(bytes),
+    };
+  };
+  const directStartupBinding = directJsonlBinding("direct-normal-startup", {
+    schema: "oxigraph.test.synthetic-normal-startup/v1",
+  });
+  const directEpochBytes = Buffer.alloc(32, 0x11);
+  const directEpochBinding = {
+    id: "direct-normal-epoch",
+    value: null,
+    bytesHex: directEpochBytes.toString("hex"),
+    byteLength: directEpochBytes.length,
+    rawSha256: byteDigest(directEpochBytes),
+  };
+  const directLaunchBinding = directJsonlBinding("direct-launch-capsule", {
+    schema: "oxigraph.candidate-containment-launch-capsule/v2",
+    marker: "direct-activation",
+  });
+  const directAdmissionValue = {
+    schema: "oxigraph.candidate-containment-guardian-control-frame/v1",
+    action: "ADMIT",
+    mode: "NORMAL",
+    sequence: 1,
+    previousFrameSha256: "1".repeat(64),
+    requirementsSha256: "2".repeat(64),
+    startupSha256: "3".repeat(64),
+    epochSha256: "4".repeat(64),
+    launchCapsuleV3Sha256: directLaunchBinding.rawSha256,
+    launchCapsuleV3: Buffer.from(
+      directLaunchBinding.bytesHex,
+      "hex",
+    ).toString("base64"),
+  };
+  const directAdmissionBinding = directJsonlBinding(
+    "direct-admission-frame",
+    directAdmissionValue,
+  );
+  const directRecvmsgBinding = directJsonlBinding("direct-recvmsg-report", {
+    schema: "oxigraph.test.synthetic-admission-recvmsg/v1",
+    messageByteLength: directAdmissionBinding.byteLength,
+    messageRawSha256: directAdmissionBinding.rawSha256,
+  });
+  const directActivationOracle = recursivelyFreezeStatusOracleValue({
+    identitySha256: "b".repeat(64),
+    witnesses: {
+      startups: [
+        {
+          mode: "NORMAL",
+          startupReport: directStartupBinding,
+          epoch: directEpochBinding,
+          epochEofObserved: true,
+        },
+      ],
+      launchCapsuleV3: { binding: directLaunchBinding },
+      inputKinds: [
+        {
+          kind: "ADMIT",
+          frame: directAdmissionBinding,
+          auxiliary: directRecvmsgBinding,
+        },
+      ],
+    },
+  });
+  const directStartupProjection = Object.freeze({ directStartup: true });
+  const directInitializedState = Object.freeze({ directState: true });
+  const directActivationCalls = [];
+  const directActivationCandidate = Object.freeze({
+    createCandidateContainmentGuardianStartupV1(
+      startupReportBytes,
+      epochBytes,
+      epochEofObserved,
+    ) {
+      assert.equal(
+        startupReportBytes.toString("hex"),
+        directStartupBinding.bytesHex,
+      );
+      assert.equal(epochBytes.toString("hex"), directEpochBinding.bytesHex);
+      assert.equal(epochEofObserved, true);
+      directActivationCalls.push("startup");
+      return directStartupProjection;
+    },
+    initializeCandidateContainmentGuardianControlV1(startupProjection) {
+      assert.equal(startupProjection, directStartupProjection);
+      directActivationCalls.push("initialize");
+      return Object.freeze({ state: directInitializedState });
+    },
+    createCandidateContainmentGuardianAdmissionInputV1(
+      currentState,
+      admissionFrameBytes,
+      recvmsgReportBytes,
+    ) {
+      assert.equal(currentState, directInitializedState);
+      const admissionFrame = JSON.parse(
+        admissionFrameBytes.toString("utf8"),
+      );
+      const launchCapsuleBytes = Buffer.from(
+        admissionFrame.launchCapsuleV3,
+        "base64",
+      );
+      const launchCapsule = JSON.parse(launchCapsuleBytes.toString("utf8"));
+      assert.equal(
+        launchCapsule.schema,
+        "oxigraph.candidate-containment-launch-capsule/v1",
+      );
+      assert.equal(
+        byteDigest(launchCapsuleBytes),
+        admissionFrame.launchCapsuleV3Sha256,
+      );
+      const recvmsgReport = JSON.parse(
+        recvmsgReportBytes.toString("utf8"),
+      );
+      assert.equal(recvmsgReport.messageByteLength, admissionFrameBytes.length);
+      assert.equal(
+        recvmsgReport.messageRawSha256,
+        byteDigest(admissionFrameBytes),
+      );
+      directActivationCalls.push("admission");
+      throw new Error("CONTROL_BINDING");
+    },
+  });
+  const directActivationRegistrations = [];
+  let directActivationLoaderCalls = 0;
+  const directActivationRegistrationReceipt =
+    registerAdversarialCandidateTests({
+      candidate: directActivationCandidate,
+      oracle: directActivationOracle,
+      loadFreshCandidate: async () => {
+        directActivationLoaderCalls += 1;
+        throw new Error("active launch translation invoked its fresh loader");
+      },
+      registerTest(name, options, run) {
+        directActivationRegistrations.push({ name, options, run });
+      },
+    });
+  assert.deepEqual(directActivationRegistrationReceipt, receipt);
+  assert.equal(directActivationRegistrations.length, 3);
+  assert.deepEqual(
+    directActivationRegistrations.map(({ options }) => options),
+    [{}, {}, { todo: true }],
+  );
+  const directLaunchTranslationReceipt =
+    await directActivationRegistrations[1].run();
+  assert.deepEqual(directActivationCalls, [
+    "startup",
+    "initialize",
+    "admission",
+  ]);
+  assert.equal(directActivationLoaderCalls, 0);
+  assert.deepEqual(directLaunchTranslationReceipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-control-v1-c15-launch-translation-dispatch/v1",
+    controlId:
+      "launch-v2-schema-substitution:predecessor-error-to-control-binding",
+    oracleIdentitySha256: "b".repeat(64),
+    originalLaunchCapsuleRawSha256:
+      "1777029e5710f4482b7fca63accddba75ed4ecf081fdef293a6ee5cd12fbcda0",
+    invalidLaunchCapsuleRawSha256:
+      "8145f73e57e9aac1a1aa7189dfb89680695a0fbd1f7629d622af98b950de6e3d",
+    originalAdmissionFrameRawSha256:
+      "c463d2e3bc4168b35f0f59e95e48e6010e857c004c1906bc75e7947133161705",
+    invalidAdmissionFrameRawSha256:
+      "8bbb5e76ce85f97390c8a05989354b1b442086afcc3d4ef8ed370192dabff83c",
+    originalRecvmsgReportRawSha256:
+      "08ee9017f91f7913ae63f4425933ca31301b3489b02f2cf36c82b552a70c007f",
+    invalidRecvmsgReportRawSha256:
+      "5ba7825eabb66862c2dd4ff64473fcbfa16bef82029d258b0f03c2025e54482c",
+    downstreamRecvmsgBindingConsistent: true,
+    candidateBehaviorAttemptCount: 3,
+    startupCandidateCallCount: 1,
+    initializationCandidateCallCount: 1,
+    admissionCandidateCallCount: 1,
+    freshLoaderCallCount: 0,
+    sourceOrCandidateDeferralUsed: false,
+    predecessorFailureTranslated: true,
+    candidateBehaviorProved: true,
+  });
+  assert.equal(Object.isFrozen(directLaunchTranslationReceipt), true);
 
   const activationOracle = Object.freeze({
     identitySha256: "a".repeat(64),
