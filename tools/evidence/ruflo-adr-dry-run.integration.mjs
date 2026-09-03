@@ -33,8 +33,8 @@ test("official Ruflo parser sees the exact numeric ADR graph", () => {
   assert.equal(report.official.dryRun, true);
   assert.equal(report.official.storedRecords, 0);
   assert.equal(report.official.storedEdges, 0);
-  assert.equal(report.official.total, 40);
-  assert.equal(report.staging.files.length, 40);
+  assert.equal(report.official.total, 41);
+  assert.equal(report.staging.files.length, 41);
   assert.deepEqual(report.staging.excludedMarkdown, ["docs/adr/README.md"]);
   assert.equal(
     report.staging.files.some((file) => file.endsWith("/README.md")),
@@ -43,22 +43,22 @@ test("official Ruflo parser sees the exact numeric ADR graph", () => {
   assert.deepEqual(report.official.byStatus, {
     accepted: 15,
     implemented: 3,
-    proposed: 22,
+    proposed: 23,
   });
   assert.deepEqual(report.official.byRelation, {
-    amends: 4,
-    related: 179,
-    "depends-on": 52,
+    amends: 6,
+    related: 182,
+    "depends-on": 56,
   });
-  assert.equal(report.official.edges, 235);
+  assert.equal(report.official.edges, 244);
   assert.deepEqual(report.official.danglingRefs, []);
   assert.deepEqual(report.official.statusMismatches, []);
   assert.deepEqual(report.official.errors, []);
-  assert.equal(report.integrity.uniqueIds, 40);
+  assert.equal(report.integrity.uniqueIds, 41);
   assert.deepEqual(report.integrity.duplicateIds, []);
   assert.deepEqual(report.integrity.unknownStatuses, []);
-  assert.equal(report.integrity.rawEdges, 235);
-  assert.equal(report.integrity.uniqueEdges, 235);
+  assert.equal(report.integrity.rawEdges, 244);
+  assert.equal(report.integrity.uniqueEdges, 244);
   assert.equal(report.integrity.duplicateEdges, 0);
   assert.deepEqual(report.integrity.danglingEdges, []);
   assert.deepEqual(report.integrity.selfEdges, []);

@@ -24,6 +24,8 @@
   source and initially empty target, and retains all handles rather than unlink
   after an unreaped Git outcome. Production build begin/finish deliberately
   return `MISSING` until a physical owner can prove exact child close and reap.
+  Proposed ADR-0041 owns that additive private issuer, build-owner-v3, and
+  product-owner-v4 successor; it does not change this ADR's implemented scope.
   Canonical execution-request v1 and replay-only process-evidence v3 are frozen
   and adversarially tested, but v1 permanently binds an incompatible isolation
   policy and v3 remains non-binding and authority-free. Policy v2 and execution
@@ -172,7 +174,9 @@
   compile but never execute it. These pieces remain physically ineligible,
   binding-null, and authority-free: no private co-located issuer,
   containment-v2 native adapter, build-owner v3, product-owner v4, live build,
-  or authority exists
+  or authority exists. [ADR-0041](0041-g17-private-co-located-build-issuer.md)
+  now owns that version-additive physical-owner plan behind ADR-0037 through
+  ADR-0040 without changing these predecessor bytes
 - Upstream synchronization checkpoint: audited merge
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` has tree
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe` and ordered parents
@@ -310,6 +314,8 @@
   [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md),
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md),
   [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
+- **Amended by**:
+  [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](0041-g17-private-co-located-build-issuer.md)
 
 ## Context
 
@@ -620,7 +626,7 @@ G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
-ADR-0020 through ADR-0040 are twenty-two Proposed living plans. G1.4a and G1.4b
+ADR-0020 through ADR-0041 are twenty-three Proposed living plans. G1.4a and G1.4b
 are completed product slices under Proposed ADR-0018, and G2.1 is implemented
 in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.

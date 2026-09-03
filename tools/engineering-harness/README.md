@@ -144,6 +144,13 @@ integrity remain in the unchanged lockfile. Host qualification, physical
 runtime closure, [ADR-0040's commit-capable successor](../../docs/adr/0040-commit-capable-containment-decision-and-output-release.md),
 G2.2, product authority,
 promotion, and publication remain absent.
+[ADR-0041](../../docs/adr/0041-g17-private-co-located-build-issuer.md)
+separately owns the Proposed, version-additive G1.7 private issuer,
+build-owner-v3, and product-owner-v4 path. Only its documentation-only S0
+architecture freeze may proceed while ADR-0036 C21 remains open. S1 and every
+source slice wait for that closure; positive Cargo execution and target release
+remain separately blocked on the exact ADR-0037 through ADR-0040 stack and the
+existing human G1.7 gates.
 
 [ADR-0035 — Durable native containment guardian and crash recovery](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,

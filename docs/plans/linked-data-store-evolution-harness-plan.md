@@ -38,10 +38,12 @@
   [ADR-0039 — Delegated-host containment qualification and readiness](../adr/0039-delegated-host-containment-qualification-and-readiness.md)
 - Commit-capable containment decision:
   [ADR-0040 — Commit-capable containment decision and application-output release](../adr/0040-commit-capable-containment-decision-and-output-release.md)
+- Private G1.7 physical-owner decision:
+  [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](../adr/0041-g17-private-co-located-build-issuer.md)
 - Write-interface decision:
   [ADR-0016 — Backend-neutral transactional RDF writes](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
-  [ADR-0018 and ADR-0020 through ADR-0040](../adr/README.md)
+  [ADR-0018 and ADR-0020 through ADR-0041](../adr/README.md)
 
 ## Outcome
 
@@ -271,7 +273,7 @@ mechanisms in its [transaction guide](https://github.com/facebook/rocksdb/wiki/T
 | MetaHarness                                               | 16/16 MetaHarness tests pass; G0.7 protects root README plus ADR/plan/research claims                                                                                                                                                                                                                                                                                                                                                                                                                         | The prior synthetic receipt is stale after the protected-input change; full qualification and independent verification remain open, while G1.7 promotion is separate                                                                                                                                                                                                                                                                                                               |
 | Engineering MetaHarness                                   | Separate local-only package, native worker adapters, Router history, sealed reconstruction, one-session sandbox, digest evidence, one exact ordered nine-task registry, and its exact generated 33-command registry are implemented; G1.2-G1.6, including G1.4a-G1.4b, have source-bound accepted candidates                                                                                                                                                                                                  | Preserve separation from semantic qualification; generic APIs select registered task IDs only, CLI slugs resolve through that registry, and each later task still needs its own direct evaluator and exact verifier artifact                                                                                                                                                                                                                                                       |
 | G1.7 qualification control                                | Outer receipt v1 and exact contract v7 `42ed3867...`; control authorization `31b8fce5...` and final decision set `b0def4f0...` are proposed/unapproved. Implemented structural contracts include policy v2 in `ef869cf4`/`466d2d78`, request v2 in `75a07693`, and the dormant compile-only helper attestation/status protocol in `c113a88f`, in addition to the earlier replay and archive mechanics                                                                                                         | `run` exits 4 before work and writes no G1.7 run. Request v1/process v3 remain legacy-incompatible. Request v2 is `STRUCTURAL_POLICY_ONLY`, physically ineligible, binding-null, and authority-free; the helper is compiled but never executed and lacks runtime request/argv/environment binding. The private issuer, containment-v2 native adapter, production owners, approvals, live controls/samples, benchmark, qualification, and promotion remain absent                   |
-| Generic MetaHarness read layer                            | Genome ready, risk 0.21, score 71/100; point-in-time OIA dry-run reported clean                                                                                                                                                                                                                                                                                                                                                                                                                               | Advisory only; OIA identifies an unknown generic harness, produced no durable receipt, and cannot promote code                                                                                                                                                                                                                                                                                                                                                                     |
+| Generic MetaHarness read layer                            | Fresh Ruflo-MCP read-only `metaharness@latest` assessment (0.4.16): score 71/100, compile/task/tool 100, memory usefulness 40; genome risk 0.275, test confidence 0.1, publish readiness 0.9, local-default-deny MCP surface. Point-in-time OIA dry-run remains historical                                                                                                                                                                                                                                    | Advisory only; the native adapter degraded `plugin-not-found`, so the explicit current CLI fallback supplied these observations. Neither result is a semantic receipt or can promote code                                                                                                                                                                                                                                                                                          |
 | Dream Machine                                             | User-scoped 0.1.1 CLI installed; deterministic compile; missing-ledger fallback observed                                                                                                                                                                                                                                                                                                                                                                                                                      | Local utility only; the fallback is not ledger proof, and there is no schedule, committed generated prompt, repository config, or publication                                                                                                                                                                                                                                                                                                                                      |
 
 The G1.7 native-workspace source policy now binds excluded Gitlink
@@ -489,6 +491,7 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G1.1-G1.4b transaction truth                                 | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Product slices complete through G1.4b; ADR remains Proposed until G1.7                                                                                                                                                                                                                                                                                                                             |
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                        |
 | G1.7 qualification and promotion                             | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Structural policy/request v2 and dormant compile-only helper attestation join the audited fail-closed v7 identity, replay, archive, containment, and build-evidence mechanics; no physical issuer, native containment-v2 adapter, production owner, human approval, live control, qualification, or promotion exists; ADR-0018 remains Proposed                                                    |
+| G1.7 private build issuer and physical owner chain           | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; corrected umbrella `task-1788403413560-sedu3a` has only documentation S0 `task-1788403444941-5l8jci` active. S1 and every source slice wait for ADR-0036 C21; host-positive execution and owner issuance additionally require exact ADR-0037 through ADR-0040 closure, successor activation, and explicit human G1.7 authority                                                           |
 | `HARNESS-CREATE-EXACT` dormant schema-v2 pre-registration    | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed ADR with its implementation task complete at the dormant, authority-null boundary: early unavailable gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; dormant selectors exit 4 before effects and grant no product authority |
 | Native containment implementation and qualification          | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design is not. ADR-0037 owns statefs/syscalls, ADR-0038 native process mechanics, and ADR-0039 qualification/activation/runtime closure. Readiness remains unavailable/native-adapter-unavailable                                                                                                                   |
 | Commit-capable containment successor                         | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                               | Proposed; critical Ruflo task `task-1788394167226-fxk7od` is pending after ADR-0034 and ADR-0035–0039. It owns durable exact decision-before-effect, at-most-once execution, descriptor-bound application output, and successor host qualification                                                                                                                                                 |
@@ -1228,7 +1231,7 @@ execution graph at
 depends on a lossy memory fallback.
 
 The 2026-08-29 ADR-0034 checkpoint established the same fail-closed pattern.
-After the ADR-0036 through ADR-0040 breakout, the ADR graph dry-run identifies
+At the historical 2026-09-03 ADR-0040 checkpoint, the ADR graph dry-run identified
 40 numeric decisions and 235 unique edges: 52 `depends-on`, 179 `related`, and
 4 `amends`, with no duplicate, dangling, or self edge, no status mismatch, and
 no dependency or supersession cycle. The official numeric-only parser passes
@@ -1249,6 +1252,14 @@ The receipt-v7 and CLI/package checkpoints were stored through Ruflo MCP at
 `programme-evidence/adr-0034-dormant-cli-package-b915c5f6-2026-09-03`; the
 proportional MetaHarness/QA readback is
 `programme-evidence/adr-0034-metaharness-qa-b915c5f6-2026-09-03`.
+The later ADR-0041 S0 checkpoint supersedes only those graph counts: the
+official numeric-only dry-run now parses 41 decisions and 244 unique edges
+(56 `depends-on`, 182 `related`, and 6 `amends`) with the same clean integrity
+conditions. Exact native Ruflo MCP readback independently returns 41
+`adr-patterns` rows and 244 `adr-edges` rows, including all nine new ADR-0041
+edges. This is documentation/graph synchronization evidence only; it does not
+implement ADR-0041 or grant source, native, G1.7, qualification, publication,
+or production authority.
 The separate ADR-0035 task
 `task-1788002473147-nsat6x` was read back as complete for its bounded local-
 preflight scope at commit `040f3343`; its
@@ -1285,6 +1296,14 @@ roll-up rows remain outside that count. G1.4b raised the total to 42 on
 
 | Plan IDs                                                                | Ruflo task rows                                                                                                                                     |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0038 integrated closure                                             | `task-1788403396333-l40l9w`                                                                                                                         |
+| ADR-0041 corrected umbrella / S0 architecture freeze                    | `task-1788403413560-sedu3a` / `task-1788403444941-5l8jci`                                                                                           |
+| ADR-0041 S1 evaluator RED / S2 pure requirements GREEN                  | `task-1788403485637-t9wn40` / `task-1788403489170-xl71j9`                                                                                           |
+| ADR-0041 S3 physical evaluator RED / S4A dormant issuer                 | `task-1788403492818-cwb4de` / `task-1788403496372-c7jl9s`                                                                                           |
+| ADR-0041 S5-S8 build/product owner RED/GREEN                            | `task-1788403522380-b68ptj` / `task-1788403525910-d6y2w9` / `task-1788403529434-e0kdtr` / `task-1788403532893-lf7mfj`                               |
+| ADR-0041 S4B explicitly authorized host-positive gate                   | `task-1788403550244-5qkzj7`                                                                                                                         |
+| ADR-0041 S9A-S9D reviews                                                | `task-1788403579267-mte41x` / `task-1788403575715-d302l3` / `task-1788403572170-ztba34` / `task-1788403599521-1hamam`                               |
+| ADR-0041 S10 integrated closure                                         | `task-1788403602984-wjeqce`                                                                                                                         |
 | G1.4a / G1.4b / corrected replacement G1.7                              | `task-1787855156849-ya7t6b` / `task-1787869201628-bwe6b0` / `task-1787871483413-ki34q2`                                                             |
 | G1.5c / G1.6 / `HARNESS-REGISTRY` / `HARNESS-REJECTION-EVIDENCE` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787740750614-4bv1fw` / `task-1787603736400-274ola` |
 | G2.2 / `HARNESS-CREATE-EXACT`                                           | `task-1787603736445-o1up97` / `task-1787935934614-ibmjn1`                                                                                           |
@@ -1296,9 +1315,24 @@ roll-up rows remain outside that count. G1.4b raised the total to 42 on
 | G4.4 / G4.5                                                             | `task-1787670632568-gk92vo` / `task-1787670632421-dkucm8`                                                                                           |
 | G4.6 / G4.7 / G4.8                                                      | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53`                                                             |
 
+Only ADR-0041 S0 is authorized while ADR-0036 C21 remains open. S1 depends on
+both S0 and completed C21, then S2 may implement the pure requirements
+contract. S3 cannot start until genuine ADR-0037 and ADR-0038 integrated
+closures exist; ADR-0038 S0 alone is insufficient. S4A adds only dormant
+authority-null source and does not run the pre-frozen host-positive cases.
+S5/S6 then freeze and implement test-fixture-only build owner v3, and S7/S8 do
+the same for product owner v4. S4B is a distinct host-positive gate that also
+requires completed ADR-0039/ADR-0040, current same-host/same-boot exact-artifact
+successor qualification and receipt-bound activation, and explicit isolated-
+host/G1.7 Phase A authority. S9A-S9C review the authority-null source in
+parallel; S9D independently reviews the authorized physical integration. S10
+depends on all four reviews, so the umbrella cannot close on replay-only
+evidence. No task self-authorizes a run, promotion, publication, or production
+use.
+
 The original exact map remains at
 `task-plans/linked-data-store-g0-g3-2026-08-24`, and the v2-v14 maps remain
-historical audit records. The current v15 map is stored and exactly read back
+historical audit records. The historical v15 map is stored and exactly read back
 through the managed Ruflo interface at
 `task-plans/linked-data-store-g0-g4-2026-08-28-v15`. It preserves all 42 stable
 plan identifiers, records G1.4a-G1.4b, corrected replacement G1.7, G3.0, and
@@ -1312,7 +1346,15 @@ two-phase owner/governance, v6 statistics, completed upstream merge, completed
 post-merge pure reseal, completed pure owner/receipt-candidate replay, completed
 physical control-envelope work, and governance support rows without changing
 the stable count.
-Superseded pending rows are cancelled but retained as runtime history.
+The latest whole-programme reconciliation is
+`task-plans/linked-data-store-g0-g4-2026-08-31-v19`; the corrected evaluator-
+first ADR-0037/ADR-0038 replacements are then recorded without rewriting v19 at
+`task-plans/adr-0037-evaluator-first-dag-v2-2026-09-03`. ADR-0041's corrected
+umbrella is `task-1788403413560-sedu3a`; its exact child DAG, C21 hold, distinct
+host-positive gate, four-review closure, and cancelled-v1 history are stored
+and read back at
+`task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`. The v1 record and all
+superseded task rows remain immutable historical evidence.
 
 The source-grounded current native `task_create` schema persists descriptions,
 priority, assignment, and tags in Ruflo-managed runtime state, but exposes no

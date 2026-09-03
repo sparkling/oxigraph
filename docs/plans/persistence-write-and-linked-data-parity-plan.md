@@ -69,8 +69,10 @@
   [ADR-0039 — Delegated-host containment qualification and readiness](../adr/0039-delegated-host-containment-qualification-and-readiness.md)
 - Commit-capable containment decision:
   [ADR-0040 — Commit-capable containment decision and application-output release](../adr/0040-commit-capable-containment-decision-and-output-release.md)
+- Private G1.7 physical-owner decision:
+  [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](../adr/0041-g17-private-co-located-build-issuer.md)
 - Outstanding capability decisions:
-  [ADR-0018 and ADR-0020 through ADR-0040](../adr/README.md)
+  [ADR-0018 and ADR-0020 through ADR-0041](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
@@ -570,6 +572,7 @@ The unfinished work is split by architectural ownership:
 | P0.1-P0.2 conformance, guarantees, conflicts    | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, bounded cleanup, raw supervision, legacy-incompatible request v1/process v3, structural policy/request v2, and a compile-only dormant attested helper are implemented. The private issuer, containment-v2 native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
+| G1.7 private build issuer and physical owners   | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; corrected umbrella `task-1788403413560-sedu3a` has only documentation S0 `task-1788403444941-5l8jci` active. S1 and every source slice wait for ADR-0036 C21; physical owner issuance additionally requires exact ADR-0037 through ADR-0040 closure, successor activation, and explicit human Phase A/Phase B controls                                                                                                                                                                                                                                                                                                                                            |
 | P1.2 dormant schema-v2 harness pre-registration | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed ADR with its implementation task complete at the dormant, authority-null boundary: early gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; hidden selectors exit 4 before effects and grant no product authority                                                                                                                                                                                                                                                                                       |
 | Native containment implementation/qualification | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design remains open. ADR-0037 owns statefs/syscalls, ADR-0038 native process mechanics, and ADR-0039 qualification/activation/runtime closure. Readiness remains unavailable/native-adapter-unavailable                                                                                                                                                                                                                                                                                                                                                                                      |
 | Commit-capable containment successor            | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                               | Proposed; critical task `task-1788394167226-fxk7od` is pending. It owns durable decision-before-effect, at-most-once execution, descriptor-bound application output, exact recovery/receipt semantics, and distinct successor host qualification                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -751,6 +754,20 @@ task `task-1787902127894-7n7vk3` is at 93%, and containment task
 `task-1787902138074-0w648x` is at 92%. ADR-0035's bounded local-preflight task
 `task-1788002473147-nsat6x` is complete; its broader Proposed physical design
 remains open. ADR-0040 task `task-1788394167226-fxk7od` is pending.
+Corrected ADR-0041 umbrella task `task-1788403413560-sedu3a` is active only for
+the authority-null architecture and evaluator-first owner plan. It grants no
+live G1.7, host, provider, qualification, promotion, or publication authority.
+Only S0 task `task-1788403444941-5l8jci` may proceed while ADR-0036 C21 remains
+open. S1 and every source slice wait for completed C21. The exact IDs, edges,
+cancelled-v1 history, and activation blockers are stored and read back at
+`task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`. After C21, S1/S2 may
+freeze and implement only pure requirements. S3 waits for reviewed ADR-0037
+and ADR-0038 integrated closures. S4A is dormant and authority-null. S4B is a
+separate host-positive gate that also waits for exact ADR-0039 and ADR-0040
+closure, current same-host/same-boot exact-artifact successor qualification,
+receipt-bound activation, and explicit isolated-host/G1.7 Phase A authority.
+The umbrella cannot close until the separately authorized S9D physical review
+also passes.
 Legacy v1/v3/v4/v5/v6 replay is Darwin-free and `LEGACY_REPLAY_ONLY`.
 
 The accepted G1.4b receipt is copied byte-for-byte, hash-bound, and pure-replayed
@@ -1180,7 +1197,7 @@ The plan scores **98/100** against the programme rubric:
 | Source authority and currency   | 20/20 | Exact local commits plus current official Jena/RDF4J pages                                                                                           |
 | Implementation traceability     | 20/20 | Public API, tests, commits, and Ruflo memory keys named                                                                                              |
 | Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit                                                                                                     |
-| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0020 has an implemented G2.1 slice but remains Proposed with ADR-0018 and ADR-0021 through ADR-0040 for their open work |
+| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0020 has an implemented G2.1 slice but remains Proposed with ADR-0018 and ADR-0021 through ADR-0041 for their open work |
 | Verifiable acceptance criteria  | 14/15 | Negative, crash, concurrency, security, and performance gates; production adapter still pending                                                      |
 | Risk and security coverage      | 10/10 | Commit ambiguity, replay, egress, index drift, and leakage covered                                                                                   |
 | Scope discipline                |  9/10 | Core versus product choices separated; P3 decisions remain independently gated and unimplemented                                                     |
@@ -1190,5 +1207,5 @@ replacement adapter has not yet run the conformance kit, and the newly admitted
 P3 decisions do not yet have product receipts. ADR-0016 is Implemented for the
 public write seam and ADR-0019 is Implemented for egress, cancellation, and
 runtime-derived service claims. ADR-0020's G2.1 registry is implemented, while
-ADR-0018 and ADR-0020 through ADR-0040 remain Proposed for their outstanding
+ADR-0018 and ADR-0020 through ADR-0041 remain Proposed for their outstanding
 slices under this plan.
