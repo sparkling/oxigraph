@@ -135,6 +135,46 @@ request/result protocol or filesystem policy.
 
 ### Frozen predecessor and dependency surface
 
+#### 2026-09-03 contract correction: exact recovery owner association
+
+Before StateFS creates or reserves a plan token for recovery replan or
+verification, it must obtain ADR-0035 recovery-v1's corrected owner-association
+predecessor:
+
+```text
+selectCandidateContainmentRecoveryOwnerAssociationV1({
+  target, lifecycleInventoryObservation, previousRecoveryReplay, plan, attempt
+})
+```
+
+The selector requires exact module-local `WeakMap` brands and one same
+target/inventory/replay/plan/nullable-attempt association. It rejects, before
+token reservation, clones, cross-module values, mixed tuples, byte-equal
+alternate replay anchors, and plan or attempt substitution. StateFS alone
+invokes and retains that exact association. The manager may
+consume only the existing branded StateFS handoff that binds the relationship;
+it must neither invoke recovery-v1 nor reconstruct or substitute the
+association with canonical bytes, a digest, a serialized projection, a fresh
+replay, or a local owner check.
+
+If the exact retained replay has no current anchor, the selector returns the
+primitive `null`. Otherwise it is repeatable and returns a deeply frozen
+null-prototype carrier with exactly `lifetimeAnchorProjection` and
+`lifetimeAttemptAnchorRawSha256`: the first is strictly the exact current
+anchor object retained for that replay and the second its retained paired
+digest. It consumes, mints, or rebrands nothing; exposes no filesystem fact;
+and leaves all authority, physical-fact, and nonclaim fields false/null.
+
+This is the minimal predecessor repair for StateFS recovery replan and
+verification. It supplies the missing exact current-anchor association while
+leaving the frozen journal and lifetime bytes unchanged, allowing a fresh
+inventory pass to remain tied to the existing replay rather than opening a
+second same-byte identity channel. The recovery and guardian-control pins, and
+the StateFS evaluator/requirements pin derived from them, must be superseded
+before S2 resumes. It creates no filesystem request, manager decision, or
+physical effect; the historical pins, receipts, statuses, and S0 evidence below
+remain historical and are not recomputed, resealed, or rebaselined.
+
 The new modules may consume only these predecessor identities. A different
 requirements digest, source specifier, export name, or same-byte value returned
 by another module instance rejects before a statefs request or manager decision
