@@ -182,6 +182,12 @@
   grants no G1.7 or publication authority. The separate pure reseal is complete
   in `d1e18c6e`; committed v6 bytes remain exact historical fixtures, and the
   v7 binding is a merged-product identity control rather than approval
+- Current maintenance synchronization: audited `upstream/main` `786d0017`
+  adds only `41768ccf`'s eight workflow-action pin updates and `786d0017`'s
+  three JavaScript lockfile updates after `5e77d401`. Patch-equivalent local
+  commits `d5343f6b` and `c86772a9` have identical stable patch IDs, and the
+  lockfile dry-run passes. No Rust, RDF, SPARQL, persistence, protocol, G1.7,
+  qualification, promotion, or publication authority changes
 - G1.4a/G1.4b registry update: commits `13352ff9` and `c2497225` first extend
   the historical seven-task/27-command registry checkpoint to eight tasks/30
   commands. Commits `1362f250`, `3bb4f0fb`, and `695def8d` add and bind G1.4b,
@@ -714,7 +720,9 @@ protocol are complete. V6 statistics-contract task
 `task-1787882542649-y8dttl` is complete at the bounded pure-replay boundary;
 governance task `task-1787885074292-neafw8` records the pre-merge v6
 synchronization. Upstream task `task-1787883108007-gik9bz` is complete at
-audited merge `e9d2db1b`; reseal task `task-1787888366495-gzxbhe` is complete
+audited merge `e9d2db1b`; maintenance-refresh task
+`task-1788397272530-xfeizf` records the patch-equivalent update through
+`786d0017`. Reseal task `task-1787888366495-gzxbhe` is complete
 at the pure, non-executing v7 boundary in `d1e18c6e`. Pure receipt-candidate
 task `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope
 task `task-1787896401667-xookiy` is complete in `fbbb692b` and is the only layer

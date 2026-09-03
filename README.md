@@ -26,7 +26,13 @@ capability or as blanket W3C-family conformance.
 
 Published extension documentation: <https://sparkling.github.io/oxigraph/>.
 
-The current upstream synchronization checkpoint is merge commit
+The fork is maintenance-current with audited `upstream/main`
+`786d00170224cb5589b03dc5283b1c25df8c0357` (tree
+`6837e027a63dbbb8c94de99e50976471c8b1fd4c`) through patch-equivalent local
+commits `d5343f6b` (upstream `41768ccf`, eight GitHub Actions pin updates) and
+`c86772a9` (upstream `786d0017`, three JavaScript lockfile updates). Those two
+commits change no Rust, RDF, SPARQL, persistence, or protocol source. The last
+product-semantic upstream synchronization checkpoint remains merge commit
 `e9d2db1b7c4eb974b406136e667e09ba06e34b48` (tree
 `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`), whose ordered parents are fork
 checkpoint `b295ea80...` and upstream `ec68e3dd...`. It adopts upstream's

@@ -277,6 +277,10 @@ while preserving ADR-0014's selected-missing Graph Store `POST=404` contract,
 strict XML validation, and fork QA lanes. Its exact-tree Rust, Python,
 workflow, and 409/0/2 engineering-harness evidence passes. Commit `d1e18c6e`
 reseals its subject/tree/`Cargo.lock` and evaluator composition as current v7.
+The fork is separately maintenance-current with audited `upstream/main`
+`786d0017` through patch-equivalent local commits `d5343f6b` and `c86772a9`;
+that delta changes only eight workflow-action pins and three JavaScript
+lockfile resolutions, not Rust or product semantics.
 After G2.1, the full harness suite reports 667 total: 663 pass, one deliberate
 sealed-subject freshness gate fails after detecting the newly committed G2.1
 product paths, and three host-gated tests skip. This is neither a helper/request

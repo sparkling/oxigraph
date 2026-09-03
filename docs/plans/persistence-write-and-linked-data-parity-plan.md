@@ -8,8 +8,10 @@
 - Updated: 2026-09-03
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
-- Current audited upstream head: `ec68e3ddb2e73470ae5940c44709e041762afa41`
-- Current audited upstream merge/tree: `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
+- Current audited upstream head: `786d00170224cb5589b03dc5283b1c25df8c0357`
+- Current maintenance-equivalent local integrations:
+  upstream `41768ccf` as `d5343f6b`; upstream `786d0017` as `c86772a9`
+- Last product-semantic upstream merge/tree: `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
 - Historical first upstream merge: `a2415a4e`
 - Transactional write implementation: `1da47285`
@@ -74,11 +76,15 @@
 
 ## Outcome
 
-The clone is current with upstream through `ec68e3dd`, the authoritative remote
-`main` head observed during this slice. The four commits after the previous
-`8dcfb6b6` baseline are ancestors through audited two-parent merge `e9d2db1b`,
-whose ordered parents are `b295ea80...` and `ec68e3dd...`; there is no remaining
-upstream commit to cherry-pick or merge at this observed head.
+The clone is patch-current with audited `upstream/main` `786d0017`. The two
+commits after the previously audited `5e77d401` checkpoint contain only eight
+GitHub Actions pin updates and three JavaScript lockfile updates. They are
+integrated as patch-equivalent local commits `d5343f6b` and `c86772a9`; stable
+patch IDs match, the lockfile parses, its npm dry-run passes, and no Rust, RDF,
+SPARQL, persistence, or protocol source changed.
+The earlier two-parent merge `e9d2db1b`, with ordered parents
+`b295ea80...`/`ec68e3dd...`, remains the last product-semantic upstream
+checkpoint and preserves the documented ADR-0014 divergence.
 
 The missing persistence-plane capability was narrower than “Oxigraph cannot
 write.” Concrete writes already existed through `Store`, transactions, SPARQL
@@ -591,6 +597,7 @@ complete ADR-0018 or the G1.7 compatibility/performance promotion gate.
 | D0.5 Stabilize unordered upstream test    | D0.1       |    S | Query states `ORDER BY`; CLI is 144/144                                                                                                        |
 | D0.6 Reconcile service-description claims | D0.1       |    S | Default and RDF 1.2 builds advertise only receipted SPARQL 1.0/1.1 capabilities                                                                |
 | D0.7 Audit merge through `ec68e3dd`       | D0.1       |    L | Merge `e9d2db1b` is a two-parent ancestor; Rust, Python, workflow, and 409/0/2 harness evidence passes while ADR-0014 divergence remains bound |
+| D0.8 Refresh maintenance through `786d0017` | D0.7       |    S | Patch-equivalent `d5343f6b`/`c86772a9` update eight action pins and three JavaScript lock resolutions; stable patch IDs and lockfile dry-run pass, with no Rust/product-semantic delta |
 
 ### P0 — make the write contract trustworthy
 
