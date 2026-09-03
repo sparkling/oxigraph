@@ -767,6 +767,132 @@ const CONTRACT_BYTE_PINS = array(
   ),
 );
 
+const STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {
+  const SELECTED_R5_EVALUATOR_BYTES = 300_770;
+  const SELECTED_R5_EVALUATOR_LINES = 8_899;
+  const SELECTED_R5_EVALUATOR_SHA256 =
+    "1c9b2baae1c7f91e5872056b050f2ab5fe2cf1e7f0b020e63d4a0066ff804302";
+  const SELECTED_R5_EVALUATOR_GIT_BLOB =
+    "075426aa69ee708ab0b667bb5eaeca1478d17f06";
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start`);
+    assert.equal(countExact(source, end), 1, `${label} end`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
+    true,
+  );
+  let selectedR5EvaluatorSource = removeRangeExactly(
+    currentEvaluatorSource,
+    "\n\nconst STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_REFREEZE_IDENTITY = (() => {\n",
+    "null-context correction identity removal",
+  );
+  selectedR5EvaluatorSource = removeRangeExactly(
+    selectedR5EvaluatorSource,
+    "\n    const recoveryOwnerAssociation = selectRecoveryOwnerAssociation({\n",
+    "\n    const recoveryPlanInput = {\n",
+    "recovery owner-association proof and null-context branch removal",
+  );
+  selectedR5EvaluatorSource = removeRangeExactly(
+    selectedR5EvaluatorSource,
+    "\n  assert.equal(replan.recoveryPlan.recoveryContext, null);\n",
+    '\n\n  const recordLabel = "recovery-record-owner-self-check";',
+    "anchor-required fixture proof removal",
+  );
+  selectedR5EvaluatorSource = replaceExactly(
+    selectedR5EvaluatorSource,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY.selectedR5EvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    1,
+    "selected R5 source-input restoration",
+  );
+  const selectedR5EvaluatorBytes = Buffer.from(
+    selectedR5EvaluatorSource,
+    "utf8",
+  );
+  assert.equal(selectedR5EvaluatorBytes.length, SELECTED_R5_EVALUATOR_BYTES);
+  assert.equal(
+    countExact(selectedR5EvaluatorSource, "\n"),
+    SELECTED_R5_EVALUATOR_LINES,
+  );
+  assert.equal(
+    byteSha256(selectedR5EvaluatorBytes),
+    SELECTED_R5_EVALUATOR_SHA256,
+  );
+  assert.equal(
+    gitBlobSha1(selectedR5EvaluatorBytes),
+    SELECTED_R5_EVALUATOR_GIT_BLOB,
+  );
+  assert.equal(countExact(selectedR5EvaluatorSource, "\ntest("), 24);
+
+  const inverseReceiptBrands = new WeakSet();
+  const inverseReceiptMetadata = new WeakMap();
+  const inverseReceipt = Object.freeze({});
+  inverseReceiptBrands.add(inverseReceipt);
+  inverseReceiptMetadata.set(
+    inverseReceipt,
+    Object.freeze({
+      schema:
+        "oxigraph.test.candidate-containment-guardian-statefs-v1-null-context-correction-inverse-receipt/v1",
+      correctionIdentityBlockRemovals: 1,
+      recoveryOwnerAssociationAndNullContextBlockRemovals: 1,
+      anchorRequiredFixtureProofRemovals: 1,
+      selectedR5SourceInputRestorations: 1,
+      currentEvaluatorBytes: currentEvaluatorBytes.length,
+      currentEvaluatorSha256: byteSha256(currentEvaluatorBytes),
+      currentEvaluatorGitBlob: gitBlobSha1(currentEvaluatorBytes),
+      selectedR5Commit: "024eed9233b74d4f8b7e90504ce7c1f80106d1dc",
+      selectedR5IntegrationCommit: "881482a6c78b4281128f8cf2dfcdf0e315c519cb",
+      selectedR5EvaluatorBytes: selectedR5EvaluatorBytes.length,
+      selectedR5EvaluatorLines: countExact(selectedR5EvaluatorSource, "\n"),
+      selectedR5EvaluatorSha256: byteSha256(selectedR5EvaluatorBytes),
+      selectedR5EvaluatorGitBlob: gitBlobSha1(selectedR5EvaluatorBytes),
+      selectedR5EvaluatorTestCount: 24,
+    }),
+  );
+
+  return Object.freeze({
+    selectedR5EvaluatorSource,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
 const STATEFS_REFREEZE_IDENTITY = (() => {
   const HISTORICAL_S1_REQUIREMENTS_SHA256 =
     "bc1da9d13e0483bb3fb6571cdce7c37af8abf1ebfa21dbe679a34f2b6c8889a0";
@@ -924,7 +1050,10 @@ const STATEFS_REFREEZE_IDENTITY = (() => {
 
   const sourceReceiptBrands = new WeakSet();
   const sourceReceiptMetadata = new WeakMap();
-  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY.selectedR5EvaluatorSource,
+    "utf8",
+  );
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
   const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
   assert.equal(
@@ -3939,6 +4068,112 @@ function assertOwnerContextCapabilities(actual, golden) {
           )
         : null;
     const recoveryContext = golden.values.recoveryPlan.recoveryContext;
+    const recoveryOwnerAssociation = selectRecoveryOwnerAssociation({
+      target: actual.recoveryTarget,
+      lifecycleInventoryObservation: actual.recoveryInventory,
+      previousRecoveryReplay: actual.recoveryReplay,
+      plan: actual.recoveryPlan,
+      attempt: actual.recoveryAttempt,
+    });
+    if (recoveryOwnerAssociation === null) {
+      assert.equal(actual.lifetimeAnchorProjection, null);
+      assert.equal(actual.lifetimeAttemptAnchorRawSha256, null);
+    } else {
+      assert.equal(
+        recoveryOwnerAssociation.lifetimeAnchorProjection,
+        actual.lifetimeAnchorProjection,
+      );
+      assert.equal(
+        recoveryOwnerAssociation.lifetimeAttemptAnchorRawSha256,
+        actual.lifetimeAttemptAnchorRawSha256,
+      );
+    }
+    const unbrandedPlan = record(...Object.entries(actual.recoveryPlan));
+    assert.deepEqual(unbrandedPlan, actual.recoveryPlan);
+    assert.notEqual(unbrandedPlan, actual.recoveryPlan);
+    assert.throws(
+      () =>
+        selectRecoveryOwnerAssociation({
+          target: actual.recoveryTarget,
+          lifecycleInventoryObservation: actual.recoveryInventory,
+          previousRecoveryReplay: actual.recoveryReplay,
+          plan: unbrandedPlan,
+          attempt: actual.recoveryAttempt,
+        }),
+      TypeError,
+    );
+    if (recoveryContext === null) {
+      assert.equal(actual.recoveryPlan.recoveryContext, null);
+      assert.equal(
+        array(
+          "RECOVERY_ANCHOR_REQUIRED",
+          "CLOSE_MOVE_REQUIRED",
+          "CLOSED_LOCATION_OBSERVED",
+          "RECOVERY_TERMINAL",
+          "UNSAFE_FILESYSTEM_INVENTORY_BLOCKED",
+          "INCONSISTENT_GENERATION_STATE_BLOCKED",
+          "RECOVERY_ATTEMPT_LIMIT_REACHED",
+          "STATE_ROOT_IDENTITY_REJECTED",
+          "STATE_FILESYSTEM_INTERFACE_REJECTED",
+          "RECOVERY_LIFETIME_IDENTITY_REJECTED",
+        ).includes(actual.recoveryPlan.status),
+        true,
+      );
+      assert.notEqual(actual.recoveryPlan.status, "RECOVERY_PLAN_READY");
+      assert.equal(actual.recoveryPlan.disposition, null);
+      assert.equal(actual.recoveryPlan.quarantineReason, null);
+      assert.deepEqual(actual.recoveryPlan.nextPermittedRecordTypes, []);
+      assert.deepEqual(actual.recoveryPlan.states, []);
+      assert.equal(actual.recoveryPlan.recordCount, 0);
+      if (actual.recoveryPlan.status === "RECOVERY_ANCHOR_REQUIRED") {
+        assert.equal(
+          array("LIVE_BIRTH_GUARDIAN", "RECOVERY_ONLY_GUARDIAN").includes(
+            actual.recoveryPlan.requiredActorKind,
+          ),
+          true,
+        );
+        assert.equal(actual.recoveryPlan.currentLifetimeAnchorMatched, false);
+        assert.equal(actual.recoveryPlan.terminal, false);
+        assert.equal(actual.recoveryAttempt, null);
+        assert.equal(actual.recoveryRecord, null);
+        assert.equal(actual.lifetimeAnchorProjection, null);
+        assert.equal(actual.lifetimeAttemptAnchorRawSha256, null);
+      } else {
+        assert.equal(actual.recoveryPlan.requiredActorKind, null);
+        if (
+          actual.recoveryPlan.status === "CLOSE_MOVE_REQUIRED" ||
+          actual.recoveryPlan.status === "CLOSED_LOCATION_OBSERVED"
+        ) {
+          assert.equal(actual.recoveryPlan.currentLifetimeAnchorMatched, null);
+          assert.equal(
+            actual.recoveryPlan.requiredDestinationLocation,
+            "closed",
+          );
+          assert.equal(
+            actual.recoveryPlan.terminal,
+            actual.recoveryPlan.status === "CLOSED_LOCATION_OBSERVED",
+          );
+        } else if (actual.recoveryPlan.status === "RECOVERY_TERMINAL") {
+          assert.equal(actual.recoveryPlan.currentLifetimeAnchorMatched, null);
+          assert.equal(actual.recoveryPlan.terminal, true);
+          assert.equal(
+            array("recovered", "quarantined").includes(
+              actual.recoveryPlan.sourceLocation,
+            ),
+            true,
+          );
+          assert.equal(
+            actual.recoveryPlan.requiredDestinationLocation,
+            actual.recoveryPlan.sourceLocation,
+          );
+        } else {
+          assert.equal(actual.recoveryPlan.terminal, false);
+        }
+      }
+      return;
+    }
+    assert.notEqual(recoveryOwnerAssociation, null);
+    assert.equal(actual.recoveryPlan.status, "RECOVERY_PLAN_READY");
     const recoveryPlanInput = {
       target: actual.recoveryTarget,
       lifecycleInventoryObservation: actual.recoveryInventory,
@@ -5781,6 +6016,71 @@ test("owner fixtures expose valid normal handoff, recovery replan, recovery reco
   const replan = buildRecoveryReplanTuple(replanOwner, replanJournal);
   assert.equal(replan.recoveryPlan.status, "RECOVERY_ANCHOR_REQUIRED");
   assert.equal(replan.recoveryPlan.requiredActorKind, "RECOVERY_ONLY_GUARDIAN");
+  assert.equal(replan.recoveryPlan.recoveryContext, null);
+  assert.equal(replan.recoveryPlan.currentLifetimeAnchorMatched, false);
+  assert.equal(replan.recoveryPlan.disposition, null);
+  assert.deepEqual(replan.recoveryPlan.nextPermittedRecordTypes, []);
+  assert.deepEqual(replan.recoveryPlan.states, []);
+  assert.equal(replan.recoveryPlan.recordCount, 0);
+  assert.equal(replan.recoveryPlan.terminal, false);
+  assert.equal(
+    selectRecoveryOwnerAssociation({
+      target: replan.recoveryTarget,
+      lifecycleInventoryObservation: replan.recoveryInventory,
+      previousRecoveryReplay: replan.recoveryReplay,
+      plan: replan.recoveryPlan,
+      attempt: null,
+    }),
+    null,
+  );
+  const unbrandedReplan = record(...Object.entries(replan.recoveryPlan));
+  assert.deepEqual(unbrandedReplan, replan.recoveryPlan);
+  assert.notEqual(unbrandedReplan, replan.recoveryPlan);
+  assert.throws(
+    () =>
+      selectRecoveryOwnerAssociation({
+        target: replan.recoveryTarget,
+        lifecycleInventoryObservation: replan.recoveryInventory,
+        previousRecoveryReplay: replan.recoveryReplay,
+        plan: unbrandedReplan,
+        attempt: null,
+      }),
+    TypeError,
+  );
+  const correctionReceipt =
+    STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY.assertInverseReceipt(
+      STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY.inverseReceipt,
+    );
+  assert.equal(
+    correctionReceipt.schema,
+    "oxigraph.test.candidate-containment-guardian-statefs-v1-null-context-correction-inverse-receipt/v1",
+  );
+  assert.equal(correctionReceipt.correctionIdentityBlockRemovals, 1);
+  assert.equal(
+    correctionReceipt.recoveryOwnerAssociationAndNullContextBlockRemovals,
+    1,
+  );
+  assert.equal(correctionReceipt.anchorRequiredFixtureProofRemovals, 1);
+  assert.equal(correctionReceipt.selectedR5SourceInputRestorations, 1);
+  assert.equal(
+    correctionReceipt.selectedR5Commit,
+    "024eed9233b74d4f8b7e90504ce7c1f80106d1dc",
+  );
+  assert.equal(
+    correctionReceipt.selectedR5IntegrationCommit,
+    "881482a6c78b4281128f8cf2dfcdf0e315c519cb",
+  );
+  assert.equal(correctionReceipt.selectedR5EvaluatorBytes, 300_770);
+  assert.equal(correctionReceipt.selectedR5EvaluatorLines, 8_899);
+  assert.equal(
+    correctionReceipt.selectedR5EvaluatorSha256,
+    "1c9b2baae1c7f91e5872056b050f2ab5fe2cf1e7f0b020e63d4a0066ff804302",
+  );
+  assert.equal(
+    correctionReceipt.selectedR5EvaluatorGitBlob,
+    "075426aa69ee708ab0b667bb5eaeca1478d17f06",
+  );
+  assert.equal(correctionReceipt.selectedR5EvaluatorTestCount, 24);
 
   const recordLabel = "recovery-record-owner-self-check";
   const recordJournal = ownerFixtures.createJournalStack(recordLabel, 5);
