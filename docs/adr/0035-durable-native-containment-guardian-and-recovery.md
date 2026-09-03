@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-29
-- Updated: 2026-08-30
+- Updated: 2026-09-03
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented and still unregistered. Commit
   `ab668ddd` adds local-only, authority-null journal construction and replay for
@@ -20,12 +20,13 @@
   recovers a filesystem journal, runs the stable native guardian, mutates a
   delegated cgroup, proves pidfd/waitid reap, or binds the executable through
   the ADR's race-free launch event; they remain absent from runtime,
-  task-profile, and CLI registries. The next permitted slice is ADR-0036's
-  evaluator-owned guardian-control RED suite and authority-null pure module.
-  That contract must close before any filesystem-backed manager/guardian owner
-  begins; no existing slice may activate production containment, G1.7, G2.2,
-  qualification, promotion, or publication
-- Programme task: `task-1788002473147-nsat6x` (84% at lifetime-v1 checkpoint)
+  task-profile, and CLI registries. ADR-0036 owns the evaluator-first guardian-
+  control ABI, which must close before any filesystem-backed manager/guardian
+  owner begins; no existing slice may activate production containment, G1.7,
+  G2.2, qualification, promotion, or publication
+- Local-preflight programme task: `task-1788002473147-nsat6x` (completed at
+  commit `040f3343`; this closes only the authority-null execution fixture, not
+  the Proposed filesystem guardian/recovery design)
 - Contract-first successor task: `task-1788008900651-u20s3l` (completed;
   journal-v2, lifetime-v1, and recovery-v1 authority-null contracts verified)
 - **Depends on**:
@@ -36,7 +37,8 @@
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md),
   [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md),
   [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md),
-  [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)
+  [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md),
+  [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
 
 ## Context
 
@@ -84,7 +86,7 @@ process topology, inherited-descriptor provenance, and target supervisor
 descriptor map. It does not own the serialized guardian-control vocabulary,
 frame schemas, startup or `recvmsg` reports, byte ceilings, reducer transitions,
 validation failure codes, or transcript-terminal rule; ADR-0036 owns and
-freezes those literals. Four additive decisions refine the remaining
+freezes those literals. Five additive decisions refine the remaining
 implementation without superseding or weakening the umbrella constraints:
 
 | Decision                                                                                                                             | Exclusive implementation ownership                                                                                                                                                 |
@@ -93,9 +95,10 @@ implementation without superseding or weakening the umbrella constraints:
 | [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)              | Sole statefs policy/oracle, exact held-root mechanics and manager handoff, plus the separately attested bounded statefs-syscalls object                                            |
 | [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md) | Link and attest ADR-0037's object unchanged; own only exact manager/guardian/trampoline executables, race-free launch, process/cgroup/exec mechanics, and the unregistered adapter |
 | [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)  | Consume ADR-0034's frozen pre-registration bytes; own isolated-host qualification, activation binding, and path-executed runtime closure only                                      |
+| [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md) | Add and qualify a byte-distinct durable `COMMIT` successor after the cancel-only path, with at-most-once execution and descriptor-bound output release                              |
 
 The implementation order is recovery-v1 under this ADR, then ADR-0036,
-ADR-0037, ADR-0038, and ADR-0039. Their Proposed status records work ownership,
+ADR-0037, ADR-0038, ADR-0039, and ADR-0040. Their Proposed status records work ownership,
 not evidence. This decomposition does not change this ADR's Proposed status,
 the current registries, any authority field, or production readiness
 `{status: "unavailable", reason: "native-adapter-unavailable"}`.

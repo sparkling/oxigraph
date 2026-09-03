@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -263,13 +263,18 @@
   adds a separate dormant-v2 profile registry, exact contract, production
   worker-context binding, and reference reconstruction. Commit `99f94fac`
   freezes a separate three-command dormant literal registry and pure resolver
-  without making either executable. Its focused matrix
-  passes 87/87 on Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the top-level
-  non-G1.7 suite passes 694/694 on Node 24 and Node 20.20.2. The active v1
-  registry and 33-command CLI are unchanged. The physical native adapter and
-  full path-executed runtime closure, receipt v7/replay, dormant v2 CLI/package
-  wiring, and G2.2 remain open; ADR-0034 stays Proposed
-  and its v2 registration stays dormant, non-product, and non-executable.
+  outside active dispatch. Commit `f6897d34` implements application receipt v7,
+  exact verification, shared worker-process proof evaluation, and private test-
+  only replay while preserving v1-v6 compatibility. Commit `b915c5f6` wires the
+  three exact records only below the hidden dormant CLI namespace and exact
+  package scripts. Each selector returns the fixed unavailable result with exit
+  4 before deferred option parsing or any downstream effect. The completion
+  checkpoint passes 99/99 focused and 724/724 top-level non-G1.7 tests on both
+  the current runtime and Node 20.20.2. The active v1 registry and public
+  33-command CLI remain unchanged. The physical native adapter, full path-
+  executed runtime closure, host qualification, a commit-capable successor,
+  and G2.2 remain open; ADR-0034 stays Proposed and its v2 registration stays
+  dormant and non-product.
   ADR-0034 owns those dormant receipt-v7/schema-v2 bytes and their early
   qualification gate; ADR-0039 consumes them unchanged and owns only current-
   host qualification, activation binding, and path-executed runtime closure.
@@ -297,7 +302,8 @@
   [ADR-0031 — Multi-repository lifecycle](0031-multi-repository-lifecycle.md),
   [ADR-0032 — Incremental entailment projections](0032-incremental-entailment-projections.md),
   [ADR-0033 — Analytical/WCOJ execution](0033-analytical-wcoj-execution.md),
-  [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md)
+  [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md),
+  [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
 
 ## Context
 
@@ -608,24 +614,26 @@ G0 evidence repair remains governed by ADR-0004, ADR-0005, ADR-0012,
 ADR-0013, and this ADR. G1 is owned by ADR-0018 and ADR-0019; G2 by ADR-0020,
 ADR-0021, and ADR-0022; G3 by ADR-0023, ADR-0024, and ADR-0025; and G4 by
 ADR-0026 through ADR-0033. ADR-0019 is now Implemented; ADR-0018 and
-ADR-0020 through ADR-0039 are twenty-one Proposed living plans. G1.4a and G1.4b
+ADR-0020 through ADR-0040 are twenty-two Proposed living plans. G1.4a and G1.4b
 are completed product slices under Proposed ADR-0018, and G2.1 is implemented
 in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
 created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-98% after the historical launch/bootstrap and guardian/preflight checkpoints,
+99% after the historical launch/bootstrap and guardian/preflight checkpoints,
 the exact early-gate commit `fd9e4d05`, fixture chain
 `c9cb6423`/`997ad287`/`dfd6d92d`, and separate dormant-v2 registration commit
-`f9ab7c72`. Commit `99f94fac` additionally freezes the three dormant command
-literals without CLI/package reachability. ADR-0035's separate Ruflo task
-`task-1788002473147-nsat6x` is 75% in progress. The filesystem-backed stable
+`f9ab7c72`. Commit `99f94fac` freezes the three dormant command literals;
+`f6897d34` implements receipt v7 and private replay; and `b915c5f6` exposes only
+the hidden unavailable-gated CLI/package surface. ADR-0035's bounded local-
+preflight Ruflo task `task-1788002473147-nsat6x` is complete; its broader
+Proposed physical design is not. The filesystem-backed stable
 guardian/reaper, recovery mutation,
 race-free exec plus pidfd/waitid evidence, interactive physical cgroup adapter
-and full runtime-closure proof, receipt v7/replay, dormant v2 CLI/package
-wiring, the complete acceptance gate, and G2.2 remain
-open. ADR-0034 and ADR-0035 add no product G-identifier.
+and full runtime-closure proof, current host qualification, a separately
+ratified commit-capable successor, and G2.2 remain open. ADR-0034 and ADR-0035
+add no product G-identifier.
 
 The remaining containment gates have one-way ownership. ADR-0037 owns the sole
 statefs policy/oracle and a tiny separately attested Linux x86-64

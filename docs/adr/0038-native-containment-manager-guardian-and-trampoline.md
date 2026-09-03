@@ -13,6 +13,7 @@
 - **Related**:
   [ADR-0034 — First-class exact new-file admission](0034-first-class-exact-new-file-admission.md),
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md),
+  [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md),
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
 
 ## Context

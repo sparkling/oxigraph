@@ -15,7 +15,8 @@
   [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
-  [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md)
+  [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md),
+  [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
 
 ## Context
 

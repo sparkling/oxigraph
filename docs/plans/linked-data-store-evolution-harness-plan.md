@@ -3,7 +3,7 @@
 - Status: active execution plan; G2.1 implemented; unattended Dream Machine
   activation blocked
 - Date: 2026-08-24
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -13,7 +13,7 @@
   `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
   `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
 - Current engineering control checkpoint:
-  `930a7722490b8ad63d6825a25bd7bcb138140dd3`
+  `b915c5f60d865d0be92afde070d30419a7179c00`
 - Current product checkpoint:
   `be08cf3bbcb836ec46df2b864d31e80f5b837b52`
 - Semantic Builder handover reviewed against:
@@ -34,10 +34,12 @@
   [ADR-0038 — Native containment manager, guardian, and launch trampoline](../adr/0038-native-containment-manager-guardian-and-trampoline.md)
 - Host qualification and activation decision:
   [ADR-0039 — Delegated-host containment qualification and readiness](../adr/0039-delegated-host-containment-qualification-and-readiness.md)
+- Commit-capable containment decision:
+  [ADR-0040 — Commit-capable containment decision and application-output release](../adr/0040-commit-capable-containment-decision-and-output-release.md)
 - Write-interface decision:
   [ADR-0016 — Backend-neutral transactional RDF writes](../adr/0016-backend-neutral-transactional-writes.md)
 - Outstanding capability decisions:
-  [ADR-0018 and ADR-0020 through ADR-0039](../adr/README.md)
+  [ADR-0018 and ADR-0020 through ADR-0040](../adr/README.md)
 
 ## Outcome
 
@@ -142,7 +144,7 @@ authority.
 [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md) now records the
 separate schema-v2 harness prerequisite for an exact candidate-created module.
 Ruflo task `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`) is in progress at
-98%. Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 compatibility and
+99%. Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 compatibility and
 add the exact v2 path/tree/contract/reconstruction/context/schema/assembly
 primitives. Commit `54a056e0` adds the deliberately unregistered native worker-
 v2, exact stdin, retained-descriptor provider/schema/Git verification, original-
@@ -198,18 +200,23 @@ then advances through early-gate commit `fd9e4d05`, frozen exact-create chain
 context, and one-`A`/one-`M` reference reconstruction without changing the
 active nine-task/33-command v1 surface. Commit `99f94fac` then freezes a
 separate three-entry dormant command-literal registry and pure exact resolver
-without adding executable CLI, help, doctor, package, or provider reachability.
-Its focused matrices pass 87/87 on
-Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the top-level non-G1.7 suite
-passes 694/694 on Node 24 and Node 20.20.2. The literal slice separately passes
-696/696 on Node 24, 64/64 focused on both Node 20 runtimes, and 9/9 through
-Agentic-QE 3.13.12. The exact-admission task is 98%; the separate ADR-0035
-native task is 75% in progress. This remains dormant and
-non-authoritative: filesystem-backed guardian/reaper durability and recovery,
+outside active dispatch. Commit `f6897d34` adds exact application-receipt-v7
+construction, verification, shared worker-process proof evaluation, and private
+test-only replay while preserving v1-v6. Commit `b915c5f6` wires only the hidden
+`dormant harness-create-exact-v2 preflight|run|replay` namespace and exact npm
+scripts.
+All three selectors preserve raw deferred arguments, return the fixed
+unavailable result with exit 4 before effects, and leave public help and the
+active registry at 33 commands. The completion checkpoint passes 99/99 focused
+and 724/724 top-level non-G1.7 tests on both the current runtime and Node
+20.20.2; MetaHarness and Agentic-QE adapter suites pass 16/16 and 40/40. The
+exact-admission task is 99% pending documentation/ledger closure; ADR-0035's
+bounded local-preflight task is complete, while its broader physical design
+remains Proposed. Filesystem-backed guardian/reaper durability and recovery,
 delegated-cgroup evidence, race-free exec and pidfd/waitid binding, the physical
-adapter and full path-executed runtime-closure proof, application receipt
-v7/replay, and dormant v2 CLI/package wiring remain open. Until all
-of them pass, G2.2 may refine its semantic algebra but may not admit a new
+adapter and full path-executed runtime closure, ADR-0039 host qualification, and
+ADR-0040's commit-capable successor remain open. Until they pass, G2.2 may
+refine its semantic algebra but may not admit a new
 product module through the harness. This checkpoint changes neither ADR-0020's
 status nor the live G1.7 authority boundary.
 Audited upstream merge `e9d2db1b` is sealed as the exact product/tree/lock
@@ -290,8 +297,9 @@ clustering, distributed transactions, and automatic cross-node failover remain
 outside the programme until a further named decision admits them.
 
 ADR-0034 is a cross-cutting engineering-harness decision rather than another
-G4 product capability. Its acceptance boundary must close before G2.2 admits a
-new module, but its completion earns no G2.2 product progress by itself.
+G4 product capability. Its dormant acceptance boundary is implemented, but it
+remains unavailable pending ADR-0039; its completion earns no G2.2 product
+progress by itself.
 
 ADR-0035 is the subordinate cross-cutting native-process decision. It splits a
 stable guardian/reaper, intent-first write-once journal, controller restart,
@@ -310,7 +318,8 @@ and the early exact `executionGate: "native-containment-qualification-v1"` for
 `contractSchemaVersion: 2`. The early gate and separate dormant profile,
 contract, context, and reconstruction are implemented through `f9ab7c72`;
 the separate dormant command literals are frozen in `99f94fac`; receipt v7 and
-dormant CLI/package wiring remain open. ADR-0039
+private replay are frozen in `f6897d34`; and hidden dormant CLI/package wiring
+is frozen in `b915c5f6`. ADR-0039
 consumes those bytes unchanged and owns
 only current-host qualification, receipt binding/activation, and path-executed
 runtime closure. Until qualification, readiness remains exactly
@@ -318,8 +327,8 @@ runtime closure. Until qualification, readiness remains exactly
 gate stops before reconstruction workspace preparation or any
 candidate/evaluator Git, submodule, process, provider, `ACCEPT`, `REJECT`,
 receipt-emission, or Router-quality work. A later check remains defense in
-depth. The qualified protocol is still cancel-only, so G2.2 also needs a
-separately ratified commit-capable successor.
+depth. The qualified protocol is still cancel-only, so G2.2 also needs
+[ADR-0040's separately ratified commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md).
 
 ## Repository fit
 
@@ -455,9 +464,10 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G1.1-G1.4b transaction truth                                 | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Product slices complete through G1.4b; ADR remains Proposed until G1.7                                                                                                                                                                                                                                                                          |
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                     |
 | G1.7 qualification and promotion                             | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Structural policy/request v2 and dormant compile-only helper attestation join the audited fail-closed v7 identity, replay, archive, containment, and build-evidence mechanics; no physical issuer, native containment-v2 adapter, production owner, human approval, live control, qualification, or promotion exists; ADR-0018 remains Proposed |
-| `HARNESS-CREATE-EXACT` dormant schema-v2 pre-registration    | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed, broader task 98%: the early unavailable gate, frozen exact-create chain, separate dormant-v2 profile/contract/context/reconstruction through `f9ab7c72`, and separate three-command literal freeze `99f94fac` are implemented. The active v1 registry remains nine tasks/33 commands and the dormant literals are non-executable. Receipt-v7/replay and dormant v2 CLI/package wiring remain open; v1-v6 remain frozen and no product or promotion authority exists |
-| Native containment implementation and qualification          | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed, ADR-0035 native task 75%: ADR-0037 owns the statefs oracle and bounded syscall object; ADR-0038 links it unchanged and owns process/cgroup/exec mechanics; ADR-0039 consumes ADR-0034 bytes unchanged and owns qualification, activation, and runtime closure. Readiness remains unavailable/native-adapter-unavailable               |
-| G2.2 new-module admission                                    | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md), after the ADR-0034 admission and ADR-0039 qualification gates above                                                                             | Blocked: the exact schema-v2 and qualification gates are open, and the containment protocol remains cancel-only. A separately ratified commit-capable successor is required before G2.2 may execute or commit a semantic-change module                                                                                                          |
+| `HARNESS-CREATE-EXACT` dormant schema-v2 pre-registration    | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed, broader task 99% pending docs/ledger closure: early unavailable gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; dormant selectors exit 4 before effects and grant no product authority |
+| Native containment implementation and qualification          | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design is not. ADR-0037 owns statefs/syscalls, ADR-0038 native process mechanics, and ADR-0039 qualification/activation/runtime closure. Readiness remains unavailable/native-adapter-unavailable |
+| Commit-capable containment successor                         | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                                | Proposed; critical Ruflo task `task-1788394167226-fxk7od` is pending after ADR-0034 and ADR-0035–0039. It owns durable exact decision-before-effect, at-most-once execution, descriptor-bound application output, and successor host qualification |
+| G2.2 new-module admission                                    | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md), after ADR-0034, ADR-0039, and ADR-0040                                                                                                           | Blocked: dormant exact admission is implemented but host qualification, physical runtime closure, and the separately ratified commit-capable successor remain open before a semantic-change module may execute or commit |
 | G2.1-G2.3c metadata/receipts/outbox                          | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | G2.1 implemented in `be08cf3b`; G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                        |
 | G2.4a-G2.4b transaction-time SHACL                           | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                        |
 | G2.5-G2.7 readiness/recovery                                 | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                        |
@@ -863,8 +873,8 @@ synthetic Darwin runs are prerequisites or diagnostics, not completion.
 | Task                                                  | Depends on                                                                                                             | Size | Exit gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | G2.1 Transactional namespace registry                 | G1.3-G1.4; evaluator freeze after `HARNESS-REGISTRY` and `HARNESS-REJECTION-EVIDENCE`                                  |    M | Implemented in `be08cf3b`: 13/13 default evaluator tests pass across memory/RocksDB/rewritten, 8/8 no-default tests pass across memory/rewritten, and focused regressions pass 26/26, 7/7, 3/3, and 3/3; minimal write traits and dataset equality remain unchanged                                                                                                                                                                                                                                                         |
-| `HARNESS-CREATE-EXACT` Exact new-file admission       | [ADR-0017 controls](../adr/0017-repository-evolution-and-evidence-promotion-harness.md); G2.1 product checkpoint       |    M | Proposed at 98%: early gate `fd9e4d05`, exact chain `c9cb6423`/`997ad287`/`dfd6d92d`, dormant-v2 profile/contract/context/reconstruction `f9ab7c72`, and the non-executable three-command literal registry `99f94fac` are implemented. Active v1 remains nine tasks/33 commands; the literal slice passes 696/696 non-G1.7 on Node 24, 64/64 focused on Node 20.0.0/20.20.2, and 9/9 through Agentic-QE. Receipt-v7/replay, dormant CLI/package wiring, host qualification, and G2.2 remain open with no product or promotion authority |
-| G2.2 Normalized semantic change set                   | G1.1, G2.1, `HARNESS-CREATE-EXACT`, current ADR-0039 qualification, and a separately ratified commit-capable successor |    L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously; a new semantic-change module or pre-created product file is forbidden while ADR-0034/ADR-0039 are open or the containment protocol remains cancel-only                                                                                                                                                                                                                                                    |
+| `HARNESS-CREATE-EXACT` Exact new-file admission       | [ADR-0017 controls](../adr/0017-repository-evolution-and-evidence-promotion-harness.md); G2.1 product checkpoint       |    M | Proposed at 99% pending docs/ledger closure: receipt-v7/private replay and hidden dormant CLI/package wiring join the implemented early gate, exact chain, and dormant profile. Focused/non-G1.7 matrices pass 99/99 and 724/724 on current and Node 20.20.2. Active v1 remains nine tasks/33 commands; hidden selectors exit 4 before effects. ADR-0039 qualification, ADR-0040's commit-capable successor, and G2.2 remain open with no product authority |
+| G2.2 Normalized semantic change set                   | G1.1, G2.1, `HARNESS-CREATE-EXACT`, current ADR-0039 qualification, and [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md) |    L | Quad, create, clear, drop, and namespace effects remain distinct; large clear/drop need not expand synchronously; a new semantic-change module or pre-created product file is forbidden while ADR-0039/ADR-0040 are open or the containment protocol remains cancel-only                                                                                                                                                                                                                                                    |
 | G2.3a Durable outcomes and atomic receipts            | G1.3-G1.4, G2.2                                                                                                        |    L | Durable key reservation, commit ID, primary state, and receipt commit atomically; lost-response/reopen lookup proves committed, durably absent, or indeterminate without replay                                                                                                                                                                                                                                                                                                                                             |
 | G2.3b Authoritative transaction outbox                | G2.3a                                                                                                                  |    L | Receipt and ordered semantic events share the primary commit; at-least-once replay and deduplication have no crash gaps                                                                                                                                                                                                                                                                                                                                                                                                     |
 | G2.3c Outbox retention, leases, and governance health | G2.3b                                                                                                                  |    L | Expiry, slow consumers, backpressure, compaction, backup interaction, and minimal governance-health fixtures fail closed without unbounded work                                                                                                                                                                                                                                                                                                                                                                             |
@@ -1137,8 +1147,9 @@ research lanes, human-only promotion, and no OpenRouter provider route.
 | G1.7 source workspace/build owner          | `task-1787902127894-7n7vk3`                                                                                                                                                       | In progress at 93%: earlier workspace/build replay and legacy request v1/process v3 are joined by structural policy v2 (`ef869cf4`/`466d2d78`), request v2 (`75a07693`), and dormant helper attestation (`c113a88f`). No physical private issuer or live authority exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | G1.7 containment owner                     | `task-1787902138074-0w648x`                                                                                                                                                       | In progress at 92%: `f04b9bc7` adds the dormant contract/owner and reviewed host locator; recovery through `3b289522` is bounded and retains unsafe state. The native syscall adapter and live containment evidence remain absent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | G2.1 transactional namespace registry      | `task-1787603736400-274ola`                                                                                                                                                       | Product slice implemented in `be08cf3b`; 13/13 default tests pass across memory/RocksDB/rewritten and 8/8 no-default tests pass across memory/rewritten, while ADR-0020 remains Proposed for G2.2-G2.3c                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Exact new-file admission / G2.2 gate       | `task-1787935934614-ibmjn1`                                                                                                                                                       | In progress at 98% through early gate `fd9e4d05`, frozen chain `c9cb6423`/`997ad287`/`dfd6d92d`, separate dormant-v2 registration `f9ab7c72`, and non-executable command literals `99f94fac`. The literal slice passes 696/696 non-G1.7 on Node 24, 64/64 focused on Node 20.0.0/20.20.2, and 9/9 through Agentic-QE. Active v1 remains nine tasks/33 commands. ADR-0034 still owns receipt-v7 and dormant CLI/package wiring; ADR-0039 owns qualification/activation/runtime closure. Filesystem-backed guardian/recovery, race-free exec plus pidfd/waitid evidence, complete gates, a commit-capable successor, and G2.2 stay open; no product or promotion authority |
-| ADR-0035 native guardian/recovery          | `task-1788002473147-nsat6x`                                                                                                                                                       | In progress at 75% after `040f3343`: local cancel-only executable-preflight and its fault/cleanup fixture are verified. Filesystem journal mechanics, stable guardian/reaper, recovery mutation, delegated-cgroup qualification, and the physical adapter remain open; all production, G1.7, G2.2, qualification, promotion, and publication authority remains false                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Exact new-file admission / G2.2 gate       | `task-1787935934614-ibmjn1`                                                                                                                                                       | In progress at 99% pending docs/ledger closure. `f6897d34` completes receipt-v7/private replay and `b915c5f6` completes the hidden unavailable-gated CLI/package surface; focused and non-G1.7 matrices pass 99/99 and 724/724 on current and Node 20.20.2. Active v1 remains nine tasks/33 commands. ADR-0039 qualification/runtime closure and ADR-0040 remain open; no product or promotion authority |
+| ADR-0035 bounded native preflight          | `task-1788002473147-nsat6x`                                                                                                                                                       | Completed at `040f3343`: local cancel-only executable-preflight and its fault/cleanup fixture are verified. The broader Proposed filesystem journal, stable guardian/reaper, recovery, delegated-host qualification, and physical adapter remain open; all production, G1.7, G2.2, qualification, promotion, and publication authority remains false |
+| ADR-0040 commit-capable successor          | `task-1788394167226-fxk7od`                                                                                                                                                       | Pending and critical. Add a byte-distinct durable `COMMIT` successor after ADR-0034 and ADR-0035–0039, with at-most-once execution, descriptor-bound output release, exact receipt/recovery semantics, and destructive successor host qualification before G2.2 |
 | ADR-0036 static closure B1-B4              | `task-1788114064268-vaigzl` / `task-1788114067364-wayobg` / `task-1788114070512-idkfkr` / `task-1788114073570-iba1gr`                                                             | Historical B1-B4 checkpoint through integrated commits `d971bfa4`, `86320201`, `99649146`, and `05bbd8bb`: 124/330 semantic negatives were frozen; `protectedAliases`, `indirectCalls`, `reflectComputed`, `bindingMemberWrites`, `untrustedSinks`, `rawEscapes`, and `literalMisuse` were closed. The frozen corpus was 69 foundation negatives + 124 semantic negatives + 11 positives = 204 controls, leaving 206 semantic negatives. Exact pins, targeted mutation kills, import purity, and relevant current-Node/Node-20 matrices were independently reviewed. The candidate source remained absent, ADR-0036 remained Proposed, and the checkpoint granted no runtime, G1.7, qualification, promotion, or publication authority. Readiness was unavailable at this B4 stage.                                                                                                                                                                             |
 | ADR-0036 static closure B5-B6 history      | `task-1788114078142-rs6kqz` / `task-1788114083136-y7f5jl`                                                                                                                         | Historical checkpoint through integrated commits `61122498` and `2f9e51ed`: 197/330 semantic negatives were frozen; every semantic bucket except `commitMutations` was closed, and that bucket reached 67/200. The full frozen corpus was 69 foundation negatives + 197 semantic negatives + 11 positives = 277 controls, leaving 133 semantic negatives at that checkpoint. The candidate source remained absent, ADR-0036 remained Proposed, readiness remained exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`, and the checkpoints granted no runtime, G1.7, qualification, promotion, or publication authority.                                                                                                                                                                                                                                                                                                                    |
 | ADR-0036 C12-C14 implementation history    | `task-1788042241332-xafq11`                                                                                                                                                       | Historical checkpoint through integrated commit `c333f8c5`: the private evaluator closes the C12 runtime oracle, C13 source lift, and C14 candidate activation while preserving exact-v2 10,833-byte SHA `2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3`, guardian 81,189-byte SHA `505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d`, and fixture 14,213-byte raw/canonical hashes `968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082` / `0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499`. All three runtimes passed direct 11 and main 15 with zero failures and three TODOs. This row is history, not the live C15 artifact envelope.                                                                                                                                                                                                                                                    |
@@ -1189,9 +1200,10 @@ execution graph at
 depends on a lossy memory fallback.
 
 The 2026-08-29 ADR-0034 checkpoint established the same fail-closed pattern.
-After the ADR-0036 through ADR-0039 breakout, Ruflo-ADR 0.4.1's dry-run
-identifies 39 numeric decisions plus `docs/adr/README.md` as one `Unknown`
-index pseudo-record; the numeric decision set yields 221 unique edges, no
+After the ADR-0036 through ADR-0040 breakout, the ADR graph dry-run identifies
+40 numeric decisions plus `docs/adr/README.md` as one `Unknown` index pseudo-
+record; the numeric decision set yields the edge count recorded in the ADR
+index, with no
 duplicate, dangling, or self edge, no status mismatch, and no dependency or
 supersession cycle.
 The script's separate reader does not see the live AgentDB store, so no bulk
@@ -1200,14 +1212,20 @@ the changed canonical ADR records, while the Brain-managed CLI used the
 explicit repository database path for the exact ADR-0034 and ADR-0035
 `depends-on`/`related` edge keys. Exact managed-CLI readback retrieves all four
 keys linking ADR-0035 to ADR-0034, ADR-0017, and ADR-0022. Task
-`task-1787935934614-ibmjn1` was read back through Ruflo's native task API at 98%
+`task-1787935934614-ibmjn1` was read back through Ruflo MCP at 99%
 and remains in progress. Its exact dormant-registration evidence was stored and
 read back at
 `programme-evidence/harness-create-exact-dormant-registration-f9ab7c72-2026-09-02`.
 The separate command-literal checkpoint was stored and read back at
 `programme-evidence/harness-create-exact-dormant-command-literals-99f94fac-2026-09-02`.
+The receipt-v7 and CLI/package checkpoints were stored through Ruflo MCP at
+`programme-evidence/adr-0034-application-receipt-v7-f6897d34-2026-09-03` and
+`programme-evidence/adr-0034-dormant-cli-package-b915c5f6-2026-09-03`; the
+proportional MetaHarness/QA readback is
+`programme-evidence/adr-0034-metaharness-qa-b915c5f6-2026-09-03`.
 The separate ADR-0035 task
-`task-1788002473147-nsat6x` was read back at 75% after commit `040f3343`; its
+`task-1788002473147-nsat6x` was read back as complete for its bounded local-
+preflight scope at commit `040f3343`; its
 exact native evidence is stored at
 `programme-evidence/oxigraph-adr35-native-preflight-execution-040f3343-20260829`.
 The earlier pure journal checkpoint is stored at
@@ -1217,6 +1235,8 @@ cancel-only bootstrap checkpoint is stored at
 the preceding exact capsule/control checkpoint is stored at
 `goap-plans/oxigraph-harness-create-exact-2026-08-29-interactive-capsule-v2`;
 the earlier opaque-verifier checkpoint remains historical evidence.
+ADR-0040 and pending critical task `task-1788394167226-fxk7od` now own the
+previously unassigned commit-capable successor prerequisite.
 
 The initial ADR breakout used Ruflo swarm `swarm-1787603675053-t6b9y7` with
 three read-only architecture lanes and one root integration writer. Its 26

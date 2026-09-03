@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-28
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Deciders: Oxigraph parity programme
-- Implementation status: partially implemented with a separate dormant,
-  non-product schema-v2 registration.
+- Implementation status: implemented and frozen as a separate dormant,
+  non-product schema-v2 admission surface; activation remains unavailable by
+  design.
   Commits `78b2cf99` through `65fb0e7a` freeze schema-v1 byte compatibility and
   add the v2 path, tree, contract, reconstruction, worker-context, schema,
   assembly, and output-validation primitives. Commit `54a056e0` adds the exact-
@@ -65,24 +66,32 @@
   its canonical SHA-256 is
   `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
   Commit `99f94fac` freezes a separate three-record dormant command-literal
-  registry and exact bounded resolver. Those records remain disconnected from
-  executable CLI dispatch, help, doctor, package scripts, and provider routing.
-  The broader exact-create task is 98% in progress; ADR-0035's separate native
-  task is 75% in progress. Committed schema-v1 fixtures remain byte-identical,
-  and their active registry remains exactly nine tasks and 33 commands.
+  registry and exact bounded resolver. Commit `f6897d34` implements exact
+  application-receipt v7 construction, verification, and private test-only
+  post-gate replay while preserving application receipts v1 through v6.
+  Commit `b915c5f6` connects the three exact records only below the hidden
+  `dormant harness-create-exact-v2 preflight|run|replay` namespace and exposes
+  matching package scripts. All three paths forward raw arguments to the early
+  gate without parsing deferred options, emit only the fixed unavailable result,
+  and exit 4. Public help and the active registry remain exactly nine v1 tasks
+  and 33 commands; no provider or Router path is reachable. The broader exact-
+  create task is 99% pending documentation and Ruflo-ledger closure; ADR-0035's
+  bounded local-preflight task is complete, while its broader physical design
+  remains Proposed. Committed schema-v1 fixtures remain byte-identical.
   Production containment remains fixed unavailable: the filesystem-backed
   native guardian/reaper, recovery mutation, race-free exec and pidfd/waitid
   binding, interactive native adapter, and full path-executed runtime-closure
-  proof, application receipt v7/replay, dormant v2 CLI/package wiring, and the
-  complete gate are not implemented. G2.2 may not admit a
-  new product module until the complete v2 gate, current host qualification,
-  and a separately ratified commit-capable successor all pass
+  proof are not implemented. The dormant v2 admission gate is implemented but
+  remains unavailable before effects. G2.2 may not admit a new product module
+  until current host qualification and a separately ratified commit-capable
+  successor both pass.
 - Programme task: `task-1787935934614-ibmjn1` (`HARNESS-CREATE-EXACT`)
 - **Depends on**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
 - **Related**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
-  [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md)
+  [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md),
+  [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
 
 ## Context
 
@@ -447,6 +456,9 @@ The exact dormant v2 implementation surface belongs to this ADR:
 - `tools/engineering-harness/src/runtime/g12-programme.mjs`;
 - `tools/engineering-harness/src/runtime/task-context-v2.mjs`;
 - `tools/engineering-harness/src/candidate/reconstruct-v2.mjs`;
+- `tools/engineering-harness/src/native/worker-v2.mjs`;
+- `tools/engineering-harness/src/policy/worker-process-proof-v2.mjs`;
+- `tools/engineering-harness/src/runtime/application-receipt-v7-replay.mjs`;
 - `tools/engineering-harness/src/task-profile.mjs`;
 - `tools/engineering-harness/src/command-registry.mjs`;
 - `tools/engineering-harness/bin/oxigraph-engineering-harness.mjs`;
@@ -456,6 +468,8 @@ The exact dormant v2 implementation surface belongs to this ADR:
 Focused evidence belongs in these existing paths:
 
 - `tools/engineering-harness/test/application-receipt.test.mjs`;
+- `tools/engineering-harness/test/application-receipt-v7-gate.test.mjs`;
+- `tools/engineering-harness/test/application-receipt-v7-replay.test.mjs`;
 - `tools/engineering-harness/test/application-admission.test.mjs`;
 - `tools/engineering-harness/test/contract.test.mjs`;
 - `tools/engineering-harness/test/contract-v2.test.mjs`;
@@ -464,13 +478,16 @@ Focused evidence belongs in these existing paths:
 - `tools/engineering-harness/test/candidate-reconstruction-v2.test.mjs`;
 - `tools/engineering-harness/test/task-context-v2.test.mjs`;
 - `tools/engineering-harness/test/task-profile.test.mjs`; and
-- `tools/engineering-harness/test/cli.test.mjs`.
+- `tools/engineering-harness/test/cli.test.mjs`, together with the exact
+  receipt-v7 fixture and support builder below `test/fixtures/` and
+  `test/support/`.
 
 The exact dormant command literals are frozen in `99f94fac`, outside the active
-33-command authority. The remaining implementation must freeze receipt-v7 and
-CLI/package fixtures before executable dormant dispatch registration and
-continue to prove that every unavailable-gate path reaches none of the
-forbidden effects above.
+33-command authority. Commits `f6897d34` and `b915c5f6` freeze receipt-v7 and
+its replay plus the CLI/package fixtures and executable dormant dispatch. The
+dispatch remains an authority-null gate surface: every selector reaches the
+fixed unavailable result before parsing deferred arguments or performing any
+forbidden effect above.
 
 ### Bounded failure behavior
 
@@ -507,9 +524,10 @@ qualification or promotion authority.
 
 The currently designed containment protocol is cancel-only and rejects
 `COMMIT`. Therefore completion of this dormant gate and later ADR-0039 host
-qualification still cannot admit G2.2. A separately ratified commit-capable
-successor, with its own evaluator and exact receipt/cleanup semantics, must
-close before any semantic-change module can execute or commit.
+qualification still cannot admit G2.2. The separately ratified
+[ADR-0040 commit-capable successor](0040-commit-capable-containment-decision-and-output-release.md),
+with its own evaluator and exact decision, output, receipt, and cleanup
+semantics, must close before any semantic-change module can execute or commit.
 
 There is no pre-v2 exception or contingency. No product file, empty or
 otherwise, may be added to manufacture a present baseline before this gate is
@@ -587,7 +605,8 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 98%.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 99%
+pending documentation and Ruflo-ledger closure.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;
@@ -696,7 +715,20 @@ The committed implementation sequence is:
   `dormant.harness-create-exact-v2.{preflight,run,replay}` records with exact
   v2 task, schema, gate, registration, and authority-null bindings. Their
   bounded trap-free validator and pure resolver cannot dispatch work; active
-  CLI/help/doctor/package/provider surfaces remain unchanged at 33 commands.
+  CLI/help/doctor/package/provider surfaces remain unchanged at 33 commands;
+  and
+- `f6897d34` adds the exact application-receipt-v7 constructor and verifier,
+  shared worker-process proof evaluation, and a private test-only post-gate
+  replay owner. It binds the raw v2 contract, exact request, task context,
+  candidate, ordered `A`/`M` projection, and actual success/failure worker
+  union; preserves v1-v6 fixture and replay compatibility; round-trips all six
+  actual `INCONCLUSIVE` shapes; and rejects eight impossible process-proof
+  contradictions in both draft and resealed receipts; and
+- `b915c5f6` wires only the exact dormant namespace and package scripts. It
+  forwards unparsed argv to the frozen v2 gate request and returns exactly
+  `{status: "unavailable", reason: "native-adapter-unavailable"}` on stdout
+  with exit 4. The active registry and help remain 33 commands, dependencies
+  remain requested as `latest`, and the lockfile is unchanged.
 
 For the `f9ab7c72` checkpoint, the six-file focused matrix passes 87/87 on
 Node 24; the exact four-file profile/contract/reconstruction/context matrix
@@ -714,6 +746,14 @@ non-G1.7 matrix excluding committed-clean identity passes 696/696 on Node 24;
 and Agentic-QE 3.13.12 executes the focused CLI file at 9/9. A fresh hostile
 review returned APPROVE. No dormant CLI or package dispatch, receipt, provider,
 qualification, promotion, or publication path was reached.
+For the `f6897d34` and `b915c5f6` completion checkpoint, the focused current-
+runtime and Node 20.20.2 matrices pass 99/99 and the complete top-level non-G1.7
+matrix passes 724/724 on both runtimes. Focused receipt-only evidence passes
+75/75 on both runtimes; focused dependency/factory/CLI evidence passes 13/13;
+the MetaHarness qualification adapter passes 16/16; and the Agentic-QE adapter
+passes 40/40. Independent receipt and CLI reviews returned APPROVE. Generic
+MetaHarness score/genome output remains advisory and cannot override the exact
+doctor result or grant activation authority.
 At the earlier `040f3343` checkpoint only the new preflight execution copy was
 executed; the frozen predecessor artifact was not. The `f9ab7c72` checkpoint
 also executed only the exact evaluator/reference Cargo test oracle, not a
@@ -743,9 +783,10 @@ the remaining output and runtime-closure proof.
 ADR-0035 owns the stable guardian/reaper, intent-first write-once journal,
 restart reconciliation, and executable cancel-only preflight decisions within
 that boundary; it does not relax this ADR's gate.
-Application receipt v7/replay, dormant CLI/package wiring, and the frozen G2.2
-profile follow. The dormant command literals are already frozen but remain
-non-executable.
+Application receipt v7/replay and dormant CLI/package wiring are now frozen.
+The hidden commands execute only the early unavailable gate; they cannot reach
+candidate work. The frozen G2.2 product profile still follows only after the
+separate host-qualification and commit-capable-successor gates close.
 Schema-v1 compatibility remains visible
 in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),
 [`paths.mjs`](../../tools/engineering-harness/src/policy/paths.mjs),
@@ -753,7 +794,8 @@ in [`contract.mjs`](../../tools/engineering-harness/src/contract.mjs),
 and [`task-context.mjs`](../../tools/engineering-harness/src/runtime/task-context.mjs);
 the unregistered boundary is implemented separately in the corresponding
 `*-v2` modules. The [linked-data-store evolution plan](../plans/linked-data-store-evolution-harness-plan.md)
-places this task before G2.2. Until its acceptance boundary is implemented,
-schema v1 remains the only active command/CLI engineering-contract family;
-the separate dormant v2 control cannot execute, and product file creation
-remains forbidden.
+places this task before G2.2. Its dormant acceptance boundary is implemented,
+but until the separate activation prerequisites pass, schema v1 remains the
+only active command/CLI engineering-contract family. The separate dormant v2
+CLI can execute only its authority-null unavailable gate, and product file
+creation remains forbidden.

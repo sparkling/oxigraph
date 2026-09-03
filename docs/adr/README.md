@@ -47,8 +47,9 @@ mapping.
 | [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)              | Proposed    | Own the sole statefs policy/oracle, held-root protocol, and separately attested bounded statefs-syscalls object                                    |
 | [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md) | Proposed    | Link ADR-0037's object unchanged and own only unregistered process/cgroup/exec mechanics, executables, adapter, and race-free launch               |
 | [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)  | Proposed    | Consume ADR-0034's frozen bytes and own current-host qualification, activation binding, and path-executed runtime closure only                     |
+| [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md) | Proposed | Add a byte-distinct durable `COMMIT` successor with at-most-once execution and descriptor-bound output release before G2.2                         |
 
-The index contains 39 decisions. ADR-0018 and ADR-0020 through ADR-0039 are
+The index contains 40 decisions. ADR-0018 and ADR-0020 through ADR-0040 are
 living implementation decisions for
 outstanding work. Their Proposed status is deliberate: the corresponding
 programme tasks and promotion evidence are not implemented merely because the
@@ -56,8 +57,8 @@ architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
 and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
 implemented. ADR-0034 separately gates the exact schema-v2 new-file
 pre-registration required before G2.2 may add a semantic-change module. The
-repository ADR dry-run parses 221 unique
-graph edges: 46 `depends-on`, 171 `related`, and 4 `amends`, with no duplicate,
+repository ADR dry-run parses 235 unique
+graph edges: 52 `depends-on`, 179 `related`, and 4 `amends`, with no duplicate,
 dangling, or self edge and no directed dependency or supersession cycle.
 Ownership is likewise one-way: ADR-0037 owns the statefs policy and exact
 statefs-syscalls object, which ADR-0038 links unchanged; ADR-0034 owns dormant
@@ -65,8 +66,8 @@ receipt-v7/schema-v2 pre-registration and the early qualification gate, whose
 frozen bytes ADR-0039 consumes while owning only current-host qualification,
 activation binding, and path-executed runtime closure. Readiness remains
 exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`. Even
-after those gates close, the cancel-only protocol leaves G2.2 blocked pending a
-separately ratified commit-capable successor. Commit
+after those gates close, the cancel-only protocol leaves G2.2 blocked pending
+[ADR-0040's commit-capable successor](0040-commit-capable-containment-decision-and-output-release.md). Commit
 `54a056e0` closes the reviewed, unregistered native-worker slice after 112/112
 focused controls, and `11e72201` adds the opaque structural verifier lifecycle
 with a 128/128 related non-G1.7 matrix. Commit `f3a0c127` adds the narrow
@@ -97,15 +98,16 @@ transcript, and thirty returned fail-closed scenarios. Its focused suite
 passes 47/47 and the top-level non-G1.7 suite, excluding the separate
 committed-clean identity control, passes 495/495 on current Node and Node 20;
 the identity control passes 2/2 on both after commit, and two fresh reviews
-are GO. ADR-0035 task `task-1788002473147-nsat6x` is 75% in progress for this
-checkpoint; the broader exact-admission task is now 98% after the exact early
-gate, frozen evaluator/reference chain, separate dormant-v2 registration, and
-three-record dormant command-literal freeze in `99f94fac`.
+are GO. ADR-0035's bounded local-preflight task
+`task-1788002473147-nsat6x` is complete, without closing its broader Proposed
+physical design. The broader exact-admission task is now 99% after the exact
+early gate, frozen evaluator/reference chain, separate dormant-v2 registration,
+application receipt v7/private replay in `f6897d34`, and hidden dormant
+CLI/package wiring in `b915c5f6`.
 Filesystem-backed guardian/reaper durability and recovery, delegated-cgroup
 evidence, pidfd/waitid and race-free exec binding, the physical native adapter
-and full runtime-closure proof, ADR-0034's application receipt v7/replay and
-dormant CLI/package wiring, ADR-0039's qualification/activation gate,
-a later commit-capable successor, and G2.2 remain open. ADR-0035 separates
+and full runtime-closure proof, ADR-0039's qualification/activation gate,
+ADR-0040's commit-capable successor, and G2.2 remain open. ADR-0035 separates
 those native concerns from ADR-0034's broader admission gate. ADR-0036 through
 ADR-0039 decompose the remaining control ABI, statefs/manager, native
 executable, and delegated-host readiness work without changing the current
@@ -117,7 +119,7 @@ closes `scopeJoins` and `nestedRecursion`; and commit `2f9e51ed` raises
 `commitMutations` to 67/200, leaving 133 semantic negatives. The candidate
 source remains absent, readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and this
-evidence does not change ADR-0036's Proposed status. Twenty-one decisions in
+evidence does not change ADR-0036's Proposed status. Twenty-two decisions in
 this range remain Proposed.
 
 The preceding ADR-0036 paragraph is the preserved historical C14 checkpoint.
@@ -257,12 +259,14 @@ first-action unavailable qualification gate; `c9cb6423`, `997ad287`, and
 `dfd6d92d` freeze the exact baseline/evaluator/reference chain; and `f9ab7c72`
 adds the separate dormant-v2 profile, raw contract, production worker context,
 and reference reconstruction. Commit `99f94fac` freezes the three exact dormant
-command records and pure resolver without executable registration. The active
-v1 registry remains nine tasks and
-33 commands. Focused matrices pass 87/87 on Node 24 and 55/55 on Node 20.0.0
-and 20.20.2; the top-level non-G1.7 suite passes 694/694 on Node 24 and Node
-20.20.2. The command-literal slice separately passes 696/696 on Node 24,
-64/64 focused on both Node 20 runtimes, and 9/9 through Agentic-QE 3.13.12.
+command records and pure resolver outside active dispatch. Commit `f6897d34`
+implements application receipt v7, exact verification, and private test-only
+replay; commit `b915c5f6` wires only the hidden dormant CLI namespace and exact
+package scripts. Every selector exits 4 at the fixed unavailable gate before
+deferred parsing or effects. The active v1 registry remains nine tasks and 33
+commands. Focused and top-level non-G1.7 matrices pass 99/99 and 724/724 on
+both the current runtime and Node 20.20.2; MetaHarness and Agentic-QE adapter
+suites pass 16/16 and 40/40.
 Independent audits returned GO only for the Proposed, dormant
 authority-null infrastructure and NO-GO for activation. It grants no product,
 qualification, or promotion authority and cannot admit G2.2's new module.
@@ -305,7 +309,7 @@ Source authority and revision metadata live in
 shows which closure gates remain open.
 
 ADR statuses and current-evidence qualifiers in this index were reviewed on
-2026-08-29. Individual sealed results retain their original evidence dates.
+2026-09-03. Individual sealed results retain their original evidence dates.
 G0.1-G0.7 retain historical source-bound completion evidence: registered
 sources, the locked Jena runner, two byte-identical runs of the refreshed
 76/198 profile, the 144/129 Agentic-QE inventories, the then-34-test

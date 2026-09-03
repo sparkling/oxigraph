@@ -124,18 +124,26 @@ and
 `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
 Commit `99f94fac` freezes the three exact
 `dormant.harness-create-exact-v2.{preflight,run,replay}` command records and a
-bounded pure resolver in a separate authority-null registry. It does not add
-them to executable CLI dispatch, help, doctor, package scripts, or provider
-routing.
-The six-file focused matrix passes 87/87 on Node 24; the exact four-file matrix
-passes 55/55 on Node 20.0.0 and Node 20.20.2; the top-level non-G1.7 suite
-passes 694/694 on Node 24 and Node 20.20.2; and the real Cargo oracle observes
-one evaluator `E0583` followed by 3/3 reference tests. The v1 registry remains
-exactly nine tasks and 33 commands. The new command-literal slice passes
-696/696 top-level non-G1.7 tests on Node 24, 64/64 focused tests on Node 20.0.0
-and 20.20.2, and 9/9 through Agentic-QE 3.13.12. Receipt v7/replay, dormant
-CLI/package wiring, host qualification, G2.2, product, promotion, and
-publication remain absent.
+bounded pure resolver in a separate authority-null registry. Commit `f6897d34`
+adds application-receipt v7 construction and exact verification, shared
+worker-process proof evaluation, and a private test-only post-gate replay owner
+while preserving v1-v6 fixtures and replay. Commit `b915c5f6` wires the records
+only below `dormant harness-create-exact-v2 preflight|run|replay` and adds the
+three exact npm scripts. Deferred arguments remain raw and unparsed because
+every selector first returns exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}` with exit 4.
+The public help and active v1 registry remain exactly nine tasks and 33
+commands; provider and Router routing remain unreachable.
+
+The completion checkpoint passes 99/99 focused tests and 724/724 top-level
+non-G1.7 tests on both the current Node runtime and Node 20.20.2. Focused
+receipt-only evidence passes 75/75 on both runtimes, the dependency/factory/CLI
+slice passes 13/13, the MetaHarness adapter passes 16/16, and the Agentic-QE
+adapter passes 40/40. Dependencies still request `latest`; exact versions and
+integrity remain in the unchanged lockfile. Host qualification, physical
+runtime closure, [ADR-0040's commit-capable successor](../../docs/adr/0040-commit-capable-containment-decision-and-output-release.md),
+G2.2, product authority,
+promotion, and publication remain absent.
 
 [ADR-0035 — Durable native containment guardian and crash recovery](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,
@@ -374,14 +382,15 @@ the physical production boundary: the current owner trace is branded
 guardian, delegated cgroup lifecycle, semantic retained-file validation, or
 pidfd/waitid reap. None can satisfy the production report
 brand. Production remains fixed `unavailable` until the guardian and
-interactive native supervisor/adapter exist. Those mechanics and the full
-runtime-closure proof,
-application receipt v7/replay,
-dormant CLI/package wiring, and G2.2 remain mandatory later gates.
+interactive native supervisor/adapter exist. Those mechanics, the full
+runtime-closure proof, host qualification,
+[ADR-0040's commit-capable successor](../../docs/adr/0040-commit-capable-containment-decision-and-output-release.md),
+and G2.2 remain mandatory later gates. Application receipt v7/replay and hidden dormant
+CLI/package wiring are implemented, but stop at the unavailable early gate.
 Exact evaluator/reference reconstruction and the separate dormant-v2 profile
 exist in `f9ab7c72`; the separate dormant command literals exist in `99f94fac`.
-Production stays fixed unavailable, schema v1 remains the only executable
-registry surface, and no candidate-created product module is admitted yet.
+Production stays fixed unavailable, schema v1 remains the only active registry
+surface, and no candidate-created product module is admitted yet.
 
 Current activation boundary:
 
@@ -530,6 +539,12 @@ Current activation boundary:
   `task-1787888366495-gzxbhe` is complete, but grants no execution authority;
 - `receipt verify` independently verifies stored application receipts without
   granting promotion authority;
+- application receipt v7 binds the exact schema-v2 task contract, gate request,
+  task context, candidate, ordered `A`/`M` projection, protected manifests,
+  created blobs, and actual success/failure worker union. Verification rejects
+  impossible process-proof combinations. Its separate Git-object replay owner
+  is private and test-only, executes only after an explicit gate witness, and
+  grants no activation authority;
 - application receipt v6 adds an exact `candidateRejections` collection and
   event kind. Each record binds one candidate execution, one successful
   implementation or repair invocation, its patch SHA-256, a typed
@@ -580,9 +595,16 @@ authorities.
 for `harness-create-exact-v2-control`. It derives only
 `tasks/v2/harness-create-exact-v2/contract.json`, is exact-digest-bound,
 deeply frozen, and rejects every v1 or G2.2 identity. It is not consulted by
-the active registry, command generator, or CLI; its production context can be
-constructed only for the exact dormant contract, behind the unavailable early
-qualification gate.
+the active registry or command generator. The CLI consults it only after the
+explicit hidden `dormant harness-create-exact-v2` selector; it is absent from
+public help. Its production context can be constructed only for the exact
+dormant contract, behind the unavailable early qualification gate.
+
+The corresponding npm scripts are
+`dormant:harness-create-exact-v2:preflight`,
+`dormant:harness-create-exact-v2:run`, and
+`dormant:harness-create-exact-v2:replay`. They do not widen the public
+33-command surface.
 
 The same registry generates the task portion of an exact ordered 33-command
 CLI surface. The CLI resolves a slug to its registered `taskId` and dispatches

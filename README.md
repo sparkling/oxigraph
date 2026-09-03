@@ -197,19 +197,25 @@ and commit `f9ab7c72` adds the separate frozen v2 profile, raw contract,
 production worker-context binding, and exact reference reconstruction. It does
 not add the task to the active v1 registry or 33-command CLI. Commit
 `99f94fac` additionally freezes a separate three-entry, authority-null dormant
-command-literal registry and exact resolver; the executable CLI, help, doctor,
-package scripts, provider routing, and active registry still cannot reach it.
+command-literal registry and exact resolver. Commit `f6897d34` adds exact
+application-receipt v7 construction, verification, and private test-only replay
+while preserving v1-v6 compatibility. Commit `b915c5f6` connects the three
+records only below the hidden
+`dormant harness-create-exact-v2 preflight|run|replay` namespace and adds the
+three exact package scripts. Each selector forwards raw arguments to the early
+gate, returns the fixed unavailable result with exit 4, and reaches no Git,
+provider, receipt, Router, or runtime effect. Public help and the active
+registry remain exactly nine v1 tasks and 33 commands.
 The raw contract SHA-256 is
 `58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`;
 its canonical SHA-256 is
 `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
-Focused tests pass 87/87 on Node 24 and 55/55 on Node 20.0.0 and 20.20.2; the
-top-level non-G1.7 suite passes 694/694 on Node 24 and Node 20.20.2. The real
-Cargo oracle observes evaluator exit 101 with one `E0583`, then 3/3 passing
-reference tests. The command-literal slice additionally passes 696/696
-top-level non-G1.7 tests on Node 24, 64/64 focused tests on Node 20.0.0 and
-20.20.2, and 9/9 through Agentic-QE 3.13.12. Application receipt v7/replay,
-dormant CLI/package wiring, current host qualification, and the complete gate
+The completion checkpoint passes 99/99 focused and 724/724 top-level non-G1.7
+tests on both the current runtime and Node 20.20.2; the MetaHarness adapter
+passes 16/16 and the Agentic-QE adapter passes 40/40. Dependencies still request
+`latest`, with exact installed versions and integrity in the unchanged lockfile.
+Current host qualification, the physical runtime closure, and
+[ADR-0040's separately ratified commit-capable successor](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md)
 remain open, so this is no G2.2 or product authority.
 
 Follow-on harness commit
@@ -449,11 +455,13 @@ native guardian/reaper, recovery mutation, delegated-cgroup evidence,
 pidfd/waitid reap, semantic retained-file validation, FD-6 execution binding,
 physical containment, or the full runtime closure. Production stays fixed
 `{status: "unavailable", reason: "native-adapter-unavailable"}` until those
-gates and the exact path-executed runtime closure exist. Application receipt
-v7/replay, dormant CLI/package wiring, the complete ADR-0034 gate,
-and G2.2 remain open. The later `f9ab7c72` checkpoint implements only the
-separate dormant profile, contract, worker context, and reconstruction, so no
-new product module or promotion authority is admitted.
+gates and the exact path-executed runtime closure exist. Commits `f6897d34` and
+`b915c5f6` now complete receipt-v7/replay and hidden dormant CLI/package wiring;
+the selectors still stop at that unavailable result before effects. Current
+host qualification,
+[ADR-0040's commit-capable successor](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md),
+and G2.2 remain open, so no new product module or promotion authority is
+admitted.
 
 The dated 2026-09-02 ADR-0036 C15 checkpoint is now GREEN. ADR-0034 helper
 commit `41dd2508` advances `containment-exact-v2.mjs` to the additive 19-export
@@ -529,8 +537,9 @@ process/cgroup/exec mechanics. ADR-0034 owns dormant application receipt v7,
 schema-v2 reconstruction/dispatch/profile literals, and the early exact
 `executionGate: "native-containment-qualification-v1"` for
 `contractSchemaVersion: 2`. Its early gate, separate dormant profile, exact
-contract, worker context, reconstruction, and separate command literals are
-implemented; receipt v7/replay and executable CLI/package wiring are not.
+contract, worker context, reconstruction, application receipt v7/replay, and
+hidden dormant CLI/package wiring are implemented and frozen. The dormant
+selectors remain outside public help and the active 33-command registry.
 [ADR-0039](./docs/adr/0039-delegated-host-containment-qualification-and-readiness.md)
 consumes those bytes unchanged and owns only current-host qualification,
 receipt binding/activation, and path-executed runtime closure. While readiness
@@ -538,8 +547,8 @@ has the unavailable value above, the early gate runs before reconstruction
 workspace preparation and performs no candidate/evaluator Git, submodule,
 process, provider, `ACCEPT`, `REJECT`, receipt-emission, or Router-quality work;
 the later check is defense in depth. The qualified protocol would still be
-cancel-only, so G2.2 additionally requires a separately ratified commit-capable
-successor.
+cancel-only, so G2.2 additionally requires
+[ADR-0040's separately ratified commit-capable successor](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md).
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
 
@@ -633,19 +642,22 @@ The ADRs explain the principal boundaries:
   indexes, explicit federation, service identity, workload governance, safe
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
-  research into ADR-0018 and ADR-0020 through ADR-0039; ADR-0019 records the
-  implemented egress, cancellation, and service-claim slice. Twenty-one decisions
+  research into ADR-0018 and ADR-0020 through ADR-0040; ADR-0019 records the
+  implemented egress, cancellation, and service-claim slice. Twenty-two decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 98%
-  in-progress controls include a separate dormant v2 profile, contract, and
-  frozen three-command literal registry, but no executable v2 CLI/package
-  registration or receipt-v7 admission until the full acceptance gate closes.
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 99%
+  controls include the separate dormant v2 profile and contract, receipt-v7
+  admission/replay, and hidden three-command CLI/package surface. That surface
+  executes only the unavailable gate and grants no product authority.
   ADR-0035 separately governs the implemented pure
   journal contract and the still-unimplemented durable native guardian,
   recovery, and executable-preflight boundary. ADR-0036 through ADR-0039 split
   the pure ABI, statefs/syscalls, native process mechanics, and isolated-host
-  qualification/activation gates without changing production readiness. The
-  ADR-0036's source-independent evaluator currently freezes 197/330 semantic
+  qualification/activation gates without changing production readiness;
+  [ADR-0040](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md)
+  owns the separate durable `COMMIT`, at-most-once execution, and descriptor-
+  bound output-release successor required before G2.2. ADR-0036's source-
+  independent evaluator currently freezes 197/330 semantic
   negatives. Integrated B5 commit `61122498` closes `scopeJoins` and
   `nestedRecursion`; B6 commit `2f9e51ed` raises `commitMutations` to 67/200
   across ten commit owners and five control-flow forms. Together with 69

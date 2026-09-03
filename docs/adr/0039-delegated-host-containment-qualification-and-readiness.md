@@ -20,7 +20,8 @@
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md),
   [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md),
   [ADR-0024 — Rebuildable derived indexes](0024-rebuildable-derived-indexes.md),
-  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md)
+  [ADR-0025 — Explicit SERVICE federation](0025-explicit-service-federation.md),
+  [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
 
 ## Context
 
@@ -104,8 +105,10 @@ does not accept a product change or mint Router quality.
 
 The initially qualified protocol remains cancel-only. It rejects `COMMIT`, emits
 no application output, and cannot admit G2.2 even after ADR-0034 and this ADR
-close. G2.2 requires a separately ratified commit-capable successor, its own
-frozen evaluator, and exact decision, receipt, and cleanup semantics.
+close. G2.2 requires the separately ratified
+[ADR-0040 commit-capable successor](0040-commit-capable-containment-decision-and-output-release.md),
+its own frozen evaluator, and exact decision, output, receipt, and cleanup
+semantics.
 
 ## Owned files
 
@@ -156,7 +159,7 @@ ADR-0019's implemented egress, cancellation, and service-claim boundary remains
 unchanged. Guardian controller-loss cancellation does not expand SERVICE or
 remote-input claims. Closing ADR-0039 removes only the host-qualification and
 activation blocker. ADR-0020 G2.2 remains blocked by the cancel-only protocol
-until a separately ratified commit-capable successor closes; neither decision
+until ADR-0040 closes; neither decision
 implements or advances that product slice by itself.
 
 ## Acceptance boundary

@@ -5,7 +5,7 @@
   outcomes/lookup and G1.4b simulated storage-call fault safety; G1.7
   qualification and G2.2-G2.3c remain open
 - Date: 2026-08-24
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Current audited upstream head: `ec68e3ddb2e73470ae5940c44709e041762afa41`
@@ -42,6 +42,10 @@
   `f9ab7c7223ed490ad83b6544246d66323cd1e86a`
 - ADR-0034 dormant command-literal checkpoint:
   `99f94fac727fd63d79810a2e36e2e0b48436eddc`
+- ADR-0034 application-receipt-v7 checkpoint:
+  `f6897d340fe5cd4a3db2d7bdb52fed2d37cd261d`
+- ADR-0034 hidden dormant CLI/package checkpoint:
+  `b915c5f60d865d0be92afde070d30419a7179c00`
 - ADR-0035 local executable-preflight checkpoint:
   `040f33438693d3e3f64f8052a849b1c84caa58d8`
 - ADR-0036 C15 guardian-control checkpoint:
@@ -61,8 +65,10 @@
   [ADR-0038 — Native containment manager, guardian, and launch trampoline](../adr/0038-native-containment-manager-guardian-and-trampoline.md)
 - Host qualification and activation decision:
   [ADR-0039 — Delegated-host containment qualification and readiness](../adr/0039-delegated-host-containment-qualification-and-readiness.md)
+- Commit-capable containment decision:
+  [ADR-0040 — Commit-capable containment decision and application-output release](../adr/0040-commit-capable-containment-decision-and-output-release.md)
 - Outstanding capability decisions:
-  [ADR-0018 and ADR-0020 through ADR-0039](../adr/README.md)
+  [ADR-0018 and ADR-0020 through ADR-0040](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
@@ -198,17 +204,20 @@ evaluator, and one-`A`/one-`M` reference. Commit `f9ab7c72` adds only the
 separate dormant-v2 profile, exact raw contract, production context binding,
 and reference reconstruction. Commit `99f94fac` freezes a separate three-entry
 dormant command-literal registry and pure resolver without executable CLI,
-help, doctor, package, or provider reachability. Its focused matrices pass
-87/87 on Node 24 and
-55/55 on Node 20.0.0 and 20.20.2; the top-level non-G1.7 suite passes 694/694
-on Node 24 and Node 20.20.2. The literal slice separately passes 696/696 on
-Node 24, 64/64 focused on both Node 20 runtimes, and 9/9 through Agentic-QE
-3.13.12. The broader Ruflo record is 98%; the separate
-ADR-0035 native task is 75% in progress. The active v1 registry remains nine
-tasks and 33 commands. Filesystem-backed native guardian/reaper durability and
-recovery, delegated-cgroup evidence, race-free exec plus pidfd/waitid binding,
-the physical adapter, full runtime-closure proof, receipt v7/replay, dormant v2
-CLI/package wiring, and the complete gate remain open. The harness
+help, doctor, package, or provider reachability at that checkpoint. Commit
+`f6897d34` adds exact application-receipt-v7 construction, verification, shared
+worker-process proof evaluation, and private test-only replay while preserving
+v1-v6. Commit `b915c5f6` wires only the hidden dormant CLI namespace and three
+exact npm scripts. Each selector returns the fixed unavailable result with exit
+4 before deferred parsing or effects. The completion checkpoint passes 99/99
+focused and 724/724 top-level non-G1.7 tests on both current Node and Node
+20.20.2; MetaHarness and Agentic-QE adapters pass 16/16 and 40/40. The broader
+Ruflo record is 99% pending docs/ledger closure; ADR-0035's bounded local-
+preflight task is complete. The active v1 registry remains nine tasks and 33
+commands. Filesystem-backed native guardian/reaper durability and recovery,
+delegated-cgroup evidence, race-free exec plus pidfd/waitid binding, the physical
+adapter, full runtime closure, ADR-0039 host qualification, and ADR-0040 remain
+open. The harness
 gate is not G2.2 product progress, and ADR-0020 remains Proposed.
 
 The open gates now have one-way ownership. ADR-0037 owns the sole statefs
@@ -225,7 +234,7 @@ that value, the early gate precedes reconstruction workspace preparation and
 performs no candidate/evaluator Git, submodule, process, provider, `ACCEPT`,
 `REJECT`, receipt-emission, or Router-quality work; a later check remains
 defense in depth. The qualified protocol would remain cancel-only, so G2.2 also
-requires a separately ratified commit-capable successor.
+requires [ADR-0040's separately ratified commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md).
 
 The dated 2026-09-02 ADR-0036 C15 checkpoint is GREEN through helper
 `41dd2508`, guardian/fixture `23d37556`, and evaluator `4620dd92`. The live
@@ -538,9 +547,10 @@ The unfinished work is split by architectural ownership:
 | P0.1-P0.2 conformance, guarantees, conflicts    | [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, bounded cleanup, raw supervision, legacy-incompatible request v1/process v3, structural policy/request v2, and a compile-only dormant attested helper are implemented. The private issuer, containment-v2 native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
-| P1.2 dormant schema-v2 harness pre-registration | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed, broader task 98%: early unavailable gating, the frozen exact-create chain, dormant-v2 profile/contract/context/reconstruction through `f9ab7c72`, and the separate non-executable three-command literal registry `99f94fac` are implemented. The active v1 registry remains nine tasks/33 commands. Receipt-v7/replay and dormant v2 CLI/package wiring remain open; v1-v6 remain frozen and no product or promotion authority exists                                                                                                                                                                                                                                                                                                                        |
-| Native containment implementation/qualification | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed, ADR-0035 native task 75%: ADR-0037 owns the statefs oracle and bounded syscall object; ADR-0038 links it unchanged and owns process/cgroup/exec mechanics; ADR-0039 consumes ADR-0034 bytes unchanged and owns qualification, activation, and runtime closure. Readiness remains unavailable/native-adapter-unavailable                                                                                                                                                                                                                                                                                                                                           |
-| P1.2/G2.2 new semantic-change module            | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md), after the ADR-0034 admission and ADR-0039 qualification gates above                                                                             | Blocked: the exact schema-v2 and qualification gates are open, and the containment protocol remains cancel-only. A separately ratified commit-capable successor is required before G2.2 may execute or commit a semantic-change module                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| P1.2 dormant schema-v2 harness pre-registration | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed, broader task 99% pending docs/ledger closure: early gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; hidden selectors exit 4 before effects and grant no product authority |
+| Native containment implementation/qualification | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design remains open. ADR-0037 owns statefs/syscalls, ADR-0038 native process mechanics, and ADR-0039 qualification/activation/runtime closure. Readiness remains unavailable/native-adapter-unavailable |
+| Commit-capable containment successor             | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                                | Proposed; critical task `task-1788394167226-fxk7od` is pending. It owns durable decision-before-effect, at-most-once execution, descriptor-bound application output, exact recovery/receipt semantics, and distinct successor host qualification |
+| P1.2/G2.2 new semantic-change module            | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md), after ADR-0034, ADR-0039, and ADR-0040                                                                                                           | Blocked: dormant exact admission is implemented, but host qualification, physical runtime closure, and the commit-capable successor remain open before a semantic-change module may execute or commit |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | P1.1/G2.1 implemented in `be08cf3b`; P1.2/G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | P1.3 transaction-time SHACL                     | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P1.4a-P1.4c readiness, backup, restore          | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -714,8 +724,9 @@ physical task `task-1787896401667-xookiy`, and its historical corrected G1.7
 checkpoint at 60%. The current overarching G1.7 task
 `task-1787871483413-ki34q2` is in progress at 74%; supporting workspace/build
 task `task-1787902127894-7n7vk3` is at 93%, and containment task
-`task-1787902138074-0w648x` is at 92%. Separate ADR-0035 native task
-`task-1788002473147-nsat6x` is at 75% after its local preflight checkpoint.
+`task-1787902138074-0w648x` is at 92%. ADR-0035's bounded local-preflight task
+`task-1788002473147-nsat6x` is complete; its broader Proposed physical design
+remains open. ADR-0040 task `task-1788394167226-fxk7od` is pending.
 Legacy v1/v3/v4/v5/v6 replay is Darwin-free and `LEGACY_REPLAY_ONLY`.
 
 The accepted G1.4b receipt is copied byte-for-byte, hash-bound, and pure-replayed
@@ -795,14 +806,15 @@ Acceptance:
 
 #### P1.2 Staged change sets, commit receipts, and durable feed — XL
 
-Dependencies: P0.1 and P0.2. Before a new product module is admitted, implement
-the [ADR-0034 exact new-file harness gate](../adr/0034-first-class-exact-new-file-admission.md)
-under Ruflo task `task-1787935934614-ibmjn1`; the existing-file algebra design
-may be refined in parallel, but no new module enters a frozen candidate before
-that gate passes. Admission also requires current
+Dependencies: P0.1 and P0.2. The
+[ADR-0034 exact new-file harness gate](../adr/0034-first-class-exact-new-file-admission.md)
+is implemented as a dormant unavailable surface under Ruflo task
+`task-1787935934614-ibmjn1`; the existing-file algebra design may be refined in
+parallel, but no new module enters a frozen candidate before activation.
+Admission also requires current
 [ADR-0039 host qualification](../adr/0039-delegated-host-containment-qualification-and-readiness.md)
-and a separately ratified commit-capable successor because the qualified
-containment protocol specified today is cancel-only.
+and [ADR-0040's commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md)
+because the qualified containment protocol specified today is cancel-only.
 
 - Record normalized quad, graph-topology, and namespace changes in the
   transaction.
@@ -1030,13 +1042,15 @@ is a separate engineering-harness prerequisite, not a P3 product feature. It
 owns the dormant receipt-v7/schema-v2 pre-registration and early qualification
 gate. The early gate plus separate dormant profile, contract, context, and
 reconstruction exist through `f9ab7c72`; the dormant command literals are
-frozen in `99f94fac`; receipt v7 and executable CLI/package wiring remain open.
+frozen in `99f94fac`; receipt v7/private replay is frozen in `f6897d34`; and
+hidden unavailable-gated CLI/package wiring is frozen in `b915c5f6`.
 None grants linked-data-store capability by itself.
 ADR-0037 and
 ADR-0038 separately own statefs/syscalls and native process mechanics;
 ADR-0039 owns host qualification/activation only. Even all three gates together
-cannot admit G2.2 until a separately ratified commit-capable successor replaces
-the cancel-only protocol.
+cannot admit G2.2 until
+[ADR-0040's separately ratified commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md)
+replaces the cancel-only protocol.
 
 ## SPARC execution framing
 
@@ -1141,7 +1155,7 @@ The plan scores **98/100** against the programme rubric:
 | Source authority and currency   | 20/20 | Exact local commits plus current official Jena/RDF4J pages                                                                                           |
 | Implementation traceability     | 20/20 | Public API, tests, commits, and Ruflo memory keys named                                                                                              |
 | Dependency and boundary clarity | 15/15 | DDD contexts and task prerequisites are explicit                                                                                                     |
-| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0020 has an implemented G2.1 slice but remains Proposed with ADR-0018 and ADR-0021 through ADR-0039 for their open work |
+| Architectural decision coverage | 10/10 | ADR-0019 is implemented; ADR-0020 has an implemented G2.1 slice but remains Proposed with ADR-0018 and ADR-0021 through ADR-0040 for their open work |
 | Verifiable acceptance criteria  | 14/15 | Negative, crash, concurrency, security, and performance gates; production adapter still pending                                                      |
 | Risk and security coverage      | 10/10 | Commit ambiguity, replay, egress, index drift, and leakage covered                                                                                   |
 | Scope discipline                |  9/10 | Core versus product choices separated; P3 decisions remain independently gated and unimplemented                                                     |
@@ -1151,5 +1165,5 @@ replacement adapter has not yet run the conformance kit, and the newly admitted
 P3 decisions do not yet have product receipts. ADR-0016 is Implemented for the
 public write seam and ADR-0019 is Implemented for egress, cancellation, and
 runtime-derived service claims. ADR-0020's G2.1 registry is implemented, while
-ADR-0018 and ADR-0020 through ADR-0039 remain Proposed for their outstanding
+ADR-0018 and ADR-0020 through ADR-0040 remain Proposed for their outstanding
 slices under this plan.
