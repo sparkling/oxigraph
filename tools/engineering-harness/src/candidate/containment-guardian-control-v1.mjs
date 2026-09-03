@@ -75,11 +75,11 @@ const guardianContract = deepFreeze(
               ["specifier", "./containment-guardian-recovery-v1.mjs"],
               [
                 "sha256",
-                "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+                "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
               ],
               [
                 "requirementsSha256",
-                "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+                "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874",
               ],
               [
                 "imports",
@@ -773,7 +773,7 @@ export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS =
   guardianContract;
 
 export const CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256 =
-  "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
+  "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131";
 
 const normalStartupMap = deepFreeze([
   nullRecord([
@@ -1047,7 +1047,7 @@ const recoveryDigestOrdinals = deepFreeze([
 ]);
 
 const guardianRequirementsSha256 =
-  "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
+  "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131";
 
 export function createCandidateContainmentGuardianStartupV1(
   startupReportBytes,
