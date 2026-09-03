@@ -74,8 +74,8 @@
   matching package scripts. All three paths forward raw arguments to the early
   gate without parsing deferred options, emit only the fixed unavailable result,
   and exit 4. Public help and the active registry remain exactly nine v1 tasks
-  and 33 commands; no provider or Router path is reachable. The broader exact-
-  create task is 99% pending documentation and Ruflo-ledger closure; ADR-0035's
+  and 33 commands; no provider or Router path is reachable. The exact-create
+  task is complete at this dormant, authority-null boundary; ADR-0035's
   bounded local-preflight task is complete, while its broader physical design
   remains Proposed. Committed schema-v1 fixtures remain byte-identical.
   Production containment remains fixed unavailable: the filesystem-backed
@@ -605,8 +605,8 @@ The implementation must prove:
 ## Evidence and task ownership
 
 Ruflo task `task-1787935934614-ibmjn1` owns the
-`HARNESS-CREATE-EXACT` implementation and evidence. It is in progress at 99%
-pending documentation and Ruflo-ledger closure.
+`HARNESS-CREATE-EXACT` implementation and evidence. It is complete at the
+dormant, authority-null boundary.
 The committed implementation sequence is:
 
 - `78b2cf99` freezes every schema-v1 task-contract and task-level receipt byte;

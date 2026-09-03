@@ -100,7 +100,8 @@ committed-clean identity control, passes 495/495 on current Node and Node 20;
 the identity control passes 2/2 on both after commit, and two fresh reviews
 are GO. ADR-0035's bounded local-preflight task
 `task-1788002473147-nsat6x` is complete, without closing its broader Proposed
-physical design. The broader exact-admission task is now 99% after the exact
+physical design. The exact-admission task is complete at the dormant,
+authority-null boundary after the exact
 early gate, frozen evaluator/reference chain, separate dormant-v2 registration,
 application receipt v7/private replay in `f6897d34`, and hidden dormant
 CLI/package wiring in `b915c5f6`.

@@ -645,8 +645,8 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0040; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Twenty-two decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's 99%
-  controls include the separate dormant v2 profile and contract, receipt-v7
+  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's
+  completed dormant controls include the separate v2 profile and contract, receipt-v7
   admission/replay, and hidden three-command CLI/package surface. That surface
   executes only the unavailable gate and grants no product authority.
   ADR-0035 separately governs the implemented pure

@@ -620,8 +620,8 @@ in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.
 
 ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
-created module. Its Ruflo task `task-1787935934614-ibmjn1` is in progress at
-99% after the historical launch/bootstrap and guardian/preflight checkpoints,
+created module. Its Ruflo task `task-1787935934614-ibmjn1` is complete at the
+dormant, authority-null boundary after the historical launch/bootstrap and guardian/preflight checkpoints,
 the exact early-gate commit `fd9e4d05`, fixture chain
 `c9cb6423`/`997ad287`/`dfd6d92d`, and separate dormant-v2 registration commit
 `f9ab7c72`. Commit `99f94fac` freezes the three dormant command literals;
