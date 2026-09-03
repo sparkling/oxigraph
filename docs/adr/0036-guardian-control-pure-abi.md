@@ -8,11 +8,10 @@
   integrated commit `b037ed0a` with zero evaluator TODOs; independent C18,
   C19, and C20 reviews returned APPROVE with zero blocking findings, and C20's
   separately enumerated mutation campaigns had zero survivors. The C21 local
-  documentation/ledger boundary and ADR-0036 programme umbrella close locally
-  with the commit carrying this synchronization; the corresponding Ruflo
-  completion/read-back is a post-commit ledger operation. External publication
-  remains a separate pending gate. Formal status remains Proposed and readiness
-  remains exactly
+  documentation/ledger boundary and ADR-0036 programme umbrella are complete at
+  commit `c01b3c6a`; the corresponding Ruflo rows and immutable evidence receipt
+  were read back after that commit. External publication remains a separate
+  pending gate. Formal status remains Proposed and readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`. The following
   paragraphs preserve the chronological implementation history, beginning with
   evaluator RED through the B6 static closure checkpoint. Commit `7a539665` adds the
@@ -810,11 +809,14 @@ authority.
 C21 reconciles the current programme documents and ledgers against exact C17
 integrated commit `b037ed0a77575463d9babbe4ab43d8a17f0b4032`, tree
 `64cb90bc403663436f91c268c2a3da04b76bf370`, and the three independently
-approved C18-C20 receipts above. The commit carrying this synchronization is
-the local closure boundary for C21 task `task-1788204883871-l9tsh9` and
-ADR-0036 programme umbrella `task-1788042241332-xafq11`; their exact Ruflo
-completion and read-back follow that commit. This ordering prevents prose from
-claiming a task-ledger transition before the commit it identifies exists.
+approved C18-C20 receipts above. Commit
+`c01b3c6a59ec6c6ae24217e2eead7cff48c07cf7` is the local closure boundary for
+C21 task `task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
+`task-1788042241332-xafq11`; both Ruflo rows are complete and read back. The
+immutable receipt is
+`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03`. This
+ordering prevents prose from claiming a task-ledger transition before the
+commit it identifies exists.
 
 The C17 statement that its package identity was unchanged from C16 remains
 historically exact for commit `b037ed0a`. Later commit `b915c5f6` changed only
@@ -1874,9 +1876,9 @@ aggregate has zero TODOs. C18, C19, and C20 independently returned APPROVE with
 zero blocking findings and their exact receipts were stored and read back.
 Every implementation and independent-review item in this pure-ABI acceptance
 boundary is therefore satisfied for that exact source state. C21 and its
-programme umbrella close locally with the commit carrying this synchronization;
-the exact Ruflo completion/read-back follows that commit without changing
-formal status. ADR-0036 remains Proposed and readiness remains exactly
+programme umbrella are complete for the local documentation/ledger boundary at
+commit `c01b3c6a`, with exact Ruflo completion/read-back, without changing formal
+status. ADR-0036 remains Proposed and readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`. This bounded
 engineering closure makes only pending, unstarted ADR-0037 S0 and ADR-0041 S1
 dependency-eligible; it starts neither and grants no filesystem-backed owner,

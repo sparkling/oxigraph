@@ -200,9 +200,11 @@ set, later commit `b915c5f6` changes only the engineering-harness package
 manifest by adding three dormant exact-create scripts; it changes no dependency,
 engine, or lock entry and does not rebaseline the historical C17 evidence.
 C21 task `task-1788204883871-l9tsh9` and programme umbrella
-`task-1788042241332-xafq11` close locally with the commit carrying the
-seven-document synchronization; exact Ruflo completion/read-back follows that
-commit. ADR-0037 S0 `task-1788205371168-e6caq3` and ADR-0041 S1 become
+`task-1788042241332-xafq11` are complete for the local documentation/ledger
+boundary at commit `c01b3c6a`; both completed Ruflo rows were read back after
+that commit. The immutable pre-transition closure receipt is
+`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03`. ADR-0037 S0
+`task-1788205371168-e6caq3` and ADR-0041 S1 become
 dependency-eligible only, and both remain pending at zero progress and
 unstarted. External Gist/main publication is transferred to pending task
 `task-1788409495130-6ikk41`; `gistUpdated:false` and `pushed:false` remain exact.

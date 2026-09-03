@@ -259,8 +259,8 @@ defense in depth. The qualified protocol would remain cancel-only, so G2.2 also
 requires [ADR-0040's separately ratified commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md).
 
 ADR-0037 now has an evaluator-first delivery DAG in the Ruflo task database and
-remains unstarted. The local ADR-0036 C21 and programme-umbrella closure recorded
-by the commit carrying this synchronization satisfies S0's dependency gate. S0
+remains unstarted. The completed local ADR-0036 C21 and programme-umbrella
+boundary at commit `c01b3c6a` satisfies S0's dependency gate. S0
 `task-1788205371168-e6caq3` is dependency-eligible but remains pending at zero
 progress and unstarted; it freezes only the ADR contract. S1
 `task-1788205386056-qz0anv` and S3
@@ -343,10 +343,11 @@ reconciles local documentation and ledgers. The C17 package identity remains
 historically exact for that commit; within its frozen identity set, later commit
 `b915c5f6` changes only the engineering-harness package manifest by adding three
 dormant exact-create scripts, with no dependency, engine, or lockfile change.
-The commit carrying this synchronization closes C21 task
-`task-1788204883871-l9tsh9` and programme umbrella
-`task-1788042241332-xafq11` locally; exact Ruflo completion/read-back follows the
-commit. External Gist/main publication is transferred to pending task
+Commit `c01b3c6a` closes C21 task `task-1788204883871-l9tsh9` and programme
+umbrella `task-1788042241332-xafq11` for the local documentation/ledger
+boundary; both exact Ruflo rows and
+`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03` were read
+back. External Gist/main publication is transferred to pending task
 `task-1788409495130-6ikk41`, with `gistUpdated:false` and `pushed:false` exact.
 It advances neither G2.2 nor the unresolved dual-host plan. ADR-0036 remains
 Proposed, readiness remains exactly
@@ -1211,9 +1212,10 @@ traceable intersection of recalled local findings and current first-party
 sources.
 
 The dated rows above preserve C16 history and record the current split: C17 and
-all three independent reviews are complete; C21 and its programme umbrella
-close locally with this synchronization, and exact Ruflo completion/read-back
-follows its commit. ADR-0037 S0 and ADR-0041 S1 are dependency-eligible only;
+all three independent reviews are complete; C21 and its programme umbrella are
+complete for the local documentation/ledger boundary at commit `c01b3c6a`, and
+their exact Ruflo rows were read back. ADR-0037 S0 and ADR-0041 S1 are
+dependency-eligible only;
 both remain pending at zero progress and unstarted. The GitHub-linked programme
 Gist and main push are transferred to pending task
 `task-1788409495130-6ikk41` and remain held because selected N3 submodule commit

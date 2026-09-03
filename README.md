@@ -537,9 +537,11 @@ for `b037ed0a`; within that frozen identity set, later commit `b915c5f6` changes
 only `tools/engineering-harness/package.json` by adding three dormant
 exact-create scripts, with no dependency, engine, or lockfile change. C21 task
 `task-1788204883871-l9tsh9` and programme umbrella
-`task-1788042241332-xafq11` close locally with the commit carrying this
-synchronization; exact Ruflo completion/read-back follows that commit. ADR-0037
-S0 `task-1788205371168-e6caq3` and ADR-0041 S1
+`task-1788042241332-xafq11` are complete for the local documentation/ledger
+boundary at commit `c01b3c6a`; both completed Ruflo rows were read back after
+that commit. The immutable pre-transition closure receipt is
+`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03`. ADR-0037 S0
+`task-1788205371168-e6caq3` and ADR-0041 S1
 `task-1788403485637-t9wn40` are thereby dependency-eligible only, pending at
 zero progress, and unstarted. External Gist and main publication are transferred
 to pending task `task-1788409495130-6ikk41` because pinned N3 commit
@@ -736,10 +738,11 @@ The ADRs explain the principal boundaries:
   binds 319 monitored calls, 318 killed receipt mutations, 25 killed behavioral
   classes, and zero survivors. C18 contract, C19 compatibility, and C20
   security/mutation review are complete with APPROVE verdicts and zero blocking
-  findings. C21 and its programme umbrella close locally with the commit carrying
-  this synchronization; ADR-0037 S0 and ADR-0041 S1 become dependency-eligible
-  but remain pending at zero progress and unstarted. Gist update and main push
-  are transferred to pending task `task-1788409495130-6ikk41` and remain
+  findings. C21 and its programme umbrella are complete for the local
+  documentation/ledger boundary at commit `c01b3c6a`; ADR-0037 S0 and ADR-0041
+  S1 are dependency-eligible but remain pending at zero progress and unstarted.
+  Gist update and main push are transferred to pending task
+  `task-1788409495130-6ikk41` and remain
   externally held while selected N3 submodule commit
   `8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
   and a fresh repository cannot fetch it by object ID. At this boundary

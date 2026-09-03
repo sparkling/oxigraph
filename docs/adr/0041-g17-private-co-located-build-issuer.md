@@ -78,8 +78,8 @@ The additive chain consists of:
 3. `oxigraph.g1.7-benchmark-build-owner/v3` and its v3 projection; and
 4. `oxigraph.g1.7-benchmark-product-owner/v4` and its v4 projection.
 
-The ADR-0036 C21 and programme-umbrella local closure recorded by the commit
-carrying the seven-document synchronization makes S1
+The completed ADR-0036 C21 and programme-umbrella local boundary at commit
+`c01b3c6a` makes S1
 `task-1788403485637-t9wn40` dependency-eligible. S1 remains pending at zero
 progress and unstarted; no source slice starts with that closure. After S1
 freezes evaluator RED, the requirements contract may be implemented and replayed
@@ -256,12 +256,12 @@ unchanged and replayable.
 
 ### Authorization and activation sequence
 
-Documentation-only S0 architecture freeze is complete. The local closure of
-C21 task `task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
-`task-1788042241332-xafq11` satisfies S1's dependency gate when the commit
-carrying this synchronization exists and exact Ruflo completion is read back.
-S1 `task-1788403485637-t9wn40` is dependency-eligible but remains pending at
-zero progress and unstarted. Only after its evaluator RED is frozen may the
+Documentation-only S0 architecture freeze is complete. C21 task
+`task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
+`task-1788042241332-xafq11` are complete for the local documentation/ledger
+boundary at commit `c01b3c6a`, satisfying S1's dependency gate. S1
+`task-1788403485637-t9wn40` is dependency-eligible but remains pending at zero
+progress and unstarted. Only after its evaluator RED is frozen may the
 authority-null serializer/verifier source slice proceed without waiting for
 physical ADR-0037 through ADR-0040 effects. Physical evaluator design may
 proceed only against integrated ADR-0037/ADR-0038 interfaces. Positive Cargo

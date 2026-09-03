@@ -891,10 +891,11 @@ Evidence is stored and read back under
 `programme-evidence/adr0036-c18-contract-review-b037ed0a-2026-09-02`,
 `programme-evidence/adr0036-c19-compatibility-review-b037ed0a-2026-09-02`, and
 `programme-evidence/adr0036-c20-security-mutation-review-b037ed0a-2026-09-02`.
-The commit carrying the seven-document current-status synchronization is the
-local closure boundary for C21 task `task-1788204883871-l9tsh9` and ADR-0036
-programme umbrella `task-1788042241332-xafq11`; exact Ruflo completion/read-back
-follows that commit. This makes ADR-0037 S0 `task-1788205371168-e6caq3` and
+Commit `c01b3c6a` is the local documentation/ledger closure boundary for C21
+task `task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
+`task-1788042241332-xafq11`; both Ruflo rows and immutable receipt
+`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03` were read
+back. This makes ADR-0037 S0 `task-1788205371168-e6caq3` and
 ADR-0041 S1 `task-1788403485637-t9wn40` dependency-eligible only. Both remain
 pending at zero progress and unstarted. External Gist/main publication is
 transferred to pending task `task-1788409495130-6ikk41`, with
