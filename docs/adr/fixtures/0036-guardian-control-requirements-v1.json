@@ -25,8 +25,8 @@
       },
       {
         "specifier": "./containment-guardian-recovery-v1.mjs",
-        "sha256": "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
-        "requirementsSha256": "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+        "sha256": "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
+        "requirementsSha256": "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874",
         "imports": [
           "CANDIDATE_CONTAINMENT_RECOVERY_ACTOR_KINDS_V1",
           "CANDIDATE_CONTAINMENT_RECOVERY_DISPOSITIONS_V1",
