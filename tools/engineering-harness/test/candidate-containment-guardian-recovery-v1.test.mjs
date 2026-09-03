@@ -100,6 +100,7 @@ const FUNCTION_EXPORTS = Object.freeze([
   "createCandidateContainmentRecoveryInventoryObservationV1",
   "verifyCandidateContainmentRecoveryInventoryObservationV1",
   "planCandidateContainmentRecoveryV1",
+  "selectCandidateContainmentRecoveryOwnerAssociationV1",
   "createCandidateContainmentRecoveryAttemptV1",
   "verifyCandidateContainmentRecoveryAttemptV1",
   "createCandidateContainmentRecoveryAnchoredEmptyAttemptV1",
@@ -402,6 +403,8 @@ const RULES = Object.freeze({
     "boot-null-or-applicable-current-mismatch>delegated-null-or-applicable-current-mismatch-or-same-boot-target-drift>unsafe-cgroup-inventory>disposition-presence-or-descriptor-mismatch>selected-nonfilesystem-interface-unavailable>prior-effect-uncertain/v1",
   lifecycleInventoryBlockRule:
     "malformed-or-corrupt:reject-before-plan;zero-or-multiple-or-unsafe-entry:unsafe-filesystem-inventory-blocked;one-safe-source-required-before-durable-quarantine/v1",
+  ownerAssociationSelectorRule:
+    "exact-module-local-target-inventory-replay-plan-nullable-attempt-weakmap-association;phase-one-no-current-anchor:null;current-anchor:repeatable-deep-frozen-null-prototype-exact-projection-plus-raw-carrier;clone-cross-module-mixed-byte-equal-alternate-replay-plan-attempt-substitution:reject-before-reservation;consume-mint-rebrand:none/v1",
 });
 
 const EXPECTED_REQUIREMENTS = Object.freeze({
@@ -481,6 +484,7 @@ const EXPECTED_REQUIREMENTS = Object.freeze({
   quarantineReasonPrecedence: QUARANTINE_REASONS,
   quarantinePredicateRule: RULES.quarantinePredicateRule,
   lifecycleInventoryBlockRule: RULES.lifecycleInventoryBlockRule,
+  ownerAssociationSelectorRule: RULES.ownerAssociationSelectorRule,
   actorLineageRule: RULES.actorLineageRule,
   descriptorLineageRule: RULES.descriptorLineageRule,
   bootLifetimeTransitionRule: RULES.bootLifetimeTransitionRule,
@@ -515,7 +519,7 @@ const EXPECTED_REQUIREMENTS = Object.freeze({
 });
 
 const EXPECTED_REQUIREMENTS_SHA256 =
-  "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a";
+  "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874";
 const EXPECTED_REQUIREMENTS_ENCODED_LITERALS = Object.freeze([
   Buffer.from(EXPECTED_REQUIREMENTS_SHA256, "utf8").toString("base64"),
   Buffer.from(EXPECTED_REQUIREMENTS_SHA256, "utf8").toString("base64url"),
@@ -2980,9 +2984,9 @@ const RECOVERY_PREEXECUTION_AUDIT =
   );
 const recovery = await import(RECOVERY_SOURCE_URL.href);
 
-test("exports exactly the 53-name recovery-v1 public contract", () => {
+test("exports exactly the 54-name recovery-v1 public contract", () => {
   assert.equal(VALUE_EXPORTS.length, 40);
-  assert.equal(FUNCTION_EXPORTS.length, 13);
+  assert.equal(FUNCTION_EXPORTS.length, 14);
   assert.deepEqual(
     Object.keys(recovery).sort(),
     [...VALUE_EXPORTS, ...FUNCTION_EXPORTS].sort(),
@@ -3037,8 +3041,8 @@ test("freezes the exact schemas, bounds, and ordered vocabularies", () => {
   }
 });
 
-test("owns the exact 99-field requirements projection and derives its independently golden digest", () => {
-  assert.equal(Object.keys(EXPECTED_REQUIREMENTS).length, 99);
+test("owns the exact 100-field requirements projection and derives its independently golden digest", () => {
+  assert.equal(Object.keys(EXPECTED_REQUIREMENTS).length, 100);
   assert.equal(
     semanticSha256(EXPECTED_AUTHORITY),
     EXPECTED_REQUIREMENTS.authoritySha256,
@@ -3194,7 +3198,7 @@ console.log("lifetime-digest-substitution-rejected");
 test("derives the recovery requirements digest through the imported canonical hash seam", () => {
   assert.equal(
     Buffer.from(
-      "Mjc4MDMxYTQzYjMzMTAzNmU2Yzg0OWY3OTZkNDgwZTdmZTY4MDIxOWQwN2JkYjViMzAxODU2NjhhOTMzN2M1YQ==",
+      "MTgwYWQ2MWViYTZjYmM4MmQ3ODI4Yzg4MTQ5NGRmZjIzYTAzMGJkZGE5NTNkOThiOGVhNDJmYzg4ZTE0NTg3NA==",
       "base64",
     ).toString("utf8"),
     EXPECTED_REQUIREMENTS_SHA256,
@@ -4410,6 +4414,224 @@ test("enforces phase one anchor-required then phase two ready with one retained 
   ]);
   assert.equal(context.plan.recordCount, 5);
   assertBoundarySummary(context.plan);
+});
+
+test("selects only the exact recovery owner association without consuming or minting authority", async () => {
+  const phaseOneContext = buildGenesis("owner-association-phase-one");
+  const phaseOne = recovery.planCandidateContainmentRecoveryV1(
+    planInput(
+      phaseOneContext.fixture,
+      phaseOneContext.target,
+      phaseOneContext.inventory,
+      phaseOneContext.zeroReplay,
+    ),
+  );
+  const phaseOneInput = {
+    target: phaseOneContext.target,
+    lifecycleInventoryObservation: phaseOneContext.inventory,
+    previousRecoveryReplay: phaseOneContext.zeroReplay,
+    plan: phaseOne,
+    attempt: null,
+  };
+  assert.equal(
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1(
+      phaseOneInput,
+    ),
+    null,
+  );
+
+  const ready = addReadyAnchor(buildGenesis("owner-association-ready"));
+  const readyInput = {
+    target: ready.target,
+    lifecycleInventoryObservation: ready.inventory,
+    previousRecoveryReplay: ready.replay,
+    plan: ready.plan,
+    attempt: null,
+  };
+  const selected =
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1(readyInput);
+  assert.deepEqual(Object.keys(selected), [
+    "lifetimeAnchorProjection",
+    "lifetimeAttemptAnchorRawSha256",
+  ]);
+  assert.equal(
+    selected.lifetimeAnchorProjection,
+    ready.anchorSelection.lifetimeAnchorProjection,
+  );
+  assert.equal(
+    selected.lifetimeAttemptAnchorRawSha256,
+    ready.anchorSelection.lifetimeAttemptAnchorRawSha256,
+  );
+  assertNullPrototypeFrozen(selected);
+  assert.equal(
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1(readyInput),
+    selected,
+  );
+
+  const attempted = createAttempt(ready);
+  const attemptedInput = { ...readyInput, attempt: attempted.attempt };
+  assert.equal(
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1(
+      attemptedInput,
+    ),
+    selected,
+  );
+  assert.deepEqual(
+    plain(
+      recovery.verifyCandidateContainmentRecoveryAttemptV1({
+        attempt: attempted.attempt,
+        target: attempted.target,
+        lifecycleInventoryObservation: attempted.inventory,
+        previousRecoveryReplay: attempted.replay,
+        plan: attempted.plan,
+        lifetimeAnchorProjection: selected.lifetimeAnchorProjection,
+        lifetimeAttemptAnchorRawSha256:
+          selected.lifetimeAttemptAnchorRawSha256,
+      }),
+    ),
+    plain(attempted.attempt),
+  );
+
+  const another = createAttempt(
+    addReadyAnchor(buildGenesis("owner-association-another")),
+  );
+  for (const [key, replacement] of [
+    ["target", another.target],
+    ["lifecycleInventoryObservation", another.inventory],
+    ["previousRecoveryReplay", another.replay],
+    ["plan", another.plan],
+    ["attempt", another.attempt],
+  ]) {
+    assertContractReject(() =>
+      recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+        ...attemptedInput,
+        [key]: replacement,
+      }),
+    );
+  }
+
+  for (const key of [
+    "target",
+    "lifecycleInventoryObservation",
+    "previousRecoveryReplay",
+    "plan",
+    "attempt",
+  ]) {
+    assertContractReject(() =>
+      recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+        ...attemptedInput,
+        [key]: structuredClone(plain(attemptedInput[key])),
+      }),
+    );
+  }
+
+  const substitutedPlan = recovery.planCandidateContainmentRecoveryV1(
+    planInput(ready.fixture, ready.target, ready.inventory, ready.replay, {
+      phase: 2,
+      anchorSelection: ready.anchorSelection,
+    }),
+  );
+  assert.notEqual(substitutedPlan, ready.plan);
+  assertContractReject(() =>
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+      ...attemptedInput,
+      plan: substitutedPlan,
+    }),
+  );
+
+  for (const key of Object.keys(attemptedInput)) {
+    const incomplete = { ...attemptedInput };
+    delete incomplete[key];
+    assertContractReject(() =>
+      recovery.selectCandidateContainmentRecoveryOwnerAssociationV1(incomplete),
+    );
+  }
+  assertContractReject(() =>
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+      ...attemptedInput,
+      evaluatorUnexpectedField: true,
+    }),
+  );
+
+  for (const key of Object.keys(attemptedInput)) {
+    if (attemptedInput[key] === null) continue;
+    let trapCount = 0;
+    const trapped = new Proxy(attemptedInput[key], {
+      get() {
+        trapCount += 1;
+        throw new Error("owner association proxy get trap ran");
+      },
+      getOwnPropertyDescriptor() {
+        trapCount += 1;
+        throw new Error("owner association proxy descriptor trap ran");
+      },
+      getPrototypeOf() {
+        trapCount += 1;
+        throw new Error("owner association proxy prototype trap ran");
+      },
+      has() {
+        trapCount += 1;
+        throw new Error("owner association proxy has trap ran");
+      },
+      ownKeys() {
+        trapCount += 1;
+        throw new Error("owner association proxy ownKeys trap ran");
+      },
+    });
+    assertContractReject(() =>
+      recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+        ...attemptedInput,
+        [key]: trapped,
+      }),
+    );
+    assert.equal(trapCount, 0, `${key} proxy trap ran before brand rejection`);
+  }
+
+  const foreignUrl = new URL(RECOVERY_SOURCE_URL);
+  foreignUrl.searchParams.set(
+    "owner-association-module",
+    randomBytes(8).toString("hex"),
+  );
+  const foreignRecovery = await import(foreignUrl.href);
+  assertContractReject(() =>
+    foreignRecovery.selectCandidateContainmentRecoveryOwnerAssociationV1(
+      readyInput,
+    ),
+  );
+  const foreignFixture = new RecoveryLifetimeFixture(
+    "owner-association-foreign-values",
+  );
+  const foreignTarget = foreignFixture.installRecoveryTarget(foreignRecovery);
+  const foreignInventory =
+    foreignRecovery.createCandidateContainmentRecoveryInventoryObservationV1(
+      inventoryInput(
+        foreignFixture.journal.generationIdentity.identitySha256,
+        "staging",
+      ),
+    );
+  const foreignReplay = foreignRecovery.replayCandidateContainmentRecoveryV1(
+    replayInput(foreignFixture, foreignTarget, {
+      entries: [],
+      expectedExternalHead: foreignFixture.headSelection(),
+    }),
+  );
+  const foreignPlan = foreignRecovery.planCandidateContainmentRecoveryV1(
+    planInput(
+      foreignFixture,
+      foreignTarget,
+      foreignInventory,
+      foreignReplay,
+    ),
+  );
+  assertContractReject(() =>
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+      target: foreignTarget,
+      lifecycleInventoryObservation: foreignInventory,
+      previousRecoveryReplay: foreignReplay,
+      plan: foreignPlan,
+      attempt: null,
+    }),
+  );
 });
 
 test("creates and re-verifies the exact canonical first attempt", () => {
@@ -10621,7 +10843,7 @@ test("rejects mutation, aliases, and accessor or proxy inputs while preserving o
   assert.deepEqual(copiedRecord.bytes, secondRead);
 });
 
-test("rejects top-level Proxy and accessor arguments across all thirteen public APIs without invoking hostile code", () => {
+test("rejects top-level Proxy and accessor arguments across all fourteen public APIs without invoking hostile code", () => {
   const base = buildGenesis("all-api-hostile");
   const ready = addReadyAnchor(base);
   const attempted = createAttempt(ready);
@@ -10715,6 +10937,18 @@ test("rejects top-level Proxy and accessor arguments across all thirteen public 
         anchorSelection: ready.anchorSelection,
       }),
       (input) => recovery.planCandidateContainmentRecoveryV1(input),
+    ],
+    [
+      "select-owner-association",
+      {
+        target: ready.target,
+        lifecycleInventoryObservation: ready.inventory,
+        previousRecoveryReplay: ready.replay,
+        plan: ready.plan,
+        attempt: null,
+      },
+      (input) =>
+        recovery.selectCandidateContainmentRecoveryOwnerAssociationV1(input),
     ],
     [
       "create-attempt",
