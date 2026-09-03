@@ -2169,6 +2169,10 @@ test("verifier rejects invalid UTF-8, CR/NUL, partial, duplicate, unknown, reord
   for (const bytes of malformed) {
     assertCode(() => verify(bytes), "CANONICAL_ARTIFACT_INVALID");
   }
+  assertCode(
+    () => verify(Buffer.from("null\n", "utf8")),
+    "CONTENT_HASH_MISMATCH",
+  );
 
   assertCode(
     () =>
