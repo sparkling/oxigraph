@@ -62,24 +62,42 @@ const LIVE_C15_EXACT_V2_SOURCE_BYTE_LENGTH = 12_687;
 const LAUNCH_CAPSULE_V3_SOURCE_BYTE_LENGTH = 17_977;
 const LAUNCH_CAPSULE_V3_SOURCE_SHA256 =
   "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d";
+const CURRENT_RECOVERY_SOURCE_SHA256 =
+  "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0";
+const HISTORICAL_C15_RECOVERY_SOURCE_SHA256 =
+  "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d";
+const CURRENT_RECOVERY_REQUIREMENTS_SHA256 =
+  "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874";
+const HISTORICAL_C15_RECOVERY_REQUIREMENTS_SHA256 =
+  "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a";
 const HISTORICAL_C14_FIXTURE_BYTE_LENGTH = 14_213;
 const HISTORICAL_C14_FIXTURE_SHA256 =
   "968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082";
-const LIVE_C15_FIXTURE_BYTE_LENGTH = 14_230;
-const LIVE_C15_FIXTURE_SHA256 =
+const HISTORICAL_C15_FIXTURE_BYTE_LENGTH = 14_230;
+const HISTORICAL_C15_FIXTURE_SHA256 =
   "4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd";
-const LIVE_C15_REQUIREMENTS_SHA256 =
+const HISTORICAL_C15_REQUIREMENTS_SHA256 =
   "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
-const LIVE_C15_FIXTURE_CONTRACT_PATH =
+const CURRENT_FIXTURE_BYTE_LENGTH = 14_230;
+const CURRENT_FIXTURE_SHA256 =
+  "47c41f6451424e0707a8c5a721e04bd9c8be1fe53811a42413697d48904498c4";
+const CURRENT_REQUIREMENTS_SHA256 =
+  "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131";
+const CURRENT_FIXTURE_CONTRACT_PATH =
   "docs/adr/fixtures/0036-guardian-control-requirements-v1.json";
+const HISTORICAL_C15_FIXTURE_RECONSTRUCTION =
+  "closure-private-exact-recovery-source-and-requirements-inverse";
 const HISTORICAL_C14_FIXTURE_RECONSTRUCTION =
-  "closure-private-exact-one-digest-and-one-import-name-inverse";
+  "closure-private-historical-c15-exact-v2-digest-and-helper-import-inverse";
 const HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH = 81_189;
 const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
   "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
-const LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
-const LIVE_C15_CANDIDATE_SOURCE_SHA256 =
+const HISTORICAL_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const HISTORICAL_C15_CANDIDATE_SOURCE_SHA256 =
   "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718";
+const CURRENT_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const CURRENT_CANDIDATE_SOURCE_SHA256 =
+  "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a";
 const ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1";
 const EXPECTED_REQUIREMENTS_SHA256 =
@@ -87,7 +105,7 @@ const EXPECTED_REQUIREMENTS_SHA256 =
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
 
-const C15_FIXTURE_IDENTITY = (() => {
+const CURRENT_FIXTURE_IDENTITY = (() => {
   if (!DIRECT_ENTRY) return null;
   const inverseReceiptBrands = new WeakSet();
   const inverseReceiptMetadata = new WeakMap();
@@ -117,58 +135,113 @@ const C15_FIXTURE_IDENTITY = (() => {
     return references;
   };
 
-  const liveFixtureBytes = readFileSync(REQUIREMENTS_URL);
-  assert.equal(Buffer.isBuffer(liveFixtureBytes), true);
-  assert.equal(Object.getPrototypeOf(liveFixtureBytes), Buffer.prototype);
-  assert.equal(liveFixtureBytes.length, LIVE_C15_FIXTURE_BYTE_LENGTH);
-  assert.equal(byteDigest(liveFixtureBytes), LIVE_C15_FIXTURE_SHA256);
-  const liveFixtureText = liveFixtureBytes.toString("utf8");
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const currentFixtureBytes = readFileSync(REQUIREMENTS_URL);
+  assert.equal(Buffer.isBuffer(currentFixtureBytes), true);
+  assert.equal(Object.getPrototypeOf(currentFixtureBytes), Buffer.prototype);
+  assert.equal(currentFixtureBytes.length, CURRENT_FIXTURE_BYTE_LENGTH);
+  assert.equal(byteDigest(currentFixtureBytes), CURRENT_FIXTURE_SHA256);
+  const currentFixtureText = currentFixtureBytes.toString("utf8");
   assert.equal(
-    Buffer.from(liveFixtureText, "utf8").equals(liveFixtureBytes),
+    Buffer.from(currentFixtureText, "utf8").equals(currentFixtureBytes),
     true,
   );
-  const liveFixture = JSON.parse(liveFixtureText);
-  assert.equal(digest(liveFixture), LIVE_C15_REQUIREMENTS_SHA256);
+  const currentFixture = JSON.parse(currentFixtureText);
+  assert.equal(digest(currentFixture), CURRENT_REQUIREMENTS_SHA256);
+
+  let historicalC15FixtureText = replaceExactly(
+    currentFixtureText,
+    CURRENT_RECOVERY_SOURCE_SHA256,
+    HISTORICAL_C15_RECOVERY_SOURCE_SHA256,
+    1,
+    "current fixture inverse recovery source digest count",
+  );
+  historicalC15FixtureText = replaceExactly(
+    historicalC15FixtureText,
+    CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+    HISTORICAL_C15_RECOVERY_REQUIREMENTS_SHA256,
+    1,
+    "current fixture inverse recovery requirements digest count",
+  );
+  const historicalC15FixtureBytes = Buffer.from(
+    historicalC15FixtureText,
+    "utf8",
+  );
+  assert.equal(
+    historicalC15FixtureBytes.length,
+    HISTORICAL_C15_FIXTURE_BYTE_LENGTH,
+  );
+  assert.equal(
+    byteDigest(historicalC15FixtureBytes),
+    HISTORICAL_C15_FIXTURE_SHA256,
+  );
+  const historicalC15Fixture = JSON.parse(historicalC15FixtureText);
+  assert.equal(
+    digest(historicalC15Fixture),
+    HISTORICAL_C15_REQUIREMENTS_SHA256,
+  );
 
   assert.equal(
-    countExact(liveFixtureText, EXPECTED_EXACT_V2_SOURCE_SHA256),
+    countExact(historicalC15FixtureText, EXPECTED_EXACT_V2_SOURCE_SHA256),
     1,
-    "C15 fixture inverse exact-v2 digest count",
+    "historical C15 fixture inverse exact-v2 digest count",
   );
-  let historicalFixtureText = liveFixtureText.replace(
+  let historicalC14FixtureText = historicalC15FixtureText.replace(
     EXPECTED_EXACT_V2_SOURCE_SHA256,
     HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
   );
   assert.equal(
     countExact(
-      historicalFixtureText,
+      historicalC14FixtureText,
       "copyBoundedBufferByFailureCategory",
     ),
     1,
-    "C15 fixture inverse helper import count",
+    "historical C15 fixture inverse helper import count",
   );
-  historicalFixtureText = historicalFixtureText.replace(
+  historicalC14FixtureText = historicalC14FixtureText.replace(
     "copyBoundedBufferByFailureCategory",
     "copyBoundedBuffer",
   );
-  const historicalFixtureBytes = Buffer.from(historicalFixtureText, "utf8");
+  const historicalC14FixtureBytes = Buffer.from(
+    historicalC14FixtureText,
+    "utf8",
+  );
   assert.equal(
-    historicalFixtureBytes.length,
+    historicalC14FixtureBytes.length,
     HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
   );
   assert.equal(
-    byteDigest(historicalFixtureBytes),
+    byteDigest(historicalC14FixtureBytes),
     HISTORICAL_C14_FIXTURE_SHA256,
   );
-  const historicalFixture = JSON.parse(historicalFixtureText);
-  assert.equal(digest(historicalFixture), EXPECTED_REQUIREMENTS_SHA256);
+  const historicalC14Fixture = JSON.parse(historicalC14FixtureText);
+  assert.equal(digest(historicalC14Fixture), EXPECTED_REQUIREMENTS_SHA256);
 
-  const liveReferences = nonPrimitiveReferences(liveFixture);
-  const historicalReferences = nonPrimitiveReferences(historicalFixture);
+  const currentReferences = nonPrimitiveReferences(currentFixture);
+  const historicalC15References = nonPrimitiveReferences(
+    historicalC15Fixture,
+  );
+  const historicalC14References = nonPrimitiveReferences(
+    historicalC14Fixture,
+  );
   assert.equal(
-    [...historicalReferences].some((value) => liveReferences.has(value)),
+    [...historicalC15References].some((value) =>
+      currentReferences.has(value),
+    ),
     false,
-    "C15 historical fixture must not share object references with live fixture",
+    "historical C15 fixture must not share object references with current fixture",
+  );
+  assert.equal(
+    [...historicalC14References].some(
+      (value) =>
+        currentReferences.has(value) || historicalC15References.has(value),
+    ),
+    false,
+    "historical C14 fixture must not share object references with later fixtures",
   );
 
   const inverseReceipt = Object.freeze({});
@@ -176,25 +249,34 @@ const C15_FIXTURE_IDENTITY = (() => {
   inverseReceiptMetadata.set(
     inverseReceipt,
     Object.freeze({
-      helperDigestInverseCount: 1,
-      helperImportNameInverseCount: 1,
-      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
-      historicalFixtureReconstruction:
+      currentToHistoricalC15RecoverySourceDigestReversals: 1,
+      currentToHistoricalC15RecoveryRequirementsDigestReversals: 1,
+      historicalC15ToC14ExactV2DigestReversals: 1,
+      historicalC15ToC14HelperImportNameReversals: 1,
+      currentFixtureContractPath: CURRENT_FIXTURE_CONTRACT_PATH,
+      historicalC15FixtureReconstruction:
+        HISTORICAL_C15_FIXTURE_RECONSTRUCTION,
+      historicalC14FixtureReconstruction:
         HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
-      liveFixtureByteLength: liveFixtureBytes.length,
-      liveFixtureSha256: byteDigest(liveFixtureBytes),
-      liveRequirementsSha256: digest(liveFixture),
-      historicalFixtureByteLength: historicalFixtureBytes.length,
-      historicalFixtureSha256: byteDigest(historicalFixtureBytes),
-      historicalRequirementsSha256: digest(historicalFixture),
+      currentFixtureByteLength: currentFixtureBytes.length,
+      currentFixtureSha256: byteDigest(currentFixtureBytes),
+      currentRequirementsSha256: digest(currentFixture),
+      historicalC15FixtureByteLength: historicalC15FixtureBytes.length,
+      historicalC15FixtureSha256: byteDigest(historicalC15FixtureBytes),
+      historicalC15RequirementsSha256: digest(historicalC15Fixture),
+      historicalC14FixtureByteLength: historicalC14FixtureBytes.length,
+      historicalC14FixtureSha256: byteDigest(historicalC14FixtureBytes),
+      historicalC14RequirementsSha256: digest(historicalC14Fixture),
       sharedNonPrimitiveReferenceCount: 0,
     }),
   );
 
   return Object.freeze({
-    liveFixture,
-    historicalFixture,
-    historicalFixtureBytes,
+    currentFixture,
+    historicalC15Fixture,
+    historicalC15FixtureBytes,
+    historicalC14Fixture,
+    historicalC14FixtureBytes,
     inverseReceipt,
     assertInverseReceipt(receipt) {
       assert.equal(inverseReceiptBrands.has(receipt), true);
@@ -203,32 +285,43 @@ const C15_FIXTURE_IDENTITY = (() => {
   });
 })();
 
-const LIVE_C15_REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY?.liveFixture ?? null;
+const CURRENT_REQUIREMENTS_ORACLE =
+  CURRENT_FIXTURE_IDENTITY?.currentFixture ?? null;
+const HISTORICAL_C15_REQUIREMENTS_ORACLE =
+  CURRENT_FIXTURE_IDENTITY?.historicalC15Fixture ?? null;
 const HISTORICAL_C14_REQUIREMENTS_ORACLE =
-  C15_FIXTURE_IDENTITY?.historicalFixture ?? null;
+  CURRENT_FIXTURE_IDENTITY?.historicalC14Fixture ?? null;
 if (DIRECT_ENTRY) {
   assert.deepEqual(
-    C15_FIXTURE_IDENTITY.assertInverseReceipt(
-      C15_FIXTURE_IDENTITY.inverseReceipt,
+    CURRENT_FIXTURE_IDENTITY.assertInverseReceipt(
+      CURRENT_FIXTURE_IDENTITY.inverseReceipt,
     ),
     {
-      helperDigestInverseCount: 1,
-      helperImportNameInverseCount: 1,
-      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
-      historicalFixtureReconstruction:
+      currentToHistoricalC15RecoverySourceDigestReversals: 1,
+      currentToHistoricalC15RecoveryRequirementsDigestReversals: 1,
+      historicalC15ToC14ExactV2DigestReversals: 1,
+      historicalC15ToC14HelperImportNameReversals: 1,
+      currentFixtureContractPath: CURRENT_FIXTURE_CONTRACT_PATH,
+      historicalC15FixtureReconstruction:
+        HISTORICAL_C15_FIXTURE_RECONSTRUCTION,
+      historicalC14FixtureReconstruction:
         HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
-      liveFixtureByteLength: LIVE_C15_FIXTURE_BYTE_LENGTH,
-      liveFixtureSha256: LIVE_C15_FIXTURE_SHA256,
-      liveRequirementsSha256: LIVE_C15_REQUIREMENTS_SHA256,
-      historicalFixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
-      historicalFixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
-      historicalRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      currentFixtureByteLength: CURRENT_FIXTURE_BYTE_LENGTH,
+      currentFixtureSha256: CURRENT_FIXTURE_SHA256,
+      currentRequirementsSha256: CURRENT_REQUIREMENTS_SHA256,
+      historicalC15FixtureByteLength: HISTORICAL_C15_FIXTURE_BYTE_LENGTH,
+      historicalC15FixtureSha256: HISTORICAL_C15_FIXTURE_SHA256,
+      historicalC15RequirementsSha256:
+        HISTORICAL_C15_REQUIREMENTS_SHA256,
+      historicalC14FixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
+      historicalC14FixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
+      historicalC14RequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
       sharedNonPrimitiveReferenceCount: 0,
     },
   );
 }
 
-const C15_SOURCE_IDENTITY = (() => {
+const CURRENT_SOURCE_IDENTITY = (() => {
   const inverseReceiptBrands = new WeakSet();
   const inverseReceiptMetadata = new WeakMap();
 
@@ -312,13 +405,57 @@ const C15_SOURCE_IDENTITY = (() => {
     return `${source.slice(0, normalizationStart)}${brandBlock}${normalizationBlock}${source.slice(brandEnd)}`;
   };
 
-  const reconstruct = (liveSourceBytes) => {
-    assert.equal(Buffer.isBuffer(liveSourceBytes), true);
-    assert.equal(Object.getPrototypeOf(liveSourceBytes), Buffer.prototype);
-    assert.equal(liveSourceBytes.length, LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH);
-    assert.equal(byteDigest(liveSourceBytes), LIVE_C15_CANDIDATE_SOURCE_SHA256);
-    const liveSource = liveSourceBytes.toString("utf8");
-    assert.equal(Buffer.from(liveSource, "utf8").equals(liveSourceBytes), true);
+  const reconstruct = (currentSourceBytes) => {
+    assert.equal(Buffer.isBuffer(currentSourceBytes), true);
+    assert.equal(Object.getPrototypeOf(currentSourceBytes), Buffer.prototype);
+    assert.equal(
+      currentSourceBytes.length,
+      CURRENT_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteDigest(currentSourceBytes),
+      CURRENT_CANDIDATE_SOURCE_SHA256,
+      "prospective guardian-control source identity mismatch",
+    );
+    const currentSource = currentSourceBytes.toString("utf8");
+    assert.equal(
+      Buffer.from(currentSource, "utf8").equals(currentSourceBytes),
+      true,
+    );
+
+    let historicalC15Source = replaceExactly(
+      currentSource,
+      CURRENT_RECOVERY_SOURCE_SHA256,
+      HISTORICAL_C15_RECOVERY_SOURCE_SHA256,
+      1,
+      "current inverse recovery source digest count",
+    );
+    historicalC15Source = replaceExactly(
+      historicalC15Source,
+      CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+      HISTORICAL_C15_RECOVERY_REQUIREMENTS_SHA256,
+      1,
+      "current inverse recovery requirements digest count",
+    );
+    historicalC15Source = replaceExactly(
+      historicalC15Source,
+      CURRENT_REQUIREMENTS_SHA256,
+      HISTORICAL_C15_REQUIREMENTS_SHA256,
+      2,
+      "current inverse guardian requirements digest count",
+    );
+    const historicalC15SourceBytes = Buffer.from(
+      historicalC15Source,
+      "utf8",
+    );
+    assert.equal(
+      historicalC15SourceBytes.length,
+      HISTORICAL_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteDigest(historicalC15SourceBytes),
+      HISTORICAL_C15_CANDIDATE_SOURCE_SHA256,
+    );
 
     const launchWrapperDeclaration = `function verifyAdmissionLaunchCapsuleV3(capsuleBytes) {
   try {
@@ -330,7 +467,7 @@ const C15_SOURCE_IDENTITY = (() => {
 
 `;
     let historicalSource = replaceExactly(
-      liveSource,
+      historicalC15Source,
       launchWrapperDeclaration,
       "",
       1,
@@ -440,7 +577,7 @@ const C15_SOURCE_IDENTITY = (() => {
     );
     historicalSource = replaceExactly(
       historicalSource,
-      LIVE_C15_REQUIREMENTS_SHA256,
+      HISTORICAL_C15_REQUIREMENTS_SHA256,
       EXPECTED_REQUIREMENTS_SHA256,
       2,
       "C15 inverse requirements digest count",
@@ -460,6 +597,9 @@ const C15_SOURCE_IDENTITY = (() => {
     inverseReceiptMetadata.set(
       inverseReceipt,
       Object.freeze({
+        recoverySourceDigestReversals: 1,
+        recoveryRequirementsDigestReversals: 1,
+        guardianRequirementsDigestReversals: 2,
         launchWrapperDeclarationRemovals: 1,
         admissionVerifierCallReversals: 1,
         normalizationDeclarationBlocksMoved: 5,
@@ -469,16 +609,20 @@ const C15_SOURCE_IDENTITY = (() => {
         helperNameReversals: 11,
         exactV2DigestReversals: 1,
         requirementsDigestReversals: 2,
-        liveSourceByteLength: liveSourceBytes.length,
-        liveSourceSha256: byteDigest(liveSourceBytes),
-        historicalSourceByteLength: historicalSourceBytes.length,
-        historicalSourceSha256: byteDigest(historicalSourceBytes),
+        currentSourceByteLength: currentSourceBytes.length,
+        currentSourceSha256: byteDigest(currentSourceBytes),
+        historicalC15SourceByteLength: historicalC15SourceBytes.length,
+        historicalC15SourceSha256: byteDigest(historicalC15SourceBytes),
+        historicalC14SourceByteLength: historicalSourceBytes.length,
+        historicalC14SourceSha256: byteDigest(historicalSourceBytes),
       }),
     );
     return Object.freeze({
-      liveSource,
-      historicalSource,
-      historicalSourceBytes,
+      currentSource,
+      historicalC15Source,
+      historicalC15SourceBytes,
+      historicalC14Source: historicalSource,
+      historicalC14SourceBytes: historicalSourceBytes,
       inverseReceipt,
     });
   };
@@ -494,9 +638,9 @@ const C15_SOURCE_IDENTITY = (() => {
 
 function directHistoricalC14Requirements() {
   assert.equal(DIRECT_ENTRY, true);
-  assert.notEqual(C15_FIXTURE_IDENTITY, null);
+  assert.notEqual(CURRENT_FIXTURE_IDENTITY, null);
   return JSON.parse(
-    C15_FIXTURE_IDENTITY.historicalFixtureBytes.toString("utf8"),
+    CURRENT_FIXTURE_IDENTITY.historicalC14FixtureBytes.toString("utf8"),
   );
 }
 
@@ -2101,7 +2245,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
     oracle.identitySha256 ?? oracle.requirementsSha256 ?? null;
   assert.match(oracleIdentitySha256, /^[0-9a-f]{64}$/u);
   assert.equal(Object.isFrozen(oracle), true);
-  assert.equal(oracle.requirementsSha256, LIVE_C15_REQUIREMENTS_SHA256);
+  assert.equal(oracle.requirementsSha256, CURRENT_REQUIREMENTS_SHA256);
   assert.equal(oracleIdentitySha256, oracle.identitySha256);
   const activity = {
     candidateCallCount: 0,
@@ -14672,17 +14816,45 @@ if (DIRECT_ENTRY) {
   try {
     DIRECT_CANDIDATE_ACTIVITY.sourceReads += 1;
     sourceBytes = readFileSync(SOURCE_PATH);
-    sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(sourceBytes);
+    sourceIdentity = CURRENT_SOURCE_IDENTITY.reconstruct(sourceBytes);
+    assert.deepEqual(
+      CURRENT_SOURCE_IDENTITY.assertInverseReceipt(
+        sourceIdentity.inverseReceipt,
+      ),
+      {
+        recoverySourceDigestReversals: 1,
+        recoveryRequirementsDigestReversals: 1,
+        guardianRequirementsDigestReversals: 2,
+        launchWrapperDeclarationRemovals: 1,
+        admissionVerifierCallReversals: 1,
+        normalizationDeclarationBlocksMoved: 5,
+        normalizationHelperCallsMoved: 7,
+        startupHelperCallsUnmoved: 2,
+        fifthFailShapeArgumentsRemoved: 9,
+        helperNameReversals: 11,
+        exactV2DigestReversals: 1,
+        requirementsDigestReversals: 2,
+        currentSourceByteLength: CURRENT_CANDIDATE_SOURCE_BYTE_LENGTH,
+        currentSourceSha256: CURRENT_CANDIDATE_SOURCE_SHA256,
+        historicalC15SourceByteLength:
+          HISTORICAL_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+        historicalC15SourceSha256:
+          HISTORICAL_C15_CANDIDATE_SOURCE_SHA256,
+        historicalC14SourceByteLength:
+          HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH,
+        historicalC14SourceSha256: C14_AUDITED_CANDIDATE_SOURCE_SHA256,
+      },
+    );
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
   if (sourceBytes !== null) {
     try {
       const historicalC14Audit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(
-        sourceIdentity.historicalSourceBytes,
+        sourceIdentity.historicalC14SourceBytes,
       );
       const liveProgram = directParse(
-        sourceIdentity.liveSource,
+        sourceIdentity.currentSource,
         DIRECT_ACORN_PARSE_OPTIONS,
       );
       const c15Extension = directAssertC15LiveAstExtension(liveProgram);
@@ -14700,7 +14872,7 @@ if (DIRECT_ENTRY) {
 
 test("independently verifies the fixture digest in the adversarial lane", () => {
   const fixtureText =
-    C15_FIXTURE_IDENTITY.historicalFixtureBytes.toString("utf8");
+    CURRENT_FIXTURE_IDENTITY.historicalC14FixtureBytes.toString("utf8");
   const fixture = JSON.parse(fixtureText);
   assert.equal(digest(fixture), EXPECTED_REQUIREMENTS_SHA256);
   assert.equal(
