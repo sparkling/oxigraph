@@ -139,11 +139,11 @@ const PREDECESSORS = pairs(
   ],
   [
     "recoveryV1RequirementsSha256",
-    "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+    "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874",
   ],
   [
     "guardianControlV1RequirementsSha256",
-    "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8",
+    "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131",
   ],
 );
 
@@ -199,6 +199,7 @@ const IMPORT_INVENTORY = array(
       "verifyCandidateContainmentRecoveryTargetV1",
       "verifyCandidateContainmentRecoveryInventoryObservationV1",
       "replayCandidateContainmentRecoveryV1",
+      "selectCandidateContainmentRecoveryOwnerAssociationV1",
       "verifyCandidateContainmentRecoveryAttemptV1",
       "verifyCandidateContainmentRecoveryAnchoredEmptyAttemptV1",
       "verifyCandidateContainmentRecoveryRecordV1",
@@ -651,7 +652,7 @@ const REQUIREMENTS_GOLDEN = record(
 );
 
 const EXPECTED_REQUIREMENTS_SHA256 =
-  "bc1da9d13e0483bb3fb6571cdce7c37af8abf1ebfa21dbe679a34f2b6c8889a0";
+  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";
 
 const EXPECTED_EXPORTS = array(
   "CANDIDATE_CONTAINMENT_GUARDIAN_STATEFS_V1_REQUIREMENTS",
@@ -693,21 +694,21 @@ const PREDECESSOR_SOURCE_PINS = array(
   ),
   record(
     ["name", "containment-guardian-recovery-v1.mjs"],
-    ["bytes", 143_143],
+    ["bytes", 146_571],
     [
       "sha256",
-      "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+      "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
     ],
-    ["gitBlob", "befb7cc0cd1627465d19ada510b9be1466c43b6e"],
+    ["gitBlob", "7cd6960820c4645b51be7156d44ec0a8c99a9a5f"],
   ),
   record(
     ["name", "containment-guardian-control-v1.mjs"],
     ["bytes", 81_670],
     [
       "sha256",
-      "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+      "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
     ],
-    ["gitBlob", "74a9ff5346210dd38027ac6ac89edf02050d081f"],
+    ["gitBlob", "3853ba078030d25b1c599c6b270d88521a65d35f"],
   ),
 );
 
@@ -721,12 +722,12 @@ const CONTRACT_BYTE_PINS = array(
         import.meta.url,
       ),
     ],
-    ["bytes", 202_635],
+    ["bytes", 204_827],
     [
       "sha256",
-      "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",
+      "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
     ],
-    ["gitBlob", "313a4152005534fc5325ef7d0ac16ff249aae492"],
+    ["gitBlob", "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231"],
   ),
   record(
     ["name", "recovery evaluator fixture"],
@@ -765,6 +766,329 @@ const CONTRACT_BYTE_PINS = array(
     ["gitBlob", "e9d18035fca73a79e538f7b64454b89ef486ead7"],
   ),
 );
+
+const STATEFS_REFREEZE_IDENTITY = (() => {
+  const HISTORICAL_S1_REQUIREMENTS_SHA256 =
+    "bc1da9d13e0483bb3fb6571cdce7c37af8abf1ebfa21dbe679a34f2b6c8889a0";
+  const HISTORICAL_RECOVERY_REQUIREMENTS_SHA256 =
+    "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a";
+  const HISTORICAL_GUARDIAN_REQUIREMENTS_SHA256 =
+    "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
+  const CURRENT_RECOVERY_REQUIREMENTS_SHA256 =
+    "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874";
+  const CURRENT_GUARDIAN_REQUIREMENTS_SHA256 =
+    "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131";
+  const HISTORICAL_S1_EVALUATOR_BYTES = 277_516;
+  const HISTORICAL_S1_EVALUATOR_LINES = 8_274;
+  const HISTORICAL_S1_EVALUATOR_SHA256 =
+    "7fb5aacb768078a96fda70d16d71d8846fa1e84a5141b6c5842d9e0a5066c78b";
+  const HISTORICAL_S1_EVALUATOR_GIT_BLOB =
+    "58fcc8de666eb4c1d34878842bf179e2c6aa4dab";
+  const selectorName = "selectCandidateContainmentRecoveryOwnerAssociationV1";
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start`);
+    assert.equal(countExact(source, end), 1, `${label} end`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const freezeJsonTree = (value) => {
+    if (value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) {
+      return array(...value.map((child) => freezeJsonTree(child)));
+    }
+    return record(
+      ...Object.entries(value).map(([key, child]) => [
+        key,
+        freezeJsonTree(child),
+      ]),
+    );
+  };
+
+  const nonPrimitiveReferences = (value, references = new Set()) => {
+    if (value === null || typeof value !== "object" || references.has(value)) {
+      return references;
+    }
+    references.add(value);
+    for (const child of Object.values(value)) {
+      nonPrimitiveReferences(child, references);
+    }
+    return references;
+  };
+
+  const requirementsReceiptBrands = new WeakSet();
+  const requirementsReceiptMetadata = new WeakMap();
+  const currentRequirementsCanonical = canonicalJson(REQUIREMENTS_GOLDEN);
+  assert.equal(
+    countExact(
+      currentRequirementsCanonical,
+      CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+    ),
+    1,
+    "current recovery requirements identity count",
+  );
+  let historicalRequirementsCanonical = replaceExactly(
+    currentRequirementsCanonical,
+    CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+    HISTORICAL_RECOVERY_REQUIREMENTS_SHA256,
+    1,
+    "recovery requirements inverse count",
+  );
+  historicalRequirementsCanonical = replaceExactly(
+    historicalRequirementsCanonical,
+    CURRENT_GUARDIAN_REQUIREMENTS_SHA256,
+    HISTORICAL_GUARDIAN_REQUIREMENTS_SHA256,
+    1,
+    "guardian requirements inverse count",
+  );
+  historicalRequirementsCanonical = replaceExactly(
+    historicalRequirementsCanonical,
+    `,${JSON.stringify(selectorName)}`,
+    "",
+    1,
+    "selector import inventory inverse count",
+  );
+  const historicalRequirementsFixture = freezeJsonTree(
+    JSON.parse(historicalRequirementsCanonical),
+  );
+  assert.equal(
+    canonicalJson(historicalRequirementsFixture),
+    historicalRequirementsCanonical,
+  );
+  assert.equal(
+    semanticSha256(REQUIREMENTS_GOLDEN),
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+  assert.equal(
+    semanticSha256(historicalRequirementsFixture),
+    HISTORICAL_S1_REQUIREMENTS_SHA256,
+  );
+  const currentRequirementReferences =
+    nonPrimitiveReferences(REQUIREMENTS_GOLDEN);
+  const historicalRequirementReferences = nonPrimitiveReferences(
+    historicalRequirementsFixture,
+  );
+  assert.equal(
+    [...historicalRequirementReferences].some((value) =>
+      currentRequirementReferences.has(value),
+    ),
+    false,
+  );
+  const requirementsInverseReceipt = Object.freeze({});
+  requirementsReceiptBrands.add(requirementsInverseReceipt);
+  requirementsReceiptMetadata.set(
+    requirementsInverseReceipt,
+    Object.freeze({
+      schema:
+        "oxigraph.test.candidate-containment-guardian-statefs-v1-requirements-inverse-receipt/v1",
+      recoveryRequirementsDigestReversals: 1,
+      guardianRequirementsDigestReversals: 1,
+      selectorImportNameRemovals: 1,
+      currentRequirementsCanonicalBytes: Buffer.byteLength(
+        currentRequirementsCanonical,
+        "utf8",
+      ),
+      currentRequirementsSha256: semanticSha256(REQUIREMENTS_GOLDEN),
+      historicalRequirementsCanonicalBytes: Buffer.byteLength(
+        historicalRequirementsCanonical,
+        "utf8",
+      ),
+      historicalRequirementsSha256: semanticSha256(
+        historicalRequirementsFixture,
+      ),
+      sharedNonPrimitiveReferenceCount: 0,
+    }),
+  );
+
+  const sourceReceiptBrands = new WeakSet();
+  const sourceReceiptMetadata = new WeakMap();
+  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
+    true,
+  );
+  let historicalEvaluatorSource = removeRangeExactly(
+    currentEvaluatorSource,
+    "\n\nconst STATEFS_REFREEZE_IDENTITY = (() => {\n",
+    "\n\nconst OPERATION_GOLDENS = array(",
+    "refreeze identity block removal",
+  );
+  historicalEvaluatorSource = removeRangeExactly(
+    historicalEvaluatorSource,
+    "\nconst {\n  selectCandidateContainmentRecoveryOwnerAssociationV1:\n    selectRecoveryOwnerAssociation,\n} = recoveryOwner;",
+    "\n\nfunction assertExactOwnFieldOrder(",
+    "recovery selector actual-import binding removal",
+  );
+  historicalEvaluatorSource = removeRangeExactly(
+    historicalEvaluatorSource,
+    '\n\ntest(\n  "recovery owner association preserves exact anchors and rejects before StateFS token reservation",',
+    '\n\ntest("source-absent RED is the exact attributable candidate module failure",',
+    "novel recovery owner-association test removal",
+  );
+  historicalEvaluatorSource = replaceExactly(
+    historicalEvaluatorSource,
+    `      ${JSON.stringify(selectorName)},\n`,
+    "",
+    1,
+    "source selector import inventory reversal",
+  );
+  const literalReversals = [
+    [
+      CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+      HISTORICAL_RECOVERY_REQUIREMENTS_SHA256,
+      1,
+      "source recovery requirements digest reversal",
+    ],
+    [
+      CURRENT_GUARDIAN_REQUIREMENTS_SHA256,
+      HISTORICAL_GUARDIAN_REQUIREMENTS_SHA256,
+      1,
+      "source guardian requirements digest reversal",
+    ],
+    [
+      EXPECTED_REQUIREMENTS_SHA256,
+      HISTORICAL_S1_REQUIREMENTS_SHA256,
+      1,
+      "source StateFS requirements digest reversal",
+    ],
+    [
+      '    ["bytes", 146_571],',
+      '    ["bytes", 143_143],',
+      1,
+      "recovery source byte reversal",
+    ],
+    [
+      "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
+      "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+      1,
+      "recovery source digest reversal",
+    ],
+    [
+      "7cd6960820c4645b51be7156d44ec0a8c99a9a5f",
+      "befb7cc0cd1627465d19ada510b9be1466c43b6e",
+      1,
+      "recovery source blob reversal",
+    ],
+    [
+      "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
+      "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+      1,
+      "guardian source digest reversal",
+    ],
+    [
+      "3853ba078030d25b1c599c6b270d88521a65d35f",
+      "74a9ff5346210dd38027ac6ac89edf02050d081f",
+      1,
+      "guardian source blob reversal",
+    ],
+    [
+      '    ["bytes", 204_827],',
+      '    ["bytes", 202_635],',
+      1,
+      "ADR-0037 byte reversal",
+    ],
+    [
+      "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
+      "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",
+      1,
+      "ADR-0037 digest reversal",
+    ],
+    [
+      "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231",
+      "313a4152005534fc5325ef7d0ac16ff249aae492",
+      1,
+      "ADR-0037 blob reversal",
+    ],
+  ];
+  for (const [before, after, count, label] of literalReversals) {
+    historicalEvaluatorSource = replaceExactly(
+      historicalEvaluatorSource,
+      before,
+      after,
+      count,
+      label,
+    );
+  }
+  const historicalEvaluatorBytes = Buffer.from(
+    historicalEvaluatorSource,
+    "utf8",
+  );
+  assert.equal(historicalEvaluatorBytes.length, HISTORICAL_S1_EVALUATOR_BYTES);
+  assert.equal(
+    countExact(historicalEvaluatorSource, "\n"),
+    HISTORICAL_S1_EVALUATOR_LINES,
+  );
+  assert.equal(
+    byteSha256(historicalEvaluatorBytes),
+    HISTORICAL_S1_EVALUATOR_SHA256,
+  );
+  assert.equal(
+    gitBlobSha1(historicalEvaluatorBytes),
+    HISTORICAL_S1_EVALUATOR_GIT_BLOB,
+  );
+  assert.equal(countExact(historicalEvaluatorSource, "\ntest("), 23);
+  const sourceInverseReceipt = Object.freeze({});
+  sourceReceiptBrands.add(sourceInverseReceipt);
+  sourceReceiptMetadata.set(
+    sourceInverseReceipt,
+    Object.freeze({
+      schema:
+        "oxigraph.test.candidate-containment-guardian-statefs-v1-source-inverse-receipt/v1",
+      identityBlockRemovals: 1,
+      selectorActualImportBindingRemovals: 1,
+      selectorImportInventoryRemovals: 1,
+      novelTestRemovals: 1,
+      literalReversalCount: literalReversals.length,
+      currentEvaluatorBytes: currentEvaluatorBytes.length,
+      currentEvaluatorSha256: byteSha256(currentEvaluatorBytes),
+      currentEvaluatorGitBlob: gitBlobSha1(currentEvaluatorBytes),
+      historicalEvaluatorBytes: historicalEvaluatorBytes.length,
+      historicalEvaluatorLines: countExact(historicalEvaluatorSource, "\n"),
+      historicalEvaluatorSha256: byteSha256(historicalEvaluatorBytes),
+      historicalEvaluatorGitBlob: gitBlobSha1(historicalEvaluatorBytes),
+      historicalEvaluatorTestCount: 23,
+      historicalCandidateSourceAbsent: true,
+    }),
+  );
+
+  return Object.freeze({
+    historicalRequirementsFixture,
+    requirementsInverseReceipt,
+    sourceInverseReceipt,
+    assertRequirementsInverseReceipt(receipt) {
+      assert.equal(requirementsReceiptBrands.has(receipt), true);
+      return requirementsReceiptMetadata.get(receipt);
+    },
+    assertSourceInverseReceipt(receipt) {
+      assert.equal(sourceReceiptBrands.has(receipt), true);
+      return sourceReceiptMetadata.get(receipt);
+    },
+  });
+})();
 
 const OPERATION_GOLDENS = array(
   record(
@@ -2211,6 +2535,10 @@ let ownerFixtures = null;
     import("./candidate-containment-guardian-recovery-v1.fixture.mjs"),
   ],
 );
+const {
+  selectCandidateContainmentRecoveryOwnerAssociationV1:
+    selectRecoveryOwnerAssociation,
+} = recoveryOwner;
 
 function assertExactOwnFieldOrder(
   value,
@@ -8261,6 +8589,303 @@ test(
           request: resultPlan.request,
           executorResult: executorResult(resultPlan.request),
         }),
+      "STATEFS_BINDING",
+    );
+  },
+);
+
+test(
+  "recovery owner association preserves exact anchors and rejects before StateFS token reservation",
+  CANDIDATE_TEST_OPTIONS,
+  async () => {
+    const requirementsReceipt =
+      STATEFS_REFREEZE_IDENTITY.assertRequirementsInverseReceipt(
+        STATEFS_REFREEZE_IDENTITY.requirementsInverseReceipt,
+      );
+    assert.deepEqual(requirementsReceipt, {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-statefs-v1-requirements-inverse-receipt/v1",
+      recoveryRequirementsDigestReversals: 1,
+      guardianRequirementsDigestReversals: 1,
+      selectorImportNameRemovals: 1,
+      currentRequirementsCanonicalBytes: Buffer.byteLength(
+        canonicalJson(REQUIREMENTS_GOLDEN),
+        "utf8",
+      ),
+      currentRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      historicalRequirementsCanonicalBytes: Buffer.byteLength(
+        canonicalJson(STATEFS_REFREEZE_IDENTITY.historicalRequirementsFixture),
+        "utf8",
+      ),
+      historicalRequirementsSha256:
+        "bc1da9d13e0483bb3fb6571cdce7c37af8abf1ebfa21dbe679a34f2b6c8889a0",
+      sharedNonPrimitiveReferenceCount: 0,
+    });
+    const sourceReceipt = STATEFS_REFREEZE_IDENTITY.assertSourceInverseReceipt(
+      STATEFS_REFREEZE_IDENTITY.sourceInverseReceipt,
+    );
+    assert.equal(sourceReceipt.identityBlockRemovals, 1);
+    assert.equal(sourceReceipt.selectorActualImportBindingRemovals, 1);
+    assert.equal(sourceReceipt.selectorImportInventoryRemovals, 1);
+    assert.equal(sourceReceipt.novelTestRemovals, 1);
+    assert.equal(sourceReceipt.literalReversalCount, 11);
+    assert.equal(sourceReceipt.historicalEvaluatorBytes, 277_516);
+    assert.equal(sourceReceipt.historicalEvaluatorLines, 8_274);
+    assert.equal(
+      sourceReceipt.historicalEvaluatorSha256,
+      "7fb5aacb768078a96fda70d16d71d8846fa1e84a5141b6c5842d9e0a5066c78b",
+    );
+    assert.equal(
+      sourceReceipt.historicalEvaluatorGitBlob,
+      "58fcc8de666eb4c1d34878842bf179e2c6aa4dab",
+    );
+    assert.equal(sourceReceipt.historicalEvaluatorTestCount, 23);
+    assert.equal(sourceReceipt.historicalCandidateSourceAbsent, true);
+
+    const replanLabel = "recovery-owner-association-replan";
+    const replanModule = await freshStatefs(replanLabel);
+    const replanRoot = heldDirectoryObservation();
+    const replanManager = digest(`${replanLabel}:manager-actor-epoch`);
+    const replanJournal = ownerFixtures.createJournalStack(replanLabel, 5);
+    const replanOwner = createAdoptedLifetimeOwner({
+      label: replanLabel,
+      root: replanRoot,
+      managerActorEpochSha256: replanManager,
+      journal: replanJournal,
+    });
+    const replanTuple = buildRecoveryReplanTuple(replanOwner, replanJournal);
+    const replanTree = await observedLifetimeOwnerToken(replanModule, {
+      label: replanLabel,
+      owner: replanOwner,
+    });
+    const replanReplayArguments = lifetimeReplayArguments(replanOwner);
+    const unbrandedReplan = record(...Object.entries(replanTuple.recoveryPlan));
+    assert.deepEqual(unbrandedReplan, replanTuple.recoveryPlan);
+    assert.notEqual(unbrandedReplan, replanTuple.recoveryPlan);
+    assert.throws(
+      () =>
+        selectRecoveryOwnerAssociation({
+          target: replanTuple.recoveryTarget,
+          lifecycleInventoryObservation: replanTuple.recoveryInventory,
+          previousRecoveryReplay: replanTuple.recoveryReplay,
+          plan: unbrandedReplan,
+          attempt: null,
+        }),
+      TypeError,
+    );
+    const replanInput = (recoveryPlan) =>
+      autoInput({
+        label: replanLabel,
+        managerActorEpochSha256: replanManager,
+        sequence: replanTree.sequence,
+        token: replanTree.token,
+        lifetimeReplayArguments: replanReplayArguments,
+        generationManifest: artifact(replanJournal.generationManifest),
+        normalJournalBundles: journalArtifactList(replanJournal),
+        recoveryTarget: replanTuple.recoveryTarget,
+        recoveryInventory: replanTuple.recoveryInventory,
+        recoveryReplay: replanTuple.recoveryReplay,
+        recoveryPlan,
+      });
+    expectCode(
+      () =>
+        replanModule.planCandidateContainmentGuardianStatefsOperationV1(
+          replanInput(unbrandedReplan),
+        ),
+      "STATEFS_PREDECESSOR",
+    );
+    assert.equal(
+      selectRecoveryOwnerAssociation({
+        target: replanTuple.recoveryTarget,
+        lifecycleInventoryObservation: replanTuple.recoveryInventory,
+        previousRecoveryReplay: replanTuple.recoveryReplay,
+        plan: replanTuple.recoveryPlan,
+        attempt: null,
+      }),
+      null,
+    );
+    const exactReplan =
+      replanModule.planCandidateContainmentGuardianStatefsOperationV1(
+        replanInput(replanTuple.recoveryPlan),
+      );
+    assert.equal(exactReplan.planKind, "CONTEXT_ONLY");
+    assert.equal(exactReplan.managerDisposition, "RECOVERY_REPLAN");
+    assert.equal(exactReplan.request, null);
+    assert.equal(exactReplan.inventorySet, replanTree.token);
+    assert.equal(exactReplan.ownerContext.lifetimeAnchorProjection, null);
+    assert.equal(exactReplan.ownerContext.lifetimeAttemptAnchorRawSha256, null);
+
+    const requestLabel = "recovery-owner-association-request";
+    const requestModule = await freshStatefs(requestLabel);
+    const requestRoot = heldDirectoryObservation();
+    const requestManager = digest(`${requestLabel}:manager-actor-epoch`);
+    const requestJournal = ownerFixtures.createJournalStack(requestLabel, 5);
+    const requestOwner = createAdoptedLifetimeOwner({
+      label: requestLabel,
+      root: requestRoot,
+      managerActorEpochSha256: requestManager,
+      journal: requestJournal,
+    });
+    const requestTuple = buildRecoveryOnlyAttemptTuple(
+      requestOwner,
+      requestJournal,
+      { launchState: "ADOPTED" },
+    );
+    const rebuiltAttempt =
+      recoveryOwner.verifyCandidateContainmentRecoveryAttemptV1({
+        attempt: requestTuple.recoveryAttempt,
+        target: requestTuple.recoveryTarget,
+        lifecycleInventoryObservation: requestTuple.recoveryInventory,
+        previousRecoveryReplay: requestTuple.recoveryReplay,
+        plan: requestTuple.recoveryPlan,
+        lifetimeAnchorProjection:
+          requestTuple.anchorSelection.lifetimeAnchorProjection,
+        lifetimeAttemptAnchorRawSha256:
+          requestTuple.anchorSelection.lifetimeAttemptAnchorRawSha256,
+      });
+    assert.notEqual(rebuiltAttempt, requestTuple.recoveryAttempt);
+    assert.deepEqual(rebuiltAttempt, requestTuple.recoveryAttempt);
+    const exactAssociation = selectRecoveryOwnerAssociation({
+      target: requestTuple.recoveryTarget,
+      lifecycleInventoryObservation: requestTuple.recoveryInventory,
+      previousRecoveryReplay: requestTuple.recoveryReplay,
+      plan: requestTuple.recoveryPlan,
+      attempt: rebuiltAttempt,
+    });
+    assertExactOwnFieldOrder(
+      exactAssociation,
+      array("lifetimeAnchorProjection", "lifetimeAttemptAnchorRawSha256"),
+      "recovery owner association",
+    );
+    assertNullFrozenTree(exactAssociation, "recovery owner association");
+    assert.equal(
+      exactAssociation.lifetimeAnchorProjection,
+      requestTuple.anchorSelection.lifetimeAnchorProjection,
+    );
+    assert.equal(
+      exactAssociation.lifetimeAttemptAnchorRawSha256,
+      requestTuple.anchorSelection.lifetimeAttemptAnchorRawSha256,
+    );
+    const equalAnchorReconstruction = record(
+      ...Object.entries(exactAssociation.lifetimeAnchorProjection),
+    );
+    assert.deepEqual(
+      equalAnchorReconstruction,
+      exactAssociation.lifetimeAnchorProjection,
+    );
+    assert.notEqual(
+      equalAnchorReconstruction,
+      exactAssociation.lifetimeAnchorProjection,
+    );
+    assert.throws(
+      () =>
+        lifetimeOwner.assertCandidateContainmentGuardianLifetimeRecoveryAttemptAnchorSelectionV1(
+          {
+            lifetimeAnchorProjection: equalAnchorReconstruction,
+            lifetimeAttemptAnchorRawSha256:
+              exactAssociation.lifetimeAttemptAnchorRawSha256,
+            targetSha256: requestTuple.recoveryTarget.targetSha256,
+            recoveryActorEpochSha256: rebuiltAttempt.recoveryActorEpochSha256,
+          },
+        ),
+      TypeError,
+    );
+    const equalReplayReconstruction = record(
+      ...Object.entries(requestTuple.recoveryReplay),
+    );
+    assert.deepEqual(equalReplayReconstruction, requestTuple.recoveryReplay);
+    assert.throws(
+      () =>
+        selectRecoveryOwnerAssociation({
+          target: requestTuple.recoveryTarget,
+          lifecycleInventoryObservation: requestTuple.recoveryInventory,
+          previousRecoveryReplay: equalReplayReconstruction,
+          plan: requestTuple.recoveryPlan,
+          attempt: rebuiltAttempt,
+        }),
+      TypeError,
+    );
+    const rebuiltRecord =
+      recoveryOwner.createCandidateContainmentRecoveryRecordV1({
+        target: requestTuple.recoveryTarget,
+        lifecycleInventoryObservation: requestTuple.recoveryInventory,
+        previousRecoveryReplay: requestTuple.recoveryReplay,
+        plan: requestTuple.recoveryPlan,
+        lifetimeAnchorProjection: exactAssociation.lifetimeAnchorProjection,
+        lifetimeAttemptAnchorRawSha256:
+          exactAssociation.lifetimeAttemptAnchorRawSha256,
+        attempt: rebuiltAttempt,
+        previousRecord: null,
+        operationBytes: ownerFixtures.jsonLine(
+          ownerFixtures.opaque(`${requestLabel}:recovery-record-operation`),
+        ),
+        evidenceBytes: ownerFixtures.jsonLine(requestTuple.recoveryInventory),
+      });
+    const requestTree = await recoveryAttemptRecordToken(requestModule, {
+      label: requestLabel,
+      journal: requestJournal,
+      recoveryAttempt: rebuiltAttempt,
+      recoveryRecord: rebuiltRecord,
+    });
+    const requestReplayArguments = lifetimeReplayArguments(requestOwner);
+    const unbrandedRequestPlan = record(
+      ...Object.entries(requestTuple.recoveryPlan),
+    );
+    assert.throws(
+      () =>
+        selectRecoveryOwnerAssociation({
+          target: requestTuple.recoveryTarget,
+          lifecycleInventoryObservation: requestTuple.recoveryInventory,
+          previousRecoveryReplay: requestTuple.recoveryReplay,
+          plan: unbrandedRequestPlan,
+          attempt: rebuiltAttempt,
+        }),
+      TypeError,
+    );
+    const requestInput = (recoveryPlan) =>
+      autoInput({
+        label: requestLabel,
+        managerActorEpochSha256: requestManager,
+        sequence: requestTree.sequence,
+        token: requestTree.token,
+        lifetimeReplayArguments: requestReplayArguments,
+        generationManifest: artifact(requestJournal.generationManifest),
+        normalJournalBundles: journalArtifactList(requestJournal),
+        recoveryTarget: requestTuple.recoveryTarget,
+        recoveryInventory: requestTuple.recoveryInventory,
+        recoveryReplay: requestTuple.recoveryReplay,
+        recoveryPlan,
+        recoveryAttempt: rebuiltAttempt,
+        recoveryRecord: rebuiltRecord,
+        artifactBytes: rebuiltRecord.bytes,
+      });
+    expectCode(
+      () =>
+        requestModule.planCandidateContainmentGuardianStatefsOperationV1(
+          requestInput(unbrandedRequestPlan),
+        ),
+      "STATEFS_PREDECESSOR",
+    );
+    const requestPlan =
+      requestModule.planCandidateContainmentGuardianStatefsOperationV1(
+        requestInput(requestTuple.recoveryPlan),
+      );
+    assert.equal(requestPlan.planKind, "REQUEST");
+    assert.equal(requestPlan.request.operation, "PERSIST_NOREPLACE");
+    assert.equal(requestPlan.inventorySet, requestTree.token);
+    assert.equal(
+      requestPlan.ownerContext.lifetimeAnchorProjection,
+      exactAssociation.lifetimeAnchorProjection,
+    );
+    assert.equal(
+      requestPlan.ownerContext.lifetimeAttemptAnchorRawSha256,
+      exactAssociation.lifetimeAttemptAnchorRawSha256,
+    );
+    expectCode(
+      () =>
+        requestModule.planCandidateContainmentGuardianStatefsOperationV1(
+          requestInput(requestTuple.recoveryPlan),
+        ),
       "STATEFS_BINDING",
     );
   },
