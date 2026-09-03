@@ -38,8 +38,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    202635,
-    "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",
+    204827,
+    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -2771,6 +2771,108 @@ test("pins the accepted S0 ADR and unchanged harness package bytes", async () =>
     assert.equal(bytes.length, byteLength, fileURLToPath(url));
     assert.equal(sha256(bytes), expectedSha256, fileURLToPath(url));
   }
+});
+
+test("ADR pin correction inversely reconstructs accepted S3 fault evaluator", async () => {
+  const acceptedEvaluatorBytes = 129214;
+  const acceptedEvaluatorLines = 3966;
+  const acceptedEvaluatorSha256 =
+    "c10fa45bd1e48e4814d1e9a61ba9519da4cd9e5f98d0ac77e531dfb4ff79ebfd";
+  const acceptedEvaluatorGitBlob =
+    "fdbd549e22616374b6bcb140594bb1e48eafda70";
+  const acceptedTestInventory = Object.freeze([
+    "independently freezes every numeric operation step and dense sequence",
+    "pins the accepted S0 ADR and unchanged harness package bytes",
+    "freezes all 144 numeric-step before/after selector results",
+    "fault matrices retain final-failure, transferred-FD, close, and cleanup edges",
+    "errno partition, retry limit, and zero-I/O verifier edges are literal",
+    "instruction audit follows reachable stack and syscall-number paths",
+    "fault source keeps active production and fault macro partitions distinct",
+    "FAULT attestation keeps production objects selector-free and isolates fault ELF",
+    "fault build retains exact exports, requirements binding, and no authority",
+    "attestation binds conflicting BOUNDS, SHAPE, and PATH precedence without authority",
+    "fault import attribution rejects wrong code, URL, message, and present source",
+    "reports only the exact source-absent fault-attestation import RED",
+  ]);
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    204827,",
+    '    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+  ].join("\n");
+  const acceptedAdrPin = [
+    "    ADR_URL,",
+    "    202635,",
+    '    "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",',
+  ].join("\n");
+  const correctionStart =
+    '\n\ntest("ADR pin correction inversely reconstructs accepted S3 fault evaluator", async () => {\n';
+  const correctionEnd =
+    '\n\ntest("freezes all 144 numeric-step before/after selector results", () => {\n';
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, label);
+    return source.replace(before, after);
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start`);
+    assert.equal(countExact(source, end), 1, `${label} end`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+  const gitBlobSha1 = (bytes) =>
+    createHash("sha1")
+      .update(Buffer.from(`blob ${bytes.length}\0`, "utf8"))
+      .update(bytes)
+      .digest("hex");
+
+  const currentEvaluatorBytes = await readFile(EVALUATOR_PATH);
+  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
+    true,
+  );
+  let acceptedEvaluatorSource = replaceExactly(
+    currentEvaluatorSource,
+    currentAdrPin,
+    acceptedAdrPin,
+    "current ADR pin replacement count",
+  );
+  acceptedEvaluatorSource = removeRangeExactly(
+    acceptedEvaluatorSource,
+    correctionStart,
+    correctionEnd,
+    "correction proof removal",
+  );
+  const reconstructedBytes = Buffer.from(acceptedEvaluatorSource, "utf8");
+  assert.equal(reconstructedBytes.length, acceptedEvaluatorBytes);
+  assert.equal(countExact(acceptedEvaluatorSource, "\n"), acceptedEvaluatorLines);
+  assert.equal(sha256(reconstructedBytes), acceptedEvaluatorSha256);
+  assert.equal(gitBlobSha1(reconstructedBytes), acceptedEvaluatorGitBlob);
+  assert.equal(countExact(acceptedEvaluatorSource, currentAdrPin), 0);
+  assert.equal(countExact(acceptedEvaluatorSource, acceptedAdrPin), 1);
+  assert.deepEqual(
+    [
+      ...acceptedEvaluatorSource.matchAll(
+        /(?:^|\n)(?:test|candidateTest)\(\s*"([^"\n]+)"/gu,
+      ),
+    ].map((match) => match[1]),
+    acceptedTestInventory,
+  );
 });
 
 test("freezes all 144 numeric-step before/after selector results", () => {
