@@ -35,6 +35,283 @@ function gitBlobSha1(bytes) {
     .digest("hex");
 }
 
+const S1_HISTORY_INVERSE_PROJECTION = (() => {
+  const historicalEvaluator = Object.freeze({
+    bytes: 277_516,
+    lines: 8_274,
+    sha256: "7fb5aacb768078a96fda70d16d71d8846fa1e84a5141b6c5842d9e0a5066c78b",
+    gitBlob: "58fcc8de666eb4c1d34878842bf179e2c6aa4dab",
+    requirementsSha256:
+      "bc1da9d13e0483bb3fb6571cdce7c37af8abf1ebfa21dbe679a34f2b6c8889a0",
+  });
+  const predecessorHistory = Object.freeze({
+    recovery: Object.freeze({
+      historicalRequirementsSha256:
+        "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+      historicalBytes: 143_143,
+      historicalSha256:
+        "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+      historicalGitBlob: "befb7cc0cd1627465d19ada510b9be1466c43b6e",
+      currentRequirementsSha256:
+        "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874",
+      currentBytes: 146_571,
+      currentSha256:
+        "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
+      currentGitBlob: "7cd6960820c4645b51be7156d44ec0a8c99a9a5f",
+    }),
+    guardianControl: Object.freeze({
+      historicalRequirementsSha256:
+        "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8",
+      historicalBytes: 81_670,
+      historicalSha256:
+        "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+      historicalGitBlob: "74a9ff5346210dd38027ac6ac89edf02050d081f",
+      currentRequirementsSha256:
+        "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131",
+      currentBytes: 81_670,
+      currentSha256:
+        "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
+      currentGitBlob: "3853ba078030d25b1c599c6b270d88521a65d35f",
+    }),
+    adr0037: Object.freeze({
+      historicalBytes: 202_635,
+      historicalSha256:
+        "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",
+      historicalGitBlob: "313a4152005534fc5325ef7d0ac16ff249aae492",
+      currentBytes: 204_827,
+      currentSha256:
+        "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
+      currentGitBlob: "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231",
+    }),
+  });
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
+    true,
+    "current StateFS evaluator must be exact UTF-8",
+  );
+  const selfStart = currentEvaluatorSource.indexOf(
+    "const S1_HISTORY_" + "INVERSE_PROJECTION = (() => {",
+  );
+  const selfEnd = currentEvaluatorSource.indexOf(
+    "\nfunction canonical" + "Json(",
+    selfStart,
+  );
+  assert.equal(selfStart > 0 && selfEnd > selfStart, true);
+  let historicalSource =
+    currentEvaluatorSource.slice(0, selfStart) +
+    currentEvaluatorSource.slice(selfEnd + 1);
+
+  const newTestStart = historicalSource.indexOf(
+    'test(\n  "StateFS maps recovery owner-association rejection before request-token reservation and retains the exact carrier anchor",',
+  );
+  const nextHistoricalTest = historicalSource.indexOf(
+    'test(\n  "a same-origin recovery-only attempt selects and persists its first exact recovery record",',
+    newTestStart,
+  );
+  assert.equal(newTestStart > 0 && nextHistoricalTest > newTestStart, true);
+  historicalSource =
+    historicalSource.slice(0, newTestStart) +
+    historicalSource.slice(nextHistoricalTest);
+
+  historicalSource = replaceExactly(
+    historicalSource,
+    `const {
+  selectCandidateContainmentRecoveryOwnerAssociationV1:
+    selectRecoveryOwnerAssociation,
+} = recoveryOwner;
+assert.equal(typeof selectRecoveryOwnerAssociation, "function");
+`,
+    "",
+    1,
+    "selector binding inverse count",
+  );
+  historicalSource = replaceExactly(
+    historicalSource,
+    `  const ownerAssociation = selectRecoveryOwnerAssociation({
+    target: recoveryTarget,
+    lifecycleInventoryObservation: recoveryInventory,
+    previousRecoveryReplay: recoveryReplay,
+    plan: recoveryPlan,
+    attempt: recoveryAttempt,
+  });
+  assert.notEqual(ownerAssociation, null);
+  assert.equal(
+    ownerAssociation.lifetimeAnchorProjection,
+    anchorSelection.lifetimeAnchorProjection,
+  );
+  assert.equal(
+    ownerAssociation.lifetimeAttemptAnchorRawSha256,
+    anchorSelection.lifetimeAttemptAnchorRawSha256,
+  );
+`,
+    "",
+    1,
+    "owner association helper inverse count",
+  );
+  historicalSource = replaceExactly(
+    historicalSource,
+    "    ownerAssociation,\n",
+    "",
+    1,
+    "owner association helper return inverse count",
+  );
+  historicalSource = replaceExactly(
+    historicalSource,
+    `    assert.deepEqual(Object.keys(tuple.ownerAssociation), [
+      "lifetimeAnchorProjection",
+      "lifetimeAttemptAnchorRawSha256",
+    ]);
+    assert.equal(
+      tuple.ownerAssociation.lifetimeAnchorProjection,
+      tuple.anchorSelection.lifetimeAnchorProjection,
+    );
+    assert.equal(
+      tuple.ownerAssociation.lifetimeAttemptAnchorRawSha256,
+      tuple.anchorSelection.lifetimeAttemptAnchorRawSha256,
+    );
+    assert.equal(Object.getPrototypeOf(tuple.ownerAssociation), null);
+    assert.equal(Object.isFrozen(tuple.ownerAssociation), true);
+`,
+    "",
+    1,
+    "owner association fixture inverse count",
+  );
+  historicalSource = replaceExactly(
+    historicalSource,
+    `    assert.notEqual(verifiedAttempt, tuple.recoveryAttempt);
+    assert.equal(
+      selectRecoveryOwnerAssociation({
+        target: tuple.recoveryTarget,
+        lifecycleInventoryObservation: tuple.recoveryInventory,
+        previousRecoveryReplay: tuple.recoveryReplay,
+        plan: tuple.recoveryPlan,
+        attempt: verifiedAttempt,
+      }),
+      tuple.ownerAssociation,
+    );
+`,
+    "",
+    1,
+    "verified-attempt association inverse count",
+  );
+  historicalSource = replaceExactly(
+    historicalSource,
+    "tuple.ownerAssociation.lifetimeAnchorProjection",
+    "tuple.anchorSelection.lifetimeAnchorProjection",
+    1,
+    "historical fixture anchor projection inverse count",
+  );
+  historicalSource = replaceExactly(
+    historicalSource,
+    "tuple.ownerAssociation.lifetimeAttemptAnchorRawSha256",
+    "tuple.anchorSelection.lifetimeAttemptAnchorRawSha256",
+    1,
+    "historical fixture anchor digest inverse count",
+  );
+  for (const [before, after, expectedCount, label] of [
+    [
+      '      "selectCandidateContainmentRecoveryOwnerAssociationV1",\n',
+      "",
+      1,
+      "selector import inventory inverse count",
+    ],
+    [
+      predecessorHistory.recovery.currentRequirementsSha256,
+      predecessorHistory.recovery.historicalRequirementsSha256,
+      1,
+      "recovery requirements inverse count",
+    ],
+    [
+      predecessorHistory.guardianControl.currentRequirementsSha256,
+      predecessorHistory.guardianControl.historicalRequirementsSha256,
+      1,
+      "guardian-control requirements inverse count",
+    ],
+    [
+      "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1",
+      historicalEvaluator.requirementsSha256,
+      1,
+      "StateFS requirements inverse count",
+    ],
+    ["146_571", "143_143", 1, "recovery source bytes inverse count"],
+    [
+      predecessorHistory.recovery.currentSha256,
+      predecessorHistory.recovery.historicalSha256,
+      1,
+      "recovery source SHA-256 inverse count",
+    ],
+    [
+      predecessorHistory.recovery.currentGitBlob,
+      predecessorHistory.recovery.historicalGitBlob,
+      1,
+      "recovery source Git blob inverse count",
+    ],
+    [
+      predecessorHistory.guardianControl.currentSha256,
+      predecessorHistory.guardianControl.historicalSha256,
+      1,
+      "guardian-control source SHA-256 inverse count",
+    ],
+    [
+      predecessorHistory.guardianControl.currentGitBlob,
+      predecessorHistory.guardianControl.historicalGitBlob,
+      1,
+      "guardian-control source Git blob inverse count",
+    ],
+    ["204_827", "202_635", 1, "ADR-0037 bytes inverse count"],
+    [
+      predecessorHistory.adr0037.currentSha256,
+      predecessorHistory.adr0037.historicalSha256,
+      1,
+      "ADR-0037 SHA-256 inverse count",
+    ],
+    [
+      predecessorHistory.adr0037.currentGitBlob,
+      predecessorHistory.adr0037.historicalGitBlob,
+      1,
+      "ADR-0037 Git blob inverse count",
+    ],
+  ]) {
+    historicalSource = replaceExactly(
+      historicalSource,
+      before,
+      after,
+      expectedCount,
+      label,
+    );
+  }
+  const historicalBytes = Buffer.from(historicalSource, "utf8");
+  assert.equal(historicalBytes.length, historicalEvaluator.bytes);
+  assert.equal(
+    historicalSource.split("\n").length - 1,
+    historicalEvaluator.lines,
+  );
+  assert.equal(byteSha256(historicalBytes), historicalEvaluator.sha256);
+  assert.equal(gitBlobSha1(historicalBytes), historicalEvaluator.gitBlob);
+  return Object.freeze({ historicalEvaluator, predecessorHistory });
+})();
+
 function canonicalJson(value, ancestors = new WeakSet()) {
   if (value === null || typeof value === "boolean")
     return JSON.stringify(value);
@@ -139,11 +416,11 @@ const PREDECESSORS = pairs(
   ],
   [
     "recoveryV1RequirementsSha256",
-    "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+    "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874",
   ],
   [
     "guardianControlV1RequirementsSha256",
-    "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8",
+    "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131",
   ],
 );
 
@@ -199,6 +476,7 @@ const IMPORT_INVENTORY = array(
       "verifyCandidateContainmentRecoveryTargetV1",
       "verifyCandidateContainmentRecoveryInventoryObservationV1",
       "replayCandidateContainmentRecoveryV1",
+      "selectCandidateContainmentRecoveryOwnerAssociationV1",
       "verifyCandidateContainmentRecoveryAttemptV1",
       "verifyCandidateContainmentRecoveryAnchoredEmptyAttemptV1",
       "verifyCandidateContainmentRecoveryRecordV1",
@@ -651,7 +929,7 @@ const REQUIREMENTS_GOLDEN = record(
 );
 
 const EXPECTED_REQUIREMENTS_SHA256 =
-  "bc1da9d13e0483bb3fb6571cdce7c37af8abf1ebfa21dbe679a34f2b6c8889a0";
+  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";
 
 const EXPECTED_EXPORTS = array(
   "CANDIDATE_CONTAINMENT_GUARDIAN_STATEFS_V1_REQUIREMENTS",
@@ -693,21 +971,21 @@ const PREDECESSOR_SOURCE_PINS = array(
   ),
   record(
     ["name", "containment-guardian-recovery-v1.mjs"],
-    ["bytes", 143_143],
+    ["bytes", 146_571],
     [
       "sha256",
-      "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+      "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
     ],
-    ["gitBlob", "befb7cc0cd1627465d19ada510b9be1466c43b6e"],
+    ["gitBlob", "7cd6960820c4645b51be7156d44ec0a8c99a9a5f"],
   ),
   record(
     ["name", "containment-guardian-control-v1.mjs"],
     ["bytes", 81_670],
     [
       "sha256",
-      "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+      "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
     ],
-    ["gitBlob", "74a9ff5346210dd38027ac6ac89edf02050d081f"],
+    ["gitBlob", "3853ba078030d25b1c599c6b270d88521a65d35f"],
   ),
 );
 
@@ -721,12 +999,12 @@ const CONTRACT_BYTE_PINS = array(
         import.meta.url,
       ),
     ],
-    ["bytes", 202_635],
+    ["bytes", 204_827],
     [
       "sha256",
-      "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",
+      "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
     ],
-    ["gitBlob", "313a4152005534fc5325ef7d0ac16ff249aae492"],
+    ["gitBlob", "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231"],
   ),
   record(
     ["name", "recovery evaluator fixture"],
@@ -2211,6 +2489,11 @@ let ownerFixtures = null;
     import("./candidate-containment-guardian-recovery-v1.fixture.mjs"),
   ],
 );
+const {
+  selectCandidateContainmentRecoveryOwnerAssociationV1:
+    selectRecoveryOwnerAssociation,
+} = recoveryOwner;
+assert.equal(typeof selectRecoveryOwnerAssociation, "function");
 
 function assertExactOwnFieldOrder(
   value,
@@ -4626,6 +4909,22 @@ function buildRecoveryOnlyAttemptTuple(
       lifetimeAttemptAnchorRawSha256:
         anchorSelection.lifetimeAttemptAnchorRawSha256,
     });
+  const ownerAssociation = selectRecoveryOwnerAssociation({
+    target: recoveryTarget,
+    lifecycleInventoryObservation: recoveryInventory,
+    previousRecoveryReplay: recoveryReplay,
+    plan: recoveryPlan,
+    attempt: recoveryAttempt,
+  });
+  assert.notEqual(ownerAssociation, null);
+  assert.equal(
+    ownerAssociation.lifetimeAnchorProjection,
+    anchorSelection.lifetimeAnchorProjection,
+  );
+  assert.equal(
+    ownerAssociation.lifetimeAttemptAnchorRawSha256,
+    anchorSelection.lifetimeAttemptAnchorRawSha256,
+  );
   return {
     ...installed,
     lifetimeTargetSelection,
@@ -4638,6 +4937,7 @@ function buildRecoveryOnlyAttemptTuple(
     anchorSelection,
     recoveryActorEpochSha256,
     recoveryAttempt,
+    ownerAssociation,
     launchState,
   };
 }
@@ -5398,6 +5698,20 @@ test("recovery-only owner fixture composes the exact same-origin anchor, plan, a
       "RECOVERY_ONLY_GUARDIAN",
     );
     assert.equal(tuple.recoveryAttempt.actorKind, "RECOVERY_ONLY_GUARDIAN");
+    assert.deepEqual(Object.keys(tuple.ownerAssociation), [
+      "lifetimeAnchorProjection",
+      "lifetimeAttemptAnchorRawSha256",
+    ]);
+    assert.equal(
+      tuple.ownerAssociation.lifetimeAnchorProjection,
+      tuple.anchorSelection.lifetimeAnchorProjection,
+    );
+    assert.equal(
+      tuple.ownerAssociation.lifetimeAttemptAnchorRawSha256,
+      tuple.anchorSelection.lifetimeAttemptAnchorRawSha256,
+    );
+    assert.equal(Object.getPrototypeOf(tuple.ownerAssociation), null);
+    assert.equal(Object.isFrozen(tuple.ownerAssociation), true);
     assert.equal(
       lifetimeOwner.assertCandidateContainmentGuardianLifetimeRecoveryAttemptAnchorSelectionV1(
         {
@@ -5419,11 +5733,22 @@ test("recovery-only owner fixture composes the exact same-origin anchor, plan, a
         previousRecoveryReplay: tuple.recoveryReplay,
         plan: tuple.recoveryPlan,
         lifetimeAnchorProjection:
-          tuple.anchorSelection.lifetimeAnchorProjection,
+          tuple.ownerAssociation.lifetimeAnchorProjection,
         lifetimeAttemptAnchorRawSha256:
-          tuple.anchorSelection.lifetimeAttemptAnchorRawSha256,
+          tuple.ownerAssociation.lifetimeAttemptAnchorRawSha256,
       });
     assert.deepEqual(verifiedAttempt, tuple.recoveryAttempt);
+    assert.notEqual(verifiedAttempt, tuple.recoveryAttempt);
+    assert.equal(
+      selectRecoveryOwnerAssociation({
+        target: tuple.recoveryTarget,
+        lifecycleInventoryObservation: tuple.recoveryInventory,
+        previousRecoveryReplay: tuple.recoveryReplay,
+        plan: tuple.recoveryPlan,
+        attempt: verifiedAttempt,
+      }),
+      tuple.ownerAssociation,
+    );
   }
 });
 
@@ -6627,6 +6952,136 @@ test(
       requestSequence: terminalTree.sequence,
       managerDisposition: "TERMINAL",
     });
+  },
+);
+
+test(
+  "StateFS maps recovery owner-association rejection before request-token reservation and retains the exact carrier anchor",
+  CANDIDATE_TEST_OPTIONS,
+  async () => {
+    const label = "recovery-owner-association";
+    const module = await freshStatefs(label);
+    const root = heldDirectoryObservation();
+    const managerActorEpochSha256 = digest(`${label}:manager-actor-epoch`);
+    const journal = ownerFixtures.createJournalStack(label, 5);
+    const owner = createAdoptedLifetimeOwner({
+      label,
+      root,
+      managerActorEpochSha256,
+      journal,
+    });
+    const tuple = buildRecoveryOnlyAttemptTuple(owner, journal, {
+      launchState: "ADOPTED",
+    });
+    const verifiedAttempt =
+      recoveryOwner.verifyCandidateContainmentRecoveryAttemptV1({
+        attempt: tuple.recoveryAttempt,
+        target: tuple.recoveryTarget,
+        lifecycleInventoryObservation: tuple.recoveryInventory,
+        previousRecoveryReplay: tuple.recoveryReplay,
+        plan: tuple.recoveryPlan,
+        lifetimeAnchorProjection:
+          tuple.ownerAssociation.lifetimeAnchorProjection,
+        lifetimeAttemptAnchorRawSha256:
+          tuple.ownerAssociation.lifetimeAttemptAnchorRawSha256,
+      });
+    assert.notEqual(verifiedAttempt, tuple.recoveryAttempt);
+    assert.deepEqual(verifiedAttempt, tuple.recoveryAttempt);
+    assert.equal(
+      selectRecoveryOwnerAssociation({
+        target: tuple.recoveryTarget,
+        lifecycleInventoryObservation: tuple.recoveryInventory,
+        previousRecoveryReplay: tuple.recoveryReplay,
+        plan: tuple.recoveryPlan,
+        attempt: verifiedAttempt,
+      }),
+      tuple.ownerAssociation,
+    );
+
+    const recoveryRecord = createFirstRecoveryRecord(tuple, label);
+    const tree = await recoveryAttemptRecordToken(module, {
+      label,
+      journal,
+      recoveryAttempt: tuple.recoveryAttempt,
+      recoveryRecord,
+    });
+    const replayArguments = lifetimeReplayArguments(owner);
+    const requestInput = autoInput({
+      label,
+      managerActorEpochSha256,
+      sequence: tree.sequence,
+      token: tree.token,
+      lifetimeReplayArguments: replayArguments,
+      generationManifest: artifact(journal.generationManifest),
+      normalJournalBundles: journalArtifactList(journal),
+      recoveryTarget: tuple.recoveryTarget,
+      recoveryInventory: tuple.recoveryInventory,
+      recoveryReplay: tuple.recoveryReplay,
+      recoveryPlan: tuple.recoveryPlan,
+      recoveryAttempt: verifiedAttempt,
+      recoveryRecord,
+      artifactBytes: recoveryRecord.bytes,
+    });
+    const unbrandedRecoveryPlan = record(...Object.entries(tuple.recoveryPlan));
+    const invalidAssociation = {
+      target: tuple.recoveryTarget,
+      lifecycleInventoryObservation: tuple.recoveryInventory,
+      previousRecoveryReplay: tuple.recoveryReplay,
+      plan: unbrandedRecoveryPlan,
+      attempt: verifiedAttempt,
+    };
+    assert.throws(
+      () => selectRecoveryOwnerAssociation(invalidAssociation),
+      TypeError,
+    );
+    expectCode(
+      () =>
+        module.planCandidateContainmentGuardianStatefsOperationV1({
+          ...requestInput,
+          recoveryPlan: unbrandedRecoveryPlan,
+        }),
+      "STATEFS_PREDECESSOR",
+    );
+
+    const requestPlan =
+      module.planCandidateContainmentGuardianStatefsOperationV1(requestInput);
+    assert.notEqual(requestPlan.request, null);
+    assert.equal(requestPlan.operation, "PERSIST_NOREPLACE");
+    expectCode(
+      () =>
+        module.planCandidateContainmentGuardianStatefsOperationV1(requestInput),
+      "STATEFS_BINDING",
+    );
+    assert.equal(requestPlan.ownerContext.recoveryAttempt, verifiedAttempt);
+    assert.equal(
+      requestPlan.ownerContext.lifetimeAnchorProjection,
+      tuple.ownerAssociation.lifetimeAnchorProjection,
+    );
+    assert.equal(
+      requestPlan.ownerContext.lifetimeAttemptAnchorRawSha256,
+      tuple.ownerAssociation.lifetimeAttemptAnchorRawSha256,
+    );
+
+    const independentlyRebuiltAnchor =
+      lifetimeOwner.selectCandidateContainmentGuardianLifetimeRecoveryAttemptAnchorV1(
+        {
+          lifetimeReplay: replayLifetimeIndependently(replayArguments),
+          targetSha256: tuple.recoveryTarget.targetSha256,
+          recoveryActorEpochSha256: tuple.recoveryActorEpochSha256,
+        },
+      );
+    assert.deepEqual(
+      independentlyRebuiltAnchor.lifetimeAnchorProjection,
+      tuple.ownerAssociation.lifetimeAnchorProjection,
+    );
+    assert.notEqual(
+      independentlyRebuiltAnchor.lifetimeAnchorProjection,
+      tuple.ownerAssociation.lifetimeAnchorProjection,
+    );
+    assert.notEqual(
+      requestPlan.ownerContext.lifetimeAnchorProjection,
+      independentlyRebuiltAnchor.lifetimeAnchorProjection,
+    );
   },
 );
 
