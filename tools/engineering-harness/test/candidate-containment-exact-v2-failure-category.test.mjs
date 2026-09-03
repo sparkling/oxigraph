@@ -136,7 +136,7 @@ const DIRECT_IMPORTER_SHA256 = Object.freeze({
   "containment-guardian-lifetime-v1.mjs":
     "f454ee962615e887c294f4aabade6a640ac1881fd3662842b75a3be8afb8f3e5",
   "containment-guardian-recovery-v1.mjs":
-    "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+    "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
   "containment-launch-capsule-v2.mjs":
     "4b6a7ed38f3b91d25488d0f9a3c88d376e1907086be17c62dc949ab80c74dda4",
   "containment-launch-capsule-v3.mjs":
