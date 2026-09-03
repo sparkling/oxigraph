@@ -4468,6 +4468,25 @@ test("selects only the exact recovery owner association without consuming or min
     selected,
   );
 
+  const anchoredBlockedPlan = recovery.planCandidateContainmentRecoveryV1({
+    ...planInput(ready.fixture, ready.target, ready.inventory, ready.replay, {
+      phase: 2,
+      anchorSelection: ready.anchorSelection,
+    }),
+    reportedStateFilesystemInterfaceAvailable: false,
+  });
+  assert.equal(
+    anchoredBlockedPlan.status,
+    "STATE_FILESYSTEM_INTERFACE_REJECTED",
+  );
+  assert.equal(
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+      ...readyInput,
+      plan: anchoredBlockedPlan,
+    }),
+    selected,
+  );
+
   const attempted = createAttempt(ready);
   const attemptedInput = { ...readyInput, attempt: attempted.attempt };
   assert.equal(
@@ -4476,20 +4495,31 @@ test("selects only the exact recovery owner association without consuming or min
     ),
     selected,
   );
-  assert.deepEqual(
-    plain(
-      recovery.verifyCandidateContainmentRecoveryAttemptV1({
-        attempt: attempted.attempt,
-        target: attempted.target,
-        lifecycleInventoryObservation: attempted.inventory,
-        previousRecoveryReplay: attempted.replay,
-        plan: attempted.plan,
-        lifetimeAnchorProjection: selected.lifetimeAnchorProjection,
-        lifetimeAttemptAnchorRawSha256:
-          selected.lifetimeAttemptAnchorRawSha256,
-      }),
-    ),
-    plain(attempted.attempt),
+  const verifiedAttempt =
+    recovery.verifyCandidateContainmentRecoveryAttemptV1({
+      attempt: attempted.attempt,
+      target: attempted.target,
+      lifecycleInventoryObservation: attempted.inventory,
+      previousRecoveryReplay: attempted.replay,
+      plan: attempted.plan,
+      lifetimeAnchorProjection: selected.lifetimeAnchorProjection,
+      lifetimeAttemptAnchorRawSha256:
+        selected.lifetimeAttemptAnchorRawSha256,
+    });
+  assert.deepEqual(plain(verifiedAttempt), plain(attempted.attempt));
+  assert.notEqual(verifiedAttempt, attempted.attempt);
+  assert.equal(
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+      ...readyInput,
+      attempt: verifiedAttempt,
+    }),
+    selected,
+  );
+  assertContractReject(() =>
+    recovery.selectCandidateContainmentRecoveryOwnerAssociationV1({
+      ...attemptedInput,
+      plan: anchoredBlockedPlan,
+    }),
   );
 
   const another = createAttempt(
