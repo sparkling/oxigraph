@@ -39,8 +39,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    202635,
-    "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",
+    204827,
+    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -2991,6 +2991,111 @@ test("pins the accepted S0 ADR and unchanged harness package bytes", async () =>
     assert.equal(bytes.length, byteLength, fileURLToPath(url));
     assert.equal(sha256(bytes), expectedSha256, fileURLToPath(url));
   }
+});
+
+test("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", async () => {
+  const acceptedEvaluatorBytes = 128349;
+  const acceptedEvaluatorLines = 3966;
+  const acceptedEvaluatorSha256 =
+    "75e137eb8c4882479687ec2ce9319b7f074b64f965b14db6d28fd0d136701a34";
+  const acceptedEvaluatorGitBlob =
+    "6dd49c0ae1a9cfeafeb941f2b22b9d5b4ab97a0f";
+  const acceptedTestInventory = Object.freeze([
+    "literal build, ABI, UAPI, syscall, and authority oracle is internally closed",
+    "pins the accepted S0 ADR and unchanged harness package bytes",
+    "exports only the three frozen attestation identities",
+    "freezes the complete build requirements and ABI digest independently",
+    "freezes all eight operations and ten exact request-shape variants",
+    "header fixes all three layouts, enum values, UAPI literals, and entrypoint",
+    "C source is one direct-syscall translation unit with no ambient authority",
+    "production attestation binds deterministic objects, ELF, ABI, and source bytes",
+    "build contract enforces BOUNDS before SHAPE before PATH and rejects caller overrides",
+    "attestation source declares the exact error vocabulary and contains no ambient effects",
+    "literal oracle fixes production nullability and report digest boundaries",
+    "local byte-array audit rejects fixed and variable stack scratch without rejecting ABI members",
+    "instruction audit follows reachable stack paths and rejects unmodelled stack writes",
+    "missing-module attribution rejects wrong code, URL, message, and present source",
+    "reports only the exact source-absent attestation import RED",
+  ]);
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    204827,",
+    '    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+  ].join("\n");
+  const acceptedAdrPin = [
+    "    ADR_URL,",
+    "    202635,",
+    '    "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",',
+  ].join("\n");
+  const correctionStart =
+    '\n\ntest("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", async () => {\n';
+  const correctionEnd =
+    '\n\ncandidateTest("exports only the three frozen attestation identities", () => {\n';
+
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, label);
+    return source.replace(before, after);
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start`);
+    assert.equal(countExact(source, end), 1, `${label} end`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+  const gitBlobSha1 = (bytes) =>
+    createHash("sha1")
+      .update(Buffer.from(`blob ${bytes.length}\0`, "utf8"))
+      .update(bytes)
+      .digest("hex");
+
+  const currentEvaluatorBytes = await readFile(EVALUATOR_PATH);
+  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
+  assert.equal(
+    Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
+    true,
+  );
+  let acceptedEvaluatorSource = replaceExactly(
+    currentEvaluatorSource,
+    currentAdrPin,
+    acceptedAdrPin,
+    "current ADR pin replacement count",
+  );
+  acceptedEvaluatorSource = removeRangeExactly(
+    acceptedEvaluatorSource,
+    correctionStart,
+    correctionEnd,
+    "correction proof removal",
+  );
+  const reconstructedBytes = Buffer.from(acceptedEvaluatorSource, "utf8");
+  assert.equal(reconstructedBytes.length, acceptedEvaluatorBytes);
+  assert.equal(countExact(acceptedEvaluatorSource, "\n"), acceptedEvaluatorLines);
+  assert.equal(sha256(reconstructedBytes), acceptedEvaluatorSha256);
+  assert.equal(gitBlobSha1(reconstructedBytes), acceptedEvaluatorGitBlob);
+  assert.equal(countExact(acceptedEvaluatorSource, currentAdrPin), 0);
+  assert.equal(countExact(acceptedEvaluatorSource, acceptedAdrPin), 1);
+  assert.deepEqual(
+    [
+      ...acceptedEvaluatorSource.matchAll(
+        /(?:^|\n)(?:test|candidateTest)\(\s*"([^"\n]+)"/gu,
+      ),
+    ].map((match) => match[1]),
+    acceptedTestInventory,
+  );
 });
 
 candidateTest("exports only the three frozen attestation identities", () => {
