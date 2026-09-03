@@ -20,26 +20,42 @@ const EXPECTED_REQUIREMENTS_SHA256 =
   "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499";
 const LIVE_C15_REQUIREMENTS_SHA256 =
   "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
+const RECOVERY_REPIN_REQUIREMENTS_SHA256 =
+  "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131";
 const LIVE_C15_FIXTURE_CONTRACT_PATH =
   "docs/adr/fixtures/0036-guardian-control-requirements-v1.json";
 const HISTORICAL_C14_FIXTURE_RECONSTRUCTION =
-  "closure-private-exact-one-digest-and-one-import-name-inverse";
+  "closure-private-recovery-repin-then-exact-v2-and-import-name-inverse";
 const HISTORICAL_C14_FIXTURE_BYTE_LENGTH = 14_213;
 const HISTORICAL_C14_FIXTURE_SHA256 =
   "968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082";
 const LIVE_C15_FIXTURE_BYTE_LENGTH = 14_230;
 const LIVE_C15_FIXTURE_SHA256 =
   "4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd";
+const RECOVERY_REPIN_FIXTURE_BYTE_LENGTH = 14_230;
+const RECOVERY_REPIN_FIXTURE_SHA256 =
+  "47c41f6451424e0707a8c5a721e04bd9c8be1fe53811a42413697d48904498c4";
 const HISTORICAL_C14_EXACT_V2_SOURCE_SHA256 =
   "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3";
 const LIVE_C15_EXACT_V2_SOURCE_SHA256 =
   "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e";
+const HISTORICAL_RECOVERY_SOURCE_SHA256 =
+  "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d";
+const RECOVERY_REPIN_SOURCE_SHA256 =
+  "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0";
+const HISTORICAL_RECOVERY_REQUIREMENTS_SHA256 =
+  "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a";
+const RECOVERY_REPIN_PREDECESSOR_REQUIREMENTS_SHA256 =
+  "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874";
 const HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH = 81_189;
 const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
   "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
 const LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
 const LIVE_C15_CANDIDATE_SOURCE_SHA256 =
   "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718";
+const RECOVERY_REPIN_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const RECOVERY_REPIN_CANDIDATE_SOURCE_SHA256 =
+  "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a";
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
 const EXPECTED_NORMAL_MAP_SHA256 =
@@ -76,7 +92,7 @@ const ACORN_IMPORT_ENTRYPOINT_URL = new URL(
   ACORN_PACKAGE_URL,
 );
 
-const C15_FIXTURE_IDENTITY = (() => {
+const RECOVERY_REPIN_FIXTURE_IDENTITY = (() => {
   const inverseReceiptBrands = new WeakSet();
   const inverseReceiptMetadata = new WeakMap();
 
@@ -105,25 +121,58 @@ const C15_FIXTURE_IDENTITY = (() => {
     return references;
   };
 
-  const liveFixtureBytes = readFileSync(REQUIREMENTS_URL);
-  assert.equal(Buffer.isBuffer(liveFixtureBytes), true);
-  assert.equal(Object.getPrototypeOf(liveFixtureBytes), Buffer.prototype);
-  assert.equal(liveFixtureBytes.length, LIVE_C15_FIXTURE_BYTE_LENGTH);
-  assert.equal(byteSha256(liveFixtureBytes), LIVE_C15_FIXTURE_SHA256);
-  const liveFixtureText = liveFixtureBytes.toString("utf8");
+  const currentFixtureBytes = readFileSync(REQUIREMENTS_URL);
+  assert.equal(Buffer.isBuffer(currentFixtureBytes), true);
+  assert.equal(Object.getPrototypeOf(currentFixtureBytes), Buffer.prototype);
+  assert.equal(currentFixtureBytes.length, RECOVERY_REPIN_FIXTURE_BYTE_LENGTH);
+  assert.equal(byteSha256(currentFixtureBytes), RECOVERY_REPIN_FIXTURE_SHA256);
+  const currentFixtureText = currentFixtureBytes.toString("utf8");
   assert.equal(
-    Buffer.from(liveFixtureText, "utf8").equals(liveFixtureBytes),
+    Buffer.from(currentFixtureText, "utf8").equals(currentFixtureBytes),
     true,
   );
-  const liveFixture = JSON.parse(liveFixtureText);
-  assert.equal(semanticSha256(liveFixture), LIVE_C15_REQUIREMENTS_SHA256);
+  const currentFixture = JSON.parse(currentFixtureText);
+  assert.equal(
+    semanticSha256(currentFixture),
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
+  );
 
   assert.equal(
-    countExact(liveFixtureText, LIVE_C15_EXACT_V2_SOURCE_SHA256),
+    countExact(currentFixtureText, RECOVERY_REPIN_SOURCE_SHA256),
+    1,
+    "recovery re-pin fixture inverse source digest count",
+  );
+  let liveC15FixtureText = currentFixtureText.replace(
+    RECOVERY_REPIN_SOURCE_SHA256,
+    HISTORICAL_RECOVERY_SOURCE_SHA256,
+  );
+  assert.equal(
+    countExact(
+      liveC15FixtureText,
+      RECOVERY_REPIN_PREDECESSOR_REQUIREMENTS_SHA256,
+    ),
+    1,
+    "recovery re-pin fixture inverse requirements digest count",
+  );
+  liveC15FixtureText = liveC15FixtureText.replace(
+    RECOVERY_REPIN_PREDECESSOR_REQUIREMENTS_SHA256,
+    HISTORICAL_RECOVERY_REQUIREMENTS_SHA256,
+  );
+  const liveC15FixtureBytes = Buffer.from(liveC15FixtureText, "utf8");
+  assert.equal(liveC15FixtureBytes.length, LIVE_C15_FIXTURE_BYTE_LENGTH);
+  assert.equal(byteSha256(liveC15FixtureBytes), LIVE_C15_FIXTURE_SHA256);
+  const liveC15Fixture = JSON.parse(liveC15FixtureText);
+  assert.equal(
+    semanticSha256(liveC15Fixture),
+    LIVE_C15_REQUIREMENTS_SHA256,
+  );
+
+  assert.equal(
+    countExact(liveC15FixtureText, LIVE_C15_EXACT_V2_SOURCE_SHA256),
     1,
     "C15 fixture inverse exact-v2 digest count",
   );
-  let historicalFixtureText = liveFixtureText.replace(
+  let historicalFixtureText = liveC15FixtureText.replace(
     LIVE_C15_EXACT_V2_SOURCE_SHA256,
     HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
   );
@@ -154,12 +203,23 @@ const C15_FIXTURE_IDENTITY = (() => {
     EXPECTED_REQUIREMENTS_SHA256,
   );
 
-  const liveReferences = nonPrimitiveReferences(liveFixture);
+  const currentReferences = nonPrimitiveReferences(currentFixture);
+  const liveC15References = nonPrimitiveReferences(liveC15Fixture);
   const historicalReferences = nonPrimitiveReferences(historicalFixture);
   assert.equal(
-    [...historicalReferences].some((value) => liveReferences.has(value)),
+    [...liveC15References].some((value) => currentReferences.has(value)),
     false,
-    "C15 historical fixture must not share object references with live fixture",
+    "C15 fixture must not share object references with current fixture",
+  );
+  assert.equal(
+    [...historicalReferences].some((value) => liveC15References.has(value)),
+    false,
+    "C14 fixture must not share object references with C15 fixture",
+  );
+  assert.equal(
+    [...historicalReferences].some((value) => currentReferences.has(value)),
+    false,
+    "C14 fixture must not share object references with current fixture",
   );
 
   const inverseReceipt = Object.freeze({});
@@ -167,14 +227,19 @@ const C15_FIXTURE_IDENTITY = (() => {
   inverseReceiptMetadata.set(
     inverseReceipt,
     Object.freeze({
+      recoverySourceDigestInverseCount: 1,
+      recoveryRequirementsDigestInverseCount: 1,
       helperDigestInverseCount: 1,
       helperImportNameInverseCount: 1,
       liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
       historicalFixtureReconstruction:
         HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
-      liveFixtureByteLength: liveFixtureBytes.length,
-      liveFixtureSha256: byteSha256(liveFixtureBytes),
-      liveRequirementsSha256: semanticSha256(liveFixture),
+      currentFixtureByteLength: currentFixtureBytes.length,
+      currentFixtureSha256: byteSha256(currentFixtureBytes),
+      currentRequirementsSha256: semanticSha256(currentFixture),
+      liveC15FixtureByteLength: liveC15FixtureBytes.length,
+      liveC15FixtureSha256: byteSha256(liveC15FixtureBytes),
+      liveC15RequirementsSha256: semanticSha256(liveC15Fixture),
       historicalFixtureByteLength: historicalFixtureBytes.length,
       historicalFixtureSha256: byteSha256(historicalFixtureBytes),
       historicalRequirementsSha256: semanticSha256(historicalFixture),
@@ -183,7 +248,9 @@ const C15_FIXTURE_IDENTITY = (() => {
   );
 
   return Object.freeze({
-    liveFixture,
+    currentFixture,
+    liveC15Fixture,
+    liveC15FixtureBytes,
     historicalFixture,
     historicalFixtureBytes,
     inverseReceipt,
@@ -194,21 +261,30 @@ const C15_FIXTURE_IDENTITY = (() => {
   });
 })();
 
-const LIVE_C15_REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY.liveFixture;
-const REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY.historicalFixture;
+const RECOVERY_REPIN_REQUIREMENTS_ORACLE =
+  RECOVERY_REPIN_FIXTURE_IDENTITY.currentFixture;
+const LIVE_C15_REQUIREMENTS_ORACLE =
+  RECOVERY_REPIN_FIXTURE_IDENTITY.liveC15Fixture;
+const REQUIREMENTS_ORACLE =
+  RECOVERY_REPIN_FIXTURE_IDENTITY.historicalFixture;
 assert.deepEqual(
-  C15_FIXTURE_IDENTITY.assertInverseReceipt(
-    C15_FIXTURE_IDENTITY.inverseReceipt,
+  RECOVERY_REPIN_FIXTURE_IDENTITY.assertInverseReceipt(
+    RECOVERY_REPIN_FIXTURE_IDENTITY.inverseReceipt,
   ),
   {
+    recoverySourceDigestInverseCount: 1,
+    recoveryRequirementsDigestInverseCount: 1,
     helperDigestInverseCount: 1,
     helperImportNameInverseCount: 1,
     liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
     historicalFixtureReconstruction:
       HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
-    liveFixtureByteLength: LIVE_C15_FIXTURE_BYTE_LENGTH,
-    liveFixtureSha256: LIVE_C15_FIXTURE_SHA256,
-    liveRequirementsSha256: LIVE_C15_REQUIREMENTS_SHA256,
+    currentFixtureByteLength: RECOVERY_REPIN_FIXTURE_BYTE_LENGTH,
+    currentFixtureSha256: RECOVERY_REPIN_FIXTURE_SHA256,
+    currentRequirementsSha256: RECOVERY_REPIN_REQUIREMENTS_SHA256,
+    liveC15FixtureByteLength: LIVE_C15_FIXTURE_BYTE_LENGTH,
+    liveC15FixtureSha256: LIVE_C15_FIXTURE_SHA256,
+    liveC15RequirementsSha256: LIVE_C15_REQUIREMENTS_SHA256,
     historicalFixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
     historicalFixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
     historicalRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
@@ -216,7 +292,7 @@ assert.deepEqual(
   },
 );
 
-const C15_SOURCE_IDENTITY = (() => {
+const RECOVERY_REPIN_SOURCE_IDENTITY = (() => {
   const inverseReceiptBrands = new WeakSet();
   const inverseReceiptMetadata = new WeakMap();
 
@@ -305,13 +381,54 @@ const C15_SOURCE_IDENTITY = (() => {
     return `${source.slice(0, normalizationStart)}${brandBlock}${normalizationBlock}${source.slice(brandEnd)}`;
   };
 
-  const reconstruct = (liveSourceBytes) => {
-    assert.equal(Buffer.isBuffer(liveSourceBytes), true);
-    assert.equal(Object.getPrototypeOf(liveSourceBytes), Buffer.prototype);
-    assert.equal(liveSourceBytes.length, LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH);
-    assert.equal(byteSha256(liveSourceBytes), LIVE_C15_CANDIDATE_SOURCE_SHA256);
-    const liveSource = liveSourceBytes.toString("utf8");
-    assert.equal(Buffer.from(liveSource, "utf8").equals(liveSourceBytes), true);
+  const reconstruct = (currentSourceBytes) => {
+    assert.equal(Buffer.isBuffer(currentSourceBytes), true);
+    assert.equal(Object.getPrototypeOf(currentSourceBytes), Buffer.prototype);
+    assert.equal(
+      currentSourceBytes.length,
+      RECOVERY_REPIN_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteSha256(currentSourceBytes),
+      RECOVERY_REPIN_CANDIDATE_SOURCE_SHA256,
+      "recovery re-pin candidate source SHA-256",
+    );
+    const currentSource = currentSourceBytes.toString("utf8");
+    assert.equal(
+      Buffer.from(currentSource, "utf8").equals(currentSourceBytes),
+      true,
+    );
+
+    let liveC15Source = replaceExactly(
+      currentSource,
+      RECOVERY_REPIN_SOURCE_SHA256,
+      HISTORICAL_RECOVERY_SOURCE_SHA256,
+      1,
+      "recovery re-pin inverse source digest count",
+    );
+    liveC15Source = replaceExactly(
+      liveC15Source,
+      RECOVERY_REPIN_PREDECESSOR_REQUIREMENTS_SHA256,
+      HISTORICAL_RECOVERY_REQUIREMENTS_SHA256,
+      1,
+      "recovery re-pin inverse predecessor requirements digest count",
+    );
+    liveC15Source = replaceExactly(
+      liveC15Source,
+      RECOVERY_REPIN_REQUIREMENTS_SHA256,
+      LIVE_C15_REQUIREMENTS_SHA256,
+      2,
+      "recovery re-pin inverse guardian requirements digest count",
+    );
+    const liveC15SourceBytes = Buffer.from(liveC15Source, "utf8");
+    assert.equal(
+      liveC15SourceBytes.length,
+      LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteSha256(liveC15SourceBytes),
+      LIVE_C15_CANDIDATE_SOURCE_SHA256,
+    );
 
     const launchWrapperDeclaration = `function verifyAdmissionLaunchCapsuleV3(capsuleBytes) {
   try {
@@ -323,7 +440,7 @@ const C15_SOURCE_IDENTITY = (() => {
 
 `;
     let historicalSource = replaceExactly(
-      liveSource,
+      liveC15Source,
       launchWrapperDeclaration,
       "",
       1,
@@ -463,15 +580,22 @@ const C15_SOURCE_IDENTITY = (() => {
         helperNameReversals: 11,
         exactV2DigestReversals: 1,
         requirementsDigestReversals: 2,
-        liveSourceByteLength: liveSourceBytes.length,
-        liveSourceSha256: byteSha256(liveSourceBytes),
+        recoverySourceDigestReversals: 1,
+        recoveryPredecessorRequirementsDigestReversals: 1,
+        guardianRequirementsDigestReversals: 2,
+        currentSourceByteLength: currentSourceBytes.length,
+        currentSourceSha256: byteSha256(currentSourceBytes),
+        liveC15SourceByteLength: liveC15SourceBytes.length,
+        liveC15SourceSha256: byteSha256(liveC15SourceBytes),
         historicalSourceByteLength: historicalSourceBytes.length,
         historicalSourceSha256: byteSha256(historicalSourceBytes),
       }),
     );
     return Object.freeze({
-      liveSource,
-      liveSourceBytes: Buffer.from(liveSourceBytes),
+      currentSource,
+      currentSourceBytes: Buffer.from(currentSourceBytes),
+      liveC15Source,
+      liveC15SourceBytes,
       historicalSource,
       historicalSourceBytes,
       inverseReceipt,
@@ -1512,6 +1636,19 @@ const LIVE_C15_PREDECESSOR_SOURCE_GOLDENS = Object.freeze(
     ),
   ),
 );
+const RECOVERY_REPIN_PREDECESSOR_SOURCE_GOLDENS = Object.freeze(
+  LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.map((golden) =>
+    Object.freeze(
+      golden.specifier === "./containment-guardian-recovery-v1.mjs"
+        ? {
+            ...golden,
+            byteLength: 146_571,
+            sha256: RECOVERY_REPIN_SOURCE_SHA256,
+          }
+        : { ...golden },
+    ),
+  ),
+);
 
 function canonicalJson(value) {
   if (
@@ -1706,12 +1843,15 @@ function assertCandidateModuleContract(moduleNamespace) {
   }
   assert.equal(
     moduleNamespace.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256,
-    LIVE_C15_REQUIREMENTS_SHA256,
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
   );
   const requirements =
     moduleNamespace.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS;
-  assertRequirementsValue(requirements, LIVE_C15_REQUIREMENTS_ORACLE);
-  assert.equal(semanticSha256(requirements), LIVE_C15_REQUIREMENTS_SHA256);
+  assertRequirementsValue(requirements, RECOVERY_REPIN_REQUIREMENTS_ORACLE);
+  assert.equal(
+    semanticSha256(requirements),
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
+  );
 }
 
 function startupDescriptor(
@@ -1956,6 +2096,24 @@ const EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256 = Object.freeze({
   atomicPrefixes:
     "a35911ae08605cd1ce18b456365d373c88135fb5d9963d50526f4012794c53d5",
 });
+const RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_ORACLE_SHA256 =
+  "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a";
+const RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256 = Object.freeze({
+  startupWitnesses:
+    "32d4efefbb0b81a72dc2c20580870db9d6ad425b785e9fe95f8aced66a8c679a",
+  inputKindWitnesses:
+    "e2a7dfc2bec0c5d58935a22aa37aaefb7cd5d0187723fab54d3063c96acfa322",
+  legalSequences:
+    "0ab8250bce3d296dbf0db221b99a93ef579bc9ff165d2d9e1fd4efddba68d758",
+  wholeTransitions:
+    "a0491389490e62219e381fb255638ee95b568ad5b7e1f75739d0767180b4b8cb",
+  acceptedPrefixes:
+    "ecb5c734c3ff9a01cee9193927fcb76d54d25fca899200ba7ca53c1ab21d6e77",
+  emittedStatuses:
+    "825d0efaf3179ff7286e6352a739185811dcc425219c6551f00d62a1f5af142a",
+  atomicPrefixes:
+    "7d63c770f5033a48aca5636e0df46aa81c567ea1c7febd64328223b839d99e32",
+});
 const C12_SCHEMAS = Object.freeze({
   startupReport: "oxigraph.candidate-containment-guardian-startup-report/v1",
   openFileDescriptionScope:
@@ -2047,6 +2205,29 @@ const EXPECTED_C12_RECOVERY_REQUEST_RAW_SHA256 =
   "606c0cf6bd2c14bac7463c42d56e1b0a49472269c199e3a7ecbe72c7ba99a17a";
 const EXPECTED_C12_RECOVERY_REQUEST_SEMANTIC_SHA256 =
   "d687f81b6ba650c361f49fc53167ba89c85ecf5558cc9986bdefa2cc2e819ec6";
+const RECOVERY_REPIN_C12_RECOVERY_PREDECESSOR_PROJECTION = Object.freeze({
+  ...C12_RECOVERY_PREDECESSOR_PROJECTION,
+  recoveryPlanSha256:
+    "89c26257a2ef945af9a696c4f72fc844ad0e85afb5c66d3bbf0b442c64d07baf",
+  recoveryReplaySha256:
+    "17d747d2f19dfb3a531573d143074dd748736dad72cd9709faca03928ed2b1a0",
+});
+const C12_HISTORICAL_RECOVERY_CONTRACT = Object.freeze({
+  requirementsSha256: C12_RECOVERY_REQUIREMENTS_SHA256,
+  predecessorProjection: C12_RECOVERY_PREDECESSOR_PROJECTION,
+  selectionSemanticSha256:
+    EXPECTED_C12_RECOVERY_SELECTION_SEMANTIC_SHA256,
+});
+const C12_RECOVERY_REPIN_CONTRACT = Object.freeze({
+  requirementsSha256: RECOVERY_REPIN_PREDECESSOR_REQUIREMENTS_SHA256,
+  predecessorProjection: RECOVERY_REPIN_C12_RECOVERY_PREDECESSOR_PROJECTION,
+  selectionSemanticSha256:
+    "8d29606a1a95493dbd280e77232e5a90d3400bbf7ccbe0e3c8565faea81549b5",
+});
+const RECOVERY_REPIN_C12_RECOVERY_REQUEST_RAW_SHA256 =
+  "c0ed72461074b03dc79b82d776f4587d6f3cd0421dccc4a23d6bdb1c54c1dac9";
+const RECOVERY_REPIN_C12_RECOVERY_REQUEST_SEMANTIC_SHA256 =
+  "b746d14a13edfeea0205b6c28e56041503d8f1f65cfd8773bc2e98d2c19c56fa";
 const C12_STATUS_ARTIFACT_OWN_KEYS = Object.freeze([
   "bytes",
   "schema",
@@ -2650,15 +2831,18 @@ function c12CreateAdmissionRecvmsgWitness(
   return binding;
 }
 
-function c12CreateRecoveryAttemptPreimage(recoveryStartup) {
+function c12CreateRecoveryAttemptPreimage(
+  recoveryStartup,
+  predecessorProjection = C12_RECOVERY_PREDECESSOR_PROJECTION,
+) {
   const prefix = {
     schema: C12_SCHEMAS.recoveryAttempt,
-    targetSha256: C12_RECOVERY_PREDECESSOR_PROJECTION.targetSha256,
+    targetSha256: predecessorProjection.targetSha256,
     actorKind: "RECOVERY_ONLY_GUARDIAN",
     recoveryActorEpochSha256: recoveryStartup.epoch.rawSha256,
     attemptDirectoryName: recoveryStartup.epoch.rawSha256,
     lifetimeAttemptAnchorRawSha256:
-      C12_RECOVERY_PREDECESSOR_PROJECTION.lifetimeAttemptAnchorRawSha256,
+      predecessorProjection.lifetimeAttemptAnchorRawSha256,
     previousRecoveryActorEpochSha256: null,
     previousAttemptDirectoryName: null,
     previousRecoveryRecordSequence: null,
@@ -2675,7 +2859,7 @@ function c12CreateRecoveryAttemptPreimage(recoveryStartup) {
     reportedSourceLocation: "active",
     decisionSourceLocation: "active",
     reportedLifecycleInventorySha256:
-      C12_RECOVERY_PREDECESSOR_PROJECTION.lifecycleInventorySha256,
+      predecessorProjection.lifecycleInventorySha256,
     reportedCommandDescriptorHeld: false,
     reportedStatusDescriptorHeld: false,
     reportedSupervisorPidfdHeld: false,
@@ -2695,13 +2879,20 @@ function c12CreateRecoveryAttemptPreimage(recoveryStartup) {
   assert.deepEqual(Object.keys(attempt), C12_RECOVERY_ATTEMPT_FIELDS);
   assert.equal(
     attempt.attemptSha256,
-    C12_RECOVERY_PREDECESSOR_PROJECTION.attemptSha256,
+    predecessorProjection.attemptSha256,
   );
   return attempt;
 }
 
-function c12CreateRecoveryAttemptForSelection(recoveryStartup, selection) {
-  const attempt = c12CreateRecoveryAttemptPreimage(recoveryStartup);
+function c12CreateRecoveryAttemptForSelection(
+  recoveryStartup,
+  selection,
+  predecessorProjection = C12_RECOVERY_PREDECESSOR_PROJECTION,
+) {
+  const attempt = c12CreateRecoveryAttemptPreimage(
+    recoveryStartup,
+    predecessorProjection,
+  );
   Object.assign(attempt, {
     targetSha256: selection.targetSha256,
     actorKind: selection.actorKind,
@@ -2723,17 +2914,24 @@ function c12CreateRecoveryAttemptForSelection(recoveryStartup, selection) {
   return attempt;
 }
 
-function c12CreateRecoverySelection(recoveryStartup) {
-  const attempt = c12CreateRecoveryAttemptPreimage(recoveryStartup);
+function c12CreateRecoverySelection(
+  recoveryStartup,
+  recoveryContract = C12_HISTORICAL_RECOVERY_CONTRACT,
+) {
+  const { predecessorProjection } = recoveryContract;
+  const attempt = c12CreateRecoveryAttemptPreimage(
+    recoveryStartup,
+    predecessorProjection,
+  );
   const selection = {
     schema: C12_SCHEMAS.recoverySelection,
     targetSha256: attempt.targetSha256,
-    recoveryRequirementsSha256: C12_RECOVERY_REQUIREMENTS_SHA256,
-    recoveryPlanSha256: C12_RECOVERY_PREDECESSOR_PROJECTION.recoveryPlanSha256,
+    recoveryRequirementsSha256: recoveryContract.requirementsSha256,
+    recoveryPlanSha256: predecessorProjection.recoveryPlanSha256,
     recoveryReplaySha256:
-      C12_RECOVERY_PREDECESSOR_PROJECTION.recoveryReplaySha256,
+      predecessorProjection.recoveryReplaySha256,
     lifecycleInventorySha256:
-      C12_RECOVERY_PREDECESSOR_PROJECTION.lifecycleInventorySha256,
+      predecessorProjection.lifecycleInventorySha256,
     attemptSha256: attempt.attemptSha256,
     planStatus: "RECOVERY_PLAN_READY",
     requiredActorKind: "RECOVERY_ONLY_GUARDIAN",
@@ -2741,7 +2939,7 @@ function c12CreateRecoverySelection(recoveryStartup) {
     recoveryActorEpochSha256: attempt.recoveryActorEpochSha256,
     attemptDirectoryName: attempt.attemptDirectoryName,
     lifetimeAnchorProjectionSha256:
-      C12_RECOVERY_PREDECESSOR_PROJECTION.lifetimeAnchorProjectionSha256,
+      predecessorProjection.lifetimeAnchorProjectionSha256,
     lifetimeAttemptAnchorRawSha256: attempt.lifetimeAttemptAnchorRawSha256,
     disposition: attempt.disposition,
     quarantineReason: attempt.quarantineReason,
@@ -2897,12 +3095,14 @@ function c12CreateInputWitness(kind, currentState, context) {
   } else if (kind === "RECOVERY_REQUEST") {
     const selection = c12CreateRecoverySelection(
       context.startups.RECOVERY_ONLY,
+      context.recoveryContract,
     );
     if (context.mutateRecoverySelection !== null) {
       context.mutateRecoverySelection(selection);
       selection.attemptSha256 = c12CreateRecoveryAttemptForSelection(
         context.startups.RECOVERY_ONLY,
         selection,
+        context.recoveryContract.predecessorProjection,
       ).attemptSha256;
     }
     const frame = {
@@ -3142,7 +3342,24 @@ function c12BuildContractValidRuntimeOracle(
       requirementsSha256,
     ),
   };
-  const context = { launchCapsule, startups, mutateRecoverySelection };
+  const recoveryContract =
+    requirementsSha256 === RECOVERY_REPIN_REQUIREMENTS_SHA256
+      ? C12_RECOVERY_REPIN_CONTRACT
+      : C12_HISTORICAL_RECOVERY_CONTRACT;
+  assert.equal(
+    [
+      EXPECTED_REQUIREMENTS_SHA256,
+      LIVE_C15_REQUIREMENTS_SHA256,
+      RECOVERY_REPIN_REQUIREMENTS_SHA256,
+    ].includes(requirementsSha256),
+    true,
+  );
+  const context = {
+    launchCapsule,
+    startups,
+    mutateRecoverySelection,
+    recoveryContract,
+  };
   const transitionRows = [];
   const transitionByPrefix = new Map();
   const statusRows = [];
@@ -3479,7 +3696,10 @@ function c12BuildContractValidRuntimeOracle(
   return oracle;
 }
 
-function c12AssertRecoverySelectionShape(selection) {
+function c12AssertRecoverySelectionShape(
+  selection,
+  recoveryRequirementsSha256 = C12_RECOVERY_REQUIREMENTS_SHA256,
+) {
   assert.deepEqual(Object.keys(selection), C12_RECOVERY_SELECTION_FIELDS);
   assert.equal(selection.schema, C12_SCHEMAS.recoverySelection);
   for (const field of [
@@ -3497,7 +3717,7 @@ function c12AssertRecoverySelectionShape(selection) {
   }
   assert.equal(
     selection.recoveryRequirementsSha256,
-    C12_RECOVERY_REQUIREMENTS_SHA256,
+    recoveryRequirementsSha256,
   );
   assert.equal(selection.planStatus, "RECOVERY_PLAN_READY");
   assert.equal(
@@ -3577,11 +3797,21 @@ function c12AssertRecoverySelectionShape(selection) {
   }
 }
 
-function c12AssertRecoverySelection(selection, expectedEpochSha256) {
-  c12AssertRecoverySelectionShape(selection);
-  const attempt = c12CreateRecoveryAttemptPreimage({
-    epoch: { rawSha256: expectedEpochSha256 },
-  });
+function c12AssertRecoverySelection(
+  selection,
+  expectedEpochSha256,
+  recoveryContract = C12_HISTORICAL_RECOVERY_CONTRACT,
+) {
+  c12AssertRecoverySelectionShape(
+    selection,
+    recoveryContract.requirementsSha256,
+  );
+  const attempt = c12CreateRecoveryAttemptPreimage(
+    {
+      epoch: { rawSha256: expectedEpochSha256 },
+    },
+    recoveryContract.predecessorProjection,
+  );
   assert.deepEqual(
     Object.fromEntries(
       Object.keys(C12_RECOVERY_PREDECESSOR_PROJECTION).map((field) => [
@@ -3589,7 +3819,7 @@ function c12AssertRecoverySelection(selection, expectedEpochSha256) {
         selection[field],
       ]),
     ),
-    C12_RECOVERY_PREDECESSOR_PROJECTION,
+    recoveryContract.predecessorProjection,
   );
   assert.equal(selection.requiredActorKind, "RECOVERY_ONLY_GUARDIAN");
   assert.equal(selection.actorKind, attempt.actorKind);
@@ -3617,7 +3847,7 @@ function c12AssertRecoverySelection(selection, expectedEpochSha256) {
   }
   assert.equal(
     semanticSha256(selection),
-    EXPECTED_C12_RECOVERY_SELECTION_SEMANTIC_SHA256,
+    recoveryContract.selectionSemanticSha256,
   );
 }
 
@@ -3629,6 +3859,10 @@ function c12AssertLocallyConsistentRuntimeOracle(
   assert.equal(typeof requireExactRecoverySelection, "boolean");
   assert.match(requirementsSha256, /^[0-9a-f]{64}$/u);
   assert.equal(oracle.schema, CONTRACT_VALID_RUNTIME_ORACLE_SCHEMA);
+  const recoveryContract =
+    requirementsSha256 === RECOVERY_REPIN_REQUIREMENTS_SHA256
+      ? C12_RECOVERY_REPIN_CONTRACT
+      : C12_HISTORICAL_RECOVERY_CONTRACT;
   assert.equal(oracle.requirementsSha256, requirementsSha256);
   assert.deepEqual(oracle.counts, {
     startupWitnesses: 2,
@@ -3885,9 +4119,16 @@ function c12AssertLocallyConsistentRuntimeOracle(
         semanticSha256(selection),
       );
       if (requireExactRecoverySelection) {
-        c12AssertRecoverySelection(selection, input.frame.value.epochSha256);
+        c12AssertRecoverySelection(
+          selection,
+          input.frame.value.epochSha256,
+          recoveryContract,
+        );
       } else {
-        c12AssertRecoverySelectionShape(selection);
+        c12AssertRecoverySelectionShape(
+          selection,
+          recoveryContract.requirementsSha256,
+        );
       }
       assert.deepEqual(input.scalarArguments, { requestEofObserved: true });
     } else if (input.kind === "DIAGNOSTIC_FAILURE") {
@@ -4185,6 +4426,22 @@ function c12AssertContractValidRuntimeOracle(oracle) {
   );
 }
 
+function c12AssertRecoveryRepinRuntimeOracle(oracle) {
+  c12AssertLocallyConsistentRuntimeOracle(
+    oracle,
+    true,
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
+  );
+  assert.deepEqual(
+    oracle.inventorySha256,
+    RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
+  );
+  assert.equal(
+    oracle.identitySha256,
+    RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+  );
+}
+
 function createContractValidRuntimeOracle(requirementsSha256) {
   assert.match(requirementsSha256, /^[0-9a-f]{64}$/u);
   const oracle = c12BuildContractValidRuntimeOracle(requirementsSha256);
@@ -4199,13 +4456,13 @@ function createContractValidRuntimeOracle(requirementsSha256) {
 function c12CreateCoherentlyResealedRecoveryOracle(mutateRecoverySelection) {
   assert.equal(typeof mutateRecoverySelection, "function");
   const oracle = c12BuildContractValidRuntimeOracle(
-    EXPECTED_REQUIREMENTS_SHA256,
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
     mutateRecoverySelection,
   );
   c12AssertLocallyConsistentRuntimeOracle(
     oracle,
     false,
-    EXPECTED_REQUIREMENTS_SHA256,
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
   );
   const recoveryStartup = oracle.witnesses.startups.find(
     ({ mode }) => mode === "RECOVERY_ONLY",
@@ -4216,6 +4473,7 @@ function c12CreateCoherentlyResealedRecoveryOracle(mutateRecoverySelection) {
   const attempt = c12CreateRecoveryAttemptForSelection(
     recoveryStartup,
     selection,
+    RECOVERY_REPIN_C12_RECOVERY_PREDECESSOR_PROJECTION,
   );
   assert.equal(selection.attemptSha256, attempt.attemptSha256);
   const world = recursivelyFreezeEvidence({ oracle, attempt });
@@ -11684,13 +11942,15 @@ function auditMainCandidateSourceForProduction(
 
 const MAIN_C14_PRODUCTION_AUDIT_BINDING = auditMainCandidateSourceForProduction;
 
-function auditLiveC15CandidateAgainstHistoricalC14(source) {
+function auditRecoveryRepinCandidateAgainstHistoricalC14(source) {
   assert.equal(typeof source, "string");
-  const sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(
+  const sourceIdentity = RECOVERY_REPIN_SOURCE_IDENTITY.reconstruct(
     Buffer.from(source, "utf8"),
   );
   assert.deepEqual(
-    C15_SOURCE_IDENTITY.assertInverseReceipt(sourceIdentity.inverseReceipt),
+    RECOVERY_REPIN_SOURCE_IDENTITY.assertInverseReceipt(
+      sourceIdentity.inverseReceipt,
+    ),
     {
       launchWrapperDeclarationRemovals: 1,
       admissionVerifierCallReversals: 1,
@@ -11701,8 +11961,13 @@ function auditLiveC15CandidateAgainstHistoricalC14(source) {
       helperNameReversals: 11,
       exactV2DigestReversals: 1,
       requirementsDigestReversals: 2,
-      liveSourceByteLength: LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
-      liveSourceSha256: LIVE_C15_CANDIDATE_SOURCE_SHA256,
+      recoverySourceDigestReversals: 1,
+      recoveryPredecessorRequirementsDigestReversals: 1,
+      guardianRequirementsDigestReversals: 2,
+      currentSourceByteLength: RECOVERY_REPIN_CANDIDATE_SOURCE_BYTE_LENGTH,
+      currentSourceSha256: RECOVERY_REPIN_CANDIDATE_SOURCE_SHA256,
+      liveC15SourceByteLength: LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+      liveC15SourceSha256: LIVE_C15_CANDIDATE_SOURCE_SHA256,
       historicalSourceByteLength: HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH,
       historicalSourceSha256: C14_AUDITED_CANDIDATE_SOURCE_SHA256,
     },
@@ -11710,7 +11975,7 @@ function auditLiveC15CandidateAgainstHistoricalC14(source) {
   const historicalC14Audit = MAIN_C14_PRODUCTION_AUDIT_BINDING(
     sourceIdentity.historicalSource,
   );
-  const liveProgram = parseCandidateModuleAst(sourceIdentity.liveSource).program;
+  const liveProgram = parseCandidateModuleAst(sourceIdentity.currentSource).program;
   const c15Extension = assertC15LiveAstExtension(liveProgram);
   assert.equal(
     c15Extension.projectionSha256,
@@ -16338,17 +16603,20 @@ function isExpectedAbsentCandidateModuleError(error, candidateSourceText) {
 function pinPredecessorSourcesBeforeCandidateRead() {
   const fixturePins = new Map(
     [
-      ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct,
-      ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
+      ...RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.direct,
+      ...RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
     ].map(({ specifier, sha256: expectedSha256 }) => [
       specifier,
       expectedSha256,
     ]),
   );
-  assert.equal(fixturePins.size, LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.length);
+  assert.equal(
+    fixturePins.size,
+    RECOVERY_REPIN_PREDECESSOR_SOURCE_GOLDENS.length,
+  );
   let directCount = 0;
   let evidenceOnlyCount = 0;
-  for (const golden of LIVE_C15_PREDECESSOR_SOURCE_GOLDENS) {
+  for (const golden of RECOVERY_REPIN_PREDECESSOR_SOURCE_GOLDENS) {
     const bytes = readFileSync(
       new URL(`../src/candidate/${golden.specifier.slice(2)}`, import.meta.url),
     );
@@ -16362,7 +16630,7 @@ function pinPredecessorSourcesBeforeCandidateRead() {
     completedBeforeCandidateRead: true,
     directCount,
     evidenceOnlyCount,
-    sourceCount: LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.length,
+    sourceCount: RECOVERY_REPIN_PREDECESSOR_SOURCE_GOLDENS.length,
   });
 }
 
@@ -16418,7 +16686,7 @@ function c12AssertGate6RecoveryCascade(canonicalOracle, falseWorldOracle) {
   c12AssertLocallyConsistentRuntimeOracle(
     falseWorldOracle,
     false,
-    EXPECTED_REQUIREMENTS_SHA256,
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
   );
   assertRecursivelyFrozenWithoutByteViews(falseWorldOracle);
   assert.equal(
@@ -16639,7 +16907,10 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
   gate6Cases,
 ) {
   assert.equal(Array.isArray(gate6Cases), true);
-  const expectedAttempt = c12CreateRecoveryAttemptPreimage(recoveryStartup);
+  const expectedAttempt = c12CreateRecoveryAttemptPreimage(
+    recoveryStartup,
+    RECOVERY_REPIN_C12_RECOVERY_PREDECESSOR_PROJECTION,
+  );
   const oracleIdentityBeforePredecessorVerification = oracle.identitySha256;
   const recovery = await import(
     new URL(
@@ -16785,7 +17056,7 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
   );
   assert.equal(
     recovery.CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_SHA256_V1,
-    C12_RECOVERY_REQUIREMENTS_SHA256,
+    RECOVERY_REPIN_PREDECESSOR_REQUIREMENTS_SHA256,
   );
   assert.deepEqual(
     {
@@ -16887,7 +17158,10 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
       0,
     );
   }
-  assert.deepEqual(observedProjection, C12_RECOVERY_PREDECESSOR_PROJECTION);
+  assert.deepEqual(
+    observedProjection,
+    RECOVERY_REPIN_C12_RECOVERY_PREDECESSOR_PROJECTION,
+  );
   const expectedRecoverySelection = oracle.witnesses.inputKinds.find(
     ({ kind }) => kind === "RECOVERY_REQUEST",
   ).frame.value.recoverySelection;
@@ -17003,7 +17277,7 @@ async function verifyC12RecoveryAttemptAfterExpectedConstruction(
     receipt: Object.freeze({
       finding: "C12-RECOVERY-PREIMAGE-001",
       predecessorSourceSha256:
-        "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+        "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
       expectedAttemptConstructedBeforePredecessorImport: true,
       predecessorConstructorsConsumedForExpectedValues: false,
       predecessorVerifierConsumedForExpectedValues: false,
@@ -17049,6 +17323,16 @@ assert.equal(
   LIVE_C15_RUNTIME_ORACLE.identitySha256,
   "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
 );
+const RECOVERY_REPIN_RUNTIME_ORACLE = createContractValidRuntimeOracle(
+  RECOVERY_REPIN_REQUIREMENTS_SHA256,
+);
+assert.deepEqual(RECOVERY_REPIN_RUNTIME_ORACLE.inventorySha256, {
+  ...RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
+});
+assert.equal(
+  RECOVERY_REPIN_RUNTIME_ORACLE.identitySha256,
+  RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+);
 const C12_ORACLE_CONSTRUCTION_RECEIPT = recursivelyFreezeEvidence({
   schema:
     "oxigraph.test.candidate-containment-guardian-control-v1-c12-construction-phase/v1",
@@ -17061,10 +17345,31 @@ const C12_ORACLE_CONSTRUCTION_RECEIPT = recursivelyFreezeEvidence({
   candidateBehaviorExecutionAttempts: 0,
   candidateOrSourceStateConsumedForExpectedValues: false,
 });
+const SYNCHRONOUS_RECOVERY_REPIN_SOURCE_PIN = (() => {
+  try {
+    const pinnedSourceBytes = readFileSync(SOURCE_PATH);
+    const pinnedSourceIdentity =
+      RECOVERY_REPIN_SOURCE_IDENTITY.reconstruct(pinnedSourceBytes);
+    return Object.freeze({
+      present: true,
+      byteLength: pinnedSourceBytes.length,
+      sha256: byteSha256(pinnedSourceBytes),
+      sourceIdentity: pinnedSourceIdentity,
+    });
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return Object.freeze({
+      present: false,
+      byteLength: null,
+      sha256: null,
+      sourceIdentity: null,
+    });
+  }
+})();
 const PRODUCTION_FRESH_CANDIDATE_LOADER =
   createDeterministicFreshCandidateLoader({
     readSourceBytes: () => readFileSync(SOURCE_PATH),
-    auditSource: auditLiveC15CandidateAgainstHistoricalC14,
+    auditSource: auditRecoveryRepinCandidateAgainstHistoricalC14,
     importCandidate: (href) => import(href),
   });
 const ADVERSARIAL_WIRING_ACTIVITY = {
@@ -17097,7 +17402,7 @@ const DEFERRED_CANDIDATE_INPUT = new Promise((resolve) => {
 });
 const DEFERRED_ADVERSARIAL_INPUTS = {
   candidate: DEFERRED_CANDIDATE_INPUT,
-  oracle: LIVE_C15_RUNTIME_ORACLE,
+  oracle: RECOVERY_REPIN_RUNTIME_ORACLE,
   loadFreshCandidate: async () => {
     ADVERSARIAL_WIRING_ACTIVITY.freshLoaderCalls += 1;
     return PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
@@ -17574,8 +17879,8 @@ let sourceIdentity = null;
 try {
   ADVERSARIAL_WIRING_ACTIVITY.candidateSourceReadAttempts += 1;
   sourceBytes = readFileSync(SOURCE_PATH);
-  sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(sourceBytes);
-  sourceText = sourceIdentity.liveSource;
+  sourceIdentity = RECOVERY_REPIN_SOURCE_IDENTITY.reconstruct(sourceBytes);
+  sourceText = sourceIdentity.currentSource;
 } catch (error) {
   if (error?.code !== "ENOENT") throw error;
 }
@@ -17583,7 +17888,7 @@ try {
   candidate = await evaluateCandidateOnlyWhenEvaluatorCloses(sourceBytes, {
     liftReceipt: C13_SOURCE_LIFT_RECEIPT,
     assertLiftReceipt: assertC13SourceLiftReceipt,
-    auditSource: auditLiveC15CandidateAgainstHistoricalC14,
+    auditSource: auditRecoveryRepinCandidateAgainstHistoricalC14,
     installFreshLoaderBaseline:
       PRODUCTION_FRESH_CANDIDATE_LOADER.installAuditedBaseline,
     importCandidate: async (href) => {
@@ -17820,7 +18125,7 @@ function c14StatusToken(status) {
 
 function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
   const moduleNamespace = c14CandidateOrThrow();
-  const oracle = LIVE_C15_RUNTIME_ORACLE;
+  const oracle = RECOVERY_REPIN_RUNTIME_ORACLE;
   const startupByMode = new Map(
     oracle.witnesses.startups.map((startup) => [startup.mode, startup]),
   );
@@ -18116,39 +18421,43 @@ function c14ReplayPositiveContract({ verifyStatuses = false } = {}) {
   });
 }
 
-test("independently canonicalizes the normative requirements fixture", () => {
+test("independently canonicalizes the recovery-repinned requirements fixture and preserves C14", () => {
   assert.equal(
-    semanticSha256(REQUIREMENTS_ORACLE),
-    EXPECTED_REQUIREMENTS_SHA256,
+    semanticSha256(RECOVERY_REPIN_REQUIREMENTS_ORACLE),
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
   );
   assert.equal(
-    REQUIREMENTS_ORACLE.schema,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.schema,
     "oxigraph.candidate-containment-guardian-control-requirements/v1",
   );
-  assert.equal(REQUIREMENTS_ORACLE.version, 1);
+  assert.equal(RECOVERY_REPIN_REQUIREMENTS_ORACLE.version, 1);
   assert.equal(
-    REQUIREMENTS_ORACLE.vocabularies.byteCarrierAdditionalOwnPropertyPolicy,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.vocabularies
+      .byteCarrierAdditionalOwnPropertyPolicy,
     EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY,
   );
   assert.equal(
-    REQUIREMENTS_ORACLE.predecessors.direct.length,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.direct.length,
     ALLOWED_IMPORTS.size,
   );
   assert.deepEqual(
-    Object.keys(REQUIREMENTS_ORACLE),
+    Object.keys(RECOVERY_REPIN_REQUIREMENTS_ORACLE),
     EXPECTED_REQUIREMENTS_TOP_LEVEL_FIELDS,
   );
-  assert.deepEqual(REQUIREMENTS_ORACLE.modes, ["NORMAL", "RECOVERY_ONLY"]);
-  assert.deepEqual(REQUIREMENTS_ORACLE.privateStateStores, [
+  assert.deepEqual(RECOVERY_REPIN_REQUIREMENTS_ORACLE.modes, [
+    "NORMAL",
+    "RECOVERY_ONLY",
+  ]);
+  assert.deepEqual(RECOVERY_REPIN_REQUIREMENTS_ORACLE.privateStateStores, [
     "startupMetadata",
     "inputMetadata",
     "stateMetadata",
   ]);
   assert.deepEqual(
-    REQUIREMENTS_ORACLE.vocabularies.ambientIntrinsics,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.vocabularies.ambientIntrinsics,
     ALLOWED_AMBIENT_INTRINSICS,
   );
-  assert.deepEqual(REQUIREMENTS_ORACLE.authority, {
+  assert.deepEqual(RECOVERY_REPIN_REQUIREMENTS_ORACLE.authority, {
     transportAuthority: false,
     descriptorAuthority: false,
     filesystemAuthority: false,
@@ -18157,7 +18466,7 @@ test("independently canonicalizes the normative requirements fixture", () => {
     recoveryAuthority: false,
     runtimeAuthority: false,
   });
-  assert.deepEqual(REQUIREMENTS_ORACLE.physicalFacts, {
+  assert.deepEqual(RECOVERY_REPIN_REQUIREMENTS_ORACLE.physicalFacts, {
     socketTransfer: null,
     descriptorInventory: null,
     epochOrigin: null,
@@ -18166,7 +18475,7 @@ test("independently canonicalizes the normative requirements fixture", () => {
     cleanup: null,
   });
   assert.deepEqual(
-    REQUIREMENTS_ORACLE.predecessors.direct.map(
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.direct.map(
       ({ specifier, sha256, requirementsSha256, imports }) => ({
         specifier,
         sha256,
@@ -18178,16 +18487,30 @@ test("independently canonicalizes the normative requirements fixture", () => {
       {
         specifier: "./containment-exact-v2.mjs",
         sha256:
-          "2c9d075538da2b114d58a208a97c97fe97a0cf9f78f7558b24ebacdab54d5bc3",
+          "194fb41e523b334206e91b2dfda8894f5e661a3d034b7330e3e6bd549e4c744e",
         requirementsSha256: null,
-        imports: ALLOWED_IMPORTS.get("./containment-exact-v2.mjs"),
+        imports: [
+          "boundedInteger",
+          "canonicalJsonBytes",
+          "canonicalJsonLine",
+          "copyBoundedBufferByFailureCategory",
+          "decodeCanonicalBase64",
+          "decodeCanonicalJsonLine",
+          "deepFreeze",
+          "exactBoolean",
+          "exactDigest",
+          "exactRecord",
+          "frozenCopyOnReadBytes",
+          "nullRecord",
+          "sha256",
+        ],
       },
       {
         specifier: "./containment-guardian-recovery-v1.mjs",
         sha256:
-          "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+          "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
         requirementsSha256:
-          "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a",
+          "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874",
         imports: ALLOWED_IMPORTS.get("./containment-guardian-recovery-v1.mjs"),
       },
       {
@@ -18200,6 +18523,16 @@ test("independently canonicalizes the normative requirements fixture", () => {
       },
     ],
   );
+  assert.equal(
+    semanticSha256(REQUIREMENTS_ORACLE),
+    EXPECTED_REQUIREMENTS_SHA256,
+  );
+  assert.deepEqual(REQUIREMENTS_ORACLE.predecessors.direct[1], {
+    specifier: "./containment-guardian-recovery-v1.mjs",
+    sha256: HISTORICAL_RECOVERY_SOURCE_SHA256,
+    requirementsSha256: HISTORICAL_RECOVERY_REQUIREMENTS_SHA256,
+    imports: ALLOWED_IMPORTS.get("./containment-guardian-recovery-v1.mjs"),
+  });
 });
 
 test("reconstructs all three map digests from separately authored goldens", () => {
@@ -18311,8 +18644,15 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
       ...LIVE_C15_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
     ].map(({ specifier, sha256 }) => [specifier, sha256]),
   );
+  const currentFixturePins = new Map(
+    [
+      ...RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.direct,
+      ...RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.evidenceOnly,
+    ].map(({ specifier, sha256 }) => [specifier, sha256]),
+  );
   assert.equal(PREDECESSOR_SOURCE_GOLDENS.length, 5);
   assert.equal(LIVE_C15_PREDECESSOR_SOURCE_GOLDENS.length, 5);
+  assert.equal(RECOVERY_REPIN_PREDECESSOR_SOURCE_GOLDENS.length, 5);
   assert.equal(
     PREDECESSOR_SOURCE_GOLDENS.filter(({ kind }) => kind === "direct").length,
     3,
@@ -18325,8 +18665,11 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
   let rejectedMutations = 0;
   for (const [index, golden] of PREDECESSOR_SOURCE_GOLDENS.entries()) {
     const liveGolden = LIVE_C15_PREDECESSOR_SOURCE_GOLDENS[index];
+    const currentGolden = RECOVERY_REPIN_PREDECESSOR_SOURCE_GOLDENS[index];
     assert.equal(liveGolden.kind, golden.kind);
     assert.equal(liveGolden.specifier, golden.specifier);
+    assert.equal(currentGolden.kind, golden.kind);
+    assert.equal(currentGolden.specifier, golden.specifier);
     assert.equal(
       historicalFixturePins.get(golden.specifier),
       golden.sha256,
@@ -18337,18 +18680,23 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
       liveGolden.sha256,
       `live ${liveGolden.specifier}`,
     );
+    assert.equal(
+      currentFixturePins.get(currentGolden.specifier),
+      currentGolden.sha256,
+      `current ${currentGolden.specifier}`,
+    );
     const bytes = readFileSync(
       new URL(
-        `../src/candidate/${liveGolden.specifier.slice(2)}`,
+        `../src/candidate/${currentGolden.specifier.slice(2)}`,
         import.meta.url,
       ),
     );
     assert.doesNotThrow(() =>
-      assertPinnedPredecessorBytes(bytes, liveGolden),
+      assertPinnedPredecessorBytes(bytes, currentGolden),
     );
     for (const mutated of predecessorByteMutations(bytes)) {
       assert.throws(
-        () => assertPinnedPredecessorBytes(mutated, liveGolden),
+        () => assertPinnedPredecessorBytes(mutated, currentGolden),
         /predecessor source pin mismatch/gu,
       );
       rejectedMutations += 1;
@@ -18358,7 +18706,16 @@ test("pins all predecessor bytes and rejects independent drift mutations", () =>
 });
 
 test("freezes the evaluator expansion-count anchors without claiming coverage", async () => {
-  const oracle = CONTRACT_VALID_RUNTIME_ORACLE;
+  const historicalOracle = CONTRACT_VALID_RUNTIME_ORACLE;
+  assert.deepEqual(
+    historicalOracle.inventorySha256,
+    EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
+  );
+  assert.equal(
+    historicalOracle.identitySha256,
+    EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+  );
+  const oracle = RECOVERY_REPIN_RUNTIME_ORACLE;
   assert.equal(
     oracle.schema,
     "oxigraph.test.candidate-containment-guardian-control-v1-contract-valid-runtime-oracle/v1",
@@ -18374,11 +18731,11 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
   });
   assert.deepEqual(
     oracle.inventorySha256,
-    EXPECTED_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
+    RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_INVENTORY_SHA256,
   );
   assert.equal(
     oracle.identitySha256,
-    EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+    RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
   );
   assert.deepEqual(C12_EXPECTED_VALUE_SOURCE_AUDIT, {
     forbiddenReferences: [],
@@ -18429,7 +18786,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     0,
   );
   const independentlyAllocatedOracle = createContractValidRuntimeOracle(
-    EXPECTED_REQUIREMENTS_SHA256,
+    RECOVERY_REPIN_REQUIREMENTS_SHA256,
   );
   assert.deepEqual(independentlyAllocatedOracle, oracle);
   assert.equal(
@@ -18509,7 +18866,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
   assert.deepEqual(recoveryAttemptVerification, {
     finding: "C12-RECOVERY-PREIMAGE-001",
     predecessorSourceSha256:
-      "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d",
+      "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0",
     expectedAttemptConstructedBeforePredecessorImport: true,
     predecessorConstructorsConsumedForExpectedValues: false,
     predecessorVerifierConsumedForExpectedValues: false,
@@ -18554,15 +18911,15 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     ),
     {
       "recovery-used-state-hash":
-        "f141454d8df7eb6b41106b9b9e8688a7ed4227edbfd098467c9edbd0b0f87fa1",
+        "3c95d4e3e46c27c3990cd34f516fc51e3d300954796965764133243e515e82be",
       "recovery-disposition":
-        "8d356bc03fbfe888e275ac3cd1b63c25492aaeacefa12ec3d2165927f4703701",
+        "b6b7a52cc0c4c002881f01944a6b8ca92ea73186ea7a024ccf60972dee74670c",
       "recovery-actor-kind":
-        "96093f7e76902d1a938c83ddf43358e90940728eca1de3a0f6f2c07ee5c90f3a",
+        "4a694497ba205f393569edb9cf580da269cf255a1dadd3c8a60259b3b8503d54",
       "recovery-destination-location":
-        "79767b59d1da59dc8a141ae46871503e38011a2ae6e2810dcb6171a4a04caa3c",
+        "e7e4917cf63d1a8f9151c6bda0f97d154789b1965fb7bc74a6741a9f3e037af1",
       "recovery-self-consistent-synthetic-predecessor-bundle":
-        "cfba243cc60dd0a00d447f8d95080e2c2a4a0b48c982d999bee71eecac4a9edf",
+        "5c79d2918af79e816e733c74138d8b12ad947a87e039c6d4084b2350511974bd",
     },
   );
 
@@ -18625,7 +18982,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     );
     const resealedMutant = resealOracle(mutant);
     recordMutationKill(id, () => {
-      c12AssertContractValidRuntimeOracle(resealedMutant);
+      c12AssertRecoveryRepinRuntimeOracle(resealedMutant);
     });
   };
   const inputOfKind = (mutant, kind) =>
@@ -18753,16 +19110,16 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
   const recoveryInput = inputOfKind(c12Clone(oracle), "RECOVERY_REQUEST");
   assert.equal(
     semanticSha256(recoveryInput.frame.value.recoverySelection),
-    EXPECTED_C12_RECOVERY_SELECTION_SEMANTIC_SHA256,
+    C12_RECOVERY_REPIN_CONTRACT.selectionSemanticSha256,
     "C12-RECOVERY-PREIMAGE-001: recovery selection must match the predecessor-verified tuple",
   );
   assert.equal(
     recoveryInput.frame.rawSha256,
-    EXPECTED_C12_RECOVERY_REQUEST_RAW_SHA256,
+    RECOVERY_REPIN_C12_RECOVERY_REQUEST_RAW_SHA256,
   );
   assert.equal(
     semanticSha256(recoveryInput.frame.value),
-    EXPECTED_C12_RECOVERY_REQUEST_SEMANTIC_SHA256,
+    RECOVERY_REPIN_C12_RECOVERY_REQUEST_SEMANTIC_SHA256,
   );
   const gate6MutationById = new Map(
     C12_GATE6_RECOVERY_MUTATIONS.map((mutation) => [mutation.id, mutation]),
@@ -18781,7 +19138,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
     assert.equal(oracle.identitySha256, canonicalIdentityBefore);
     assert.equal(
       oracle.identitySha256,
-      EXPECTED_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
+      RECOVERY_REPIN_CONTRACT_VALID_RUNTIME_ORACLE_SHA256,
     );
     const falseWorldSelection = falseWorldOracle.witnesses.inputKinds.find(
       ({ kind }) => kind === "RECOVERY_REQUEST",
@@ -18868,6 +19225,7 @@ test("freezes the evaluator expansion-count anchors without claiming coverage", 
       c12AssertRecoverySelection(
         selection,
         recoveryInput.frame.value.epochSha256,
+        C12_RECOVERY_REPIN_CONTRACT,
       );
     });
   }
@@ -21798,6 +22156,22 @@ test("recognizes only exact absent-candidate module-load failures", () => {
 
 test("loads the candidate once and freezes its exact module contract", () => {
   assertMainCandidateActivationContract();
+  assert.deepEqual(
+    {
+      present: SYNCHRONOUS_RECOVERY_REPIN_SOURCE_PIN.present,
+      byteLength: SYNCHRONOUS_RECOVERY_REPIN_SOURCE_PIN.byteLength,
+      sha256: SYNCHRONOUS_RECOVERY_REPIN_SOURCE_PIN.sha256,
+    },
+    {
+      present: true,
+      byteLength: RECOVERY_REPIN_CANDIDATE_SOURCE_BYTE_LENGTH,
+      sha256: RECOVERY_REPIN_CANDIDATE_SOURCE_SHA256,
+    },
+  );
+  assert.equal(
+    SYNCHRONOUS_RECOVERY_REPIN_SOURCE_PIN.sourceIdentity.currentSource,
+    sourceIdentity.currentSource,
+  );
   if (candidateSourceGateError !== null) throw candidateSourceGateError;
   if (candidateImportError !== null) throw candidateImportError;
   assert.notEqual(candidate, null);
@@ -22013,7 +22387,7 @@ test("expand 15 independently encoded emitted-status byte goldens", () => {
   assert.equal(observations.statusIds.length, 15);
   assert.equal(observations.verifiedStatusIds.length, 15);
   const runtimeStatusRawSha256 = new Set(
-    LIVE_C15_RUNTIME_ORACLE.expected.emittedStatuses.map(
+    RECOVERY_REPIN_RUNTIME_ORACLE.expected.emittedStatuses.map(
       ({ expectedArtifact }) => expectedArtifact.fields.rawSha256,
     ),
   );
@@ -22122,7 +22496,7 @@ test("expand 4 atomic two-status internal wire-prefix controls", () => {
   const observations = c14ReplayPositiveContract();
   assert.equal(observations.atomicIds.length, 4);
   const runtimeAtomicRawSha256 = new Set(
-    LIVE_C15_RUNTIME_ORACLE.expected.atomicPrefixes.map(
+    RECOVERY_REPIN_RUNTIME_ORACLE.expected.atomicPrefixes.map(
       ({ concatenatedRawSha256 }) => concatenatedRawSha256,
     ),
   );
@@ -22517,7 +22891,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   };
   for (const [name, value] of [
     ["candidate", realCandidateInput],
-    ["oracle", LIVE_C15_RUNTIME_ORACLE],
+    ["oracle", RECOVERY_REPIN_RUNTIME_ORACLE],
     [
       "loadFreshCandidate",
       async () => {
@@ -22528,7 +22902,10 @@ test("close the remaining private-store commit-position and semantic-mutation qu
           await PRODUCTION_FRESH_CANDIDATE_LOADER.loadFreshCandidate();
         const loadReceipt = PRODUCTION_FRESH_CANDIDATE_LOADER.lastLoadReceipt();
         assert.notEqual(loadReceipt, null);
-        assert.equal(loadReceipt.sourceSha256, LIVE_C15_CANDIDATE_SOURCE_SHA256);
+        assert.equal(
+          loadReceipt.sourceSha256,
+          RECOVERY_REPIN_CANDIDATE_SOURCE_SHA256,
+        );
         assert.equal(loadReceipt.ordinal, successfulOrdinalBefore + 1);
         assert.equal(
           PRODUCTION_FRESH_CANDIDATE_LOADER.successfulOrdinal(),
@@ -22536,7 +22913,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         );
         assertCanonicalFreshCandidateUrl(
           loadReceipt.url,
-          LIVE_C15_CANDIDATE_SOURCE_SHA256,
+          RECOVERY_REPIN_CANDIDATE_SOURCE_SHA256,
           loadReceipt.ordinal,
         );
         realCandidateFreshLoaderAudit = recursivelyFreezeEvidence({
@@ -22589,11 +22966,11 @@ test("close the remaining private-store commit-position and semantic-mutation qu
   activeRealCandidateCallback = "complete";
   assert.equal(
     semanticSha256(byteDispatchReceipt),
-    "e164e4cc96a6129d9cb74ff234975e7f6b40928f7839467355465a98c1a1b35c",
+    "3285d02b3b1c4d447fcd4cc7f3d8b595ba7484bc23510f945f770cbbedce719e",
   );
   assert.equal(
     semanticSha256(privateDispatchReceipt),
-    "914baa75ad37e662895caf2002f98f395c47586bd8681d746ecd97820c7a18aa",
+    "4a6b5c8ba31b51eb4ec249ce64f089c361b62992bdd9e9df4b55968752b11d32",
   );
   assert.deepEqual(realCandidateGetterReads, {
     candidate: 3,
@@ -22634,7 +23011,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
     privateDispatch: c12Clone(privateDispatchReceipt),
     privateFreshLoaderAudit: c12Clone(realCandidateFreshLoaderAudit),
     realCandidateUsed: true,
-    liveOracleIdentitySha256: LIVE_C15_RUNTIME_ORACLE.identitySha256,
+    liveOracleIdentitySha256: RECOVERY_REPIN_RUNTIME_ORACLE.identitySha256,
     privateTodoDeferredWithoutCandidateExecution:
       privateDispatchReceipt.status === "DEFERRED_ENTRY_TODO",
     freshLoaderCallCount: realCandidateFreshLoaderCalls,
@@ -22707,7 +23084,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         controlCount: 228,
         controlIds: expectedByteControlIds,
         oracleIdentitySha256:
-          "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+          "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a",
         candidateBehaviorAttemptCount: 520,
         targetCandidateCallCount: 226,
         ignoredPropertyTouches: { reads: 0, writes: 0, invocations: 0 },
@@ -22730,21 +23107,21 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         controlId:
           "launch-v2-schema-substitution:predecessor-error-to-control-binding",
         oracleIdentitySha256:
-          "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+          "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a",
         originalLaunchCapsuleRawSha256:
           "65d49e83493ae64b8641e442ef7468dd218a9d9c8d93ac4944a1870ca6203935",
         invalidLaunchCapsuleRawSha256:
           "904aedd34cfe5c27c869ebf03c8cd6274bc8f1ca320387ee1b6d6be150134e63",
         originalAdmissionFrameRawSha256:
-          "b519d037d3d07e3012bc50079596732ec5eca979d7078dc1f91afc149f98dfb7",
+          "2b62047717a1b01673d7565e55aabdb3465b6cba94e1d945072d7940b46bc17b",
         invalidAdmissionFrameRawSha256:
-          "3d8b440c08d4d889ad5332471094c9255fad65927142fe6e32adc50645adb485",
+          "1319e51c4724ca1d699e08a5435105522520762676e5b85e54545767b1302970",
         originalRecvmsgReportRawSha256:
-          "bc864e126954ebf6256335d4a0dbdbe555954b0247e3b581570d25adcef5bc9c",
+          "edf06a9065654d54ac043d760779654a4374c54c57aa4118aa96659e445fec43",
         invalidRecvmsgReportRawSha256:
-          "093b6f6efbb4725e81dcc2e8c8480175d958e999ef86117eef4fdb1093b19b2c",
+          "cdc66998588bb4f1f139a844190e2a220f6b4e8b5de1d3a6d80517c305e7d8c1",
         malformedBase64AdmissionFrameRawSha256:
-          "5c5d9ab904aced9ecc4c3d80712c383b5bfb1aaf22a839b6657231149d152d97",
+          "00131fdd6694ae7957ece408700273e412baf1094998a8b10f48dccc772dcc4b",
         downstreamRecvmsgBindingConsistent: true,
         validAdmissionSucceeded: true,
         predecessorSourceByteLength: 17_977,
@@ -22817,7 +23194,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
           "main-evaluator-read-pin-decode-full-audit-import",
         freshModuleReauditDelegatedToMainEvaluator: true,
         oracleIdentitySha256:
-          "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+          "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a",
         entryTodo: false,
         candidateInputThenable: true,
         candidateInputAwaited: true,
@@ -22972,7 +23349,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
         importSequence: 5,
         successfulOrdinalAdvance: 1,
         sourceSha256:
-          "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+          "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
         sourceUrl: SOURCE_URL.href,
         canonicalSourceSha256ThenPaddedOrdinalQuery: true,
         ordered: true,
@@ -22980,7 +23357,7 @@ test("close the remaining private-store commit-position and semantic-mutation qu
       },
       realCandidateUsed: true,
       liveOracleIdentitySha256:
-        "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+        "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a",
       privateTodoDeferredWithoutCandidateExecution: false,
       freshLoaderCallCount: 1,
       candidateBehaviorProved: true,
@@ -24583,7 +24960,7 @@ function c17AssertCaptureShape(capture, ordinal) {
 }
 
 function c17CreateLiveBaselines(monitoredNamespace) {
-  const oracle = LIVE_C15_RUNTIME_ORACLE;
+  const oracle = RECOVERY_REPIN_RUNTIME_ORACLE;
   const normalWitness = oracle.witnesses.startups.find(
     ({ mode }) => mode === "NORMAL",
   );
@@ -24833,11 +25210,11 @@ function c17CreateLiveDescriptorAliasDesigns(baselines) {
     baselines.admission.admissionRecvmsgReportBytesHex,
     "C17 live admission topology",
   );
-  const normalCount = LIVE_C15_REQUIREMENTS_ORACLE.startupMaps
+  const normalCount = RECOVERY_REPIN_REQUIREMENTS_ORACLE.startupMaps
     .normalDescriptorCount;
-  const recoveryCount = LIVE_C15_REQUIREMENTS_ORACLE.startupMaps
+  const recoveryCount = RECOVERY_REPIN_REQUIREMENTS_ORACLE.startupMaps
     .recoveryOnlyDescriptorCount;
-  const rightCount = LIVE_C15_REQUIREMENTS_ORACLE.admissionRights.count;
+  const rightCount = RECOVERY_REPIN_REQUIREMENTS_ORACLE.admissionRights.count;
   assert.deepEqual(
     { normalCount, recoveryCount, rightCount },
     { normalCount: 8, recoveryCount: 7, rightCount: 14 },
@@ -25202,7 +25579,7 @@ function c17FailureWitnessId(operation, earlier, later, code) {
 }
 
 function c17ExpectedFailurePrecedenceCells() {
-  const liveFailurePrecedence = LIVE_C15_REQUIREMENTS_ORACLE.vocabularies
+  const liveFailurePrecedence = RECOVERY_REPIN_REQUIREMENTS_ORACLE.vocabularies
     .failurePrecedence;
   assert.deepEqual(liveFailurePrecedence, [
     "CONTROL_BOUNDS",
@@ -25646,7 +26023,7 @@ function c17DeriveFailurePrecedenceEvidence(captures, cells) {
           if (!resealed) {
             assert.equal(
               capture.preimage.admissionRecvmsgReport.byteLength >
-                LIVE_C15_REQUIREMENTS_ORACLE.limits
+                RECOVERY_REPIN_REQUIREMENTS_ORACLE.limits
                   .admissionRecvmsgReportMaximumBytes,
               true,
             );
@@ -25755,7 +26132,7 @@ function c17DeriveFailurePrecedenceEvidence(captures, cells) {
 }
 
 function c17C15ByteDispatchPriorEvidence() {
-  const limits = LIVE_C15_REQUIREMENTS_ORACLE.limits;
+  const limits = RECOVERY_REPIN_REQUIREMENTS_ORACLE.limits;
   const positions = recursivelyFreezeEvidence([
     {
       name: "startupReportBytes",
@@ -25963,7 +26340,7 @@ function c17C16ControlProjection() {
     phases.map((phase) => operation + ":" + phase),
   );
   assert.deepEqual(
-    LIVE_C15_REQUIREMENTS_ORACLE.privateStateStores,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.privateStateStores,
     ["startupMetadata", "inputMetadata", "stateMetadata"],
   );
   assert.equal(operations.length, 10);
@@ -26094,7 +26471,7 @@ function c17AssertExactIdCoverage(actual, expected, label) {
 
 function c17PositiveReplayEvidence(observations) {
   assertRecursivelyFrozenWithoutByteViews(observations);
-  const oracle = LIVE_C15_RUNTIME_ORACLE;
+  const oracle = RECOVERY_REPIN_RUNTIME_ORACLE;
   const expectedModeIds = [...new Set(
     oracle.expected.legalSequences.map(({ mode }) => mode),
   )];
@@ -26298,16 +26675,16 @@ function c17PositiveReplayEvidence(observations) {
 }
 
 function c17ClaimBoundary() {
-  const authority = c12Clone(LIVE_C15_REQUIREMENTS_ORACLE.authority);
+  const authority = c12Clone(RECOVERY_REPIN_REQUIREMENTS_ORACLE.authority);
   const physicalFacts = c12Clone(
-    LIVE_C15_REQUIREMENTS_ORACLE.physicalFacts,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE.physicalFacts,
   );
-  const nonclaims = c12Clone(LIVE_C15_REQUIREMENTS_ORACLE.nonclaims);
+  const nonclaims = c12Clone(RECOVERY_REPIN_REQUIREMENTS_ORACLE.nonclaims);
   const readiness = candidateContainmentOwnerV2Readiness();
   const candidateRequirements = c14CandidateOrThrow()
     .CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS;
   for (const comparison of [
-    LIVE_C15_RUNTIME_ORACLE,
+    RECOVERY_REPIN_RUNTIME_ORACLE,
     candidateRequirements,
   ]) {
     assert.equal(
@@ -26439,13 +26816,21 @@ function c17TopologyProjection(requirements) {
 }
 
 function c17RuntimeBridgeEvidence() {
-  const changedPointers = c17JsonPointerDiff(
+  const historicalC15ChangedPointers = c17JsonPointerDiff(
     REQUIREMENTS_ORACLE,
     LIVE_C15_REQUIREMENTS_ORACLE,
   );
-  assert.deepEqual(changedPointers, [
+  assert.deepEqual(historicalC15ChangedPointers, [
     "/predecessors/direct/0/imports/3",
     "/predecessors/direct/0/sha256",
+  ]);
+  const recoveryRepinChangedPointers = c17JsonPointerDiff(
+    LIVE_C15_REQUIREMENTS_ORACLE,
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE,
+  );
+  assert.deepEqual(recoveryRepinChangedPointers, [
+    "/predecessors/direct/1/requirementsSha256",
+    "/predecessors/direct/1/sha256",
   ]);
   assert.equal(
     REQUIREMENTS_ORACLE.predecessors.direct[0].sha256,
@@ -26463,31 +26848,57 @@ function c17RuntimeBridgeEvidence() {
     LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct[0].imports[3],
     "copyBoundedBufferByFailureCategory",
   );
+  assert.deepEqual(
+    LIVE_C15_REQUIREMENTS_ORACLE.predecessors.direct[1],
+    {
+      ...RECOVERY_REPIN_REQUIREMENTS_ORACLE.predecessors.direct[1],
+      sha256: HISTORICAL_RECOVERY_SOURCE_SHA256,
+      requirementsSha256: HISTORICAL_RECOVERY_REQUIREMENTS_SHA256,
+    },
+  );
   const historicalTopology = c17TopologyProjection(
     REQUIREMENTS_ORACLE,
   );
-  const liveTopology = c17TopologyProjection(LIVE_C15_REQUIREMENTS_ORACLE);
-  assert.deepEqual(historicalTopology, liveTopology);
+  const historicalC15Topology = c17TopologyProjection(
+    LIVE_C15_REQUIREMENTS_ORACLE,
+  );
+  const liveTopology = c17TopologyProjection(
+    RECOVERY_REPIN_REQUIREMENTS_ORACLE,
+  );
+  assert.deepEqual(historicalTopology, historicalC15Topology);
+  assert.deepEqual(historicalC15Topology, liveTopology);
   assert.equal(
     Buffer.byteLength(canonicalJson(historicalTopology), "utf8"),
     6216,
   );
+  assert.equal(
+    Buffer.byteLength(canonicalJson(historicalC15Topology), "utf8"),
+    6216,
+  );
   assert.equal(Buffer.byteLength(canonicalJson(liveTopology), "utf8"), 6216);
   const historicalTopologySha256 = semanticSha256(historicalTopology);
+  const historicalC15TopologySha256 = semanticSha256(
+    historicalC15Topology,
+  );
   const liveTopologySha256 = semanticSha256(liveTopology);
   assert.equal(
     historicalTopologySha256,
     "2e089766b58b8fafae784ddf109f91f9a4af4ee682c0bb69020bcdfb1ef9f6e3",
   );
+  assert.equal(historicalC15TopologySha256, historicalTopologySha256);
   assert.equal(liveTopologySha256, historicalTopologySha256);
   return recursivelyFreezeEvidence({
     historicalDesignRequirementsSha256:
       "0f244f7242eb40a615245a5eda77d5380e368f43a8382f27b3cdb5c1a387e499",
-    liveRuntimeRequirementsSha256:
+    historicalC15RuntimeRequirementsSha256:
       "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8",
-    changedPointers,
+    liveRuntimeRequirementsSha256:
+      "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131",
+    historicalC15ChangedPointers,
+    recoveryRepinChangedPointers,
     topologyCanonicalByteLength: 6216,
     historicalTopologySha256,
+    historicalC15TopologySha256,
     liveTopologySha256,
     historicalDesignRole: "TOPOLOGY_DESIGN_ONLY",
     liveRuntimeRole: "PREIMAGE_AND_OUTCOME_EVIDENCE",
@@ -26499,7 +26910,7 @@ function c17AssertPinnedRuntimeBridge() {
   assert.notEqual(sourceBytes, null);
   assert.equal(
     byteSha256(sourceBytes),
-    "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+    "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
   );
   assert.equal(
     SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.requirementsSha256,
@@ -26523,9 +26934,21 @@ function c17AssertPinnedRuntimeBridge() {
     LIVE_C15_RUNTIME_ORACLE.identitySha256,
     "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
   );
+  assert.equal(
+    RECOVERY_REPIN_RUNTIME_ORACLE.requirementsSha256,
+    "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131",
+  );
+  assert.equal(
+    RECOVERY_REPIN_RUNTIME_ORACLE.identitySha256,
+    "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a",
+  );
   assert.notEqual(
     SOURCE_INDEPENDENT_ADVERSARIAL_ORACLE.requirementsSha256,
     LIVE_C15_RUNTIME_ORACLE.requirementsSha256,
+  );
+  assert.notEqual(
+    LIVE_C15_RUNTIME_ORACLE.requirementsSha256,
+    RECOVERY_REPIN_RUNTIME_ORACLE.requirementsSha256,
   );
   return c17RuntimeBridgeEvidence();
 }
@@ -26950,9 +27373,9 @@ function c17ExpectedRuntimeReceipt(
     scope:
       "EVALUATOR_RUNTIME_CONSOLIDATION_WITH_POSITIVE_REPLAY_C17_MONITOR_AND_PRIOR_RECEIPTS",
     candidateSourceSha256:
-      "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718",
+      "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a",
     runtimeOracleIdentitySha256:
-      "57a65ccb545a7c0deaba0f0306273925165e622d0dbc37d1eafc9f4ffa5657f5",
+      "a9c0def60e5ee56cf61430f2267e73ca1db2f70d3c999c80e727a1a4b7716d7a",
     runtimeBridge,
     baselineEvidence: {
       targetObservations: targetBaselineEvidence,
