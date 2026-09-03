@@ -318,6 +318,15 @@ Proposed and depends on the exact ADR-0037 through ADR-0040 physical stack; it
 does not enable Cargo execution or change any G1.7 authority value. Only its
 documentation-only S0 architecture freeze is currently active; S1 and every
 source slice remain held until ADR-0036 C21 completes.
+[ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
+records the separate evidence-backed decision to keep RocksDB as the only
+production-intended persistent `Store` backend. TurboKV and other alternatives
+may be evaluated only as non-default experiments until they pass the unchanged
+semantic, operational, migration, and workload gates; no replacement adapter
+is implemented or supported. Passing those gates may supply evidence to a
+later Accepted ADR; it does not authorize adoption automatically.
+The pre-existing replacement-adapter conformance task is cancelled because no
+candidate is selected; any future candidate requires a new explicit task.
 The exact control-authorization artifact is
 `31b8fce50d503f50656c5390cfe8d35913babeec54fc67906b20e66e7d713767`;
 the exact final-decision-set artifact is
@@ -654,8 +663,8 @@ The ADRs explain the principal boundaries:
   indexes, explicit federation, service identity, workload governance, safe
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
-  research into ADR-0018 and ADR-0020 through ADR-0041; ADR-0019 records the
-  implemented egress, cancellation, and service-claim slice. Twenty-three decisions
+  research into ADR-0018 and ADR-0020 through ADR-0042; ADR-0019 records the
+  implemented egress, cancellation, and service-claim slice. Twenty-four decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
   support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's
   completed dormant controls include the separate v2 profile and contract, receipt-v7
@@ -671,7 +680,11 @@ The ADRs explain the principal boundaries:
   bound output-release successor required before G2.2;
   [ADR-0041](./docs/adr/0041-g17-private-co-located-build-issuer.md) adds the
   authority-null private build-owner-v3/product-owner-v4 plan without
-  reinterpreting predecessor evidence. ADR-0036's source-
+  reinterpreting predecessor evidence;
+  [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
+  retains RocksDB and gates any alternative behind a separate non-default
+  falsification experiment. It adds no TurboKV dependency, storage variant,
+  migration, or production claim. ADR-0036's source-
   independent evaluator currently freezes 197/330 semantic
   negatives. Integrated B5 commit `61122498` closes `scopeJoins` and
   `nestedRecursion`; B6 commit `2f9e51ed` raises `commitMutations` to 67/200
