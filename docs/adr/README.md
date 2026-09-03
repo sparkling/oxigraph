@@ -75,11 +75,12 @@ after those gates close, the cancel-only protocol leaves G2.2 blocked pending
 [ADR-0041](0041-g17-private-co-located-build-issuer.md) separately amends the
 implemented ADR-0017 harness with an authority-null path from request v2 to
 additive build-owner v3 and product-owner v4. Its physical path must reuse the
-exact ADR-0037 through ADR-0040 mechanisms. Only its documentation-only S0
-architecture freeze may proceed while ADR-0036 C21 is open; S1 and every source
-slice remain held until that closure, and positive Cargo execution, target
-release, live G1.7 controls, qualification, and promotion remain separately
-blocked.
+exact ADR-0037 through ADR-0040 mechanisms. Its documentation-only S0
+architecture freeze is complete. The ADR-0036 C21 and programme-umbrella local
+closure recorded below makes S1 `task-1788403485637-t9wn40`
+dependency-eligible, but it remains pending at zero progress and unstarted.
+Every later source slice, positive Cargo execution, target release, live G1.7
+control, qualification, and promotion remains separately gated.
 
 [ADR-0042](0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the evidence-backed decision to retain RocksDB as the only
@@ -194,9 +195,19 @@ classes, and zero survivors. Node 24.14.1, exact Node 20.0.0, and Node 20.20.2
 each pass focused 20/20, direct 11/11, main 19/19, and combined 30/30 with zero
 TODOs. Independent C18 contract, C19 compatibility, and C20 security/mutation
 reviews each returned APPROVE with zero blocking findings; their exact receipts
-were stored and read back before task closure. C21 reconciles this bounded
-engineering evidence without accepting the decision. ADR-0036 remains
-Proposed, readiness remains exactly
+were stored and read back before task closure. Within the C17 frozen identity
+set, later commit `b915c5f6` changes only the engineering-harness package
+manifest by adding three dormant exact-create scripts; it changes no dependency,
+engine, or lock entry and does not rebaseline the historical C17 evidence.
+C21 task `task-1788204883871-l9tsh9` and programme umbrella
+`task-1788042241332-xafq11` close locally with the commit carrying the
+seven-document synchronization; exact Ruflo completion/read-back follows that
+commit. ADR-0037 S0 `task-1788205371168-e6caq3` and ADR-0041 S1 become
+dependency-eligible only, and both remain pending at zero progress and
+unstarted. External Gist/main publication is transferred to pending task
+`task-1788409495130-6ikk41`; `gistUpdated:false` and `pushed:false` remain exact.
+This reconciles bounded engineering evidence without accepting the decision.
+ADR-0036 remains Proposed, readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and no runtime,
 physical, product, G1.7, G2.2, qualification, promotion, publication, or push
 authority is added.

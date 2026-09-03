@@ -146,11 +146,13 @@ G2.2, product authority,
 promotion, and publication remain absent.
 [ADR-0041](../../docs/adr/0041-g17-private-co-located-build-issuer.md)
 separately owns the Proposed, version-additive G1.7 private issuer,
-build-owner-v3, and product-owner-v4 path. Only its documentation-only S0
-architecture freeze may proceed while ADR-0036 C21 remains open. S1 and every
-source slice wait for that closure; positive Cargo execution and target release
-remain separately blocked on the exact ADR-0037 through ADR-0040 stack and the
-existing human G1.7 gates.
+build-owner-v3, and product-owner-v4 path. Its documentation-only S0 architecture
+freeze is complete. Local ADR-0036 C21 and programme-umbrella closure makes S1
+`task-1788403485637-t9wn40` dependency-eligible only; it remains pending at zero
+progress and unstarted. Every later source slice, positive Cargo execution, and
+target release remains separately gated on its exact predecessors, the
+ADR-0037 through ADR-0040 stack where applicable, and the existing human G1.7
+gates.
 
 [ADR-0035 — Durable native containment guardian and crash recovery](../../docs/adr/0035-durable-native-containment-guardian-and-recovery.md)
 now owns the Proposed stable guardian/reaper, intent-first write-once journal,
@@ -838,7 +840,7 @@ helper, fixture, package, lockfile, dependency, runtime, filesystem, process,
 cgroup, G1.7, G2.2, qualification, promotion, publication, push, product, or
 physical authority changed, and the dual-host plan remains unresolved.
 
-### ADR-0036 C17-C20 checkpoint — 2026-09-02
+### ADR-0036 C17-C21 checkpoint — 2026-09-03
 
 The C16 section above remains historical evidence. C17 started at evaluator
 RED `0bafc84dea56dd4e75fffa0546dcdcf48c2ea408` and is GREEN at integrated
@@ -859,8 +861,15 @@ The main evaluator is 1,016,600 bytes at SHA-256
 and Git blob `022623c453e8177300e3dc843426eae6c5e84ec5`. Its normalized AST has
 97,343 nodes and identity
 `09806ef6b91200c376c72d6667c88cd14aca8e5298ddf9ca4adb12438f14d579`.
-The adversarial evaluator, candidate, live fixture, predecessors, package,
-lockfile, dependency, and registration identities are unchanged from C16.
+At integrated C17, the adversarial evaluator, candidate, live fixture,
+predecessors, package, lockfile, dependency, and registration identities are
+unchanged from C16. Within that frozen identity set, later commit `b915c5f6`
+changes only `package.json`: it adds the dormant exact-create preflight, run,
+and replay scripts without changing dependencies, engines, or the lockfile. The
+current manifest is 2,790 bytes at SHA-256
+`6cbf5ba32081cc3ff540d3500fb34f5e63c15dde1edadc909500fc9fbf4c45a8`
+and Git blob `b480befac6ce8ba3fd9fa74dbf3963df58048926`. This later script-only drift does
+not rebaseline C17.
 
 The final aggregate performs exactly four setup, 252 descriptor-alias, and 63
 precedence calls: 319 monitored calls with four returns and 315 throws. It
@@ -882,6 +891,15 @@ Evidence is stored and read back under
 `programme-evidence/adr0036-c18-contract-review-b037ed0a-2026-09-02`,
 `programme-evidence/adr0036-c19-compatibility-review-b037ed0a-2026-09-02`, and
 `programme-evidence/adr0036-c20-security-mutation-review-b037ed0a-2026-09-02`.
+The commit carrying the seven-document current-status synchronization is the
+local closure boundary for C21 task `task-1788204883871-l9tsh9` and ADR-0036
+programme umbrella `task-1788042241332-xafq11`; exact Ruflo completion/read-back
+follows that commit. This makes ADR-0037 S0 `task-1788205371168-e6caq3` and
+ADR-0041 S1 `task-1788403485637-t9wn40` dependency-eligible only. Both remain
+pending at zero progress and unstarted. External Gist/main publication is
+transferred to pending task `task-1788409495130-6ikk41`, with
+`gistUpdated:false` and `pushed:false` still exact.
+
 No G1.7 command ran. ADR-0036 remains Proposed and readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`. This checkpoint
 grants no product, runtime, filesystem, process, cgroup, G2.2, qualification,

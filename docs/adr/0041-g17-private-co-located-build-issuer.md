@@ -11,8 +11,8 @@
   completion path, or physical G1.7 authority exists
 - Programme task: `task-1788403413560-sedu3a`
   (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-V2`)
-- Architecture-freeze task: `task-1788403444941-5l8jci`; the exact corrected
-  DAG is stored at
+- Architecture-freeze task: `task-1788403444941-5l8jci`, complete; the exact
+  corrected DAG is stored at
   `task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`
 - **Amends**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
@@ -78,12 +78,16 @@ The additive chain consists of:
 3. `oxigraph.g1.7-benchmark-build-owner/v3` and its v3 projection; and
 4. `oxigraph.g1.7-benchmark-product-owner/v4` and its v4 projection.
 
-After ADR-0036 C21 closes, the requirements contract may be implemented and
-replayed before the physical dependencies close. It freezes vocabulary,
-bounds, descriptor roles, ordering, failure precedence, required dependency
-identities, and nonclaims; it opens no descriptor, launches no process, mutates
-no cgroup or filesystem, invokes no callback, and accepts no ambient authority.
-Its passing replay is not a build owner.
+The ADR-0036 C21 and programme-umbrella local closure recorded by the commit
+carrying the seven-document synchronization makes S1
+`task-1788403485637-t9wn40` dependency-eligible. S1 remains pending at zero
+progress and unstarted; no source slice starts with that closure. After S1
+freezes evaluator RED, the requirements contract may be implemented and replayed
+before the physical dependencies close. It freezes vocabulary, bounds,
+descriptor roles, ordering, failure precedence, required dependency identities,
+and nonclaims; it opens no descriptor, launches no process, mutates no cgroup or
+filesystem, invokes no callback, and accepts no ambient authority. Its passing
+replay is not a build owner.
 
 The physical issuer, build owner v3, and product owner v4 remain unavailable
 until their exact predecessor interfaces exist. This ADR does not guess or
@@ -252,16 +256,19 @@ unchanged and replayable.
 
 ### Authorization and activation sequence
 
-Only the documentation-only S0 architecture freeze may proceed while ADR-0036
-C21 remains open. S1 and every later ADR-0041 task are held until C21 task
-`task-1788204883871-l9tsh9` is complete. After that closure, the pure
-requirements evaluator and authority-null serializer/verifier may proceed
-without waiting for physical ADR-0037 through ADR-0040 effects. Physical
-evaluator design may proceed only against integrated ADR-0037/ADR-0038
-interfaces. Positive Cargo execution or output crossing the boundary requires
-the current ADR-0039 prerequisite plus ADR-0040's distinct successor
-destructive qualification and receipt-bound activation for the same host,
-boot, artifacts, state root, delegated root, protocol, and implementation.
+Documentation-only S0 architecture freeze is complete. The local closure of
+C21 task `task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
+`task-1788042241332-xafq11` satisfies S1's dependency gate when the commit
+carrying this synchronization exists and exact Ruflo completion is read back.
+S1 `task-1788403485637-t9wn40` is dependency-eligible but remains pending at
+zero progress and unstarted. Only after its evaluator RED is frozen may the
+authority-null serializer/verifier source slice proceed without waiting for
+physical ADR-0037 through ADR-0040 effects. Physical evaluator design may
+proceed only against integrated ADR-0037/ADR-0038 interfaces. Positive Cargo
+execution or output crossing the boundary requires the current ADR-0039
+prerequisite plus ADR-0040's distinct successor destructive qualification and
+receipt-bound activation for the same host, boot, artifacts, state root,
+delegated root, protocol, and implementation.
 
 Even then, capability to run does not self-authorize a G1.7 build. ADR-0017's
 existing two human phases remain controlling:
@@ -369,9 +376,10 @@ qualification, receipt, and promotion values remain null or false.
   release no owner, making recovery cost visible rather than manufacturing
   success.
 - The additional evaluator, mutation, native, host, and independent-review
-  surface is substantial. Documentation-only S0 may proceed now; pure
-  requirements work begins only after ADR-0036 C21 closes, while positive
-  physical work remains separately blocked.
+  surface is substantial. Documentation-only S0 is complete; local ADR-0036
+  C21/umbrella closure makes S1 dependency-eligible but leaves it pending at
+  zero progress and unstarted. Pure requirements source still waits for S1 RED,
+  while positive physical work remains separately blocked.
 
 ## Alternatives rejected
 

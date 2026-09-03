@@ -315,9 +315,11 @@ control/sample/qualification owners, and live evidence are still required.
 [ADR-0041](./docs/adr/0041-g17-private-co-located-build-issuer.md) now owns the
 version-additive requirements, build-owner-v3, and product-owner-v4 path. It is
 Proposed and depends on the exact ADR-0037 through ADR-0040 physical stack; it
-does not enable Cargo execution or change any G1.7 authority value. Only its
-documentation-only S0 architecture freeze is currently active; S1 and every
-source slice remain held until ADR-0036 C21 completes.
+does not enable Cargo execution or change any G1.7 authority value. Its
+documentation-only S0 architecture freeze is complete. Local ADR-0036 C21 and
+programme-umbrella closure makes S1 `task-1788403485637-t9wn40`
+dependency-eligible only; it remains pending at zero progress and unstarted,
+and every later source slice keeps its own predecessor and authority gates.
 [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the separate evidence-backed decision to keep RocksDB as the only
 production-intended persistent `Store` backend. TurboKV and other alternatives
@@ -530,10 +532,20 @@ verifier passes 1/1. C18 contract, C19 compatibility, and C20
 security/mutation review each returned APPROVE with zero blocking findings;
 C20's separately enumerated mutation campaigns had zero survivors. Their exact
 repository-memory receipts were read back before task closure. C21 records the
-bounded engineering closure while external Gist
-and push publication remain held because pinned N3 commit
-`8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream
-ref and a fresh repository cannot fetch it by object ID (`not our ref`).
+bounded engineering closure. The historical C17 package identity remains exact
+for `b037ed0a`; within that frozen identity set, later commit `b915c5f6` changes
+only `tools/engineering-harness/package.json` by adding three dormant
+exact-create scripts, with no dependency, engine, or lockfile change. C21 task
+`task-1788204883871-l9tsh9` and programme umbrella
+`task-1788042241332-xafq11` close locally with the commit carrying this
+synchronization; exact Ruflo completion/read-back follows that commit. ADR-0037
+S0 `task-1788205371168-e6caq3` and ADR-0041 S1
+`task-1788403485637-t9wn40` are thereby dependency-eligible only, pending at
+zero progress, and unstarted. External Gist and main publication are transferred
+to pending task `task-1788409495130-6ikk41` because pinned N3 commit
+`8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
+and a fresh repository cannot fetch it by object ID (`not our ref`);
+`gistUpdated:false` and `pushed:false` remain exact.
 ADR-0036 remains Proposed, readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and this
 evaluator evidence grants no product, runtime, G1.7, G2.2, qualification,
@@ -724,10 +736,14 @@ The ADRs explain the principal boundaries:
   binds 319 monitored calls, 318 killed receipt mutations, 25 killed behavioral
   classes, and zero survivors. C18 contract, C19 compatibility, and C20
   security/mutation review are complete with APPROVE verdicts and zero blocking
-  findings. C21 reconciles the local documentation and ledgers; Gist update and
-  main push remain externally held while selected N3 submodule commit
+  findings. C21 and its programme umbrella close locally with the commit carrying
+  this synchronization; ADR-0037 S0 and ADR-0041 S1 become dependency-eligible
+  but remain pending at zero progress and unstarted. Gist update and main push
+  are transferred to pending task `task-1788409495130-6ikk41` and remain
+  externally held while selected N3 submodule commit
   `8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
-  and a fresh repository cannot fetch it by object ID. The decision remains
+  and a fresh repository cannot fetch it by object ID. At this boundary
+  `gistUpdated:false` and `pushed:false` remain exact. The decision remains
   Proposed and gains no readiness, product, G1.7, qualification, promotion,
   publication, push, or physical authority.
 

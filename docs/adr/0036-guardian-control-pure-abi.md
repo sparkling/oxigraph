@@ -2,14 +2,17 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-02
+- Updated: 2026-09-03
 - Deciders: Oxigraph parity programme
 - Implementation status: the C17 pure-ABI implementation boundary is GREEN at
   integrated commit `b037ed0a` with zero evaluator TODOs; independent C18,
   C19, and C20 reviews returned APPROVE with zero blocking findings, and C20's
-  separately enumerated mutation campaigns had zero survivors. C21 local
-  documentation/ledger reconciliation is active. Formal status remains
-  Proposed and readiness remains exactly
+  separately enumerated mutation campaigns had zero survivors. The C21 local
+  documentation/ledger boundary and ADR-0036 programme umbrella close locally
+  with the commit carrying this synchronization; the corresponding Ruflo
+  completion/read-back is a post-commit ledger operation. External publication
+  remains a separate pending gate. Formal status remains Proposed and readiness
+  remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`. The following
   paragraphs preserve the chronological implementation history, beginning with
   evaluator RED through the B6 static closure checkpoint. Commit `7a539665` adds the
@@ -357,7 +360,7 @@
   20.0.0, and Node 20.20.2 with zero TODOs. Independent C18 contract, C19
   compatibility, and C20 security/mutation reviews each returned APPROVE with
   zero blocking findings; C20's separately enumerated mutation campaigns had
-  zero survivors. C21 records this bounded engineering closure without
+  zero survivors. C21 closes this bounded engineering boundary locally without
   accepting the ADR. ADR-0036 remains Proposed, readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`, and no
   runtime, physical, product, qualification, promotion, publication, or push
@@ -801,6 +804,44 @@ boundary only. They do not accept this Proposed ADR, register a runtime owner,
 establish a physical fact, make readiness available, or grant product,
 production, G1.7, G2.2, qualification, promotion, publication, or push
 authority.
+
+### C21 local documentation and umbrella closure record (2026-09-03)
+
+C21 reconciles the current programme documents and ledgers against exact C17
+integrated commit `b037ed0a77575463d9babbe4ab43d8a17f0b4032`, tree
+`64cb90bc403663436f91c268c2a3da04b76bf370`, and the three independently
+approved C18-C20 receipts above. The commit carrying this synchronization is
+the local closure boundary for C21 task `task-1788204883871-l9tsh9` and
+ADR-0036 programme umbrella `task-1788042241332-xafq11`; their exact Ruflo
+completion and read-back follow that commit. This ordering prevents prose from
+claiming a task-ledger transition before the commit it identifies exists.
+
+The C17 statement that its package identity was unchanged from C16 remains
+historically exact for commit `b037ed0a`. Later commit `b915c5f6` changed only
+one file inside C17's frozen candidate/evaluator/fixture/predecessor/package/
+lock identity set: `tools/engineering-harness/package.json` gained the three
+dormant `harness-create-exact-v2` preflight, run, and replay scripts. It changed
+no dependency, engine, or lockfile entry. The current manifest is 2,790 bytes,
+SHA-256
+`6cbf5ba32081cc3ff540d3500fb34f5e63c15dde1edadc909500fc9fbf4c45a8`,
+and Git blob `b480befac6ce8ba3fd9fa74dbf3963df58048926`; every other frozen C17 identity
+remains exact. This later dormant command wiring does not rebaseline C17 or add
+runtime authority.
+
+Local C21 and umbrella closure makes ADR-0037 S0
+`task-1788205371168-e6caq3` and ADR-0041 S1
+`task-1788403485637-t9wn40` dependency-eligible only. Both remain pending at
+zero progress and unstarted; no downstream task is started by this record.
+GitHub-linked programme-Gist and main-branch publication have been transferred
+to pending task `task-1788409495130-6ikk41`, which still requires explicit
+publication authority and resolution of the fresh-clone N3 gate. At this
+boundary `gistUpdated:false` and `pushed:false` remain exact.
+
+ADR-0036 therefore remains Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. This closure
+does not register an owner, establish a physical fact, run G1.7, or grant
+product, production, runtime, filesystem, process, cgroup, G1.7, G2.2,
+qualification, promotion, publication, push, or physical authority.
 
 ### Bounded input representation
 
@@ -1832,13 +1873,15 @@ combined 30/30 on Node 24.14.1, exact Node 20.0.0, and Node 20.20.2; the final
 aggregate has zero TODOs. C18, C19, and C20 independently returned APPROVE with
 zero blocking findings and their exact receipts were stored and read back.
 Every implementation and independent-review item in this pure-ABI acceptance
-boundary is therefore satisfied for that exact source state. C21 reconciles
-the documentation and ledgers without changing formal status. ADR-0036 remains
-Proposed and readiness remains exactly
+boundary is therefore satisfied for that exact source state. C21 and its
+programme umbrella close locally with the commit carrying this synchronization;
+the exact Ruflo completion/read-back follows that commit without changing
+formal status. ADR-0036 remains Proposed and readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`. This bounded
-engineering closure permits only the separately gated ADR-0037 contract work;
-it grants no filesystem-backed owner, product, production, G1.7, G2.2,
-qualification, promotion, publication, push, or physical authority.
+engineering closure makes only pending, unstarted ADR-0037 S0 and ADR-0041 S1
+dependency-eligible; it starts neither and grants no filesystem-backed owner,
+product, production, G1.7, G2.2, qualification, promotion, publication, push,
+or physical authority.
 
 ## Consequences
 
