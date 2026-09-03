@@ -1782,6 +1782,45 @@ supervisor-preflight-v4, registries, readiness, or any production runtime.
 
 ## Nonclaims and authority boundary
 
+### 2026-09-03 contract correction: recovery owner association predecessor
+
+ADR-0036 neither owns nor reimplements the following corrected ADR-0035
+recovery-v1 predecessor export, and this pure control ABI does not directly
+consume or invoke it:
+
+```text
+selectCandidateContainmentRecoveryOwnerAssociationV1({
+  target, lifecycleInventoryObservation, previousRecoveryReplay, plan, attempt
+})
+```
+
+The selector is a transitive predecessor repair: the recovery owner must use
+the recovery-v1 module's exact module-local `WeakMap` brands to prove one same
+target/inventory/replay/plan/nullable-attempt association before ADR-0037
+reserves a StateFS plan token or verifies a recovery replan. Clones,
+cross-module values, mixed tuples, byte-equal alternate replay anchors, and
+plan or attempt substitution reject with `TypeError` before reservation.
+Guardian-control behavior does not replace this check with serialized
+projections, digests, or a local brand.
+
+For an exact replay with no current anchor the selector returns primitive
+`null`. Otherwise it repeatably returns only a deeply frozen null-prototype
+carrier whose ordered fields are `lifetimeAnchorProjection` and
+`lifetimeAttemptAnchorRawSha256`. The projection is strictly the exact current
+anchor object retained by recovery-v1 for that replay, and the digest is its
+strictly paired retained digest. The selector consumes, mints, and rebrands
+nothing, reports no filesystem fact, and leaves all authority,
+physical-fact, and nonclaim fields false/null. Accordingly, the correction
+does not change guardian-control behavior or grant it physical or control
+authority; ADR-0037 alone preserves the transitive same-origin predecessor
+relationship through recovery replan and verification.
+
+The recovery requirements/source pins and the guardian-control
+requirements/source pins derived from them will be superseded by their later
+corrected artifacts. The historical ADR-0036 pins, receipts, status, and
+implementation evidence remain historical and are not recomputed, resealed, or
+rebaselined by this documentation correction.
+
 Creation or verification of a control value proves none of the following:
 
 - socket creation, peer identity, message delivery, or actual `SCM_RIGHTS`

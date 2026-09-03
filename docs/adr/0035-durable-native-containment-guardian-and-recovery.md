@@ -1892,6 +1892,58 @@ inventory for recovery-v1. Implementation-private helpers remain unexported;
 harmless standard ESM module metadata that is not an implementation helper or
 additional public API is outside this inventory and is not prohibited.
 
+#### 2026-09-03 contract correction: recovery owner association
+
+The preceding 53-name/13-function inventory and every hash, pin, receipt, and
+status recorded with it remain historical evidence; this correction does not
+recompute or reseal any of them. The effective recovery-v1 public surface is
+now a 54-name/14-function inventory, additionally exporting the following
+exact function. Its requirements rule produces a superseding recovery
+requirements digest and source pin; the former digest and pin remain
+historical. It is the minimal predecessor repair required by ADR-0037 and
+creates neither a new durable evidence-object schema nor authority.
+
+```text
+selectCandidateContainmentRecoveryOwnerAssociationV1({
+  target, lifecycleInventoryObservation, previousRecoveryReplay, plan, attempt
+})
+```
+
+The selector accepts only the exact module-local `WeakMap` brands for the same
+`target`, `lifecycleInventoryObservation`, `previousRecoveryReplay`, and
+`plan` tuple, plus the same associated `attempt` or the exact associated
+primitive `null` attempt. It validates those associations before any token
+reservation. In particular, a structurally valid clone, a value from another
+module instance, a mixed tuple, a byte-equal alternate replay anchor, and a
+plan or attempt substituted from another association all throw `TypeError`.
+No property projection, canonical-byte equality, digest equality, or
+independently replayed lookalike substitutes for these exact identities.
+
+When the exact retained replay association has no current anchor, the selector
+returns the primitive `null`. Otherwise it repeatably returns a deeply frozen
+null-prototype carrier with exactly these ordered fields:
+
+```text
+lifetimeAnchorProjection
+lifetimeAttemptAnchorRawSha256
+```
+
+`lifetimeAnchorProjection` is strictly the exact current-anchor projection
+object retained for that `previousRecoveryReplay` by recovery-v1's private
+association, not a copy, reconstructed projection, or byte-equal anchor from
+another replay. `lifetimeAttemptAnchorRawSha256` is strictly that retained
+anchor's paired digest. Repeated selection of one unchanged, associated tuple
+is permitted and yields a carrier with the same retained values; the selector
+consumes, mints, or rebrands nothing.
+
+The selector reports no filesystem fact and grants no filesystem, process,
+cgroup, runtime, qualification, promotion, or publication authority. It leaves
+all authority, physical-fact, and nonclaim fields false/null as already frozen
+by recovery-v1, and it performs no physical effect. This narrow association
+repair lets ADR-0037 carry the exact current lifetime-anchor relationship
+through StateFS recovery replan and verification without minting a new replay,
+loosening same-origin checks, or reserving an owner token prematurely.
+
 `generationManifest` is the exact verified v2 `{name, bytes}` artifact and
 `normalJournalBundles` is a dense ordered array of zero through 18 exact v2
 `{name, bytes}` artifacts. Target construction re-verifies the manifest and,
