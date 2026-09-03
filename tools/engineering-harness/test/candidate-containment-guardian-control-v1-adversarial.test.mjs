@@ -62,24 +62,42 @@ const LIVE_C15_EXACT_V2_SOURCE_BYTE_LENGTH = 12_687;
 const LAUNCH_CAPSULE_V3_SOURCE_BYTE_LENGTH = 17_977;
 const LAUNCH_CAPSULE_V3_SOURCE_SHA256 =
   "9579d8b66a81a09be1efc60e2f23e930070dda66175273548fcf1d3e9d23c41d";
+const CURRENT_RECOVERY_SOURCE_SHA256 =
+  "d9c9fa9acf10def4160cf81211659bbefc9c0f7a985a2860fcbbfdb42f991da0";
+const HISTORICAL_C15_RECOVERY_SOURCE_SHA256 =
+  "e8873c848411bb719139962d1940f0bdb825e09e0df079345ae95cf01c598c1d";
+const CURRENT_RECOVERY_REQUIREMENTS_SHA256 =
+  "180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874";
+const HISTORICAL_C15_RECOVERY_REQUIREMENTS_SHA256 =
+  "278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a";
 const HISTORICAL_C14_FIXTURE_BYTE_LENGTH = 14_213;
 const HISTORICAL_C14_FIXTURE_SHA256 =
   "968d1d53a14657545685b991b843aed58b7ed4e6e3e43e149308f839ebfd1082";
-const LIVE_C15_FIXTURE_BYTE_LENGTH = 14_230;
-const LIVE_C15_FIXTURE_SHA256 =
+const HISTORICAL_C15_FIXTURE_BYTE_LENGTH = 14_230;
+const HISTORICAL_C15_FIXTURE_SHA256 =
   "4f4433ed7e74a6076154d19139ffe79f8cf4a8fab4dbf0f5808a36fddf46dbdd";
-const LIVE_C15_REQUIREMENTS_SHA256 =
+const HISTORICAL_C15_REQUIREMENTS_SHA256 =
   "7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8";
-const LIVE_C15_FIXTURE_CONTRACT_PATH =
+const CURRENT_FIXTURE_BYTE_LENGTH = 14_230;
+const CURRENT_FIXTURE_SHA256 =
+  "47c41f6451424e0707a8c5a721e04bd9c8be1fe53811a42413697d48904498c4";
+const CURRENT_REQUIREMENTS_SHA256 =
+  "4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131";
+const CURRENT_FIXTURE_CONTRACT_PATH =
   "docs/adr/fixtures/0036-guardian-control-requirements-v1.json";
+const HISTORICAL_C15_FIXTURE_RECONSTRUCTION =
+  "closure-private-exact-recovery-source-and-requirements-inverse";
 const HISTORICAL_C14_FIXTURE_RECONSTRUCTION =
-  "closure-private-exact-one-digest-and-one-import-name-inverse";
+  "closure-private-historical-c15-exact-v2-digest-and-helper-import-inverse";
 const HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH = 81_189;
 const C14_AUDITED_CANDIDATE_SOURCE_SHA256 =
   "505fc2ea12a197603f745fb4fdeebaf1f560d9054c0245f135aa20972104e54d";
-const LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
-const LIVE_C15_CANDIDATE_SOURCE_SHA256 =
+const HISTORICAL_C15_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const HISTORICAL_C15_CANDIDATE_SOURCE_SHA256 =
   "3b3af0e393ed2141a1623be324b20369231742f66bfd0f745b0307575fdc9718";
+const CURRENT_CANDIDATE_SOURCE_BYTE_LENGTH = 81_670;
+const CURRENT_CANDIDATE_SOURCE_SHA256 =
+  "05a0af1ab91764a735836efdb8632e8e4f5113360f0b9c9ee9f95f580401ff5a";
 const ADVERSARIAL_EXACT_V2_LOAD_AUDIT_SCHEMA =
   "oxigraph.test.candidate-containment-guardian-control-v1-adversarial-exact-v2-load/v1";
 const EXPECTED_REQUIREMENTS_SHA256 =
@@ -87,7 +105,7 @@ const EXPECTED_REQUIREMENTS_SHA256 =
 const EXPECTED_BYTE_CARRIER_ADDITIONAL_OWN_PROPERTY_POLICY =
   "additional-non-index-string-and-symbol-properties-ignored-without-enumeration-inspection-read-write-or-invocation;own-length-rejected;semantics-derived-only-from-immediate-intrinsic-copy-of-indexed-bytes/v1";
 
-const C15_FIXTURE_IDENTITY = (() => {
+const CURRENT_FIXTURE_IDENTITY = (() => {
   if (!DIRECT_ENTRY) return null;
   const inverseReceiptBrands = new WeakSet();
   const inverseReceiptMetadata = new WeakMap();
@@ -117,58 +135,104 @@ const C15_FIXTURE_IDENTITY = (() => {
     return references;
   };
 
-  const liveFixtureBytes = readFileSync(REQUIREMENTS_URL);
-  assert.equal(Buffer.isBuffer(liveFixtureBytes), true);
-  assert.equal(Object.getPrototypeOf(liveFixtureBytes), Buffer.prototype);
-  assert.equal(liveFixtureBytes.length, LIVE_C15_FIXTURE_BYTE_LENGTH);
-  assert.equal(byteDigest(liveFixtureBytes), LIVE_C15_FIXTURE_SHA256);
-  const liveFixtureText = liveFixtureBytes.toString("utf8");
+  const replaceExactly = (source, before, after, expectedCount, label) => {
+    assert.equal(countExact(source, before), expectedCount, label);
+    return source.split(before).join(after);
+  };
+
+  const currentFixtureBytes = readFileSync(REQUIREMENTS_URL);
+  assert.equal(Buffer.isBuffer(currentFixtureBytes), true);
+  assert.equal(Object.getPrototypeOf(currentFixtureBytes), Buffer.prototype);
+  assert.equal(currentFixtureBytes.length, CURRENT_FIXTURE_BYTE_LENGTH);
+  assert.equal(byteDigest(currentFixtureBytes), CURRENT_FIXTURE_SHA256);
+  const currentFixtureText = currentFixtureBytes.toString("utf8");
   assert.equal(
-    Buffer.from(liveFixtureText, "utf8").equals(liveFixtureBytes),
+    Buffer.from(currentFixtureText, "utf8").equals(currentFixtureBytes),
     true,
   );
-  const liveFixture = JSON.parse(liveFixtureText);
-  assert.equal(digest(liveFixture), LIVE_C15_REQUIREMENTS_SHA256);
+  const currentFixture = JSON.parse(currentFixtureText);
+  assert.equal(digest(currentFixture), CURRENT_REQUIREMENTS_SHA256);
+
+  let historicalC15FixtureText = replaceExactly(
+    currentFixtureText,
+    CURRENT_RECOVERY_SOURCE_SHA256,
+    HISTORICAL_C15_RECOVERY_SOURCE_SHA256,
+    1,
+    "current fixture inverse recovery source digest count",
+  );
+  historicalC15FixtureText = replaceExactly(
+    historicalC15FixtureText,
+    CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+    HISTORICAL_C15_RECOVERY_REQUIREMENTS_SHA256,
+    1,
+    "current fixture inverse recovery requirements digest count",
+  );
+  const historicalC15FixtureBytes = Buffer.from(
+    historicalC15FixtureText,
+    "utf8",
+  );
+  assert.equal(
+    historicalC15FixtureBytes.length,
+    HISTORICAL_C15_FIXTURE_BYTE_LENGTH,
+  );
+  assert.equal(
+    byteDigest(historicalC15FixtureBytes),
+    HISTORICAL_C15_FIXTURE_SHA256,
+  );
+  const historicalC15Fixture = JSON.parse(historicalC15FixtureText);
+  assert.equal(
+    digest(historicalC15Fixture),
+    HISTORICAL_C15_REQUIREMENTS_SHA256,
+  );
 
   assert.equal(
-    countExact(liveFixtureText, EXPECTED_EXACT_V2_SOURCE_SHA256),
+    countExact(historicalC15FixtureText, EXPECTED_EXACT_V2_SOURCE_SHA256),
     1,
-    "C15 fixture inverse exact-v2 digest count",
+    "historical C15 fixture inverse exact-v2 digest count",
   );
-  let historicalFixtureText = liveFixtureText.replace(
+  let historicalC14FixtureText = historicalC15FixtureText.replace(
     EXPECTED_EXACT_V2_SOURCE_SHA256,
     HISTORICAL_C14_EXACT_V2_SOURCE_SHA256,
   );
   assert.equal(
-    countExact(
-      historicalFixtureText,
-      "copyBoundedBufferByFailureCategory",
-    ),
+    countExact(historicalC14FixtureText, "copyBoundedBufferByFailureCategory"),
     1,
-    "C15 fixture inverse helper import count",
+    "historical C15 fixture inverse helper import count",
   );
-  historicalFixtureText = historicalFixtureText.replace(
+  historicalC14FixtureText = historicalC14FixtureText.replace(
     "copyBoundedBufferByFailureCategory",
     "copyBoundedBuffer",
   );
-  const historicalFixtureBytes = Buffer.from(historicalFixtureText, "utf8");
+  const historicalC14FixtureBytes = Buffer.from(
+    historicalC14FixtureText,
+    "utf8",
+  );
   assert.equal(
-    historicalFixtureBytes.length,
+    historicalC14FixtureBytes.length,
     HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
   );
   assert.equal(
-    byteDigest(historicalFixtureBytes),
+    byteDigest(historicalC14FixtureBytes),
     HISTORICAL_C14_FIXTURE_SHA256,
   );
-  const historicalFixture = JSON.parse(historicalFixtureText);
-  assert.equal(digest(historicalFixture), EXPECTED_REQUIREMENTS_SHA256);
+  const historicalC14Fixture = JSON.parse(historicalC14FixtureText);
+  assert.equal(digest(historicalC14Fixture), EXPECTED_REQUIREMENTS_SHA256);
 
-  const liveReferences = nonPrimitiveReferences(liveFixture);
-  const historicalReferences = nonPrimitiveReferences(historicalFixture);
+  const currentReferences = nonPrimitiveReferences(currentFixture);
+  const historicalC15References = nonPrimitiveReferences(historicalC15Fixture);
+  const historicalC14References = nonPrimitiveReferences(historicalC14Fixture);
   assert.equal(
-    [...historicalReferences].some((value) => liveReferences.has(value)),
+    [...historicalC15References].some((value) => currentReferences.has(value)),
     false,
-    "C15 historical fixture must not share object references with live fixture",
+    "historical C15 fixture must not share object references with current fixture",
+  );
+  assert.equal(
+    [...historicalC14References].some(
+      (value) =>
+        currentReferences.has(value) || historicalC15References.has(value),
+    ),
+    false,
+    "historical C14 fixture must not share object references with later fixtures",
   );
 
   const inverseReceipt = Object.freeze({});
@@ -176,25 +240,32 @@ const C15_FIXTURE_IDENTITY = (() => {
   inverseReceiptMetadata.set(
     inverseReceipt,
     Object.freeze({
-      helperDigestInverseCount: 1,
-      helperImportNameInverseCount: 1,
-      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
-      historicalFixtureReconstruction:
-        HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
-      liveFixtureByteLength: liveFixtureBytes.length,
-      liveFixtureSha256: byteDigest(liveFixtureBytes),
-      liveRequirementsSha256: digest(liveFixture),
-      historicalFixtureByteLength: historicalFixtureBytes.length,
-      historicalFixtureSha256: byteDigest(historicalFixtureBytes),
-      historicalRequirementsSha256: digest(historicalFixture),
+      currentToHistoricalC15RecoverySourceDigestReversals: 1,
+      currentToHistoricalC15RecoveryRequirementsDigestReversals: 1,
+      historicalC15ToC14ExactV2DigestReversals: 1,
+      historicalC15ToC14HelperImportNameReversals: 1,
+      currentFixtureContractPath: CURRENT_FIXTURE_CONTRACT_PATH,
+      historicalC15FixtureReconstruction: HISTORICAL_C15_FIXTURE_RECONSTRUCTION,
+      historicalC14FixtureReconstruction: HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
+      currentFixtureByteLength: currentFixtureBytes.length,
+      currentFixtureSha256: byteDigest(currentFixtureBytes),
+      currentRequirementsSha256: digest(currentFixture),
+      historicalC15FixtureByteLength: historicalC15FixtureBytes.length,
+      historicalC15FixtureSha256: byteDigest(historicalC15FixtureBytes),
+      historicalC15RequirementsSha256: digest(historicalC15Fixture),
+      historicalC14FixtureByteLength: historicalC14FixtureBytes.length,
+      historicalC14FixtureSha256: byteDigest(historicalC14FixtureBytes),
+      historicalC14RequirementsSha256: digest(historicalC14Fixture),
       sharedNonPrimitiveReferenceCount: 0,
     }),
   );
 
   return Object.freeze({
-    liveFixture,
-    historicalFixture,
-    historicalFixtureBytes,
+    currentFixture,
+    historicalC15Fixture,
+    historicalC15FixtureBytes,
+    historicalC14Fixture,
+    historicalC14FixtureBytes,
     inverseReceipt,
     assertInverseReceipt(receipt) {
       assert.equal(inverseReceiptBrands.has(receipt), true);
@@ -203,32 +274,40 @@ const C15_FIXTURE_IDENTITY = (() => {
   });
 })();
 
-const LIVE_C15_REQUIREMENTS_ORACLE = C15_FIXTURE_IDENTITY?.liveFixture ?? null;
+const CURRENT_REQUIREMENTS_ORACLE =
+  CURRENT_FIXTURE_IDENTITY?.currentFixture ?? null;
+const HISTORICAL_C15_REQUIREMENTS_ORACLE =
+  CURRENT_FIXTURE_IDENTITY?.historicalC15Fixture ?? null;
 const HISTORICAL_C14_REQUIREMENTS_ORACLE =
-  C15_FIXTURE_IDENTITY?.historicalFixture ?? null;
+  CURRENT_FIXTURE_IDENTITY?.historicalC14Fixture ?? null;
 if (DIRECT_ENTRY) {
   assert.deepEqual(
-    C15_FIXTURE_IDENTITY.assertInverseReceipt(
-      C15_FIXTURE_IDENTITY.inverseReceipt,
+    CURRENT_FIXTURE_IDENTITY.assertInverseReceipt(
+      CURRENT_FIXTURE_IDENTITY.inverseReceipt,
     ),
     {
-      helperDigestInverseCount: 1,
-      helperImportNameInverseCount: 1,
-      liveFixtureContractPath: LIVE_C15_FIXTURE_CONTRACT_PATH,
-      historicalFixtureReconstruction:
-        HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
-      liveFixtureByteLength: LIVE_C15_FIXTURE_BYTE_LENGTH,
-      liveFixtureSha256: LIVE_C15_FIXTURE_SHA256,
-      liveRequirementsSha256: LIVE_C15_REQUIREMENTS_SHA256,
-      historicalFixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
-      historicalFixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
-      historicalRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      currentToHistoricalC15RecoverySourceDigestReversals: 1,
+      currentToHistoricalC15RecoveryRequirementsDigestReversals: 1,
+      historicalC15ToC14ExactV2DigestReversals: 1,
+      historicalC15ToC14HelperImportNameReversals: 1,
+      currentFixtureContractPath: CURRENT_FIXTURE_CONTRACT_PATH,
+      historicalC15FixtureReconstruction: HISTORICAL_C15_FIXTURE_RECONSTRUCTION,
+      historicalC14FixtureReconstruction: HISTORICAL_C14_FIXTURE_RECONSTRUCTION,
+      currentFixtureByteLength: CURRENT_FIXTURE_BYTE_LENGTH,
+      currentFixtureSha256: CURRENT_FIXTURE_SHA256,
+      currentRequirementsSha256: CURRENT_REQUIREMENTS_SHA256,
+      historicalC15FixtureByteLength: HISTORICAL_C15_FIXTURE_BYTE_LENGTH,
+      historicalC15FixtureSha256: HISTORICAL_C15_FIXTURE_SHA256,
+      historicalC15RequirementsSha256: HISTORICAL_C15_REQUIREMENTS_SHA256,
+      historicalC14FixtureByteLength: HISTORICAL_C14_FIXTURE_BYTE_LENGTH,
+      historicalC14FixtureSha256: HISTORICAL_C14_FIXTURE_SHA256,
+      historicalC14RequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
       sharedNonPrimitiveReferenceCount: 0,
     },
   );
 }
 
-const C15_SOURCE_IDENTITY = (() => {
+const CURRENT_SOURCE_IDENTITY = (() => {
   const inverseReceiptBrands = new WeakSet();
   const inverseReceiptMetadata = new WeakMap();
 
@@ -263,7 +342,10 @@ const C15_SOURCE_IDENTITY = (() => {
     assert.equal(countExact(source, functionMarker), 1, functionName);
     const functionStart = source.indexOf(functionMarker);
     const possibleEnds = [
-      source.indexOf("\nexport function ", functionStart + functionMarker.length),
+      source.indexOf(
+        "\nexport function ",
+        functionStart + functionMarker.length,
+      ),
       source.indexOf("\nfunction ", functionStart + functionMarker.length),
     ].filter((index) => index !== -1);
     const functionEnd =
@@ -289,10 +371,7 @@ const C15_SOURCE_IDENTITY = (() => {
       `${functionName} normalization/brand order`,
     );
     const recordTerminator = "\n  );\n";
-    const recordTerminatorStart = source.indexOf(
-      recordTerminator,
-      recordStart,
-    );
+    const recordTerminatorStart = source.indexOf(recordTerminator, recordStart);
     assert.equal(
       recordTerminatorStart !== -1 && recordTerminatorStart < functionEnd,
       true,
@@ -302,23 +381,61 @@ const C15_SOURCE_IDENTITY = (() => {
     const normalizationBlock = source.slice(normalizationStart, brandStart);
     const brandBlock = source.slice(brandStart, brandEnd);
     assert.equal(
-      countExact(
-        normalizationBlock,
-        "copyBoundedBufferByFailureCategory(",
-      ),
+      countExact(normalizationBlock, "copyBoundedBufferByFailureCategory("),
       helperCallCount,
       `${functionName} normalization helper-call count`,
     );
     return `${source.slice(0, normalizationStart)}${brandBlock}${normalizationBlock}${source.slice(brandEnd)}`;
   };
 
-  const reconstruct = (liveSourceBytes) => {
-    assert.equal(Buffer.isBuffer(liveSourceBytes), true);
-    assert.equal(Object.getPrototypeOf(liveSourceBytes), Buffer.prototype);
-    assert.equal(liveSourceBytes.length, LIVE_C15_CANDIDATE_SOURCE_BYTE_LENGTH);
-    assert.equal(byteDigest(liveSourceBytes), LIVE_C15_CANDIDATE_SOURCE_SHA256);
-    const liveSource = liveSourceBytes.toString("utf8");
-    assert.equal(Buffer.from(liveSource, "utf8").equals(liveSourceBytes), true);
+  const reconstruct = (currentSourceBytes) => {
+    assert.equal(Buffer.isBuffer(currentSourceBytes), true);
+    assert.equal(Object.getPrototypeOf(currentSourceBytes), Buffer.prototype);
+    assert.equal(
+      currentSourceBytes.length,
+      CURRENT_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteDigest(currentSourceBytes),
+      CURRENT_CANDIDATE_SOURCE_SHA256,
+      "prospective guardian-control source identity mismatch",
+    );
+    const currentSource = currentSourceBytes.toString("utf8");
+    assert.equal(
+      Buffer.from(currentSource, "utf8").equals(currentSourceBytes),
+      true,
+    );
+
+    let historicalC15Source = replaceExactly(
+      currentSource,
+      CURRENT_RECOVERY_SOURCE_SHA256,
+      HISTORICAL_C15_RECOVERY_SOURCE_SHA256,
+      1,
+      "current inverse recovery source digest count",
+    );
+    historicalC15Source = replaceExactly(
+      historicalC15Source,
+      CURRENT_RECOVERY_REQUIREMENTS_SHA256,
+      HISTORICAL_C15_RECOVERY_REQUIREMENTS_SHA256,
+      1,
+      "current inverse recovery requirements digest count",
+    );
+    historicalC15Source = replaceExactly(
+      historicalC15Source,
+      CURRENT_REQUIREMENTS_SHA256,
+      HISTORICAL_C15_REQUIREMENTS_SHA256,
+      2,
+      "current inverse guardian requirements digest count",
+    );
+    const historicalC15SourceBytes = Buffer.from(historicalC15Source, "utf8");
+    assert.equal(
+      historicalC15SourceBytes.length,
+      HISTORICAL_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+    );
+    assert.equal(
+      byteDigest(historicalC15SourceBytes),
+      HISTORICAL_C15_CANDIDATE_SOURCE_SHA256,
+    );
 
     const launchWrapperDeclaration = `function verifyAdmissionLaunchCapsuleV3(capsuleBytes) {
   try {
@@ -330,7 +447,7 @@ const C15_SOURCE_IDENTITY = (() => {
 
 `;
     let historicalSource = replaceExactly(
-      liveSource,
+      historicalC15Source,
       launchWrapperDeclaration,
       "",
       1,
@@ -440,7 +557,7 @@ const C15_SOURCE_IDENTITY = (() => {
     );
     historicalSource = replaceExactly(
       historicalSource,
-      LIVE_C15_REQUIREMENTS_SHA256,
+      HISTORICAL_C15_REQUIREMENTS_SHA256,
       EXPECTED_REQUIREMENTS_SHA256,
       2,
       "C15 inverse requirements digest count",
@@ -460,6 +577,9 @@ const C15_SOURCE_IDENTITY = (() => {
     inverseReceiptMetadata.set(
       inverseReceipt,
       Object.freeze({
+        recoverySourceDigestReversals: 1,
+        recoveryRequirementsDigestReversals: 1,
+        guardianRequirementsDigestReversals: 2,
         launchWrapperDeclarationRemovals: 1,
         admissionVerifierCallReversals: 1,
         normalizationDeclarationBlocksMoved: 5,
@@ -469,16 +589,20 @@ const C15_SOURCE_IDENTITY = (() => {
         helperNameReversals: 11,
         exactV2DigestReversals: 1,
         requirementsDigestReversals: 2,
-        liveSourceByteLength: liveSourceBytes.length,
-        liveSourceSha256: byteDigest(liveSourceBytes),
-        historicalSourceByteLength: historicalSourceBytes.length,
-        historicalSourceSha256: byteDigest(historicalSourceBytes),
+        currentSourceByteLength: currentSourceBytes.length,
+        currentSourceSha256: byteDigest(currentSourceBytes),
+        historicalC15SourceByteLength: historicalC15SourceBytes.length,
+        historicalC15SourceSha256: byteDigest(historicalC15SourceBytes),
+        historicalC14SourceByteLength: historicalSourceBytes.length,
+        historicalC14SourceSha256: byteDigest(historicalSourceBytes),
       }),
     );
     return Object.freeze({
-      liveSource,
-      historicalSource,
-      historicalSourceBytes,
+      currentSource,
+      historicalC15Source,
+      historicalC15SourceBytes,
+      historicalC14Source: historicalSource,
+      historicalC14SourceBytes: historicalSourceBytes,
       inverseReceipt,
     });
   };
@@ -494,9 +618,9 @@ const C15_SOURCE_IDENTITY = (() => {
 
 function directHistoricalC14Requirements() {
   assert.equal(DIRECT_ENTRY, true);
-  assert.notEqual(C15_FIXTURE_IDENTITY, null);
+  assert.notEqual(CURRENT_FIXTURE_IDENTITY, null);
   return JSON.parse(
-    C15_FIXTURE_IDENTITY.historicalFixtureBytes.toString("utf8"),
+    CURRENT_FIXTURE_IDENTITY.historicalC14FixtureBytes.toString("utf8"),
   );
 }
 
@@ -650,12 +774,7 @@ function directC15GuardianLimit(node, expected) {
   );
 }
 
-function directC15PrivateStoreCall(
-  node,
-  storeName,
-  methodName,
-  keyName,
-) {
+function directC15PrivateStoreCall(node, storeName, methodName, keyName) {
   return (
     node?.type === "CallExpression" &&
     node.optional === false &&
@@ -682,10 +801,7 @@ function directAssertC15LiveAstExtension(program) {
       occurrences.push(node);
       identifiers.set(node.name, occurrences);
     } else if (node.type === "Literal" && typeof node.value === "string") {
-      stringLiterals.set(
-        node.value,
-        (stringLiterals.get(node.value) ?? 0) + 1,
-      );
+      stringLiterals.set(node.value, (stringLiterals.get(node.value) ?? 0) + 1);
     } else if (node.type === "CallExpression") {
       calls.push(node);
     }
@@ -703,7 +819,10 @@ function directAssertC15LiveAstExtension(program) {
       : [],
   );
   assert.equal(helperSpecifiers.length, 1);
-  assert.equal(directC15Identifier(helperSpecifiers[0].local, helperName), true);
+  assert.equal(
+    directC15Identifier(helperSpecifiers[0].local, helperName),
+    true,
+  );
   assert.equal(stringLiterals.get(helperName), 1);
 
   const functions = new Map();
@@ -729,7 +848,9 @@ function directAssertC15LiveAstExtension(program) {
     for (const [statementIndex, statement] of fn.body.body.entries()) {
       if (statement.type !== "VariableDeclaration") continue;
       for (const declaration of statement.declarations) {
-        if (directC15Identifier(declaration.id, specification.declarationName)) {
+        if (
+          directC15Identifier(declaration.id, specification.declarationName)
+        ) {
           matches.push({ declaration, statement, statementIndex });
         }
       }
@@ -815,7 +936,10 @@ function directAssertC15LiveAstExtension(program) {
   const wrapper = functions.get(wrapperName);
   assert.notEqual(wrapper, undefined);
   assert.equal(exportedFunctions.has(wrapperName), false);
-  assert.deepEqual(wrapper.params.map(({ name }) => name), ["capsuleBytes"]);
+  assert.deepEqual(
+    wrapper.params.map(({ name }) => name),
+    ["capsuleBytes"],
+  );
   assert.equal(wrapper.body.body.length, 1);
   const tryStatement = wrapper.body.body[0];
   assert.equal(tryStatement.type, "TryStatement");
@@ -824,17 +948,24 @@ function directAssertC15LiveAstExtension(program) {
   const returned = tryStatement.block.body[0];
   assert.equal(returned.type, "ReturnStatement");
   assert.equal(returned.argument?.type, "CallExpression");
-  assert.equal(directC15Identifier(returned.argument.callee, rawVerifierName), true);
-  assert.deepEqual(returned.argument.arguments.map(({ name }) => name), [
-    "capsuleBytes",
-  ]);
+  assert.equal(
+    directC15Identifier(returned.argument.callee, rawVerifierName),
+    true,
+  );
+  assert.deepEqual(
+    returned.argument.arguments.map(({ name }) => name),
+    ["capsuleBytes"],
+  );
   assert.equal(tryStatement.handler?.type, "CatchClause");
   assert.equal(tryStatement.handler.param, null);
   assert.equal(tryStatement.handler.body.body.length, 1);
   const caught = tryStatement.handler.body.body[0];
   assert.equal(caught.type, "ExpressionStatement");
   assert.equal(caught.expression?.type, "CallExpression");
-  assert.equal(directC15Identifier(caught.expression.callee, "failBinding"), true);
+  assert.equal(
+    directC15Identifier(caught.expression.callee, "failBinding"),
+    true,
+  );
   assert.equal(caught.expression.arguments.length, 0);
 
   const wrapperCalls = calls.filter((call) =>
@@ -1740,7 +1871,11 @@ function c15ExpectedError(invoke, expectedMessage, label, sentinel = null) {
   }
   assert.notEqual(observedError, null, `${label} must reject`);
   if (sentinel !== null) {
-    assert.notEqual(observedError, sentinel, `${label} invoked a forbidden trap`);
+    assert.notEqual(
+      observedError,
+      sentinel,
+      `${label} invoked a forbidden trap`,
+    );
   }
   assert.equal(
     observedError?.message,
@@ -1929,8 +2064,7 @@ function c15BytePositionRuntime(candidate, oracle, activity) {
       ];
     } else if (position === "recoveryRequestFrameBytes") {
       witness = recoveryRequest;
-      operation =
-        "createCandidateContainmentGuardianRecoveryRequestInputV1";
+      operation = "createCandidateContainmentGuardianRecoveryRequestInputV1";
       mode = "RECOVERY_ONLY";
       const state = positive ? initialState(mode).state : unbranded;
       args = [state, carrier, witness.scalarArguments.requestEofObserved];
@@ -1942,8 +2076,7 @@ function c15BytePositionRuntime(candidate, oracle, activity) {
         position,
       );
       witness = diagnostic;
-      operation =
-        "createCandidateContainmentGuardianDiagnosticFailureInputV1";
+      operation = "createCandidateContainmentGuardianDiagnosticFailureInputV1";
       const state = positive ? initialState(mode).state : unbranded;
       args = [
         state,
@@ -1961,16 +2094,15 @@ function c15BytePositionRuntime(candidate, oracle, activity) {
     assert.deepEqual(c15JsonClone(input), witness.expectedProjection);
     return Object.freeze({
       verifyAfterMutation() {
-        const transition = call(
-          "reduceCandidateContainmentGuardianControlV1",
-          [state, input],
-        );
+        const transition = call("reduceCandidateContainmentGuardianControlV1", [
+          state,
+          input,
+        ]);
         const expected = oracle.expected.wholeTransitions.find(
           (entry) =>
             entry.operation === witness.kind &&
             entry.beforeStateSha256 === state.stateSha256 &&
-            entry.inputWitness?.frame?.rawSha256 ===
-              witness.frame?.rawSha256,
+            entry.inputWitness?.frame?.rawSha256 === witness.frame?.rawSha256,
         );
         assert.notEqual(expected, undefined, witness.kind);
         assert.equal(
@@ -1998,8 +2130,7 @@ function c15DecoratedCarrier(source, variant, touches, label) {
       return null;
     },
   });
-  const key =
-    variant.keyKind === "string" ? `extra-${label}` : Symbol(label);
+  const key = variant.keyKind === "string" ? `extra-${label}` : Symbol(label);
   const descriptor = { configurable: true, enumerable: variant.enumerable };
   if (variant.descriptorKind === "getter") {
     descriptor.get = () => {
@@ -2101,7 +2232,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
     oracle.identitySha256 ?? oracle.requirementsSha256 ?? null;
   assert.match(oracleIdentitySha256, /^[0-9a-f]{64}$/u);
   assert.equal(Object.isFrozen(oracle), true);
-  assert.equal(oracle.requirementsSha256, LIVE_C15_REQUIREMENTS_SHA256);
+  assert.equal(oracle.requirementsSha256, CURRENT_REQUIREMENTS_SHA256);
   assert.equal(oracleIdentitySha256, oracle.identitySha256);
   const activity = {
     candidateCallCount: 0,
@@ -2141,8 +2272,12 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
       C15_HOSTILE_CARRIER_FAMILIES,
       spec.name,
     );
-    for (const { family, carrier, sentinel = null, trapState = null } of
-      hostileCarriers) {
+    for (const {
+      family,
+      carrier,
+      sentinel = null,
+      trapState = null,
+    } of hostileCarriers) {
       const id = `${spec.name}:${family}`;
       c15ExpectedError(
         () => runtime.invoke(spec.name, carrier),
@@ -2157,8 +2292,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
       hostileControlIds.push(id);
     }
 
-    for (const [variantIndex, variant] of
-      IGNORED_PROPERTY_VARIANTS.entries()) {
+    for (const [variantIndex, variant] of IGNORED_PROPERTY_VARIANTS.entries()) {
       const id = `${spec.name}:ignored-own-property-${String(
         variantIndex,
       ).padStart(2, "0")}`;
@@ -2189,8 +2323,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
     localBufferSuccess.verifyAfterMutation();
     localSuccessControlIds.push(localBufferId);
 
-    const normalizedViewId =
-      `${spec.name}:local-uint8array-buffer-prototype-copy-no-alias`;
+    const normalizedViewId = `${spec.name}:local-uint8array-buffer-prototype-copy-no-alias`;
     const normalizedView = new Uint8Array(source);
     assert.equal(Object.getPrototypeOf(normalizedView), Uint8Array.prototype);
     assert.equal(Buffer.isBuffer(normalizedView), false);
@@ -2207,10 +2340,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
     const maximumId = `${spec.name}:maximum-accepted-before-downstream-check`;
     let maximumError = null;
     try {
-      runtime.invoke(
-        spec.name,
-        Buffer.alloc(spec.maximumBytes, 0x61),
-      );
+      runtime.invoke(spec.name, Buffer.alloc(spec.maximumBytes, 0x61));
     } catch (error) {
       maximumError = error;
     }
@@ -2220,10 +2350,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
     const overMaximumId = `${spec.name}:overmaximum-control-bounds`;
     c15ExpectedError(
       () =>
-        runtime.invoke(
-          spec.name,
-          Buffer.alloc(spec.maximumBytes + 1, 0x61),
-        ),
+        runtime.invoke(spec.name, Buffer.alloc(spec.maximumBytes + 1, 0x61)),
       "CONTROL_BOUNDS",
       overMaximumId,
     );
@@ -2232,10 +2359,7 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
     const boundsBeforeShapeId = `${spec.name}:bounds-before-shape`;
     const boundsBeforeShape = Buffer.alloc(spec.maximumBytes + 1, 0x62);
     class OversizedBufferSubclass extends Buffer {}
-    Object.setPrototypeOf(
-      boundsBeforeShape,
-      OversizedBufferSubclass.prototype,
-    );
+    Object.setPrototypeOf(boundsBeforeShape, OversizedBufferSubclass.prototype);
     c15ExpectedError(
       () => runtime.invoke(spec.name, boundsBeforeShape),
       "CONTROL_BOUNDS",
@@ -2265,13 +2389,9 @@ async function c15RunBytePositionCandidateControls({ candidate, oracle }) {
   assert.equal(exactV2SourceBytes.length, LIVE_C15_EXACT_V2_SOURCE_BYTE_LENGTH);
   assert.equal(byteDigest(exactV2SourceBytes), EXPECTED_EXACT_V2_SOURCE_SHA256);
   const exactV2 = await import(EXACT_V2_URL.href);
-  assert.equal(
-    typeof exactV2.copyBoundedBufferByFailureCategory,
-    "function",
-  );
+  assert.equal(typeof exactV2.copyBoundedBufferByFailureCategory, "function");
   const runDetachedHelperBoundary = (minimumBytes, expectedMessage) => {
-    const id =
-      `exact-v2:detached-minimum-${minimumBytes}-${expectedMessage.toLowerCase()}`;
+    const id = `exact-v2:detached-minimum-${minimumBytes}-${expectedMessage.toLowerCase()}`;
     const detached = c15DetachedBuffer(Buffer.from([0x45]));
     c15ExpectedError(
       () =>
@@ -2461,29 +2581,23 @@ async function c15RunLaunchVerifierErrorTranslationControl({
   const invalidAdmissionFrame = c15JsonClone(admissionWitness.frame.value);
   invalidAdmissionFrame.launchCapsuleV3 =
     invalidLaunchCapsuleBytes.toString("base64");
-  invalidAdmissionFrame.launchCapsuleV3Sha256 =
-    invalidLaunchCapsuleRawSha256;
-  const invalidAdmissionFrameBytes =
-    c15CanonicalJsonlBytes(invalidAdmissionFrame);
-  const invalidAdmissionFrameRawSha256 = byteDigest(
-    invalidAdmissionFrameBytes,
+  invalidAdmissionFrame.launchCapsuleV3Sha256 = invalidLaunchCapsuleRawSha256;
+  const invalidAdmissionFrameBytes = c15CanonicalJsonlBytes(
+    invalidAdmissionFrame,
   );
+  const invalidAdmissionFrameRawSha256 = byteDigest(invalidAdmissionFrameBytes);
   assert.notEqual(
     invalidAdmissionFrameRawSha256,
     admissionWitness.frame.rawSha256,
     `${C15_LAUNCH_SCHEMA_SUBSTITUTION_CONTROL_ID} must reseal the admission frame`,
   );
   assert.equal(invalidAdmissionFrameBytes.length <= 131_072, true);
-  const invalidRecvmsgReport = c15JsonClone(
-    admissionWitness.auxiliary.value,
-  );
+  const invalidRecvmsgReport = c15JsonClone(admissionWitness.auxiliary.value);
   invalidRecvmsgReport.messageByteLength = invalidAdmissionFrameBytes.length;
   invalidRecvmsgReport.messageRawSha256 = invalidAdmissionFrameRawSha256;
   const invalidRecvmsgReportBytes =
     c15CanonicalJsonlBytes(invalidRecvmsgReport);
-  const invalidRecvmsgReportRawSha256 = byteDigest(
-    invalidRecvmsgReportBytes,
-  );
+  const invalidRecvmsgReportRawSha256 = byteDigest(invalidRecvmsgReportBytes);
   assert.equal(invalidRecvmsgReportBytes.length <= 16_384, true);
   assert.notEqual(
     invalidRecvmsgReportRawSha256,
@@ -2562,7 +2676,7 @@ async function c15RunLaunchVerifierErrorTranslationControl({
   const initialized =
     candidate.initializeCandidateContainmentGuardianControlV1(
       startupProjection,
-  );
+    );
   assert.notEqual(initialized, null);
   assert.notEqual(initialized.state, null);
 
@@ -2575,10 +2689,7 @@ async function c15RunLaunchVerifierErrorTranslationControl({
     );
   assert.notEqual(validAdmission, null);
   assert.equal(validAdmission.kind, "ADMIT");
-  assert.equal(
-    validAdmission.frameSha256,
-    admissionWitness.frame.rawSha256,
-  );
+  assert.equal(validAdmission.frameSha256, admissionWitness.frame.rawSha256);
   assert.equal(
     validAdmission.auxiliarySha256,
     admissionWitness.auxiliary.rawSha256,
@@ -2644,8 +2755,10 @@ async function c15RunLaunchVerifierErrorTranslationControl({
     validAdmissionSucceeded: true,
     predecessorSourceByteLength: predecessorSourceBytes.length,
     predecessorSourceSha256: byteDigest(predecessorSourceBytes),
-    predecessorNativeFailure:
-      String(predecessorObservedError.message).split("\n", 1)[0],
+    predecessorNativeFailure: String(predecessorObservedError.message).split(
+      "\n",
+      1,
+    )[0],
     predecessorNativeFailureIsControlBinding: false,
     malformedBase64Failure: malformedBase64ObservedError.message,
     malformedBase64RejectedBeforeWrapper: true,
@@ -2689,8 +2802,7 @@ const C16_PRIVATE_STORE_DISPATCH_SCHEMA =
 const C16_PRIVATE_STORE_INPUT_OPERATION_BY_KIND = Object.freeze({
   ADMIT: "createCandidateContainmentGuardianAdmissionInputV1",
   CANCEL: "createCandidateContainmentGuardianCancelInputV1",
-  RECOVERY_REQUEST:
-    "createCandidateContainmentGuardianRecoveryRequestInputV1",
+  RECOVERY_REQUEST: "createCandidateContainmentGuardianRecoveryRequestInputV1",
   CONTROLLER_CLOSED:
     "createCandidateContainmentGuardianControllerClosedInputV1",
   DIAGNOSTIC_FAILURE:
@@ -2713,14 +2825,12 @@ const C16_PRIVATE_STORE_LATE_FAILURE_BOUNDARIES = Object.freeze([
   }),
   Object.freeze({
     operation: "createCandidateContainmentGuardianCancelInputV1",
-    boundary:
-      "sequence-transition-after-frame-scalar-and-state-bindings",
+    boundary: "sequence-transition-after-frame-scalar-and-state-bindings",
     collapsed: false,
   }),
   Object.freeze({
     operation: "createCandidateContainmentGuardianRecoveryRequestInputV1",
-    boundary:
-      "sequence-transition-after-selection-and-state-bindings",
+    boundary: "sequence-transition-after-selection-and-state-bindings",
     collapsed: false,
   }),
   Object.freeze({
@@ -2749,8 +2859,7 @@ const C16_PRIVATE_STORE_LATE_FAILURE_BOUNDARIES = Object.freeze([
   }),
   Object.freeze({
     operation: "initializeCandidateContainmentGuardianControlV1",
-    boundary:
-      "collapsed-to-startup-brand-no-later-injectable-fallible-step",
+    boundary: "collapsed-to-startup-brand-no-later-injectable-fallible-step",
     collapsed: true,
   }),
   Object.freeze({
@@ -2918,15 +3027,16 @@ function c16PrivateStoreOwnerSpecs() {
       ([kind, operation]) => [operation, kind],
     ),
   );
-  const specs = PRIVATE_STORE_COMMIT_CONTROL_PLAN.flatMap(({ store, operations }) =>
-    operations.map((operation) =>
-      Object.freeze({
-        store,
-        operation,
-        kind: kindByOperation.get(operation) ?? null,
-        lateFailureBoundary: lateBoundaryByOperation.get(operation),
-      }),
-    ),
+  const specs = PRIVATE_STORE_COMMIT_CONTROL_PLAN.flatMap(
+    ({ store, operations }) =>
+      operations.map((operation) =>
+        Object.freeze({
+          store,
+          operation,
+          kind: kindByOperation.get(operation) ?? null,
+          lateFailureBoundary: lateBoundaryByOperation.get(operation),
+        }),
+      ),
   );
   assert.equal(specs.length, 10);
   assert.equal(new Set(specs.map(({ operation }) => operation)).size, 10);
@@ -2962,15 +3072,18 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
     ]),
   );
   assert.deepEqual([...startupByMode.keys()], ["NORMAL", "RECOVERY_ONLY"]);
-  assert.deepEqual([...inputByKind.keys()], [
-    "ADMIT",
-    "CANCEL",
-    "RECOVERY_REQUEST",
-    "CONTROLLER_CLOSED",
-    "DIAGNOSTIC_FAILURE",
-    "RECOVERY_CONTROL_HANDOFF",
-    "STATUS_EOF",
-  ]);
+  assert.deepEqual(
+    [...inputByKind.keys()],
+    [
+      "ADMIT",
+      "CANCEL",
+      "RECOVERY_REQUEST",
+      "CONTROLLER_CLOSED",
+      "DIAGNOSTIC_FAILURE",
+      "RECOVERY_CONTROL_HANDOFF",
+      "STATUS_EOF",
+    ],
+  );
 
   const activity = {
     candidateBehaviorAttemptCount: 0,
@@ -3222,10 +3335,7 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
     if (spec.kind !== null) {
       const witness = inputByKind.get(spec.kind);
       assert.notEqual(witness, undefined, spec.kind);
-      const state = materializeState(
-        moduleInstance,
-        witness.boundStateSha256,
-      );
+      const state = materializeState(moduleInstance, witness.boundStateSha256);
       const output = createInput(moduleInstance, witness, state, options);
       const context = {
         ownerType: "input",
@@ -3240,9 +3350,7 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
       assertOwnerProjection(context, `${spec.operation} success`);
       return context;
     }
-    if (
-      spec.operation === "initializeCandidateContainmentGuardianControlV1"
-    ) {
+    if (spec.operation === "initializeCandidateContainmentGuardianControlV1") {
       const witness = startupByMode.get("NORMAL");
       const startup = createStartup(moduleInstance, witness);
       const expected = initializationTransition("NORMAL").expectedProjection;
@@ -3257,10 +3365,7 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
       assertOwnerProjection(context, `${spec.operation} success`);
       return context;
     }
-    assert.equal(
-      spec.operation,
-      "reduceCandidateContainmentGuardianControlV1",
-    );
+    assert.equal(spec.operation, "reduceCandidateContainmentGuardianControlV1");
     const transition = oracle.expected.wholeTransitions.find(
       (entry) => entry.operation === "ADMIT",
     );
@@ -3269,12 +3374,13 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
       moduleInstance,
       transition.beforeStateSha256,
     );
-    const input = createInput(
+    const input = createInput(moduleInstance, transition.inputWitness, state);
+    const output = call(
       moduleInstance,
-      transition.inputWitness,
-      state,
+      spec.operation,
+      [state, input],
+      options,
     );
-    const output = call(moduleInstance, spec.operation, [state, input], options);
     const context = {
       ownerType: "state",
       spec,
@@ -3396,9 +3502,11 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
     if (spec.kind !== null) {
       const witness = inputByKind.get(spec.kind);
       if (
-        ["CONTROLLER_CLOSED", "RECOVERY_CONTROL_HANDOFF", "STATUS_EOF"].includes(
-          spec.kind,
-        )
+        [
+          "CONTROLLER_CLOSED",
+          "RECOVERY_CONTROL_HANDOFF",
+          "STATUS_EOF",
+        ].includes(spec.kind)
       ) {
         return expectError(
           candidate,
@@ -3419,9 +3527,7 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
         `${spec.operation}:earlyFailure`,
       );
     }
-    if (
-      spec.operation === "initializeCandidateContainmentGuardianControlV1"
-    ) {
+    if (spec.operation === "initializeCandidateContainmentGuardianControlV1") {
       return expectError(
         candidate,
         spec.operation,
@@ -3460,9 +3566,11 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
       const witness = inputByKind.get(spec.kind);
       const state = materializeState(candidate, witness.boundStateSha256);
       if (
-        ["CONTROLLER_CLOSED", "RECOVERY_CONTROL_HANDOFF", "STATUS_EOF"].includes(
-          spec.kind,
-        )
+        [
+          "CONTROLLER_CLOSED",
+          "RECOVERY_CONTROL_HANDOFF",
+          "STATUS_EOF",
+        ].includes(spec.kind)
       ) {
         return expectError(
           candidate,
@@ -3526,9 +3634,7 @@ function c16PrivateStoreRuntime(candidate, freshCandidate, oracle) {
         `${spec.operation}:lateFailure`,
       );
     }
-    if (
-      spec.operation === "initializeCandidateContainmentGuardianControlV1"
-    ) {
+    if (spec.operation === "initializeCandidateContainmentGuardianControlV1") {
       const startup = createStartup(candidate, startupByMode.get("NORMAL"));
       return expectError(
         candidate,
@@ -3742,27 +3848,23 @@ async function c16RunPrivateStoreCandidateControls(
     primaryCandidateCallCount: runtime.activity.primaryCandidateCallCount,
     freshCandidateCallCount: runtime.activity.freshCandidateCallCount,
     setupCandidateCallCount: runtime.activity.setupCandidateCallCount,
-    downstreamCandidateCallCount:
-      runtime.activity.downstreamCandidateCallCount,
+    downstreamCandidateCallCount: runtime.activity.downstreamCandidateCallCount,
     ownerTargetAttemptCount: runtime.activity.ownerTargetAttemptCount,
     ownerTargetSuccessCount: runtime.activity.ownerTargetSuccessCount,
     ownerTargetRejectionCount: runtime.activity.ownerTargetRejectionCount,
     primaryOwnerTargetAttemptCount:
       runtime.activity.primaryOwnerTargetAttemptCount,
-    freshOwnerTargetAttemptCount:
-      runtime.activity.freshOwnerTargetAttemptCount,
+    freshOwnerTargetAttemptCount: runtime.activity.freshOwnerTargetAttemptCount,
     successfulOwnerResultCount,
     distinctAllocationPairCount,
     downstreamUsabilityCount: runtime.observations().downstreamUsabilityCount,
     priorBrandPreservationCount,
     structuralCloneRejectionCount:
       runtime.observations().structuralCloneRejectionCount,
-    crossModuleRejectionCount:
-      runtime.observations().crossModuleRejectionCount,
+    crossModuleRejectionCount: runtime.observations().crossModuleRejectionCount,
     freshLoaderCallCount,
     freshCandidateDistinct: true,
-    freshModuleLoadPolicy:
-      "main-evaluator-read-pin-decode-full-audit-import",
+    freshModuleLoadPolicy: "main-evaluator-read-pin-decode-full-audit-import",
     freshModuleReauditDelegatedToMainEvaluator: true,
     oracleIdentitySha256: oracle.identitySha256,
     entryTodo,
@@ -8314,11 +8416,7 @@ function directAssertContextualGrammar(
       value.arrayElements === null
         ? null
         : value.arrayElements.map((entry) =>
-            sanitizeRequirementsValue(
-              entry,
-              "requirements-subtree",
-              true,
-            ),
+            sanitizeRequirementsValue(entry, "requirements-subtree", true),
           );
     const sanitizedObjectProperties =
       value.objectProperties === null
@@ -8679,11 +8777,11 @@ function directAssertContextualGrammar(
     const exactPinnedRecoveryStateAt =
       asCallee &&
       memberName === "at" &&
-      c14AtTopology?.importedStates.has(context.directMemberCallNode) === true &&
+      c14AtTopology?.importedStates.has(context.directMemberCallNode) ===
+        true &&
       context.directMemberCallNode?.callee === node &&
       node.object.type === "Identifier" &&
-      node.object.name ===
-        "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1";
+      node.object.name === "CANDIDATE_CONTAINMENT_RECOVERY_RECORD_STATES_V1";
     if (exactPinnedRecoveryStateAt) {
       const binding = evaluateIdentifier(node.object, scope, {
         usage: "receiver",
@@ -8921,7 +9019,8 @@ function directAssertContextualGrammar(
       record.node.params.length === parameters.length &&
       record.node.params.every(
         (parameter, index) =>
-          parameter.type === "Identifier" && parameter.name === parameters[index],
+          parameter.type === "Identifier" &&
+          parameter.name === parameters[index],
       )
     );
   };
@@ -9011,7 +9110,11 @@ function directAssertContextualGrammar(
     directC14NumericTopology =
       directC14ExactParameterList("initialStateFields", ["startup"]) &&
       directC14ExactParameterList("appendStatusFields", ["fields", "status"]) &&
-      directC14ExactParameterList("applyInputFields", ["state", "input", "plan"]) &&
+      directC14ExactParameterList("applyInputFields", [
+        "state",
+        "input",
+        "plan",
+      ]) &&
       zeroSeedExact("nextWireSequence") &&
       zeroSeedExact("aggregateWireBytes") &&
       zeroSeedExact("eventCount") &&
@@ -9112,11 +9215,7 @@ function directAssertContextualGrammar(
       init.arguments[3].name === "failBounds"
     );
   };
-  const directC14ExactNumericPairPlacement = (
-    functionName,
-    key,
-    node,
-  ) => {
+  const directC14ExactNumericPairPlacement = (functionName, key, node) => {
     const record = functionRecords.get(functionName);
     if (record === undefined) return false;
     const matches = [];
@@ -9220,11 +9319,7 @@ function directAssertContextualGrammar(
     for (const key of ["nextWireSequence", "eventCount"]) {
       if (
         directC14ExactMember(node.left, root, [key]) &&
-        directC14ExactNumericPairPlacement(
-          context.functionName,
-          key,
-          node,
-        )
+        directC14ExactNumericPairPlacement(context.functionName, key, node)
       ) {
         return true;
       }
@@ -9367,12 +9462,7 @@ function directAssertContextualGrammar(
       !directC14ExactCallTopology("validateAdmissionRight", [
         {
           callerName: "validateAdmissionRights",
-          arguments: [
-            "rightValue",
-            "capsule",
-            "scopeSha256",
-            "expectedIndex",
-          ],
+          arguments: ["rightValue", "capsule", "scopeSha256", "expectedIndex"],
         },
       ]) ||
       !directC14ExactCallTopology("recoveryStateDigests", [
@@ -9381,16 +9471,12 @@ function directAssertContextualGrammar(
           arguments: [],
         },
       ]) ||
-      !directC14ExactCallTopology(
-        "verifyCandidateContainmentLaunchCapsuleV3",
-        [
-          {
-            callerName:
-              "createCandidateContainmentGuardianAdmissionInputV1",
-            arguments: ["capsuleBytes"],
-          },
-        ],
-      )
+      !directC14ExactCallTopology("verifyCandidateContainmentLaunchCapsuleV3", [
+        {
+          callerName: "createCandidateContainmentGuardianAdmissionInputV1",
+          arguments: ["capsuleBytes"],
+        },
+      ])
     ) {
       return reject();
     }
@@ -9567,8 +9653,8 @@ function directAssertContextualGrammar(
     ) {
       return reject();
     }
-    const recoveryReturn =
-      functionRecords.get("recoveryStateDigests")?.node.body.body[0];
+    const recoveryReturn = functionRecords.get("recoveryStateDigests")?.node
+      .body.body[0];
     const recoveryElements = recoveryReturn?.argument?.arguments?.[0]?.elements;
     if (
       functionRecords.get("recoveryStateDigests")?.node.body.body.length !==
@@ -9580,11 +9666,7 @@ function directAssertContextualGrammar(
       recoveryElements.some(
         (element, index) =>
           !directC14ExactCall(element, "sha256", 1) ||
-          !directC14ExactCall(
-            element.arguments[0],
-            "canonicalJsonBytes",
-            1,
-          ) ||
+          !directC14ExactCall(element.arguments[0], "canonicalJsonBytes", 1) ||
           element.arguments[0].arguments[0] !== importedStates[index].node,
       )
     ) {
@@ -9614,7 +9696,10 @@ function directAssertContextualGrammar(
       ...ordinarySites,
       ...importedStates.map(({ node }) => node),
     ]);
-    if (classified.size !== 39 || sites.some(({ node }) => !classified.has(node))) {
+    if (
+      classified.size !== 39 ||
+      sites.some(({ node }) => !classified.has(node))
+    ) {
       return reject();
     }
     directC14AtTopology = Object.freeze({
@@ -9643,15 +9728,14 @@ function directAssertContextualGrammar(
     }
     const elements = indexes.map((index) => receiver.arrayElements[index]);
     if (
-      elements.some(
-        (element) =>
-          [
-            "protected",
-            "parameter",
-            "private-read",
-            "requirements-root",
-            "requirements-subtree",
-          ].includes(element.kind),
+      elements.some((element) =>
+        [
+          "protected",
+          "parameter",
+          "private-read",
+          "requirements-root",
+          "requirements-subtree",
+        ].includes(element.kind),
       ) ||
       elements.some((element) => element.kind !== elements[0].kind)
     ) {
@@ -10114,10 +10198,7 @@ function directAssertContextualGrammar(
         ["requirements-root", "requirements-subtree"].includes(
           argumentValues[index].kind,
         ) &&
-        !(
-          directBinding?.name === "exactRecord" &&
-          index === 1
-        )
+        !(directBinding?.name === "exactRecord" && index === 1)
       ) {
         fail("requirements subtree escape");
       }
@@ -10433,7 +10514,7 @@ function directAssertContextualGrammar(
       scope,
       { ...context, directMemberCallNode: node },
       {
-      asCallee: true,
+        asCallee: true,
       },
     );
     if (member.kind === "private-method") {
@@ -11014,13 +11095,12 @@ function directAssertContextualGrammar(
       return;
     }
     if (declarator.init === null) fail("uninitialized const");
-    const literalRole =
-      requirementsDependencies.has(declarator.id.name)
-        ? "requirements-value"
-        : declarator.id.name ===
-            "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
-          ? "requirements-digest"
-          : "ordinary";
+    const literalRole = requirementsDependencies.has(declarator.id.name)
+      ? "requirements-value"
+      : declarator.id.name ===
+          "CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS_SHA256"
+        ? "requirements-digest"
+        : "ordinary";
     let value = evaluateExpression(declarator.init, scope, {
       ...context,
       literalRole,
@@ -11090,9 +11170,10 @@ function directAssertContextualGrammar(
         { functionBody: true },
       );
       if (fallsThrough) returnValues.push(exactUndefinedValue);
-      const result = returnValues.length === 0
-        ? exactUndefinedValue
-        : joinAbstractValues(...returnValues);
+      const result =
+        returnValues.length === 0
+          ? exactUndefinedValue
+          : joinAbstractValues(...returnValues);
       if (directC14AuditedSource) {
         directC14ContextuallyReachedLocalFunctions.add(binding.name);
       }
@@ -11112,9 +11193,7 @@ function directAssertContextualGrammar(
         node.argument === null
           ? exactUndefinedValue
           : evaluateExpression(node.argument, scope, context);
-      if (
-        ["requirements-root", "requirements-subtree"].includes(value.kind)
-      ) {
+      if (["requirements-root", "requirements-subtree"].includes(value.kind)) {
         fail("requirements subtree escape");
       }
       if (Array.isArray(context.returnValues)) {
@@ -12711,8 +12790,7 @@ function independentStaticAudit(
     }
     if (fragmentRejection !== null) throw fragmentRejection;
     return Object.freeze({
-      c14Provenance:
-        assertDirectC14CandidateActivationProvenance(program),
+      c14Provenance: assertDirectC14CandidateActivationProvenance(program),
     });
   }
   const walkAudit = directWalkAst(program, source);
@@ -13909,14 +13987,8 @@ function directCandidateActivationStateBody({
   }
   if (wrongTransitionState) {
     const projectionStart = body.indexOf("const projection = ");
-    const projectionEnd = body.indexOf(
-      "; const metadata =",
-      projectionStart,
-    );
-    assert.equal(
-      projectionStart >= 0 && projectionEnd > projectionStart,
-      true,
-    );
+    const projectionEnd = body.indexOf("; const metadata =", projectionStart);
+    assert.equal(projectionStart >= 0 && projectionEnd > projectionStart, true);
     const projectionExpression = body.slice(
       projectionStart + "const projection = ".length,
       projectionEnd,
@@ -14672,17 +14744,44 @@ if (DIRECT_ENTRY) {
   try {
     DIRECT_CANDIDATE_ACTIVITY.sourceReads += 1;
     sourceBytes = readFileSync(SOURCE_PATH);
-    sourceIdentity = C15_SOURCE_IDENTITY.reconstruct(sourceBytes);
+    sourceIdentity = CURRENT_SOURCE_IDENTITY.reconstruct(sourceBytes);
+    assert.deepEqual(
+      CURRENT_SOURCE_IDENTITY.assertInverseReceipt(
+        sourceIdentity.inverseReceipt,
+      ),
+      {
+        recoverySourceDigestReversals: 1,
+        recoveryRequirementsDigestReversals: 1,
+        guardianRequirementsDigestReversals: 2,
+        launchWrapperDeclarationRemovals: 1,
+        admissionVerifierCallReversals: 1,
+        normalizationDeclarationBlocksMoved: 5,
+        normalizationHelperCallsMoved: 7,
+        startupHelperCallsUnmoved: 2,
+        fifthFailShapeArgumentsRemoved: 9,
+        helperNameReversals: 11,
+        exactV2DigestReversals: 1,
+        requirementsDigestReversals: 2,
+        currentSourceByteLength: CURRENT_CANDIDATE_SOURCE_BYTE_LENGTH,
+        currentSourceSha256: CURRENT_CANDIDATE_SOURCE_SHA256,
+        historicalC15SourceByteLength:
+          HISTORICAL_C15_CANDIDATE_SOURCE_BYTE_LENGTH,
+        historicalC15SourceSha256: HISTORICAL_C15_CANDIDATE_SOURCE_SHA256,
+        historicalC14SourceByteLength:
+          HISTORICAL_C14_CANDIDATE_SOURCE_BYTE_LENGTH,
+        historicalC14SourceSha256: C14_AUDITED_CANDIDATE_SOURCE_SHA256,
+      },
+    );
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
   if (sourceBytes !== null) {
     try {
       const historicalC14Audit = DIRECT_C14_PRODUCTION_AUDIT_BINDING(
-        sourceIdentity.historicalSourceBytes,
+        sourceIdentity.historicalC14SourceBytes,
       );
       const liveProgram = directParse(
-        sourceIdentity.liveSource,
+        sourceIdentity.currentSource,
         DIRECT_ACORN_PARSE_OPTIONS,
       );
       const c15Extension = directAssertC15LiveAstExtension(liveProgram);
@@ -14700,7 +14799,7 @@ if (DIRECT_ENTRY) {
 
 test("independently verifies the fixture digest in the adversarial lane", () => {
   const fixtureText =
-    C15_FIXTURE_IDENTITY.historicalFixtureBytes.toString("utf8");
+    CURRENT_FIXTURE_IDENTITY.historicalC14FixtureBytes.toString("utf8");
   const fixture = JSON.parse(fixtureText);
   assert.equal(digest(fixture), EXPECTED_REQUIREMENTS_SHA256);
   assert.equal(
@@ -15435,10 +15534,9 @@ test("freezes the 10-operation private-store evaluator design without claiming c
     startupSha256: "3".repeat(64),
     epochSha256: "4".repeat(64),
     launchCapsuleV3Sha256: directLaunchBinding.rawSha256,
-    launchCapsuleV3: Buffer.from(
-      directLaunchBinding.bytesHex,
-      "hex",
-    ).toString("base64"),
+    launchCapsuleV3: Buffer.from(directLaunchBinding.bytesHex, "hex").toString(
+      "base64",
+    ),
   };
   const directAdmissionBinding = directJsonlBinding(
     "direct-admission-frame",
@@ -15499,12 +15597,8 @@ test("freezes the 10-operation private-store evaluator design without claiming c
       recvmsgReportBytes,
     ) {
       assert.equal(currentState, directInitializedState);
-      const admissionFrame = JSON.parse(
-        admissionFrameBytes.toString("utf8"),
-      );
-      if (
-        admissionFrame.launchCapsuleV3 === "***not-canonical-base64***"
-      ) {
+      const admissionFrame = JSON.parse(admissionFrameBytes.toString("utf8"));
+      if (admissionFrame.launchCapsuleV3 === "***not-canonical-base64***") {
         directActivationCalls.push("admission-malformed-base64");
         throw new Error("CONTROL_FRAME");
       }
@@ -15524,9 +15618,7 @@ test("freezes the 10-operation private-store evaluator design without claiming c
         byteDigest(launchCapsuleBytes),
         admissionFrame.launchCapsuleV3Sha256,
       );
-      const recvmsgReport = JSON.parse(
-        recvmsgReportBytes.toString("utf8"),
-      );
+      const recvmsgReport = JSON.parse(recvmsgReportBytes.toString("utf8"));
       assert.equal(recvmsgReport.messageByteLength, admissionFrameBytes.length);
       assert.equal(
         recvmsgReport.messageRawSha256,
@@ -15549,8 +15641,8 @@ test("freezes the 10-operation private-store evaluator design without claiming c
   });
   const directActivationRegistrations = [];
   let directActivationLoaderCalls = 0;
-  const directActivationRegistrationReceipt =
-    registerAdversarialCandidateTests({
+  const directActivationRegistrationReceipt = registerAdversarialCandidateTests(
+    {
       candidate: directActivationCandidate,
       oracle: directActivationOracle,
       loadFreshCandidate: async () => {
@@ -15560,7 +15652,8 @@ test("freezes the 10-operation private-store evaluator design without claiming c
       registerTest(name, options, run) {
         directActivationRegistrations.push({ name, options, run });
       },
-    });
+    },
+  );
   assert.deepEqual(directActivationRegistrationReceipt, receipt);
   assert.equal(directActivationRegistrations.length, 3);
   assert.deepEqual(
