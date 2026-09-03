@@ -421,6 +421,10 @@ const RULES = deepFreeze(
       "lifecycleInventoryBlockRule",
       "malformed-or-corrupt:reject-before-plan;zero-or-multiple-or-unsafe-entry:unsafe-filesystem-inventory-blocked;one-safe-source-required-before-durable-quarantine/v1",
     ],
+    [
+      "ownerAssociationSelectorRule",
+      "exact-module-local-target-inventory-replay-plan-nullable-attempt-weakmap-association;phase-one-no-current-anchor:null;current-anchor:repeatable-deep-frozen-null-prototype-exact-projection-plus-raw-carrier;clone-cross-module-mixed-byte-equal-alternate-replay-plan-attempt-substitution:reject-before-reservation;consume-mint-rebrand:none/v1",
+    ],
   ]),
 );
 
@@ -582,6 +586,7 @@ export const CANDIDATE_CONTAINMENT_RECOVERY_REQUIREMENTS_V1 = deepFreeze(
     ],
     ["quarantinePredicateRule", RULES.quarantinePredicateRule],
     ["lifecycleInventoryBlockRule", RULES.lifecycleInventoryBlockRule],
+    ["ownerAssociationSelectorRule", RULES.ownerAssociationSelectorRule],
     ["actorLineageRule", RULES.actorLineageRule],
     ["descriptorLineageRule", RULES.descriptorLineageRule],
     ["bootLifetimeTransitionRule", RULES.bootLifetimeTransitionRule],
@@ -1708,6 +1713,7 @@ export function replayCandidateContainmentRecoveryV1(input) {
         record.currentLifetimeAnchorPredecessorExternalHead,
       ],
       ["currentAnchor", currentAnchor],
+      ["currentCarrier", currentCarrier],
       ["normalCloseDurabilityReceipt", normalCloseDurabilityReceipt],
     ]),
   );
@@ -1820,6 +1826,30 @@ const QUARANTINE_RESUME_STATES = deepFreeze([
   "QUARANTINED_LOCATION_OBSERVED",
 ]);
 const planBrands = new WeakMap();
+
+function planAssociation(record, replayAssociation, ready) {
+  return immutableRecord([
+    ["ready", ready],
+    ["target", record.target],
+    ["inventory", record.lifecycleInventoryObservation],
+    ["replay", record.previousRecoveryReplay],
+    ["currentAnchor", replayAssociation.currentAnchor],
+    ["currentCarrier", replayAssociation.currentCarrier],
+    [
+      "lifetimeAnchorProjection",
+      replayAssociation.currentLifetimeAnchorProjection,
+    ],
+    [
+      "lifetimeAttemptAnchorRawSha256",
+      replayAssociation.currentLifetimeAttemptAnchorRawSha256,
+    ],
+  ]);
+}
+
+function brandPlan(plan, record, replayAssociation, ready) {
+  planBrands.set(plan, planAssociation(record, replayAssociation, ready));
+  return plan;
+}
 
 function inventorySource(inventory) {
   let count = 0;
@@ -2283,8 +2313,7 @@ export function planCandidateContainmentRecoveryV1(input) {
   ) {
     base.status = "UNSAFE_FILESYSTEM_INVENTORY_BLOCKED";
     const blocked = planResult(base);
-    planBrands.set(blocked, immutableRecord([["ready", false]]));
-    return blocked;
+    return brandPlan(blocked, record, replayAssociation, false);
   }
   if (
     record.reportedStateRootIdentitySha256 !==
@@ -2294,8 +2323,7 @@ export function planCandidateContainmentRecoveryV1(input) {
   ) {
     base.status = "STATE_ROOT_IDENTITY_REJECTED";
     const blocked = planResult(base);
-    planBrands.set(blocked, immutableRecord([["ready", false]]));
-    return blocked;
+    return brandPlan(blocked, record, replayAssociation, false);
   }
   if (
     record.reportedLifetimeCgroupIdentitySha256 !==
@@ -2303,15 +2331,13 @@ export function planCandidateContainmentRecoveryV1(input) {
   ) {
     base.status = "RECOVERY_LIFETIME_IDENTITY_REJECTED";
     const blocked = planResult(base);
-    planBrands.set(blocked, immutableRecord([["ready", false]]));
-    return blocked;
+    return brandPlan(blocked, record, replayAssociation, false);
   }
   if (!record.reportedStateFilesystemInterfaceAvailable) {
     base.status = "STATE_FILESYSTEM_INTERFACE_REJECTED";
     base.currentLifetimeAnchorMatched = hasCurrentAnchor;
     const blocked = planResult(base);
-    planBrands.set(blocked, immutableRecord([["ready", false]]));
-    return blocked;
+    return brandPlan(blocked, record, replayAssociation, false);
   }
   if (normalStateNumber(record.target) === 18) {
     if (
@@ -2340,8 +2366,7 @@ export function planCandidateContainmentRecoveryV1(input) {
       base.requiredDestinationLocation = "closed";
     }
     const closePlan = planResult(base);
-    planBrands.set(closePlan, immutableRecord([["ready", false]]));
-    return closePlan;
+    return brandPlan(closePlan, record, replayAssociation, false);
   }
   if (record.previousRecoveryReplay.chainTerminal) {
     if (
@@ -2366,8 +2391,7 @@ export function planCandidateContainmentRecoveryV1(input) {
       base.terminal = true;
     }
     const terminalPlan = planResult(base);
-    planBrands.set(terminalPlan, immutableRecord([["ready", false]]));
-    return terminalPlan;
+    return brandPlan(terminalPlan, record, replayAssociation, false);
   }
   if (
     record.previousRecoveryReplay.attemptCount >=
@@ -2382,8 +2406,7 @@ export function planCandidateContainmentRecoveryV1(input) {
     }
     base.status = "RECOVERY_ATTEMPT_LIMIT_REACHED";
     const limitedPlan = planResult(base);
-    planBrands.set(limitedPlan, immutableRecord([["ready", false]]));
-    return limitedPlan;
+    return brandPlan(limitedPlan, record, replayAssociation, false);
   }
   const selected = readyDisposition(
     record.target,
@@ -2412,8 +2435,7 @@ export function planCandidateContainmentRecoveryV1(input) {
       base.latestFinalizedRecoveryState = null;
     }
     const inconsistentPlan = planResult(base);
-    planBrands.set(inconsistentPlan, immutableRecord([["ready", false]]));
-    return inconsistentPlan;
+    return brandPlan(inconsistentPlan, record, replayAssociation, false);
   }
   const requiredActorKind = hasCurrentAnchor
     ? replayAssociation.currentAnchor.actorKind
@@ -2433,7 +2455,7 @@ export function planCandidateContainmentRecoveryV1(input) {
     base.status = "RECOVERY_ANCHOR_REQUIRED";
     base.requiredActorKind = requiredActorKind;
     const anchorRequired = planResult(base);
-    planBrands.set(anchorRequired, immutableRecord([["ready", false]]));
+    brandPlan(anchorRequired, record, replayAssociation, false);
     targetPendingActorKinds.set(record.target, requiredActorKind);
     return anchorRequired;
   }
@@ -2470,22 +2492,78 @@ export function planCandidateContainmentRecoveryV1(input) {
   base.states = selected.states;
   base.recordCount = selected.states.length;
   const plan = planResult(base);
-  planBrands.set(
-    plan,
-    immutableRecord([
-      ["ready", true],
-      ["target", record.target],
-      ["inventory", record.lifecycleInventoryObservation],
-      ["replay", record.previousRecoveryReplay],
-      ["anchor", anchor],
-      ["lifetimeAnchorProjection", record.currentLifetimeAnchorProjection],
-      [
-        "lifetimeAttemptAnchorRawSha256",
-        record.currentLifetimeAttemptAnchorRawSha256,
-      ],
-    ]),
+  return brandPlan(plan, record, replayAssociation, true);
+}
+
+const OWNER_ASSOCIATION_INPUT_FIELDS = deepFreeze([
+  "target",
+  "lifecycleInventoryObservation",
+  "previousRecoveryReplay",
+  "plan",
+  "attempt",
+]);
+
+export function selectCandidateContainmentRecoveryOwnerAssociationV1(input) {
+  const record = exactRecord(
+    input,
+    OWNER_ASSOCIATION_INPUT_FIELDS,
+    "recovery owner association input",
+    fail,
   );
-  return plan;
+  const targetAssociation = targetBrands.get(record.target);
+  if (!targetAssociation)
+    fail("recovery owner association target is not branded");
+  const inventoryAssociation = inventoryBrands.get(
+    record.lifecycleInventoryObservation,
+  );
+  if (!inventoryAssociation) {
+    fail("recovery owner association inventory is not branded");
+  }
+  const replayAssociation = replayBrands.get(record.previousRecoveryReplay);
+  if (!replayAssociation)
+    fail("recovery owner association replay is not branded");
+  const selectedPlanAssociation = planBrands.get(record.plan);
+  if (!selectedPlanAssociation) {
+    fail("recovery owner association plan is not branded");
+  }
+  const attemptAssociation =
+    record.attempt === null ? null : attemptBrands.get(record.attempt);
+  if (record.attempt !== null && !attemptAssociation) {
+    fail("recovery owner association attempt is not branded");
+  }
+  if (
+    replayAssociation.target !== record.target ||
+    selectedPlanAssociation.target !== record.target ||
+    selectedPlanAssociation.inventory !==
+      record.lifecycleInventoryObservation ||
+    selectedPlanAssociation.replay !== record.previousRecoveryReplay ||
+    selectedPlanAssociation.currentAnchor !== replayAssociation.currentAnchor ||
+    selectedPlanAssociation.currentCarrier !==
+      replayAssociation.currentCarrier ||
+    selectedPlanAssociation.lifetimeAnchorProjection !==
+      replayAssociation.currentLifetimeAnchorProjection ||
+    selectedPlanAssociation.lifetimeAttemptAnchorRawSha256 !==
+      replayAssociation.currentLifetimeAttemptAnchorRawSha256
+  ) {
+    fail("recovery owner association origin changed");
+  }
+  if (
+    attemptAssociation !== null &&
+    (!selectedPlanAssociation.ready ||
+      attemptAssociation.target !== record.target ||
+      attemptAssociation.lifecycleInventoryObservation !==
+        record.lifecycleInventoryObservation ||
+      attemptAssociation.previousRecoveryReplay !==
+        record.previousRecoveryReplay ||
+      attemptAssociation.plan !== record.plan ||
+      attemptAssociation.lifetimeAnchorProjection !==
+        selectedPlanAssociation.lifetimeAnchorProjection ||
+      attemptAssociation.lifetimeAttemptAnchorRawSha256 !==
+        selectedPlanAssociation.lifetimeAttemptAnchorRawSha256)
+  ) {
+    fail("recovery owner association attempt origin changed");
+  }
+  return selectedPlanAssociation.currentCarrier;
 }
 
 const ATTEMPT_INPUT_FIELDS = deepFreeze([
@@ -2562,7 +2640,7 @@ function attemptPrefixFromContext(context) {
   ) {
     fail("recovery attempt context is not branded");
   }
-  const anchor = planAssociation.anchor;
+  const anchor = planAssociation.currentAnchor;
   assertCandidateContainmentGuardianLifetimeRecoveryAttemptAnchorSelectionV1({
     lifetimeAnchorProjection: context.lifetimeAnchorProjection,
     lifetimeAttemptAnchorRawSha256: context.lifetimeAttemptAnchorRawSha256,
