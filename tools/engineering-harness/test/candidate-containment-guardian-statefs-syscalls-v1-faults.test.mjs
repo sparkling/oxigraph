@@ -3,11 +3,13 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   lstat,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
   realpath,
   rm,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -38,8 +40,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    204827,
-    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
+    216620,
+    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -111,9 +113,9 @@ const EXPECTED_NONCLAIMS = Object.freeze([
 ]);
 
 const EXPECTED_REQUIREMENTS_SHA256 =
-  "16756669b08e3898380065d27a8e3e0ad6e4eaaaf7a3a9d445f9506385a9ac23";
+  "fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70";
 const EXPECTED_ABI_LAYOUT_SHA256 =
-  "f69c11d17c0264b2af3eaee0e092bb27ce149207425f8239879d85f1ca589ffd";
+  "651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0";
 
 const EXPECTED_STEPS = Object.freeze([
   ["NONE", 0],
@@ -384,7 +386,7 @@ const EXPECTED_SPECIAL_RULES = deepFreeze([
   ["mutating-eexist-enoent", "same-row-as-every-other-errno"],
   [
     "cleanup-close",
-    "reverse-open-once/no-step/no-errno-replacement/D-or-M-to-U",
+    "reverse-open-once/no-step/no-errno-replacement/N-or-D-or-M-to-U-only-if-live",
   ],
 ]);
 
@@ -2907,7 +2909,7 @@ const EXPECTED_ORACLE_SHA256 = deepFreeze(
     ],
     [
       "specialRules",
-      "360083e614f4535031365141bdd592d8a812ecd32952d045f4858711f7421cd9",
+      "55057314d875c12d91553d35dd8562a9863c90029a6407d377278114daef5092",
     ],
   ]),
 );
@@ -3016,7 +3018,7 @@ test("independently freezes every numeric operation step and dense sequence", ()
   assert.deepEqual(EXPECTED_SEQUENCES.RELEASE_DIRECTORY.at(-1), 34);
 });
 
-test("pins the accepted S0 ADR and unchanged harness package bytes", async () => {
+test("pins amended ADR-0037 and unchanged harness package bytes", async () => {
   for (const [url, byteLength, expectedSha256] of PREDECESSOR_BYTE_PINS) {
     const bytes = await readFile(url);
     assert.equal(bytes.length, byteLength, fileURLToPath(url));
@@ -3098,7 +3100,7 @@ test("ADR pin correction inversely reconstructs accepted S3 fault evaluator", as
     true,
   );
   let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(
-    currentEvaluatorSource,
+    reconstructPreR13EvaluatorSource(currentEvaluatorSource),
     [
       '\n\ntest("R8 fixed-register and syscall-immediate correction ',
       'inversely reconstructs the pre-R8 fault evaluator", async () => {\n',
@@ -3190,7 +3192,7 @@ test("R8 fixed-register and syscall-immediate correction inversely reconstructs 
   const currentSource = currentBytes.toString("utf8");
   assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
   const reconstructedSource = reconstructPreR8EvaluatorSource(
-    currentSource,
+    reconstructPreR13EvaluatorSource(currentSource),
     proofStart,
     proofEnd,
   );
@@ -3210,6 +3212,873 @@ test("R8 fixed-register and syscall-immediate correction inversely reconstructs 
       .update(reconstructedBytes)
       .digest("hex"),
     "cbd0ff0c3951703726fbcb4f4bc074bb5a53c66d",
+  );
+});
+
+const R13_SUBSTEP_MUTATION_CASES = deepFreeze([
+  ["mask/fd-a/basic", "pre", "R", "N", 2, 1, 1, "zero", false],
+  ["mask/fd-a/mnt-id", "pre", "R", "N", 2, 1, 1, "zero", false],
+  ["mask/fd-b/mnt-id", "pre", "R", "N", 3, 2, 2, "zero", false],
+  ["mask/directory-target/basic", "pre", "R", "N", 5, 2, 2, "zero", true],
+  ["mask/directory-target/mnt-id", "pre", "R", "N", 5, 2, 2, "zero", true],
+  ["mask/directory-entry/basic", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["mask/directory-entry/mnt-id", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["mask/regular-initial/basic", "pre", "R", "N", 5, 2, 2, "zero", false],
+  ["mask/regular-repeat/mnt-id", "pre", "R", "N", 7, 5, 3, "zero", true],
+  ["mask/persist-created/basic", "post", "V", "M", 33, 8, 3, "zero", true],
+  ["mask/mkdir-created/mnt-id", "post", "V", "M", 33, 13, 3, "zero", false],
+  ["mask/move-source/basic", "pre", "R", "N", 15, 3, 3, "zero", false],
+  ["mask/move-destination/mnt-id", "post", "V", "U", 21, 22, 8, "source-absent-only", false],
+  ["raw/0x01", "abi-then-semantic", "COMPLETE", "COMPLETE", 0, 24, 5, "target-entry", false],
+  ["raw/0x1f", "abi-then-semantic", "COMPLETE", "COMPLETE", 0, 24, 5, "target-entry", false],
+  ["raw/0x7f", "abi-then-semantic", "COMPLETE", "COMPLETE", 0, 24, 5, "target-entry", false],
+  ["raw/0x80", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["raw/0xff", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["raw/overlength", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["raw/embedded-slash", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["raw/malformed-record", "pre", "R", "N", 6, 5, 3, "target-only", true],
+  ["raw/unterminated-record", "pre", "R", "N", 6, 5, 3, "target-only", true],
+]);
+
+const EXPECTED_R13_SUBSTEP_MUTATION_SHA256 =
+  "6d1fc69150eb7f7d51718dd09c700a06192c51c20e7f0f21df75f31066bb517e";
+const EXPECTED_R13_MUTANT_DRIVER_BYTES = 6472;
+const EXPECTED_R13_MUTANT_DRIVER_SHA256 =
+  "73ad83a22c4c3aca5afe98da17537b17ed82f990d4a7d0dd22c75a6e57dba298";
+const R13_REQUIRED_STATX_MASK = 0x17ff;
+const R13_EXTRA_STATX_MASK = 0x80000000;
+const R13_MUTANT_SOURCE_DIRECTORY = fileURLToPath(
+  new URL("../src/candidate/", import.meta.url),
+);
+
+const R13_MUTANT_DRIVER_SOURCE = String.raw`#define _GNU_SOURCE 1
+#include "containment-guardian-statefs-syscalls-v1.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/stat.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/statfs.h>
+#include <unistd.h>
+
+static struct oxigraph_containment_statefs_observation_v1 observations[257];
+static uint8_t output_bytes[98304];
+
+static int fill_context(
+    struct oxigraph_containment_statefs_request_v1 *request,
+    int descriptor, int second) {
+    struct statx identity;
+    struct statfs filesystem;
+    uint64_t mount_id;
+    memset(&identity, 0, sizeof(identity));
+    memset(&filesystem, 0, sizeof(filesystem));
+    if (statx(descriptor, "", AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW,
+              STATX_BASIC_STATS | STATX_MNT_ID, &identity) != 0 ||
+        fstatfs(descriptor, &filesystem) != 0) return 0;
+    mount_id = (uint64_t)identity.stx_mnt_id;
+    if (mount_id == 0U || identity.stx_ino == 0U ||
+        (uint64_t)filesystem.f_type == 0U) return 0;
+    if (second == 0) {
+        request->expected_owner_uid = identity.stx_uid;
+        request->expected_owner_gid = identity.stx_gid;
+        request->expected_mount_id_a = mount_id;
+        request->expected_device_major_a = (uint64_t)identity.stx_dev_major;
+        request->expected_device_minor_a = (uint64_t)identity.stx_dev_minor;
+        request->expected_inode_a = identity.stx_ino;
+        request->expected_filesystem_magic_a = (uint64_t)filesystem.f_type;
+    } else {
+        if (request->expected_owner_uid != identity.stx_uid ||
+            request->expected_owner_gid != identity.stx_gid) return 0;
+        request->expected_mount_id_b = mount_id;
+        request->expected_device_major_b = (uint64_t)identity.stx_dev_major;
+        request->expected_device_minor_b = (uint64_t)identity.stx_dev_minor;
+        request->expected_inode_b = identity.stx_ino;
+        request->expected_filesystem_magic_b = (uint64_t)filesystem.f_type;
+    }
+    return 1;
+}
+
+static int write_exact(const void *bytes, size_t length) {
+    return fwrite(bytes, 1U, length, stdout) == length;
+}
+
+int main(int argc, char **argv) {
+    struct oxigraph_containment_statefs_request_v1 request;
+    struct oxigraph_containment_statefs_result_v1 result;
+    int32_t execute_return;
+    int descriptor_a = -1;
+    int descriptor_b = -1;
+    uint32_t capacity;
+    const char *name_a = NULL;
+    const char *name_b = NULL;
+    memset(&request, 0, sizeof(request));
+    memset(&result, 0, sizeof(result));
+    memset(observations, 0xa5, sizeof(observations));
+    memset(output_bytes, 0, sizeof(output_bytes));
+    request.abi_version = 1U;
+    request.struct_size = 192U;
+    request.dirfd_b = 0;
+    request.observations_address = (uint64_t)(uintptr_t)observations;
+
+    if (argc >= 3 && strcmp(argv[1], "directory") == 0) {
+        descriptor_a = open(argv[2], O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (descriptor_a < 0) return 10;
+        request.operation = OXIGRAPH_STATEFS_OPERATION_INVENTORY;
+        request.inventory_kind = OXIGRAPH_STATEFS_INVENTORY_DIRECTORY;
+        request.dirfd_a = descriptor_a;
+        request.dirfd_a_role = OXIGRAPH_STATEFS_ROLE_STATE_ROOT;
+        request.inventory_directory_role = OXIGRAPH_STATEFS_ROLE_STATE_ROOT;
+        request.observation_capacity = 257U;
+        request.output_capacity = 32768U;
+        request.output_address = (uint64_t)(uintptr_t)output_bytes;
+    } else if (argc == 4 && strcmp(argv[1], "mkdir") == 0) {
+        descriptor_a = open(argv[2], O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (descriptor_a < 0) return 11;
+        name_a = argv[3];
+        request.operation = OXIGRAPH_STATEFS_OPERATION_MKDIR_SYNC;
+        request.inventory_kind = OXIGRAPH_STATEFS_INVENTORY_NONE;
+        request.dirfd_a = descriptor_a;
+        request.dirfd_a_role = OXIGRAPH_STATEFS_ROLE_STATE_ROOT;
+        request.name_a_length = (uint32_t)strlen(name_a);
+        request.name_a_address = (uint64_t)(uintptr_t)name_a;
+        request.observation_capacity = 1U;
+    } else if (argc == 4 && strcmp(argv[1], "regular") == 0) {
+        descriptor_a = open(argv[2], O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (descriptor_a < 0) return 11;
+        name_a = argv[3];
+        request.operation = OXIGRAPH_STATEFS_OPERATION_INVENTORY;
+        request.inventory_kind = OXIGRAPH_STATEFS_INVENTORY_REGULAR_FILE;
+        request.dirfd_a = descriptor_a;
+        request.dirfd_a_role = OXIGRAPH_STATEFS_ROLE_STATE_ROOT;
+        request.name_a_length = (uint32_t)strlen(name_a);
+        request.name_a_address = (uint64_t)(uintptr_t)name_a;
+        request.observation_capacity = 1U;
+        request.output_capacity = 98304U;
+        request.output_address = (uint64_t)(uintptr_t)output_bytes;
+    } else if (argc == 6 && strcmp(argv[1], "move") == 0) {
+        descriptor_a = open(argv[2], O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        descriptor_b = open(argv[3], O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (descriptor_a < 0 || descriptor_b < 0) return 12;
+        name_a = argv[4];
+        name_b = argv[5];
+        request.operation = OXIGRAPH_STATEFS_OPERATION_MOVE_NOREPLACE_SYNC;
+        request.inventory_kind = OXIGRAPH_STATEFS_INVENTORY_NONE;
+        request.dirfd_a = descriptor_a;
+        request.dirfd_b = descriptor_b;
+        request.dirfd_a_role = OXIGRAPH_STATEFS_ROLE_STAGING;
+        request.dirfd_b_role = OXIGRAPH_STATEFS_ROLE_ACTIVE;
+        request.name_a_length = (uint32_t)strlen(name_a);
+        request.name_b_length = (uint32_t)strlen(name_b);
+        request.name_a_address = (uint64_t)(uintptr_t)name_a;
+        request.name_b_address = (uint64_t)(uintptr_t)name_b;
+        request.observation_capacity = 2U;
+    } else {
+        return 13;
+    }
+    if (request.name_a_length > 255U || request.name_b_length > 255U ||
+        !fill_context(&request, descriptor_a, 0) ||
+        (descriptor_b >= 0 && !fill_context(&request, descriptor_b, 1))) return 14;
+
+    execute_return = oxigraph_containment_statefs_execute_v1(&request, &result);
+    capacity = request.observation_capacity;
+    if (!write_exact(&execute_return, sizeof(execute_return)) ||
+        !write_exact(&result, sizeof(result)) ||
+        !write_exact(observations, (size_t)capacity * sizeof(observations[0])) ||
+        fflush(stdout) != 0) return 15;
+    if (descriptor_b >= 0 && close(descriptor_b) != 0) return 16;
+    if (close(descriptor_a) != 0) return 17;
+    return 0;
+}
+`;
+
+function r13CountExact(source, needle) {
+  assert.equal(typeof source, "string");
+  assert.equal(typeof needle, "string");
+  assert.notEqual(needle.length, 0);
+  let count = 0;
+  let offset = 0;
+  while (true) {
+    const index = source.indexOf(needle, offset);
+    if (index === -1) return count;
+    count += 1;
+    offset = index + needle.length;
+  }
+}
+
+function r13ReplaceExactly(source, before, after, label) {
+  assert.equal(r13CountExact(source, before), 1, label);
+  return source.replace(before, after);
+}
+
+function r13MutatedSource(
+  source,
+  { statxCall = 0, maskAnd = 0xffffffff, maskOr = 0, failClose = false },
+) {
+  let transformed = source;
+  if (statxCall !== 0) {
+    assert.ok(Number.isInteger(statxCall) && statxCall >= 1);
+    const anchor = [
+      "STATEFS_ALWAYS_INLINE long statefs_linux_statx(long directory, long name, long flags,",
+      "                                                long mask, long output) {",
+    ].join("\n");
+    transformed = r13ReplaceExactly(
+      transformed,
+      anchor,
+      [
+        "static uint32_t statefs_r13_statx_call_count_v1;",
+        "",
+        anchor,
+      ].join("\n"),
+      "R13 statx declaration mutation",
+    );
+    const returnAnchor = [
+      '                     : "rcx", "r11", "memory");',
+      "    return value;",
+      "}",
+      "",
+      "STATEFS_ALWAYS_INLINE int statefs_raw_error(long value) {",
+    ].join("\n");
+    const hexadecimal = (value) => `0x${(value >>> 0).toString(16)}U`;
+    transformed = r13ReplaceExactly(
+      transformed,
+      returnAnchor,
+      [
+        '                     : "rcx", "r11", "memory");',
+        "    statefs_r13_statx_call_count_v1 += 1U;",
+        `    if (value == 0L && statefs_r13_statx_call_count_v1 == ${statxCall}U) {`,
+        "        struct statefs_kernel_statx_v1 *mutated =",
+        "            (struct statefs_kernel_statx_v1 *)(uintptr_t)output;",
+        `        mutated->mask = (mutated->mask & (uint32_t)${hexadecimal(maskAnd)}) |`,
+        `                        (uint32_t)${hexadecimal(maskOr)};`,
+        "    }",
+        "    return value;",
+        "}",
+        "",
+        "STATEFS_ALWAYS_INLINE int statefs_raw_error(long value) {",
+      ].join("\n"),
+      "R13 statx result mutation",
+    );
+  }
+  if (failClose) {
+    const anchor =
+      "STATEFS_ALWAYS_INLINE long statefs_linux_close(long descriptor) {";
+    transformed = r13ReplaceExactly(
+      transformed,
+      anchor,
+      [
+        "static uint32_t statefs_r13_close_call_count_v1;",
+        "",
+        anchor,
+      ].join("\n"),
+      "R13 close declaration mutation",
+    );
+    const returnAnchor = [
+      '                     : "rcx", "r11", "memory");',
+      "    return value;",
+      "}",
+      "",
+      "STATEFS_ALWAYS_INLINE long statefs_linux_fcntl(long descriptor, long command, long argument) {",
+    ].join("\n");
+    transformed = r13ReplaceExactly(
+      transformed,
+      returnAnchor,
+      [
+        '                     : "rcx", "r11", "memory");',
+        "    statefs_r13_close_call_count_v1 += 1U;",
+        "    if (statefs_r13_close_call_count_v1 == 1U)",
+        "        return -(long)OXIGRAPH_STATEFS_EIO;",
+        "    return value;",
+        "}",
+        "",
+        "STATEFS_ALWAYS_INLINE long statefs_linux_fcntl(long descriptor, long command, long argument) {",
+      ].join("\n"),
+      "R13 cleanup-close result mutation",
+    );
+  }
+  for (const selectorNeedle of [
+    "test_fault_selector",
+    "statefs_fault_selector_is_valid",
+    "statefs_fault_selector_is_pending",
+  ]) {
+    assert.equal(
+      r13CountExact(transformed, selectorNeedle),
+      r13CountExact(source, selectorNeedle),
+      `${selectorNeedle} mutation neutrality`,
+    );
+  }
+  return transformed;
+}
+
+function r13ExactChild(executable, args, cwd) {
+  const child = spawnSync(executable, args, {
+    cwd,
+    env: Object.fromEntries(EXPECTED_ENVIRONMENT),
+    encoding: null,
+    maxBuffer: 8 * 1024 * 1024,
+    shell: false,
+    timeout: 30000,
+    windowsHide: true,
+  });
+  assert.equal(child.error, undefined);
+  assert.equal(child.signal, null);
+  assert.equal(child.status, 0, child.stderr?.toString("utf8"));
+  assert.equal(Buffer.isBuffer(child.stdout), true);
+  assert.equal(Buffer.isBuffer(child.stderr), true);
+  assert.equal(child.stderr.length, 0);
+  return child.stdout;
+}
+
+async function r13BuildMutant(label, mutation) {
+  const root = await mkdtemp(join(tmpdir(), `oxigraph-statefs-r13-${label}-`));
+  try {
+    const sourcePath = join(root, "statefs-r13-mutant.c");
+    const driverPath = join(root, "statefs-r13-driver.c");
+    const executablePath = join(root, "statefs-r13-mutant");
+    const source = await readFile(SOURCE_URL, "utf8");
+    const transformed = r13MutatedSource(source, mutation);
+    await Promise.all([
+      writeFile(sourcePath, transformed, { encoding: "utf8", mode: 0o600 }),
+      writeFile(driverPath, R13_MUTANT_DRIVER_SOURCE, {
+        encoding: "utf8",
+        mode: 0o600,
+      }),
+    ]);
+    r13ExactChild(
+      "/usr/bin/cc",
+      [
+        "-std=c17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-B/usr/bin",
+        "-DOXIGRAPH_CONTAINMENT_STATEFS_TEST_FAULTS=1",
+        "-I",
+        R13_MUTANT_SOURCE_DIRECTORY,
+        sourcePath,
+        driverPath,
+        "-o",
+        executablePath,
+      ],
+      REPOSITORY_ROOT,
+    );
+    return Object.freeze({ executablePath, root });
+  } catch (error) {
+    await rm(root, { force: true, recursive: true });
+    throw error;
+  }
+}
+
+function r13NativeProjection(bytes, capacity) {
+  const resultOffset = 4;
+  const observationsOffset = resultOffset + 64;
+  assert.equal(bytes.length, observationsOffset + capacity * 384);
+  const result = bytes.subarray(resultOffset, observationsOffset);
+  const observationBytes = bytes.subarray(observationsOffset);
+  const count = result.readUInt32LE(32);
+  assert.ok(count <= capacity);
+  const observations = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 384;
+    const nameLength = observationBytes.readUInt32LE(offset + 12);
+    assert.ok(nameLength <= 255);
+    observations.push(
+      orderedRecord([
+        ["kind", observationBytes.readUInt32LE(offset + 4)],
+        ["role", observationBytes.readUInt32LE(offset + 8)],
+        [
+          "name",
+          [...observationBytes.subarray(offset + 104, offset + 104 + nameLength)],
+        ],
+        ["statxMask", observationBytes.readUInt32LE(offset + 76)],
+      ]),
+    );
+  }
+  return orderedRecord([
+    ["returnValue", bytes.readInt32LE(0)],
+    ["operation", result.readUInt32LE(8)],
+    ["status", result.readUInt32LE(12)],
+    ["effect", result.readUInt32LE(16)],
+    ["lastCompletedStep", result.readUInt32LE(20)],
+    ["failedStep", result.readUInt32LE(24)],
+    ["errno", result.readInt32LE(28)],
+    ["observationCount", count],
+    ["outputLength", result.readUInt32LE(36)],
+    ["completedStepCount", result.readUInt32LE(40)],
+    ["returnedDirectoryFd", result.readInt32LE(44)],
+    ["bytesConsumed", Number(result.readBigUInt64LE(48))],
+    ["reserved", Number(result.readBigUInt64LE(56))],
+    ["observations", observations],
+    [
+      "unpublishedBytesAreZero",
+      observationBytes.subarray(count * 384).every((byte) => byte === 0),
+    ],
+  ]);
+}
+
+function r13RunNative(executablePath, args, capacity) {
+  return r13NativeProjection(
+    r13ExactChild(executablePath, args, REPOSITORY_ROOT),
+    capacity,
+  );
+}
+
+function r13ExpectedFailure({
+  operation,
+  status = 1,
+  effect,
+  last,
+  failed,
+  steps,
+  observations,
+}) {
+  return orderedRecord([
+    ["returnValue", 0],
+    ["operation", operation],
+    ["status", status],
+    ["effect", effect],
+    ["lastCompletedStep", last],
+    ["failedStep", failed],
+    ["errno", 0],
+    ["observationCount", observations.length],
+    ["outputLength", 0],
+    ["completedStepCount", steps],
+    ["returnedDirectoryFd", -1],
+    ["bytesConsumed", 0],
+    ["reserved", 0],
+    ["observations", observations],
+    ["unpublishedBytesAreZero", true],
+  ]);
+}
+
+function reconstructPreR13EvaluatorSource(source) {
+  let reconstructed = source;
+  const replacements = [
+    [
+      "  lstat,\n  mkdir,\n  mkdtemp,",
+      "  lstat,\n  mkdtemp,",
+      "R13 mkdir import inverse",
+    ],
+    [
+      "  rm,\n  writeFile,\n} from \"node:fs/promises\";",
+      "  rm,\n} from \"node:fs/promises\";",
+      "R13 writeFile import inverse",
+    ],
+    [
+      [
+        'test("pins amended ADR-0037 and unchanged harness package bytes", async () => {',
+        "  for (const [url, byteLength, expectedSha256] of PREDECESSOR_BYTE_PINS) {",
+      ].join("\n"),
+      [
+        'test("pins the accepted S0 ADR and unchanged harness package bytes", async () => {',
+        "  for (const [url, byteLength, expectedSha256] of PREDECESSOR_BYTE_PINS) {",
+      ].join("\n"),
+      "R13 ADR pin test name inverse",
+    ],
+    [
+      [
+        "  [",
+        '    "cleanup-close",',
+        '    "reverse-open-once/no-step/no-errno-replacement/N-or-D-or-M-to-U-only-if-live",',
+        "  ],",
+      ].join("\n"),
+      [
+        "  [",
+        '    "cleanup-close",',
+        '    "reverse-open-once/no-step/no-errno-replacement/D-or-M-to-U",',
+        "  ],",
+      ].join("\n"),
+      "R13 cleanup-close rule inverse",
+    ],
+    [
+      [
+        "    [",
+        '      "specialRules",',
+        '      "55057314d875c12d91553d35dd8562a9863c90029a6407d377278114daef5092",',
+        "    ],",
+      ].join("\n"),
+      [
+        "    [",
+        '      "specialRules",',
+        '      "360083e614f4535031365141bdd592d8a812ecd32952d045f4858711f7421cd9",',
+        "    ],",
+      ].join("\n"),
+      "R13 special-rule identity inverse",
+    ],
+    [
+      [
+        "    ADR_URL,",
+        "    216620,",
+        '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+      ].join("\n"),
+      [
+        "    ADR_URL,",
+        "    204827,",
+        '    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+      ].join("\n"),
+      "R13 ADR pin inverse",
+    ],
+    [
+      [
+        "const EXPECTED_REQUIREMENTS_SHA256 =",
+        '  "fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70";',
+      ].join("\n"),
+      [
+        "const EXPECTED_REQUIREMENTS_SHA256 =",
+        '  "16756669b08e3898380065d27a8e3e0ad6e4eaaaf7a3a9d445f9506385a9ac23";',
+      ].join("\n"),
+      "R13 requirements identity inverse",
+    ],
+    [
+      [
+        "const EXPECTED_ABI_LAYOUT_SHA256 =",
+        '  "651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0";',
+      ].join("\n"),
+      [
+        "const EXPECTED_ABI_LAYOUT_SHA256 =",
+        '  "f69c11d17c0264b2af3eaee0e092bb27ce149207425f8239879d85f1ca589ffd";',
+      ].join("\n"),
+      "R13 ABI identity inverse",
+    ],
+    [
+      "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(\n    reconstructPreR13EvaluatorSource(currentEvaluatorSource),",
+      "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(\n    currentEvaluatorSource,",
+      "R13 accepted inverse entry",
+    ],
+    [
+      "  const reconstructedSource = reconstructPreR8EvaluatorSource(\n    reconstructPreR13EvaluatorSource(currentSource),",
+      "  const reconstructedSource = reconstructPreR8EvaluatorSource(\n    currentSource,",
+      "R13 R8 inverse entry",
+    ],
+  ];
+  for (const [before, after, label] of replacements) {
+    reconstructed = r13ReplaceExactly(reconstructed, before, after, label);
+  }
+  const blockStart = "\n\nconst R13_SUBSTEP_MUTATION_CASES = deepFreeze([\n";
+  const blockEnd =
+    '\n\ntest("freezes all 144 numeric-step before/after selector results", () => {\n';
+  assert.equal(r13CountExact(reconstructed, blockStart), 1, "R13 block start");
+  assert.equal(r13CountExact(reconstructed, blockEnd), 1, "R13 block end");
+  const startIndex = reconstructed.indexOf(blockStart);
+  const endIndex = reconstructed.indexOf(blockEnd, startIndex + blockStart.length);
+  assert.ok(endIndex > startIndex);
+  return `${reconstructed.slice(0, startIndex)}${reconstructed.slice(endIndex)}`;
+}
+
+test("R13 sub-step oracle is complete and does not extend the 144 selector surface", () => {
+  assert.equal(semanticSha256(R13_SUBSTEP_MUTATION_CASES), EXPECTED_R13_SUBSTEP_MUTATION_SHA256);
+  assert.equal(Buffer.byteLength(R13_MUTANT_DRIVER_SOURCE, "utf8"), EXPECTED_R13_MUTANT_DRIVER_BYTES);
+  assert.equal(sha256(R13_MUTANT_DRIVER_SOURCE), EXPECTED_R13_MUTANT_DRIVER_SHA256);
+  assert.equal(EXPECTED_FAULT_CASES.length, 144);
+  assert.equal(new Set(EXPECTED_FAULT_CASES.map(({ selector }) => selector)).size, 68);
+  assert.deepEqual(
+    R13_SUBSTEP_MUTATION_CASES.filter(([name]) => name.startsWith("raw/0x0") || name === "raw/0x1f" || name === "raw/0x7f").map(([name]) => name),
+    ["raw/0x01", "raw/0x1f", "raw/0x7f"],
+  );
+  for (const name of [
+    "raw/0x80",
+    "raw/0xff",
+    "raw/overlength",
+    "raw/embedded-slash",
+    "raw/malformed-record",
+    "raw/unterminated-record",
+  ]) {
+    const row = R13_SUBSTEP_MUTATION_CASES.find(([candidate]) => candidate === name);
+    assert.deepEqual(row.slice(2), ["R", "N", 6, 5, 3, "target-only", true]);
+  }
+});
+
+candidateTest(
+  "R13 transformed native mask failures publish only validated prefixes and enforce descriptor liveness",
+  async () => {
+    const rows = [
+      {
+        label: "fd-a-basic-impossible-close",
+        scenario: "directory",
+        mutation: { statxCall: 1, maskAnd: ~0x7ff, failClose: true },
+        expected: { operation: 2, effect: 0, last: 1, failed: 2, steps: 1, observations: [] },
+      },
+      {
+        label: "regular-initial-mnt-impossible-close",
+        scenario: "regular",
+        mutation: { statxCall: 2, maskAnd: ~0x1000, failClose: true },
+        expected: { operation: 2, effect: 0, last: 2, failed: 5, steps: 2, observations: [] },
+      },
+      {
+        label: "directory-target-basic-close-success",
+        scenario: "directory",
+        mutation: { statxCall: 2, maskAnd: ~0x7ff },
+        expected: { operation: 2, effect: 0, last: 2, failed: 5, steps: 2, observations: [] },
+      },
+      {
+        label: "directory-target-basic-close-failure",
+        scenario: "directory",
+        mutation: { statxCall: 2, maskAnd: ~0x7ff, failClose: true },
+        expected: { operation: 2, effect: 4, last: 2, failed: 5, steps: 2, observations: [] },
+      },
+      {
+        label: "regular-repeat-mnt-close-success",
+        scenario: "regular",
+        mutation: { statxCall: 3, maskAnd: ~0x1000 },
+        expected: { operation: 2, effect: 0, last: 5, failed: 7, steps: 3, observations: [] },
+      },
+      {
+        label: "regular-repeat-mnt-close-failure",
+        scenario: "regular",
+        mutation: { statxCall: 3, maskAnd: ~0x1000, failClose: true },
+        expected: { operation: 2, effect: 4, last: 5, failed: 7, steps: 3, observations: [] },
+      },
+      {
+        label: "mkdir-created-basic",
+        scenario: "mkdir",
+        mutation: { statxCall: 2, maskAnd: ~0x7ff },
+        expected: { operation: 4, status: 5, effect: 3, last: 13, failed: 33, steps: 3, observations: [] },
+      },
+    ];
+    const actual = [];
+    const expected = [];
+    for (const row of rows) {
+      const build = await r13BuildMutant(row.label, row.mutation);
+      try {
+        const scratch = join(build.root, "scratch");
+        await mkdir(scratch, { mode: 0o700 });
+        if (row.scenario === "regular") {
+          await writeFile(join(scratch, "record"), "x", { mode: 0o600 });
+        }
+        actual.push(
+          r13RunNative(
+            build.executablePath,
+            row.scenario === "regular"
+              ? ["regular", scratch, "record"]
+              : row.scenario === "mkdir"
+                ? ["mkdir", scratch, "child"]
+              : ["directory", scratch],
+            row.scenario === "directory" ? 257 : 1,
+          ),
+        );
+        expected.push(r13ExpectedFailure(row.expected));
+      } finally {
+        await rm(build.root, { force: true, recursive: true });
+      }
+    }
+    assert.deepEqual(actual, expected);
+  },
+);
+
+candidateTest(
+  "R13 transformed native entry and mutation masks retain target-only and prior-canonical observations",
+  async () => {
+    const actual = [];
+    const expected = [];
+    let targetMask;
+    const entryBuild = await r13BuildMutant("entry-mask", {
+      statxCall: 3,
+      maskAnd: ~0x1000,
+    });
+    try {
+      const scratch = join(entryBuild.root, "scratch");
+      await mkdir(scratch, { mode: 0o700 });
+      await mkdir(join(scratch, "lifetimes"), { mode: 0o700 });
+      const result = r13RunNative(
+        entryBuild.executablePath,
+        ["directory", scratch],
+        257,
+      );
+      actual.push(result);
+      assert.equal(result.observations.length, 1);
+      targetMask = result.observations[0].statxMask;
+      expected.push(
+        r13ExpectedFailure({
+          operation: 2,
+          effect: 0,
+          last: 5,
+          failed: 6,
+          steps: 3,
+          observations: result.observations,
+        }),
+      );
+    } finally {
+      await rm(entryBuild.root, { force: true, recursive: true });
+    }
+
+    for (const row of [
+      {
+        label: "move-fd-b-mask",
+        statxCall: 2,
+        expected: { effect: 0, last: 2, failed: 3, steps: 2, observations: [] },
+      },
+      {
+        label: "move-source-mask",
+        statxCall: 3,
+        expected: { effect: 0, last: 3, failed: 15, steps: 3, observations: [] },
+      },
+      {
+        label: "move-destination-mask",
+        statxCall: 6,
+        expected: {
+          status: 5,
+          effect: 4,
+          last: 22,
+          failed: 21,
+          steps: 8,
+          observations: [
+            orderedRecord([
+              ["kind", 0],
+              ["role", 4],
+              ["name", [...Buffer.from("generation", "ascii")]],
+              ["statxMask", 0],
+            ]),
+          ],
+        },
+      },
+    ]) {
+      const moveBuild = await r13BuildMutant(row.label, {
+        statxCall: row.statxCall,
+        maskAnd: ~0x1000,
+      });
+      try {
+        const sourceParent = join(moveBuild.root, "source-parent");
+        const destinationParent = join(moveBuild.root, "destination-parent");
+        await Promise.all([
+          mkdir(sourceParent, { mode: 0o700 }),
+          mkdir(destinationParent, { mode: 0o700 }),
+        ]);
+        await mkdir(join(sourceParent, "generation"), { mode: 0o700 });
+        actual.push(
+          r13RunNative(
+            moveBuild.executablePath,
+            [
+              "move",
+              sourceParent,
+              destinationParent,
+              "generation",
+              "generation",
+            ],
+            2,
+          ),
+        );
+        expected.push(
+          r13ExpectedFailure({ operation: 5, ...row.expected }),
+        );
+      } finally {
+        await rm(moveBuild.root, { force: true, recursive: true });
+      }
+    }
+    assert.deepEqual(actual, expected);
+    assert.equal(
+      (targetMask & R13_REQUIRED_STATX_MASK) >>> 0,
+      R13_REQUIRED_STATX_MASK,
+    );
+  },
+);
+
+candidateTest(
+  "R13 native raw-byte domain preserves controls and terminates non-ASCII without a partial entry",
+  async () => {
+    const build = await r13BuildMutant("raw-domain", {});
+    const publishedMasks = [];
+    try {
+      for (const byte of [0x01, 0x1f, 0x7f, 0x80, 0xff]) {
+        const scratch = join(build.root, `raw-${byte.toString(16).padStart(2, "0")}`);
+        await mkdir(scratch, { mode: 0o700 });
+        const rawPath = Buffer.concat([
+          Buffer.from(scratch, "utf8"),
+          Buffer.from([0x2f, byte]),
+        ]);
+        await writeFile(rawPath, "x", { mode: 0o600 });
+        const result = r13RunNative(
+          build.executablePath,
+          ["directory", scratch],
+          257,
+        );
+        if (byte <= 0x7f) {
+          assert.equal(result.status, 0, `raw 0x${byte.toString(16)}`);
+          assert.equal(result.effect, 2);
+          assert.equal(result.lastCompletedStep, 24);
+          assert.equal(result.failedStep, 0);
+          assert.equal(result.completedStepCount, 5);
+          assert.equal(result.observationCount, 2);
+          assert.deepEqual(result.observations[1].name, [byte]);
+          for (const observation of result.observations) {
+            publishedMasks.push(observation.statxMask);
+          }
+        } else {
+          assert.equal(result.status, 1, `raw 0x${byte.toString(16)}`);
+          assert.equal(result.effect, 0);
+          assert.equal(result.lastCompletedStep, 5);
+          assert.equal(result.failedStep, 6);
+          assert.equal(result.completedStepCount, 3);
+          assert.equal(result.observationCount, 1);
+          assert.equal(result.unpublishedBytesAreZero, true);
+          publishedMasks.push(result.observations[0].statxMask);
+        }
+      }
+      for (const mask of publishedMasks) {
+        assert.equal(
+          (mask & R13_REQUIRED_STATX_MASK) >>> 0,
+          R13_REQUIRED_STATX_MASK,
+        );
+      }
+    } finally {
+      await rm(build.root, { force: true, recursive: true });
+    }
+  },
+);
+
+candidateTest(
+  "R13 native statx evidence retains required bits plus an additional returned bit",
+  async () => {
+    const build = await r13BuildMutant("mask-extra", {
+      statxCall: 2,
+      maskOr: R13_EXTRA_STATX_MASK,
+    });
+    try {
+      const scratch = join(build.root, "scratch");
+      await mkdir(scratch, { mode: 0o700 });
+      const result = r13RunNative(
+        build.executablePath,
+        ["directory", scratch],
+        257,
+      );
+      assert.equal(result.status, 0);
+      assert.equal(result.effect, 2);
+      assert.equal(result.observationCount, 1);
+      assert.equal(
+        (result.observations[0].statxMask & R13_REQUIRED_STATX_MASK) >>> 0,
+        R13_REQUIRED_STATX_MASK,
+      );
+      assert.equal(
+        (result.observations[0].statxMask & R13_EXTRA_STATX_MASK) >>> 0,
+        R13_EXTRA_STATX_MASK,
+      );
+    } finally {
+      await rm(build.root, { force: true, recursive: true });
+    }
+  },
+);
+
+test("R13 correction inversely reconstructs the exact pre-R13 fault evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR13EvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 146152);
+  assert.equal(r13CountExact(reconstructedSource, "\n"), 4406);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "864588a504d506fd1b94a33717797b0b9d72299e",
   );
 });
 
