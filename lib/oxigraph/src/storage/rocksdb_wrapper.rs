@@ -1952,3 +1952,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "rocksdb_maintenance_evidence_contract_tests.rs"]
+mod maintenance_evidence_contract_tests;
