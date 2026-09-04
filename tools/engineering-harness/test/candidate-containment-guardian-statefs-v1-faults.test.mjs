@@ -152,7 +152,459 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR13PrivateEvaluatorSource(source) {
+  let reconstructed = source;
+  const pinReplacements = [
+    [
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 216688,",
+        "    lines: 3638,",
+        '    sha256: "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+        '    blob: "49b0467887646ee05126a593d28e78bebff6f78f",',
+      ].join("\n"),
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 204827,",
+        "    lines: 3458,",
+        '    sha256: "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+        '    blob: "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231",',
+      ].join("\n"),
+      "R13 private ADR pin inverse",
+    ],
+    [
+      [
+        '    label: "S2 statefs source",',
+        "    url: STATEFS_SOURCE_URL,",
+        "    bytes: 189577,",
+        "    lines: 6242,",
+        '    sha256: "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",',
+        '    blob: "c452f04d9b64719dcd6b0392ee019578811aa263",',
+      ].join("\n"),
+      [
+        '    label: "S2 statefs source",',
+        "    url: STATEFS_SOURCE_URL,",
+        "    bytes: 190954,",
+        "    lines: 6299,",
+        '    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",',
+        '    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",',
+      ].join("\n"),
+      "R13 private StateFS source pin inverse",
+    ],
+    [
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 386695,",
+        "    lines: 11305,",
+        '    sha256: "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",',
+        '    blob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",',
+      ].join("\n"),
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 324808,",
+        "    lines: 9548,",
+        '    sha256: "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",',
+        '    blob: "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",',
+      ].join("\n"),
+      "R13 private StateFS evaluator pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 166676,",
+        "    lines: 4955,",
+        '    sha256: "4da18be9ae8dcf04288482aa728acccf7281054cd69061f3227353ecc24dd24c",',
+        '    blob: "b7eae6e8f5a9724ad6d2b9963785faf9d76ca1b0",',
+      ].join("\n"),
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 147416,",
+        "    lines: 4459,",
+        '    sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",',
+        '    blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",',
+      ].join("\n"),
+      "R13 private P2 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 182254,",
+        "    lines: 5400,",
+        '    sha256: "108dbfe0235ee9fed7d17d0a2352a0184e7eda74a39a77f59d5f5efd8353627a",',
+        '    blob: "f09c812da56dd9c45c90ee8a5af38266e9856245",',
+      ].join("\n"),
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 146152,",
+        "    lines: 4406,",
+        '    sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",',
+        '    blob: "864588a504d506fd1b94a33717797b0b9d72299e",',
+      ].join("\n"),
+      "R13 private P3 pin inverse",
+    ],
+  ];
+  for (const [before, after, label] of pinReplacements) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  for (const [before, after, label] of [
+    [
+      [
+        '["ownerGid", 72], ["statx',
+        'Mask", 76], ["filesystemMagic", 80]',
+      ].join(""),
+      '["ownerGid", 72], ["flags", 76], ["filesystemMagic", 80]',
+      "R13 private ABI field inverse",
+    ],
+    [
+      'const EXPECTED_STATEFS_REQUIREMENTS_SHA256 =\n  "9b401032c2b0331174f74895181e906106bb86a32204b818b30686d9a47c0a42";',
+      'const EXPECTED_STATEFS_REQUIREMENTS_SHA256 =\n  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";',
+      "R13 private requirements inverse",
+    ],
+    [
+      [
+        "      assert.equal(",
+        "        nameBytes.every(",
+        "          (byte) => byte >= 0x01 && byte <= 0x7f && byte !== 0x2f,",
+        "        ),",
+        "        true,",
+        "      );",
+      ].join("\n"),
+      "      assert.equal(nameBytes.every((byte) => byte >= 0x20 && byte <= 0x7e), true);",
+      "R13 private cleanup raw-name inverse",
+    ],
+    [
+      [
+        "    observations: Buffer.alloc(observationCapacity * 384, ",
+        "0xa5),",
+      ].join(""),
+      "    observations: Buffer.alloc(observationCapacity * 384),",
+      "R13 private observation prefill inverse",
+    ],
+    [
+      [
+        "  assert.equal(bytes.readUInt32LE(offset), 384);",
+        "  assert.equal(bytes.readBigUInt64LE(offset + 360), 0n);",
+        "  assert.equal(bytes.readBigUInt64LE(offset + 368), 0n);",
+        "  assert.equal(bytes.readBigUInt64LE(offset + 376), 0n);",
+        "  const kind = exactEnumName(",
+        "    OBSERVATION_KIND_NAMES,",
+        "    bytes.readUInt32LE(offset + 4),",
+        '    "observation kind",',
+        "  );",
+      ].join("\n"),
+      [
+        "  assert.equal(bytes.readUInt32LE(offset), 384);",
+        "  assert.equal(bytes.readUInt32LE(offset + 76), 0);",
+        "  assert.equal(bytes.readBigUInt64LE(offset + 360), 0n);",
+        "  assert.equal(bytes.readBigUInt64LE(offset + 368), 0n);",
+        "  assert.equal(bytes.readBigUInt64LE(offset + 376), 0n);",
+      ].join("\n"),
+      "R13 private decoder kind ordering inverse",
+    ],
+    [
+      [
+        "  assert.equal(",
+        "    rawObservedName.every(",
+        "      (byte) => byte >= 0x01 && byte <= 0x7f && byte !== 0x2f,",
+        "    ),",
+        "    true,",
+        "  );",
+      ].join("\n"),
+      [
+        "  assert.equal(",
+        "    rawObservedName.every((byte) => byte >= 0x20 && byte <= 0x7e),",
+        "    true,",
+        "  );",
+      ].join("\n"),
+      "R13 private decoder raw-name inverse",
+    ],
+    [
+      [
+        '  const name = nameLength === 0 ? null : rawObservedName.toString("ascii");',
+        '  assert.equal(name !== "." && name !== "..", true);',
+        "  const statxMask = bytes.readUInt32LE(offset + 76);",
+        "  assert.equal(",
+        '    kind === "ABSENT" ? statxMask === 0 : (statxMask & 0x17ff) === 0x17ff,',
+        "    true,",
+        "  );",
+        "  const role = exactEnumName(",
+      ].join("\n"),
+      [
+        '  const name = nameLength === 0 ? null : rawObservedName.toString("ascii");',
+        "  const kind = exactEnumName(",
+        "    OBSERVATION_KIND_NAMES,",
+        "    bytes.readUInt32LE(offset + 4),",
+        '    "observation kind",',
+        "  );",
+        "  const role = exactEnumName(",
+      ].join("\n"),
+      "R13 private decoder mask inverse",
+    ],
+    [
+      '      ["ownerGid", bytes.readUInt32LE(offset + 72)],\n      ["statxMask", statxMask],\n      ["filesystemMagic", bytes.readBigUInt64LE(offset + 80).toString(10)],',
+      '      ["ownerGid", bytes.readUInt32LE(offset + 72)],\n      ["filesystemMagic", bytes.readBigUInt64LE(offset + 80).toString(10)],',
+      "R13 private decoded observation field inverse",
+    ],
+    [
+      [
+        "  assert.equal(outputLength <= buffers.output.length, true);",
+        "  assert.equal(",
+        "    buffers.observations",
+        "      .subarray(observationCount * 384)",
+        "      .every((byte) => byte === 0),",
+        "    true,",
+        "  );",
+        "  const observations = array(",
+      ].join("\n"),
+      [
+        "  assert.equal(outputLength <= buffers.output.length, true);",
+        "  const observations = array(",
+      ].join("\n"),
+      "R13 private unpublished tail inverse",
+    ],
+    [
+      '    ["ownerGid", identity.ownerGid],\n    ["statxMask", identity.mask],\n    ["filesystemMagic", filesystemMagic.toString(10)],',
+      '    ["ownerGid", identity.ownerGid],\n    ["filesystemMagic", filesystemMagic.toString(10)],',
+      "R13 private expected native mask inverse",
+    ],
+    [
+      '    ["ownerGid", 0],\n    ["statxMask", 0],\n    ["filesystemMagic", "0"],',
+      '    ["ownerGid", 0],\n    ["filesystemMagic", "0"],',
+      "R13 private expected absent mask inverse",
+    ],
+    [
+      [
+        "  const currentStatefsSourcePin = [",
+        '    \'    label: "S2 statefs source",\',',
+        '    "    url: STATEFS_SOURCE_URL,",',
+        '    "    bytes: 189577,",',
+        '    "    lines: 6242,",',
+        '    \'    sha256: "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",\',',
+        '    \'    blob: "c452f04d9b64719dcd6b0392ee019578811aa263",\',',
+        '  ].join("\\n");',
+      ].join("\n"),
+      [
+        "  const currentStatefsSourcePin = [",
+        '    \'    label: "S2 statefs source",\',',
+        '    "    url: STATEFS_SOURCE_URL,",',
+        '    "    bytes: 190954,",',
+        '    "    lines: 6299,",',
+        '    \'    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",\',',
+        '    \'    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",\',',
+        '  ].join("\\n");',
+      ].join("\n"),
+      "R13 private R11C mutation pin inverse",
+    ],
+    [
+      [
+        "  const mutatedStatefsSourcePin = currentStatefsSourcePin.replace(",
+        '    "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",',
+        '    "0feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",',
+        "  );",
+      ].join("\n"),
+      [
+        "  const mutatedStatefsSourcePin = currentStatefsSourcePin.replace(",
+        '    "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",',
+        '    "040c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",',
+        "  );",
+      ].join("\n"),
+      "R13 private R11C mutation digest inverse",
+    ],
+    [
+      [
+        '      error?.message.includes("R13 private StateFS ',
+        'source pin inverse"),',
+      ].join(""),
+      '      error?.message.includes("R11C S2 source pin inverse"),',
+      "R13 private R11C mutation assertion inverse",
+    ],
+    [
+      "function reconstructPreR11CPrivateEvaluatorSource(source, proofStart, proofEnd) {\n  source = reconstructPreR13PrivateEvaluatorSource(source);",
+      "function reconstructPreR11CPrivateEvaluatorSource(source, proofStart, proofEnd) {",
+      "R13 private older inverse forwarding",
+    ],
+  ]) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      '  assert.equal(decodeNativeObservation(observation, 0).kind, "ABSENT");',
+      '  assert.equal(decodeNativeObservation(observation, 0).statxMask, 0);',
+      "  const regularObservation = Buffer.from(observation);",
+      "  regularObservation.writeUInt32LE(",
+      '    OBSERVATION_KIND_NAMES.indexOf("REGULAR"),',
+      "    4,",
+      "  );",
+      "  regularObservation.writeUInt32LE(0x17ff, 76);",
+      "  assert.equal(decodeNativeObservation(regularObservation, 0).statxMask, 0x17ff);",
+      "  for (const mask of [0x1000, 0x07ff]) {",
+      "    const incompleteMask = Buffer.from(regularObservation);",
+      "    incompleteMask.writeUInt32LE(mask, 76);",
+      "    assert.throws(() => decodeNativeObservation(incompleteMask, 0));",
+      "  }",
+      "  const extraMask = Buffer.from(regularObservation);",
+      "  extraMask.writeUInt32LE((0x17ff | 0x8000_0000) >>> 0, 76);",
+      "  assert.equal(",
+      "    decodeNativeObservation(extraMask, 0).statxMask,",
+      "    (0x17ff | 0x8000_0000) >>> 0,",
+      "  );",
+      "  const nonzeroAbsentMask = Buffer.from(observation);",
+      "  nonzeroAbsentMask.writeUInt32LE(1, 76);",
+      "  assert.throws(() => decodeNativeObservation(nonzeroAbsentMask, 0));",
+      "  for (const rawByte of [0x01, 0x1f, 0x7f]) {",
+      "    const rawNameObservation = Buffer.from(observation);",
+      "    rawNameObservation.writeUInt32LE(1, 12);",
+      "    rawNameObservation[104] = rawByte;",
+      "    assert.equal(",
+      "      decodeNativeObservation(rawNameObservation, 0).name.charCodeAt(0),",
+      "      rawByte,",
+      "    );",
+      "  }",
+      "  for (const rawName of [",
+      "    Buffer.from([0x00]),",
+      "    Buffer.from([0x2f]),",
+      '    Buffer.from("."),',
+      '    Buffer.from(".."),',
+      "    Buffer.from([0x80]),",
+      "    Buffer.from([0xff]),",
+      "  ]) {",
+      "    const invalidRawName = Buffer.from(observation);",
+      "    invalidRawName.writeUInt32LE(rawName.length, 12);",
+      "    rawName.copy(invalidRawName, 104);",
+      "    assert.throws(() => decodeNativeObservation(invalidRawName, 0));",
+      "  }",
+      "  const overlengthName = Buffer.from(observation);",
+      "  overlengthName.writeUInt32LE(256, 12);",
+      "  assert.throws(() => decodeNativeObservation(overlengthName, 0));",
+      "  const malformedKind = Buffer.from(observation);",
+    ].join("\n"),
+    [
+      '  assert.equal(decodeNativeObservation(observation, 0).kind, "ABSENT");',
+      "  const malformedKind = Buffer.from(observation);",
+    ].join("\n"),
+    "R13 private ABI decoder cases inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  const unpublishedPartialSlot = Buffer.alloc(ABI.observation.size);",
+      "  unpublishedPartialSlot[0] = 0xa5;",
+      "  assert.throws(() =>",
+      "    decodeNativeResult(resultSpecification, {",
+      "      ...resultBuffers,",
+      "      observations: unpublishedPartialSlot,",
+      "    }),",
+      "  );",
+      "",
+      "",
+    ].join("\n"),
+    "",
+    "R13 private ABI unpublished-tail case inverse",
+  );
+
+  for (const block of [
+    [
+      "      preR14Bytes: 160288,",
+      "      preR14Lines: 4801,",
+      '      preR14Sha256: "6fb8848670dc84fad1fa42fdf8f34bfd31ea7876da40361bcff7ddf5ed95be81",',
+      '      preR14Blob: "d95a93e4fe0b3ca6b9da5b55dad7672e09253edd",',
+      "      preR14Tests: 13,",
+      "      preR14CandidateTests: 8,",
+      "",
+    ].join("\n"),
+    [
+      "      preR14Bytes: 177918,",
+      "      preR14Lines: 5275,",
+      '      preR14Sha256: "b3555e754804ed768771dfb1a0541624554be205b348a250fea248c00dfd28a2",',
+      '      preR14Blob: "966c0ef49a1868588b38b7e556bf700353417990",',
+      "      preR14Tests: 12,",
+      "      preR14CandidateTests: 8,",
+      "",
+    ].join("\n"),
+    [
+      "      preR13Bytes: 147416,",
+      "      preR13Lines: 4459,",
+      '      preR13Sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",',
+      '      preR13Blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",',
+      "",
+    ].join("\n"),
+    [
+      "      preR13Bytes: 146152,",
+      "      preR13Lines: 4406,",
+      '      preR13Sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",',
+      '      preR13Blob: "864588a504d506fd1b94a33717797b0b9d72299e",',
+      "",
+    ].join("\n"),
+  ]) {
+    reconstructed = replaceExactly(
+      reconstructed,
+      block,
+      "",
+      "R13 private S3 preimage fields inverse",
+    );
+  }
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      '    const r8Kind =',
+      '      item.url.href === SYSCALL_EVALUATOR_URL.href ? "syscall" : "fault";',
+      "    source = item.url.href === SYSCALL_EVALUATOR_URL.href",
+      "      ? reconstructPreR14P2SourceForPrivate(source)",
+      "      : reconstructPreR14P3SourceForPrivate(source);",
+      '    const preR14Bytes = Buffer.from(source, "utf8");',
+      "    assert.equal(preR14Bytes.length, item.preR14Bytes);",
+      '    assert.equal(countExact(source, "\\n"), item.preR14Lines);',
+      "    assert.equal(sha256(preR14Bytes), item.preR14Sha256);",
+      "    assert.equal(gitBlobSha1(preR14Bytes), item.preR14Blob);",
+      '    assert.equal(countExact(source, \'\\ntest("\'), item.preR14Tests);',
+      "    assert.equal(",
+      '      countExact(source, "\\ncandidateTest("),',
+      "      item.preR14CandidateTests,",
+      "    );",
+      "    source = item.url.href === SYSCALL_EVALUATOR_URL.href",
+      "      ? reconstructPreR13P2SourceForPrivate(source)",
+      "      : reconstructPreR13P3SourceForPrivate(source);",
+      '    const preR13Bytes = Buffer.from(source, "utf8");',
+      "    assert.equal(preR13Bytes.length, item.preR13Bytes);",
+      '    assert.equal(countExact(source, "\\n"), item.preR13Lines);',
+      "    assert.equal(sha256(preR13Bytes), item.preR13Sha256);",
+      "    assert.equal(gitBlobSha1(preR13Bytes), item.preR13Blob);",
+      "    source = reconstructPreR8S3EvaluatorSource(",
+    ].join("\n"),
+    [
+      '    const r8Kind =',
+      '      item.url.href === SYSCALL_EVALUATOR_URL.href ? "syscall" : "fault";',
+      "    source = reconstructPreR8S3EvaluatorSource(",
+    ].join("\n"),
+    "R13 private S3 forwarding inverse",
+  );
+
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nconst R13_REQUIRED_STATX_MASK = 0x17ff;\n",
+    '\n\ntest("pins ADR, S2, S3, package, lock, and immutable StateFS source identities", async () => {\n',
+    "R13 private correction block inverse",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR13PrivateEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreR11CPrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "R13 private inverse helper removal",
+  );
+}
+
 function reconstructPreR11CPrivateEvaluatorSource(source, proofStart, proofEnd) {
+  source = reconstructPreR13PrivateEvaluatorSource(source);
   const currentStatefsSourcePin = [
     '    label: "S2 statefs source",',
     "    url: STATEFS_SOURCE_URL,",
@@ -723,42 +1175,42 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "ADR-0037",
     url: ADR_URL,
-    bytes: 204827,
-    lines: 3458,
-    sha256: "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
-    blob: "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231",
+    bytes: 216688,
+    lines: 3638,
+    sha256: "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
+    blob: "49b0467887646ee05126a593d28e78bebff6f78f",
   },
   {
     label: "S2 statefs source",
     url: STATEFS_SOURCE_URL,
-    bytes: 190954,
-    lines: 6299,
-    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
-    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",
+    bytes: 189577,
+    lines: 6242,
+    sha256: "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",
+    blob: "c452f04d9b64719dcd6b0392ee019578811aa263",
   },
   {
     label: "S2 statefs evaluator",
     url: STATEFS_EVALUATOR_URL,
-    bytes: 324808,
-    lines: 9548,
-    sha256: "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",
-    blob: "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",
+    bytes: 386695,
+    lines: 11305,
+    sha256: "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",
+    blob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",
   },
   {
     label: "S3 syscall evaluator",
     url: SYSCALL_EVALUATOR_URL,
-    bytes: 147416,
-    lines: 4459,
-    sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",
-    blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",
+    bytes: 166676,
+    lines: 4955,
+    sha256: "4da18be9ae8dcf04288482aa728acccf7281054cd69061f3227353ecc24dd24c",
+    blob: "b7eae6e8f5a9724ad6d2b9963785faf9d76ca1b0",
   },
   {
     label: "S3 fault evaluator",
     url: FAULT_EVALUATOR_URL,
-    bytes: 146152,
-    lines: 4406,
-    sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",
-    blob: "864588a504d506fd1b94a33717797b0b9d72299e",
+    bytes: 182254,
+    lines: 5400,
+    sha256: "108dbfe0235ee9fed7d17d0a2352a0184e7eda74a39a77f59d5f5efd8353627a",
+    blob: "f09c812da56dd9c45c90ee8a5af38266e9856245",
   },
   {
     label: "engineering package",
@@ -1113,7 +1565,7 @@ const FAULT_CASES = expectedFaultCases();
 const ABI = deepFreeze(
   record(
     ["request", record(["alignment", 8], ["size", 192], ["offsets", pairs(["abiVersion", 0], ["structSize", 4], ["operation", 8], ["inventoryKind", 12], ["dirfdA", 16], ["dirfdB", 20], ["dirfdARole", 24], ["dirfdBRole", 28], ["nameALength", 32], ["nameBLength", 36], ["inputLength", 40], ["nameAAddress", 48], ["nameBAddress", 56], ["inputAddress", 64], ["observationsAddress", 72], ["observationCapacity", 80], ["outputCapacity", 84], ["outputAddress", 88], ["testFaultSelector", 96], ["expectedOwnerUid", 100], ["expectedOwnerGid", 104], ["inventoryDirectoryRole", 108], ["expectedMountIdA", 112], ["expectedMountIdB", 120], ["expectedDeviceMajorA", 128], ["expectedDeviceMinorA", 136], ["expectedInodeA", 144], ["expectedFilesystemMagicA", 152], ["expectedDeviceMajorB", 160], ["expectedDeviceMinorB", 168], ["expectedInodeB", 176], ["expectedFilesystemMagicB", 184])])],
-    ["observation", record(["alignment", 8], ["size", 384], ["offsets", pairs(["structSize", 0], ["kind", 4], ["role", 8], ["nameLength", 12], ["deviceMajor", 16], ["deviceMinor", 24], ["inode", 32], ["mountId", 40], ["byteLength", 48], ["linkCount", 56], ["mode", 64], ["ownerUid", 68], ["ownerGid", 72], ["flags", 76], ["filesystemMagic", 80], ["contentOffset", 88], ["contentLength", 96], ["name", 104], ["reserved0", 360], ["reserved1", 368], ["reserved2", 376])])],
+    ["observation", record(["alignment", 8], ["size", 384], ["offsets", pairs(["structSize", 0], ["kind", 4], ["role", 8], ["nameLength", 12], ["deviceMajor", 16], ["deviceMinor", 24], ["inode", 32], ["mountId", 40], ["byteLength", 48], ["linkCount", 56], ["mode", 64], ["ownerUid", 68], ["ownerGid", 72], ["statxMask", 76], ["filesystemMagic", 80], ["contentOffset", 88], ["contentLength", 96], ["name", 104], ["reserved0", 360], ["reserved1", 368], ["reserved2", 376])])],
     ["result", record(["alignment", 8], ["size", 64], ["offsets", pairs(["abiVersion", 0], ["structSize", 4], ["operation", 8], ["status", 12], ["effectClass", 16], ["lastCompletedStep", 20], ["failedStep", 24], ["errno", 28], ["observationCount", 32], ["outputLength", 36], ["completedStepCount", 40], ["returnedDirectoryFd", 44], ["bytesConsumed", 48], ["reserved", 56])])],
   ),
 );
@@ -1963,7 +2415,7 @@ const CLEANUP_MAX_OPEN_DIRECTORIES = 5;
 const CLEANUP_MAX_DIRECTORY_ENTRIES = 256;
 const CLEANUP_MAX_AGGREGATE_ENTRIES = 1_536;
 const EXPECTED_STATEFS_REQUIREMENTS_SHA256 =
-  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";
+  "9b401032c2b0331174f74895181e906106bb86a32204b818b30686d9a47c0a42";
 let profileOrdinal = 0;
 let scratchParentPromise;
 
@@ -2117,7 +2569,12 @@ function parseDirectoryEntries(bytes, byteLength) {
     const nameBytes = Buffer.from(nameArea.subarray(0, nul));
     if (!nameBytes.equals(Buffer.from(".")) && !nameBytes.equals(Buffer.from(".."))) {
       assert.equal(nameBytes.length >= 1 && nameBytes.length <= 255, true);
-      assert.equal(nameBytes.every((byte) => byte >= 0x20 && byte <= 0x7e), true);
+      assert.equal(
+        nameBytes.every(
+          (byte) => byte >= 0x01 && byte <= 0x7f && byte !== 0x2f,
+        ),
+        true,
+      );
       entries.push(nameBytes);
     }
     offset += recordLength;
@@ -2766,7 +3223,7 @@ function encodeNativeRequest(specification) {
     nameA,
     nameB,
     input,
-    observations: Buffer.alloc(observationCapacity * 384),
+    observations: Buffer.alloc(observationCapacity * 384, 0xa5),
     output: Buffer.alloc(outputCapacity),
     result: Buffer.alloc(64),
   };
@@ -2774,24 +3231,31 @@ function encodeNativeRequest(specification) {
 
 function decodeNativeObservation(bytes, offset) {
   assert.equal(bytes.readUInt32LE(offset), 384);
-  assert.equal(bytes.readUInt32LE(offset + 76), 0);
   assert.equal(bytes.readBigUInt64LE(offset + 360), 0n);
   assert.equal(bytes.readBigUInt64LE(offset + 368), 0n);
   assert.equal(bytes.readBigUInt64LE(offset + 376), 0n);
+  const kind = exactEnumName(
+    OBSERVATION_KIND_NAMES,
+    bytes.readUInt32LE(offset + 4),
+    "observation kind",
+  );
   const nameLength = bytes.readUInt32LE(offset + 12);
   assert.equal(nameLength <= 255, true);
   const nameArea = bytes.subarray(offset + 104, offset + 360);
   assert.equal(nameArea.subarray(nameLength).every((byte) => byte === 0), true);
   const rawObservedName = nameArea.subarray(0, nameLength);
   assert.equal(
-    rawObservedName.every((byte) => byte >= 0x20 && byte <= 0x7e),
+    rawObservedName.every(
+      (byte) => byte >= 0x01 && byte <= 0x7f && byte !== 0x2f,
+    ),
     true,
   );
   const name = nameLength === 0 ? null : rawObservedName.toString("ascii");
-  const kind = exactEnumName(
-    OBSERVATION_KIND_NAMES,
-    bytes.readUInt32LE(offset + 4),
-    "observation kind",
+  assert.equal(name !== "." && name !== "..", true);
+  const statxMask = bytes.readUInt32LE(offset + 76);
+  assert.equal(
+    kind === "ABSENT" ? statxMask === 0 : (statxMask & 0x17ff) === 0x17ff,
+    true,
   );
   const role = exactEnumName(
     ROLE_NAMES,
@@ -2812,6 +3276,7 @@ function decodeNativeObservation(bytes, offset) {
       ["mode", bytes.readUInt32LE(offset + 64)],
       ["ownerUid", bytes.readUInt32LE(offset + 68)],
       ["ownerGid", bytes.readUInt32LE(offset + 72)],
+      ["statxMask", statxMask],
       ["filesystemMagic", bytes.readBigUInt64LE(offset + 80).toString(10)],
       ["contentOffset", exactSafeUnsignedNumber(bytes.readBigUInt64LE(offset + 88), "contentOffset")],
       ["contentLength", exactSafeUnsignedNumber(bytes.readBigUInt64LE(offset + 96), "contentLength")],
@@ -2842,6 +3307,12 @@ function decodeNativeResult(specification, buffers) {
   const outputLength = bytes.readUInt32LE(36);
   assert.equal(observationCount * 384 <= buffers.observations.length, true);
   assert.equal(outputLength <= buffers.output.length, true);
+  assert.equal(
+    buffers.observations
+      .subarray(observationCount * 384)
+      .every((byte) => byte === 0),
+    true,
+  );
   const observations = array(
     ...Array.from({ length: observationCount }, (_, index) =>
       decodeNativeObservation(buffers.observations, index * 384),
@@ -4590,6 +5061,7 @@ function expectedNativeObservation({
     ["mode", identity.mode],
     ["ownerUid", identity.ownerUid],
     ["ownerGid", identity.ownerGid],
+    ["statxMask", identity.mask],
     ["filesystemMagic", filesystemMagic.toString(10)],
     ["contentOffset", 0],
     ["contentLength", contentLength],
@@ -4610,6 +5082,7 @@ function expectedAbsentObservation(role, name) {
     ["mode", 0],
     ["ownerUid", 0],
     ["ownerGid", 0],
+    ["statxMask", 0],
     ["filesystemMagic", "0"],
     ["contentOffset", 0],
     ["contentLength", 0],
@@ -5199,6 +5672,1076 @@ test.after(async () => {
   }
 });
 
+const R13_REQUIRED_STATX_MASK = 0x17ff;
+const R13_EXTRA_STATX_MASK = 0x8000_0000;
+const R13_CLEANUP_CLOSE_ERRNO = 13;
+const R13_PRIVATE_MASK_LOCATIONS = deepFreeze([
+  ["fd-a", "LOCK_EX_NB", 1, "REJECTED", "NO_EFFECT", "REQUEST_VALIDATED", "FD_A_VALIDATED", 1, "zero"],
+  ["fd-b", "MOVE_NOREPLACE_SYNC", 2, "REJECTED", "NO_EFFECT", "FD_A_VALIDATED", "FD_B_VALIDATED", 2, "zero"],
+  ["directory-target", "INVENTORY/DIRECTORY/ROOT", 2, "REJECTED", "NO_EFFECT", "FD_A_VALIDATED", "INTERNAL_DESCRIPTOR_OPENED", 2, "zero"],
+  ["directory-entry", "INVENTORY/DIRECTORY/ROOT", 3, "REJECTED", "NO_EFFECT", "INTERNAL_DESCRIPTOR_OPENED", "DIRECTORY_ENUMERATED", 3, "target-only"],
+  ["regular-initial", "INVENTORY/REGULAR_FILE/PRESENT", 2, "REJECTED", "NO_EFFECT", "FD_A_VALIDATED", "INTERNAL_DESCRIPTOR_OPENED", 2, "zero"],
+  ["regular-repeat", "INVENTORY/REGULAR_FILE/PRESENT", 3, "REJECTED", "NO_EFFECT", "INTERNAL_DESCRIPTOR_OPENED", "ENTRY_REOBSERVED", 3, "zero"],
+  ["persist-metadata", "PERSIST_NOREPLACE", 2, "VERIFICATION_FAILED", "MUTATION_OBSERVED_NOT_FULLY_SYNCED", "TEMP_CREATED", "CREATED_METADATA_VALIDATED", 3, "zero"],
+  ["mkdir-metadata", "MKDIR_SYNC", 2, "VERIFICATION_FAILED", "MUTATION_OBSERVED_NOT_FULLY_SYNCED", "CHILD_DIRECTORY_CREATED", "CREATED_METADATA_VALIDATED", 3, "zero"],
+  ["move-source", "MOVE_NOREPLACE_SYNC", 3, "REJECTED", "NO_EFFECT", "FD_B_VALIDATED", "SOURCE_REOBSERVED", 3, "zero"],
+  ["move-destination-final", "MOVE_NOREPLACE_SYNC", 6, "VERIFICATION_FAILED", "EFFECT_UNCERTAIN", "SOURCE_ABSENCE_REOBSERVED", "DESTINATION_REOBSERVED", 8, "source-absent-only"],
+]);
+const R13_PRIVATE_LIVENESS_LOCATIONS = deepFreeze([
+  ["directory-root-step-5", "INVENTORY/DIRECTORY/ROOT", 2, "DEFINITE_NO_EFFECT", "EFFECT_UNCERTAIN", "FD_A_VALIDATED", "INTERNAL_DESCRIPTOR_OPENED", 2],
+  ["directory-child-step-5", "INVENTORY/DIRECTORY/CHILD", 2, "DEFINITE_NO_EFFECT", "EFFECT_UNCERTAIN", "FD_A_VALIDATED", "INTERNAL_DESCRIPTOR_OPENED", 2],
+  ["mkdir-step-5", "MKDIR_SYNC", 3, "MUTATION_OBSERVED_NOT_FULLY_SYNCED", "EFFECT_UNCERTAIN", "CREATED_METADATA_VALIDATED", "INTERNAL_DESCRIPTOR_OPENED", 4],
+  ["regular-initial-step-5", "INVENTORY/REGULAR_FILE/PRESENT", 2, "DEFINITE_NO_EFFECT", "DEFINITE_NO_EFFECT", "FD_A_VALIDATED", "INTERNAL_DESCRIPTOR_OPENED", 2],
+  ["mkdir-step-33", "MKDIR_SYNC", 2, "MUTATION_OBSERVED_NOT_FULLY_SYNCED", "MUTATION_OBSERVED_NOT_FULLY_SYNCED", "CHILD_DIRECTORY_CREATED", "CREATED_METADATA_VALIDATED", 3],
+]);
+const R13_PRIVATE_RAW_CASES = deepFreeze([
+  ["0x01", 0x01, null, true],
+  ["0x1f", 0x1f, null, true],
+  ["0x7f", 0x7f, null, true],
+  ["0x80", 0x80, null, false],
+  ["0xff", 0xff, null, false],
+  ["overlength", null, "overlength", false],
+  ["embedded-slash", null, "embedded-slash", false],
+  ["malformed-record", null, "malformed-record", false],
+  ["unterminated-record", null, "unterminated-record", false],
+]);
+
+function r13MutatedNativeSource(
+  source,
+  {
+    statxCall = 0,
+    maskAnd = 0xffff_ffff,
+    maskOr = 0,
+    statxErrno = 0,
+    failClose = false,
+    closeErrno = R13_CLEANUP_CLOSE_ERRNO,
+    directoryEntryMutation = null,
+  },
+) {
+  let transformed = source;
+  if (statxCall !== 0) {
+    assert.equal(Number.isInteger(statxCall) && statxCall >= 1, true);
+    assert.equal(Number.isInteger(statxErrno) && statxErrno >= 0, true);
+    const statxAnchor = [
+      "STATEFS_ALWAYS_INLINE long statefs_linux_statx(long directory, long name, long flags,",
+      "                                                long mask, long output) {",
+    ].join("\n");
+    transformed = replaceExactly(
+      transformed,
+      statxAnchor,
+      [
+        "static uint32_t statefs_r13_private_statx_call_count_v1;",
+        "",
+        statxAnchor,
+      ].join("\n"),
+      "R13 private statx declaration mutation",
+    );
+    const statxReturnAnchor = [
+      '                     : "rcx", "r11", "memory");',
+      "    return value;",
+      "}",
+      "",
+      "STATEFS_ALWAYS_INLINE int statefs_raw_error(long value) {",
+    ].join("\n");
+    const hexadecimal = (value) => `0x${(value >>> 0).toString(16)}U`;
+    transformed = replaceExactly(
+      transformed,
+      statxReturnAnchor,
+      [
+        '                     : "rcx", "r11", "memory");',
+        "    statefs_r13_private_statx_call_count_v1 += 1U;",
+        `    if (statefs_r13_private_statx_call_count_v1 == ${statxCall}U) {`,
+        ...(statxErrno === 0
+          ? [
+              "        if (value == 0L) {",
+              "            struct statefs_kernel_statx_v1 *mutated =",
+              "                (struct statefs_kernel_statx_v1 *)(uintptr_t)output;",
+              `            mutated->mask = (mutated->mask & (uint32_t)${hexadecimal(maskAnd)}) |`,
+              `                            (uint32_t)${hexadecimal(maskOr)};`,
+              "        }",
+            ]
+          : [`        return -(long)${statxErrno};`]),
+        "    }",
+        "    return value;",
+        "}",
+        "",
+        "STATEFS_ALWAYS_INLINE int statefs_raw_error(long value) {",
+      ].join("\n"),
+      "R13 private statx result mutation",
+    );
+  }
+  if (directoryEntryMutation !== null) {
+    assert.equal(
+      [
+        "overlength",
+        "embedded-slash",
+        "malformed-record",
+        "unterminated-record",
+      ].includes(directoryEntryMutation),
+      true,
+    );
+    const getdentsAnchor =
+      "STATEFS_ALWAYS_INLINE long statefs_linux_getdents64(long descriptor, long output, long length) {";
+    transformed = replaceExactly(
+      transformed,
+      getdentsAnchor,
+      [
+        "static uint32_t statefs_r13_private_getdents_call_count_v1;",
+        "",
+        getdentsAnchor,
+      ].join("\n"),
+      "R13 private getdents declaration mutation",
+    );
+    const getdentsReturnAnchor = [
+      '                     : "rcx", "r11", "memory");',
+      "    return value;",
+      "}",
+      "",
+      "STATEFS_ALWAYS_INLINE long statefs_linux_openat(long directory, long name, long flags, long mode) {",
+    ].join("\n");
+    const mutationLines = {
+      overlength: [
+        "        bytes[16] = 0x14U;",
+        "        bytes[17] = 0x01U;",
+        "        for (index = 19L; index < 275L; index += 1L) bytes[index] = (uint8_t)'a';",
+        "        bytes[275] = 0U;",
+        "        value = 276L;",
+      ],
+      "embedded-slash": [
+        "        bytes[16] = 22U;",
+        "        bytes[19] = (uint8_t)'a';",
+        "        bytes[20] = (uint8_t)'/';",
+        "        bytes[21] = 0U;",
+        "        value = 22L;",
+      ],
+      "malformed-record": [
+        "        bytes[16] = 18U;",
+        "        value = 18L;",
+      ],
+      "unterminated-record": [
+        "        bytes[16] = 20U;",
+        "        bytes[19] = (uint8_t)'a';",
+        "        value = 20L;",
+      ],
+    }[directoryEntryMutation];
+    transformed = replaceExactly(
+      transformed,
+      getdentsReturnAnchor,
+      [
+        '                     : "rcx", "r11", "memory");',
+        "    statefs_r13_private_getdents_call_count_v1 += 1U;",
+        "    if (statefs_r13_private_getdents_call_count_v1 == 1U) {",
+        "        uint8_t *bytes = (uint8_t *)(uintptr_t)output;",
+        "        long index;",
+        "        for (index = 0L; index < length; index += 1L) bytes[index] = 0U;",
+        ...mutationLines,
+        "    }",
+        "    return value;",
+        "}",
+        "",
+        "STATEFS_ALWAYS_INLINE long statefs_linux_openat(long directory, long name, long flags, long mode) {",
+      ].join("\n"),
+      "R13 private getdents result mutation",
+    );
+  }
+  if (failClose) {
+    assert.equal(Number.isInteger(closeErrno) && closeErrno > 0, true);
+    const closeAnchor =
+      "STATEFS_ALWAYS_INLINE long statefs_linux_close(long descriptor) {";
+    transformed = replaceExactly(
+      transformed,
+      closeAnchor,
+      [
+        "static uint32_t statefs_r13_private_close_call_count_v1;",
+        "",
+        closeAnchor,
+      ].join("\n"),
+      "R13 private close declaration mutation",
+    );
+    const closeReturnAnchor = [
+      '                     : "rcx", "r11", "memory");',
+      "    return value;",
+      "}",
+      "",
+      "STATEFS_ALWAYS_INLINE long statefs_linux_fcntl(long descriptor, long command, long argument) {",
+    ].join("\n");
+    transformed = replaceExactly(
+      transformed,
+      closeReturnAnchor,
+      [
+        '                     : "rcx", "r11", "memory");',
+        "    statefs_r13_private_close_call_count_v1 += 1U;",
+        "    if (statefs_r13_private_close_call_count_v1 == 1U)",
+        `        return -(long)${closeErrno};`,
+        "    return value;",
+        "}",
+        "",
+        "STATEFS_ALWAYS_INLINE long statefs_linux_fcntl(long descriptor, long command, long argument) {",
+      ].join("\n"),
+      "R13 private cleanup-close result mutation",
+    );
+  }
+  for (const selectorNeedle of [
+    "test_fault_selector",
+    "statefs_fault_selector_is_valid",
+    "statefs_fault_selector_is_pending",
+  ]) {
+    assert.equal(
+      countExact(transformed, selectorNeedle),
+      countExact(source, selectorNeedle),
+      `${selectorNeedle} R13 mutation neutrality`,
+    );
+  }
+  return transformed;
+}
+
+async function buildR13PrivateNativeMutant(runtime, label, mutation) {
+  const root = await mkdtemp(join(tmpdir(), `oxigraph-statefs-private-r13-${label}-`));
+  try {
+    const sourcePath = join(root, "containment-guardian-statefs-syscalls-v1.c");
+    const bridgeSource = join(root, "statefs-private-r13-bridge.c");
+    const bridgeObject = join(root, "statefs-private-r13-bridge.o");
+    const candidateObject = join(root, "statefs-private-r13-candidate.o");
+    const modulePath = join(root, "statefs-private-r13.node");
+    const source = await readFile(SOURCE_URL, "utf8");
+    await Promise.all([
+      writeFile(sourcePath, r13MutatedNativeSource(source, mutation), {
+        encoding: "utf8",
+        mode: 0o600,
+      }),
+      writeFile(bridgeSource, BRIDGE_SOURCE, { encoding: "utf8", mode: 0o600 }),
+    ]);
+    const includeDirectory = dirname(fileURLToPath(HEADER_URL));
+    exactChild(
+      runtime.compiler,
+      [
+        "-std=c17",
+        "-O2",
+        "-fPIC",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I/usr/include/node",
+        `-I${includeDirectory}`,
+        "-c",
+        bridgeSource,
+        "-o",
+        bridgeObject,
+      ],
+      REPOSITORY_ROOT,
+    );
+    exactChild(
+      runtime.compiler,
+      [
+        "-std=c17",
+        "-O2",
+        "-fPIC",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DOXIGRAPH_CONTAINMENT_STATEFS_TEST_FAULTS=1",
+        `-I${includeDirectory}`,
+        "-c",
+        sourcePath,
+        "-o",
+        candidateObject,
+      ],
+      REPOSITORY_ROOT,
+    );
+    const linkArgs = [
+      "-shared",
+      "-B/usr/bin/",
+      "-Wl,-z,noexecstack",
+      bridgeObject,
+      candidateObject,
+      "-o",
+      modulePath,
+    ];
+    assertExactBridgeLinkContract(
+      BRIDGE_LINK_TEMPLATE,
+      linkArgs,
+      bridgeObject,
+      candidateObject,
+      modulePath,
+    );
+    exactChild(runtime.compiler, linkArgs, REPOSITORY_ROOT);
+    const bridge = require(modulePath);
+    assert.deepEqual(Reflect.ownKeys(bridge), ["invoke"]);
+    return Object.freeze({ bridge, root });
+  } catch (error) {
+    await rm(root, { force: true, recursive: true });
+    throw error;
+  }
+}
+
+function dispatchR13PrivateMutant(profile, fixture, bridge) {
+  const ownerContext =
+    fixture.module.assertCandidateContainmentGuardianStatefsPlanV1(fixture.plan);
+  assert.equal(ownerContext, fixture.plan.ownerContext);
+  assert.equal(
+    fixture.module.assertCandidateContainmentGuardianStatefsRequestV1(
+      fixture.plan.request,
+    ),
+    true,
+  );
+  const result = executeNative(
+    bridge,
+    nativeSpecificationForRequest(
+      profile,
+      fixture.plan.request,
+      fixture.handles,
+      0,
+      fixture.observedPresence,
+    ),
+  );
+  const receipt = fixture.module.verifyCandidateContainmentGuardianStatefsResultV1({
+    request: fixture.plan.request,
+    executorResult: result,
+  });
+  return Object.freeze({ receipt, result });
+}
+
+async function runR13PrivateFixture(label, operation, index, mutation, prepare = null) {
+  const { value, report } = await withPrivateProfile(label, async (profile) => {
+    const fixture = await faultFixture(
+      profile,
+      { operation, selector: 0 },
+      10_000 + index,
+    );
+    const fixtureCleanup = prepare === null
+      ? null
+      : await prepare(profile, fixture);
+    try {
+      const build = await buildR13PrivateNativeMutant(
+        profile.runtime,
+        `${String(index).padStart(3, "0")}-${label}`,
+        mutation,
+      );
+      try {
+        return dispatchR13PrivateMutant(profile, fixture, build.bridge);
+      } finally {
+        await rm(build.root, { force: true, recursive: true });
+      }
+    } finally {
+      if (fixtureCleanup !== null) await fixtureCleanup();
+    }
+  });
+  assert.equal(report.cleanupCompleted, true);
+  return value;
+}
+
+function assertR13PrivateResult(
+  { result, receipt },
+  {
+    status,
+    effectClass,
+    lastCompletedStep,
+    failedStep,
+    completedStepCount,
+    observationPrefix,
+    errno = 0,
+  },
+) {
+  assert.equal(result.status, status);
+  assert.equal(result.effectClass, effectClass);
+  assert.equal(result.lastCompletedStep, lastCompletedStep);
+  assert.equal(result.failedStep, failedStep);
+  assert.equal(result.errno, errno);
+  assert.equal(result.completedStepCount, completedStepCount);
+  assert.equal(result.bytesConsumed, 0);
+  assert.equal(result.returnedDirectoryFd, -1);
+  assert.equal(result.outputBytes === null || result.outputBytes.length === 0, true);
+  if (observationPrefix === "zero") {
+    assert.deepEqual(result.observations, []);
+  } else if (observationPrefix === "target-only") {
+    assert.equal(result.observations.length, 1);
+    assert.notEqual(result.observations[0].kind, "ABSENT");
+    assert.equal(
+      (result.observations[0].statxMask & R13_REQUIRED_STATX_MASK) >>> 0,
+      R13_REQUIRED_STATX_MASK,
+    );
+  } else {
+    assert.equal(observationPrefix, "source-absent-only");
+    assert.equal(result.observations.length, 1);
+    assert.equal(result.observations[0].kind, "ABSENT");
+    assert.equal(result.observations[0].statxMask, 0);
+  }
+  for (const field of [
+    "status",
+    "effectClass",
+    "lastCompletedStep",
+    "failedStep",
+    "errno",
+    "completedStepCount",
+    "bytesConsumed",
+  ]) {
+    assert.equal(receipt[field], result[field], field);
+  }
+  assert.equal(receipt.retryDisposition, effectClass === "DEFINITE_NO_EFFECT"
+    ? "REPLAN_AFTER_FRESH_INVENTORY"
+    : "NO_RETRY");
+  assert.deepEqual(receipt.inventories, []);
+  if (effectClass === "DEFINITE_NO_EFFECT") {
+    assert.equal(receipt.outcome, "FAILED_DEFINITE_NO_EFFECT");
+    assert.notEqual(receipt.inventorySet, null);
+    assert.notEqual(receipt.inventorySetSha256, null);
+  } else {
+    assert.equal(
+      receipt.outcome,
+      effectClass === "EFFECT_UNCERTAIN"
+        ? "FAILED_EFFECT_UNCERTAIN"
+        : effectClass === "MUTATION_OBSERVED_NOT_FULLY_SYNCED"
+          ? "FAILED_MUTATION_NOT_FULLY_SYNCED"
+          : "REJECTED",
+    );
+    assert.equal(receipt.inventorySet, null);
+    assert.equal(receipt.inventorySetSha256, null);
+  }
+}
+
+async function assertR13ImpossibleUncertainRejected(
+  label,
+  operation,
+  index,
+  executorResult,
+) {
+  const { report } = await withPrivateProfile(label, async (profile) => {
+    const fixture = await faultFixture(
+      profile,
+      { operation, selector: 0 },
+      20_000 + index,
+    );
+    fixture.module.assertCandidateContainmentGuardianStatefsPlanV1(fixture.plan);
+    fixture.module.assertCandidateContainmentGuardianStatefsRequestV1(
+      fixture.plan.request,
+    );
+    const impossibleUncertain = Object.freeze({
+      ...executorResult,
+      requestSha256: fixture.plan.request.requestSha256,
+      effectClass: "EFFECT_UNCERTAIN",
+    });
+    for (const expectedMessage of ["STATEFS_RESULT", "STATEFS_BINDING"]) {
+      assert.throws(
+        () =>
+          fixture.module.verifyCandidateContainmentGuardianStatefsResultV1({
+            request: fixture.plan.request,
+            executorResult: impossibleUncertain,
+          }),
+        (error) => error?.message === expectedMessage,
+      );
+    }
+  });
+  assert.equal(report.cleanupCompleted, true);
+}
+
+function reconstructPreR14P2SourceForPrivate(source) {
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    216688,",
+    '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+  ].join("\n");
+  const predecessorAdrPin = [
+    "    ADR_URL,",
+    "    216620,",
+    '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+  ].join("\n");
+  const reversals = [
+    [
+      [
+        "  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(",
+        "    reconstructPreR14D1P2AdrRepinSource(currentEvaluatorSource),",
+        "  );",
+      ].join("\n"),
+      [
+        "  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(",
+        "    currentEvaluatorSource,",
+        "  );",
+      ].join("\n"),
+      "R14 P2 accepted inverse forwarding",
+    ],
+    [
+      [
+        "  const reconstructedSource = reconstructPreR13S3SyscallEvaluatorSource(",
+        "    reconstructPreR14D1P2AdrRepinSource(currentSource),",
+        "  );",
+      ].join("\n"),
+      [
+        "  const reconstructedSource = reconstructPreR13S3SyscallEvaluatorSource(",
+        "    currentSource,",
+        "  );",
+      ].join("\n"),
+      "R14 P2 R13 inverse forwarding",
+    ],
+    [
+      [
+        "  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(",
+        "    reconstructPreR14D1P2AdrRepinSource(currentSource),",
+        "  );",
+      ].join("\n"),
+      "  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(currentSource);",
+      "R14 P2 R8 inverse forwarding",
+    ],
+  ];
+  let reconstructed = replaceExactly(
+    source,
+    currentAdrPin,
+    predecessorAdrPin,
+    "R14 P2 ADR pin inverse",
+  );
+  for (const [before, after, label] of reversals) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  return removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR14D1P2AdrRepinSource(source) {\n",
+    "\n\nfunction reconstructPreR8EvaluatorSource(source, proofStart, proofEnd) {\n",
+    "R14 P2 correction inverse",
+  );
+}
+
+function reconstructPreR13P2SourceForPrivate(source) {
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    216620,",
+    '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+  ].join("\n");
+  const preR13AdrPin = [
+    "    ADR_URL,",
+    "    204827,",
+    '    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+  ].join("\n");
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nconst EXPECTED_STATX_OBSERVATION_CONTRACT = deepFreeze(\n",
+    [
+      '\n\ntest("R8 fixed-register and syscall-immediate correction ',
+      'inversely reconstructs the pre-R8 syscall evaluator", async () => {\n',
+    ].join(""),
+    "R13 P2 correction inverse",
+  );
+  for (const [before, after, label] of [
+    [currentAdrPin, preR13AdrPin, "R13 P2 ADR pin inverse"],
+    [
+      '["statx_mask", "uint32_t", 76]',
+      '["flags", "uint32_t", 76]',
+      "R13 P2 observation field inverse",
+    ],
+    [
+      '"fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70"',
+      '"16756669b08e3898380065d27a8e3e0ad6e4eaaaf7a3a9d445f9506385a9ac23"',
+      "R13 P2 requirements inverse",
+    ],
+    [
+      '"651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0"',
+      '"f69c11d17c0264b2af3eaee0e092bb27ce149207425f8239879d85f1ca589ffd"',
+      "R13 P2 ABI inverse",
+    ],
+    [
+      [
+        "  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(",
+        "    currentEvaluatorSource,",
+        "  );",
+        "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+        "    preR13EvaluatorSource,",
+      ].join("\n"),
+      [
+        "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+        "    currentEvaluatorSource,",
+      ].join("\n"),
+      "R13 P2 accepted inverse entry",
+    ],
+    [
+      [
+        '  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);',
+        "  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(currentSource);",
+        "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+        "    preR13Source,",
+      ].join("\n"),
+      [
+        '  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);',
+        "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+        "    currentSource,",
+      ].join("\n"),
+      "R13 P2 R8 inverse entry",
+    ],
+  ]) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  return reconstructed;
+}
+
+function reconstructPreR14P3SourceForPrivate(source) {
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    216688,",
+    '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+  ].join("\n");
+  const predecessorAdrPin = [
+    "    ADR_URL,",
+    "    216620,",
+    '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+  ].join("\n");
+  let reconstructed = replaceExactly(
+    source,
+    currentAdrPin,
+    predecessorAdrPin,
+    "R14 P3 ADR pin inverse",
+  );
+  for (const [before, after, label] of [
+    [
+      [
+        "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(",
+        "      reconstructPreR14AdrRepinEvaluatorSource(currentEvaluatorSource),",
+        "    ),",
+      ].join("\n"),
+      [
+        "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(currentEvaluatorSource),",
+      ].join("\n"),
+      "R14 P3 accepted inverse forwarding",
+    ],
+    [
+      [
+        "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(",
+        "      reconstructPreR14AdrRepinEvaluatorSource(currentSource),",
+        "    ),",
+      ].join("\n"),
+      [
+        "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(currentSource),",
+      ].join("\n"),
+      "R14 P3 R8 inverse forwarding",
+    ],
+    [
+      [
+        "  const reconstructedSource = reconstructPreR13EvaluatorSource(",
+        "    reconstructPreR14AdrRepinEvaluatorSource(currentSource),",
+        "  );",
+      ].join("\n"),
+      "  const reconstructedSource = reconstructPreR13EvaluatorSource(currentSource);",
+      "R14 P3 R13 inverse forwarding",
+    ],
+  ]) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  return removeRangeExactly(
+    reconstructed,
+    [
+      "\n\nfunction reconstructPreR14AdrRepinEvaluator",
+      "Source(source) {\n",
+    ].join(""),
+    [
+      '\n\ntest("ADR pin correction inversely reconstructs ',
+      'accepted S3 fault evaluator", async () => {\n',
+    ].join(""),
+    "R14 P3 correction inverse",
+  );
+}
+
+function reconstructPreR13P3SourceForPrivate(source) {
+  let reconstructed = source;
+  for (const [before, after, label] of [
+    [
+      "  lstat,\n  mkdir,\n  mkdtemp,",
+      "  lstat,\n  mkdtemp,",
+      "R13 P3 mkdir import inverse",
+    ],
+    [
+      '  rm,\n  writeFile,\n} from "node:fs/promises";',
+      '  rm,\n} from "node:fs/promises";',
+      "R13 P3 writeFile import inverse",
+    ],
+    [
+      'test("pins amended ADR-0037 and unchanged harness package bytes", async () => {\n  for (const [url, byteLength, expectedSha256] of PREDECESSOR_BYTE_PINS) {',
+      'test("pins the accepted S0 ADR and unchanged harness package bytes", async () => {\n  for (const [url, byteLength, expectedSha256] of PREDECESSOR_BYTE_PINS) {',
+      "R13 P3 pin test name inverse",
+    ],
+    [
+      [
+        "  [",
+        '    "cleanup-close",',
+        '    "reverse-open-once/no-step/no-errno-replacement/N-or-D-or-M-to-U-only-if-live",',
+        "  ],",
+      ].join("\n"),
+      [
+        "  [",
+        '    "cleanup-close",',
+        '    "reverse-open-once/no-step/no-errno-replacement/D-or-M-to-U",',
+        "  ],",
+      ].join("\n"),
+      "R13 P3 close rule inverse",
+    ],
+    [
+      [
+        "    [",
+        '      "specialRules",',
+        '      "55057314d875c12d91553d35dd8562a9863c90029a6407d377278114daef5092",',
+        "    ],",
+      ].join("\n"),
+      [
+        "    [",
+        '      "specialRules",',
+        '      "360083e614f4535031365141bdd592d8a812ecd32952d045f4858711f7421cd9",',
+        "    ],",
+      ].join("\n"),
+      "R13 P3 special rule inverse",
+    ],
+    [
+      [
+        "    ADR_URL,",
+        "    216620,",
+        '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+      ].join("\n"),
+      [
+        "    ADR_URL,",
+        "    204827,",
+        '    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+      ].join("\n"),
+      "R13 P3 ADR pin inverse",
+    ],
+    [
+      'const EXPECTED_REQUIREMENTS_SHA256 =\n  "fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70";',
+      'const EXPECTED_REQUIREMENTS_SHA256 =\n  "16756669b08e3898380065d27a8e3e0ad6e4eaaaf7a3a9d445f9506385a9ac23";',
+      "R13 P3 requirements inverse",
+    ],
+    [
+      'const EXPECTED_ABI_LAYOUT_SHA256 =\n  "651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0";',
+      'const EXPECTED_ABI_LAYOUT_SHA256 =\n  "f69c11d17c0264b2af3eaee0e092bb27ce149207425f8239879d85f1ca589ffd";',
+      "R13 P3 ABI inverse",
+    ],
+    [
+      "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(\n    reconstructPreR13EvaluatorSource(currentEvaluatorSource),",
+      "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(\n    currentEvaluatorSource,",
+      "R13 P3 accepted inverse entry",
+    ],
+    [
+      "  const reconstructedSource = reconstructPreR8EvaluatorSource(\n    reconstructPreR13EvaluatorSource(currentSource),",
+      "  const reconstructedSource = reconstructPreR8EvaluatorSource(\n    currentSource,",
+      "R13 P3 R8 inverse entry",
+    ],
+  ]) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  return removeRangeExactly(
+    reconstructed,
+    "\n\nconst R13_SUBSTEP_MUTATION_CASES = deepFreeze([\n",
+    '\n\ntest("freezes all 144 numeric-step before/after selector results", () => {\n',
+    "R13 P3 correction inverse",
+  );
+}
+
+test("R13 private native matrix is exhaustive without extending the 144 selector surface", () => {
+  assert.equal(FAULT_CASES.length, 144);
+  assert.deepEqual(
+    R13_PRIVATE_MASK_LOCATIONS.map(([label]) => label),
+    [
+      "fd-a",
+      "fd-b",
+      "directory-target",
+      "directory-entry",
+      "regular-initial",
+      "regular-repeat",
+      "persist-metadata",
+      "mkdir-metadata",
+      "move-source",
+      "move-destination-final",
+    ],
+  );
+  assert.deepEqual(
+    R13_PRIVATE_LIVENESS_LOCATIONS.map(([label]) => label),
+    [
+      "directory-root-step-5",
+      "directory-child-step-5",
+      "mkdir-step-5",
+      "regular-initial-step-5",
+      "mkdir-step-33",
+    ],
+  );
+  assert.deepEqual(
+    R13_PRIVATE_RAW_CASES.map(([label]) => label),
+    [
+      "0x01",
+      "0x1f",
+      "0x7f",
+      "0x80",
+      "0xff",
+      "overlength",
+      "embedded-slash",
+      "malformed-record",
+      "unterminated-record",
+    ],
+  );
+  assert.equal(
+    new Set(FAULT_CASES.map(({ selector }) => selector)).size,
+    68,
+  );
+  assert.equal(
+    new Set(
+      FAULT_CASES.map(({ operation, selector }) => `${operation}:${selector}`),
+    ).size,
+    144,
+  );
+  assert.equal(R13_CLEANUP_CLOSE_ERRNO, 13);
+  assert.notEqual(R13_CLEANUP_CLOSE_ERRNO, 5);
+});
+
+candidateTest(
+  "R13 private native mask failures cover every statx location and publish only complete prefixes",
+  async () => {
+    let executionCount = 0;
+    for (const [locationIndex, location] of R13_PRIVATE_MASK_LOCATIONS.entries()) {
+      const [
+        locationLabel,
+        operation,
+        statxCall,
+        status,
+        effectClass,
+        lastCompletedStep,
+        failedStep,
+        completedStepCount,
+        observationPrefix,
+      ] = location;
+      for (const [maskLabel, clearedMask] of [
+        ["basic-stats", 0x07ff],
+        ["mount-id", 0x1000],
+      ]) {
+        const dispatched = await runR13PrivateFixture(
+          `r13-mask-${locationLabel}-${maskLabel}`,
+          operation,
+          locationIndex * 2 + executionCount,
+          {
+            statxCall,
+            maskAnd: (~clearedMask) >>> 0,
+          },
+        );
+        assertR13PrivateResult(dispatched, {
+          status,
+          effectClass,
+          lastCompletedStep,
+          failedStep,
+          completedStepCount,
+          observationPrefix,
+        });
+        executionCount += 1;
+      }
+    }
+    assert.equal(executionCount, 20);
+  },
+);
+
+candidateTest(
+  "R13 private native cleanup-close upgrades require an actually acquired live descriptor",
+  async () => {
+    let executionCount = 0;
+    for (const [locationIndex, location] of R13_PRIVATE_LIVENESS_LOCATIONS.entries()) {
+      const [
+        locationLabel,
+        operation,
+        statxCall,
+        closeSuccessEffect,
+        closeFailureEffect,
+        lastCompletedStep,
+        failedStep,
+        completedStepCount,
+      ] = location;
+      const observedEffects = [];
+      let impossibleExecutorResult = null;
+      for (const failClose of [false, true]) {
+        const effectClass = failClose
+          ? closeFailureEffect
+          : closeSuccessEffect;
+        const dispatched = await runR13PrivateFixture(
+          `r13-liveness-${locationLabel}-${failClose ? "close-failed" : "close-succeeded"}`,
+          operation,
+          100 + locationIndex * 2 + Number(failClose),
+          { statxCall, statxErrno: 5, failClose },
+        );
+        assertR13PrivateResult(dispatched, {
+          status: "SYSCALL_FAILED",
+          effectClass,
+          lastCompletedStep,
+          failedStep,
+          completedStepCount,
+          observationPrefix: "zero",
+          errno: 5,
+        });
+        observedEffects.push(dispatched.result.effectClass);
+        if (failClose) impossibleExecutorResult = dispatched.result;
+        executionCount += 1;
+      }
+      assert.deepEqual(observedEffects, [closeSuccessEffect, closeFailureEffect]);
+      if (closeSuccessEffect === closeFailureEffect) {
+        assert.notEqual(impossibleExecutorResult, null);
+        await assertR13ImpossibleUncertainRejected(
+          `r13-liveness-${locationLabel}-impossible-uncertain`,
+          operation,
+          locationIndex,
+          impossibleExecutorResult,
+        );
+      }
+    }
+    assert.equal(executionCount, 10);
+  },
+);
+
+candidateTest(
+  "R13 private native raw-name bytes cross the ABI exactly or terminate without partial publication",
+  async () => {
+    let executionCount = 0;
+    for (const [caseIndex, [label, byte, directoryEntryMutation, representable]] of
+      R13_PRIVATE_RAW_CASES.entries()) {
+      const dispatched = await runR13PrivateFixture(
+        `r13-raw-${label}`,
+        "INVENTORY/DIRECTORY/ROOT",
+        200 + caseIndex,
+        directoryEntryMutation === null ? {} : { directoryEntryMutation },
+        byte === null
+          ? null
+          : async (profile) => {
+              const rootPath = Buffer.from(
+                join(
+                  profile.input.scratchParent,
+                  profile.input.stateRootName,
+                ),
+                "utf8",
+              );
+              const rawPath = Buffer.concat([
+                rootPath,
+                Buffer.from([0x2f, byte]),
+              ]);
+              await writeFile(
+                rawPath,
+                Buffer.from("x", "utf8"),
+                { mode: 0o600 },
+              );
+              return () => rm(rawPath, { force: true });
+            },
+      );
+      if (!representable) {
+        assertR13PrivateResult(dispatched, {
+          status: "REJECTED",
+          effectClass: "NO_EFFECT",
+          lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+          failedStep: "DIRECTORY_ENUMERATED",
+          completedStepCount: 3,
+          observationPrefix: "target-only",
+        });
+      } else {
+        const { receipt, result } = dispatched;
+        assert.equal(result.status, "COMPLETE");
+        assert.equal(result.effectClass, "COMPLETE");
+        assert.equal(result.lastCompletedStep, "INVENTORY_DESCRIPTOR_CLOSED");
+        assert.equal(result.failedStep, "NONE");
+        assert.equal(result.errno, 0);
+        assert.equal(result.completedStepCount, 5);
+        assert.equal(result.bytesConsumed, 0);
+        assert.equal(result.outputBytes, null);
+        assert.equal(result.returnedDirectoryFd, -1);
+        const rawObservations = result.observations.filter(
+          ({ name }) => name !== null && name.length === 1 && name.charCodeAt(0) === byte,
+        );
+        assert.equal(rawObservations.length, 1);
+        assert.equal(
+          result.observations.some(({ name }) => name === "." || name === ".."),
+          false,
+        );
+        assert.equal(
+          result.observations.every(
+            ({ statxMask }) =>
+              (statxMask & R13_REQUIRED_STATX_MASK) ===
+              R13_REQUIRED_STATX_MASK,
+          ),
+          true,
+        );
+        assert.equal(receipt.status, "REJECTED");
+        assert.equal(receipt.effectClass, "DEFINITE_NO_EFFECT");
+        assert.equal(receipt.outcome, "REJECTED");
+        assert.equal(receipt.retryDisposition, "NO_RETRY");
+        assert.equal(receipt.inventories.length, 1);
+        assert.equal(
+          receipt.inventories[0].entries.some(
+            ({ name }) => name.length === 1 && name.charCodeAt(0) === byte,
+          ),
+          true,
+        );
+        assert.equal(receipt.inventorySet, null);
+        assert.equal(receipt.inventorySetSha256, null);
+      }
+      executionCount += 1;
+    }
+    assert.equal(executionCount, 9);
+  },
+);
+
+candidateTest(
+  "R13 private native statxMask retains additional unsigned bits without public projection drift",
+  async () => {
+    const dispatched = await runR13PrivateFixture(
+      "r13-mask-extra-bit",
+      "INVENTORY/DIRECTORY/ROOT",
+      300,
+      { statxCall: 2, maskOr: R13_EXTRA_STATX_MASK },
+    );
+    const { receipt, result } = dispatched;
+    assert.equal(result.status, "COMPLETE");
+    assert.equal(result.effectClass, "COMPLETE");
+    assert.equal(result.failedStep, "NONE");
+    assert.equal(result.observations.length >= 1, true);
+    assert.equal(
+      (result.observations[0].statxMask & R13_EXTRA_STATX_MASK) >>> 0,
+      R13_EXTRA_STATX_MASK,
+    );
+    assert.equal(receipt.outcome, "INVENTORY_OBSERVED");
+    assert.equal(receipt.retryDisposition, "NO_RETRY");
+    assert.notEqual(receipt.inventorySet, null);
+    assert.notEqual(receipt.inventorySetSha256, null);
+    assert.equal(Object.hasOwn(receipt, "statxMask"), false);
+    assert.equal(
+      Object.hasOwn(receipt.inventories[0].directory, "statxMask"),
+      false,
+    );
+    assert.equal(
+      receipt.inventories[0].entries.some((entry) =>
+        Object.hasOwn(entry, "statxMask")),
+      false,
+    );
+    assert.equal(canonicalJson(receipt).includes('"statxMask"'), false);
+  },
+);
+
+test("R13 private totality correction inversely reconstructs the exact pre-R13 evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR13PrivateEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 233922);
+  assert.equal(countExact(reconstructedSource, "\n"), 7040);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "305d64498746725bf6274f67fa39a5698939e51299e8410c5d02023a11c3e39a",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "2db49b46bd31c43a69cdbf2d669ca2577c33cca7",
+  );
+  const directTests = [
+    ...reconstructedSource.matchAll(
+      /(?:^|\n)test\(\s*"([^"\n]+)"/gu,
+    ),
+  ];
+  const candidateTests = [
+    ...reconstructedSource.matchAll(
+      /(?:^|\n)candidateTest\(\s*"([^"\n]+)"/gu,
+    ),
+  ];
+  assert.equal(directTests.length, 20);
+  assert.equal(candidateTests.length, 5);
+  assert.equal(directTests.length + candidateTests.length, 25);
+});
+
 test("pins ADR, S2, S3, package, lock, and immutable StateFS source identities", async () => {
   for (const pin of PREDECESSOR_PINS) {
     const bytes = await readFile(pin.url);
@@ -5237,14 +6780,14 @@ test("R11C S2 pins inversely reconstruct the exact post-R12 private evaluator", 
   const currentStatefsSourcePin = [
     '    label: "S2 statefs source",',
     "    url: STATEFS_SOURCE_URL,",
-    "    bytes: 190954,",
-    "    lines: 6299,",
-    '    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",',
-    '    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",',
+    "    bytes: 189577,",
+    "    lines: 6242,",
+    '    sha256: "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",',
+    '    blob: "c452f04d9b64719dcd6b0392ee019578811aa263",',
   ].join("\n");
   const mutatedStatefsSourcePin = currentStatefsSourcePin.replace(
-    "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
-    "040c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
+    "5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",
+    "0feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1",
   );
   const mutatedSource = replaceExactly(
     currentSource,
@@ -5261,7 +6804,7 @@ test("R11C S2 pins inversely reconstruct the exact post-R12 private evaluator", 
       ),
     (error) =>
       error?.code === "ERR_ASSERTION" &&
-      error?.message.includes("R11C S2 source pin inverse"),
+      error?.message.includes("R13 private StateFS source pin inverse"),
   );
 });
 
@@ -5765,6 +7308,16 @@ test("count-checked inverses reconstruct both originally accepted S3 evaluators"
       url: SYSCALL_EVALUATOR_URL,
       start: '\n\ntest("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", async () => {\n',
       end: '\n\ncandidateTest("exports only the three frozen attestation identities", () => {\n',
+      preR14Bytes: 160288,
+      preR14Lines: 4801,
+      preR14Sha256: "6fb8848670dc84fad1fa42fdf8f34bfd31ea7876da40361bcff7ddf5ed95be81",
+      preR14Blob: "d95a93e4fe0b3ca6b9da5b55dad7672e09253edd",
+      preR14Tests: 13,
+      preR14CandidateTests: 8,
+      preR13Bytes: 147416,
+      preR13Lines: 4459,
+      preR13Sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",
+      preR13Blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",
       bytes: 128349,
       lines: 3966,
       sha256: "75e137eb8c4882479687ec2ce9319b7f074b64f965b14db6d28fd0d136701a34",
@@ -5791,6 +7344,16 @@ test("count-checked inverses reconstruct both originally accepted S3 evaluators"
       url: FAULT_EVALUATOR_URL,
       start: '\n\ntest("ADR pin correction inversely reconstructs accepted S3 fault evaluator", async () => {\n',
       end: '\n\ntest("freezes all 144 numeric-step before/after selector results", () => {\n',
+      preR14Bytes: 177918,
+      preR14Lines: 5275,
+      preR14Sha256: "b3555e754804ed768771dfb1a0541624554be205b348a250fea248c00dfd28a2",
+      preR14Blob: "966c0ef49a1868588b38b7e556bf700353417990",
+      preR14Tests: 12,
+      preR14CandidateTests: 8,
+      preR13Bytes: 146152,
+      preR13Lines: 4406,
+      preR13Sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",
+      preR13Blob: "864588a504d506fd1b94a33717797b0b9d72299e",
       bytes: 129214,
       lines: 3966,
       sha256: "c10fa45bd1e48e4814d1e9a61ba9519da4cd9e5f98d0ac77e531dfb4ff79ebfd",
@@ -5815,6 +7378,27 @@ test("count-checked inverses reconstruct both originally accepted S3 evaluators"
     let source = await readFile(item.url, "utf8");
     const r8Kind =
       item.url.href === SYSCALL_EVALUATOR_URL.href ? "syscall" : "fault";
+    source = item.url.href === SYSCALL_EVALUATOR_URL.href
+      ? reconstructPreR14P2SourceForPrivate(source)
+      : reconstructPreR14P3SourceForPrivate(source);
+    const preR14Bytes = Buffer.from(source, "utf8");
+    assert.equal(preR14Bytes.length, item.preR14Bytes);
+    assert.equal(countExact(source, "\n"), item.preR14Lines);
+    assert.equal(sha256(preR14Bytes), item.preR14Sha256);
+    assert.equal(gitBlobSha1(preR14Bytes), item.preR14Blob);
+    assert.equal(countExact(source, '\ntest("'), item.preR14Tests);
+    assert.equal(
+      countExact(source, "\ncandidateTest("),
+      item.preR14CandidateTests,
+    );
+    source = item.url.href === SYSCALL_EVALUATOR_URL.href
+      ? reconstructPreR13P2SourceForPrivate(source)
+      : reconstructPreR13P3SourceForPrivate(source);
+    const preR13Bytes = Buffer.from(source, "utf8");
+    assert.equal(preR13Bytes.length, item.preR13Bytes);
+    assert.equal(countExact(source, "\n"), item.preR13Lines);
+    assert.equal(sha256(preR13Bytes), item.preR13Sha256);
+    assert.equal(gitBlobSha1(preR13Bytes), item.preR13Blob);
     source = reconstructPreR8S3EvaluatorSource(
       source,
       `\n\ntest("R8 fixed-register and syscall-immediate correction inversely reconstructs the pre-R8 ${r8Kind} evaluator", async () => {\n`,
@@ -6106,6 +7690,53 @@ test("ABI sizes and every request, observation, and result offset are independen
   const observation = Buffer.alloc(ABI.observation.size);
   observation.writeUInt32LE(ABI.observation.size, 0);
   assert.equal(decodeNativeObservation(observation, 0).kind, "ABSENT");
+  assert.equal(decodeNativeObservation(observation, 0).statxMask, 0);
+  const regularObservation = Buffer.from(observation);
+  regularObservation.writeUInt32LE(
+    OBSERVATION_KIND_NAMES.indexOf("REGULAR"),
+    4,
+  );
+  regularObservation.writeUInt32LE(0x17ff, 76);
+  assert.equal(decodeNativeObservation(regularObservation, 0).statxMask, 0x17ff);
+  for (const mask of [0x1000, 0x07ff]) {
+    const incompleteMask = Buffer.from(regularObservation);
+    incompleteMask.writeUInt32LE(mask, 76);
+    assert.throws(() => decodeNativeObservation(incompleteMask, 0));
+  }
+  const extraMask = Buffer.from(regularObservation);
+  extraMask.writeUInt32LE((0x17ff | 0x8000_0000) >>> 0, 76);
+  assert.equal(
+    decodeNativeObservation(extraMask, 0).statxMask,
+    (0x17ff | 0x8000_0000) >>> 0,
+  );
+  const nonzeroAbsentMask = Buffer.from(observation);
+  nonzeroAbsentMask.writeUInt32LE(1, 76);
+  assert.throws(() => decodeNativeObservation(nonzeroAbsentMask, 0));
+  for (const rawByte of [0x01, 0x1f, 0x7f]) {
+    const rawNameObservation = Buffer.from(observation);
+    rawNameObservation.writeUInt32LE(1, 12);
+    rawNameObservation[104] = rawByte;
+    assert.equal(
+      decodeNativeObservation(rawNameObservation, 0).name.charCodeAt(0),
+      rawByte,
+    );
+  }
+  for (const rawName of [
+    Buffer.from([0x00]),
+    Buffer.from([0x2f]),
+    Buffer.from("."),
+    Buffer.from(".."),
+    Buffer.from([0x80]),
+    Buffer.from([0xff]),
+  ]) {
+    const invalidRawName = Buffer.from(observation);
+    invalidRawName.writeUInt32LE(rawName.length, 12);
+    rawName.copy(invalidRawName, 104);
+    assert.throws(() => decodeNativeObservation(invalidRawName, 0));
+  }
+  const overlengthName = Buffer.from(observation);
+  overlengthName.writeUInt32LE(256, 12);
+  assert.throws(() => decodeNativeObservation(overlengthName, 0));
   const malformedKind = Buffer.from(observation);
   malformedKind.writeUInt32LE(OBSERVATION_KIND_NAMES.length, 4);
   assert.throws(() => decodeNativeObservation(malformedKind, 0));
@@ -6119,6 +7750,15 @@ test("ABI sizes and every request, observation, and result offset are independen
     88,
   );
   assert.throws(() => decodeNativeObservation(unsafeContentOffset, 0));
+
+  const unpublishedPartialSlot = Buffer.alloc(ABI.observation.size);
+  unpublishedPartialSlot[0] = 0xa5;
+  assert.throws(() =>
+    decodeNativeResult(resultSpecification, {
+      ...resultBuffers,
+      observations: unpublishedPartialSlot,
+    }),
+  );
 
   const absentRegular = decodeNativeResult(
     { ...resultSpecification, inventoryKind: "REGULAR_FILE" },
