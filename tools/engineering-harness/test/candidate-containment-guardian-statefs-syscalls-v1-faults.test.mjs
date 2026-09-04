@@ -40,8 +40,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    216620,
-    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
+    216688,
+    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -3026,6 +3026,125 @@ test("pins amended ADR-0037 and unchanged harness package bytes", async () => {
   }
 });
 
+function reconstructPreR14AdrRepinEvaluatorSource(source) {
+  const countExact = (value, needle) => {
+    assert.equal(typeof value, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    216688,",
+    '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+  ].join("\n");
+  const preR14AdrPin = [
+    "    ADR_URL,",
+    "    216620,",
+    '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+  ].join("\n");
+  let reconstructed = replaceExactly(
+    source,
+    currentAdrPin,
+    preR14AdrPin,
+    "R14 ADR predecessor pin inverse",
+  );
+
+  const callReversals = [
+    [
+      [
+        "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(",
+        "      reconstructPreR14AdrRepinEvaluatorSource(currentEvaluatorSource),",
+        "    ),",
+      ].join("\n"),
+      [
+        "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(currentEvaluatorSource),",
+      ].join("\n"),
+      "R14 accepted S3 inverse entry",
+    ],
+    [
+      [
+        "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(",
+        "      reconstructPreR14AdrRepinEvaluatorSource(currentSource),",
+        "    ),",
+      ].join("\n"),
+      [
+        "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+        "    reconstructPreR13EvaluatorSource(currentSource),",
+      ].join("\n"),
+      "R14 pre-R8 inverse entry",
+    ],
+    [
+      [
+        "  const reconstructedSource = reconstructPreR13EvaluatorSource(",
+        "    reconstructPreR14AdrRepinEvaluatorSource(currentSource),",
+        "  );",
+      ].join("\n"),
+      "  const reconstructedSource = reconstructPreR13EvaluatorSource(currentSource);",
+      "R14 pre-R13 inverse entry",
+    ],
+  ];
+  for (const [before, after, label] of callReversals) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+
+  const proofStart = [
+    "\n\nfunction reconstructPreR14AdrRepinEvaluator",
+    "Source(source) {\n",
+  ].join("");
+  const proofEnd = [
+    '\n\ntest("ADR pin correction inversely reconstructs ',
+    'accepted S3 fault evaluator", async () => {\n',
+  ].join("");
+  assert.equal(countExact(reconstructed, proofStart), 1, "R14 proof start");
+  assert.equal(countExact(reconstructed, proofEnd), 1, "R14 proof end");
+  const startIndex = reconstructed.indexOf(proofStart);
+  const endIndex = reconstructed.indexOf(
+    proofEnd,
+    startIndex + proofStart.length,
+  );
+  assert.ok(endIndex > startIndex);
+  return `${reconstructed.slice(0, startIndex)}${reconstructed.slice(endIndex)}`;
+}
+
+test("R14 ADR predecessor repin inversely reconstructs the exact pre-R14 fault evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource =
+    reconstructPreR14AdrRepinEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 177918);
+  assert.equal(reconstructedSource.split("\n").length - 1, 5275);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "b3555e754804ed768771dfb1a0541624554be205b348a250fea248c00dfd28a2",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "966c0ef49a1868588b38b7e556bf700353417990",
+  );
+  assert.equal([...reconstructedSource.matchAll(/^test\(/gmu)].length, 12);
+});
+
 test("ADR pin correction inversely reconstructs accepted S3 fault evaluator", async () => {
   const acceptedEvaluatorBytes = 129214;
   const acceptedEvaluatorLines = 3966;
@@ -3100,7 +3219,9 @@ test("ADR pin correction inversely reconstructs accepted S3 fault evaluator", as
     true,
   );
   let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(
-    reconstructPreR13EvaluatorSource(currentEvaluatorSource),
+    reconstructPreR13EvaluatorSource(
+      reconstructPreR14AdrRepinEvaluatorSource(currentEvaluatorSource),
+    ),
     [
       '\n\ntest("R8 fixed-register and syscall-immediate correction ',
       'inversely reconstructs the pre-R8 fault evaluator", async () => {\n',
@@ -3192,7 +3313,9 @@ test("R8 fixed-register and syscall-immediate correction inversely reconstructs 
   const currentSource = currentBytes.toString("utf8");
   assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
   const reconstructedSource = reconstructPreR8EvaluatorSource(
-    reconstructPreR13EvaluatorSource(currentSource),
+    reconstructPreR13EvaluatorSource(
+      reconstructPreR14AdrRepinEvaluatorSource(currentSource),
+    ),
     proofStart,
     proofEnd,
   );
@@ -4065,7 +4188,9 @@ test("R13 correction inversely reconstructs the exact pre-R13 fault evaluator", 
   const currentBytes = await readFile(EVALUATOR_PATH);
   const currentSource = currentBytes.toString("utf8");
   assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
-  const reconstructedSource = reconstructPreR13EvaluatorSource(currentSource);
+  const reconstructedSource = reconstructPreR13EvaluatorSource(
+    reconstructPreR14AdrRepinEvaluatorSource(currentSource),
+  );
   const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
   assert.equal(reconstructedBytes.length, 146152);
   assert.equal(r13CountExact(reconstructedSource, "\n"), 4406);
