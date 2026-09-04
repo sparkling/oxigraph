@@ -152,7 +152,73 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR12PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  const correctedPreR10Entry = [
+    "function reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {",
+    "  source = reconstructPreR12PrivateEvaluatorSource(",
+    "    source,",
+    '    \'\\n\\ntest("R12 terminal attribution distinguishes absent and present source triplets", () => {\\n\',',
+    '    \'\\n\\ntest("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {\\n\',',
+    "  );",
+  ].join("\n");
+  const acceptedPreR10Entry =
+    "function reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {";
+  const correctedTerminalTest = [
+    'test("reports exactly one candidate-attributed missing-triplet RED before native build or filesystem setup", () => {',
+    "  assertTerminalAttestationState(",
+    "    attestationImportAttempts,",
+    "    attestationImportError,",
+    "    attestation,",
+    "    evaluatorOwnedRoot,",
+    "  );",
+    "});",
+  ].join("\n");
+  const acceptedTerminalTest = [
+    'test("reports exactly one candidate-attributed missing-triplet RED before native build or filesystem setup", () => {',
+    "  assert.equal(attestationImportAttempts, 1);",
+    "  assert.equal(evaluatorOwnedRoot, undefined);",
+    "  if (attestationImportError !== null) throw attestationImportError;",
+    "  assert.notEqual(attestation, null);",
+    "});",
+  ].join("\n");
+  let reconstructed = replaceExactly(
+    source,
+    correctedPreR10Entry,
+    acceptedPreR10Entry,
+    "R12 R10 inverse-chain entry",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedTerminalTest,
+    acceptedTerminalTest,
+    "R12 terminal attribution inverse",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction assertTerminalAttestationState(\n",
+    "\n\nlet evaluatorOwnedRoot;\n",
+    "R12 terminal helper inverse",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR12PrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "\n\nfunction reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "R12 inverse helper",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "R12 proof inverse",
+  );
+}
+
 function reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  source = reconstructPreR12PrivateEvaluatorSource(
+    source,
+    '\n\ntest("R12 terminal attribution distinguishes absent and present source triplets", () => {\n',
+    '\n\ntest("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {\n',
+  );
   const correctedPreR9Entry = [
     "function reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {",
     "  source = reconstructPreR10PrivateEvaluatorSource(",
@@ -5031,6 +5097,21 @@ function candidateTest(name, body) {
   );
 }
 
+function assertTerminalAttestationState(
+  importAttempts,
+  importError,
+  importedAttestation,
+  ownedRoot,
+) {
+  assert.equal(importAttempts, 1);
+  if (importError !== null) {
+    assert.equal(importedAttestation, null);
+    assert.equal(ownedRoot, undefined);
+    throw importError;
+  }
+  assert.notEqual(importedAttestation, null);
+}
+
 let evaluatorOwnedRoot;
 test.after(async () => {
   if (evaluatorOwnedRoot !== undefined) {
@@ -5046,6 +5127,90 @@ test("pins ADR, S2, S3, package, lock, and immutable StateFS source identities",
     assert.equal(sha256(bytes), pin.sha256, `${pin.label} sha256`);
     assert.equal(gitBlobSha1(bytes), pin.blob, `${pin.label} git blob`);
   }
+});
+
+test("R12 terminal attribution distinguishes absent and present source triplets", () => {
+  const importedAttestation = Object.freeze({ attest: true });
+  assert.doesNotThrow(() =>
+    assertTerminalAttestationState(
+      1,
+      null,
+      importedAttestation,
+      "/private/evaluator-root",
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertTerminalAttestationState(1, null, importedAttestation, undefined),
+  );
+
+  const missing = Object.assign(new Error("candidate attestation absent"), {
+    code: "ERR_MODULE_NOT_FOUND",
+  });
+  assert.throws(
+    () => assertTerminalAttestationState(1, missing, null, undefined),
+    (error) => error === missing,
+  );
+  assert.throws(
+    () =>
+      assertTerminalAttestationState(1, missing, null, "/unexpected/root"),
+    (error) => error !== missing && error?.code === "ERR_ASSERTION",
+  );
+  assert.throws(
+    () =>
+      assertTerminalAttestationState(
+        1,
+        missing,
+        importedAttestation,
+        undefined,
+      ),
+    (error) => error !== missing && error?.code === "ERR_ASSERTION",
+  );
+  assert.throws(() =>
+    assertTerminalAttestationState(0, null, importedAttestation, undefined),
+  );
+  assert.throws(() =>
+    assertTerminalAttestationState(2, null, importedAttestation, undefined),
+  );
+  assert.throws(() =>
+    assertTerminalAttestationState(1, null, null, undefined),
+  );
+});
+
+test("R12 terminal attribution inversely reconstructs the exact R10 evaluator", async () => {
+  const proofStart =
+    '\n\ntest("R12 terminal attribution distinguishes absent and present source triplets", () => {\n';
+  const proofEnd =
+    '\n\ntest("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {\n';
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR12PrivateEvaluatorSource(
+    currentSource,
+    proofStart,
+    proofEnd,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 223181);
+  assert.equal(countExact(reconstructedSource, "\n"), 6737);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "54d93ae0ebc3a3f8c34d4bfde86c2456b0fc919d0513b54574097a24a3933050",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "ec3ef5fce310b61525e3157c6368eac6367b41f6",
+  );
+  assert.equal(
+    countExact(reconstructedSource, "function assertTerminalAttestationState("),
+    0,
+  );
+  assert.equal(
+    countExact(
+      reconstructedSource,
+      "  assert.equal(evaluatorOwnedRoot, undefined);\n",
+    ),
+    1,
+  );
 });
 
 test("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {
@@ -6730,8 +6895,10 @@ test("source-triplet attribution rejects partial, wrong-code, wrong-URL, wrong-m
 });
 
 test("reports exactly one candidate-attributed missing-triplet RED before native build or filesystem setup", () => {
-  assert.equal(attestationImportAttempts, 1);
-  assert.equal(evaluatorOwnedRoot, undefined);
-  if (attestationImportError !== null) throw attestationImportError;
-  assert.notEqual(attestation, null);
+  assertTerminalAttestationState(
+    attestationImportAttempts,
+    attestationImportError,
+    attestation,
+    evaluatorOwnedRoot,
+  );
 });
