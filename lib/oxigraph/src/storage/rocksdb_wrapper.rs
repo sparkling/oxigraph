@@ -1726,6 +1726,60 @@ mod tests {
     use std::io::ErrorKind;
     use tempfile::TempDir;
 
+    fn prefix_scan_keys(
+        reader: &Reader<'_>,
+        column_family: &ColumnFamily,
+        prefix: &[u8],
+    ) -> Result<Vec<Vec<u8>>, StorageError> {
+        let mut keys = Vec::new();
+        let mut iter = reader.scan_prefix(column_family, prefix);
+        while iter.is_valid() {
+            keys.push(
+                iter.key()
+                    .expect("a valid RocksDB iterator must expose its key")
+                    .to_vec(),
+            );
+            iter.next();
+        }
+        iter.status()?;
+        Ok(keys)
+    }
+
+    fn prefix_scan_mismatches(
+        reader_name: &str,
+        reader: &Reader<'_>,
+        column_family: &ColumnFamily,
+        prefixes: &[Vec<u8>],
+        stored_keys: &[Vec<u8>],
+    ) -> Result<Vec<String>, StorageError> {
+        let mut mismatches = Vec::new();
+        for prefix in prefixes {
+            let expected = stored_keys
+                .iter()
+                .filter(|key| key.starts_with(prefix))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert!(
+                !expected.is_empty(),
+                "the prefix fixture must contain at least one matching key for {prefix:?}"
+            );
+            if !prefix.is_empty() {
+                assert!(
+                    stored_keys.iter().any(|key| !key.starts_with(prefix)),
+                    "the prefix fixture must contain a non-matching key for {prefix:?}"
+                );
+            }
+
+            let actual = prefix_scan_keys(reader, column_family, prefix)?;
+            if actual != expected {
+                mismatches.push(format!(
+                    "{reader_name} prefix {prefix:?}: expected {expected:?}, got {actual:?}"
+                ));
+            }
+        }
+        Ok(mismatches)
+    }
+
     #[test]
     fn max_open_files_from_fd_limit_default_reserve() {
         assert_eq!(
@@ -1778,6 +1832,125 @@ mod tests {
         assert!(ro_reader.contains_key(&ro_default_cf, b"non-empty")?);
         assert!(!ro_reader.contains_key(&ro_default_cf, b"missing")?);
 
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic_in_result_fn)]
+    fn scan_prefix_never_returns_non_prefix_keys() -> Result<(), StorageError> {
+        let dir = TempDir::new()?;
+        let db = Db::open_read_write(dir.path(), vec![], DbOptions::default())?;
+        let default_cf = db.column_family("default")?;
+
+        let mut base_keys = vec![
+            b"plain:a".to_vec(),
+            b"plain:z".to_vec(),
+            b"plain;".to_vec(),
+            vec![0x12, 0xfe],
+            vec![0x12, 0xfe, 0x00],
+            vec![0x12, 0xff],
+            vec![0x12, 0xff, 0x00],
+            vec![0x12, 0xff, 0xff],
+            vec![0x13],
+            vec![0x13, 0x00],
+            vec![0x13, 0xfe, 0xff],
+            vec![0x13, 0xff],
+            vec![0x20, 0xff, 0xff],
+            vec![0x20, 0xff, 0xff, 0x00],
+            vec![0x21],
+            vec![0x21, 0x00],
+            vec![0x21, 0xff, 0xfe],
+            vec![0x21, 0xff, 0xff],
+            vec![0xfe, 0xff],
+            vec![0xfe, 0xff, 0x00],
+            vec![0xff],
+            vec![0xff, 0x00],
+            vec![0xff, 0xff],
+            vec![0xff, 0xff, 0x00],
+            vec![0xff, 0xff, 0xff],
+        ];
+        base_keys.sort();
+        base_keys.dedup();
+        for key in &base_keys {
+            db.insert(&default_cf, key, b"value")?;
+        }
+        db.flush()?;
+
+        let prefixes = vec![
+            Vec::new(),
+            b"plain:".to_vec(),
+            vec![0x12, 0xfe],
+            vec![0x12, 0xff],
+            vec![0x20, 0xff, 0xff],
+            vec![0xfe, 0xff],
+            vec![0xff, 0xff],
+        ];
+        let mut mismatches = Vec::new();
+
+        {
+            let snapshot_reader = db.snapshot();
+            mismatches.extend(prefix_scan_mismatches(
+                "read-write snapshot",
+                &snapshot_reader,
+                &default_cf,
+                &prefixes,
+                &base_keys,
+            )?);
+        }
+
+        {
+            let mut transaction = db.start_readable_transaction()?;
+            let staged_keys = [
+                b"plain:transaction".to_vec(),
+                vec![0x12, 0xff, 0x80],
+                vec![0x13, 0x80],
+                vec![0x20, 0xff, 0xff, 0x80],
+                vec![0x21, 0x80],
+                vec![0xfe, 0xff, 0x80],
+                vec![0xff, 0x80],
+                vec![0xff, 0xff, 0x80],
+            ];
+            for key in &staged_keys {
+                transaction.insert(&default_cf, key, b"staged");
+            }
+            let mut transaction_keys = base_keys.clone();
+            transaction_keys.extend(staged_keys);
+            transaction_keys.sort();
+            transaction_keys.dedup();
+            mismatches.extend(prefix_scan_mismatches(
+                "readable transaction",
+                &transaction.reader(),
+                &default_cf,
+                &prefixes,
+                &transaction_keys,
+            )?);
+        }
+
+        let read_only_dir = TempDir::new()?;
+        {
+            let seed_db = Db::open_read_write(read_only_dir.path(), vec![], DbOptions::default())?;
+            let seed_cf = seed_db.column_family("default")?;
+            for key in &base_keys {
+                seed_db.insert(&seed_cf, key, b"value")?;
+            }
+            seed_db.flush()?;
+        }
+        let read_only_db = Db::open_read_only(read_only_dir.path(), vec![])?;
+        let read_only_cf = read_only_db.column_family("default")?;
+        let read_only_reader = read_only_db.snapshot();
+        mismatches.extend(prefix_scan_mismatches(
+            "read-only",
+            &read_only_reader,
+            &read_only_cf,
+            &prefixes,
+            &base_keys,
+        )?);
+
+        assert!(
+            mismatches.is_empty(),
+            "Reader::scan_prefix returned keys outside the requested prefix:\n{}",
+            mismatches.join("\n")
+        );
         Ok(())
     }
 }
