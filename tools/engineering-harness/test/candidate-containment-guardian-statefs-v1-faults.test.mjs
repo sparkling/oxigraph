@@ -152,6 +152,126 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  const correctedLinkTemplate = [
+    "const BRIDGE_LINK_TEMPLATE = array(",
+    '  "/usr/bin/cc",',
+    '  "-shared",',
+    '  "-B/usr/bin/",',
+    '  "-Wl,-z,noexecstack",',
+    '  "<BRIDGE_OBJECT>",',
+    '  "<ATTESTED_CANDIDATE_OBJECT>",',
+    '  "-o",',
+    '  "<NATIVE_MODULE>",',
+    ");",
+  ].join("\n");
+  const acceptedLinkTemplate = [
+    "const BRIDGE_LINK_TEMPLATE = array(",
+    '  "/usr/bin/cc",',
+    '  "-shared",',
+    '  "-Wl,-z,noexecstack",',
+    '  "<BRIDGE_OBJECT>",',
+    '  "<ATTESTED_CANDIDATE_OBJECT>",',
+    '  "-o",',
+    '  "<NATIVE_MODULE>",',
+    ");",
+  ].join("\n");
+  const correctedRuntimeLink = [
+    "      const linkArgs = [",
+    '        "-shared",',
+    '        "-B/usr/bin/",',
+    '        "-Wl,-z,noexecstack",',
+    "        bridgeObject,",
+    "        candidateObject,",
+    '        "-o",',
+    "        modulePath,",
+    "      ];",
+    "      assertExactBridgeLinkContract(",
+    "        BRIDGE_LINK_TEMPLATE,",
+    "        linkArgs,",
+    "        bridgeObject,",
+    "        candidateObject,",
+    "        modulePath,",
+    "      );",
+    "      exactChild(compiler, linkArgs, REPOSITORY_ROOT);",
+  ].join("\n");
+  const acceptedRuntimeLink = [
+    "      exactChild(",
+    "        compiler,",
+    "        [",
+    '          "-shared",',
+    '          "-Wl,-z,noexecstack",',
+    "          bridgeObject,",
+    "          candidateObject,",
+    '          "-o",',
+    "          modulePath,",
+    "        ],",
+    "        REPOSITORY_ROOT,",
+    "      );",
+  ].join("\n");
+  const correctedBridgeAssertion = [
+    "  assert.deepEqual(BRIDGE_LINK_TEMPLATE.slice(0, 3), [",
+    '    "/usr/bin/cc",',
+    '    "-shared",',
+    '    "-B/usr/bin/",',
+    "  ]);",
+  ].join("\n");
+  const acceptedBridgeAssertion =
+    '  assert.deepEqual(BRIDGE_LINK_TEMPLATE.slice(0, 3), ["/usr/bin/cc", "-shared", "-Wl,-z,noexecstack"]);';
+  const correctedR8Chain = [
+    "function reconstructPreR8PrivateEvaluatorSource(source, proofStart, proofEnd) {",
+    "  source = reconstructPreR9PrivateEvaluatorSource(",
+    "    source,",
+    '    \'\\n\\ntest("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {\\n\',',
+    '    \'\\n\\ntest("R7 persistence observation correction inversely reconstructs accepted R6 private evaluator", async () => {\\n\',',
+    "  );",
+  ].join("\n");
+  const acceptedR8Chain =
+    "function reconstructPreR8PrivateEvaluatorSource(source, proofStart, proofEnd) {";
+  let reconstructed = replaceExactly(
+    source,
+    correctedLinkTemplate,
+    acceptedLinkTemplate,
+    "R9 link template inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedRuntimeLink,
+    acceptedRuntimeLink,
+    "R9 runtime link inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedBridgeAssertion,
+    acceptedBridgeAssertion,
+    "R9 bridge assertion inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedR8Chain,
+    acceptedR8Chain,
+    "R9 R8 inverse-chain entry",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction assertExactBridgeLinkContract(\n",
+    "\n\nconst BRIDGE = deepFreeze(\n",
+    "R9 link-contract helper inverse",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "\n\nfunction reconstructPreR8S3EvaluatorSource(source, proofStart, proofEnd) {\n",
+    "R9 inverse helper",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "R9 proof inverse",
+  );
+}
+
 function reconstructPreR8S3EvaluatorSource(source, proofStart, proofEnd) {
   const functionRangeCorrection = [
     "  const functionBodyRanges = [];",
@@ -295,6 +415,11 @@ function reconstructPreR8S3EvaluatorSource(source, proofStart, proofEnd) {
 }
 
 function reconstructPreR8PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  source = reconstructPreR9PrivateEvaluatorSource(
+    source,
+    '\n\ntest("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {\n',
+    '\n\ntest("R7 persistence observation correction inversely reconstructs accepted R6 private evaluator", async () => {\n',
+  );
   const currentSyscallPin = [
     '    label: "S3 syscall evaluator",',
     "    url: SYSCALL_EVALUATOR_URL,",
@@ -1128,12 +1253,41 @@ const BRIDGE_COMPILE_TEMPLATE = array(
 const BRIDGE_LINK_TEMPLATE = array(
   "/usr/bin/cc",
   "-shared",
+  "-B/usr/bin/",
   "-Wl,-z,noexecstack",
   "<BRIDGE_OBJECT>",
   "<ATTESTED_CANDIDATE_OBJECT>",
   "-o",
   "<NATIVE_MODULE>",
 );
+
+function assertExactBridgeLinkContract(
+  template,
+  argv,
+  bridgeObject,
+  candidateObject,
+  modulePath,
+) {
+  assert.deepEqual(template, [
+    "/usr/bin/cc",
+    "-shared",
+    "-B/usr/bin/",
+    "-Wl,-z,noexecstack",
+    "<BRIDGE_OBJECT>",
+    "<ATTESTED_CANDIDATE_OBJECT>",
+    "-o",
+    "<NATIVE_MODULE>",
+  ]);
+  assert.deepEqual(argv, [
+    "-shared",
+    "-B/usr/bin/",
+    "-Wl,-z,noexecstack",
+    bridgeObject,
+    candidateObject,
+    "-o",
+    modulePath,
+  ]);
+}
 
 const BRIDGE = deepFreeze(
   record(
@@ -1237,18 +1391,23 @@ async function ensureNativeRuntime() {
       [productionObject, productionModulePath],
       [faultObject, faultModulePath],
     ]) {
-      exactChild(
-        compiler,
-        [
-          "-shared",
-          "-Wl,-z,noexecstack",
-          bridgeObject,
-          candidateObject,
-          "-o",
-          modulePath,
-        ],
-        REPOSITORY_ROOT,
+      const linkArgs = [
+        "-shared",
+        "-B/usr/bin/",
+        "-Wl,-z,noexecstack",
+        bridgeObject,
+        candidateObject,
+        "-o",
+        modulePath,
+      ];
+      assertExactBridgeLinkContract(
+        BRIDGE_LINK_TEMPLATE,
+        linkArgs,
+        bridgeObject,
+        candidateObject,
+        modulePath,
       );
+      exactChild(compiler, linkArgs, REPOSITORY_ROOT);
     }
     const production = require(productionModulePath);
     const fault = require(faultModulePath);
@@ -4788,6 +4947,142 @@ test("pins ADR, S2, S3, package, lock, and immutable StateFS source identities",
   }
 });
 
+test("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {
+  const bridgeObject = "/private/bridge.o";
+  const candidateObject = "/private/candidate.o";
+  const modulePath = "/private/statefs.node";
+  const expectedTemplate = [
+    "/usr/bin/cc",
+    "-shared",
+    "-B/usr/bin/",
+    "-Wl,-z,noexecstack",
+    "<BRIDGE_OBJECT>",
+    "<ATTESTED_CANDIDATE_OBJECT>",
+    "-o",
+    "<NATIVE_MODULE>",
+  ];
+  const expectedArgs = [
+    "-shared",
+    "-B/usr/bin/",
+    "-Wl,-z,noexecstack",
+    bridgeObject,
+    candidateObject,
+    "-o",
+    modulePath,
+  ];
+  assertExactBridgeLinkContract(
+    BRIDGE_LINK_TEMPLATE,
+    expectedArgs,
+    bridgeObject,
+    candidateObject,
+    modulePath,
+  );
+  assert.deepEqual(BRIDGE_LINK_TEMPLATE, expectedTemplate);
+
+  const mutations = (values, prefixIndex) => {
+    const missing = [
+      ...values.slice(0, prefixIndex),
+      ...values.slice(prefixIndex + 1),
+    ];
+    const relative = [...values];
+    relative[prefixIndex] = "-Busr/bin/";
+    const alternate = [...values];
+    alternate[prefixIndex] = "-B/usr/lib/";
+    const noTrailingSeparator = [...values];
+    noTrailingSeparator[prefixIndex] = "-B/usr/bin";
+    const duplicated = [
+      ...values.slice(0, prefixIndex + 1),
+      "-B/usr/bin/",
+      ...values.slice(prefixIndex + 1),
+    ];
+    const reordered = [...values];
+    [reordered[prefixIndex], reordered[prefixIndex + 1]] = [
+      reordered[prefixIndex + 1],
+      reordered[prefixIndex],
+    ];
+    return [
+      missing,
+      relative,
+      alternate,
+      noTrailingSeparator,
+      duplicated,
+      reordered,
+    ];
+  };
+  for (const template of mutations(expectedTemplate, 2)) {
+    assert.throws(() =>
+      assertExactBridgeLinkContract(
+        template,
+        expectedArgs,
+        bridgeObject,
+        candidateObject,
+        modulePath,
+      ),
+    );
+  }
+  for (const argv of mutations(expectedArgs, 1)) {
+    assert.throws(() =>
+      assertExactBridgeLinkContract(
+        expectedTemplate,
+        argv,
+        bridgeObject,
+        candidateObject,
+        modulePath,
+      ),
+    );
+  }
+
+  const source = await readFile(EVALUATOR_PATH, "utf8");
+  const runtimeLink = [
+    "      const linkArgs = [",
+    '        "-shared",',
+    '        "-B/usr/bin/",',
+    '        "-Wl,-z,noexecstack",',
+    "        bridgeObject,",
+    "        candidateObject,",
+    '        "-o",',
+    "        modulePath,",
+    "      ];",
+    "      assertExactBridgeLinkContract(",
+    "        BRIDGE_LINK_TEMPLATE,",
+    "        linkArgs,",
+    "        bridgeObject,",
+    "        candidateObject,",
+    "        modulePath,",
+    "      );",
+    "      exactChild(compiler, linkArgs, REPOSITORY_ROOT);",
+  ].join("\n");
+  assert.equal(countExact(source, runtimeLink), 1);
+  assert.equal(Object.hasOwn(BRIDGE_ENVIRONMENT, "PATH"), false);
+});
+
+test("R9 bridge linker bootstrap inversely reconstructs the exact R8-integrated private evaluator", async () => {
+  const proofStart =
+    '\n\ntest("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {\n';
+  const proofEnd =
+    '\n\ntest("R7 persistence observation correction inversely reconstructs accepted R6 private evaluator", async () => {\n';
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR9PrivateEvaluatorSource(
+    currentSource,
+    proofStart,
+    proofEnd,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 206309);
+  assert.equal(countExact(reconstructedSource, "\n"), 6205);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "3ffb9215e03271d49f7f5f4c74706a54047a5153a94bbdcc7678f614fb3d6808",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "3046fd45c829047d7de588b484f7b2bedcaa3118",
+  );
+  assert.equal(countExact(reconstructedSource, '  "-B/usr/bin/",\n'), 0);
+});
+
 test("R7 persistence observation correction inversely reconstructs accepted R6 private evaluator", async () => {
   const correctedFaultExpectation = [
     "        [",
@@ -5313,7 +5608,11 @@ test("the pinned N-API bridge is a single raw transport with fixed compiler and 
   );
   assert.deepEqual(Object.values(BRIDGE), Array.from({ length: 15 }, (_, index) => index + 1));
   assert.deepEqual(BRIDGE_COMPILE_TEMPLATE.slice(0, 2), ["/usr/bin/cc", "-std=c17"]);
-  assert.deepEqual(BRIDGE_LINK_TEMPLATE.slice(0, 3), ["/usr/bin/cc", "-shared", "-Wl,-z,noexecstack"]);
+  assert.deepEqual(BRIDGE_LINK_TEMPLATE.slice(0, 3), [
+    "/usr/bin/cc",
+    "-shared",
+    "-B/usr/bin/",
+  ]);
   assert.deepEqual(Object.keys(BRIDGE_ENVIRONMENT), ["LC_ALL", "LANG", "TZ", "SOURCE_DATE_EPOCH"]);
   assert.equal(Object.hasOwn(BRIDGE_ENVIRONMENT, "PATH"), false);
 
