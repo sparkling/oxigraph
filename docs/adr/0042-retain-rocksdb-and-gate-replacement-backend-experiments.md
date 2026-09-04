@@ -2,13 +2,14 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-03
-- Updated: 2026-09-03
+- Updated: 2026-09-04
 - Deciders: Oxigraph parity programme
 - Implementation status: decision and evidence boundary only. RocksDB remains
   the existing persistent `Store` backend; no replacement adapter, migration,
   comparative benchmark, or production qualification is implemented
 - Programme task: `task-1788074788516-p5tvdm`
   (`REPLACEMENT-BACKEND-DECISION`)
+- Research refresh: `task-1788537072284-hrdf2s` (complete)
 - **Depends on**:
   [ADR-0016 — Backend-neutral transactional RDF writes](0016-backend-neutral-transactional-writes.md)
 - **Related**:
@@ -43,7 +44,7 @@ The programme separately assessed TurboKV at upstream commit
 whose Cargo manifest declares version 0.6.0. It is not the published `v0.6.0`
 release identity: that tag resolves to
 [`46bcba152f957cebf087c8099fedcae57280506b`](https://github.com/kingroryg/turbokv/commit/46bcba152f957cebf087c8099fedcae57280506b).
-A live recheck on 2026-09-03 found `5706b6ba` at the upstream default branch,
+A live recheck on 2026-09-04 found `5706b6ba` at the upstream default branch,
 thirteen commits after the tag. TurboKV has useful recovery engineering and an
 atomic one-keyspace write batch, but the audited revision lacks several
 contracts the current store uses or the programme requires: a reusable
@@ -53,6 +54,13 @@ online checkpoint/restore, read-only opening, and comparable RDF workload
 evidence. Its public database operations are Tokio-based and asynchronous,
 whereas Oxigraph's product `Store` API is synchronous; that runtime boundary is
 unresolved product work, not an implementation detail an adapter may hide.
+
+The same recheck found RocksDB `v11.8.1` as the latest upstream release. Its
+release notes are dated 2026-07-28 and GitHub published the release on
+2026-08-07. That identity is a separately qualified candidate, not an
+authorization to float the vendored dependency or replace the exact
+`v11.1.2` product baseline without compatibility, format, packaging, recovery,
+and workload evidence.
 
 The in-test `RewrittenPersistencePlane` implementations are portability
 oracles for the public traits. They are not persistent stores and cannot be
@@ -139,6 +147,26 @@ Re-evaluation is useful when at least one of these facts changes materially:
 - matched RDF workload evidence shows a material benefit without violating a
   pre-registered correctness, resource, or operability gate.
 
+### Retained-RocksDB follow-up programme
+
+The 2026-09-04 source audit also identified work that improves the retained
+backend without changing this decision. Each item is a separate Ruflo task and
+must retain its own evaluator-first, review, and evidence boundary:
+
+| Task | Scope | Ordering boundary |
+| --- | --- | --- |
+| `task-1788553382377-xo1dkf` | Correct binary prefix upper bounds, including trailing and all-`0xff` prefixes | Critical correctness gate; precedes prefix-Bloom or upgrade claims |
+| `task-1788553387083-5fwo96` | Include `graphs_cf` in manual compaction and preserve explicit empty-graph topology | Correctness/maintenance gate |
+| `task-1788553391542-of8ja8` | Reconcile the public read-only/concurrent-writer documentation and frozen-view regression | Contract gate; no silent multi-process or live-refresh widening |
+| `task-1788553395816-lrussp` | Measure opt-in SST prefix Bloom behavior for RDF indexes | Starts only after prefix-bound correctness; default remains unchanged without evidence |
+| `task-1788553400390-ktdb3p` | Qualify exact RocksDB `v11.8.1` against the exact `v11.1.2` baseline | Starts after the three correctness/contract gates; no floating “latest” comparator |
+| `task-1788553404762-7by6gv` | Add structured maintenance evidence for compaction, health, stalls, and amplification | Diagnostic until ADR-0022 qualification and human promotion |
+
+The dependency graph and evidence boundary are stored at
+`task-plans/retained-rocksdb-improvement-dag-v1-2026-09-04`. These tasks do
+not authorize a TurboKV product adapter. A TurboKV experiment still requires
+the separate trigger and terminating boundary defined above.
+
 ## Consequences
 
 - The current persistent `Store` and its operational behavior remain stable;
@@ -177,9 +205,11 @@ Re-evaluation is useful when at least one of these facts changes materially:
 
 ## Evidence
 
-- [Pinned TurboKV versus RocksDB assessment revision](https://gist.githubusercontent.com/sparkling/eb76655d220e3d7f53cf98a746079a6d/raw/5e867caa5e2d167932605a0beefdfafe2a19da5b/turbokv-rocksdb-gist.md),
-  revision `5e867caa5e2d167932605a0beefdfafe2a19da5b`, raw SHA-256
-  `e676867466c9c109df31dd27579e727b02b5de1f68a0b9dce850bf9cfbc7d781`
+- [Pinned TurboKV versus RocksDB assessment revision](https://gist.githubusercontent.com/sparkling/eb76655d220e3d7f53cf98a746079a6d/raw/f414ab67ee3d43eba7852610e7b9ebcb17cc951b/turbokv-rocksdb-gist.md),
+  Gist revision `f7dc042c90e7784bf3d886738e2aa8b9e22e8999`, raw route
+  revision `f414ab67ee3d43eba7852610e7b9ebcb17cc951b`, 18,436 bytes,
+  raw SHA-256
+  `3c906803d48999fd42c1fbd8a498d72c3605d0887d938343f34e9efc809db068`
 - [TurboKV `v0.6.0` release identity](https://github.com/kingroryg/turbokv/commit/46bcba152f957cebf087c8099fedcae57280506b)
 - [`lib/oxigraph` feature boundary](../../lib/oxigraph/Cargo.toml)
 - [Built-in storage dispatch](../../lib/oxigraph/src/storage/mod.rs)
@@ -199,8 +229,10 @@ Re-evaluation is useful when at least one of these facts changes materially:
 This ADR is **Proposed**. It records the programme's current evidence-backed
 rejection of a TurboKV production replacement and the safe boundary for any
 future experiment. It adds no adapter or product capability. The research task
-may close after repository documents, the ADR graph, and the task ledger agree
-on that defer/reject result.
+`task-1788537072284-hrdf2s` and its exact Gist publication receipt are
+complete; the follow-up tasks remain independently gated. Repository documents,
+the ADR graph, and the task ledger must continue to agree on that defer/reject
+result.
 
 Moving this ADR to Accepted requires explicit programme-decider confirmation.
 Implementing a replacement requires a later accepted ADR plus unchanged
