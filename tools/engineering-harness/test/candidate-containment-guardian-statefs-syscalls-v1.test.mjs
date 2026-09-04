@@ -1265,8 +1265,10 @@ function cIntegerAssignments(header) {
 function assertAssignedSuffix(assignments, suffix, expected, category = null) {
   const candidates = assignments.filter(
     ([identifier]) =>
-      (identifier === suffix || identifier.endsWith(`_${suffix}`)) &&
-      (category === null || identifier.includes(category)),
+      (identifier === suffix ||
+        (category === null
+          ? identifier.endsWith(`_${suffix}`)
+          : identifier.endsWith(`_${category}_${suffix}`))),
   );
   assert.deepEqual(
     candidates,
@@ -3027,6 +3029,48 @@ test("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", 
     "    202635,",
     '    "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",',
   ].join("\n");
+  const correctedAssignmentMatcher = [
+    "function assertAssignedSuffix(assignments, suffix, expected, category = null) {",
+    "  const candidates = assignments.filter(",
+    "    ([identifier]) =>",
+    "      (identifier === suffix ||",
+    "        (category === null",
+    "          ? identifier.endsWith(`_${suffix}`)",
+    "          : identifier.endsWith(`_${category}_${suffix}`))),",
+    "  );",
+    "  assert.deepEqual(",
+    "    candidates,",
+    "    [[candidates[0]?.[0], expected]],",
+    "    `${category ?? \"literal\"}:${suffix}=${expected}`,",
+    "  );",
+    "}",
+  ].join("\n");
+  const acceptedAssignmentMatcher = [
+    "function assertAssignedSuffix(assignments, suffix, expected, category = null) {",
+    "  const candidates = assignments.filter(",
+    "    ([identifier]) =>",
+    "      (identifier === suffix || identifier.endsWith(`_${suffix}`)) &&",
+    "      (category === null || identifier.includes(category)),",
+    "  );",
+    "  assert.deepEqual(",
+    "    candidates,",
+    "    [[candidates[0]?.[0], expected]],",
+    "    `${category ?? \"literal\"}:${suffix}=${expected}`,",
+    "  );",
+    "}",
+  ].join("\n");
+  const overlappingEffectAssignments = Object.freeze([
+    Object.freeze(["OXIGRAPH_STATEFS_EFFECT_NO_EFFECT", 0]),
+    Object.freeze(["OXIGRAPH_STATEFS_EFFECT_DEFINITE_NO_EFFECT", 1]),
+    Object.freeze(["OXIGRAPH_STATEFS_EFFECT_COMPLETE", 2]),
+  ]);
+  assertAssignedSuffix(overlappingEffectAssignments, "NO_EFFECT", 0, "EFFECT");
+  assertAssignedSuffix(
+    overlappingEffectAssignments,
+    "DEFINITE_NO_EFFECT",
+    1,
+    "EFFECT",
+  );
   const correctionStart =
     '\n\ntest("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", async () => {\n';
   const correctionEnd =
@@ -3074,6 +3118,12 @@ test("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", 
     currentAdrPin,
     acceptedAdrPin,
     "current ADR pin replacement count",
+  );
+  acceptedEvaluatorSource = replaceExactly(
+    acceptedEvaluatorSource,
+    correctedAssignmentMatcher,
+    acceptedAssignmentMatcher,
+    "effect assignment matcher correction count",
   );
   acceptedEvaluatorSource = removeRangeExactly(
     acceptedEvaluatorSource,
