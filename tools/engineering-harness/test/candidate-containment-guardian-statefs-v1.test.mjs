@@ -771,7 +771,7 @@ const CONTRACT_BYTE_PINS = array(
   ),
 );
 
-const STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY = (() => {
+const STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY = (() => {
   const countExact = (source, needle) => {
     assert.equal(typeof source, "string");
     assert.equal(typeof needle, "string");
@@ -815,6 +815,269 @@ const STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY = (() => {
   };
 
   const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY = (() => {\n",
+    "R13B2 identity block",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "R13 inverse input redirection",
+  );
+  source = replaceExactly(
+    source,
+    `      currentRequirementsCanonicalBytes: Buffer.byteLength(
+        STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsCanonical,
+        "utf8",
+      ),
+      currentRequirementsSha256:
+        STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsSha256,`,
+    `      currentRequirementsCanonicalBytes: Buffer.byteLength(
+        canonicalJson(REQUIREMENTS_GOLDEN),
+        "utf8",
+      ),
+      currentRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,`,
+    "R13B2 refreeze receipt expectation inverse",
+  );
+  source = replaceExactly(
+    source,
+    `  if (
+    receipt.operation === "INVENTORY" &&
+    result.status === "COMPLETE"
+  ) {`,
+    `  if (
+    receipt.operation === "INVENTORY" &&
+    (receipt.status === "COMPLETE" || receipt.status === "REJECTED")
+  ) {`,
+    "R13B2 native inventory status oracle inverse",
+  );
+  source = replaceExactly(
+    source,
+    `    const assertPrefix = (
+      receipt,
+      { lastCompletedStep, failedStep, completedStepCount, bytesConsumed = 0 },
+    ) => {
+      assert.equal(receipt.lastCompletedStep, lastCompletedStep);
+      assert.equal(receipt.failedStep, failedStep);
+      assert.equal(receipt.errno, 0);
+      assert.equal(receipt.completedStepCount, completedStepCount);
+      assert.equal(receipt.bytesConsumed, bytesConsumed);
+    };`,
+    `    const assertPrefix = (
+      receipt,
+      { lastCompletedStep, failedStep, completedStepCount },
+    ) => {
+      assert.equal(receipt.lastCompletedStep, lastCompletedStep);
+      assert.equal(receipt.failedStep, failedStep);
+      assert.equal(receipt.errno, 0);
+      assert.equal(receipt.completedStepCount, completedStepCount);
+      assert.equal(receipt.bytesConsumed, 0);
+    };`,
+    "R13B2 bytes-consumed assertion inverse",
+  );
+  source = replaceExactly(
+    source,
+    `    const freshRegularPlan = async (label) => {
+      const module = await freshStatefs(label);
+      const segmentName = digest(\`\${label}:segment\`);
+      const tree = await rootAndLifecycleToken(module, {
+        label,
+        lifecycleEntries: array(
+          array(segmentName, "LIFETIME_SEGMENT", "201"),
+        ),
+      });
+      const segment = completeDirectoryInventory(module, {
+        label,
+        sequence: 3,
+        token: tree.token,
+        role: "LIFETIME_SEGMENT",
+        parentRole: "LIFETIMES",
+        name: segmentName,
+        targetInode: "201",
+        entries: array(),
+        returnedDirectoryFd: 66,
+      });
+      const name = \`0000000000000000-\${digest(\`\${label}:entry\`)}.jsonl\`;
+      const plan = module.planCandidateContainmentGuardianStatefsOperationV1(
+        inventoryInput({
+          label,
+          sequence: 4,
+          token: segment.receipt.inventorySet,
+          inventoryDirectoryRole: null,
+          directoryRoleA: "LIFETIME_SEGMENT",
+          nameA: name,
+        }),
+      );`,
+    `    const freshRegularPlan = async (label) => {
+      const module = await freshStatefs(label);
+      const tree = await rootAndLifecycleToken(module, { label });
+      const name = \`0000000000000000-\${digest(\`\${label}:entry\`)}.jsonl\`;
+      const plan = module.planCandidateContainmentGuardianStatefsOperationV1(
+        inventoryInput({
+          label,
+          sequence: 3,
+          token: tree.token,
+          inventoryDirectoryRole: null,
+          directoryRoleA: "LIFETIMES",
+          nameA: name,
+        }),
+      );`,
+    "R13B2 regular-plan fixture inverse",
+  );
+  source = removeRangeExactly(
+    source,
+    "\n\n    const crossBoundaryInvalidMasks = invalidMasks.filter(([label]) =>\n",
+    '\n\n    const extraModule = await freshStatefs("r13-mask-extra");\n',
+    "R13B2 cross-boundary mask killers",
+  );
+  source = replaceExactly(
+    source,
+    `        nativeObservation({
+          statxMask: (requiredMask | 0x8000_0000) >>> 0,
+        }),`,
+    "        nativeObservation({ statxMask: requiredMask | 0x8000_0000 }),",
+    "R13B2 unsigned extra-mask fixture inverse",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\n    const impossibleRegular = await freshRegularPlan(\n      "r13-impossible-live-regular-initial",\n    );\n',
+    '\n\n    for (const [suffix, effectClass] of [\n      ["closed", "NO_EFFECT"],\n',
+    "R13B2 regular impossible-live control",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\n    const impossibleMkdir = await freshMkdirPlan(\n      "r13-impossible-live-mkdir-created-metadata",\n    );\n',
+    '\n\n    for (const [suffix, effectClass] of [\n      ["cleanup-closed", "MUTATION_OBSERVED_NOT_FULLY_SYNCED"],\n',
+    "R13B2 mkdir impossible-live control",
+  );
+  source = replaceExactly(
+    source,
+    '            role: unrelated.plan.request.directoryRoleA,',
+    '            role: "LIFETIMES",',
+    "R13B2 unrelated regular role inverse",
+  );
+  source = replaceExactly(
+    source,
+    `    assertPrefix(unrelatedReceipt, {
+      lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      failedStep: "ENTRY_REOBSERVED",
+      completedStepCount: 3,
+      bytesConsumed: unrelatedBytes.length,
+    });`,
+    `    assertPrefix(unrelatedReceipt, {
+      lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      failedStep: "ENTRY_REOBSERVED",
+      completedStepCount: 3,
+    });`,
+    "R13B2 unrelated bytes-consumed expectation inverse",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\n    const uncertainRegular = await freshRegularPlan(\n      "r13-unrelated-verification-cleanup-close-failed",\n    );\n',
+    "\n  },\n);\n\ntest(\n  \"R13B2 liveness RED correction inversely reconstructs the exact R13B evaluator\",\n",
+    "R13B2 definite-to-uncertain live-cleanup pair",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest(\n  "R13B2 liveness RED correction inversely reconstructs the exact R13B evaluator",\n',
+    '\n\ntest("source-absent RED is the exact attributable candidate module failure", () => {\n',
+    "R13B2 inverse proof",
+  );
+  const predecessorBytes = Buffer.from(source, "utf8");
+  assert.equal(predecessorBytes.length, 355_185);
+  assert.equal(countExact(source, "\n"), 10_424);
+  assert.equal(
+    byteSha256(predecessorBytes),
+    "11a59f00404d4fd9cc6683c46d2e35563c3582bbe24e8c2f8a67a65ed9b9e9a1",
+  );
+  assert.equal(
+    gitBlobSha1(predecessorBytes),
+    "2d59c8c56c3455103bdf4970fd749034dae9bf4e",
+  );
+  assert.equal(countExact(source, "\ntest("), 27);
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-r13b2-liveness-red-inverse-receipt/v1",
+        predecessorBytes: predecessorBytes.length,
+        predecessorLines: countExact(source, "\n"),
+        predecessorSha256: byteSha256(predecessorBytes),
+        predecessorGitBlob: gitBlobSha1(predecessorBytes),
+        predecessorTestCount: 27,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    predecessorEvaluatorSource: source,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    assert.equal(countExact(source, after), 0, `${label} inverse precondition`);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(countExact(replaced, after), 1, `${label} inverse`);
+    return replaced;
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
   let source = currentEvaluatorBytes.toString("utf8");
   assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
@@ -3686,7 +3949,7 @@ function assertExactReceiptInventories(receipt, result, previousMeta) {
   }
   if (
     receipt.operation === "INVENTORY" &&
-    (receipt.status === "COMPLETE" || receipt.status === "REJECTED")
+    result.status === "COMPLETE"
   ) {
     const expected =
       receipt.request.inventoryKind === "DIRECTORY"
@@ -9298,10 +9561,11 @@ test(
       guardianRequirementsDigestReversals: 1,
       selectorImportNameRemovals: 1,
       currentRequirementsCanonicalBytes: Buffer.byteLength(
-        canonicalJson(REQUIREMENTS_GOLDEN),
+        STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsCanonical,
         "utf8",
       ),
-      currentRequirementsSha256: EXPECTED_REQUIREMENTS_SHA256,
+      currentRequirementsSha256:
+        STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsSha256,
       historicalRequirementsCanonicalBytes: Buffer.byteLength(
         canonicalJson(STATEFS_REFREEZE_IDENTITY.historicalRequirementsFixture),
         "utf8",
@@ -9936,13 +10200,13 @@ test(
     };
     const assertPrefix = (
       receipt,
-      { lastCompletedStep, failedStep, completedStepCount },
+      { lastCompletedStep, failedStep, completedStepCount, bytesConsumed = 0 },
     ) => {
       assert.equal(receipt.lastCompletedStep, lastCompletedStep);
       assert.equal(receipt.failedStep, failedStep);
       assert.equal(receipt.errno, 0);
       assert.equal(receipt.completedStepCount, completedStepCount);
-      assert.equal(receipt.bytesConsumed, 0);
+      assert.equal(receipt.bytesConsumed, bytesConsumed);
     };
     const assertUncertain = (receipt, status) => {
       assertTerminal(receipt, {
@@ -9965,15 +10229,32 @@ test(
     };
     const freshRegularPlan = async (label) => {
       const module = await freshStatefs(label);
-      const tree = await rootAndLifecycleToken(module, { label });
+      const segmentName = digest(`${label}:segment`);
+      const tree = await rootAndLifecycleToken(module, {
+        label,
+        lifecycleEntries: array(
+          array(segmentName, "LIFETIME_SEGMENT", "201"),
+        ),
+      });
+      const segment = completeDirectoryInventory(module, {
+        label,
+        sequence: 3,
+        token: tree.token,
+        role: "LIFETIME_SEGMENT",
+        parentRole: "LIFETIMES",
+        name: segmentName,
+        targetInode: "201",
+        entries: array(),
+        returnedDirectoryFd: 66,
+      });
       const name = `0000000000000000-${digest(`${label}:entry`)}.jsonl`;
       const plan = module.planCandidateContainmentGuardianStatefsOperationV1(
         inventoryInput({
           label,
-          sequence: 3,
-          token: tree.token,
+          sequence: 4,
+          token: segment.receipt.inventorySet,
           inventoryDirectoryRole: null,
-          directoryRoleA: "LIFETIMES",
+          directoryRoleA: "LIFETIME_SEGMENT",
           nameA: name,
         }),
       );
@@ -10116,11 +10397,90 @@ test(
       );
     }
 
+    const crossBoundaryInvalidMasks = invalidMasks.filter(([label]) =>
+      ["missing", "string", "mount-id-cleared"].includes(label),
+    );
+    assert.deepEqual(
+      crossBoundaryInvalidMasks.map(([label]) => label),
+      ["missing", "string", "mount-id-cleared"],
+    );
+    for (const [label, mutate] of crossBoundaryInvalidMasks) {
+      const directory = await freshRootInventoryPlan(
+        `r13-directory-entry-mask-${label}`,
+      );
+      expectResultFailure(
+        directory.module,
+        directory.plan,
+        executorResult(directory.plan.request, {
+          lastCompletedStep: "INVENTORY_DESCRIPTOR_CLOSED",
+          completedStepCount: 5,
+          observations: array(
+            nativeObservation({ role: "STATE_ROOT", inode: "100" }),
+            mutate(
+              nativeObservation({
+                kind: "DIRECTORY",
+                role: "NONE",
+                name: "lifetimes",
+                inode: "701",
+              }),
+            ),
+          ),
+        }),
+      );
+
+      const regular = await freshRegularPlan(`r13-regular-mask-${label}`);
+      const regularBytes = Buffer.from("x", "utf8");
+      expectResultFailure(
+        regular.module,
+        regular.plan,
+        executorResult(regular.plan.request, {
+          lastCompletedStep: "INVENTORY_DESCRIPTOR_CLOSED",
+          completedStepCount: 5,
+          bytesConsumed: regularBytes.length,
+          observations: array(
+            mutate(
+              nativeObservation({
+                kind: "REGULAR",
+                role: "LIFETIME_SEGMENT",
+                name: regular.name,
+                inode: "801",
+                byteLength: String(regularBytes.length),
+                linkCount: "1",
+                mode: 0o100_600,
+                contentLength: regularBytes.length,
+              }),
+            ),
+          ),
+          outputBytes: regularBytes,
+        }),
+      );
+
+      const mkdir = await freshMkdirPlan(`r13-mkdir-mask-${label}`);
+      expectResultFailure(
+        mkdir.module,
+        mkdir.plan,
+        completeMutationResult(mkdir.plan.request, {
+          observations: array(
+            mutate(
+              nativeObservation({
+                kind: "DIRECTORY",
+                role: "LIFETIME_SEGMENT",
+                name: mkdir.plan.request.nameA,
+                inode: "202",
+              }),
+            ),
+          ),
+        }),
+      );
+    }
+
     const extraModule = await freshStatefs("r13-mask-extra");
     const extraPlan = planLock(extraModule, { label: "r13-mask-extra" });
     const extraResult = executorResult(extraPlan.request, {
       observations: array(
-        nativeObservation({ statxMask: requiredMask | 0x8000_0000 }),
+        nativeObservation({
+          statxMask: (requiredMask | 0x8000_0000) >>> 0,
+        }),
       ),
     });
     const extraReceipt = dispatchPlan(extraModule, extraPlan, extraResult);
@@ -10251,6 +10611,23 @@ test(
       completedStepCount: 2,
     });
 
+    const impossibleRegular = await freshRegularPlan(
+      "r13-impossible-live-regular-initial",
+    );
+    expectResultFailure(
+      impossibleRegular.module,
+      impossibleRegular.plan,
+      executorResult(impossibleRegular.plan.request, {
+        status: "REJECTED",
+        effectClass: "EFFECT_UNCERTAIN",
+        lastCompletedStep: "FD_A_VALIDATED",
+        failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        completedStepCount: 2,
+        observations: array(),
+        outputBytes: Buffer.alloc(0),
+      }),
+    );
+
     for (const [suffix, effectClass] of [
       ["closed", "NO_EFFECT"],
       ["cleanup-close-failed", "EFFECT_UNCERTAIN"],
@@ -10306,6 +10683,22 @@ test(
         lastCompletedStep: "REQUEST_VALIDATED",
         failedStep: "FD_A_VALIDATED",
         completedStepCount: 1,
+        observations: array(),
+      }),
+    );
+
+    const impossibleMkdir = await freshMkdirPlan(
+      "r13-impossible-live-mkdir-created-metadata",
+    );
+    expectResultFailure(
+      impossibleMkdir.module,
+      impossibleMkdir.plan,
+      completeMutationResult(impossibleMkdir.plan.request, {
+        status: "VERIFICATION_FAILED",
+        effectClass: "EFFECT_UNCERTAIN",
+        lastCompletedStep: "CHILD_DIRECTORY_CREATED",
+        failedStep: "CREATED_METADATA_VALIDATED",
+        completedStepCount: 3,
         observations: array(),
       }),
     );
@@ -10386,7 +10779,7 @@ test(
         observations: array(
           nativeObservation({
             kind: "REGULAR",
-            role: "LIFETIMES",
+            role: unrelated.plan.request.directoryRoleA,
             name: unrelated.name,
             inode: "800",
             byteLength: "2",
@@ -10412,6 +10805,64 @@ test(
       lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
       failedStep: "ENTRY_REOBSERVED",
       completedStepCount: 3,
+      bytesConsumed: unrelatedBytes.length,
+    });
+
+    const uncertainRegular = await freshRegularPlan(
+      "r13-unrelated-verification-cleanup-close-failed",
+    );
+    const uncertainBytes = Buffer.from("x", "utf8");
+    const uncertainReceipt = dispatchPlan(
+      uncertainRegular.module,
+      uncertainRegular.plan,
+      executorResult(uncertainRegular.plan.request, {
+        status: "VERIFICATION_FAILED",
+        effectClass: "EFFECT_UNCERTAIN",
+        lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        failedStep: "ENTRY_REOBSERVED",
+        completedStepCount: 3,
+        bytesConsumed: uncertainBytes.length,
+        observations: array(
+          nativeObservation({
+            kind: "REGULAR",
+            role: "LIFETIME_SEGMENT",
+            name: uncertainRegular.name,
+            inode: "802",
+            byteLength: "2",
+            linkCount: "1",
+            mode: 0o100_600,
+            contentLength: uncertainBytes.length,
+          }),
+        ),
+        outputBytes: uncertainBytes,
+      }),
+    );
+    assertUncertain(uncertainReceipt, "VERIFICATION_FAILED");
+    assertPrefix(uncertainReceipt, {
+      lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      failedStep: "ENTRY_REOBSERVED",
+      completedStepCount: 3,
+      bytesConsumed: uncertainBytes.length,
+    });
+  },
+);
+
+test(
+  "R13B2 liveness RED correction inversely reconstructs the exact R13B evaluator",
+  () => {
+    const receipt =
+      STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY.assertInverseReceipt(
+        STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY.inverseReceipt,
+      );
+    assert.deepEqual(receipt, {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-statefs-v1-r13b2-liveness-red-inverse-receipt/v1",
+      predecessorBytes: 355_185,
+      predecessorLines: 10_424,
+      predecessorSha256:
+        "11a59f00404d4fd9cc6683c46d2e35563c3582bbe24e8c2f8a67a65ed9b9e9a1",
+      predecessorGitBlob: "2d59c8c56c3455103bdf4970fd749034dae9bf4e",
+      predecessorTestCount: 27,
     });
   },
 );
