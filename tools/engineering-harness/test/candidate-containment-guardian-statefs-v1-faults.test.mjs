@@ -152,7 +152,87 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR11CPrivateEvaluatorSource(source, proofStart, proofEnd) {
+  const currentStatefsSourcePin = [
+    '    label: "S2 statefs source",',
+    "    url: STATEFS_SOURCE_URL,",
+    "    bytes: 190954,",
+    "    lines: 6299,",
+    '    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",',
+    '    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",',
+  ].join("\n");
+  const postR12StatefsSourcePin = [
+    '    label: "S2 statefs source",',
+    "    url: STATEFS_SOURCE_URL,",
+    "    bytes: 190998,",
+    "    lines: 6299,",
+    '    sha256: "07592b9a817074980ae4d5a2d6097b8c56e440554184e836e3a0094f6d9586c9",',
+    '    blob: "61c0927541b3b993ed432921a48baf2e07e1ad1d",',
+  ].join("\n");
+  const currentStatefsEvaluatorPin = [
+    '    label: "S2 statefs evaluator",',
+    "    url: STATEFS_EVALUATOR_URL,",
+    "    bytes: 324808,",
+    "    lines: 9548,",
+    '    sha256: "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",',
+    '    blob: "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",',
+  ].join("\n");
+  const postR12StatefsEvaluatorPin = [
+    '    label: "S2 statefs evaluator",',
+    "    url: STATEFS_EVALUATOR_URL,",
+    "    bytes: 312547,",
+    "    lines: 9199,",
+    '    sha256: "dd23977051b54fbd8b6090d84f779de366a53b570149b8395b3bc8cd33d2253e",',
+    '    blob: "2e5d483b1097283f7b699a7de518a9126f80ca7a",',
+  ].join("\n");
+  const correctedPreR12Entry = [
+    "function reconstructPreR12PrivateEvaluatorSource(source, proofStart, proofEnd) {",
+    "  source = reconstructPreR11CPrivateEvaluatorSource(",
+    "    source,",
+    '    \'\\n\\ntest("R11C S2 pins inversely reconstruct the exact post-R12 private evaluator", async () => {\\n\',',
+    '    \'\\n\\ntest("R12 terminal attribution distinguishes absent and present source triplets", () => {\\n\',',
+    "  );",
+  ].join("\n");
+  const postR12PreR12Entry =
+    "function reconstructPreR12PrivateEvaluatorSource(source, proofStart, proofEnd) {";
+  let reconstructed = replaceExactly(
+    source,
+    currentStatefsSourcePin,
+    postR12StatefsSourcePin,
+    "R11C S2 source pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    currentStatefsEvaluatorPin,
+    postR12StatefsEvaluatorPin,
+    "R11C S2 evaluator pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedPreR12Entry,
+    postR12PreR12Entry,
+    "R11C R12 inverse-chain entry",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR11CPrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "\n\nfunction reconstructPreR12PrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "R11C inverse helper",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "R11C proof inverse",
+  );
+}
+
 function reconstructPreR12PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  source = reconstructPreR11CPrivateEvaluatorSource(
+    source,
+    '\n\ntest("R11C S2 pins inversely reconstruct the exact post-R12 private evaluator", async () => {\n',
+    '\n\ntest("R12 terminal attribution distinguishes absent and present source triplets", () => {\n',
+  );
   const correctedPreR10Entry = [
     "function reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {",
     "  source = reconstructPreR12PrivateEvaluatorSource(",
@@ -651,18 +731,18 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "S2 statefs source",
     url: STATEFS_SOURCE_URL,
-    bytes: 190998,
+    bytes: 190954,
     lines: 6299,
-    sha256: "07592b9a817074980ae4d5a2d6097b8c56e440554184e836e3a0094f6d9586c9",
-    blob: "61c0927541b3b993ed432921a48baf2e07e1ad1d",
+    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
+    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",
   },
   {
     label: "S2 statefs evaluator",
     url: STATEFS_EVALUATOR_URL,
-    bytes: 312547,
-    lines: 9199,
-    sha256: "dd23977051b54fbd8b6090d84f779de366a53b570149b8395b3bc8cd33d2253e",
-    blob: "2e5d483b1097283f7b699a7de518a9126f80ca7a",
+    bytes: 324808,
+    lines: 9548,
+    sha256: "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",
+    blob: "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",
   },
   {
     label: "S3 syscall evaluator",
@@ -5127,6 +5207,62 @@ test("pins ADR, S2, S3, package, lock, and immutable StateFS source identities",
     assert.equal(sha256(bytes), pin.sha256, `${pin.label} sha256`);
     assert.equal(gitBlobSha1(bytes), pin.blob, `${pin.label} git blob`);
   }
+});
+
+test("R11C S2 pins inversely reconstruct the exact post-R12 private evaluator", async () => {
+  const proofStart =
+    '\n\ntest("R11C S2 pins inversely reconstruct the exact post-R12 private evaluator", async () => {\n';
+  const proofEnd =
+    '\n\ntest("R12 terminal attribution distinguishes absent and present source triplets", () => {\n';
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR11CPrivateEvaluatorSource(
+    currentSource,
+    proofStart,
+    proofEnd,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 228785);
+  assert.equal(countExact(reconstructedSource, "\n"), 6904);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "8f4c60149a0e4e99603df2ce11c8ed10a561ace82f4b8185a08a04bb004f8332",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "d88f134288fb5096cbd752ef22f590a142eefe3f",
+  );
+
+  const currentStatefsSourcePin = [
+    '    label: "S2 statefs source",',
+    "    url: STATEFS_SOURCE_URL,",
+    "    bytes: 190954,",
+    "    lines: 6299,",
+    '    sha256: "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",',
+    '    blob: "a59c48fa21bc31cf8dcb646fb9a298569a1840de",',
+  ].join("\n");
+  const mutatedStatefsSourcePin = currentStatefsSourcePin.replace(
+    "240c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
+    "040c7f3a34cc609ed65c3d6c4b4f255780f6e1562d4d689bf42b445529dd90f2",
+  );
+  const mutatedSource = replaceExactly(
+    currentSource,
+    currentStatefsSourcePin,
+    mutatedStatefsSourcePin,
+    "R11C mutation fixture",
+  );
+  assert.throws(
+    () =>
+      reconstructPreR11CPrivateEvaluatorSource(
+        mutatedSource,
+        proofStart,
+        proofEnd,
+      ),
+    (error) =>
+      error?.code === "ERR_ASSERTION" &&
+      error?.message.includes("R11C S2 source pin inverse"),
+  );
 });
 
 test("R12 terminal attribution distinguishes absent and present source triplets", () => {
