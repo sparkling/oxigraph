@@ -152,7 +152,50 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR13FPrivateEvaluatorSource(source) {
+  let reconstructed = source;
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR13PrivateEvaluatorSource(source) {",
+      "  source = reconstructPreR13FPrivateEvaluatorSource(source);",
+      "  let reconstructed = source;",
+    ].join("\n"),
+    [
+      "function reconstructPreR13PrivateEvaluatorSource(source) {",
+      "  let reconstructed = source;",
+    ].join("\n"),
+    "R13F older inverse forwarding",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      '        ["ownerGid", profile.effectiveGid],',
+      '        ["statxMask", rootContext.identity.mask],',
+      '        ["filesystemMagic", profile.filesystemMagic.toString(10)],',
+    ].join("\n"),
+    [
+      '        ["ownerGid", profile.effectiveGid],',
+      '        ["filesystemMagic", profile.filesystemMagic.toString(10)],',
+    ].join("\n"),
+    "R13F held-root decoded observation inverse",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    '\n\ntest("R13F held-root mask fixture correction inversely reconstructs the exact R13E evaluator", async () => {\n',
+    '\n\ntest("R13 private totality correction inversely reconstructs the exact pre-R13 evaluator", async () => {\n',
+    "R13F inverse proof",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR13FPrivateEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreR13PrivateEvaluatorSource(source) {\n",
+    "R13F inverse helper",
+  );
+}
+
 function reconstructPreR13PrivateEvaluatorSource(source) {
+  source = reconstructPreR13FPrivateEvaluatorSource(source);
   let reconstructed = source;
   const pinReplacements = [
     [
@@ -6711,6 +6754,38 @@ candidateTest(
   },
 );
 
+test("R13F held-root mask fixture correction inversely reconstructs the exact R13E evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource =
+    reconstructPreR13FPrivateEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 292811);
+  assert.equal(countExact(reconstructedSource, "\n"), 8680);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "6c1b4baab039767dfb758bf7a63b903d3a0f9b28e80fa41a64ee4d53791c356b",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "8a51f2517d8547fc1e3511ce5ad25792638c5b28",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(\s*"([^"\n]+)"/gu)]
+      .length,
+    22,
+  );
+  assert.equal(
+    [
+      ...reconstructedSource.matchAll(
+        /(?:^|\n)candidateTest\(\s*"([^"\n]+)"/gu,
+      ),
+    ].length,
+    9,
+  );
+});
+
 test("R13 private totality correction inversely reconstructs the exact pre-R13 evaluator", async () => {
   const currentBytes = await readFile(EVALUATOR_PATH);
   const currentSource = currentBytes.toString("utf8");
@@ -7913,6 +7988,7 @@ candidateTest("held root, nonblocking lock contention, depth-first inventory, ch
         ["mode", rootContext.identity.mode],
         ["ownerUid", profile.effectiveUid],
         ["ownerGid", profile.effectiveGid],
+        ["statxMask", rootContext.identity.mask],
         ["filesystemMagic", profile.filesystemMagic.toString(10)],
         ["contentOffset", 0],
         ["contentLength", 0],
