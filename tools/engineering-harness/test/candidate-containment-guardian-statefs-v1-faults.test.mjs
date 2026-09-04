@@ -152,6 +152,241 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR8S3EvaluatorSource(source, proofStart, proofEnd) {
+  const functionRangeCorrection = [
+    "  const functionBodyRanges = [];",
+    "  let declarationStart = 0;",
+    "  for (",
+    '    let open = masked.indexOf("{");',
+    "    open !== -1;",
+    '    open = masked.indexOf("{", open + 1)',
+    "  ) {",
+    "    const header = masked.slice(declarationStart, open).trim();",
+    "    const functionName =",
+    "      /\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\([^;{}]*\\)\\s*$/u.exec(header)?.[1];",
+    "    let depth = 1;",
+    "    let close = open + 1;",
+    "    for (; close < masked.length && depth > 0; close += 1) {",
+    '      if (masked[close] === "{") depth += 1;',
+    '      if (masked[close] === "}") depth -= 1;',
+    "    }",
+    '    assert.equal(depth, 0, "unterminated C function body");',
+    "    if (",
+    "      functionName !== undefined &&",
+    '      !new Set(["if", "for", "while", "switch"]).has(functionName)',
+    "    ) {",
+    "      functionBodyRanges.push([open + 1, close - 1]);",
+    "    }",
+    "    open = close - 1;",
+    "    declarationStart = close;",
+    "  }",
+    "",
+  ].join("\n");
+  const correctedDecision = [
+    "    const statementStart =",
+    "      Math.max(",
+    '        masked.lastIndexOf(";", occurrence.index),',
+    '        masked.lastIndexOf("{", occurrence.index),',
+    '        masked.lastIndexOf("}", occurrence.index),',
+    "      ) + 1;",
+    '    const statementEnd = masked.indexOf(";", close + 1);',
+    "    const isAllowedLocalRegisterBinding =",
+    '      occurrence[0] === "__asm__" &&',
+    "      qualifier === null &&",
+    "      functionBodyRanges.some(",
+    "        ([start, end]) => occurrence.index >= start && occurrence.index < end,",
+    "      ) &&",
+    "      /^\\s*register\\s+long\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*$/u.test(",
+    "        masked.slice(statementStart, occurrence.index),",
+    "      ) &&",
+    "      new Set(['\"r10\"', '\"r8\"']).has(",
+    "        clean.slice(open + 1, close).trim(),",
+    "      ) &&",
+    "      statementEnd !== -1 &&",
+    "      /^\\s*=\\s*[a-zA-Z_][a-zA-Z0-9_]*\\s*;$/u.test(",
+    "        masked.slice(close + 1, statementEnd + 1),",
+    "      );",
+    "    if (isAllowedLocalRegisterBinding) continue;",
+    "    const executableTemplate = clean.slice(open + 1, templateEnd).trim();",
+    '    if (executableTemplate !== \'"syscall"\') {',
+    "      const fixedImmediate =",
+    '        /^"movl \\$([0-9]+), %%eax\\\\n\\\\tsyscall"$/u.exec(executableTemplate);',
+    '      assert.notEqual(fixedImmediate, null, "inline-assembly-template");',
+    "      assert.equal(",
+    "        new Set([",
+    '          "0",',
+    '          "1",',
+    '          "3",',
+    '          "72",',
+    '          "73",',
+    '          "74",',
+    '          "138",',
+    '          "217",',
+    '          "257",',
+    '          "258",',
+    '          "263",',
+    '          "316",',
+    '          "332",',
+    "        ]).has(fixedImmediate[1]),",
+    "        true,",
+    '        "inline-assembly-syscall-immediate",',
+    "      );",
+    "    }",
+    "    directSyscallAssemblyCount += 1;",
+  ].join("\n");
+  const acceptedDecision = [
+    "    assert.equal(",
+    "      clean.slice(open + 1, templateEnd).trim(),",
+    "      '\"syscall\"',",
+    '      "inline-assembly-template",',
+    "    );",
+  ].join("\n");
+  let reconstructed = replaceExactly(
+    source,
+    functionRangeCorrection,
+    "",
+    "S3 R8 function-range inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    "  let directSyscallAssemblyCount = 0;\n",
+    "",
+    "S3 R8 counter declaration inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedDecision,
+    acceptedDecision,
+    "S3 R8 assembly decision inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    '  assert.ok(directSyscallAssemblyCount > 0, "direct syscall assembly required");\n',
+    "",
+    "S3 R8 counter assertion inverse",
+  );
+  const originalInverseStart =
+    "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(\n";
+  const originalInverseEnd = "    currentAdrPin,\n";
+  assert.equal(countExact(reconstructed, originalInverseStart), 1);
+  assert.equal(countExact(reconstructed, originalInverseEnd), 1);
+  const originalInverseStartIndex = reconstructed.indexOf(originalInverseStart);
+  const originalInverseEndIndex = reconstructed.indexOf(
+    originalInverseEnd,
+    originalInverseStartIndex + originalInverseStart.length,
+  );
+  assert.equal(originalInverseEndIndex > originalInverseStartIndex, true);
+  reconstructed = `${reconstructed.slice(0, originalInverseStartIndex)}  let acceptedEvaluatorSource = replaceExactly(\n    currentEvaluatorSource,\n${reconstructed.slice(originalInverseEndIndex)}`;
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    [
+      "\n\nfunction reconstruct",
+      "PreR8EvaluatorSource(source, proofStart, proofEnd) {\n",
+    ].join(""),
+    "\n\nfunction assertNoFunctionLocalByteArrays(source) {\n",
+    "S3 R8 inverse helper",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "S3 R8 proof inverse",
+  );
+}
+
+function reconstructPreR8PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  const currentSyscallPin = [
+    '    label: "S3 syscall evaluator",',
+    "    url: SYSCALL_EVALUATOR_URL,",
+    "    bytes: 147416,",
+    "    lines: 4459,",
+    '    sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",',
+    '    blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",',
+  ].join("\n");
+  const acceptedSyscallPin = [
+    '    label: "S3 syscall evaluator",',
+    "    url: SYSCALL_EVALUATOR_URL,",
+    "    bytes: 134818,",
+    "    lines: 4121,",
+    '    sha256: "3b8d21a57b70f0ccb6669598c851ad0cfb9aaac78bce93421e9b49c135deaf9e",',
+    '    blob: "539f331c11edb4c95b0d5df2a854bfd6903ff3b4",',
+  ].join("\n");
+  const currentFaultPin = [
+    '    label: "S3 fault evaluator",',
+    "    url: FAULT_EVALUATOR_URL,",
+    "    bytes: 146152,",
+    "    lines: 4406,",
+    '    sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",',
+    '    blob: "864588a504d506fd1b94a33717797b0b9d72299e",',
+  ].join("\n");
+  const acceptedFaultPin = [
+    '    label: "S3 fault evaluator",',
+    "    url: FAULT_EVALUATOR_URL,",
+    "    bytes: 133571,",
+    "    lines: 4068,",
+    '    sha256: "426d5397c3324b59fd6dc4ae3dd27ee4c42537f10cf84efbcee2742744a2d6f8",',
+    '    blob: "cbd0ff0c3951703726fbcb4f4bc074bb5a53c66d",',
+  ].join("\n");
+  let reconstructed = replaceExactly(
+    source,
+    currentSyscallPin,
+    acceptedSyscallPin,
+    "private R8 syscall pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    currentFaultPin,
+    acceptedFaultPin,
+    "private R8 fault pin inverse",
+  );
+  const correctedR7Entry = [
+    "  let source = reconstructPreR8PrivateEvaluatorSource(",
+    '    await readFile(EVALUATOR_PATH, "utf8"),',
+    "    [",
+    "      '\\n\\ntest(\"R8 S3 evaluator pins and inverse chain ',",
+    "      'reconstruct the pre-R8 private evaluator\", async () => {\\n',",
+    '    ].join(""),',
+    "    '\\n\\ntest(\"count-checked inverses reconstruct both originally accepted S3 evaluators\", async () => {\\n',",
+    "  );",
+  ].join("\n");
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedR7Entry,
+    '  let source = await readFile(EVALUATOR_PATH, "utf8");',
+    "private R8 R7-inverse entry",
+  );
+  const s3Chain = [
+    "    const r8Kind =",
+    '      item.url.href === SYSCALL_EVALUATOR_URL.href ? "syscall" : "fault";',
+    "    source = reconstructPreR8S3EvaluatorSource(",
+    "      source,",
+    "      `\\n\\ntest(\"R8 fixed-register and syscall-immediate correction inversely reconstructs the pre-R8 ${r8Kind} evaluator\", async () => {\\n`,",
+    "      item.end,",
+    "    );",
+  ].join("\n");
+  reconstructed = replaceExactly(
+    reconstructed,
+    `${s3Chain}\n`,
+    "",
+    "private R8 S3 inverse chain",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    [
+      "\n\nfunction reconstruct",
+      "PreR8S3EvaluatorSource(source, proofStart, proofEnd) {\n",
+    ].join(""),
+    "\n\nconst PREDECESSOR_PINS = deepFreeze([\n",
+    "private R8 inverse helpers",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "private R8 proof inverse",
+  );
+}
+
 const PREDECESSOR_PINS = deepFreeze([
   {
     label: "ADR-0037",
@@ -180,18 +415,18 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "S3 syscall evaluator",
     url: SYSCALL_EVALUATOR_URL,
-    bytes: 134818,
-    lines: 4121,
-    sha256: "3b8d21a57b70f0ccb6669598c851ad0cfb9aaac78bce93421e9b49c135deaf9e",
-    blob: "539f331c11edb4c95b0d5df2a854bfd6903ff3b4",
+    bytes: 147416,
+    lines: 4459,
+    sha256: "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",
+    blob: "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",
   },
   {
     label: "S3 fault evaluator",
     url: FAULT_EVALUATOR_URL,
-    bytes: 133571,
-    lines: 4068,
-    sha256: "426d5397c3324b59fd6dc4ae3dd27ee4c42537f10cf84efbcee2742744a2d6f8",
-    blob: "cbd0ff0c3951703726fbcb4f4bc074bb5a53c66d",
+    bytes: 146152,
+    lines: 4406,
+    sha256: "b8fa23d4fd6238f175da41a3348ecac592c2777b2fc44df82c0c90d371cc9774",
+    blob: "864588a504d506fd1b94a33717797b0b9d72299e",
   },
   {
     label: "engineering package",
@@ -4574,7 +4809,14 @@ test("R7 persistence observation correction inversely reconstructs accepted R6 p
     "    assert.equal(persist.observations[0].",
     "contentLength, input.length);",
   ].join("");
-  let source = await readFile(EVALUATOR_PATH, "utf8");
+  let source = reconstructPreR8PrivateEvaluatorSource(
+    await readFile(EVALUATOR_PATH, "utf8"),
+    [
+      '\n\ntest("R8 S3 evaluator pins and inverse chain ',
+      'reconstruct the pre-R8 private evaluator", async () => {\n',
+    ].join(""),
+    '\n\ntest("count-checked inverses reconstruct both originally accepted S3 evaluators", async () => {\n',
+  );
   const faultStart = [
     "  if (request.operation === ",
     '"PERSIST_NOREPLACE"',
@@ -4618,6 +4860,34 @@ test("R7 persistence observation correction inversely reconstructs accepted R6 p
   assert.equal(gitBlobSha1(bytes), "d45ba9249c83d8aff4ccefa12cf9a631ced5107d");
   assert.equal(countExact(source, correctedSuccessExpectation), 0);
   assert.equal(countExact(source, acceptedSuccessExpectation), 1);
+});
+
+test("R8 S3 evaluator pins and inverse chain reconstruct the pre-R8 private evaluator", async () => {
+  const proofStart = [
+    '\n\ntest("R8 S3 evaluator pins and inverse chain ',
+    'reconstruct the pre-R8 private evaluator", async () => {\n',
+  ].join("");
+  const proofEnd =
+    '\n\ntest("count-checked inverses reconstruct both originally accepted S3 evaluators", async () => {\n';
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR8PrivateEvaluatorSource(
+    currentSource,
+    proofStart,
+    proofEnd,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 196168);
+  assert.equal(countExact(reconstructedSource, "\n"), 5928);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "a2615605ca9b565a25b9782ee24df4c8e1c7fd2fca08d862ad2598a708a6dc1c",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "ffcfe3aca242997af16196c490ad5ceffd465d90",
+  );
 });
 
 test("count-checked inverses reconstruct both originally accepted S3 evaluators", async () => {
@@ -4714,6 +4984,13 @@ test("count-checked inverses reconstruct both originally accepted S3 evaluators"
   ];
   for (const item of cases) {
     let source = await readFile(item.url, "utf8");
+    const r8Kind =
+      item.url.href === SYSCALL_EVALUATOR_URL.href ? "syscall" : "fault";
+    source = reconstructPreR8S3EvaluatorSource(
+      source,
+      `\n\ntest("R8 fixed-register and syscall-immediate correction inversely reconstructs the pre-R8 ${r8Kind} evaluator", async () => {\n`,
+      item.end,
+    );
     source = replaceExactly(source, currentAdrPin, acceptedAdrPin, "ADR inverse");
     if (item.url.href === SYSCALL_EVALUATOR_URL.href) {
       source = replaceExactly(

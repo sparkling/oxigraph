@@ -2031,8 +2031,35 @@ function assertOnlySyscallInlineAssembly(source) {
   const clean = stripCComments(phaseTwo);
   const masked = stripCStringAndCharacterLiterals(clean);
   assert.doesNotMatch(masked, /(?:##|%:%:|\?\?)/u, "C token construction");
+  const functionBodyRanges = [];
+  let declarationStart = 0;
+  for (
+    let open = masked.indexOf("{");
+    open !== -1;
+    open = masked.indexOf("{", open + 1)
+  ) {
+    const header = masked.slice(declarationStart, open).trim();
+    const functionName =
+      /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^;{}]*\)\s*$/u.exec(header)?.[1];
+    let depth = 1;
+    let close = open + 1;
+    for (; close < masked.length && depth > 0; close += 1) {
+      if (masked[close] === "{") depth += 1;
+      if (masked[close] === "}") depth -= 1;
+    }
+    assert.equal(depth, 0, "unterminated C function body");
+    if (
+      functionName !== undefined &&
+      !new Set(["if", "for", "while", "switch"]).has(functionName)
+    ) {
+      functionBodyRanges.push([open + 1, close - 1]);
+    }
+    open = close - 1;
+    declarationStart = close;
+  }
   const occurrences = [...masked.matchAll(/\b(?:__asm__|__asm|asm)\b/gu)];
   assert.ok(occurrences.length > 0, "direct syscall assembly required");
+  let directSyscallAssemblyCount = 0;
   for (const occurrence of occurrences) {
     let cursor = occurrence.index + occurrence[0].length;
     while (/\s/u.test(masked[cursor] ?? "")) cursor += 1;
@@ -2058,12 +2085,236 @@ function assertOnlySyscallInlineAssembly(source) {
     assert.equal(depth, 0, "inline-assembly-close");
     const close = cursor - 1;
     const templateEnd = firstColon === -1 ? close : firstColon;
-    assert.equal(
-      clean.slice(open + 1, templateEnd).trim(),
-      '"syscall"',
-      "inline-assembly-template",
-    );
+    const statementStart =
+      Math.max(
+        masked.lastIndexOf(";", occurrence.index),
+        masked.lastIndexOf("{", occurrence.index),
+        masked.lastIndexOf("}", occurrence.index),
+      ) + 1;
+    const statementEnd = masked.indexOf(";", close + 1);
+    const isAllowedLocalRegisterBinding =
+      occurrence[0] === "__asm__" &&
+      qualifier === null &&
+      functionBodyRanges.some(
+        ([start, end]) => occurrence.index >= start && occurrence.index < end,
+      ) &&
+      /^\s*register\s+long\s+[a-zA-Z_][a-zA-Z0-9_]*\s*$/u.test(
+        masked.slice(statementStart, occurrence.index),
+      ) &&
+      new Set(['"r10"', '"r8"']).has(
+        clean.slice(open + 1, close).trim(),
+      ) &&
+      statementEnd !== -1 &&
+      /^\s*=\s*[a-zA-Z_][a-zA-Z0-9_]*\s*;$/u.test(
+        masked.slice(close + 1, statementEnd + 1),
+      );
+    if (isAllowedLocalRegisterBinding) continue;
+    const executableTemplate = clean.slice(open + 1, templateEnd).trim();
+    if (executableTemplate !== '"syscall"') {
+      const fixedImmediate =
+        /^"movl \$([0-9]+), %%eax\\n\\tsyscall"$/u.exec(executableTemplate);
+      assert.notEqual(fixedImmediate, null, "inline-assembly-template");
+      assert.equal(
+        new Set([
+          "0",
+          "1",
+          "3",
+          "72",
+          "73",
+          "74",
+          "138",
+          "217",
+          "257",
+          "258",
+          "263",
+          "316",
+          "332",
+        ]).has(fixedImmediate[1]),
+        true,
+        "inline-assembly-syscall-immediate",
+      );
+    }
+    directSyscallAssemblyCount += 1;
   }
+  assert.ok(directSyscallAssemblyCount > 0, "direct syscall assembly required");
+}
+
+function reconstructPreR8EvaluatorSource(source, proofStart, proofEnd) {
+  const count = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let matches = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return matches;
+      matches += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceOne = (value, before, after, label) => {
+    assert.equal(count(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeOne = (value, start, end, label) => {
+    assert.equal(count(value, start), 1, `${label} start`);
+    assert.equal(count(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+  const functionRangeCorrection = [
+    "  const functionBodyRanges = [];",
+    "  let declarationStart = 0;",
+    "  for (",
+    '    let open = masked.indexOf("{");',
+    "    open !== -1;",
+    '    open = masked.indexOf("{", open + 1)',
+    "  ) {",
+    "    const header = masked.slice(declarationStart, open).trim();",
+    "    const functionName =",
+    "      /\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\([^;{}]*\\)\\s*$/u.exec(header)?.[1];",
+    "    let depth = 1;",
+    "    let close = open + 1;",
+    "    for (; close < masked.length && depth > 0; close += 1) {",
+    '      if (masked[close] === "{") depth += 1;',
+    '      if (masked[close] === "}") depth -= 1;',
+    "    }",
+    '    assert.equal(depth, 0, "unterminated C function body");',
+    "    if (",
+    "      functionName !== undefined &&",
+    '      !new Set(["if", "for", "while", "switch"]).has(functionName)',
+    "    ) {",
+    "      functionBodyRanges.push([open + 1, close - 1]);",
+    "    }",
+    "    open = close - 1;",
+    "    declarationStart = close;",
+    "  }",
+    "",
+  ].join("\n");
+  const correctedDecision = [
+    "    const statementStart =",
+    "      Math.max(",
+    '        masked.lastIndexOf(";", occurrence.index),',
+    '        masked.lastIndexOf("{", occurrence.index),',
+    '        masked.lastIndexOf("}", occurrence.index),',
+    "      ) + 1;",
+    '    const statementEnd = masked.indexOf(";", close + 1);',
+    "    const isAllowedLocalRegisterBinding =",
+    '      occurrence[0] === "__asm__" &&',
+    "      qualifier === null &&",
+    "      functionBodyRanges.some(",
+    "        ([start, end]) => occurrence.index >= start && occurrence.index < end,",
+    "      ) &&",
+    "      /^\\s*register\\s+long\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*$/u.test(",
+    "        masked.slice(statementStart, occurrence.index),",
+    "      ) &&",
+    "      new Set(['\"r10\"', '\"r8\"']).has(",
+    "        clean.slice(open + 1, close).trim(),",
+    "      ) &&",
+    "      statementEnd !== -1 &&",
+    "      /^\\s*=\\s*[a-zA-Z_][a-zA-Z0-9_]*\\s*;$/u.test(",
+    "        masked.slice(close + 1, statementEnd + 1),",
+    "      );",
+    "    if (isAllowedLocalRegisterBinding) continue;",
+    "    const executableTemplate = clean.slice(open + 1, templateEnd).trim();",
+    '    if (executableTemplate !== \'"syscall"\') {',
+    "      const fixedImmediate =",
+    '        /^"movl \\$([0-9]+), %%eax\\\\n\\\\tsyscall"$/u.exec(executableTemplate);',
+    '      assert.notEqual(fixedImmediate, null, "inline-assembly-template");',
+    "      assert.equal(",
+    "        new Set([",
+    '          "0",',
+    '          "1",',
+    '          "3",',
+    '          "72",',
+    '          "73",',
+    '          "74",',
+    '          "138",',
+    '          "217",',
+    '          "257",',
+    '          "258",',
+    '          "263",',
+    '          "316",',
+    '          "332",',
+    "        ]).has(fixedImmediate[1]),",
+    "        true,",
+    '        "inline-assembly-syscall-immediate",',
+    "      );",
+    "    }",
+    "    directSyscallAssemblyCount += 1;",
+  ].join("\n");
+  const acceptedDecision = [
+    "    assert.equal(",
+    "      clean.slice(open + 1, templateEnd).trim(),",
+    "      '\"syscall\"',",
+    '      "inline-assembly-template",',
+    "    );",
+  ].join("\n");
+  const correctedOriginalInverseEntry = [
+    "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+    "    currentEvaluatorSource,",
+    "    [",
+    "      '\\n\\ntest(\"R8 fixed-register and syscall-immediate correction ',",
+    "      'inversely reconstructs the pre-R8 fault evaluator\", async () => {\\n',",
+    '    ].join(""),',
+    "    '\\n\\ntest(\"freezes all 144 numeric-step before/after selector results\", () => {\\n',",
+    "  );",
+    "  acceptedEvaluatorSource = replaceExactly(",
+    "    acceptedEvaluatorSource,",
+  ].join("\n");
+  const acceptedOriginalInverseEntry = [
+    "  let acceptedEvaluatorSource = replaceExactly(",
+    "    currentEvaluatorSource,",
+  ].join("\n");
+  const helperStart = [
+    "\n\nfunction ",
+    "reconstructPreR8EvaluatorSource(source, proofStart, proofEnd) {\n",
+  ].join("");
+  const helperEnd =
+    "\n\nfunction assertNoFunctionLocalByteArrays(source) {\n";
+  let reconstructed = replaceOne(
+    source,
+    functionRangeCorrection,
+    "",
+    "R8 function-range correction",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    "  let directSyscallAssemblyCount = 0;\n",
+    "",
+    "R8 syscall counter declaration",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    correctedDecision,
+    acceptedDecision,
+    "R8 assembly decision",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    '  assert.ok(directSyscallAssemblyCount > 0, "direct syscall assembly required");\n',
+    "",
+    "R8 syscall counter assertion",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    correctedOriginalInverseEntry,
+    acceptedOriginalInverseEntry,
+    "R8 original-inverse chain",
+  );
+  reconstructed = removeRangeOne(
+    reconstructed,
+    helperStart,
+    helperEnd,
+    "R8 inverse helper",
+  );
+  return removeRangeOne(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "R8 correction proof",
+  );
 }
 
 function assertNoFunctionLocalByteArrays(source) {
@@ -2846,8 +3097,16 @@ test("ADR pin correction inversely reconstructs accepted S3 fault evaluator", as
     Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
     true,
   );
-  let acceptedEvaluatorSource = replaceExactly(
+  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(
     currentEvaluatorSource,
+    [
+      '\n\ntest("R8 fixed-register and syscall-immediate correction ',
+      'inversely reconstructs the pre-R8 fault evaluator", async () => {\n',
+    ].join(""),
+    '\n\ntest("freezes all 144 numeric-step before/after selector results", () => {\n',
+  );
+  acceptedEvaluatorSource = replaceExactly(
+    acceptedEvaluatorSource,
     currentAdrPin,
     acceptedAdrPin,
     "current ADR pin replacement count",
@@ -2872,6 +3131,85 @@ test("ADR pin correction inversely reconstructs accepted S3 fault evaluator", as
       ),
     ].map((match) => match[1]),
     acceptedTestInventory,
+  );
+});
+
+test("R8 fixed-register and syscall-immediate correction inversely reconstructs the pre-R8 fault evaluator", async () => {
+  assert.doesNotThrow(() =>
+    assertOnlySyscallInlineAssembly(`
+      long invoke(long fourth, long fifth) {
+        register long argument_4 __asm__("r10") = fourth;
+        register long argument_5 __asm__("r8") = fifth;
+        long value;
+        __asm__ volatile ("syscall"
+                          : "=a" (value), "+r" (argument_4), "+r" (argument_5));
+        return value;
+      }
+    `),
+  );
+  for (const number of ["0", "257", "316"]) {
+    assert.doesNotThrow(() =>
+      assertOnlySyscallInlineAssembly(`
+        long invoke(void) {
+          long value;
+          __asm__ volatile ("movl $${number}, %%eax\\n\\tsyscall"
+                            : "=a" (value));
+          return value;
+        }
+      `),
+    );
+  }
+  for (const mutation of [
+    'long invoke(void) { long value; __asm__ volatile ("movl $999, %%eax\\n\\tsyscall" : "=a" (value)); return value; }',
+    'long invoke(void) { long value; __asm__ volatile ("movl $0x101, %%eax\\n\\tsyscall" : "=a" (value)); return value; }',
+    'long invoke(void) { long value; __asm__ volatile ("movl $257, %%rax\\n\\tsyscall" : "=a" (value)); return value; }',
+    'long invoke(void) { long value; __asm__ volatile ("movl $257, %%eax\\n\\tnop\\n\\tsyscall" : "=a" (value)); return value; }',
+    'long invoke(void) { long value; __asm__ volatile ("movl $257, %%eax\\n\\t" "syscall" : "=a" (value)); return value; }',
+    '#define SYSCALL_TEMPLATE "movl $257, %%eax\\n\\tsyscall"\nlong invoke(void) { long value; __asm__ volatile (SYSCALL_TEMPLATE : "=a" (value)); return value; }',
+    'register long argument_4 __asm__("r10") = fourth; long invoke(void) { __asm__ volatile ("syscall"); return 0; }',
+    'long invoke(long fourth) { long argument_4 __asm__("r10") = fourth; __asm__ volatile ("syscall"); return argument_4; }',
+    'long invoke(long fourth) { register long argument_4 asm("r10") = fourth; __asm__ volatile ("syscall"); return argument_4; }',
+    'long invoke(long fourth) { register long argument_4 __asm__("r9") = fourth; __asm__ volatile ("syscall"); return argument_4; }',
+    'long invoke(long fourth) { __asm__("r10"); __asm__ volatile ("syscall"); return fourth; }',
+    'long invoke(long fourth) { register long argument_4 __asm__("r10") = fourth; return argument_4; }',
+  ]) {
+    assert.throws(
+      () => assertOnlySyscallInlineAssembly(mutation),
+      undefined,
+      mutation,
+    );
+  }
+
+  const proofStart = [
+    '\n\ntest("R8 fixed-register and syscall-immediate correction ',
+    'inversely reconstructs the pre-R8 fault evaluator", async () => {\n',
+  ].join("");
+  const proofEnd =
+    '\n\ntest("freezes all 144 numeric-step before/after selector results", () => {\n';
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR8EvaluatorSource(
+    currentSource,
+    proofStart,
+    proofEnd,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 133571);
+  assert.equal(
+    reconstructedSource.split("\n").length - 1,
+    4068,
+  );
+  assert.equal(
+    sha256(reconstructedBytes),
+    "426d5397c3324b59fd6dc4ae3dd27ee4c42537f10cf84efbcee2742744a2d6f8",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "cbd0ff0c3951703726fbcb4f4bc074bb5a53c66d",
   );
 });
 
