@@ -180,10 +180,10 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "S3 syscall evaluator",
     url: SYSCALL_EVALUATOR_URL,
-    bytes: 132992,
-    lines: 4071,
-    sha256: "a7c283f77fd0976cc53dabf536fccdd7318cd75e6bfc34c4f58fd12e8759fc41",
-    blob: "64f0b93f4119e5812128e7cb12bdffdeb14d37f8",
+    bytes: 134818,
+    lines: 4121,
+    sha256: "3b8d21a57b70f0ccb6669598c851ad0cfb9aaac78bce93421e9b49c135deaf9e",
+    blob: "539f331c11edb4c95b0d5df2a854bfd6903ff3b4",
   },
   {
     label: "S3 fault evaluator",
@@ -4564,6 +4564,36 @@ test("count-checked inverses reconstruct both originally accepted S3 evaluators"
     "    202635,",
     '    "35a9d8990a67f4a9c332d6a32d47314d19ea73c474610efab240a2cf80b7f97d",',
   ].join("\n");
+  const correctedAssignmentMatcher = [
+    "function assertAssignedSuffix(assignments, suffix, expected, category = null) {",
+    "  const candidates = assignments.filter(",
+    "    ([identifier]) =>",
+    "      (identifier === suffix ||",
+    "        (category === null",
+    "          ? identifier.endsWith(`_${suffix}`)",
+    "          : identifier.endsWith(`_${category}_${suffix}`))),",
+    "  );",
+    "  assert.deepEqual(",
+    "    candidates,",
+    "    [[candidates[0]?.[0], expected]],",
+    "    `${category ?? \"literal\"}:${suffix}=${expected}`,",
+    "  );",
+    "}",
+  ].join("\n");
+  const acceptedAssignmentMatcher = [
+    "function assertAssignedSuffix(assignments, suffix, expected, category = null) {",
+    "  const candidates = assignments.filter(",
+    "    ([identifier]) =>",
+    "      (identifier === suffix || identifier.endsWith(`_${suffix}`)) &&",
+    "      (category === null || identifier.includes(category)),",
+    "  );",
+    "  assert.deepEqual(",
+    "    candidates,",
+    "    [[candidates[0]?.[0], expected]],",
+    "    `${category ?? \"literal\"}:${suffix}=${expected}`,",
+    "  );",
+    "}",
+  ].join("\n");
   const cases = [
     {
       url: SYSCALL_EVALUATOR_URL,
@@ -4618,6 +4648,14 @@ test("count-checked inverses reconstruct both originally accepted S3 evaluators"
   for (const item of cases) {
     let source = await readFile(item.url, "utf8");
     source = replaceExactly(source, currentAdrPin, acceptedAdrPin, "ADR inverse");
+    if (item.url.href === SYSCALL_EVALUATOR_URL.href) {
+      source = replaceExactly(
+        source,
+        correctedAssignmentMatcher,
+        acceptedAssignmentMatcher,
+        "effect assignment matcher inverse",
+      );
+    }
     source = removeRangeExactly(source, item.start, item.end, "correction inverse");
     const bytes = Buffer.from(source, "utf8");
     assert.equal(bytes.length, item.bytes);
@@ -5124,13 +5162,23 @@ candidateTest("held root, nonblocking lock contention, depth-first inventory, ch
     );
     assert.equal(rootInventory.receipt.outcome, "INVENTORY_OBSERVED");
     assert.equal(rootInventory.result.returnedDirectoryFd, -1);
+    const expectedRootNames = rootChildren
+      .map(([name]) => name)
+      .sort((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right)),
+      );
+    const rawRootNames = rootInventory.result.observations
+      .slice(1)
+      .map(({ name }) => name);
     assert.deepEqual(
-      rootInventory.result.observations.slice(1).map(({ name }) => name),
-      rootChildren
-        .map(([name]) => name)
-        .sort((left, right) =>
-          Buffer.compare(Buffer.from(left), Buffer.from(right)),
-        ),
+      [...rawRootNames].sort((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right)),
+      ),
+      expectedRootNames,
+    );
+    assert.deepEqual(
+      rootInventory.receipt.inventories[0].entries.map(({ name }) => name),
+      expectedRootNames,
     );
     let token = rootInventory.receipt.inventorySet;
     for (const [name, role] of rootChildren) {
