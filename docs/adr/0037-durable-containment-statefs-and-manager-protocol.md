@@ -2,11 +2,13 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-03
+- Updated: 2026-09-04
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented. No filesystem-backed guardian state
-  owner or manager-protocol module exists, and production containment remains
-  unavailable
+- Implementation status: not implemented. A pre-correction pure JavaScript
+  StateFS candidate and four StateFS evaluators are tracked, but the corrected
+  observation-contract implementation, native header/C/attestation triplet,
+  and manager protocol module/evaluator are absent; production containment
+  remains unavailable
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md),
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md)
@@ -174,6 +176,102 @@ the StateFS evaluator/requirements pin derived from them, must be superseded
 before S2 resumes. It creates no filesystem request, manager decision, or
 physical effect; the historical pins, receipts, statuses, and S0 evidence below
 remain historical and are not recomputed, resealed, or rebaselined.
+
+#### 2026-09-04 contract correction: total native observation evidence
+
+The native observation ABI remains version 1, 384 bytes, and alignment 8, but
+its zero-only uint32 field at offset 76 is corrected from `flags` to
+`statx_mask`. Its exact JavaScript translation is `statxMask` in the matching
+ordered position. Every published non-`ABSENT` observation requires
+`(statxMask & 0x17ff) === 0x17ff`, where `0x17ff` is exactly
+`STATX_BASIC_STATS|STATX_MNT_ID`; additional returned bits are permitted and
+retained. A synthesized `ABSENT` observation instead has `statxMask === 0`
+together with all existing zero-metadata constraints. `statxMask` exists only
+in the private native executor/verifier observation shape; it is not added to a
+public inventory projection or receipt digest.
+
+The executor copies the kernel-returned `stx_mask` and validates the required
+bits before interpreting any field that mask governs, publishing the current
+observation, or incrementing `observation_count`. The current incomplete slot
+remains zero. A terminating result retains exactly the earlier complete,
+mask-validated, publishable observation prefix and no later or partial
+observation. Publication is exhaustive: a mask failure while validating caller
+descriptors at step 2 or 3, or the opened directory target at step 5, publishes
+zero observations; every directory-entry slot remains provisional until step 6
+completes, so a raw-representation or entry-mask failure there publishes only
+the already valid target in slot zero; and a regular-file snapshot remains
+provisional through step 7, so an initial or repeated `statx` mask failure
+publishes zero observations. A mutation reobservation failure retains only
+earlier canonical slots already completed by that sequence—for example, a
+move's destination-mask failure may retain its already valid `ABSENT` source
+slot—and never the failing destination. The JavaScript verifier independently
+enforces the same rule: a purported
+non-`ABSENT` observation without the complete required mask, an `ABSENT`
+observation with a nonzero mask, or a result whose count includes an incomplete
+slot is `STATEFS_RESULT`, not a semantic inventory rejection. Full mask coverage
+is evidence only that the returned `statx` fields were marked available; it is
+not cryptographic provenance, descriptor-origin evidence, or a replacement for
+the existing identity and same-origin checks.
+
+The native directory-entry output domain is the exact raw-byte range
+`0x01` through `0x7f`, excluding `/`; `.` and `..` are recognized and discarded
+and are never published. Other names in that range cross the ABI byte-for-byte.
+In particular, control bytes `0x01` through `0x1f` and `DEL` (`0x7f`) are
+representable and reach the JavaScript semantic inventory oracle, where they
+are unsafe because they match no admitted grammar; the native decoder does not
+silently omit or rewrite them. A payload byte at or above `0x80`, a name longer
+than 255 bytes, an embedded `/`, or a malformed or unterminated
+`linux_dirent64` record is unrepresentable output. Directory enumeration then
+terminates at owning step `DIRECTORY_ENUMERATED` as
+`REJECTED/NO_EFFECT`, with errno zero, the exact preceding dense step prefix,
+the already validated target-directory observation as its complete target-only
+observation prefix, and no partial entry. It is terminal `NO_RETRY` with no
+successor token. A failed mandatory cleanup close may change only its effect to
+`EFFECT_UNCERTAIN` under the descriptor-liveness rule below.
+
+Every pre-mutation observation-mask, observed-metadata, or raw-representation
+mismatch governed by this correction is `REJECTED/NO_EFFECT`, errno zero, at
+its owning dense failed step; it retains only the preceding completed steps and
+complete observations. Every corresponding post-mutation observation-mask or
+observed-metadata mismatch is `VERIFICATION_FAILED` with errno zero and the
+exact `MUTATION_OBSERVED_NOT_FULLY_SYNCED` or `EFFECT_UNCERTAIN` class fixed by
+that mutation boundary. Every corrected `REJECTED/NO_EFFECT`, narrow
+`REJECTED/EFFECT_UNCERTAIN`,
+`VERIFICATION_FAILED/MUTATION_OBSERVED_NOT_FULLY_SYNCED`, and
+`VERIFICATION_FAILED/EFFECT_UNCERTAIN` branch is terminal `NO_RETRY`,
+fabricates no successor, and publishes no incomplete inventory. A complete,
+mask-valid inventory that only the JavaScript semantic policy finds unsafe
+retains its existing receipt-only `REJECTED/DEFINITE_NO_EFFECT` rule. All other
+operation-specific status/effect rules, including the existing zero-read, EOF,
+and length-mismatch rules, remain unchanged; in particular, an unrelated exact
+`VERIFICATION_FAILED/DEFINITE_NO_EFFECT` result retains its existing
+`REPLAN_AFTER_FRESH_INVENTORY` disposition rather than being widened into this
+correction's terminal set.
+
+Internal descriptor liveness starts when an `openat` succeeds, even if later
+validation prevents `INTERNAL_DESCRIPTOR_OPENED` from becoming a completed
+step. On failure cleanup, each actually acquired live internal descriptor is
+closed once in reverse-open order and its integer is retired regardless of the
+return. If and only if one of those cleanup closes fails, it upgrades a base
+`NO_EFFECT`, `DEFINITE_NO_EFFECT`, or
+`MUTATION_OBSERVED_NOT_FULLY_SYNCED` effect to `EFFECT_UNCERTAIN`; it does not
+change the base status, first errno, failed step, completed prefix, bytes, or
+validated observation prefix. Thus the otherwise forbidden
+`REJECTED/EFFECT_UNCERTAIN` pair is accepted only at an exact post-open,
+pre-mutation rejection boundary where an internal descriptor can be live. It
+remains forbidden at every impossible-live boundary, and a successful cleanup
+close leaves the base effect unchanged. No close is retried.
+
+Every verified `EFFECT_UNCERTAIN` receipt, including that narrow rejected
+case, has outcome `FAILED_EFFECT_UNCERTAIN`, disposition `NO_RETRY`, empty
+`inventories`, and null successor token/digest. It grants no successor or
+reusable capability, authority, or physical fact. These corrections supersede
+the affected StateFS requirements, JavaScript evaluator, C ABI evaluator,
+header/source, private fault evaluator, and attestation identities before
+further integration. Prior green results remain historical evidence for their
+exact earlier bytes and do not qualify the corrected contract. This amendment
+changes no ADR status, implementation claim, authority, readiness, promotion,
+publication, or protected runtime state.
 
 The new modules may consume only these predecessor identities. A different
 requirements digest, source specifier, export name, or same-byte value returned
@@ -349,9 +447,10 @@ hexadecimal characters. An absent optional field is the primitive `null`; an
 empty string, zero digest, missing property, or `undefined` never substitutes
 for null.
 
-UID, GID, and flags are integers from 0 through 4,294,967,295 before ABI
-conversion. Public JavaScript `mode` is exactly the four-ASCII-byte permission
-string `0600` or `0700`; no other spelling or numeric substitute is accepted.
+UID, GID, and native `statxMask` are integers from 0 through 4,294,967,295
+before ABI conversion. Public JavaScript `mode` is exactly the four-ASCII-byte
+permission string `0600` or `0700`; no other spelling or numeric substitute is
+accepted.
 The native observation's uint32 `mode` is the exact Linux `statx.stx_mode`.
 Translation derives entry kind from `mode & 0170000`, requires the expected type
 bits and zero setuid/setgid/sticky bits, and emits the zero-padded four-digit
@@ -926,24 +1025,28 @@ the executor retains and cleanup-closes its internal descriptor.
 
 Each `observations` element is an exact null-prototype translation with ordered
 fields `kind`, `role`, `name`, `deviceMajor`, `deviceMinor`, `inode`, `mountId`,
-`byteLength`, `linkCount`, `mode`, `ownerUid`, `ownerGid`, `filesystemMagic`,
-`contentOffset`, and `contentLength`; the array length equals the C result's
-`observation_count`. Integer and decimal-string translation follows the frozen
-JS/ABI rules and zero native flags/reserved bytes are rechecked. Directory
+`byteLength`, `linkCount`, `mode`, `ownerUid`, `ownerGid`, `statxMask`,
+`filesystemMagic`, `contentOffset`, and `contentLength`; the array length equals
+the C result's `observation_count`. Integer and decimal-string translation
+follows the frozen JS/ABI rules. `statxMask` is the exact native uint32 value,
+and zero reserved bytes are rechecked. Directory
 inventory has the target held-directory observation first and zero through 256
 entry observations thereafter. Present regular-file inventory has one
 `REGULAR` observation with exact requested name and output extent. Absent
 regular-file inventory has exactly one `ABSENT` observation whose role/name are
-the exact request, whose every identity/metadata/content field is zero, and
-whose output is empty; only the verifier turns it into the canonical zero-entry
-inventory. Complete persistence has the one final `REGULAR` observation and C
-has already byte-compared it to the request input. Complete mkdir has the one
-new `DIRECTORY` observation. Complete move or sync/reobserve has, in order, one
+the exact request, whose every identity/metadata/content field, including
+`statxMask`, is zero, and whose output is empty; only the verifier turns it into
+the canonical zero-entry inventory. Every other observation requires
+`(statxMask & 0x17ff) === 0x17ff`; extra mask bits are retained. Complete
+persistence has the one final `REGULAR` observation and C has already
+byte-compared it to the request input. Complete mkdir has the one new
+`DIRECTORY` observation. Complete move or sync/reobserve has, in order, one
 zero-metadata `ABSENT` source observation and the exact destination `DIRECTORY`
 observation. Complete cleanup has one zero-metadata `ABSENT` temporary
 observation. Complete release has no observation. Every operation-specific
-observation count, role, name, identity, content extent, and ordering is exact;
-missing, extra, or reordered observations are `STATEFS_RESULT`.
+observation count, role, name, mask, identity, content extent, and ordering is
+exact; missing, extra, reordered, partially published, or mask-incomplete
+observations are `STATEFS_RESULT`.
 
 Planning is the token's atomic use point. After all validation and policy
 selection succeeds but before returning a request, statefs irreversibly marks
@@ -1174,10 +1277,12 @@ attempt directory contains zero through 24 recovery-v1 final files. A lifetime
 segment contains zero through 256 lifetime-v1 final files. These predecessor
 ceilings dominate the generic directory-entry ceiling.
 
-Every name is a nonempty ASCII byte sequence, contains no NUL or `/`, and is
-neither `.` nor `..`. Unicode normalization, platform collation, percent
-decoding, case folding, backslash-as-separator, and pathname expansion are
-forbidden. The exact grammar alternatives are:
+Every published name is a nonempty raw byte sequence whose bytes are in
+`0x01` through `0x7f`, contains no `/`, and is neither `.` nor `..`. It crosses
+the native/JavaScript boundary byte-for-byte; control bytes and `0x7f` are not
+decoder errors. Unicode normalization, platform collation, percent decoding,
+case folding, backslash-as-separator, and pathname expansion are forbidden. The
+exact semantic grammar alternatives are:
 
 ```text
 digest-directory = [0-9a-f]{64}
@@ -1195,6 +1300,17 @@ unsafe residue. Symlinks, hard-linked regular files, devices, FIFOs, sockets,
 sparse or over-count directories, unknown names, aliases, duplicate identities,
 wrong owners/modes/mounts, and any grammar-valid entry not admitted by complete
 replay fail before mutation.
+
+An observed raw name that does not fit the published domain is never truncated,
+escaped, replaced, or silently omitted from a successful inventory. Instead, a
+byte at or above `0x80`, more than 255 name bytes, an embedded `/`, or a
+malformed/unterminated raw directory record ends the directory result at step
+`DIRECTORY_ENUMERATED` with the complete validated target-only observation
+prefix and no partial entry, under the exact status/effect and cleanup rules
+below. The literal `.` and `..` records alone are discarded during enumeration.
+A published control-byte or `0x7f` name is then an ordinary ABI-valid but
+semantically unsafe inventory entry because it matches none of the alternatives
+above.
 
 The complete JavaScript error vocabulary and precedence are exactly:
 
@@ -1305,10 +1421,12 @@ fdRules = [held-dirfd-relative-only/v1,exact-role-identity/v1,
   reject-at-fdcwd-opath-root-path/v1]
 metadataRules = [expected-owner-uid-gid/v1,private-mode/v1,
   regular-link-count-one/v1,directory-link-count-minimum-two/v1,
-  no-follow/v1,no-repeated-inode/v1,ascii-byte-order/v1]
+  no-follow/v1,no-repeated-inode/v1,raw-name-bytes-01-7f/v1,
+  ascii-byte-order/v1,statx-required-mask-0x17ff/v1]
 syscallRules = [linux-amd64-direct-allowlist/v1,one-shot-mutation/v1,
   eintr-read-write-only/v1,errno-immediate/v1,close-no-retry/v1,
-  zero-before-syscall/v1]
+  zero-before-syscall/v1,validated-observation-prefix-only/v1,
+  live-cleanup-close-upgrades-effect/v1]
 orderingRules = [intent-before-effect/v1,write-readback-file-sync-rename-parent-sync/v1,
   move-source-sync-destination-sync-reobserve/v1,outcome-last/v1,
   ambiguous-effect-no-retry/v1,fresh-inventory-replan/v1]
@@ -1434,7 +1552,7 @@ non-overlap checks.
 |     64 | `uint32_t`     | `mode`             |
 |     68 | `uint32_t`     | `owner_uid`        |
 |     72 | `uint32_t`     | `owner_gid`        |
-|     76 | `uint32_t`     | `flags`            |
+|     76 | `uint32_t`     | `statx_mask`       |
 |     80 | `uint64_t`     | `filesystem_magic` |
 |     88 | `uint64_t`     | `content_offset`   |
 |     96 | `uint64_t`     | `content_length`   |
@@ -1443,11 +1561,13 @@ non-overlap checks.
 |    368 | `uint64_t`     | `reserved_1`       |
 |    376 | `uint64_t`     | `reserved_2`       |
 
-Unused name bytes, flags, content offsets/lengths, and reserved words are zero.
-Directory inventory never returns content. Regular-file inventory returns one
-observation and places its exact bytes at output offset zero. The C executor
-does not hash, sort, parse JSON, select policy, or infer a predecessor; the JS
-oracle performs those operations over copied buffers.
+Unused name bytes, content offsets/lengths, and reserved words are zero.
+`statx_mask` is zero for `ABSENT`; every other published observation retains
+the kernel-returned value and requires all bits in `0x17ff`. Directory inventory
+never returns content. Regular-file inventory returns one observation and
+places its exact bytes at output offset zero. The C executor does not hash,
+sort, parse JSON, select policy, or infer a predecessor; the JS oracle performs
+those operations over copied buffers.
 
 `struct oxigraph_containment_statefs_result_v1` has alignment 8 and size 64:
 
@@ -1560,7 +1680,12 @@ Observation/output/input/name ranges may not overlap one
 another, the request, or the result. The executor zeroes the complete result and
 every observation slot it will publish before its first filesystem syscall;
 sets `returned_directory_fd=-1` before that syscall; it
-never reports partially initialized caller memory.
+never reports partially initialized caller memory. After each `statx`, it checks
+the returned mask before reading governed metadata and advances
+`observation_count` only after the complete current slot—or, for directory
+entries, the complete step-6 entry group—is publishable. A terminal path exposes
+only the operation-specific prefix frozen above and leaves every incomplete
+slot zero.
 
 `expected_owner_uid` and `expected_owner_gid` are always the exact bounded
 values from the manager-accepted held state-root observation. Every existing
@@ -1664,8 +1789,9 @@ complete inventory is `COMPLETE`. After temporary creation, directory creation,
 rename, or unlink, any missing required write/readback/sync/reobservation step is
 `MUTATION_OBSERVED_NOT_FULLY_SYNCED` when the current mutation is directly
 known and `EFFECT_UNCERTAIN` when the failing syscall's effect itself cannot be
-distinguished. Only the full sequence is `COMPLETE`. Native `REJECTED` pairs only with
-`NO_EFFECT`. `LIMIT_EXCEEDED` pairs with `NO_EFFECT` before the first syscall and
+distinguished. Only the full sequence is `COMPLETE`. Native `REJECTED` pairs
+with `NO_EFFECT`, except for the exact live-descriptor cleanup-close upgrade to
+`EFFECT_UNCERTAIN`. `LIMIT_EXCEEDED` pairs with `NO_EFFECT` before the first syscall and
 `DEFINITE_NO_EFFECT` after read-only enumeration or reading; it never pairs with
 a mutation class. `COMPLETE` executor status pairs only with `COMPLETE` effect;
 `SYSCALL_FAILED`, `FAULT_INJECTED`, and post-mutation
@@ -1673,8 +1799,11 @@ a mutation class. `COMPLETE` executor status pairs only with `COMPLETE` effect;
 boundary. `VERIFICATION_FAILED` covers an exact readback, EOF, metadata, or
 reobservation mismatch after mutation and always retains honest residue; the
 same mismatch before mutation is `REJECTED/NO_EFFECT`. Every other native
-executor status/effect pair is `STATEFS_RESULT`. A verified receipt copies that
-native pair except for exactly two receipt-only branches:
+executor status/effect pair is `STATEFS_RESULT`, except that a pre-mutation
+`REJECTED/NO_EFFECT` whose actually acquired internal descriptor fails its
+one-shot cleanup close becomes the narrow
+`REJECTED/EFFECT_UNCERTAIN` pair. A verified receipt copies that native pair
+except for exactly two receipt-only branches:
 `OBSERVATION_ONLY/DEFINITE_NO_EFFECT` for a null executor result selected by the
 planner, and `REJECTED/DEFINITE_NO_EFFECT` for the ABI-valid complete but
 semantically unsafe inventory branch frozen above. No other receipt
@@ -1736,6 +1865,18 @@ enumerated close completed successfully before injection. Output-capacity exhaus
 `ENOENT` at a mutating step follows the same row as every other errno and never
 selects an already-observed outcome. This partitions every operation, step, and
 numeric errno without an implementation default.
+
+Every pre-mutation `statx` required-mask failure, unrepresentable directory
+record, or successful observed-metadata mismatch governed by the 2026-09-04
+correction follows `REJECTED/NO_EFFECT/REJECTED`, with errno zero, at its owning
+failed step. It retains the exact preceding dense step prefix and only the
+operation-specific publishable observations frozen above. If an internal
+descriptor was actually acquired and its mandatory cleanup close fails, status
+remains `REJECTED`, errno remains zero, effect and outcome become
+`EFFECT_UNCERTAIN` and `FAILED_EFFECT_UNCERTAIN`, and every other field remains
+that same prefix. The verifier permits this pair only at an exact boundary
+where such a descriptor can be live; it rejects the pair at validation or
+failed-open boundaries where liveness is impossible.
 
 For fault selectors, status is `FAULT_INJECTED`, errno is exactly `EIO=5`, and
 outcome again follows `D/M/U`. The exact before/after class arrays below align
@@ -1932,8 +2073,11 @@ best-effort `close` call per remaining descriptor in reverse-open order. These
 failure cleanup calls have no selector, never retry, never add a completed
 operation step, never replace the first reported errno, and never unlink or
 rename. A cleanup-close error upgrades `D` or `M` to `U`; it cannot downgrade
-`U` or produce success. On a successful path, every internal close is an
-enumerated step and no hidden cleanup close remains.
+`U` or produce success. It also upgrades a base `NO_EFFECT` to `U` if and only
+if the descriptor was actually acquired. Liveness begins at the successful
+`openat` return rather than completion of step 5; a failed open or any other
+impossible-live boundary cannot select `U`. On a successful path, every
+internal close is an enumerated step and no hidden cleanup close remains.
 
 `read`/`write` advance only after a positive count. A zero `write` before all
 `input_length` bytes are transferred is
@@ -2002,7 +2146,11 @@ non-lock syscall/fault/verification error with definite no effect has outcome
 `FAILED_DEFINITE_NO_EFFECT`. The replan disposition authorizes only a new
 planner request after complete fresh root inventory, never replay of the old
 request. Mutation-not-fully-synced and effect-uncertain receipts are terminally
-`NO_RETRY` for that intent and feed ADR-0035's unresolved-effect path.
+`NO_RETRY` for that intent and feed ADR-0035's unresolved-effect path. Every
+effect-uncertain receipt has outcome `FAILED_EFFECT_UNCERTAIN`, empty
+`inventories`, and a null successor token/digest, including the narrow native
+`REJECTED/EFFECT_UNCERTAIN` cleanup case; no such receipt grants a successor or
+reusable capability.
 
 ### Intent-before-effect and outcome-last ordering
 
@@ -3089,7 +3237,7 @@ abi = [
     [device_minor,uint64_t,24],[inode,uint64_t,32],[mount_id,uint64_t,40],
     [byte_length,uint64_t,48],[link_count,uint64_t,56],
     [mode,uint32_t,64],[owner_uid,uint32_t,68],[owner_gid,uint32_t,72],
-    [flags,uint32_t,76],[filesystem_magic,uint64_t,80],
+    [statx_mask,uint32_t,76],[filesystem_magic,uint64_t,80],
     [content_offset,uint64_t,88],[content_length,uint64_t,96],
     [name,uint8_t[256],104],[reserved_0,uint64_t,360],
     [reserved_1,uint64_t,368],[reserved_2,uint64_t,376]
@@ -3390,6 +3538,32 @@ status remains not implemented at S0. Production readiness remains exactly
 
 ## Acceptance boundary
 
+The 2026-09-04 R13A correction is accepted only as a one-file amendment to
+this ADR, with Proposed/not-implemented status and every authority,
+physical-fact, readiness, nonclaim, ownership, and publication boundary
+unchanged. Its evaluator-first successors must freeze all of the following
+before corrected candidate or native implementation work resumes:
+
+- unchanged 384-byte/alignment-8 observation layout with offset 76 renamed
+  exactly to `statx_mask` and JavaScript field `statxMask`;
+- negative cases that independently clear `STATX_BASIC_STATS` and
+  `STATX_MNT_ID` from otherwise plausible non-`ABSENT` observations, a positive
+  case with all `0x17ff` bits plus an extra bit, and exact zero-mask `ABSENT`;
+- exact zero-, target-only-, and prior-canonical-slot retention for every
+  mask/raw failure boundary, with no count or bytes from a partial slot;
+- raw-name cases containing `0x01`, `0x1f`, and `0x7f` that cross the ABI and
+  become semantic-unsafe inventory, plus `0x80` and `0xff`, overlength, and
+  malformed records that terminate without publishing a partial entry; and
+- cleanup-close success/failure pairs before step 5 completion, after an
+  internal descriptor has actually been acquired, plus impossible-live
+  controls that reject an overbroad `EFFECT_UNCERTAIN` classification.
+
+The correction itself performs no source/evaluator/native edit, compile,
+filesystem execution, task mutation, qualification, promotion, publication, or
+push. Prior pins are not refreshed in place: each affected successor must use a
+count-checked inverse that reconstructs its exact pre-R13 bytes before adopting
+the corrected identity.
+
 S0 is accepted only when the sole changed path is this ADR; all ten owned
 candidate/evaluator paths remain absent; every export, schema, field order,
 enum, numeric bound, grammar, ABI offset, syscall/flag, step sequence, errno and
@@ -3423,7 +3597,9 @@ The full ADR-0037 S7 integrated boundary requires:
 - evaluator-owned operation plans and independently observed syscall receipts;
 - an exact separately attested header, C source, compiler/recipe, repeated
   byte-identical link-time object, fixed entrypoint, eight-operation request
-  enum, and bounded last-step/failed-step/`errno`/observation result;
+  enum, bounded last-step/failed-step/`errno`/observation result, exact
+  `statx_mask` availability evidence, and operation-specific complete-prefix
+  publication;
 - rejection of root paths, callbacks, unknown operations, unbounded names or
   bytes, descriptor substitution, extra exports, process or cgroup behavior,
   and any production object retaining the test-only fault selector;
@@ -3436,7 +3612,10 @@ The full ADR-0037 S7 integrated boundary requires:
 - exact anchored-empty, temporary-residue, collision, unsafe inventory,
   state-18 close, attempt-limit, and one-through-four reboot controls;
 - hostile path, symlink, hard-link, device, FIFO, sparse directory, rename race,
-  mutable-buffer, Proxy, accessor, and over-count/over-byte rejection;
+  missing required `statx` mask bits, acceptance and retention of additional
+  mask bits, raw control/DEL/high-bit names, partial observation publication,
+  pre-step-5 cleanup-close liveness, mutable-buffer, Proxy, accessor, and
+  over-count/over-byte rejection;
 - unchanged ADR-0035 bytes, requirements digests, brands, authority and
   nonclaims, plus unchanged registries and production readiness; and
 - focused and complete explicit non-G1.7 suites on current Node and Node 20,
