@@ -49,11 +49,11 @@ mapping.
 | [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)             | Proposed    | Consume ADR-0034's frozen bytes and own current-host qualification, activation binding, and path-executed runtime closure only                      |
 | [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md) | Proposed    | Add a byte-distinct durable `COMMIT` successor with at-most-once execution and descriptor-bound output release before G2.2                          |
 | [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](0041-g17-private-co-located-build-issuer.md)                         | Proposed    | Add version-distinct private build-owner v3 and product-owner v4 behind the qualified shared containment stack without granting G1.7 authority      |
-| [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)           | Proposed    | Keep RocksDB as the sole production-intended persistent backend and require semantic, operational, migration, and workload evidence before adoption |
+| [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)           | Accepted    | Keep RocksDB as the sole production-intended persistent backend; TurboKV remains historical evidence and is excluded from active work               |
 
-The index contains 42 decisions. ADR-0018 and ADR-0020 through ADR-0042 are
-living implementation decisions for
-outstanding work. Their Proposed status is deliberate: the corresponding
+The index contains 42 decisions. ADR-0018 and ADR-0020 through ADR-0041 are
+living implementation decisions for outstanding work. Their Proposed status is
+deliberate: the corresponding
 programme tasks and promotion evidence are not implemented merely because the
 architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
 and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
@@ -86,11 +86,12 @@ control, qualification, and promotion remains separately gated.
 records the evidence-backed decision to retain RocksDB as the only
 production-intended persistent `Store` backend. TurboKV remains rejected for
 production adoption at audited post-release commit `5706b6ba` (whose manifest
-still declares 0.6.0). Any alternative-engine work must start as a separate
-non-default semantic falsification experiment;
-it grants no adapter, migration, benchmark, qualification, or production
-claim. ADR-0042 remains Proposed pending explicit programme-decider
-confirmation.
+still declares 0.6.0). The completed comparison remains decision history, but
+TurboKV is excluded from implementation, import, comparison, benchmarking, and
+every active programme task. Any future alternative-engine programme requires
+new explicit user authorization and a new ADR; this decision grants no adapter,
+migration, benchmark, qualification, or production claim. ADR-0042 was
+Accepted on 2026-09-05 following explicit programme-decider confirmation.
 
 Commit
 `54a056e0` closes the reviewed, unregistered native-worker slice after 112/112

@@ -322,11 +322,12 @@ dependency-eligible only; it remains pending at zero progress and unstarted,
 and every later source slice keeps its own predecessor and authority gates.
 [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the separate evidence-backed decision to keep RocksDB as the only
-production-intended persistent `Store` backend. TurboKV and other alternatives
-may be evaluated only as non-default experiments until they pass the unchanged
-semantic, operational, migration, and workload gates; no replacement adapter
-is implemented or supported. Passing those gates may supply evidence to a
-later Accepted ADR; it does not authorize adoption automatically.
+production-intended persistent `Store` backend. It was Accepted on 2026-09-05:
+TurboKV is retained only as historical research and is excluded from active
+implementation, import, comparison, and benchmarking. No replacement adapter
+is implemented or supported. A future alternative-backend programme requires
+new explicit user authorization and a new ADR; passing technical gates would
+still not authorize adoption automatically.
 The pre-existing replacement-adapter conformance task is cancelled because no
 candidate is selected; any future candidate requires a new explicit task.
 The exact control-authorization artifact is
@@ -696,9 +697,10 @@ The ADRs explain the principal boundaries:
   authority-null private build-owner-v3/product-owner-v4 plan without
   reinterpreting predecessor evidence;
   [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
-  retains RocksDB and gates any alternative behind a separate non-default
-  falsification experiment. It adds no TurboKV dependency, storage variant,
-  migration, or production claim. ADR-0036's source-
+  retains RocksDB. TurboKV remains historical decision evidence and has no
+  active implementation, comparison, or benchmark path. The decision adds no
+  TurboKV dependency, storage variant, migration, or production claim.
+  ADR-0036's source-
   independent evaluator currently freezes 197/330 semantic
   negatives. Integrated B5 commit `61122498` closes `scopeJoins` and
   `nestedRecursion`; B6 commit `2f9e51ed` raises `commitMutations` to 67/200

@@ -1,12 +1,13 @@
 # ADR-0042: Retain RocksDB and gate replacement-backend experiments
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-03
-- Updated: 2026-09-04
+- Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
-- Implementation status: decision and evidence boundary only. RocksDB remains
-  the existing persistent `Store` backend; no replacement adapter, migration,
-  comparative benchmark, or production qualification is implemented
+- Implementation status: the RocksDB-retention decision is accepted. Prefix
+  scan correctness and complete owned-column-family compaction are implemented;
+  no replacement adapter, migration, alternative-backend benchmark, or
+  production qualification is implemented
 - Programme task: `task-1788074788516-p5tvdm`
   (`REPLACEMENT-BACKEND-DECISION`)
 - Research refresh: `task-1788537072284-hrdf2s` (complete)
@@ -39,7 +40,7 @@ The opt-in `rocksdb-pkg-config` feature instead accepts a system RocksDB at
 version 9.10.0 or newer. That path is a separate build identity, not evidence
 equivalent to the vendored pin.
 
-The programme separately assessed TurboKV at upstream commit
+The programme historically assessed TurboKV at upstream commit
 [`5706b6ba02d86ff40d950276cfc4cf17bcd3a871`](https://github.com/kingroryg/turbokv/commit/5706b6ba02d86ff40d950276cfc4cf17bcd3a871),
 whose Cargo manifest declares version 0.6.0. It is not the published `v0.6.0`
 release identity: that tag resolves to
@@ -55,7 +56,8 @@ evidence. Its public database operations are Tokio-based and asynchronous,
 whereas Oxigraph's product `Store` API is synchronous; that runtime boundary is
 unresolved product work, not an implementation detail an adapter may hide.
 
-The same recheck found RocksDB `v11.8.1` as the latest upstream release. Its
+The same 2026-09-04 recheck found RocksDB `v11.8.1` as the latest upstream
+release at that time. Its
 release notes are dated 2026-07-28 and GitHub published the release on
 2026-08-07. That identity is a separately qualified candidate, not an
 authorization to float the vendored dependency or replace the exact
@@ -74,8 +76,12 @@ built-in `Store`. Do not add TurboKV to the workspace, dependency graph,
 default feature set, `StorageKind`, CLI, language bindings, packaging, or
 migration surface on the current evidence.
 
-This is an evidence-backed defer/reject decision, not a claim that RocksDB is
-permanently irreplaceable. It has five consequences for alternative engines:
+This is an evidence-backed rejection for this programme, not a claim that
+RocksDB is permanently irreplaceable. TurboKV is historical evidence only: it
+must not be implemented, imported, benchmarked, or used as design input by any
+active task. A future alternative-backend programme would require new explicit
+user authorization and a new ADR. The historical assessment established five
+constraints that such a separately authorized programme would inherit:
 
 1. An experiment must live in a dedicated non-default experimental crate or a
    test-only adapter. Its design must name the applicable public
@@ -115,10 +121,11 @@ permanently irreplaceable. It has five consequences for alternative engines:
 | Format and migration          | Versioned physical layout, source-preserving migration, old/new binary behavior, rollback, and the ADR-0028 shadow-upgrade gate                                                        |
 | Workload evidence             | Matched RDF query/update/bulk/reopen workloads, raw repetitions, tail latency, CPU, memory, disk, write amplification, recovery time, and pre-registered stop criteria                 |
 
-### Bounded falsification experiment
+### Historical falsification boundary (inactive)
 
-The existing assessment defines two terminating experimental slices. Neither
-slice is authorized or implemented by this ADR.
+The completed assessment defined two terminating experimental slices. They are
+retained here to preserve the decision history, but neither is authorized,
+scheduled, or implemented by this ADR or the current programme.
 
 Before it may claim semantic acceptance, the semantic slice must freeze an
 interface/runtime/package receipt covering the applicable public traits, the
@@ -137,7 +144,8 @@ must include the exact current RocksDB build and matched durability. Zero
 correctness or recovery regressions is mandatory; performance can inform a
 later adoption decision but cannot waive a missing capability.
 
-Re-evaluation is useful when at least one of these facts changes materially:
+Outside this programme, re-evaluation would require explicit authorization and
+at least one materially changed fact:
 
 - TurboKV or another candidate exposes the missing transaction, snapshot,
   maintenance, and recovery contracts;
@@ -155,23 +163,25 @@ must retain its own evaluator-first, review, and evidence boundary:
 
 | Task | Scope | Ordering boundary |
 | --- | --- | --- |
-| `task-1788553382377-xo1dkf` | Correct binary prefix upper bounds, including trailing and all-`0xff` prefixes | Critical correctness gate; precedes prefix-Bloom or upgrade claims |
-| `task-1788553387083-5fwo96` | Include `graphs_cf` in manual compaction and preserve explicit empty-graph topology | Correctness/maintenance gate |
+| `task-1788553382377-xo1dkf` | Correct binary prefix upper bounds, including trailing and all-`0xff` prefixes | Complete in `95193a5d`; precedes prefix-Bloom or upgrade claims |
+| `task-1788553387083-5fwo96` | Include `graphs_cf` in manual compaction and preserve explicit empty-graph topology | Complete in `6719de52` |
 | `task-1788553391542-of8ja8` | Reconcile the public read-only/concurrent-writer documentation and frozen-view regression | Contract gate; no silent multi-process or live-refresh widening |
 | `task-1788553395816-lrussp` | Measure opt-in SST prefix Bloom behavior for RDF indexes | Starts only after prefix-bound correctness; default remains unchanged without evidence |
-| `task-1788553400390-ktdb3p` | Qualify exact RocksDB `v11.8.1` against the exact `v11.1.2` baseline | Starts after the three correctness/contract gates; no floating “latest” comparator |
-| `task-1788553404762-7by6gv` | Add structured maintenance evidence for compaction, health, stalls, and amplification | Diagnostic until ADR-0022 qualification and human promotion |
+| `task-1788560557088-tolwgj` | Resolve the then-current stable RocksDB release to an exact tag and commit, then qualify it against exact `v11.1.2` | Starts after the correctness/contract gates; the candidate is frozen for the qualification epoch |
+| `task-1788560306922-rych8a` | Add RocksDB-native structured maintenance evidence for compaction, health, stalls, and amplification | Diagnostic until ADR-0022 qualification and human promotion |
 
 The dependency graph and evidence boundary are stored at
-`task-plans/retained-rocksdb-improvement-dag-v1-2026-09-04`. These tasks do
-not authorize a TurboKV product adapter. A TurboKV experiment still requires
-the separate trigger and terminating boundary defined above.
+`task-plans/retained-rocksdb-improvement-dag-v3-2026-09-05`. Superseded task
+records remain in Ruflo history: `task-1788553400390-ktdb3p` was tied to the
+time-sensitive `v11.8.1` label, and `task-1788553404762-7by6gv` carried
+TurboKV-derived active wording. Neither is executable. No active task
+authorizes a TurboKV adapter, comparison, or benchmark.
 
 ## Consequences
 
-- The current persistent `Store` and its operational behavior remain stable;
-  this ADR changes no Rust source, dependency, feature, storage format, or
-  runtime path.
+- The persistent `Store` remains RocksDB-backed. Follow-up correctness commits
+  `95193a5d` and `6719de52` change bounded scan and maintenance behavior without
+  changing dependencies, features, or the storage format.
 - The programme can evaluate pure-Rust engines without confusing a trait-level
   portability test with backend support.
 - RocksDB's C++ build, bindgen, and native dependency cost remains. That cost
@@ -214,6 +224,8 @@ the separate trigger and terminating boundary defined above.
 - [`lib/oxigraph` feature boundary](../../lib/oxigraph/Cargo.toml)
 - [Built-in storage dispatch](../../lib/oxigraph/src/storage/mod.rs)
 - [RocksDB implementation](../../lib/oxigraph/src/storage/rocksdb.rs)
+- [Prefix-bound regression](../../lib/oxigraph/src/storage/rocksdb_wrapper.rs)
+- [Graph-column-family compaction regression](../../lib/oxigraph/tests/rocksdb_graph_compaction.rs)
 - [`oxrocksdb-sys` feature boundary](../../oxrocksdb-sys/Cargo.toml)
 - [`oxrocksdb-sys` build selection](../../oxrocksdb-sys/build.rs)
 - [Transactional write traits](../../lib/oxigraph/src/store/transactional.rs)
@@ -226,16 +238,16 @@ the separate trigger and terminating boundary defined above.
 
 ## Acceptance boundary
 
-This ADR is **Proposed**. It records the programme's current evidence-backed
-rejection of a TurboKV production replacement and the safe boundary for any
-future experiment. It adds no adapter or product capability. The research task
-`task-1788537072284-hrdf2s` and its exact Gist publication receipt are
-complete; the follow-up tasks remain independently gated. Repository documents,
-the ADR graph, and the task ledger must continue to agree on that defer/reject
-result.
+This ADR is **Accepted** following explicit programme-decider confirmation on
+2026-09-05: retain RocksDB, do not pursue TurboKV, and preserve the completed
+research as history. It adds no replacement adapter or migration capability.
+The research task `task-1788537072284-hrdf2s` and its exact Gist publication
+receipt remain historical evidence; the RocksDB follow-up tasks retain their
+independent gates. Repository documents, the ADR graph, and the Ruflo task
+ledger must continue to agree on this decision.
 
-Moving this ADR to Accepted requires explicit programme-decider confirmation.
-Implementing a replacement requires a later accepted ADR plus unchanged
-semantic conformance, independent review, operational recovery evidence, and
-the normal human promotion boundary. No task completion, Gist, harness score,
-benchmark, or upstream release supplies that authority by itself.
+Implementing or benchmarking any replacement requires new explicit user
+authorization and a later accepted ADR, plus unchanged semantic conformance,
+independent review, operational recovery evidence, and the normal human
+promotion boundary. No task completion, Gist, harness score, benchmark, or
+upstream release supplies that authority by itself.
