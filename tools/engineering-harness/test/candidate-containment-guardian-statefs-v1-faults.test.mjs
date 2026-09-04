@@ -152,7 +152,68 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  const correctedPreR9Entry = [
+    "function reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {",
+    "  source = reconstructPreR10PrivateEvaluatorSource(",
+    "    source,",
+    '    \'\\n\\ntest("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {\\n\',',
+    '    \'\\n\\ntest("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {\\n\',',
+    "  );",
+  ].join("\n");
+  const acceptedPreR9Entry =
+    "function reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {";
+  const correctedFaultAssertion = [
+    "  assertFaultObservations(",
+    "    result.observations,",
+    "    expectedFaultObservations(profile, faultCase, fixture),",
+    "    fixture.plan.request,",
+    "  );",
+  ].join("\n");
+  const acceptedFaultAssertion = [
+    "  assert.deepEqual(",
+    "    result.observations,",
+    "    expectedFaultObservations(profile, faultCase, fixture),",
+    "  );",
+  ].join("\n");
+  let reconstructed = replaceExactly(
+    source,
+    correctedPreR9Entry,
+    acceptedPreR9Entry,
+    "R10 R9 inverse-chain entry",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    correctedFaultAssertion,
+    acceptedFaultAssertion,
+    "R10 fault-observation assertion inverse",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction rawDirectoryObservationNameKey(observation) {\n",
+    "\n\nfunction assertFaultNative(result, faultCase, fixture, profile) {\n",
+    "R10 directory observation helpers inverse",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreR10PrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "\n\nfunction reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {\n",
+    "R10 inverse helper",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    proofStart,
+    proofEnd,
+    "R10 proof inverse",
+  );
+}
+
 function reconstructPreR9PrivateEvaluatorSource(source, proofStart, proofEnd) {
+  source = reconstructPreR10PrivateEvaluatorSource(
+    source,
+    '\n\ntest("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {\n',
+    '\n\ntest("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {\n',
+  );
   const correctedLinkTemplate = [
     "const BRIDGE_LINK_TEMPLATE = array(",
     '  "/usr/bin/cc",',
@@ -3293,6 +3354,45 @@ function assertCompleteNative(result, variant, { bytesConsumed = 0 } = {}) {
   assert.equal(result.bytesConsumed, bytesConsumed);
 }
 
+function rawDirectoryObservationNameKey(observation) {
+  assert.equal(observation !== null && typeof observation === "object", true);
+  assert.equal(typeof observation.name, "string");
+  const nameBytes = Buffer.from(observation.name, "ascii");
+  assert.equal(nameBytes.length >= 1 && nameBytes.length <= 255, true);
+  assert.equal(nameBytes.toString("ascii"), observation.name);
+  return nameBytes.toString("hex");
+}
+
+function assertFaultObservations(actual, expected, request) {
+  const directoryInventory =
+    request.operation === "INVENTORY" && request.inventoryKind === "DIRECTORY";
+  if (!directoryInventory) {
+    assert.deepEqual(actual, expected);
+    return;
+  }
+
+  assert.equal(actual.length, expected.length);
+  if (actual.length === 0) return;
+  assert.deepEqual(actual[0], expected[0]);
+
+  const expectedByRawName = new Map();
+  for (const observation of expected.slice(1)) {
+    const rawName = rawDirectoryObservationNameKey(observation);
+    assert.equal(expectedByRawName.has(rawName), false);
+    expectedByRawName.set(rawName, observation);
+  }
+
+  const actualRawNames = new Set();
+  for (const observation of actual.slice(1)) {
+    const rawName = rawDirectoryObservationNameKey(observation);
+    assert.equal(actualRawNames.has(rawName), false);
+    assert.equal(expectedByRawName.has(rawName), true);
+    assert.deepEqual(observation, expectedByRawName.get(rawName));
+    actualRawNames.add(rawName);
+  }
+  assert.equal(actualRawNames.size, expectedByRawName.size);
+}
+
 function assertFaultNative(result, faultCase, fixture, profile) {
   const expected = expectedFaultResult(faultCase);
   assert.equal(result.requestSha256, fixture.plan.request.requestSha256);
@@ -3333,9 +3433,10 @@ function assertFaultNative(result, faultCase, fixture, profile) {
       : result.returnedDirectoryFd === -1,
     true,
   );
-  assert.deepEqual(
+  assertFaultObservations(
     result.observations,
     expectedFaultObservations(profile, faultCase, fixture),
+    fixture.plan.request,
   );
 }
 
@@ -4945,6 +5046,138 @@ test("pins ADR, S2, S3, package, lock, and immutable StateFS source identities",
     assert.equal(sha256(bytes), pin.sha256, `${pin.label} sha256`);
     assert.equal(gitBlobSha1(bytes), pin.blob, `${pin.label} git blob`);
   }
+});
+
+test("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {
+  const directoryRequest = record(
+    ["operation", "INVENTORY"],
+    ["inventoryKind", "DIRECTORY"],
+  );
+  const regularRequest = record(
+    ["operation", "INVENTORY"],
+    ["inventoryKind", "REGULAR_FILE"],
+  );
+  const target = record(
+    ["kind", "DIRECTORY"],
+    ["role", "STATE_ROOT"],
+    ["name", null],
+    ["inode", "100"],
+  );
+  const children = array(
+    record(["kind", "DIRECTORY"], ["role", "NONE"], ["name", "zeta"], ["inode", "103"]),
+    record(["kind", "DIRECTORY"], ["role", "NONE"], ["name", "alpha"], ["inode", "101"]),
+    record(["kind", "REGULAR"], ["role", "NONE"], ["name", "middle"], ["inode", "102"]),
+  );
+  const expected = array(target, ...children);
+  const permutations = (values) =>
+    values.length === 0
+      ? [[]]
+      : values.flatMap((value, index) =>
+          permutations([...values.slice(0, index), ...values.slice(index + 1)]).map(
+            (suffix) => [value, ...suffix],
+          ),
+        );
+  const childPermutations = permutations([...children]);
+  assert.equal(childPermutations.length, 6);
+  for (const permutation of childPermutations) {
+    assert.doesNotThrow(() =>
+      assertFaultObservations(array(target, ...permutation), expected, directoryRequest),
+    );
+  }
+  assert.doesNotThrow(() =>
+    assertFaultObservations(array(), array(), directoryRequest),
+  );
+  assert.doesNotThrow(() =>
+    assertFaultObservations(array(target), array(target), directoryRequest),
+  );
+
+  const extra = record(
+    ["kind", "DIRECTORY"],
+    ["role", "NONE"],
+    ["name", "extra"],
+    ["inode", "104"],
+  );
+  const mutated = record(
+    ...Object.entries(children[1]).map(([key, value]) => [
+      key,
+      key === "inode" ? "999" : value,
+    ]),
+  );
+  const renamed = record(
+    ...Object.entries(children[2]).map(([key, value]) => [
+      key,
+      key === "name" ? "renamed" : value,
+    ]),
+  );
+  const changedTarget = record(
+    ...Object.entries(target).map(([key, value]) => [
+      key,
+      key === "inode" ? "999" : value,
+    ]),
+  );
+  const rejected = [
+    array(children[0], target, children[1], children[2]),
+    array(target, children[0], children[1]),
+    array(target, ...children, extra),
+    array(target, children[0], children[1], children[1]),
+    array(target, children[0], mutated, children[2]),
+    array(target, children[0], children[1], renamed),
+    array(changedTarget, ...children),
+  ];
+  for (const observations of rejected) {
+    assert.throws(() =>
+      assertFaultObservations(observations, expected, directoryRequest),
+    );
+  }
+  assert.throws(() =>
+    assertFaultObservations(
+      array(target, children[1], children[0], children[2]),
+      expected,
+      regularRequest,
+    ),
+  );
+});
+
+test("R10 directory-inventory fault oracle inversely reconstructs the exact R9 evaluator", async () => {
+  const proofStart =
+    '\n\ntest("R10 directory-inventory fault oracle accepts every child permutation and rejects set mutations", () => {\n';
+  const proofEnd =
+    '\n\ntest("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {\n';
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR10PrivateEvaluatorSource(
+    currentSource,
+    proofStart,
+    proofEnd,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 215032);
+  assert.equal(countExact(reconstructedSource, "\n"), 6504);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "c8b2b5f155c5b2fcd479de7c5d7bf7f29c42be3265729514dabd77e765b1519a",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "4ca4ecda35fcc3b70f10178c53c248982a06ce0f",
+  );
+  assert.equal(
+    countExact(reconstructedSource, "function assertFaultObservations("),
+    0,
+  );
+  assert.equal(
+    countExact(
+      reconstructedSource,
+      [
+        "  assert.deepEqual(",
+        "    result.observations,",
+        "    expectedFaultObservations(profile, faultCase, fixture),",
+        "  );",
+      ].join("\n"),
+    ),
+    1,
+  );
 });
 
 test("R9 bridge linker bootstrap rejects noncanonical prefixes and ordering", async () => {
