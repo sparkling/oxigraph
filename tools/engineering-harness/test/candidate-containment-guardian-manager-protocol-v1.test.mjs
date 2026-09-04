@@ -7136,7 +7136,7 @@ function preparePersistOperation(label) {
 }
 
 candidateTest(
-  "directory releases bind the exact nonroot DFS top before advancing the handle stack",
+  "StateFS rejects a non-top release without consuming the token before an exact top release",
   () => {
     let { state, token } = enterInventory("release-stack-binding");
     ({ state, token } = acceptDirectoryInventory({
@@ -7172,22 +7172,14 @@ candidateTest(
     }));
     assert.equal(state.activeDirectoryHandleCount, 3);
 
-    const nonTopPlan = statefsReleasePlan({
-      state,
-      token,
-      role: "LIFETIMES",
-    });
-    expectCode(() => {
-      const nonTopInput = makeManagerPlanInput(state, nonTopPlan);
-      manager.reduceCandidateContainmentGuardianManagerProtocolV1(
-        state,
-        nonTopInput,
-      );
-    }, "MANAGER_BINDING");
-    assert.equal(
-      statefs.assertCandidateContainmentGuardianStatefsPlanV1(nonTopPlan),
-      nonTopPlan.ownerContext,
-      "manager rejects non-top release before consuming the StateFS plan",
+    expectCode(
+      () =>
+        statefsReleasePlan({
+          state,
+          token,
+          role: "LIFETIMES",
+        }),
+      "STATEFS_BINDING",
     );
 
     const topPlan = statefsReleasePlan({
@@ -7198,7 +7190,7 @@ candidateTest(
     const topOperation = acceptPlan(
       state,
       topPlan,
-      "release-stack-binding exact top",
+      "release-stack-binding exact top after rejected non-top release",
     );
     assert.equal(
       topOperation.state.permittedStatefsOperation,
@@ -7304,33 +7296,50 @@ candidateTest(
 );
 
 candidateTest(
-  "T07 accepts an exact empty-root inventory as complete with only the retained root handle",
+  "StateFS rejects an empty STATE_ROOT before manager consumption, then a valid six-root operation advances",
   () => {
-    const { state, token } = enterInventory("empty-root-traversal");
-    const plan = statefsInventoryPlan({
-      state,
-      token,
+    const invalid = enterInventory("empty-root-rejected");
+    const invalidPlan = statefsInventoryPlan({
+      state: invalid.state,
+      token: invalid.token,
       role: "STATE_ROOT",
       parentRole: "STATE_ROOT",
     });
-    const operation = acceptPlan(state, plan, "T04 empty root plan");
-    const receipt = dispatchStatefsRequest(
-      plan,
-      directoryInventoryResult(plan.request, {
+    const rejectedReceipt = dispatchStatefsRequest(
+      invalidPlan,
+      directoryInventoryResult(invalidPlan.request, {
         role: "STATE_ROOT",
         inode: "100",
         entries: array(),
       }),
     );
-    assert.equal(receipt.outcome, "INVENTORY_OBSERVED");
-    const replay = acceptReceipt(operation.state, receipt, "T07 empty root");
-    assert.equal(replay.state.status, "REPLAY_REQUIRED");
-    assert.equal(replay.state.inventoryRequestCount, 1);
-    assert.equal(replay.state.inventoryComplete, true);
-    assert.equal(replay.state.activeDirectoryHandleCount, 1);
+    assert.equal(rejectedReceipt.outcome, "REJECTED");
+    assert.equal(rejectedReceipt.retryDisposition, "NO_RETRY");
+    assert.equal(rejectedReceipt.inventorySetSha256, null);
+    assert.equal(rejectedReceipt.inventorySet, null);
     assert.equal(
-      replay.state.inventorySetSha256,
-      receipt.inventorySet.inventorySetSha256,
+      statefs.assertCandidateContainmentGuardianStatefsPlanV1(invalidPlan),
+      invalidPlan.ownerContext,
+      "StateFS rejection never crosses or consumes the manager plan boundary",
+    );
+
+    const valid = enterInventory("valid-root-after-empty-rejection");
+    const traversal = acceptDirectoryInventory({
+      state: valid.state,
+      token: valid.token,
+      role: "STATE_ROOT",
+      parentRole: "STATE_ROOT",
+      inode: "100",
+      entries: ROOT_CHILDREN,
+      label: "valid six-root inventory",
+    });
+    assert.equal(traversal.state.status, "INVENTORY_REQUIRED");
+    assert.equal(traversal.state.inventoryRequestCount, 1);
+    assert.equal(traversal.state.inventoryComplete, false);
+    assert.equal(traversal.state.activeDirectoryHandleCount, 1);
+    assert.equal(
+      traversal.state.inventorySetSha256,
+      traversal.token.inventorySetSha256,
     );
   },
 );
