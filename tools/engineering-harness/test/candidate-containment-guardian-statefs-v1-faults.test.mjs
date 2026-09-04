@@ -4075,7 +4075,7 @@ function expectedFaultObservations(profile, faultCase, fixture) {
     ).map((observation) =>
       record(
         ...Object.entries(observation).filter(([key]) => key !== "contentLength"),
-        ["contentLength", request.inputByteLength],
+        ["contentLength", 0],
       ),
     );
   }
@@ -4551,6 +4551,73 @@ test("pins ADR, S2, S3, package, lock, and immutable StateFS source identities",
     assert.equal(sha256(bytes), pin.sha256, `${pin.label} sha256`);
     assert.equal(gitBlobSha1(bytes), pin.blob, `${pin.label} git blob`);
   }
+});
+
+test("R7 persistence observation correction inversely reconstructs accepted R6 private evaluator", async () => {
+  const correctedFaultExpectation = [
+    "        [",
+    '"contentLength"',
+    ", 0],",
+  ].join("");
+  const acceptedFaultExpectation = [
+    "        [",
+    '"contentLength"',
+    ", request.inputByteLength],",
+  ].join("");
+  const correctedSuccessExpectation = [
+    "    assert.equal(persist.observations[0].",
+    "contentLength, 0);",
+    "\n",
+    "    assert.equal(persist.outputBytes, null);",
+  ].join("");
+  const acceptedSuccessExpectation = [
+    "    assert.equal(persist.observations[0].",
+    "contentLength, input.length);",
+  ].join("");
+  let source = await readFile(EVALUATOR_PATH, "utf8");
+  const faultStart = [
+    "  if (request.operation === ",
+    '"PERSIST_NOREPLACE"',
+    " && completed.includes(21)) {",
+  ].join("");
+  const faultEnd = [
+    "\n  if (request.operation === ",
+    '"MKDIR_SYNC"',
+    " && completed.includes(21)) {",
+  ].join("");
+  assert.equal(countExact(source, faultStart), 1);
+  const faultStartIndex = source.indexOf(faultStart);
+  const faultEndIndex = source.indexOf(faultEnd, faultStartIndex);
+  assert.equal(faultEndIndex > faultStartIndex, true);
+  const correctedFaultBlock = source.slice(faultStartIndex, faultEndIndex);
+  assert.equal(countExact(correctedFaultBlock, correctedFaultExpectation), 1);
+  const acceptedFaultBlock = correctedFaultBlock.replace(
+    correctedFaultExpectation,
+    acceptedFaultExpectation,
+  );
+  source = `${source.slice(0, faultStartIndex)}${acceptedFaultBlock}${source.slice(faultEndIndex)}`;
+  source = replaceExactly(
+    source,
+    correctedSuccessExpectation,
+    acceptedSuccessExpectation,
+    "R7 success observation inverse",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest("R7 persistence observation correction inversely reconstructs accepted R6 private evaluator", async () => {\n',
+    '\n\ntest("count-checked inverses reconstruct both originally accepted S3 evaluators", async () => {\n',
+    "R7 correction inverse",
+  );
+  const bytes = Buffer.from(source, "utf8");
+  assert.equal(bytes.length, 193631);
+  assert.equal(countExact(source, "\n"), 5860);
+  assert.equal(
+    sha256(bytes),
+    "32b84acb2423f47482560a5c04d497bdc2fc5be659bbdffc63a0037c857a21a5",
+  );
+  assert.equal(gitBlobSha1(bytes), "d45ba9249c83d8aff4ccefa12cf9a631ced5107d");
+  assert.equal(countExact(source, correctedSuccessExpectation), 0);
+  assert.equal(countExact(source, acceptedSuccessExpectation), 1);
 });
 
 test("count-checked inverses reconstruct both originally accepted S3 evaluators", async () => {
@@ -5271,7 +5338,8 @@ candidateTest("persist and mkdir exercise immutable bytes, no-replace collisions
     assertCompleteNative(persist, "PERSIST_NOREPLACE", { bytesConsumed: input.length });
     assert.equal(persist.observations.length, 1);
     assert.equal(persist.observations[0].name, finalName);
-    assert.equal(persist.observations[0].contentLength, input.length);
+    assert.equal(persist.observations[0].contentLength, 0);
+    assert.equal(persist.outputBytes, null);
     assertDirectoryAllowlist(
       profile,
       generation,
