@@ -726,12 +726,12 @@ const CONTRACT_BYTE_PINS = array(
         import.meta.url,
       ),
     ],
-    ["bytes", 216_620],
+    ["bytes", 216_688],
     [
       "sha256",
-      "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
+      "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
     ],
-    ["gitBlob", "284231e5441ee45b8fdd8f7cef0b0434edf49743"],
+    ["gitBlob", "49b0467887646ee05126a593d28e78bebff6f78f"],
   ),
   record(
     ["name", "recovery evaluator fixture"],
@@ -771,7 +771,7 @@ const CONTRACT_BYTE_PINS = array(
   ),
 );
 
-const STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY = (() => {
+const STATEFS_R14B_P1_ADR_REPIN_IDENTITY = (() => {
   const countExact = (source, needle) => {
     assert.equal(typeof source, "string");
     assert.equal(typeof needle, "string");
@@ -807,6 +807,124 @@ const STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY = (() => {
   };
 
   const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_R14B_P1_ADR_REPIN_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY = (() => {\n",
+    "R14B P1 identity block",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `    ["bytes", 216_688],
+    [
+      "sha256",
+      "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
+    ],
+    ["gitBlob", "49b0467887646ee05126a593d28e78bebff6f78f"],`,
+    `    ["bytes", 216_620],
+    [
+      "sha256",
+      "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
+    ],
+    ["gitBlob", "284231e5441ee45b8fdd8f7cef0b0434edf49743"],`,
+    "R14B P1 ADR pin inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R14B_P1_ADR_REPIN_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "R13B3 inverse input restoration",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest("R14B P1 ADR re-pin inversely reconstructs the exact R13B3 evaluator", () => {\n',
+    '\n\ntest(\n  "R13B3 syscall liveness RED inversely reconstructs the exact R13B2 evaluator",\n',
+    "R14B P1 inverse proof",
+  );
+  const predecessorBytes = Buffer.from(source, "utf8");
+  assert.equal(predecessorBytes.length, 381_815);
+  assert.equal(countExact(source, "\n"), 11_171);
+  assert.equal(
+    byteSha256(predecessorBytes),
+    "8362816b1008daa63500f0a506c1e19a2be79fffff441b97db6d3c7b8698c382",
+  );
+  assert.equal(
+    gitBlobSha1(predecessorBytes),
+    "ef1d5692a651aa75467049dc64040b69ebc73e97",
+  );
+  assert.equal(countExact(source, "\ntest("), 29);
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-r14b-p1-adr-repin-inverse-receipt/v1",
+        predecessorBytes: predecessorBytes.length,
+        predecessorLines: countExact(source, "\n"),
+        predecessorSha256: byteSha256(predecessorBytes),
+        predecessorGitBlob: gitBlobSha1(predecessorBytes),
+        predecessorTestCount: 29,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    predecessorEvaluatorSource: source,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R14B_P1_ADR_REPIN_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
   let source = currentEvaluatorBytes.toString("utf8");
   assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
@@ -11122,6 +11240,22 @@ test(
     });
   },
 );
+
+test("R14B P1 ADR re-pin inversely reconstructs the exact R13B3 evaluator", () => {
+  const receipt = STATEFS_R14B_P1_ADR_REPIN_IDENTITY.assertInverseReceipt(
+    STATEFS_R14B_P1_ADR_REPIN_IDENTITY.inverseReceipt,
+  );
+  assert.deepEqual(receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-statefs-v1-r14b-p1-adr-repin-inverse-receipt/v1",
+    predecessorBytes: 381_815,
+    predecessorLines: 11_171,
+    predecessorSha256:
+      "8362816b1008daa63500f0a506c1e19a2be79fffff441b97db6d3c7b8698c382",
+    predecessorGitBlob: "ef1d5692a651aa75467049dc64040b69ebc73e97",
+    predecessorTestCount: 29,
+  });
+});
 
 test(
   "R13B3 syscall liveness RED inversely reconstructs the exact R13B2 evaluator",
