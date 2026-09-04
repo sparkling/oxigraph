@@ -171,7 +171,7 @@ must retain its own evaluator-first, review, and evidence boundary:
 | `task-1788560306922-rych8a` | Add RocksDB-native structured maintenance evidence for compaction, health, stalls, and amplification | Diagnostic until ADR-0022 qualification and human promotion |
 
 The dependency graph and evidence boundary are stored at
-`task-plans/retained-rocksdb-improvement-dag-v3-2026-09-05`. Superseded task
+`task-plans/retained-rocksdb-improvement-dag-v5-2026-09-05`. Superseded task
 records remain in Ruflo history: `task-1788553400390-ktdb3p` was tied to the
 time-sensitive `v11.8.1` label, and `task-1788553404762-7by6gv` carried
 TurboKV-derived active wording. Neither is executable. No active task
