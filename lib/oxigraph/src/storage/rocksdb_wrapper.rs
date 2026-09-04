@@ -1097,15 +1097,13 @@ impl<'a> Reader<'a> {
         // We generate the upper bound
         let upper_bound = {
             let mut bound = prefix.to_vec();
-            let mut found = false;
-            for c in bound.iter_mut().rev() {
-                if *c < u8::MAX {
-                    *c += 1;
-                    found = true;
-                    break;
-                }
+            if let Some(index) = bound.iter().rposition(|&c| c < u8::MAX) {
+                bound.truncate(index + 1);
+                bound[index] += 1;
+                Some(bound)
+            } else {
+                None
             }
-            found.then_some(bound)
         };
 
         unsafe {
