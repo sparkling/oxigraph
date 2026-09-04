@@ -39,8 +39,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    204827,
-    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
+    216620,
+    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -160,7 +160,7 @@ const OBSERVATION_FIELDS = Object.freeze([
   ["mode", "uint32_t", 64],
   ["owner_uid", "uint32_t", 68],
   ["owner_gid", "uint32_t", 72],
-  ["flags", "uint32_t", 76],
+  ["statx_mask", "uint32_t", 76],
   ["filesystem_magic", "uint64_t", 80],
   ["content_offset", "uint64_t", 88],
   ["content_length", "uint64_t", 96],
@@ -597,9 +597,9 @@ const EXPECTED_BUILD_REQUIREMENTS = deepFreeze(
 );
 
 const EXPECTED_REQUIREMENTS_SHA256 =
-  "16756669b08e3898380065d27a8e3e0ad6e4eaaaf7a3a9d445f9506385a9ac23";
+  "fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70";
 const EXPECTED_ABI_LAYOUT_SHA256 =
-  "f69c11d17c0264b2af3eaee0e092bb27ce149207425f8239879d85f1ca589ffd";
+  "651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0";
 const EXPECTED_OPERATION_SHAPES_SHA256 =
   "9a66e919ac4e1fc361ecdc91c2f9c67723d1b948089f8191122870461f1d975f";
 const EXPECTED_UAPI_SHA256 =
@@ -3364,8 +3364,11 @@ test("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", 
     Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
     true,
   );
-  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(
+  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(
     currentEvaluatorSource,
+  );
+  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(
+    preR13EvaluatorSource,
     [
       '\n\ntest("R8 fixed-register and syscall-immediate correction ',
       'inversely reconstructs the pre-R8 syscall evaluator", async () => {\n',
@@ -3406,6 +3409,344 @@ test("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", 
     acceptedTestInventory,
   );
 });
+
+const EXPECTED_STATX_OBSERVATION_CONTRACT = deepFreeze(
+  orderedRecord([
+    ["requiredMask", 0x17ff],
+    ["absentMask", 0],
+    ["additionalMaskBits", "retained"],
+    ["rawNameBytes", "0x01-0x7f-excluding-slash-dot-dotdot"],
+    [
+      "failurePrefixes",
+      [
+        ["FD_A_VALIDATED", "zero"],
+        ["FD_B_VALIDATED", "zero"],
+        ["INTERNAL_DESCRIPTOR_OPENED", "zero"],
+        ["DIRECTORY_ENUMERATED", "target-only"],
+        ["ENTRY_REOBSERVED", "zero"],
+        ["MUTATION_REOBSERVATION", "prior-canonical-slots-only"],
+      ],
+    ],
+    ["incompleteSlots", "zero"],
+  ]),
+);
+
+function extractNamedCFunctionBody(source, functionName) {
+  const clean = stripCStringAndCharacterLiterals(stripCComments(source));
+  const matches = [
+    ...clean.matchAll(
+      new RegExp(
+        `(?:^|\\n)[^\\n;{}]*\\b${functionName}\\s*\\([^;{}]*\\)\\s*\\{`,
+        "gu",
+      ),
+    ),
+  ];
+  assert.equal(matches.length, 1, `${functionName} definition`);
+  const open = matches[0].index + matches[0][0].lastIndexOf("{");
+  let depth = 1;
+  let close = open + 1;
+  for (; close < clean.length && depth > 0; close += 1) {
+    if (clean[close] === "{") depth += 1;
+    if (clean[close] === "}") depth -= 1;
+  }
+  assert.equal(depth, 0, `${functionName} closing brace`);
+  return clean.slice(open + 1, close - 1);
+}
+
+function assertStatxObservationSourceContract(source) {
+  assert.match(
+    source,
+    /\bSTATEFS_ALWAYS_INLINE\s+int\s+statefs_observe_statx\s*\(/u,
+  );
+  const observeBody = extractNamedCFunctionBody(
+    source,
+    "statefs_observe_statx",
+  );
+  const requiredMaskGuard = /if\s*\(\s*\(\s*statefs_workspace\.statx\.mask\s*&\s*\(uint32_t\)\s*\(\s*OXIGRAPH_STATEFS_STATX_BASIC_STATS\s*\|\s*OXIGRAPH_STATEFS_STATX_MNT_ID\s*\)\s*\)\s*!=\s*\(uint32_t\)\s*\(\s*OXIGRAPH_STATEFS_STATX_BASIC_STATS\s*\|\s*OXIGRAPH_STATEFS_STATX_MNT_ID\s*\)\s*\)\s*return\s+0\s*;/gu;
+  const guards = [...observeBody.matchAll(requiredMaskGuard)];
+  assert.equal(guards.length, 1, "one complete required-mask guard");
+  const firstGovernedRead = Math.min(
+    ...[
+      "mode",
+      "device_major",
+      "device_minor",
+      "inode",
+      "mount_id",
+      "byte_length",
+      "link_count",
+      "owner_uid",
+      "owner_gid",
+    ].map((field) => observeBody.indexOf(`statefs_workspace.statx.${field}`)),
+  );
+  assert.ok(firstGovernedRead >= 0);
+  assert.ok(guards[0].index < firstGovernedRead, "mask before governed fields");
+  const fullMaskCopies = [
+    ...observeBody.matchAll(
+      /\bobservation->statx_mask\s*=\s*statefs_workspace\.statx\.mask\s*;/gu,
+    ),
+  ];
+  assert.equal(fullMaskCopies.length, 1, "one full statx mask copy");
+  assert.ok(guards[0].index < fullMaskCopies[0].index);
+  assert.doesNotMatch(observeBody, /\bobservation->flags\b/u);
+  assert.match(observeBody, /\breturn\s+1\s*;\s*$/u);
+
+  const absentBody = extractNamedCFunctionBody(
+    source,
+    "statefs_observe_absent",
+  );
+  assert.match(
+    absentBody,
+    /\bstatefs_zero\s*\(\s*\(uint8_t\s*\*\)\s*observation\s*,\s*384U\s*\)\s*;/u,
+  );
+  const absentMaskAssignments = [
+    ...absentBody.matchAll(/\bstatx_mask\s*=\s*([^;]+)\s*;/gu),
+  ];
+  assert.ok(absentMaskAssignments.length <= 1);
+  for (const assignment of absentMaskAssignments) {
+    assert.match(assignment[1], /^\s*0U\s*$/u);
+  }
+  assert.doesNotMatch(absentBody, /\bflags\s*=/u);
+
+  const executeBody = extractNamedCFunctionBody(
+    source,
+    "oxigraph_containment_statefs_execute_v1",
+  );
+  const observationZero = executeBody.search(
+    /\bstatefs_zero\s*\(\s*\(uint8_t\s*\*\)\s*observations\s*,\s*\(uint64_t\)\s*request->observation_capacity\s*\*\s*384U\s*\)\s*;/u,
+  );
+  assert.ok(observationZero >= 0, "complete observation buffer zeroing");
+  assert.ok(
+    observationZero < executeBody.indexOf("statefs_issue_syscall:"),
+    "observation buffers zero before syscall dispatch",
+  );
+  assert.equal(
+    [...executeBody.matchAll(/\bstatefs_observe_statx\s*\(/gu)].length,
+    13,
+    "all thirteen statx publication sites",
+  );
+  assert.equal(
+    [
+      ...executeBody.matchAll(
+        /\bif\s*\(\s*!\s*statefs_observe_statx\s*\(/gu,
+      ),
+    ].length,
+    13,
+    "every publication site checks mask success before advancing",
+  );
+  const failBody = extractNamedCFunctionBody(source, "statefs_fail");
+  assert.doesNotMatch(failBody, /\bobservation_count\b/u);
+  assert.doesNotMatch(failBody, /\bobservations\b/u);
+}
+
+function reconstructPreR13S3SyscallEvaluatorSource(source) {
+  const count = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let matches = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return matches;
+      matches += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceOne = (value, before, after, label) => {
+    assert.equal(count(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const newAdrPin = [
+    "    ADR_URL,",
+    "    216620,",
+    '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+  ].join("\n");
+  const oldAdrPin = [
+    "    ADR_URL,",
+    "    204827,",
+    '    "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",',
+  ].join("\n");
+  const oldAdrInverseEntry = [
+    "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+    "    currentEvaluatorSource,",
+  ].join("\n");
+  const newAdrInverseEntry = [
+    "  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(",
+    "    currentEvaluatorSource,",
+    "  );",
+    "  let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(",
+    "    preR13EvaluatorSource,",
+  ].join("\n");
+  const oldR8InverseEntry = [
+    '  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);',
+    "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+    "    currentSource,",
+  ].join("\n");
+  const newR8InverseEntry = [
+    '  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);',
+    "  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(currentSource);",
+    "  const reconstructedSource = reconstructPreR8EvaluatorSource(",
+    "    preR13Source,",
+  ].join("\n");
+  const blockStart =
+    "\n\nconst EXPECTED_STATX_OBSERVATION_CONTRACT = deepFreeze(\n";
+  const blockEnd = [
+    '\n\ntest("R8 fixed-register and syscall-immediate correction ',
+    'inversely reconstructs the pre-R8 syscall evaluator", async () => {\n',
+  ].join("");
+  assert.equal(count(source, blockStart), 1, "R13 block start");
+  assert.equal(count(source, blockEnd), 1, "R13 block end");
+  const startIndex = source.indexOf(blockStart);
+  const endIndex = source.indexOf(blockEnd, startIndex + blockStart.length);
+  assert.ok(endIndex > startIndex, "R13 block order");
+  let reconstructed = `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  reconstructed = replaceOne(reconstructed, newAdrPin, oldAdrPin, "ADR repin");
+  reconstructed = replaceOne(
+    reconstructed,
+    '["statx_mask", "uint32_t", 76]',
+    '["flags", "uint32_t", 76]',
+    "observation field rename",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    '"fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70"',
+    '"16756669b08e3898380065d27a8e3e0ad6e4eaaaf7a3a9d445f9506385a9ac23"',
+    "requirements digest",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    '"651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0"',
+    '"f69c11d17c0264b2af3eaee0e092bb27ce149207425f8239879d85f1ca589ffd"',
+    "ABI digest",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    newAdrInverseEntry,
+    oldAdrInverseEntry,
+    "ADR inverse chain",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    newR8InverseEntry,
+    oldR8InverseEntry,
+    "R8 inverse chain",
+  );
+  return reconstructed;
+}
+
+test("R13 statx-mask correction inversely reconstructs the exact pre-R13 syscall evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreR13S3SyscallEvaluatorSource(
+    currentSource,
+  );
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 147416);
+  assert.equal(reconstructedSource.split("\n").length - 1, 4459);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "75b60e1ebfe8322f804e715ca926cd7ed943289acc77834488cd9b019470b909",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "e07e312de2b0d7102afd9dd9f613bf495ca8cc77",
+  );
+});
+
+test("literal statx-mask and complete-prefix oracle is internally closed", () => {
+  assert.deepEqual(EXPECTED_STATX_OBSERVATION_CONTRACT, {
+    __proto__: null,
+    requiredMask: 0x17ff,
+    absentMask: 0,
+    additionalMaskBits: "retained",
+    rawNameBytes: "0x01-0x7f-excluding-slash-dot-dotdot",
+    failurePrefixes: [
+      ["FD_A_VALIDATED", "zero"],
+      ["FD_B_VALIDATED", "zero"],
+      ["INTERNAL_DESCRIPTOR_OPENED", "zero"],
+      ["DIRECTORY_ENUMERATED", "target-only"],
+      ["ENTRY_REOBSERVED", "zero"],
+      ["MUTATION_REOBSERVATION", "prior-canonical-slots-only"],
+    ],
+    incompleteSlots: "zero",
+  });
+  assertDeepFrozenNullPrototype(EXPECTED_STATX_OBSERVATION_CONTRACT);
+});
+
+test("statx source oracle kills incomplete masks, masked copies, and partial publication", () => {
+  const publicationSites = Array(13)
+    .fill("if (!statefs_observe_statx(observation)) return 0;")
+    .join("\n");
+  const validSource = `
+    STATEFS_ALWAYS_INLINE int statefs_observe_statx(void *unused) {
+      if ((statefs_workspace.statx.mask &
+           (uint32_t)(OXIGRAPH_STATEFS_STATX_BASIC_STATS |
+                      OXIGRAPH_STATEFS_STATX_MNT_ID)) !=
+          (uint32_t)(OXIGRAPH_STATEFS_STATX_BASIC_STATS |
+                     OXIGRAPH_STATEFS_STATX_MNT_ID)) return 0;
+      statefs_zero((uint8_t *)observation, 384U);
+      observation->kind = statefs_kind_from_mode((uint32_t)statefs_workspace.statx.mode);
+      observation->device_major = statefs_workspace.statx.device_major;
+      observation->device_minor = statefs_workspace.statx.device_minor;
+      observation->inode = statefs_workspace.statx.inode;
+      observation->mount_id = statefs_workspace.statx.mount_id;
+      observation->byte_length = statefs_workspace.statx.byte_length;
+      observation->link_count = statefs_workspace.statx.link_count;
+      observation->owner_uid = statefs_workspace.statx.owner_uid;
+      observation->owner_gid = statefs_workspace.statx.owner_gid;
+      observation->statx_mask = statefs_workspace.statx.mask;
+      return 1;
+    }
+    STATEFS_ALWAYS_INLINE void statefs_observe_absent(void *unused) {
+      statefs_zero((uint8_t *)observation, 384U);
+      observation->kind = OXIGRAPH_STATEFS_OBSERVATION_ABSENT;
+    }
+    void statefs_fail(void) { result->status = 1U; }
+    int32_t oxigraph_containment_statefs_execute_v1(void) {
+      statefs_zero((uint8_t *)observations,
+                   (uint64_t)request->observation_capacity * 384U);
+      ${publicationSites}
+    statefs_issue_syscall:
+      return 0;
+    }
+  `;
+  assert.doesNotThrow(() => assertStatxObservationSourceContract(validSource));
+  for (const mutation of [
+    validSource.replaceAll("OXIGRAPH_STATEFS_STATX_BASIC_STATS |", ""),
+    validSource.replaceAll("|\n                      OXIGRAPH_STATEFS_STATX_MNT_ID", ""),
+    validSource.replace(
+      "observation->statx_mask = statefs_workspace.statx.mask;",
+      "observation->statx_mask = statefs_workspace.statx.mask & 0x17ffU;",
+    ),
+    validSource.replace(
+      "observation->kind = OXIGRAPH_STATEFS_OBSERVATION_ABSENT;",
+      "observation->statx_mask = 1U;\nobservation->kind = OXIGRAPH_STATEFS_OBSERVATION_ABSENT;",
+    ),
+    validSource.replace(
+      "if (!statefs_observe_statx(observation)) return 0;",
+      "statefs_observe_statx(observation);",
+    ),
+    validSource.replace(
+      "statefs_zero((uint8_t *)observations,\n                   (uint64_t)request->observation_capacity * 384U);",
+      "",
+    ),
+    validSource.replace(
+      "void statefs_fail(void) { result->status = 1U; }",
+      "void statefs_fail(void) { result->observation_count = 0U; }",
+    ),
+  ]) {
+    assert.throws(() => assertStatxObservationSourceContract(mutation));
+  }
+});
+
+candidateTest(
+  "C source copies and gates complete statx evidence before publication",
+  async () => {
+    assertStatxObservationSourceContract(await readFile(SOURCE_URL, "utf8"));
+  },
+);
 
 test("R8 fixed-register and syscall-immediate correction inversely reconstructs the pre-R8 syscall evaluator", async () => {
   assert.doesNotThrow(() =>
@@ -3462,8 +3803,9 @@ test("R8 fixed-register and syscall-immediate correction inversely reconstructs 
   const currentBytes = await readFile(EVALUATOR_PATH);
   const currentSource = currentBytes.toString("utf8");
   assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(currentSource);
   const reconstructedSource = reconstructPreR8EvaluatorSource(
-    currentSource,
+    preR13Source,
     proofStart,
     proofEnd,
   );
