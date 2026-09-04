@@ -472,6 +472,7 @@ const NATIVE_OBSERVATION_FIELDS = [
   "mode",
   "ownerUid",
   "ownerGid",
+  "statxMask",
   "filesystemMagic",
   "contentOffset",
   "contentLength",
@@ -674,7 +675,9 @@ const METADATA_RULES = [
   "directory-link-count-minimum-two/v1",
   "no-follow/v1",
   "no-repeated-inode/v1",
+  "raw-name-bytes-01-7f/v1",
   "ascii-byte-order/v1",
+  "statx-required-mask-0x17ff/v1",
 ];
 const SYSCALL_RULES = [
   "linux-amd64-direct-allowlist/v1",
@@ -683,6 +686,8 @@ const SYSCALL_RULES = [
   "errno-immediate/v1",
   "close-no-retry/v1",
   "zero-before-syscall/v1",
+  "validated-observation-prefix-only/v1",
+  "live-cleanup-close-upgrades-effect/v1",
 ];
 const ORDERING_RULES = [
   "intent-before-effect/v1",
@@ -3559,6 +3564,14 @@ function normalizeNativeObservation(value) {
       { minimumBytes: 1, maximumBytes: 255, nulFree: true },
       failResult,
     );
+    if (
+      !/^[\x01-\x7f]+$/u.test(native.name) ||
+      /\//u.test(native.name) ||
+      native.name === "." ||
+      native.name === ".."
+    ) {
+      failResult();
+    }
   }
   try {
     exactUint64(native.deviceMajor, true);
@@ -3571,6 +3584,7 @@ function normalizeNativeObservation(value) {
     exactUint32(native.mode);
     exactUint32(native.ownerUid);
     exactUint32(native.ownerGid);
+    exactUint32(native.statxMask);
     boundedInteger(
       native.contentOffset,
       "content offset",
@@ -3586,6 +3600,12 @@ function normalizeNativeObservation(value) {
       failResult,
     );
   } catch {
+    failResult();
+  }
+  if (
+    (native.kind === "ABSENT" && native.statxMask !== 0) ||
+    (native.kind !== "ABSENT" && (native.statxMask & 0x17ff) !== 0x17ff)
+  ) {
     failResult();
   }
   return native;
@@ -4355,6 +4375,7 @@ function canonicalAbsentObservation(native, role, name) {
     native.mode === 0 &&
     native.ownerUid === 0 &&
     native.ownerGid === 0 &&
+    native.statxMask === 0 &&
     native.filesystemMagic === "0" &&
     native.contentOffset === 0 &&
     native.contentLength === 0
@@ -4960,7 +4981,7 @@ function rejectedBoundaryLimit(sequenceName) {
     sequenceName === "INVENTORY/DIRECTORY/CHILD" ||
     sequenceName === "INVENTORY/REGULAR_FILE/PRESENT"
   ) {
-    return 3;
+    return 4;
   }
   if (
     sequenceName === "MOVE_NOREPLACE_SYNC" ||
@@ -4982,12 +5003,22 @@ function completedStep(match, completedStepCount, expectedStep) {
 }
 
 function internalDescriptorIsLive(request, result, match) {
+  const openedButNotPublished =
+    result.failedStep === "INTERNAL_DESCRIPTOR_OPENED" &&
+    (result.status === "REJECTED" ||
+      result.status === "SYSCALL_FAILED" ||
+      result.status === "VERIFICATION_FAILED");
   if (request.operation === "INVENTORY") {
     if (match.sequenceName === "INVENTORY/REGULAR_FILE/ABSENT") return false;
+    const openedDirectoryTarget =
+      openedButNotPublished &&
+      (match.sequenceName === "INVENTORY/DIRECTORY/ROOT" ||
+        match.sequenceName === "INVENTORY/DIRECTORY/CHILD");
     const finalStep =
       match.sequenceName === "INVENTORY/DIRECTORY/CHILD" ? 32 : 24;
     return (
-      completedStep(match, result.completedStepCount, 5) &&
+      (openedDirectoryTarget ||
+        completedStep(match, result.completedStepCount, 5)) &&
       !completedStep(match, result.completedStepCount, finalStep)
     );
   }
@@ -5005,7 +5036,8 @@ function internalDescriptorIsLive(request, result, match) {
   }
   if (request.operation === "MKDIR_SYNC") {
     return (
-      completedStep(match, result.completedStepCount, 5) &&
+      (openedButNotPublished ||
+        completedStep(match, result.completedStepCount, 5)) &&
       !completedStep(match, result.completedStepCount, 30)
     );
   }
@@ -5040,6 +5072,7 @@ function verificationStepIsExact(request, failedStep, match) {
   if (request.operation === "MKDIR_SYNC") {
     return (
       failedStep === "CREATED_METADATA_VALIDATED" ||
+      failedStep === "INTERNAL_DESCRIPTOR_OPENED" ||
       failedStep === "DESTINATION_REOBSERVED"
     );
   }
@@ -5132,7 +5165,7 @@ function verifyNoncompleteStatus(request, result, match) {
     if (
       match.after ||
       result.errno !== 0 ||
-      result.effectClass !== "NO_EFFECT" ||
+      !effectClassIsExact(request, result, match, "NO_EFFECT") ||
       match.position >= rejectedBoundaryLimit(match.sequenceName)
     ) {
       failResult();
@@ -5214,54 +5247,6 @@ function directoryTargetObservationIsExact(
     native.filesystemMagic === entry.filesystemMagic &&
     native.contentOffset === 0 &&
     native.contentLength === 0
-  );
-}
-
-function directoryTargetObservationIsAbiExact(request, native) {
-  return (
-    native.kind === "DIRECTORY" &&
-    native.role === request.inventoryDirectoryRole &&
-    native.name === null &&
-    entryKindIsConsistent(native) &&
-    native.linkCount !== "0" &&
-    native.inode !== "0" &&
-    native.mountId !== "0" &&
-    native.filesystemMagic !== "0" &&
-    native.contentOffset === 0 &&
-    native.contentLength === 0
-  );
-}
-
-function regularRejectedObservationIsExact(request, native, tokenState) {
-  if (
-    tokenState === null ||
-    native.kind === "ABSENT" ||
-    native.role !== request.directoryRoleA ||
-    native.name !== request.nameA ||
-    !entryKindIsConsistent(native) ||
-    native.linkCount === "0" ||
-    native.inode === "0" ||
-    native.mountId === "0" ||
-    native.filesystemMagic === "0" ||
-    native.contentOffset !== 0 ||
-    native.contentLength !== 0
-  ) {
-    return false;
-  }
-  const parent = findDirectoryScopeByHandle(
-    tokenState,
-    request.directoryHandleSha256A,
-  );
-  return !(
-    native.kind === "REGULAR" &&
-    native.mode === 33152 &&
-    native.ownerUid === parent.inventory.directory.ownerUid &&
-    native.ownerGid === parent.inventory.directory.ownerGid &&
-    native.deviceMajor === parent.inventory.directory.deviceMajor &&
-    native.deviceMinor === parent.inventory.directory.deviceMinor &&
-    native.linkCount === "1" &&
-    native.mountId === parent.inventory.directory.mountId &&
-    native.filesystemMagic === parent.inventory.directory.filesystemMagic
   );
 }
 
@@ -5430,49 +5415,17 @@ function verifyDirectoryInventoryObservations(
   tokenState,
   rootObservation,
 ) {
-  const rejectedTarget =
-    result.status === "REJECTED" &&
-    result.failedStep === "INTERNAL_DESCRIPTOR_OPENED" &&
-    result.completedStepCount === 2;
+  const targetPublished = completedStep(match, result.completedStepCount, 5);
   const enumerated = completedStep(match, result.completedStepCount, 6);
   if (enumerated) {
     if (result.observations.length < 1 || result.observations.length > 257) {
       failResult();
     }
-  } else if (
-    (rejectedTarget && result.observations.length !== 1) ||
-    (!rejectedTarget && result.observations.length > 1)
-  ) {
-    failResult();
-  }
-  if (rejectedTarget) {
-    const target = result.observations[0];
-    if (
-      !directoryTargetObservationIsAbiExact(request, target) ||
-      directoryTargetObservationIsExact(
-        request,
-        target,
-        tokenState,
-        rootObservation,
-      )
-    ) {
-      failResult();
-    }
-    return;
-  }
-  if (
-    result.observations.length === 1 &&
-    !directoryTargetObservationIsExact(
-      request,
-      result.observations[0],
-      tokenState,
-      rootObservation,
-    )
-  ) {
+  } else if (result.observations.length !== (targetPublished ? 1 : 0)) {
     failResult();
   }
   if (
-    result.observations.length > 1 &&
+    result.observations.length > 0 &&
     !directoryTargetObservationIsExact(
       request,
       result.observations[0],
@@ -5499,10 +5452,6 @@ function verifyRegularInventoryObservations(
   tokenState,
 ) {
   const observed = completedStep(match, result.completedStepCount, 7);
-  const rejectedExisting =
-    result.status === "REJECTED" &&
-    result.failedStep === "INTERNAL_DESCRIPTOR_OPENED" &&
-    result.completedStepCount === 2;
   const partialPresent =
     !observed &&
     match.sequenceName === "INVENTORY/REGULAR_FILE/PRESENT" &&
@@ -5513,23 +5462,13 @@ function verifyRegularInventoryObservations(
     result.outputBytes !== null;
   if (
     result.observations.length !==
-    (observed || partialPresent || rejectedExisting ? 1 : 0)
+    (observed || partialPresent ? 1 : 0)
   ) {
     failResult();
   }
-  if (!observed && !partialPresent && !rejectedExisting) return;
+  if (!observed && !partialPresent) return;
   if (result.outputBytes === null) failResult();
   const native = result.observations[0];
-  if (rejectedExisting) {
-    if (
-      result.bytesConsumed !== 0 ||
-      result.outputBytes.length !== 0 ||
-      !regularRejectedObservationIsExact(request, native, tokenState)
-    ) {
-      failResult();
-    }
-    return;
-  }
   if (match.sequenceName === "INVENTORY/REGULAR_FILE/ABSENT") {
     if (
       result.bytesConsumed !== 0 ||
@@ -5597,7 +5536,10 @@ function verifyNoncompletePayload(
       failResult();
     }
   } else if (regularInventory) {
-    if (result.bytesConsumed !== result.outputBytes.length) {
+    if (
+      result.bytesConsumed !== result.outputBytes.length ||
+      (result.status === "REJECTED" && result.bytesConsumed !== 0)
+    ) {
       failResult();
     }
   } else if (result.bytesConsumed !== 0) {
@@ -6042,6 +5984,7 @@ function verifyExecutedResult(request, result, tokenState, requestState) {
       (result.status === "SYSCALL_FAILED" ||
         result.status === "FAULT_INJECTED" ||
         result.status === "VERIFICATION_FAILED" ||
+        result.status === "REJECTED" ||
         result.status === "LIMIT_EXCEEDED") &&
       result.effectClass === "EFFECT_UNCERTAIN"
     ) {
