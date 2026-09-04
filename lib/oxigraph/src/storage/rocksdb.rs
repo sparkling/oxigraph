@@ -503,6 +503,7 @@ impl RocksDbStorage {
         self.db.compact(&self.dspo_cf)?;
         self.db.compact(&self.dpos_cf)?;
         self.db.compact(&self.dosp_cf)?;
+        self.db.compact(&self.graphs_cf)?;
         self.db.compact(&self.id2str_cf)
     }
 
