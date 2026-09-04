@@ -39,8 +39,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    216620,
-    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
+    216688,
+    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -939,6 +939,158 @@ function assertOnlySyscallInlineAssembly(source) {
   }
   assert.ok(directSyscallAssemblyCount > 0, "direct syscall assembly required");
 }
+
+function reconstructPreR14D1P2AdrRepinSource(source) {
+  const count = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let matches = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return matches;
+      matches += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceOne = (value, before, after, label) => {
+    assert.equal(count(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const currentAdrPin = [
+    "    ADR_URL,",
+    "    216688,",
+    '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+  ].join("\n");
+  const predecessorAdrPin = [
+    "    ADR_URL,",
+    "    216620,",
+    '    "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",',
+  ].join("\n");
+  const currentAcceptedInverseEntry = [
+    "  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(",
+    "    reconstructPreR14D1P2AdrRepinSource(currentEvaluatorSource),",
+    "  );",
+  ].join("\n");
+  const predecessorAcceptedInverseEntry = [
+    "  const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(",
+    "    currentEvaluatorSource,",
+    "  );",
+  ].join("\n");
+  const currentR13InverseEntry = [
+    "  const reconstructedSource = reconstructPreR13S3SyscallEvaluatorSource(",
+    "    reconstructPreR14D1P2AdrRepinSource(currentSource),",
+    "  );",
+  ].join("\n");
+  const predecessorR13InverseEntry = [
+    "  const reconstructedSource = reconstructPreR13S3SyscallEvaluatorSource(",
+    "    currentSource,",
+    "  );",
+  ].join("\n");
+  const currentR8InverseEntry = [
+    "  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(",
+    "    reconstructPreR14D1P2AdrRepinSource(currentSource),",
+    "  );",
+  ].join("\n");
+  const predecessorR8InverseEntry =
+    "  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(currentSource);";
+  let reconstructed = replaceOne(
+    source,
+    currentAdrPin,
+    predecessorAdrPin,
+    "R14D1 P2 ADR pin inverse",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    currentAcceptedInverseEntry,
+    predecessorAcceptedInverseEntry,
+    "R14D1 P2 accepted inverse entry",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    currentR13InverseEntry,
+    predecessorR13InverseEntry,
+    "R14D1 P2 R13 inverse entry",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    currentR8InverseEntry,
+    predecessorR8InverseEntry,
+    "R14D1 P2 R8 inverse entry",
+  );
+  const correctionStart =
+    "\n\nfunction reconstructPreR14D1P2AdrRepinSource(source) {\n";
+  const correctionEnd =
+    "\n\nfunction reconstructPreR8EvaluatorSource(source, proofStart, proofEnd) {\n";
+  assert.equal(count(reconstructed, correctionStart), 1, "R14D1 P2 start");
+  assert.equal(count(reconstructed, correctionEnd), 1, "R14D1 P2 end");
+  const startIndex = reconstructed.indexOf(correctionStart);
+  const endIndex = reconstructed.indexOf(
+    correctionEnd,
+    startIndex + correctionStart.length,
+  );
+  assert.equal(endIndex > startIndex, true, "R14D1 P2 inverse order");
+  return `${reconstructed.slice(0, startIndex)}${reconstructed.slice(endIndex)}`;
+}
+
+test("R14D1 P2 ADR repin inversely reconstructs the exact R13D1 evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource =
+    reconstructPreR14D1P2AdrRepinSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 160288);
+  assert.equal(reconstructedSource.split("\n").length - 1, 4801);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "6fb8848670dc84fad1fa42fdf8f34bfd31ea7876da40361bcff7ddf5ed95be81",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "d95a93e4fe0b3ca6b9da5b55dad7672e09253edd",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    13,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+  assert.deepEqual(
+    [
+      ...reconstructedSource.matchAll(
+        /(?:^|\n)(?:test|candidateTest)\(\s*"([^"\n]+)"/gu,
+      ),
+    ].map((match) => match[1]),
+    [
+      "literal build, ABI, UAPI, syscall, and authority oracle is internally closed",
+      "pins the accepted S0 ADR and unchanged harness package bytes",
+      "ADR pin correction inversely reconstructs accepted S3 syscall evaluator",
+      "R13 statx-mask correction inversely reconstructs the exact pre-R13 syscall evaluator",
+      "literal statx-mask and complete-prefix oracle is internally closed",
+      "statx source oracle kills incomplete masks, masked copies, and partial publication",
+      "C source copies and gates complete statx evidence before publication",
+      "R8 fixed-register and syscall-immediate correction inversely reconstructs the pre-R8 syscall evaluator",
+      "exports only the three frozen attestation identities",
+      "freezes the complete build requirements and ABI digest independently",
+      "freezes all eight operations and ten exact request-shape variants",
+      "header fixes all three layouts, enum values, UAPI literals, and entrypoint",
+      "C source is one direct-syscall translation unit with no ambient authority",
+      "production attestation binds deterministic objects, ELF, ABI, and source bytes",
+      "build contract enforces BOUNDS before SHAPE before PATH and rejects caller overrides",
+      "attestation source declares the exact error vocabulary and contains no ambient effects",
+      "literal oracle fixes production nullability and report digest boundaries",
+      "local byte-array audit rejects fixed and variable stack scratch without rejecting ABI members",
+      "instruction audit follows reachable stack paths and rejects unmodelled stack writes",
+      "missing-module attribution rejects wrong code, URL, message, and present source",
+      "reports only the exact source-absent attestation import RED",
+    ],
+  );
+});
 
 function reconstructPreR8EvaluatorSource(source, proofStart, proofEnd) {
   const count = (value, needle) => {
@@ -3365,7 +3517,7 @@ test("ADR pin correction inversely reconstructs accepted S3 syscall evaluator", 
     true,
   );
   const preR13EvaluatorSource = reconstructPreR13S3SyscallEvaluatorSource(
-    currentEvaluatorSource,
+    reconstructPreR14D1P2AdrRepinSource(currentEvaluatorSource),
   );
   let acceptedEvaluatorSource = reconstructPreR8EvaluatorSource(
     preR13EvaluatorSource,
@@ -3637,7 +3789,7 @@ test("R13 statx-mask correction inversely reconstructs the exact pre-R13 syscall
   const currentSource = currentBytes.toString("utf8");
   assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
   const reconstructedSource = reconstructPreR13S3SyscallEvaluatorSource(
-    currentSource,
+    reconstructPreR14D1P2AdrRepinSource(currentSource),
   );
   const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
   assert.equal(reconstructedBytes.length, 147416);
@@ -3803,7 +3955,9 @@ test("R8 fixed-register and syscall-immediate correction inversely reconstructs 
   const currentBytes = await readFile(EVALUATOR_PATH);
   const currentSource = currentBytes.toString("utf8");
   assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
-  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(currentSource);
+  const preR13Source = reconstructPreR13S3SyscallEvaluatorSource(
+    reconstructPreR14D1P2AdrRepinSource(currentSource),
+  );
   const reconstructedSource = reconstructPreR8EvaluatorSource(
     preR13Source,
     proofStart,
