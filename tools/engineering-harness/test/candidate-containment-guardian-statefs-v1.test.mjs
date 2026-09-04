@@ -805,11 +805,95 @@ const STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {
 
   const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
-  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
+  let currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
   assert.equal(
     Buffer.from(currentEvaluatorSource, "utf8").equals(currentEvaluatorBytes),
     true,
   );
+  const r11aCompatibilityStart = [
+    "\n  const r11a",
+    "CompatibilityStart = [\n",
+  ].join("");
+  const r11aCompatibilityEnd = [
+    "\n  let selectedR5EvaluatorSource = remove",
+    "RangeExactly(\n",
+  ].join("");
+  const r11aProofStart = [
+    "\n\ntest(\n  \"R11A persistence observation correction separates ",
+    "scratch extents from regular inventory content and inversely reconstructs exact S2 evaluator\",\n",
+  ].join("");
+  const r11aProofEnd = [
+    "\n\ntest(\"source-absent RED is the exact attributable candidate module ",
+    "failure\", () => {\n",
+  ].join("");
+  currentEvaluatorSource = removeRangeExactly(
+    currentEvaluatorSource,
+    r11aCompatibilityStart,
+    r11aCompatibilityEnd,
+    "R11A compatibility removal",
+  );
+  currentEvaluatorSource = removeRangeExactly(
+    currentEvaluatorSource,
+    r11aProofStart,
+    r11aProofEnd,
+    "R11A proof removal",
+  );
+  currentEvaluatorSource = replaceExactly(
+    currentEvaluatorSource,
+    '  let currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");',
+    '  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");',
+    1,
+    "R11A compatibility binding inverse",
+  );
+  currentEvaluatorSource = replaceExactly(
+    currentEvaluatorSource,
+    [
+      "          byteLength: String(lifetimeRecord.bytes.length),\n",
+      '          linkCount: "1",\n',
+      "          mode: 0o100_600,\n",
+      "          contentLength: 0,",
+    ].join(""),
+    [
+      "          byteLength: String(lifetimeRecord.bytes.length),\n",
+      '          linkCount: "1",\n',
+      "          mode: 0o100_600,\n",
+      "          contentLength: lifetimeRecord.bytes.length,",
+    ].join(""),
+    1,
+    "R11A lifetime persistence extent inverse",
+  );
+  currentEvaluatorSource = replaceExactly(
+    currentEvaluatorSource,
+    [
+      "          byteLength: String(recoveryRecord.bytes.length),\n",
+      '          linkCount: "1",\n',
+      "          mode: 0o100_600,\n",
+      "          contentLength: 0,",
+    ].join(""),
+    [
+      "          byteLength: String(recoveryRecord.bytes.length),\n",
+      '          linkCount: "1",\n',
+      "          mode: 0o100_600,\n",
+      "          contentLength: recoveryRecord.bytes.length,",
+    ].join(""),
+    1,
+    "R11A recovery persistence extent inverse",
+  );
+  const reconstructedS2EvaluatorBytes = Buffer.from(
+    currentEvaluatorSource,
+    "utf8",
+  );
+  assert.equal(reconstructedS2EvaluatorBytes.length, 312_547);
+  assert.equal(countExact(currentEvaluatorSource, "\n"), 9_199);
+  assert.equal(
+    byteSha256(reconstructedS2EvaluatorBytes),
+    "dd23977051b54fbd8b6090d84f779de366a53b570149b8395b3bc8cd33d2253e",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedS2EvaluatorBytes),
+    "2e5d483b1097283f7b699a7de518a9126f80ca7a",
+  );
+  assert.equal(countExact(currentEvaluatorSource, "\ntest("), 24);
   let selectedR5EvaluatorSource = removeRangeExactly(
     currentEvaluatorSource,
     "\n\nconst STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {\n",
@@ -6780,7 +6864,7 @@ test(
           byteLength: String(lifetimeRecord.bytes.length),
           linkCount: "1",
           mode: 0o100_600,
-          contentLength: lifetimeRecord.bytes.length,
+          contentLength: 0,
         }),
       ),
     });
@@ -7378,7 +7462,7 @@ test(
           byteLength: String(recoveryRecord.bytes.length),
           linkCount: "1",
           mode: 0o100_600,
-          contentLength: recoveryRecord.bytes.length,
+          contentLength: 0,
         }),
       ),
     });
@@ -9188,6 +9272,271 @@ test(
         ),
       "STATEFS_BINDING",
     );
+  },
+);
+
+test(
+  "R11A persistence observation correction separates scratch extents from regular inventory content and inversely reconstructs exact S2 evaluator",
+  () => {
+    const countExact = (source, needle) => {
+      assert.equal(typeof source, "string");
+      assert.equal(typeof needle, "string");
+      assert.notEqual(needle.length, 0);
+      let count = 0;
+      let offset = 0;
+      while (true) {
+        const index = source.indexOf(needle, offset);
+        if (index === -1) return count;
+        count += 1;
+        offset = index + needle.length;
+      }
+    };
+    const exactRange = (source, start, end, label) => {
+      assert.equal(countExact(source, start), 1, `${label} start count`);
+      assert.equal(countExact(source, end), 1, `${label} end count`);
+      const startIndex = source.indexOf(start);
+      const endIndex = source.indexOf(end, startIndex + start.length);
+      assert.equal(endIndex > startIndex, true, `${label} order`);
+      return { startIndex, endIndex, value: source.slice(startIndex, endIndex) };
+    };
+    const replaceInExactRange = (
+      source,
+      start,
+      end,
+      before,
+      after,
+      label,
+    ) => {
+      const range = exactRange(source, start, end, label);
+      assert.equal(
+        countExact(range.value, before),
+        1,
+        `${label} replacement count`,
+      );
+      assert.equal(
+        countExact(range.value, after),
+        0,
+        `${label} inverse precondition`,
+      );
+      const replaced = range.value.replace(before, after);
+      assert.equal(countExact(replaced, before), 0, `${label} removal count`);
+      assert.equal(countExact(replaced, after), 1, `${label} inverse count`);
+      return `${source.slice(0, range.startIndex)}${replaced}${source.slice(range.endIndex)}`;
+    };
+    const removeRangeExactly = (source, start, end, label) => {
+      const range = exactRange(source, start, end, label);
+      return `${source.slice(0, range.startIndex)}${source.slice(range.endIndex)}`;
+    };
+    const assertObservationExtentContract = ({
+      operation,
+      inputByteLength,
+      bytesConsumed,
+      observation,
+      outputBytes,
+    }) => {
+      assert.equal(inputByteLength > 0, true);
+      assert.equal(bytesConsumed, inputByteLength);
+      assert.equal(observation.byteLength, String(inputByteLength));
+      assert.equal(observation.contentOffset, 0);
+      if (operation === "PERSIST_NOREPLACE") {
+        assert.equal(observation.contentLength, 0);
+        assert.equal(outputBytes, null);
+        return;
+      }
+      assert.equal(operation, "INVENTORY/REGULAR_FILE/PRESENT");
+      assert.equal(observation.contentLength, inputByteLength);
+      assert.equal(Buffer.isBuffer(outputBytes), true);
+      assert.equal(outputBytes.length, inputByteLength);
+    };
+
+    const input = Buffer.from('{"persist":"scratch-not-result"}\n', "utf8");
+    const persistFixture = {
+      operation: "PERSIST_NOREPLACE",
+      inputByteLength: input.length,
+      bytesConsumed: input.length,
+      observation: {
+        byteLength: String(input.length),
+        contentOffset: 0,
+        contentLength: 0,
+      },
+      outputBytes: null,
+    };
+    const regularInventoryFixture = {
+      operation: "INVENTORY/REGULAR_FILE/PRESENT",
+      inputByteLength: input.length,
+      bytesConsumed: input.length,
+      observation: {
+        byteLength: String(input.length),
+        contentOffset: 0,
+        contentLength: input.length,
+      },
+      outputBytes: Buffer.from(input),
+    };
+    assertObservationExtentContract(persistFixture);
+    assertObservationExtentContract(regularInventoryFixture);
+    assert.throws(() =>
+      assertObservationExtentContract({
+        ...persistFixture,
+        observation: {
+          ...persistFixture.observation,
+          contentLength: input.length,
+        },
+      }),
+    );
+    assert.throws(() =>
+      assertObservationExtentContract({
+        ...persistFixture,
+        outputBytes: Buffer.from(input),
+      }),
+    );
+    assert.throws(() =>
+      assertObservationExtentContract({
+        ...persistFixture,
+        bytesConsumed: 0,
+      }),
+    );
+    assert.throws(() =>
+      assertObservationExtentContract({
+        ...regularInventoryFixture,
+        observation: {
+          ...regularInventoryFixture.observation,
+          contentLength: 0,
+        },
+      }),
+    );
+    assert.throws(() =>
+      assertObservationExtentContract({
+        ...regularInventoryFixture,
+        outputBytes: null,
+      }),
+    );
+
+    const proofStart = [
+      "\n\ntest(\n  \"R11A persistence observation correction separates ",
+      "scratch extents from regular inventory content and inversely reconstructs exact S2 evaluator\",\n",
+    ].join("");
+    const proofEnd = [
+      "\n\ntest(\"source-absent RED is the exact attributable candidate module ",
+      "failure\", () => {\n",
+    ].join("");
+    const compatibilityStart = [
+      "\n  const r11a",
+      "CompatibilityStart = [\n",
+    ].join("");
+    const compatibilityEnd = [
+      "\n  let selectedR5EvaluatorSource = remove",
+      "RangeExactly(\n",
+    ].join("");
+    const nullIdentityStart = [
+      "\n\nconst STATEFS_NULL_CONTEXT_CORRECTION_",
+      "IDENTITY = (() => {\n",
+    ].join("");
+    const nullIdentityEnd = [
+      "\n\nconst STATEFS_REFREEZE_",
+      "IDENTITY = (() => {\n",
+    ].join("");
+    const lifetimeStart = [
+      "\n\ntest(\n  \"same-origin lifetime evidence deterministically selects ",
+      "MKDIR, PERSIST, and the two matching observation-only outcomes\",\n",
+    ].join("");
+    const lifetimeEnd = [
+      "\n\ntest(\n  \"a fully inventoried adopted lifetime yields a one-shot ",
+      "CONTEXT_ONLY WAIT plan without reserving its token\",\n",
+    ].join("");
+    const recoveryStart = [
+      "\n\ntest(\n  \"a same-origin recovery-only attempt selects and persists ",
+      "its first exact recovery record\",\n",
+    ].join("");
+    const recoveryEnd = [
+      "\n\ntest(\n  \"same-origin adopted journal evidence selects MOVE, ",
+      "sync-only recovery, and destination-already without laundering rename\",\n",
+    ].join("");
+    const regularStart = "\n\nfunction completeRegularInventory(\n";
+    const regularEnd = "\n\nfunction canonicalInventoryProjection(";
+    const correctedExtent = "          contentLength: 0,";
+    const lifetimeHistoricalExtent =
+      "          contentLength: lifetimeRecord.bytes.length,";
+    const recoveryHistoricalExtent =
+      "          contentLength: recoveryRecord.bytes.length,";
+    const regularInventoryExtent = "          contentLength: bytes.length,";
+    const regularInventoryOutput =
+      "    outputBytes: absent ? Buffer.alloc(0) : Buffer.from(bytes),";
+
+    const currentBytes = readFileSync(EVALUATOR_PATH);
+    assert.equal(Buffer.isBuffer(currentBytes), true);
+    const currentSource = currentBytes.toString("utf8");
+    assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+    assert.equal(countExact(currentSource, "\ntest("), 25);
+    for (const [start, end, historicalExtent, label] of [
+      [lifetimeStart, lifetimeEnd, lifetimeHistoricalExtent, "lifetime persist"],
+      [recoveryStart, recoveryEnd, recoveryHistoricalExtent, "recovery persist"],
+    ]) {
+      const range = exactRange(currentSource, start, end, label).value;
+      assert.equal(countExact(range, correctedExtent), 1, `${label} zero extent`);
+      assert.equal(
+        countExact(range, historicalExtent),
+        0,
+        `${label} stale nonzero extent`,
+      );
+    }
+    const regularRange = exactRange(
+      currentSource,
+      regularStart,
+      regularEnd,
+      "regular inventory fixture",
+    ).value;
+    assert.equal(countExact(regularRange, regularInventoryExtent), 1);
+    assert.equal(countExact(regularRange, regularInventoryOutput), 1);
+    assert.equal(countExact(regularRange, correctedExtent), 0);
+
+    let reconstructedSource = removeRangeExactly(
+      currentSource,
+      proofStart,
+      proofEnd,
+      "R11A proof removal",
+    );
+    reconstructedSource = removeRangeExactly(
+      reconstructedSource,
+      compatibilityStart,
+      compatibilityEnd,
+      "R11A compatibility removal",
+    );
+    reconstructedSource = replaceInExactRange(
+      reconstructedSource,
+      nullIdentityStart,
+      nullIdentityEnd,
+      '  let currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");',
+      '  const currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");',
+      "R11A compatibility binding inverse",
+    );
+    reconstructedSource = replaceInExactRange(
+      reconstructedSource,
+      lifetimeStart,
+      lifetimeEnd,
+      correctedExtent,
+      lifetimeHistoricalExtent,
+      "lifetime persist inverse",
+    );
+    reconstructedSource = replaceInExactRange(
+      reconstructedSource,
+      recoveryStart,
+      recoveryEnd,
+      correctedExtent,
+      recoveryHistoricalExtent,
+      "recovery persist inverse",
+    );
+    const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+    assert.equal(reconstructedBytes.length, 312_547);
+    assert.equal(countExact(reconstructedSource, "\n"), 9_199);
+    assert.equal(
+      byteSha256(reconstructedBytes),
+      "dd23977051b54fbd8b6090d84f779de366a53b570149b8395b3bc8cd33d2253e",
+    );
+    assert.equal(
+      gitBlobSha1(reconstructedBytes),
+      "2e5d483b1097283f7b699a7de518a9126f80ca7a",
+    );
+    assert.equal(countExact(reconstructedSource, "\ntest("), 24);
   },
 );
 
