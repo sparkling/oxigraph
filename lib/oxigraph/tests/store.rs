@@ -594,16 +594,18 @@ fn test_read_only() -> Result<(), Box<dyn Error>> {
         vec![first_quad]
     );
     read_only.validate()?;
+    drop(read_only);
 
     // We open as read-write again
     let read_write = Store::open(&store_dir)?;
     read_write.insert(second_quad.clone())?;
     read_write.flush()?;
     read_write.optimize()?; // Makes sure it's well flushed
+    drop(read_write);
 
-    // The new quad is in the read-write instance but not the read-only instance
-    assert!(read_write.contains(&second_quad)?);
-    assert!(!read_only.contains(&second_quad)?);
+    // We reopen as read-only after the writer closes
+    let read_only = Store::open_read_only(&store_dir)?;
+    assert!(read_only.contains(&second_quad)?);
     read_only.validate()?;
 
     Ok(())

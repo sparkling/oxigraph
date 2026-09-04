@@ -712,8 +712,7 @@ impl Store {
     /// Opens a read-write [`Store`] and creates it if it does not exist yet.
     ///
     /// Only one read-write [`Store`] can exist at the same time.
-    /// If you want to have extra [`Store`] instance opened on the same data
-    /// use [`Store::open_read_only`].
+    /// If you want another [`Store`] handle in the same process, use [`Store::clone`].
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         let storage = Storage::open(path.as_ref())?;
@@ -726,8 +725,7 @@ impl Store {
     /// Opens a read-write [`Store`] with explicit RocksDB options and creates it if it does not exist yet.
     ///
     /// Only one read-write [`Store`] can exist at the same time.
-    /// If you want to have extra [`Store`] instance opened on the same data
-    /// use [`Store::open_read_only`].
+    /// If you want another [`Store`] handle in the same process, use [`Store::clone`].
     ///
     /// Lower `max_open_files` values reduce open file descriptor usage but might increase read I/O and cache misses.
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -744,7 +742,9 @@ impl Store {
 
     /// Opens a read-only [`Store`] from disk.
     ///
-    /// Opening as read-only while having an other process writing the database is undefined behavior.
+    /// Multiple read-only [`Store`] instances may coexist.
+    /// Opening a writer in the same or another process while an ordinary read-only instance is open
+    /// causes undefined behavior for that read-only instance.
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Ok(Self {
