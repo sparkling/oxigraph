@@ -4238,7 +4238,7 @@ function persistSuccessInventories(request, result, tokenState) {
     native.inode === "0" ||
     native.byteLength !== String(request.inputByteLength) ||
     native.contentOffset !== 0 ||
-    native.contentLength !== request.inputByteLength ||
+    native.contentLength !== 0 ||
     bytes.length !== request.inputByteLength ||
     sha256(bytes) !== request.inputRawSha256 ||
     !nativeIdentityMatchesDirectory(native, parent.inventory.directory)
@@ -5280,7 +5280,7 @@ function persistObservationIsExact(request, native, tokenState) {
     native.inode !== "0" &&
     native.byteLength === String(request.inputByteLength) &&
     native.contentOffset === 0 &&
-    native.contentLength === request.inputByteLength &&
+    native.contentLength === 0 &&
     nativeIdentityMatchesDirectory(native, parent.inventory.directory)
   );
 }
