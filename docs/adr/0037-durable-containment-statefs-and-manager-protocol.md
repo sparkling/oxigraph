@@ -4,11 +4,11 @@
 - **Date**: 2026-08-30
 - Updated: 2026-09-04
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented. A pre-correction pure JavaScript
-  StateFS candidate and four StateFS evaluators are tracked, but the corrected
-  observation-contract implementation, native header/C/attestation triplet,
-  and manager protocol module/evaluator are absent; production containment
-  remains unavailable
+- Implementation status: not implemented. The corrected pure JavaScript
+  StateFS source and three public StateFS evaluators exist; the private StateFS
+  evaluator is being re-frozen, while the corrected native
+  header/C/attestation triplet and manager protocol source/evaluator are absent;
+  production containment remains unavailable
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md),
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md)
@@ -283,8 +283,8 @@ exists.
 | `containment-exact-v2.mjs` | Git blob `8e59aae2ec200652ffa848c9d1a8ab31a2280c29`                |
 | journal-v2                 | `95a4311224d8dfa5f481436e87da4b4d5f56a00d67278e7ed0e931476b584e26` |
 | lifetime-v1                | `764975dd915913db4c4e0fc7bee308f8cb830c5f972ac0b97355601e7ff1b773` |
-| recovery-v1                | `278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a` |
-| guardian-control-v1        | `7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8` |
+| recovery-v1                | `180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874` |
+| guardian-control-v1        | `4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131` |
 
 The exact source import inventories are below. Both arrays preserve module and
 name order; no other static or dynamic import is permitted.
@@ -317,6 +317,7 @@ statefsImportInventory = [
     verifyCandidateContainmentRecoveryTargetV1,
     verifyCandidateContainmentRecoveryInventoryObservationV1,
     replayCandidateContainmentRecoveryV1,
+    selectCandidateContainmentRecoveryOwnerAssociationV1,
     verifyCandidateContainmentRecoveryAttemptV1,
     verifyCandidateContainmentRecoveryAnchoredEmptyAttemptV1,
     verifyCandidateContainmentRecoveryRecordV1]]
@@ -1356,8 +1357,8 @@ predecessors = [
   [containmentExactV2GitBlob,8e59aae2ec200652ffa848c9d1a8ab31a2280c29],
   [journalV2RequirementsSha256,95a4311224d8dfa5f481436e87da4b4d5f56a00d67278e7ed0e931476b584e26],
   [lifetimeV1RequirementsSha256,764975dd915913db4c4e0fc7bee308f8cb830c5f972ac0b97355601e7ff1b773],
-  [recoveryV1RequirementsSha256,278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a],
-  [guardianControlV1RequirementsSha256,7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8]
+  [recoveryV1RequirementsSha256,180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874],
+  [guardianControlV1RequirementsSha256,4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131]
 ]
 importInventory = statefsImportInventory
 schemas = [
@@ -2916,8 +2917,8 @@ predecessors = [
   [containmentExactV2GitBlob,8e59aae2ec200652ffa848c9d1a8ab31a2280c29],
   [journalV2RequirementsSha256,95a4311224d8dfa5f481436e87da4b4d5f56a00d67278e7ed0e931476b584e26],
   [lifetimeV1RequirementsSha256,764975dd915913db4c4e0fc7bee308f8cb830c5f972ac0b97355601e7ff1b773],
-  [recoveryV1RequirementsSha256,278031a43b331036e6c849f796d480e7fe680219d07bdb5b30185668a9337c5a],
-  [guardianControlV1RequirementsSha256,7348640cbf1128447cea9af280e4c5eec4fbcdb5405055fa883a0c81cb462fe8]
+  [recoveryV1RequirementsSha256,180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874],
+  [guardianControlV1RequirementsSha256,4306a64a108dd3537f5e6a6683f6615d59cab6e12d2c91ffbfb116a7439e9131]
 ]
 importInventory = managerImportInventory
 schemas = [
