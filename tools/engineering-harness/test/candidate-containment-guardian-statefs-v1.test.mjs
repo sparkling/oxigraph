@@ -771,6 +771,111 @@ const CONTRACT_BYTE_PINS = array(
   ),
 );
 
+const STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY = (() => {\n",
+    "R13B3 identity block",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "R13B2 inverse input redirection",
+  );
+  source = removeRangeExactly(
+    source,
+    "\n\n    const freshDirectorySyscallFailurePlan = async (label, variant) => {\n",
+    '\n\n    const impossibleRegular = await freshRegularPlan(\n      "r13-impossible-live-regular-initial",\n    );\n',
+    "R13B3 syscall liveness cases",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest(\n  "R13B3 syscall liveness RED inversely reconstructs the exact R13B2 evaluator",\n',
+    '\n\ntest(\n  "R13B2 liveness RED correction inversely reconstructs the exact R13B evaluator",\n',
+    "R13B3 inverse proof",
+  );
+  const predecessorBytes = Buffer.from(source, "utf8");
+  assert.equal(predecessorBytes.length, 371_224);
+  assert.equal(countExact(source, "\n"), 10_875);
+  assert.equal(
+    byteSha256(predecessorBytes),
+    "e0da6dc758789bd8bc27b75a2a2e5942afcfffd2d5166d65e5fc9756b8b7e19f",
+  );
+  assert.equal(
+    gitBlobSha1(predecessorBytes),
+    "81ac0866b800efd18679afd53e7e6fd03c4c3b4c",
+  );
+  assert.equal(countExact(source, "\ntest("), 28);
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-r13b3-syscall-liveness-red-inverse-receipt/v1",
+        predecessorBytes: predecessorBytes.length,
+        predecessorLines: countExact(source, "\n"),
+        predecessorSha256: byteSha256(predecessorBytes),
+        predecessorGitBlob: gitBlobSha1(predecessorBytes),
+        predecessorTestCount: 28,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    predecessorEvaluatorSource: source,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
 const STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY = (() => {
   const countExact = (source, needle) => {
     assert.equal(typeof source, "string");
@@ -814,7 +919,10 @@ const STATEFS_R13B2_LIVENESS_RED_CORRECTION_IDENTITY = (() => {
     return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
   };
 
-  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
   let source = currentEvaluatorBytes.toString("utf8");
   assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
@@ -10611,6 +10719,174 @@ test(
       completedStepCount: 2,
     });
 
+    const freshDirectorySyscallFailurePlan = async (label, variant) => {
+      if (variant === "ROOT") return freshRootInventoryPlan(label);
+      assert.equal(variant, "CHILD");
+      const module = await freshStatefs(label);
+      const lock = completeLock(module, { label });
+      const root = completeDirectoryInventory(module, {
+        label,
+        sequence: 1,
+        token: lock.receipt.inventorySet,
+        role: "STATE_ROOT",
+        parentRole: "STATE_ROOT",
+        targetInode: "100",
+        entries: ROOT_CHILDREN,
+      });
+      const plan = planDirectoryInventory(module, {
+        label,
+        sequence: 2,
+        token: root.receipt.inventorySet,
+        role: "LIFETIMES",
+        parentRole: "STATE_ROOT",
+        name: "lifetimes",
+      });
+      return { module, plan };
+    };
+    const assertSyscallPrefix = (
+      receipt,
+      { lastCompletedStep, failedStep, completedStepCount, errno },
+    ) => {
+      assert.equal(receipt.lastCompletedStep, lastCompletedStep);
+      assert.equal(receipt.failedStep, failedStep);
+      assert.equal(receipt.errno, errno);
+      assert.notEqual(receipt.errno, 0);
+      assert.equal(receipt.completedStepCount, completedStepCount);
+      assert.equal(receipt.bytesConsumed, 0);
+    };
+
+    for (const [variant, expectedRole] of [
+      ["ROOT", "STATE_ROOT"],
+      ["CHILD", "LIFETIMES"],
+    ]) {
+      for (const [suffix, effectClass] of [
+        ["cleanup-closed", "DEFINITE_NO_EFFECT"],
+        ["cleanup-close-failed", "EFFECT_UNCERTAIN"],
+      ]) {
+        const directory = await freshDirectorySyscallFailurePlan(
+          `r13b3-directory-${variant.toLowerCase()}-${suffix}`,
+          variant,
+        );
+        assert.equal(
+          directory.plan.request.inventoryDirectoryRole,
+          expectedRole,
+        );
+        const directoryResult = executorResult(directory.plan.request, {
+          status: "SYSCALL_FAILED",
+          effectClass,
+          lastCompletedStep: "FD_A_VALIDATED",
+          failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+          errno: 5,
+          completedStepCount: 2,
+          observations: array(),
+        });
+        const directoryReceipt = dispatchPlan(
+          directory.module,
+          directory.plan,
+          directoryResult,
+        );
+        assert.deepEqual(directoryResult.observations, array());
+        if (effectClass === "EFFECT_UNCERTAIN") {
+          assertUncertain(directoryReceipt, "SYSCALL_FAILED");
+        } else {
+          assert.equal(directoryReceipt.status, "SYSCALL_FAILED");
+          assert.equal(
+            directoryReceipt.effectClass,
+            "DEFINITE_NO_EFFECT",
+          );
+          assert.equal(
+            directoryReceipt.outcome,
+            "FAILED_DEFINITE_NO_EFFECT",
+          );
+          assert.equal(
+            directoryReceipt.retryDisposition,
+            "REPLAN_AFTER_FRESH_INVENTORY",
+          );
+          assert.deepEqual(directoryReceipt.inventories, []);
+          assert.notEqual(directoryReceipt.inventorySet, null);
+          assert.notEqual(directoryReceipt.inventorySetSha256, null);
+        }
+        assertSyscallPrefix(directoryReceipt, {
+          lastCompletedStep: "FD_A_VALIDATED",
+          failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+          completedStepCount: 2,
+          errno: 5,
+        });
+      }
+    }
+
+    for (const [suffix, effectClass] of [
+      ["cleanup-closed", "MUTATION_OBSERVED_NOT_FULLY_SYNCED"],
+      ["cleanup-close-failed", "EFFECT_UNCERTAIN"],
+    ]) {
+      const mkdir = await freshMkdirPlan(`r13b3-mkdir-syscall-${suffix}`);
+      const mkdirResult = completeMutationResult(mkdir.plan.request, {
+        status: "SYSCALL_FAILED",
+        effectClass,
+        lastCompletedStep: "CREATED_METADATA_VALIDATED",
+        failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        errno: 5,
+        completedStepCount: 4,
+        observations: array(),
+      });
+      const mkdirReceipt = dispatchPlan(
+        mkdir.module,
+        mkdir.plan,
+        mkdirResult,
+      );
+      assert.deepEqual(mkdirResult.observations, array());
+      if (effectClass === "EFFECT_UNCERTAIN") {
+        assertUncertain(mkdirReceipt, "SYSCALL_FAILED");
+      } else {
+        assertTerminal(mkdirReceipt, {
+          status: "SYSCALL_FAILED",
+          effectClass: "MUTATION_OBSERVED_NOT_FULLY_SYNCED",
+          outcome: "FAILED_MUTATION_NOT_FULLY_SYNCED",
+        });
+      }
+      assertSyscallPrefix(mkdirReceipt, {
+        lastCompletedStep: "CREATED_METADATA_VALIDATED",
+        failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        completedStepCount: 4,
+        errno: 5,
+      });
+    }
+
+    const impossibleSyscallRegular = await freshRegularPlan(
+      "r13b3-impossible-live-syscall-regular-initial",
+    );
+    expectResultFailure(
+      impossibleSyscallRegular.module,
+      impossibleSyscallRegular.plan,
+      executorResult(impossibleSyscallRegular.plan.request, {
+        status: "SYSCALL_FAILED",
+        effectClass: "EFFECT_UNCERTAIN",
+        lastCompletedStep: "FD_A_VALIDATED",
+        failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        errno: 5,
+        completedStepCount: 2,
+        observations: array(),
+        outputBytes: Buffer.alloc(0),
+      }),
+    );
+
+    const impossibleSyscallMkdir = await freshMkdirPlan(
+      "r13b3-impossible-live-syscall-mkdir-created-metadata",
+    );
+    expectResultFailure(
+      impossibleSyscallMkdir.module,
+      impossibleSyscallMkdir.plan,
+      completeMutationResult(impossibleSyscallMkdir.plan.request, {
+        status: "SYSCALL_FAILED",
+        effectClass: "EFFECT_UNCERTAIN",
+        lastCompletedStep: "CHILD_DIRECTORY_CREATED",
+        failedStep: "CREATED_METADATA_VALIDATED",
+        errno: 5,
+        completedStepCount: 3,
+        observations: array(),
+      }),
+    );
+
     const impossibleRegular = await freshRegularPlan(
       "r13-impossible-live-regular-initial",
     );
@@ -10843,6 +11119,26 @@ test(
       failedStep: "ENTRY_REOBSERVED",
       completedStepCount: 3,
       bytesConsumed: uncertainBytes.length,
+    });
+  },
+);
+
+test(
+  "R13B3 syscall liveness RED inversely reconstructs the exact R13B2 evaluator",
+  () => {
+    const receipt =
+      STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY.assertInverseReceipt(
+        STATEFS_R13B3_SYSCALL_LIVENESS_RED_IDENTITY.inverseReceipt,
+      );
+    assert.deepEqual(receipt, {
+      schema:
+        "oxigraph.test.candidate-containment-guardian-statefs-v1-r13b3-syscall-liveness-red-inverse-receipt/v1",
+      predecessorBytes: 371_224,
+      predecessorLines: 10_875,
+      predecessorSha256:
+        "e0da6dc758789bd8bc27b75a2a2e5942afcfffd2d5166d65e5fc9756b8b7e19f",
+      predecessorGitBlob: "81ac0866b800efd18679afd53e7e6fd03c4c3b4c",
+      predecessorTestCount: 28,
     });
   },
 );
