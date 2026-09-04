@@ -370,7 +370,7 @@ const REQUEST_FIELDS = fields(`
 `);
 const NATIVE_OBSERVATION_FIELDS = fields(`
   kind role name deviceMajor deviceMinor inode mountId byteLength linkCount mode ownerUid
-  ownerGid filesystemMagic contentOffset contentLength
+  ownerGid statxMask filesystemMagic contentOffset contentLength
 `);
 const EXECUTOR_RESULT_FIELDS = fields(`
   schema abiVersion requestSha256 operation status effectClass lastCompletedStep failedStep
@@ -508,7 +508,9 @@ const METADATA_RULES = array(
   "directory-link-count-minimum-two/v1",
   "no-follow/v1",
   "no-repeated-inode/v1",
+  "raw-name-bytes-01-7f/v1",
   "ascii-byte-order/v1",
+  "statx-required-mask-0x17ff/v1",
 );
 const SYSCALL_RULES = array(
   "linux-amd64-direct-allowlist/v1",
@@ -517,6 +519,8 @@ const SYSCALL_RULES = array(
   "errno-immediate/v1",
   "close-no-retry/v1",
   "zero-before-syscall/v1",
+  "validated-observation-prefix-only/v1",
+  "live-cleanup-close-upgrades-effect/v1",
 );
 const ORDERING_RULES = array(
   "intent-before-effect/v1",
@@ -652,7 +656,7 @@ const REQUIREMENTS_GOLDEN = record(
 );
 
 const EXPECTED_REQUIREMENTS_SHA256 =
-  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";
+  "9b401032c2b0331174f74895181e906106bb86a32204b818b30686d9a47c0a42";
 
 const EXPECTED_EXPORTS = array(
   "CANDIDATE_CONTAINMENT_GUARDIAN_STATEFS_V1_REQUIREMENTS",
@@ -722,12 +726,12 @@ const CONTRACT_BYTE_PINS = array(
         import.meta.url,
       ),
     ],
-    ["bytes", 204_827],
+    ["bytes", 216_620],
     [
       "sha256",
-      "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
+      "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
     ],
-    ["gitBlob", "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231"],
+    ["gitBlob", "284231e5441ee45b8fdd8f7cef0b0434edf49743"],
   ),
   record(
     ["name", "recovery evaluator fixture"],
@@ -767,6 +771,290 @@ const CONTRACT_BYTE_PINS = array(
   ),
 );
 
+const STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    assert.equal(countExact(source, after), 0, `${label} inverse precondition`);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(countExact(replaced, after), 1, `${label} inverse`);
+    return replaced;
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {\n",
+    "R13 identity block",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest(\n  "R13 statx-mask correction inversely reconstructs the exact pre-R13 evaluator",\n',
+    '\n\ntest("source-absent RED is the exact attributable candidate module failure", () => {\n',
+    "R13 proof and behavior tests",
+  );
+  source = replaceExactly(
+    source,
+    `const NATIVE_OBSERVATION_FIELDS = fields(\`
+  kind role name deviceMajor deviceMinor inode mountId byteLength linkCount mode ownerUid
+  ownerGid statxMask filesystemMagic contentOffset contentLength
+\`);`,
+    `const NATIVE_OBSERVATION_FIELDS = fields(\`
+  kind role name deviceMajor deviceMinor inode mountId byteLength linkCount mode ownerUid
+  ownerGid filesystemMagic contentOffset contentLength
+\`);`,
+    "native observation field inverse",
+  );
+  source = replaceExactly(
+    source,
+    `const METADATA_RULES = array(
+  "expected-owner-uid-gid/v1",
+  "private-mode/v1",
+  "regular-link-count-one/v1",
+  "directory-link-count-minimum-two/v1",
+  "no-follow/v1",
+  "no-repeated-inode/v1",
+  "raw-name-bytes-01-7f/v1",
+  "ascii-byte-order/v1",
+  "statx-required-mask-0x17ff/v1",
+);`,
+    `const METADATA_RULES = array(
+  "expected-owner-uid-gid/v1",
+  "private-mode/v1",
+  "regular-link-count-one/v1",
+  "directory-link-count-minimum-two/v1",
+  "no-follow/v1",
+  "no-repeated-inode/v1",
+  "ascii-byte-order/v1",
+);`,
+    "metadata rules inverse",
+  );
+  source = replaceExactly(
+    source,
+    `const SYSCALL_RULES = array(
+  "linux-amd64-direct-allowlist/v1",
+  "one-shot-mutation/v1",
+  "eintr-read-write-only/v1",
+  "errno-immediate/v1",
+  "close-no-retry/v1",
+  "zero-before-syscall/v1",
+  "validated-observation-prefix-only/v1",
+  "live-cleanup-close-upgrades-effect/v1",
+);`,
+    `const SYSCALL_RULES = array(
+  "linux-amd64-direct-allowlist/v1",
+  "one-shot-mutation/v1",
+  "eintr-read-write-only/v1",
+  "errno-immediate/v1",
+  "close-no-retry/v1",
+  "zero-before-syscall/v1",
+);`,
+    "syscall rules inverse",
+  );
+  source = replaceExactly(
+    source,
+    `const EXPECTED_REQUIREMENTS_SHA256 =
+  "9b401032c2b0331174f74895181e906106bb86a32204b818b30686d9a47c0a42";`,
+    `const EXPECTED_REQUIREMENTS_SHA256 =
+  "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1";`,
+    "requirements digest inverse",
+  );
+  source = replaceExactly(
+    source,
+    `    ["bytes", 216_620],
+    [
+      "sha256",
+      "b560e535f89ef2cd87ff4845a1f4296e23bcbc2eb47d7021f7c0ab424820449d",
+    ],
+    ["gitBlob", "284231e5441ee45b8fdd8f7cef0b0434edf49743"],`,
+    `    ["bytes", 204_827],
+    [
+      "sha256",
+      "d41b0a9d88a972dcb836a9753890e76804fea53a2ae6105ba4eb503a19b36f57",
+    ],
+    ["gitBlob", "d3b0bfebdf336036e6d723ce0ee7ce85d26a4231"],`,
+    "ADR-0037 pin inverse",
+  );
+  source = replaceExactly(
+    source,
+    `    ownerGid: 1000,
+    statxMask: overrides.kind === "ABSENT" ? 0 : 0x17ff,
+    filesystemMagic: "61267",`,
+    `    ownerGid: 1000,
+    filesystemMagic: "61267",`,
+    "native observation fixture inverse",
+  );
+  source = replaceExactly(
+    source,
+    `const SOURCE_PRESENT_TEST_OPTIONS = Object.freeze({ skip: statefs === null });
+const CANDIDATE_TEST_OPTIONS = Object.freeze({
+  skip:
+    statefs === null
+      ? "candidate source absent"
+      : statefs.CANDIDATE_CONTAINMENT_GUARDIAN_STATEFS_V1_REQUIREMENTS_SHA256 ===
+          EXPECTED_REQUIREMENTS_SHA256
+        ? false
+        : "R13 candidate contract correction pending",
+});`,
+    "const CANDIDATE_TEST_OPTIONS = Object.freeze({ skip: statefs === null });",
+    "candidate RED gate inverse",
+  );
+  source = replaceExactly(
+    source,
+    `test(
+  "candidate has exactly seven exports and the independent requirements value",
+  SOURCE_PRESENT_TEST_OPTIONS,`,
+    `test(
+  "candidate has exactly seven exports and the independent requirements value",
+  CANDIDATE_TEST_OPTIONS,`,
+    "candidate contract test option inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13EvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "prior inverse input restoration",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `    const currentBytes = Buffer.from(
+      STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13EvaluatorSource,
+      "utf8",
+    );`,
+    "    const currentBytes = readFileSync(EVALUATOR_PATH);",
+    "R11A proof input restoration",
+  );
+  source = replaceExactly(
+    source,
+    `  const currentRequirementsCanonical =
+    STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsCanonical;
+  const currentRequirementsFixture = freezeJsonTree(
+    JSON.parse(currentRequirementsCanonical),
+  );`,
+    "  const currentRequirementsCanonical = canonicalJson(REQUIREMENTS_GOLDEN);",
+    "prior requirements fixture inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `    semanticSha256(currentRequirementsFixture),
+    STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsSha256,`,
+    `    semanticSha256(REQUIREMENTS_GOLDEN),
+    EXPECTED_REQUIREMENTS_SHA256,`,
+    "prior requirements assertion inverse",
+  );
+  source = replaceExactly(
+    source,
+    "    nonPrimitiveReferences(currentRequirementsFixture);",
+    "    nonPrimitiveReferences(REQUIREMENTS_GOLDEN);",
+    "prior requirements references inverse",
+  );
+  source = replaceExactly(
+    source,
+    "      currentRequirementsSha256: semanticSha256(currentRequirementsFixture),",
+    "      currentRequirementsSha256: semanticSha256(REQUIREMENTS_GOLDEN),",
+    "prior requirements receipt inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    "      STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsSha256,",
+    "      EXPECTED_REQUIREMENTS_SHA256,",
+    "prior source requirements digest inverse",
+  );
+  const preR13EvaluatorBytes = Buffer.from(source, "utf8");
+  assert.equal(preR13EvaluatorBytes.length, 324_808);
+  assert.equal(countExact(source, "\n"), 9_548);
+  assert.equal(
+    byteSha256(preR13EvaluatorBytes),
+    "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",
+  );
+  assert.equal(
+    gitBlobSha1(preR13EvaluatorBytes),
+    "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",
+  );
+  assert.equal(countExact(source, "\ntest("), 25);
+
+  const preR13Requirements = JSON.parse(canonicalJson(REQUIREMENTS_GOLDEN));
+  preR13Requirements.nativeObservationFields.splice(12, 1);
+  preR13Requirements.metadataRules.splice(6, 1);
+  preR13Requirements.metadataRules.pop();
+  preR13Requirements.syscallRules.splice(-2, 2);
+  const preR13RequirementsCanonical = canonicalJson(preR13Requirements);
+  const preR13RequirementsSha256 = byteSha256(
+    Buffer.from(preR13RequirementsCanonical, "utf8"),
+  );
+  assert.equal(
+    preR13RequirementsSha256,
+    "9edea8e3e4a7e4e9679b338635ec9d9768ac159fde531ba6e4966498c8d025d1",
+  );
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-r13-statx-mask-inverse-receipt/v1",
+        preR13EvaluatorBytes: preR13EvaluatorBytes.length,
+        preR13EvaluatorLines: countExact(source, "\n"),
+        preR13EvaluatorSha256: byteSha256(preR13EvaluatorBytes),
+        preR13EvaluatorGitBlob: gitBlobSha1(preR13EvaluatorBytes),
+        preR13EvaluatorTestCount: 25,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    preR13EvaluatorSource: source,
+    preR13RequirementsCanonical,
+    preR13RequirementsSha256,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
 const STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {
   const SELECTED_R5_EVALUATOR_BYTES = 300_770;
   const SELECTED_R5_EVALUATOR_LINES = 8_899;
@@ -803,7 +1091,10 @@ const STATEFS_NULL_CONTEXT_CORRECTION_IDENTITY = (() => {
     return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
   };
 
-  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13EvaluatorSource,
+    "utf8",
+  );
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
   let currentEvaluatorSource = currentEvaluatorBytes.toString("utf8");
   assert.equal(
@@ -1050,7 +1341,11 @@ const STATEFS_REFREEZE_IDENTITY = (() => {
 
   const requirementsReceiptBrands = new WeakSet();
   const requirementsReceiptMetadata = new WeakMap();
-  const currentRequirementsCanonical = canonicalJson(REQUIREMENTS_GOLDEN);
+  const currentRequirementsCanonical =
+    STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsCanonical;
+  const currentRequirementsFixture = freezeJsonTree(
+    JSON.parse(currentRequirementsCanonical),
+  );
   assert.equal(
     countExact(
       currentRequirementsCanonical,
@@ -1088,15 +1383,15 @@ const STATEFS_REFREEZE_IDENTITY = (() => {
     historicalRequirementsCanonical,
   );
   assert.equal(
-    semanticSha256(REQUIREMENTS_GOLDEN),
-    EXPECTED_REQUIREMENTS_SHA256,
+    semanticSha256(currentRequirementsFixture),
+    STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsSha256,
   );
   assert.equal(
     semanticSha256(historicalRequirementsFixture),
     HISTORICAL_S1_REQUIREMENTS_SHA256,
   );
   const currentRequirementReferences =
-    nonPrimitiveReferences(REQUIREMENTS_GOLDEN);
+    nonPrimitiveReferences(currentRequirementsFixture);
   const historicalRequirementReferences = nonPrimitiveReferences(
     historicalRequirementsFixture,
   );
@@ -1120,7 +1415,7 @@ const STATEFS_REFREEZE_IDENTITY = (() => {
         currentRequirementsCanonical,
         "utf8",
       ),
-      currentRequirementsSha256: semanticSha256(REQUIREMENTS_GOLDEN),
+      currentRequirementsSha256: semanticSha256(currentRequirementsFixture),
       historicalRequirementsCanonicalBytes: Buffer.byteLength(
         historicalRequirementsCanonical,
         "utf8",
@@ -1183,7 +1478,7 @@ const STATEFS_REFREEZE_IDENTITY = (() => {
       "source guardian requirements digest reversal",
     ],
     [
-      EXPECTED_REQUIREMENTS_SHA256,
+      STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13RequirementsSha256,
       HISTORICAL_S1_REQUIREMENTS_SHA256,
       1,
       "source StateFS requirements digest reversal",
@@ -2914,6 +3209,7 @@ function nativeObservation(overrides = {}) {
     mode: 0o40_700,
     ownerUid: 1000,
     ownerGid: 1000,
+    statxMask: overrides.kind === "ABSENT" ? 0 : 0x17ff,
     filesystemMagic: "61267",
     contentOffset: 0,
     contentLength: 0,
@@ -5822,7 +6118,16 @@ async function observedLifetimeOwnerToken(module, { label, owner }) {
   return { ...tree, segment, token, sequence };
 }
 
-const CANDIDATE_TEST_OPTIONS = Object.freeze({ skip: statefs === null });
+const SOURCE_PRESENT_TEST_OPTIONS = Object.freeze({ skip: statefs === null });
+const CANDIDATE_TEST_OPTIONS = Object.freeze({
+  skip:
+    statefs === null
+      ? "candidate source absent"
+      : statefs.CANDIDATE_CONTAINMENT_GUARDIAN_STATEFS_V1_REQUIREMENTS_SHA256 ===
+          EXPECTED_REQUIREMENTS_SHA256
+        ? false
+        : "R13 candidate contract correction pending",
+});
 
 test("independent requirements golden is literal, ordered, and authority-null", () => {
   assert.equal(
@@ -6208,7 +6513,7 @@ test("owner fixtures expose valid normal handoff, recovery replan, recovery reco
 
 test(
   "candidate has exactly seven exports and the independent requirements value",
-  CANDIDATE_TEST_OPTIONS,
+  SOURCE_PRESENT_TEST_OPTIONS,
   () => {
     assert.deepEqual(Object.keys(statefs).sort(), [...EXPECTED_EXPORTS].sort());
     assert.deepEqual(
@@ -9462,7 +9767,10 @@ test(
     const regularInventoryOutput =
       "    outputBytes: absent ? Buffer.alloc(0) : Buffer.from(bytes),";
 
-    const currentBytes = readFileSync(EVALUATOR_PATH);
+    const currentBytes = Buffer.from(
+      STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.preR13EvaluatorSource,
+      "utf8",
+    );
     assert.equal(Buffer.isBuffer(currentBytes), true);
     const currentSource = currentBytes.toString("utf8");
     assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
@@ -9537,6 +9845,574 @@ test(
       "2e5d483b1097283f7b699a7de518a9126f80ca7a",
     );
     assert.equal(countExact(reconstructedSource, "\ntest("), 24);
+  },
+);
+
+test(
+  "R13 statx-mask correction inversely reconstructs the exact pre-R13 evaluator",
+  () => {
+    const receipt =
+      STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.assertInverseReceipt(
+        STATEFS_R13_STATX_MASK_CONTRACT_IDENTITY.inverseReceipt,
+      );
+    assert.deepEqual(NATIVE_OBSERVATION_FIELDS, [
+      "kind",
+      "role",
+      "name",
+      "deviceMajor",
+      "deviceMinor",
+      "inode",
+      "mountId",
+      "byteLength",
+      "linkCount",
+      "mode",
+      "ownerUid",
+      "ownerGid",
+      "statxMask",
+      "filesystemMagic",
+      "contentOffset",
+      "contentLength",
+    ]);
+    assert.equal(semanticSha256(REQUIREMENTS_GOLDEN), EXPECTED_REQUIREMENTS_SHA256);
+    assert.equal(receipt.preR13EvaluatorBytes, 324_808);
+    assert.equal(receipt.preR13EvaluatorLines, 9_548);
+    assert.equal(
+      receipt.preR13EvaluatorSha256,
+      "0170540e8cd68d233b2e6c01df6cbeca3a9be44dabc59570b09c4b9d48a08c8c",
+    );
+    assert.equal(
+      receipt.preR13EvaluatorGitBlob,
+      "6d808b107ed9bda6b2195c035e6a3ad2a6066c9d",
+    );
+    assert.equal(receipt.preR13EvaluatorTestCount, 25);
+    assert.deepEqual(METADATA_RULES.slice(-3), [
+      "raw-name-bytes-01-7f/v1",
+      "ascii-byte-order/v1",
+      "statx-required-mask-0x17ff/v1",
+    ]);
+    assert.deepEqual(SYSCALL_RULES.slice(-2), [
+      "validated-observation-prefix-only/v1",
+      "live-cleanup-close-upgrades-effect/v1",
+    ]);
+  },
+);
+
+test(
+  "R13 statx availability, raw names, observation prefixes, and cleanup liveness are fail closed",
+  CANDIDATE_TEST_OPTIONS,
+  async () => {
+    const requiredMask = 0x17ff;
+    const dispatchForVerification = (module, plan) => {
+      module.assertCandidateContainmentGuardianStatefsPlanV1(plan);
+      module.assertCandidateContainmentGuardianStatefsRequestV1(plan.request);
+    };
+    const expectResultFailure = (module, plan, result) => {
+      dispatchForVerification(module, plan);
+      expectCode(
+        () =>
+          module.verifyCandidateContainmentGuardianStatefsResultV1({
+            request: plan.request,
+            executorResult: result,
+          }),
+        "STATEFS_RESULT",
+      );
+      expectCode(
+        () =>
+          module.verifyCandidateContainmentGuardianStatefsResultV1({
+            request: plan.request,
+            executorResult: result,
+          }),
+        "STATEFS_BINDING",
+      );
+    };
+    const assertTerminal = (receipt, { status, effectClass, outcome }) => {
+      assert.equal(receipt.status, status);
+      assert.equal(receipt.effectClass, effectClass);
+      assert.equal(receipt.outcome, outcome);
+      assert.equal(receipt.retryDisposition, "NO_RETRY");
+      assert.deepEqual(receipt.inventories, []);
+      assert.equal(receipt.inventorySet, null);
+      assert.equal(receipt.inventorySetSha256, null);
+    };
+    const assertPrefix = (
+      receipt,
+      { lastCompletedStep, failedStep, completedStepCount },
+    ) => {
+      assert.equal(receipt.lastCompletedStep, lastCompletedStep);
+      assert.equal(receipt.failedStep, failedStep);
+      assert.equal(receipt.errno, 0);
+      assert.equal(receipt.completedStepCount, completedStepCount);
+      assert.equal(receipt.bytesConsumed, 0);
+    };
+    const assertUncertain = (receipt, status) => {
+      assertTerminal(receipt, {
+        status,
+        effectClass: "EFFECT_UNCERTAIN",
+        outcome: "FAILED_EFFECT_UNCERTAIN",
+      });
+    };
+    const freshRootInventoryPlan = async (label) => {
+      const module = await freshStatefs(label);
+      const lock = completeLock(module, { label });
+      const plan = planDirectoryInventory(module, {
+        label,
+        sequence: 1,
+        token: lock.receipt.inventorySet,
+        role: "STATE_ROOT",
+        parentRole: "STATE_ROOT",
+      });
+      return { module, plan };
+    };
+    const freshRegularPlan = async (label) => {
+      const module = await freshStatefs(label);
+      const tree = await rootAndLifecycleToken(module, { label });
+      const name = `0000000000000000-${digest(`${label}:entry`)}.jsonl`;
+      const plan = module.planCandidateContainmentGuardianStatefsOperationV1(
+        inventoryInput({
+          label,
+          sequence: 3,
+          token: tree.token,
+          inventoryDirectoryRole: null,
+          directoryRoleA: "LIFETIMES",
+          nameA: name,
+        }),
+      );
+      return { module, plan, name };
+    };
+    const absentObservation = (role, name, statxMask = 0) =>
+      nativeObservation({
+        kind: "ABSENT",
+        role,
+        name,
+        deviceMajor: "0",
+        deviceMinor: "0",
+        inode: "0",
+        mountId: "0",
+        byteLength: "0",
+        linkCount: "0",
+        mode: 0,
+        ownerUid: 0,
+        ownerGid: 0,
+        statxMask,
+        filesystemMagic: "0",
+      });
+    const completeAbsentResult = (request, name, statxMask = 0) =>
+      executorResult(request, {
+        lastCompletedStep: "ENTRY_REOBSERVED",
+        completedStepCount: 3,
+        observations: array(
+          absentObservation(request.directoryRoleA, name, statxMask),
+        ),
+        outputBytes: Buffer.alloc(0),
+      });
+    const freshMkdirPlan = async (label) => {
+      const module = await freshStatefs(label);
+      const tree = await rootAndLifecycleToken(module, { label });
+      const managerActorEpochSha256 = digest(`${label}:manager-actor-epoch`);
+      const owner = createLifetimeOwner({
+        label,
+        root: tree.root,
+        managerActorEpochSha256,
+      });
+      const beforeReplay = lifetimeReplayArguments(owner, 0);
+      const lifetimeRecord = owner.append("NORMAL_LIFETIME_EPOCH_CONSUMED");
+      const plan = module.planCandidateContainmentGuardianStatefsOperationV1(
+        autoInput({
+          label,
+          managerActorEpochSha256,
+          sequence: 3,
+          token: tree.token,
+          lifetimeReplayArguments: beforeReplay,
+          artifactBytes: lifetimeRecord.bytes,
+        }),
+      );
+      assert.equal(plan.request.operation, "MKDIR_SYNC");
+      return { module, plan };
+    };
+    const freshMovePlan = async (label) => {
+      const module = await freshStatefs(label);
+      const journal = ownerFixtures.createJournalStack(label, 18);
+      const generationName = journal.generationIdentity.identitySha256;
+      const active = await lifecycleParentToken(module, {
+        label,
+        role: "ACTIVE",
+        entries: array(array(generationName, "GENERATION", "500")),
+      });
+      const closed = completeDirectoryInventory(module, {
+        label,
+        sequence: 3,
+        token: active.token,
+        role: "CLOSED",
+        parentRole: "STATE_ROOT",
+        name: "closed",
+        targetInode: "104",
+        entries: array(),
+        returnedDirectoryFd: 64,
+      });
+      const managerActorEpochSha256 = digest(`${label}:manager-actor-epoch`);
+      const owner = createAdoptedLifetimeOwner({
+        label,
+        root: active.root,
+        managerActorEpochSha256,
+        journal,
+      });
+      const closeDecision = buildCloseDecisionTuple(owner, journal, "active");
+      const plan = module.planCandidateContainmentGuardianStatefsOperationV1(
+        autoInput({
+          label,
+          managerActorEpochSha256,
+          sequence: 4,
+          token: closed.receipt.inventorySet,
+          lifetimeReplayArguments: lifetimeReplayArguments(owner),
+          generationManifest: artifact(journal.generationManifest),
+          normalJournalBundles: journalArtifactList(journal),
+          recoveryTarget: closeDecision.recoveryTarget,
+          recoveryInventory: closeDecision.recoveryInventory,
+          recoveryReplay: closeDecision.recoveryReplay,
+          recoveryPlan: closeDecision.recoveryPlan,
+        }),
+      );
+      assert.equal(plan.request.operation, "MOVE_NOREPLACE_SYNC");
+      return { module, plan, generationName };
+    };
+
+    const invalidMasks = [
+      ["missing", (observation) => {
+        const copy = { ...observation };
+        delete copy.statxMask;
+        return copy;
+      }],
+      ["negative", (observation) => ({ ...observation, statxMask: -1 })],
+      ["fractional", (observation) => ({ ...observation, statxMask: 1.5 })],
+      ["string", (observation) => ({ ...observation, statxMask: "6143" })],
+      [
+        "overflow",
+        (observation) => ({ ...observation, statxMask: 0x1_0000_0000 }),
+      ],
+      [
+        "basic-stats-cleared",
+        (observation) => ({
+          ...observation,
+          statxMask: requiredMask & ~0x07ff,
+        }),
+      ],
+      [
+        "mount-id-cleared",
+        (observation) => ({
+          ...observation,
+          statxMask: requiredMask & ~0x1000,
+        }),
+      ],
+    ];
+    for (const [label, mutate] of invalidMasks) {
+      const module = await freshStatefs(`r13-mask-${label}`);
+      const plan = planLock(module, { label: `r13-mask-${label}` });
+      expectResultFailure(
+        module,
+        plan,
+        executorResult(plan.request, {
+          observations: array(mutate(nativeObservation())),
+        }),
+      );
+    }
+
+    const extraModule = await freshStatefs("r13-mask-extra");
+    const extraPlan = planLock(extraModule, { label: "r13-mask-extra" });
+    const extraResult = executorResult(extraPlan.request, {
+      observations: array(
+        nativeObservation({ statxMask: requiredMask | 0x8000_0000 }),
+      ),
+    });
+    const extraReceipt = dispatchPlan(extraModule, extraPlan, extraResult);
+    assert.equal(extraReceipt.outcome, "LOCK_HELD");
+    assert.equal(Object.hasOwn(extraReceipt, "statxMask"), false);
+
+    const absent = await freshRegularPlan("r13-mask-absent-zero");
+    const absentResult = completeAbsentResult(
+      absent.plan.request,
+      absent.name,
+    );
+    const absentReceipt = dispatchPlan(absent.module, absent.plan, absentResult);
+    assert.equal(absentResult.observations[0].statxMask, 0);
+    assert.equal(absentReceipt.outcome, "INVENTORY_OBSERVED");
+    assert.equal(absentReceipt.inventories[0].entryCount, 0);
+    assert.equal(Object.hasOwn(absentReceipt.inventories[0], "statxMask"), false);
+    assert.equal(
+      Object.hasOwn(absentReceipt.inventories[0].directory, "statxMask"),
+      false,
+    );
+
+    const nonzeroAbsent = await freshRegularPlan("r13-mask-absent-nonzero");
+    expectResultFailure(
+      nonzeroAbsent.module,
+      nonzeroAbsent.plan,
+      completeAbsentResult(
+        nonzeroAbsent.plan.request,
+        nonzeroAbsent.name,
+        1,
+      ),
+    );
+
+    const raw = await freshRootInventoryPlan("r13-raw-name-controls");
+    const rawNames = array("\x01", "\x1f", "\x7f");
+    const rawResult = executorResult(raw.plan.request, {
+      lastCompletedStep: "INVENTORY_DESCRIPTOR_CLOSED",
+      completedStepCount: 5,
+      observations: directoryNativeObservations({
+        targetRole: "STATE_ROOT",
+        targetInode: "100",
+        entries: rawNames.map((name, index) =>
+          nativeObservation({
+            kind: "DIRECTORY",
+            role: "NONE",
+            name,
+            inode: String(700 + index),
+          }),
+        ),
+      }),
+    });
+    assert.equal(rawResult.status, "COMPLETE");
+    assert.equal(rawResult.effectClass, "COMPLETE");
+    assert.equal(rawResult.observations.length, 4);
+    assert.equal(
+      rawResult.observations.every(
+        (observation) =>
+          (observation.statxMask & requiredMask) === requiredMask,
+      ),
+      true,
+    );
+    const rawReceipt = dispatchPlan(raw.module, raw.plan, rawResult);
+    assert.equal(rawReceipt.status, "REJECTED");
+    assert.equal(rawReceipt.effectClass, "DEFINITE_NO_EFFECT");
+    assert.equal(rawReceipt.outcome, "REJECTED");
+    assert.equal(rawReceipt.retryDisposition, "NO_RETRY");
+    assert.deepEqual(
+      rawReceipt.inventories[0].entries.map((entry) => entry.name),
+      rawNames,
+    );
+    assert.equal(
+      rawReceipt.inventories[0].entries.some((entry) =>
+        Object.hasOwn(entry, "statxMask"),
+      ),
+      false,
+    );
+    assert.equal(
+      Object.hasOwn(rawReceipt.inventories[0].directory, "statxMask"),
+      false,
+    );
+    assert.equal(rawReceipt.inventorySet, null);
+    assert.equal(rawReceipt.inventorySetSha256, null);
+
+    const targetMask = await freshRootInventoryPlan("r13-target-mask");
+    const targetMaskResult = executorResult(targetMask.plan.request, {
+      status: "REJECTED",
+      effectClass: "NO_EFFECT",
+      lastCompletedStep: "FD_A_VALIDATED",
+      failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      completedStepCount: 2,
+      observations: array(),
+    });
+    const targetMaskReceipt = dispatchPlan(
+      targetMask.module,
+      targetMask.plan,
+      targetMaskResult,
+    );
+    assert.equal(targetMaskResult.observations.length, 0);
+    assertTerminal(targetMaskReceipt, {
+      status: "REJECTED",
+      effectClass: "NO_EFFECT",
+      outcome: "REJECTED",
+    });
+    assertPrefix(targetMaskReceipt, {
+      lastCompletedStep: "FD_A_VALIDATED",
+      failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      completedStepCount: 2,
+    });
+
+    const possibleLive = await freshRootInventoryPlan("r13-possible-live");
+    const possibleLiveResult = executorResult(possibleLive.plan.request, {
+      status: "REJECTED",
+      effectClass: "EFFECT_UNCERTAIN",
+      lastCompletedStep: "FD_A_VALIDATED",
+      failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      completedStepCount: 2,
+      observations: array(),
+    });
+    const possibleLiveReceipt = dispatchPlan(
+      possibleLive.module,
+      possibleLive.plan,
+      possibleLiveResult,
+    );
+    assert.equal(possibleLiveResult.observations.length, 0);
+    assertUncertain(possibleLiveReceipt, "REJECTED");
+    assertPrefix(possibleLiveReceipt, {
+      lastCompletedStep: "FD_A_VALIDATED",
+      failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      completedStepCount: 2,
+    });
+
+    for (const [suffix, effectClass] of [
+      ["closed", "NO_EFFECT"],
+      ["cleanup-close-failed", "EFFECT_UNCERTAIN"],
+    ]) {
+      const unrepresentable = await freshRootInventoryPlan(
+        `r13-unrepresentable-${suffix}`,
+      );
+      const unrepresentableResult = executorResult(
+        unrepresentable.plan.request,
+        {
+          status: "REJECTED",
+          effectClass,
+          lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+          failedStep: "DIRECTORY_ENUMERATED",
+          completedStepCount: 3,
+          observations: array(
+            nativeObservation({ role: "STATE_ROOT", inode: "100" }),
+          ),
+        },
+      );
+      const receipt = dispatchPlan(
+        unrepresentable.module,
+        unrepresentable.plan,
+        unrepresentableResult,
+      );
+      assert.equal(unrepresentableResult.observations.length, 1);
+      if (effectClass === "EFFECT_UNCERTAIN") {
+        assertUncertain(receipt, "REJECTED");
+      } else {
+        assertTerminal(receipt, {
+          status: "REJECTED",
+          effectClass: "NO_EFFECT",
+          outcome: "REJECTED",
+        });
+      }
+      assertPrefix(receipt, {
+        lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        failedStep: "DIRECTORY_ENUMERATED",
+        completedStepCount: 3,
+      });
+    }
+
+    const impossibleLiveModule = await freshStatefs("r13-impossible-live");
+    const impossibleLivePlan = planLock(impossibleLiveModule, {
+      label: "r13-impossible-live",
+    });
+    expectResultFailure(
+      impossibleLiveModule,
+      impossibleLivePlan,
+      executorResult(impossibleLivePlan.request, {
+        status: "REJECTED",
+        effectClass: "EFFECT_UNCERTAIN",
+        lastCompletedStep: "REQUEST_VALIDATED",
+        failedStep: "FD_A_VALIDATED",
+        completedStepCount: 1,
+        observations: array(),
+      }),
+    );
+
+    for (const [suffix, effectClass] of [
+      ["cleanup-closed", "MUTATION_OBSERVED_NOT_FULLY_SYNCED"],
+      ["cleanup-close-failed", "EFFECT_UNCERTAIN"],
+    ]) {
+      const mkdir = await freshMkdirPlan(`r13-post-mutation-${suffix}`);
+      const mkdirResult = completeMutationResult(mkdir.plan.request, {
+        status: "VERIFICATION_FAILED",
+        effectClass,
+        lastCompletedStep: "CREATED_METADATA_VALIDATED",
+        failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        completedStepCount: 4,
+        observations: array(),
+      });
+      const receipt = dispatchPlan(
+        mkdir.module,
+        mkdir.plan,
+        mkdirResult,
+      );
+      assert.equal(mkdirResult.observations.length, 0);
+      if (effectClass === "EFFECT_UNCERTAIN") {
+        assertUncertain(receipt, "VERIFICATION_FAILED");
+      } else {
+        assertTerminal(receipt, {
+          status: "VERIFICATION_FAILED",
+          effectClass: "MUTATION_OBSERVED_NOT_FULLY_SYNCED",
+          outcome: "FAILED_MUTATION_NOT_FULLY_SYNCED",
+        });
+      }
+      assertPrefix(receipt, {
+        lastCompletedStep: "CREATED_METADATA_VALIDATED",
+        failedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        completedStepCount: 4,
+      });
+    }
+
+    const move = await freshMovePlan("r13-prior-canonical-slot");
+    const moveResult = completeMutationResult(move.plan.request, {
+      status: "VERIFICATION_FAILED",
+      effectClass: "EFFECT_UNCERTAIN",
+      lastCompletedStep: "SOURCE_ABSENCE_REOBSERVED",
+      failedStep: "DESTINATION_REOBSERVED",
+      completedStepCount: 8,
+      observations: array(
+        absentObservation("ACTIVE", move.generationName),
+      ),
+    });
+    const moveReceipt = dispatchPlan(
+      move.module,
+      move.plan,
+      moveResult,
+    );
+    assert.equal(moveResult.observations.length, 1);
+    assert.equal(moveResult.observations[0].kind, "ABSENT");
+    assert.equal(moveResult.observations[0].statxMask, 0);
+    assertUncertain(moveReceipt, "VERIFICATION_FAILED");
+    assertPrefix(moveReceipt, {
+      lastCompletedStep: "SOURCE_ABSENCE_REOBSERVED",
+      failedStep: "DESTINATION_REOBSERVED",
+      completedStepCount: 8,
+    });
+
+    const unrelated = await freshRegularPlan("r13-unrelated-verification");
+    const unrelatedBytes = Buffer.from("x", "utf8");
+    const unrelatedReceipt = dispatchPlan(
+      unrelated.module,
+      unrelated.plan,
+      executorResult(unrelated.plan.request, {
+        status: "VERIFICATION_FAILED",
+        effectClass: "DEFINITE_NO_EFFECT",
+        lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+        failedStep: "ENTRY_REOBSERVED",
+        completedStepCount: 3,
+        bytesConsumed: unrelatedBytes.length,
+        observations: array(
+          nativeObservation({
+            kind: "REGULAR",
+            role: "LIFETIMES",
+            name: unrelated.name,
+            inode: "800",
+            byteLength: "2",
+            linkCount: "1",
+            mode: 0o100_600,
+            contentLength: unrelatedBytes.length,
+          }),
+        ),
+        outputBytes: unrelatedBytes,
+      }),
+    );
+    assert.equal(unrelatedReceipt.status, "VERIFICATION_FAILED");
+    assert.equal(unrelatedReceipt.effectClass, "DEFINITE_NO_EFFECT");
+    assert.equal(unrelatedReceipt.outcome, "FAILED_DEFINITE_NO_EFFECT");
+    assert.equal(
+      unrelatedReceipt.retryDisposition,
+      "REPLAN_AFTER_FRESH_INVENTORY",
+    );
+    assert.deepEqual(unrelatedReceipt.inventories, []);
+    assert.notEqual(unrelatedReceipt.inventorySet, null);
+    assert.notEqual(unrelatedReceipt.inventorySetSha256, null);
+    assertPrefix(unrelatedReceipt, {
+      lastCompletedStep: "INTERNAL_DESCRIPTOR_OPENED",
+      failedStep: "ENTRY_REOBSERVED",
+      completedStepCount: 3,
+    });
   },
 );
 
