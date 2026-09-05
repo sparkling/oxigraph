@@ -16,6 +16,23 @@
   recursive trap-free exact-own-data validation; the repaired freeze requires
   fresh review and does not change this Proposed ADR's implementation or
   readiness authority.
+- S3A evaluator note (2026-09-05): task `task-1788625446905-rigaey`
+  deliberately remains RED only for the absent ADR-0037 one-use manager-
+  protocol/StateFS transition consumer. It pins the unchanged S0-S2 and
+  ADR-0037 inputs, treats foreign transitions and bare requests as opaque, and
+  requires manager-transition consumption before property access followed by
+  exact nested-request identity, one StateFS request assertion, and immediate
+  evaluator-bound dispatch. It also locally repeats the deterministic exact
+  link-only manager build and attestation, including the unchanged StateFS
+  object and sole entrypoint. The evaluator-owned dispatch returns ADR-0037's
+  exact lock executor-result shape; the future bridge must verify and return
+  the exact branded receipt, which the fixture then feeds through the retained
+  manager receipt input and reducer. Omitted, substituted, replayed, or thrown
+  result/receipt paths remain terminal. Neither local build nor the synthetic
+  dispatch proves StateFS C execution. S3A adds no bridge implementation,
+  physical fact, registration, readiness, qualification, or closure claim;
+  those remain the dependent S3B task `task-1788625462636-m8y9ga` or later
+  gated work.
 - **Depends on**:
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md),
   [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)
