@@ -1,0 +1,361 @@
+{
+  "schema": "oxigraph.rocksdb-opaque-c-upgrade-oracle/v1",
+  "taskId": "task-1788564859420-quqacs",
+  "integratedBase": "34351248f05bf6befc5d60556a4991c75100b53e",
+  "rustTarget": {
+    "triple": "x86_64-unknown-linux-gnu",
+    "flags": {
+      "test": false,
+      "unix": true,
+      "windows": false
+    },
+    "values": {
+      "feature": ["rocksdb"],
+      "target_arch": "x86_64",
+      "target_endian": "little",
+      "target_env": "gnu",
+      "target_family": "unix",
+      "target_os": "linux",
+      "target_pointer_width": "64",
+      "target_vendor": "unknown"
+    }
+  },
+  "rustFfiResult": {
+    "macro": "ffi_result",
+    "tokenSha256": "0f6f5b268837035ce83f7751fe95e28ab1260a77812248b03fddb0dd3505af20"
+  },
+  "upstream": {
+    "repository": "https://github.com/facebook/rocksdb",
+    "baseline": {
+      "tag": "v11.1.2",
+      "releaseUrl": "https://github.com/facebook/rocksdb/releases/tag/v11.1.2",
+      "tagKind": "annotated",
+      "tagObject": "9d94571e3091e14a0b428cab639c388971cb4fcb",
+      "commit": "3b446089141659fad25328c5ea3e7ed283df46e4",
+      "commitUrl": "https://github.com/facebook/rocksdb/commit/3b446089141659fad25328c5ea3e7ed283df46e4",
+      "tree": "36afaac5df4b9666e3c7ca5e32e094edd6fedfac",
+      "files": [
+        {
+          "path": "db/c.cc",
+          "gitBlob": "07438c7e77e5b0ed4457d18ca3c61e4db193619b",
+          "sha256": "3e513ee412f140da8aa7d7a6d8fc92b69bb03a774829532073e9610673399b13"
+        },
+        {
+          "path": "include/rocksdb/c.h",
+          "gitBlob": "744aea966b83411ba0e1c0da0ce2723b7b3306fe",
+          "sha256": "5ccf0734b2a821826458c2ccb312d40dc02cfa0f504e96ba9dcdc2e557338765"
+        },
+        {
+          "path": "include/rocksdb/version.h",
+          "gitBlob": "90db840be8f530887153dbd9d445ad52bbcd74f5",
+          "sha256": "90df67f369aadb9cf8bf3223dba827f53355ad7953ade7902b85b602521585ff"
+        }
+      ]
+    },
+    "candidate": {
+      "tag": "v11.8.1",
+      "releaseUrl": "https://github.com/facebook/rocksdb/releases/tag/v11.8.1",
+      "tagKind": "lightweight",
+      "tagObject": null,
+      "commit": "abeebd9630f11bd08c28b7bd43c7bdfc62050654",
+      "commitUrl": "https://github.com/facebook/rocksdb/commit/abeebd9630f11bd08c28b7bd43c7bdfc62050654",
+      "tree": "061f8e3ce4ac04b1e9420ff92f6ed3c9b841b806",
+      "files": [
+        {
+          "path": "db/c.cc",
+          "gitBlob": "bff4deba77f423c9e24adce0e50c0cc225cfb462",
+          "sha256": "f2d55e08fed8f9502271a555aabb937a18786acc12384337e5f076b64f3a592a"
+        },
+        {
+          "path": "include/rocksdb/c.h",
+          "gitBlob": "f1e42b283f63d06a52b33335f72145b0fc5aa288",
+          "sha256": "d2d96eb10b8670e37cb51c91758e39d7f10acfede72ab69e765326585eefb41f"
+        },
+        {
+          "path": "include/rocksdb/version.h",
+          "gitBlob": "4917594fd9cb42099f5403ae0e6261f09bc5e07b",
+          "sha256": "e0d7ea392587f1353f083c73178373e0874035a89667b30e8f3564913fee06ed"
+        }
+      ]
+    }
+  },
+  "opaqueMirrors": [
+    {
+      "tag": "rocksdb_t",
+      "privateCppType": "DB",
+      "baselineShape": "DB * rep",
+      "candidateShape": "DB * rep",
+      "baselineMemberNames": ["rep"],
+      "candidateMemberNames": ["rep"],
+      "disposition": "public-c-only"
+    },
+    {
+      "tag": "rocksdb_iterator_t",
+      "privateCppType": "Iterator",
+      "baselineShape": "Iterator * rep",
+      "candidateShape": "Iterator * rep",
+      "baselineMemberNames": ["rep"],
+      "candidateMemberNames": ["rep"],
+      "disposition": "public-c-only"
+    },
+    {
+      "tag": "rocksdb_column_family_handle_t",
+      "privateCppType": "ColumnFamilyHandle",
+      "baselineShape": "ColumnFamilyHandle * rep; bool immortal",
+      "candidateShape": "ColumnFamilyHandle * rep; bool immortal",
+      "baselineMemberNames": ["rep", "immortal"],
+      "candidateMemberNames": ["rep", "immortal"],
+      "disposition": "public-c-only"
+    },
+    {
+      "tag": "rocksdb_writebatch_wi_t",
+      "privateCppType": "WriteBatchWithIndex",
+      "baselineShape": "WriteBatchWithIndex * rep",
+      "candidateShape": "WriteBatchWithIndex * rep",
+      "baselineMemberNames": ["rep"],
+      "candidateMemberNames": ["rep"],
+      "disposition": "public-c-only"
+    },
+    {
+      "tag": "rocksdb_ingestexternalfileoptions_t",
+      "privateCppType": "IngestExternalFileOptions",
+      "baselineShape": "IngestExternalFileOptions rep",
+      "candidateShape": "IngestExternalFileOptions rep",
+      "baselineMemberNames": ["rep"],
+      "candidateMemberNames": ["rep"],
+      "disposition": "upstream-owner-only"
+    },
+    {
+      "tag": "rocksdb_readoptions_t",
+      "privateCppType": "ReadOptions",
+      "baselineShape": "ReadOptions rep; Slice upper_bound; Slice lower_bound; Slice timestamp; Slice iter_start_ts",
+      "candidateShape": "ReadOptions rep; Slice upper_bound; Slice lower_bound; Slice timestamp; Slice iter_start_ts; unique_ptr<string> request_id; table-filter state/callback/destructor; shared_ptr<UserDefinedIndexFactory> table_index_factory; non-trivial destructor",
+      "baselineMemberNames": [
+        "rep",
+        "upper_bound",
+        "lower_bound",
+        "timestamp",
+        "iter_start_ts"
+      ],
+      "candidateMemberNames": [
+        "rep",
+        "upper_bound",
+        "lower_bound",
+        "timestamp",
+        "iter_start_ts",
+        "request_id",
+        "table_filter_state",
+        "table_filter_destructor",
+        "table_filter_callback",
+        "table_index_factory"
+      ],
+      "disposition": "public-c-only"
+    }
+  ],
+  "shimDisposition": [
+    {
+      "customSymbol": "oxrocksdb_writebatch_wi_create_iterator_with_base_readopts_cf",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": [
+        "rocksdb_writebatch_wi_create_iterator_with_base_cf_readopts"
+      ],
+      "ownership": "the public call consumes and replaces the base iterator; the returned iterator is destroyed exactly once with rocksdb_iter_destroy"
+    },
+    {
+      "customSymbol": "oxrocksdb_get_pinned_cf_v2",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": [
+        "rocksdb_get_pinned_cf_v2",
+        "rocksdb_pinnable_handle_get_value",
+        "rocksdb_pinnable_handle_destroy"
+      ],
+      "ownership": "the handle owns the pin; value bytes borrow from it and remain valid only until its single destroy"
+    },
+    {
+      "customSymbol": "oxrocksdb_pinnable_handle_get_value",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": ["rocksdb_pinnable_handle_get_value"],
+      "ownership": "returned bytes borrow from the live handle"
+    },
+    {
+      "customSymbol": "oxrocksdb_pinnable_handle_destroy",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": ["rocksdb_pinnable_handle_destroy"],
+      "ownership": "destroy each non-null handle exactly once after all borrowed bytes are unused"
+    },
+    {
+      "customSymbol": "oxrocksdb_get_into_buffer_cf",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": ["rocksdb_get_into_buffer_cf"],
+      "ownership": "the public call preserves distinct found, error, and short-buffer outputs without creating a temporary owner"
+    },
+    {
+      "customSymbol": "oxrocksdb_iter_key_slice",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": ["rocksdb_iter_key_slice"],
+      "ownership": "key bytes borrow from the iterator and are invalidated by movement or destruction"
+    },
+    {
+      "customSymbol": "oxrocksdb_writebatch_wi_get_into_buffer_cf",
+      "disposition": "replace-with-public-c-composition",
+      "publicSymbols": [
+        "rocksdb_writebatch_wi_get_pinned_from_batch_and_db_cf",
+        "rocksdb_pinnableslice_value",
+        "rocksdb_pinnableslice_destroy"
+      ],
+      "ownership": "the transaction-overlay result owns its pin; not-found is distinct from error and the pin is destroyed on every terminal path"
+    },
+    {
+      "customSymbol": "oxrocksdb_writebatch_wi_get_pinned_cf_v2",
+      "disposition": "replace-with-public-c",
+      "publicSymbols": [
+        "rocksdb_writebatch_wi_get_pinned_from_batch_and_db_cf",
+        "rocksdb_pinnableslice_value",
+        "rocksdb_pinnableslice_destroy"
+      ],
+      "ownership": "reads must preserve the WriteBatchWithIndex overlay; returned bytes borrow from the result until its single destroy"
+    },
+    {
+      "customSymbol": "oxrocksdb_readoptions_create_copy",
+      "disposition": "replace-with-product-state-reconstruction",
+      "publicSymbols": [
+        "rocksdb_readoptions_create",
+        "rocksdb_readoptions_set_async_io",
+        "rocksdb_readoptions_set_snapshot",
+        "rocksdb_readoptions_set_iterate_upper_bound",
+        "rocksdb_readoptions_destroy"
+      ],
+      "ownership": "there is no public opaque read-options clone; construct a fresh object from product-owned state, keep snapshot and bound owners alive, and destroy it exactly once"
+    }
+  ],
+  "requiredExtension": {
+    "symbol": "oxrocksdb_ingest_external_files",
+    "reason": "the public C API exposes only per-column-family ingestion and cannot preserve one atomic DB::IngestExternalFiles call across column families",
+    "ownerTranslationUnit": "oxrocksdb-sys/rocksdb/db/c.cc",
+    "forbiddenTranslationUnit": "oxrocksdb-sys/api/c.cc",
+    "header": "oxrocksdb-sys/api/c.h",
+    "rustCallSite": "lib/oxigraph/src/storage/rocksdb_wrapper.rs",
+    "atomicCppCall": "IngestExternalFiles",
+    "ownership": "copy every path into storage that outlives argument assembly, bind each public opaque CF/options object only inside the upstream-owned translation unit, invoke DB::IngestExternalFiles exactly once, and report one status",
+    "candidateOverlay": {
+      "placement": "exact-append-to-pristine-db-c-cc",
+      "changedPaths": ["db/c.cc"],
+      "utf8": "\nstruct rocksdb_ingestexternalfilearg_t {\n  rocksdb_column_family_handle_t* column_family;\n  const char* const* external_files;\n  size_t external_files_len;\n  rocksdb_ingestexternalfileoptions_t* options;\n};\n\nextern \"C\" void oxrocksdb_ingest_external_files(\n    rocksdb_t* db, const rocksdb_ingestexternalfilearg_t* list,\n    const size_t list_len, char** errptr) {\n  vector<rocksdb::IngestExternalFileArg> args(list_len);\n  for (size_t i = 0; i < list_len; ++i) {\n    args[i].column_family = list[i].column_family->rep;\n    for (size_t j = 0; j < list[i].external_files_len; ++j) {\n      args[i].external_files.emplace_back(list[i].external_files[j]);\n    }\n    args[i].options = list[i].options->rep;\n  }\n  SaveError(errptr, db->rep->IngestExternalFiles(args));\n}\n",
+      "sha256": "94b61090379d7f0717c9955f43fb218a86a83da1c0c16b7497f1d8c13374a1f6",
+      "resultSha256": "a501913889fcc828581ca37853baf1af5834e7af0ab02af7fd37976f3c727526"
+    }
+  },
+  "buildGraph": {
+    "buildScript": {
+      "path": "oxrocksdb-sys/build.rs",
+      "sha256": "c793573ec4af81c60b723e2978c74bcc8f1f7ead5fe9a2999caa608a0bff7791"
+    },
+    "sourceManifest": {
+      "path": "oxrocksdb-sys/rocksdb/src.mk",
+      "sha256": "cceafaa734aaf9637fbaf60e68be16adbdca6908c33cc1f03fd36b75dd012fd9"
+    },
+    "literalTranslationUnits": [
+      "oxrocksdb-sys/api/build_version.cc",
+      "oxrocksdb-sys/api/c.cc",
+      "oxrocksdb-sys/lz4/lib/lz4.c",
+      "oxrocksdb-sys/lz4/lib/lz4frame.c",
+      "oxrocksdb-sys/lz4/lib/lz4hc.c",
+      "oxrocksdb-sys/lz4/lib/xxhash.c"
+    ],
+    "manifestTranslationUnits": {
+      "count": 341,
+      "sha256": "30db38e8bc22818e365267e3896e6337ba725b4516c16727f5f623b180716f30"
+    },
+    "sourceRoots": [
+      "oxrocksdb-sys/api/",
+      "oxrocksdb-sys/lz4/",
+      "oxrocksdb-sys/rocksdb/"
+    ],
+    "closure": {
+      "count": 853,
+      "sha256": "026f2be8844bb587af42d67a0653e2aab1756c2208147170bb24b29d6463bc09"
+    },
+    "externalHeaders": {
+      "count": 160,
+      "sha256": "12e38a4c85733aef2243f89f1be109c8e9fa7c90038e047f9706fd851a1b4caf"
+    }
+  },
+  "futureGreenGates": [
+    {
+      "id": "address-sanitizer",
+      "compilerFlag": "-fsanitize=address",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1"
+      },
+      "buildEnvironment": {
+        "CXXFLAGS": "-fsanitize=address -fno-omit-frame-pointer",
+        "RUSTFLAGS": "-C link-arg=-fsanitize=address"
+      },
+      "cargo": [
+        "test",
+        "--offline",
+        "-p",
+        "oxigraph",
+        "--features",
+        "rocksdb",
+        "--lib"
+      ],
+      "success": "zero exit, no AddressSanitizer or LeakSanitizer diagnostic",
+      "executionPhase": "future-green-post-implementation",
+      "unavailableDisposition": "BLOCKED"
+    },
+    {
+      "id": "undefined-behavior-sanitizer",
+      "compilerFlag": "-fsanitize=undefined",
+      "environment": {
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      },
+      "buildEnvironment": {
+        "CXXFLAGS": "-fsanitize=undefined -fno-omit-frame-pointer",
+        "RUSTFLAGS": "-C link-arg=-fsanitize=undefined"
+      },
+      "cargo": [
+        "test",
+        "--offline",
+        "-p",
+        "oxigraph",
+        "--features",
+        "rocksdb",
+        "--lib"
+      ],
+      "success": "zero exit, no UndefinedBehaviorSanitizer or runtime error diagnostic",
+      "executionPhase": "future-green-post-implementation",
+      "unavailableDisposition": "BLOCKED"
+    }
+  ],
+  "lifecycle": [
+    {
+      "id": "read-options",
+      "contract": "created only by the public constructor, reconstructed from product-owned async/snapshot state rather than copied as an opaque object, and destroyed exactly once"
+    },
+    {
+      "id": "bounds",
+      "contract": "the Rust-owned lower/upper-bound bytes outlive the read options and iterator that borrow them; iterator destruction precedes read-options destruction"
+    },
+    {
+      "id": "snapshot",
+      "contract": "the DB outlives its snapshot, every read option borrowing a snapshot is destroyed before that snapshot is released, and release occurs exactly once"
+    },
+    {
+      "id": "iterator",
+      "contract": "iterator key/value slices are borrowed only until movement or destruction; the iterator is destroyed exactly once before its read options and bound owner"
+    },
+    {
+      "id": "transaction-overlay",
+      "contract": "reads and iterators use the public WriteBatchWithIndex overlay APIs; the overlay outlives its readers and is destroyed before read options and snapshot release"
+    },
+    {
+      "id": "pinned-and-buffer-getters",
+      "contract": "not-found remains distinct from error and short-buffer; borrowed bytes never outlive their public pin handle, which is destroyed exactly once on every terminal path"
+    },
+    {
+      "id": "multi-cf-ingest",
+      "contract": "all column-family arguments and path storage outlive one and only one DB::IngestExternalFiles call so validation failure cannot degrade into per-CF partial ingestion"
+    }
+  ]
+}
