@@ -14,8 +14,9 @@
 use super::*;
 use std::collections::BTreeSet;
 use std::ffi::{CStr, CString};
-use std::fs::read_to_string;
+use std::fs::{read_to_string, write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::ptr::NonNull;
 use tempfile::TempDir;
 
@@ -1491,6 +1492,27 @@ fn unique_unconditional_function_has_header(
         .eq(expected.iter().copied())
 }
 
+fn unique_unconditional_function_has_exact_prefix_and_header(
+    tokens: &[RustToken],
+    name: &str,
+    expected: &[&str],
+) -> bool {
+    let Some(depths) = curly_depths(tokens) else {
+        return false;
+    };
+    let Some(item) = unique_unconditional_top_level_item(tokens, "fn", name) else {
+        return false;
+    };
+    let Some(body_open) = item.body_open else {
+        return false;
+    };
+    let prefix = prefix_start(tokens, &depths, item.declaration, 0, 0);
+    tokens[prefix..body_open]
+        .iter()
+        .map(|token| token.0.as_str())
+        .eq(expected.iter().copied())
+}
+
 fn unique_unconditional_method_body<'a>(
     tokens: &'a [RustToken],
     type_name: &str,
@@ -1642,11 +1664,431 @@ fn manifest_package_build_script(manifest: &str) -> Option<&str> {
     None
 }
 
+fn reviewed_sys_build_helpers() -> &'static str {
+    r#"
+        use std::env::var;
+        #[cfg(not(feature = "pkg-config"))]
+        use std::env::{remove_var, set_var};
+        use std::path::PathBuf;
+
+        #[cfg(not(feature = "pkg-config"))]
+        fn link(name: &str, bundled: bool) {
+            let target = var("TARGET").unwrap();
+            let target: Vec<_> = target.split('-').collect();
+            if target.get(2) == Some(&"windows") {
+                println!("cargo:rustc-link-lib=dylib={name}");
+                if bundled && target.get(3) == Some(&"gnu") {
+                    let dir = var("CARGO_MANIFEST_DIR").unwrap();
+                    println!("cargo:rustc-link-search=native={}/{}", dir, target[0]);
+                }
+            }
+        }
+
+        fn bindgen_rocksdb_api(includes: &[PathBuf]) {
+            println!("cargo:rerun-if-changed=api/");
+
+            let mut builder = bindgen::Builder::default();
+            for include in includes {
+                builder = builder.clang_arg(format!("-I{}", include.display()));
+            }
+            builder
+                .header("api/c.h")
+                .allowlist_function("rocksdb_.*")
+                .allowlist_function("oxrocksdb_.*")
+                .allowlist_type("rocksdb_.*")
+                .allowlist_type("oxrocksdb_.*")
+                .allowlist_var("rocksdb_.*")
+                .generate()
+                .unwrap()
+                .write_to_file(PathBuf::from(var("OUT_DIR").unwrap()).join("bindings.rs"))
+                .unwrap();
+        }
+
+        fn build_rocksdb_api(includes: &[PathBuf]) {
+            let target = var("TARGET").unwrap();
+            let mut config = cc::Build::new();
+            for include in includes {
+                config.include(include);
+            }
+            if target.contains("msvc") {
+                config.flag("-EHsc").flag("-std:c++20");
+            } else {
+                config.flag("-std=c++20");
+            }
+            if target.contains("armv5te") || target.contains("riscv64gc") {
+                println!("cargo:rustc-link-lib=atomic");
+            }
+            config.cpp(true).file("api/c.cc").compile("oxrocksdb_api");
+        }
+
+        #[cfg(not(feature = "pkg-config"))]
+        fn build_rocksdb() {
+            let target = var("TARGET").unwrap();
+
+            let mut config = cc::Build::new();
+            config
+                .cpp(true)
+                .include("rocksdb/include/")
+                .include("rocksdb/")
+                .file("api/build_version.cc")
+                .define("NDEBUG", Some("1"))
+                .define("LZ4", Some("1"))
+                .include("lz4/lib/");
+
+            let mut lib_sources = include_str!("rocksdb/src.mk")
+                .split_once("LIB_SOURCES =")
+                .unwrap()
+                .1
+                .split_once("ifeq")
+                .unwrap()
+                .0
+                .split('\\')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>();
+
+            if target.contains("x86_64") {
+                let target_feature = var("CARGO_CFG_TARGET_FEATURE").unwrap();
+                let target_features: Vec<_> = target_feature.split(',').collect();
+                if target_features.contains(&"sse2") {
+                    config.flag_if_supported("-msse2");
+                }
+                if target_features.contains(&"sse4.1") {
+                    config.flag_if_supported("-msse4.1");
+                }
+                if target_features.contains(&"sse4.2") {
+                    config.flag_if_supported("-msse4.2");
+                    config.define("HAVE_SSE42", Some("1"));
+                }
+                if target_features.contains(&"pclmulqdq") && !target.contains("android") {
+                    config.define("HAVE_PCLMUL", Some("1"));
+                    config.flag_if_supported("-mpclmul");
+                }
+                if target_features.contains(&"avx2") {
+                    config.define("HAVE_AVX2", Some("1"));
+                    config.flag_if_supported("-mavx2");
+                }
+                if target_features.contains(&"bmi1") {
+                    config.define("HAVE_BMI", Some("1"));
+                    config.flag_if_supported("-mbmi");
+                }
+                if target_features.contains(&"lzcnt") {
+                    config.define("HAVE_LZCNT", Some("1"));
+                    config.flag_if_supported("-mlzcnt");
+                }
+            }
+
+            if target.contains("apple-ios") {
+                config.define("OS_MACOSX", None);
+                config.define("IOS_CROSS_COMPILE", None);
+                config.define("PLATFORM", "IOS");
+                config.define("NIOSTATS_CONTEXT", None);
+                config.define("NPERF_CONTEXT", None);
+                config.define("ROCKSDB_PLATFORM_POSIX", None);
+                config.define("ROCKSDB_LIB_IO_POSIX", None);
+                unsafe { remove_var("SDKROOT") };
+                unsafe { set_var("IPHONEOS_DEPLOYMENT_TARGET", "11.0") };
+            } else if target.contains("darwin") {
+                config.define("OS_MACOSX", None);
+                config.define("ROCKSDB_PLATFORM_POSIX", None);
+                config.define("ROCKSDB_LIB_IO_POSIX", None);
+                unsafe { remove_var("SDKROOT") };
+            } else if target.contains("android") {
+                config.define("OS_ANDROID", None);
+                config.define("ROCKSDB_PLATFORM_POSIX", None);
+                config.define("ROCKSDB_LIB_IO_POSIX", None);
+            } else if target.contains("linux") {
+                config.define("OS_LINUX", None);
+                config.define("ROCKSDB_PLATFORM_POSIX", None);
+                config.define("ROCKSDB_LIB_IO_POSIX", None);
+            } else if target.contains("freebsd") {
+                config.define("OS_FREEBSD", None);
+                config.define("ROCKSDB_PLATFORM_POSIX", None);
+                config.define("ROCKSDB_LIB_IO_POSIX", None);
+            } else if target.contains("windows") {
+                link("rpcrt4", false);
+                link("shlwapi", false);
+                config.define("DWIN32", None);
+                config.define("OS_WIN", None);
+                config.define("_MBCS", None);
+                config.define("WIN64", None);
+                config.define("NOMINMAX", None);
+                config.define("ROCKSDB_WINDOWS_UTF8_FILENAMES", None);
+
+                if target.contains("pc-windows-gnu") {
+                    config.define("_POSIX_C_SOURCE", Some("1"));
+                    config.define("_WIN32_WINNT", Some("_WIN32_WINNT_VISTA"));
+                }
+
+                lib_sources = lib_sources
+                    .iter()
+                    .copied()
+                    .filter(|file| {
+                        !matches!(
+                            *file,
+                            "port/port_posix.cc"
+                                | "env/env_posix.cc"
+                                | "env/fs_posix.cc"
+                                | "env/io_posix.cc"
+                        )
+                    })
+                    .collect::<Vec<&'static str>>();
+
+                lib_sources.extend([
+                    "port/win/env_default.cc",
+                    "port/win/port_win.cc",
+                    "port/win/xpress_win.cc",
+                    "port/win/io_win.cc",
+                    "port/win/win_thread.cc",
+                    "port/win/env_win.cc",
+                    "port/win/win_logger.cc",
+                ]);
+            }
+
+            config.define("ROCKSDB_SUPPORT_THREAD_LOCAL", None);
+
+            if target.contains("msvc") {
+                config.flag("-EHsc").flag("-std:c++20");
+            } else {
+                config.flag("-std=c++20").flag("-Wno-invalid-offsetof");
+                if target.contains("x86_64") || target.contains("aarch64") {
+                    config.define("HAVE_UINT128_EXTENSION", Some("1"));
+                }
+            }
+
+            for file in lib_sources {
+                if file != "util/build_version.cc" {
+                    config.file(format!("rocksdb/{file}"));
+                }
+            }
+
+            config.compile("rocksdb");
+        }
+
+        #[cfg(not(feature = "pkg-config"))]
+        fn build_lz4() {
+            let mut config = cc::Build::new();
+            config
+                .file("lz4/lib/lz4.c")
+                .file("lz4/lib/lz4frame.c")
+                .file("lz4/lib/lz4hc.c")
+                .file("lz4/lib/xxhash.c");
+            if var("TARGET").unwrap() == "i686-pc-windows-gnu" {
+                config.flag("-fno-tree-vectorize");
+            }
+            config.compile("lz4");
+        }
+    "#
+}
+
+fn top_level_function_matches_reviewed_source(
+    tokens: &[RustToken],
+    reviewed_source: &str,
+    name: &str,
+) -> bool {
+    let reviewed_tokens = rust_tokens(reviewed_source);
+    let actual = top_level_named_items(tokens, "fn", name);
+    let reviewed = top_level_named_items(&reviewed_tokens, "fn", name);
+    let ([actual], [reviewed]) = (actual.as_slice(), reviewed.as_slice()) else {
+        return false;
+    };
+    let (Some(actual_depths), Some(reviewed_depths)) =
+        (curly_depths(tokens), curly_depths(&reviewed_tokens))
+    else {
+        return false;
+    };
+    let actual_prefix = prefix_start(tokens, &actual_depths, actual.declaration, 0, 0);
+    let reviewed_prefix = prefix_start(
+        &reviewed_tokens,
+        &reviewed_depths,
+        reviewed.declaration,
+        0,
+        0,
+    );
+    tokens[actual_prefix..=actual.end] == reviewed_tokens[reviewed_prefix..=reviewed.end]
+}
+
+fn sys_build_support_matches_reviewed_source(tokens: &[RustToken]) -> bool {
+    let Some(depths) = curly_depths(tokens) else {
+        return false;
+    };
+    let emitter = top_level_named_items(tokens, "fn", "emit_rocksdb_build_metadata");
+    let mains = top_level_named_items(tokens, "fn", "main");
+    let ([emitter], [vendored, system]) = (emitter.as_slice(), mains.as_slice()) else {
+        return false;
+    };
+    let mut retained = vec![true; tokens.len()];
+    for item in [emitter, vendored, system] {
+        let prefix = prefix_start(tokens, &depths, item.declaration, 0, 0);
+        retained[prefix..=item.end].fill(false);
+    }
+    let actual = tokens
+        .iter()
+        .zip(retained)
+        .filter_map(|(token, retained)| retained.then_some(token))
+        .collect::<Vec<_>>();
+    let reviewed = rust_tokens(reviewed_sys_build_helpers());
+    actual
+        .into_iter()
+        .map(|token| token.0.as_str())
+        .eq(reviewed.iter().map(|token| token.0.as_str()))
+}
+
+fn compile_and_run_build_script_fixture(
+    source: &str,
+    system_feature: bool,
+) -> Result<std::process::Output, String> {
+    let directory = TempDir::new()
+        .map_err(|error| format!("failed to create build-script fixture directory: {error}"))?;
+    let source_path = directory.path().join("fixture.rs");
+    let executable_path = directory.path().join(if cfg!(windows) {
+        "fixture.exe"
+    } else {
+        "fixture"
+    });
+    write(&source_path, source)
+        .map_err(|error| format!("failed to write build-script fixture: {error}"))?;
+    let mut compiler = Command::new(
+        std::env::var_os("RUSTC").unwrap_or_else(|| std::ffi::OsString::from("rustc")),
+    );
+    compiler
+        .arg("--edition=2024")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&executable_path);
+    if system_feature {
+        compiler.arg("--cfg").arg("feature=\"pkg-config\"");
+    }
+    let compilation = compiler
+        .output()
+        .map_err(|error| format!("failed to run rustc for hostile fixture: {error}"))?;
+    if !compilation.status.success() {
+        return Err(format!(
+            "hostile fixture must be compiler-valid: {}",
+            String::from_utf8_lossy(&compilation.stderr),
+        ));
+    }
+    let execution = Command::new(executable_path)
+        .output()
+        .map_err(|error| format!("failed to run compiled hostile fixture: {error}"))?;
+    if !execution.status.success() {
+        return Err(format!(
+            "compiled hostile fixture must run: {}",
+            String::from_utf8_lossy(&execution.stderr),
+        ));
+    }
+    Ok(execution)
+}
+
+fn compilable_build_script_fixture(extra: &str, vendored_main: &str, system_main: &str) -> String {
+    [
+        extra,
+        r#"
+            extern crate self as pkg_config;
+
+            struct Config;
+            struct Library {
+                version: String,
+                include_paths: Vec<()>,
+            }
+
+            impl Config {
+                fn new() -> Self { Self }
+                fn atleast_version(self, _version: &str) -> Self { self }
+                fn probe(self, _name: &str) -> Result<Library, ()> {
+                    Ok(Library {
+                        version: "11.8.1".to_owned(),
+                        include_paths: Vec::new(),
+                    })
+                }
+            }
+
+            fn emit_rocksdb_build_metadata(
+                build_kind: &str,
+                rocksdb_version: &str,
+                source_revision: ::core::option::Option<&str>,
+            ) {
+                ::std::println!("cargo::metadata=build_kind={build_kind}");
+                ::std::println!("cargo::metadata=version={rocksdb_version}");
+                if let ::core::option::Option::Some(source_revision) = source_revision {
+                    ::std::println!("cargo::metadata=source_revision={source_revision}");
+                }
+            }
+
+            fn build_lz4() { ::std::println!("fixture-build-lz4"); }
+            fn build_rocksdb() { ::std::println!("fixture-build-rocksdb"); }
+            fn build_rocksdb_api<T>(_includes: &[T]) {
+                ::std::println!("fixture-build-rocksdb-api");
+            }
+            fn bindgen_rocksdb_api<T>(_includes: &[T]) {
+                ::std::println!("fixture-bindgen-rocksdb-api");
+            }
+        "#,
+        vendored_main,
+        system_main,
+    ]
+    .join("\n")
+}
+
+fn compilable_qualified_vendored_main() -> &'static str {
+    r#"
+        #[cfg(not(feature = "pkg-config"))]
+        fn main() {
+            crate::emit_rocksdb_build_metadata(
+                "vendored",
+                "11.1.2",
+                ::core::option::Option::Some("3b446089141659fad25328c5ea3e7ed283df46e4"),
+            );
+            let includes = [::std::path::Path::new("rocksdb/include").to_path_buf()];
+            crate::build_lz4();
+            crate::build_rocksdb();
+            crate::build_rocksdb_api(&includes);
+            crate::bindgen_rocksdb_api(&includes);
+        }
+    "#
+}
+
+fn compilable_qualified_system_main() -> &'static str {
+    r#"
+        #[cfg(feature = "pkg-config")]
+        fn main() {
+            let library = ::pkg_config::Config::new()
+                .atleast_version("9.10.0")
+                .probe("rocksdb")
+                .unwrap();
+            ::core::assert!(
+                !library.version.is_empty(),
+                "pkg-config returned an empty RocksDB version"
+            );
+            crate::emit_rocksdb_build_metadata("system", &library.version, ::core::option::Option::None);
+            crate::build_rocksdb_api(&library.include_paths);
+            crate::bindgen_rocksdb_api(&library.include_paths);
+        }
+    "#
+}
+
 fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
     let tokens = rust_tokens(source);
     let mut failures = Vec::new();
+    for helper in [
+        "build_lz4",
+        "build_rocksdb",
+        "build_rocksdb_api",
+        "bindgen_rocksdb_api",
+    ] {
+        if !top_level_function_matches_reviewed_source(
+            &tokens,
+            reviewed_sys_build_helpers(),
+            helper,
+        ) {
+            failures.push("reviewed build helper identity and body");
+        }
+    }
+    if !sys_build_support_matches_reviewed_source(&tokens) {
+        failures.push("reviewed build support projection");
+    }
     let helper = unique_unconditional_function_body(&tokens, "emit_rocksdb_build_metadata");
-    if !unique_unconditional_function_has_header(
+    if !unique_unconditional_function_has_exact_prefix_and_header(
         &tokens,
         "emit_rocksdb_build_metadata",
         &[
@@ -1664,6 +2106,14 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
             "str",
             ",",
             "source_revision",
+            ":",
+            ":",
+            ":",
+            "core",
+            ":",
+            ":",
+            "option",
+            ":",
             ":",
             "Option",
             "<",
@@ -1702,6 +2152,17 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
                 ";",
                 "if",
                 "let",
+                ":",
+                ":",
+                "core",
+                ":",
+                ":",
+                "option",
+                ":",
+                ":",
+                "Option",
+                ":",
+                ":",
                 "Some",
                 "(",
                 "source_revision",
@@ -1781,12 +2242,26 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
             body,
             &[
                 "{",
+                "crate",
+                ":",
+                ":",
                 "emit_rocksdb_build_metadata",
                 "(",
                 "\"vendored\"",
                 ",",
                 "\"11.1.2\"",
                 ",",
+                ":",
+                ":",
+                "core",
+                ":",
+                ":",
+                "option",
+                ":",
+                ":",
+                "Option",
+                ":",
+                ":",
                 "Some",
                 "(",
                 "\"3b446089141659fad25328c5ea3e7ed283df46e4\"",
@@ -1794,11 +2269,68 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
                 ",",
                 ")",
                 ";",
+                "let",
+                "includes",
+                "=",
+                "[",
+                ":",
+                ":",
+                "std",
+                ":",
+                ":",
+                "path",
+                ":",
+                ":",
+                "Path",
+                ":",
+                ":",
+                "new",
+                "(",
+                "\"rocksdb/include\"",
+                ")",
+                ".",
+                "to_path_buf",
+                "(",
+                ")",
+                "]",
+                ";",
+                "crate",
+                ":",
+                ":",
+                "build_lz4",
+                "(",
+                ")",
+                ";",
+                "crate",
+                ":",
+                ":",
+                "build_rocksdb",
+                "(",
+                ")",
+                ";",
+                "crate",
+                ":",
+                ":",
+                "build_rocksdb_api",
+                "(",
+                "&",
+                "includes",
+                ")",
+                ";",
+                "crate",
+                ":",
+                ":",
+                "bindgen_rocksdb_api",
+                "(",
+                "&",
+                "includes",
+                ")",
+                ";",
                 "}",
             ],
         )
     }) {
-        failures.push("exact vendored metadata selection");
+        failures.push("exact vendored metadata and build selection");
     }
     if system.is_none() {
         failures.push("system feature main selection");
@@ -1838,6 +2370,29 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
                 "(",
                 ")",
                 ";",
+                ":",
+                ":",
+                "core",
+                ":",
+                ":",
+                "assert",
+                "!",
+                "(",
+                "!",
+                "library",
+                ".",
+                "version",
+                ".",
+                "is_empty",
+                "(",
+                ")",
+                ",",
+                "\"pkg-config returned an empty RocksDB version\"",
+                ")",
+                ";",
+                "crate",
+                ":",
+                ":",
                 "emit_rocksdb_build_metadata",
                 "(",
                 "\"system\"",
@@ -1847,7 +2402,40 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
                 ".",
                 "version",
                 ",",
+                ":",
+                ":",
+                "core",
+                ":",
+                ":",
+                "option",
+                ":",
+                ":",
+                "Option",
+                ":",
+                ":",
                 "None",
+                ")",
+                ";",
+                "crate",
+                ":",
+                ":",
+                "build_rocksdb_api",
+                "(",
+                "&",
+                "library",
+                ".",
+                "include_paths",
+                ")",
+                ";",
+                "crate",
+                ":",
+                ":",
+                "bindgen_rocksdb_api",
+                "(",
+                "&",
+                "library",
+                ".",
+                "include_paths",
                 ")",
                 ";",
                 "}",
@@ -1859,6 +2447,9 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
     }
     if !exact_system_body {
         failures.push("system pkg-config metadata selection");
+    }
+    if !exact_system_body {
+        failures.push("system build tail selection");
     }
     failures
 }
@@ -2562,27 +3153,35 @@ fn contract_source_failures(source: &str) -> Vec<&'static str> {
     failures
 }
 
-fn valid_sys_build_metadata_fixture() -> &'static str {
-    r#"
+fn valid_sys_build_metadata_fixture() -> String {
+    format!(
+        "{}\n{}",
+        reviewed_sys_build_helpers(),
+        r#"
         fn emit_rocksdb_build_metadata(
             build_kind: &str,
             rocksdb_version: &str,
-            source_revision: Option<&str>,
+            source_revision: ::core::option::Option<&str>,
         ) {
             ::std::println!("cargo::metadata=build_kind={build_kind}");
             ::std::println!("cargo::metadata=version={rocksdb_version}");
-            if let Some(source_revision) = source_revision {
+            if let ::core::option::Option::Some(source_revision) = source_revision {
                 ::std::println!("cargo::metadata=source_revision={source_revision}");
             }
         }
 
         #[cfg(not(feature = "pkg-config"))]
         fn main() {
-            emit_rocksdb_build_metadata(
+            crate::emit_rocksdb_build_metadata(
                 "vendored",
                 "11.1.2",
-                Some("3b446089141659fad25328c5ea3e7ed283df46e4"),
+                ::core::option::Option::Some("3b446089141659fad25328c5ea3e7ed283df46e4"),
             );
+            let includes = [::std::path::Path::new("rocksdb/include").to_path_buf()];
+            crate::build_lz4();
+            crate::build_rocksdb();
+            crate::build_rocksdb_api(&includes);
+            crate::bindgen_rocksdb_api(&includes);
         }
 
         #[cfg(feature = "pkg-config")]
@@ -2591,9 +3190,16 @@ fn valid_sys_build_metadata_fixture() -> &'static str {
                 .atleast_version("9.10.0")
                 .probe("rocksdb")
                 .unwrap();
-            emit_rocksdb_build_metadata("system", &library.version, None);
+            ::core::assert!(
+                !library.version.is_empty(),
+                "pkg-config returned an empty RocksDB version"
+            );
+            crate::emit_rocksdb_build_metadata("system", &library.version, ::core::option::Option::None);
+            crate::build_rocksdb_api(&library.include_paths);
+            crate::bindgen_rocksdb_api(&library.include_paths);
         }
-    "#
+    "#,
+    )
 }
 
 fn valid_oxigraph_build_relay_fixture() -> &'static str {
@@ -2678,10 +3284,176 @@ fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_d
     let valid_sys = valid_sys_build_metadata_fixture();
     let valid_relay = valid_oxigraph_build_relay_fixture();
     let valid_wrapper = valid_wrapper_build_selection_fixture();
-    let valid_sys_failures = sys_build_metadata_failures(valid_sys);
+    let valid_sys_failures = sys_build_metadata_failures(&valid_sys);
     assert!(
         valid_sys_failures.is_empty(),
         "valid dependency fixture: {valid_sys_failures:?}",
+    );
+    let compilable_sync_emitter = compilable_build_script_fixture(
+        "",
+        compilable_qualified_vendored_main(),
+        compilable_qualified_system_main(),
+    );
+    let async_emitter = compilable_sync_emitter.replacen(
+        "            fn emit_rocksdb_build_metadata(",
+        "            async fn emit_rocksdb_build_metadata(",
+        1,
+    );
+    assert_ne!(
+        async_emitter, compilable_sync_emitter,
+        "async-emitter mutant must be live"
+    );
+    assert!(
+        sys_build_metadata_failures(&async_emitter).contains(&"dependency metadata emitter"),
+        "an async metadata emitter must not satisfy the synchronous build-script contract",
+    );
+    let async_emitter_execution = compile_and_run_build_script_fixture(&async_emitter, false)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !String::from_utf8_lossy(&async_emitter_execution.stdout).contains("cargo::metadata="),
+        "the compiler-backed control must prove that an unawaited async emitter emits no metadata",
+    );
+    for hostile_emitter in [
+        valid_sys.replacen(
+            "        fn emit_rocksdb_build_metadata(",
+            "        unsafe fn emit_rocksdb_build_metadata(",
+            1,
+        ),
+        valid_sys.replacen(
+            "        fn emit_rocksdb_build_metadata(",
+            "        const fn emit_rocksdb_build_metadata(",
+            1,
+        ),
+        valid_sys.replacen(
+            "        fn emit_rocksdb_build_metadata(",
+            "        extern \"C\" fn emit_rocksdb_build_metadata(",
+            1,
+        ),
+        valid_sys.replacen(
+            "        fn emit_rocksdb_build_metadata(",
+            "        pub fn emit_rocksdb_build_metadata(",
+            1,
+        ),
+        valid_sys.replacen(
+            "        fn emit_rocksdb_build_metadata(",
+            "        #[inline]\n        fn emit_rocksdb_build_metadata(",
+            1,
+        ),
+    ] {
+        assert_ne!(
+            hostile_emitter, valid_sys,
+            "metadata-emitter prefix mutant must be live",
+        );
+        assert!(
+            sys_build_metadata_failures(&hostile_emitter).contains(&"dependency metadata emitter"),
+            "the metadata emitter must retain its exact ordinary synchronous function prefix",
+        );
+    }
+    let unqualified_none_system_main =
+        compilable_qualified_system_main().replace("::core::option::Option::None", "None");
+    let module_scope_none_shadow = compilable_build_script_fixture(
+        r#"
+            #[allow(non_upper_case_globals)]
+            const None: ::core::option::Option<&str> =
+                ::core::option::Option::Some("module-scope-revision-leak");
+        "#,
+        compilable_qualified_vendored_main(),
+        &unqualified_none_system_main,
+    );
+    assert!(
+        sys_build_metadata_failures(&module_scope_none_shadow)
+            .contains(&"system pkg-config metadata selection"),
+        "a module-scope None binding must not inject a system source revision",
+    );
+    let none_shadow_execution =
+        compile_and_run_build_script_fixture(&module_scope_none_shadow, true)
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        String::from_utf8_lossy(&none_shadow_execution.stdout)
+            .contains("cargo::metadata=source_revision=module-scope-revision-leak"),
+        "the compiler-backed control must prove the unqualified None leak is live",
+    );
+
+    let unqualified_some_vendored_main = compilable_qualified_vendored_main().replace(
+        "::core::option::Option::Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\")",
+        "Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\")",
+    );
+    let module_scope_some_shadow = compilable_build_script_fixture(
+        "
+            #[allow(non_snake_case)]
+            fn Some<T>(_value: T) -> ::core::option::Option<T> {
+                ::core::option::Option::None
+            }
+        ",
+        &unqualified_some_vendored_main,
+        compilable_qualified_system_main(),
+    );
+    assert!(
+        sys_build_metadata_failures(&module_scope_some_shadow)
+            .contains(&"exact vendored metadata and build selection"),
+        "a module-scope Some binding must not discard the vendored source revision",
+    );
+    let some_shadow_execution =
+        compile_and_run_build_script_fixture(&module_scope_some_shadow, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !String::from_utf8_lossy(&some_shadow_execution.stdout)
+            .contains("cargo::metadata=source_revision="),
+        "the compiler-backed control must prove the unqualified Some redirection is live",
+    );
+
+    let unqualified_path_vendored_main =
+        compilable_qualified_vendored_main().replace("::std::path::Path::new", "Path::new");
+    let module_scope_path_shadow = compilable_build_script_fixture(
+        r#"
+            struct Path;
+            struct RedirectedPath;
+            impl Path {
+                fn new(_path: &str) -> RedirectedPath {
+                    ::std::println!("module-scope-path-redirection");
+                    RedirectedPath
+                }
+            }
+            impl RedirectedPath {
+                fn to_path_buf(&self) -> Self { Self }
+            }
+        "#,
+        &unqualified_path_vendored_main,
+        compilable_qualified_system_main(),
+    );
+    assert!(
+        sys_build_metadata_failures(&module_scope_path_shadow)
+            .contains(&"exact vendored metadata and build selection"),
+        "a module-scope Path binding must not redirect the vendored include root",
+    );
+    let path_shadow_execution =
+        compile_and_run_build_script_fixture(&module_scope_path_shadow, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        String::from_utf8_lossy(&path_shadow_execution.stdout)
+            .contains("module-scope-path-redirection"),
+        "the compiler-backed control must prove the unqualified Path redirection is live",
+    );
+
+    let replaced_helper = compilable_build_script_fixture(
+        r#"
+            fn renamed_reviewed_build_lz4() {
+                ::std::println!("renamed-reviewed-build-lz4");
+            }
+        "#,
+        compilable_qualified_vendored_main(),
+        compilable_qualified_system_main(),
+    );
+    assert!(
+        sys_build_metadata_failures(&replaced_helper)
+            .contains(&"reviewed build helper identity and body"),
+        "qualified main calls must remain bound to the reviewed helper identities and bodies",
+    );
+    let replaced_helper_execution = compile_and_run_build_script_fixture(&replaced_helper, false)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        String::from_utf8_lossy(&replaced_helper_execution.stdout).contains("fixture-build-lz4"),
+        "the compiler-backed control must prove replacement helpers can redirect exact main calls",
     );
     let valid_relay_failures =
         oxigraph_build_relay_failures("[package]\nbuild = \"build.rs\"", Some(valid_relay));
@@ -2709,14 +3481,17 @@ fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_d
         "valid direct-return wrapper fixture: {direct_return_failures:?}",
     );
 
-    let empty_system_version = valid_sys.replace("&library.version, None", "\"\", None");
+    let empty_system_version = valid_sys.replace(
+        "&library.version, ::core::option::Option::None",
+        "\"\", ::core::option::Option::None",
+    );
     assert!(
         sys_build_metadata_failures(&empty_system_version)
             .contains(&"system pkg-config metadata selection")
     );
     let system_revision_leak = valid_sys.replace(
-        "&library.version, None",
-        "&library.version, Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\")",
+        "&library.version, ::core::option::Option::None",
+        "&library.version, ::core::option::Option::Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\")",
     );
     assert!(
         sys_build_metadata_failures(&system_revision_leak)
@@ -2728,7 +3503,7 @@ fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_d
     assert!(!sys_build_metadata_failures(&nested_sys_decoy).is_empty());
     let rebound_emitter = valid_sys.replacen(
         "        ) {\n            ::std::println!(\"cargo::metadata=build_kind={build_kind}\");",
-        "        ) {\n            let build_kind = \"vendored\";\n            let rocksdb_version = \"11.1.2\";\n            let source_revision = Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\");\n            ::std::println!(\"cargo::metadata=build_kind={build_kind}\");",
+        "        ) {\n            let build_kind = \"vendored\";\n            let rocksdb_version = \"11.1.2\";\n            let source_revision = ::core::option::Option::Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\");\n            ::std::println!(\"cargo::metadata=build_kind={build_kind}\");",
         1,
     );
     assert_ne!(rebound_emitter, valid_sys, "emitter mutant must be live");
@@ -2746,8 +3521,8 @@ fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_d
         "a module-scope macro must not substitute for the standard metadata emitter",
     );
     let rebound_probe_result = valid_sys.replacen(
-        "            emit_rocksdb_build_metadata(\"system\", &library.version, None);",
-        "            let library = FakeLibrary { version: \"hardcoded\".to_owned() };\n            emit_rocksdb_build_metadata(\"system\", &library.version, None);",
+        "            crate::emit_rocksdb_build_metadata(\"system\", &library.version, ::core::option::Option::None);",
+        "            let library = FakeLibrary { version: \"hardcoded\".to_owned() };\n            crate::emit_rocksdb_build_metadata(\"system\", &library.version, ::core::option::Option::None);",
         1,
     );
     assert_ne!(
@@ -2758,6 +3533,147 @@ fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_d
         sys_build_metadata_failures(&rebound_probe_result)
             .contains(&"system pkg-config metadata selection"),
         "the relayed system version must come directly from the probe result",
+    );
+    let unchecked_system_version = valid_sys.replacen(
+        "            ::core::assert!(\n                !library.version.is_empty(),\n                \"pkg-config returned an empty RocksDB version\"\n            );\n",
+        "",
+        1,
+    );
+    assert_ne!(
+        unchecked_system_version, valid_sys,
+        "unchecked system-version mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&unchecked_system_version)
+            .contains(&"system pkg-config metadata selection"),
+        "the probed system version must be rejected when empty before relay",
+    );
+    let deleted_vendored_build = valid_sys.replacen("            crate::build_lz4();\n", "", 1);
+    assert_ne!(
+        deleted_vendored_build, valid_sys,
+        "vendored-build deletion mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&deleted_vendored_build)
+            .contains(&"exact vendored metadata and build selection"),
+        "the vendored main must retain its complete build tail",
+    );
+    let reordered_vendored_build = valid_sys.replacen(
+        "            crate::build_lz4();\n            crate::build_rocksdb();",
+        "            crate::build_rocksdb();\n            crate::build_lz4();",
+        1,
+    );
+    assert_ne!(
+        reordered_vendored_build, valid_sys,
+        "vendored-build reorder mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&reordered_vendored_build)
+            .contains(&"exact vendored metadata and build selection"),
+        "the vendored build tail must preserve its dependency order",
+    );
+    let dead_vendored_build = valid_sys.replacen(
+        "            crate::build_lz4();\n            crate::build_rocksdb();",
+        "            if false {\n                crate::build_lz4();\n                crate::build_rocksdb();\n            }",
+        1,
+    );
+    assert_ne!(
+        dead_vendored_build, valid_sys,
+        "dead vendored-build mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&dead_vendored_build)
+            .contains(&"exact vendored metadata and build selection"),
+        "dead build calls must not satisfy the vendored build tail",
+    );
+    let shadowed_vendored_build = valid_sys.replacen(
+        "            crate::build_lz4();",
+        "            let build_lz4 = || {};\n            build_lz4();",
+        1,
+    );
+    assert_ne!(
+        shadowed_vendored_build, valid_sys,
+        "shadowed vendored-build mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&shadowed_vendored_build)
+            .contains(&"exact vendored metadata and build selection"),
+        "a shadowed build function must not satisfy the vendored build tail",
+    );
+    let alternate_main = format!("{valid_sys}\n#[cfg(any())] fn main() {{}}");
+    assert!(
+        sys_build_metadata_failures(&alternate_main)
+            .contains(&"exact dependency feature selection"),
+        "an alternate main must invalidate the exact two-main selection",
+    );
+    let metadata_after_return = valid_sys.replacen(
+        "            crate::emit_rocksdb_build_metadata(\n                \"vendored\",",
+        "            return;\n            crate::emit_rocksdb_build_metadata(\n                \"vendored\",",
+        1,
+    );
+    assert_ne!(
+        metadata_after_return, valid_sys,
+        "metadata-after-return mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&metadata_after_return)
+            .contains(&"exact vendored metadata and build selection"),
+        "unreachable metadata must not bless the vendored build",
+    );
+    let vendored_cross_wiring = valid_sys.replacen(
+        "            crate::build_rocksdb_api(&includes);",
+        "            crate::build_rocksdb_api(&library.include_paths);",
+        1,
+    );
+    assert_ne!(
+        vendored_cross_wiring, valid_sys,
+        "vendored cross-wiring mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&vendored_cross_wiring)
+            .contains(&"exact vendored metadata and build selection"),
+        "vendored shim compilation must use the vendored include set",
+    );
+    let system_cross_wiring = valid_sys.replacen(
+        "            crate::build_rocksdb_api(&library.include_paths);",
+        "            crate::build_rocksdb_api(&includes);",
+        1,
+    );
+    assert_ne!(
+        system_cross_wiring, valid_sys,
+        "system cross-wiring mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&system_cross_wiring).contains(&"system build tail selection"),
+        "system shim compilation must use the probed include paths",
+    );
+    let reordered_system_build = valid_sys.replacen(
+        "            crate::emit_rocksdb_build_metadata(\"system\", &library.version, ::core::option::Option::None);\n            crate::build_rocksdb_api(&library.include_paths);",
+        "            crate::build_rocksdb_api(&library.include_paths);\n            crate::emit_rocksdb_build_metadata(\"system\", &library.version, ::core::option::Option::None);",
+        1,
+    );
+    assert_ne!(
+        reordered_system_build, valid_sys,
+        "system-build reorder mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&reordered_system_build)
+            .contains(&"system build tail selection"),
+        "the system build tail must retain probe, validation, relay, shim, and bindgen order",
+    );
+    let deleted_system_bindgen = valid_sys.replacen(
+        "            crate::bindgen_rocksdb_api(&library.include_paths);\n",
+        "",
+        1,
+    );
+    assert_ne!(
+        deleted_system_bindgen, valid_sys,
+        "system-bindgen deletion mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&deleted_system_bindgen)
+            .contains(&"system build tail selection"),
+        "the system main must retain binding generation",
     );
 
     assert_eq!(
