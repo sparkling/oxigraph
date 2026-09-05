@@ -4,7 +4,24 @@
     unsafe_code,
     clippy::undocumented_unsafe_blocks,
     clippy::panic_in_result_fn,
-    clippy::unwrap_in_result
+    clippy::struct_field_names,
+    clippy::unwrap_in_result,
+    reason = "the private RocksDB wrapper owns audited FFI and byte-denominated evidence fields"
+)]
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the diagnostics-only maintenance seam is consumed by tests until its internal observer is integrated"
+    )
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::expect_used,
+        clippy::same_name_method,
+        reason = "test fixtures retain attributable assertions and a RED fallback trait shadowed by the product seam"
+    )
 )]
 
 use crate::storage::StorageTransactionStartError;
@@ -62,6 +79,398 @@ pub struct Db {
 enum DbKind {
     ReadOnly(Arc<RoDbHandler>),
     ReadWrite(Arc<RwDbHandler>),
+}
+
+const ROCKSDB_MAINTENANCE_EVIDENCE_SCHEMA_VERSION: u16 = 1;
+#[expect(
+    dead_code,
+    reason = "the exact vendored identity is retained as an independently audited contract constant"
+)]
+const VENDORED_ROCKSDB_VERSION: &str = "11.1.2";
+#[expect(
+    dead_code,
+    reason = "the exact vendored identity is retained as an independently audited contract constant"
+)]
+const VENDORED_ROCKSDB_SOURCE_REVISION: &str = "3b446089141659fad25328c5ea3e7ed283df46e4";
+
+const ROCKSDB_COMPACTION_PENDING: &str = "rocksdb.compaction-pending";
+const ROCKSDB_PENDING_COMPACTION_BYTES: &str = "rocksdb.estimate-pending-compaction-bytes";
+const ROCKSDB_BACKGROUND_ERRORS: &str = "rocksdb.background-errors";
+const ROCKSDB_WRITES_STOPPED: &str = "rocksdb.is-write-stopped";
+const ROCKSDB_DELAYED_WRITE_RATE: &str = "rocksdb.actual-delayed-write-rate";
+const ROCKSDB_LIVE_SST_BYTES: &str = "rocksdb.live-sst-files-size";
+const ROCKSDB_MEMTABLE_BYTES: &str = "rocksdb.size-all-mem-tables";
+const ROCKSDB_TABLE_READER_BYTES: &str = "rocksdb.estimate-table-readers-mem";
+
+fn rocksdb_maintenance_statistics_tickers() -> [u32; 5] {
+    unsafe {
+        [
+            oxrocksdb_ticker_user_bytes_written(),
+            oxrocksdb_ticker_stall_micros(),
+            oxrocksdb_ticker_compact_read_bytes(),
+            oxrocksdb_ticker_compact_write_bytes(),
+            oxrocksdb_ticker_flush_write_bytes(),
+        ]
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RocksDbMaintenanceSignal<T> {
+    Available(T),
+    Unavailable,
+    Unsupported,
+}
+
+impl<T> RocksDbMaintenanceSignal<T> {
+    const fn available(&self) -> Option<&T> {
+        match self {
+            Self::Available(value) => Some(value),
+            Self::Unavailable | Self::Unsupported => None,
+        }
+    }
+
+    const fn is_available(&self) -> bool {
+        matches!(self, Self::Available(_))
+    }
+
+    const fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Unavailable)
+    }
+
+    const fn is_unsupported(&self) -> bool {
+        matches!(self, Self::Unsupported)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RocksDbMaintenanceAuthority {
+    DiagnosticsOnly,
+}
+
+impl RocksDbMaintenanceAuthority {
+    const fn is_diagnostics_only(&self) -> bool {
+        matches!(self, Self::DiagnosticsOnly)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RocksDbMaintenanceBackend {
+    RocksDb,
+}
+
+impl RocksDbMaintenanceBackend {
+    const fn is_rocksdb(&self) -> bool {
+        matches!(self, Self::RocksDb)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RocksDbMaintenanceBuild {
+    Vendored {
+        rocksdb_version: &'static str,
+        source_revision: &'static str,
+    },
+    System {
+        rocksdb_version: String,
+    },
+}
+
+impl RocksDbMaintenanceBuild {
+    const fn is_vendored(&self) -> bool {
+        matches!(self, Self::Vendored { .. })
+    }
+
+    const fn is_system(&self) -> bool {
+        matches!(self, Self::System { .. })
+    }
+
+    fn rocksdb_version(&self) -> &str {
+        match self {
+            Self::Vendored {
+                rocksdb_version, ..
+            } => rocksdb_version,
+            Self::System { rocksdb_version } => rocksdb_version,
+        }
+    }
+
+    const fn source_revision(&self) -> Option<&str> {
+        match self {
+            Self::Vendored {
+                source_revision, ..
+            } => Some(source_revision),
+            Self::System { .. } => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RocksDbMaintenanceOpenMode {
+    ReadWrite,
+    ReadOnly,
+}
+
+impl RocksDbMaintenanceOpenMode {
+    const fn is_read_write(&self) -> bool {
+        matches!(self, Self::ReadWrite)
+    }
+
+    const fn is_read_only(&self) -> bool {
+        matches!(self, Self::ReadOnly)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbMaintenanceBackendIdentity {
+    backend: RocksDbMaintenanceBackend,
+    build: RocksDbMaintenanceBuild,
+}
+
+impl RocksDbMaintenanceBackendIdentity {
+    const fn backend(&self) -> &RocksDbMaintenanceBackend {
+        &self.backend
+    }
+
+    const fn build(&self) -> &RocksDbMaintenanceBuild {
+        &self.build
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbMaintenanceRuntimeIdentity {
+    database_id: RocksDbMaintenanceSignal<String>,
+    open_mode: RocksDbMaintenanceOpenMode,
+    latest_sequence_number: u64,
+}
+
+impl RocksDbMaintenanceRuntimeIdentity {
+    const fn database_id(&self) -> &RocksDbMaintenanceSignal<String> {
+        &self.database_id
+    }
+
+    const fn open_mode(&self) -> &RocksDbMaintenanceOpenMode {
+        &self.open_mode
+    }
+
+    const fn latest_sequence_number(&self) -> u64 {
+        self.latest_sequence_number
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbCompactionEvidence {
+    pending: RocksDbMaintenanceSignal<bool>,
+    estimated_pending_bytes: RocksDbMaintenanceSignal<u64>,
+}
+
+impl RocksDbCompactionEvidence {
+    const fn pending(&self) -> &RocksDbMaintenanceSignal<bool> {
+        &self.pending
+    }
+
+    const fn estimated_pending_bytes(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.estimated_pending_bytes
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbHealthEvidence {
+    background_errors: RocksDbMaintenanceSignal<u64>,
+}
+
+impl RocksDbHealthEvidence {
+    const fn background_errors(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.background_errors
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbStallEvidence {
+    writes_stopped: RocksDbMaintenanceSignal<bool>,
+    delayed_write_rate_bytes_per_second: RocksDbMaintenanceSignal<u64>,
+}
+
+impl RocksDbStallEvidence {
+    const fn writes_stopped(&self) -> &RocksDbMaintenanceSignal<bool> {
+        &self.writes_stopped
+    }
+
+    const fn delayed_write_rate_bytes_per_second(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.delayed_write_rate_bytes_per_second
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbResourceEvidence {
+    live_sst_bytes: RocksDbMaintenanceSignal<u64>,
+    memtable_bytes: RocksDbMaintenanceSignal<u64>,
+    table_reader_bytes: RocksDbMaintenanceSignal<u64>,
+}
+
+impl RocksDbResourceEvidence {
+    const fn live_sst_bytes(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.live_sst_bytes
+    }
+
+    const fn memtable_bytes(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.memtable_bytes
+    }
+
+    const fn table_reader_bytes(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.table_reader_bytes
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbColumnFamilyMaintenanceEvidence {
+    name: &'static str,
+    compaction: RocksDbCompactionEvidence,
+    health: RocksDbHealthEvidence,
+    stalls: RocksDbStallEvidence,
+    resources: RocksDbResourceEvidence,
+}
+
+impl RocksDbColumnFamilyMaintenanceEvidence {
+    const fn name(&self) -> &str {
+        self.name
+    }
+
+    const fn compaction(&self) -> &RocksDbCompactionEvidence {
+        &self.compaction
+    }
+
+    const fn health(&self) -> &RocksDbHealthEvidence {
+        &self.health
+    }
+
+    const fn stalls(&self) -> &RocksDbStallEvidence {
+        &self.stalls
+    }
+
+    const fn resources(&self) -> &RocksDbResourceEvidence {
+        &self.resources
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbAmplificationEvidence {
+    user_bytes_written: RocksDbMaintenanceSignal<u64>,
+    stall_micros: RocksDbMaintenanceSignal<u64>,
+    compaction_read_bytes: RocksDbMaintenanceSignal<u64>,
+    compaction_write_bytes: RocksDbMaintenanceSignal<u64>,
+    flush_write_bytes: RocksDbMaintenanceSignal<u64>,
+}
+
+impl RocksDbAmplificationEvidence {
+    const fn signals(&self) -> [&RocksDbMaintenanceSignal<u64>; 5] {
+        [
+            &self.user_bytes_written,
+            &self.stall_micros,
+            &self.compaction_read_bytes,
+            &self.compaction_write_bytes,
+            &self.flush_write_bytes,
+        ]
+    }
+
+    const fn user_bytes_written(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.user_bytes_written
+    }
+
+    const fn flush_write_bytes(&self) -> &RocksDbMaintenanceSignal<u64> {
+        &self.flush_write_bytes
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RocksDbMaintenanceEvidence {
+    schema_version: u16,
+    authority: RocksDbMaintenanceAuthority,
+    backend: RocksDbMaintenanceBackendIdentity,
+    runtime: RocksDbMaintenanceRuntimeIdentity,
+    column_families: Vec<RocksDbColumnFamilyMaintenanceEvidence>,
+    amplification: RocksDbAmplificationEvidence,
+    build: RocksDbMaintenanceBuild,
+}
+
+impl RocksDbMaintenanceEvidence {
+    const fn schema_version(&self) -> u16 {
+        self.schema_version
+    }
+
+    const fn authority(&self) -> &RocksDbMaintenanceAuthority {
+        &self.authority
+    }
+
+    const fn backend(&self) -> &RocksDbMaintenanceBackendIdentity {
+        let _: &RocksDbMaintenanceBuild = &self.build;
+        &self.backend
+    }
+
+    const fn runtime(&self) -> &RocksDbMaintenanceRuntimeIdentity {
+        &self.runtime
+    }
+
+    fn column_families(&self) -> &[RocksDbColumnFamilyMaintenanceEvidence] {
+        &self.column_families
+    }
+
+    const fn amplification(&self) -> &RocksDbAmplificationEvidence {
+        &self.amplification
+    }
+}
+
+fn rocksdb_maintenance_build() -> RocksDbMaintenanceBuild {
+    match (
+        ::core::option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND"),
+        ::core::option_env!("OXIGRAPH_ROCKSDB_VERSION"),
+        ::core::option_env!("OXIGRAPH_ROCKSDB_SOURCE_REVISION"),
+    ) {
+        (Some("vendored"), Some(rocksdb_version), Some(source_revision)) => {
+            RocksDbMaintenanceBuild::Vendored {
+                rocksdb_version,
+                source_revision,
+            }
+        }
+        (Some("system"), Some(rocksdb_version), None) if !rocksdb_version.is_empty() => {
+            RocksDbMaintenanceBuild::System {
+                rocksdb_version: rocksdb_version.to_owned(),
+            }
+        }
+        _ => ::core::unreachable!(),
+    }
+}
+
+fn rocksdb_maintenance_backend_identity() -> RocksDbMaintenanceBackendIdentity {
+    RocksDbMaintenanceBackendIdentity {
+        backend: RocksDbMaintenanceBackend::RocksDb,
+        build: rocksdb_maintenance_build(),
+    }
+}
+
+fn rocksdb_unsupported_amplification() -> RocksDbAmplificationEvidence {
+    RocksDbAmplificationEvidence {
+        user_bytes_written: RocksDbMaintenanceSignal::Unsupported,
+        stall_micros: RocksDbMaintenanceSignal::Unsupported,
+        compaction_read_bytes: RocksDbMaintenanceSignal::Unsupported,
+        compaction_write_bytes: RocksDbMaintenanceSignal::Unsupported,
+        flush_write_bytes: RocksDbMaintenanceSignal::Unsupported,
+    }
+}
+
+fn rocksdb_property_signal(value: &Result<u64, StorageError>) -> RocksDbMaintenanceSignal<u64> {
+    match value {
+        Ok(value) => RocksDbMaintenanceSignal::Available(*value),
+        Err(_) => RocksDbMaintenanceSignal::Unavailable,
+    }
+}
+
+fn rocksdb_boolean_property_signal(
+    value: &Result<u64, StorageError>,
+) -> RocksDbMaintenanceSignal<bool> {
+    match value {
+        Ok(0) => RocksDbMaintenanceSignal::Available(false),
+        Ok(1) => RocksDbMaintenanceSignal::Available(true),
+        Ok(_) | Err(_) => RocksDbMaintenanceSignal::Unavailable,
+    }
 }
 
 struct RwDbHandler {
@@ -252,6 +661,214 @@ impl Drop for RoDbHandler {
 impl Db {
     const DEFAULT_FD_RESERVE: u32 = 48;
     const MINIMUM_MAX_OPEN_FILES: u64 = 48;
+
+    fn maintenance_evidence(&self) -> RocksDbMaintenanceEvidence {
+        let evidence = self.maintenance_evidence_with_readers(
+            |column_family, property| self.read_rocksdb_property(column_family, property),
+            |ticker| self.read_rocksdb_statistic(ticker),
+        );
+        RocksDbMaintenanceEvidence {
+            schema_version: evidence.schema_version,
+            authority: evidence.authority,
+            backend: evidence.backend,
+            runtime: evidence.runtime,
+            column_families: evidence.column_families,
+            amplification: evidence.amplification,
+            build: rocksdb_maintenance_build(),
+        }
+    }
+
+    fn maintenance_evidence_with_readers<P, S>(
+        &self,
+        property_reader: P,
+        mut statistics_reader: S,
+    ) -> RocksDbMaintenanceEvidence
+    where
+        P: FnMut(&str, &str) -> Result<u64, StorageError>,
+        S: FnMut(u32) -> Result<u64, StorageError>,
+    {
+        let statistics_tickers = rocksdb_maintenance_statistics_tickers();
+        let amplification = if cfg!(feature = "rocksdb-debug") && self.is_writable() {
+            let mut values = Vec::with_capacity(statistics_tickers.len());
+            for ticker in statistics_tickers {
+                values.push(rocksdb_property_signal(&statistics_reader(ticker)));
+            }
+            RocksDbAmplificationEvidence {
+                user_bytes_written: values.remove(0),
+                stall_micros: values.remove(0),
+                compaction_read_bytes: values.remove(0),
+                compaction_write_bytes: values.remove(0),
+                flush_write_bytes: values.remove(0),
+            }
+        } else {
+            rocksdb_unsupported_amplification()
+        };
+        let (runtime, column_families) = self.collect_maintenance_evidence(property_reader);
+        RocksDbMaintenanceEvidence {
+            schema_version: ROCKSDB_MAINTENANCE_EVIDENCE_SCHEMA_VERSION,
+            authority: RocksDbMaintenanceAuthority::DiagnosticsOnly,
+            backend: rocksdb_maintenance_backend_identity(),
+            runtime,
+            column_families,
+            amplification,
+            build: rocksdb_maintenance_build(),
+        }
+    }
+
+    fn collect_maintenance_evidence<P>(
+        &self,
+        mut property_reader: P,
+    ) -> (
+        RocksDbMaintenanceRuntimeIdentity,
+        Vec<RocksDbColumnFamilyMaintenanceEvidence>,
+    )
+    where
+        P: FnMut(&str, &str) -> Result<u64, StorageError>,
+    {
+        let names = match &self.inner {
+            DbKind::ReadOnly(db) => &db.column_family_names,
+            DbKind::ReadWrite(db) => &db.column_family_names,
+        };
+        let mut column_families = Vec::with_capacity(names.len());
+        for &name in names {
+            column_families.push(RocksDbColumnFamilyMaintenanceEvidence {
+                name,
+                compaction: RocksDbCompactionEvidence {
+                    pending: rocksdb_boolean_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_COMPACTION_PENDING,
+                    )),
+                    estimated_pending_bytes: rocksdb_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_PENDING_COMPACTION_BYTES,
+                    )),
+                },
+                health: RocksDbHealthEvidence {
+                    background_errors: rocksdb_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_BACKGROUND_ERRORS,
+                    )),
+                },
+                stalls: RocksDbStallEvidence {
+                    writes_stopped: rocksdb_boolean_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_WRITES_STOPPED,
+                    )),
+                    delayed_write_rate_bytes_per_second: rocksdb_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_DELAYED_WRITE_RATE,
+                    )),
+                },
+                resources: RocksDbResourceEvidence {
+                    live_sst_bytes: rocksdb_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_LIVE_SST_BYTES,
+                    )),
+                    memtable_bytes: rocksdb_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_MEMTABLE_BYTES,
+                    )),
+                    table_reader_bytes: rocksdb_property_signal(&property_reader(
+                        name,
+                        ROCKSDB_TABLE_READER_BYTES,
+                    )),
+                },
+            });
+        }
+        (
+            RocksDbMaintenanceRuntimeIdentity {
+                database_id: self.rocksdb_database_id(),
+                open_mode: if self.is_writable() {
+                    RocksDbMaintenanceOpenMode::ReadWrite
+                } else {
+                    RocksDbMaintenanceOpenMode::ReadOnly
+                },
+                latest_sequence_number: unsafe {
+                    rocksdb_get_latest_sequence_number(self.raw_rocksdb())
+                },
+            },
+            column_families,
+        )
+    }
+
+    fn raw_rocksdb(&self) -> *mut rocksdb_t {
+        match &self.inner {
+            DbKind::ReadOnly(db) => db.db,
+            DbKind::ReadWrite(db) => db.db,
+        }
+    }
+
+    fn read_rocksdb_property(
+        &self,
+        column_family: &str,
+        property: &str,
+    ) -> Result<u64, StorageError> {
+        let (db, names, handles) = match &self.inner {
+            DbKind::ReadOnly(handler) => (
+                handler.db,
+                &handler.column_family_names,
+                &handler.cf_handles,
+            ),
+            DbKind::ReadWrite(handler) => (
+                handler.db,
+                &handler.column_family_names,
+                &handler.cf_handles,
+            ),
+        };
+        let index = names
+            .iter()
+            .position(|name| *name == column_family)
+            .ok_or_else(|| {
+                StorageError::Other(
+                    format!("unknown RocksDB column family: {column_family}").into(),
+                )
+            })?;
+        let property = CString::new(property).map_err(|error| {
+            StorageError::Other(format!("invalid RocksDB property name: {error}").into())
+        })?;
+        let mut value = 0;
+        let status = unsafe {
+            rocksdb_property_int_cf(db, handles[index], property.as_ptr(), &raw mut value)
+        };
+        if status == 0 {
+            Ok(value)
+        } else {
+            Err(StorageError::Other(
+                "RocksDB property is unavailable".into(),
+            ))
+        }
+    }
+
+    fn read_rocksdb_statistic(&self, ticker: u32) -> Result<u64, StorageError> {
+        match &self.inner {
+            DbKind::ReadOnly(_) => Err(StorageError::Other(
+                "RocksDB statistics are unsupported for read-only opens".into(),
+            )),
+            DbKind::ReadWrite(handler) => {
+                Ok(unsafe { rocksdb_options_statistics_get_ticker_count(handler.options, ticker) })
+            }
+        }
+    }
+
+    fn rocksdb_database_id(&self) -> RocksDbMaintenanceSignal<String> {
+        let mut identity_len = 0;
+        let identity =
+            unsafe { rocksdb_get_db_identity(self.raw_rocksdb(), &raw mut identity_len) };
+        let Some(identity) = NonNull::new(identity) else {
+            return RocksDbMaintenanceSignal::Unavailable;
+        };
+        let identity = unsafe {
+            let bytes = slice::from_raw_parts(identity.as_ptr().cast::<u8>(), identity_len);
+            let value = String::from_utf8_lossy(bytes).into_owned();
+            rocksdb_free(identity.as_ptr().cast());
+            value
+        };
+        if identity.is_empty() {
+            RocksDbMaintenanceSignal::Unavailable
+        } else {
+            RocksDbMaintenanceSignal::Available(identity)
+        }
+    }
 
     pub fn open_read_write(
         path: &Path,
@@ -1954,5 +2571,9 @@ mod tests {
 }
 
 #[cfg(test)]
+#[expect(
+    dead_code,
+    reason = "the RED fallback contract is intentionally shadowed once the product seam exists"
+)]
 #[path = "rocksdb_maintenance_evidence_contract_tests.rs"]
 mod maintenance_evidence_contract_tests;
