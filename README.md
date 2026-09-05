@@ -319,11 +319,12 @@ does not enable Cargo execution or change any G1.7 authority value. Its
 documentation-only S0 architecture freeze is complete. Local ADR-0036 C21 and
 programme-umbrella closure made S1 `task-1788403485637-t9wn40` eligible; S1's
 source-absent evaluator and S2's authority-null requirements contract
-`task-1788403489170-xl71j9` are now complete. Current graph-V4 umbrella
-`task-1788589424013-hx1i83` remains pending. Its S3 evaluator
-`task-1788589440120-iaem8f` waits only for this ADR-0038 S3 V3 closure after
-completed S2 and ADR-0037 S7; every later source or host-positive slice keeps
-its own predecessor and authority gates.
+`task-1788403489170-xl71j9` are now complete. Graph-V5 umbrella
+`task-1788638159292-7hkaf5` is in progress. Its S3A source-absent evaluator
+`task-1788638011523-4c24e5` is complete at `a5f2442f`; S3B
+`task-1788638033847-mlvsbe` is the current dormant source step. A distinct S4A
+evaluator amendment waits for exact ADR-0039/ADR-0040 successor interfaces,
+and S4B retains separate host and human authorization gates.
 [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the separate evidence-backed decision to keep RocksDB as the only
 production-intended persistent `Store` backend. It was Accepted on 2026-09-05:

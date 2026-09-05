@@ -521,7 +521,7 @@ Proposed ADRs do not become implemented merely because their task rows exist.
 | G1.5-G1.6 egress/cancellation/claims, including G1.5b-G1.5c  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                        |
 | Persistent-backend adoption gate                             | [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](../adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)                                                                                     | Accepted 2026-09-05: RocksDB remains the only production-intended persistent backend; TurboKV is historical evidence only and has no active implementation, comparison, or benchmark path                                                                                                                                                                                                         |
 | G1.7 qualification and promotion                             | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Structural policy/request v2 and dormant compile-only helper attestation join the audited fail-closed v7 identity, replay, archive, containment, and build-evidence mechanics; no physical issuer, native containment-v2 adapter, production owner, human approval, live control, qualification, or promotion exists; ADR-0018 remains Proposed                                                    |
-| G1.7 private build issuer and physical owner chain           | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; S0, S1 `task-1788403485637-t9wn40`, and pure S2 `task-1788403489170-xl71j9` are complete and authority-null. Current graph-V4 umbrella `task-1788589424013-hx1i83` and S3 `task-1788589440120-iaem8f` are pending; S3 depends on completed S2/ADR-0037 S7 and the current ADR-0038 closure. Physical issuance remains separately gated by ADR-0039/ADR-0040, successor activation, and explicit human G1.7 authority |
+| G1.7 private build issuer and physical owner chain           | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; S0, S1 `task-1788403485637-t9wn40`, pure S2 `task-1788403489170-xl71j9`, and Graph-V5 S3A evaluator `task-1788638011523-4c24e5` are complete and authority-null. Current umbrella `task-1788638159292-7hkaf5` is in progress; dormant source S3B `task-1788638033847-mlvsbe` is next. Host integration remains split into an ADR-0039/ADR-0040-dependent evaluator amendment and separately authorized validation with explicit human controls |
 | `HARNESS-CREATE-EXACT` dormant schema-v2 pre-registration    | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed ADR with its implementation task complete at the dormant, authority-null boundary: early unavailable gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; dormant selectors exit 4 before effects and grant no product authority |
 | Native containment implementation and qualification          | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design is not. ADR-0037's bounded local StateFS/manager interfaces and ADR-0038's authority-null S0-S3B repository inputs, including the one-use branded StateFS-transition consumer, are integrated through `37a02bb2`; the exact 23-file matrix passes 400/400 on Node 24.14.1 and exact Node 20.20.2. Non-StateFS transitions, C-side dispatch, physical process/cgroup integration, and ADR-0039 qualification/activation remain open. Readiness remains unavailable/native-adapter-unavailable |
 | Commit-capable containment successor                         | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                               | Proposed; critical Ruflo task `task-1788394167226-fxk7od` is pending after ADR-0034 and ADR-0035–0039. It owns durable exact decision-before-effect, at-most-once execution, descriptor-bound application output, and successor host qualification                                                                                                                                                 |
@@ -1335,11 +1335,12 @@ roll-up rows remain outside that count. G1.4b raised the total to 42 on
 | Historical ADR-0041 V2 umbrella (cancelled/superseded)                  | `task-1788403413560-sedu3a`                                                                                                                         |
 | ADR-0041 carried S0 / completed S1 / completed S2                       | `task-1788403444941-5l8jci` / `task-1788403485637-t9wn40` / `task-1788403489170-xl71j9`                                                             |
 | Historical ADR-0041 V2 S3-S10 rows (superseded)                         | `task-1788403492818-cwb4de` / `task-1788403496372-c7jl9s` / `task-1788403522380-b68ptj` / `task-1788403525910-d6y2w9` / `task-1788403529434-e0kdtr` / `task-1788403532893-lf7mfj` / `task-1788403550244-5qkzj7` / `task-1788403579267-mte41x` / `task-1788403575715-d302l3` / `task-1788403572170-ztba34` / `task-1788403599521-1hamam` / `task-1788403602984-wjeqce` |
-| Current ADR-0041 graph-V4 umbrella / S3                                 | `task-1788589424013-hx1i83` / `task-1788589440120-iaem8f`                                                                                           |
-| Current ADR-0041 graph-V4 S4A / separately gated S4B                    | `task-1788589454420-fmvphr` / `task-1788589530701-mbw5o1`                                                                                           |
-| Current ADR-0041 graph-V4 S5-S8                                         | `task-1788589468599-ups9ef` / `task-1788589487836-s3r701` / `task-1788589500731-zwsnw6` / `task-1788589514254-ljdtq6`                               |
-| Current ADR-0041 graph-V4 S9A-S9D                                       | `task-1788589579217-kuss2e` / `task-1788589563697-1a3gzp` / `task-1788589574670-by4114` / `task-1788589568674-reupks`                               |
-| Current ADR-0041 graph-V4 S10                                           | `task-1788589594631-xd0pst`                                                                                                                         |
+| Historical ADR-0041 graph-V4 umbrella / S3-S10 (superseded)             | `task-1788589424013-hx1i83` / `task-1788589440120-iaem8f` / `task-1788589454420-fmvphr` / `task-1788589530701-mbw5o1` / `task-1788589468599-ups9ef` / `task-1788589487836-s3r701` / `task-1788589500731-zwsnw6` / `task-1788589514254-ljdtq6` / `task-1788589579217-kuss2e` / `task-1788589563697-1a3gzp` / `task-1788589574670-by4114` / `task-1788589568674-reupks` / `task-1788589594631-xd0pst` |
+| Current ADR-0041 Graph-V5 umbrella / completed S3A / pending S3B        | `task-1788638159292-7hkaf5` / `task-1788638011523-4c24e5` / `task-1788638033847-mlvsbe`                                                             |
+| Current ADR-0041 Graph-V5 dependency-gated S4A / authorized S4B         | `task-1788638038970-05pyb8` / `task-1788638043966-3guruj`                                                                                           |
+| Current ADR-0041 Graph-V5 S5-S8                                         | `task-1788638073097-t2aqrs` / `task-1788638078573-n0vkhg` / `task-1788638083939-dz5vwd` / `task-1788638088741-9ywepw`                               |
+| Current ADR-0041 Graph-V5 S9A-S9D                                       | `task-1788638114646-z1zy9s` / `task-1788638119695-ni98m7` / `task-1788638125028-eo5igi` / `task-1788638130124-880dvm`                               |
+| Current ADR-0041 Graph-V5 S10                                           | `task-1788638154084-z6kwq8`                                                                                                                         |
 | ADR-0042 accepted RocksDB-retention decision                             | `task-1788074788516-p5tvdm`                                                                                                                         |
 | G1.4a / G1.4b / corrected replacement G1.7                              | `task-1787855156849-ya7t6b` / `task-1787869201628-bwe6b0` / `task-1787871483413-ki34q2`                                                             |
 | G1.5c / G1.6 / `HARNESS-REGISTRY` / `HARNESS-REJECTION-EVIDENCE` / G2.1 | `task-1787667172994-ru8mm1` / `task-1787603736309-5dnsls` / `task-1787676052834-q1rbfr` / `task-1787740750614-4bv1fw` / `task-1787603736400-274ola` |
@@ -1352,18 +1353,17 @@ roll-up rows remain outside that count. G1.4b raised the total to 42 on
 | G4.4 / G4.5                                                             | `task-1787670632568-gk92vo` / `task-1787670632421-dkucm8`                                                                                           |
 | G4.6 / G4.7 / G4.8                                                      | `task-1787728710646-enu8i1` / `task-1787670632864-10hfsk` / `task-1787728711087-ibcg53`                                                             |
 
-ADR-0041's documentation-only S0, source-absent S1 evaluator, S1A review, and
-authority-null S2 requirements contract are complete. Current graph-V4 S3
-`task-1788589440120-iaem8f` depends only on completed S2, completed ADR-0037 S7,
-and current ADR-0038 S3 V3; completion of this ADR-0038 reconciliation makes S3
-dependency-eligible but does not start it. S4A adds only dormant authority-null
-source and does not run the pre-frozen host-positive cases.
-S5/S6 then freeze and implement test-fixture-only build owner v3, and S7/S8 do
-the same for product owner v4. S4B is a distinct host-positive gate that also
-requires completed ADR-0039/ADR-0040, current same-host/same-boot exact-artifact
-successor qualification and receipt-bound activation, and explicit isolated-
-host/G1.7 Phase A authority. S9A-S9C review the authority-null source in
-parallel; S9D independently reviews the authorized physical integration. S10
+ADR-0041's documentation-only S0, source-absent S1 evaluator, S1A review,
+authority-null S2 requirements contract, and Graph-V5 S3A dormant evaluator
+`task-1788638011523-4c24e5` are complete. S3B
+`task-1788638033847-mlvsbe` now adds only the dormant authority-null source and
+does not run the three future host-validation TODOs. S4A
+`task-1788638038970-05pyb8` is a later evaluator amendment that waits for exact
+ADR-0039/ADR-0040 successor interfaces; S4B `task-1788638043966-3guruj` is the
+separate authorization-gated host validation. S5/S6 then freeze and implement
+test-fixture-only build owner v3, and S7/S8 do the same for product owner v4.
+S9A-S9C review the authority-null source in parallel; S9D independently reviews
+the already authorized host result. S10
 depends on all four reviews, so the umbrella cannot close on replay-only
 evidence. No task self-authorizes a run, promotion, publication, or production
 use.
@@ -1391,12 +1391,13 @@ first ADR-0037/ADR-0038 replacements are then recorded without rewriting v19 at
 `task-1788403413560-sedu3a`, its child DAG, original C21 hold, distinct
 host-positive gate, four-review closure, and cancelled-v1 history remain
 immutable historical evidence at
-`task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`. The current graph-V4
-umbrella is `task-1788589424013-hx1i83`; it carries the completed S0/S1/S1A/S2
-evidence unchanged and uses the current S3-S10 rows listed above. S3 becomes
-dependency-eligible only after current ADR-0038 S3 V3 completes; the separate
-S4B host-positive gate retains ADR-0039/ADR-0040 and explicit-authority
-prerequisites.
+`task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`. Graph-V4 is retained
+as cancelled historical evidence. The current Graph-V5 umbrella is
+`task-1788638159292-7hkaf5`; it carries completed S0/S1/S1A/S2 evidence and the
+S3A commit unchanged. Its exact map is stored at
+`task-plans/adr-0041-private-build-issuer-graph-v5-2026-09-05`. S4A retains
+ADR-0039/ADR-0040 interface prerequisites, while S4B separately retains exact
+host, activation, and human-authorization prerequisites.
 
 The source-grounded current native `task_create` schema persists descriptions,
 priority, assignment, and tags in Ruflo-managed runtime state, but exposes no

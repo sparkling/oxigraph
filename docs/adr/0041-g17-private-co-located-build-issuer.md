@@ -5,19 +5,28 @@
 - Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented at the authority-null contract
-  boundary. Documentation-only S0, the S1 source-absent evaluator, and S2's
-  pure private-build-issuer requirements contract are complete. Execution
+  boundary. Documentation-only S0, the S1 source-absent evaluator, S2's pure
+  private-build-issuer requirements contract, and Graph-V5 S3A's dormant
+  private-issuer evaluator are complete. Execution
   request v2, the Cargo helper attestation and status protocol, containment v2,
   build owner v2, process evidence v3, and product owner v3 remain dormant or
   replay-only. No private co-located issuer, build owner v3, product owner v4,
   production build completion path, or physical G1.7 authority exists
-- Current programme task: `task-1788589424013-hx1i83`
-  (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-V2-GRAPH-V4`), pending
+- Current programme task: `task-1788638159292-7hkaf5`
+  (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-GRAPH-V5`), in progress
+- Current completed evaluator task: Graph-V5 S3A
+  `task-1788638011523-4c24e5` at `a5f2442f`; dormant source task S3B
+  `task-1788638033847-mlvsbe` is pending
+- Historical Graph-V4 programme task: `task-1788589424013-hx1i83`, cancelled
+  and superseded after independent review found that it coupled the dormant
+  evaluator to predecessor interfaces that do not yet exist
 - Historical V2 programme task: `task-1788403413560-sedu3a`,
   cancelled and superseded
 - Architecture-freeze task: `task-1788403444941-5l8jci`, complete; the exact
   historical V2 DAG is stored at
   `task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`
+- The corrected current DAG is stored at
+  `task-plans/adr-0041-private-build-issuer-graph-v5-2026-09-05`
 - Authority-null contract evidence: S1 `task-1788403485637-t9wn40` completed
   at `ef50d492`; S2 `task-1788403489170-xl71j9` completed at `4f5b5c51`
 - **Amends**:
@@ -94,12 +103,17 @@ it opens no descriptor, launches no process, mutates no cgroup or filesystem,
 invokes no callback, and accepts no ambient authority. Its passing replay is
 not a build owner.
 
-Current graph-V4 S3 `task-1788589440120-iaem8f` depends only on completed S2,
+Graph-V5 S3A `task-1788638011523-4c24e5` depended only on completed S2,
 completed ADR-0037 S7 `task-1788573342748-wln111`, and completed ADR-0038 S3 V3
-`task-1788589313411-vm7pg0`. Those dependencies are satisfied, so S3 is
-dependency-eligible but remains pending and unstarted. S3 may add only the
-source-absent physical-issuer evaluator; it grants no physical execution or
-host authority.
+`task-1788589313411-vm7pg0`. It froze the dormant source-absent evaluator at
+`a5f2442f`; its production candidate remains absent, readiness remains
+unavailable, and the three later host-validation cases are non-executing
+TODOs. S3B `task-1788638033847-mlvsbe` may now add only the dormant
+authority-null source. Graph-V5 S4A `task-1788638038970-05pyb8` is a distinct
+evaluator-amendment task that cannot start until the exact ADR-0039 and
+ADR-0040 successor interfaces exist; S4B `task-1788638043966-3guruj` remains a
+separately authorized host-validation gate. This split prevents the current
+evaluator from guessing absent receipt fields or implying host authority.
 
 The physical issuer, build owner v3, and product owner v4 remain unavailable
 until their exact predecessor interfaces exist. This ADR does not guess or
@@ -272,11 +286,12 @@ Documentation-only S0 architecture freeze is complete. C21 task
 `task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
 `task-1788042241332-xafq11` are complete for the local documentation/ledger
 boundary at commit `c01b3c6a`. S1 `task-1788403485637-t9wn40` and pure S2
-`task-1788403489170-xl71j9` are complete. Current graph-V4 S3
-`task-1788589440120-iaem8f` is dependency-eligible after the completed
-ADR-0037 S7 and ADR-0038 S3 V3 repository interfaces, but remains pending and
-unstarted. Its evaluator-only scope must keep host-positive cases gated and
-must not guess absent receipt fields. Positive Cargo execution or output
+`task-1788403489170-xl71j9` are complete. Graph-V5 S3A
+`task-1788638011523-4c24e5` froze the dormant evaluator at `a5f2442f`; S3B
+`task-1788638033847-mlvsbe` is the current authority-null source task. Its
+evaluator scope keeps later host-validation cases non-executing and does not
+guess absent receipt fields. S4A/S4B retain the dependency and authorization
+split described above. Positive Cargo execution or output
 crossing the boundary requires the current ADR-0039
 prerequisite plus ADR-0040's distinct successor destructive qualification and
 receipt-bound activation for the same host, boot, artifacts, state root,
@@ -388,9 +403,9 @@ qualification, receipt, and promotion values remain null or false.
   release no owner, making recovery cost visible rather than manufacturing
   success.
 - The additional evaluator, mutation, native, host, and independent-review
-  surface is substantial. Documentation-only S0, S1 RED, and pure S2 GREEN are
-  complete. Current graph-V4 S3 is dependency-eligible but unstarted, while
-  positive physical work remains separately gated.
+  surface is substantial. Documentation-only S0, S1 RED, pure S2 GREEN, and
+  Graph-V5 S3A's exact source-absent RED are complete. S3B is the current
+  dormant source step, while host validation remains separately gated.
 
 ## Alternatives rejected
 
