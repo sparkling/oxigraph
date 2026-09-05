@@ -14,6 +14,8 @@
 use super::*;
 use std::collections::BTreeSet;
 use std::ffi::{CStr, CString};
+use std::fs::read_to_string;
+use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
 use tempfile::TempDir;
 
@@ -237,6 +239,9 @@ enum MissingMaintenanceBuild {
         rocksdb_version: &'static str,
         source_revision: &'static str,
     },
+    System {
+        rocksdb_version: String,
+    },
     Missing,
 }
 
@@ -245,11 +250,16 @@ impl MissingMaintenanceBuild {
         matches!(self, Self::Vendored { .. })
     }
 
-    const fn rocksdb_version(&self) -> &str {
+    const fn is_system(&self) -> bool {
+        matches!(self, Self::System { .. })
+    }
+
+    fn rocksdb_version(&self) -> &str {
         match self {
             Self::Vendored {
                 rocksdb_version, ..
             } => rocksdb_version,
+            Self::System { rocksdb_version } => rocksdb_version,
             Self::Missing => "missing",
         }
     }
@@ -259,9 +269,49 @@ impl MissingMaintenanceBuild {
             Self::Vendored {
                 source_revision, ..
             } => Some(source_revision),
-            Self::Missing => None,
+            Self::System { .. } | Self::Missing => None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExpectedMaintenanceBuild<'a> {
+    Vendored {
+        rocksdb_version: &'a str,
+        source_revision: &'a str,
+    },
+    System {
+        rocksdb_version: &'a str,
+    },
+}
+
+fn expected_maintenance_build_from_relay<'a>(
+    build_kind: Option<&'a str>,
+    rocksdb_version: Option<&'a str>,
+    source_revision: Option<&'a str>,
+) -> Result<ExpectedMaintenanceBuild<'a>, &'static str> {
+    match (build_kind, rocksdb_version, source_revision) {
+        (Some("vendored"), Some(VENDORED_VERSION), Some(VENDORED_SOURCE_REVISION)) => {
+            Ok(ExpectedMaintenanceBuild::Vendored {
+                rocksdb_version: VENDORED_VERSION,
+                source_revision: VENDORED_SOURCE_REVISION,
+            })
+        }
+        (Some("system"), Some(rocksdb_version), None) if !rocksdb_version.is_empty() => {
+            Ok(ExpectedMaintenanceBuild::System { rocksdb_version })
+        }
+        (Some("vendored"), _, _) => Err("invalid vendored RocksDB build metadata"),
+        (Some("system"), _, _) => Err("invalid system RocksDB build metadata"),
+        _ => Err("missing or unknown RocksDB build metadata"),
+    }
+}
+
+fn expected_maintenance_build() -> Result<ExpectedMaintenanceBuild<'static>, &'static str> {
+    expected_maintenance_build_from_relay(
+        ::core::option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND"),
+        ::core::option_env!("OXIGRAPH_ROCKSDB_VERSION"),
+        ::core::option_env!("OXIGRAPH_ROCKSDB_SOURCE_REVISION"),
+    )
 }
 
 #[derive(Debug)]
@@ -664,6 +714,25 @@ fn current_c_api_exercises_available_zero_unknown_and_statistics_states() -> Res
 }
 
 #[test]
+fn build_metadata_relay_selects_an_exact_backend_identity() {
+    let build = expected_maintenance_build().unwrap_or_else(|error| {
+        panic!("RED: the actual oxrocksdb-sys build selection was not relayed to oxigraph: {error}")
+    });
+    match build {
+        ExpectedMaintenanceBuild::Vendored {
+            rocksdb_version,
+            source_revision,
+        } => {
+            assert_eq!(rocksdb_version, VENDORED_VERSION);
+            assert_eq!(source_revision, VENDORED_SOURCE_REVISION);
+        }
+        ExpectedMaintenanceBuild::System { rocksdb_version } => {
+            assert!(!rocksdb_version.is_empty());
+        }
+    }
+}
+
+#[test]
 fn maintenance_evidence_is_typed_identity_bound_and_diagnostic_only() -> Result<(), StorageError> {
     let (directory, db, data) = open_fixture()?;
     let before = db.maintenance_evidence();
@@ -675,13 +744,29 @@ fn maintenance_evidence_is_typed_identity_bound_and_diagnostic_only() -> Result<
     );
     assert!(before.authority().is_diagnostics_only());
     assert!(before.backend().backend().is_rocksdb());
-    assert!(before.backend().build().is_vendored());
-    assert_eq!(before.backend().build().rocksdb_version(), VENDORED_VERSION);
-    assert_eq!(
-        before.backend().build().source_revision(),
-        Some(VENDORED_SOURCE_REVISION),
-        "the default build must bind the exact vendored source revision",
-    );
+    match expected_maintenance_build().expect("build metadata relay must be valid") {
+        ExpectedMaintenanceBuild::Vendored {
+            rocksdb_version,
+            source_revision,
+        } => {
+            assert!(before.backend().build().is_vendored());
+            assert_eq!(before.backend().build().rocksdb_version(), rocksdb_version);
+            assert_eq!(
+                before.backend().build().source_revision(),
+                Some(source_revision),
+                "the default build must bind the exact vendored source revision",
+            );
+        }
+        ExpectedMaintenanceBuild::System { rocksdb_version } => {
+            assert!(before.backend().build().is_system());
+            assert_eq!(before.backend().build().rocksdb_version(), rocksdb_version);
+            assert_eq!(
+                before.backend().build().source_revision(),
+                None,
+                "a system build must not inherit the vendored source revision",
+            );
+        }
+    }
     assert!(before.runtime().open_mode().is_read_write());
     let Some(before_database_id) = before.runtime().database_id().available().cloned() else {
         panic!("an open database must expose its RocksDB IDENTITY");
@@ -1380,6 +1465,827 @@ fn has_unique_method_in_impl(tokens: &[RustToken], type_name: &str, method_name:
     methods.len() == 1 && (!methods[0].conditional || methods[0].test_only)
 }
 
+fn unique_unconditional_function_body<'a>(
+    tokens: &'a [RustToken],
+    name: &str,
+) -> Option<&'a [RustToken]> {
+    let item = unique_unconditional_top_level_item(tokens, "fn", name)?;
+    let body_open = item.body_open?;
+    Some(&tokens[body_open..=item.end])
+}
+
+fn unique_unconditional_function_has_header(
+    tokens: &[RustToken],
+    name: &str,
+    expected: &[&str],
+) -> bool {
+    let Some(item) = unique_unconditional_top_level_item(tokens, "fn", name) else {
+        return false;
+    };
+    let Some(body_open) = item.body_open else {
+        return false;
+    };
+    tokens[item.declaration..body_open]
+        .iter()
+        .map(|token| token.0.as_str())
+        .eq(expected.iter().copied())
+}
+
+fn unique_unconditional_method_body<'a>(
+    tokens: &'a [RustToken],
+    type_name: &str,
+    method_name: &str,
+) -> Option<&'a [RustToken]> {
+    let depths = curly_depths(tokens)?;
+    let mut bodies = Vec::new();
+    for implementation in top_level_inherent_impls(tokens, type_name) {
+        if implementation.conditional {
+            continue;
+        }
+        for declaration in implementation.body_open + 1..implementation.body_close {
+            if depths[declaration] != 1
+                || tokens[declaration].0 != "fn"
+                || tokens
+                    .get(declaration + 1)
+                    .is_none_or(|token| token.0 != method_name)
+            {
+                continue;
+            }
+            let body_open = (declaration + 2..implementation.body_close)
+                .find(|index| depths[*index] == 1 && tokens[*index].0 == "{")?;
+            let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
+            bodies.push(&tokens[body_open..=body_close]);
+        }
+    }
+    (bodies.len() == 1).then(|| bodies[0])
+}
+
+fn returned_top_level_struct_field_is_direct_call(
+    body: &[RustToken],
+    struct_name: &str,
+    field_name: &str,
+    function_name: &str,
+) -> bool {
+    if body.first().is_none_or(|token| token.0 != "{")
+        || body.last().is_none_or(|token| token.0 != "}")
+    {
+        return false;
+    }
+    let Some(depths) = curly_depths(body) else {
+        return false;
+    };
+    let mut returned_literals = Vec::new();
+    for literal in 1..body.len() - 1 {
+        if depths[literal] != 1
+            || body[literal].0 != struct_name
+            || body.get(literal + 1).is_none_or(|token| token.0 != "{")
+        {
+            continue;
+        }
+        let Some(close) = matching_delimiter(body, literal + 1, "{", "}") else {
+            return false;
+        };
+        let tail_expression = close + 1 == body.len() - 1;
+        let direct_return = close + 2 == body.len() - 1
+            && body[close + 1].0 == ";"
+            && literal > 1
+            && body[literal - 1].0 == "return";
+        if tail_expression || direct_return {
+            returned_literals.push((literal, literal + 1, close, direct_return));
+        }
+    }
+    let [(literal, open, close, direct_return)] = returned_literals.as_slice() else {
+        return false;
+    };
+    let return_count = token_value_count(body, "return");
+    if (*direct_return && (return_count != 1 || body[*literal - 1].0 != "return"))
+        || (!*direct_return && return_count != 0)
+    {
+        return false;
+    }
+    let direct_fields = (*open + 1..*close)
+        .filter(|index| {
+            depths[*index] == 2
+                && body[*index].0 == field_name
+                && body.get(*index + 1).is_some_and(|token| token.0 == ":")
+                && depths[*index + 1] == 2
+        })
+        .collect::<Vec<_>>();
+    let [field] = direct_fields.as_slice() else {
+        return false;
+    };
+    body.get(*field..*field + 6).is_some_and(|tokens| {
+        exact_token_sequence(tokens, &[field_name, ":", function_name, "(", ")", ","])
+    })
+}
+
+fn token_sequence_count(tokens: &[RustToken], expected: &[&str]) -> usize {
+    tokens
+        .windows(expected.len())
+        .filter(|window| {
+            window
+                .iter()
+                .zip(expected)
+                .all(|(actual, expected)| actual.0 == *expected)
+        })
+        .count()
+}
+
+fn exact_token_sequence(tokens: &[RustToken], expected: &[&str]) -> bool {
+    tokens
+        .iter()
+        .map(|token| token.0.as_str())
+        .eq(expected.iter().copied())
+}
+
+fn token_value_count(tokens: &[RustToken], expected: &str) -> usize {
+    tokens.iter().filter(|token| token.0 == expected).count()
+}
+
+fn top_level_function_with_exact_attribute(
+    tokens: &[RustToken],
+    name: &str,
+    expected_attribute: &[&str],
+) -> Option<TopLevelItem> {
+    let depths = curly_depths(tokens)?;
+    let matching = top_level_named_items(tokens, "fn", name)
+        .into_iter()
+        .filter(|item| {
+            let prefix = prefix_start(tokens, &depths, item.declaration, 0, 0);
+            tokens[prefix..item.declaration]
+                .iter()
+                .map(|token| token.0.as_str())
+                .eq(expected_attribute.iter().copied())
+        })
+        .collect::<Vec<_>>();
+    (matching.len() == 1).then(|| matching[0])
+}
+
+fn manifest_package_build_script(manifest: &str) -> Option<&str> {
+    let mut in_package = false;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_package = line == "[package]";
+            continue;
+        }
+        if !in_package || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() == "build" {
+            return value.trim().strip_prefix('"')?.strip_suffix('"');
+        }
+    }
+    None
+}
+
+fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
+    let tokens = rust_tokens(source);
+    let mut failures = Vec::new();
+    let helper = unique_unconditional_function_body(&tokens, "emit_rocksdb_build_metadata");
+    if !unique_unconditional_function_has_header(
+        &tokens,
+        "emit_rocksdb_build_metadata",
+        &[
+            "fn",
+            "emit_rocksdb_build_metadata",
+            "(",
+            "build_kind",
+            ":",
+            "&",
+            "str",
+            ",",
+            "rocksdb_version",
+            ":",
+            "&",
+            "str",
+            ",",
+            "source_revision",
+            ":",
+            "Option",
+            "<",
+            "&",
+            "str",
+            ">",
+            ",",
+            ")",
+        ],
+    ) || helper.is_none_or(|body| {
+        !exact_token_sequence(
+            body,
+            &[
+                "{",
+                ":",
+                ":",
+                "std",
+                ":",
+                ":",
+                "println",
+                "!",
+                "(",
+                "\"cargo::metadata=build_kind={build_kind}\"",
+                ")",
+                ";",
+                ":",
+                ":",
+                "std",
+                ":",
+                ":",
+                "println",
+                "!",
+                "(",
+                "\"cargo::metadata=version={rocksdb_version}\"",
+                ")",
+                ";",
+                "if",
+                "let",
+                "Some",
+                "(",
+                "source_revision",
+                ")",
+                "=",
+                "source_revision",
+                "{",
+                ":",
+                ":",
+                "std",
+                ":",
+                ":",
+                "println",
+                "!",
+                "(",
+                "\"cargo::metadata=source_revision={source_revision}\"",
+                ")",
+                ";",
+                "}",
+                "}",
+            ],
+        )
+    }) {
+        failures.push("dependency metadata emitter");
+    }
+    for literal in [
+        "\"cargo::metadata=build_kind={build_kind}\"",
+        "\"cargo::metadata=version={rocksdb_version}\"",
+        "\"cargo::metadata=source_revision={source_revision}\"",
+    ] {
+        if token_sequence_count(&tokens, &[literal]) != 1 {
+            failures.push("unique dependency metadata output");
+        }
+    }
+
+    let mains = top_level_named_items(&tokens, "fn", "main");
+    let vendored = top_level_function_with_exact_attribute(
+        &tokens,
+        "main",
+        &[
+            "#",
+            "[",
+            "cfg",
+            "(",
+            "not",
+            "(",
+            "feature",
+            "=",
+            "\"pkg-config\"",
+            ")",
+            ")",
+            "]",
+        ],
+    );
+    let system = top_level_function_with_exact_attribute(
+        &tokens,
+        "main",
+        &[
+            "#",
+            "[",
+            "cfg",
+            "(",
+            "feature",
+            "=",
+            "\"pkg-config\"",
+            ")",
+            "]",
+        ],
+    );
+    if mains.len() != 2 || vendored.is_none() || system.is_none() {
+        failures.push("exact dependency feature selection");
+        return failures;
+    }
+    let vendored = vendored.and_then(|item| item.body_open.map(|open| &tokens[open..=item.end]));
+    if vendored.is_none_or(|body| {
+        !exact_token_sequence(
+            body,
+            &[
+                "{",
+                "emit_rocksdb_build_metadata",
+                "(",
+                "\"vendored\"",
+                ",",
+                "\"11.1.2\"",
+                ",",
+                "Some",
+                "(",
+                "\"3b446089141659fad25328c5ea3e7ed283df46e4\"",
+                ")",
+                ",",
+                ")",
+                ";",
+                "}",
+            ],
+        )
+    }) {
+        failures.push("exact vendored metadata selection");
+    }
+    if system.is_none() {
+        failures.push("system feature main selection");
+    }
+    let system = system.and_then(|item| item.body_open.map(|open| &tokens[open..=item.end]));
+    let exact_system_body = system.is_some_and(|body| {
+        exact_token_sequence(
+            body,
+            &[
+                "{",
+                "let",
+                "library",
+                "=",
+                ":",
+                ":",
+                "pkg_config",
+                ":",
+                ":",
+                "Config",
+                ":",
+                ":",
+                "new",
+                "(",
+                ")",
+                ".",
+                "atleast_version",
+                "(",
+                "\"9.10.0\"",
+                ")",
+                ".",
+                "probe",
+                "(",
+                "\"rocksdb\"",
+                ")",
+                ".",
+                "unwrap",
+                "(",
+                ")",
+                ";",
+                "emit_rocksdb_build_metadata",
+                "(",
+                "\"system\"",
+                ",",
+                "&",
+                "library",
+                ".",
+                "version",
+                ",",
+                "None",
+                ")",
+                ";",
+                "}",
+            ],
+        )
+    });
+    if !exact_system_body {
+        failures.push("system pkg-config probe selection");
+    }
+    if !exact_system_body {
+        failures.push("system pkg-config metadata selection");
+    }
+    failures
+}
+
+fn oxigraph_build_relay_failures(manifest: &str, build_script: Option<&str>) -> Vec<&'static str> {
+    let mut failures = Vec::new();
+    if manifest_package_build_script(manifest) != Some("build.rs") {
+        failures.push("oxigraph build script declaration");
+    }
+    let Some(build_script) = build_script else {
+        failures.push("oxigraph dependency metadata relay");
+        return failures;
+    };
+    let tokens = rust_tokens(build_script);
+    let Some(main) = unique_unconditional_function_body(&tokens, "main") else {
+        failures.push("oxigraph dependency metadata relay");
+        return failures;
+    };
+    if !unique_unconditional_function_has_header(&tokens, "main", &["fn", "main", "(", ")"]) {
+        failures.push("oxigraph dependency metadata relay");
+    }
+    let exact_relay_body = exact_token_sequence(
+        main,
+        &[
+            "{",
+            "let",
+            "build_kind",
+            "=",
+            ":",
+            ":",
+            "std",
+            ":",
+            ":",
+            "env",
+            ":",
+            ":",
+            "var",
+            "(",
+            "\"DEP_ROCKSDB_BUILD_KIND\"",
+            ")",
+            ".",
+            "expect",
+            "(",
+            "\"oxrocksdb-sys must report its selected build kind\"",
+            ")",
+            ";",
+            "let",
+            "rocksdb_version",
+            "=",
+            ":",
+            ":",
+            "std",
+            ":",
+            ":",
+            "env",
+            ":",
+            ":",
+            "var",
+            "(",
+            "\"DEP_ROCKSDB_VERSION\"",
+            ")",
+            ".",
+            "expect",
+            "(",
+            "\"oxrocksdb-sys must report its RocksDB version\"",
+            ")",
+            ";",
+            "let",
+            "source_revision",
+            "=",
+            ":",
+            ":",
+            "std",
+            ":",
+            ":",
+            "env",
+            ":",
+            ":",
+            "var",
+            "(",
+            "\"DEP_ROCKSDB_SOURCE_REVISION\"",
+            ")",
+            ".",
+            "ok",
+            "(",
+            ")",
+            ";",
+            ":",
+            ":",
+            "std",
+            ":",
+            ":",
+            "println",
+            "!",
+            "(",
+            "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\"",
+            ")",
+            ";",
+            ":",
+            ":",
+            "std",
+            ":",
+            ":",
+            "println",
+            "!",
+            "(",
+            "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION={rocksdb_version}\"",
+            ")",
+            ";",
+            "if",
+            "let",
+            "Some",
+            "(",
+            "source_revision",
+            ")",
+            "=",
+            "source_revision",
+            "{",
+            ":",
+            ":",
+            "std",
+            ":",
+            ":",
+            "println",
+            "!",
+            "(",
+            "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION={source_revision}\"",
+            ")",
+            ";",
+            "}",
+            "}",
+        ],
+    );
+    if !exact_relay_body {
+        failures.push("causal dependency metadata input");
+    }
+    for literal in [
+        "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\"",
+        "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION={rocksdb_version}\"",
+        "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION={source_revision}\"",
+    ] {
+        if token_sequence_count(&tokens, &[literal]) != 1 {
+            failures.push("unique oxigraph metadata output");
+        }
+    }
+    if !exact_relay_body {
+        failures.push("causal oxigraph metadata output");
+    }
+    failures
+}
+
+fn wrapper_build_selection_failures(source: &str) -> Vec<&'static str> {
+    let tokens = rust_tokens(source);
+    let mut failures = Vec::new();
+    let Some(selector) = unique_unconditional_function_body(&tokens, "rocksdb_maintenance_build")
+    else {
+        failures.push("unique build metadata selector");
+        return failures;
+    };
+    if !unique_unconditional_function_has_header(
+        &tokens,
+        "rocksdb_maintenance_build",
+        &[
+            "fn",
+            "rocksdb_maintenance_build",
+            "(",
+            ")",
+            "-",
+            ">",
+            "RocksDbMaintenanceBuild",
+        ],
+    ) {
+        failures.push("unique build metadata selector");
+    }
+    if !exact_token_sequence(
+        selector,
+        &[
+            "{",
+            "match",
+            "(",
+            ":",
+            ":",
+            "core",
+            ":",
+            ":",
+            "option_env",
+            "!",
+            "(",
+            "\"OXIGRAPH_ROCKSDB_BUILD_KIND\"",
+            ")",
+            ",",
+            ":",
+            ":",
+            "core",
+            ":",
+            ":",
+            "option_env",
+            "!",
+            "(",
+            "\"OXIGRAPH_ROCKSDB_VERSION\"",
+            ")",
+            ",",
+            ":",
+            ":",
+            "core",
+            ":",
+            ":",
+            "option_env",
+            "!",
+            "(",
+            "\"OXIGRAPH_ROCKSDB_SOURCE_REVISION\"",
+            ")",
+            ",",
+            ")",
+            "{",
+            "(",
+            "Some",
+            "(",
+            "\"vendored\"",
+            ")",
+            ",",
+            "Some",
+            "(",
+            "rocksdb_version",
+            ")",
+            ",",
+            "Some",
+            "(",
+            "source_revision",
+            ")",
+            ")",
+            "=",
+            ">",
+            "{",
+            "RocksDbMaintenanceBuild",
+            ":",
+            ":",
+            "Vendored",
+            "{",
+            "rocksdb_version",
+            ",",
+            "source_revision",
+            ",",
+            "}",
+            "}",
+            "(",
+            "Some",
+            "(",
+            "\"system\"",
+            ")",
+            ",",
+            "Some",
+            "(",
+            "rocksdb_version",
+            ")",
+            ",",
+            "None",
+            ")",
+            "if",
+            "!",
+            "rocksdb_version",
+            ".",
+            "is_empty",
+            "(",
+            ")",
+            "=",
+            ">",
+            "{",
+            "RocksDbMaintenanceBuild",
+            ":",
+            ":",
+            "System",
+            "{",
+            "rocksdb_version",
+            ":",
+            "rocksdb_version",
+            ".",
+            "to_owned",
+            "(",
+            ")",
+            ",",
+            "}",
+            "}",
+            "_",
+            "=",
+            ">",
+            ":",
+            ":",
+            "core",
+            ":",
+            ":",
+            "unreachable",
+            "!",
+            "(",
+            ")",
+            ",",
+            "}",
+            "}",
+        ],
+    ) {
+        failures.push("direct unshadowed wrapper metadata selection");
+    }
+    for literal in [
+        "\"OXIGRAPH_ROCKSDB_BUILD_KIND\"",
+        "\"OXIGRAPH_ROCKSDB_VERSION\"",
+        "\"OXIGRAPH_ROCKSDB_SOURCE_REVISION\"",
+    ] {
+        if token_sequence_count(&tokens, &[literal]) != 1
+            || token_sequence_count(
+                selector,
+                &[
+                    ":",
+                    ":",
+                    "core",
+                    ":",
+                    ":",
+                    "option_env",
+                    "!",
+                    "(",
+                    literal,
+                    ")",
+                ],
+            ) != 1
+        {
+            failures.push("causal wrapper metadata input");
+        }
+    }
+    if !has_tokens(
+        selector,
+        &[
+            "Some",
+            "(",
+            "\"vendored\"",
+            ")",
+            ",",
+            "Some",
+            "(",
+            "rocksdb_version",
+            ")",
+            ",",
+            "Some",
+            "(",
+            "source_revision",
+            ")",
+        ],
+    ) || !has_tokens(
+        selector,
+        &[
+            "RocksDbMaintenanceBuild",
+            ":",
+            ":",
+            "Vendored",
+            "{",
+            "rocksdb_version",
+            ",",
+            "source_revision",
+            ",",
+            "}",
+        ],
+    ) {
+        failures.push("vendored metadata construction");
+    }
+    if !has_tokens(
+        selector,
+        &[
+            "Some",
+            "(",
+            "\"system\"",
+            ")",
+            ",",
+            "Some",
+            "(",
+            "rocksdb_version",
+            ")",
+            ",",
+            "None",
+        ],
+    ) || !has_tokens(
+        selector,
+        &["if", "!", "rocksdb_version", ".", "is_empty", "(", ")"],
+    ) || !has_tokens(
+        selector,
+        &[
+            "RocksDbMaintenanceBuild",
+            ":",
+            ":",
+            "System",
+            "{",
+            "rocksdb_version",
+            ":",
+            "rocksdb_version",
+            ".",
+            "to_owned",
+            "(",
+            ")",
+            ",",
+            "}",
+        ],
+    ) {
+        failures.push("system metadata construction");
+    }
+    if has_tokens(selector, &["cfg", "!"])
+        || has_tokens(selector, &["\"11.1.2\""])
+        || has_tokens(selector, &["\"3b446089141659fad25328c5ea3e7ed283df46e4\""])
+    {
+        failures.push("noncausal wrapper build hardcode");
+    }
+    let collector = unique_unconditional_method_body(&tokens, "Db", "maintenance_evidence");
+    if collector.is_none_or(|body| {
+        !returned_top_level_struct_field_is_direct_call(
+            body,
+            "RocksDbMaintenanceEvidence",
+            "build",
+            "rocksdb_maintenance_build",
+        ) || token_value_count(body, "rocksdb_maintenance_build") != 1
+    }) {
+        failures.push("collector build identity linkage");
+    }
+    failures
+}
+
+fn repository_path(relative: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(relative)
+}
+
 fn contract_source_failures(source: &str) -> Vec<&'static str> {
     let tokens = rust_tokens(source);
     let mut failures = Vec::new();
@@ -1652,7 +2558,393 @@ fn contract_source_failures(source: &str) -> Vec<&'static str> {
     {
         failures.push("read-write/read-only variants");
     }
+    failures.extend(wrapper_build_selection_failures(source));
     failures
+}
+
+fn valid_sys_build_metadata_fixture() -> &'static str {
+    r#"
+        fn emit_rocksdb_build_metadata(
+            build_kind: &str,
+            rocksdb_version: &str,
+            source_revision: Option<&str>,
+        ) {
+            ::std::println!("cargo::metadata=build_kind={build_kind}");
+            ::std::println!("cargo::metadata=version={rocksdb_version}");
+            if let Some(source_revision) = source_revision {
+                ::std::println!("cargo::metadata=source_revision={source_revision}");
+            }
+        }
+
+        #[cfg(not(feature = "pkg-config"))]
+        fn main() {
+            emit_rocksdb_build_metadata(
+                "vendored",
+                "11.1.2",
+                Some("3b446089141659fad25328c5ea3e7ed283df46e4"),
+            );
+        }
+
+        #[cfg(feature = "pkg-config")]
+        fn main() {
+            let library = ::pkg_config::Config::new()
+                .atleast_version("9.10.0")
+                .probe("rocksdb")
+                .unwrap();
+            emit_rocksdb_build_metadata("system", &library.version, None);
+        }
+    "#
+}
+
+fn valid_oxigraph_build_relay_fixture() -> &'static str {
+    r#"
+        fn main() {
+            let build_kind = ::std::env::var("DEP_ROCKSDB_BUILD_KIND")
+                .expect("oxrocksdb-sys must report its selected build kind");
+            let rocksdb_version = ::std::env::var("DEP_ROCKSDB_VERSION")
+                .expect("oxrocksdb-sys must report its RocksDB version");
+            let source_revision = ::std::env::var("DEP_ROCKSDB_SOURCE_REVISION").ok();
+            ::std::println!("cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}");
+            ::std::println!("cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION={rocksdb_version}");
+            if let Some(source_revision) = source_revision {
+                ::std::println!(
+                    "cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION={source_revision}"
+                );
+            }
+        }
+    "#
+}
+
+fn valid_wrapper_build_selection_fixture() -> &'static str {
+    r#"
+        fn rocksdb_maintenance_build() -> RocksDbMaintenanceBuild {
+            match (
+                ::core::option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND"),
+                ::core::option_env!("OXIGRAPH_ROCKSDB_VERSION"),
+                ::core::option_env!("OXIGRAPH_ROCKSDB_SOURCE_REVISION"),
+            ) {
+                (Some("vendored"), Some(rocksdb_version), Some(source_revision)) => {
+                    RocksDbMaintenanceBuild::Vendored {
+                        rocksdb_version,
+                        source_revision,
+                    }
+                }
+                (Some("system"), Some(rocksdb_version), None)
+                    if !rocksdb_version.is_empty() =>
+                {
+                    RocksDbMaintenanceBuild::System {
+                        rocksdb_version: rocksdb_version.to_owned(),
+                    }
+                }
+                _ => ::core::unreachable!(),
+            }
+        }
+
+        impl Db {
+            fn maintenance_evidence(&self) -> RocksDbMaintenanceEvidence {
+                RocksDbMaintenanceEvidence {
+                    build: rocksdb_maintenance_build(),
+                }
+            }
+        }
+    "#
+}
+
+#[test]
+fn build_metadata_relay_is_causally_declared_across_the_dependency_boundary() {
+    let sys_build = read_to_string(repository_path("oxrocksdb-sys/build.rs"))
+        .expect("the oxrocksdb-sys build script must be readable");
+    let oxigraph_manifest = read_to_string(repository_path("lib/oxigraph/Cargo.toml"))
+        .expect("the oxigraph manifest must be readable");
+    let oxigraph_build_path = repository_path("lib/oxigraph/build.rs");
+    let oxigraph_build = read_to_string(&oxigraph_build_path).ok();
+
+    let mut failures = sys_build_metadata_failures(&sys_build);
+    failures.extend(oxigraph_build_relay_failures(
+        &oxigraph_manifest,
+        oxigraph_build.as_deref(),
+    ));
+    failures.extend(wrapper_build_selection_failures(include_str!(
+        "rocksdb_wrapper.rs"
+    )));
+    assert!(
+        failures.is_empty(),
+        "RED: the selected RocksDB build identity is not causally relayed into maintenance evidence: {failures:?}",
+    );
+}
+
+#[test]
+fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_decoys() {
+    let valid_sys = valid_sys_build_metadata_fixture();
+    let valid_relay = valid_oxigraph_build_relay_fixture();
+    let valid_wrapper = valid_wrapper_build_selection_fixture();
+    let valid_sys_failures = sys_build_metadata_failures(valid_sys);
+    assert!(
+        valid_sys_failures.is_empty(),
+        "valid dependency fixture: {valid_sys_failures:?}",
+    );
+    let valid_relay_failures =
+        oxigraph_build_relay_failures("[package]\nbuild = \"build.rs\"", Some(valid_relay));
+    assert!(
+        valid_relay_failures.is_empty(),
+        "valid relay fixture: {valid_relay_failures:?}",
+    );
+    let valid_wrapper_failures = wrapper_build_selection_failures(valid_wrapper);
+    assert!(
+        valid_wrapper_failures.is_empty(),
+        "valid wrapper fixture: {valid_wrapper_failures:?}",
+    );
+    let direct_return_wrapper = valid_wrapper.replacen(
+        "                RocksDbMaintenanceEvidence {\n                    build: rocksdb_maintenance_build(),\n                }",
+        "                return RocksDbMaintenanceEvidence {\n                    build: rocksdb_maintenance_build(),\n                };",
+        1,
+    );
+    assert_ne!(
+        direct_return_wrapper, valid_wrapper,
+        "direct-return wrapper control must be live",
+    );
+    let direct_return_failures = wrapper_build_selection_failures(&direct_return_wrapper);
+    assert!(
+        direct_return_failures.is_empty(),
+        "valid direct-return wrapper fixture: {direct_return_failures:?}",
+    );
+
+    let empty_system_version = valid_sys.replace("&library.version, None", "\"\", None");
+    assert!(
+        sys_build_metadata_failures(&empty_system_version)
+            .contains(&"system pkg-config metadata selection")
+    );
+    let system_revision_leak = valid_sys.replace(
+        "&library.version, None",
+        "&library.version, Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\")",
+    );
+    assert!(
+        sys_build_metadata_failures(&system_revision_leak)
+            .contains(&"system pkg-config metadata selection")
+    );
+    let nested_sys_decoy = format!(
+        "mod decoy {{ {valid_sys} }}\n#[cfg(not(feature = \"pkg-config\"))] fn main() {{}}\n#[cfg(feature = \"pkg-config\")] fn main() {{}}",
+    );
+    assert!(!sys_build_metadata_failures(&nested_sys_decoy).is_empty());
+    let rebound_emitter = valid_sys.replacen(
+        "        ) {\n            ::std::println!(\"cargo::metadata=build_kind={build_kind}\");",
+        "        ) {\n            let build_kind = \"vendored\";\n            let rocksdb_version = \"11.1.2\";\n            let source_revision = Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\");\n            ::std::println!(\"cargo::metadata=build_kind={build_kind}\");",
+        1,
+    );
+    assert_ne!(rebound_emitter, valid_sys, "emitter mutant must be live");
+    assert!(
+        sys_build_metadata_failures(&rebound_emitter).contains(&"dependency metadata emitter"),
+        "metadata parameters must not be shadowed before output",
+    );
+    let macro_shadowed_emitter = format!(
+        "macro_rules! println {{ ($($tokens:tt)*) => {{}} }}\n{}",
+        valid_sys.replace("::std::println!", "println!"),
+    );
+    assert!(
+        sys_build_metadata_failures(&macro_shadowed_emitter)
+            .contains(&"dependency metadata emitter"),
+        "a module-scope macro must not substitute for the standard metadata emitter",
+    );
+    let rebound_probe_result = valid_sys.replacen(
+        "            emit_rocksdb_build_metadata(\"system\", &library.version, None);",
+        "            let library = FakeLibrary { version: \"hardcoded\".to_owned() };\n            emit_rocksdb_build_metadata(\"system\", &library.version, None);",
+        1,
+    );
+    assert_ne!(
+        rebound_probe_result, valid_sys,
+        "probe-result mutant must be live",
+    );
+    assert!(
+        sys_build_metadata_failures(&rebound_probe_result)
+            .contains(&"system pkg-config metadata selection"),
+        "the relayed system version must come directly from the probe result",
+    );
+
+    assert_eq!(
+        manifest_package_build_script(
+            "[package]\n# build = \"build.rs\"\ndescription = \"build = build.rs\""
+        ),
+        None,
+    );
+    let inactive_relay = valid_relay.replace("fn main()", "#[cfg(any())]\nfn main()");
+    assert!(
+        !oxigraph_build_relay_failures("[package]\nbuild = \"build.rs\"", Some(&inactive_relay),)
+            .is_empty()
+    );
+    let rebound_relay = valid_relay.replacen(
+        "            let source_revision = ::std::env::var(\"DEP_ROCKSDB_SOURCE_REVISION\").ok();",
+        "            let source_revision = ::std::env::var(\"DEP_ROCKSDB_SOURCE_REVISION\").ok();\n            let build_kind = \"vendored\";\n            let rocksdb_version = \"11.1.2\";\n            let source_revision = Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\");",
+        1,
+    );
+    assert_ne!(rebound_relay, valid_relay, "relay mutant must be live");
+    assert!(
+        oxigraph_build_relay_failures("[package]\nbuild = \"build.rs\"", Some(&rebound_relay),)
+            .contains(&"causal dependency metadata input"),
+        "dependency metadata inputs must not be shadowed before relay output",
+    );
+    let macro_shadowed_relay = format!(
+        "macro_rules! println {{ ($($tokens:tt)*) => {{}} }}\n{}",
+        valid_relay.replace("::std::println!", "println!"),
+    );
+    assert!(
+        oxigraph_build_relay_failures(
+            "[package]\nbuild = \"build.rs\"",
+            Some(&macro_shadowed_relay),
+        )
+        .contains(&"causal oxigraph metadata output"),
+        "a module-scope macro must not substitute for the standard metadata relay",
+    );
+
+    let hardcoded_wrapper = r#"
+        const KIND_DECOY: Option<&str> = option_env!("OXIGRAPH_ROCKSDB_BUILD_KIND");
+        const VERSION_DECOY: Option<&str> = option_env!("OXIGRAPH_ROCKSDB_VERSION");
+        const REVISION_DECOY: Option<&str> = option_env!("OXIGRAPH_ROCKSDB_SOURCE_REVISION");
+        fn rocksdb_maintenance_build() -> RocksDbMaintenanceBuild {
+            let _ = (KIND_DECOY, VERSION_DECOY, REVISION_DECOY);
+            RocksDbMaintenanceBuild::Vendored {
+                rocksdb_version: "11.1.2",
+                source_revision: "3b446089141659fad25328c5ea3e7ed283df46e4",
+            }
+        }
+        impl Db {
+            fn maintenance_evidence(&self) -> RocksDbMaintenanceEvidence {
+                RocksDbMaintenanceEvidence { build: rocksdb_maintenance_build() }
+            }
+        }
+    "#;
+    assert!(!wrapper_build_selection_failures(hardcoded_wrapper).is_empty());
+    let local_feature_only = r#"
+        fn rocksdb_maintenance_build() -> RocksDbMaintenanceBuild {
+            if cfg!(feature = "rocksdb-pkg-config") {
+                RocksDbMaintenanceBuild::System { rocksdb_version: "system".to_owned() }
+            } else {
+                RocksDbMaintenanceBuild::Vendored {
+                    rocksdb_version: "11.1.2",
+                    source_revision: "3b446089141659fad25328c5ea3e7ed283df46e4",
+                }
+            }
+        }
+        impl Db {
+            fn maintenance_evidence(&self) -> RocksDbMaintenanceEvidence {
+                RocksDbMaintenanceEvidence { build: rocksdb_maintenance_build() }
+            }
+        }
+    "#;
+    assert!(!wrapper_build_selection_failures(local_feature_only).is_empty());
+    let nested_wrapper_decoy = format!("mod decoy {{ {valid_wrapper} }}");
+    assert!(!wrapper_build_selection_failures(&nested_wrapper_decoy).is_empty());
+    let macro_shadowed_wrapper = format!(
+        "macro_rules! option_env {{ ($name:literal) => {{ None }} }}\n{}",
+        valid_wrapper.replace("::core::option_env!", "option_env!"),
+    );
+    assert!(
+        wrapper_build_selection_failures(&macro_shadowed_wrapper)
+            .contains(&"direct unshadowed wrapper metadata selection"),
+        "a module-scope macro must not substitute for the built-in metadata selector",
+    );
+    let macro_shadowed_unreachable = format!(
+        "macro_rules! unreachable {{ () => {{ RocksDbMaintenanceBuild::System {{ rocksdb_version: \"shadowed\".to_owned() }} }} }}\n{}",
+        valid_wrapper.replace("::core::unreachable!", "unreachable!"),
+    );
+    assert!(
+        wrapper_build_selection_failures(&macro_shadowed_unreachable)
+            .contains(&"direct unshadowed wrapper metadata selection"),
+        "a module-scope macro must not replace invalid-metadata rejection",
+    );
+    let rebound_vendored_arm = valid_wrapper.replacen(
+        "                (Some(\"vendored\"), Some(rocksdb_version), Some(source_revision)) => {\n                    RocksDbMaintenanceBuild::Vendored {",
+        "                (Some(\"vendored\"), Some(rocksdb_version), Some(source_revision)) => {\n                    let rocksdb_version = \"11.1.2\";\n                    let source_revision = \"3b446089141659fad25328c5ea3e7ed283df46e4\";\n                    RocksDbMaintenanceBuild::Vendored {",
+        1,
+    );
+    assert_ne!(
+        rebound_vendored_arm, valid_wrapper,
+        "vendored-arm mutant must be live",
+    );
+    assert!(
+        wrapper_build_selection_failures(&rebound_vendored_arm)
+            .contains(&"direct unshadowed wrapper metadata selection"),
+        "vendored match bindings must flow directly into the build identity",
+    );
+    let rebound_system_arm = valid_wrapper.replacen(
+        "                {\n                    RocksDbMaintenanceBuild::System {",
+        "                {\n                    let rocksdb_version = \"hardcoded\";\n                    RocksDbMaintenanceBuild::System {",
+        1,
+    );
+    assert_ne!(
+        rebound_system_arm, valid_wrapper,
+        "system-arm mutant must be live",
+    );
+    assert!(
+        wrapper_build_selection_failures(&rebound_system_arm)
+            .contains(&"direct unshadowed wrapper metadata selection"),
+        "system match bindings must flow directly into the build identity",
+    );
+    let shadowed_collector = valid_wrapper.replacen(
+        "                RocksDbMaintenanceEvidence {\n                    build: rocksdb_maintenance_build(),",
+        "                let rocksdb_maintenance_build = || RocksDbMaintenanceBuild::System { rocksdb_version: \"hardcoded\".to_owned() };\n                RocksDbMaintenanceEvidence {\n                    build: rocksdb_maintenance_build(),",
+        1,
+    );
+    assert_ne!(
+        shadowed_collector, valid_wrapper,
+        "collector mutant must be live",
+    );
+    assert!(
+        wrapper_build_selection_failures(&shadowed_collector)
+            .contains(&"collector build identity linkage"),
+        "the production collector must call the top-level selector directly",
+    );
+    let dead_branch_collector = valid_wrapper.replacen(
+        "                RocksDbMaintenanceEvidence {\n                    build: rocksdb_maintenance_build(),\n                }",
+        "                if false {\n                    let _ = RocksDbMaintenanceEvidence {\n                        build: rocksdb_maintenance_build(),\n                    };\n                }\n                RocksDbMaintenanceEvidence {\n                    build: RocksDbMaintenanceBuild::System {\n                        rocksdb_version: \"hardcoded\".to_owned(),\n                    },\n                }",
+        1,
+    );
+    assert_ne!(
+        dead_branch_collector, valid_wrapper,
+        "dead-branch collector mutant must be live",
+    );
+    assert!(
+        wrapper_build_selection_failures(&dead_branch_collector)
+            .contains(&"collector build identity linkage"),
+        "a sole selector call in a dead branch must not bless an alternate returned build",
+    );
+
+    expected_maintenance_build_from_relay(None, None, None).unwrap_err();
+    assert_eq!(
+        expected_maintenance_build_from_relay(
+            Some("vendored"),
+            Some(VENDORED_VERSION),
+            Some(VENDORED_SOURCE_REVISION),
+        ),
+        Ok(ExpectedMaintenanceBuild::Vendored {
+            rocksdb_version: VENDORED_VERSION,
+            source_revision: VENDORED_SOURCE_REVISION,
+        }),
+    );
+    assert_eq!(
+        expected_maintenance_build_from_relay(Some("system"), Some("9.10.0"), None),
+        Ok(ExpectedMaintenanceBuild::System {
+            rocksdb_version: "9.10.0",
+        }),
+    );
+    let fallback_system = MissingMaintenanceBuild::System {
+        rocksdb_version: "9.10.0".to_owned(),
+    };
+    assert!(fallback_system.is_system());
+    assert_eq!(fallback_system.rocksdb_version(), "9.10.0");
+    assert_eq!(fallback_system.source_revision(), None);
+    expected_maintenance_build_from_relay(
+        Some("vendored"),
+        Some("11.1.1"),
+        Some(VENDORED_SOURCE_REVISION),
+    )
+    .unwrap_err();
+    expected_maintenance_build_from_relay(Some("system"), Some(""), None).unwrap_err();
+    expected_maintenance_build_from_relay(
+        Some("system"),
+        Some("9.10.0"),
+        Some(VENDORED_SOURCE_REVISION),
+    )
+    .unwrap_err();
 }
 
 #[test]
