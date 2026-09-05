@@ -14,6 +14,7 @@
 use super::*;
 use std::collections::BTreeSet;
 use std::ffi::{CStr, CString};
+use std::fmt::Write as _;
 use std::fs::{read_to_string, write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,8 +22,24 @@ use std::ptr::NonNull;
 use tempfile::TempDir;
 
 const CONTRACT_SCHEMA_VERSION: u16 = 1;
+const SYSTEM_9_10_0_TAG: &str = "v9.10.0";
+const SYSTEM_9_10_0_VERSION: &str = "9.10.0";
+const SYSTEM_9_10_0_TAG_OBJECT: &str = "c344e30e276b5359f1a0970a00395a0d70a2bf2b";
 const VENDORED_VERSION: &str = "11.1.2";
+const VENDORED_TAG: &str = "v11.1.2";
+const VENDORED_TAG_OBJECT: &str = "9d94571e3091e14a0b428cab639c388971cb4fcb";
 const VENDORED_SOURCE_REVISION: &str = "3b446089141659fad25328c5ea3e7ed283df46e4";
+const SYSTEM_9_10_0_SOURCE_REVISION: &str = "ae8fb3e5000e46d8d4c9dbf3a36019c0aaceebff";
+const SYSTEM_9_10_0_STATISTICS_HEADER_SHA256: &str =
+    "30d32617d2aabae3d0530272904f095a5c469995a834eb540f86dc4f0dbe9c4a";
+const VENDORED_STATISTICS_HEADER_SHA256: &str =
+    "240568b035dc9b0f71d4d96829a83f37d5f2a0c734f8cca3a6a317ef567d6924";
+const CANDIDATE_11_8_1_TAG: &str = "v11.8.1";
+const CANDIDATE_11_8_1_VERSION: &str = "11.8.1";
+const CANDIDATE_11_8_1_SOURCE_REVISION: &str = "abeebd9630f11bd08c28b7bd43c7bdfc62050654";
+const CANDIDATE_11_8_1_STATISTICS_HEADER_SHA256: &str =
+    "0df121e1d1daba03c38eee1cfa59790935f11101b13826849428bd90ad488ffb";
+const TICKER_ABI_EVIDENCE_SCOPE: &str = "repository sources and frozen compiler fixtures only; not installed-system, runtime, qualification, promotion, or production evidence";
 const EXTERNAL_ALIAS_FAKE_STD_SOURCE: &str = r#"
     pub mod prelude {
         pub mod rust_2024 {
@@ -66,11 +83,14 @@ const LIVE_SST_BYTES: &str = "rocksdb.live-sst-files-size";
 const MEMTABLE_BYTES: &str = "rocksdb.size-all-mem-tables";
 const TABLE_READER_BYTES: &str = "rocksdb.estimate-table-readers-mem";
 
-const USER_BYTES_WRITTEN_TICKER: u32 = 61;
-const STALL_MICROS_TICKER: u32 = 76;
-const COMPACTION_READ_BYTES_TICKER: u32 = 89;
-const COMPACTION_WRITE_BYTES_TICKER: u32 = 90;
-const FLUSH_WRITE_BYTES_TICKER: u32 = 91;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MaintenanceTicker {
+    UserBytesWritten,
+    StallMicros,
+    CompactionReadBytes,
+    CompactionWriteBytes,
+    FlushWriteBytes,
+}
 
 const INTEGER_PROPERTIES: [&str; 8] = [
     COMPACTION_PENDING,
@@ -83,12 +103,12 @@ const INTEGER_PROPERTIES: [&str; 8] = [
     TABLE_READER_BYTES,
 ];
 
-const STATISTICS_TICKERS: [u32; 5] = [
-    USER_BYTES_WRITTEN_TICKER,
-    STALL_MICROS_TICKER,
-    COMPACTION_READ_BYTES_TICKER,
-    COMPACTION_WRITE_BYTES_TICKER,
-    FLUSH_WRITE_BYTES_TICKER,
+const STATISTICS_TICKERS: [MaintenanceTicker; 5] = [
+    MaintenanceTicker::UserBytesWritten,
+    MaintenanceTicker::StallMicros,
+    MaintenanceTicker::CompactionReadBytes,
+    MaintenanceTicker::CompactionWriteBytes,
+    MaintenanceTicker::FlushWriteBytes,
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -472,7 +492,7 @@ trait MissingMaintenanceEvidenceContract {
     ) -> MissingMaintenanceEvidence
     where
         P: FnMut(&str, &str) -> Result<u64, StorageError>,
-        S: FnMut(u32) -> Result<u64, StorageError>;
+        S: FnMut(MaintenanceTicker) -> Result<u64, StorageError>;
 }
 
 impl MissingMaintenanceEvidenceContract for Db {
@@ -505,7 +525,7 @@ impl MissingMaintenanceEvidenceContract for Db {
     ) -> MissingMaintenanceEvidence
     where
         P: FnMut(&str, &str) -> Result<u64, StorageError>,
-        S: FnMut(u32) -> Result<u64, StorageError>,
+        S: FnMut(MaintenanceTicker) -> Result<u64, StorageError>,
     {
         let names = match &self.inner {
             DbKind::ReadOnly(db) => &db.column_family_names,
@@ -602,6 +622,495 @@ fn open_fixture() -> Result<(TempDir, Db, ColumnFamily), StorageError> {
     Ok((directory, db, data))
 }
 
+const TICKERS_THROUGH_COMPACTION_CANCELLED: &str = "
+  BLOCK_CACHE_MISS = 0,
+  BLOCK_CACHE_HIT,
+  BLOCK_CACHE_ADD,
+  BLOCK_CACHE_ADD_FAILURES,
+  BLOCK_CACHE_INDEX_MISS,
+  BLOCK_CACHE_INDEX_HIT,
+  BLOCK_CACHE_INDEX_ADD,
+  BLOCK_CACHE_INDEX_BYTES_INSERT,
+  BLOCK_CACHE_FILTER_MISS,
+  BLOCK_CACHE_FILTER_HIT,
+  BLOCK_CACHE_FILTER_ADD,
+  BLOCK_CACHE_FILTER_BYTES_INSERT,
+  BLOCK_CACHE_DATA_MISS,
+  BLOCK_CACHE_DATA_HIT,
+  BLOCK_CACHE_DATA_ADD,
+  BLOCK_CACHE_DATA_BYTES_INSERT,
+  BLOCK_CACHE_BYTES_READ,
+  BLOCK_CACHE_BYTES_WRITE,
+  BLOCK_CACHE_COMPRESSION_DICT_MISS,
+  BLOCK_CACHE_COMPRESSION_DICT_HIT,
+  BLOCK_CACHE_COMPRESSION_DICT_ADD,
+  BLOCK_CACHE_COMPRESSION_DICT_BYTES_INSERT,
+  BLOCK_CACHE_ADD_REDUNDANT,
+  BLOCK_CACHE_INDEX_ADD_REDUNDANT,
+  BLOCK_CACHE_FILTER_ADD_REDUNDANT,
+  BLOCK_CACHE_DATA_ADD_REDUNDANT,
+  BLOCK_CACHE_COMPRESSION_DICT_ADD_REDUNDANT,
+  SECONDARY_CACHE_HITS,
+  SECONDARY_CACHE_FILTER_HITS,
+  SECONDARY_CACHE_INDEX_HITS,
+  SECONDARY_CACHE_DATA_HITS,
+  COMPRESSED_SECONDARY_CACHE_DUMMY_HITS,
+  COMPRESSED_SECONDARY_CACHE_HITS,
+  COMPRESSED_SECONDARY_CACHE_PROMOTIONS,
+  COMPRESSED_SECONDARY_CACHE_PROMOTION_SKIPS,
+  BLOOM_FILTER_USEFUL,
+  BLOOM_FILTER_FULL_POSITIVE,
+  BLOOM_FILTER_FULL_TRUE_POSITIVE,
+  BLOOM_FILTER_PREFIX_CHECKED,
+  BLOOM_FILTER_PREFIX_USEFUL,
+  BLOOM_FILTER_PREFIX_TRUE_POSITIVE,
+  PERSISTENT_CACHE_HIT,
+  PERSISTENT_CACHE_MISS,
+  SIM_BLOCK_CACHE_HIT,
+  SIM_BLOCK_CACHE_MISS,
+  MEMTABLE_HIT,
+  MEMTABLE_MISS,
+  GET_HIT_L0,
+  GET_HIT_L1,
+  GET_HIT_L2_AND_UP,
+  COMPACTION_KEY_DROP_NEWER_ENTRY,
+  COMPACTION_KEY_DROP_OBSOLETE,
+  COMPACTION_KEY_DROP_RANGE_DEL,
+  COMPACTION_KEY_DROP_USER,
+  COMPACTION_RANGE_DEL_DROP_OBSOLETE,
+  COMPACTION_OPTIMIZED_DEL_DROP_OBSOLETE,
+  COMPACTION_CANCELLED,
+";
+
+const TICKERS_FROM_KEYS_THROUGH_WAL_BYTES: &str = "
+  NUMBER_KEYS_WRITTEN,
+  NUMBER_KEYS_READ,
+  NUMBER_KEYS_UPDATED,
+  BYTES_WRITTEN,
+  BYTES_READ,
+  NUMBER_DB_SEEK,
+  NUMBER_DB_NEXT,
+  NUMBER_DB_PREV,
+  NUMBER_DB_SEEK_FOUND,
+  NUMBER_DB_NEXT_FOUND,
+  NUMBER_DB_PREV_FOUND,
+  ITER_BYTES_READ,
+  NUMBER_ITER_SKIP,
+  NUMBER_OF_RESEEKS_IN_ITERATION,
+  NO_ITERATOR_CREATED,
+  NO_ITERATOR_DELETED,
+  NO_FILE_OPENS,
+  NO_FILE_ERRORS,
+  STALL_MICROS,
+  DB_MUTEX_WAIT_MICROS,
+  NUMBER_MULTIGET_CALLS,
+  NUMBER_MULTIGET_KEYS_READ,
+  NUMBER_MULTIGET_BYTES_READ,
+  NUMBER_MULTIGET_KEYS_FOUND,
+  NUMBER_MERGE_FAILURES,
+  GET_UPDATES_SINCE_CALLS,
+  WAL_FILE_SYNCED,
+  WAL_FILE_BYTES,
+";
+
+const TICKERS_WAL_PRECREATE_11_8_1: &str = "
+  WAL_PRECREATE_HIT,
+  WAL_PRECREATE_MISS,
+  WAL_PRECREATE_WAITED,
+  WAL_PRECREATE_WAIT_MICROS,
+  WAL_PRECREATE_FAILED,
+";
+
+const TICKERS_MAINTENANCE_SUFFIX: &str = "
+  WRITE_DONE_BY_SELF,
+  WRITE_DONE_BY_OTHER,
+  WRITE_WITH_WAL,
+  COMPACT_READ_BYTES,
+  COMPACT_WRITE_BYTES,
+  FLUSH_WRITE_BYTES,
+  COMPACT_READ_BYTES_MARKED,
+";
+
+const TICKER_API_HEADER_FIXTURE: &str = r#"
+#pragma once
+#include <stdint.h>
+#ifndef ROCKSDB_LIBRARY_API
+#define ROCKSDB_LIBRARY_API
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_user_bytes_written(void);
+extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_stall_micros(void);
+extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_compact_read_bytes(void);
+extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_compact_write_bytes(void);
+extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_flush_write_bytes(void);
+#ifdef __cplusplus
+}
+#endif
+"#;
+
+fn frozen_statistics_header(
+    includes_compaction_aborted: bool,
+    includes_wal_precreate: bool,
+) -> String {
+    format!(
+        "
+#pragma once
+#include <cstdint>
+#ifndef ROCKSDB_NAMESPACE
+#define ROCKSDB_NAMESPACE rocksdb
+#endif
+namespace ROCKSDB_NAMESPACE {{
+enum Tickers : uint32_t {{
+{prefix}{compaction_aborted}{middle}{wal_precreate}{suffix}}};
+}}
+",
+        prefix = TICKERS_THROUGH_COMPACTION_CANCELLED,
+        compaction_aborted = if includes_compaction_aborted {
+            "  COMPACTION_ABORTED,\n"
+        } else {
+            ""
+        },
+        middle = TICKERS_FROM_KEYS_THROUGH_WAL_BYTES,
+        wal_precreate = if includes_wal_precreate {
+            TICKERS_WAL_PRECREATE_11_8_1
+        } else {
+            ""
+        },
+        suffix = TICKERS_MAINTENANCE_SUFFIX,
+    )
+}
+
+fn frozen_9_10_0_statistics_header() -> String {
+    frozen_statistics_header(false, false)
+}
+
+fn frozen_11_1_2_statistics_header() -> String {
+    frozen_statistics_header(true, false)
+}
+
+fn frozen_11_8_1_statistics_header() -> String {
+    frozen_statistics_header(true, true)
+}
+
+fn reviewed_ticker_abi_cpp() -> &'static str {
+    r#"
+#include "c.h"
+#include <rocksdb/statistics.h>
+
+extern "C" {
+uint32_t oxrocksdb_ticker_user_bytes_written(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_WRITTEN);
+}
+uint32_t oxrocksdb_ticker_stall_micros(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::STALL_MICROS);
+}
+uint32_t oxrocksdb_ticker_compact_read_bytes(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_READ_BYTES);
+}
+uint32_t oxrocksdb_ticker_compact_write_bytes(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_WRITE_BYTES);
+}
+uint32_t oxrocksdb_ticker_flush_write_bytes(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::FLUSH_WRITE_BYTES);
+}
+}
+"#
+}
+
+fn ticker_abi_assertion_main() -> &'static str {
+    r#"
+#include "c.h"
+#include <cstdio>
+#include <rocksdb/statistics.h>
+
+int main() {
+  if (oxrocksdb_ticker_user_bytes_written() !=
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_WRITTEN) ||
+      oxrocksdb_ticker_user_bytes_written() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::NUMBER_KEYS_UPDATED) ||
+      oxrocksdb_ticker_user_bytes_written() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_READ) ||
+      oxrocksdb_ticker_stall_micros() !=
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::STALL_MICROS) ||
+      oxrocksdb_ticker_stall_micros() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::NO_FILE_ERRORS) ||
+      oxrocksdb_ticker_stall_micros() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_MICROS) ||
+      oxrocksdb_ticker_compact_read_bytes() !=
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_READ_BYTES) ||
+      oxrocksdb_ticker_compact_read_bytes() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::WRITE_WITH_WAL) ||
+      oxrocksdb_ticker_compact_read_bytes() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_WRITE_BYTES) ||
+      oxrocksdb_ticker_compact_write_bytes() !=
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_WRITE_BYTES) ||
+      oxrocksdb_ticker_compact_write_bytes() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_READ_BYTES) ||
+      oxrocksdb_ticker_compact_write_bytes() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::FLUSH_WRITE_BYTES) ||
+      oxrocksdb_ticker_flush_write_bytes() !=
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::FLUSH_WRITE_BYTES) ||
+      oxrocksdb_ticker_flush_write_bytes() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_WRITE_BYTES) ||
+      oxrocksdb_ticker_flush_write_bytes() ==
+          static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_READ_BYTES_MARKED)) {
+    return 1;
+  }
+  std::printf("%u %u %u %u %u\n",
+              oxrocksdb_ticker_user_bytes_written(),
+              oxrocksdb_ticker_stall_micros(),
+              oxrocksdb_ticker_compact_read_bytes(),
+              oxrocksdb_ticker_compact_write_bytes(),
+              oxrocksdb_ticker_flush_write_bytes());
+}
+"#
+}
+
+fn compile_ticker_abi_fixture(
+    statistics_header: &str,
+    implementation: &str,
+) -> Result<std::process::Output, String> {
+    let directory = TempDir::new()
+        .map_err(|error| format!("failed to create ticker ABI fixture directory: {error}"))?;
+    let include_directory = directory.path().join("include");
+    let rocksdb_include_directory = include_directory.join("rocksdb");
+    std::fs::create_dir_all(&rocksdb_include_directory)
+        .map_err(|error| format!("failed to create ticker ABI include directory: {error}"))?;
+    let api_header = directory.path().join("c.h");
+    let statistics_header_path = rocksdb_include_directory.join("statistics.h");
+    let implementation_path = directory.path().join("c.cc");
+    let main_path = directory.path().join("main.cc");
+    let executable_path = directory.path().join(if cfg!(windows) {
+        "ticker-abi.exe"
+    } else {
+        "ticker-abi"
+    });
+    write(&api_header, TICKER_API_HEADER_FIXTURE)
+        .map_err(|error| format!("failed to write ticker ABI C header: {error}"))?;
+    write(&statistics_header_path, statistics_header)
+        .map_err(|error| format!("failed to write frozen RocksDB statistics header: {error}"))?;
+    write(&implementation_path, implementation)
+        .map_err(|error| format!("failed to write ticker ABI implementation: {error}"))?;
+    write(&main_path, ticker_abi_assertion_main())
+        .map_err(|error| format!("failed to write ticker ABI assertion main: {error}"))?;
+
+    let compiler = std::env::var_os("CXX").unwrap_or_else(|| std::ffi::OsString::from("c++"));
+    let compilation = Command::new(&compiler)
+        .arg("-std=c++20")
+        .arg("-I")
+        .arg(&include_directory)
+        .arg("-I")
+        .arg(directory.path())
+        .arg(&implementation_path)
+        .arg(&main_path)
+        .arg("-o")
+        .arg(&executable_path)
+        .output()
+        .map_err(|error| {
+            format!(
+                "C++ compiler {compiler:?} is unavailable for the required ticker ABI fixture: {error}"
+            )
+        })?;
+    if !compilation.status.success() {
+        return Err(format!(
+            "ticker ABI fixture did not compile: {}",
+            String::from_utf8_lossy(&compilation.stderr)
+        ));
+    }
+    Command::new(&executable_path)
+        .output()
+        .map_err(|error| format!("failed to execute ticker ABI fixture: {error}"))
+}
+
+fn compile_cpp_syntax_fixture(source: &str) -> Result<std::process::Output, String> {
+    let directory = TempDir::new()
+        .map_err(|error| format!("failed to create C++ syntax fixture directory: {error}"))?;
+    let source_path = directory.path().join("syntax.cc");
+    write(&source_path, source)
+        .map_err(|error| format!("failed to write C++ syntax fixture: {error}"))?;
+    let compiler = std::env::var_os("CXX").unwrap_or_else(|| std::ffi::OsString::from("c++"));
+    Command::new(&compiler)
+        .arg("-std=c++20")
+        .arg("-fsyntax-only")
+        .arg(&source_path)
+        .output()
+        .map_err(|error| format!("failed to run C++ syntax fixture with {compiler:?}: {error}"))
+}
+
+fn resolved_ticker_values(
+    statistics_header: &str,
+    implementation: &str,
+) -> Result<[u32; 5], String> {
+    let output = compile_ticker_abi_fixture(statistics_header, implementation)?;
+    if !output.status.success() {
+        return Err(format!(
+            "ticker ABI fixture selected an unnamed or adjacent entry (status {}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+    let values = String::from_utf8(output.stdout)
+        .map_err(|error| format!("ticker ABI fixture output was not UTF-8: {error}"))?
+        .split_ascii_whitespace()
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("ticker ABI fixture emitted a non-integer: {error}"))?;
+    values
+        .try_into()
+        .map_err(|values: Vec<u32>| format!("ticker ABI fixture emitted {} values", values.len()))
+}
+
+#[expect(
+    clippy::many_single_char_names,
+    reason = "the eight SHA-256 working variables follow the standard algorithm notation"
+)]
+fn sha256_hex(input: &[u8]) -> String {
+    const INITIAL: [u32; 8] = [
+        0x6a09_e667,
+        0xbb67_ae85,
+        0x3c6e_f372,
+        0xa54f_f53a,
+        0x510e_527f,
+        0x9b05_688c,
+        0x1f83_d9ab,
+        0x5be0_cd19,
+    ];
+    const ROUND: [u32; 64] = [
+        0x428a_2f98,
+        0x7137_4491,
+        0xb5c0_fbcf,
+        0xe9b5_dba5,
+        0x3956_c25b,
+        0x59f1_11f1,
+        0x923f_82a4,
+        0xab1c_5ed5,
+        0xd807_aa98,
+        0x1283_5b01,
+        0x2431_85be,
+        0x550c_7dc3,
+        0x72be_5d74,
+        0x80de_b1fe,
+        0x9bdc_06a7,
+        0xc19b_f174,
+        0xe49b_69c1,
+        0xefbe_4786,
+        0x0fc1_9dc6,
+        0x240c_a1cc,
+        0x2de9_2c6f,
+        0x4a74_84aa,
+        0x5cb0_a9dc,
+        0x76f9_88da,
+        0x983e_5152,
+        0xa831_c66d,
+        0xb003_27c8,
+        0xbf59_7fc7,
+        0xc6e0_0bf3,
+        0xd5a7_9147,
+        0x06ca_6351,
+        0x1429_2967,
+        0x27b7_0a85,
+        0x2e1b_2138,
+        0x4d2c_6dfc,
+        0x5338_0d13,
+        0x650a_7354,
+        0x766a_0abb,
+        0x81c2_c92e,
+        0x9272_2c85,
+        0xa2bf_e8a1,
+        0xa81a_664b,
+        0xc24b_8b70,
+        0xc76c_51a3,
+        0xd192_e819,
+        0xd699_0624,
+        0xf40e_3585,
+        0x106a_a070,
+        0x19a4_c116,
+        0x1e37_6c08,
+        0x2748_774c,
+        0x34b0_bcb5,
+        0x391c_0cb3,
+        0x4ed8_aa4a,
+        0x5b9c_ca4f,
+        0x682e_6ff3,
+        0x748f_82ee,
+        0x78a5_636f,
+        0x84c8_7814,
+        0x8cc7_0208,
+        0x90be_fffa,
+        0xa450_6ceb,
+        0xbef9_a3f7,
+        0xc671_78f2,
+    ];
+
+    let bit_length = u64::try_from(input.len())
+        .unwrap_or_else(|_| panic!("ticker evidence input length does not fit u64"))
+        .wrapping_mul(8);
+    let mut padded = input.to_vec();
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&bit_length.to_be_bytes());
+
+    let mut state = INITIAL;
+    for chunk in padded.chunks_exact(64) {
+        let mut words = [0_u32; 64];
+        for (word, bytes) in words[..16].iter_mut().zip(chunk.chunks_exact(4)) {
+            *word = u32::from_be_bytes(
+                bytes
+                    .try_into()
+                    .unwrap_or_else(|_| panic!("SHA-256 word must contain four bytes")),
+            );
+        }
+        for index in 16..64 {
+            let s0 = words[index - 15].rotate_right(7)
+                ^ words[index - 15].rotate_right(18)
+                ^ (words[index - 15] >> 3);
+            let s1 = words[index - 2].rotate_right(17)
+                ^ words[index - 2].rotate_right(19)
+                ^ (words[index - 2] >> 10);
+            words[index] = words[index - 16]
+                .wrapping_add(s0)
+                .wrapping_add(words[index - 7])
+                .wrapping_add(s1);
+        }
+
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
+        for index in 0..64 {
+            let sum1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let choice = (e & f) ^ ((!e) & g);
+            let temporary1 = h
+                .wrapping_add(sum1)
+                .wrapping_add(choice)
+                .wrapping_add(ROUND[index])
+                .wrapping_add(words[index]);
+            let sum0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let majority = (a & b) ^ (a & c) ^ (b & c);
+            let temporary2 = sum0.wrapping_add(majority);
+            h = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temporary1);
+            d = c;
+            c = b;
+            b = a;
+            a = temporary1.wrapping_add(temporary2);
+        }
+        for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
+            *slot = slot.wrapping_add(value);
+        }
+    }
+
+    let mut digest = String::with_capacity(64);
+    for value in state {
+        write!(&mut digest, "{value:08x}")
+            .unwrap_or_else(|_| panic!("writing to a String must not fail"));
+    }
+    digest
+}
+
 #[test]
 fn vendored_rocksdb_primary_surface_supports_the_bounded_contract() {
     let version = include_str!("../../../../oxrocksdb-sys/rocksdb/include/rocksdb/version.h");
@@ -646,6 +1155,209 @@ fn vendored_rocksdb_primary_surface_supports_the_bounded_contract() {
     assert!(
         db.contains("returns false") && db.contains("IO\n  // errors"),
         "the oracle must retain GetProperty's unavailable/error semantics",
+    );
+}
+
+#[test]
+fn frozen_rocksdb_headers_resolve_maintenance_tickers_by_cpp_name() {
+    assert_eq!(SYSTEM_9_10_0_TAG, "v9.10.0");
+    assert_eq!(SYSTEM_9_10_0_VERSION, "9.10.0");
+    assert_eq!(
+        SYSTEM_9_10_0_TAG_OBJECT,
+        "c344e30e276b5359f1a0970a00395a0d70a2bf2b"
+    );
+    assert_eq!(
+        SYSTEM_9_10_0_SOURCE_REVISION,
+        "ae8fb3e5000e46d8d4c9dbf3a36019c0aaceebff"
+    );
+    assert_eq!(
+        SYSTEM_9_10_0_STATISTICS_HEADER_SHA256,
+        "30d32617d2aabae3d0530272904f095a5c469995a834eb540f86dc4f0dbe9c4a"
+    );
+    assert_eq!(
+        VENDORED_STATISTICS_HEADER_SHA256,
+        "240568b035dc9b0f71d4d96829a83f37d5f2a0c734f8cca3a6a317ef567d6924"
+    );
+    assert_eq!(VENDORED_TAG, "v11.1.2");
+    assert_eq!(
+        VENDORED_TAG_OBJECT,
+        "9d94571e3091e14a0b428cab639c388971cb4fcb"
+    );
+    assert_eq!(CANDIDATE_11_8_1_TAG, "v11.8.1");
+    assert_eq!(CANDIDATE_11_8_1_VERSION, "11.8.1");
+    assert_eq!(
+        CANDIDATE_11_8_1_SOURCE_REVISION,
+        "abeebd9630f11bd08c28b7bd43c7bdfc62050654"
+    );
+    assert_eq!(
+        CANDIDATE_11_8_1_STATISTICS_HEADER_SHA256,
+        "0df121e1d1daba03c38eee1cfa59790935f11101b13826849428bd90ad488ffb"
+    );
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "the self-contained digest oracle must agree with the SHA-256 standard vector",
+    );
+    assert_eq!(
+        sha256_hex(include_bytes!(
+            "../../../../oxrocksdb-sys/rocksdb/include/rocksdb/statistics.h"
+        )),
+        VENDORED_STATISTICS_HEADER_SHA256,
+        "the checked-out vendored header must remain the frozen v11.1.2 header",
+    );
+    assert!(TICKER_ABI_EVIDENCE_SCOPE.starts_with("repository sources"));
+    assert!(TICKER_ABI_EVIDENCE_SCOPE.contains("not installed-system"));
+    for excluded_claim in ["runtime", "qualification", "promotion", "production"] {
+        assert!(TICKER_ABI_EVIDENCE_SCOPE.contains(excluded_claim));
+    }
+
+    let system = frozen_9_10_0_statistics_header();
+    let vendored = frozen_11_1_2_statistics_header();
+    let candidate = frozen_11_8_1_statistics_header();
+    let system_values = resolved_ticker_values(&system, reviewed_ticker_abi_cpp())
+        .unwrap_or_else(|error| panic!("exact v9.10.0 header fixture: {error}"));
+    let vendored_values = resolved_ticker_values(&vendored, reviewed_ticker_abi_cpp())
+        .unwrap_or_else(|error| panic!("exact vendored v11.1.2 header fixture: {error}"));
+    let candidate_values = resolved_ticker_values(&candidate, reviewed_ticker_abi_cpp())
+        .unwrap_or_else(|error| panic!("exact candidate v11.8.1 header fixture: {error}"));
+
+    assert!(
+        system_values
+            .iter()
+            .zip(vendored_values)
+            .all(|(system, vendored)| system != &vendored),
+        "COMPACTION_ABORTED shifts every selected entry between v9.10.0 and v11.1.2",
+    );
+    assert_eq!(
+        &vendored_values[..2],
+        &candidate_values[..2],
+        "the v11.8.1 WAL insertion is after the first two selected entries",
+    );
+    assert!(
+        vendored_values[2..]
+            .iter()
+            .zip(&candidate_values[2..])
+            .all(|(vendored, candidate)| vendored != candidate),
+        "the v11.8.1 WAL insertion shifts all three compaction/flush entries",
+    );
+
+    for (named, adjacent) in [
+        ("Tickers::BYTES_WRITTEN", "Tickers::NUMBER_KEYS_UPDATED"),
+        ("Tickers::BYTES_WRITTEN", "Tickers::BYTES_READ"),
+        ("Tickers::STALL_MICROS", "Tickers::NO_FILE_ERRORS"),
+        ("Tickers::STALL_MICROS", "Tickers::DB_MUTEX_WAIT_MICROS"),
+        ("Tickers::COMPACT_READ_BYTES", "Tickers::WRITE_WITH_WAL"),
+        (
+            "Tickers::COMPACT_READ_BYTES",
+            "Tickers::COMPACT_WRITE_BYTES",
+        ),
+        (
+            "Tickers::COMPACT_WRITE_BYTES",
+            "Tickers::COMPACT_READ_BYTES",
+        ),
+        ("Tickers::COMPACT_WRITE_BYTES", "Tickers::FLUSH_WRITE_BYTES"),
+        ("Tickers::FLUSH_WRITE_BYTES", "Tickers::COMPACT_WRITE_BYTES"),
+        (
+            "Tickers::FLUSH_WRITE_BYTES",
+            "Tickers::COMPACT_READ_BYTES_MARKED",
+        ),
+    ] {
+        let adjacent_mutant = reviewed_ticker_abi_cpp().replacen(named, adjacent, 1);
+        assert_ne!(
+            adjacent_mutant,
+            reviewed_ticker_abi_cpp(),
+            "adjacent-entry mutant must be live",
+        );
+        let output = compile_ticker_abi_fixture(&vendored, &adjacent_mutant)
+            .unwrap_or_else(|error| panic!("adjacent-entry compiler control: {error}"));
+        assert!(
+            !output.status.success(),
+            "the same-header assertion must reject {named} being replaced by {adjacent}",
+        );
+    }
+
+    let stale_vendored_mapping = format!(
+        r#"
+#include "c.h"
+extern "C" {{
+uint32_t oxrocksdb_ticker_user_bytes_written(void) {{ return {}; }}
+uint32_t oxrocksdb_ticker_stall_micros(void) {{ return {}; }}
+uint32_t oxrocksdb_ticker_compact_read_bytes(void) {{ return {}; }}
+uint32_t oxrocksdb_ticker_compact_write_bytes(void) {{ return {}; }}
+uint32_t oxrocksdb_ticker_flush_write_bytes(void) {{ return {}; }}
+}}
+"#,
+        vendored_values[0],
+        vendored_values[1],
+        vendored_values[2],
+        vendored_values[3],
+        vendored_values[4],
+    );
+    assert!(
+        compile_ticker_abi_fixture(&vendored, &stale_vendored_mapping)
+            .unwrap_or_else(|error| panic!("stale mapping vendored control: {error}"))
+            .status
+            .success(),
+        "the hardcoded control must demonstrate why one frozen header can hide the defect",
+    );
+    for (label, header) in [("v9.10.0", &system), ("v11.8.1", &candidate)] {
+        assert!(
+            !compile_ticker_abi_fixture(header, &stale_vendored_mapping)
+                .unwrap_or_else(|error| panic!("stale mapping {label} control: {error}"))
+                .status
+                .success(),
+            "a mapping frozen to vendored v11.1.2 ordinals must fail against {label}",
+        );
+    }
+
+    let inactive_named_active_generated = format!(
+        r#"
+#if 0
+{}
+#endif
+
+#include "c.h"
+#define OXROCKSDB_STATISTICS_HEADER <rocksdb/statistics.h>
+#include OXROCKSDB_STATISTICS_HEADER
+#define OXROCKSDB_TICKER_NAME_INNER(prefix, suffix) prefix ## suffix
+#define OXROCKSDB_TICKER_NAME(prefix, suffix) \
+  OXROCKSDB_TICKER_NAME_INNER(prefix, suffix)
+#define OXROCKSDB_FIXED_TICKER(suffix, value) \
+  extern "C" uint32_t \
+  OXROCKSDB_TICKER_NAME(oxrocksdb_ticker_, suffix)(void) {{ return value; }}
+OXROCKSDB_FIXED_TICKER(user_bytes_written, {})
+OXROCKSDB_FIXED_TICKER(stall_micros, {})
+OXROCKSDB_FIXED_TICKER(compact_read_bytes, {})
+OXROCKSDB_FIXED_TICKER(compact_write_bytes, {})
+OXROCKSDB_FIXED_TICKER(flush_write_bytes, {})
+"#,
+        reviewed_ticker_abi_cpp(),
+        vendored_values[0],
+        vendored_values[1],
+        vendored_values[2],
+        vendored_values[3],
+        vendored_values[4],
+    );
+    assert!(
+        compile_ticker_abi_fixture(&vendored, &inactive_named_active_generated)
+            .unwrap_or_else(|error| panic!("inactive-name generated-ordinal control: {error}"))
+            .status
+            .success(),
+        "the confirmed control must compile while only generated fixed-value definitions are active",
+    );
+    let generated_failures = ticker_cpp_implementation_failures(&inactive_named_active_generated);
+    assert!(
+        generated_failures.contains(&"conditional C++ preprocessor activity"),
+        "inactive exact definitions must not establish active implementation provenance",
+    );
+    assert!(
+        generated_failures.contains(&"protected C++ macro rebinding or generation")
+            || generated_failures.contains(&"composed C++ resolver function name"),
+        "macro-generated fixed-value resolver definitions must be rejected",
+    );
+    assert!(
+        generated_failures.contains(&"redirected statistics header include"),
+        "a macro-selected statistics header must not substitute for the exact direct include",
     );
 }
 
@@ -728,14 +1440,17 @@ fn current_c_api_exercises_available_zero_unknown_and_statistics_states() -> Res
         unsafe {
             rocksdb_free(statistics.as_ptr().cast());
         }
-        // SAFETY: The live options own an enabled statistics collector and the
-        // audited ticker number is valid for the pinned build.
+        // This C API smoke is bound to the checked-out vendored v11.1.2
+        // primary surface above. Cross-version and system-header selection are
+        // exercised independently by the compiler-backed ABI fixture.
+        let frozen_header = frozen_11_1_2_statistics_header();
+        let ticker_values = resolved_ticker_values(&frozen_header, reviewed_ticker_abi_cpp())
+            .unwrap_or_else(|error| panic!("selected RocksDB ticker-name fixture: {error}"));
+        // SAFETY: The live options own an enabled statistics collector. The
+        // ticker value was compiled from the exact selected header's C++ name.
         assert!(
             unsafe {
-                rocksdb_options_statistics_get_ticker_count(
-                    handler.options,
-                    USER_BYTES_WRITTEN_TICKER,
-                )
+                rocksdb_options_statistics_get_ticker_count(handler.options, ticker_values[0])
             } > 0
         );
     } else {
@@ -3972,6 +4687,629 @@ fn repository_path(relative: &str) -> PathBuf {
         .join(relative)
 }
 
+const TICKER_ABI_NAMES: [(&str, &str); 5] = [
+    ("oxrocksdb_ticker_user_bytes_written", "BYTES_WRITTEN"),
+    ("oxrocksdb_ticker_stall_micros", "STALL_MICROS"),
+    ("oxrocksdb_ticker_compact_read_bytes", "COMPACT_READ_BYTES"),
+    (
+        "oxrocksdb_ticker_compact_write_bytes",
+        "COMPACT_WRITE_BYTES",
+    ),
+    ("oxrocksdb_ticker_flush_write_bytes", "FLUSH_WRITE_BYTES"),
+];
+
+fn ticker_api_header_failures(source: &str) -> Vec<&'static str> {
+    let tokens = rust_tokens(source);
+    let mut failures = Vec::new();
+    for (function_name, _) in TICKER_ABI_NAMES {
+        let declaration = [
+            "extern",
+            "ROCKSDB_LIBRARY_API",
+            "uint32_t",
+            function_name,
+            "(",
+            "void",
+            ")",
+            ";",
+        ];
+        if token_sequence_count(&tokens, &declaration) != 1
+            || token_value_count(&tokens, function_name) != 1
+        {
+            failures.push("unique exported ticker declaration");
+        }
+    }
+    failures
+}
+
+struct CppLexicalVisibility {
+    source: String,
+    tokens: Vec<RustToken>,
+}
+
+fn is_cpp_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn cpp_literal_quote(bytes: &[u8], start: usize, prefixes: &[&[u8]]) -> Option<usize> {
+    prefixes
+        .iter()
+        .find(|prefix| {
+            (prefix.len() == 1 || start == 0 || !is_cpp_identifier_byte(bytes[start - 1]))
+                && bytes[start..].starts_with(prefix)
+        })
+        .map(|prefix| start + prefix.len() - 1)
+}
+
+fn cpp_literal_suffix_end(bytes: &[u8], mut end: usize) -> usize {
+    while bytes
+        .get(end)
+        .is_some_and(|byte| is_cpp_identifier_byte(*byte))
+    {
+        end += 1;
+    }
+    end
+}
+
+fn cpp_raw_literal_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let quote = cpp_literal_quote(bytes, start, &[b"u8R\"", b"uR\"", b"UR\"", b"LR\"", b"R\""])?;
+    let delimiter_start = quote + 1;
+    let mut opening_parenthesis = None;
+    for (index, current) in bytes
+        .iter()
+        .enumerate()
+        .take(bytes.len().min(delimiter_start + 17))
+        .skip(delimiter_start)
+    {
+        match *current {
+            b'(' => {
+                opening_parenthesis = Some(index);
+                break;
+            }
+            byte if byte.is_ascii_whitespace() || matches!(byte, b'\\' | b')' | b'\r' | b'\n') => {
+                return None;
+            }
+            _ => {}
+        }
+    }
+    let opening_parenthesis = opening_parenthesis?;
+    let delimiter = &bytes[delimiter_start..opening_parenthesis];
+    let content_start = opening_parenthesis + 1;
+    for closing_parenthesis in content_start..bytes.len() {
+        if bytes[closing_parenthesis] != b')' {
+            continue;
+        }
+        let delimiter_end = closing_parenthesis + 1 + delimiter.len();
+        if bytes.get(closing_parenthesis + 1..delimiter_end) == Some(delimiter)
+            && bytes.get(delimiter_end) == Some(&b'"')
+        {
+            return Some(cpp_literal_suffix_end(bytes, delimiter_end + 1));
+        }
+    }
+    Some(bytes.len())
+}
+
+fn cpp_ordinary_literal_end(bytes: &[u8], quote: usize) -> usize {
+    let delimiter = bytes[quote];
+    let mut index = quote + 1;
+    while index < bytes.len() {
+        if bytes[index] == b'\\' {
+            index = (index + 2).min(bytes.len());
+        } else if bytes[index] == delimiter {
+            return cpp_literal_suffix_end(bytes, index + 1);
+        } else if matches!(bytes[index], b'\r' | b'\n') {
+            return index;
+        } else {
+            index += 1;
+        }
+    }
+    bytes.len()
+}
+
+fn blank_cpp_lexeme(visible: &mut [u8], start: usize, end: usize) {
+    for byte in &mut visible[start..end] {
+        if !matches!(*byte, b'\r' | b'\n') {
+            *byte = b' ';
+        }
+    }
+}
+
+fn cpp_lexical_visibility(source: &str) -> CppLexicalVisibility {
+    let spliced = source.replace("\\\r\n", "").replace("\\\n", "");
+    let bytes = spliced.as_bytes();
+    let mut visible = bytes.to_vec();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index..].starts_with(b"//") {
+            let end = bytes[index..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(bytes.len(), |length| index + length);
+            blank_cpp_lexeme(&mut visible, index, end);
+            index = end;
+            continue;
+        }
+        if bytes[index..].starts_with(b"/*") {
+            let end = bytes[index + 2..]
+                .windows(2)
+                .position(|window| window == b"*/")
+                .map_or(bytes.len(), |length| index + length + 4);
+            blank_cpp_lexeme(&mut visible, index, end);
+            index = end;
+            continue;
+        }
+        if let Some(end) = cpp_raw_literal_end(bytes, index) {
+            blank_cpp_lexeme(&mut visible, index, end);
+            index = end;
+            continue;
+        }
+        if let Some(quote) =
+            cpp_literal_quote(bytes, index, &[b"u8\"", b"u\"", b"U\"", b"L\"", b"\""])
+        {
+            let end = cpp_ordinary_literal_end(bytes, quote);
+            blank_cpp_lexeme(&mut visible, index, end);
+            index = end;
+            continue;
+        }
+        if let Some(quote) = cpp_literal_quote(bytes, index, &[b"u8'", b"u'", b"U'", b"L'", b"'"]) {
+            let end = cpp_ordinary_literal_end(bytes, quote);
+            blank_cpp_lexeme(&mut visible, index, end);
+            index = end;
+            continue;
+        }
+        index += 1;
+    }
+    let source = String::from_utf8(visible)
+        .unwrap_or_else(|error| panic!("C++ lexical visibility was not UTF-8: {error}"));
+    let tokens = rust_tokens(&source);
+    CppLexicalVisibility { source, tokens }
+}
+
+fn cpp_preprocessor_directives(visible_source: &str) -> Vec<Vec<RustToken>> {
+    let mut directives = Vec::new();
+    for line in visible_source.lines() {
+        let trimmed = line.trim_start();
+        let normalized = if let Some(directive) = trimmed.strip_prefix("%:") {
+            format!("#{directive}").replace("%:%:", "##")
+        } else if trimmed.starts_with('#') {
+            trimmed.replace("%:%:", "##")
+        } else {
+            continue;
+        };
+        directives.push(rust_tokens(&normalized));
+    }
+    directives
+}
+
+fn cpp_preprocessor_provenance_failures_from_visibility(
+    visibility: &CppLexicalVisibility,
+) -> Vec<&'static str> {
+    let mut failures = Vec::new();
+    let directives = cpp_preprocessor_directives(&visibility.source);
+    let protected = [
+        "ROCKSDB_NAMESPACE",
+        "Tickers",
+        "BYTES_WRITTEN",
+        "STALL_MICROS",
+        "COMPACT_READ_BYTES",
+        "COMPACT_WRITE_BYTES",
+        "FLUSH_WRITE_BYTES",
+        "rocksdb_options_statistics_get_ticker_count",
+        "oxrocksdb_ticker_",
+        "oxrocksdb_",
+        "ticker_",
+        "user_bytes_written",
+        "stall_micros",
+        "compact_read_bytes",
+        "compact_write_bytes",
+        "flush_write_bytes",
+        "statistics",
+    ];
+    for directive in &directives {
+        let values = directive
+            .iter()
+            .map(|token| token.0.as_str())
+            .collect::<Vec<_>>();
+        let Some(kind) = values.get(1).copied() else {
+            continue;
+        };
+        if matches!(kind, "if" | "ifdef" | "ifndef" | "elif" | "else" | "endif") {
+            failures.push("conditional C++ preprocessor activity");
+            continue;
+        }
+        if matches!(kind, "define" | "undef") {
+            let touches_protected_name = values[2..].iter().any(|token| {
+                TICKER_ABI_NAMES
+                    .iter()
+                    .any(|(function_name, _)| *token == *function_name)
+                    || protected.iter().any(|protected| {
+                        let lowercase = token.to_ascii_lowercase();
+                        *token == *protected
+                            || (lowercase.contains("oxrocksdb") && lowercase.contains("ticker"))
+                    })
+            });
+            let pastes_resolver_fragments =
+                values[2..].windows(2).any(|window| window == ["#", "#"])
+                    && values[2..].iter().any(|token| {
+                        token.contains("oxrocksdb")
+                            || token.contains("ticker_")
+                            || [
+                                "user_bytes_written",
+                                "stall_micros",
+                                "compact_read_bytes",
+                                "compact_write_bytes",
+                                "flush_write_bytes",
+                            ]
+                            .contains(token)
+                    });
+            if touches_protected_name || pastes_resolver_fragments {
+                failures.push("protected C++ macro rebinding or generation");
+            }
+        }
+        if matches!(kind, "include" | "include_next" | "import") {
+            let direct_statistics_header = values
+                == [
+                    "#",
+                    "include",
+                    "<",
+                    "rocksdb",
+                    "/",
+                    "statistics",
+                    ".",
+                    "h",
+                    ">",
+                ];
+            let direct_literal_include = values.len() == 2 || values.get(2) == Some(&"<");
+            let touches_statistics_header = values[2..]
+                .iter()
+                .any(|token| token.to_ascii_lowercase().contains("statistics"));
+            if !direct_literal_include
+                || (touches_statistics_header && (kind != "include" || !direct_statistics_header))
+            {
+                failures.push("redirected statistics header include");
+            }
+        }
+    }
+
+    let tokens = &visibility.tokens;
+    for (function_name, _) in TICKER_ABI_NAMES {
+        for start in 0..tokens.len() {
+            let mut composed = String::new();
+            let mut identifiers = 0;
+            for token in &tokens[start..tokens.len().min(start + 12)] {
+                if token
+                    .0
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                {
+                    composed.push_str(&token.0);
+                    identifiers += 1;
+                    if identifiers > 1 && composed == function_name {
+                        failures.push("composed C++ resolver function name");
+                    }
+                    if !function_name.starts_with(&composed) {
+                        break;
+                    }
+                } else if !matches!(token.0.as_str(), "(" | ")" | "," | "#") {
+                    break;
+                }
+            }
+        }
+    }
+    failures
+}
+
+fn cpp_preprocessor_provenance_failures(source: &str) -> Vec<&'static str> {
+    let visibility = cpp_lexical_visibility(source);
+    cpp_preprocessor_provenance_failures_from_visibility(&visibility)
+}
+
+fn ticker_cpp_implementation_failures(source: &str) -> Vec<&'static str> {
+    let visibility = cpp_lexical_visibility(source);
+    let tokens = &visibility.tokens;
+    let mut failures = cpp_preprocessor_provenance_failures_from_visibility(&visibility);
+    if token_sequence_count(
+        tokens,
+        &[
+            "#",
+            "include",
+            "<",
+            "rocksdb",
+            "/",
+            "statistics",
+            ".",
+            "h",
+            ">",
+        ],
+    ) != 1
+    {
+        failures.push("selected statistics header include");
+    }
+    for (function_name, enum_name) in TICKER_ABI_NAMES {
+        let definition = [
+            "uint32_t",
+            function_name,
+            "(",
+            "void",
+            ")",
+            "{",
+            "return",
+            "static_cast",
+            "<",
+            "uint32_t",
+            ">",
+            "(",
+            "ROCKSDB_NAMESPACE",
+            ":",
+            ":",
+            "Tickers",
+            ":",
+            ":",
+            enum_name,
+            ")",
+            ";",
+            "}",
+        ];
+        if token_sequence_count(tokens, &definition) != 1
+            || token_value_count(tokens, function_name) != 1
+            || token_value_count(tokens, enum_name) != 1
+        {
+            failures.push("unique C++ enum-name ticker definition");
+        }
+    }
+    failures
+}
+
+fn build_compiles_and_binds_api_from_same_headers(source: &str) -> bool {
+    let tokens = rust_tokens(source);
+    let Some(build_api) = unique_unconditional_function_body(&tokens, "build_rocksdb_api") else {
+        return false;
+    };
+    let Some(bindgen_api) = unique_unconditional_function_body(&tokens, "bindgen_rocksdb_api")
+    else {
+        return false;
+    };
+    has_tokens(build_api, &["for", "include", "in", "includes"])
+        && has_tokens(build_api, &["config", ".", "include", "(", "include", ")"])
+        && has_tokens(bindgen_api, &["for", "include", "in", "includes"])
+        && has_tokens(
+            bindgen_api,
+            &[
+                "builder",
+                "=",
+                "builder",
+                ".",
+                "clang_arg",
+                "(",
+                "format",
+                "!",
+                "(",
+                "\"-I{}\"",
+                ",",
+                "include",
+                ".",
+                "display",
+                "(",
+                ")",
+                ")",
+                ")",
+            ],
+        )
+        && token_sequence_count(
+            &tokens,
+            &[
+                "crate",
+                ":",
+                ":",
+                "build_rocksdb_api",
+                "(",
+                "&",
+                "includes",
+                ")",
+            ],
+        ) == 1
+        && token_sequence_count(
+            &tokens,
+            &[
+                "crate",
+                ":",
+                ":",
+                "bindgen_rocksdb_api",
+                "(",
+                "&",
+                "includes",
+                ")",
+            ],
+        ) == 1
+        && token_sequence_count(
+            &tokens,
+            &[
+                "crate",
+                ":",
+                ":",
+                "build_rocksdb_api",
+                "(",
+                "&",
+                "library",
+                ".",
+                "include_paths",
+                ")",
+            ],
+        ) == 1
+        && token_sequence_count(
+            &tokens,
+            &[
+                "crate",
+                ":",
+                ":",
+                "bindgen_rocksdb_api",
+                "(",
+                "&",
+                "library",
+                ".",
+                "include_paths",
+                ")",
+            ],
+        ) == 1
+}
+
+fn ticker_wrapper_source_failures(source: &str) -> Vec<&'static str> {
+    let tokens = rust_tokens(source);
+    let mut failures = Vec::new();
+    let expected_header = [
+        "fn",
+        "rocksdb_maintenance_statistics_tickers",
+        "(",
+        ")",
+        "-",
+        ">",
+        "[",
+        "u32",
+        ";",
+        "5",
+        "]",
+    ];
+    let expected_body = [
+        "{",
+        "unsafe",
+        "{",
+        "[",
+        "oxrocksdb_ticker_user_bytes_written",
+        "(",
+        ")",
+        ",",
+        "oxrocksdb_ticker_stall_micros",
+        "(",
+        ")",
+        ",",
+        "oxrocksdb_ticker_compact_read_bytes",
+        "(",
+        ")",
+        ",",
+        "oxrocksdb_ticker_compact_write_bytes",
+        "(",
+        ")",
+        ",",
+        "oxrocksdb_ticker_flush_write_bytes",
+        "(",
+        ")",
+        ",",
+        "]",
+        "}",
+        "}",
+    ];
+    let depths = curly_depths(&tokens).unwrap_or_default();
+    let declarations = (0..tokens.len().saturating_sub(1))
+        .filter(|index| {
+            depths.get(*index) == Some(&0)
+                && tokens[*index].0 == "fn"
+                && tokens[*index + 1].0 == "rocksdb_maintenance_statistics_tickers"
+        })
+        .collect::<Vec<_>>();
+    let ticker_span = declarations
+        .as_slice()
+        .first()
+        .and_then(|declaration| (declarations.len() == 1).then_some(*declaration));
+    let ticker_span = ticker_span.and_then(|declaration| {
+        let body_open = (declaration + 2..tokens.len())
+            .find(|index| depths.get(*index) == Some(&0) && tokens[*index].0 == "{")?;
+        let body_close = matching_delimiter(&tokens, body_open, "{", "}")?;
+        Some((declaration, body_open, body_close))
+    });
+    if ticker_span.is_none_or(|(declaration, body_open, _)| {
+        !tokens[declaration..body_open]
+            .iter()
+            .map(|token| token.0.as_str())
+            .eq(expected_header)
+    }) {
+        failures.push("Rust ticker accessor signature");
+    }
+    if ticker_span.is_none_or(|(_, body_open, body_close)| {
+        !tokens[body_open..=body_close]
+            .iter()
+            .map(|token| token.0.as_str())
+            .eq(expected_body)
+    }) {
+        failures.push("direct Rust use of C++-resolved ticker names");
+    }
+    for (function_name, _) in TICKER_ABI_NAMES {
+        if token_value_count(&tokens, function_name) != 1 {
+            failures.push("unique Rust ticker accessor use");
+        }
+    }
+    if tokens.iter().enumerate().any(|(index, token)| {
+        token.0 == "const"
+            && depths.get(index).copied().unwrap_or_default() <= 1
+            && tokens
+                .get(index + 1)
+                .is_some_and(|name| name.0.contains("TICKER"))
+    }) {
+        failures.push("no local Rust ticker constants");
+    }
+    let linked = ["maintenance_evidence", "maintenance_evidence_with_readers"]
+        .into_iter()
+        .filter_map(|method| unique_unconditional_method_body(&tokens, "Db", method))
+        .any(|body| {
+            token_sequence_count(
+                body,
+                &[
+                    "let",
+                    "statistics_tickers",
+                    "=",
+                    "rocksdb_maintenance_statistics_tickers",
+                    "(",
+                    ")",
+                    ";",
+                ],
+            ) == 1
+                && token_sequence_count(body, &["for", "ticker", "in", "statistics_tickers"]) == 1
+                && token_sequence_count(body, &["statistics_reader", "(", "ticker", ")"]) == 1
+        });
+    if !linked || token_value_count(&tokens, "rocksdb_maintenance_statistics_tickers") != 2 {
+        failures.push("collector ticker linkage");
+    }
+    failures
+}
+
+fn ticker_abi_source_failures(
+    api_header: &str,
+    api_cpp: &str,
+    sys_build: &str,
+    wrapper: &str,
+) -> Vec<&'static str> {
+    let mut failures = ticker_api_header_failures(api_header);
+    failures.extend(ticker_cpp_implementation_failures(api_cpp));
+    if !build_compiles_and_binds_api_from_same_headers(sys_build) {
+        failures.push("same-header C++ compilation and bindgen selection");
+    }
+    failures.extend(ticker_wrapper_source_failures(wrapper));
+    failures
+}
+
+fn valid_ticker_wrapper_fixture() -> &'static str {
+    "
+        fn rocksdb_maintenance_statistics_tickers() -> [u32; 5] {
+            unsafe {
+                [
+                    oxrocksdb_ticker_user_bytes_written(),
+                    oxrocksdb_ticker_stall_micros(),
+                    oxrocksdb_ticker_compact_read_bytes(),
+                    oxrocksdb_ticker_compact_write_bytes(),
+                    oxrocksdb_ticker_flush_write_bytes(),
+                ]
+            }
+        }
+
+        impl Db {
+            fn maintenance_evidence_with_readers(&self) {
+                let statistics_tickers = rocksdb_maintenance_statistics_tickers();
+                for ticker in statistics_tickers {
+                    let _ = statistics_reader(ticker);
+                }
+            }
+        }
+    "
+}
+
 fn contract_source_failures(source: &str) -> Vec<&'static str> {
     let tokens = rust_tokens(source);
     let mut failures = Vec::new();
@@ -4202,21 +5540,7 @@ fn contract_source_failures(source: &str) -> Vec<&'static str> {
             failures.push("audited integer property");
         }
     }
-    for (ticker, value) in [
-        ("ROCKSDB_TICKER_USER_BYTES_WRITTEN", "61"),
-        ("ROCKSDB_TICKER_STALL_MICROS", "76"),
-        ("ROCKSDB_TICKER_COMPACTION_READ_BYTES", "89"),
-        ("ROCKSDB_TICKER_COMPACTION_WRITE_BYTES", "90"),
-        ("ROCKSDB_TICKER_FLUSH_WRITE_BYTES", "91"),
-    ] {
-        if !top_level_const_matches(
-            &tokens,
-            ticker,
-            &["const", ticker, ":", "u32", "=", value, ";"],
-        ) {
-            failures.push("audited statistics ticker");
-        }
-    }
+    failures.extend(ticker_wrapper_source_failures(source));
     if enum_variants(&tokens, "RocksDbMaintenanceSignal")
         != Some(vec![
             "Available".to_owned(),
@@ -5733,6 +7057,279 @@ fn build_identity_contract_rejects_hardcodes_empty_versions_revision_leaks_and_d
 }
 
 #[test]
+fn ticker_abi_contract_rejects_ordinals_stale_mappings_swaps_and_decoys() {
+    let valid_build = valid_sys_build_metadata_fixture();
+    let valid_wrapper = valid_ticker_wrapper_fixture();
+    let valid = ticker_abi_source_failures(
+        TICKER_API_HEADER_FIXTURE,
+        reviewed_ticker_abi_cpp(),
+        &valid_build,
+        valid_wrapper,
+    );
+    assert!(valid.is_empty(), "valid ticker ABI fixture: {valid:?}");
+
+    let hardcoded_cpp = reviewed_ticker_abi_cpp().replacen(
+        "static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_WRITTEN)",
+        "61",
+        1,
+    );
+    assert_ne!(
+        hardcoded_cpp,
+        reviewed_ticker_abi_cpp(),
+        "hardcoded-ordinal mutant must be live",
+    );
+    assert!(
+        ticker_cpp_implementation_failures(&hardcoded_cpp)
+            .contains(&"unique C++ enum-name ticker definition"),
+        "a C++ ordinal must not substitute for enum-name resolution",
+    );
+
+    let swapped_cpp = reviewed_ticker_abi_cpp()
+        .replacen(
+            "Tickers::BYTES_WRITTEN",
+            "Tickers::TICKER_SWAP_PLACEHOLDER",
+            1,
+        )
+        .replacen("Tickers::STALL_MICROS", "Tickers::BYTES_WRITTEN", 1)
+        .replacen(
+            "Tickers::TICKER_SWAP_PLACEHOLDER",
+            "Tickers::STALL_MICROS",
+            1,
+        );
+    assert_ne!(
+        swapped_cpp,
+        reviewed_ticker_abi_cpp(),
+        "name-swap mutant must be live",
+    );
+    assert!(
+        !ticker_cpp_implementation_failures(&swapped_cpp).is_empty(),
+        "swapping two named counters must fail the semantic mapping",
+    );
+
+    let local_rust_constant = format!("const ROCKSDB_TICKER_DECOY: u32 = 61;\n{valid_wrapper}");
+    assert!(
+        ticker_wrapper_source_failures(&local_rust_constant)
+            .contains(&"no local Rust ticker constants"),
+        "local Rust ordinals must not reintroduce the unstable ABI",
+    );
+    let hardcoded_rust_array = valid_wrapper.replacen(
+        "let statistics_tickers = rocksdb_maintenance_statistics_tickers();",
+        "let _ = rocksdb_maintenance_statistics_tickers();\n                let statistics_tickers = [61, 76, 89, 90, 91];",
+        1,
+    );
+    assert_ne!(
+        hardcoded_rust_array, valid_wrapper,
+        "hardcoded Rust array mutant must be live",
+    );
+    assert!(
+        ticker_wrapper_source_failures(&hardcoded_rust_array).contains(&"collector ticker linkage"),
+        "an unused C++ resolver decoy must not bless a Rust ordinal array",
+    );
+    let swapped_wrapper = valid_wrapper
+        .replacen(
+            "oxrocksdb_ticker_user_bytes_written()",
+            "ticker_swap_placeholder()",
+            1,
+        )
+        .replacen(
+            "oxrocksdb_ticker_stall_micros()",
+            "oxrocksdb_ticker_user_bytes_written()",
+            1,
+        )
+        .replacen(
+            "ticker_swap_placeholder()",
+            "oxrocksdb_ticker_stall_micros()",
+            1,
+        );
+    assert_ne!(
+        swapped_wrapper, valid_wrapper,
+        "Rust name-swap mutant must be live"
+    );
+    assert!(
+        !ticker_wrapper_source_failures(&swapped_wrapper).is_empty(),
+        "the Rust semantic order must not be swappable",
+    );
+
+    let cross_wired_build = valid_build.replacen(
+        "crate::build_rocksdb_api(&library.include_paths);",
+        "crate::build_rocksdb_api(&includes);",
+        1,
+    );
+    assert_ne!(
+        cross_wired_build, valid_build,
+        "stale vendored-only include mutant must be live",
+    );
+    assert!(
+        !build_compiles_and_binds_api_from_same_headers(&cross_wired_build),
+        "the C++ boundary must compile against the selected system include paths",
+    );
+
+    let header_spoof = r#"
+        // extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_user_bytes_written(void);
+        const char* lie = "extern ROCKSDB_LIBRARY_API uint32_t oxrocksdb_ticker_stall_micros(void);";
+    "#;
+    assert!(
+        !ticker_api_header_failures(header_spoof).is_empty(),
+        "comments and strings must not declare ABI functions",
+    );
+    let cpp_spoof = r#"
+        // return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_WRITTEN);
+        const char* lie = "uint32_t oxrocksdb_ticker_user_bytes_written(void)";
+    "#;
+    assert!(
+        !ticker_cpp_implementation_failures(cpp_spoof).is_empty(),
+        "comments and strings must not define the C++ boundary",
+    );
+    let raw_cpp_spoof = format!(
+        r#"
+const char* lie = R"raw("
+{}
+")raw";
+"#,
+        reviewed_ticker_abi_cpp(),
+    );
+    let raw_cpp_failures = ticker_cpp_implementation_failures(&raw_cpp_spoof);
+    assert!(
+        raw_cpp_failures.contains(&"selected statistics header include"),
+        "a statistics include inside a raw string must not establish header provenance",
+    );
+    assert_eq!(
+        raw_cpp_failures
+            .iter()
+            .filter(|failure| **failure == "unique C++ enum-name ticker definition")
+            .count(),
+        TICKER_ABI_NAMES.len(),
+        "all five named-enum bodies inside a raw string must remain structurally invisible",
+    );
+    let raw_cpp_syntax = compile_cpp_syntax_fixture(&raw_cpp_spoof)
+        .unwrap_or_else(|error| panic!("raw-string syntax control: {error}"));
+    assert!(
+        raw_cpp_syntax.status.success(),
+        "the raw-string spoof must be valid C++ before its missing active definitions are tested: {}",
+        String::from_utf8_lossy(&raw_cpp_syntax.stderr),
+    );
+    assert!(
+        compile_ticker_abi_fixture(&frozen_11_1_2_statistics_header(), &raw_cpp_spoof).is_err(),
+        "the raw-string spoof must not satisfy the compiled same-header fixture",
+    );
+    for prefix in ["R", "u8R", "uR", "UR", "LR"] {
+        let prefixed_raw_spoof = format!(
+            "const auto lie = {prefix}\"tag(\n#if 0\n#define BYTES_WRITTEN hidden\noxrocksdb_ticker_user_bytes_written\n)tag\"_diagnostic;\n",
+        );
+        let visibility = cpp_lexical_visibility(&prefixed_raw_spoof);
+        for hidden in [
+            "if",
+            "define",
+            "BYTES_WRITTEN",
+            "oxrocksdb_ticker_user_bytes_written",
+            "_diagnostic",
+        ] {
+            assert_eq!(
+                token_value_count(&visibility.tokens, hidden),
+                0,
+                "{prefix} raw-literal spelling leaked {hidden} into structural proof",
+            );
+        }
+        assert!(
+            cpp_preprocessor_provenance_failures_from_visibility(&visibility).is_empty(),
+            "{prefix} raw-literal content must not create active directives",
+        );
+    }
+    let wrapper_spoof = r#"
+        // fn rocksdb_maintenance_statistics_tickers() -> [u32; 5] { todo!() }
+        const LIE: &str = "oxrocksdb_ticker_user_bytes_written()";
+    "#;
+    assert!(
+        !ticker_wrapper_source_failures(wrapper_spoof).is_empty(),
+        "comments and strings must not establish Rust linkage",
+    );
+
+    let benign_cpp_decoy = format!(
+        "{}\nuint32_t unrelated_diagnostic_counter(void) {{ return 7; }}",
+        reviewed_ticker_abi_cpp(),
+    );
+    assert!(
+        ticker_cpp_implementation_failures(&benign_cpp_decoy).is_empty(),
+        "an unrelated definition must neither prove nor invalidate the named ABI",
+    );
+    let benign_cpp_macros = format!(
+        r##"
+#define UNRELATED_DIAGNOSTIC_SCALE(value) ((value) + 1)
+#define UNRELATED_DIAGNOSTIC_LABEL "statistics are diagnostic"
+#define UNRELATED_DIAGNOSTIC_JOIN_INNER(left, right) left ## right
+#define UNRELATED_DIAGNOSTIC_JOIN(left, right) \
+  UNRELATED_DIAGNOSTIC_JOIN_INNER(left, right)
+// #if 0
+/*
+#define oxrocksdb_ticker_user_bytes_written hidden_comment
+#endif
+*/
+const char* unrelated_preprocessor_text = "#if 0";
+const char* unrelated_raw_preprocessor_text = R"tag(
+#if 0
+#define BYTES_WRITTEN hidden_raw_string
+)tag";
+int UNRELATED_DIAGNOSTIC_JOIN(unrelated_, counter)(void) {{ return 7; }}
+{}
+"##,
+        reviewed_ticker_abi_cpp(),
+    );
+    assert!(
+        ticker_cpp_implementation_failures(&benign_cpp_macros).is_empty(),
+        "unrelated ordinary macros, comments, and strings must remain benign",
+    );
+    assert!(
+        compile_ticker_abi_fixture(&frozen_11_1_2_statistics_header(), &benign_cpp_macros)
+            .unwrap_or_else(|error| panic!("benign C++ macro control: {error}"))
+            .status
+            .success(),
+        "the accepted benign macro control must compile and select the named entries",
+    );
+
+    let rebound_enum = format!(
+        "#define BYTES_WRITTEN STALL_MICROS\n{}",
+        reviewed_ticker_abi_cpp(),
+    );
+    assert!(
+        ticker_cpp_implementation_failures(&rebound_enum)
+            .contains(&"protected C++ macro rebinding or generation"),
+        "rebinding an exact enum spelling must invalidate implementation provenance",
+    );
+    let spliced_conditional = "#i\\\nf 0\n";
+    assert!(
+        cpp_preprocessor_provenance_failures(spliced_conditional)
+            .contains(&"conditional C++ preprocessor activity"),
+        "translation-phase line splicing must not conceal a conditional directive",
+    );
+    let digraph_conditional = "%:if 0\n";
+    assert!(
+        cpp_preprocessor_provenance_failures(digraph_conditional)
+            .contains(&"conditional C++ preprocessor activity"),
+        "the standard preprocessor directive digraph must not conceal a conditional",
+    );
+    let composed_function = format!(
+        "
+#define OXROCKSDB_JOIN_INNER(left, right) left ## right
+#define OXROCKSDB_JOIN(left, right) OXROCKSDB_JOIN_INNER(left, right)
+uint32_t OXROCKSDB_JOIN(oxrocksdb_ticker_, user_bytes_written)(void) {{ return 61; }}
+{}
+",
+        reviewed_ticker_abi_cpp(),
+    );
+    assert!(
+        ticker_cpp_implementation_failures(&composed_function)
+            .contains(&"composed C++ resolver function name"),
+        "token-composed resolver names must invalidate direct-definition provenance",
+    );
+    let benign_wrapper_decoy =
+        format!("{valid_wrapper}\nfn unrelated_diagnostic_counter() -> u32 {{ 7 }}");
+    assert!(
+        ticker_wrapper_source_failures(&benign_wrapper_decoy).is_empty(),
+        "an unrelated Rust helper must neither prove nor invalidate ticker linkage",
+    );
+}
+
+#[test]
 fn source_contract_scanner_rejects_comment_and_string_spoofs() {
     let hostile = r#"
         // pub(crate) enum RocksDbMaintenanceSignal<T> { Available(T), Unavailable, Unsupported }
@@ -5953,6 +7550,22 @@ fn collector_selection_rejects_nested_inactive_duplicate_and_dead_decoys() {
     assert!(
         !has_unique_method_in_impl(&inactive_hook, "Db", "maintenance_evidence_with_readers",),
         "an inactive fault-injection decoy must not leave controls on the fallback path",
+    );
+}
+
+#[test]
+fn repository_sources_select_statistics_tickers_through_the_same_header_cpp_abi() {
+    let api_header = read_to_string(repository_path("oxrocksdb-sys/api/c.h"))
+        .expect("the oxrocksdb-sys C API header must be readable");
+    let api_cpp = read_to_string(repository_path("oxrocksdb-sys/api/c.cc"))
+        .expect("the oxrocksdb-sys C++ API implementation must be readable");
+    let sys_build = read_to_string(repository_path("oxrocksdb-sys/build.rs"))
+        .expect("the oxrocksdb-sys build script must be readable");
+    let wrapper = include_str!("rocksdb_wrapper.rs");
+    let failures = ticker_abi_source_failures(&api_header, &api_cpp, &sys_build, wrapper);
+    assert!(
+        failures.is_empty(),
+        "RED: repository sources do not select maintenance statistics by stable C++ enum names from the exact header used by the selected RocksDB build: {failures:?}; {TICKER_ABI_EVIDENCE_SCOPE}",
     );
 }
 
