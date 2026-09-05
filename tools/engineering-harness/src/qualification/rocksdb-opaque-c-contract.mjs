@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ORACLE_URL = new URL("./rocksdb-opaque-c-oracle.json", import.meta.url);
 export const ROCKSDB_OPAQUE_C_ORACLE_SHA256 =
-  "11b190d127abda3ababd8e304c41a3e10bbef18f17ffbd227775e8584361255a";
+  "b1e494f22b1534ba429f005ebabd220870a838bd748b72b317785b0ae9dd6342";
 
 const DEFAULT_REPOSITORY_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
