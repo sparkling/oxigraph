@@ -39,8 +39,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    216688,
-    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
+    221438,
+    "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -940,7 +940,209 @@ function assertOnlySyscallInlineAssembly(source) {
   assert.ok(directSyscallAssemblyCount > 0, "direct syscall assembly required");
 }
 
+function reconstructPreS7V5P2Source(source) {
+  const count = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let matches = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return matches;
+      matches += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceOne = (value, before, after, label) => {
+    assert.equal(count(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeOne = (value, start, end, label) => {
+    assert.equal(count(value, start), 1, `${label} start`);
+    assert.equal(count(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeOne(
+    source,
+    "\n\nfunction reconstructPreS7V5P2Source(source) {\n",
+    "\n\nfunction reconstructPreS7V4P2Source(source) {\n",
+    "S7 V5 P2 inverse helper",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    "S7 V5 P2 ADR pin inverse",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    [
+      "function reconstructPreS7V4P2Source(source) {",
+      "  source = reconstructPreS7V5P2Source(source);",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4P2Source(source) {",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    "S7 V5 P2 older inverse forwarding",
+  );
+  reconstructed = removeRangeOne(
+    reconstructed,
+    "\n  const v5Source = reconstructPreS7V5P2Source(currentSource);\n",
+    "\n  const reconstructedSource = reconstructPreS7V4P2Source(currentSource);\n",
+    "S7 V5 P2 direct inverse proof",
+  );
+  return reconstructed;
+}
+
+function reconstructPreS7V4P2Source(source) {
+  source = reconstructPreS7V5P2Source(source);
+  const count = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let matches = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return matches;
+      matches += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceOne = (value, before, after, label) => {
+    assert.equal(count(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeOne = (value, start, end, label) => {
+    assert.equal(count(value, start), 1, `${label} start`);
+    assert.equal(count(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeOne(
+    source,
+    "\n\nfunction reconstructPreS7V4P2Source(source) {\n",
+    "\n\nfunction reconstructPreS7P2AdrClosureSource(source) {\n",
+    "S7 V4 P2 inverse helper",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    "S7 V4 P2 ADR pin inverse",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    [
+      "function reconstructPreS7P2AdrClosureSource(source) {",
+      "  source = reconstructPreS7V4P2Source(source);",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7P2AdrClosureSource(source) {",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    "S7 V4 P2 older inverse forwarding",
+  );
+  return removeRangeOne(
+    reconstructed,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 syscall evaluator", async () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure syscall evaluator", async () => {\n',
+    "S7 V4 P2 inverse proof",
+  );
+}
+
+function reconstructPreS7P2AdrClosureSource(source) {
+  source = reconstructPreS7V4P2Source(source);
+  const count = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let matches = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return matches;
+      matches += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceOne = (value, before, after, label) => {
+    assert.equal(count(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeOne = (value, start, end, label) => {
+    assert.equal(count(value, start), 1, `${label} start`);
+    assert.equal(count(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeOne(
+    source,
+    "\n\nfunction reconstructPreS7P2AdrClosureSource(source) {\n",
+    "\n\nfunction reconstructPreR14D1P2AdrRepinSource(source) {\n",
+    "S7 P2 inverse helper",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    216688,",
+      '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+    ].join("\n"),
+    "S7 P2 ADR pin inverse",
+  );
+  reconstructed = replaceOne(
+    reconstructed,
+    [
+      "function reconstructPreR14D1P2AdrRepinSource(source) {",
+      "  source = reconstructPreS7P2AdrClosureSource(source);",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreR14D1P2AdrRepinSource(source) {",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    "S7 P2 older inverse forwarding",
+  );
+  return removeRangeOne(
+    reconstructed,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure syscall evaluator", async () => {\n',
+    '\n\ntest("R14D1 P2 ADR repin inversely reconstructs the exact R13D1 evaluator", async () => {\n',
+    "S7 P2 inverse proof",
+  );
+}
+
 function reconstructPreR14D1P2AdrRepinSource(source) {
+  source = reconstructPreS7P2AdrClosureSource(source);
   const count = (value, needle) => {
     assert.notEqual(needle.length, 0);
     let matches = 0;
@@ -1031,6 +1233,84 @@ function reconstructPreR14D1P2AdrRepinSource(source) {
   assert.equal(endIndex > startIndex, true, "R14D1 P2 inverse order");
   return `${reconstructed.slice(0, startIndex)}${reconstructed.slice(endIndex)}`;
 }
+
+test("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 syscall evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const v5Source = reconstructPreS7V5P2Source(currentSource);
+  const v5Bytes = Buffer.from(v5Source, "utf8");
+  assert.equal(v5Bytes.length, 173505);
+  assert.equal(v5Source.split("\n").length - 1, 5147);
+  assert.equal(
+    sha256(v5Bytes),
+    "04be5f97e08f6a02a7316bada10422f57f2de41b4e659cea3e8a569dfdedceda",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${v5Bytes.length}\0`, "utf8"))
+      .update(v5Bytes)
+      .digest("hex"),
+    "bbc1e3860da94c86da335369259342e61866c0d0",
+  );
+  assert.equal([...v5Source.matchAll(/(?:^|\n)test\(/gu)].length, 16);
+  assert.equal(
+    [...v5Source.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+  const reconstructedSource = reconstructPreS7V4P2Source(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 170098);
+  assert.equal(reconstructedSource.split("\n").length - 1, 5051);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "2dad7967f6037a7c65287ab6af54522e67886b589255a050165aa243590ae2cb",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "d414c88f82d9b0528df9416b2fb89da83fbcf146",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    15,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+});
+
+test("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure syscall evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreS7P2AdrClosureSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 166676);
+  assert.equal(reconstructedSource.split("\n").length - 1, 4955);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "4da18be9ae8dcf04288482aa728acccf7281054cd69061f3227353ecc24dd24c",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "b7eae6e8f5a9724ad6d2b9963785faf9d76ca1b0",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    14,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+});
 
 test("R14D1 P2 ADR repin inversely reconstructs the exact R13D1 evaluator", async () => {
   const currentBytes = await readFile(EVALUATOR_PATH);

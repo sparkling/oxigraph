@@ -726,12 +726,12 @@ const CONTRACT_BYTE_PINS = array(
         import.meta.url,
       ),
     ],
-    ["bytes", 216_688],
+    ["bytes", 221_438],
     [
       "sha256",
-      "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
+      "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",
     ],
-    ["gitBlob", "49b0467887646ee05126a593d28e78bebff6f78f"],
+    ["gitBlob", "d3b32ea45c3d44913c8931024b53404e511f5bec"],
   ),
   record(
     ["name", "recovery evaluator fixture"],
@@ -771,7 +771,7 @@ const CONTRACT_BYTE_PINS = array(
   ),
 );
 
-const STATEFS_R14B_P1_ADR_REPIN_IDENTITY = (() => {
+const STATEFS_S7_V5_MATRIX_COUNT_CORRECTION_IDENTITY = (() => {
   const countExact = (source, needle) => {
     assert.equal(typeof source, "string");
     assert.equal(typeof needle, "string");
@@ -807,6 +807,363 @@ const STATEFS_R14B_P1_ADR_REPIN_IDENTITY = (() => {
   };
 
   const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_S7_V5_MATRIX_COUNT_CORRECTION_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY = (() => {\n",
+    "S7 V5 identity block",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `    ["bytes", 221_438],
+    [
+      "sha256",
+      "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",
+    ],
+    ["gitBlob", "d3b32ea45c3d44913c8931024b53404e511f5bec"],`,
+    `    ["bytes", 221_438],
+    [
+      "sha256",
+      "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",
+    ],
+    ["gitBlob", "5b876789f86d8bb394bc1d4dc51b972c17850e80"],`,
+    "S7 V5 ADR pin inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_S7_V5_MATRIX_COUNT_CORRECTION_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "S7 V4 inverse input restoration",
+  );
+  source = removeRangeExactly(
+    source,
+    "\n  const v5Receipt =\n",
+    [
+      "\n  const receipt =",
+      "    STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY.assertInverseReceipt(",
+    ].join("\n"),
+    "S7 V5 direct inverse proof",
+  );
+  const predecessorBytes = Buffer.from(source, "utf8");
+  assert.equal(predecessorBytes.length, 396_556);
+  assert.equal(countExact(source, "\n"), 11_574);
+  assert.equal(
+    byteSha256(predecessorBytes),
+    "860fc5de84cabb913ab7835d04c5e1cbe17cbe8792615ce38d741fc7692bcea1",
+  );
+  assert.equal(
+    gitBlobSha1(predecessorBytes),
+    "d8f14f567d10c5e2a5176343540cef65c93d38ff",
+  );
+  assert.equal(countExact(source, "\ntest("), 32);
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-s7-v5-matrix-count-correction-inverse-receipt/v1",
+        predecessorBytes: predecessorBytes.length,
+        predecessorLines: countExact(source, "\n"),
+        predecessorSha256: byteSha256(predecessorBytes),
+        predecessorGitBlob: gitBlobSha1(predecessorBytes),
+        predecessorTestCount: 32,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    predecessorEvaluatorSource: source,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_S7_V5_MATRIX_COUNT_CORRECTION_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_S7_ADR_CLOSURE_IDENTITY = (() => {\n",
+    "S7 V4 identity block",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `    ["bytes", 221_438],
+    [
+      "sha256",
+      "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",
+    ],
+    ["gitBlob", "5b876789f86d8bb394bc1d4dc51b972c17850e80"],`,
+    `    ["bytes", 221_172],
+    [
+      "sha256",
+      "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",
+    ],
+    ["gitBlob", "426ea53752ad09533d85f27231f4f251cc99c0fa"],`,
+    "S7 V4 ADR pin inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "S7 V3 inverse input restoration",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 evaluator", () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure evaluator", () => {\n',
+    "S7 V4 inverse proof",
+  );
+  const predecessorBytes = Buffer.from(source, "utf8");
+  assert.equal(predecessorBytes.length, 391_542);
+  assert.equal(countExact(source, "\n"), 11_439);
+  assert.equal(
+    byteSha256(predecessorBytes),
+    "9205a95e78138a2f8e3b1630e5fa830c6aa862496b54404423ab53ea6ab33ead",
+  );
+  assert.equal(
+    gitBlobSha1(predecessorBytes),
+    "2f8222fb0db1f9c49ccfcb5b470d4f02592229ad",
+  );
+  assert.equal(countExact(source, "\ntest("), 31);
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-s7-v4-task-dependency-correction-inverse-receipt/v1",
+        predecessorBytes: predecessorBytes.length,
+        predecessorLines: countExact(source, "\n"),
+        predecessorSha256: byteSha256(predecessorBytes),
+        predecessorGitBlob: gitBlobSha1(predecessorBytes),
+        predecessorTestCount: 31,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    predecessorEvaluatorSource: source,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const STATEFS_S7_ADR_CLOSURE_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );
+  assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
+  let source = currentEvaluatorBytes.toString("utf8");
+  assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
+  source = removeRangeExactly(
+    source,
+    "\n\nconst STATEFS_S7_ADR_CLOSURE_IDENTITY = (() => {\n",
+    "\n\nconst STATEFS_R14B_P1_ADR_REPIN_IDENTITY = (() => {\n",
+    "S7 identity block",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `    ["bytes", 221_172],
+    [
+      "sha256",
+      "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",
+    ],
+    ["gitBlob", "426ea53752ad09533d85f27231f4f251cc99c0fa"],`,
+    `    ["bytes", 216_688],
+    [
+      "sha256",
+      "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
+    ],
+    ["gitBlob", "49b0467887646ee05126a593d28e78bebff6f78f"],`,
+    "S7 ADR pin inverse",
+  );
+  source = replaceExactlyAllowingExisting(
+    source,
+    `  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_S7_ADR_CLOSURE_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );`,
+    "  const currentEvaluatorBytes = readFileSync(EVALUATOR_PATH);",
+    "R14B inverse input restoration",
+  );
+  source = removeRangeExactly(
+    source,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure evaluator", () => {\n',
+    '\n\ntest("R14B P1 ADR re-pin inversely reconstructs the exact R13B3 evaluator", () => {\n',
+    "S7 inverse proof",
+  );
+  const predecessorBytes = Buffer.from(source, "utf8");
+  assert.equal(predecessorBytes.length, 386_695);
+  assert.equal(countExact(source, "\n"), 11_305);
+  assert.equal(
+    byteSha256(predecessorBytes),
+    "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",
+  );
+  assert.equal(
+    gitBlobSha1(predecessorBytes),
+    "fc45c3975f6c4901bd89ba362a0816b51efb61be",
+  );
+  assert.equal(countExact(source, "\ntest("), 30);
+
+  const inverseReceipt = Object.freeze({});
+  const inverseReceiptBrands = new WeakSet([inverseReceipt]);
+  const inverseReceiptMetadata = new WeakMap([
+    [
+      inverseReceipt,
+      Object.freeze({
+        schema:
+          "oxigraph.test.candidate-containment-guardian-statefs-v1-s7-adr-closure-inverse-receipt/v1",
+        predecessorBytes: predecessorBytes.length,
+        predecessorLines: countExact(source, "\n"),
+        predecessorSha256: byteSha256(predecessorBytes),
+        predecessorGitBlob: gitBlobSha1(predecessorBytes),
+        predecessorTestCount: 30,
+      }),
+    ],
+  ]);
+  return Object.freeze({
+    predecessorEvaluatorSource: source,
+    inverseReceipt,
+    assertInverseReceipt(receipt) {
+      assert.equal(inverseReceiptBrands.has(receipt), true);
+      return inverseReceiptMetadata.get(receipt);
+    },
+  });
+})();
+
+const STATEFS_R14B_P1_ADR_REPIN_IDENTITY = (() => {
+  const countExact = (source, needle) => {
+    assert.equal(typeof source, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = source.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactlyAllowingExisting = (source, before, after, label) => {
+    assert.equal(countExact(source, before), 1, `${label} count`);
+    const priorAfterCount = countExact(source, after);
+    const replaced = source.replace(before, after);
+    assert.equal(countExact(replaced, before), 0, `${label} removal`);
+    assert.equal(
+      countExact(replaced, after),
+      priorAfterCount + 1,
+      `${label} inverse`,
+    );
+    return replaced;
+  };
+  const removeRangeExactly = (source, start, end, label) => {
+    assert.equal(countExact(source, start), 1, `${label} start count`);
+    assert.equal(countExact(source, end), 1, `${label} end count`);
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
+  };
+
+  const currentEvaluatorBytes = Buffer.from(
+    STATEFS_S7_ADR_CLOSURE_IDENTITY.predecessorEvaluatorSource,
+    "utf8",
+  );
   assert.equal(Buffer.isBuffer(currentEvaluatorBytes), true);
   let source = currentEvaluatorBytes.toString("utf8");
   assert.equal(Buffer.from(source, "utf8").equals(currentEvaluatorBytes), true);
@@ -11240,6 +11597,53 @@ test(
     });
   },
 );
+
+test("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 evaluator", () => {
+  const v5Receipt =
+    STATEFS_S7_V5_MATRIX_COUNT_CORRECTION_IDENTITY.assertInverseReceipt(
+      STATEFS_S7_V5_MATRIX_COUNT_CORRECTION_IDENTITY.inverseReceipt,
+    );
+  assert.deepEqual(v5Receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-statefs-v1-s7-v5-matrix-count-correction-inverse-receipt/v1",
+    predecessorBytes: 396_556,
+    predecessorLines: 11_574,
+    predecessorSha256:
+      "860fc5de84cabb913ab7835d04c5e1cbe17cbe8792615ce38d741fc7692bcea1",
+    predecessorGitBlob: "d8f14f567d10c5e2a5176343540cef65c93d38ff",
+    predecessorTestCount: 32,
+  });
+  const receipt =
+    STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY.assertInverseReceipt(
+      STATEFS_S7_V4_TASK_DEPENDENCY_CORRECTION_IDENTITY.inverseReceipt,
+    );
+  assert.deepEqual(receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-statefs-v1-s7-v4-task-dependency-correction-inverse-receipt/v1",
+    predecessorBytes: 391_542,
+    predecessorLines: 11_439,
+    predecessorSha256:
+      "9205a95e78138a2f8e3b1630e5fa830c6aa862496b54404423ab53ea6ab33ead",
+    predecessorGitBlob: "2f8222fb0db1f9c49ccfcb5b470d4f02592229ad",
+    predecessorTestCount: 31,
+  });
+});
+
+test("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure evaluator", () => {
+  const receipt = STATEFS_S7_ADR_CLOSURE_IDENTITY.assertInverseReceipt(
+    STATEFS_S7_ADR_CLOSURE_IDENTITY.inverseReceipt,
+  );
+  assert.deepEqual(receipt, {
+    schema:
+      "oxigraph.test.candidate-containment-guardian-statefs-v1-s7-adr-closure-inverse-receipt/v1",
+    predecessorBytes: 386_695,
+    predecessorLines: 11_305,
+    predecessorSha256:
+      "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",
+    predecessorGitBlob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",
+    predecessorTestCount: 30,
+  });
+});
 
 test("R14B P1 ADR re-pin inversely reconstructs the exact R13B3 evaluator", () => {
   const receipt = STATEFS_R14B_P1_ADR_REPIN_IDENTITY.assertInverseReceipt(

@@ -2,12 +2,14 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-04
+- Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented. The corrected pure JavaScript
-  StateFS source and three public StateFS evaluators exist; the private StateFS
-  evaluator is being re-frozen, while the corrected native
-  header/C/attestation triplet and manager protocol source/evaluator are absent;
+- Implementation status: implemented as a dormant, unregistered,
+  authority-null candidate boundary and frozen for the S7 integrated review at
+  base commit `4dbe7854a30ebe559cb918cf7cfe7780df3bc031`. The StateFS and
+  manager-protocol modules, separately attested syscall translation unit, and
+  all five owned evaluators are present. They confer no runtime registration,
+  physical-host fact, qualification, readiness, promotion, or publication;
   production containment remains unavailable
 - **Depends on**:
   [ADR-0035 — Durable native containment guardian and crash recovery](0035-durable-native-containment-guardian-and-recovery.md),
@@ -3533,9 +3535,78 @@ attestation, and one local run do not by themselves prove:
 
 The modules are not a general filesystem transaction library. The initial
 profile excludes NFS, SMB, unclassified filesystems, caller-selected roots, and
-same-UID tamper-resistance claims. ADR-0037 remains Proposed and implementation
-status remains not implemented at S0. Production readiness remains exactly
+same-UID tamper-resistance claims. The S0 not-implemented state is historical;
+the bounded candidate implementation described below is now present. ADR-0037
+remains Proposed and production readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
+## 2026-09-05 S7 integrated candidate evidence
+
+The S7 author freeze starts from exact commit
+`4dbe7854a30ebe559cb918cf7cfe7780df3bc031`. Direct deterministic
+application tests are the authority for this bounded repository claim;
+MetaHarness plans, scores, and receipts remain diagnostic only. The ten owned
+paths above are present and the five source artifacts have these exact SHA-256
+identities:
+
+| Artifact                                                   | SHA-256                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `containment-guardian-statefs-v1.mjs`                      | `5feccc9039c36d404e3097ee2c3da59ff1d3a319413deaf8e1c18ec9f80aa5e1` |
+| `containment-guardian-manager-protocol-v1.mjs`             | `79c6dec19e6f7e1c68090dae36eab72b6c0f956f07b52ff0fa2d84b4f187b158` |
+| `containment-guardian-statefs-syscalls-v1.h`               | `358abbcb75ee52e889f850e7d9a1eb68d6124af20963fbbf96e1f30c5ccd2a28` |
+| `containment-guardian-statefs-syscalls-v1.c`               | `f0dd2f3d6944a1a81f31181ebec616669f2f8f21c52ad9d6799d1ba07ad63138` |
+| `containment-guardian-statefs-syscalls-attestation-v1.mjs` | `09f016c0686289bb39cb52af52b120a94e3de4c338cf8f1b72e834a3ab56a779` |
+
+The direct matrix binds the unchanged journal-v2, lifetime-v1, recovery-v1,
+StateFS, and manager requirements digests respectively as
+`95a4311224d8dfa5f481436e87da4b4d5f56a00d67278e7ed0e931476b584e26`,
+`764975dd915913db4c4e0fc7bee308f8cb830c5f972ac0b97355601e7ff1b773`,
+`180ad61eba6cbc82d7828c881494dff23a030bdda953d98b8ea42fc88e145874`,
+`9b401032c2b0331174f74895181e906106bb86a32204b818b30686d9a47c0a42`,
+and
+`a6e98c1956c0a4a37a4b8a5ca46e56b0e9e66bf76928cd1669e43e4db1a68d02`.
+It exercises generation-manifest and journal-v2 construction/replay,
+lifetime-v1 and recovery-v1 prefixes, StateFS plans, owner contexts, requests,
+receipts and faults, the syscall ABI/object, and manager transition, replay,
+near-miss, one-shot, and fault boundaries. The fault inventory is exactly 144
+operation/selector rows over 68 distinct numeric selector values; it does not
+add a production selector surface.
+
+The exact deterministic C17 build produces two byte-identical 33,048-byte
+production objects with SHA-256
+`73980718aa506c536387515073b93f228a433d5969c3610f8a0c945602d97043`
+and one 41,376-byte fault object with SHA-256
+`9b0429c7e1f8dc23117d74972de77a3defa923034f76d09b64a48b7604fc240e`.
+The independent fault inspection digest is
+`1c0d84f4f934da6c91d7c6b2af529fadc2f6d3afc1ed4853b485aeeda54ba414`;
+the build-requirements and ABI-layout digests remain
+`fb198db797d462d97b35272820daa0ed84547621a877671882432afced000c70`
+and
+`651ae0afeedca00a87275030238afe7788cb8852acb2f060f44f711712b041a0`.
+The production objects expose only
+`oxigraph_containment_statefs_execute_v1`, contain exactly thirteen reachable
+direct syscall instructions, and contain no undefined symbol, PLT entry, or
+test-only selector. The separate fault object retains the selector only for the
+finite evaluator matrix.
+
+After the count-checked ADR re-pin, the complete explicit non-G1.7 matrix must
+pass 335/335 on both Node 24.14.1 and exact Node 20.20.2. Its mutation oracles
+kill incomplete `statx_mask`, partial-publication, cleanup-liveness,
+fixed-register, syscall-immediate, transition, binding, replay, and one-shot
+defects while preserving every older byte-exact inverse. The engineering
+package and lock remain at SHA-256
+`6cbf5ba32081cc3ff540d3500fb34f5e63c15dde1edadc909500fc9fbf4c45a8`
+and
+`5076addd19b823b7669d20321dac066ddb269587b688675ac4c02d5c2b38612d`.
+No candidate is added to a runtime, task-profile, or CLI registry.
+
+This is local integrated implementation evidence, not a physical-host-positive
+run or semantic qualification. It does not change the authority, physical-fact,
+nonclaim, or readiness values above. S7 closes only after the exact frozen diff
+receives independent filesystem, contract, compatibility, and security review
+and task `task-1788573342748-wln111` is closed. Until then, and afterward unless
+a later ADR explicitly supplies the missing authority, this ADR remains
+Proposed, unregistered, and unavailable for production use.
 
 ## Acceptance boundary
 
@@ -3623,9 +3694,13 @@ The full ADR-0037 S7 integrated boundary requires:
   followed by independent filesystem, contract, compatibility, and security
   review.
 
-Only passing S7 task `task-1788421989249-lblm05`, after its frozen predecessor
-tasks and reviews, makes its explicitly dependent ADR-0038 S0 task
-`task-1788424083626-k0qd39` eligible. It does not start ADR-0038 and is not
+Passing, reviewing, and integrating replacement S7 task
+`task-1788573342748-wln111` does not make obsolete ADR-0038 S0 task
+`task-1788424083626-k0qd39` eligible. After S7 integration that obsolete row
+must be cancelled, and a new exact-base ADR-0038 S0 row must be created with
+explicit dependencies on `task-1788573342748-wln111` and current completed
+ADR-0035 native-preflight task `task-1788002473147-nsat6x`. Only that
+replacement row can become eligible. This does not start ADR-0038 and is not
 delegated-host qualification, production readiness, G1.7 authority, promotion,
 or publication.
 
