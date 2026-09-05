@@ -248,7 +248,7 @@
   "buildGraph": {
     "buildScript": {
       "path": "oxrocksdb-sys/build.rs",
-      "sha256": "c793573ec4af81c60b723e2978c74bcc8f1f7ead5fe9a2999caa608a0bff7791"
+      "sha256": "e0b8485c2015570aa3a39114b182f9b740b4b40e17e6435f9476cba2c4dee0a3"
     },
     "sourceManifest": {
       "path": "oxrocksdb-sys/rocksdb/src.mk",
