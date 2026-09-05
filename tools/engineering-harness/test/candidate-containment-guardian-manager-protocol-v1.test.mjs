@@ -4910,6 +4910,14 @@ candidateTest(
       coherentPredecessorTransition.state.status,
       "STATEFS_OPERATION_REQUIRED",
     );
+    const unlistedPlan = makeLockPlan(
+      statefs,
+      coherentPredecessorTransition.state,
+    );
+    const unlistedInput = makeManagerPlanInput(
+      coherentPredecessorTransition.state,
+      unlistedPlan,
+    );
 
     const disjointEpochPredecessorBoundary = record(
       ["earlierCode", "MANAGER_EPOCH"],
@@ -4938,10 +4946,20 @@ candidateTest(
       ) + 1,
     );
 
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "precedence-writer",
       createNormalHandoffOwner,
     );
+    expectCode(
+      () => statefsAutoPlan({ state, token, owner }),
+      "STATEFS_BINDING",
+    );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "precedence-writer",
+    }));
     const handoffPlan = statefsAutoPlan({ state, token, owner });
     const handoff = acceptPlan(
       state,
@@ -5009,20 +5027,12 @@ candidateTest(
       "WRITER rejection is non-consuming",
     );
 
-    const contextPlan = statefsAutoPlan({
-      state: waiting.state,
-      token,
-      owner,
-    });
-    assert.equal(contextPlan.request, null);
-    assert.equal(contextPlan.writerKind, null);
-    const contextInput = makeManagerPlanInput(waiting.state, contextPlan);
     observed.push(
       expectPrecedence(
         () =>
           manager.reduceCandidateContainmentGuardianManagerProtocolV1(
-            waiting.state,
-            contextInput,
+            coherentPredecessorTransition.state,
+            unlistedInput,
           ),
         "MANAGER_TRANSITION",
         null,
@@ -5032,8 +5042,8 @@ candidateTest(
     expectCode(
       () =>
         manager.reduceCandidateContainmentGuardianManagerProtocolV1(
-          waiting.state,
-          contextInput,
+          coherentPredecessorTransition.state,
+          unlistedInput,
         ),
       "MANAGER_TRANSITION",
     );
@@ -6792,7 +6802,7 @@ function acceptDirectoryInventory({
     }),
   );
   const accepted = acceptReceipt(operation.state, receipt, `${label} receipt`);
-  return { state: accepted.state, token: receipt.inventorySet };
+  return { state: accepted.state, token: receipt.inventorySet, plan, receipt };
 }
 
 function acceptRegularInventory({
@@ -6819,7 +6829,7 @@ function acceptDirectoryRelease({ state, token, role, label }) {
   const operation = acceptPlan(state, plan, `${label} plan`);
   const receipt = dispatchStatefsRequest(plan, releaseResult(plan.request));
   const accepted = acceptReceipt(operation.state, receipt, `${label} receipt`);
-  return { state: accepted.state, token: receipt.inventorySet };
+  return { state: accepted.state, token: receipt.inventorySet, plan, receipt };
 }
 
 function inventoryGenerationTree({
@@ -7084,6 +7094,221 @@ function inventoryLifetimeOwner(label, createOwner) {
   return { owner, state, token };
 }
 
+function lifetimeSegmentDirectoryEntries(owner) {
+  const visibleRecords = owner.records.slice(
+    0,
+    owner.inventoryRecordCount ?? owner.records.length,
+  );
+  return array(
+    ...visibleRecords.map((entry, index) =>
+      record(
+        ["kind", "REGULAR"],
+        ["name", entry.name],
+        ["inode", String(300 + index)],
+        ["byteLength", String(entry.bytes.length)],
+        ["linkCount", "1"],
+        ["mode", 0o100_600],
+      ),
+    ),
+  );
+}
+
+function reopenLifetimeSegment({ state, token, owner, label }) {
+  expectCode(
+    () =>
+      statefsInventoryPlan({
+        state,
+        token,
+        role: "LIFETIME_SEGMENT",
+        parentRole: "LIFETIMES",
+        name: owner.identity.identitySha256,
+      }),
+    "STATEFS_BINDING",
+  );
+
+  const rootOnlyToken = token;
+  const rootOnlyState = state;
+  let reopened = acceptDirectoryInventory({
+    state,
+    token,
+    role: "LIFETIMES",
+    parentRole: "STATE_ROOT",
+    name: "lifetimes",
+    inode: "101",
+    entries: array(
+      array(owner.identity.identitySha256, "LIFETIME_SEGMENT", "201"),
+    ),
+    returnedDirectoryFd: 151,
+    label: `${label} reopen lifetimes`,
+  });
+  assert.equal(reopened.plan.inventorySet, rootOnlyToken);
+  assert.equal(reopened.plan.request.inventorySet, rootOnlyToken);
+  assert.equal(
+    reopened.plan.request.requestSequence,
+    rootOnlyState.nextStatefsRequestSequence,
+  );
+  expectCode(
+    () =>
+      statefs.assertCandidateContainmentGuardianStatefsPlanV1(reopened.plan),
+    "STATEFS_BINDING",
+  );
+  assert.equal(reopened.state.status, "REPLAY_REQUIRED");
+  assert.equal(reopened.state.inventoryComplete, true);
+  assert.equal(reopened.state.activeDirectoryHandleCount, 2);
+  expectCode(
+    () =>
+      statefsInventoryPlan({
+        state: reopened.state,
+        token: rootOnlyToken,
+        role: "LIFETIME_SEGMENT",
+        parentRole: "LIFETIMES",
+        name: owner.identity.identitySha256,
+      }),
+    "STATEFS_BINDING",
+  );
+
+  ({ state, token } = reopened);
+  const lifetimesToken = token;
+  const lifetimesState = state;
+  reopened = acceptDirectoryInventory({
+    state,
+    token,
+    role: "LIFETIME_SEGMENT",
+    parentRole: "LIFETIMES",
+    name: owner.identity.identitySha256,
+    inode: "201",
+    entries: lifetimeSegmentDirectoryEntries(owner),
+    returnedDirectoryFd: 152,
+    label: `${label} reopen lifetime segment`,
+  });
+  assert.equal(reopened.plan.inventorySet, lifetimesToken);
+  assert.equal(reopened.plan.request.inventorySet, lifetimesToken);
+  assert.equal(
+    reopened.plan.request.requestSequence,
+    lifetimesState.nextStatefsRequestSequence,
+  );
+  expectCode(
+    () =>
+      statefs.assertCandidateContainmentGuardianStatefsPlanV1(reopened.plan),
+    "STATEFS_BINDING",
+  );
+  expectCode(
+    () =>
+      statefsReleasePlan({
+        state: reopened.state,
+        token: lifetimesToken,
+        role: "LIFETIME_SEGMENT",
+      }),
+    "STATEFS_BINDING",
+  );
+  assert.equal(reopened.state.status, "REPLAY_REQUIRED");
+  assert.equal(reopened.state.inventoryComplete, true);
+  assert.equal(reopened.state.activeDirectoryHandleCount, 3);
+  return { state: reopened.state, token: reopened.token };
+}
+
+function closeLifetimeSegment({ state, token, label }) {
+  let closed = acceptDirectoryRelease({
+    state,
+    token,
+    role: "LIFETIME_SEGMENT",
+    label: `${label} close lifetime segment`,
+  });
+  assert.equal(closed.state.status, "REPLAY_REQUIRED");
+  assert.equal(closed.state.inventoryComplete, true);
+  assert.equal(closed.state.activeDirectoryHandleCount, 2);
+  expectCode(
+    () => statefs.assertCandidateContainmentGuardianStatefsPlanV1(closed.plan),
+    "STATEFS_BINDING",
+  );
+  expectCode(
+    () =>
+      statefsReleasePlan({
+        state: closed.state,
+        token,
+        role: "LIFETIMES",
+      }),
+    "STATEFS_BINDING",
+  );
+  ({ state, token } = closed);
+  closed = acceptDirectoryRelease({
+    state,
+    token,
+    role: "LIFETIMES",
+    label: `${label} close lifetimes`,
+  });
+  assert.equal(closed.state.status, "REPLAY_REQUIRED");
+  assert.equal(closed.state.inventoryComplete, true);
+  assert.equal(closed.state.activeDirectoryHandleCount, 1);
+  expectCode(
+    () => statefs.assertCandidateContainmentGuardianStatefsPlanV1(closed.plan),
+    "STATEFS_BINDING",
+  );
+  expectCode(
+    () =>
+      statefsReleasePlan({
+        state: closed.state,
+        token: closed.token,
+        role: "LIFETIMES",
+      }),
+    "STATEFS_BINDING",
+  );
+  return { state: closed.state, token: closed.token };
+}
+
+function reopenState18MoveParents({ state, token, owner, label }) {
+  const generationName =
+    owner.inventoryJournalStack.generationIdentity.identitySha256;
+  let reopened = acceptDirectoryInventory({
+    state,
+    token,
+    role: "ACTIVE",
+    parentRole: "STATE_ROOT",
+    name: "active",
+    inode: "103",
+    returnedDirectoryFd: 153,
+    label: `${label} reopen active`,
+  });
+  assert.equal(reopened.state.activeDirectoryHandleCount, 2);
+  ({ state, token } = reopened);
+  reopened = acceptDirectoryInventory({
+    state,
+    token,
+    role: "CLOSED",
+    parentRole: "STATE_ROOT",
+    name: "closed",
+    inode: "104",
+    entries: array(array(generationName, "GENERATION", "500")),
+    returnedDirectoryFd: 154,
+    label: `${label} reopen closed`,
+  });
+  assert.equal(reopened.state.status, "REPLAY_REQUIRED");
+  assert.equal(reopened.state.inventoryComplete, true);
+  assert.equal(reopened.state.activeDirectoryHandleCount, 3);
+  return { state: reopened.state, token: reopened.token };
+}
+
+function closeState18MoveParents({ state, token, label }) {
+  let closed = acceptDirectoryRelease({
+    state,
+    token,
+    role: "CLOSED",
+    label: `${label} close closed`,
+  });
+  assert.equal(closed.state.activeDirectoryHandleCount, 2);
+  ({ state, token } = closed);
+  closed = acceptDirectoryRelease({
+    state,
+    token,
+    role: "ACTIVE",
+    label: `${label} close active`,
+  });
+  assert.equal(closed.state.status, "REPLAY_REQUIRED");
+  assert.equal(closed.state.inventoryComplete, true);
+  assert.equal(closed.state.activeDirectoryHandleCount, 1);
+  return { state: closed.state, token: closed.token };
+}
+
 function preparePersistOperation(label) {
   let pendingRecord = null;
   const createPendingOwner = (options) => {
@@ -7096,12 +7321,17 @@ function preparePersistOperation(label) {
     label,
     createPendingOwner,
   );
-  const inventoryPlan = statefsAutoPlan({
+  ({ state, token } = reopenLifetimeSegment({
     state,
     token,
     owner,
-    recordCount: 0,
-    artifactBytes: pendingRecord.bytes,
+    label,
+  }));
+  const inventoryPlan = statefsRegularInventoryPlan({
+    state,
+    token,
+    role: "LIFETIME_SEGMENT",
+    name: pendingRecord.name,
   });
   const inventoryOperation = acceptPlan(
     state,
@@ -7410,16 +7640,19 @@ candidateTest(
       "persist-first-record",
       createPendingOwner,
     );
-    assert.notEqual(pendingRecord, null);
-    const callerBytes = Buffer.from(pendingRecord.bytes);
-    const inventoryPlan = statefsAutoPlan({
+    ({ state, token } = reopenLifetimeSegment({
       state,
       token,
       owner,
-      recordCount: 0,
-      artifactBytes: callerBytes,
+      label: "persist-first-record",
+    }));
+    assert.notEqual(pendingRecord, null);
+    const inventoryPlan = statefsRegularInventoryPlan({
+      state,
+      token,
+      role: "LIFETIME_SEGMENT",
+      name: pendingRecord.name,
     });
-    callerBytes.fill(0);
     assert.equal(inventoryPlan.managerDisposition, "STATEFS_REQUEST");
     assert.equal(inventoryPlan.request.operation, "INVENTORY");
     assert.equal(inventoryPlan.request.inventoryKind, "REGULAR_FILE");
@@ -7443,13 +7676,15 @@ candidateTest(
     assert.equal(state.status, "REPLAY_REQUIRED");
     assert.equal(state.inventoryComplete, true);
 
+    const callerBytes = Buffer.from(pendingRecord.bytes);
     const persistPlan = statefsAutoPlan({
       state,
       token,
       owner,
       recordCount: 0,
-      artifactBytes: pendingRecord.bytes,
+      artifactBytes: callerBytes,
     });
+    callerBytes.fill(0);
     assert.equal(persistPlan.managerDisposition, "STATEFS_REQUEST");
     assert.equal(persistPlan.request.operation, "PERSIST_NOREPLACE");
     assert.equal(persistPlan.request.writerKind, "SERVICE_MANAGER");
@@ -7478,6 +7713,13 @@ candidateTest(
       state.inventorySetSha256,
       receipt.inventorySet.inventorySetSha256,
     );
+    ({ state, token } = closeLifetimeSegment({
+      state,
+      token: receipt.inventorySet,
+      label: "persist-first-record",
+    }));
+    assert.equal(state.activeDirectoryHandleCount, 1);
+    assert.equal(state.inventorySetSha256, token.inventorySetSha256);
   },
 );
 
@@ -7589,10 +7831,16 @@ candidateTest(
 candidateTest(
   "T13 normal handoff copies only the selected service-manager/live-birth boundary",
   () => {
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "normal-handoff",
       createNormalHandoffOwner,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "normal-handoff",
+    }));
     const plan = statefsAutoPlan({ state, token, owner });
     assert.equal(plan.planKind, "CONTEXT_ONLY");
     assert.equal(plan.managerDisposition, "GUARDIAN_HANDOFF");
@@ -7641,10 +7889,16 @@ candidateTest(
 candidateTest(
   "T22-T24-T25 bind the exact normal guardian wire prefix and reset it only at terminal",
   () => {
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "normal-wire-prefix",
       createNormalHandoffOwner,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "normal-wire-prefix",
+    }));
     const plan = statefsAutoPlan({ state, token, owner });
     const handoff = acceptPlan(state, plan, "T13 normal wire handoff");
     const outOfScenarioPrefix = createNormalControlPrefix(owner);
@@ -7761,6 +8015,12 @@ candidateTest(
     manager.assertCandidateContainmentGuardianManagerProtocolTransitionV1(
       transition,
     );
+    const closed = closeLifetimeSegment({
+      state: transition.state,
+      token,
+      label: "normal-wire-prefix",
+    });
+    assert.equal(closed.state.activeDirectoryHandleCount, 1);
   },
 );
 
@@ -7772,10 +8032,16 @@ candidateTest(
         ...options,
         journalStack: ownerFixtures.createJournalStack(options.label, 0),
       });
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "wait-live-birth",
       buildAdopted,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "wait-live-birth",
+    }));
     const plan = statefsAutoPlan({ state, token, owner });
     assert.equal(plan.managerDisposition, "WAIT_GUARDIAN");
     assert.equal(plan.writerKind, null);
@@ -7823,10 +8089,16 @@ candidateTest(
         ...options,
         journalStack: ownerFixtures.createJournalStack(options.label, 0),
       });
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "unlisted-waiting-plan",
       buildAdopted,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "unlisted-waiting-plan",
+    }));
     const waitPlan = statefsAutoPlan({ state, token, owner });
     const waiting = acceptPlan(state, waitPlan, "unlisted waiting state");
     assert.equal(waiting.state.status, "WAITING_FOR_GUARDIAN");
@@ -7861,10 +8133,16 @@ candidateTest(
       tuple = buildRecoveryReplanTuple(owner, journalStack);
       return owner;
     };
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "recovery-replan",
       buildReplanOwner,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "recovery-replan",
+    }));
     const plan = statefsAutoPlan({
       state,
       token,
@@ -7906,10 +8184,16 @@ candidateTest(
       tuple = buildAnchoredEmptyReplanTuple(owner, journalStack);
       return owner;
     };
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "anchored-empty-replan",
       buildAnchoredEmptyOwner,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "anchored-empty-replan",
+    }));
     assert.equal(
       tuple.recoveryReplay.status,
       "VALID_ANCHORED_EMPTY_ATTEMPT_REPLAYED",
@@ -7975,10 +8259,16 @@ candidateTest(
       tuple = buildState18CloseTuple(owner, journalStack);
       return owner;
     };
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "state18-move-sync-reobserve",
       buildState18Owner,
     );
+    ({ state, token } = reopenState18MoveParents({
+      state,
+      token,
+      owner,
+      label: "state18-move-sync-reobserve",
+    }));
     const plan = statefsAutoPlan({
       state,
       token,
@@ -8034,6 +8324,12 @@ candidateTest(
       () => makeManagerReceiptInput(operation.state, receipt),
       "MANAGER_BINDING",
     );
+    const closed = closeState18MoveParents({
+      state: replay.state,
+      token: receipt.inventorySet,
+      label: "state18-move-sync-reobserve",
+    });
+    assert.equal(closed.state.activeDirectoryHandleCount, 1);
   },
 );
 
@@ -8048,10 +8344,16 @@ candidateTest(
       tuple = buildRecoveryHandoffTuple(owner, journalStack);
       return owner;
     };
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "recovery-wire-prefix",
       buildRecoveryOwner,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "recovery-wire-prefix",
+    }));
     const plan = statefsAutoPlan({
       state,
       token,
@@ -8250,10 +8552,16 @@ candidateTest(
         ...options,
         journalStack: ownerFixtures.createJournalStack(options.label, 0),
       });
-    const { owner, state, token } = inventoryLifetimeOwner(
+    let { owner, state, token } = inventoryLifetimeOwner(
       "terminal-tail",
       buildTerminal,
     );
+    ({ state, token } = reopenLifetimeSegment({
+      state,
+      token,
+      owner,
+      label: "terminal-tail",
+    }));
     const plan = statefsAutoPlan({ state, token, owner });
     assert.equal(plan.managerDisposition, "TERMINAL");
     const terminal = acceptPlan(state, plan, "T16 terminal plan");
