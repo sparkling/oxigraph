@@ -5,12 +5,17 @@
 - Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
 - Implementation status: the bounded S0 native sources and S1 authority-null
-  receipt/replay candidate below are present. S1 adds a pure unregistered
-  adapter contract plus safe-local and explicitly synthetic evaluator evidence;
-  it is not an operational native adapter. The manager remains a fail-closed
-  link-only service-manager child, and no artifact is registered or eligible to
-  own production effects. Readiness remains exactly
+  receipt/replay candidate below are present. S2 adds a pure unregistered
+  cancel/recovery execution-transcript model and isolated in-memory fixture.
+  Neither candidate is an operational native adapter. The manager remains a
+  fail-closed link-only service-manager child, and no artifact is registered or
+  eligible to own production effects. Readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`
+- S2 review note (2026-09-05): four independent findings were repaired across
+  three review rounds, including the recovery/trace 64-item call-site bound and
+  recursive trap-free exact-own-data validation; the repaired freeze requires
+  fresh review and does not change this Proposed ADR's implementation or
+  readiness authority.
 - **Depends on**:
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md),
   [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)
@@ -350,6 +355,96 @@ These identities are exact repository evidence only. The package, lockfile,
 dependencies, submodules, predecessors, StateFS bytes, product/runtime
 registries, schemas, authority, physical facts, binding, nonclaims, and
 readiness remain unchanged.
+
+### 2026-09-05 S2 authority-null cancel and recovery executor model
+
+Task `task-1788589296466-4nzidh` starts from exact integrated-S1 commit
+`0b6826077fa57d326dde9a434e93b7768c33c53e`. Its evaluator-first RED was the
+sole absence of
+`containment-guardian-recovery-executor-v1.mjs`. S2 adds that pure transcript
+boundary, two focused evaluators, and one isolated in-memory fixture. The
+candidate imports no filesystem, process, network, thread, cgroup, service-
+manager, or registry authority and invokes no caller-supplied effect callback.
+
+The S2 requirements SHA-256 is
+`b6ad1ab0bdcae784e4cd348e1833015d8d693a1a94c7a2cc07971878c6a394a5`.
+It binds the exact unchanged journal-v1, journal-v2, lifetime-v1, recovery-v1,
+ADR-0037 StateFS-v1, and S1 native-adapter requirement digests. The latter
+retains S1's exact S0 manager, guardian, trampoline, compiler, ELF, and StateFS
+bindings. S2 neither replaces nor refreshes any predecessor identity.
+
+The live plan is cancel-only and fixes one stable live-birth direct-parent
+guardian model. After controller-command EOF and the durable cancel decision,
+it orders cancel completion and supervisor done, then exact supervisor-status
+EOF, exclusive `waitid(P_PIDFD)` reap, cleanup intent, ctl/job kill and
+quiescence, ctl/job removal, guardian-owned descriptor closure, and finally
+durable `CLOSED`. Every isolated synthetic effect refers to an earlier durable
+intent. The plan contains no PID field or PID-signalling operation. The fixture
+mutates only an in-memory object and the accepted execution status is explicitly
+`SYNTHETIC_TRANSCRIPT_ACCEPTED`.
+
+Recovery plans require a fresh `RECOVERY_ONLY_GUARDIAN` actor and accept
+parentage only as lost, ambiguous, or not reconstructed. The exact recovery-v1
+state sequence determines one of same-boot reconciliation, anchored-empty
+genesis recovery, reboot interruption, quarantine, recovered-decision resume,
+or quarantine-decision resume. A recovery-only actor may model the exact ctl/job
+presence, two-phase kill, quiescence, removal, and recovered placement branches,
+but must report old-supervisor command, status, pidfd, direct-wait, and reap
+facts false. Any corresponding inherited state is rejected before plan
+construction. Descriptor ownership and exclusive wait remain solely in the
+live direct-child plan. Recovery never substitutes persisted PID signalling or
+reconstructed parentage. Genesis and reboot anchored-empty plans first model
+path absence.
+Recovered and quarantined moves require an earlier durable decision, a
+no-replace move, both source- and destination-parent syncs, and exact final-
+location observation. Previously durable recovered/quarantine decisions are
+adopted; a generation at the immutable decision source follows that exact move
+sequence, while one already at the matching destination is only reobserved.
+
+Every serialized authority field remains `false`, every physical fact remains
+`null`, binding remains `null`, and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. Durable intent,
+controller loss, actor freshness, cgroup effects, EOF, descriptor state, pidfd
+events, reap, moves, filesystem durability, and power-loss durability are all
+explicit nonclaims outside the isolated synthetic model. S2 supplies no
+delegated-cgroup, reboot, power-cut, production-unit, G1.7, G2.2,
+qualification, promotion, publication, deployment, or production-readiness
+result.
+
+The focused S2 suite contains 19 tests. It covers exact predecessor bindings,
+both live and recovery plans, every disposition, all three unresolved recovery
+parentage forms, durable-intent ordering, isolated final states, and authority
+nullness. It discriminates live direct-child descriptor/wait ownership from a
+fresh recovery-only actor and fixes the complete status-EOF through durable-
+`CLOSED` ordering. It rejects inherited command/status/pidfd/direct-wait/reap
+facts, extra or aliased PID/parent/controller fields, stale actor kinds, state
+omission/insertion/reorder/duplication, pathname substitution, PID signalling,
+intent drift, trace overrun or unlisted events, false-positive outcomes,
+missing or reordered EOF/reap/cleanup/quiescence/removal/descriptor/closed/
+sync/location events, wrong move destinations, decision/adoption confusion,
+and any binding, authority, physical-fact, or readiness upgrade. The focused
+suite also proves that 65-item recovery-state and trace arrays fail at the
+64-item bounds gate before accessor element processing. Recursive exact-own-
+data validation covers the complete plan and the execution's embedded plan and
+trace before derived canonical comparison; nested accessors and proxies are
+rejected without invoking their getters or traps. It passes 19/19 on current
+Node 24.14.1 and exact Node 20.20.2. Together with the unchanged
+377-test explicit ADR-0035 through ADR-0038 S0/S1 non-G1.7 matrix, the exact
+matrix passes 396/396 on both runtimes.
+
+The exact additive S2 file identities at freeze are:
+
+| Path | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `tools/engineering-harness/src/candidate/containment-guardian-recovery-executor-v1.mjs` | 27,265 | `e1ccb7a436db91fb6589b6126b5279148c04d8bf435fa44d8ed73061c4149f2a` |
+| `tools/engineering-harness/test/candidate-containment-guardian-recovery-executor-s2.test.mjs` | 11,769 | `40a65f7f8490b3375e58d81bce8b5ca5a08321b39e076b4bc3d169a256660f02` |
+| `tools/engineering-harness/test/candidate-containment-guardian-recovery-executor-s2-faults.test.mjs` | 13,345 | `97f5ae868b5a423497e9c9f632b477d011af306bf429c51965b87a1c2b1ae2d5` |
+| `tools/engineering-harness/test/support/candidate-containment-guardian-recovery-executor-s2-fixture.mjs` | 6,458 | `db0f949bb8ea6654cc8f9dd2f77f5914ca148fb8fdbb5fffea13341806f1b4ae` |
+
+These hashes identify repository inputs only. S2 leaves package and lock bytes,
+dependencies, submodules, all predecessor and ADR-0037 StateFS bytes,
+product/runtime registries and schemas, authority, physical facts, binding,
+nonclaims, and readiness unchanged.
 
 ## Nonclaims and authority boundary
 
