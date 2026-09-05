@@ -321,10 +321,12 @@ programme-umbrella closure made S1 `task-1788403485637-t9wn40` eligible; S1's
 source-absent evaluator and S2's authority-null requirements contract
 `task-1788403489170-xl71j9` are now complete. Graph-V5 umbrella
 `task-1788638159292-7hkaf5` is in progress. Its S3A source-absent evaluator
-`task-1788638011523-4c24e5` is complete at `a5f2442f`; S3B
-`task-1788638033847-mlvsbe` is the current dormant source step. A distinct S4A
-evaluator amendment waits for exact ADR-0039/ADR-0040 successor interfaces,
-and S4B retains separate host and human authorization gates.
+`task-1788638011523-4c24e5` is complete at `a5f2442f`, and S3B's dormant
+authority-null source `task-1788638033847-mlvsbe` is complete at `2532c31e`.
+Readiness remains `unavailable/native-adapter-unavailable`; S5/S6 are the next
+unblocked build-owner-v3 evaluator/source pair. A distinct S4A evaluator
+amendment waits for exact ADR-0039/ADR-0040 successor interfaces, and S4B
+retains separate host and human authorization gates.
 [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the separate evidence-backed decision to keep RocksDB as the only
 production-intended persistent `Store` backend. It was Accepted on 2026-09-05:

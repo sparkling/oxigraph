@@ -6,17 +6,18 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: partially implemented at the authority-null contract
   boundary. Documentation-only S0, the S1 source-absent evaluator, S2's pure
-  private-build-issuer requirements contract, and Graph-V5 S3A's dormant
-  private-issuer evaluator are complete. Execution
+  private-build-issuer requirements contract, Graph-V5 S3A's dormant
+  private-issuer evaluator, and S3B's authority-null source are complete. Execution
   request v2, the Cargo helper attestation and status protocol, containment v2,
   build owner v2, process evidence v3, and product owner v3 remain dormant or
-  replay-only. No private co-located issuer, build owner v3, product owner v4,
-  production build completion path, or physical G1.7 authority exists
+  replay-only. The issuer has no host adapter and reports unavailable; no build
+  owner v3, product owner v4, production build completion path, or physical
+  G1.7 authority exists
 - Current programme task: `task-1788638159292-7hkaf5`
   (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-GRAPH-V5`), in progress
-- Current completed evaluator task: Graph-V5 S3A
-  `task-1788638011523-4c24e5` at `a5f2442f`; dormant source task S3B
-  `task-1788638033847-mlvsbe` is pending
+- Current completed issuer tasks: Graph-V5 S3A
+  `task-1788638011523-4c24e5` at `a5f2442f` and S3B
+  `task-1788638033847-mlvsbe` at `2532c31e`
 - Historical Graph-V4 programme task: `task-1788589424013-hx1i83`, cancelled
   and superseded after independent review found that it coupled the dormant
   evaluator to predecessor interfaces that do not yet exist
@@ -106,10 +107,11 @@ not a build owner.
 Graph-V5 S3A `task-1788638011523-4c24e5` depended only on completed S2,
 completed ADR-0037 S7 `task-1788573342748-wln111`, and completed ADR-0038 S3 V3
 `task-1788589313411-vm7pg0`. It froze the dormant source-absent evaluator at
-`a5f2442f`; its production candidate remains absent, readiness remains
-unavailable, and the three later host-validation cases are non-executing
-TODOs. S3B `task-1788638033847-mlvsbe` may now add only the dormant
-authority-null source. Graph-V5 S4A `task-1788638038970-05pyb8` is a distinct
+`a5f2442f`. S3B `task-1788638033847-mlvsbe` added only the dormant,
+authority-null source at `2532c31e`; readiness remains
+`unavailable/native-adapter-unavailable`, and the three later host-validation
+cases remain non-executing TODOs. Graph-V5 S4A
+`task-1788638038970-05pyb8` is a distinct
 evaluator-amendment task that cannot start until the exact ADR-0039 and
 ADR-0040 successor interfaces exist; S4B `task-1788638043966-3guruj` remains a
 separately authorized host-validation gate. This split prevents the current
@@ -288,10 +290,11 @@ Documentation-only S0 architecture freeze is complete. C21 task
 boundary at commit `c01b3c6a`. S1 `task-1788403485637-t9wn40` and pure S2
 `task-1788403489170-xl71j9` are complete. Graph-V5 S3A
 `task-1788638011523-4c24e5` froze the dormant evaluator at `a5f2442f`; S3B
-`task-1788638033847-mlvsbe` is the current authority-null source task. Its
-evaluator scope keeps later host-validation cases non-executing and does not
-guess absent receipt fields. S4A/S4B retain the dependency and authorization
-split described above. Positive Cargo execution or output
+`task-1788638033847-mlvsbe` added its authority-null source at `2532c31e`.
+The evaluator keeps later host-validation cases non-executing and does not
+guess absent receipt fields. S5/S6 are now the next unblocked build-owner-v3
+evaluator/source pair. S4A/S4B retain the dependency and authorization split
+described above. Positive Cargo execution or output
 crossing the boundary requires the current ADR-0039
 prerequisite plus ADR-0040's distinct successor destructive qualification and
 receipt-bound activation for the same host, boot, artifacts, state root,
@@ -404,8 +407,9 @@ qualification, receipt, and promotion values remain null or false.
   success.
 - The additional evaluator, mutation, native, host, and independent-review
   surface is substantial. Documentation-only S0, S1 RED, pure S2 GREEN, and
-  Graph-V5 S3A's exact source-absent RED are complete. S3B is the current
-  dormant source step, while host validation remains separately gated.
+  Graph-V5 S3A's exact source-absent RED and S3B's dormant authority-null source
+  are complete. S5/S6 are the next unblocked evaluator/source pair, while host
+  validation remains separately gated.
 
 ## Alternatives rejected
 
