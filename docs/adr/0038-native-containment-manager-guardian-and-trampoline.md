@@ -6,18 +6,19 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: the bounded S0 native sources and S1 authority-null
   receipt/replay candidate below are present. S2 adds a pure unregistered
-  cancel/recovery execution-transcript model and isolated in-memory fixture.
-  Neither candidate is an operational native adapter. The manager remains a
-  fail-closed link-only service-manager child, and no artifact is registered or
-  eligible to own production effects. Readiness remains exactly
+  cancel/recovery execution-transcript model and isolated in-memory fixture;
+  S3B adds the bounded one-use manager-transition/StateFS consumer required by
+  S3A. None is an operational native adapter. The manager remains a fail-closed
+  link-only service-manager child, and no artifact is registered or eligible to
+  own production effects. Readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`
 - S2 review note (2026-09-05): four independent findings were repaired across
   three review rounds, including the recovery/trace 64-item call-site bound and
-  recursive trap-free exact-own-data validation; the repaired freeze requires
-  fresh review and does not change this Proposed ADR's implementation or
-  readiness authority.
+  recursive trap-free exact-own-data validation; the repaired freeze required
+  fresh review at that checkpoint and did not change this Proposed ADR's
+  implementation or readiness authority.
 - S3A evaluator note (2026-09-05): task `task-1788625446905-rigaey`
-  deliberately remains RED only for the absent ADR-0037 one-use manager-
+  froze RED only for the then-absent ADR-0037 one-use manager-
   protocol/StateFS transition consumer. It pins the unchanged S0-S2 and
   ADR-0037 inputs, treats foreign transitions and bare requests as opaque, and
   requires manager-transition consumption before property access followed by
@@ -25,14 +26,24 @@
   evaluator-bound dispatch. It also locally repeats the deterministic exact
   link-only manager build and attestation, including the unchanged StateFS
   object and sole entrypoint. The evaluator-owned dispatch returns ADR-0037's
-  exact lock executor-result shape; the future bridge must verify and return
+  exact lock executor-result shape; the bridge under evaluation must verify and return
   the exact branded receipt, which the fixture then feeds through the retained
   manager receipt input and reducer. Omitted, substituted, replayed, or thrown
   result/receipt paths remain terminal. Neither local build nor the synthetic
   dispatch proves StateFS C execution. S3A adds no bridge implementation,
   physical fact, registration, readiness, qualification, or closure claim;
-  those remain the dependent S3B task `task-1788625462636-m8y9ga` or later
+  those remained the dependent S3B task `task-1788625462636-m8y9ga` or later
   gated work.
+- S3B evidence note (2026-09-05): task `task-1788625462636-m8y9ga` adds only
+  the S3A-frozen three-export, arity-two consumer. It asserts the branded
+  manager transition before reading its exact nested StateFS request, validates
+  the synchronous evaluator-bound dispatch, asserts and dispatches that request
+  once, and passes the uninspected result through ADR-0037's verifier to return
+  its exact branded receipt. Failure and replay remain terminal through the
+  retained predecessor brands. This closes only the bounded synthetic StateFS
+  transition-consumption contract: it does not prove C-side StateFS execution,
+  non-StateFS manager transition closure, physical effects, registration,
+  readiness, qualification, or production containment.
 - **Depends on**:
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md),
   [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)
@@ -150,7 +161,9 @@ This ADR owns these new sources:
   `containment-guardian-trampoline-attestation-v1.mjs`; and
 - their shared authority-null
   `containment-guardian-native-attestation-common-v1.mjs` verifier; and
-- `tools/engineering-harness/src/candidate/containment-guardian-native-adapter-v1.mjs`.
+- `tools/engineering-harness/src/candidate/containment-guardian-native-adapter-v1.mjs`;
+  and
+- `tools/engineering-harness/src/candidate/containment-guardian-manager-transition-consumer-v1.mjs`.
 
 It also owns matching candidate native fixture, attestation, manager, guardian,
 trampoline, and fault tests under `tools/engineering-harness/test/`. It does not
@@ -462,6 +475,29 @@ These hashes identify repository inputs only. S2 leaves package and lock bytes,
 dependencies, submodules, all predecessor and ADR-0037 StateFS bytes,
 product/runtime registries and schemas, authority, physical facts, binding,
 nonclaims, and readiness unchanged.
+
+### 2026-09-05 S3B bounded one-use StateFS transition consumer
+
+S3B starts from exact integrated-S3A commit
+`5cee5887e1055ed9e1000d8a2ed813b0dc1d8e22` and adds the single owned consumer
+module above. Its requirements SHA-256 is
+`62cc5c020663523629f42e5ac8170ef74bfc663ff1ad77515f1abbef1431c32a`.
+The source is 4,814 bytes at SHA-256
+`d7de4cdf7422586d495b93b8870a6207bd3e1800a09870927b56c1810ac31858`.
+The unchanged frozen S3A focused evaluator passes 4/4 on Node 24.14.1 and exact
+Node 20.20.2. Its deterministic local manager build and attestation still bind
+the exact link-only manager ELF, unchanged ADR-0037 StateFS object, and sole
+StateFS entrypoint. Adding the focused evaluator to the unchanged 396-test
+explicit predecessor matrix passes 400/400 on both runtimes.
+
+The consumer imports no new effect authority, exposes no alternate entrypoint,
+and neither invokes nor claims the C-side StateFS implementation. All serialized
+authority remains false; physical facts and binding remain null; readiness
+remains exactly unavailable for reason
+`native-adapter-unavailable`. S3B leaves S0-S3A, ADR-0037, native C and adapter,
+package and lock, dependencies, submodules, product/runtime registries, and
+predecessor requirements bytes unchanged. Broader manager transition
+consumption and any physical or production closure remain later gated work.
 
 ## Nonclaims and authority boundary
 
