@@ -4,8 +4,6 @@
 use std::env::var;
 #[cfg(not(feature = "pkg-config"))]
 use std::env::{remove_var, set_var};
-#[cfg(not(feature = "pkg-config"))]
-use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(not(feature = "pkg-config"))]
@@ -224,21 +222,43 @@ fn build_lz4() {
     config.compile("lz4");
 }
 
+fn emit_rocksdb_build_metadata(
+    build_kind: &str,
+    rocksdb_version: &str,
+    source_revision: ::core::option::Option<&str>,
+) {
+    ::std::println!("cargo::metadata=build_kind={build_kind}");
+    ::std::println!("cargo::metadata=version={rocksdb_version}");
+    if let ::core::option::Option::Some(source_revision) = source_revision {
+        ::std::println!("cargo::metadata=source_revision={source_revision}");
+    }
+}
+
 #[cfg(not(feature = "pkg-config"))]
 fn main() {
-    let includes = [Path::new("rocksdb/include").to_path_buf()];
-    build_lz4();
-    build_rocksdb();
-    build_rocksdb_api(&includes);
-    bindgen_rocksdb_api(&includes);
+    crate::emit_rocksdb_build_metadata(
+        "vendored",
+        "11.1.2",
+        ::core::option::Option::Some("3b446089141659fad25328c5ea3e7ed283df46e4"),
+    );
+    let includes = [::std::path::Path::new("rocksdb/include").to_path_buf()];
+    crate::build_lz4();
+    crate::build_rocksdb();
+    crate::build_rocksdb_api(&includes);
+    crate::bindgen_rocksdb_api(&includes);
 }
 
 #[cfg(feature = "pkg-config")]
 fn main() {
-    let library = pkg_config::Config::new()
+    let library = ::pkg_config::Config::new()
         .atleast_version("9.10.0")
         .probe("rocksdb")
         .unwrap();
-    build_rocksdb_api(&library.include_paths);
-    bindgen_rocksdb_api(&library.include_paths);
+    ::core::assert!(
+        !library.version.is_empty(),
+        "pkg-config returned an empty RocksDB version"
+    );
+    crate::emit_rocksdb_build_metadata("system", &library.version, ::core::option::Option::None);
+    crate::build_rocksdb_api(&library.include_paths);
+    crate::bindgen_rocksdb_api(&library.include_paths);
 }

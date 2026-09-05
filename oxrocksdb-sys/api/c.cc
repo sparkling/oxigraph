@@ -1,6 +1,7 @@
 #include "c.h"
 
 #include <rocksdb/db.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/utilities/write_batch_with_index.h>
 
 #include <cstring>
@@ -61,6 +62,26 @@ static void SaveError(char** errptr, const Status& source) {
 }
 
 extern "C" {
+
+uint32_t oxrocksdb_ticker_user_bytes_written(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::BYTES_WRITTEN);
+}
+
+uint32_t oxrocksdb_ticker_stall_micros(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::STALL_MICROS);
+}
+
+uint32_t oxrocksdb_ticker_compact_read_bytes(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_READ_BYTES);
+}
+
+uint32_t oxrocksdb_ticker_compact_write_bytes(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::COMPACT_WRITE_BYTES);
+}
+
+uint32_t oxrocksdb_ticker_flush_write_bytes(void) {
+  return static_cast<uint32_t>(ROCKSDB_NAMESPACE::Tickers::FLUSH_WRITE_BYTES);
+}
 
 void oxrocksdb_ingest_external_files(
     rocksdb_t* db, const rocksdb_ingestexternalfilearg_t* list,
