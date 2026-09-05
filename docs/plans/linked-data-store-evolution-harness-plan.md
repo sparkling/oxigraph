@@ -3,7 +3,7 @@
 - Status: active execution plan; G2.1 implemented; unattended Dream Machine
   activation blocked
 - Date: 2026-08-24
-- Updated: 2026-09-03
+- Updated: 2026-09-05
 - Repository: `oxigraph/oxigraph` clone maintained by this fork
 - Previous programme baseline: `oxigraph/oxigraph`
   `8dcfb6b66cbb077bb2406379abb280d2471970d7`
@@ -68,6 +68,23 @@ production claim.
 Pre-existing adapter-conformance task `task-1788042251643-t1d67p` is cancelled
 because no replacement is selected; this decision releases no implementation
 task, and any future candidate requires a new explicitly scoped task.
+
+The engineering harness now has a version-additive, dormant GPT-6 Astra
+compatibility slice under Ruflo task `task-1788617481850-zd4asj`. Future
+schema-v2 Codex contracts may use `gpt-6-astra` only with an explicit `low`,
+`medium`, `high`, `xhigh`, or `max` effort. A pure planning helper recommends
+low for triage, medium for a bounded component, high for substantive
+implementation/review, and xhigh for cross-component concurrency, durability,
+or recovery; it recommends max only from caller-recorded unresolved xhigh and
+discriminating-evaluator inputs. Legacy task bytes, Sol
+receipts, and request identities are preserved. The capability is selected
+only after a native provider probe; the current registered v2 task remains
+Sol-routed and stops before provider execution. Direct deterministic tests
+remain the fitness authority. Quality learning across effort variants remains disabled
+until a receipt successor binds model-plus-effort, task class, evaluator
+identity, and prior escalation evidence as a candidate identity.
+This updates ADR-0017's existing routing decision and does not create a new ADR,
+activate G1.7, or change the product DAG.
 
 Use a thin Ruflo control plane to execute the existing product plan. Reuse the
 repository's Agentic-QE, Jena, W3C, mutation, and MetaHarness runners as the

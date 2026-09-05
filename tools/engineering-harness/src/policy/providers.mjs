@@ -9,6 +9,7 @@ import {
   workerOutputSchemaPath,
   workerOutputV2SchemaPath,
 } from "../native/worker-schema.mjs";
+import { validateAstraReasoningEffort } from "./astra-routing.mjs";
 
 export const PROVIDERS = Object.freeze(["codex", "claude"]);
 export const FORBIDDEN_ARGUMENTS = Object.freeze([
@@ -127,8 +128,17 @@ export function validateProviderInvocation({
   for (const forbidden of FORBIDDEN_ARGUMENTS) {
     if (
       args.some(
-        (argument) =>
-          argument === forbidden || argument.startsWith(`${forbidden}=`),
+        (argument, index) => {
+          if (
+            forbidden === "--config" &&
+            provider === "codex" &&
+            argument === "--config" &&
+            index === args.indexOf("--config")
+          ) {
+            return false;
+          }
+          return argument === forbidden || argument.startsWith(`${forbidden}=`);
+        },
       )
     ) {
       throw new Error(
@@ -152,8 +162,25 @@ export function validateProviderInvocation({
     );
   }
   if (provider === "codex") {
-    const model = args[8 + CODEX_DISABLED_FEATURES.length * 2];
+    const modelIndex = args.indexOf("--model");
+    const model = args[modelIndex + 1];
     validateModel(model, provider);
+    const configIndexes = args.flatMap((argument, index) =>
+      argument === "--config" ? [index] : [],
+    );
+    if (configIndexes.length > 1) {
+      throw new Error("codex invocation may select one reasoning effort");
+    }
+    const reasoningEffort =
+      configIndexes.length === 0
+        ? null
+        : /^model_reasoning_effort="([a-z]+)"$/u.exec(
+            args[configIndexes[0] + 1] ?? "",
+          )?.[1];
+    if (configIndexes.length === 1 && reasoningEffort === undefined) {
+      throw new Error("codex invocation contains an unsupported configuration");
+    }
+    validateAstraReasoningEffort(model, reasoningEffort);
     const suppliedSchemaPath = args[args.indexOf("--output-schema") + 1];
     if (
       suppliedSchemaPath !== workerOutputSchemaPath &&
@@ -175,6 +202,9 @@ export function validateProviderInvocation({
         ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
         "--model",
         model,
+        ...(reasoningEffort === null
+          ? []
+          : ["--config", `model_reasoning_effort="${reasoningEffort}"`]),
         "--json",
         "--color",
         "never",

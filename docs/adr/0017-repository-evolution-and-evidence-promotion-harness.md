@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-09-03
+- Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -83,6 +83,37 @@
   false. Pure and physical fixtures do not establish production control owner
   emission, crash/power-loss/filesystem-flush durability, historical
   receipt-last order from replay, or same-UID tamper resistance
+- GPT-6 Astra routing update: the native Codex boundary and schema-v2 task
+  contract now admit the exact model identifier `gpt-6-astra` only with one
+  explicit reasoning effort from `low`, `medium`, `high`, `xhigh`, or `max`,
+  matching the [official model reference](https://developers.openai.com/api/docs/models/gpt-6-astra).
+  A pure planning helper recommends `low` for short triage, `medium` for
+  bounded single-component changes, `high` for substantive implementation and
+  independent review, and `xhigh` for cross-component concurrency, durability,
+  and recovery work. It recommends `max` only when the caller records an
+  unresolved `xhigh` attempt and a concrete evaluator that can distinguish a
+  better result; this first compatibility slice does not authenticate that
+  evidence or activate any registered task. The prompt supplement makes
+  follow-through, concise structured output, routine
+  assumptions, stopping conditions, and proportional validation explicit, in
+  line with the [official migration guidance](https://developers.openai.com/api/docs/guides/latest-model).
+  Existing non-Astra contracts, prompts, and request identities remain
+  byte-compatible. Existing `gpt-5.6-sol` contracts and receipts remain
+  historical evidence and are not rewritten. Each Astra invocation binds its
+  effort into the canonical native argument shape and schema-v2 request
+  identity. A native Codex 0.153.4 probe accepted the Astra model/`max` request,
+  and the implemented `runNativeWorker` path returned one schema-valid
+  `gpt-6-astra`/`low` review result through the attested executable;
+  the in-process collaboration registry did not expose Astra, so there is no
+  substituted model or provider fallback. Capability probing is still required
+  before a future task epoch selects Astra, but model-specific probe evidence
+  is not yet part of the doctor result or task contract. Until an additive
+  receipt version makes model-plus-effort a first-class quality-candidate
+  identity, Astra executions
+  may produce direct evaluator evidence but must not train or promote the
+  quality router across effort variants. This is an implementation-compatible
+  extension of this ADR, not a new architectural decision, and it grants no
+  G1.7 qualification or product-promotion authority
 - G1.7 containment-owner update: commit `f04b9bc7` implements the dormant,
   authority-free containment contract. It freezes the one reviewed host
   locator at

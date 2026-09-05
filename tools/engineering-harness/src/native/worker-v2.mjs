@@ -29,6 +29,10 @@ import { workerOutputV2SchemaPath } from "./worker-schema.mjs";
 import { claudeInvocation } from "./claude.mjs";
 import { codexInvocation } from "./codex.mjs";
 import { runBoundedProcessBytes } from "./process.mjs";
+import {
+  astraWorkerPromptGuidance,
+  validateAstraReasoningEffort,
+} from "../policy/astra-routing.mjs";
 
 const MAX_TASK_BYTES = 2_097_152;
 const MAX_CONTRACT_BYTES = 4 * 1024 * 1024;
@@ -438,7 +442,7 @@ function deepFreeze(value, seen = new Set()) {
   return Object.freeze(value);
 }
 
-function routingModel(contract, provider) {
+function routingSelection(contract, provider) {
   if (provider !== "codex" && provider !== "claude") {
     fail(
       "ERR_RECONSTRUCTION",
@@ -454,7 +458,23 @@ function routingModel(contract, provider) {
       "v2 worker provider/model is not contract-bound",
     );
   }
-  return matches[0].model;
+  let reasoningEffort;
+  try {
+    reasoningEffort = validateAstraReasoningEffort(
+      matches[0].model,
+      matches[0].reasoningEffort ?? null,
+    );
+    if (provider !== "codex" && reasoningEffort !== null) {
+      fail(
+        "ERR_RECONSTRUCTION",
+        "reasoning effort is supported only for native Codex",
+      );
+    }
+  } catch (error) {
+    if (isTaskV2Failure(error)) throw error;
+    fail("ERR_RECONSTRUCTION", error);
+  }
+  return Object.freeze({ model: matches[0].model, reasoningEffort });
 }
 
 function captureAbortSignal(value) {
@@ -587,7 +607,8 @@ function createRequestWithAssertion(input, assertContext, requestStore) {
       );
     }
     const provider = captured.provider;
-    const model = routingModel(sealed.contract, provider);
+    const selection = routingSelection(sealed.contract, provider);
+    const { model, reasoningEffort } = selection;
     const signal = captureAbortSignal(hasSignal ? captured.signal : undefined);
     const task = deepFreeze({
       schemaVersion: 2,
@@ -602,12 +623,16 @@ function createRequestWithAssertion(input, assertContext, requestStore) {
       fail("ERR_RECONSTRUCTION", "v2 worker task exceeds its byte ceiling");
     }
     const taskSha256 = sha256(taskBytes);
+    const routingIdentity =
+      reasoningEffort === null
+        ? `${provider}\0${model}\0${role}`
+        : `${provider}\0${model}\0${reasoningEffort}\0${role}`;
     const requestSha256 = sha256(
       Buffer.concat([
         REQUEST_DOMAIN,
         Buffer.from(sealed.contractSha256, "ascii"),
         Buffer.from(taskSha256, "ascii"),
-        Buffer.from(`${provider}\0${model}\0${role}`, "utf8"),
+        Buffer.from(routingIdentity, "utf8"),
       ]),
     );
     const request = Object.freeze({ schema: REQUEST_SCHEMA, requestSha256 });
@@ -619,6 +644,7 @@ function createRequestWithAssertion(input, assertContext, requestStore) {
         contextTaskSha256: sealed.taskSha256,
         provider,
         model,
+        reasoningEffort,
         role,
         requestSha256,
         taskJson,
@@ -655,6 +681,7 @@ function promptFor(authority) {
   } else {
     lines.push("Return patch=null and creations=[].");
   }
+  lines.push(...astraWorkerPromptGuidance(authority.model));
   lines.push("Sealed task request:", authority.taskJson);
   return lines.join("\n");
 }
@@ -1314,6 +1341,7 @@ async function runRequestCore(
         ? codexInvocation({
             executionRoot: outputRoot,
             model: authority.model,
+            reasoningEffort: authority.reasoningEffort,
             prompt,
             workerSchemaVersion: 2,
           })

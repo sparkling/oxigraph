@@ -8,6 +8,37 @@ The package requests current upstream `latest` dist-tags. Its committed npm
 lock binds exact registry tarballs and SHA-512 integrity, and `.npmrc` disables
 lifecycle scripts. Runtime publication and OpenRouter transport are forbidden.
 
+## GPT-6 Astra routing
+
+Schema-v2 contracts may select native Codex model `gpt-6-astra` with exactly
+one explicit effort: `low`, `medium`, `high`, `xhigh`, or `max`. A pure policy
+helper recommends `low` for short triage, `medium` for a bounded component,
+`high` for substantive implementation or independent review, and `xhigh` for
+cross-component concurrency, durability, or recovery work. It recommends
+`max` only when its caller records an unresolved `xhigh` attempt and a concrete
+evaluator that can distinguish the next result; this compatibility slice does
+not authenticate that evidence or activate a registered task. Astra prompts
+explicitly require follow-through, concise structured output, routine
+assumptions, genuine stopping conditions, and proportional validation.
+
+The effort is bound as the one admitted Codex `--config` value and into the
+schema-v2 request identity. Non-Astra contracts admit no effort field and keep
+their prior request identity, so committed `gpt-5.6-sol` evidence remains
+replayable. Capability probing is required before selection, and no provider or
+model fallback is permitted. Direct task evaluators remain authoritative.
+Until a successor application receipt records model-plus-effort as a distinct
+quality candidate, Astra results are excluded from cross-effort Router learning
+and promotion.
+
+The 2026-09-05 host probe verifies an attested standalone Codex 0.153.4
+executable, and the `runNativeWorker` path returned one schema-valid Astra/low
+review result. A separate direct probe observed the provider reject Codex 0.151
+as too old for Astra; that observation is not a harness version rule. A future
+activation slice must bind model-capability evidence, task class, evaluator
+identity, and any prior xhigh result into a contract/receipt successor. The
+current registered schema-v2 task stays Sol-routed and unavailable before the
+provider boundary.
+
 Native provider processes use an attested role-specific timeout policy. The
 architecture, critique, and review roles retain the ten-minute ceiling;
 implementation and repair receive a bounded twenty minutes because patch

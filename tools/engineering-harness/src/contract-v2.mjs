@@ -28,6 +28,7 @@ import {
   withTaskV2FailureBoundary,
 } from "./policy/task-v2-failures.mjs";
 import { canonicalJson } from "./routing/features.mjs";
+import { validateAstraReasoningEffort } from "./policy/astra-routing.mjs";
 
 const TOP_LEVEL_KEYS = Object.freeze([
   "schemaVersion",
@@ -345,9 +346,23 @@ function validateRouting(routing) {
     );
   }
   for (const [index, expectedProvider] of ["codex", "claude"].entries()) {
+    let hasReasoningEffort;
+    try {
+      hasReasoningEffort = Object.hasOwn(
+        providers[index],
+        "reasoningEffort",
+      );
+    } catch (error) {
+      fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
+    }
     const provider = exactRecord(
       providers[index],
-      ["provider", "transport", "model"],
+      [
+        "provider",
+        "transport",
+        "model",
+        ...(hasReasoningEffort ? ["reasoningEffort"] : []),
+      ],
       `routing.providers[${index}]`,
     );
     if (
@@ -363,6 +378,24 @@ function validateRouting(routing) {
         "ERR_CONTRACT_SCHEMA_OR_KEYS",
         "routing provider binding is invalid",
       );
+    }
+    try {
+      const effort = validateAstraReasoningEffort(
+        provider.model,
+        hasReasoningEffort ? provider.reasoningEffort : null,
+      );
+      if (
+        hasReasoningEffort &&
+        (expectedProvider !== "codex" || effort === null)
+      ) {
+        fail(
+          "ERR_CONTRACT_SCHEMA_OR_KEYS",
+          "reasoning effort is supported only for explicit native Codex Astra routing",
+        );
+      }
+    } catch (error) {
+      if (isTaskV2Failure(error)) throw error;
+      fail("ERR_CONTRACT_SCHEMA_OR_KEYS", error);
     }
   }
 }

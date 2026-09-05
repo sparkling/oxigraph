@@ -5,7 +5,7 @@
   outcomes/lookup and G1.4b simulated storage-call fault safety; G1.7
   qualification and G2.2-G2.3c remain open
 - Date: 2026-08-24
-- Updated: 2026-09-03
+- Updated: 2026-09-05
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Current audited upstream head: `786d00170224cb5589b03dc5283b1c25df8c0357`
@@ -89,6 +89,18 @@ SPARQL, persistence, or protocol source changed.
 The earlier two-parent merge `e9d2db1b`, with ordered parents
 `b295ea80...`/`ec68e3dd...`, remains the last product-semantic upstream
 checkpoint and preserves the documented ADR-0014 divergence.
+
+Ruflo task `task-1788617481850-zd4asj` adds a dormant GPT-6 Astra
+compatibility option to the native Codex engineering-harness boundary. A pure
+planning helper recommends `low` for triage, `medium` for bounded changes,
+`high` for substantive implementation/review, and `xhigh` for cross-component
+concurrency, durability, or recovery; it recommends `max` only from recorded
+unresolved xhigh and discriminating-evaluator inputs. Existing Sol evidence
+is not rewritten, provider fallback remains forbidden, application tests remain
+authoritative, and Router learning across Astra efforts waits for a receipt
+successor that binds model-plus-effort and escalation evidence. The current
+registered v2 task remains Sol-routed and unavailable before provider work, so
+this change does not alter the feature DAG or close G1.7/G2.2.
 
 ADR-0042 now records the evidence-backed persistence-backend disposition:
 RocksDB remains the sole production-intended persistent `Store` backend, and

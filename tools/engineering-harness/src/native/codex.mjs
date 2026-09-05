@@ -6,13 +6,16 @@ import {
 import { nativeChildEnvironment } from "./environment.mjs";
 import { resolveNativeExecutable } from "./executable.mjs";
 import { workerOutputSchemaPathForVersion } from "./worker-schema.mjs";
+import { validateAstraReasoningEffort } from "../policy/astra-routing.mjs";
 
 export function codexInvocation({
   executionRoot,
   model,
   prompt,
+  reasoningEffort = null,
   workerSchemaVersion = 1,
 }) {
+  const validatedEffort = validateAstraReasoningEffort(model, reasoningEffort);
   const environment = nativeChildEnvironment();
   const attestation = resolveNativeExecutable("codex");
   const args = [
@@ -26,6 +29,9 @@ export function codexInvocation({
     ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     "--model",
     model,
+    ...(validatedEffort === null
+      ? []
+      : ["--config", `model_reasoning_effort="${validatedEffort}"`]),
     "--json",
     "--color",
     "never",

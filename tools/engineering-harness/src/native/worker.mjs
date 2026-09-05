@@ -16,6 +16,10 @@ import {
   validateCandidatePatch,
   validateCandidatePatchSize,
 } from "../policy/paths.mjs";
+import {
+  astraWorkerPromptGuidance,
+  validateAstraReasoningEffort,
+} from "../policy/astra-routing.mjs";
 
 const MAX_TASK_BYTES = 2_097_152;
 const MAX_OUTPUT_BYTES = 1_048_576;
@@ -87,7 +91,7 @@ function cancellationError() {
   return error;
 }
 
-function promptFor({ role, encodedTask }) {
+function promptFor({ role, encodedTask, model }) {
   const lines = [
     "You are a bounded Oxigraph engineering worker.",
     `Role: ${role}.`,
@@ -101,6 +105,7 @@ function promptFor({ role, encodedTask }) {
       "Do not wrap the patch in Markdown fences, add prose or `*** Begin Patch` markers, use timestamps, elide unchanged hunk lines, or include a trailing unmarked blank line before another hunk/file.",
     );
   }
+  lines.push(...astraWorkerPromptGuidance(model));
   lines.push("Task contract:", encodedTask);
   return lines.join("\n");
 }
@@ -138,6 +143,7 @@ export async function runNativeWorker({
   provider,
   role,
   model,
+  reasoningEffort = null,
   task,
   contract,
   timeoutMs = 120_000,
@@ -154,6 +160,10 @@ export async function runNativeWorker({
   if (typeof model !== "string" || model.length === 0 || model.length > 256) {
     throw new Error("native worker model is invalid");
   }
+  if (provider !== "codex" && reasoningEffort !== null) {
+    throw new Error("reasoning effort is supported only by the native Codex worker");
+  }
+  const validatedEffort = validateAstraReasoningEffort(model, reasoningEffort);
   let encodedTask;
   try {
     encodedTask = JSON.stringify(task);
@@ -195,10 +205,15 @@ export async function runNativeWorker({
   const outputRoot = await mkdtemp(join(tmpdir(), "oxigraph-worker-"));
   try {
     const outputPath = join(outputRoot, "last-message.json");
-    const prompt = promptFor({ role, encodedTask });
+    const prompt = promptFor({ role, encodedTask, model });
     const invocation =
       provider === "codex"
-        ? codexInvocation({ executionRoot: outputRoot, model, prompt })
+        ? codexInvocation({
+            executionRoot: outputRoot,
+            model,
+            reasoningEffort: validatedEffort,
+            prompt,
+          })
         : claudeInvocation({ executionRoot: outputRoot, model, prompt });
     const invocationEvidence = Object.freeze({
       executable: invocation.executable,

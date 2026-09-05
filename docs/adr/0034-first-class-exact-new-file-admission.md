@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-28
-- Updated: 2026-09-03
+- Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented and frozen as a separate dormant,
   non-product schema-v2 admission surface; activation remains unavailable by
@@ -65,6 +65,16 @@
   `58a9207303ab541552fa3b8342ad61bc24a3cb8b9b97a6d8236a58b3440489ad`;
   its canonical SHA-256 is
   `f345886f86725dbedf4a57b1abfd9e66d5153ae7d0c86e79bbe251e71bb22d08`.
+  The shared schema-v2 validator and worker now have a version-additive,
+  dormant Astra compatibility field for future contract instances: only the
+  native Codex model `gpt-6-astra` may carry `reasoningEffort`, and its value
+  must be one of `low`, `medium`, `high`, `xhigh`, or `max`; missing, null, or
+  undefined values reject. Non-Astra Codex and Claude records forbid the field
+  entirely, including null or undefined. The committed
+  exact-create contract remains byte-identical, keeps its Sol routing and the
+  raw/canonical identities above, and selects no Astra route. The early gate
+  remains first and unavailable, so this compatibility extension cannot reach
+  a provider, issue a receipt, activate G2.2, or mint authority.
   Commit `99f94fac` freezes a separate three-record dormant command-literal
   registry and exact bounded resolver. Commit `f6897d34` implements exact
   application-receipt v7 construction, verification, and private test-only

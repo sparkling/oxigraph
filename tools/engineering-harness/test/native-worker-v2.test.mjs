@@ -83,6 +83,25 @@ function contract(objectFormat = "sha1", overrides = {}) {
   });
 }
 
+function contractWithAstra(reasoningEffort) {
+  const current = contract();
+  return Object.freeze({
+    ...current,
+    routing: Object.freeze({
+      ...current.routing,
+      providers: Object.freeze([
+        Object.freeze({
+          provider: "codex",
+          transport: "native",
+          model: "gpt-6-astra",
+          reasoningEffort,
+        }),
+        current.routing.providers[1],
+      ]),
+    }),
+  });
+}
+
 function sealedContext(currentContract, contractBytes = CONTRACT_BYTES) {
   const taskBytes = Buffer.from(JSON.stringify(CONTEXT), "utf8");
   return Object.freeze({
@@ -292,6 +311,17 @@ test("v2 Codex request is opaque, one-shot, contract-routed, and assembles exact
   assert.equal(result.model, "gpt-5.6-sol");
   assert.equal(result.invocation.requestSha256, sealedRequest.requestSha256);
   assert.equal(
+    sealedRequest.requestSha256,
+    sha256(
+      Buffer.concat([
+        Buffer.from("oxigraph.engineering-native-worker-request/v2\0", "ascii"),
+        Buffer.from(result.invocation.contractSha256, "ascii"),
+        Buffer.from(result.invocation.taskSha256, "ascii"),
+        Buffer.from("codex\0gpt-5.6-sol\0implementation", "utf8"),
+      ]),
+    ),
+  );
+  assert.equal(
     result.invocation.outputSchemaSha256,
     nativeWorkerV2OutputSchemaSha256,
   );
@@ -321,6 +351,41 @@ test("v2 Codex request is opaque, one-shot, contract-routed, and assembles exact
     terminalFailure("ERR_RECONSTRUCTION"),
   );
   assert.equal(processCalls, 1);
+});
+
+test("v2 Astra request binds its explicit effort and focused worker guidance", async () => {
+  let observedPrompt;
+  const currentContract = contractWithAstra("xhigh");
+  const currentController = controller({
+    currentContract,
+    processRunner: async ({ args, stdin }) => {
+      observedPrompt = stdin.toString("utf8");
+      assert.equal(args[args.indexOf("--model") + 1], "gpt-6-astra");
+      assert.equal(
+        args[args.indexOf("--config") + 1],
+        'model_reasoning_effort="xhigh"',
+      );
+      const outputPath = args[args.indexOf("--output-last-message") + 1];
+      await writeFile(outputPath, JSON.stringify(output()), "utf8");
+      return completed();
+    },
+  });
+  const sealedRequest = request(currentController);
+  const result = await currentController.run(sealedRequest);
+  assert.equal(result.model, "gpt-6-astra");
+  assert.equal(
+    sealedRequest.requestSha256,
+    sha256(
+      Buffer.concat([
+        Buffer.from("oxigraph.engineering-native-worker-request/v2\0", "ascii"),
+        Buffer.from(result.invocation.contractSha256, "ascii"),
+        Buffer.from(result.invocation.taskSha256, "ascii"),
+        Buffer.from("codex\0gpt-6-astra\0xhigh\0implementation", "utf8"),
+      ]),
+    ),
+  );
+  assert.match(observedPrompt, /continue without asking questions/u);
+  assert.match(observedPrompt, /structured response concise/u);
 });
 
 test("v2 worker preserves raw mixed modifications and derives SHA-1/SHA-256 creation identities", async () => {

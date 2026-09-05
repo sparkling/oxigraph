@@ -28,6 +28,17 @@ function modelMap(contract) {
   return Object.freeze(result);
 }
 
+function reasoningEffortMap(contract) {
+  return Object.freeze(
+    Object.fromEntries(
+      contract.routing.providers.map((declaration) => [
+        declaration.provider,
+        declaration.reasoningEffort ?? null,
+      ]),
+    ),
+  );
+}
+
 function boundedOutcome(outcome) {
   if (outcome === null || typeof outcome !== "object") {
     throw new Error("native worker did not return process evidence");
@@ -163,6 +174,7 @@ function strategyRoles(intent) {
 export class NativeWorkerPool {
   #contract;
   #models;
+  #reasoningEfforts;
   #workerRunner;
   #recoveries;
   #evidence = [];
@@ -173,6 +185,7 @@ export class NativeWorkerPool {
     }
     this.#contract = contract;
     this.#models = modelMap(contract);
+    this.#reasoningEfforts = reasoningEffortMap(contract);
     this.#workerRunner = workerRunner;
     this.#recoveries = new Map(
       PROVIDERS.map((provider) => [
@@ -189,6 +202,10 @@ export class NativeWorkerPool {
 
   get models() {
     return this.#models;
+  }
+
+  get reasoningEfforts() {
+    return this.#reasoningEfforts;
   }
 
   agentsFor({ intent, providersByRole, taskFactory, signal, executionId = null }) {
@@ -212,6 +229,7 @@ export class NativeWorkerPool {
       }
       const id = `${provider}:${role}`;
       const model = this.#models[provider];
+      const reasoningEffort = this.#reasoningEfforts[provider];
       selectedAgents.push(
         Object.freeze({
           id,
@@ -252,6 +270,7 @@ export class NativeWorkerPool {
                 provider,
                 role,
                 model,
+                reasoningEffort,
                 task,
                 contract: this.#contract,
                 timeoutMs: nativeWorkerTimeoutMs(

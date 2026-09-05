@@ -487,6 +487,60 @@ test("strict v2 schema and repository verification accept exact A and M fixtures
   }
 });
 
+test("schema-v2 routing admits explicit Astra efforts without changing legacy provider records", async (t) => {
+  const { contract } = await createFixture(t);
+  assert.equal(validateTaskContractV2(contract), contract);
+
+  for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max"]) {
+    const astra = changed(contract, (value) => {
+      value.routing.providers[0] = {
+        provider: "codex",
+        transport: "native",
+        model: "gpt-6-astra",
+        reasoningEffort,
+      };
+    });
+    assert.equal(validateTaskContractV2(astra), astra);
+  }
+
+  for (const mutate of [
+    (value) => {
+      value.routing.providers[0].model = "gpt-6-astra";
+    },
+    (value) => {
+      value.routing.providers[0].reasoningEffort = "high";
+    },
+    (value) => {
+      value.routing.providers[0].reasoningEffort = null;
+    },
+    (value) => {
+      value.routing.providers[0].reasoningEffort = undefined;
+    },
+    (value) => {
+      value.routing.providers[0] = {
+        provider: "codex",
+        transport: "native",
+        model: "gpt-6-astra",
+        reasoningEffort: "minimal",
+      };
+    },
+    (value) => {
+      value.routing.providers[1].reasoningEffort = "high";
+    },
+    (value) => {
+      value.routing.providers[1].reasoningEffort = null;
+    },
+    (value) => {
+      value.routing.providers[1].reasoningEffort = undefined;
+    },
+  ]) {
+    assert.throws(
+      () => validateTaskContractV2(changed(contract, mutate)),
+      failureCode("ERR_CONTRACT_SCHEMA_OR_KEYS"),
+    );
+  }
+});
+
 test("raw v2 contract parsing owns exact bytes and binds raw and canonical identities", async (t) => {
   const { contract } = await createFixture(t);
   const raw = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`, "utf8");

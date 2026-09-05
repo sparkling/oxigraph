@@ -144,3 +144,71 @@ test("provider policy rejects cross-provider and authority injection", () => {
     rmSync(executionRoot, { recursive: true, force: true });
   }
 });
+
+test("native Codex invocation binds each Astra effort in one canonical configuration", () => {
+  const executionRoot = mkdtempSync(join(tmpdir(), "oxigraph-provider-test-"));
+  try {
+    for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max"]) {
+      const invocation = codexInvocation({
+        executionRoot,
+        model: "gpt-6-astra",
+        reasoningEffort,
+        prompt: "inspect",
+      });
+      assert.equal(validateProviderInvocation(invocation), true);
+      assert.equal(
+        invocation.args[invocation.args.indexOf("--config") + 1],
+        `model_reasoning_effort="${reasoningEffort}"`,
+      );
+    }
+
+    for (const reasoningEffort of [null, "none", "minimal", "extreme"]) {
+      assert.throws(
+        () =>
+          codexInvocation({
+            executionRoot,
+            model: "gpt-6-astra",
+            reasoningEffort,
+            prompt: "inspect",
+          }),
+        /explicit reasoning effort|must be low/u,
+      );
+    }
+    assert.throws(
+      () =>
+        codexInvocation({
+          executionRoot,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          prompt: "inspect",
+        }),
+      /requires gpt-6-astra/u,
+    );
+
+    const canonical = codexInvocation({
+      executionRoot,
+      model: "gpt-6-astra",
+      reasoningEffort: "high",
+      prompt: "inspect",
+    });
+    const configIndex = canonical.args.indexOf("--config");
+    assert.throws(
+      () =>
+        validateProviderInvocation({
+          ...canonical,
+          args: canonical.args.with(configIndex + 1, "model_reasoning_effort=high"),
+        }),
+      /unsupported configuration|canonical/u,
+    );
+    assert.throws(
+      () =>
+        validateProviderInvocation({
+          ...canonical,
+          args: [...canonical.args, "--config", 'model_reasoning_effort="max"'],
+        }),
+      /prohibited argument|may select one/u,
+    );
+  } finally {
+    rmSync(executionRoot, { recursive: true, force: true });
+  }
+});

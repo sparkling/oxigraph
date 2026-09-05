@@ -107,6 +107,47 @@ test("persistent native pool freezes providers and records non-secret invocation
   assert.equal(pool.recoverySnapshot().codex.state, "closed");
 });
 
+test("native pool carries the contract-bound Astra effort to every selected Codex worker", async () => {
+  const calls = [];
+  const astraContract = {
+    ...contract,
+    routing: {
+      providers: [
+        {
+          provider: "codex",
+          transport: "native",
+          model: "gpt-6-astra",
+          reasoningEffort: "xhigh",
+        },
+        { provider: "claude", transport: "native", model: "claude-model" },
+      ],
+    },
+  };
+  const pool = new NativeWorkerPool({
+    contract: astraContract,
+    workerRunner: async (request) => {
+      calls.push(request);
+      return result(request);
+    },
+  });
+  const selected = pool.agentsFor({
+    intent: "oxigraph-review",
+    providersByRole: { review: "codex" },
+    taskFactory: ({ role }) => ({ role }),
+  });
+  await selected.selectedAgents[0].run({});
+  assert.deepEqual(pool.models, {
+    codex: "gpt-6-astra",
+    claude: "claude-model",
+  });
+  assert.deepEqual(pool.reasoningEfforts, {
+    codex: "xhigh",
+    claude: null,
+  });
+  assert.equal(calls[0].model, "gpt-6-astra");
+  assert.equal(calls[0].reasoningEffort, "xhigh");
+});
+
 test("native pool applies explicit role ceilings without changing provider identity", async () => {
   const calls = [];
   const productionContract = {
