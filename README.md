@@ -317,9 +317,13 @@ version-additive requirements, build-owner-v3, and product-owner-v4 path. It is
 Proposed and depends on the exact ADR-0037 through ADR-0040 physical stack; it
 does not enable Cargo execution or change any G1.7 authority value. Its
 documentation-only S0 architecture freeze is complete. Local ADR-0036 C21 and
-programme-umbrella closure makes S1 `task-1788403485637-t9wn40`
-dependency-eligible only; it remains pending at zero progress and unstarted,
-and every later source slice keeps its own predecessor and authority gates.
+programme-umbrella closure made S1 `task-1788403485637-t9wn40` eligible; S1's
+source-absent evaluator and S2's authority-null requirements contract
+`task-1788403489170-xl71j9` are now complete. Current graph-V4 umbrella
+`task-1788589424013-hx1i83` remains pending. Its S3 evaluator
+`task-1788589440120-iaem8f` waits only for this ADR-0038 S3 V3 closure after
+completed S2 and ADR-0037 S7; every later source or host-positive slice keeps
+its own predecessor and authority gates.
 [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the separate evidence-backed decision to keep RocksDB as the only
 production-intended persistent `Store` backend. It was Accepted on 2026-09-05:
@@ -541,10 +545,10 @@ exact-create scripts, with no dependency, engine, or lockfile change. C21 task
 `task-1788042241332-xafq11` are complete for the local documentation/ledger
 boundary at commit `c01b3c6a`; both completed Ruflo rows were read back after
 that commit. The immutable pre-transition closure receipt is
-`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03`. ADR-0037 S0
-`task-1788205371168-e6caq3` and ADR-0041 S1
-`task-1788403485637-t9wn40` are thereby dependency-eligible only, pending at
-zero progress, and unstarted. External Gist and main publication are transferred
+`programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03`. At that
+historical checkpoint, ADR-0037 S0 `task-1788205371168-e6caq3` and ADR-0041 S1
+`task-1788403485637-t9wn40` were dependency-eligible, pending, and unstarted.
+Replacement ADR-0037 S7 and ADR-0041 S1/S2 are now complete. External Gist and main publication are transferred
 to pending task `task-1788409495130-6ikk41` because pinned N3 commit
 `8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
 and a fresh repository cannot fetch it by object ID (`not our ref`);
@@ -568,8 +572,16 @@ The remaining Proposed containment decisions now have one-way ownership.
 owns the sole statefs policy/oracle and exact separately attested bounded
 statefs-syscalls object;
 [ADR-0038](./docs/adr/0038-native-containment-manager-guardian-and-trampoline.md)
-must link that object unchanged and owns only manager/guardian/trampoline
-process/cgroup/exec mechanics. ADR-0034 owns dormant application receipt v7,
+links that object unchanged and owns only manager/guardian/trampoline
+process/cgroup/exec mechanics. ADR-0038's bounded authority-null S0-S3B
+repository inputs are integrated through exact commit
+`37a02bb28b9dcd2ed647b6be78371748d9e804be`; the exact 23-file matrix passes
+400/400 on Node 24.14.1 and exact Node 20.20.2. That closure does not implement
+non-StateFS manager transitions, native-manager dispatch into ADR-0037's C
+entrypoint, physical process/cgroup integration, or qualification/activation.
+ADR-0038 remains Proposed and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`. ADR-0034 owns
+dormant application receipt v7,
 schema-v2 reconstruction/dispatch/profile literals, and the early exact
 `executionGate: "native-containment-qualification-v1"` for
 `contractSchemaVersion: 2`. Its early gate, separate dormant profile, exact
@@ -741,8 +753,9 @@ The ADRs explain the principal boundaries:
   classes, and zero survivors. C18 contract, C19 compatibility, and C20
   security/mutation review are complete with APPROVE verdicts and zero blocking
   findings. C21 and its programme umbrella are complete for the local
-  documentation/ledger boundary at commit `c01b3c6a`; ADR-0037 S0 and ADR-0041
-  S1 are dependency-eligible but remain pending at zero progress and unstarted.
+  documentation/ledger boundary at commit `c01b3c6a`. At that historical
+  checkpoint, ADR-0037 S0 and ADR-0041 S1 were dependency-eligible, pending,
+  and unstarted; replacement ADR-0037 S7 and ADR-0041 S1/S2 are now complete.
   Gist update and main push are transferred to pending task
   `task-1788409495130-6ikk41` and remain
   externally held while selected N3 submodule commit

@@ -140,7 +140,7 @@ matching ELF is not compiler causality or proof that the artifact executed.
 
 ADR-0037 exclusively owns
 `containment-guardian-statefs-syscalls-v1.h`, its C source, request/result
-protocol, six-operation vocabulary, object attestation, and statefs policy.
+protocol, eight-operation vocabulary, object attestation, and statefs policy.
 This ADR neither regenerates nor forks those bytes. The manager build consumes
 the exact attested link-time object, binds its digest and unchanged exported
 entrypoint into the manager attestation, and proves that the final ELF contains
@@ -151,25 +151,62 @@ adding another state-filesystem syscall path requires ADR-0037 review first.
 
 ## Owned files
 
-This ADR owns these new sources:
+This ADR owns exactly the following S0-S3B implementation, evaluator, and
+fixture paths in addition to this living record.
+
+S0 native sources and attestations:
 
 - `tools/engineering-harness/src/candidate/containment-guardian-manager-v1.c`;
 - `tools/engineering-harness/src/candidate/containment-guardian-v1.c`;
 - `tools/engineering-harness/src/candidate/containment-guardian-trampoline-v1.c`;
-- corresponding `containment-guardian-manager-attestation-v1.mjs`,
-  `containment-guardian-attestation-v1.mjs`, and
-  `containment-guardian-trampoline-attestation-v1.mjs`; and
-- their shared authority-null
-  `containment-guardian-native-attestation-common-v1.mjs` verifier; and
-- `tools/engineering-harness/src/candidate/containment-guardian-native-adapter-v1.mjs`;
+- `tools/engineering-harness/src/candidate/containment-guardian-manager-attestation-v1.mjs`;
+- `tools/engineering-harness/src/candidate/containment-guardian-attestation-v1.mjs`;
+- `tools/engineering-harness/src/candidate/containment-guardian-trampoline-attestation-v1.mjs`;
   and
+- `tools/engineering-harness/src/candidate/containment-guardian-native-attestation-common-v1.mjs`.
+
+S0 evaluators and fixtures:
+
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s0.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s0-attestation.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s0-faults.test.mjs`;
+- `tools/engineering-harness/test/support/candidate-containment-guardian-native-v1-fixture.mjs`;
+- `tools/engineering-harness/test/support/candidate-containment-guardian-native-v1-driver.c`;
+  and
+- `tools/engineering-harness/test/support/candidate-containment-guardian-trampoline-target-v1.c`.
+
+S1 source, evaluators, and fixtures:
+
+- `tools/engineering-harness/src/candidate/containment-guardian-native-adapter-v1.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s1.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s1-faults.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s1-native.test.mjs`;
+- `tools/engineering-harness/test/support/candidate-containment-guardian-native-s1-fixture.mjs`;
+  and
+- `tools/engineering-harness/test/support/candidate-containment-guardian-native-s1-driver.c`.
+
+S2 source, evaluators, and fixture:
+
+- `tools/engineering-harness/src/candidate/containment-guardian-recovery-executor-v1.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-recovery-executor-s2.test.mjs`;
+- `tools/engineering-harness/test/candidate-containment-guardian-recovery-executor-s2-faults.test.mjs`;
+  and
+- `tools/engineering-harness/test/support/candidate-containment-guardian-recovery-executor-s2-fixture.mjs`.
+
+S3A evaluator and fixture:
+
+- `tools/engineering-harness/test/candidate-containment-guardian-native-s3a-red.test.mjs`;
+  and
+- `tools/engineering-harness/test/support/candidate-containment-guardian-native-s3a-fixture.mjs`.
+
+S3B source:
+
 - `tools/engineering-harness/src/candidate/containment-guardian-manager-transition-consumer-v1.mjs`.
 
-It also owns matching candidate native fixture, attestation, manager, guardian,
-trampoline, and fault tests under `tools/engineering-harness/test/`. It does not
-own or modify ADR-0037's statefs-syscalls header, C source, attestation, or
-tests, or the frozen supervisor-v2, supervisor preflight-v4, bootstrap-v3,
-journal, lifetime, or recovery sources.
+This ADR does not own or modify ADR-0037's StateFS header, C source,
+attestation, candidate modules, evaluators, or fixtures, nor the frozen
+supervisor-v2, supervisor preflight-v4, bootstrap-v3, journal, lifetime, or
+recovery sources.
 
 ### 2026-09-05 S0 authority-null native candidate
 
@@ -498,6 +535,93 @@ remains exactly unavailable for reason
 package and lock, dependencies, submodules, product/runtime registries, and
 predecessor requirements bytes unchanged. Broader manager transition
 consumption and any physical or production closure remain later gated work.
+
+### 2026-09-05 S3 integrated repository-input closure
+
+Parent task `task-1788589313411-vm7pg0` reconciles the verified S0-S3B
+repository evidence after S3B integration at exact commit
+`37a02bb28b9dcd2ed647b6be78371748d9e804be`. This is a documentation-only
+closure of those bounded, authority-null inputs. ADR-0038 remains Proposed;
+binding and every physical fact remain `null`, every authority remains `false`,
+and readiness remains exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
+The exact 23-file non-G1.7 matrix is the S0-S2/ADR-0037 predecessor set plus
+the frozen S3A evaluator:
+
+```text
+test/candidate-containment-guardian-journal-v1.test.mjs
+test/candidate-containment-guardian-journal-v2.test.mjs
+test/candidate-containment-guardian-control-v1.test.mjs
+test/candidate-containment-guardian-control-v1-adversarial.test.mjs
+test/candidate-containment-guardian-lifetime-v1.test.mjs
+test/candidate-containment-guardian-lifetime-v1-adversarial.test.mjs
+test/candidate-containment-guardian-lifetime-v1-security-adversarial.test.mjs
+test/candidate-containment-guardian-recovery-v1.test.mjs
+test/candidate-containment-guardian-recovery-v1-exactrecord-seam.test.mjs
+test/candidate-containment-guardian-statefs-v1.test.mjs
+test/candidate-containment-guardian-statefs-v1-faults.test.mjs
+test/candidate-containment-guardian-statefs-syscalls-v1.test.mjs
+test/candidate-containment-guardian-statefs-syscalls-v1-faults.test.mjs
+test/candidate-containment-guardian-manager-protocol-v1.test.mjs
+test/candidate-containment-guardian-native-s0.test.mjs
+test/candidate-containment-guardian-native-s0-attestation.test.mjs
+test/candidate-containment-guardian-native-s0-faults.test.mjs
+test/candidate-containment-guardian-native-s1.test.mjs
+test/candidate-containment-guardian-native-s1-faults.test.mjs
+test/candidate-containment-guardian-native-s1-native.test.mjs
+test/candidate-containment-guardian-recovery-executor-s2.test.mjs
+test/candidate-containment-guardian-recovery-executor-s2-faults.test.mjs
+test/candidate-containment-guardian-native-s3a-red.test.mjs
+```
+
+From `tools/engineering-harness`, every one of the 23 paths listed above was
+passed as a positional argument after `--test --test-concurrency=1
+--test-reporter=dot`. That exact set passes 400/400 with
+`/home/claude/.local/opt/node-v24.14.1-linux-x64/bin/node` and 400/400 with
+`/home/claude/.local/share/mise/installs/node/20.20.2/bin/node`. It includes
+the deterministic local manager build and attestation. Those checks prove the
+exact repository and safe local inputs only; they do not prove C-side StateFS
+dispatch or physical-host behavior.
+
+The consolidated committed S0-S3B identities are:
+
+| Slice | Path | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-attestation-v1.mjs` | 4,483 | `ed11c028cde8d4b56f1c371e7152c47cc0f40c97b0530eedcefe6e33e0e3a960` |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-manager-attestation-v1.mjs` | 4,693 | `5961d34b4614e3242cc4b986bd4bbf453e600929e1c5480565c360ccb302e653` |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-manager-v1.c` | 2,840 | `4dba252351003b14202f20490b17b55ac5abf011ab60bdd87024a3d207585137` |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-native-attestation-common-v1.mjs` | 12,722 | `7d507525867d158d973adba5b6074ae1ed87d0674625ba570a8ed12a97e136ee` |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-trampoline-attestation-v1.mjs` | 3,686 | `a49094dc77dad92f8960e2c452dd48169432d8f1403de358a9d18d0db8d06f2d` |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-trampoline-v1.c` | 5,828 | `2e4e39718673030ee26f9870eab03d0adda33d656d807c01226420b776dc955b` |
+| S0 | `tools/engineering-harness/src/candidate/containment-guardian-v1.c` | 18,627 | `93e87316a10d289ac537350bd2af314370f0324e3d5b130cfe9ba4f1760f8039` |
+| S0 | `tools/engineering-harness/test/candidate-containment-guardian-native-s0-attestation.test.mjs` | 8,240 | `66650c466d2c394f705d20d37aeb5d482f47febbe1beee0a459a29e4bd722822` |
+| S0 | `tools/engineering-harness/test/candidate-containment-guardian-native-s0-faults.test.mjs` | 2,885 | `44a960688d7fff199b29c36ecd7e9864b62c0155c1f2a0a5bd0ecb176f6ea3e8` |
+| S0 | `tools/engineering-harness/test/candidate-containment-guardian-native-s0.test.mjs` | 2,006 | `4b91152759450e1e85ef1431a4be9c3238d48e935ea4fb61567f68e39b8b8b39` |
+| S0 | `tools/engineering-harness/test/support/candidate-containment-guardian-native-v1-driver.c` | 8,867 | `71b03d6804392749ac8e494ce4f76ad803f247bb5558e83a4f0515fef40d54a3` |
+| S0 | `tools/engineering-harness/test/support/candidate-containment-guardian-native-v1-fixture.mjs` | 17,236 | `1e36105122bc73dca4749cb45e1da8514f0e2ca55adcbdfda2690630e1975e28` |
+| S0 | `tools/engineering-harness/test/support/candidate-containment-guardian-trampoline-target-v1.c` | 1,102 | `48c3da2bf8939e2527d6418ea2893d6ce98530ac8a1f3d2f6f1aab55904666f3` |
+| S1 | `tools/engineering-harness/src/candidate/containment-guardian-native-adapter-v1.mjs` | 27,800 | `d8bc60a333608d7b94bce870c13facfe1e75fce878c46aca2b97b8dd78a4225a` |
+| S1 | `tools/engineering-harness/test/candidate-containment-guardian-native-s1-faults.test.mjs` | 9,377 | `4bdff1fbf388cedf0558a7ca70c2e06334af2b19a982bcdb4e9775b25846cae6` |
+| S1 | `tools/engineering-harness/test/candidate-containment-guardian-native-s1-native.test.mjs` | 3,980 | `103207db857dd80b2f191554a10b5f425b08ee60ae33137d6268f19c2d850cdf` |
+| S1 | `tools/engineering-harness/test/candidate-containment-guardian-native-s1.test.mjs` | 10,660 | `0d2cd4f7a5c7b64e51e36e00e8bec6e4432e18b6eb251fdd26d4e40ecae5b4ef` |
+| S1 | `tools/engineering-harness/test/support/candidate-containment-guardian-native-s1-driver.c` | 8,307 | `b94ad49bd224e892f7da0581889ffd29fee1c50d129bac5e435ebb2409159cf0` |
+| S1 | `tools/engineering-harness/test/support/candidate-containment-guardian-native-s1-fixture.mjs` | 10,442 | `f8a7332e17dcd20a3328b85888477a3a5c7be9bd2a261f19cd441187c9518c12` |
+| S2 | `tools/engineering-harness/src/candidate/containment-guardian-recovery-executor-v1.mjs` | 27,265 | `e1ccb7a436db91fb6589b6126b5279148c04d8bf435fa44d8ed73061c4149f2a` |
+| S2 | `tools/engineering-harness/test/candidate-containment-guardian-recovery-executor-s2-faults.test.mjs` | 13,345 | `97f5ae868b5a423497e9c9f632b477d011af306bf429c51965b87a1c2b1ae2d5` |
+| S2 | `tools/engineering-harness/test/candidate-containment-guardian-recovery-executor-s2.test.mjs` | 11,769 | `40a65f7f8490b3375e58d81bce8b5ca5a08321b39e076b4bc3d169a256660f02` |
+| S2 | `tools/engineering-harness/test/support/candidate-containment-guardian-recovery-executor-s2-fixture.mjs` | 6,458 | `db0f949bb8ea6654cc8f9dd2f77f5914ca148fb8fdbb5fffea13341806f1b4ae` |
+| S3A | `tools/engineering-harness/test/candidate-containment-guardian-native-s3a-red.test.mjs` | 10,547 | `ed58122fc8e1e984e9b7e7c170e460d9a4351310eaec06241f289053b13c2d0a` |
+| S3A | `tools/engineering-harness/test/support/candidate-containment-guardian-native-s3a-fixture.mjs` | 18,674 | `b9886aedb002c947ac68559d40062732296ac6b6dfb877db60c0b0a213888a57` |
+| S3B | `tools/engineering-harness/src/candidate/containment-guardian-manager-transition-consumer-v1.mjs` | 4,814 | `d7de4cdf7422586d495b93b8870a6207bd3e1800a09870927b56c1810ac31858` |
+
+The repository-input closure does not implement the remaining non-StateFS
+manager transitions or a production call from the native manager into the
+ADR-0037 C entrypoint. It does not establish physical service-manager,
+manager, guardian, trampoline, process, descriptor, cgroup, reboot, or
+power-loss behavior. ADR-0039 still exclusively owns delegated-host
+qualification, receipt-bound activation, and production readiness; none may
+start without its separate authorization and evidence.
 
 ## Nonclaims and authority boundary
 

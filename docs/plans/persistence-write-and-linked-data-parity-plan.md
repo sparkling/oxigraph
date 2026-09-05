@@ -270,25 +270,18 @@ performs no candidate/evaluator Git, submodule, process, provider, `ACCEPT`,
 defense in depth. The qualified protocol would remain cancel-only, so G2.2 also
 requires [ADR-0040's separately ratified commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md).
 
-ADR-0037 now has an evaluator-first delivery DAG in the Ruflo task database and
-remains unstarted. The completed local ADR-0036 C21 and programme-umbrella
-boundary at commit `c01b3c6a` satisfies S0's dependency gate. S0
-`task-1788205371168-e6caq3` is dependency-eligible but remains pending at zero
-progress and unstarted; it freezes only the ADR contract. S1
-`task-1788205386056-qz0anv` and S3
-`task-1788205431734-trylt5` establish source-absent RED evaluators. Replacement
-S2 `task-1788399091085-u7a5lw` may add only the pure statefs source; S4A
-`task-1788399095038-1zb8po` precedes native-artifact GREEN S4B
-`task-1788399098734-v8ve9g`; S5 `task-1788399104822-pzsod1` is independent
-verification and changes no source, evaluator, fixture, package, lock,
-registry, or readiness file.
-The parallel manager branch separates S6A evaluator RED
-`task-1788399108388-65439n` from S6B source GREEN
-`task-1788399112386-qn8psc`; S7 `task-1788399842562-kjszvk` joins the two
-branches and releases only corrected ADR-0038 S0
-`task-1788399847418-arzwjy`. A GREEN slice may not change its frozen evaluator.
-This planning correction changes no product code, ADR status, readiness,
-qualification, promotion, publication, or authority.
+The older ADR-0037 evaluator-first DAG is a historical 2026-09-03 snapshot.
+Its S5 `task-1788399104822-pzsod1`, S6A
+`task-1788399108388-65439n`, S6B `task-1788399112386-qn8psc`, S7
+`task-1788399842562-kjszvk`, and released ADR-0038 S0
+`task-1788399847418-arzwjy` rows were cancelled and superseded after contract
+corrections; they are not current work. Replacement ADR-0037 S7 V3 task
+`task-1788573342748-wln111` completed the bounded local, unregistered closure
+at `acd09b61`. ADR-0038's replacement S0-S3B repository inputs are integrated
+through `37a02bb2`, with parent reconciliation task
+`task-1788589313411-vm7pg0` owning the current documentation and independent
+review closure. ADR-0037 and ADR-0038 both remain Proposed; readiness,
+qualification, production effects, and publication authority remain unchanged.
 
 The dated 2026-09-02 ADR-0036 C15 checkpoint is GREEN through helper
 `41dd2508`, guardian/fixture `23d37556`, and evaluator `4620dd92`. The live
@@ -612,9 +605,9 @@ The unfinished work is split by architectural ownership:
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Persistent-backend adoption gate                | [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](../adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)                                                                                     | Accepted 2026-09-05: RocksDB remains the only production-intended persistent backend; TurboKV is historical evidence only and is excluded from active implementation, comparison, and benchmarking                                                                                                                                                                                                                                                                                                                                                                                          |
 | P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, bounded cleanup, raw supervision, legacy-incompatible request v1/process v3, structural policy/request v2, and a compile-only dormant attested helper are implemented. The private issuer, containment-v2 native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
-| G1.7 private build issuer and physical owners   | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; S0 `task-1788403444941-5l8jci` is complete. Local C21/umbrella closure makes S1 `task-1788403485637-t9wn40` eligible but pending at 0% and unstarted. Physical issuance still requires ADR-0037 through ADR-0040, successor activation, and explicit human Phase A/Phase B controls                                                                                                                                                                                                                                                                                                                                                                               |
+| G1.7 private build issuer and physical owners   | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; S0, S1 `task-1788403485637-t9wn40`, and pure S2 `task-1788403489170-xl71j9` are complete and authority-null. Current graph-V4 umbrella `task-1788589424013-hx1i83` and S3 `task-1788589440120-iaem8f` are pending; S3 depends on completed S2/ADR-0037 S7 and the current ADR-0038 closure. Physical issuance remains separately gated by ADR-0039/ADR-0040, successor activation, and explicit human Phase A/Phase B controls                                                                                                                                                                                                                                               |
 | P1.2 dormant schema-v2 harness pre-registration | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed ADR with its implementation task complete at the dormant, authority-null boundary: early gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; hidden selectors exit 4 before effects and grant no product authority                                                                                                                                                                                                                                                                                       |
-| Native containment implementation/qualification | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design remains open. ADR-0037 owns statefs/syscalls, ADR-0038 native process mechanics, and ADR-0039 qualification/activation/runtime closure. Readiness remains unavailable/native-adapter-unavailable                                                                                                                                                                                                                                                                                                                                                                                      |
+| Native containment implementation/qualification | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design remains open. ADR-0037's bounded local StateFS/manager interfaces and ADR-0038's authority-null S0-S3B repository inputs, including the one-use branded StateFS-transition consumer, are integrated through `37a02bb2`; the exact 23-file matrix passes 400/400 on Node 24.14.1 and exact Node 20.20.2. Non-StateFS transitions, C-side dispatch, physical process/cgroup integration, and ADR-0039 qualification/activation remain open. Readiness remains unavailable/native-adapter-unavailable                                                                                                                                                                                                                         |
 | Commit-capable containment successor            | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                               | Proposed; critical task `task-1788394167226-fxk7od` is pending. It owns durable decision-before-effect, at-most-once execution, descriptor-bound application output, exact recovery/receipt semantics, and distinct successor host qualification                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | P1.2/G2.2 new semantic-change module            | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md), after ADR-0034, ADR-0039, and ADR-0040                                                                                                          | Blocked: dormant exact admission is implemented, but host qualification, physical runtime closure, and the commit-capable successor remain open before a semantic-change module may execute or commit                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | P1.1/G2.1 implemented in `be08cf3b`; P1.2/G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -798,17 +791,18 @@ Replacement-backend decision task `task-1788074788516-p5tvdm` records the
 ADR-0042 evidence-backed defer/reject result: retain RocksDB, select no
 replacement adapter, and grant no experiment, benchmark, migration, or
 production authority.
-ADR-0041 remains Proposed. Its corrected umbrella task
-`task-1788403413560-sedu3a` grants no live G1.7, host, provider, qualification,
-promotion, or publication authority. Documentation-only S0 task
-`task-1788403444941-5l8jci` is complete.
-Local ADR-0036 C21/umbrella closure satisfies S1's C21 dependency, so S1
-`task-1788403485637-t9wn40` is dependency-eligible but remains pending at zero
-progress and unstarted. The exact IDs, edges, cancelled-v1 history, and
-activation blockers are stored and read back at
-`task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`. S2 may implement only
-pure requirements after S1 freezes evaluator RED. S3 waits for reviewed ADR-0037
-and ADR-0038 integrated closures. S4A is dormant and authority-null. S4B is a
+ADR-0041 remains Proposed. Its V2 umbrella task
+`task-1788403413560-sedu3a` is cancelled/superseded historical evidence and
+grants no live G1.7, host, provider, qualification, promotion, or publication
+authority. Documentation-only S0 `task-1788403444941-5l8jci`, S1 evaluator
+`task-1788403485637-t9wn40`, and pure S2 requirements
+`task-1788403489170-xl71j9` are complete and authority-null. The exact V2 IDs,
+edges, cancelled history, and activation blockers remain recorded at
+`task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`. Current graph-V4
+umbrella `task-1788589424013-hx1i83` carries that evidence unchanged. Its S3
+`task-1788589440120-iaem8f` depends only on completed S2, completed ADR-0037 S7,
+and current ADR-0038 S3 V3; this ADR-0038 closure makes S3 dependency-eligible
+but does not start it. S4A is dormant and authority-null. S4B is a
 separate host-positive gate that also waits for exact ADR-0039 and ADR-0040
 closure, current same-host/same-boot exact-artifact successor qualification,
 receipt-bound activation, and explicit isolated-host/G1.7 Phase A authority.
@@ -1212,7 +1206,9 @@ memory:
 | Guardian-control C17 complete     | `task-1788204854834-82qx49`                                                                                                                                                                                                                                                                               | [ADR-0036 C17 acceptance record](../adr/0036-guardian-control-pure-abi.md#c17-acceptance-consolidation-record-2026-09-02)                                                                                                               |
 | Guardian-control C18-C20 complete | `task-1788204862237-jcs5sd` / `task-1788204868984-521i0d` / `task-1788204877088-j678ig`                                                                                                                                                                                                                   | [ADR-0036 independent-review record](../adr/0036-guardian-control-pure-abi.md#c18-c20-independent-review-record-2026-09-02)                                                                                                             |
 | Guardian-control C21 closure      | `task-1788204883871-l9tsh9`                                                                                                                                                                                                                                                                               | [ADR-0036 C21 local closure record](../adr/0036-guardian-control-pure-abi.md#c21-local-documentation-and-umbrella-closure-record-2026-09-03)                                                                                            |
-| ADR-0037 evaluator-first DAG      | `task-1788205371168-e6caq3` / `task-1788205386056-qz0anv` / `task-1788399091085-u7a5lw` / `task-1788205431734-trylt5` / `task-1788399095038-1zb8po` / `task-1788399098734-v8ve9g` / `task-1788399104822-pzsod1` / `task-1788399108388-65439n` / `task-1788399112386-qn8psc` / `task-1788399842562-kjszvk` | `task-plans/adr-0037-evaluator-first-dag-v2-2026-09-03`; planned/unstarted; local C21 closure makes S0 eligible but pending 0%; no authority change                                                                                     |
+| Historical ADR-0037 evaluator-first DAG | `task-1788205371168-e6caq3` / `task-1788205386056-qz0anv` / `task-1788399091085-u7a5lw` / `task-1788205431734-trylt5` / `task-1788399095038-1zb8po` / `task-1788399098734-v8ve9g` / `task-1788399104822-pzsod1` / `task-1788399108388-65439n` / `task-1788399112386-qn8psc` / `task-1788399842562-kjszvk` | `task-plans/adr-0037-evaluator-first-dag-v2-2026-09-03`; historical 2026-09-03 planned/unstarted snapshot whose later rows were cancelled and superseded; no authority change                                                            |
+| ADR-0037 S7 V3 bounded local closure | `task-1788573342748-wln111`                                                                                                                                                                                                                                                                               | Complete at `acd09b61`; Proposed, unregistered, and authority-null                                                                                                                                                                                                       |
+| ADR-0038 S3 V3 repository-input closure | `task-1788589313411-vm7pg0`                                                                                                                                                                                                                                                                               | S0-S3B implementation inputs are integrated through `37a02bb2`; documentation and independent review close only this bounded repository-input slice                                                                                                                    |
 
 Exact recall from the three research-memory entries succeeded. The remaining
 rows are programme task maps for prerequisite and delivery gates; they are not
@@ -1226,9 +1222,9 @@ sources.
 The dated rows above preserve C16 history and record the current split: C17 and
 all three independent reviews are complete; C21 and its programme umbrella are
 complete for the local documentation/ledger boundary at commit `c01b3c6a`, and
-their exact Ruflo rows were read back. ADR-0037 S0 and ADR-0041 S1 are
-dependency-eligible only;
-both remain pending at zero progress and unstarted. The GitHub-linked programme
+their exact Ruflo rows were read back. At that historical checkpoint, ADR-0037
+S0 and ADR-0041 S1 were dependency-eligible, pending, and unstarted. Current
+replacement ADR-0037 S7 and ADR-0041 S1/S2 are complete. The GitHub-linked programme
 Gist and main push are transferred to pending task
 `task-1788409495130-6ikk41` and remain held because selected N3 submodule commit
 `8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
