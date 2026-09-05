@@ -23,6 +23,39 @@ use tempfile::TempDir;
 const CONTRACT_SCHEMA_VERSION: u16 = 1;
 const VENDORED_VERSION: &str = "11.1.2";
 const VENDORED_SOURCE_REVISION: &str = "3b446089141659fad25328c5ea3e7ed283df46e4";
+const EXTERNAL_ALIAS_FAKE_STD_SOURCE: &str = r#"
+    pub mod prelude {
+        pub mod rust_2024 {
+            pub use ::std::prelude::rust_2024::*;
+        }
+    }
+    pub use ::std::println;
+    pub mod env {
+        pub fn var_os(_name: &str) -> ::std::option::Option<::std::string::String> {
+            ::std::option::Option::Some(::std::string::String::from("fabricated-feature"))
+        }
+        pub fn var(name: &str) -> ::std::result::Result<::std::string::String, ()> {
+            ::std::result::Result::Ok(::std::string::String::from(match name {
+                "DEP_ROCKSDB_BUILD_KIND" => "vendored",
+                "DEP_ROCKSDB_VERSION" => "11.1.2",
+                "DEP_ROCKSDB_SOURCE_REVISION" => {
+                    "3b446089141659fad25328c5ea3e7ed283df46e4"
+                }
+                _ => "",
+            }))
+        }
+    }
+"#;
+const EXTERNAL_ALIAS_FAKE_CORE_SOURCE: &str = "
+    #![no_std]
+    pub mod option {
+        pub use ::core::option::*;
+    }
+    #[macro_export]
+    macro_rules! panic {
+        ($($tokens:tt)*) => {{}}
+    }
+";
 
 const COMPACTION_PENDING: &str = "rocksdb.compaction-pending";
 const PENDING_COMPACTION_BYTES: &str = "rocksdb.estimate-pending-compaction-bytes";
@@ -1643,25 +1676,603 @@ fn top_level_function_with_exact_attribute(
     (matching.len() == 1).then(|| matching[0])
 }
 
-fn manifest_package_build_script(manifest: &str) -> Option<&str> {
-    let mut in_package = false;
-    for line in manifest.lines() {
-        let line = line.trim();
-        if line.starts_with('[') {
-            in_package = line == "[package]";
+#[derive(Debug)]
+struct TomlAssignment {
+    path: Vec<String>,
+    value: String,
+}
+
+#[derive(Debug, Default)]
+struct TomlStructure {
+    tables: Vec<Vec<String>>,
+    assignments: Vec<TomlAssignment>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TomlMultilineString {
+    Basic,
+    Literal,
+}
+
+#[derive(Debug, Default)]
+struct TomlValueContinuation {
+    square_depth: usize,
+    curly_depth: usize,
+    multiline: Option<TomlMultilineString>,
+}
+
+impl TomlValueContinuation {
+    fn is_active(&self) -> bool {
+        self.multiline.is_some() || self.square_depth > 0 || self.curly_depth > 0
+    }
+
+    fn scan_line(&mut self, line: &str) {
+        let bytes = line.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            match self.multiline {
+                Some(TomlMultilineString::Basic) => {
+                    if bytes[index..].starts_with(b"\"\"\"") {
+                        let preceding_backslashes = bytes[..index]
+                            .iter()
+                            .rev()
+                            .take_while(|byte| **byte == b'\\')
+                            .count();
+                        if preceding_backslashes % 2 == 0 {
+                            self.multiline = None;
+                            index += 3;
+                            continue;
+                        }
+                    }
+                    index += 1;
+                }
+                Some(TomlMultilineString::Literal) => {
+                    if bytes[index..].starts_with(b"'''") {
+                        self.multiline = None;
+                        index += 3;
+                    } else {
+                        index += 1;
+                    }
+                }
+                None => match bytes[index] {
+                    b'#' => return,
+                    b'"' if bytes[index..].starts_with(b"\"\"\"") => {
+                        self.multiline = Some(TomlMultilineString::Basic);
+                        index += 3;
+                    }
+                    b'\'' if bytes[index..].starts_with(b"'''") => {
+                        self.multiline = Some(TomlMultilineString::Literal);
+                        index += 3;
+                    }
+                    b'"' => {
+                        index += 1;
+                        while index < bytes.len() {
+                            match bytes[index] {
+                                b'\\' => index = (index + 2).min(bytes.len()),
+                                b'"' => {
+                                    index += 1;
+                                    break;
+                                }
+                                _ => index += 1,
+                            }
+                        }
+                    }
+                    b'\'' => {
+                        index += 1;
+                        while index < bytes.len() && bytes[index] != b'\'' {
+                            index += 1;
+                        }
+                        index = (index + 1).min(bytes.len());
+                    }
+                    b'[' => {
+                        self.square_depth += 1;
+                        index += 1;
+                    }
+                    b']' => {
+                        self.square_depth = self.square_depth.saturating_sub(1);
+                        index += 1;
+                    }
+                    b'{' => {
+                        self.curly_depth += 1;
+                        index += 1;
+                    }
+                    b'}' => {
+                        self.curly_depth = self.curly_depth.saturating_sub(1);
+                        index += 1;
+                    }
+                    _ => index += 1,
+                },
+            }
+        }
+    }
+}
+
+fn decode_toml_basic_key(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut output = String::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'\\' {
+            let character = input[index..].chars().next()?;
+            output.push(character);
+            index += character.len_utf8();
             continue;
         }
-        if !in_package || line.starts_with('#') {
-            continue;
+        index += 1;
+        match *bytes.get(index)? {
+            b'b' => output.push('\u{0008}'),
+            b't' => output.push('\t'),
+            b'n' => output.push('\n'),
+            b'f' => output.push('\u{000c}'),
+            b'r' => output.push('\r'),
+            b'"' => output.push('"'),
+            b'\\' => output.push('\\'),
+            b'u' | b'U' => {
+                let digits = if bytes[index] == b'u' { 4 } else { 8 };
+                let start = index + 1;
+                let end = start + digits;
+                let value = u32::from_str_radix(input.get(start..end)?, 16).ok()?;
+                output.push(char::from_u32(value)?);
+                index = end;
+                continue;
+            }
+            _ => return None,
         }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
+        index += 1;
+    }
+    Some(output)
+}
+
+fn parse_toml_key_path(input: &str) -> Option<Vec<String>> {
+    let bytes = input.as_bytes();
+    let mut segments = Vec::new();
+    let mut index = 0;
+    loop {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        let segment = match *bytes.get(index)? {
+            b'"' => {
+                index += 1;
+                let start = index;
+                while index < bytes.len() {
+                    match bytes[index] {
+                        b'\\' => index = (index + 2).min(bytes.len()),
+                        b'"' => break,
+                        _ => index += 1,
+                    }
+                }
+                let decoded = decode_toml_basic_key(input.get(start..index)?)?;
+                index += 1;
+                decoded
+            }
+            b'\'' => {
+                index += 1;
+                let start = index;
+                while index < bytes.len() && bytes[index] != b'\'' {
+                    index += 1;
+                }
+                let segment = input.get(start..index)?.to_owned();
+                index += 1;
+                segment
+            }
+            byte if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-') => {
+                let start = index;
+                while bytes
+                    .get(index)
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+                {
+                    index += 1;
+                }
+                input.get(start..index)?.to_owned()
+            }
+            _ => return None,
         };
-        if key.trim() == "build" {
-            return value.trim().strip_prefix('"')?.strip_suffix('"');
+        segments.push(segment);
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        match bytes.get(index) {
+            None => return Some(segments),
+            Some(b'.') => index += 1,
+            _ => return None,
+        }
+    }
+}
+
+fn toml_unquoted_equals(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'#' => return None,
+            b'=' => return Some(index),
+            b'"' => {
+                index += 1;
+                while index < bytes.len() {
+                    match bytes[index] {
+                        b'\\' => index = (index + 2).min(bytes.len()),
+                        b'"' => {
+                            index += 1;
+                            break;
+                        }
+                        _ => index += 1,
+                    }
+                }
+            }
+            b'\'' => {
+                index += 1;
+                while index < bytes.len() && bytes[index] != b'\'' {
+                    index += 1;
+                }
+                index = (index + 1).min(bytes.len());
+            }
+            _ => index += 1,
         }
     }
     None
+}
+
+fn toml_table_key(line: &str) -> Option<Vec<String>> {
+    let line = line.trim_start();
+    if !line.starts_with('[') || line.starts_with("[[") {
+        return None;
+    }
+    let bytes = line.as_bytes();
+    let mut index = 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b']' => return parse_toml_key_path(line.get(1..index)?.trim()),
+            b'"' => {
+                index += 1;
+                while index < bytes.len() {
+                    match bytes[index] {
+                        b'\\' => index = (index + 2).min(bytes.len()),
+                        b'"' => {
+                            index += 1;
+                            break;
+                        }
+                        _ => index += 1,
+                    }
+                }
+            }
+            b'\'' => {
+                index += 1;
+                while index < bytes.len() && bytes[index] != b'\'' {
+                    index += 1;
+                }
+                index = (index + 1).min(bytes.len());
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn parse_toml_structure(source: &str) -> TomlStructure {
+    let mut structure = TomlStructure::default();
+    let mut table = Vec::new();
+    let mut continuation = TomlValueContinuation::default();
+    for line in source.lines() {
+        if continuation.is_active() {
+            if let Some(assignment) = structure.assignments.last_mut() {
+                assignment.value.push('\n');
+                assignment.value.push_str(line);
+            }
+            continuation.scan_line(line);
+            continue;
+        }
+        let line = line.trim_start();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(next_table) = toml_table_key(line) {
+            structure.tables.push(next_table.clone());
+            table = next_table;
+            continue;
+        }
+        let Some(equals) = toml_unquoted_equals(line) else {
+            continue;
+        };
+        let Some(key) = parse_toml_key_path(line[..equals].trim()) else {
+            continue;
+        };
+        let mut path = table.clone();
+        path.extend(key);
+        let value = line[equals + 1..].to_owned();
+        structure.assignments.push(TomlAssignment { path, value });
+        continuation.scan_line(&line[equals + 1..]);
+    }
+    structure
+}
+
+fn toml_inline_table_paths(value: &str) -> Vec<Vec<String>> {
+    fn append_entry_paths(mut entry: &str, paths: &mut Vec<Vec<String>>) {
+        loop {
+            entry = entry.trim_start();
+            if !entry.starts_with('#') {
+                break;
+            }
+            let Some(newline) = entry.find('\n') else {
+                return;
+            };
+            entry = &entry[newline + 1..];
+        }
+        let Some(equals) = toml_unquoted_equals(entry) else {
+            return;
+        };
+        let Some(key) = parse_toml_key_path(entry[..equals].trim()) else {
+            return;
+        };
+        paths.push(key.clone());
+        for child in toml_inline_table_paths(&entry[equals + 1..]) {
+            let mut nested = key.clone();
+            nested.extend(child);
+            paths.push(nested);
+        }
+    }
+
+    let value = value.trim_start();
+    if !value.starts_with('{') {
+        return Vec::new();
+    }
+    let bytes = value.as_bytes();
+    let mut paths = Vec::new();
+    let mut index = 1;
+    let mut entry_start = index;
+    let mut curly_depth = 1_usize;
+    let mut square_depth = 0_usize;
+    let mut multiline = None;
+    while index < bytes.len() {
+        match multiline {
+            Some(TomlMultilineString::Basic) => {
+                if bytes[index..].starts_with(b"\"\"\"") {
+                    let preceding_backslashes = bytes[..index]
+                        .iter()
+                        .rev()
+                        .take_while(|byte| **byte == b'\\')
+                        .count();
+                    if preceding_backslashes % 2 == 0 {
+                        multiline = None;
+                        index += 3;
+                        continue;
+                    }
+                }
+                index += 1;
+                continue;
+            }
+            Some(TomlMultilineString::Literal) => {
+                if bytes[index..].starts_with(b"'''") {
+                    multiline = None;
+                    index += 3;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            None => {}
+        }
+        match bytes[index] {
+            b'#' => {
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+                continue;
+            }
+            b'"' if bytes[index..].starts_with(b"\"\"\"") => {
+                multiline = Some(TomlMultilineString::Basic);
+                index += 3;
+                continue;
+            }
+            b'\'' if bytes[index..].starts_with(b"'''") => {
+                multiline = Some(TomlMultilineString::Literal);
+                index += 3;
+                continue;
+            }
+            b'"' => {
+                index += 1;
+                while index < bytes.len() {
+                    match bytes[index] {
+                        b'\\' => index = (index + 2).min(bytes.len()),
+                        b'"' => {
+                            index += 1;
+                            break;
+                        }
+                        _ => index += 1,
+                    }
+                }
+                continue;
+            }
+            b'\'' => {
+                index += 1;
+                while index < bytes.len() && bytes[index] != b'\'' {
+                    index += 1;
+                }
+                index = (index + 1).min(bytes.len());
+                continue;
+            }
+            b'{' => curly_depth += 1,
+            b'}' => {
+                curly_depth = curly_depth.saturating_sub(1);
+                if curly_depth == 0 {
+                    append_entry_paths(&value[entry_start..index], &mut paths);
+                    break;
+                }
+            }
+            b'[' => square_depth += 1,
+            b']' => square_depth = square_depth.saturating_sub(1),
+            b',' if curly_depth == 1 && square_depth == 0 => {
+                append_entry_paths(&value[entry_start..index], &mut paths);
+                entry_start = index + 1;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    paths
+}
+
+fn toml_assignment_paths(assignment: &TomlAssignment) -> Vec<Vec<String>> {
+    let mut paths = vec![assignment.path.clone()];
+    for inline_path in toml_inline_table_paths(&assignment.value) {
+        let mut path = assignment.path.clone();
+        path.extend(inline_path);
+        paths.push(path);
+    }
+    paths
+}
+
+fn toml_basic_or_literal_string(value: &str) -> Option<String> {
+    let value = value.trim_start();
+    let quote = *value.as_bytes().first()?;
+    if !matches!(quote, b'"' | b'\'') {
+        return None;
+    }
+    let bytes = value.as_bytes();
+    let mut index = 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' if quote == b'"' => index = (index + 2).min(bytes.len()),
+            byte if byte == quote => {
+                let decoded = if quote == b'"' {
+                    decode_toml_basic_key(value.get(1..index)?)?
+                } else {
+                    value.get(1..index)?.to_owned()
+                };
+                let remainder = value.get(index + 1..)?.trim_start();
+                if remainder.is_empty() || remainder.starts_with('#') {
+                    return Some(decoded);
+                }
+                return None;
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn manifest_package_build_script(manifest: &str) -> Option<String> {
+    let matches = parse_toml_structure(manifest)
+        .assignments
+        .into_iter()
+        .filter(|assignment| assignment.path == ["package", "build"])
+        .collect::<Vec<_>>();
+    let [assignment] = matches.as_slice() else {
+        return None;
+    };
+    toml_basic_or_literal_string(&assignment.value)
+}
+
+fn path_declares_build_dependency_alias(path: &[String], alias: &str) -> bool {
+    if path
+        .first()
+        .is_some_and(|segment| segment == "build-dependencies")
+    {
+        return path.get(1).is_some_and(|segment| segment == alias);
+    }
+    if path.first().is_some_and(|segment| segment == "target") {
+        return path
+            .iter()
+            .position(|segment| segment == "build-dependencies")
+            .and_then(|index| path.get(index + 1))
+            .is_some_and(|segment| segment == alias);
+    }
+    false
+}
+
+fn manifest_declares_build_dependency_alias(manifest: &str, alias: &str) -> bool {
+    let structure = parse_toml_structure(manifest);
+    structure
+        .tables
+        .iter()
+        .any(|path| path_declares_build_dependency_alias(path, alias))
+        || structure
+            .assignments
+            .iter()
+            .flat_map(toml_assignment_paths)
+            .any(|path| path_declares_build_dependency_alias(&path, alias))
+}
+
+fn workspace_manifest_declares_dependency_alias(manifest: &str, alias: &str) -> bool {
+    let structure = parse_toml_structure(manifest);
+    let declares = |path: &[String]| {
+        path.first().is_some_and(|segment| segment == "workspace")
+            && path.get(1).is_some_and(|segment| segment == "dependencies")
+            && path.get(2).is_some_and(|segment| segment == alias)
+    };
+    structure.tables.iter().any(|path| declares(path))
+        || structure
+            .assignments
+            .iter()
+            .flat_map(toml_assignment_paths)
+            .any(|path| declares(&path))
+}
+
+fn cargo_config_overrides_rocksdb_build_script(config: &str) -> bool {
+    let structure = parse_toml_structure(config);
+    let overrides = |path: &[String]| {
+        matches!(path, [key] if key == "include")
+            || matches!(
+                path,
+                [scope, target, links, ..]
+                    if scope == "target"
+                        && links == "rocksdb"
+                        // Cargo 1.98 only supports links overrides under a target
+                        // triple. A matching cfg() sub-table is reported as unused
+                        // and does not suppress the dependency build script.
+                        && !(target.starts_with("cfg(") && target.ends_with(')'))
+            )
+    };
+    structure.tables.iter().any(|path| overrides(path))
+        || structure
+            .assignments
+            .iter()
+            .flat_map(toml_assignment_paths)
+            .any(|path| overrides(&path))
+}
+
+fn cargo_config_controls_compiler(config: &str) -> bool {
+    let structure = parse_toml_structure(config);
+    let controls = |path: &[String]| {
+        matches!(
+            path,
+            [scope, key]
+                if scope == "build"
+                    && matches!(
+                        key.as_str(),
+                        "rustflags" | "rustc" | "rustc-wrapper" | "rustc-workspace-wrapper"
+                    )
+        ) || matches!(path, [key] if key == "include")
+            || matches!(path, [scope, key] if scope == "host" && key == "rustflags")
+            || matches!(
+                path,
+                [scope, _, key]
+                    if (scope == "target"
+                        && matches!(key.as_str(), "rustflags" | "linker"))
+                        || (scope == "host" && key == "rustflags")
+            )
+            || matches!(path, [scope, _, key] if scope == "profile" && key == "rustflags")
+            || matches!(
+                path,
+                [scope, key, ..]
+                    if scope == "env"
+                        && [
+                            "RUSTFLAGS",
+                            "CARGO_ENCODED_RUSTFLAGS",
+                            "RUSTC",
+                            "RUSTC_WRAPPER",
+                            "RUSTC_WORKSPACE_WRAPPER",
+                        ]
+                        .iter()
+                        .any(|compiler_variable| key.eq_ignore_ascii_case(compiler_variable))
+            )
+    };
+    structure.tables.iter().any(|path| controls(path))
+        || structure
+            .assignments
+            .iter()
+            .flat_map(toml_assignment_paths)
+            .any(|path| controls(&path))
 }
 
 fn reviewed_sys_build_helpers() -> &'static str {
@@ -1978,6 +2589,282 @@ fn compile_and_run_build_script_fixture(
         ));
     }
     Ok(execution)
+}
+
+fn compile_and_execute_oxigraph_build_relay_fixture(
+    source: &str,
+    environment: &[(&str, &str)],
+) -> Result<std::process::Output, String> {
+    let directory = TempDir::new()
+        .map_err(|error| format!("failed to create relay fixture directory: {error}"))?;
+    let source_path = directory.path().join("fixture.rs");
+    let executable_path = directory.path().join(if cfg!(windows) {
+        "fixture.exe"
+    } else {
+        "fixture"
+    });
+    write(&source_path, source)
+        .map_err(|error| format!("failed to write relay fixture: {error}"))?;
+    let compilation = Command::new(
+        std::env::var_os("RUSTC").unwrap_or_else(|| std::ffi::OsString::from("rustc")),
+    )
+    .arg("--edition=2024")
+    .arg(&source_path)
+    .arg("-o")
+    .arg(&executable_path)
+    .output()
+    .map_err(|error| format!("failed to run rustc for relay fixture: {error}"))?;
+    if !compilation.status.success() {
+        return Err(format!(
+            "relay fixture must be compiler-valid: {}",
+            String::from_utf8_lossy(&compilation.stderr),
+        ));
+    }
+    let mut command = Command::new(executable_path);
+    for key in [
+        "CARGO_FEATURE_ROCKSDB",
+        "DEP_ROCKSDB_BUILD_KIND",
+        "DEP_ROCKSDB_VERSION",
+        "DEP_ROCKSDB_SOURCE_REVISION",
+    ] {
+        command.env_remove(key);
+    }
+    command.envs(environment.iter().copied());
+    command
+        .output()
+        .map_err(|error| format!("failed to run compiled relay fixture: {error}"))
+}
+
+struct CargoLinksOverrideExecution {
+    baseline: std::process::Output,
+    baseline_ran_dependency_build_script: bool,
+    overridden: std::process::Output,
+    override_ran_dependency_build_script: bool,
+    invalid_linker: std::process::Output,
+    invalid_linker_ran_dependency_build_script: bool,
+}
+
+fn execute_cargo_links_override_fixture(
+    relay: &str,
+) -> Result<CargoLinksOverrideExecution, String> {
+    let directory = TempDir::new()
+        .map_err(|error| format!("failed to create Cargo links fixture directory: {error}"))?;
+    let root = directory.path();
+    let backend = root.join("backend");
+    let cargo_config = root.join(".cargo");
+    for path in [root.join("src"), backend.join("src"), cargo_config.clone()] {
+        std::fs::create_dir_all(&path)
+            .map_err(|error| format!("failed to create Cargo links fixture path: {error}"))?;
+    }
+    write(
+        root.join("Cargo.toml"),
+        r#"[package]
+name = "relay-consumer"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+fixture-backend = { path = "backend" }
+
+[features]
+default = ["rocksdb"]
+rocksdb = []
+
+[workspace]
+"#,
+    )
+    .map_err(|error| format!("failed to write Cargo links fixture manifest: {error}"))?;
+    write(root.join("build.rs"), relay)
+        .map_err(|error| format!("failed to write Cargo links relay: {error}"))?;
+    write(
+        root.join("src/lib.rs"),
+        r#"pub const BUILD_KIND: &str = env!("OXIGRAPH_ROCKSDB_BUILD_KIND");
+pub const VERSION: &str = env!("OXIGRAPH_ROCKSDB_VERSION");
+pub const SOURCE_REVISION: &str = env!("OXIGRAPH_ROCKSDB_SOURCE_REVISION");
+"#,
+    )
+    .map_err(|error| format!("failed to write Cargo links consumer source: {error}"))?;
+    write(
+        backend.join("Cargo.toml"),
+        r#"[package]
+name = "fixture-backend"
+version = "0.1.0"
+edition = "2024"
+links = "rocksdb"
+build = "build.rs"
+"#,
+    )
+    .map_err(|error| format!("failed to write Cargo links backend manifest: {error}"))?;
+    write(
+        backend.join("build.rs"),
+        r#"fn main() {
+    std::fs::write(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("build-script-ran"),
+        b"ran",
+    )
+    .unwrap();
+    panic!("fixture dependency build script executed");
+}
+"#,
+    )
+    .map_err(|error| format!("failed to write Cargo links backend build script: {error}"))?;
+    write(backend.join("src/lib.rs"), "pub fn fixture() {}\n")
+        .map_err(|error| format!("failed to write Cargo links backend source: {error}"))?;
+
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| std::ffi::OsString::from("rustc"));
+    let rustc_version = Command::new(&rustc)
+        .arg("-vV")
+        .output()
+        .map_err(|error| format!("failed to inspect fixture rustc host: {error}"))?;
+    if !rustc_version.status.success() {
+        return Err(format!(
+            "fixture rustc host inspection failed: {}",
+            String::from_utf8_lossy(&rustc_version.stderr),
+        ));
+    }
+    let rustc_version = String::from_utf8_lossy(&rustc_version.stdout);
+    let host = rustc_version
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .ok_or_else(|| "fixture rustc did not report a host triple".to_owned())?;
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| std::ffi::OsString::from("cargo"));
+    let cargo_home = root.join("cargo-home");
+    std::fs::create_dir_all(&cargo_home)
+        .map_err(|error| format!("failed to create isolated Cargo home: {error}"))?;
+    let run_cargo = |target_dir: &Path| {
+        let mut command = Command::new(&cargo);
+        command
+            .arg("check")
+            .arg("--offline")
+            .current_dir(root)
+            .env("CARGO_HOME", &cargo_home)
+            .env("CARGO_TARGET_DIR", target_dir);
+        for key in [
+            "CARGO_BUILD_RUSTC",
+            "CARGO_BUILD_RUSTC_WRAPPER",
+            "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_BUILD_TARGET",
+            "CARGO_ENCODED_RUSTFLAGS",
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+            "RUSTFLAGS",
+        ] {
+            command.env_remove(key);
+        }
+        command.output()
+    };
+
+    let marker = backend.join("build-script-ran");
+    let baseline = run_cargo(&root.join("target-baseline"))
+        .map_err(|error| format!("failed to run baseline Cargo links fixture: {error}"))?;
+    let baseline_ran_dependency_build_script = marker.exists();
+    if baseline_ran_dependency_build_script {
+        std::fs::remove_file(&marker)
+            .map_err(|error| format!("failed to reset Cargo links marker: {error}"))?;
+    }
+    let missing_runner = root.join("runner-must-not-run");
+    let missing_linker = root.join("linker-must-not-run");
+    let override_config = format!(
+        "[target.'{host}']\nrunner = '{}'\n\n[target.'{host}'.rocksdb]\nbuild_kind = \"vendored\"\nversion = \"{VENDORED_VERSION}\"\nsource_revision = \"{VENDORED_SOURCE_REVISION}\"\n",
+        missing_runner.display(),
+    );
+    write(cargo_config.join("config.toml"), &override_config)
+        .map_err(|error| format!("failed to write Cargo links override: {error}"))?;
+    let overridden = run_cargo(&root.join("target-override"))
+        .map_err(|error| format!("failed to run Cargo links override fixture: {error}"))?;
+    let override_ran_dependency_build_script = marker.exists();
+    if override_ran_dependency_build_script {
+        std::fs::remove_file(&marker)
+            .map_err(|error| format!("failed to reset overridden Cargo links marker: {error}"))?;
+    }
+
+    let linker_config = format!(
+        "[target.'{host}']\nlinker = '{}'\nrunner = '{}'\n\n[target.'{host}'.rocksdb]\nbuild_kind = \"vendored\"\nversion = \"{VENDORED_VERSION}\"\nsource_revision = \"{VENDORED_SOURCE_REVISION}\"\n",
+        missing_linker.display(),
+        missing_runner.display(),
+    );
+    write(cargo_config.join("config.toml"), linker_config)
+        .map_err(|error| format!("failed to write Cargo linker fixture: {error}"))?;
+    let invalid_linker = run_cargo(&root.join("target-linker"))
+        .map_err(|error| format!("failed to run Cargo linker fixture: {error}"))?;
+    let invalid_linker_ran_dependency_build_script = marker.exists();
+
+    Ok(CargoLinksOverrideExecution {
+        baseline,
+        baseline_ran_dependency_build_script,
+        overridden,
+        override_ran_dependency_build_script,
+        invalid_linker,
+        invalid_linker_ran_dependency_build_script,
+    })
+}
+
+fn compile_and_execute_oxigraph_build_relay_with_external_alias(
+    source: &str,
+    alias: &str,
+    external_crate_name: &str,
+    external_source: &str,
+    environment: &[(&str, &str)],
+) -> Result<std::process::Output, String> {
+    let directory = TempDir::new()
+        .map_err(|error| format!("failed to create external-alias fixture directory: {error}"))?;
+    let external_source_path = directory.path().join("external.rs");
+    let external_library_path = directory.path().join("libexternal.rlib");
+    let relay_source_path = directory.path().join("relay.rs");
+    let executable_path = directory
+        .path()
+        .join(if cfg!(windows) { "relay.exe" } else { "relay" });
+    write(&external_source_path, external_source)
+        .map_err(|error| format!("failed to write external-alias crate: {error}"))?;
+    write(&relay_source_path, source)
+        .map_err(|error| format!("failed to write external-alias relay: {error}"))?;
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| std::ffi::OsString::from("rustc"));
+    let external_compilation = Command::new(&rustc)
+        .arg("--edition=2024")
+        .arg("--crate-name")
+        .arg(external_crate_name)
+        .arg("--crate-type=rlib")
+        .arg(&external_source_path)
+        .arg("-o")
+        .arg(&external_library_path)
+        .output()
+        .map_err(|error| format!("failed to compile external-alias crate: {error}"))?;
+    if !external_compilation.status.success() {
+        return Err(format!(
+            "external-alias crate must be compiler-valid: {}",
+            String::from_utf8_lossy(&external_compilation.stderr),
+        ));
+    }
+    let relay_compilation = Command::new(rustc)
+        .arg("--edition=2024")
+        .arg("--extern")
+        .arg(format!("{alias}={}", external_library_path.display()))
+        .arg(&relay_source_path)
+        .arg("-o")
+        .arg(&executable_path)
+        .output()
+        .map_err(|error| format!("failed to compile external-alias relay: {error}"))?;
+    if !relay_compilation.status.success() {
+        return Err(format!(
+            "external-alias relay must be compiler-valid: {}",
+            String::from_utf8_lossy(&relay_compilation.stderr),
+        ));
+    }
+    let mut command = Command::new(executable_path);
+    for key in [
+        "CARGO_FEATURE_ROCKSDB",
+        "DEP_ROCKSDB_BUILD_KIND",
+        "DEP_ROCKSDB_VERSION",
+        "DEP_ROCKSDB_SOURCE_REVISION",
+    ] {
+        command.env_remove(key);
+    }
+    command.envs(environment.iter().copied());
+    command
+        .output()
+        .map_err(|error| format!("failed to run external-alias relay: {error}"))
 }
 
 fn compilable_build_script_fixture(extra: &str, vendored_main: &str, system_main: &str) -> String {
@@ -2454,9 +3341,12 @@ fn sys_build_metadata_failures(source: &str) -> Vec<&'static str> {
     failures
 }
 
-fn oxigraph_build_relay_failures(manifest: &str, build_script: Option<&str>) -> Vec<&'static str> {
+fn oxigraph_build_relay_source_failures(
+    manifest: &str,
+    build_script: Option<&str>,
+) -> Vec<&'static str> {
     let mut failures = Vec::new();
-    if manifest_package_build_script(manifest) != Some("build.rs") {
+    if manifest_package_build_script(manifest).as_deref() != Some("build.rs") {
         failures.push("oxigraph build script declaration");
     }
     let Some(build_script) = build_script else {
@@ -2471,120 +3361,283 @@ fn oxigraph_build_relay_failures(manifest: &str, build_script: Option<&str>) -> 
     if !unique_unconditional_function_has_header(&tokens, "main", &["fn", "main", "(", ")"]) {
         failures.push("oxigraph dependency metadata relay");
     }
-    let exact_relay_body = exact_token_sequence(
-        main,
-        &[
-            "{",
-            "let",
-            "build_kind",
-            "=",
-            ":",
-            ":",
-            "std",
-            ":",
-            ":",
-            "env",
-            ":",
-            ":",
-            "var",
-            "(",
-            "\"DEP_ROCKSDB_BUILD_KIND\"",
-            ")",
-            ".",
-            "expect",
-            "(",
-            "\"oxrocksdb-sys must report its selected build kind\"",
-            ")",
-            ";",
-            "let",
-            "rocksdb_version",
-            "=",
-            ":",
-            ":",
-            "std",
-            ":",
-            ":",
-            "env",
-            ":",
-            ":",
-            "var",
-            "(",
-            "\"DEP_ROCKSDB_VERSION\"",
-            ")",
-            ".",
-            "expect",
-            "(",
-            "\"oxrocksdb-sys must report its RocksDB version\"",
-            ")",
-            ";",
-            "let",
-            "source_revision",
-            "=",
-            ":",
-            ":",
-            "std",
-            ":",
-            ":",
-            "env",
-            ":",
-            ":",
-            "var",
-            "(",
-            "\"DEP_ROCKSDB_SOURCE_REVISION\"",
-            ")",
-            ".",
-            "ok",
-            "(",
-            ")",
-            ";",
-            ":",
-            ":",
-            "std",
-            ":",
-            ":",
-            "println",
-            "!",
-            "(",
-            "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\"",
-            ")",
-            ";",
-            ":",
-            ":",
-            "std",
-            ":",
-            ":",
-            "println",
-            "!",
-            "(",
-            "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION={rocksdb_version}\"",
-            ")",
-            ";",
-            "if",
-            "let",
-            "Some",
-            "(",
-            "source_revision",
-            ")",
-            "=",
-            "source_revision",
-            "{",
-            ":",
-            ":",
-            "std",
-            ":",
-            ":",
-            "println",
-            "!",
-            "(",
-            "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION={source_revision}\"",
-            ")",
-            ";",
-            "}",
-            "}",
-        ],
-    );
+    let no_rocksdb_gate = [
+        "{",
+        "if",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "env",
+        ":",
+        ":",
+        "var_os",
+        "(",
+        "\"CARGO_FEATURE_ROCKSDB\"",
+        ")",
+        ".",
+        "is_none",
+        "(",
+        ")",
+        "{",
+        "return",
+        ";",
+        "}",
+    ];
+    let exact_no_rocksdb_gate = main
+        .get(..no_rocksdb_gate.len())
+        .is_some_and(|prefix| exact_token_sequence(prefix, &no_rocksdb_gate));
+    if !exact_no_rocksdb_gate {
+        failures.push("exact no-RocksDB build relay gate");
+    }
+    let expected_relay_body = [
+        "{",
+        "if",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "env",
+        ":",
+        ":",
+        "var_os",
+        "(",
+        "\"CARGO_FEATURE_ROCKSDB\"",
+        ")",
+        ".",
+        "is_none",
+        "(",
+        ")",
+        "{",
+        "return",
+        ";",
+        "}",
+        "let",
+        "build_kind",
+        "=",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "env",
+        ":",
+        ":",
+        "var",
+        "(",
+        "\"DEP_ROCKSDB_BUILD_KIND\"",
+        ")",
+        ".",
+        "expect",
+        "(",
+        "\"oxrocksdb-sys must report its selected build kind\"",
+        ")",
+        ";",
+        "let",
+        "rocksdb_version",
+        "=",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "env",
+        ":",
+        ":",
+        "var",
+        "(",
+        "\"DEP_ROCKSDB_VERSION\"",
+        ")",
+        ".",
+        "expect",
+        "(",
+        "\"oxrocksdb-sys must report its RocksDB version\"",
+        ")",
+        ";",
+        "let",
+        "source_revision",
+        "=",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "env",
+        ":",
+        ":",
+        "var",
+        "(",
+        "\"DEP_ROCKSDB_SOURCE_REVISION\"",
+        ")",
+        ".",
+        "ok",
+        "(",
+        ")",
+        ";",
+        "match",
+        "(",
+        "build_kind",
+        ".",
+        "as_str",
+        "(",
+        ")",
+        ",",
+        "rocksdb_version",
+        ".",
+        "as_str",
+        "(",
+        ")",
+        ",",
+        "source_revision",
+        ".",
+        "as_deref",
+        "(",
+        ")",
+        ",",
+        ")",
+        "{",
+        "(",
+        "\"vendored\"",
+        ",",
+        "\"11.1.2\"",
+        ",",
+        ":",
+        ":",
+        "core",
+        ":",
+        ":",
+        "option",
+        ":",
+        ":",
+        "Option",
+        ":",
+        ":",
+        "Some",
+        "(",
+        "\"3b446089141659fad25328c5ea3e7ed283df46e4\"",
+        ",",
+        ")",
+        ",",
+        ")",
+        "=",
+        ">",
+        "{",
+        "}",
+        "(",
+        "\"system\"",
+        ",",
+        "version",
+        ",",
+        ":",
+        ":",
+        "core",
+        ":",
+        ":",
+        "option",
+        ":",
+        ":",
+        "Option",
+        ":",
+        ":",
+        "None",
+        ")",
+        "if",
+        "!",
+        "version",
+        ".",
+        "is_empty",
+        "(",
+        ")",
+        "=",
+        ">",
+        "{",
+        "}",
+        "_",
+        "=",
+        ">",
+        ":",
+        ":",
+        "core",
+        ":",
+        ":",
+        "panic",
+        "!",
+        "(",
+        "\"oxrocksdb-sys reported invalid RocksDB build metadata\"",
+        ")",
+        ",",
+        "}",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "println",
+        "!",
+        "(",
+        "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\"",
+        ")",
+        ";",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "println",
+        "!",
+        "(",
+        "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION={rocksdb_version}\"",
+        ")",
+        ";",
+        "if",
+        "let",
+        ":",
+        ":",
+        "core",
+        ":",
+        ":",
+        "option",
+        ":",
+        ":",
+        "Option",
+        ":",
+        ":",
+        "Some",
+        "(",
+        "source_revision",
+        ")",
+        "=",
+        "source_revision",
+        "{",
+        ":",
+        ":",
+        "std",
+        ":",
+        ":",
+        "println",
+        "!",
+        "(",
+        "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION={source_revision}\"",
+        ")",
+        ";",
+        "}",
+        "}",
+    ];
+    let exact_relay_body = exact_token_sequence(main, &expected_relay_body);
+    let exact_relay_file = tokens
+        .get(..4)
+        .is_some_and(|header| exact_token_sequence(header, &["fn", "main", "(", ")"]))
+        && tokens
+            .get(4..)
+            .is_some_and(|body| exact_token_sequence(body, &expected_relay_body));
+    if !exact_relay_file {
+        failures.push("exact oxigraph build relay file");
+    }
     if !exact_relay_body {
         failures.push("causal dependency metadata input");
+        failures.push("validated RocksDB build identity relay");
     }
     for literal in [
         "\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\"",
@@ -2599,6 +3652,48 @@ fn oxigraph_build_relay_failures(manifest: &str, build_script: Option<&str>) -> 
         failures.push("causal oxigraph metadata output");
     }
     failures
+}
+
+fn oxigraph_build_relay_failures_with_provenance(
+    manifest: &str,
+    workspace_manifest: &str,
+    cargo_configs: &[&str],
+    build_script: Option<&str>,
+) -> Vec<&'static str> {
+    // This is a repository-controlled provenance contract, not a toolchain attestation.
+    // Operator-supplied RUSTFLAGS, RUSTC wrappers, and compiler binaries remain an
+    // external release-environment boundary and must be attested outside this evaluator.
+    let mut failures = oxigraph_build_relay_source_failures(manifest, build_script);
+    let compiler_aliases = ["std", "core"];
+    let manifest_alias = compiler_aliases
+        .iter()
+        .any(|alias| manifest_declares_build_dependency_alias(manifest, alias));
+    if manifest_alias {
+        failures.push("build-script compiler namespace provenance");
+    }
+    if compiler_aliases.iter().any(|alias| {
+        manifest_declares_build_dependency_alias(manifest, alias)
+            && workspace_manifest_declares_dependency_alias(workspace_manifest, alias)
+    }) {
+        failures.push("workspace-inherited build-script compiler namespace provenance");
+    }
+    if cargo_configs
+        .iter()
+        .any(|config| cargo_config_controls_compiler(config))
+    {
+        failures.push("repository-controlled compiler configuration provenance");
+    }
+    if cargo_configs
+        .iter()
+        .any(|config| cargo_config_overrides_rocksdb_build_script(config))
+    {
+        failures.push("repository-controlled RocksDB links override provenance");
+    }
+    failures
+}
+
+fn oxigraph_build_relay_failures(manifest: &str, build_script: Option<&str>) -> Vec<&'static str> {
+    oxigraph_build_relay_failures_with_provenance(manifest, "", &[], build_script)
 }
 
 fn wrapper_build_selection_failures(source: &str) -> Vec<&'static str> {
@@ -3205,14 +4300,32 @@ fn valid_sys_build_metadata_fixture() -> String {
 fn valid_oxigraph_build_relay_fixture() -> &'static str {
     r#"
         fn main() {
+            if ::std::env::var_os("CARGO_FEATURE_ROCKSDB").is_none() {
+                return;
+            }
             let build_kind = ::std::env::var("DEP_ROCKSDB_BUILD_KIND")
                 .expect("oxrocksdb-sys must report its selected build kind");
             let rocksdb_version = ::std::env::var("DEP_ROCKSDB_VERSION")
                 .expect("oxrocksdb-sys must report its RocksDB version");
             let source_revision = ::std::env::var("DEP_ROCKSDB_SOURCE_REVISION").ok();
+            match (
+                build_kind.as_str(),
+                rocksdb_version.as_str(),
+                source_revision.as_deref(),
+            ) {
+                (
+                    "vendored",
+                    "11.1.2",
+                    ::core::option::Option::Some(
+                        "3b446089141659fad25328c5ea3e7ed283df46e4",
+                    ),
+                ) => {}
+                ("system", version, ::core::option::Option::None) if !version.is_empty() => {}
+                _ => ::core::panic!("oxrocksdb-sys reported invalid RocksDB build metadata"),
+            }
             ::std::println!("cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}");
             ::std::println!("cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION={rocksdb_version}");
-            if let Some(source_revision) = source_revision {
+            if let ::core::option::Option::Some(source_revision) = source_revision {
                 ::std::println!(
                     "cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION={source_revision}"
                 );
@@ -3262,12 +4375,29 @@ fn build_metadata_relay_is_causally_declared_across_the_dependency_boundary() {
         .expect("the oxrocksdb-sys build script must be readable");
     let oxigraph_manifest = read_to_string(repository_path("lib/oxigraph/Cargo.toml"))
         .expect("the oxigraph manifest must be readable");
+    let workspace_manifest = read_to_string(repository_path("Cargo.toml"))
+        .unwrap_or_else(|error| panic!("the workspace manifest must be readable: {error}"));
+    let cargo_config_sources = [
+        ".cargo/config.toml",
+        ".cargo/config",
+        "lib/.cargo/config.toml",
+        "lib/.cargo/config",
+        "lib/oxigraph/.cargo/config.toml",
+        "lib/oxigraph/.cargo/config",
+    ]
+    .map(|path| read_to_string(repository_path(path)).ok());
+    let cargo_configs = cargo_config_sources
+        .iter()
+        .filter_map(Option::as_deref)
+        .collect::<Vec<_>>();
     let oxigraph_build_path = repository_path("lib/oxigraph/build.rs");
     let oxigraph_build = read_to_string(&oxigraph_build_path).ok();
 
     let mut failures = sys_build_metadata_failures(&sys_build);
-    failures.extend(oxigraph_build_relay_failures(
+    failures.extend(oxigraph_build_relay_failures_with_provenance(
         &oxigraph_manifest,
+        &workspace_manifest,
+        &cargo_configs,
         oxigraph_build.as_deref(),
     ));
     failures.extend(wrapper_build_selection_failures(include_str!(
@@ -3276,6 +4406,745 @@ fn build_metadata_relay_is_causally_declared_across_the_dependency_boundary() {
     assert!(
         failures.is_empty(),
         "RED: the selected RocksDB build identity is not causally relayed into maintenance evidence: {failures:?}",
+    );
+}
+
+#[test]
+fn oxigraph_build_relay_is_feature_gated_and_fails_closed_under_compiled_execution() {
+    const MANIFEST: &str = "[package]\nbuild = \"build.rs\"";
+    const GATE: &str = r#"            if ::std::env::var_os("CARGO_FEATURE_ROCKSDB").is_none() {
+                return;
+            }
+"#;
+    let relay = valid_oxigraph_build_relay_fixture();
+    let relay_failures = oxigraph_build_relay_failures(MANIFEST, Some(relay));
+    assert!(
+        relay_failures.is_empty(),
+        "the reviewed relay fixture must satisfy its static contract: {relay_failures:?}",
+    );
+
+    let disabled = compile_and_execute_oxigraph_build_relay_fixture(relay, &[])
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        disabled.status.success(),
+        "a no-RocksDB build must exit successfully: {}",
+        String::from_utf8_lossy(&disabled.stderr),
+    );
+    assert!(
+        disabled.stdout.is_empty(),
+        "a no-RocksDB build must emit no RocksDB identity metadata: {}",
+        String::from_utf8_lossy(&disabled.stdout),
+    );
+
+    let missing =
+        compile_and_execute_oxigraph_build_relay_fixture(relay, &[("CARGO_FEATURE_ROCKSDB", "1")])
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !missing.status.success(),
+        "an enabled RocksDB build must fail closed when dependency metadata is absent",
+    );
+
+    let vendored_environment = [
+        ("CARGO_FEATURE_ROCKSDB", "1"),
+        ("DEP_ROCKSDB_BUILD_KIND", "vendored"),
+        ("DEP_ROCKSDB_VERSION", "11.1.2"),
+        (
+            "DEP_ROCKSDB_SOURCE_REVISION",
+            "3b446089141659fad25328c5ea3e7ed283df46e4",
+        ),
+    ];
+    let vendored = compile_and_execute_oxigraph_build_relay_fixture(relay, &vendored_environment)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        vendored.status.success(),
+        "valid vendored metadata must relay: {}",
+        String::from_utf8_lossy(&vendored.stderr),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&vendored.stdout),
+        concat!(
+            "cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND=vendored\n",
+            "cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION=11.1.2\n",
+            "cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION=",
+            "3b446089141659fad25328c5ea3e7ed283df46e4\n",
+        ),
+    );
+
+    let system_environment = [
+        ("CARGO_FEATURE_ROCKSDB", "1"),
+        ("DEP_ROCKSDB_BUILD_KIND", "system"),
+        ("DEP_ROCKSDB_VERSION", "11.8.1"),
+    ];
+    let system = compile_and_execute_oxigraph_build_relay_fixture(relay, &system_environment)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        system.status.success(),
+        "valid system metadata must relay: {}",
+        String::from_utf8_lossy(&system.stderr),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&system.stdout),
+        concat!(
+            "cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND=system\n",
+            "cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION=11.8.1\n",
+        ),
+    );
+
+    for invalid_environment in [
+        vec![
+            ("CARGO_FEATURE_ROCKSDB", "1"),
+            ("DEP_ROCKSDB_BUILD_KIND", "other"),
+            ("DEP_ROCKSDB_VERSION", "11.1.2"),
+            (
+                "DEP_ROCKSDB_SOURCE_REVISION",
+                "3b446089141659fad25328c5ea3e7ed283df46e4",
+            ),
+        ],
+        vec![
+            ("CARGO_FEATURE_ROCKSDB", "1"),
+            ("DEP_ROCKSDB_BUILD_KIND", "vendored"),
+            ("DEP_ROCKSDB_VERSION", "11.1.3"),
+            (
+                "DEP_ROCKSDB_SOURCE_REVISION",
+                "3b446089141659fad25328c5ea3e7ed283df46e4",
+            ),
+        ],
+        vec![
+            ("CARGO_FEATURE_ROCKSDB", "1"),
+            ("DEP_ROCKSDB_BUILD_KIND", "vendored"),
+            ("DEP_ROCKSDB_VERSION", "11.1.2"),
+        ],
+        vec![
+            ("CARGO_FEATURE_ROCKSDB", "1"),
+            ("DEP_ROCKSDB_BUILD_KIND", "system"),
+            ("DEP_ROCKSDB_VERSION", ""),
+        ],
+        vec![
+            ("CARGO_FEATURE_ROCKSDB", "1"),
+            ("DEP_ROCKSDB_BUILD_KIND", "system"),
+            ("DEP_ROCKSDB_VERSION", "11.8.1"),
+            ("DEP_ROCKSDB_SOURCE_REVISION", "vendored-revision-leak"),
+        ],
+    ] {
+        let invalid =
+            compile_and_execute_oxigraph_build_relay_fixture(relay, invalid_environment.as_slice())
+                .unwrap_or_else(|error| panic!("{error}"));
+        assert!(
+            !invalid.status.success(),
+            "invalid enabled-feature metadata must fail closed: {invalid_environment:?}",
+        );
+    }
+
+    let wrong_gate = relay.replacen("CARGO_FEATURE_ROCKSDB", "CARGO_FEATURE_ROCKSDB_WRONG", 1);
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&wrong_gate))
+            .contains(&"exact no-RocksDB build relay gate"),
+        "a gate on the wrong feature must be rejected",
+    );
+    let wrong_gate_execution = compile_and_execute_oxigraph_build_relay_fixture(
+        &wrong_gate,
+        &[("CARGO_FEATURE_ROCKSDB", "1")],
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        wrong_gate_execution.status.success() && wrong_gate_execution.stdout.is_empty(),
+        "the compiler-backed control must prove that a wrong feature gate silently skips an enabled build",
+    );
+
+    let inverted_gate = relay.replacen(".is_none()", ".is_some()", 1);
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&inverted_gate))
+            .contains(&"exact no-RocksDB build relay gate"),
+        "an inverted feature gate must be rejected",
+    );
+    let inverted_execution = compile_and_execute_oxigraph_build_relay_fixture(&inverted_gate, &[])
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !inverted_execution.status.success(),
+        "the compiler-backed control must prove that an inverted gate breaks no-RocksDB builds",
+    );
+
+    let late_gate = relay.replacen(GATE, "", 1).replacen(
+        "                .expect(\"oxrocksdb-sys must report its selected build kind\");\n",
+        concat!(
+            "                .expect(\"oxrocksdb-sys must report its selected build kind\");\n",
+            "            if ::std::env::var_os(\"CARGO_FEATURE_ROCKSDB\").is_none() {\n",
+            "                return;\n",
+            "            }\n",
+        ),
+        1,
+    );
+    assert_ne!(late_gate, relay, "late-gate mutant must be live");
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&late_gate))
+            .contains(&"exact no-RocksDB build relay gate"),
+        "a feature gate after a dependency metadata read must be rejected",
+    );
+    let late_execution = compile_and_execute_oxigraph_build_relay_fixture(&late_gate, &[])
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !late_execution.status.success(),
+        "the compiler-backed control must prove that a late gate breaks no-RocksDB builds",
+    );
+
+    let fabricated = relay
+        .replacen(
+            ".expect(\"oxrocksdb-sys must report its selected build kind\")",
+            ".unwrap_or_else(|_| \"vendored\".to_owned())",
+            1,
+        )
+        .replacen(
+            ".expect(\"oxrocksdb-sys must report its RocksDB version\")",
+            ".unwrap_or_else(|_| \"11.1.2\".to_owned())",
+            1,
+        )
+        .replacen(
+            ".ok();",
+            ".ok().or_else(|| ::core::option::Option::Some(\"3b446089141659fad25328c5ea3e7ed283df46e4\".to_owned()));",
+            1,
+        );
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&fabricated))
+            .contains(&"validated RocksDB build identity relay"),
+        "fabricated dependency metadata fallbacks must be rejected",
+    );
+    let fabricated_execution = compile_and_execute_oxigraph_build_relay_fixture(
+        &fabricated,
+        &[("CARGO_FEATURE_ROCKSDB", "1")],
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        fabricated_execution.status.success()
+            && String::from_utf8_lossy(&fabricated_execution.stdout)
+                .contains("OXIGRAPH_ROCKSDB_BUILD_KIND=vendored"),
+        "the compiler-backed control must prove that fallback fabrication can swallow missing metadata",
+    );
+
+    let duplicate_output = relay.replacen(
+        "            ::std::println!(\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\");",
+        concat!(
+            "            ::std::println!(\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\");\n",
+            "            ::std::println!(\"cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND={build_kind}\");",
+        ),
+        1,
+    );
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&duplicate_output))
+            .contains(&"unique oxigraph metadata output"),
+        "duplicate metadata outputs must be rejected",
+    );
+
+    let source_revision_leak = relay
+        .replacen(
+            ".ok();",
+            ".ok().or_else(|| ::core::option::Option::Some(\"fabricated-revision\".to_owned()));",
+            1,
+        )
+        .replacen(
+            "(\"system\", version, ::core::option::Option::None)",
+            "(\"system\", version, _)",
+            1,
+        );
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&source_revision_leak))
+            .contains(&"validated RocksDB build identity relay"),
+        "a system-source-revision fallback must be rejected",
+    );
+    let leak_execution = compile_and_execute_oxigraph_build_relay_fixture(
+        &source_revision_leak,
+        &system_environment,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        leak_execution.status.success()
+            && String::from_utf8_lossy(&leak_execution.stdout)
+                .contains("OXIGRAPH_ROCKSDB_SOURCE_REVISION=fabricated-revision"),
+        "the compiler-backed control must prove that a permissive system arm can leak a revision",
+    );
+
+    let rebound_std_namespace = format!(
+        r#"
+            #![no_std]
+            extern crate std as real_std;
+            extern crate self as std;
+
+            pub use real_std::println;
+
+            pub mod env {{
+                pub fn var_os(_name: &str) -> ::core::option::Option<real_std::ffi::OsString> {{
+                    ::core::option::Option::Some(real_std::ffi::OsString::from("fabricated"))
+                }}
+
+                pub fn var(name: &str) -> ::core::result::Result<real_std::string::String, real_std::env::VarError> {{
+                    ::core::result::Result::Ok(match name {{
+                        "DEP_ROCKSDB_BUILD_KIND" => real_std::string::String::from("vendored"),
+                        "DEP_ROCKSDB_VERSION" => real_std::string::String::from("11.1.2"),
+                        "DEP_ROCKSDB_SOURCE_REVISION" => real_std::string::String::from(
+                            "3b446089141659fad25328c5ea3e7ed283df46e4",
+                        ),
+                        _ => real_std::string::String::new(),
+                    }})
+                }}
+            }}
+
+            {relay}
+        "#,
+    );
+    assert!(
+        oxigraph_build_relay_failures(MANIFEST, Some(&rebound_std_namespace))
+            .contains(&"exact oxigraph build relay file"),
+        "crate-level namespace rebinding around an exact main must be rejected",
+    );
+    let rebound_execution =
+        compile_and_execute_oxigraph_build_relay_fixture(&rebound_std_namespace, &[])
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        rebound_execution.status.success()
+            && String::from_utf8_lossy(&rebound_execution.stdout)
+                == String::from_utf8_lossy(&vendored.stdout),
+        "the compiler-backed control must prove crate-level namespace rebinding can fabricate exact metadata from an empty environment: stdout={} stderr={}",
+        String::from_utf8_lossy(&rebound_execution.stdout),
+        String::from_utf8_lossy(&rebound_execution.stderr),
+    );
+
+    for (label, alias_manifest) in [
+        (
+            "normal std alias",
+            r#"[package]
+build = "build.rs"
+[build-dependencies]
+std = { package = "relay-fake-std", version = "1" }
+"#,
+        ),
+        (
+            "quoted core package rename",
+            r#"[package]
+build = "build.rs"
+[build-dependencies]
+"core" = { package = "relay-fake-core", version = "1" }
+"#,
+        ),
+        (
+            "literal quoted std alias",
+            r#"[package]
+build = "build.rs"
+[build-dependencies]
+'std' = "1"
+"#,
+        ),
+        (
+            "unicode escaped core alias",
+            r#"[package]
+build = "build.rs"
+[build-dependencies]
+"\u0063ore" = "1"
+"#,
+        ),
+        (
+            "dependency table std alias",
+            r#"[package]
+build = "build.rs"
+[build-dependencies.std]
+package = "relay-fake-std"
+version = "1"
+"#,
+        ),
+        (
+            "quoted dependency table core alias",
+            r#"[package]
+build = "build.rs"
+[build-dependencies."core"]
+package = "relay-fake-core"
+version = "1"
+"#,
+        ),
+        (
+            "top-level dotted std alias",
+            r#"build-dependencies.std = { package = "relay-fake-std", version = "1" }
+[package]
+build = "build.rs"
+"#,
+        ),
+        (
+            "top-level quoted dotted core alias",
+            r#"build-dependencies."core".package = "relay-fake-core"
+build-dependencies."core".version = "1"
+[package]
+build = "build.rs"
+"#,
+        ),
+        (
+            "target inline std alias",
+            r#"[package]
+build = "build.rs"
+[target.'cfg(unix)'.build-dependencies]
+std = { package = "relay-fake-std", version = "1" }
+"#,
+        ),
+        (
+            "target dependency table core alias",
+            r#"[package]
+build = "build.rs"
+[target."x86_64-unknown-linux-gnu".build-dependencies.core]
+package = "relay-fake-core"
+version = "1"
+"#,
+        ),
+        (
+            "target dotted literal std alias",
+            r#"target.'cfg(windows)'.build-dependencies.'std' = { package = "relay-fake-std", version = "1" }
+[package]
+build = "build.rs"
+"#,
+        ),
+        (
+            "top-level inline build dependency table",
+            r#"build-dependencies = { std = { package = "relay-fake-std", version = "1" } }
+[package]
+build = "build.rs"
+"#,
+        ),
+        (
+            "nested inline target build dependency table",
+            r#"target = { 'cfg(unix)' = { build-dependencies = { core = { package = "relay-fake-core", version = "1" } } } }
+[package]
+build = "build.rs"
+"#,
+        ),
+        (
+            "multiline inline std alias",
+            r#"build-dependencies = {
+    # The alias remains structural after this comment.
+    std = { package = "relay-fake-std", version = "1" },
+}
+[package]
+build = "build.rs"
+"#,
+        ),
+    ] {
+        let failures = oxigraph_build_relay_failures(alias_manifest, Some(relay));
+        assert!(
+            failures.contains(&"build-script compiler namespace provenance"),
+            "{label} must be rejected: {failures:?}",
+        );
+    }
+
+    let workspace_std = r#"
+        [workspace]
+        [workspace.dependencies]
+        "std" = { package = "relay-fake-std", version = "1" }
+    "#;
+    let inherited_std = r#"
+        [package]
+        build = "build.rs"
+        [build-dependencies]
+        "std".workspace = true
+    "#;
+    let inherited_std_failures = oxigraph_build_relay_failures_with_provenance(
+        inherited_std,
+        workspace_std,
+        &[],
+        Some(relay),
+    );
+    assert!(
+        inherited_std_failures
+            .contains(&"workspace-inherited build-script compiler namespace provenance"),
+        "workspace-inherited std aliases must be rejected: {inherited_std_failures:?}",
+    );
+    let workspace_core = r#"
+        [workspace]
+        [workspace.dependencies."core"]
+        package = "relay-fake-core"
+        version = "1"
+    "#;
+    let inherited_target_core = r#"
+        [package]
+        build = "build.rs"
+        [target.'cfg(unix)'.build-dependencies."core"]
+        workspace = true
+    "#;
+    let inherited_target_core_failures = oxigraph_build_relay_failures_with_provenance(
+        inherited_target_core,
+        workspace_core,
+        &[],
+        Some(relay),
+    );
+    assert!(
+        inherited_target_core_failures
+            .contains(&"workspace-inherited build-script compiler namespace provenance"),
+        "target-specific workspace-inherited core aliases must be rejected: {inherited_target_core_failures:?}",
+    );
+
+    for safe_manifest in [
+        r#"[package]
+build = "build.rs"
+# [build-dependencies]
+# std = { package = "relay-fake-std" }
+description = "build-dependencies.core = { package = 'decoy' }"
+[dependencies]
+std = { package = "ordinary-runtime-dependency", version = "1" }
+[build-dependencies]
+std-helper = { package = "std", version = "1" }
+core-helper = { package = "core", version = "1" }
+"#,
+        r#"build-dependencies = { helper = { package = "std", version = "1" }, core-helper = { package = "core", version = "1" } }
+[package]
+build = "build.rs"
+"#,
+        r#"build-dependencies = {
+    helper = { package = "std", version = "1" },
+    core-helper = { package = "core", version = "1" },
+}
+[package]
+build = "build.rs"
+"#,
+        r#"[package]
+build = "build.rs"
+description = """
+[build-dependencies]
+std = { package = "multiline-string-decoy" }
+"""
+[package.metadata.build-dependencies.std]
+value = "metadata-only"
+"#,
+    ] {
+        let failures = oxigraph_build_relay_failures_with_provenance(
+            safe_manifest,
+            workspace_std,
+            &[],
+            Some(relay),
+        );
+        assert!(
+            failures.is_empty(),
+            "comments, irrelevant strings, ordinary aliases, and unused workspace declarations must not fail provenance: {failures:?}",
+        );
+    }
+
+    for cargo_config in [
+        r#"[build]
+rustflags = ["--extern", "std=/tmp/libfake_std.rlib"]
+"#,
+        r#"build.rustc-wrapper = "tools/compiler-wrapper"
+"#,
+        r#"[target.'cfg(unix)']
+rustflags = "--extern core=/tmp/libfake_core.rlib"
+"#,
+        r#"[target.x86_64-unknown-linux-gnu]
+linker = "tools/build-script-linker"
+"#,
+        r#"[host]
+rustflags = ["--extern", "std=/tmp/libfake_std.rlib"]
+"#,
+        r#"[env]
+"RUSTC_WORKSPACE_WRAPPER" = { value = "tools/compiler-wrapper", force = true }
+"#,
+        r#"build = { rustflags = ["--extern", "std=/tmp/libfake_std.rlib"] }
+"#,
+        r#"target = { 'cfg(unix)' = { rustflags = "--extern core=/tmp/libfake_core.rlib" } }
+"#,
+        r#"env = { rustflags = { value = "--extern std=/tmp/libfake_std.rlib", force = true } }
+"#,
+        r#"include = "compiler-overrides.toml"
+"#,
+        r#"[profile.dev]
+rustflags = ["--extern", "core=/tmp/libfake_core.rlib"]
+"#,
+    ] {
+        let failures = oxigraph_build_relay_failures_with_provenance(
+            MANIFEST,
+            "[workspace]",
+            &[cargo_config],
+            Some(relay),
+        );
+        assert!(
+            failures.contains(&"repository-controlled compiler configuration provenance"),
+            "repository-controlled compiler overrides must be rejected: {failures:?}",
+        );
+    }
+    let irrelevant_config = r#"
+        # build.rustflags = ["--extern", "std=comment"]
+        [alias]
+        relay-example = "test -- build.rustflags = '--extern core=string'"
+        [build]
+        target-dir = "target-rustflags-core-decoy"
+    "#;
+    let irrelevant_config_failures = oxigraph_build_relay_failures_with_provenance(
+        MANIFEST,
+        "[workspace]",
+        &[irrelevant_config],
+        Some(relay),
+    );
+    assert!(
+        irrelevant_config_failures.is_empty(),
+        "comments and irrelevant compiler-looking config strings must not fail provenance: {irrelevant_config_failures:?}",
+    );
+
+    for (label, cargo_config) in [
+        (
+            "target links table",
+            r#"[target.x86_64-unknown-linux-gnu.rocksdb]
+build_kind = "vendored"
+version = "11.1.2"
+source_revision = "fabricated"
+"#,
+        ),
+        (
+            "quoted target links table",
+            r#"[target."x86_64-unknown-linux-gnu"."rocksdb"]
+build_kind = "vendored"
+"#,
+        ),
+        (
+            "unicode escaped target links table",
+            r#"[target."x86_64-unknown-linux-gnu"."rock\u0073db"]
+build_kind = "vendored"
+"#,
+        ),
+        (
+            "dotted target links override",
+            r#"target.x86_64-unknown-linux-gnu.rocksdb.build_kind = "vendored"
+target.x86_64-unknown-linux-gnu.rocksdb.version = "11.1.2"
+"#,
+        ),
+        (
+            "inline links override in target table",
+            r#"[target.x86_64-unknown-linux-gnu]
+rocksdb = { build_kind = "vendored", version = "11.1.2" }
+"#,
+        ),
+        (
+            "top-level inline links override",
+            r#"target = { x86_64-unknown-linux-gnu = { rocksdb = { build_kind = "vendored" } } }
+"#,
+        ),
+        (
+            "multiline inline links override",
+            r#"target = {
+    x86_64-unknown-linux-gnu = {
+        # Cargo treats this as a links override despite the layout.
+        rocksdb = { build_kind = "vendored", version = "11.1.2" },
+    },
+}
+"#,
+        ),
+        (
+            "included Cargo configuration",
+            r#"include = ["reviewed-base.toml", "rocksdb-override.toml"]
+"#,
+        ),
+    ] {
+        let failures = oxigraph_build_relay_failures_with_provenance(
+            MANIFEST,
+            "[workspace]",
+            &[cargo_config],
+            Some(relay),
+        );
+        assert!(
+            failures.contains(&"repository-controlled RocksDB links override provenance"),
+            "{label} must not replace oxrocksdb-sys build-script metadata: {failures:?}",
+        );
+    }
+
+    for cargo_config in [
+        r#"# [target.x86_64-unknown-linux-gnu.rocksdb]
+# build_kind = "vendored"
+[alias]
+links-decoy = "test -- target.x86_64-unknown-linux-gnu.rocksdb"
+"#,
+        r#"[target.x86_64-unknown-linux-gnu.openssl]
+include_dir = "/reviewed/openssl"
+"#,
+        r#"[target.x86_64-unknown-linux-gnu]
+runner = "tools/reviewed-runner"
+rustdocflags = ["--cfg", "docsrs"]
+rocksdb-helper = { build_kind = "ordinary-application-setting" }
+"#,
+        // Cargo 1.98 warns that links sub-tables below cfg() target selectors are
+        // unused. The real fixture below covers the supported target-triple form.
+        r#"[target.'cfg(unix)'.rocksdb]
+build_kind = "unused-by-cargo"
+"#,
+    ] {
+        let failures = oxigraph_build_relay_failures_with_provenance(
+            MANIFEST,
+            "[workspace]",
+            &[cargo_config],
+            Some(relay),
+        );
+        assert!(
+            failures.is_empty(),
+            "unrelated links names, strings, runner, and Cargo-unsupported cfg links tables must not fail provenance: {failures:?}",
+        );
+    }
+
+    let links_execution =
+        execute_cargo_links_override_fixture(relay).unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !links_execution.baseline.status.success()
+            && links_execution.baseline_ran_dependency_build_script
+            && String::from_utf8_lossy(&links_execution.baseline.stderr)
+                .contains("fixture dependency build script executed"),
+        "the Cargo control baseline must execute the links dependency build script: stdout={} stderr={}",
+        String::from_utf8_lossy(&links_execution.baseline.stdout),
+        String::from_utf8_lossy(&links_execution.baseline.stderr),
+    );
+    assert!(
+        links_execution.overridden.status.success()
+            && !links_execution.override_ran_dependency_build_script,
+        "a target-triple links override must skip the dependency build script, inject exact DEP_ROCKSDB_* metadata into the relay, and leave its nonexistent runner unused: stdout={} stderr={}",
+        String::from_utf8_lossy(&links_execution.overridden.stdout),
+        String::from_utf8_lossy(&links_execution.overridden.stderr),
+    );
+    assert!(
+        !links_execution.invalid_linker.status.success()
+            && !links_execution.invalid_linker_ran_dependency_build_script
+            && String::from_utf8_lossy(&links_execution.invalid_linker.stderr)
+                .contains("linker-must-not-run"),
+        "Cargo must prove that target linker configuration affects build-script linkage while runner configuration does not affect execution: stdout={} stderr={}",
+        String::from_utf8_lossy(&links_execution.invalid_linker.stdout),
+        String::from_utf8_lossy(&links_execution.invalid_linker.stderr),
+    );
+
+    let external_std_execution = compile_and_execute_oxigraph_build_relay_with_external_alias(
+        relay,
+        "std",
+        "relay_fake_std",
+        EXTERNAL_ALIAS_FAKE_STD_SOURCE,
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        external_std_execution.status.success() && external_std_execution.stdout == vendored.stdout,
+        "the compiler-backed control must prove an external std alias can fabricate exact vendored metadata from an empty environment: stdout={} stderr={}",
+        String::from_utf8_lossy(&external_std_execution.stdout),
+        String::from_utf8_lossy(&external_std_execution.stderr),
+    );
+
+    let invalid_alias_environment = [
+        ("CARGO_FEATURE_ROCKSDB", "1"),
+        ("DEP_ROCKSDB_BUILD_KIND", "invalid"),
+        ("DEP_ROCKSDB_VERSION", "invalid"),
+        ("DEP_ROCKSDB_SOURCE_REVISION", "invalid"),
+    ];
+    let external_core_execution = compile_and_execute_oxigraph_build_relay_with_external_alias(
+        relay,
+        "core",
+        "relay_fake_core",
+        EXTERNAL_ALIAS_FAKE_CORE_SOURCE,
+        &invalid_alias_environment,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        external_core_execution.status.success()
+            && String::from_utf8_lossy(&external_core_execution.stdout)
+                == concat!(
+                    "cargo::rustc-env=OXIGRAPH_ROCKSDB_BUILD_KIND=invalid\n",
+                    "cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION=invalid\n",
+                    "cargo::rustc-env=OXIGRAPH_ROCKSDB_SOURCE_REVISION=invalid\n",
+                ),
+        "the compiler-backed control must prove an external core alias can bypass the invalid-metadata panic: stdout={} stderr={}",
+        String::from_utf8_lossy(&external_core_execution.stdout),
+        String::from_utf8_lossy(&external_core_execution.stderr),
     );
 }
 
