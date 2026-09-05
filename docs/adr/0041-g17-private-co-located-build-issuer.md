@@ -2,18 +2,24 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-03
-- Updated: 2026-09-03
+- Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented. Execution request v2, the Cargo
-  helper attestation and status protocol, containment v2, build owner v2,
-  process evidence v3, and product owner v3 remain dormant or replay-only. No
-  private co-located issuer, build owner v3, product owner v4, production build
-  completion path, or physical G1.7 authority exists
-- Programme task: `task-1788403413560-sedu3a`
-  (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-V2`)
+- Implementation status: partially implemented at the authority-null contract
+  boundary. Documentation-only S0, the S1 source-absent evaluator, and S2's
+  pure private-build-issuer requirements contract are complete. Execution
+  request v2, the Cargo helper attestation and status protocol, containment v2,
+  build owner v2, process evidence v3, and product owner v3 remain dormant or
+  replay-only. No private co-located issuer, build owner v3, product owner v4,
+  production build completion path, or physical G1.7 authority exists
+- Current programme task: `task-1788589424013-hx1i83`
+  (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-V2-GRAPH-V4`), pending
+- Historical V2 programme task: `task-1788403413560-sedu3a`,
+  cancelled and superseded
 - Architecture-freeze task: `task-1788403444941-5l8jci`, complete; the exact
-  corrected DAG is stored at
+  historical V2 DAG is stored at
   `task-plans/adr-0041-evaluator-first-dag-v2-2026-09-03`
+- Authority-null contract evidence: S1 `task-1788403485637-t9wn40` completed
+  at `ef50d492`; S2 `task-1788403489170-xl71j9` completed at `4f5b5c51`
 - **Amends**:
   [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)
 - **Depends on**:
@@ -79,15 +85,21 @@ The additive chain consists of:
 4. `oxigraph.g1.7-benchmark-product-owner/v4` and its v4 projection.
 
 The completed ADR-0036 C21 and programme-umbrella local boundary at commit
-`c01b3c6a` makes S1
-`task-1788403485637-t9wn40` dependency-eligible. S1 remains pending at zero
-progress and unstarted; no source slice starts with that closure. After S1
-freezes evaluator RED, the requirements contract may be implemented and replayed
-before the physical dependencies close. It freezes vocabulary, bounds,
-descriptor roles, ordering, failure precedence, required dependency identities,
-and nonclaims; it opens no descriptor, launches no process, mutates no cgroup or
-filesystem, invokes no callback, and accepts no ambient authority. Its passing
-replay is not a build owner.
+`c01b3c6a` made S1 `task-1788403485637-t9wn40` dependency-eligible. S1 then
+froze its source-absent evaluator at `ef50d492`, and S2
+`task-1788403489170-xl71j9` implemented the pure requirements contract at
+`4f5b5c51`. That contract freezes vocabulary, bounds, descriptor roles,
+ordering, failure precedence, required dependency identities, and nonclaims;
+it opens no descriptor, launches no process, mutates no cgroup or filesystem,
+invokes no callback, and accepts no ambient authority. Its passing replay is
+not a build owner.
+
+Current graph-V4 S3 `task-1788589440120-iaem8f` depends only on completed S2,
+completed ADR-0037 S7 `task-1788573342748-wln111`, and completed ADR-0038 S3 V3
+`task-1788589313411-vm7pg0`. Those dependencies are satisfied, so S3 is
+dependency-eligible but remains pending and unstarted. S3 may add only the
+source-absent physical-issuer evaluator; it grants no physical execution or
+host authority.
 
 The physical issuer, build owner v3, and product owner v4 remain unavailable
 until their exact predecessor interfaces exist. This ADR does not guess or
@@ -259,13 +271,13 @@ unchanged and replayable.
 Documentation-only S0 architecture freeze is complete. C21 task
 `task-1788204883871-l9tsh9` and ADR-0036 programme umbrella
 `task-1788042241332-xafq11` are complete for the local documentation/ledger
-boundary at commit `c01b3c6a`, satisfying S1's dependency gate. S1
-`task-1788403485637-t9wn40` is dependency-eligible but remains pending at zero
-progress and unstarted. Only after its evaluator RED is frozen may the
-authority-null serializer/verifier source slice proceed without waiting for
-physical ADR-0037 through ADR-0040 effects. Physical evaluator design may
-proceed only against integrated ADR-0037/ADR-0038 interfaces. Positive Cargo
-execution or output crossing the boundary requires the current ADR-0039
+boundary at commit `c01b3c6a`. S1 `task-1788403485637-t9wn40` and pure S2
+`task-1788403489170-xl71j9` are complete. Current graph-V4 S3
+`task-1788589440120-iaem8f` is dependency-eligible after the completed
+ADR-0037 S7 and ADR-0038 S3 V3 repository interfaces, but remains pending and
+unstarted. Its evaluator-only scope must keep host-positive cases gated and
+must not guess absent receipt fields. Positive Cargo execution or output
+crossing the boundary requires the current ADR-0039
 prerequisite plus ADR-0040's distinct successor destructive qualification and
 receipt-bound activation for the same host, boot, artifacts, state root,
 delegated root, protocol, and implementation.
@@ -376,10 +388,9 @@ qualification, receipt, and promotion values remain null or false.
   release no owner, making recovery cost visible rather than manufacturing
   success.
 - The additional evaluator, mutation, native, host, and independent-review
-  surface is substantial. Documentation-only S0 is complete; local ADR-0036
-  C21/umbrella closure makes S1 dependency-eligible but leaves it pending at
-  zero progress and unstarted. Pure requirements source still waits for S1 RED,
-  while positive physical work remains separately blocked.
+  surface is substantial. Documentation-only S0, S1 RED, and pure S2 GREEN are
+  complete. Current graph-V4 S3 is dependency-eligible but unstarted, while
+  positive physical work remains separately gated.
 
 ## Alternatives rejected
 
