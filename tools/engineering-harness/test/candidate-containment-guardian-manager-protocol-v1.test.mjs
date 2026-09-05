@@ -6230,7 +6230,7 @@ function persistResult(request, { role, name, inode }) {
     operation: request.operation,
     status: "COMPLETE",
     effectClass: "COMPLETE",
-    lastCompletedStep: "DESTINATION_REOBSERVED",
+    lastCompletedStep: "FINAL_READ_DESCRIPTOR_CLOSED",
     failedStep: "NONE",
     errno: 0,
     completedStepCount: 15,
