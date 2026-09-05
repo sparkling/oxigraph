@@ -1330,6 +1330,266 @@ function parsePinnedAdrTable(source, header, widths) {
   );
 }
 
+function reconstructPreS7V5ManagerEvaluatorSource(source) {
+  const countExact = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeExactly = (value, start, end, label) => {
+    assert.equal(countExact(value, start), 1, `${label} start`);
+    assert.equal(countExact(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V5ManagerEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreS7V4ManagerEvaluatorSource(source) {\n",
+    "S7 V5 manager inverse helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  await assertArtifactPin(ADR_URL, {",
+      "    byteLength: 221438,",
+      "    lineFeeds: 3713,",
+      '    sha256: "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",',
+      '    gitBlob: "d3b32ea45c3d44913c8931024b53404e511f5bec",',
+    ].join("\n"),
+    [
+      "  await assertArtifactPin(ADR_URL, {",
+      "    byteLength: 221438,",
+      "    lineFeeds: 3713,",
+      '    sha256: "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+      '    gitBlob: "5b876789f86d8bb394bc1d4dc51b972c17850e80",',
+    ].join("\n"),
+    "S7 V5 manager ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  await assertArtifactPin(STATEFS_EVALUATOR_URL, {",
+      "    byteLength: 401433,",
+      "    lineFeeds: 11709,",
+      '    sha256: "1a9e3e102139a1462454146d57de57439fa845b360790c5dfaf945fd717f5d1b",',
+      '    gitBlob: "dcba8881b2ccc625befd26e998d0292ac00c5f97",',
+    ].join("\n"),
+    [
+      "  await assertArtifactPin(STATEFS_EVALUATOR_URL, {",
+      "    byteLength: 396556,",
+      "    lineFeeds: 11574,",
+      '    sha256: "860fc5de84cabb913ab7835d04c5e1cbe17cbe8792615ce38d741fc7692bcea1",',
+      '    gitBlob: "d8f14f567d10c5e2a5176343540cef65c93d38ff",',
+    ].join("\n"),
+    "S7 V5 manager StateFS evaluator pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4ManagerEvaluatorSource(source) {",
+      "  source = reconstructPreS7V5ManagerEvaluatorSource(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4ManagerEvaluatorSource(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 V5 manager older inverse forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    [
+      "\n  const v5Source =",
+      "    reconstructPreS7V5ManagerEvaluatorSource(currentSource);",
+    ].join("\n"),
+    [
+      "\n  const reconstructedSource =",
+      "    reconstructPreS7V4ManagerEvaluatorSource(currentSource);",
+    ].join("\n"),
+    "S7 V5 manager direct inverse proof",
+  );
+  return reconstructed;
+}
+
+function reconstructPreS7V4ManagerEvaluatorSource(source) {
+  source = reconstructPreS7V5ManagerEvaluatorSource(source);
+  const countExact = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeExactly = (value, start, end, label) => {
+    assert.equal(countExact(value, start), 1, `${label} start`);
+    assert.equal(countExact(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V4ManagerEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreS7ManagerEvaluatorSource(source) {\n",
+    "S7 V4 manager inverse helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  await assertArtifactPin(ADR_URL, {",
+      "    byteLength: 221438,",
+      "    lineFeeds: 3713,",
+      '    sha256: "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+      '    gitBlob: "5b876789f86d8bb394bc1d4dc51b972c17850e80",',
+    ].join("\n"),
+    [
+      "  await assertArtifactPin(ADR_URL, {",
+      "    byteLength: 221172,",
+      "    lineFeeds: 3709,",
+      '    sha256: "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+      '    gitBlob: "426ea53752ad09533d85f27231f4f251cc99c0fa",',
+    ].join("\n"),
+    "S7 V4 manager ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  await assertArtifactPin(STATEFS_EVALUATOR_URL, {",
+      "    byteLength: 396556,",
+      "    lineFeeds: 11574,",
+      '    sha256: "860fc5de84cabb913ab7835d04c5e1cbe17cbe8792615ce38d741fc7692bcea1",',
+      '    gitBlob: "d8f14f567d10c5e2a5176343540cef65c93d38ff",',
+    ].join("\n"),
+    [
+      "  await assertArtifactPin(STATEFS_EVALUATOR_URL, {",
+      "    byteLength: 391542,",
+      "    lineFeeds: 11439,",
+      '    sha256: "9205a95e78138a2f8e3b1630e5fa830c6aa862496b54404423ab53ea6ab33ead",',
+      '    gitBlob: "2f8222fb0db1f9c49ccfcb5b470d4f02592229ad",',
+    ].join("\n"),
+    "S7 V4 manager StateFS evaluator pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7ManagerEvaluatorSource(source) {",
+      "  source = reconstructPreS7V4ManagerEvaluatorSource(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7ManagerEvaluatorSource(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 V4 manager older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 manager evaluator", async () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure manager evaluator", async () => {\n',
+    "S7 V4 manager inverse proof",
+  );
+}
+
+function reconstructPreS7ManagerEvaluatorSource(source) {
+  source = reconstructPreS7V4ManagerEvaluatorSource(source);
+  const countExact = (value, needle) => {
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeExactly = (value, start, end, label) => {
+    assert.equal(countExact(value, start), 1, `${label} start`);
+    assert.equal(countExact(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7ManagerEvaluatorSource(source) {\n",
+    '\n\ntest("first creation pins the exact base tree and proves both manager paths absent", async () => {\n',
+    "S7 manager inverse helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  await assertArtifactPin(ADR_URL, {",
+      "    byteLength: 221172,",
+      "    lineFeeds: 3709,",
+      '    sha256: "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+      '    gitBlob: "426ea53752ad09533d85f27231f4f251cc99c0fa",',
+    ].join("\n"),
+    [
+      "  await assertArtifactPin(ADR_URL, {",
+      "    byteLength: 216688,",
+      "    lineFeeds: 3638,",
+      '    sha256: "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+      '    gitBlob: "49b0467887646ee05126a593d28e78bebff6f78f",',
+    ].join("\n"),
+    "S7 manager ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "  await assertArtifactPin(STATEFS_EVALUATOR_URL, {",
+      "    byteLength: 391542,",
+      "    lineFeeds: 11439,",
+      '    sha256: "9205a95e78138a2f8e3b1630e5fa830c6aa862496b54404423ab53ea6ab33ead",',
+      '    gitBlob: "2f8222fb0db1f9c49ccfcb5b470d4f02592229ad",',
+    ].join("\n"),
+    [
+      "  await assertArtifactPin(STATEFS_EVALUATOR_URL, {",
+      "    byteLength: 386695,",
+      "    lineFeeds: 11305,",
+      '    sha256: "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",',
+      '    gitBlob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",',
+    ].join("\n"),
+    "S7 manager StateFS evaluator pin inverse",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure manager evaluator", async () => {\n',
+    '\n\ntest("literal manager requirements oracle is ordered, recursively frozen, and internally closed", () => {\n',
+    "S7 manager inverse proof",
+  );
+}
+
 test("first creation pins the exact base tree and proves both manager paths absent", async () => {
   assert.equal(
     git("rev-parse", `${AUTHORING_BASE}^{tree}`).trim(),
@@ -1346,16 +1606,16 @@ test("first creation pins the exact base tree and proves both manager paths abse
 
 test("pins the amended ADR, public StateFS evaluator, exact helper, and predecessor requirements", async () => {
   await assertArtifactPin(ADR_URL, {
-    byteLength: 216688,
-    lineFeeds: 3638,
-    sha256: "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
-    gitBlob: "49b0467887646ee05126a593d28e78bebff6f78f",
+    byteLength: 221438,
+    lineFeeds: 3713,
+    sha256: "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",
+    gitBlob: "d3b32ea45c3d44913c8931024b53404e511f5bec",
   });
   await assertArtifactPin(STATEFS_EVALUATOR_URL, {
-    byteLength: 386695,
-    lineFeeds: 11305,
-    sha256: "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",
-    gitBlob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",
+    byteLength: 401433,
+    lineFeeds: 11709,
+    sha256: "1a9e3e102139a1462454146d57de57439fa845b360790c5dfaf945fd717f5d1b",
+    gitBlob: "dcba8881b2ccc625befd26e998d0292ac00c5f97",
   });
   assert.equal(
     gitBlobSha1(await readFile(EXACT_V2_URL)),
@@ -1384,6 +1644,77 @@ test("pins the amended ADR, public StateFS evaluator, exact helper, and predeces
       control.CANDIDATE_CONTAINMENT_GUARDIAN_CONTROL_V1_REQUIREMENTS,
     ),
     PREDECESSORS[5][1],
+  );
+});
+
+test("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 manager evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const v5Source =
+    reconstructPreS7V5ManagerEvaluatorSource(currentSource);
+  const v5Bytes = Buffer.from(v5Source, "utf8");
+  assert.equal(v5Bytes.length, 280616);
+  assert.equal(v5Source.split("\n").length - 1, 8809);
+  assert.equal(
+    byteSha256(v5Bytes),
+    "c295973a7af70e5ab58411313bc243236cd4ce6ac0fc32af02922f60222a162e",
+  );
+  assert.equal(
+    gitBlobSha1(v5Bytes),
+    "118c3083353e6e2f1a49d3dd049212a0e785e2c0",
+  );
+  assert.equal([...v5Source.matchAll(/(?:^|\n)test\(/gu)].length, 16);
+  assert.equal(
+    [...v5Source.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    28,
+  );
+  const reconstructedSource =
+    reconstructPreS7V4ManagerEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 276171);
+  assert.equal(reconstructedSource.split("\n").length - 1, 8693);
+  assert.equal(
+    byteSha256(reconstructedBytes),
+    "4bae8ec1b858f1813d410b625642031c0f00abfc552b542c371a497518dfef7c",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "6e445228de06f6e78b1701e4ff261452d3dd7bf7",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    15,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    28,
+  );
+});
+
+test("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure manager evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreS7ManagerEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 272226);
+  assert.equal(reconstructedSource.split("\n").length - 1, 8592);
+  assert.equal(
+    byteSha256(reconstructedBytes),
+    "9e5acee6695f6ce63acbb29040504794b38b530421e9e60298653187fc9f7620",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "6936436f74cdd11cc512eff4055ca24bb5e130a5",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    14,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    28,
   );
 });
 

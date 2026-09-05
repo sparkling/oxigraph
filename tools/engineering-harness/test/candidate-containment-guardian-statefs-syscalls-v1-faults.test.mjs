@@ -40,8 +40,8 @@ const EVALUATOR_PATH = fileURLToPath(import.meta.url);
 const PREDECESSOR_BYTE_PINS = Object.freeze([
   Object.freeze([
     ADR_URL,
-    216688,
-    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
+    221438,
+    "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",
   ]),
   Object.freeze([
     PACKAGE_URL,
@@ -3026,7 +3026,215 @@ test("pins amended ADR-0037 and unchanged harness package bytes", async () => {
   }
 });
 
+function reconstructPreS7V5P3Source(source) {
+  const countExact = (value, needle) => {
+    assert.equal(typeof value, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeExactly = (value, start, end, label) => {
+    assert.equal(countExact(value, start), 1, `${label} start`);
+    assert.equal(countExact(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V5P3Source(source) {\n",
+    "\n\nfunction reconstructPreS7V4P3Source(source) {\n",
+    "S7 V5 P3 inverse helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    "S7 V5 P3 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4P3Source(source) {",
+      "  source = reconstructPreS7V5P3Source(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4P3Source(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 V5 P3 older inverse forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n  const v5Source = reconstructPreS7V5P3Source(currentSource);\n",
+    "\n  const reconstructedSource = reconstructPreS7V4P3Source(currentSource);\n",
+    "S7 V5 P3 direct inverse proof",
+  );
+  return reconstructed;
+}
+
+function reconstructPreS7V4P3Source(source) {
+  source = reconstructPreS7V5P3Source(source);
+  const countExact = (value, needle) => {
+    assert.equal(typeof value, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeExactly = (value, start, end, label) => {
+    assert.equal(countExact(value, start), 1, `${label} start`);
+    assert.equal(countExact(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V4P3Source(source) {\n",
+    "\n\nfunction reconstructPreS7P3AdrClosureSource(source) {\n",
+    "S7 V4 P3 inverse helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    "S7 V4 P3 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7P3AdrClosureSource(source) {",
+      "  source = reconstructPreS7V4P3Source(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7P3AdrClosureSource(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 V4 P3 older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 fault evaluator", async () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure fault evaluator", async () => {\n',
+    "S7 V4 P3 inverse proof",
+  );
+}
+
+function reconstructPreS7P3AdrClosureSource(source) {
+  source = reconstructPreS7V4P3Source(source);
+  const countExact = (value, needle) => {
+    assert.equal(typeof value, "string");
+    assert.equal(typeof needle, "string");
+    assert.notEqual(needle.length, 0);
+    let count = 0;
+    let offset = 0;
+    while (true) {
+      const index = value.indexOf(needle, offset);
+      if (index === -1) return count;
+      count += 1;
+      offset = index + needle.length;
+    }
+  };
+  const replaceExactly = (value, before, after, label) => {
+    assert.equal(countExact(value, before), 1, label);
+    return value.replace(before, after);
+  };
+  const removeRangeExactly = (value, start, end, label) => {
+    assert.equal(countExact(value, start), 1, `${label} start`);
+    assert.equal(countExact(value, end), 1, `${label} end`);
+    const startIndex = value.indexOf(start);
+    const endIndex = value.indexOf(end, startIndex + start.length);
+    assert.equal(endIndex > startIndex, true, `${label} order`);
+    return `${value.slice(0, startIndex)}${value.slice(endIndex)}`;
+  };
+
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7P3AdrClosureSource(source) {\n",
+    "\n\nfunction reconstructPreR14AdrRepinEvaluatorSource(source) {\n",
+    "S7 P3 inverse helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    216688,",
+      '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+    ].join("\n"),
+    "S7 P3 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR14AdrRepinEvaluatorSource(source) {",
+      "  source = reconstructPreS7P3AdrClosureSource(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreR14AdrRepinEvaluatorSource(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 P3 older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure fault evaluator", async () => {\n',
+    '\n\ntest("R14 ADR predecessor repin inversely reconstructs the exact pre-R14 fault evaluator", async () => {\n',
+    "S7 P3 inverse proof",
+  );
+}
+
 function reconstructPreR14AdrRepinEvaluatorSource(source) {
+  source = reconstructPreS7P3AdrClosureSource(source);
   const countExact = (value, needle) => {
     assert.equal(typeof value, "string");
     assert.equal(typeof needle, "string");
@@ -3121,6 +3329,84 @@ function reconstructPreR14AdrRepinEvaluatorSource(source) {
   assert.ok(endIndex > startIndex);
   return `${reconstructed.slice(0, startIndex)}${reconstructed.slice(endIndex)}`;
 }
+
+test("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 fault evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const v5Source = reconstructPreS7V5P3Source(currentSource);
+  const v5Bytes = Buffer.from(v5Source, "utf8");
+  assert.equal(v5Bytes.length, 189369);
+  assert.equal(v5Source.split("\n").length - 1, 5596);
+  assert.equal(
+    sha256(v5Bytes),
+    "3ae77a03e59ef5f3ee113533ff06cf54a19875651f81b871666953224757e9b0",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${v5Bytes.length}\0`, "utf8"))
+      .update(v5Bytes)
+      .digest("hex"),
+    "5db2795dbab24278ed89d7dacfb21ca422f19dbb",
+  );
+  assert.equal([...v5Source.matchAll(/(?:^|\n)test\(/gu)].length, 15);
+  assert.equal(
+    [...v5Source.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+  const reconstructedSource = reconstructPreS7V4P3Source(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 185835);
+  assert.equal(reconstructedSource.split("\n").length - 1, 5498);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "75171730469775f3c3d10ad2577f016911994f52fa10baa7ff44659d40225dad",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "b5f791e8fe87913675d1caeb432c0264f27ee4e8",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    14,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+});
+
+test("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure fault evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreS7P3AdrClosureSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 182254);
+  assert.equal(reconstructedSource.split("\n").length - 1, 5400);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "108dbfe0235ee9fed7d17d0a2352a0184e7eda74a39a77f59d5f5efd8353627a",
+  );
+  assert.equal(
+    createHash("sha1")
+      .update(Buffer.from(`blob ${reconstructedBytes.length}\0`, "utf8"))
+      .update(reconstructedBytes)
+      .digest("hex"),
+    "f09c812da56dd9c45c90ee8a5af38266e9856245",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    13,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    8,
+  );
+});
 
 test("R14 ADR predecessor repin inversely reconstructs the exact pre-R14 fault evaluator", async () => {
   const currentBytes = await readFile(EVALUATOR_PATH);

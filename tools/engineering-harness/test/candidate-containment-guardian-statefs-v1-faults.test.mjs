@@ -152,7 +152,459 @@ function removeRangeExactly(source, start, end, label) {
   return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
 }
 
+function reconstructPreS7V5PrivateEvaluatorSource(source) {
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V5PrivateEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreS7V4PrivateEvaluatorSource(source) {\n",
+    "S7 V5 private inverse helper",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7V5P2SourceForPrivate(source) {\n",
+    "\n\nfunction reconstructPreS7V4P2SourceForPrivate(source) {\n",
+    "S7 V5 private P2 helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4P2SourceForPrivate(source) {",
+      "  source = reconstructPreS7V5P2SourceForPrivate(source);",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4P2SourceForPrivate(source) {",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    "S7 V5 private P2 forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7V5P3SourceForPrivate(source) {\n",
+    "\n\nfunction reconstructPreS7V4P3SourceForPrivate(source) {\n",
+    "S7 V5 private P3 helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4P3SourceForPrivate(source) {",
+      "  source = reconstructPreS7V5P3SourceForPrivate(source);",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4P3SourceForPrivate(source) {",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    "S7 V5 private P3 forwarding",
+  );
+  const pinReplacements = [
+    [
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 221438,",
+        "    lines: 3713,",
+        '    sha256: "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",',
+        '    blob: "d3b32ea45c3d44913c8931024b53404e511f5bec",',
+      ].join("\n"),
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 221438,",
+        "    lines: 3713,",
+        '    sha256: "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+        '    blob: "5b876789f86d8bb394bc1d4dc51b972c17850e80",',
+      ].join("\n"),
+      "S7 V5 private ADR pin inverse",
+    ],
+    [
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 401433,",
+        "    lines: 11709,",
+        '    sha256: "1a9e3e102139a1462454146d57de57439fa845b360790c5dfaf945fd717f5d1b",',
+        '    blob: "dcba8881b2ccc625befd26e998d0292ac00c5f97",',
+      ].join("\n"),
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 396556,",
+        "    lines: 11574,",
+        '    sha256: "860fc5de84cabb913ab7835d04c5e1cbe17cbe8792615ce38d741fc7692bcea1",',
+        '    blob: "d8f14f567d10c5e2a5176343540cef65c93d38ff",',
+      ].join("\n"),
+      "S7 V5 private P1 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 176420,",
+        "    lines: 5235,",
+        '    sha256: "c2cde3ddee41e99f0103d0f23960f384c845fd7fcfc0f24e80aca12e7729f02c",',
+        '    blob: "0f2237b939ae7e6bf70a56aa075e67cb791b4630",',
+      ].join("\n"),
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 173505,",
+        "    lines: 5147,",
+        '    sha256: "04be5f97e08f6a02a7316bada10422f57f2de41b4e659cea3e8a569dfdedceda",',
+        '    blob: "bbc1e3860da94c86da335369259342e61866c0d0",',
+      ].join("\n"),
+      "S7 V5 private P2 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 192417,",
+        "    lines: 5686,",
+        '    sha256: "494dd274ee477549cb1923759f88344215df09bd87cd513258de3c4e9b4df191",',
+        '    blob: "eb0e5b619c10a0f92e7457ba91c3c804a82c1f0d",',
+      ].join("\n"),
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 189369,",
+        "    lines: 5596,",
+        '    sha256: "3ae77a03e59ef5f3ee113533ff06cf54a19875651f81b871666953224757e9b0",',
+        '    blob: "5db2795dbab24278ed89d7dacfb21ca422f19dbb",',
+      ].join("\n"),
+      "S7 V5 private P3 pin inverse",
+    ],
+  ];
+  for (const [before, after, label] of pinReplacements) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4PrivateEvaluatorSource(source) {",
+      "  source = reconstructPreS7V5PrivateEvaluatorSource(source);",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4PrivateEvaluatorSource(source) {",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    "S7 V5 private older inverse forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    [
+      "\n  const v5Source =",
+      "    reconstructPreS7V5PrivateEvaluatorSource(currentSource);",
+    ].join("\n"),
+    [
+      "\n  const reconstructedSource =",
+      "    reconstructPreS7V4PrivateEvaluatorSource(currentSource);",
+    ].join("\n"),
+    "S7 V5 private direct inverse proof",
+  );
+  return reconstructed;
+}
+
+function reconstructPreS7V4PrivateEvaluatorSource(source) {
+  source = reconstructPreS7V5PrivateEvaluatorSource(source);
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V4PrivateEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreS7PrivateEvaluatorSource(source) {\n",
+    "S7 V4 private inverse helper",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7V4P2SourceForPrivate(source) {\n",
+    "\n\nfunction reconstructPreS7P2SourceForPrivate(source) {\n",
+    "S7 V4 private P2 helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7P2SourceForPrivate(source) {",
+      "  source = reconstructPreS7V4P2SourceForPrivate(source);",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    [
+      "function reconstructPreS7P2SourceForPrivate(source) {",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    "S7 V4 private P2 forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7V4P3SourceForPrivate(source) {\n",
+    "\n\nfunction reconstructPreS7P3SourceForPrivate(source) {\n",
+    "S7 V4 private P3 helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7P3SourceForPrivate(source) {",
+      "  source = reconstructPreS7V4P3SourceForPrivate(source);",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    [
+      "function reconstructPreS7P3SourceForPrivate(source) {",
+      "  let reconstructed = removeRangeExactly(",
+    ].join("\n"),
+    "S7 V4 private P3 forwarding",
+  );
+  const pinReplacements = [
+    [
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 221438,",
+        "    lines: 3713,",
+        '    sha256: "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+        '    blob: "5b876789f86d8bb394bc1d4dc51b972c17850e80",',
+      ].join("\n"),
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 221172,",
+        "    lines: 3709,",
+        '    sha256: "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+        '    blob: "426ea53752ad09533d85f27231f4f251cc99c0fa",',
+      ].join("\n"),
+      "S7 V4 private ADR pin inverse",
+    ],
+    [
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 396556,",
+        "    lines: 11574,",
+        '    sha256: "860fc5de84cabb913ab7835d04c5e1cbe17cbe8792615ce38d741fc7692bcea1",',
+        '    blob: "d8f14f567d10c5e2a5176343540cef65c93d38ff",',
+      ].join("\n"),
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 391542,",
+        "    lines: 11439,",
+        '    sha256: "9205a95e78138a2f8e3b1630e5fa830c6aa862496b54404423ab53ea6ab33ead",',
+        '    blob: "2f8222fb0db1f9c49ccfcb5b470d4f02592229ad",',
+      ].join("\n"),
+      "S7 V4 private P1 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 173505,",
+        "    lines: 5147,",
+        '    sha256: "04be5f97e08f6a02a7316bada10422f57f2de41b4e659cea3e8a569dfdedceda",',
+        '    blob: "bbc1e3860da94c86da335369259342e61866c0d0",',
+      ].join("\n"),
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 170098,",
+        "    lines: 5051,",
+        '    sha256: "2dad7967f6037a7c65287ab6af54522e67886b589255a050165aa243590ae2cb",',
+        '    blob: "d414c88f82d9b0528df9416b2fb89da83fbcf146",',
+      ].join("\n"),
+      "S7 V4 private P2 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 189369,",
+        "    lines: 5596,",
+        '    sha256: "3ae77a03e59ef5f3ee113533ff06cf54a19875651f81b871666953224757e9b0",',
+        '    blob: "5db2795dbab24278ed89d7dacfb21ca422f19dbb",',
+      ].join("\n"),
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 185835,",
+        "    lines: 5498,",
+        '    sha256: "75171730469775f3c3d10ad2577f016911994f52fa10baa7ff44659d40225dad",',
+        '    blob: "b5f791e8fe87913675d1caeb432c0264f27ee4e8",',
+      ].join("\n"),
+      "S7 V4 private P3 pin inverse",
+    ],
+  ];
+  for (const [before, after, label] of pinReplacements) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7PrivateEvaluatorSource(source) {",
+      "  source = reconstructPreS7V4PrivateEvaluatorSource(source);",
+      "  let reconstructed = source;",
+    ].join("\n"),
+    [
+      "function reconstructPreS7PrivateEvaluatorSource(source) {",
+      "  let reconstructed = source;",
+    ].join("\n"),
+    "S7 V4 private older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 private evaluator", async () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure private evaluator", async () => {\n',
+    "S7 V4 private inverse proof",
+  );
+}
+
+function reconstructPreS7PrivateEvaluatorSource(source) {
+  source = reconstructPreS7V4PrivateEvaluatorSource(source);
+  let reconstructed = source;
+  const pinReplacements = [
+    [
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 221172,",
+        "    lines: 3709,",
+        '    sha256: "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+        '    blob: "426ea53752ad09533d85f27231f4f251cc99c0fa",',
+      ].join("\n"),
+      [
+        '    label: "ADR-0037",',
+        "    url: ADR_URL,",
+        "    bytes: 216688,",
+        "    lines: 3638,",
+        '    sha256: "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+        '    blob: "49b0467887646ee05126a593d28e78bebff6f78f",',
+      ].join("\n"),
+      "S7 private ADR pin inverse",
+    ],
+    [
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 391542,",
+        "    lines: 11439,",
+        '    sha256: "9205a95e78138a2f8e3b1630e5fa830c6aa862496b54404423ab53ea6ab33ead",',
+        '    blob: "2f8222fb0db1f9c49ccfcb5b470d4f02592229ad",',
+      ].join("\n"),
+      [
+        '    label: "S2 statefs evaluator",',
+        "    url: STATEFS_EVALUATOR_URL,",
+        "    bytes: 386695,",
+        "    lines: 11305,",
+        '    sha256: "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",',
+        '    blob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",',
+      ].join("\n"),
+      "S7 private P1 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 170098,",
+        "    lines: 5051,",
+        '    sha256: "2dad7967f6037a7c65287ab6af54522e67886b589255a050165aa243590ae2cb",',
+        '    blob: "d414c88f82d9b0528df9416b2fb89da83fbcf146",',
+      ].join("\n"),
+      [
+        '    label: "S3 syscall evaluator",',
+        "    url: SYSCALL_EVALUATOR_URL,",
+        "    bytes: 166676,",
+        "    lines: 4955,",
+        '    sha256: "4da18be9ae8dcf04288482aa728acccf7281054cd69061f3227353ecc24dd24c",',
+        '    blob: "b7eae6e8f5a9724ad6d2b9963785faf9d76ca1b0",',
+      ].join("\n"),
+      "S7 private P2 pin inverse",
+    ],
+    [
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 185835,",
+        "    lines: 5498,",
+        '    sha256: "75171730469775f3c3d10ad2577f016911994f52fa10baa7ff44659d40225dad",',
+        '    blob: "b5f791e8fe87913675d1caeb432c0264f27ee4e8",',
+      ].join("\n"),
+      [
+        '    label: "S3 fault evaluator",',
+        "    url: FAULT_EVALUATOR_URL,",
+        "    bytes: 182254,",
+        "    lines: 5400,",
+        '    sha256: "108dbfe0235ee9fed7d17d0a2352a0184e7eda74a39a77f59d5f5efd8353627a",',
+        '    blob: "f09c812da56dd9c45c90ee8a5af38266e9856245",',
+      ].join("\n"),
+      "S7 private P3 pin inverse",
+    ],
+  ];
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7PrivateEvaluatorSource(source) {\n",
+    "\n\nfunction reconstructPreR13FPrivateEvaluatorSource(source) {\n",
+    "S7 private inverse helper",
+  );
+  for (const [before, after, label] of pinReplacements) {
+    reconstructed = replaceExactly(reconstructed, before, after, label);
+  }
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR13FPrivateEvaluatorSource(source) {",
+      "  source = reconstructPreS7PrivateEvaluatorSource(source);",
+      "  let reconstructed = source;",
+    ].join("\n"),
+    [
+      "function reconstructPreR13FPrivateEvaluatorSource(source) {",
+      "  let reconstructed = source;",
+    ].join("\n"),
+    "S7 private older inverse forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7P2SourceForPrivate(source) {\n",
+    "\n\nfunction reconstructPreR14P2SourceForPrivate(source) {\n",
+    "S7 private P2 helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR14P2SourceForPrivate(source) {",
+      "  source = reconstructPreS7P2SourceForPrivate(source);",
+      "  const currentAdrPin = [",
+    ].join("\n"),
+    [
+      "function reconstructPreR14P2SourceForPrivate(source) {",
+      "  const currentAdrPin = [",
+    ].join("\n"),
+    "S7 private P2 helper forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n\nfunction reconstructPreS7P3SourceForPrivate(source) {\n",
+    "\n\nfunction reconstructPreR14P3SourceForPrivate(source) {\n",
+    "S7 private P3 helper",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR14P3SourceForPrivate(source) {",
+      "  source = reconstructPreS7P3SourceForPrivate(source);",
+      "  const currentAdrPin = [",
+    ].join("\n"),
+    [
+      "function reconstructPreR14P3SourceForPrivate(source) {",
+      "  const currentAdrPin = [",
+    ].join("\n"),
+    "S7 private P3 helper forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure private evaluator", async () => {\n',
+    '\n\ntest("R13F held-root mask fixture correction inversely reconstructs the exact R13E evaluator", async () => {\n',
+    "S7 private inverse proof",
+  );
+}
+
 function reconstructPreR13FPrivateEvaluatorSource(source) {
+  source = reconstructPreS7PrivateEvaluatorSource(source);
   let reconstructed = source;
   reconstructed = replaceExactly(
     reconstructed,
@@ -1218,10 +1670,10 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "ADR-0037",
     url: ADR_URL,
-    bytes: 216688,
-    lines: 3638,
-    sha256: "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",
-    blob: "49b0467887646ee05126a593d28e78bebff6f78f",
+    bytes: 221438,
+    lines: 3713,
+    sha256: "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",
+    blob: "d3b32ea45c3d44913c8931024b53404e511f5bec",
   },
   {
     label: "S2 statefs source",
@@ -1234,26 +1686,26 @@ const PREDECESSOR_PINS = deepFreeze([
   {
     label: "S2 statefs evaluator",
     url: STATEFS_EVALUATOR_URL,
-    bytes: 386695,
-    lines: 11305,
-    sha256: "7b79d1ab3c28289a2db9a262552c44c3e866e087b408e37d1898365d27b91651",
-    blob: "fc45c3975f6c4901bd89ba362a0816b51efb61be",
+    bytes: 401433,
+    lines: 11709,
+    sha256: "1a9e3e102139a1462454146d57de57439fa845b360790c5dfaf945fd717f5d1b",
+    blob: "dcba8881b2ccc625befd26e998d0292ac00c5f97",
   },
   {
     label: "S3 syscall evaluator",
     url: SYSCALL_EVALUATOR_URL,
-    bytes: 166676,
-    lines: 4955,
-    sha256: "4da18be9ae8dcf04288482aa728acccf7281054cd69061f3227353ecc24dd24c",
-    blob: "b7eae6e8f5a9724ad6d2b9963785faf9d76ca1b0",
+    bytes: 176420,
+    lines: 5235,
+    sha256: "c2cde3ddee41e99f0103d0f23960f384c845fd7fcfc0f24e80aca12e7729f02c",
+    blob: "0f2237b939ae7e6bf70a56aa075e67cb791b4630",
   },
   {
     label: "S3 fault evaluator",
     url: FAULT_EVALUATOR_URL,
-    bytes: 182254,
-    lines: 5400,
-    sha256: "108dbfe0235ee9fed7d17d0a2352a0184e7eda74a39a77f59d5f5efd8353627a",
-    blob: "f09c812da56dd9c45c90ee8a5af38266e9856245",
+    bytes: 192417,
+    lines: 5686,
+    sha256: "494dd274ee477549cb1923759f88344215df09bd87cd513258de3c4e9b4df191",
+    blob: "eb0e5b619c10a0f92e7457ba91c3c804a82c1f0d",
   },
   {
     label: "engineering package",
@@ -6177,7 +6629,137 @@ async function assertR13ImpossibleUncertainRejected(
   assert.equal(report.cleanupCompleted, true);
 }
 
+function reconstructPreS7V5P2SourceForPrivate(source) {
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V5P2Source(source) {\n",
+    "\n\nfunction reconstructPreS7V4P2Source(source) {\n",
+    "S7 V5 P2 helper inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    "S7 V5 P2 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4P2Source(source) {",
+      "  source = reconstructPreS7V5P2Source(source);",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4P2Source(source) {",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    "S7 V5 P2 older inverse forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n  const v5Source = reconstructPreS7V5P2Source(currentSource);\n",
+    "\n  const reconstructedSource = reconstructPreS7V4P2Source(currentSource);\n",
+    "S7 V5 P2 direct inverse proof",
+  );
+  return reconstructed;
+}
+
+function reconstructPreS7V4P2SourceForPrivate(source) {
+  source = reconstructPreS7V5P2SourceForPrivate(source);
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V4P2Source(source) {\n",
+    "\n\nfunction reconstructPreS7P2AdrClosureSource(source) {\n",
+    "S7 V4 P2 helper inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    "S7 V4 P2 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7P2AdrClosureSource(source) {",
+      "  source = reconstructPreS7V4P2Source(source);",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7P2AdrClosureSource(source) {",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    "S7 V4 P2 older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 syscall evaluator", async () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure syscall evaluator", async () => {\n',
+    "S7 V4 P2 proof inverse",
+  );
+}
+
+function reconstructPreS7P2SourceForPrivate(source) {
+  source = reconstructPreS7V4P2SourceForPrivate(source);
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7P2AdrClosureSource(source) {\n",
+    "\n\nfunction reconstructPreR14D1P2AdrRepinSource(source) {\n",
+    "S7 P2 helper inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    216688,",
+      '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+    ].join("\n"),
+    "S7 P2 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR14D1P2AdrRepinSource(source) {",
+      "  source = reconstructPreS7P2AdrClosureSource(source);",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreR14D1P2AdrRepinSource(source) {",
+      "  const count = (value, needle) => {",
+    ].join("\n"),
+    "S7 P2 older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure syscall evaluator", async () => {\n',
+    '\n\ntest("R14D1 P2 ADR repin inversely reconstructs the exact R13D1 evaluator", async () => {\n',
+    "S7 P2 proof inverse",
+  );
+}
+
 function reconstructPreR14P2SourceForPrivate(source) {
+  source = reconstructPreS7P2SourceForPrivate(source);
   const currentAdrPin = [
     "    ADR_URL,",
     "    216688,",
@@ -6313,7 +6895,137 @@ function reconstructPreR13P2SourceForPrivate(source) {
   return reconstructed;
 }
 
+function reconstructPreS7V5P3SourceForPrivate(source) {
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V5P3Source(source) {\n",
+    "\n\nfunction reconstructPreS7V4P3Source(source) {\n",
+    "S7 V5 P3 helper inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "bd3e1f703e25c255d30b0e171c5c8b7bd958e1ce2d6bbe08a2b3a8ee6f1dd377",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    "S7 V5 P3 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7V4P3Source(source) {",
+      "  source = reconstructPreS7V5P3Source(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7V4P3Source(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 V5 P3 older inverse forwarding",
+  );
+  reconstructed = removeRangeExactly(
+    reconstructed,
+    "\n  const v5Source = reconstructPreS7V5P3Source(currentSource);\n",
+    "\n  const reconstructedSource = reconstructPreS7V4P3Source(currentSource);\n",
+    "S7 V5 P3 direct inverse proof",
+  );
+  return reconstructed;
+}
+
+function reconstructPreS7V4P3SourceForPrivate(source) {
+  source = reconstructPreS7V5P3SourceForPrivate(source);
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7V4P3Source(source) {\n",
+    "\n\nfunction reconstructPreS7P3AdrClosureSource(source) {\n",
+    "S7 V4 P3 helper inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221438,",
+      '    "4836b92bbbb87af2cb1e51b6ca24d436c82c92f03032e9fbcaf1b093d3922fd0",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    "S7 V4 P3 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreS7P3AdrClosureSource(source) {",
+      "  source = reconstructPreS7V4P3Source(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreS7P3AdrClosureSource(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 V4 P3 older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 fault evaluator", async () => {\n',
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure fault evaluator", async () => {\n',
+    "S7 V4 P3 proof inverse",
+  );
+}
+
+function reconstructPreS7P3SourceForPrivate(source) {
+  source = reconstructPreS7V4P3SourceForPrivate(source);
+  let reconstructed = removeRangeExactly(
+    source,
+    "\n\nfunction reconstructPreS7P3AdrClosureSource(source) {\n",
+    "\n\nfunction reconstructPreR14AdrRepinEvaluatorSource(source) {\n",
+    "S7 P3 helper inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "    ADR_URL,",
+      "    221172,",
+      '    "1e132ff0b6779fbaeb98da50485fd877686d7e2a7222134dc69e107dce166800",',
+    ].join("\n"),
+    [
+      "    ADR_URL,",
+      "    216688,",
+      '    "6af1f5a4ff8357f83266d303d258fcde56ff6e581f91e01ca03e530b9173e4ce",',
+    ].join("\n"),
+    "S7 P3 ADR pin inverse",
+  );
+  reconstructed = replaceExactly(
+    reconstructed,
+    [
+      "function reconstructPreR14AdrRepinEvaluatorSource(source) {",
+      "  source = reconstructPreS7P3AdrClosureSource(source);",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    [
+      "function reconstructPreR14AdrRepinEvaluatorSource(source) {",
+      "  const countExact = (value, needle) => {",
+    ].join("\n"),
+    "S7 P3 older inverse forwarding",
+  );
+  return removeRangeExactly(
+    reconstructed,
+    '\n\ntest("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure fault evaluator", async () => {\n',
+    '\n\ntest("R14 ADR predecessor repin inversely reconstructs the exact pre-R14 fault evaluator", async () => {\n',
+    "S7 P3 proof inverse",
+  );
+}
+
 function reconstructPreR14P3SourceForPrivate(source) {
+  source = reconstructPreS7P3SourceForPrivate(source);
   const currentAdrPin = [
     "    ADR_URL,",
     "    216688,",
@@ -6753,6 +7465,89 @@ candidateTest(
     assert.equal(canonicalJson(receipt).includes('"statxMask"'), false);
   },
 );
+
+test("S7 V4 stale-task correction inversely reconstructs the exact S7 V3 private evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const v5Source =
+    reconstructPreS7V5PrivateEvaluatorSource(currentSource);
+  const v5Bytes = Buffer.from(v5Source, "utf8");
+  assert.equal(v5Bytes.length, 314262);
+  assert.equal(countExact(v5Source, "\n"), 9283);
+  assert.equal(
+    sha256(v5Bytes),
+    "d18241b01a5052fd6d1f56100dbcd562a5c26f12c4019af67e9568f0305a823e",
+  );
+  assert.equal(
+    gitBlobSha1(v5Bytes),
+    "ccc60225468a9d64db684747be1d999d9f2e30e4",
+  );
+  assert.equal(
+    [...v5Source.matchAll(/(?:^|\n)test\(\s*"([^"\n]+)"/gu)].length,
+    25,
+  );
+  assert.equal(
+    [
+      ...v5Source.matchAll(
+        /(?:^|\n)candidateTest\(\s*"([^"\n]+)"/gu,
+      ),
+    ].length,
+    9,
+  );
+  const reconstructedSource =
+    reconstructPreS7V4PrivateEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 304844);
+  assert.equal(countExact(reconstructedSource, "\n"), 9017);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "d6a8d5b5b6e15ac1fb8090b3d7ba511591df8262747eab83076270e94611252c",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "e098c126c5d16381736f5c2f785c0c0f1b731d0c",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(\s*"([^"\n]+)"/gu)]
+      .length,
+    24,
+  );
+  assert.equal(
+    [
+      ...reconstructedSource.matchAll(
+        /(?:^|\n)candidateTest\(\s*"([^"\n]+)"/gu,
+      ),
+    ].length,
+    9,
+  );
+});
+
+test("S7 ADR evidence re-pin inversely reconstructs the exact pre-closure private evaluator", async () => {
+  const currentBytes = await readFile(EVALUATOR_PATH);
+  const currentSource = currentBytes.toString("utf8");
+  assert.equal(Buffer.from(currentSource, "utf8").equals(currentBytes), true);
+  const reconstructedSource = reconstructPreS7PrivateEvaluatorSource(currentSource);
+  const reconstructedBytes = Buffer.from(reconstructedSource, "utf8");
+  assert.equal(reconstructedBytes.length, 295539);
+  assert.equal(reconstructedSource.split("\n").length - 1, 8756);
+  assert.equal(
+    sha256(reconstructedBytes),
+    "68914f1a8d7279ea530415a7c2d08c4e6c03b318f34c2693ad72a1147bc2b5e2",
+  );
+  assert.equal(
+    gitBlobSha1(reconstructedBytes),
+    "bacc6295f4d95b8a5fdbf7ac444fcb71bab0c702",
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)test\(/gu)].length,
+    23,
+  );
+  assert.equal(
+    [...reconstructedSource.matchAll(/(?:^|\n)candidateTest\(/gu)].length,
+    9,
+  );
+});
 
 test("R13F held-root mask fixture correction inversely reconstructs the exact R13E evaluator", async () => {
   const currentBytes = await readFile(EVALUATOR_PATH);
