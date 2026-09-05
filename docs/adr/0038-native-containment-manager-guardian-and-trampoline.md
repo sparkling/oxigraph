@@ -4,12 +4,12 @@
 - **Date**: 2026-08-30
 - Updated: 2026-09-05
 - Deciders: Oxigraph parity programme
-- Implementation status: the bounded S0 authority-null native candidate below
-  is present. It adds separately attested manager, guardian/reaper, and launch-
-  trampoline sources plus safe-local evaluator fixtures. The manager is still
-  a fail-closed link-only service-manager child, the production native adapter
-  does not exist, and no artifact is registered or eligible to own production
-  effects. Readiness remains exactly
+- Implementation status: the bounded S0 native sources and S1 authority-null
+  receipt/replay candidate below are present. S1 adds a pure unregistered
+  adapter contract plus safe-local and explicitly synthetic evaluator evidence;
+  it is not an operational native adapter. The manager remains a fail-closed
+  link-only service-manager child, and no artifact is registered or eligible to
+  own production effects. Readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`
 - **Depends on**:
   [ADR-0036 — Guardian-control pure ABI](0036-guardian-control-pure-abi.md),
@@ -249,6 +249,107 @@ or complete ADR-0035/ADR-0037 lifetime/recovery execution. Those remain later
 ADR-0038 slices and ADR-0039 qualification gates. The package, lockfile,
 dependencies, submodules, predecessor sources, schemas, registries, binding,
 authority, nonclaims, and readiness are unchanged.
+
+### 2026-09-05 S1 authority-null launch-lifecycle evidence
+
+Task `task-1788589281302-odp45f` starts from exact commit
+`13586aeb4696c52ccc8574946e205003bdb027bd`. Its evaluator-first RED is the
+absence of `containment-guardian-native-adapter-v1.mjs`. S1 adds that pure
+receipt/replay verifier, three focused evaluator files, and two test-support
+fixture files. It does not change or replace an S0 source or attestation and it
+does not supply an operational service-manager adapter, registry binding, or
+production effect path.
+
+The candidate requirements SHA-256 is
+`be25697d389f5b6023faebaf851095ed18d0d61501a755590f8c432bac809bba`.
+It binds the exact S0 manager, guardian, and trampoline source, requirement,
+and ELF identities above; the exact compiler and version identities; and the
+unchanged ADR-0037 header, source, 33,048-byte production object, build-
+requirements digest, and sole `oxigraph_containment_statefs_execute_v1`
+entrypoint. S1 imports no filesystem, process, network, thread, or registry
+authority. Its serialized reports retain binding `null`, every authority field
+`false`, every physical fact `null`, and readiness exactly
+`{status: "unavailable", reason: "native-adapter-unavailable"}`.
+
+The receipt model fixes two chained pre-release rows. Sequence zero names the
+trusted service-manager as the held-manager launch owner; sequence one names
+the manager as the held-guardian launch owner and must carry sequence zero's
+exact raw receipt digest. Those owner identities are explicit synthetic model
+rows, not observations of the safe-local driver's identity. Both require
+empty-path `execveat(AT_EMPTY_PATH)`, a one-syscall trace and a one-event event
+trace scoped only from the initial ptrace stop through the positive exec event,
+exact `PTRACE_EVENT_EXEC`, held/live device and inode equality, independently
+read byte equality, and outcome-channel EOF. The model then fixes an ADR-0037
+`PERSIST` request/result-before-release row. That row is
+explicitly `synthetic-durable-model`, its physical durability is `null`, and
+`releasePerformed` remains `false`; receipt replay is not filesystem or power-
+loss evidence.
+
+The placement row is also explicitly synthetic. It fixes an 88-byte `clone3`
+request with `CLONE_INTO_CGROUP | CLONE_PIDFD`, `SIGCHLD`, no fallback, exact
+child and pidfd return identities, and a one-member exact synthetic
+`cgroup.procs` replay. The safe-local native fixture does not call `clone3` or
+touch a cgroup. Its pidfd is obtained by `pidfd_open`, and the serialized
+nonclaim says that this cannot prove the clone-returned pidfd or delegated
+membership. Token disagreement, flag changes, membership drift, extra members,
+fallback, and evidence-class substitution all reject before receipt creation.
+
+The test-only C driver opens the exact S0 ELF read-only, may replace its
+pathname with a decoy after that open, and enters the held file with
+`execveat(AT_EMPTY_PATH)`. From the initial `SIGSTOP` through exec it observes
+exactly syscall 322 and one `PTRACE_EVENT_EXEC`. While the child remains stopped
+there, it matches the held and live `/proc/<pid>/exe` device, inode, size, and
+independently read bytes, and observes the close-on-exec outcome channel at EOF.
+It then detaches, observes the safe-local pidfd readable, consumes one exclusive
+`waitid(P_PIDFD)`, and proves a second wait returns `ECHILD`. Both the unchanged
+S0 manager and guardian exit 125; the installed pathname decoy exits 77 and is
+not executed. The driver is not relabelled as the trusted service manager or
+manager, so launch-owner/wait-owner equality is `null` in the safe-local row and
+exists only in its explicit synthetic row.
+
+This host does not report `POLLHUP` on that pidfd after the exclusive wait. S1
+records the safe-local HUP observation as `0`, leaves the corresponding physical
+fact `null`, and keeps the required HUP transition only as an exact
+`synthetic-replay` row. The safe-local driver also has no independent guardian
+status channel, so status EOF is `null` and exists only in the synthetic row.
+Neither absence is relabelled as observed success.
+Likewise, `parentage-lost` and `parentage-ambiguous` are valid unresolved receipt
+states only when every pidfd, HUP, wait-owner, waitid, EOF, exit, and reap field
+is `null`; neither state satisfies the pre-release model or proves reap.
+
+The three focused S1 evaluators contain 20 tests. They cover the exact bindings,
+canonical copy-on-read receipts, service-manager/manager launch ownership,
+held-file pathname replacement, positive exec stop, bounded syscall and event
+trace, live-image identity, synthetic durable and clone/membership replay,
+safe-local pidfd readability and exclusive wait, honest HUP absence, unresolved
+parentage, bounds, hostile objects, and authority/readiness tamper. Pathname
+execution, live-image mismatch, wrong parent or reap owner, trace overrun or an
+unlisted event, clone/pidfd/wait disagreement, membership drift, and smuggled
+reap claims all fail closed. The focused suite passes 20/20 on current Node
+24.14.1 and exact Node 20.20.2. Together with S0's 22 tests and ADR-0035 through
+ADR-0037's unchanged 335-test explicit matrix, the non-G1.7 matrix passes
+377/377 on both runtimes. No delegated-cgroup, G1.7, production-unit, reboot,
+or power-loss action is part of S1.
+
+The exact S1 file identities at freeze are:
+
+| Path | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `tools/engineering-harness/src/candidate/containment-guardian-native-adapter-v1.mjs` | 27,800 | `d8bc60a333608d7b94bce870c13facfe1e75fce878c46aca2b97b8dd78a4225a` |
+| `tools/engineering-harness/test/candidate-containment-guardian-native-s1.test.mjs` | 10,660 | `0d2cd4f7a5c7b64e51e36e00e8bec6e4432e18b6eb251fdd26d4e40ecae5b4ef` |
+| `tools/engineering-harness/test/candidate-containment-guardian-native-s1-faults.test.mjs` | 9,377 | `4bdff1fbf388cedf0558a7ca70c2e06334af2b19a982bcdb4e9775b25846cae6` |
+| `tools/engineering-harness/test/candidate-containment-guardian-native-s1-native.test.mjs` | 3,980 | `103207db857dd80b2f191554a10b5f425b08ee60ae33137d6268f19c2d850cdf` |
+| `tools/engineering-harness/test/support/candidate-containment-guardian-native-s1-driver.c` | 8,307 | `b94ad49bd224e892f7da0581889ffd29fee1c50d129bac5e435ebb2409159cf0` |
+| `tools/engineering-harness/test/support/candidate-containment-guardian-native-s1-fixture.mjs` | 10,442 | `f8a7332e17dcd20a3328b85888477a3a5c7be9bd2a261f19cd441187c9518c12` |
+
+The deterministic synthetic manager receipt is 4,074 bytes at SHA-256
+`3d0e831aca589feb96d4b807ff12fa8562ab9d630f55dd3e5ed8d1780435f9ff`;
+its chained guardian receipt is 4,050 bytes at SHA-256
+`90d960dba1c57ef3676e199aa0385dfb91a3df5acb8ad01a7440149cfe5a2fa5`.
+These identities are exact repository evidence only. The package, lockfile,
+dependencies, submodules, predecessors, StateFS bytes, product/runtime
+registries, schemas, authority, physical facts, binding, nonclaims, and
+readiness remain unchanged.
 
 ## Nonclaims and authority boundary
 
