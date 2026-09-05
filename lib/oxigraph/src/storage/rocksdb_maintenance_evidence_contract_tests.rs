@@ -4076,6 +4076,35 @@ fn oxigraph_build_relay_source_failures(
     if !unique_unconditional_function_has_header(&tokens, "main", &["fn", "main", "(", ")"]) {
         failures.push("oxigraph dependency metadata relay");
     }
+    let expected_lint_expectation = [
+        "#",
+        "!",
+        "[",
+        "expect",
+        "(",
+        "clippy",
+        ":",
+        ":",
+        "expect_used",
+        ",",
+        "clippy",
+        ":",
+        ":",
+        "panic",
+        ",",
+        "reason",
+        "=",
+        "\"missing or invalid dependency build metadata must stop compilation\"",
+        ")",
+        "]",
+    ];
+    let exact_lint_expectation = tokens
+        .get(..expected_lint_expectation.len())
+        .is_some_and(|prefix| exact_token_sequence(prefix, &expected_lint_expectation))
+        && token_sequence_count(&tokens, &expected_lint_expectation) == 1;
+    if !exact_lint_expectation {
+        failures.push("exact oxigraph build relay lint expectation");
+    }
     let no_rocksdb_gate = [
         "{",
         "if",
@@ -4341,11 +4370,14 @@ fn oxigraph_build_relay_source_failures(
         "}",
     ];
     let exact_relay_body = exact_token_sequence(main, &expected_relay_body);
-    let exact_relay_file = tokens
-        .get(..4)
-        .is_some_and(|header| exact_token_sequence(header, &["fn", "main", "(", ")"]))
+    let main_header_start = expected_lint_expectation.len();
+    let main_body_start = main_header_start + 4;
+    let exact_relay_file = exact_lint_expectation
         && tokens
-            .get(4..)
+            .get(main_header_start..main_body_start)
+            .is_some_and(|header| exact_token_sequence(header, &["fn", "main", "(", ")"]))
+        && tokens
+            .get(main_body_start..)
             .is_some_and(|body| exact_token_sequence(body, &expected_relay_body));
     if !exact_relay_file {
         failures.push("exact oxigraph build relay file");
@@ -5623,6 +5655,12 @@ fn valid_sys_build_metadata_fixture() -> String {
 
 fn valid_oxigraph_build_relay_fixture() -> &'static str {
     r#"
+        #![expect(
+            clippy::expect_used,
+            clippy::panic,
+            reason = "missing or invalid dependency build metadata must stop compilation"
+        )]
+
         fn main() {
             if ::std::env::var_os("CARGO_FEATURE_ROCKSDB").is_none() {
                 return;
@@ -5736,6 +5774,11 @@ fn build_metadata_relay_is_causally_declared_across_the_dependency_boundary() {
 #[test]
 fn oxigraph_build_relay_is_feature_gated_and_fails_closed_under_compiled_execution() {
     const MANIFEST: &str = "[package]\nbuild = \"build.rs\"";
+    const EXACT_LINT_EXPECTATION: &str = r#"#![expect(
+            clippy::expect_used,
+            clippy::panic,
+            reason = "missing or invalid dependency build metadata must stop compilation"
+        )]"#;
     const GATE: &str = r#"            if ::std::env::var_os("CARGO_FEATURE_ROCKSDB").is_none() {
                 return;
             }
@@ -5813,6 +5856,92 @@ fn oxigraph_build_relay_is_feature_gated_and_fails_closed_under_compiled_executi
             "cargo::rustc-env=OXIGRAPH_ROCKSDB_VERSION=11.8.1\n",
         ),
     );
+
+    let duplicated_expectation =
+        format!("{EXACT_LINT_EXPECTATION}\n        {EXACT_LINT_EXPECTATION}");
+    let body_expectation = format!("fn main() {{\n            {EXACT_LINT_EXPECTATION}");
+    let lint_expectation_mutants = [
+        ("missing", relay.replacen(EXACT_LINT_EXPECTATION, "", 1)),
+        (
+            "altered reason",
+            relay.replacen(
+                "missing or invalid dependency build metadata must stop compilation",
+                "dependency metadata should be present",
+                1,
+            ),
+        ),
+        (
+            "duplicated",
+            relay.replacen(EXACT_LINT_EXPECTATION, &duplicated_expectation, 1),
+        ),
+        (
+            "rebound lint",
+            relay.replacen("clippy::panic,", "clippy::panic_in_result_fn,", 1),
+        ),
+        (
+            "reordered lints",
+            relay.replacen(
+                "clippy::expect_used,\n            clippy::panic,",
+                "clippy::panic,\n            clippy::expect_used,",
+                1,
+            ),
+        ),
+        (
+            "outer function",
+            relay.replacen("#![expect(", "#[expect(", 1),
+        ),
+        (
+            "broad lint group",
+            relay.replacen(
+                "clippy::expect_used,\n            clippy::panic,",
+                "clippy::restriction,",
+                1,
+            ),
+        ),
+        (
+            "extra broad lint",
+            relay.replacen(
+                "clippy::panic,",
+                "clippy::panic,\n            clippy::unwrap_used,",
+                1,
+            ),
+        ),
+        (
+            "allow instead of expect",
+            relay.replacen("#![expect(", "#![allow(", 1),
+        ),
+        (
+            "body level",
+            relay.replacen(EXACT_LINT_EXPECTATION, "", 1).replacen(
+                "fn main() {",
+                &body_expectation,
+                1,
+            ),
+        ),
+    ];
+    for (label, mutant) in lint_expectation_mutants {
+        assert_ne!(
+            mutant, relay,
+            "{label} lint-expectation mutant must be live"
+        );
+        let failures = oxigraph_build_relay_failures(MANIFEST, Some(&mutant));
+        assert!(
+            failures.contains(&"exact oxigraph build relay lint expectation"),
+            "{label} lint-expectation mutant must be rejected: {failures:?}",
+        );
+        assert!(
+            failures.contains(&"exact oxigraph build relay file"),
+            "{label} lint-expectation mutant must invalidate the exact relay file: {failures:?}",
+        );
+        let execution = compile_and_execute_oxigraph_build_relay_fixture(&mutant, &[])
+            .unwrap_or_else(|error| panic!("{label} compiler control: {error}"));
+        assert!(
+            execution.status.success() && execution.stdout.is_empty(),
+            "{label} compiler control must retain the no-RocksDB runtime behavior: stdout={} stderr={}",
+            String::from_utf8_lossy(&execution.stdout),
+            String::from_utf8_lossy(&execution.stderr),
+        );
+    }
 
     for invalid_environment in [
         vec![
@@ -5986,8 +6115,10 @@ fn oxigraph_build_relay_is_feature_gated_and_fails_closed_under_compiled_executi
         "the compiler-backed control must prove that a permissive system arm can leak a revision",
     );
 
+    let rebound_relay_body = relay.replacen(EXACT_LINT_EXPECTATION, "", 1);
     let rebound_std_namespace = format!(
         r#"
+            {EXACT_LINT_EXPECTATION}
             #![no_std]
             extern crate std as real_std;
             extern crate self as std;
@@ -6011,7 +6142,7 @@ fn oxigraph_build_relay_is_feature_gated_and_fails_closed_under_compiled_executi
                 }}
             }}
 
-            {relay}
+            {rebound_relay_body}
         "#,
     );
     assert!(
