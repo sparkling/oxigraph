@@ -163,6 +163,9 @@ const PINNED_CANDIDATE_SNAPSHOT_JSON_SOURCE = `function snapshotJson(parsed, lab
 const PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE = `function canonicalBytes(value) {
   return Buffer.from(canonicalJson(value) + "\\n", "utf8");
 }`;
+const PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE = `function ownerContentHash(value) {
+  return canonicalSha256(value);
+}`;
 const PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE = `function snapshotBuilds(builds) {
   if (types.isProxy(builds)) {
     fail("INPUT_SHAPE_INVALID", "input-shape", "builds proxy");
@@ -278,7 +281,6 @@ const PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE = `function decodeVerifiedO
   const { contentHash, ...unsigned } = owner;
   if (
     typeof contentHash !== "string" ||
-    !DIGEST.test(contentHash) ||
     contentHash !== canonicalSha256(unsigned)
   ) {
     fail(
@@ -3339,6 +3341,21 @@ function assertCandidateSourceStructure(source) {
     PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE,
     "canonicalBytes must equal the pinned canonical-JSON-plus-LF helper",
   );
+  const ownerContentHashDeclarations = program.body.filter(
+    (node) =>
+      node.type === "FunctionDeclaration" &&
+      node.id?.name === "ownerContentHash",
+  );
+  assert.equal(ownerContentHashDeclarations.length, 1);
+  const [ownerContentHashDeclaration] = ownerContentHashDeclarations;
+  assert.equal(
+    source.slice(
+      ownerContentHashDeclaration.start,
+      ownerContentHashDeclaration.end,
+    ),
+    PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE,
+    "ownerContentHash must equal the pinned canonical SHA-256 helper",
+  );
   const snapshotDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" && node.id?.name === "snapshotBuilds",
@@ -3623,10 +3640,55 @@ function assertCandidateSourceStructure(source) {
   assert.equal(ownerVariable.init.callee.object.name, "Object");
   assert.equal(memberPropertyName(ownerVariable.init.callee), "freeze");
   assert.equal(ownerVariable.init.arguments.length, 1);
+  assert.equal(ownerVariable.init.arguments[0].type, "ObjectExpression");
+  const ownerContentHashProperties =
+    ownerVariable.init.arguments[0].properties.filter(
+      (property) =>
+        property.type === "Property" &&
+        property.computed === false &&
+        property.key.type === "Identifier" &&
+        property.key.name === "contentHash",
+    );
+  assert.equal(ownerContentHashProperties.length, 1);
+  const [ownerContentHashProperty] = ownerContentHashProperties;
+  assert.equal(ownerContentHashProperty.kind, "init");
+  assert.equal(ownerContentHashProperty.method, false);
+  assert.equal(ownerContentHashProperty.value.type, "CallExpression");
+  assert.equal(ownerContentHashProperty.value.callee.type, "Identifier");
+  assert.equal(ownerContentHashProperty.value.callee.name, "ownerContentHash");
+  assert.equal(ownerContentHashProperty.value.arguments.length, 1);
+  assert.equal(ownerContentHashProperty.value.arguments[0].type, "Identifier");
+  assert.equal(ownerContentHashProperty.value.arguments[0].name, "unsigned");
+  const unsignedStatements = ownerDeclaration.body.body.filter(
+    (statement) =>
+      statement.type === "VariableDeclaration" &&
+      statement.kind === "const" &&
+      statement.declarations.length === 1 &&
+      statement.declarations[0].id.type === "Identifier" &&
+      statement.declarations[0].id.name === "unsigned",
+  );
+  assert.equal(unsignedStatements.length, 1);
+  const [unsignedStatement] = unsignedStatements;
+  const [unsignedVariable] = unsignedStatement.declarations;
+  assert.equal(unsignedVariable.init?.type, "CallExpression");
+  assert.equal(unsignedVariable.init.callee.type, "MemberExpression");
+  assert.equal(unsignedVariable.init.callee.computed, false);
+  assert.equal(unsignedVariable.init.callee.object.type, "Identifier");
+  assert.equal(unsignedVariable.init.callee.object.name, "Object");
+  assert.equal(memberPropertyName(unsignedVariable.init.callee), "freeze");
+  assert.equal(unsignedVariable.init.arguments.length, 1);
+  assert.equal(unsignedVariable.init.arguments[0].type, "ObjectExpression");
   const ownerStatementIndex = ownerDeclaration.body.body.indexOf(ownerStatement);
+  const unsignedStatementIndex =
+    ownerDeclaration.body.body.indexOf(unsignedStatement);
   const bytesStatementIndex =
     ownerDeclaration.body.body.indexOf(ownerBytesStatement);
   assert.equal(ownerStatementIndex >= 0, true);
+  assert.equal(
+    ownerStatementIndex,
+    unsignedStatementIndex + 1,
+    "the sealed owner must immediately follow its frozen unsigned projection",
+  );
   assert.equal(
     bytesStatementIndex,
     ownerStatementIndex + 1,
@@ -3654,6 +3716,17 @@ function assertCandidateSourceStructure(source) {
   assert.equal(includeArtifact.left.name, "verified");
   assert.equal(includeArtifact.right.type, "Identifier");
   assert.equal(includeArtifact.right.name, "undefined");
+  const ownerContentHashIdentifiers = [];
+  walkAst(program, (node) => {
+    if (node.type === "Identifier" && node.name === "ownerContentHash") {
+      ownerContentHashIdentifiers.push(node);
+    }
+  });
+  assert.deepEqual(
+    ownerContentHashIdentifiers,
+    [ownerContentHashDeclaration.id, ownerContentHashProperty.value.callee],
+    "ownerContentHash may only be declared once and seal the expected owner",
+  );
   const ownerCompletionBoundaries = [];
   walkAst(ownerDeclaration.body, (node, _parent, ancestors) => {
     if (
@@ -4338,6 +4411,7 @@ function assertCandidateSourceStructure(source) {
       if (
         containing === undefined ||
         containing === canonicalBytesDeclaration ||
+        containing === ownerContentHashDeclaration ||
         containing === snapshotDeclaration ||
         containing === jsonSnapshotDeclaration ||
         containing === verifiedOwnerDecoderDeclaration
@@ -5791,6 +5865,7 @@ function assertCandidateSourceStructure(source) {
       if (
         containing === undefined ||
         containing === canonicalBytesDeclaration ||
+        containing === ownerContentHashDeclaration ||
         containing === snapshotDeclaration ||
         containing === jsonSnapshotDeclaration ||
         containing === verifiedOwnerDecoderDeclaration
@@ -5974,6 +6049,9 @@ function assertCandidateSourceStructure(source) {
     const insidePinnedCanonicalBytes =
       node === canonicalBytesDeclaration ||
       ancestors.includes(canonicalBytesDeclaration);
+    const insidePinnedOwnerContentHash =
+      node === ownerContentHashDeclaration ||
+      ancestors.includes(ownerContentHashDeclaration);
     const insidePinnedSnapshotBuilds =
       node === snapshotDeclaration || ancestors.includes(snapshotDeclaration);
     const insidePinnedVerifiedOwnerDecoder =
@@ -5987,6 +6065,7 @@ function assertCandidateSourceStructure(source) {
     );
     if (
       insidePinnedCanonicalBytes ||
+      insidePinnedOwnerContentHash ||
       insidePinnedSnapshotBuilds ||
       insidePinnedJsonSnapshot ||
       insidePinnedVerifiedOwnerDecoder
@@ -7264,6 +7343,7 @@ function assertCandidateSourceStructure(source) {
           name === "snapshotJson" ||
           name === "decodeVerifiedOwnerBeforeBuildReplay" ||
           name === "created" ||
+          name === "ownerContentHash" ||
           name === "expectedOwner" ||
           name === "ownDataRecord" ||
           name === "validateVerifiedOwnerBeforeBuildReplay" ||
@@ -7271,6 +7351,7 @@ function assertCandidateSourceStructure(source) {
         ) {
           const protectedDeclaration = {
             created: createdDeclaration,
+            ownerContentHash: ownerContentHashDeclaration,
             expectedOwner: ownerDeclaration,
             fail: failDeclaration,
             normalizeBuilds: normalizationDeclaration,
@@ -7799,6 +7880,7 @@ function assertCandidateSourceStructure(source) {
     if (
       containing === undefined ||
       containing === canonicalBytesDeclaration ||
+      containing === ownerContentHashDeclaration ||
       containing === snapshotDeclaration ||
       containing === jsonSnapshotDeclaration ||
       containing === verifiedOwnerDecoderDeclaration
@@ -8074,10 +8156,11 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
   const createdBuilder =
     "function created(owner, bytes, includeArtifact) { return Object.freeze({ owner, bytes, includeArtifact }); }";
   const ownerBuilder =
-    "function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }";
+    "function expectedOwner(verified, envelope, builds) { const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }";
   const replay = [
     "function fail(code, phase, message, cause) { throw new G17BenchmarkProductOwnerV4ContractError(code, phase, message, cause === undefined ? undefined : { cause }); }",
     PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE,
+    PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE,
     artifactFactory,
     inputValidator,
     'function ownDataRecord(input) { validateInput(input); const descriptors = Object.getOwnPropertyDescriptors(input); const builds = descriptors.builds.value; const bytes = Object.hasOwn(descriptors, "bytes") ? descriptors.bytes.value : undefined; return Object.freeze({ builds, bytes }); }',
@@ -8102,7 +8185,7 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     assertCandidateSourceStructure(
       admitted.replace(
         ownerBuilder,
-        "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { Buffer.isBuffer(envelope.bytes); } const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
+        "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { Buffer.isBuffer(envelope.bytes); } const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
       ),
     ),
   );
@@ -8221,29 +8304,38 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
         "canonicalJson(value)",
       ),
     ),
+    admitted.replace(PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE, ""),
+    `${admitted}\n${PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE}`,
     admitted.replace(
-      ownerBuilder,
-      'function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = verified === undefined ? canonicalBytes(owner) : Buffer.from("fabricated"); return created(owner, bytes, verified === undefined); }',
+      PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE,
+      PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE.replace(
+        "canonicalSha256(value)",
+        'createHash("sha256").update(value).digest("hex")',
+      ),
     ),
     admitted.replace(
       ownerBuilder,
-      'function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); canonicalBytes(owner); const bytes = Buffer.from("fabricated"); return created(owner, bytes, verified === undefined); }',
+      'function expectedOwner(verified, envelope, builds) { const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = verified === undefined ? canonicalBytes(owner) : Buffer.from("fabricated"); return created(owner, bytes, verified === undefined); }',
     ),
     admitted.replace(
       ownerBuilder,
-      'function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, Buffer.from("fabricated"), verified === undefined); }',
+      'function expectedOwner(verified, envelope, builds) { const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); canonicalBytes(owner); const bytes = Buffer.from("fabricated"); return created(owner, bytes, verified === undefined); }',
     ),
     admitted.replace(
       ownerBuilder,
-      "function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); if (verified === undefined) { return created(owner, bytes, true); } return created(owner, bytes, false); }",
+      'function expectedOwner(verified, envelope, builds) { const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, Buffer.from("fabricated"), verified === undefined); }',
     ),
     admitted.replace(
       ownerBuilder,
-      "function expectedOwner(verified, envelope, builds) { if (verified === undefined) { return null; } const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
+      "function expectedOwner(verified, envelope, builds) { const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); if (verified === undefined) { return created(owner, bytes, true); } return created(owner, bytes, false); }",
     ),
     admitted.replace(
       ownerBuilder,
-      "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { return null; } const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
+      "function expectedOwner(verified, envelope, builds) { if (verified === undefined) { return null; } const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
+    ),
+    admitted.replace(
+      ownerBuilder,
+      "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { return null; } const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
     ),
     admitted.replace(PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE, ""),
     `${admitted}\n${PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE}`,
@@ -8305,6 +8397,20 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     ),
     admitted.replace(PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE, ""),
     `${admitted}\n${PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE}`,
+    admitted.replace(
+      PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE,
+      PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE.replace(
+        'typeof contentHash !== "string" ||\n    contentHash !== canonicalSha256(unsigned)',
+        'typeof contentHash !== "string" ||\n    !DIGEST.test(contentHash) ||\n    contentHash !== canonicalSha256(unsigned)',
+      ),
+    ),
+    admitted.replace(
+      PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE,
+      PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE.replace(
+        'typeof contentHash !== "string" ||\n    contentHash !== canonicalSha256(unsigned)',
+        "contentHash !== canonicalSha256(unsigned)",
+      ),
+    ),
     admitted.replace(
       "const verified = decodeVerifiedOwnerBeforeBuildReplay(envelope); return verified;",
       "decodeVerifiedOwnerBeforeBuildReplay(envelope); return envelope;",
