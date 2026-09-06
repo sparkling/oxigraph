@@ -1285,6 +1285,7 @@ function assertScopedAmbientReferencePolicy(ast, source) {
       }
     }
   };
+  const reflectionOriginsByBinding = new Map();
   walkAst(ast, (node) => {
     if (node.type === "AssignmentExpression") markWriteTarget(node.left);
     if (node.type === "UpdateExpression") markWriteTarget(node.argument);
@@ -1833,6 +1834,7 @@ function assertScopedAmbientReferencePolicy(ast, source) {
       `reflection result has multiple owners ${binding.name}`,
     );
     sensitiveBindingKinds.set(binding, originKind);
+    reflectionOriginsByBinding.set(binding, { node, originKind });
     const inputBinding = sensitiveInputBindingForExpression(node);
     if (inputBinding !== null) {
       sensitiveInputBindings.set(binding, inputBinding);
@@ -1909,6 +1911,8 @@ function assertScopedAmbientReferencePolicy(ast, source) {
       }
     }
   };
+  const reflectionIterationsByViewBinding = new Map();
+  const descriptorEntryIterations = [];
   walkAst(ast, (node) => {
     if (node.type !== "ForOfStatement") return;
     const rightKind = sensitiveKindForExpression(node.right);
@@ -1927,6 +1931,19 @@ function assertScopedAmbientReferencePolicy(ast, source) {
       "reflection iteration requires one const binding pattern",
     );
     const pattern = node.left.declarations[0].id;
+    const right = unwrapTransparentExpression(node.right);
+    const rightBinding =
+      right?.type === "Identifier"
+        ? (referenceBindingForNode.get(right) ?? null)
+        : null;
+    if (rightBinding !== null) {
+      const iterations = reflectionIterationsByViewBinding.get(rightBinding);
+      if (iterations === undefined) {
+        reflectionIterationsByViewBinding.set(rightBinding, [node]);
+      } else {
+        iterations.push(node);
+      }
+    }
     if (rightKind === "descriptor-entry-view") {
       assert.equal(
         pattern.type === "ArrayPattern" &&
@@ -1942,10 +1959,1363 @@ function assertScopedAmbientReferencePolicy(ast, source) {
         "descriptor-record",
         inputBinding,
       );
+      const entryCall = unwrapTransparentExpression(node.right);
+      const descriptorMapExpression =
+        entryCall?.type === "CallExpression"
+          ? unwrapTransparentExpression(entryCall.arguments[0])
+          : null;
+      descriptorEntryIterations.push({
+        descriptorBinding: declaredBindingForIdentifier.get(
+          pattern.elements[1],
+        ),
+        descriptorMapBinding:
+          descriptorMapExpression?.type === "Identifier"
+            ? (referenceBindingForNode.get(descriptorMapExpression) ?? null)
+            : null,
+        inputBinding,
+        keyBinding: declaredBindingForIdentifier.get(pattern.elements[0]),
+        node,
+      });
     } else {
       bindSensitivePattern(pattern, "reflection-key", inputBinding);
     }
   });
+  const enclosingFunctionForNode = (node) => {
+    let current = parentForNode.get(node);
+    while (current !== undefined) {
+      if (
+        current.type === "FunctionDeclaration" ||
+        current.type === "FunctionExpression" ||
+        current.type === "ArrowFunctionExpression"
+      ) {
+        return current;
+      }
+      current = parentForNode.get(current);
+    }
+    return null;
+  };
+  const certifiedDescriptorSnapshotKeyReferences = new WeakSet();
+  const uniqueConstDeclaratorForBinding = (binding) => {
+    if (
+      binding === null ||
+      binding === undefined ||
+      binding.declarationKinds.size !== 1 ||
+      !binding.declarationKinds.has("const") ||
+      binding.declarations.length !== 1
+    ) {
+      return null;
+    }
+    const identifier = binding.declarations[0];
+    const declarator = parentForNode.get(identifier);
+    const declaration = parentForNode.get(declarator);
+    return declarator?.type === "VariableDeclarator" &&
+      declarator.id === identifier &&
+      declaration?.type === "VariableDeclaration" &&
+      declaration.kind === "const" &&
+      declaration.declarations.length === 1
+      ? { declaration, declarator }
+      : null;
+  };
+  const referencesBinding = (node, binding) =>
+    node?.type === "Identifier" &&
+    referenceBindingForNode.get(node) === binding;
+  const bindingHasRootedWrite = (binding) =>
+    binding.references.some((reference) => {
+      let expression = reference;
+      let parent = parentForNode.get(expression);
+      while (
+        (parent?.type === "MemberExpression" && parent.object === expression) ||
+        ((parent?.type === "ParenthesizedExpression" ||
+          parent?.type === "ChainExpression") &&
+          parent.expression === expression)
+      ) {
+        expression = parent;
+        parent = parentForNode.get(expression);
+      }
+      return writtenReferences.has(expression);
+    });
+  const isLiteral = (node, value) => {
+    const expression = unwrapTransparentExpression(node);
+    return expression?.type === "Literal" && expression.value === value;
+  };
+  const isExactUnresolvedUndefined = (node) => {
+    const expression = unwrapTransparentExpression(node);
+    return (
+      expression?.type === "Identifier" &&
+      expression.name === "undefined" &&
+      !resolves("undefined", scopeForNode.get(expression))
+    );
+  };
+  const isExactStaticMember = (node, objectBinding, propertyName) => {
+    const member = unwrapTransparentExpression(node);
+    return (
+      member?.type === "MemberExpression" &&
+      member.computed === false &&
+      member.optional === false &&
+      referencesBinding(member.object, objectBinding) &&
+      member.property.type === "Identifier" &&
+      member.property.name === propertyName
+    );
+  };
+  const exactThrowingFailCall = (statement, failBinding) => {
+    if (statement?.type !== "IfStatement" || statement.alternate !== null) {
+      return null;
+    }
+    const consequence =
+      statement.consequent.type === "BlockStatement" &&
+      statement.consequent.body.length === 1
+        ? statement.consequent.body[0]
+        : statement.consequent;
+    if (consequence?.type !== "ThrowStatement") return null;
+    const call = unwrapTransparentExpression(consequence.argument);
+    return call?.type === "CallExpression" &&
+      call.optional === false &&
+      call.callee.type === "Identifier" &&
+      referenceBindingForNode.get(call.callee) === failBinding &&
+      call.arguments.length === 3 &&
+      call.arguments.every((argument) => argument.type !== "SpreadElement")
+      ? call
+      : null;
+  };
+  const hasExactFailPrefix = (call, code) =>
+    call !== null &&
+    isLiteral(call.arguments[0], code) &&
+    isLiteral(call.arguments[1], "input-snapshot");
+  const exactLabelOnlyTemplate = (node, labelBinding, suffix = null) => {
+    const template = unwrapTransparentExpression(node);
+    return (
+      template?.type === "TemplateLiteral" &&
+      template.expressions.length === 1 &&
+      template.quasis.length === 2 &&
+      template.quasis[0].value.cooked === "" &&
+      referencesBinding(template.expressions[0], labelBinding) &&
+      (suffix === null || template.quasis[1].value.cooked === suffix)
+    );
+  };
+  const exactLabelKeyTemplate = (node, labelBinding, keyBinding, suffix) => {
+    const template = unwrapTransparentExpression(node);
+    if (
+      template?.type !== "TemplateLiteral" ||
+      template.expressions.length !== 2 ||
+      template.quasis.length !== 3 ||
+      template.quasis[0].value.cooked !== "" ||
+      template.quasis[1].value.cooked !== "." ||
+      template.quasis[2].value.cooked !== suffix ||
+      !referencesBinding(template.expressions[0], labelBinding) ||
+      !referencesBinding(template.expressions[1], keyBinding)
+    ) {
+      return null;
+    }
+    return template.expressions[1];
+  };
+  const exactTypeofStringRejection = (
+    statement,
+    keyBinding,
+    failBinding,
+    labelBinding,
+    suffix = null,
+  ) => {
+    const call = exactThrowingFailCall(statement, failBinding);
+    const test = unwrapTransparentExpression(statement?.test);
+    const operand = unwrapTransparentExpression(test?.left);
+    return hasExactFailPrefix(call, "INPUT_SHAPE_INVALID") &&
+      test?.type === "BinaryExpression" &&
+      test.operator === "!==" &&
+      operand?.type === "UnaryExpression" &&
+      operand.operator === "typeof" &&
+      referencesBinding(operand.argument, keyBinding) &&
+      isLiteral(test.right, "string") &&
+      exactLabelOnlyTemplate(call.arguments[2], labelBinding, suffix)
+      ? operand.argument
+      : null;
+  };
+  const topLevelStatementFor = (node, block) => {
+    let statement = node;
+    let parent = parentForNode.get(statement);
+    while (parent !== undefined && parent !== block) {
+      statement = parent;
+      parent = parentForNode.get(statement);
+    }
+    return parent === block ? statement : null;
+  };
+  const statementIndicesByBlock = new WeakMap();
+  const statementIndexInBlock = (block, statement) => {
+    let indices = statementIndicesByBlock.get(block);
+    if (indices === undefined) {
+      indices = new Map(
+        block.body.map((blockStatement, index) => [blockStatement, index]),
+      );
+      statementIndicesByBlock.set(block, indices);
+    }
+    return indices.get(statement) ?? -1;
+  };
+  const exactBudgetBinding = (binding, contextBinding, functionBody) => {
+    const owner = uniqueConstDeclaratorForBinding(binding);
+    if (
+      owner === null ||
+      parentForNode.get(owner.declaration) !== functionBody
+    ) {
+      return false;
+    }
+    const initializer = unwrapTransparentExpression(owner.declarator.init);
+    if (
+      initializer?.type !== "LogicalExpression" ||
+      initializer.operator !== "??" ||
+      !referencesBinding(initializer.left, contextBinding) ||
+      initializer.right.type !== "ObjectExpression" ||
+      initializer.right.properties.length !== 3
+    ) {
+      return false;
+    }
+    const [ancestors, nodes, stringBytes] = initializer.right.properties;
+    const exactProperty = (property, name) =>
+      property?.type === "Property" &&
+      property.kind === "init" &&
+      property.method === false &&
+      property.computed === false &&
+      property.shorthand === false &&
+      property.key.type === "Identifier" &&
+      property.key.name === name;
+    const weakSet = unwrapTransparentExpression(ancestors?.value);
+    return (
+      exactProperty(ancestors, "ancestors") &&
+      weakSet?.type === "NewExpression" &&
+      weakSet.callee.type === "Identifier" &&
+      weakSet.callee.name === "WeakSet" &&
+      !resolves("WeakSet", scopeForNode.get(weakSet.callee)) &&
+      weakSet.arguments.length === 0 &&
+      exactProperty(nodes, "nodes") &&
+      isLiteral(nodes.value, 0) &&
+      exactProperty(stringBytes, "stringBytes") &&
+      isLiteral(stringBytes.value, 0)
+    );
+  };
+  const ownKeyViewBindingsByDescriptorMap = new Map();
+  for (const [binding, origin] of reflectionOriginsByBinding) {
+    if (
+      origin.originKind !== "reflection-view" ||
+      ambientMemberCallPath(origin.node) !== "Reflect.ownKeys"
+    ) {
+      continue;
+    }
+    const call = unwrapTransparentExpression(origin.node);
+    if (
+      call?.type !== "CallExpression" ||
+      call.optional !== false ||
+      call.arguments.length !== 1 ||
+      call.arguments[0].type === "SpreadElement"
+    ) {
+      continue;
+    }
+    const argument = unwrapTransparentExpression(call.arguments[0]);
+    if (argument?.type !== "Identifier") continue;
+    const descriptorMapBinding = referenceBindingForNode.get(argument);
+    if (descriptorMapBinding === undefined) continue;
+    const bindings =
+      ownKeyViewBindingsByDescriptorMap.get(descriptorMapBinding);
+    if (bindings === undefined) {
+      ownKeyViewBindingsByDescriptorMap.set(descriptorMapBinding, [binding]);
+    } else {
+      bindings.push(binding);
+    }
+  }
+  const certifyDescriptorEntrySnapshot = (context) => {
+    const {
+      descriptorBinding,
+      descriptorMapBinding,
+      inputBinding,
+      keyBinding,
+      node: entryLoop,
+    } = context;
+    const entryCall = unwrapTransparentExpression(entryLoop.right);
+    if (
+      descriptorBinding === undefined ||
+      descriptorMapBinding === null ||
+      inputBinding === null ||
+      keyBinding === undefined ||
+      entryCall?.type !== "CallExpression" ||
+      entryCall.optional !== false ||
+      ambientMemberCallPath(entryCall) !== "Object.entries" ||
+      entryCall.arguments.length !== 1 ||
+      entryCall.arguments[0].type === "SpreadElement" ||
+      entryLoop.await === true ||
+      entryLoop.body.type !== "BlockStatement" ||
+      entryLoop.body.body.length !== 6
+    ) {
+      return false;
+    }
+    const functionNode = enclosingFunctionForNode(entryLoop);
+    if (
+      functionNode?.type !== "FunctionDeclaration" ||
+      functionNode.async !== false ||
+      functionNode.generator !== false ||
+      functionNode.id === null ||
+      functionNode.params.length !== 5 ||
+      functionNode.params[0].type !== "Identifier" ||
+      functionNode.params[1].type !== "Identifier" ||
+      functionNode.params[2].type !== "Identifier" ||
+      functionNode.params[3].type !== "AssignmentPattern" ||
+      functionNode.params[3].left.type !== "Identifier" ||
+      !isExactUnresolvedUndefined(functionNode.params[3].right) ||
+      functionNode.params[4].type !== "AssignmentPattern" ||
+      functionNode.params[4].left.type !== "Identifier" ||
+      !isLiteral(functionNode.params[4].right, 0)
+    ) {
+      return false;
+    }
+    const functionBinding = declaredBindingForIdentifier.get(functionNode.id);
+    const functionBody = functionNode.body;
+    const expectedInputBinding = declaredBindingForIdentifier.get(
+      functionNode.params[0],
+    );
+    const labelBinding = declaredBindingForIdentifier.get(
+      functionNode.params[1],
+    );
+    const failBinding = declaredBindingForIdentifier.get(
+      functionNode.params[2],
+    );
+    const contextBinding = declaredBindingForIdentifier.get(
+      functionNode.params[3].left,
+    );
+    const depthBinding = declaredBindingForIdentifier.get(
+      functionNode.params[4].left,
+    );
+    if (
+      inputBinding !== expectedInputBinding ||
+      functionBinding === undefined ||
+      labelBinding === undefined ||
+      failBinding === undefined ||
+      contextBinding === undefined ||
+      depthBinding === undefined
+    ) {
+      return false;
+    }
+    if (
+      bindingHasRootedWrite(functionBinding) ||
+      bindingHasRootedWrite(inputBinding) ||
+      bindingHasRootedWrite(labelBinding) ||
+      bindingHasRootedWrite(failBinding) ||
+      bindingHasRootedWrite(contextBinding) ||
+      bindingHasRootedWrite(depthBinding)
+    ) {
+      return false;
+    }
+    const descriptorOwner =
+      uniqueConstDeclaratorForBinding(descriptorMapBinding);
+    const descriptorOrigin =
+      reflectionOriginsByBinding.get(descriptorMapBinding);
+    const descriptorCall = unwrapTransparentExpression(descriptorOrigin?.node);
+    if (
+      descriptorOwner === null ||
+      parentForNode.get(descriptorOwner.declaration) !== functionBody ||
+      descriptorOrigin?.originKind !== "descriptor-map" ||
+      descriptorCall?.type !== "CallExpression" ||
+      descriptorCall.optional !== false ||
+      descriptorCall.arguments.length !== 1 ||
+      !referencesBinding(descriptorCall.arguments[0], inputBinding)
+    ) {
+      return false;
+    }
+    const entryTopLevel = topLevelStatementFor(entryLoop, functionBody);
+    const entryBlock = parentForNode.get(entryLoop);
+    const entryTry = parentForNode.get(entryBlock);
+    if (
+      entryBlock?.type !== "BlockStatement" ||
+      entryTry?.type !== "TryStatement" ||
+      entryTry.block !== entryBlock ||
+      entryTry.handler !== null ||
+      entryTry.finalizer?.type !== "BlockStatement" ||
+      entryTopLevel !== entryTry
+    ) {
+      return false;
+    }
+    const ownKeyBindings =
+      ownKeyViewBindingsByDescriptorMap.get(descriptorMapBinding) ?? [];
+    if (ownKeyBindings.length !== 1) return false;
+    const ownKeyBinding = ownKeyBindings[0];
+    const ownKeyOwner = uniqueConstDeclaratorForBinding(ownKeyBinding);
+    const ownKeyLoops =
+      reflectionIterationsByViewBinding.get(ownKeyBinding) ?? [];
+    if (ownKeyOwner === null || ownKeyLoops.length !== 1) return false;
+    const ownKeyLoop = ownKeyLoops[0];
+    const ownKeyDeclaration = ownKeyLoop.left;
+    const ownKeyPattern = ownKeyDeclaration.declarations[0]?.id;
+    if (
+      parentForNode.get(ownKeyOwner.declaration) !== functionBody ||
+      parentForNode.get(ownKeyLoop) !== functionBody ||
+      ownKeyDeclaration.type !== "VariableDeclaration" ||
+      ownKeyDeclaration.kind !== "const" ||
+      ownKeyDeclaration.declarations.length !== 1 ||
+      ownKeyPattern?.type !== "Identifier" ||
+      ownKeyLoop.body.type !== "BlockStatement" ||
+      ownKeyLoop.body.body.length !== 1
+    ) {
+      return false;
+    }
+    const ownKeyElementBinding =
+      declaredBindingForIdentifier.get(ownKeyPattern);
+    const ownKeyTypeofReference = exactTypeofStringRejection(
+      ownKeyLoop.body.body[0],
+      ownKeyElementBinding,
+      failBinding,
+      labelBinding,
+      " has symbol fields",
+    );
+    if (
+      ownKeyElementBinding === undefined ||
+      ownKeyTypeofReference === null ||
+      ownKeyElementBinding.references.length !== 1
+    ) {
+      return false;
+    }
+    const descriptorIndex = statementIndexInBlock(
+      functionBody,
+      descriptorOwner.declaration,
+    );
+    const ownKeysIndex = statementIndexInBlock(
+      functionBody,
+      ownKeyOwner.declaration,
+    );
+    const ownKeyLoopIndex = statementIndexInBlock(functionBody, ownKeyLoop);
+    const entryIndex = statementIndexInBlock(functionBody, entryTry);
+    if (!(
+      descriptorIndex >= 0 &&
+      descriptorIndex < ownKeysIndex &&
+      ownKeysIndex < ownKeyLoopIndex &&
+      ownKeyLoopIndex < entryIndex
+    )) {
+      return false;
+    }
+    const [keyGuard, lengthSkip, descriptorGuard, charge, overflow, append] =
+      entryLoop.body.body;
+    const keyTypeofReference = exactTypeofStringRejection(
+      keyGuard,
+      keyBinding,
+      failBinding,
+      labelBinding,
+      " has non-string descriptor key",
+    );
+    if (keyTypeofReference === null) return false;
+    const lengthTest = unwrapTransparentExpression(lengthSkip?.test);
+    const lengthComparison = unwrapTransparentExpression(lengthTest?.left);
+    const lengthKeyReference = unwrapTransparentExpression(
+      lengthComparison?.left,
+    );
+    const arrayReference = unwrapTransparentExpression(lengthTest?.right);
+    if (
+      lengthSkip?.type !== "IfStatement" ||
+      lengthSkip.alternate !== null ||
+      lengthSkip.consequent.type !== "ContinueStatement" ||
+      lengthSkip.consequent.label !== null ||
+      lengthTest?.type !== "LogicalExpression" ||
+      lengthTest.operator !== "&&" ||
+      lengthComparison?.type !== "BinaryExpression" ||
+      lengthComparison.operator !== "===" ||
+      !referencesBinding(lengthKeyReference, keyBinding) ||
+      !isLiteral(lengthComparison.right, "length") ||
+      arrayReference?.type !== "Identifier"
+    ) {
+      return false;
+    }
+    const arrayBinding = referenceBindingForNode.get(arrayReference);
+    const arrayOwner = uniqueConstDeclaratorForBinding(arrayBinding);
+    const arrayCall = unwrapTransparentExpression(arrayOwner?.declarator.init);
+    if (
+      arrayOwner === null ||
+      parentForNode.get(arrayOwner.declaration) !== functionBody ||
+      arrayCall?.type !== "CallExpression" ||
+      arrayCall.optional !== false ||
+      ambientMemberCallPath(arrayCall) !== "Array.isArray" ||
+      arrayCall.arguments.length !== 1 ||
+      !referencesBinding(arrayCall.arguments[0], inputBinding)
+    ) {
+      return false;
+    }
+    const descriptorCallGuard = exactThrowingFailCall(
+      descriptorGuard,
+      failBinding,
+    );
+    const descriptorTest = unwrapTransparentExpression(descriptorGuard?.test);
+    const descriptorTerms =
+      descriptorTest?.type === "LogicalExpression" &&
+      descriptorTest.operator === "||"
+        ? [
+            unwrapTransparentExpression(descriptorTest.left),
+            unwrapTransparentExpression(descriptorTest.right),
+          ]
+        : [];
+    const missingValue = descriptorTerms[0];
+    const membership = unwrapTransparentExpression(missingValue?.argument);
+    const enumerableComparison = descriptorTerms[1];
+    const enumerableMember = unwrapTransparentExpression(
+      enumerableComparison?.left,
+    );
+    const descriptorMessageKey = exactLabelKeyTemplate(
+      descriptorCallGuard?.arguments[2],
+      labelBinding,
+      keyBinding,
+      " is not own enumerable data",
+    );
+    if (
+      !hasExactFailPrefix(descriptorCallGuard, "INPUT_SHAPE_INVALID") ||
+      descriptorTerms.length !== 2 ||
+      missingValue?.type !== "UnaryExpression" ||
+      missingValue.operator !== "!" ||
+      membership?.type !== "BinaryExpression" ||
+      membership.operator !== "in" ||
+      !isLiteral(membership.left, "value") ||
+      !referencesBinding(membership.right, descriptorBinding) ||
+      enumerableComparison?.type !== "BinaryExpression" ||
+      enumerableComparison.operator !== "!==" ||
+      enumerableMember?.type !== "MemberExpression" ||
+      enumerableMember.computed !== false ||
+      enumerableMember.optional !== false ||
+      !referencesBinding(enumerableMember.object, descriptorBinding) ||
+      enumerableMember.property.type !== "Identifier" ||
+      enumerableMember.property.name !== "enumerable" ||
+      !isLiteral(enumerableComparison.right, true) ||
+      descriptorMessageKey === null
+    ) {
+      return false;
+    }
+    const chargeExpression = unwrapTransparentExpression(charge?.expression);
+    const chargeTarget = unwrapTransparentExpression(chargeExpression?.left);
+    const byteLengthCall = unwrapTransparentExpression(chargeExpression?.right);
+    const byteLengthKeyReference = unwrapTransparentExpression(
+      byteLengthCall?.arguments?.[0],
+    );
+    if (
+      charge?.type !== "ExpressionStatement" ||
+      chargeExpression?.type !== "AssignmentExpression" ||
+      chargeExpression.operator !== "+=" ||
+      chargeTarget?.type !== "MemberExpression" ||
+      chargeTarget.computed !== false ||
+      chargeTarget.optional !== false ||
+      chargeTarget.object.type !== "Identifier" ||
+      chargeTarget.property.type !== "Identifier" ||
+      chargeTarget.property.name !== "stringBytes" ||
+      byteLengthCall?.type !== "CallExpression" ||
+      byteLengthCall.optional !== false ||
+      ambientMemberCallPath(byteLengthCall) !== "Buffer.byteLength" ||
+      byteLengthCall.arguments.length !== 2 ||
+      !referencesBinding(byteLengthKeyReference, keyBinding) ||
+      !isLiteral(byteLengthCall.arguments[1], "utf8")
+    ) {
+      return false;
+    }
+    const budgetBinding = referenceBindingForNode.get(chargeTarget.object);
+    if (!exactBudgetBinding(budgetBinding, contextBinding, functionBody)) {
+      return false;
+    }
+    const budgetOwner = uniqueConstDeclaratorForBinding(budgetBinding);
+    const budgetInitializer = unwrapTransparentExpression(
+      budgetOwner?.declarator.init,
+    );
+    const budgetIndex = statementIndexInBlock(
+      functionBody,
+      budgetOwner?.declaration,
+    );
+    const arrayIndex = statementIndexInBlock(
+      functionBody,
+      arrayOwner.declaration,
+    );
+    if (
+      budgetIndex < 0 ||
+      budgetIndex >= descriptorIndex ||
+      arrayIndex < 0 ||
+      arrayIndex >= descriptorIndex
+    ) {
+      return false;
+    }
+    if (
+      budgetInitializer?.type !== "LogicalExpression" ||
+      budgetInitializer.operator !== "??" ||
+      contextBinding.references.length !== 1 ||
+      contextBinding.references[0] !== budgetInitializer.left
+    ) {
+      return false;
+    }
+    const finalizerStatement = entryTry.finalizer.body[0];
+    const finalizerCall = unwrapTransparentExpression(
+      finalizerStatement?.expression,
+    );
+    const finalizerMember = unwrapTransparentExpression(finalizerCall?.callee);
+    const finalizerAncestors = unwrapTransparentExpression(
+      finalizerMember?.object,
+    );
+    if (
+      entryTry.finalizer.body.length !== 1 ||
+      finalizerStatement?.type !== "ExpressionStatement" ||
+      finalizerCall?.type !== "CallExpression" ||
+      finalizerCall.optional !== false ||
+      finalizerCall.arguments.length !== 1 ||
+      !referencesBinding(finalizerCall.arguments[0], inputBinding) ||
+      finalizerMember?.type !== "MemberExpression" ||
+      finalizerMember.computed !== false ||
+      finalizerMember.optional !== false ||
+      finalizerMember.property.type !== "Identifier" ||
+      finalizerMember.property.name !== "delete" ||
+      finalizerAncestors?.type !== "MemberExpression" ||
+      finalizerAncestors.computed !== false ||
+      finalizerAncestors.optional !== false ||
+      !referencesBinding(finalizerAncestors.object, budgetBinding) ||
+      finalizerAncestors.property.type !== "Identifier" ||
+      finalizerAncestors.property.name !== "ancestors"
+    ) {
+      return false;
+    }
+    const overflowCall = exactThrowingFailCall(overflow, failBinding);
+    const overflowTest = unwrapTransparentExpression(overflow?.test);
+    const overflowLimit = unwrapTransparentExpression(overflowTest?.right);
+    const overflowLimitPath = staticMemberPath(overflowLimit);
+    const limitBinding =
+      overflowLimitPath === null
+        ? null
+        : referenceBindingForNode.get(overflowLimitPath.root);
+    if (
+      !hasExactFailPrefix(overflowCall, "LIMIT_EXCEEDED") ||
+      overflowTest?.type !== "BinaryExpression" ||
+      overflowTest.operator !== ">" ||
+      !isExactStaticMember(overflowTest.left, budgetBinding, "stringBytes") ||
+      overflowLimitPath?.path.join(".") !==
+        "LIMITS.aggregateStringUtf8MaximumBytes" ||
+      limitBinding?.scope !== moduleScope ||
+      uniqueConstDeclaratorForBinding(limitBinding) === null ||
+      !exactLabelOnlyTemplate(
+        overflowCall.arguments[2],
+        labelBinding,
+        " exceeds aggregate property-name and value strings",
+      )
+    ) {
+      return false;
+    }
+    const appendCall = unwrapTransparentExpression(append?.expression);
+    const appendMember = unwrapTransparentExpression(appendCall?.callee);
+    const outputReference = unwrapTransparentExpression(appendMember?.object);
+    const frozenCall = unwrapTransparentExpression(appendCall?.arguments?.[0]);
+    const pair = unwrapTransparentExpression(frozenCall?.arguments?.[0]);
+    const pairKeyReference = unwrapTransparentExpression(pair?.elements?.[0]);
+    const recursiveCall = unwrapTransparentExpression(pair?.elements?.[1]);
+    const reflectedValue = unwrapTransparentExpression(
+      recursiveCall?.arguments?.[0],
+    );
+    const recursiveLabelKey = exactLabelKeyTemplate(
+      recursiveCall?.arguments?.[1],
+      labelBinding,
+      keyBinding,
+      "",
+    );
+    const recursiveDepth = unwrapTransparentExpression(
+      recursiveCall?.arguments?.[4],
+    );
+    if (
+      append?.type !== "ExpressionStatement" ||
+      appendCall?.type !== "CallExpression" ||
+      appendCall.optional !== false ||
+      appendCall.arguments.length !== 1 ||
+      appendMember?.type !== "MemberExpression" ||
+      appendMember.computed !== false ||
+      appendMember.optional !== false ||
+      appendMember.property.type !== "Identifier" ||
+      appendMember.property.name !== "push" ||
+      outputReference?.type !== "Identifier" ||
+      frozenCall?.type !== "CallExpression" ||
+      frozenCall.optional !== false ||
+      ambientMemberCallPath(frozenCall) !== "Object.freeze" ||
+      frozenCall.arguments.length !== 1 ||
+      pair?.type !== "ArrayExpression" ||
+      pair.elements.length !== 2 ||
+      !referencesBinding(pairKeyReference, keyBinding) ||
+      recursiveCall?.type !== "CallExpression" ||
+      recursiveCall.optional !== false ||
+      recursiveCall.arguments.length !== 5 ||
+      recursiveCall.callee.type !== "Identifier" ||
+      referenceBindingForNode.get(recursiveCall.callee) !== functionBinding ||
+      reflectedValue?.type !== "MemberExpression" ||
+      reflectedValue.computed !== false ||
+      reflectedValue.optional !== false ||
+      !referencesBinding(reflectedValue.object, descriptorBinding) ||
+      reflectedValue.property.type !== "Identifier" ||
+      reflectedValue.property.name !== "value" ||
+      recursiveLabelKey === null ||
+      !referencesBinding(recursiveCall.arguments[2], failBinding) ||
+      !referencesBinding(recursiveCall.arguments[3], budgetBinding) ||
+      recursiveDepth?.type !== "BinaryExpression" ||
+      recursiveDepth.operator !== "+" ||
+      !referencesBinding(recursiveDepth.left, depthBinding) ||
+      !isLiteral(recursiveDepth.right, 1)
+    ) {
+      return false;
+    }
+    const outputBinding = referenceBindingForNode.get(outputReference);
+    const outputOwner = uniqueConstDeclaratorForBinding(outputBinding);
+    const outputInitializer = unwrapTransparentExpression(
+      outputOwner?.declarator.init,
+    );
+    const entryBlockIndex = statementIndexInBlock(entryBlock, entryLoop);
+    const outputIndex = statementIndexInBlock(
+      entryBlock,
+      outputOwner?.declaration,
+    );
+    const returnStatement = entryBlock.body[entryBlockIndex + 1];
+    const returned = unwrapTransparentExpression(returnStatement?.argument);
+    const mapCall = unwrapTransparentExpression(returned?.consequent);
+    const mapMember = unwrapTransparentExpression(mapCall?.callee);
+    const mapOutputReference = unwrapTransparentExpression(mapMember?.object);
+    const callback = unwrapTransparentExpression(mapCall?.arguments[0]);
+    const callbackBinding =
+      callback?.params?.[0]?.type === "Identifier"
+        ? declaredBindingForIdentifier.get(callback.params[0])
+        : null;
+    const callbackCall = unwrapTransparentExpression(callback?.body);
+    const callbackMember = unwrapTransparentExpression(callbackCall?.callee);
+    const callbackEntryReference = unwrapTransparentExpression(
+      callbackMember?.object,
+    );
+    const fromEntriesCall = unwrapTransparentExpression(returned?.alternate);
+    const fromEntriesOutputReference = unwrapTransparentExpression(
+      fromEntriesCall?.arguments?.[0],
+    );
+    if (
+      outputOwner === null ||
+      outputIndex !== 0 ||
+      entryBlockIndex !== 1 ||
+      entryBlock.body.length !== 3 ||
+      outputInitializer?.type !== "ArrayExpression" ||
+      outputInitializer.elements.length !== 0 ||
+      returnStatement?.type !== "ReturnStatement" ||
+      returned?.type !== "ConditionalExpression" ||
+      !referencesBinding(returned.test, arrayBinding) ||
+      mapCall?.type !== "CallExpression" ||
+      mapCall.optional !== false ||
+      mapCall.arguments.length !== 1 ||
+      mapMember?.type !== "MemberExpression" ||
+      mapMember.computed !== false ||
+      mapMember.optional !== false ||
+      mapMember.property.type !== "Identifier" ||
+      mapMember.property.name !== "map" ||
+      !referencesBinding(mapOutputReference, outputBinding) ||
+      callback?.type !== "ArrowFunctionExpression" ||
+      callback.async !== false ||
+      callback.generator !== false ||
+      callback.expression !== true ||
+      callback.params.length !== 1 ||
+      callback.params[0].type !== "Identifier" ||
+      callbackCall?.type !== "CallExpression" ||
+      callbackCall.optional !== false ||
+      callbackCall.arguments.length !== 1 ||
+      callbackMember?.type !== "MemberExpression" ||
+      callbackMember.computed !== false ||
+      callbackMember.optional !== false ||
+      callbackMember.property.type !== "Identifier" ||
+      callbackMember.property.name !== "at" ||
+      !referencesBinding(callbackEntryReference, callbackBinding) ||
+      !isLiteral(callbackCall.arguments[0], 1) ||
+      fromEntriesCall?.type !== "CallExpression" ||
+      fromEntriesCall.optional !== false ||
+      ambientMemberCallPath(fromEntriesCall) !== "Object.fromEntries" ||
+      fromEntriesCall.arguments.length !== 1 ||
+      !referencesBinding(fromEntriesOutputReference, outputBinding)
+    ) {
+      return false;
+    }
+    const exactLimitReference = (node, path) => {
+      const member = staticMemberPath(unwrapTransparentExpression(node));
+      if (member?.path.join(".") !== path) return false;
+      const binding = referenceBindingForNode.get(member.root);
+      return (
+        binding?.scope === moduleScope &&
+        uniqueConstDeclaratorForBinding(binding) !== null
+      );
+    };
+    const outermostStaticMemberFromReference = (reference) => {
+      let member = reference;
+      let parent = parentForNode.get(member);
+      while (
+        parent?.type === "MemberExpression" &&
+        parent.computed === false &&
+        parent.optional === false &&
+        parent.object === member
+      ) {
+        member = parent;
+        parent = parentForNode.get(member);
+      }
+      return { member, parent, path: staticMemberPath(member) };
+    };
+    const exactScalarStringBytesBinding = (node) => {
+      const expression = unwrapTransparentExpression(node);
+      if (expression?.type !== "Identifier") return false;
+      const binding = referenceBindingForNode.get(expression);
+      const owner = uniqueConstDeclaratorForBinding(binding);
+      const call = unwrapTransparentExpression(owner?.declarator.init);
+      return (
+        owner !== null &&
+        enclosingFunctionForNode(owner.declaration) === functionNode &&
+        call?.type === "CallExpression" &&
+        call.optional === false &&
+        ambientMemberCallPath(call) === "Buffer.byteLength" &&
+        call.arguments.length === 2 &&
+        referencesBinding(call.arguments[0], inputBinding) &&
+        isLiteral(call.arguments[1], "utf8")
+      );
+    };
+    const budgetUseCounts = {
+      ancestorAdd: 0,
+      ancestorDelete: 0,
+      ancestorHas: 0,
+      nodeCheck: 0,
+      nodeIncrement: 0,
+      recursiveArgument: 0,
+      scalarStringCharge: 0,
+      stringCheck: 0,
+      keyStringCharge: 0,
+    };
+    for (const reference of budgetBinding.references) {
+      if (enclosingFunctionForNode(reference) !== functionNode) return false;
+      if (reference === recursiveCall.arguments[3]) {
+        budgetUseCounts.recursiveArgument += 1;
+        continue;
+      }
+      const { member, parent, path } =
+        outermostStaticMemberFromReference(reference);
+      if (
+        path === null ||
+        referenceBindingForNode.get(path.root) !== budgetBinding
+      ) {
+        return false;
+      }
+      const suffix = path.path.slice(1).join(".");
+      if (
+        ["ancestors.has", "ancestors.add", "ancestors.delete"].includes(suffix)
+      ) {
+        if (
+          parent?.type !== "CallExpression" ||
+          parent.callee !== member ||
+          parent.optional !== false ||
+          parent.arguments.length !== 1 ||
+          !referencesBinding(parent.arguments[0], inputBinding)
+        ) {
+          return false;
+        }
+        if (suffix === "ancestors.has") budgetUseCounts.ancestorHas += 1;
+        if (suffix === "ancestors.add") budgetUseCounts.ancestorAdd += 1;
+        if (suffix === "ancestors.delete") {
+          if (parent !== finalizerCall) return false;
+          budgetUseCounts.ancestorDelete += 1;
+        }
+        continue;
+      }
+      if (suffix === "nodes") {
+        if (
+          parent?.type === "AssignmentExpression" &&
+          parent.left === member &&
+          parent.operator === "+=" &&
+          isLiteral(parent.right, 1)
+        ) {
+          budgetUseCounts.nodeIncrement += 1;
+          continue;
+        }
+        if (
+          parent?.type === "BinaryExpression" &&
+          parent.left === member &&
+          parent.operator === ">" &&
+          exactLimitReference(parent.right, "LIMITS.maximumNodes")
+        ) {
+          budgetUseCounts.nodeCheck += 1;
+          continue;
+        }
+        return false;
+      }
+      if (suffix === "stringBytes") {
+        if (
+          parent?.type === "AssignmentExpression" &&
+          parent.left === member &&
+          parent.operator === "+="
+        ) {
+          if (member === chargeTarget && parent.right === byteLengthCall) {
+            budgetUseCounts.keyStringCharge += 1;
+            continue;
+          }
+          if (exactScalarStringBytesBinding(parent.right)) {
+            budgetUseCounts.scalarStringCharge += 1;
+            continue;
+          }
+        }
+        if (
+          parent?.type === "BinaryExpression" &&
+          parent.left === member &&
+          parent.operator === ">" &&
+          exactLimitReference(
+            parent.right,
+            "LIMITS.aggregateStringUtf8MaximumBytes",
+          )
+        ) {
+          budgetUseCounts.stringCheck += 1;
+          continue;
+        }
+        return false;
+      }
+      return false;
+    }
+    if (
+      !Object.entries(budgetUseCounts).every(
+        ([name, count]) => count === (name === "stringCheck" ? 2 : 1),
+      )
+    ) {
+      return false;
+    }
+    const exactTypeofInput = (node, expected) => {
+      const comparison = unwrapTransparentExpression(node);
+      const unary = unwrapTransparentExpression(comparison?.left);
+      return (
+        comparison?.type === "BinaryExpression" &&
+        comparison.operator === "===" &&
+        unary?.type === "UnaryExpression" &&
+        unary.operator === "typeof" &&
+        referencesBinding(unary.argument, inputBinding) &&
+        isLiteral(comparison.right, expected)
+      );
+    };
+    const inputCallMaximums = new Map([
+      ["Array.isArray", 1],
+      ["Buffer.byteLength", 1],
+      ["Buffer.from", 1],
+      ["Buffer.isBuffer", 1],
+      ["Number.isFinite", 1],
+      ["Object.getOwnPropertyDescriptors", 1],
+      ["Object.getPrototypeOf", 2],
+      ["Object.hasOwn", 1],
+      ["Object.is", 1],
+      ["Object.keys", 1],
+      ["types.isProxy", 1],
+    ]);
+    const inputCallCounts = new Map();
+    const certifiedInputCalls = new WeakSet();
+    const recordInputCall = (path) => {
+      const count = (inputCallCounts.get(path) ?? 0) + 1;
+      if (count > inputCallMaximums.get(path)) return false;
+      inputCallCounts.set(path, count);
+      return true;
+    };
+    const exactInputCallArgument = (reference, call) => {
+      const ambientPath = ambientMemberCallPath(call);
+      const calleePath = staticMemberPath(
+        unwrapTransparentExpression(call.callee),
+      );
+      const calleeRootBinding =
+        calleePath === null
+          ? null
+          : referenceBindingForNode.get(calleePath.root);
+      if (calleePath !== null && calleeRootBinding === budgetBinding) {
+        const suffix = calleePath.path.slice(1).join(".");
+        return (
+          ["ancestors.has", "ancestors.add", "ancestors.delete"].includes(
+            suffix,
+          ) &&
+          call.optional === false &&
+          call.arguments.length === 1 &&
+          call.arguments[0] === reference
+        );
+      }
+      const path =
+        ambientPath ??
+        (calleePath?.path.join(".") === "types.isProxy" &&
+        calleeRootBinding?.importedName === "types"
+          ? "types.isProxy"
+          : null);
+      if (
+        path === null ||
+        !inputCallMaximums.has(path) ||
+        call.optional !== false ||
+        call.arguments[0] !== reference
+      ) {
+        return false;
+      }
+      let exactContext = false;
+      if (path === "Array.isArray") {
+        exactContext = call === arrayCall && call.arguments.length === 1;
+      } else if (path === "Object.getOwnPropertyDescriptors") {
+        exactContext = call === descriptorCall && call.arguments.length === 1;
+      } else if (path === "Buffer.byteLength") {
+        const declarator = parentForNode.get(call);
+        const declaration = parentForNode.get(declarator);
+        const block = parentForNode.get(declaration);
+        const branch = parentForNode.get(block);
+        exactContext =
+          call.arguments.length === 2 &&
+          isLiteral(call.arguments[1], "utf8") &&
+          declarator?.type === "VariableDeclarator" &&
+          declarator.init === call &&
+          declaration?.type === "VariableDeclaration" &&
+          declaration.kind === "const" &&
+          block?.type === "BlockStatement" &&
+          branch?.type === "IfStatement" &&
+          branch.consequent === block &&
+          exactTypeofInput(branch.test, "string");
+      } else if (path === "Buffer.isBuffer") {
+        const branch = parentForNode.get(call);
+        exactContext =
+          call.arguments.length === 1 &&
+          branch?.type === "IfStatement" &&
+          branch.test === call;
+      } else if (path === "Buffer.from") {
+        const statement = parentForNode.get(call);
+        const block = parentForNode.get(statement);
+        const branch = parentForNode.get(block);
+        const testCall = unwrapTransparentExpression(branch?.test);
+        exactContext =
+          call.arguments.length === 1 &&
+          statement?.type === "ReturnStatement" &&
+          statement.argument === call &&
+          block?.type === "BlockStatement" &&
+          branch?.type === "IfStatement" &&
+          branch.consequent === block &&
+          testCall?.type === "CallExpression" &&
+          ambientMemberCallPath(testCall) === "Buffer.isBuffer" &&
+          testCall.arguments.length === 1 &&
+          referencesBinding(testCall.arguments[0], inputBinding);
+      } else if (path === "Object.getPrototypeOf") {
+        const comparison = parentForNode.get(call);
+        const branch = parentForNode.get(comparison);
+        exactContext =
+          call.arguments.length === 1 &&
+          comparison?.type === "BinaryExpression" &&
+          comparison.left === call &&
+          comparison.operator === "!==" &&
+          branch?.type === "IfStatement" &&
+          branch.test === comparison;
+      } else if (path === "Number.isFinite") {
+        const negative = parentForNode.get(call);
+        const branch = parentForNode.get(negative);
+        exactContext =
+          call.arguments.length === 1 &&
+          negative?.type === "UnaryExpression" &&
+          negative.operator === "!" &&
+          negative.argument === call &&
+          branch?.type === "IfStatement" &&
+          branch.test === negative;
+      } else if (path === "Object.is") {
+        const conditional = parentForNode.get(call);
+        exactContext =
+          call.arguments.length === 2 &&
+          conditional?.type === "ConditionalExpression" &&
+          conditional.test === call;
+      } else if (path === "Object.keys") {
+        const declarator = parentForNode.get(call);
+        const declaration = parentForNode.get(declarator);
+        const block = parentForNode.get(declaration);
+        const branch = parentForNode.get(block);
+        exactContext =
+          call.arguments.length === 1 &&
+          declarator?.type === "VariableDeclarator" &&
+          declarator.init === call &&
+          declaration?.type === "VariableDeclaration" &&
+          declaration.kind === "const" &&
+          block?.type === "BlockStatement" &&
+          branch?.type === "IfStatement" &&
+          branch.consequent === block &&
+          referencesBinding(branch.test, arrayBinding);
+      } else if (path === "Object.hasOwn") {
+        const negative = parentForNode.get(call);
+        const branch = parentForNode.get(negative);
+        const block = parentForNode.get(branch);
+        const loop = parentForNode.get(block);
+        exactContext =
+          call.arguments.length === 2 &&
+          negative?.type === "UnaryExpression" &&
+          negative.operator === "!" &&
+          negative.argument === call &&
+          branch?.type === "IfStatement" &&
+          branch.test === negative &&
+          block?.type === "BlockStatement" &&
+          loop?.type === "WhileStatement" &&
+          loop.body === block;
+      } else if (path === "types.isProxy") {
+        const logical = parentForNode.get(call);
+        const branch = parentForNode.get(logical);
+        exactContext =
+          call.arguments.length === 1 &&
+          logical?.type === "LogicalExpression" &&
+          logical.operator === "&&" &&
+          logical.right === call &&
+          branch?.type === "IfStatement" &&
+          branch.test === logical;
+      }
+      if (!exactContext || !recordInputCall(path)) return false;
+      certifiedInputCalls.add(call);
+      return true;
+    };
+    const exactNullBooleanReturn = (reference, statement) => {
+      const conditional = parentForNode.get(statement);
+      const test = unwrapTransparentExpression(conditional?.test);
+      const nullComparison = unwrapTransparentExpression(test?.left);
+      return (
+        conditional?.type === "IfStatement" &&
+        conditional.consequent === statement &&
+        conditional.alternate === null &&
+        test?.type === "LogicalExpression" &&
+        test.operator === "||" &&
+        nullComparison?.type === "BinaryExpression" &&
+        nullComparison.operator === "===" &&
+        referencesBinding(nullComparison.left, inputBinding) &&
+        isLiteral(nullComparison.right, null) &&
+        exactTypeofInput(test.right, "boolean") &&
+        statement.argument === reference
+      );
+    };
+    const exactStringReturn = (reference, statement) => {
+      const block = parentForNode.get(statement);
+      const conditional = parentForNode.get(block);
+      return (
+        block?.type === "BlockStatement" &&
+        block.body.at(-1) === statement &&
+        conditional?.type === "IfStatement" &&
+        conditional.consequent === block &&
+        conditional.alternate === null &&
+        exactTypeofInput(conditional.test, "string") &&
+        statement.argument === reference
+      );
+    };
+    const exactNumberProjection = (reference, conditional) => {
+      const statement = parentForNode.get(conditional);
+      const block = parentForNode.get(statement);
+      const numberBranch = parentForNode.get(block);
+      const testCall = unwrapTransparentExpression(conditional.test);
+      const negativeZero = unwrapTransparentExpression(
+        testCall?.arguments?.[1],
+      );
+      return (
+        conditional.type === "ConditionalExpression" &&
+        conditional.alternate === reference &&
+        isLiteral(conditional.consequent, 0) &&
+        statement?.type === "ReturnStatement" &&
+        statement.argument === conditional &&
+        block?.type === "BlockStatement" &&
+        block.body.at(-1) === statement &&
+        numberBranch?.type === "IfStatement" &&
+        numberBranch.consequent === block &&
+        numberBranch.alternate === null &&
+        exactTypeofInput(numberBranch.test, "number") &&
+        testCall?.type === "CallExpression" &&
+        testCall.optional === false &&
+        ambientMemberCallPath(testCall) === "Object.is" &&
+        testCall.arguments.length === 2 &&
+        referencesBinding(testCall.arguments[0], inputBinding) &&
+        negativeZero?.type === "UnaryExpression" &&
+        negativeZero.operator === "-" &&
+        isLiteral(negativeZero.argument, 0)
+      );
+    };
+    let inputLengthCount = 0;
+    const isWithinArrayBranch = (node) => {
+      let current = node;
+      let parent = parentForNode.get(current);
+      while (parent !== undefined && parent !== functionBody) {
+        if (
+          parent.type === "IfStatement" &&
+          parent.consequent === current &&
+          referencesBinding(parent.test, arrayBinding)
+        ) {
+          return true;
+        }
+        current = parent;
+        parent = parentForNode.get(current);
+      }
+      return false;
+    };
+    const exactInputLength = (member) => {
+      const parent = parentForNode.get(member);
+      let exactContext = false;
+      if (
+        parent?.type === "BinaryExpression" &&
+        parent.left === member &&
+        parent.operator === ">" &&
+        exactLimitReference(parent.right, "LIMITS.maximumArrayLength")
+      ) {
+        const logical = parentForNode.get(parent);
+        exactContext =
+          logical?.type === "LogicalExpression" &&
+          logical.operator === "&&" &&
+          logical.right === parent &&
+          referencesBinding(logical.left, arrayBinding);
+      } else if (
+        parent?.type === "BinaryExpression" &&
+        parent.right === member &&
+        parent.operator === "!==" &&
+        isWithinArrayBranch(parent)
+      ) {
+        const leftLength = staticMemberPath(
+          unwrapTransparentExpression(parent.left),
+        );
+        exactContext = leftLength?.path.at(-1) === "length";
+      } else if (
+        parent?.type === "BinaryExpression" &&
+        parent.left === member &&
+        parent.operator === "+" &&
+        isLiteral(parent.right, 1)
+      ) {
+        const comparison = parentForNode.get(parent);
+        const leftLength = staticMemberPath(
+          unwrapTransparentExpression(comparison?.left),
+        );
+        exactContext =
+          comparison?.type === "BinaryExpression" &&
+          comparison.right === parent &&
+          comparison.operator === "!==" &&
+          leftLength?.path.at(-1) === "length" &&
+          isWithinArrayBranch(comparison);
+      } else if (
+        parent?.type === "BinaryExpression" &&
+        parent.right === member &&
+        parent.operator === "<"
+      ) {
+        const loop = parentForNode.get(parent);
+        exactContext =
+          loop?.type === "WhileStatement" &&
+          loop.test === parent &&
+          isWithinArrayBranch(loop);
+      }
+      if (!exactContext || inputLengthCount >= 4) return false;
+      inputLengthCount += 1;
+      return true;
+    };
+    for (const reference of inputBinding.references) {
+      if (
+        enclosingFunctionForNode(reference) !== functionNode ||
+        bindingHasRootedWrite(inputBinding)
+      ) {
+        return false;
+      }
+      const parent = parentForNode.get(reference);
+      if (
+        parent?.type === "UnaryExpression" &&
+        parent.operator === "typeof" &&
+        parent.argument === reference
+      ) {
+        continue;
+      }
+      if (
+        parent?.type === "BinaryExpression" &&
+        ["===", "!=="].includes(parent.operator) &&
+        ((parent.left === reference && isLiteral(parent.right, null)) ||
+          (parent.right === reference && isLiteral(parent.left, null)))
+      ) {
+        continue;
+      }
+      if (
+        parent?.type === "ReturnStatement" &&
+        (exactNullBooleanReturn(reference, parent) ||
+          exactStringReturn(reference, parent))
+      ) {
+        continue;
+      }
+      if (
+        parent?.type === "ConditionalExpression" &&
+        exactNumberProjection(reference, parent)
+      ) {
+        continue;
+      }
+      if (
+        parent?.type === "MemberExpression" &&
+        parent.object === reference &&
+        parent.computed === false &&
+        parent.optional === false &&
+        parent.property.type === "Identifier" &&
+        parent.property.name === "length" &&
+        !writtenReferences.has(parent) &&
+        exactInputLength(parent)
+      ) {
+        continue;
+      }
+      if (
+        parent?.type === "CallExpression" &&
+        parent.arguments.includes(reference) &&
+        exactInputCallArgument(reference, parent)
+      ) {
+        continue;
+      }
+      return false;
+    }
+    const ownedReturns = [];
+    walkAst(functionBody, (node) => {
+      if (
+        node.type === "ReturnStatement" &&
+        enclosingFunctionForNode(node) === functionNode
+      ) {
+        ownedReturns.push(node);
+      }
+    });
+    for (const statement of ownedReturns) {
+      if (statement === returnStatement) continue;
+      const argument = unwrapTransparentExpression(statement.argument);
+      if (
+        argument?.type === "CallExpression" &&
+        ambientMemberCallPath(argument) === "Buffer.from" &&
+        certifiedInputCalls.has(argument)
+      ) {
+        continue;
+      }
+      if (
+        argument?.type === "Identifier" &&
+        referencesBinding(argument, inputBinding) &&
+        (exactNullBooleanReturn(argument, statement) ||
+          exactStringReturn(argument, statement))
+      ) {
+        continue;
+      }
+      if (
+        argument?.type === "ConditionalExpression" &&
+        argument.alternate?.type === "Identifier" &&
+        referencesBinding(argument.alternate, inputBinding) &&
+        exactNumberProjection(argument.alternate, argument)
+      ) {
+        continue;
+      }
+      return false;
+    }
+    const exactOutputReferences = new Set([
+      outputReference,
+      mapOutputReference,
+      fromEntriesOutputReference,
+    ]);
+    if (
+      outputBinding.references.length !== exactOutputReferences.size ||
+      outputBinding.references.some(
+        (reference) => !exactOutputReferences.has(reference),
+      )
+    ) {
+      return false;
+    }
+    for (const reference of [
+      lengthKeyReference,
+      descriptorMessageKey,
+      byteLengthKeyReference,
+      pairKeyReference,
+      recursiveLabelKey,
+    ]) {
+      certifiedDescriptorSnapshotKeyReferences.add(reference);
+    }
+    return true;
+  };
+  for (const context of descriptorEntryIterations) {
+    const hasNonTypeofKeyReference = context.keyBinding.references.some(
+      (reference) => {
+        const parent = parentForNode.get(reference);
+        return !(
+          parent?.type === "UnaryExpression" &&
+          parent.operator === "typeof" &&
+          parent.argument === reference
+        );
+      },
+    );
+    if (hasNonTypeofKeyReference) {
+      assert.equal(
+        certifyDescriptorEntrySnapshot(context),
+        true,
+        "reflection key outside exact descriptor-entry snapshot certificate",
+      );
+    }
+  }
   const reflectionOwnerKinds = new Set([
     "descriptor-map",
     "reflection-view",
@@ -1979,20 +3349,6 @@ function assertScopedAmbientReferencePolicy(ast, source) {
     "value",
     "writable",
   ]);
-  const enclosingFunctionForNode = (node) => {
-    let current = parentForNode.get(node);
-    while (current !== undefined) {
-      if (
-        current.type === "FunctionDeclaration" ||
-        current.type === "FunctionExpression" ||
-        current.type === "ArrowFunctionExpression"
-      ) {
-        return current;
-      }
-      current = parentForNode.get(current);
-    }
-    return null;
-  };
   const isExactRecursivePlainDataSnapshotArgument = (node, call) => {
     if (
       call.type !== "CallExpression" ||
@@ -2233,6 +3589,7 @@ function assertScopedAmbientReferencePolicy(ast, source) {
       assert.fail("descriptor record escape");
     }
     if (kind === "reflection-key") {
+      if (certifiedDescriptorSnapshotKeyReferences.has(node)) return;
       assert.equal(
         parent.type === "UnaryExpression" &&
           parent.operator === "typeof" &&
@@ -4836,8 +6193,9 @@ async function assertCandidateContract(candidate, source = null) {
     detachedExpected.artifact.bytes,
   );
 
+  let plainObjectLengthAccessorReads = 0;
   const hostileBases = await Promise.all(
-    Array.from({ length: 4 }, () => createG17PrivateOwnerV3Fixture()),
+    Array.from({ length: 5 }, () => createG17PrivateOwnerV3Fixture()),
   );
   for (const hostile of [
     new Proxy(hostileBases[0], {}),
@@ -4857,6 +6215,18 @@ async function assertCandidateContract(candidate, source = null) {
       fixture[Symbol("extra")] = true;
       return fixture;
     })(),
+    (() => {
+      const fixture = hostileBases[4];
+      Object.defineProperty(fixture, "length", {
+        configurable: true,
+        enumerable: true,
+        get() {
+          plainObjectLengthAccessorReads += 1;
+          return 3137;
+        },
+      });
+      return fixture;
+    })(),
   ]) {
     assertContractError(
       candidate,
@@ -4868,6 +6238,11 @@ async function assertCandidateContract(candidate, source = null) {
       "hostile fixture",
     );
   }
+  assert.equal(
+    plainObjectLengthAccessorReads,
+    0,
+    "plain-object length accessor was not invoked",
+  );
   assertContractError(
     candidate,
     "INPUT_SHAPE_INVALID",
@@ -6839,6 +8214,373 @@ test("ADR-0041 S5 ambient-reference policy resolves lexical scope", () => {
       ),
     );
   }
+});
+
+test("ADR-0041 S5R2 admits only the exact bounded descriptor-entry snapshot", () => {
+  const validate = (source) =>
+    assertScopedAmbientReferencePolicy(
+      parse(source, ACORN_PARSE_OPTIONS),
+      source,
+    );
+  const oracle = [
+    "const LIMITS = { aggregateStringUtf8MaximumBytes: 1024, maximumNodes: 100 };",
+    "function snapshot(value, label, fail, context = undefined, depth = 0) {",
+    "  const budget = context ?? { ancestors: new WeakSet(), nodes: 0, stringBytes: 0 };",
+    "  if (typeof value === 'string') {",
+    "    const bytes = Buffer.byteLength(value, 'utf8');",
+    "    budget.stringBytes += bytes;",
+    "    if (budget.stringBytes > LIMITS.aggregateStringUtf8MaximumBytes) {",
+    "      throw fail('LIMIT_EXCEEDED', 'input-snapshot', `${label} exceeds aggregate strings`);",
+    "    }",
+    "  }",
+    "  if (budget.ancestors.has(value)) {",
+    "    throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} contains cycle`);",
+    "  }",
+    "  budget.nodes += 1;",
+    "  if (budget.nodes > LIMITS.maximumNodes) {",
+    "    throw fail('LIMIT_EXCEEDED', 'input-snapshot', `${label} exceeds nodes`);",
+    "  }",
+    "  budget.ancestors.add(value);",
+    "  const array = Array.isArray(value);",
+    "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    "  const keys = Reflect.ownKeys(descriptors);",
+    "  for (const key of keys) {",
+    "    if (typeof key !== 'string') {",
+    "      throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has symbol fields`);",
+    "    }",
+    "  }",
+    "  try {",
+    "    const outputEntries = [];",
+    "    for (const [key, descriptor] of Object.entries(descriptors)) {",
+    "      if (typeof key !== 'string') {",
+    "        throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has non-string descriptor key`);",
+    "      }",
+    "      if (key === 'length' && array) continue;",
+    "      if (!('value' in descriptor) || descriptor.enumerable !== true) {",
+    "        throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label}.${key} is not own enumerable data`);",
+    "      }",
+    "      budget.stringBytes += Buffer.byteLength(key, 'utf8');",
+    "      if (budget.stringBytes > LIMITS.aggregateStringUtf8MaximumBytes) {",
+    "        throw fail('LIMIT_EXCEEDED', 'input-snapshot', `${label} exceeds aggregate property-name and value strings`);",
+    "      }",
+    "      outputEntries.push(Object.freeze([key, snapshot(descriptor.value, `${label}.${key}`, fail, budget, depth + 1)]));",
+    "    }",
+    "    return array ? outputEntries.map((entry) => entry.at(1)) : Object.fromEntries(outputEntries);",
+    "  } finally {",
+    "    budget.ancestors.delete(value);",
+    "  }",
+    "}",
+  ].join("\n");
+  assert.doesNotThrow(() => validate(oracle));
+
+  const mutate = (label, before, after) => {
+    const first = oracle.indexOf(before);
+    assert.notEqual(first, -1, `${label}: mutation anchor missing`);
+    assert.equal(
+      oracle.indexOf(before, first + before.length),
+      -1,
+      `${label}: mutation anchor is not unique`,
+    );
+    return [
+      label,
+      `${oracle.slice(0, first)}${after}${oracle.slice(first + before.length)}`,
+    ];
+  };
+  const relocateAfter = (label, line, anchor) => {
+    const lineWithBreak = `${line}\n`;
+    assert.equal(
+      oracle.indexOf(lineWithBreak),
+      oracle.lastIndexOf(lineWithBreak),
+      `${label}: relocated line is not unique`,
+    );
+    const withoutLine = oracle.replace(lineWithBreak, "");
+    const anchorIndex = withoutLine.indexOf(anchor);
+    assert.notEqual(anchorIndex, -1, `${label}: relocation anchor missing`);
+    const insertionIndex = anchorIndex + anchor.length;
+    return [
+      label,
+      `${withoutLine.slice(0, insertionIndex)}\n${line}${withoutLine.slice(insertionIndex)}`,
+    ];
+  };
+  const certificateMutants = [
+    mutate(
+      "snapshot function is async",
+      "function snapshot(value, label, fail, context = undefined, depth = 0) {",
+      "async function snapshot(value, label, fail, context = undefined, depth = 0) {",
+    ),
+    mutate(
+      "snapshot function is a generator",
+      "function snapshot(value, label, fail, context = undefined, depth = 0) {",
+      "function* snapshot(value, label, fail, context = undefined, depth = 0) {",
+    ),
+    mutate(
+      "snapshot function binding is replaced",
+      "  try {",
+      "  snapshot = (replacement) => replacement;\n  try {",
+    ),
+    mutate(
+      "input binding is replaced",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  value = {};\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "input object is mutated",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  value.changed = true;\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "input is passed to a local mutator",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  function mutate(input) { input.changed = true; }\n  mutate(value);\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "input is aliased before descriptor capture",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  const inputAlias = value;\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "non-null input returns before snapshotting",
+      "  const budget = context ?? { ancestors: new WeakSet(), nodes: 0, stringBytes: 0 };",
+      "  if (value !== null) return value;\n  const budget = context ?? { ancestors: new WeakSet(), nodes: 0, stringBytes: 0 };",
+    ),
+    mutate(
+      "admitted input call is unguarded",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  Buffer.from(value);\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "recursive context is passed to a helper before budget binding",
+      "  const budget = context ?? { ancestors: new WeakSet(), nodes: 0, stringBytes: 0 };",
+      "  function reset(shared) { shared.stringBytes = 0; }\n  if (context !== undefined) reset(context);\n  const budget = context ?? { ancestors: new WeakSet(), nodes: 0, stringBytes: 0 };",
+    ),
+    mutate(
+      "depth binding is replaced",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  depth = 0;\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "symbol scan does not throw",
+      "throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has symbol fields`);",
+      "fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has symbol fields`);",
+    ),
+    mutate(
+      "symbol scan uses the descriptor value instead of its descriptor map",
+      "const keys = Reflect.ownKeys(descriptors);",
+      "const keys = Reflect.ownKeys(value);",
+    ),
+    mutate(
+      "symbol scan receives an extra argument",
+      "const keys = Reflect.ownKeys(descriptors);",
+      "const keys = Reflect.ownKeys(descriptors, value);",
+    ),
+    mutate(
+      "descriptor entry view receives an extra argument",
+      "Object.entries(descriptors)",
+      "Object.entries(descriptors, value)",
+    ),
+    mutate(
+      "same-loop key guard does not throw",
+      "throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has non-string descriptor key`);",
+      "fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has non-string descriptor key`);",
+    ),
+    mutate(
+      "same-loop key guard is inverted",
+      "if (typeof key !== 'string') {\n        throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has non-string descriptor key`);",
+      "if (typeof key === 'string') {\n        throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label} has non-string descriptor key`);",
+    ),
+    mutate(
+      "same-loop key diagnostic drifts",
+      "`${label} has non-string descriptor key`",
+      "`${label} has descriptor key`",
+    ),
+    mutate(
+      "array length is skipped without the array proof",
+      "if (key === 'length' && array) continue;",
+      "if (key === 'length') continue;",
+    ),
+    mutate(
+      "array proof is for a different input",
+      "const array = Array.isArray(value);",
+      "const array = Array.isArray({});",
+    ),
+    mutate(
+      "array proof declaration does not dominate descriptor capture",
+      "  const array = Array.isArray(value);\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);\n  const array = Array.isArray(value);",
+    ),
+    mutate(
+      "array length branch returns before descriptor capture",
+      "  const array = Array.isArray(value);",
+      "  const array = Array.isArray(value);\n  if (array && value.length === 3137) return [];",
+    ),
+    mutate(
+      "plain-object length is read outside an array proof",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+      "  void value.length;\n  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    relocateAfter(
+      "budget declaration does not dominate descriptor capture",
+      "  const budget = context ?? { ancestors: new WeakSet(), nodes: 0, stringBytes: 0 };",
+      "  const descriptors = Object.getOwnPropertyDescriptors(value);",
+    ),
+    mutate(
+      "descriptor membership guard is missing",
+      "if (!('value' in descriptor) || descriptor.enumerable !== true) {",
+      "if (descriptor.enumerable !== true || descriptor.enumerable !== true) {",
+    ),
+    mutate(
+      "descriptor enumerable guard is inverted",
+      "descriptor.enumerable !== true",
+      "descriptor.enumerable === true",
+    ),
+    mutate(
+      "descriptor guard does not throw",
+      "throw fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label}.${key} is not own enumerable data`);",
+      "fail('INPUT_SHAPE_INVALID', 'input-snapshot', `${label}.${key} is not own enumerable data`);",
+    ),
+    mutate(
+      "descriptor diagnostic omits the validated key",
+      "`${label}.${key} is not own enumerable data`",
+      "`${label} is not own enumerable data`",
+    ),
+    mutate(
+      "property charge uses UTF-16 length",
+      "Buffer.byteLength(key, 'utf8')",
+      "key.length",
+    ),
+    mutate(
+      "property charge uses the wrong encoding",
+      "Buffer.byteLength(key, 'utf8')",
+      "Buffer.byteLength(key, 'utf16le')",
+    ),
+    mutate(
+      "property charge overwrites the aggregate",
+      "budget.stringBytes += Buffer.byteLength(key, 'utf8');",
+      "budget.stringBytes = Buffer.byteLength(key, 'utf8');",
+    ),
+    mutate(
+      "aggregate overflow accepts the first excessive byte",
+      "      if (budget.stringBytes > LIMITS.aggregateStringUtf8MaximumBytes) {",
+      "      if (budget.stringBytes >= LIMITS.aggregateStringUtf8MaximumBytes) {",
+    ),
+    mutate(
+      "aggregate overflow does not throw",
+      "throw fail('LIMIT_EXCEEDED', 'input-snapshot', `${label} exceeds aggregate property-name and value strings`);",
+      "fail('LIMIT_EXCEEDED', 'input-snapshot', `${label} exceeds aggregate property-name and value strings`);",
+    ),
+    mutate(
+      "pair is not frozen",
+      "outputEntries.push(Object.freeze([key, snapshot(descriptor.value, `${label}.${key}`, fail, budget, depth + 1)]));",
+      "outputEntries.push([key, snapshot(descriptor.value, `${label}.${key}`, fail, budget, depth + 1)]);",
+    ),
+    mutate(
+      "pair key is not the validated key",
+      "Object.freeze([key, snapshot(",
+      "Object.freeze(['fixed', snapshot(",
+    ),
+    mutate(
+      "pair has an extra field",
+      "`${label}.${key}`, fail, budget, depth + 1)]",
+      "`${label}.${key}`, fail, budget, depth + 1), null]",
+    ),
+    mutate(
+      "recursive value is not the guarded descriptor value",
+      "snapshot(descriptor.value,",
+      "snapshot(descriptor.writable,",
+    ),
+    mutate(
+      "recursive label omits the validated key",
+      "snapshot(descriptor.value, `${label}.${key}`,",
+      "snapshot(descriptor.value, `${label}`,",
+    ),
+    mutate(
+      "recursive call changes the fail binding",
+      "`${label}.${key}`, fail, budget, depth + 1",
+      "`${label}.${key}`, () => {}, budget, depth + 1",
+    ),
+    mutate(
+      "recursive call changes the budget binding",
+      "fail, budget, depth + 1",
+      "fail, context, depth + 1",
+    ),
+    mutate(
+      "recursive call changes the depth step",
+      "fail, budget, depth + 1",
+      "fail, budget, depth + 2",
+    ),
+    mutate(
+      "accumulator is mutable",
+      "const outputEntries = [];",
+      "let outputEntries = [];",
+    ),
+    mutate(
+      "accumulator is not empty",
+      "const outputEntries = [];",
+      "const outputEntries = [['forged', null]];",
+    ),
+    mutate(
+      "accumulator is aliased",
+      "const outputEntries = [];",
+      "const outputEntries = []; const leakedEntries = outputEntries; void leakedEntries;",
+    ),
+    mutate(
+      "aggregate is reset before descriptor iteration",
+      "    for (const [key, descriptor] of Object.entries(descriptors)) {",
+      "    budget.stringBytes = 0;\n    for (const [key, descriptor] of Object.entries(descriptors)) {",
+    ),
+    mutate(
+      "aggregate is reset before the certified try block",
+      "  try {",
+      "  budget.stringBytes = 0;\n  try {",
+    ),
+    mutate(
+      "budget is aliased before the certified try block",
+      "  try {",
+      "  const budgetAlias = budget;\n  budgetAlias.stringBytes = 0;\n  try {",
+    ),
+    mutate(
+      "pre-loop return bypasses descriptor iteration",
+      "    for (const [key, descriptor] of Object.entries(descriptors)) {",
+      "    if (array) return value;\n    for (const [key, descriptor] of Object.entries(descriptors)) {",
+    ),
+    mutate(
+      "accumulator receives an additional push",
+      "outputEntries.push(Object.freeze([key, snapshot(descriptor.value, `${label}.${key}`, fail, budget, depth + 1)]));",
+      "outputEntries.push(Object.freeze([key, snapshot(descriptor.value, `${label}.${key}`, fail, budget, depth + 1)])); outputEntries.push(Object.freeze(['forged', null]));",
+    ),
+    mutate("array projection exposes keys", "entry.at(1)", "entry.at(0)"),
+    mutate(
+      "array projection exposes pairs",
+      "outputEntries.map((entry) => entry.at(1))",
+      "outputEntries.map((entry) => entry)",
+    ),
+    mutate(
+      "object projection uses a different accumulator",
+      "Object.fromEntries(outputEntries)",
+      "Object.fromEntries([])",
+    ),
+    mutate(
+      "finalizer can override the snapshot return",
+      "    budget.ancestors.delete(value);",
+      "    return value;",
+    ),
+  ];
+  for (const [label, source] of certificateMutants) {
+    assert.throws(
+      () => validate(source),
+      /reflection key outside exact descriptor-entry snapshot certificate/u,
+      label,
+    );
+  }
+  const computedMember = mutate(
+    "computed descriptor access",
+    "snapshot(descriptor.value,",
+    "snapshot(descriptor[key],",
+  )[1];
+  assert.throws(
+    () => validate(computedMember),
+    /computed member descriptor\[key\]/u,
+  );
 });
 
 test("ADR-0041 S5 static policy owns reflection and imported values", () => {
