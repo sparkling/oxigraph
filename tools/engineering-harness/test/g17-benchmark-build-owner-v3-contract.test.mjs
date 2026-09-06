@@ -4729,6 +4729,18 @@ async function assertCandidateContract(candidate, source = null) {
       "role, ordinal, or generation substitution",
     );
   }
+  const outOfRangeOrdinal = await createG17PrivateOwnerV3Fixture();
+  outOfRangeOrdinal.identity.ordinal = G17_BENCHMARK_BUILD_PLAN.length + 1;
+  assertContractError(
+    candidate,
+    "IDENTITY_INVALID",
+    () =>
+      candidate.createG17BenchmarkBuildOwnerV3CapabilityForTesting({
+        fixture: outOfRangeOrdinal,
+      }),
+    "out-of-range build ordinal",
+    { phase: "identity-validation", message: "build order drifted" },
+  );
 
   for (const lookalike of [
     {},
@@ -4854,6 +4866,105 @@ async function assertCandidateContract(candidate, source = null) {
           fixture: hostile,
         }),
       "hostile fixture",
+    );
+  }
+  assertContractError(
+    candidate,
+    "INPUT_SHAPE_INVALID",
+    () =>
+      candidate.createG17BenchmarkBuildOwnerV3CapabilityForTesting({
+        fixture: {},
+      }),
+    "missing fixture fields",
+    { phase: "input-shape" },
+  );
+  let arrayAccessorReads = 0;
+  const accessorArray = [null];
+  Object.defineProperty(accessorArray, "0", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      arrayAccessorReads += 1;
+      return null;
+    },
+  });
+  assertContractError(
+    candidate,
+    "INPUT_SHAPE_INVALID",
+    () =>
+      candidate.createG17BenchmarkBuildOwnerV3CapabilityForTesting({
+        fixture: accessorArray,
+      }),
+    "array accessor fixture",
+    { phase: "input-snapshot" },
+  );
+  assert.equal(arrayAccessorReads, 0, "array accessor was not invoked");
+  const nestedAccessorFixture = await createG17PrivateOwnerV3Fixture();
+  const nestedAccessorArray =
+    nestedAccessorFixture.observations.target.ancestors;
+  const nestedAccessorValue = nestedAccessorArray[0];
+  let nestedArrayAccessorReads = 0;
+  Object.defineProperty(nestedAccessorArray, "0", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      nestedArrayAccessorReads += 1;
+      return nestedAccessorValue;
+    },
+  });
+  assertContractError(
+    candidate,
+    "INPUT_SHAPE_INVALID",
+    () =>
+      candidate.createG17BenchmarkBuildOwnerV3CapabilityForTesting({
+        fixture: nestedAccessorFixture,
+      }),
+    "nested array accessor fixture",
+    {
+      phase: "input-snapshot",
+      message:
+        "test capability input.fixture.observations.target.ancestors.0 is not own enumerable data",
+    },
+  );
+  assert.equal(
+    nestedArrayAccessorReads,
+    0,
+    "nested array accessor was not invoked",
+  );
+  for (const [label, mutate, message] of [
+    [
+      "sparse nested array fixture",
+      (array) => {
+        delete array[0];
+      },
+      "test capability input.fixture.observations.target.ancestors array is sparse",
+    ],
+    [
+      "extra-field nested array fixture",
+      (array) => {
+        array.extra = null;
+      },
+      "test capability input.fixture.observations.target.ancestors array is sparse",
+    ],
+    [
+      "symbol-field nested array fixture",
+      (array) => {
+        array[Symbol("extra")] = null;
+      },
+      "test capability input.fixture.observations.target.ancestors has symbol fields",
+    ],
+  ]) {
+    const fixture = await createG17PrivateOwnerV3Fixture();
+    mutate(fixture.observations.target.ancestors);
+    assertContractError(
+      candidate,
+      "INPUT_SHAPE_INVALID",
+      () =>
+        candidate.createG17BenchmarkBuildOwnerV3CapabilityForTesting({
+          fixture,
+        }),
+      label,
+      { phase: "input-snapshot", message },
     );
   }
   for (const mutate of [
@@ -5592,6 +5703,24 @@ async function assertCandidateContract(candidate, source = null) {
   }
   const tooManyNodes = Array.from({ length: 25 }, () =>
     Array.from({ length: LIMITS.maximumArrayLength }, () => ({})),
+  );
+  const oversizedPropertyFixture = await createG17PrivateOwnerV3Fixture();
+  oversizedPropertyFixture.observations[
+    "x".repeat(LIMITS.aggregateStringUtf8MaximumBytes + 1)
+  ] = null;
+  assertContractError(
+    candidate,
+    "LIMIT_EXCEEDED",
+    () =>
+      candidate.createG17BenchmarkBuildOwnerV3CapabilityForTesting({
+        fixture: oversizedPropertyFixture,
+      }),
+    "deep property names count toward aggregate strings",
+    {
+      phase: "input-snapshot",
+      message:
+        "test capability input.fixture.observations exceeds aggregate property-name and value strings",
+    },
   );
   for (const [label, input] of [
     ["maximum depth", { fixture: tooDeep }],
