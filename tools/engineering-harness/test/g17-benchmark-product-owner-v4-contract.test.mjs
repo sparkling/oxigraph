@@ -160,6 +160,58 @@ const PINNED_CANDIDATE_SNAPSHOT_JSON_SOURCE = `function snapshotJson(parsed, lab
   }
   return parsed;
 }`;
+const PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE = `function canonicalBytes(value) {
+  return Buffer.from(canonicalJson(value) + "\\n", "utf8");
+}`;
+const PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE = `function snapshotBuilds(builds) {
+  if (types.isProxy(builds)) {
+    fail("INPUT_SHAPE_INVALID", "input-shape", "builds proxy");
+  }
+  if (
+    !Array.isArray(builds) ||
+    Object.getPrototypeOf(builds) !== Array.prototype ||
+    builds.length !== 4
+  ) {
+    fail("INPUT_SHAPE_INVALID", "input-shape", "builds shape drifted");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(builds);
+  if (
+    !isDeepStrictEqual(Reflect.ownKeys(descriptors), [
+      "0",
+      "1",
+      "2",
+      "3",
+      "length",
+    ])
+  ) {
+    fail("INPUT_SHAPE_INVALID", "input-shape", "builds fields drifted");
+  }
+  if (
+    !Object.hasOwn(descriptors[0], "value") ||
+    descriptors[0].enumerable !== true ||
+    !Object.hasOwn(descriptors[1], "value") ||
+    descriptors[1].enumerable !== true ||
+    !Object.hasOwn(descriptors[2], "value") ||
+    descriptors[2].enumerable !== true ||
+    !Object.hasOwn(descriptors[3], "value") ||
+    descriptors[3].enumerable !== true ||
+    !Object.hasOwn(descriptors.length, "value") ||
+    descriptors.length.value !== 4 ||
+    descriptors.length.enumerable !== false
+  ) {
+    fail(
+      "INPUT_SHAPE_INVALID",
+      "input-shape",
+      "builds descriptors drifted",
+    );
+  }
+  return Object.freeze([
+    snapshotBuild(descriptors[0], 0),
+    snapshotBuild(descriptors[1], 1),
+    snapshotBuild(descriptors[2], 2),
+    snapshotBuild(descriptors[3], 3),
+  ]);
+}`;
 const PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE = `function decodeVerifiedOwnerBeforeBuildReplay(envelope) {
   const value = envelope.bytes;
   if (
@@ -2942,7 +2994,7 @@ function assertSafeModuleInitializer(
   assert.fail(`module initializer ${node.type} is not admitted`);
 }
 
-function assertCandidateModuleSurface(program) {
+function assertCandidateModuleSurface(program, source) {
   const imports = program.body.filter(
     (node) => node.type === "ImportDeclaration",
   );
@@ -3098,6 +3150,14 @@ function assertCandidateModuleSurface(program) {
         assert.equal(superStatement.expression.callee.type, "Super");
         assert.equal(superStatement.expression.arguments.length, 2);
         assert.equal(
+          source.slice(
+            superStatement.expression.start,
+            superStatement.expression.end,
+          ),
+          'super("G1.7 benchmark product owner v4 contract: [" + code + "] " + phase + ": " + message, options[0])',
+          "error constructor super call must equal the pinned message and options expression",
+        );
+        assert.equal(
           superStatement.expression.arguments[0].type,
           "BinaryExpression",
         );
@@ -3201,7 +3261,7 @@ function assertCandidateSourceStructure(source) {
   );
   const program = parseCandidateSource(source);
   walkAst(program, () => {});
-  assertCandidateModuleSurface(program);
+  assertCandidateModuleSurface(program, source);
   assert.deepEqual(importBindings(program), EXPECTED_IMPORT_BINDINGS);
   assert.deepEqual(literalExports(program), [...EXPECTED_EXPORTS].sort());
   const lexical = buildCandidateLexicalScopes(program);
@@ -3265,6 +3325,20 @@ function assertCandidateSourceStructure(source) {
   assert.equal(normalizationDeclaration.params.length, 1);
   assert.equal(normalizationDeclaration.params[0].type, "Identifier");
   assert.equal(normalizationDeclaration.params[0].name, "builds");
+  const canonicalBytesDeclarations = program.body.filter(
+    (node) =>
+      node.type === "FunctionDeclaration" && node.id?.name === "canonicalBytes",
+  );
+  assert.equal(canonicalBytesDeclarations.length, 1);
+  const canonicalBytesDeclaration = canonicalBytesDeclarations[0];
+  assert.equal(
+    source.slice(
+      canonicalBytesDeclaration.start,
+      canonicalBytesDeclaration.end,
+    ),
+    PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE,
+    "canonicalBytes must equal the pinned canonical-JSON-plus-LF helper",
+  );
   const snapshotDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" && node.id?.name === "snapshotBuilds",
@@ -3274,6 +3348,11 @@ function assertCandidateSourceStructure(source) {
   assert.equal(snapshotDeclaration.params.length, 1);
   assert.equal(snapshotDeclaration.params[0].type, "Identifier");
   assert.equal(snapshotDeclaration.params[0].name, "builds");
+  assert.equal(
+    source.slice(snapshotDeclaration.start, snapshotDeclaration.end),
+    PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE,
+    "snapshotBuilds must equal the pinned dense four-build helper",
+  );
   const snapshotBuildDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" && node.id?.name === "snapshotBuild",
@@ -3407,14 +3486,6 @@ function assertCandidateSourceStructure(source) {
   assert.equal(descriptorDeclaration.init.arguments.length, 1);
   assert.equal(descriptorDeclaration.init.arguments[0].type, "Identifier");
   assert.equal(descriptorDeclaration.init.arguments[0].name, "builds");
-  assert.equal(snapshotDeclaration.body.body.length, 3);
-  assertLeadingProxyRejection(snapshotDeclaration, "builds");
-  assert.equal(snapshotDeclaration.body.body[1].type, "VariableDeclaration");
-  assert.equal(snapshotDeclaration.body.body[1].declarations.length, 1);
-  assert.equal(
-    snapshotDeclaration.body.body[1].declarations[0],
-    descriptorDeclaration,
-  );
   const snapshotReturn = snapshotDeclaration.body.body.at(-1);
   assert.equal(snapshotReturn?.type, "ReturnStatement");
   const snapshotBoundaries = [];
@@ -3461,6 +3532,19 @@ function assertCandidateSourceStructure(source) {
     assert.equal(element.arguments[1].type, "Literal");
     assert.equal(element.arguments[1].value, index);
   }
+  const createdDeclarations = program.body.filter(
+    (node) =>
+      node.type === "FunctionDeclaration" && node.id?.name === "created",
+  );
+  assert.equal(createdDeclarations.length, 1);
+  const [createdDeclaration] = createdDeclarations;
+  assert.deepEqual(
+    createdDeclaration.params.map((parameter) => {
+      assert.equal(parameter.type, "Identifier");
+      return parameter.name;
+    }),
+    ["owner", "bytes", "includeArtifact"],
+  );
   const ownerDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" && node.id?.name === "expectedOwner",
@@ -3474,6 +3558,133 @@ function assertCandidateSourceStructure(source) {
   assert.equal(ownerDeclaration.params[1].name, "envelope");
   assert.equal(ownerDeclaration.params[2].type, "Identifier");
   assert.equal(ownerDeclaration.params[2].name, "builds");
+  const canonicalBytesCalls = [];
+  const canonicalBytesIdentifiers = [];
+  walkAst(program, (node, parent, ancestors) => {
+    if (node.type === "Identifier" && node.name === "canonicalBytes") {
+      canonicalBytesIdentifiers.push(node);
+    }
+    if (
+      node.type !== "CallExpression" ||
+      node.callee.type !== "Identifier" ||
+      node.callee.name !== "canonicalBytes"
+    ) {
+      return;
+    }
+    const containing = ancestors
+      .filter((ancestor) =>
+        [
+          "ArrowFunctionExpression",
+          "FunctionDeclaration",
+          "FunctionExpression",
+        ].includes(ancestor.type),
+      )
+      .at(-1);
+    canonicalBytesCalls.push({ node, parent, ancestors, containing });
+  });
+  assert.equal(canonicalBytesCalls.length, 1);
+  const [canonicalBytesCall] = canonicalBytesCalls;
+  assert.equal(canonicalBytesCall.containing, ownerDeclaration);
+  assert.equal(canonicalBytesCall.node.arguments.length, 1);
+  assert.equal(canonicalBytesCall.node.arguments[0].type, "Identifier");
+  assert.equal(canonicalBytesCall.node.arguments[0].name, "owner");
+  assert.deepEqual(
+    canonicalBytesIdentifiers,
+    [canonicalBytesDeclaration.id, canonicalBytesCall.node.callee],
+    "canonicalBytes may only be declared once and called directly by expectedOwner",
+  );
+  const ownerBytesDeclaration = canonicalBytesCall.parent;
+  assert.equal(ownerBytesDeclaration.type, "VariableDeclarator");
+  assert.equal(ownerBytesDeclaration.id.type, "Identifier");
+  assert.equal(ownerBytesDeclaration.id.name, "bytes");
+  assert.equal(ownerBytesDeclaration.init, canonicalBytesCall.node);
+  const ownerBytesStatements = canonicalBytesCall.ancestors.filter(
+    (ancestor) => ancestor.type === "VariableDeclaration",
+  );
+  assert.equal(ownerBytesStatements.length, 1);
+  const [ownerBytesStatement] = ownerBytesStatements;
+  assert.equal(ownerBytesStatement.kind, "const");
+  assert.deepEqual(ownerBytesStatement.declarations, [ownerBytesDeclaration]);
+  const ownerStatements = ownerDeclaration.body.body.filter(
+    (statement) =>
+      statement.type === "VariableDeclaration" &&
+      statement.kind === "const" &&
+      statement.declarations.length === 1 &&
+      statement.declarations[0].id.type === "Identifier" &&
+      statement.declarations[0].id.name === "owner",
+  );
+  assert.equal(ownerStatements.length, 1);
+  const [ownerStatement] = ownerStatements;
+  const [ownerVariable] = ownerStatement.declarations;
+  assert.equal(ownerVariable.init?.type, "CallExpression");
+  assert.equal(ownerVariable.init.callee.type, "MemberExpression");
+  assert.equal(ownerVariable.init.callee.computed, false);
+  assert.equal(ownerVariable.init.callee.object.type, "Identifier");
+  assert.equal(ownerVariable.init.callee.object.name, "Object");
+  assert.equal(memberPropertyName(ownerVariable.init.callee), "freeze");
+  assert.equal(ownerVariable.init.arguments.length, 1);
+  const ownerStatementIndex = ownerDeclaration.body.body.indexOf(ownerStatement);
+  const bytesStatementIndex =
+    ownerDeclaration.body.body.indexOf(ownerBytesStatement);
+  assert.equal(ownerStatementIndex >= 0, true);
+  assert.equal(
+    bytesStatementIndex,
+    ownerStatementIndex + 1,
+    "canonical bytes must immediately follow the frozen owner declaration",
+  );
+  const ownerReturn = ownerDeclaration.body.body.at(-1);
+  assert.equal(ownerReturn?.type, "ReturnStatement");
+  assert.equal(bytesStatementIndex < ownerDeclaration.body.body.length - 1, true);
+  assert.equal(ownerReturn.argument?.type, "CallExpression");
+  assert.equal(ownerReturn.argument.callee.type, "Identifier");
+  assert.equal(ownerReturn.argument.callee.name, "created");
+  assert.equal(ownerReturn.argument.arguments.length, 3);
+  assert.deepEqual(
+    ownerReturn.argument.arguments.slice(0, 2).map((argument) => {
+      assert.equal(argument.type, "Identifier");
+      return argument.name;
+    }),
+    ["owner", "bytes"],
+    "the returned result must consume the exact frozen owner and canonical bytes",
+  );
+  const includeArtifact = ownerReturn.argument.arguments[2];
+  assert.equal(includeArtifact.type, "BinaryExpression");
+  assert.equal(includeArtifact.operator, "===");
+  assert.equal(includeArtifact.left.type, "Identifier");
+  assert.equal(includeArtifact.left.name, "verified");
+  assert.equal(includeArtifact.right.type, "Identifier");
+  assert.equal(includeArtifact.right.name, "undefined");
+  const ownerCompletionBoundaries = [];
+  walkAst(ownerDeclaration.body, (node, _parent, ancestors) => {
+    if (
+      (node.type === "ReturnStatement" || node.type === "ThrowStatement") &&
+      !ancestors.some((ancestor) =>
+        [
+          "ArrowFunctionExpression",
+          "FunctionDeclaration",
+          "FunctionExpression",
+        ].includes(ancestor.type),
+      )
+    ) {
+      ownerCompletionBoundaries.push(node);
+    }
+  });
+  assert.deepEqual(
+    ownerCompletionBoundaries,
+    [ownerReturn],
+    "the canonical owner result must be the sole expected-owner completion path",
+  );
+  const createdIdentifiers = [];
+  walkAst(program, (node) => {
+    if (node.type === "Identifier" && node.name === "created") {
+      createdIdentifiers.push(node);
+    }
+  });
+  assert.deepEqual(
+    createdIdentifiers,
+    [createdDeclaration.id, ownerReturn.argument.callee],
+    "created may only be declared once and called by the expected-owner return",
+  );
   const inputRecordDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" && node.id?.name === "ownDataRecord",
@@ -4126,6 +4337,8 @@ function assertCandidateSourceStructure(source) {
         .at(-1);
       if (
         containing === undefined ||
+        containing === canonicalBytesDeclaration ||
+        containing === snapshotDeclaration ||
         containing === jsonSnapshotDeclaration ||
         containing === verifiedOwnerDecoderDeclaration
       ) {
@@ -5577,6 +5790,8 @@ function assertCandidateSourceStructure(source) {
         .at(-1);
       if (
         containing === undefined ||
+        containing === canonicalBytesDeclaration ||
+        containing === snapshotDeclaration ||
         containing === jsonSnapshotDeclaration ||
         containing === verifiedOwnerDecoderDeclaration
       ) {
@@ -5756,6 +5971,11 @@ function assertCandidateSourceStructure(source) {
     const insidePinnedJsonSnapshot =
       node === jsonSnapshotDeclaration ||
       ancestors.includes(jsonSnapshotDeclaration);
+    const insidePinnedCanonicalBytes =
+      node === canonicalBytesDeclaration ||
+      ancestors.includes(canonicalBytesDeclaration);
+    const insidePinnedSnapshotBuilds =
+      node === snapshotDeclaration || ancestors.includes(snapshotDeclaration);
     const insidePinnedVerifiedOwnerDecoder =
       node === verifiedOwnerDecoderDeclaration ||
       ancestors.includes(verifiedOwnerDecoderDeclaration);
@@ -5765,7 +5985,14 @@ function assertCandidateSourceStructure(source) {
       true,
       "candidate AST exceeds bound",
     );
-    if (insidePinnedJsonSnapshot || insidePinnedVerifiedOwnerDecoder) return;
+    if (
+      insidePinnedCanonicalBytes ||
+      insidePinnedSnapshotBuilds ||
+      insidePinnedJsonSnapshot ||
+      insidePinnedVerifiedOwnerDecoder
+    ) {
+      return;
+    }
     assert.equal(
       ALLOWED_CANDIDATE_AST_NODES.has(node.type),
       true,
@@ -7036,12 +7263,14 @@ function assertCandidateSourceStructure(source) {
           name === "snapshotBuild" ||
           name === "snapshotJson" ||
           name === "decodeVerifiedOwnerBeforeBuildReplay" ||
+          name === "created" ||
           name === "expectedOwner" ||
           name === "ownDataRecord" ||
           name === "validateVerifiedOwnerBeforeBuildReplay" ||
           name === "fail"
         ) {
           const protectedDeclaration = {
+            created: createdDeclaration,
             expectedOwner: ownerDeclaration,
             fail: failDeclaration,
             normalizeBuilds: normalizationDeclaration,
@@ -7569,6 +7798,8 @@ function assertCandidateSourceStructure(source) {
       .at(-1);
     if (
       containing === undefined ||
+      containing === canonicalBytesDeclaration ||
+      containing === snapshotDeclaration ||
       containing === jsonSnapshotDeclaration ||
       containing === verifiedOwnerDecoderDeclaration
     ) {
@@ -7833,18 +8064,20 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     "const PURE_INITIALIZER_FIXTURE = Object.freeze({ plan: G17_BENCHMARK_BUILD_PLAN, limits: Object.freeze([1, 2]) });";
   const normalizer =
     'function normalizeBuilds(builds) { return snapshotBuilds(builds).map(({ bytes, fixture }) => { let replay; try { replay = verifyG17BenchmarkBuildOwnerV3Artifact({ bytes, fixture }); } catch (error) { fail("BUILD_OWNER_INVALID", "build-owner-replay", "S6 build owner did not replay", error); } return Object.freeze({ bytes, fixture, replay }); }); }';
-  const snapshotter =
-    'function snapshotBuilds(builds) { if (types.isProxy(builds)) { fail("INPUT_SHAPE_INVALID", "input-shape", "builds proxy"); } const descriptors = Object.getOwnPropertyDescriptors(builds); return Object.freeze([snapshotBuild(descriptors[0], 0), snapshotBuild(descriptors[1], 1), snapshotBuild(descriptors[2], 2), snapshotBuild(descriptors[3], 3)]); }';
+  const snapshotter = PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE;
   const inputValidator =
     'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } }';
   const buildValidator =
     'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } }';
   const artifactFactory =
     'function artifactFor(bytes) { const stored = Buffer.from(bytes); return Object.freeze({ name: G17_BENCHMARK_PRODUCT_OWNER_V4_ARTIFACT_NAME, rawSha256: createHash("sha256").update(stored).digest("hex"), get bytes() { return Buffer.from(stored); } }); }';
+  const createdBuilder =
+    "function created(owner, bytes, includeArtifact) { return Object.freeze({ owner, bytes, includeArtifact }); }";
   const ownerBuilder =
-    "function expectedOwner(verified, envelope, builds) { return Object.freeze({ verified, envelope, builds }); }";
+    "function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }";
   const replay = [
     "function fail(code, phase, message, cause) { throw new G17BenchmarkProductOwnerV4ContractError(code, phase, message, cause === undefined ? undefined : { cause }); }",
+    PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE,
     artifactFactory,
     inputValidator,
     'function ownDataRecord(input) { validateInput(input); const descriptors = Object.getOwnPropertyDescriptors(input); const builds = descriptors.builds.value; const bytes = Object.hasOwn(descriptors, "bytes") ? descriptors.bytes.value : undefined; return Object.freeze({ builds, bytes }); }',
@@ -7855,6 +8088,7 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     PINNED_CANDIDATE_SNAPSHOT_JSON_SOURCE,
     PINNED_CANDIDATE_VERIFIED_OWNER_DECODER_SOURCE,
     "function validateVerifiedOwnerBeforeBuildReplay(envelope) { const verified = decodeVerifiedOwnerBeforeBuildReplay(envelope); return verified; }",
+    createdBuilder,
     ownerBuilder,
   ].join("\n");
   const createEntrypoint =
@@ -7868,7 +8102,7 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     assertCandidateSourceStructure(
       admitted.replace(
         ownerBuilder,
-        "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { Buffer.isBuffer(envelope.bytes); } return Object.freeze({ verified, envelope, builds }); }",
+        "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { Buffer.isBuffer(envelope.bytes); } const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
       ),
     ),
   );
@@ -7978,6 +8212,48 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
       inputValidator,
       "function validateInput(input) { return `${input}`; }",
     ),
+    admitted.replace(PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE, ""),
+    `${admitted}\n${PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE}`,
+    admitted.replace(
+      PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE,
+      PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE.replace(
+        'canonicalJson(value) + "\\n"',
+        "canonicalJson(value)",
+      ),
+    ),
+    admitted.replace(
+      ownerBuilder,
+      'function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = verified === undefined ? canonicalBytes(owner) : Buffer.from("fabricated"); return created(owner, bytes, verified === undefined); }',
+    ),
+    admitted.replace(
+      ownerBuilder,
+      'function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); canonicalBytes(owner); const bytes = Buffer.from("fabricated"); return created(owner, bytes, verified === undefined); }',
+    ),
+    admitted.replace(
+      ownerBuilder,
+      'function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, Buffer.from("fabricated"), verified === undefined); }',
+    ),
+    admitted.replace(
+      ownerBuilder,
+      "function expectedOwner(verified, envelope, builds) { const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); if (verified === undefined) { return created(owner, bytes, true); } return created(owner, bytes, false); }",
+    ),
+    admitted.replace(
+      ownerBuilder,
+      "function expectedOwner(verified, envelope, builds) { if (verified === undefined) { return null; } const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
+    ),
+    admitted.replace(
+      ownerBuilder,
+      "function expectedOwner(verified, envelope, builds) { if (envelope.bytes !== undefined) { return null; } const owner = Object.freeze({ verified, envelope, builds }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }",
+    ),
+    admitted.replace(PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE, ""),
+    `${admitted}\n${PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE}`,
+    admitted.replace(
+      PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE,
+      PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE.replace(
+        '"3",\n      "length",',
+        '"length",',
+      ),
+    ),
     `${admitted}\nfunction escape() { return ({}).constructor.constructor("return process")(); }`,
     `${admitted}\nfunction metadata() { return import.meta.url; }`,
     `${admitted}\nfunction timer() { return setInterval(() => {}, 1); }`,
@@ -7985,6 +8261,10 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     admitted.replace(
       'super("G1.7 benchmark product owner v4 contract: [" + code + "] " + phase + ": " + message, options[0]);',
       'super("G1.7 benchmark product owner v4 contract: [" + code + "] " + phase + ": " + message + (options[1] === undefined ? "" : options[1]), options[0]);',
+    ),
+    admitted.replace(
+      'super("G1.7 benchmark product owner v4 contract: [" + code + "] " + phase + ": " + message, options[0]);',
+      'super(phase === "canonical-encoding" ? message + "\\n" : "G1.7 benchmark product owner v4 contract: [" + code + "] " + phase + ": " + message, options[0]);',
     ),
     `${admitted}\nfunction queued() { return queueMicrotask(() => {}); }`,
     `${admitted}\nfunction localGetter() { return ({ get value() { return 1; } }).value; }`,
@@ -8265,7 +8545,7 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
       "snapshotBuild(descriptors[3], 3)",
       "snapshotBuild(descriptors[2], 2)",
     ),
-    admitted.replace(", snapshotBuild(descriptors[3], 3)", ""),
+    admitted.replace("    snapshotBuild(descriptors[3], 3),\n", ""),
     admitted.replace(
       snapshotter,
       "function snapshotBuilds(builds) { const descriptors = Object.getOwnPropertyDescriptors(builds); return Object.freeze([snapshotBuild(descriptors[1], 1), snapshotBuild(descriptors[0], 0), snapshotBuild(descriptors[2], 2), snapshotBuild(descriptors[3], 3)]); }",
