@@ -4204,7 +4204,10 @@ function assertCandidateSourceStructure(source) {
         (root.name === "Buffer" && property === "isBuffer") ||
         (root.name === "Number" &&
           ["isFinite", "isSafeInteger"].includes(property)) ||
-        (root.name === "Object" && property === "is") ||
+        (root.name === "Object" &&
+          ["getOwnPropertyDescriptors", "getPrototypeOf", "is"].includes(
+            property,
+          )) ||
         (root.name === "G17_BENCHMARK_PRODUCT_OWNER_V4_ERROR_CODES" &&
           property === "includes"))
     );
@@ -4222,9 +4225,61 @@ function assertCandidateSourceStructure(source) {
       return ["isFinite", "isSafeInteger"].includes(property);
     }
     if (root.name === "Object") {
-      return ["getPrototypeOf", "hasOwn", "is"].includes(property);
+      return [
+        "getOwnPropertyDescriptors",
+        "getPrototypeOf",
+        "hasOwn",
+        "is",
+      ].includes(property);
     }
     return root.name === "Reflect" && property === "ownKeys";
+  };
+  const isExactBuildOwnerByteBound = (node, containing) => {
+    if (
+      containing !== validateBuildDeclaration ||
+      node.type !== "BinaryExpression" ||
+      node.operator !== ">" ||
+      node.right.type !== "Identifier" ||
+      node.right.name !== "G17_BENCHMARK_BUILD_OWNER_V3_MAX_BYTES"
+    ) {
+      return false;
+    }
+    const byteLength = node.left;
+    if (
+      byteLength.type !== "CallExpression" ||
+      byteLength.callee.type !== "MemberExpression" ||
+      byteLength.callee.computed !== false ||
+      byteLength.callee.object.type !== "Identifier" ||
+      byteLength.callee.object.name !== "Buffer" ||
+      memberPropertyName(byteLength.callee) !== "byteLength" ||
+      byteLength.arguments.length !== 1
+    ) {
+      return false;
+    }
+    const descriptorValue = byteLength.arguments[0];
+    if (
+      descriptorValue.type !== "MemberExpression" ||
+      descriptorValue.computed !== false ||
+      memberPropertyName(descriptorValue) !== "value" ||
+      descriptorValue.object.type !== "MemberExpression" ||
+      descriptorValue.object.computed !== false ||
+      memberPropertyName(descriptorValue.object) !== "bytes"
+    ) {
+      return false;
+    }
+    const descriptorCall = descriptorValue.object.object;
+    return (
+      descriptorCall.type === "CallExpression" &&
+      descriptorCall.callee.type === "MemberExpression" &&
+      descriptorCall.callee.computed === false &&
+      descriptorCall.callee.object.type === "Identifier" &&
+      descriptorCall.callee.object.name === "Object" &&
+      memberPropertyName(descriptorCall.callee) ===
+        "getOwnPropertyDescriptors" &&
+      descriptorCall.arguments.length === 1 &&
+      descriptorCall.arguments[0].type === "Identifier" &&
+      descriptorCall.arguments[0].name === "value"
+    );
   };
   const expressionReferencesAmbient = (expression) => {
     let found = false;
@@ -4309,7 +4364,8 @@ function assertCandidateSourceStructure(source) {
       return (
         directCallImports.has(call.callee.name) ||
         call.callee.name === "snapshotJson" ||
-        call.callee.name === "decodeVerifiedOwnerBeforeBuildReplay"
+        call.callee.name === "decodeVerifiedOwnerBeforeBuildReplay" ||
+        call.callee.name === "validateVerifiedOwnerBeforeBuildReplay"
       );
     }
     if (call.callee.type !== "MemberExpression") return false;
@@ -4344,9 +4400,9 @@ function assertCandidateSourceStructure(source) {
   };
   const expressionIsBorrowed = (expression, containing) => {
     const borrowed = borrowedBindings.get(containing) ?? new Set();
-    const stack = [expression];
+    const stack = [{ node: expression, parent: null }];
     while (stack.length > 0) {
-      const current = stack.pop();
+      const { node: current, parent } = stack.pop();
       if (
         current !== expression &&
         [
@@ -4357,7 +4413,11 @@ function assertCandidateSourceStructure(source) {
       ) {
         continue;
       }
-      if (current.type === "Identifier" && borrowed.has(current.name)) {
+      if (
+        current.type === "Identifier" &&
+        lexical.isReference(current, parent) &&
+        borrowed.has(current.name)
+      ) {
         return true;
       }
       if (current.type === "CallExpression") {
@@ -4378,11 +4438,11 @@ function assertCandidateSourceStructure(source) {
         if (Array.isArray(value)) {
           for (const child of value) {
             if (child !== null && typeof child?.type === "string") {
-              stack.push(child);
+              stack.push({ node: child, parent: current });
             }
           }
         } else if (value !== null && typeof value?.type === "string") {
-          stack.push(value);
+          stack.push({ node: value, parent: current });
         }
       }
     }
@@ -4730,6 +4790,9 @@ function assertCandidateSourceStructure(source) {
   const descriptorOrigins = new Map(
     functionNodes.map((node) => [node, new Map()]),
   );
+  const descriptorAliasDeclarations = new Map(
+    functionNodes.map((node) => [node, new Map()]),
+  );
   const descriptorRecordOrigins = new Map(
     functionNodes.map((node) => [node, new Map()]),
   );
@@ -4742,7 +4805,7 @@ function assertCandidateSourceStructure(source) {
   const functionIdentityIndices = new Map(
     functionNodes.map((node, index) => [node, index]),
   );
-  walkAst(program, (node, _parent, ancestors) => {
+  walkAst(program, (node, parent, ancestors) => {
     let binding;
     let initializer;
     if (
@@ -4803,6 +4866,17 @@ function assertCandidateSourceStructure(source) {
         const origins = descriptorOrigins.get(containing);
         if (!origins.has(binding)) origins.set(binding, new Set());
         origins.get(binding).add(descriptorCall.arguments[0].name);
+        if (
+          node.type === "VariableDeclarator" &&
+          parent?.type === "VariableDeclaration"
+        ) {
+          const declarations = descriptorAliasDeclarations.get(containing);
+          if (!declarations.has(binding)) declarations.set(binding, []);
+          declarations.get(binding).push({
+            kind: parent.kind,
+            origin: descriptorCall.arguments[0].name,
+          });
+        }
       } else {
         const origins = descriptorRecordOrigins.get(containing);
         if (!origins.has(binding)) origins.set(binding, new Set());
@@ -6030,6 +6104,73 @@ function assertCandidateSourceStructure(source) {
       }
     });
   });
+  const isGuardedDescriptorAlias = (expression, containing) => {
+    if (
+      expression.type !== "Identifier" ||
+      containing?.type !== "FunctionDeclaration"
+    ) {
+      return false;
+    }
+    const origins = descriptorOrigins.get(containing)?.get(expression.name);
+    if (origins === undefined || origins.size !== 1) return false;
+    const [origin] = origins;
+    const declarations = descriptorAliasDeclarations
+      .get(containing)
+      ?.get(expression.name);
+    if (
+      declarations?.length !== 1 ||
+      declarations[0].kind !== "const" ||
+      declarations[0].origin !== origin
+    ) {
+      return false;
+    }
+    let definitions = 0;
+    let writes = 0;
+    walkAst(containing.body, (node, _parent, ancestors) => {
+      if (
+        ancestors.some((ancestor) =>
+          [
+            "ArrowFunctionExpression",
+            "FunctionDeclaration",
+            "FunctionExpression",
+          ].includes(ancestor.type),
+        )
+      ) {
+        return;
+      }
+      if (declaredNames(node).includes(expression.name)) {
+        definitions += 1;
+      }
+      if (
+        node.type === "AssignmentExpression" &&
+        patternNames(node.left).includes(expression.name)
+      ) {
+        writes += 1;
+      }
+      if (
+        node.type === "UpdateExpression" &&
+        node.argument.type === "Identifier" &&
+        node.argument.name === expression.name
+      ) {
+        writes += 1;
+      }
+      if (
+        ["ForInStatement", "ForOfStatement"].includes(node.type) &&
+        node.left.type !== "VariableDeclaration" &&
+        patternNames(node.left).includes(expression.name)
+      ) {
+        writes += 1;
+      }
+    });
+    return (
+      definitions === 1 &&
+      writes === 0 &&
+      containing.params.some(
+        (parameter) =>
+          parameter.type === "Identifier" && parameter.name === origin,
+      )
+    );
+  };
   walkAst(program, (node, parent, ancestors) => {
     const containingFunction = ancestors
       .filter((ancestor) =>
@@ -6403,7 +6544,8 @@ function assertCandidateSourceStructure(source) {
       )
     ) {
       assert.equal(
-        ["===", "!=="].includes(node.operator),
+        ["===", "!=="].includes(node.operator) ||
+          isExactBuildOwnerByteBound(node, containingFunction),
         true,
         "binary operations must not coerce borrowed values",
       );
@@ -6561,7 +6703,11 @@ function assertCandidateSourceStructure(source) {
             inspectedValue.callee.object.name === "Object" &&
             memberPropertyName(inspectedValue.callee) ===
               "getOwnPropertyDescriptors";
-          if (!ownedDescriptorView) {
+          const ownedDescriptorAlias = isGuardedDescriptorAlias(
+            inspectedValue,
+            containingFunction,
+          );
+          if (!ownedDescriptorView && !ownedDescriptorAlias) {
             assert.equal(
               inspectedValue.type,
               "Identifier",
@@ -6591,14 +6737,19 @@ function assertCandidateSourceStructure(source) {
         ) {
           assert.equal(node.arguments.length, 1);
           const [inspectedValue] = node.arguments;
-          assert.equal(inspectedValue.type, "CallExpression");
-          assert.equal(inspectedValue.callee.type, "MemberExpression");
-          assert.equal(inspectedValue.callee.computed, false);
-          assert.equal(inspectedValue.callee.object.type, "Identifier");
-          assert.equal(inspectedValue.callee.object.name, "Object");
+          const directDescriptorCall =
+            inspectedValue.type === "CallExpression" &&
+            inspectedValue.callee.type === "MemberExpression" &&
+            inspectedValue.callee.computed === false &&
+            inspectedValue.callee.object.type === "Identifier" &&
+            inspectedValue.callee.object.name === "Object" &&
+            memberPropertyName(inspectedValue.callee) ===
+              "getOwnPropertyDescriptors";
           assert.equal(
-            memberPropertyName(inspectedValue.callee),
-            "getOwnPropertyDescriptors",
+            directDescriptorCall ||
+              isGuardedDescriptorAlias(inspectedValue, containingFunction),
+            true,
+            "Reflect.ownKeys requires an owned descriptor view",
           );
         }
         if (
@@ -6608,16 +6759,18 @@ function assertCandidateSourceStructure(source) {
         ) {
           assert.equal(node.arguments.length, 1);
           const [descriptorCall] = node.arguments;
-          assert.equal(descriptorCall.type, "CallExpression");
-          assert.equal(descriptorCall.callee.type, "MemberExpression");
-          assert.equal(descriptorCall.callee.computed, false);
-          assert.equal(descriptorCall.callee.object.type, "Identifier");
-          assert.equal(descriptorCall.callee.object.name, "Object");
-          assert.equal(
-            memberPropertyName(descriptorCall.callee),
-            "getOwnPropertyDescriptors",
-          );
-          assert.equal(descriptorCall.arguments.length, 1);
+          if (!isGuardedDescriptorAlias(descriptorCall, containingFunction)) {
+            assert.equal(descriptorCall.type, "CallExpression");
+            assert.equal(descriptorCall.callee.type, "MemberExpression");
+            assert.equal(descriptorCall.callee.computed, false);
+            assert.equal(descriptorCall.callee.object.type, "Identifier");
+            assert.equal(descriptorCall.callee.object.name, "Object");
+            assert.equal(
+              memberPropertyName(descriptorCall.callee),
+              "getOwnPropertyDescriptors",
+            );
+            assert.equal(descriptorCall.arguments.length, 1);
+          }
         }
       }
       if (
@@ -6735,8 +6888,21 @@ function assertCandidateSourceStructure(source) {
           (descriptorPath[0] === "length" ||
             (Number.isSafeInteger(descriptorPath[0]) &&
               descriptorPath[0] >= 0));
+        const fromDescriptorAlias =
+          descriptorRoot.type === "Identifier" &&
+          isGuardedDescriptorAlias(descriptorRoot, containingFunction) &&
+          descriptorPath.length <= 2 &&
+          (descriptorPath.length < 2 ||
+            [
+              "configurable",
+              "enumerable",
+              "get",
+              "set",
+              "value",
+              "writable",
+            ].includes(descriptorPath[1]));
         assert.equal(
-          fromDescriptorMap || fromReflectionView,
+          fromDescriptorMap || fromReflectionView || fromDescriptorAlias,
           true,
           "validation member reads require a reflected owned origin",
         );
@@ -6893,9 +7059,17 @@ function assertCandidateSourceStructure(source) {
     }
     if (insideValidation && node.type === "BinaryExpression") {
       assert.equal(
-        ["===", "!=="].includes(node.operator),
+        ["===", "!=="].includes(node.operator) ||
+          isExactBuildOwnerByteBound(node, containingFunction),
         true,
         "validation comparisons must not coerce borrowed values",
+      );
+    }
+    if (insideValidation && node.type === "ReturnStatement") {
+      assert.equal(
+        node.argument,
+        null,
+        "validation reflection results may not escape",
       );
     }
     if (node.type === "Identifier") {
@@ -8151,12 +8325,28 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } }';
   const buildValidator =
     'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } }';
+  const reflectedInputValidator =
+    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if (Reflect.ownKeys(descriptors).length !== 1 || typeof descriptors.builds.writable !== "boolean") { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
+  const reflectedInputHasOwnValidator =
+    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if (!Object.hasOwn(descriptors, "builds")) { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
+  const boundedBuildValidator =
+    'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } if (Buffer.byteLength(Object.getOwnPropertyDescriptors(value).bytes.value) > G17_BENCHMARK_BUILD_OWNER_V3_MAX_BYTES) { fail("INPUT_SHAPE_INVALID", "input-shape", "build bytes drifted"); } }';
+  const reboundDescriptorValidator =
+    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const borrowed = Object.getOwnPropertyDescriptors(input).builds.value; let descriptors = Object.getOwnPropertyDescriptors(input); descriptors = borrowed; Reflect.ownKeys(descriptors); }';
+  const mutableDescriptorValidator =
+    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } let descriptors = Object.getOwnPropertyDescriptors(input); Reflect.ownKeys(descriptors); }';
+  const functionShadowDescriptorValidator =
+    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); { function descriptors() {} Reflect.ownKeys(descriptors); } }';
+  const classShadowDescriptorValidator =
+    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); { class descriptors {} Reflect.ownKeys(descriptors); } }';
   const artifactFactory =
     'function artifactFor(bytes) { const stored = Buffer.from(bytes); return Object.freeze({ name: G17_BENCHMARK_PRODUCT_OWNER_V4_ARTIFACT_NAME, rawSha256: createHash("sha256").update(stored).digest("hex"), get bytes() { return Buffer.from(stored); } }); }';
   const createdBuilder =
     "function created(owner, bytes, includeArtifact) { return Object.freeze({ owner, bytes, includeArtifact }); }";
   const ownerBuilder =
     "function expectedOwner(verified, envelope, builds) { const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }";
+  const ownedVerifiedOwnerBuilder =
+    'function expectedOwner(verified, envelope, builds) { if (verified !== undefined && !isDeepStrictEqual(verified.owner.authority, G17_BENCHMARK_PRODUCT_OWNER_V4_AUTHORITY)) { fail("AUTHORITY_OVERCLAIM", "authority-validation", "owner authority drifted"); } const unsigned = Object.freeze({ verified, envelope, builds }); const owner = Object.freeze({ verified, envelope, builds, contentHash: ownerContentHash(unsigned) }); const bytes = canonicalBytes(owner); return created(owner, bytes, verified === undefined); }';
   const replay = [
     "function fail(code, phase, message, cause) { throw new G17BenchmarkProductOwnerV4ContractError(code, phase, message, cause === undefined ? undefined : { cause }); }",
     PINNED_CANDIDATE_CANONICAL_BYTES_SOURCE,
@@ -8181,6 +8371,26 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
   const entrypoints = [createEntrypoint, verifyEntrypoint].join("\n");
   const admitted = `${imports}\n${pureInitializer}\n${replay}\n${exports}\n${errorClass}\n${entrypoints}`;
   assert.doesNotThrow(() => assertCandidateSourceStructure(admitted));
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(inputValidator, reflectedInputValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(inputValidator, reflectedInputHasOwnValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(buildValidator, boundedBuildValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(ownerBuilder, ownedVerifiedOwnerBuilder),
+    ),
+  );
   assert.doesNotThrow(() =>
     assertCandidateSourceStructure(
       admitted.replace(
@@ -8219,6 +8429,10 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
       `const left${index} = payload; const right${index} = payload; payload = [left${index}, right${index}];`,
   ).join(" ");
   const mutations = [
+    admitted.replace(inputValidator, reboundDescriptorValidator),
+    admitted.replace(inputValidator, mutableDescriptorValidator),
+    admitted.replace(inputValidator, functionShadowDescriptorValidator),
+    admitted.replace(inputValidator, classShadowDescriptorValidator),
     `${admitted}\nprocess.exitCode = 0;`,
     `${admitted}\nimport("./other.mjs");`,
     `${admitted}\nfetch("https://example.invalid");`,
@@ -8227,6 +8441,28 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     `${admitted}\nimport {} from "node:fs";`,
     `${admitted}\nexport default console.log("module initializer ran");`,
     `${admitted}\nfunction poison() { types.isProxy = () => false; }`,
+    admitted.replace(
+      inputValidator,
+      reflectedInputValidator.replace(
+        'if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } ',
+        "",
+      ),
+    ),
+    admitted.replace(
+      inputValidator,
+      'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } return Object.getOwnPropertyDescriptors(input); }',
+    ),
+    admitted.replace(
+      inputValidator,
+      'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors({}); Reflect.ownKeys(descriptors); }',
+    ),
+    admitted.replace(
+      buildValidator,
+      boundedBuildValidator.replace(
+        ") > G17_BENCHMARK_BUILD_OWNER_V3_MAX_BYTES",
+        ") >= G17_BENCHMARK_BUILD_OWNER_V3_MAX_BYTES",
+      ),
+    ),
     admitted.replace(
       inputValidator,
       'function validateInput(input) { if (Object.hasOwn(input, "sideEffect")) input.sideEffect(); return input; }',
