@@ -46,6 +46,7 @@ const MAX_CANDIDATE_AST_DEPTH = 256;
 const MAX_CANDIDATE_LOOP_ITERATIONS = 4 * 1024 * 1024;
 const MAX_CANDIDATE_CALL_DEPTH = 128;
 const MAX_CANDIDATE_STATIC_WORK = 512n * 1024n * 1024n;
+const CANDIDATE_BOUNDED_INTRINSIC_WORK = 1024n;
 const MAX_CANDIDATE_TOKENS = MAX_CANDIDATE_AST_NODES * 4;
 const MAX_CANDIDATE_DELIMITER_DEPTH = 256;
 const PINNED_CANDIDATE_SNAPSHOT_JSON_SOURCE = `function snapshotJson(parsed, label, fail) {
@@ -7824,14 +7825,51 @@ function assertCandidateSourceStructure(source) {
       ) {
         summary.allocatesAggregate = true;
       }
-      const operationWeight =
+      let operationWeight = 1n;
+      if (
         node.type === "NewExpression" ||
         (node.type === "CallExpression" &&
           (node.callee.type === "MemberExpression" ||
             (node.callee.type === "Identifier" &&
               directCallImports.has(node.callee.name))))
-          ? BigInt(MAX_CANDIDATE_LOOP_ITERATIONS)
-          : 1n;
+      ) {
+        let boundedIntrinsic =
+          name === "fail" &&
+          node.type === "NewExpression" &&
+          node.callee.type === "Identifier" &&
+          node.callee.name === "G17BenchmarkProductOwnerV4ContractError";
+        if (
+          node.type === "CallExpression" &&
+          node.callee.type === "MemberExpression"
+        ) {
+          const property = memberPropertyName(node.callee);
+          const object = node.callee.object;
+          boundedIntrinsic ||=
+            object.type === "Identifier" &&
+            ((object.name === "Array" && property === "isArray") ||
+              (object.name === "Buffer" && property === "isBuffer") ||
+              (object.name === "Number" &&
+                ["isFinite", "isSafeInteger"].includes(property)) ||
+              (object.name === "Object" &&
+                (["freeze", "getPrototypeOf", "is"].includes(property) ||
+                  (property === "hasOwn" &&
+                    node.arguments.length === 2 &&
+                    node.arguments[1].type === "Literal" &&
+                    typeof node.arguments[1].value === "string"))) ||
+              (object.name === "types" && property === "isProxy") ||
+              (object.name ===
+                "G17_BENCHMARK_PRODUCT_OWNER_V4_ERROR_CODES" &&
+                property === "includes"));
+          boundedIntrinsic ||=
+            property === "map" &&
+            object.type === "CallExpression" &&
+            object.callee.type === "Identifier" &&
+            object.callee.name === "snapshotBuilds";
+        }
+        operationWeight = boundedIntrinsic
+          ? CANDIDATE_BOUNDED_INTRINSIC_WORK
+          : BigInt(MAX_CANDIDATE_LOOP_ITERATIONS);
+      }
       summary.localWork = saturatingAdd(
         summary.localWork,
         saturatingMultiply(multiplier, operationWeight),
@@ -8419,6 +8457,18 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
           index + 1
         }(); }`,
   ).join("\n");
+  const boundedIntrinsicSequence = Array.from(
+    { length: 129 },
+    () => "Object.freeze({});",
+  ).join(" ");
+  const inputScaledSequence = Array.from(
+    { length: 129 },
+    () => 'Buffer.from("bounded");',
+  ).join(" ");
+  const nonliteralHasOwnSequence = Array.from(
+    { length: 129 },
+    () => "Object.hasOwn({}, key);",
+  ).join(" ");
   const sequentialAggregateAmplification = Array.from(
     { length: 40 },
     () => "payload = [payload, payload];",
@@ -9086,6 +9136,28 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
       '"./benchmark-product-owner-contract.mjs"',
     ),
   ];
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      `${admitted}\nfunction boundedIntrinsicWork() { ${boundedIntrinsicSequence} }`,
+    ),
+    "bounded constant-time intrinsics must fit below the static-work ceiling",
+  );
+  assert.throws(
+    () =>
+      assertCandidateSourceStructure(
+        `${admitted}\nfunction inputScaledWork() { ${inputScaledSequence} }`,
+      ),
+    /candidate static work exceeds bound at inputScaledWork/u,
+    "input-scaled byte copies must retain the high static-work weight",
+  );
+  assert.throws(
+    () =>
+      assertCandidateSourceStructure(
+        `${admitted}\nfunction nonliteralHasOwnWork() { const key = "field"; ${nonliteralHasOwnSequence} }`,
+      ),
+    /candidate static work exceeds bound at nonliteralHasOwnWork/u,
+    "nonliteral property-key coercion must retain the high static-work weight",
+  );
   for (const [index, mutation] of mutations.entries()) {
     assert.notEqual(
       mutation,
