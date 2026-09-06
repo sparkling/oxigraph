@@ -891,11 +891,18 @@ function denseArray(value, length, label, fail) {
   });
 }
 
-function copiedBuffer(value, maximum, label, fail) {
+function copiedBuffer(
+  value,
+  maximum,
+  label,
+  fail,
+  rejectOwnByteLength = false,
+) {
   if (
     !Buffer.isBuffer(value) ||
     types.isProxy(value) ||
-    Object.getPrototypeOf(value) !== Buffer.prototype
+    Object.getPrototypeOf(value) !== Buffer.prototype ||
+    (rejectOwnByteLength && Object.hasOwn(value, "byteLength"))
   ) {
     fail(
       "INPUT_SHAPE_INVALID",
@@ -1097,6 +1104,7 @@ function createReferenceCandidate() {
         G17_BENCHMARK_BUILD_OWNER_V3_MAX_BYTES,
         `product build ${index} owner`,
         fail,
+        true,
       );
       let replay;
       try {
@@ -1990,6 +1998,16 @@ async function assertCandidateContract(candidate) {
   assert.equal(Object.hasOwn(verified, "artifact"), false);
   assertDeepFrozen(verified.owner);
 
+  const reorderedVerificationEnvelope = {
+    builds: cloneInput(await baseInput()).builds,
+    bytes: secondBytes,
+  };
+  assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+    candidate.verifyG17BenchmarkProductOwnerV4Artifact(
+      reorderedVerificationEnvelope,
+    ),
+  );
+
   let coercionHooks = 0;
   const hookedBytes = Buffer.from(secondBytes);
   Object.defineProperty(hookedBytes, Symbol.toPrimitive, {
@@ -2075,6 +2093,68 @@ async function assertCandidateContract(candidate) {
     candidate.createG17BenchmarkProductOwnerV4Artifact(callbackInput),
   );
   assert.equal(callbackCalls, 0);
+  const undefinedCreationBytes = cloneInput(await baseInput());
+  undefinedCreationBytes.bytes = undefined;
+  assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+    candidate.createG17BenchmarkProductOwnerV4Artifact(
+      undefinedCreationBytes,
+    ),
+  );
+  const bytesFirstUndefinedCreation = {
+    bytes: undefined,
+    builds: cloneInput(await baseInput()).builds,
+  };
+  assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+    candidate.createG17BenchmarkProductOwnerV4Artifact(
+      bytesFirstUndefinedCreation,
+    ),
+  );
+  const creationShapePrecedence = cloneInput(await baseInput());
+  creationShapePrecedence.bytes = Buffer.alloc(0);
+  creationShapePrecedence.builds[0].bytes = Buffer.alloc(0);
+  assertContractError(
+    candidate,
+    "INPUT_SHAPE_INVALID",
+    () =>
+      candidate.createG17BenchmarkProductOwnerV4Artifact(
+        creationShapePrecedence,
+    ),
+    { phase: "input-shape" },
+  );
+  const bytesFirstCreationShapePrecedence = {
+    bytes: Buffer.from(secondBytes),
+    builds: cloneInput(await baseInput()).builds,
+  };
+  bytesFirstCreationShapePrecedence.builds[0].bytes = Buffer.alloc(0);
+  assertContractError(
+    candidate,
+    "INPUT_SHAPE_INVALID",
+    () =>
+      candidate.createG17BenchmarkProductOwnerV4Artifact(
+        bytesFirstCreationShapePrecedence,
+      ),
+    { phase: "input-shape" },
+  );
+  for (const prototype of [null, Object.freeze({})]) {
+    const nonPlainCreationEnvelope = cloneInput(await baseInput());
+    Object.setPrototypeOf(nonPlainCreationEnvelope, prototype);
+    assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+      candidate.createG17BenchmarkProductOwnerV4Artifact(
+        nonPlainCreationEnvelope,
+      ),
+    );
+
+    const nonPlainVerificationEnvelope = {
+      bytes: secondBytes,
+      builds: cloneInput(await baseInput()).builds,
+    };
+    Object.setPrototypeOf(nonPlainVerificationEnvelope, prototype);
+    assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+      candidate.verifyG17BenchmarkProductOwnerV4Artifact(
+        nonPlainVerificationEnvelope,
+      ),
+    );
+  }
   let extraReads = 0;
   const extraAccessorInput = cloneInput(await baseInput());
   Object.defineProperty(extraAccessorInput, "sideEffect", {
@@ -2109,6 +2189,21 @@ async function assertCandidateContract(candidate) {
   assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
     candidate.createG17BenchmarkProductOwnerV4Artifact(proxiedBuild),
   );
+  const reorderedBuildRecord = cloneInput(await baseInput());
+  reorderedBuildRecord.builds[0] = {
+    fixture: reorderedBuildRecord.builds[0].fixture,
+    bytes: reorderedBuildRecord.builds[0].bytes,
+  };
+  assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+    candidate.createG17BenchmarkProductOwnerV4Artifact(reorderedBuildRecord),
+  );
+  for (const prototype of [null, Object.freeze({})]) {
+    const nonPlainBuild = cloneInput(await baseInput());
+    Object.setPrototypeOf(nonPlainBuild.builds[0], prototype);
+    assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+      candidate.createG17BenchmarkProductOwnerV4Artifact(nonPlainBuild),
+    );
+  }
   let buildsProxyTraps = 0;
   const proxiedBuilds = cloneInput(await baseInput());
   proxiedBuilds.builds = new Proxy(proxiedBuilds.builds, {
@@ -2141,6 +2236,48 @@ async function assertCandidateContract(candidate) {
   assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
     candidate.createG17BenchmarkProductOwnerV4Artifact(bufferPrototypeDrift),
   );
+  let ownBufferByteLengthHooks = 0;
+  const ownBufferByteLengthAccessor = cloneInput(await baseInput());
+  Object.defineProperty(
+    ownBufferByteLengthAccessor.builds[0].bytes,
+    "byteLength",
+    {
+      configurable: false,
+      enumerable: false,
+      get() {
+        ownBufferByteLengthHooks += 1;
+        return ownBufferByteLengthAccessor.builds[0].bytes.length;
+      },
+    },
+  );
+  assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+    candidate.createG17BenchmarkProductOwnerV4Artifact(
+      ownBufferByteLengthAccessor,
+    ),
+  );
+  assert.equal(ownBufferByteLengthHooks, 0);
+  let inheritedBufferPrototypeHooks = 0;
+  const inheritedBufferPrototype = cloneInput(await baseInput());
+  const callerBufferPrototype = Object.create(Buffer.prototype, {
+    byteLength: {
+      configurable: false,
+      enumerable: false,
+      get() {
+        inheritedBufferPrototypeHooks += 1;
+        return inheritedBufferPrototype.builds[0].bytes.length;
+      },
+    },
+  });
+  Object.setPrototypeOf(
+    inheritedBufferPrototype.builds[0].bytes,
+    callerBufferPrototype,
+  );
+  assertContractError(candidate, "INPUT_SHAPE_INVALID", () =>
+    candidate.createG17BenchmarkProductOwnerV4Artifact(
+      inheritedBufferPrototype,
+    ),
+  );
+  assert.equal(inheritedBufferPrototypeHooks, 0);
   let nestedReads = 0;
   const nestedAccessor = cloneInput(await baseInput());
   Object.defineProperty(nestedAccessor.builds[0], "bytes", {
@@ -3765,18 +3902,32 @@ function assertCandidateSourceStructure(source) {
   );
   assert.equal(inputRecordDeclarations.length, 1);
   const inputRecordDeclaration = inputRecordDeclarations[0];
-  assert.equal(inputRecordDeclaration.params.length, 1);
+  assert.equal(
+    [1, 2].includes(inputRecordDeclaration.params.length),
+    true,
+  );
   assert.equal(inputRecordDeclaration.params[0].type, "Identifier");
   assert.equal(inputRecordDeclaration.params[0].name, "input");
+  if (inputRecordDeclaration.params.length === 2) {
+    assert.equal(inputRecordDeclaration.params[1].type, "Identifier");
+    assert.equal(inputRecordDeclaration.params[1].name, "bytesExpected");
+  }
   const validateInputDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" && node.id?.name === "validateInput",
   );
   assert.equal(validateInputDeclarations.length, 1);
   const validateInputDeclaration = validateInputDeclarations[0];
-  assert.equal(validateInputDeclaration.params.length, 1);
+  assert.equal(
+    validateInputDeclaration.params.length,
+    inputRecordDeclaration.params.length,
+  );
   assert.equal(validateInputDeclaration.params[0].type, "Identifier");
   assert.equal(validateInputDeclaration.params[0].name, "input");
+  if (validateInputDeclaration.params.length === 2) {
+    assert.equal(validateInputDeclaration.params[1].type, "Identifier");
+    assert.equal(validateInputDeclaration.params[1].name, "bytesExpected");
+  }
   const verificationPreflightDeclarations = program.body.filter(
     (node) =>
       node.type === "FunctionDeclaration" &&
@@ -3892,7 +4043,9 @@ function assertCandidateSourceStructure(source) {
       assert.equal(argument.type, "Identifier");
       return argument.name;
     }),
-    ["input"],
+    inputRecordDeclaration.params.length === 2
+      ? ["input", "bytesExpected"]
+      : ["input"],
   );
   assert.equal(inputDescriptorsStatement.type, "VariableDeclaration");
   assert.equal(inputDescriptorsStatement.kind, "const");
@@ -4091,7 +4244,7 @@ function assertCandidateSourceStructure(source) {
   const allowedAmbientMembers = new Map([
     ["Array", new Set(["isArray"])],
     ["ArrayBuffer", new Set(["isView"])],
-    ["Buffer", new Set(["byteLength", "from", "isBuffer"])],
+    ["Buffer", new Set(["byteLength", "from", "isBuffer", "prototype"])],
     ["JSON", new Set(["parse"])],
     ["Number", new Set(["isFinite", "isSafeInteger"])],
     [
@@ -4102,6 +4255,7 @@ function assertCandidateSourceStructure(source) {
         "getPrototypeOf",
         "hasOwn",
         "is",
+        "prototype",
       ]),
     ],
     ["Reflect", new Set(["ownKeys"])],
@@ -6172,6 +6326,46 @@ function assertCandidateSourceStructure(source) {
       )
     );
   };
+  const isGuardedDescriptorValue = (
+    expression,
+    containing,
+    expectedKey,
+  ) => {
+    if (
+      expression.type !== "MemberExpression" ||
+      expression.computed !== false ||
+      memberPropertyName(expression) !== "value" ||
+      expression.object.type !== "MemberExpression" ||
+      expression.object.computed !== false ||
+      memberPropertyName(expression.object) !== expectedKey
+    ) {
+      return false;
+    }
+    const descriptorRoot = expression.object.object;
+    if (
+      descriptorRoot.type === "Identifier" &&
+      isGuardedDescriptorAlias(descriptorRoot, containing)
+    ) {
+      return true;
+    }
+    return (
+      descriptorRoot.type === "CallExpression" &&
+      descriptorRoot.callee.type === "MemberExpression" &&
+      descriptorRoot.callee.computed === false &&
+      descriptorRoot.callee.object.type === "Identifier" &&
+      descriptorRoot.callee.object.name === "Object" &&
+      memberPropertyName(descriptorRoot.callee) ===
+        "getOwnPropertyDescriptors" &&
+      descriptorRoot.arguments.length === 1 &&
+      descriptorRoot.arguments[0].type === "Identifier" &&
+      containing?.type === "FunctionDeclaration" &&
+      containing.params.some(
+        (parameter) =>
+          parameter.type === "Identifier" &&
+          parameter.name === descriptorRoot.arguments[0].name,
+      )
+    );
+  };
   walkAst(program, (node, parent, ancestors) => {
     const containingFunction = ancestors
       .filter((ancestor) =>
@@ -6708,7 +6902,18 @@ function assertCandidateSourceStructure(source) {
             inspectedValue,
             containingFunction,
           );
-          if (!ownedDescriptorView && !ownedDescriptorAlias) {
+          const ownedDescriptorValue =
+            ["getPrototypeOf", "hasOwn"].includes(property) &&
+            isGuardedDescriptorValue(
+              inspectedValue,
+              containingFunction,
+              "bytes",
+            );
+          if (
+            !ownedDescriptorView &&
+            !ownedDescriptorAlias &&
+            !ownedDescriptorValue
+          ) {
             assert.equal(
               inspectedValue.type,
               "Identifier",
@@ -6909,7 +7114,49 @@ function assertCandidateSourceStructure(source) {
         );
       }
       if (property === "prototype") {
-        assert.fail("prototype access and escape are forbidden");
+        const comparison = parent;
+        assert.equal(
+          insideValidation &&
+            comparison?.type === "BinaryExpression" &&
+            ["===", "!=="].includes(comparison.operator),
+          true,
+          "prototype access is limited to exact validation guards",
+        );
+        const inspected =
+          comparison.left === node ? comparison.right : comparison.left;
+        assert.equal(inspected.type, "CallExpression");
+        assert.equal(inspected.callee.type, "MemberExpression");
+        assert.equal(inspected.callee.computed, false);
+        assert.equal(inspected.callee.object.type, "Identifier");
+        assert.equal(inspected.callee.object.name, "Object");
+        assert.equal(memberPropertyName(inspected.callee), "getPrototypeOf");
+        assert.equal(inspected.arguments.length, 1);
+        const [inspectedValue] = inspected.arguments;
+        assert.equal(node.object.type, "Identifier");
+        if (node.object.name === "Object") {
+          assert.equal(
+            (containingFunction === validateInputDeclaration &&
+              inspectedValue.type === "Identifier" &&
+              inspectedValue.name === "input") ||
+              (containingFunction === validateBuildDeclaration &&
+                inspectedValue.type === "Identifier" &&
+                inspectedValue.name === "value"),
+            true,
+            "Object.prototype may only guard exact input records",
+          );
+        } else {
+          assert.equal(node.object.name, "Buffer");
+          assert.equal(containingFunction, validateBuildDeclaration);
+          assert.equal(
+            isGuardedDescriptorValue(
+              inspectedValue,
+              containingFunction,
+              "bytes",
+            ),
+            true,
+            "Buffer.prototype may only guard reflected build bytes",
+          );
+        }
       }
       if (isMutationTarget(node, parent)) {
         assert.equal(
@@ -7162,12 +7409,22 @@ function assertCandidateSourceStructure(source) {
             `ambient binding ${node.name} may not be aliased`,
           );
           const property = memberPropertyName(parent);
-          assert.equal(
-            grandparent?.type === "CallExpression" &&
-              grandparent.callee === parent,
-            true,
-            `ambient member ${node.name}.${property} is direct-callee-only`,
-          );
+          if (property === "prototype") {
+            assert.equal(
+              grandparent?.type === "BinaryExpression" &&
+                ["===", "!=="].includes(grandparent.operator) &&
+                (grandparent.left === parent || grandparent.right === parent),
+              true,
+              `ambient member ${node.name}.prototype is comparison-only`,
+            );
+          } else {
+            assert.equal(
+              grandparent?.type === "CallExpression" &&
+                grandparent.callee === parent,
+              true,
+              `ambient member ${node.name}.${property} is direct-callee-only`,
+            );
+          }
         } else if (
           ["Set", "TextDecoder", "TypeError", "WeakSet"].includes(node.name)
         ) {
@@ -7324,9 +7581,20 @@ function assertCandidateSourceStructure(source) {
         assert.equal(envelopeDeclaration.init?.type, "CallExpression");
         assert.equal(envelopeDeclaration.init.callee.type, "Identifier");
         assert.equal(envelopeDeclaration.init.callee.name, "ownDataRecord");
-        assert.equal(envelopeDeclaration.init.arguments.length, 1);
+        assert.equal(
+          envelopeDeclaration.init.arguments.length,
+          inputRecordDeclaration.params.length,
+        );
         assert.equal(envelopeDeclaration.init.arguments[0].type, "Identifier");
         assert.equal(envelopeDeclaration.init.arguments[0].name, "input");
+        if (envelopeDeclaration.init.arguments.length === 2) {
+          assert.equal(envelopeDeclaration.init.arguments[1].type, "Literal");
+          assert.equal(
+            envelopeDeclaration.init.arguments[1].value,
+            containingFunction.id?.name ===
+              "verifyG17BenchmarkProductOwnerV4Artifact",
+          );
+        }
         assert.equal(envelopeDeclaration.start < parent.start, true);
         const ownerCall = ancestors.at(-2);
         assert.equal(ownerCall?.type, "CallExpression");
@@ -8360,15 +8628,23 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     'function normalizeBuilds(builds) { return snapshotBuilds(builds).map(({ bytes, fixture }) => { let replay; try { replay = verifyG17BenchmarkBuildOwnerV3Artifact({ bytes, fixture }); } catch (error) { fail("BUILD_OWNER_INVALID", "build-owner-replay", "S6 build owner did not replay", error); } return Object.freeze({ bytes, fixture, replay }); }); }';
   const snapshotter = PINNED_CANDIDATE_SNAPSHOT_BUILDS_SOURCE;
   const inputValidator =
-    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } }';
+    'function validateInput(input, bytesExpected) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } }';
   const buildValidator =
     'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } }';
   const reflectedInputValidator =
-    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if (Reflect.ownKeys(descriptors).length !== 1 || typeof descriptors.builds.writable !== "boolean") { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
+    'function validateInput(input, bytesExpected) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if (Reflect.ownKeys(descriptors).length !== 1 || typeof descriptors.builds.writable !== "boolean") { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
   const reflectedInputHasOwnValidator =
-    'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if (!Object.hasOwn(descriptors, "builds")) { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
+    'function validateInput(input, bytesExpected) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if (!Object.hasOwn(descriptors, "builds")) { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
+  const plainInputValidator =
+    'function validateInput(input, bytesExpected) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } if (Object.getPrototypeOf(input) !== Object.prototype) { fail("INPUT_SHAPE_INVALID", "input-shape", "input prototype drifted"); } }';
+  const modeSpecificInputValidator =
+    'function validateInput(input, bytesExpected) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const descriptors = Object.getOwnPropertyDescriptors(input); if ((bytesExpected === false && (Reflect.ownKeys(descriptors).length !== 1 || Reflect.ownKeys(descriptors)[0] !== "builds")) || (bytesExpected === true && (Reflect.ownKeys(descriptors).length !== 2 || Reflect.ownKeys(descriptors)[0] !== "bytes" || Reflect.ownKeys(descriptors)[1] !== "builds"))) { fail("INPUT_SHAPE_INVALID", "input-shape", "input fields drifted"); } }';
   const boundedBuildValidator =
     'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } if (Buffer.byteLength(Object.getOwnPropertyDescriptors(value).bytes.value) > G17_BENCHMARK_BUILD_OWNER_V3_MAX_BYTES) { fail("INPUT_SHAPE_INVALID", "input-shape", "build bytes drifted"); } }';
+  const plainBuildValidator =
+    'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } const descriptors = Object.getOwnPropertyDescriptors(value); if (Object.getPrototypeOf(value) !== Object.prototype || Object.getPrototypeOf(descriptors.bytes.value) !== Buffer.prototype) { fail("INPUT_SHAPE_INVALID", "input-shape", "build prototype drifted"); } }';
+  const plainOrderedBuildValidator =
+    'function validateBuild(value, index) { if (types.isProxy(value)) { fail("INPUT_SHAPE_INVALID", "input-shape", "build proxy"); } const descriptors = Object.getOwnPropertyDescriptors(value); if (Object.getPrototypeOf(value) !== Object.prototype || Reflect.ownKeys(descriptors).length !== 2 || Reflect.ownKeys(descriptors)[0] !== "bytes" || Reflect.ownKeys(descriptors)[1] !== "fixture" || Object.getPrototypeOf(descriptors.bytes.value) !== Buffer.prototype || Object.hasOwn(descriptors.bytes.value, "byteLength")) { fail("INPUT_SHAPE_INVALID", "input-shape", "build fields drifted"); } }';
   const reboundDescriptorValidator =
     'function validateInput(input) { if (types.isProxy(input)) { fail("INPUT_SHAPE_INVALID", "input-shape", "input proxy"); } const borrowed = Object.getOwnPropertyDescriptors(input).builds.value; let descriptors = Object.getOwnPropertyDescriptors(input); descriptors = borrowed; Reflect.ownKeys(descriptors); }';
   const mutableDescriptorValidator =
@@ -8391,7 +8667,7 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     PINNED_CANDIDATE_OWNER_CONTENT_HASH_SOURCE,
     artifactFactory,
     inputValidator,
-    'function ownDataRecord(input) { validateInput(input); const descriptors = Object.getOwnPropertyDescriptors(input); const builds = descriptors.builds.value; const bytes = Object.hasOwn(descriptors, "bytes") ? descriptors.bytes.value : undefined; return Object.freeze({ builds, bytes }); }',
+    'function ownDataRecord(input, bytesExpected) { validateInput(input, bytesExpected); const descriptors = Object.getOwnPropertyDescriptors(input); const builds = descriptors.builds.value; const bytes = Object.hasOwn(descriptors, "bytes") ? descriptors.bytes.value : undefined; return Object.freeze({ builds, bytes }); }',
     buildValidator,
     "function snapshotBuild(descriptor, index) { const value = descriptor.value; validateBuild(value, index); const bytes = Buffer.from(value.bytes); const fixture = value.fixture; return Object.freeze({ bytes, fixture }); }",
     snapshotter,
@@ -8403,9 +8679,9 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     ownerBuilder,
   ].join("\n");
   const createEntrypoint =
-    "export function createG17BenchmarkProductOwnerV4Artifact(input) { const envelope = ownDataRecord(input); return expectedOwner(undefined, envelope, normalizeBuilds(envelope.builds)); }";
+    "export function createG17BenchmarkProductOwnerV4Artifact(input) { const envelope = ownDataRecord(input, false); return expectedOwner(undefined, envelope, normalizeBuilds(envelope.builds)); }";
   const verifyEntrypoint =
-    "export function verifyG17BenchmarkProductOwnerV4Artifact(input) { const envelope = ownDataRecord(input); const verified = validateVerifiedOwnerBeforeBuildReplay(envelope); return expectedOwner(verified, envelope, normalizeBuilds(envelope.builds)); }";
+    "export function verifyG17BenchmarkProductOwnerV4Artifact(input) { const envelope = ownDataRecord(input, true); const verified = validateVerifiedOwnerBeforeBuildReplay(envelope); return expectedOwner(verified, envelope, normalizeBuilds(envelope.builds)); }";
   const entrypoints = [createEntrypoint, verifyEntrypoint].join("\n");
   const admitted = `${imports}\n${pureInitializer}\n${replay}\n${exports}\n${errorClass}\n${entrypoints}`;
   assert.doesNotThrow(() => assertCandidateSourceStructure(admitted));
@@ -8421,7 +8697,27 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
   );
   assert.doesNotThrow(() =>
     assertCandidateSourceStructure(
+      admitted.replace(inputValidator, plainInputValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(inputValidator, modeSpecificInputValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
       admitted.replace(buildValidator, boundedBuildValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(buildValidator, plainBuildValidator),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCandidateSourceStructure(
+      admitted.replace(buildValidator, plainOrderedBuildValidator),
     ),
   );
   assert.doesNotThrow(() =>
@@ -8998,7 +9294,10 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     ),
     admitted.replace(
       createEntrypoint,
-      createEntrypoint.replace("ownDataRecord(input)", "ownDataRecord({})"),
+      createEntrypoint.replace(
+        "ownDataRecord(input, false)",
+        "ownDataRecord({}, false)",
+      ),
     ),
     admitted.replace(
       createEntrypoint,
@@ -9011,7 +9310,7 @@ test("ADR-0041 S7 source policy keeps product-owner-v4 pure and additive", async
     admitted.replace(
       createEntrypoint,
       createEntrypoint.replace(
-        "ownDataRecord(input)",
+        "ownDataRecord(input, false)",
         "ownDataRecord(input, input)",
       ),
     ),
