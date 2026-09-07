@@ -491,7 +491,7 @@ test("schema-v2 routing admits explicit Astra efforts without changing legacy pr
   const { contract } = await createFixture(t);
   assert.equal(validateTaskContractV2(contract), contract);
 
-  for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max"]) {
+  for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max", "ultra"]) {
     const astra = changed(contract, (value) => {
       value.routing.providers[0] = {
         provider: "codex",

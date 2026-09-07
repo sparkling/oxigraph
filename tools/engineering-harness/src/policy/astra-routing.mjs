@@ -6,6 +6,7 @@ export const ASTRA_REASONING_EFFORTS = Object.freeze([
   "high",
   "xhigh",
   "max",
+  "ultra",
 ]);
 
 export const ASTRA_ROUTING_POLICY = "oxigraph.astra-routing/v1";
@@ -26,7 +27,7 @@ export function validateAstraReasoningEffort(model, effort) {
     throw new Error("gpt-6-astra requires an explicit reasoning effort");
   }
   if (!ASTRA_REASONING_EFFORTS.includes(effort)) {
-    throw new Error("Astra reasoning effort must be low, medium, high, xhigh, or max");
+    throw new Error("Astra reasoning effort must be low, medium, high, xhigh, max, or ultra");
   }
   return effort;
 }

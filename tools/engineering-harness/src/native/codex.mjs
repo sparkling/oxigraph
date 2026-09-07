@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import {
-  CODEX_DISABLED_FEATURES,
+  codexFeatureArguments,
   validateProviderInvocation,
 } from "../policy/providers.mjs";
 import { nativeChildEnvironment } from "./environment.mjs";
@@ -26,7 +26,7 @@ export function codexInvocation({
     "--ignore-user-config",
     "--ignore-rules",
     "--strict-config",
-    ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
+    ...codexFeatureArguments(validatedEffort),
     "--model",
     model,
     ...(validatedEffort === null

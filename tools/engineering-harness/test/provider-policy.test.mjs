@@ -148,7 +148,7 @@ test("provider policy rejects cross-provider and authority injection", () => {
 test("native Codex invocation binds each Astra effort in one canonical configuration", () => {
   const executionRoot = mkdtempSync(join(tmpdir(), "oxigraph-provider-test-"));
   try {
-    for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max"]) {
+    for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max", "ultra"]) {
       const invocation = codexInvocation({
         executionRoot,
         model: "gpt-6-astra",
@@ -160,6 +160,21 @@ test("native Codex invocation binds each Astra effort in one canonical configura
         invocation.args[invocation.args.indexOf("--config") + 1],
         `model_reasoning_effort="${reasoningEffort}"`,
       );
+      const multiAgentIndex = invocation.args.indexOf("multi_agent");
+      assert.equal(
+        invocation.args[multiAgentIndex - 1],
+        reasoningEffort === "ultra" ? "--enable" : "--disable",
+      );
+      assert.equal(invocation.args[invocation.args.indexOf("--sandbox") + 1], "read-only");
+      assert.equal(invocation.args[invocation.args.indexOf("shell_tool") - 1], "--disable");
+      if (reasoningEffort === "ultra") {
+        const suppressed = [...invocation.args];
+        suppressed[multiAgentIndex - 1] = "--disable";
+        assert.throws(
+          () => validateProviderInvocation({ ...invocation, args: suppressed }),
+          /canonical argument shape/u,
+        );
+      }
     }
 
     for (const reasoningEffort of [null, "none", "minimal", "extreme"]) {

@@ -10,7 +10,7 @@ import {
   validateAstraReasoningEffort,
 } from "../src/policy/astra-routing.mjs";
 
-test("Astra routing exposes the five native effort levels and deterministic work classes", () => {
+test("Astra routing exposes native Codex efforts and deterministic work classes", () => {
   assert.equal(ASTRA_MODEL, "gpt-6-astra");
   assert.equal(ASTRA_ROUTING_POLICY, "oxigraph.astra-routing/v1");
   assert.deepEqual(ASTRA_REASONING_EFFORTS, [
@@ -19,6 +19,7 @@ test("Astra routing exposes the five native effort levels and deterministic work
     "high",
     "xhigh",
     "max",
+    "ultra",
   ]);
   assert.deepEqual(
     Object.fromEntries(
@@ -65,7 +66,7 @@ test("Astra selections require an explicit supported effort while legacy models 
   for (const effort of ["none", "minimal", "extreme", ""] ) {
     assert.throws(
       () => validateAstraReasoningEffort(ASTRA_MODEL, effort),
-      /must be low, medium, high, xhigh, or max/u,
+      /must be low, medium, high, xhigh, max, or ultra/u,
     );
   }
   assert.throws(

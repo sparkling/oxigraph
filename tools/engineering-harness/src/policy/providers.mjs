@@ -47,6 +47,17 @@ export const CODEX_DISABLED_FEATURES = Object.freeze([
   "skill_search",
 ]);
 
+export function codexFeatureArguments(reasoningEffort) {
+  // Ultra is native Codex orchestration, not another API reasoning level.
+  // Keep the existing tool restrictions while permitting its subagents.
+  return [
+    ...CODEX_DISABLED_FEATURES.filter(
+      (feature) => reasoningEffort !== "ultra" || feature !== "multi_agent",
+    ).flatMap((feature) => ["--disable", feature]),
+    ...(reasoningEffort === "ultra" ? ["--enable", "multi_agent"] : []),
+  ];
+}
+
 function assertSequence(actual, expected, provider) {
   if (
     actual.length !== expected.length ||
@@ -199,7 +210,7 @@ export function validateProviderInvocation({
         "--ignore-user-config",
         "--ignore-rules",
         "--strict-config",
-        ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
+        ...codexFeatureArguments(reasoningEffort),
         "--model",
         model,
         ...(reasoningEffort === null

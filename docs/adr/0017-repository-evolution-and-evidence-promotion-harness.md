@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-09-05
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
@@ -85,8 +85,16 @@
   receipt-last order from replay, or same-UID tamper resistance
 - GPT-6 Astra routing update: the native Codex boundary and schema-v2 task
   contract now admit the exact model identifier `gpt-6-astra` only with one
-  explicit reasoning effort from `low`, `medium`, `high`, `xhigh`, or `max`,
-  matching the [official model reference](https://developers.openai.com/api/docs/models/gpt-6-astra).
+  explicit native effort from `low`, `medium`, `high`, `xhigh`, `max`, or
+  `ultra`. The 2026-09-07 correction follows the live Codex 0.153.4 catalogue
+  and [native model guidance](https://learn.chatgpt.com/docs/models), rather
+  than applying the API model's five-level list to the native client. Ultra
+  adds native subagent orchestration: only explicitly selected Ultra invocations
+  enable `multi_agent`, retaining the read-only sandbox and other tool
+  restrictions. Focused local tests cover effort admission, canonical native
+  arguments, and schema-v2 contracts; this is not a live Ultra execution claim.
+  Automatic work-class recommendations remain unchanged, and Ultra is not
+  selected by default.
   A pure planning helper recommends `low` for short triage, `medium` for
   bounded single-component changes, `high` for substantive implementation and
   independent review, and `xhigh` for cross-component concurrency, durability,
