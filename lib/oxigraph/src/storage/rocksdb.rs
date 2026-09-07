@@ -497,9 +497,9 @@ impl RocksDbStorage {
         transaction_key: &[u8; 16],
     ) -> Result<StorageTransactionOutcome, StorageError> {
         Ok(match self.lookup_commit_receipt(transaction_key)? {
-            CommitReceiptOutcome::Committed(_) | CommitReceiptOutcome::CommittedWithoutReceipt => {
-                StorageTransactionOutcome::Committed
-            }
+            CommitReceiptOutcome::Committed(_)
+            | CommitReceiptOutcome::Expired(_)
+            | CommitReceiptOutcome::CommittedWithoutReceipt => StorageTransactionOutcome::Committed,
             CommitReceiptOutcome::ProvenAbsent(_) => StorageTransactionOutcome::RolledBack,
             CommitReceiptOutcome::Indeterminate => StorageTransactionOutcome::Indeterminate,
         })
@@ -527,6 +527,20 @@ impl RocksDbStorage {
                 GOVERNED_OUTCOME_ROLLED_BACK => Ok(CommitReceiptOutcome::ProvenAbsent(
                     TransactionNonCommitReason::RolledBack,
                 )),
+                value if value.starts_with(&[2, 4]) => {
+                    let state = reader
+                        .get(&self.default_cf, GOVERNANCE_STATE_KEY)?
+                        .ok_or_else(|| {
+                            CorruptionError::msg("expired receipt without governance state")
+                        })?;
+                    Ok(CommitReceiptOutcome::Expired(
+                        crate::store::ExpiredCommitReceipt::decode(
+                            transaction_key,
+                            value,
+                            &GovernanceState::decode(&state)?,
+                        )?,
+                    ))
+                }
                 value if value.starts_with(GOVERNED_OUTCOME_COMMITTED) => {
                     let receipt = CommitReceipt::decode(&value[2..])?;
                     let state = reader
@@ -547,7 +561,10 @@ impl RocksDbStorage {
                             if receipt.sequence() <= outbox.after_receipt_sequence => {}
                         (Some(outbox), Some(end))
                             if receipt.sequence() > outbox.after_receipt_sequence
-                                && end.position() <= outbox.high_water => {}
+                                && end.position() <= outbox.high_water
+                                && receipt.outbox_header_cursor().is_some_and(|cursor| {
+                                    cursor.position() > crate::store::retention::floor(&state)
+                                }) => {}
                         _ => {
                             return Err(CorruptionError::msg(
                                 "receipt disagrees with outbox activation or high-water",
@@ -584,11 +601,33 @@ impl RocksDbStorage {
         limit: std::num::NonZeroUsize,
     ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
         let reader = self.db.snapshot();
+        self.read_outbox_snapshot(&reader, after, limit)
+    }
+
+    fn read_outbox_snapshot(
+        &self,
+        reader: &Reader<'_>,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
         let state = reader.get(&self.default_cf, GOVERNANCE_STATE_KEY)?;
         let state = state.as_deref().map(GovernanceState::decode).transpose()?;
+        if let Some(state) = &state {
+            crate::store::retention::validate_cleanup_head(state, |position| {
+                self.read_outbox_record(reader, position)
+            })?;
+        }
         let first = reader.scan_prefix(&self.default_cf, OUTBOX_RECORD_PREFIX);
         first.status()?;
-        if first.is_valid() && first.key() != Some(outbox_record_key(1).as_slice()) {
+        let gc = state
+            .as_ref()
+            .map_or(0, crate::store::retention::physical_gc);
+        let high = state
+            .as_ref()
+            .and_then(|state| state.outbox.as_ref())
+            .map_or(0, |state| state.high_water);
+        let expected = (gc < high).then(|| outbox_record_key(gc + 1));
+        if first.key() != expected.as_deref() {
             return Err(
                 StorageError::from(CorruptionError::msg("invalid outbox origin key")).into(),
             );
@@ -597,28 +636,7 @@ impl RocksDbStorage {
             state.as_ref(),
             after,
             limit,
-            |position| {
-                let key = outbox_record_key(position);
-                let mut records =
-                    reader.scan_prefix_from(&self.default_cf, OUTBOX_RECORD_PREFIX, &key);
-                records.status()?;
-                if records.key() != Some(key.as_slice()) {
-                    return Ok(None);
-                }
-                let value = records.value().map(<[u8]>::to_vec);
-                records.next();
-                records.status()?;
-                if let Some(next) = records.key()
-                    && position
-                        .checked_add(1)
-                        .is_none_or(|position| next != outbox_record_key(position))
-                {
-                    return Err(
-                        CorruptionError::msg("invalid or gapped outbox successor key").into(),
-                    );
-                }
-                Ok(value)
-            },
+            |position| self.read_outbox_record(reader, position),
             |key| {
                 if reader
                     .get(&self.default_cf, &transaction_outcome_key(key))?
@@ -629,6 +647,15 @@ impl RocksDbStorage {
                 let value = reader.get(&self.default_cf, &governed_outcome_key(key))?;
                 value
                     .map(|value| {
+                        if value.starts_with(&[2, 4]) {
+                            let state = state.as_ref().ok_or_else(|| {
+                                CorruptionError::msg("expired anchor without governance state")
+                            })?;
+                            return crate::store::retention::anchor_receipt(
+                                state,
+                                &crate::store::ExpiredCommitReceipt::decode(key, &value, state)?,
+                            );
+                        }
                         if !value.starts_with(GOVERNED_OUTCOME_COMMITTED) {
                             return Err(
                                 CorruptionError::msg("outbox has no committed outcome").into()
@@ -647,6 +674,104 @@ impl RocksDbStorage {
                 Ok(records.is_valid())
             },
         )
+    }
+
+    fn read_outbox_record(
+        &self,
+        reader: &Reader<'_>,
+        position: u64,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let key = outbox_record_key(position);
+        let mut records = reader.scan_prefix_from(&self.default_cf, OUTBOX_RECORD_PREFIX, &key);
+        records.status()?;
+        if records.key() != Some(key.as_slice()) {
+            return Ok(None);
+        }
+        let value = records.value().map(<[u8]>::to_vec);
+        records.next();
+        records.status()?;
+        if let Some(next) = records.key()
+            && position
+                .checked_add(1)
+                .is_none_or(|position| next != outbox_record_key(position))
+        {
+            return Err(CorruptionError::msg("invalid or gapped outbox successor key").into());
+        }
+        Ok(value)
+    }
+
+    pub fn govern_outbox(
+        &self,
+        action: crate::store::retention::Action<'_>,
+        now: crate::store::GovernanceTime,
+    ) -> Result<crate::store::retention::ActionResult, crate::store::GovernanceError> {
+        let mut transaction = self.db.start_readable_transaction()?;
+        let prepared = {
+            let reader = transaction.reader();
+            let raw_state = reader.get(&self.default_cf, GOVERNANCE_STATE_KEY)?;
+            // An absent lineage with any existing key is ambiguous. Do not scan
+            // unbounded historical reservations to guess whether it is safe.
+            if raw_state.is_none() {
+                let records = reader.scan_prefix(&self.default_cf, GOVERNED_OUTCOME_KEY_PREFIX);
+                records.status()?;
+                if records.is_valid() {
+                    return Err(crate::store::GovernanceError::LineageUnavailable);
+                }
+            }
+            let state = raw_state
+                .as_deref()
+                .map(GovernanceState::decode)
+                .transpose()?
+                .unwrap_or_default();
+            self.read_outbox_snapshot(&reader, None, std::num::NonZeroUsize::MIN)?;
+            if let Some(cursor) = action.cursor() {
+                self.read_outbox_snapshot(&reader, Some(cursor), std::num::NonZeroUsize::MIN)?;
+            }
+            crate::store::retention::prepare(&state, action, now, |position| {
+                let bytes = self
+                    .read_outbox_record(&reader, position)?
+                    .ok_or_else(|| CorruptionError::msg("missing cleanup record"))?;
+                crate::store::outbox::decode_record(&state.store_identity, position, &bytes)
+            })?
+        };
+        if let Some(receipt) = prepared.expired {
+            transaction.insert(
+                &self.default_cf,
+                &governed_outcome_key(receipt.transaction_key().as_bytes()),
+                &crate::store::ExpiredCommitReceipt::new(&receipt).encode(),
+            );
+        }
+        for position in prepared.remove {
+            transaction.remove(&self.default_cf, &outbox_record_key(position));
+        }
+        transaction.insert(
+            &self.default_cf,
+            GOVERNANCE_STATE_KEY,
+            &prepared.state.encode(),
+        );
+        transaction
+            .commit_governance()
+            .map_err(crate::store::GovernanceError::MaintenanceIndeterminate)?;
+        Ok(prepared.result)
+    }
+
+    pub fn governance_health(
+        &self,
+        now: crate::store::GovernanceTime,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::GovernanceHealth, crate::store::GovernanceError> {
+        let reader = self.db.snapshot();
+        let bytes = reader.get(&self.default_cf, GOVERNANCE_STATE_KEY)?;
+        let state = bytes.as_deref().map(GovernanceState::decode).transpose()?;
+        if state.is_none() {
+            let records = reader.scan_prefix(&self.default_cf, GOVERNED_OUTCOME_KEY_PREFIX);
+            records.status()?;
+            if records.is_valid() {
+                return Err(crate::store::GovernanceError::LineageUnavailable);
+            }
+        }
+        let page = self.read_outbox_snapshot(&reader, None, limit)?;
+        crate::store::retention::health(state.as_ref(), now, &page)
     }
 
     #[cfg(test)]
@@ -2588,6 +2713,111 @@ mod tests {
     #[expect(
         clippy::panic_in_result_fn,
         clippy::missing_assert_message,
+        reason = "cleanup corruption must reject before mutation"
+    )]
+    fn retention_rejects_corrupt_physical_history_before_advancing_gc()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::store::retention::Action;
+        use crate::store::{
+            GovernanceTime, OutboxRetentionPolicy, Store, TransactionRequest, WritableDataset,
+        };
+        use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
+        for mode in [
+            "interstitial-key",
+            "damaged-event",
+            "missing-event",
+            "damaged-expired-receipt",
+        ] {
+            let directory = TempDir::new()?;
+            let store = Store::open(directory.path())?;
+            store.configure_outbox_retention(
+                OutboxRetentionPolicy::new(NonZeroU64::new(20).unwrap(), NonZeroU16::MIN)?,
+                GovernanceTime::from_unix_millis(1),
+            )?;
+            let mut tx = store
+                .start_governed_transaction(
+                    TransactionRequest::default(),
+                    TransactionKey::new([1; 16]),
+                )?
+                .into_transaction();
+            for id in 0..3 {
+                let node = NamedNode::new_unchecked(format!("urn:{id}"));
+                tx.insert(Quad::new(
+                    node.clone(),
+                    node.clone(),
+                    node,
+                    GraphName::DefaultGraph,
+                ))?;
+            }
+            let first = tx.commit()?;
+            let high = first.outbox_end_cursor().unwrap();
+            store.maintain_outbox(
+                &high,
+                NonZeroUsize::MIN,
+                GovernanceTime::from_unix_millis(1),
+            )?;
+            drop(store);
+            let storage = RocksDbStorage::open(directory.path())?;
+            let before = storage
+                .db
+                .snapshot()
+                .get(&storage.default_cf, GOVERNANCE_STATE_KEY)?
+                .unwrap()
+                .to_vec();
+            let mut damage = storage.db.start_readable_transaction()?;
+            match mode {
+                "interstitial-key" => {
+                    let mut bad = outbox_record_key(2);
+                    bad.push(0);
+                    damage.insert(&storage.default_cf, &bad, b"not-a-record");
+                }
+                "damaged-event" => {
+                    damage.insert(&storage.default_cf, &outbox_record_key(2), b"bad")
+                }
+                "missing-event" => damage.remove(&storage.default_cf, &outbox_record_key(2)),
+                _ => damage.insert(
+                    &storage.default_cf,
+                    &governed_outcome_key(&[1; 16]),
+                    &[2, 4],
+                ),
+            }
+            damage.commit()?;
+            assert!(
+                storage
+                    .governance_health(GovernanceTime::from_unix_millis(2), NonZeroUsize::MIN)
+                    .is_err(),
+                "{mode}"
+            );
+            assert!(
+                storage
+                    .govern_outbox(
+                        Action::Maintain {
+                            through: &high,
+                            limit: NonZeroUsize::new(10).unwrap()
+                        },
+                        GovernanceTime::from_unix_millis(2)
+                    )
+                    .is_err(),
+                "{mode}"
+            );
+            assert_eq!(
+                storage
+                    .db
+                    .snapshot()
+                    .get(&storage.default_cf, GOVERNANCE_STATE_KEY)?
+                    .unwrap()
+                    .as_ref(),
+                before.as_slice(),
+                "{mode}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
         reason = "receipt corruption assertions"
     )]
     fn governed_receipt_lookup_rejects_malformed_and_inconsistent_metadata()
@@ -2790,6 +3020,7 @@ mod tests {
                         store_identity: previous.store_identity().clone(),
                         sequence: u64::MAX,
                         outbox: None,
+                        retention: None,
                     }
                     .encode(),
                 ),

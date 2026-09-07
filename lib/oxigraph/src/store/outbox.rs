@@ -113,9 +113,14 @@ pub struct OutboxBatch {
     next_cursor: Option<OutboxCursor>,
     high_water: Option<OutboxCursor>,
     coverage: Option<OutboxCoverage>,
+    retained_after: Option<OutboxCursor>,
 }
 
 impl OutboxBatch {
+    /// Records at or before this whole-commit boundary have expired.
+    pub const fn retained_after(&self) -> Option<&OutboxCursor> {
+        self.retained_after.as_ref()
+    }
     pub fn records(&self) -> &[OutboxRecord] {
         &self.records
     }
@@ -139,6 +144,8 @@ pub enum OutboxReadError {
     DifferentStore,
     #[error("outbox cursor is ahead of this store snapshot")]
     CursorAhead,
+    #[error("outbox cursor has expired")]
+    CursorExpired { retained_after: OutboxCursor },
     #[error(transparent)]
     Storage(#[from] StorageError),
 }
@@ -169,6 +176,12 @@ pub(crate) fn prepare(
     key: &[u8; 16],
     changes: &SemanticChangeSet,
 ) -> Result<PreparedOutbox, StorageError> {
+    super::retention::check_capacity(
+        state,
+        (changes.len() as u64)
+            .checked_add(1)
+            .ok_or_else(|| CorruptionError::msg("outbox record count exhausted"))?,
+    )?;
     let high = state.outbox.as_ref().map_or(0, |outbox| outbox.high_water);
     let header = high
         .checked_add(1)
@@ -226,7 +239,7 @@ fn record_checksum(identity: &StoreIdentity, position: u64, body: &[u8]) -> [u8;
     hasher.finalize().into()
 }
 
-fn decode_record(
+pub(crate) fn decode_record(
     identity: &StoreIdentity,
     position: u64,
     bytes: &[u8],
@@ -298,6 +311,12 @@ pub(crate) fn read_page(
     mut receipt_for: impl FnMut(&[u8; 16]) -> Result<Option<CommitReceipt>, StorageError>,
     mut has_after: impl FnMut(u64) -> Result<bool, StorageError>,
 ) -> Result<OutboxBatch, OutboxReadError> {
+    if let Some(state) = state {
+        super::retention::validate(state)?;
+    }
+    let floor = state.map_or(0, super::retention::floor);
+    let retained_after =
+        state.and_then(|state| super::retention::cursor(&state.store_identity, floor));
     let high = state
         .and_then(|state| state.outbox.as_ref())
         .map_or(0, |outbox| outbox.high_water);
@@ -314,6 +333,11 @@ pub(crate) fn read_page(
         if after.position > high {
             return Err(OutboxReadError::CursorAhead);
         }
+        if after.position < floor {
+            return Err(OutboxReadError::CursorExpired {
+                retained_after: OutboxCursor::new(after.store_identity.clone(), floor),
+            });
+        }
     }
     let Some((state, outbox)) =
         state.and_then(|state| state.outbox.as_ref().map(|outbox| (state, outbox)))
@@ -323,9 +347,17 @@ pub(crate) fn read_page(
             next_cursor: after.cloned(),
             high_water: None,
             coverage: None,
+            retained_after,
         });
     };
     let identity = &state.store_identity;
+    let retention_anchor = state
+        .retention
+        .as_ref()
+        .and_then(|retention| retention.anchor.as_ref());
+    if let Some(anchor) = retention_anchor {
+        validate_header(anchor, state, &mut receipt_for)?;
+    }
     let mut read = |position| -> Result<OutboxRecord, StorageError> {
         let bytes = get(position)?
             .ok_or_else(|| CorruptionError::msg("outbox gap below high-water mark"))?;
@@ -333,7 +365,18 @@ pub(crate) fn read_page(
     };
     // Validate the latest complete commit even on an empty page. An earlier
     // page need not scan the full history to reject an inconsistent watermark.
-    let last = read(high)?;
+    let last = if high == floor {
+        OutboxRecord::Commit {
+            cursor: OutboxCursor::new(identity.clone(), high),
+            receipt: retention_anchor
+                .ok_or_else(|| {
+                    StorageError::from(CorruptionError::msg("missing retention anchor"))
+                })?
+                .clone(),
+        }
+    } else {
+        read(high)?
+    };
     let last_header = match &last {
         OutboxRecord::Commit { .. } => last.clone(),
         OutboxRecord::Event { header_cursor, .. } => read(header_cursor.position)?,
@@ -359,11 +402,11 @@ pub(crate) fn read_page(
     }
     validate_header(latest, state, &mut receipt_for)?;
     validate_event(&last, latest)?;
-    let start = after.map_or(0, |cursor| cursor.position);
+    let start = after.map_or(floor, |cursor| cursor.position);
     let count = (high - start).min(u64::try_from(limit.get()).unwrap_or(u64::MAX));
     let mut records = Vec::new();
-    let mut cached_header: Option<CommitReceipt> = None;
-    if let Some(after) = after {
+    let mut cached_header: Option<CommitReceipt> = retention_anchor.cloned();
+    if let Some(after) = after.filter(|cursor| cursor.position > floor) {
         let anchor = read(after.position)?;
         let header = match &anchor {
             OutboxRecord::Commit { receipt, .. } => receipt.clone(),
@@ -423,7 +466,8 @@ pub(crate) fn read_page(
     let next_cursor = records
         .last()
         .map(|record| record.cursor().clone())
-        .or_else(|| after.cloned());
+        .or_else(|| after.cloned())
+        .or_else(|| retained_after.clone());
     Ok(OutboxBatch {
         records,
         next_cursor,
@@ -435,6 +479,7 @@ pub(crate) fn read_page(
             store_identity: identity.clone(),
             after_receipt_sequence: outbox.after_receipt_sequence,
         }),
+        retained_after,
     })
 }
 
@@ -464,7 +509,10 @@ fn validate_header(
     Ok(())
 }
 
-fn validate_event(record: &OutboxRecord, receipt: &CommitReceipt) -> Result<(), StorageError> {
+pub(crate) fn validate_event(
+    record: &OutboxRecord,
+    receipt: &CommitReceipt,
+) -> Result<(), StorageError> {
     if let OutboxRecord::Event {
         commit_id,
         event_count,

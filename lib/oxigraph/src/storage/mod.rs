@@ -163,6 +163,8 @@ pub(crate) enum TransactionOutcomeFaultPoint {
     FinalBatchAfter,
     RolledBackBefore,
     RolledBackAfter,
+    GovernanceBatchBefore,
+    GovernanceBatchAfter,
 }
 
 impl From<TransactionStartControlError> for StorageTransactionStartError {
@@ -392,6 +394,30 @@ impl Storage {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKind::RocksDb(storage) => storage.lookup_commit_receipt(transaction_key),
             StorageKind::Memory(storage) => storage.lookup_commit_receipt(transaction_key),
+        }
+    }
+
+    pub(crate) fn govern_outbox(
+        &self,
+        action: crate::store::retention::Action<'_>,
+        now: crate::store::GovernanceTime,
+    ) -> Result<crate::store::retention::ActionResult, crate::store::GovernanceError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(storage) => storage.govern_outbox(action, now),
+            StorageKind::Memory(storage) => storage.govern_outbox(action, now),
+        }
+    }
+
+    pub(crate) fn governance_health(
+        &self,
+        now: crate::store::GovernanceTime,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::GovernanceHealth, crate::store::GovernanceError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(storage) => storage.governance_health(now, limit),
+            StorageKind::Memory(storage) => storage.governance_health(now, limit),
         }
     }
 

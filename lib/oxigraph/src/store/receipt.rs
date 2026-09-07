@@ -227,6 +227,8 @@ impl CommitReceipt {
 #[non_exhaustive]
 pub enum CommitReceiptOutcome {
     Committed(CommitReceipt),
+    /// Known committed, but the full receipt and its outbox range have expired.
+    Expired(super::ExpiredCommitReceipt),
     /// An explicitly ungoverned legacy keyed transaction committed without a receipt.
     CommittedWithoutReceipt,
     ProvenAbsent(TransactionNonCommitReason),
@@ -239,6 +241,7 @@ pub(crate) struct GovernanceState {
     pub store_identity: StoreIdentity,
     pub sequence: u64,
     pub outbox: Option<super::outbox::OutboxState>,
+    pub retention: Option<super::retention::RetentionState>,
 }
 
 impl Default for GovernanceState {
@@ -247,6 +250,7 @@ impl Default for GovernanceState {
             store_identity: StoreIdentity::new(),
             sequence: 0,
             outbox: None,
+            retention: None,
         }
     }
 }
@@ -271,6 +275,9 @@ impl GovernanceState {
 
     #[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
     pub fn encode(&self) -> Vec<u8> {
+        if self.retention.is_some() {
+            return super::retention::encode_state(self);
+        }
         let mut bytes = Vec::with_capacity(73);
         bytes.push(if self.outbox.is_some() { 2 } else { 1 });
         bytes.extend_from_slice(self.store_identity.as_bytes());
@@ -291,6 +298,9 @@ impl GovernanceState {
 
     #[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
     pub fn decode(bytes: &[u8]) -> Result<Self, StorageError> {
+        if bytes.first() == Some(&3) {
+            return super::retention::decode_state(bytes);
+        }
         let (length, domain) = match bytes.first() {
             Some(1) if bytes.len() == 57 => (25, b"oxigraph.governance.v1\0"),
             Some(2) if bytes.len() == 73 => (41, b"oxigraph.governance.v2\0"),
@@ -335,6 +345,7 @@ impl GovernanceState {
             store_identity: StoreIdentity(receipt_field(&fields[1..17])?),
             sequence,
             outbox,
+            retention: None,
         })
     }
 }
@@ -454,8 +465,114 @@ impl super::OutcomeAwareWritableDataset for GovernedTransaction<'_> {
 }
 
 impl Store {
+    /// Explicitly enables retention. RocksDB writes governance schema v3;
+    /// older binaries cannot consume this governance state. No open-time migration occurs.
+    /// Call before opening a write transaction (all mutations share its writer lock).
+    pub fn configure_outbox_retention(
+        &self,
+        policy: super::OutboxRetentionPolicy,
+        now: super::GovernanceTime,
+    ) -> Result<(), super::GovernanceError> {
+        self.storage
+            .govern_outbox(super::retention::Action::Configure(policy), now)?;
+        Ok(())
+    }
+
+    /// Pins history after the supplied checkpoint until the explicit deadline.
+    /// `None` starts at the current retention boundary, not at expired history.
+    /// Persist the returned fenced token to checkpoint or release after restart.
+    pub fn acquire_outbox_lease(
+        &self,
+        id: [u8; 16],
+        after: Option<&super::OutboxCursor>,
+        expires: super::GovernanceTime,
+        now: super::GovernanceTime,
+    ) -> Result<super::OutboxLease, super::GovernanceError> {
+        match self.storage.govern_outbox(
+            super::retention::Action::Acquire { id, after, expires },
+            now,
+        )? {
+            super::retention::ActionResult::Lease(lease) => Ok(lease),
+            _ => Err(StorageError::from(CorruptionError::msg(
+                "unexpected lease transition result",
+            ))
+            .into()),
+        }
+    }
+
+    /// Advances a live lease monotonically and renews its deadline. A checkpoint
+    /// inside a commit keeps that entire commit; expired or replaced owners fail.
+    pub fn checkpoint_outbox_lease(
+        &self,
+        token: &super::OutboxLeaseToken,
+        after: &super::OutboxCursor,
+        expires: super::GovernanceTime,
+        now: super::GovernanceTime,
+    ) -> Result<super::OutboxLease, super::GovernanceError> {
+        match self.storage.govern_outbox(
+            super::retention::Action::Checkpoint {
+                token,
+                after,
+                expires,
+            },
+            now,
+        )? {
+            super::retention::ActionResult::Lease(lease) => Ok(lease),
+            _ => Err(StorageError::from(CorruptionError::msg(
+                "unexpected lease transition result",
+            ))
+            .into()),
+        }
+    }
+
+    pub fn release_outbox_lease(
+        &self,
+        token: &super::OutboxLeaseToken,
+        now: super::GovernanceTime,
+    ) -> Result<(), super::GovernanceError> {
+        self.storage
+            .govern_outbox(super::retention::Action::Release(token), now)?;
+        Ok(())
+    }
+
+    /// Expires at most one whole commit through `through`, subject to live leases,
+    /// and deletes at most `max_records` physical records. Repeat to drain pending
+    /// cleanup or further commits. Primary RDF, graph topology, and namespaces are
+    /// untouched. Keys retain compact committed markers and cannot be replayed.
+    pub fn maintain_outbox(
+        &self,
+        through: &super::OutboxCursor,
+        max_records: std::num::NonZeroUsize,
+        now: super::GovernanceTime,
+    ) -> Result<super::OutboxMaintenance, super::GovernanceError> {
+        match self.storage.govern_outbox(
+            super::retention::Action::Maintain {
+                through,
+                limit: max_records,
+            },
+            now,
+        )? {
+            super::retention::ActionResult::Maintenance(result) => Ok(result),
+            _ => Err(StorageError::from(CorruptionError::msg(
+                "unexpected maintenance transition result",
+            ))
+            .into()),
+        }
+    }
+
+    /// Validates the boundary anchor, retained prefix (at most `max_records`),
+    /// latest commit and capped lease metadata in one snapshot. Does not scan the
+    /// entire history, expire leases, change state, or establish service readiness.
+    pub fn governance_health(
+        &self,
+        now: super::GovernanceTime,
+        max_records: std::num::NonZeroUsize,
+    ) -> Result<super::GovernanceHealth, super::GovernanceError> {
+        self.storage.governance_health(now, max_records)
+    }
+
     /// Reads at most `max_records` records after the supplied cursor, or from the
-    /// coverage origin for `None`. RocksDB records survive reopen and backup;
+    /// current retention boundary for `None`. RocksDB records survive reopen and backup;
     /// memory records live only as long as that store. No retention or automatic
     /// acknowledgement is performed. This feed covers only governed commits.
     /// The bound is in records, not bytes; a single RDF term can be large.
@@ -652,6 +769,7 @@ mod tests {
             store_identity: StoreIdentity([9; 16]),
             sequence: 1,
             outbox: None,
+            retention: None,
         };
         let encoded = state.encode();
         assert_eq!(GovernanceState::decode(&encoded)?.sequence, 1);

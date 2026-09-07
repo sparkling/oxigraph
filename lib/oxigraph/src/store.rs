@@ -36,6 +36,7 @@ mod change_codec;
 mod namespace;
 pub(crate) mod outbox;
 pub(crate) mod receipt;
+pub(crate) mod retention;
 mod semantic_change;
 mod transactional;
 
@@ -46,6 +47,10 @@ pub use namespace::{
 pub use outbox::{OutboxBatch, OutboxCoverage, OutboxCursor, OutboxReadError, OutboxRecord};
 pub use receipt::{
     CommitId, CommitReceipt, CommitReceiptOutcome, GovernedTransaction, StoreIdentity,
+};
+pub use retention::{
+    ExpiredCommitReceipt, GovernanceError, GovernanceHealth, GovernanceTime, OutboxLease,
+    OutboxLeaseToken, OutboxMaintenance, OutboxRetentionPolicy,
 };
 pub use semantic_change::{
     ChangeTrackingError, ChangeTrackingTransaction, SemanticChange, SemanticChangeSet,

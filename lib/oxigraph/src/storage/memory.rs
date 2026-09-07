@@ -47,6 +47,7 @@ struct MemoryGovernance {
     state: GovernanceState,
     governed_keys: FxHashSet<[u8; 16]>,
     receipts: HashMap<[u8; 16], CommitReceipt>,
+    expired: HashMap<[u8; 16], crate::store::ExpiredCommitReceipt>,
     outbox: BTreeMap<u64, Vec<u8>>,
 }
 
@@ -200,6 +201,15 @@ impl MemoryStorage {
             .transaction_outcomes
             .get(transaction_key)
             .map(|value| *value);
+        if let Some(expired) = governance.expired.get(transaction_key) {
+            expired.validate(&governance.state)?;
+            if state != Some(MemoryTransactionOutcomeState::Committed)
+                || governance.receipts.contains_key(transaction_key)
+            {
+                return Err(CorruptionError::msg("inconsistent expired memory receipt").into());
+            }
+            return Ok(CommitReceiptOutcome::Expired(expired.clone()));
+        }
         if let Some(receipt) = governance.receipts.get(transaction_key) {
             if state != Some(MemoryTransactionOutcomeState::Committed) {
                 return Err(
@@ -241,6 +251,20 @@ impl MemoryStorage {
         after: Option<&crate::store::OutboxCursor>,
         limit: std::num::NonZeroUsize,
     ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        let gc = crate::store::retention::physical_gc(&governance.state);
+        let high = governance
+            .state
+            .outbox
+            .as_ref()
+            .map_or(0, |state| state.high_water);
+        crate::store::retention::validate_cleanup_head(&governance.state, |position| {
+            Ok(governance.outbox.get(&position).cloned())
+        })?;
+        if governance.outbox.first_key_value().map(|(key, _)| *key) != (gc < high).then(|| gc + 1) {
+            return Err(
+                StorageError::from(CorruptionError::msg("invalid physical outbox origin")).into(),
+            );
+        }
         crate::store::outbox::read_page(
             Some(&governance.state),
             after,
@@ -256,6 +280,10 @@ impl MemoryStorage {
                         CorruptionError::msg("outbox receipt has no committed outcome").into(),
                     );
                 }
+                if let Some(expired) = governance.expired.get(key) {
+                    return crate::store::retention::anchor_receipt(&governance.state, expired)
+                        .map(Some);
+                }
                 Ok(governance.receipts.get(key).cloned())
             },
             |position| {
@@ -265,6 +293,57 @@ impl MemoryStorage {
                     .is_some_and(|(last, _)| *last > position))
             },
         )
+    }
+
+    pub fn govern_outbox(
+        &self,
+        action: crate::store::retention::Action<'_>,
+        now: crate::store::GovernanceTime,
+    ) -> Result<crate::store::retention::ActionResult, crate::store::GovernanceError> {
+        let _writer = self.transaction_lock.lock();
+        let mut governance = self.governance.write().map_err(|_| {
+            StorageError::from(CorruptionError::msg("poisoned memory governance state"))
+        })?;
+        self.read_outbox_locked(&governance, None, std::num::NonZeroUsize::MIN)?;
+        if let Some(cursor) = action.cursor() {
+            self.read_outbox_locked(&governance, Some(cursor), std::num::NonZeroUsize::MIN)?;
+        }
+        let prepared =
+            crate::store::retention::prepare(&governance.state, action, now, |position| {
+                let bytes = governance
+                    .outbox
+                    .get(&position)
+                    .ok_or_else(|| CorruptionError::msg("missing cleanup record"))?;
+                crate::store::outbox::decode_record(
+                    &governance.state.store_identity,
+                    position,
+                    bytes,
+                )
+            })?;
+        if let Some(receipt) = prepared.expired {
+            let key = *receipt.transaction_key().as_bytes();
+            governance
+                .expired
+                .insert(key, crate::store::ExpiredCommitReceipt::new(&receipt));
+            governance.receipts.remove(&key);
+        }
+        for position in prepared.remove {
+            governance.outbox.remove(&position);
+        }
+        governance.state = prepared.state;
+        Ok(prepared.result)
+    }
+
+    pub fn governance_health(
+        &self,
+        now: crate::store::GovernanceTime,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::GovernanceHealth, crate::store::GovernanceError> {
+        let governance = self.governance.read().map_err(|_| {
+            StorageError::from(CorruptionError::msg("poisoned memory governance state"))
+        })?;
+        let page = self.read_outbox_locked(&governance, None, limit)?;
+        crate::store::retention::health(Some(&governance.state), now, &page)
     }
 
     fn start_transaction_with_guard<'a>(

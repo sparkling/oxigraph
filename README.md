@@ -47,9 +47,10 @@ The [N3 publication fix](docs/research/n3-submodule-publication-2026-09-07.md)
 makes the existing reviewed gitlink fetchable without changing its contents.
 R1 source and installation instructions were published on `main` at
 `aa7128bb`; the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
-records all 43 decisions at that handoff. G2.2 and G2.3a-b are now implemented locally;
-G2.3c retention/leases and governance health are next, not another
-containment or harness milestone.
+records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
+`58d3253c`; G2.3c adds native retention/leases and governance health.
+The next product slice is staged-view SHACL commit validation (G2.4a), not
+another containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
 
@@ -66,7 +67,8 @@ public extension contract, not deployment of a separate replacement backend.
 G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.
 The broader [linked-data roadmap](docs/plans/persistence-write-and-linked-data-parity-plan.md)
 continues after R1 with one product slice at a time. G2.2's normalized semantic
-changes, G2.3a atomic receipts, and G2.3b ordered outbox are implemented. Six-hour delivery reviews
+changes, G2.3a atomic receipts, G2.3b ordered outbox, and G2.3c bounded
+retention/leases are implemented. Six-hour delivery reviews
 continue across milestones.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
@@ -102,8 +104,26 @@ Run the [native example](lib/oxigraph/examples/transaction_outbox.rs):
 cargo run --locked -p oxigraph --example transaction_outbox
 ```
 
-No HTTP subscription endpoint, retention/leases, or power-loss qualification
-is claimed. G2.3c owns retention and governance health; ADR-0020 remains Proposed.
+G2.3c adds explicit `configure_outbox_retention`, fenced consumer leases,
+whole-commit expiry, and bounded `maintain_outbox` cleanup. Live leases pin
+history; physical-record capacity applies backpressure before commit. Expired
+cursors fail explicitly and expired receipts remain **known committed**, so
+old transaction keys cannot be replayed. Primary RDF is untouched by cleanup.
+
+`governance_health` reports bounded snapshot checks and lag/retention state,
+not whole-store readiness. RocksDB preserves leases and partial cleanup over
+restart, backup, and compaction. Retention is opt-in and writes governance v3;
+do not downgrade its governed writer. The cap is in outbox records, not bytes
+or permanent key-marker count. Pre-outbox receipts retain their permanent policy.
+See [ADR-0020](docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
+for the clock, compatibility, failure, and validation contracts.
+
+```sh
+cargo run --locked -p oxigraph --example outbox_retention
+```
+
+No HTTP subscription endpoint, whole-store readiness, or power-loss
+qualification is claimed. Those are separate programme requirements.
 
 ## Upstream Oxigraph
 
@@ -477,7 +497,7 @@ passes 13/13 across memory, RocksDB, and the rewritten plane; the no-default
 evaluator passes 8/8 across memory and the rewritten plane. Focused regressions
 pass `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
 `transactional_dataset` 3/3. [ADR-0020 — Transactional metadata, receipts, and change delivery](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
-now includes implemented G2.2 capture/integration and G2.3a-b atomic receipts/outbox, and remains Proposed for G2.3c.
+now implements native G2.1–G2.3c, including bounded retention, fenced leases, and governance health.
 
 [ADR-0034 — First-class exact new-file admission](./docs/adr/0034-first-class-exact-new-file-admission.md) separately
 governs optional candidate-created module admission, not direct G2.2 delivery
@@ -764,7 +784,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0042; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Twenty-three decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespaces
-  and G2.2 capture/integration plus G2.3a-b receipts/outbox but remains Proposed for G2.3c; ADR-0034's
+  and native G2.2 capture plus G2.3a–c receipts/outbox/retention; ADR-0034's
   completed dormant controls include the separate v2 profile and contract, receipt-v7
   admission/replay, and hidden three-command CLI/package surface. That surface
   executes only the unavailable gate and grants no product authority.

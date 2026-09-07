@@ -1980,6 +1980,30 @@ impl ReadableTransaction<'_> {
         Ok(())
     }
 
+    pub fn commit_governance(self) -> Result<(), StorageError> {
+        if self.keyed_outcome.is_some() {
+            return Err(StorageError::Other(
+                "governance maintenance requires an unkeyed batch".into(),
+            ));
+        }
+        #[cfg(test)]
+        self.db.visit_transaction_outcome_fault_point(
+            TransactionOutcomeFaultPoint::GovernanceBatchBefore,
+        )?;
+        unsafe {
+            ffi_result!(rocksdb_write_writebatch_wi(
+                self.db.db,
+                self.db.sync_write_options,
+                self.batch
+            ))?;
+        }
+        #[cfg(test)]
+        self.db.visit_transaction_outcome_fault_point(
+            TransactionOutcomeFaultPoint::GovernanceBatchAfter,
+        )?;
+        Ok(())
+    }
+
     pub fn commit_keyed(
         mut self,
         commit_attempted_value: &[u8],

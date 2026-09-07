@@ -1,13 +1,14 @@
 # ADR-0020: Transactional metadata, receipts, and change delivery
 
-- **Status**: Proposed
+- **Status**: Implemented (native G2.1–G2.3c scope below)
 - **Date**: 2026-08-24
 - Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.1 is implemented in `be08cf3b`. G2.2 now includes
   opt-in staged semantic-change capture and request/keyed integration.
-  G2.3a native atomic receipts and G2.3b ordered outbox are implemented locally.
-  G2.3c retention/leases and governance health remain open, so this ADR remains Proposed
+  G2.3a native atomic receipts and G2.3b ordered outbox are published in `58d3253c`.
+  G2.3c adds opt-in bounded retention, fenced leases, expired receipt lookup,
+  physical-record backpressure, and native governance-health observations
 - Update note: `ChangeTrackingTransaction` captures real backend-neutral
   mutations, with graph-scoped normalization and failure poisoning, without
   changing the minimal write traits, backends, or qualification evidence.
@@ -267,10 +268,118 @@ is read. RDF 1.2 effects permit at most 32 nested triple terms; unrepresentable
 effects reject before commit. The general RDF API and infallible v1 checksum
 do not acquire this depth limit.
 
-There is no compaction/retention deletion in G2.3b. G2.3c owns leases, expiry,
-backpressure, retention advance, and governance health; storage currently grows.
+G2.3b alone has no retention deletion. G2.3c supplies the explicit policy below;
+stores that do not opt in retain the previous growing-history behavior.
 In-process listeners, RDF Patch, HTTP feeds, governed bulk-load modes, and
 arbitrary crash-window/power-loss qualification are not claimed.
+
+### G2.3c retention and governance health (2026-09-07)
+
+`Store::configure_outbox_retention(policy, now)` explicitly activates governance
+v3. It changes neither the global RocksDB format nor column families and does
+not migrate on open. V1/v2 state and receipt bytes remain readable and retain
+their previous encoding until activation. Older governance decoders reject v3;
+do not downgrade a retention-enabled store to an older governed writer. Legacy
+ungoverned writes remain explicitly outside this feed. On RocksDB, activation
+without a lineage but with existing governed keys returns `LineageUnavailable`
+instead of scanning unbounded history or inventing identity. A known-good
+pre-lineage store can establish identity through an explicit acknowledged
+governed commit; missing or damaged committed history is not automatically repaired.
+
+The policy caps physical outbox **records**, not bytes, and at most 128 consumer
+leases. A commit that would exceed capacity rejects before `CommitAttempted`;
+no primary mutations or feed records publish. Its reserved key retains the
+existing non-commit outcome and is not reusable. Even zero-effect commits cost
+one header. Lowering capacity below existing occupancy is allowed and applies
+backpressure until explicit cleanup makes room.
+
+`acquire_outbox_lease`, `checkpoint_outbox_lease`, and `release_outbox_lease`
+use store-bound identifiers and fresh fencing nonces. Persist the returned
+48-byte token to resume after restart. Checkpoints only advance and deadlines
+must exceed the supplied `GovernanceTime`. Maintenance uses an explicit trusted
+UTC millisecond observation, persists successful observations, and rejects clock
+regression. Reads never expire leases or persist time. Expired/replaced owners
+cannot renew or release a newer owner's lease. Tokens are fencing handles, not
+authentication credentials; the host owns clock trust and authorization.
+
+`maintain_outbox(through, max_records, now)` shares the primary writer permit.
+It expires at most one **whole commit**, only if every live lease has consumed
+through that commit. A mid-commit checkpoint pins the entire commit. The logical
+retention floor and a fixed-size receipt anchor advance atomically with the
+receipt's permanent committed-expired marker. Physical deletion has a separate
+cursor and removes at most `max_records` records per call. It finishes the prior
+commit's cleanup before expiring another. Pending physical records continue to
+count against capacity; logical expiry alone does not release that capacity.
+
+The invariant is `physical_gc <= retention_floor <= high_water`. Replay from
+`None` starts immediately after the floor. A cursor below the floor returns
+`OutboxReadError::CursorExpired`; the floor itself remains a valid checkpoint
+even when all its records are gone. `OutboxBatch::retained_after` exposes the
+boundary. Strict record/successor validation rejects malformed interstitial
+RocksDB keys before advancing cleanup. No scan-and-skip from the original feed
+origin is introduced.
+
+`CommitReceiptOutcome::Expired` means **known committed with expired receipt**,
+not absence or indeterminacy. Its 58-byte native outcome envelope binds key,
+store, sequence, version, and checksum. The legacy outcome API still returns
+Committed and both keyed openers reject reuse. Outbox-era full receipts expire
+with their whole commit. Pre-outbox v1 receipts and rollback/indeterminate key
+records retain their existing permanent policy. This bounds retained outbox
+payload/record history, **not total transaction-key cardinality or disk bytes**.
+
+RocksDB maintenance uses one synchronous batch for the anchor/floor, compact
+outcome, bounded deletions, leases, and clock. Memory performs the same transition
+under its governance/write locks and remains process-local. An acknowledgement
+failure returns `MaintenanceIndeterminate`: inspect health and receipt lookup
+before continuing; never replay primary effects. For a lost lease-acquisition
+response, retry cannot steal the live identifier; wait for its declared deadline
+if the returned token was not obtained.
+
+`governance_health(now, max_records)` checks one snapshot's recognized schema,
+floor/anchor, physical cleanup head, capped lease metadata, retained prefix, and
+latest complete commit. It exposes policy, logical/physical counts, live/expired
+lease counts, oldest live checkpoint, and the validated-through cursor. It is
+O(max_records + capped leases), not a full historical audit or service-readiness
+certificate. Unvisited middle-history corruption is detected on consumption.
+G2.5 owns operational readiness. Backups preserve identity, leases, floor, anchor,
+and pending cleanup at their snapshot; physical compaction does not advance
+logical retention. G2.6/G2.7 still own backup receipts and restore qualification.
+
+The [native retention example](../../lib/oxigraph/examples/outbox_retention.rs)
+demonstrates lease pinning, release, bounded cleanup, and unchanged primary RDF:
+
+```sh
+cargo run --locked -p oxigraph --example outbox_retention
+```
+
+Native tests in [outbox_retention.rs](../../lib/oxigraph/tests/outbox_retention.rs),
+[retention.rs](../../lib/oxigraph/src/store/retention.rs), and storage tests cover
+expiry, partial checkpoints, nonce fencing, clock regression, capacity rejection,
+one-record cleanup, duplicate-key denial, concurrent primary writers, read-only
+open, restart, backup, compaction, abrupt process exit with pending cleanup,
+and synchronous batch pre-write/lost-acknowledgement failures. A four-case
+corruption regression proves malformed keys, missing/damaged pending records,
+and damaged expired receipts reject before governance-state mutation. V3's
+maximum 6,408-byte state fixture checks every byte flip and truncation; v1/v2
+compatibility fixtures remain unchanged. These prove the named native seams,
+not arbitrary crash windows or power-loss qualification.
+
+Final affected native matrix (2026-09-07; configurations overlap):
+
+| Configuration | Unit checks | Integration checks | Total |
+| --- | ---: | ---: | ---: |
+| Default (RocksDB) | 67 | 73 | 140 |
+| RocksDB + `rdf-12,http-client` | 67 | 76 | 143 |
+| No default features + `rdf-12` | 24 | 47 | 71 |
+
+Commands use `cargo test --quiet --locked -p oxigraph --jobs 4 --lib` with
+`--test outbox_retention --test transaction_outbox --test commit_receipts
+--test semantic_changes --test transactional_namespaces --test transaction_outcomes`.
+The RocksDB configurations also select `--test rocksdb_writer_serialization`;
+the latter two add their feature flags exactly as shown in the table. The
+retention integration file has ten default-feature entries, including the
+abrupt-exit child entry point, and three no-default entries. Strict focused
+Clippy runs on default and no-default builds; no lint policy is relaxed.
 
 ## Acceptance boundary
 
@@ -427,7 +536,7 @@ frozen evaluator is relaxed to close this product slice.
 This closes G2.2's native capture/integration task, not this ADR. Effects are
 in-process results without durable identity or global commit order. The separate
 G2.3a-b governed API now provides atomic receipts and the authoritative outbox;
-retention/leases and governance health remain outstanding.
+G2.3c now adds the retention and governance-health contract above.
 
 ### Existing G2.1 evidence and complete ADR acceptance
 
@@ -507,7 +616,9 @@ plus `tests/commit_receipts.rs` and direct storage-fault/corruption tests.
 It reuses the already-locked workspace `sha2` package; no new package version,
 Node dependency, or harness is introduced. G2.3b adds `store/outbox.rs`, the
 shared logical `store/change_codec.rs`, bounded native reads, integration tests,
-and a runnable example. G2.3c retention/leases and governance health keep this
-ADR Proposed.
+and a runnable example. G2.3c adds `store/retention.rs`, native maintenance,
+health, integration/failure tests, and the retention example. This completes
+the native G2.1–G2.3c scope; HTTP/listener/RDF Patch adapters and operational
+qualification remain separate programme work, not implied by this status.
 Under ADR-0043, optional containment is not a prerequisite
 for these direct product slices.

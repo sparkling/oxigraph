@@ -13,8 +13,11 @@
   wider programme has implemented G2.2 capture/request/keyed integration in
   task `task-1788781295095-lrzbqi` and G2.3a native atomic receipts in
   `task-1787670631130-9jlo3h` and G2.3b ordered outbox in
-  `task-1787670631321-dewzgm`. G2.3c retention/leases and governance health in
-  `task-1787670631517-qjoyw1` are next; local implementation is not publication
+  `task-1787670631321-dewzgm`, published in `58d3253c`. G2.3c retention/leases
+  and bounded governance health in `task-1787670631517-qjoyw1` are implemented
+  with native expiry, slow-consumer, backpressure, restart, compaction, backup,
+  and corruption tests. G2.4a staged-view SHACL commit validation in
+  `task-1787670631682-97ibi4` is next; local implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
