@@ -38,6 +38,8 @@ pub(crate) mod outbox;
 pub(crate) mod receipt;
 pub(crate) mod retention;
 mod semantic_change;
+#[cfg(feature = "shacl")]
+mod shacl_gate;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
@@ -54,6 +56,12 @@ pub use retention::{
 };
 pub use semantic_change::{
     ChangeTrackingError, ChangeTrackingTransaction, SemanticChange, SemanticChangeSet,
+};
+#[cfg(feature = "shacl")]
+pub use shacl_gate::{
+    ShaclCommitError, ShaclCommitPolicy, ShaclCommitReport, ShaclGateError, ShaclGraphScope,
+    ShaclGraphValidation, ShaclShapesSource, ShaclStartError, ShaclTransaction,
+    ShaclTransactionControl,
 };
 pub use transactional::{TransactionalDataset, WritableDataset};
 

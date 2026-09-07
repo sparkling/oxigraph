@@ -285,7 +285,6 @@ impl<'a> Budget<'a> {
         self.options.cancellation_token.clone()
     }
 
-    #[cfg(all(feature = "sparql", not(target_family = "wasm")))]
     pub(crate) fn remaining_timeout(&self) -> Option<Duration> {
         self.options
             .limits

@@ -465,6 +465,18 @@ impl super::OutcomeAwareWritableDataset for GovernedTransaction<'_> {
 }
 
 impl Store {
+    /// Opens an opt-in full staged-view SHACL gate under the governed writer
+    /// permit. Existing unguarded write APIs remain explicitly unguarded.
+    #[cfg(feature = "shacl")]
+    pub fn start_shacl_transaction(
+        &self,
+        request: TransactionRequest,
+        transaction_key: TransactionKey,
+        policy: super::ShaclCommitPolicy,
+    ) -> Result<NegotiatedTransaction<super::ShaclTransaction<'_>>, super::ShaclStartError> {
+        super::ShaclTransaction::start(self, request, transaction_key, policy)
+    }
+
     /// Explicitly enables retention. RocksDB writes governance schema v3;
     /// older binaries cannot consume this governance state. No open-time migration occurs.
     /// Call before opening a write transaction (all mutations share its writer lock).

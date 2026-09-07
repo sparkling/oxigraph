@@ -2,7 +2,8 @@
 
 - Status: R1 delivered at source handoff `aa7128bb`; G2.2 capture/integration and
   G2.3a-b receipts/outbox are published in `58d3253c`; G2.3c retention/health is
-  implemented natively. G2.4a staged-view SHACL commit validation is next.
+  implemented natively. G2.4a native staged-view SHACL commit validation is
+  implemented; G2.4b policy-receipt/failure closure is next.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -60,7 +61,8 @@ read back. G2.2 task `task-1788781295095-lrzbqi` closes with native capture and
 request/keyed integration. G2.3a task `task-1787670631130-9jlo3h` adds native
 atomic receipts; G2.3b task `task-1787670631321-dewzgm` implements ordered outbox
 in `58d3253c`. G2.3c task `task-1787670631517-qjoyw1` implements retention/leases
-and bounded health. G2.4a task `task-1787670631682-97ibi4` is the next product slice.
+and bounded health. G2.4a task `task-1787670631682-97ibi4` implements the native
+SHACL gate; G2.4b task `task-1787670631837-w5ac24` is the next product slice.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -88,7 +90,11 @@ and bounded governance health. Native expiry, restart, abrupt-exit, backup,
 compaction, corruption, and concurrent-writer tests close that slice; the
 native G2.1–G2.3c scope of ADR-0020 is implemented. This is not HTTP delivery,
 whole-store readiness, or power-loss qualification. G2.4a's full staged-view
-SHACL commit gate is next, followed by G2.4b failure/receipt closure and G2.5–G2.7
+SHACL commit gate now validates complete selected graphs under the native writer
+permit, including mutable shapes and explicit topology, before atomic governed
+commit. No union graph or implicit global policy is introduced. Native
+concurrent-invalid, rollback, deadline/limit, and reopen tests exercise the gate.
+G2.4b failure/policy-receipt closure is next, followed by G2.5–G2.7
 operations/backup/restore. Remaining G3/G4 capabilities stay in the programme.
 No harness or new dependency version was added; receipt hashing reuses the
 already-locked workspace `sha2` dependency. Current behavior is documented in

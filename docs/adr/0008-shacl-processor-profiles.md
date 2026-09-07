@@ -138,7 +138,8 @@ The current public profiles do not claim:
 - generated-node or other SHACL Rules forms outside the typed triple-pattern
   API;
 - automatic RDFS/OWL entailment selection;
-- validation-before-commit hooks or incremental validation;
+- incremental validation or global store-policy enforcement (the opt-in native
+  transaction gate is separately scoped by [ADR-0021](0021-transaction-time-shacl-validation.md));
 - cross-language binding parity; or
 - SPARQL-backed execution on synchronous WebAssembly until the evaluator can
   guarantee cooperative timeout and cancellation checks.

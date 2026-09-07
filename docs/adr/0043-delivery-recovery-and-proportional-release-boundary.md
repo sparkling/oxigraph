@@ -17,7 +17,9 @@
   and bounded governance health in `task-1787670631517-qjoyw1` are implemented
   with native expiry, slow-consumer, backpressure, restart, compaction, backup,
   and corruption tests. G2.4a staged-view SHACL commit validation in
-  `task-1787670631682-97ibi4` is next; local implementation is not publication
+  `task-1787670631682-97ibi4` implements the native gate under the governed writer
+  permit. G2.4b executable policy-receipt/failure closure is next; local
+  implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`

@@ -28,7 +28,7 @@ pub(super) fn encode(change: &SemanticChange) -> Result<Vec<u8>, StorageError> {
     Ok(bytes)
 }
 
-fn emit(change: &SemanticChange, put: &mut impl FnMut(&[u8])) {
+pub(super) fn emit(change: &SemanticChange, put: &mut impl FnMut(&[u8])) {
     put(&[match change {
         SemanticChange::QuadAdded(_) => 0,
         SemanticChange::QuadRemoved(_) => 1,

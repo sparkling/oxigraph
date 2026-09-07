@@ -49,7 +49,8 @@ R1 source and installation instructions were published on `main` at
 `aa7128bb`; the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
 records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
 `58d3253c`; G2.3c adds native retention/leases and governance health.
-The next product slice is staged-view SHACL commit validation (G2.4a), not
+G2.4a adds the native staged-view SHACL commit gate. The next product slice
+is its policy-receipt and failure closure (G2.4b), not
 another containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
@@ -124,6 +125,25 @@ cargo run --locked -p oxigraph --example outbox_retention
 
 No HTTP subscription endpoint, whole-store readiness, or power-loss
 qualification is claimed. Those are separate programme requirements.
+
+With the existing `shacl` feature, `Store::start_shacl_transaction` validates
+the complete resulting contents of each explicitly selected graph under the
+governed writer lock. It rejects invalid data before publishing RDF, namespaces,
+receipt, or outbox. Graphs are not unioned; required graphs must exist at commit,
+and optional absent graphs are validated as empty with absence recorded.
+External RDF shapes are owned/pinned at begin; mutable stored shapes are
+recompiled from staged state. Cancellation, a shared cooperative deadline,
+and cumulative snapshot/result bounds fail closed.
+
+```sh
+cargo run --locked -p oxigraph --features shacl --example shacl_commit_gate
+```
+
+This is an opt-in Rust transaction API, not a global store policy or an HTTP
+validation endpoint. Existing unguarded write methods remain unguarded.
+Reports can contain RDF diagnostics; the existing atomic receipt does **not**
+yet durably bind the SHACL policy. G2.4b owns that remaining boundary under
+[ADR-0021](docs/adr/0021-transaction-time-shacl-validation.md).
 
 ## Upstream Oxigraph
 

@@ -30,9 +30,18 @@ impl ShapesGraph {
         profiles: ProfileSet,
         options: &ValidationOptions,
     ) -> Result<Self, CompileError> {
+        // Syntax checking and compilation share the caller's total timeout;
+        // a second Budget must not restart the original duration.
+        let budget = Budget::new(options)?;
         imports::reject_unresolved(source)?;
-        let checked_shapes = well_formed::check(source, &profiles, options)?;
-        Self::compile_internal(source, profiles, options, Some(checked_shapes))
+        let mut remaining = options.clone();
+        remaining.limits.timeout = budget.remaining_timeout();
+        let checked_shapes = well_formed::check(source, &profiles, &remaining)?;
+        budget.check()?;
+        remaining.limits.timeout = budget.remaining_timeout();
+        let compiled = Self::compile_internal(source, profiles, &remaining, Some(checked_shapes))?;
+        budget.check()?;
+        Ok(compiled)
     }
 
     /// Resolves the import closure through an application-supplied resolver,
