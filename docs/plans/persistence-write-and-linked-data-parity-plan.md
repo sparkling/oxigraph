@@ -112,6 +112,13 @@ boundary are current.
 
 ## Outcome
 
+G2.2's first product slice provides `ChangeTrackingTransaction` and pending
+`SemanticChangeSet` snapshots over the existing write traits. Point effects
+normalize within affected graph/namespace boundaries; lifecycle summaries and
+failure poisoning are explicit. Request-level SPARQL and keyed ownership
+integration remain next; no receipt, outbox, or full G2.2 closure is claimed.
+See [ADR-0020's current slice](../adr/0020-transactional-metadata-receipts-and-change-delivery.md#g22-staged-effect-capture-slice-2026-09-07).
+
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
 fork-specific RocksDB regressions. Earlier maintenance-equivalent commits

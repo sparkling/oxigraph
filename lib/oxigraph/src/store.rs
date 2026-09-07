@@ -33,11 +33,15 @@
 //! # Result::<_, Box<dyn std::error::Error>>::Ok(())
 //! ```
 mod namespace;
+mod semantic_change;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
+};
+pub use semantic_change::{
+    ChangeTrackingError, ChangeTrackingTransaction, SemanticChange, SemanticChangeSet,
 };
 pub use transactional::{TransactionalDataset, WritableDataset};
 

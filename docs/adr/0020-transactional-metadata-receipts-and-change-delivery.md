@@ -2,10 +2,14 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-28
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
-- Implementation status: G2.1 is implemented in `be08cf3b`. G2.2-G2.3c remain
-  planned, so this ADR remains Proposed
+- Implementation status: G2.1 is implemented in `be08cf3b`. G2.2 now includes
+  opt-in staged semantic-change capture; request/keyed integration and G2.3a-c
+  durable governance remain outstanding, so this ADR remains Proposed
+- Update note: `ChangeTrackingTransaction` captures real backend-neutral
+  mutations, with graph-scoped normalization and failure poisoning, without
+  changing the minimal write traits, backends, or qualification evidence
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - **Related**:
@@ -20,10 +24,10 @@
 
 ## Context
 
-G2.1 now provides a transactional namespace registry. The store still has no
-normalized semantic change set, commit-governance identity and receipt, or
-ordered change feed. A commit error can be ambiguous, and downstream
-validators, indexers, or subscribers have no native atomic hand-off from
+G2.1 provides a transactional namespace registry. G2.2's first product slice
+now provides opt-in normalized staged changes, but no commit-governance
+identity and receipt or ordered change feed. A commit error can be ambiguous,
+and downstream validators, indexers, or subscribers have no native atomic hand-off from
 primary state. Quad-only events also lose the distinction between graph
 creation, clear, drop, and namespace changes.
 
@@ -122,6 +126,57 @@ reopens ADR-0028's migration evaluator; it is not part of G2.1.
 
 ## Acceptance boundary
 
+### G2.2 staged-effect capture slice (2026-09-07)
+
+[`ChangeTrackingTransaction`](../../lib/oxigraph/src/store/semantic_change.rs)
+wraps an existing `WritableDataset` transaction and also implements
+`WritableNamespaceRegistry` when the underlying transaction does. It has no
+second opener or mutable escape hatch. Wrap a fresh transaction to capture its
+full mutation history; unwrapped transactions and autocommit retain their
+existing behavior and overhead.
+
+`changes()` returns an immutable **pending** snapshot, not a receipt or feed.
+Point reads distinguish actual quad and namespace changes from idempotent
+writes. Implicit named-graph creation is a separate effect. Opposing point
+effects cancel until a lifecycle boundary affects their graph or namespace
+registry; unrelated graph operations do not prevent cancellation. Namespace
+updates retain the first prior mapping and final mapping. Output is
+deterministic for the same operation order and preserves blank-node identity.
+
+Clear/drop calls retain bounded operation summaries without enumerating the
+removed quads in the tracker. Successful clears, including empty-target and
+aggregate operations, remain explicit ordering boundaries; missing single
+graph clear/drop and idempotent point writes are omitted. This is not a
+globally minimal initial-to-final diff: create/drop or insert/clear lifecycle
+boundaries are not erased. The underlying backend's own clear work is unchanged.
+Memory is proportional to outstanding point effects and retained lifecycle
+boundaries, not the cardinality of removed graphs. No new resource-limit,
+latency, or performance guarantee is advertised.
+
+Failed mutation preflight or backend mutation poisons capture. Later mutations,
+snapshots, and commit fail, while rollback/drop remain available. Backend
+commit errors retain their original ambiguity, not a fabricated rollback
+outcome. A copied pending snapshot never establishes that commit succeeded.
+
+The public integration suite is
+[`semantic_changes.rs`](../../lib/oxigraph/tests/semantic_changes.rs). It covers
+memory, RocksDB/reopen, a separate Dataset-based persistence plane, explicit
+and dropped rollback, partial-mutation/read failure, lost commit response,
+point cancellation, scoped ordering, namespaces, and bounded summaries.
+The original `transactional.rs` hash below remains unchanged. This slice does
+not yet bind snapshots to negotiated/keyed ownership or expose request-level
+SPARQL capture; those remain G2.2 integration work. Durable receipt/outbox,
+commit identity/order, recovery lookup, cursors, and health remain G2.3a-c.
+
+Validation for this slice: `semantic_changes` passes 11/11 with default
+features and 10/10 without default features; the six existing transactional
+dataset/namespace, topology, outcome, state-model, and update-atomicity suites
+pass 37/37. The public wrapper doctest, strict library/new-test Clippy, and
+format/diff checks pass. The default feature matrix includes RocksDB; this
+does not claim that pending changes are durably stored with a commit.
+
+### Existing G2.1 evidence and complete ADR acceptance
+
 G2.1 is implemented by commit `be08cf3bbcb836ec46df2b864d31e80f5b837b52`.
 The default-feature evaluator passes 13/13 across memory, RocksDB, and the
 test-only rewritten persistence plane; the `--no-default-features` evaluator
@@ -190,7 +245,9 @@ Commit `be08cf3b` implemented G2.1 in the public-only
 product paths: the new `store/namespace.rs` API plus `store.rs`,
 `storage/mod.rs`, `storage/memory.rs`, `storage/rocksdb.rs`, and
 `storage/rocksdb_wrapper.rs`. Parser, serializer, SPARQL, CLI, bindings, and
-Cargo integration remain intentionally outside G2.1. G2.2-G2.3c still own
-normalized effects, durable receipts and outcome resolution, the authoritative
-outbox, retention/leases, and governance health; their absence keeps this ADR
-Proposed.
+Cargo integration remain intentionally outside G2.1. G2.2's opt-in capture
+adds `store/semantic_change.rs` and its public integration tests, with exports
+from `store.rs`. Its remaining integration and G2.3's durable receipts, outcome
+resolution, authoritative outbox, retention/leases, and governance health keep
+this ADR Proposed. Under ADR-0043, optional containment is not a prerequisite
+for these direct product slices.

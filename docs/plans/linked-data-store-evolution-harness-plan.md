@@ -65,6 +65,14 @@ not override this dated boundary.
 
 ## Outcome
 
+G2.2 now has an opt-in native product capture API and focused tests for memory,
+RocksDB, and a Dataset-based plane. `ChangeTrackingTransaction::changes()`
+returns pending ordered semantic effects, not committed governance evidence.
+Request/keyed integration remains active under `task-1788781295095-lrzbqi`;
+the staged slice does not close all G2.2 or ADR-0020 acceptance requirements.
+No harness or dependency was added. Current behavior is documented in
+[ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md).
+
 The fork is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph change while preserving
 fork-specific dataset and SPARQL-version semantics, with two RocksDB-specific

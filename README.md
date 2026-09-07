@@ -68,6 +68,14 @@ continues after R1 with one product slice at a time, starting with G2.2's
 normalized semantic change set under ADR-0020. Six-hour delivery reviews
 continue across milestones.
 
+G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
+transactions: inspect pending quad, graph-lifecycle, and namespace changes
+before commit. It excludes point no-ops, preserves scoped operation ordering,
+and summarizes clear/drop without expanding removed quads. Capture failures
+prevent commit. See [ADR-0020](docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
+for the tested boundary; these snapshots are not durable receipts or a change
+feed, and request/keyed integration remains outstanding.
+
 ## Upstream Oxigraph
 
 Oxigraph is both a graph database and a [RDF](https://www.w3.org/TR/rdf11-primer/) and [SPARQL](https://www.w3.org/TR/sparql11-overview/) toolkit.
