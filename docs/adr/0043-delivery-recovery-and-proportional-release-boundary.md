@@ -176,6 +176,18 @@ The queued turn must use live structured Ruflo MCP tools to retrieve task and
 memory state, dispatch a read-only audit worker, and validate both the exact
 worker record and daemon run counter before accepting the audit result.
 
+The [scheduled prompt](../plans/oxigraph-six-hour-delivery-review-prompt.md)
+was revised to v2 on 2026-09-07 after review of the original control. It names
+the R1 delivery outcome, bounds the review to ten minutes and audit observation
+to sixty seconds, separates new product behavior and closed release gates from
+supporting work, and requires implementation after every review. Audit or
+memory failures are reported without starting another harness-repair cycle.
+An unresolved release hold is not completion. Once every R1 delivery gate is
+verified, the review timer is disabled; the wider roadmap remains recorded.
+The installed service message must match the versioned prompt after whitespace
+normalization. These bounds govern review overhead, not product execution or
+subscription usage.
+
 The timer and service are
 `~/.config/systemd/user/oxigraph-programme-review.timer` and
 `~/.config/systemd/user/oxigraph-programme-review.service`. The unit files pass
@@ -249,8 +261,9 @@ This ADR's recovery decision is implemented when:
 - The external scheduler depends on the user-level `systemd` manager, the
   native Codex app server, and this persisted thread remaining available.
 - Ruflo currently reports a processed audit in daemon counters without
-  reconciling the corresponding MCP worker record to `completed`; reviews must
-  retain the dual check until that defect is fixed.
+  reconciling the corresponding MCP worker record to `completed`. The counter
+  cannot identify which queued request ran; reviews retain both observations
+  and require an attributable result before claiming that exact audit completed.
 
 ### Neutral
 
