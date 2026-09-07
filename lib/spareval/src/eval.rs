@@ -1,6 +1,8 @@
 #[cfg(feature = "sparql-12")]
 use crate::dataset::ExpressionTriple;
-use crate::dataset::{ExpressionTerm, InternalQuad, QueryableDataset};
+use crate::dataset::{
+    ExpressionTerm, InternalQuad, InternalTriple, QueryableDataset, hash_deduplicate,
+};
 use crate::error::QueryEvaluationError;
 use crate::expression::{
     CustomFunctionRegistry, ExpressionEvaluator, ExpressionEvaluatorContext, NumericBinaryOperands,
@@ -18,7 +20,7 @@ use oxrdf::NamedOrBlankNode;
 use oxrdf::{BlankNode, GraphName, Literal, NamedNode, Term, Triple, Variable};
 use oxsdatatypes::{DateTime, DayTimeDuration, Decimal, Double, Float, Integer};
 use oxstr::OxString;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use spargebra::SparqlVersion;
 use spargebra::algebra::PropertyPathExpression;
 #[cfg(feature = "sparql-12")]
@@ -356,6 +358,34 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
         }))
     }
 
+    fn underlying_internal_triples_for_pattern(
+        &self,
+        subject: Option<&D::InternalTerm>,
+        predicate: Option<&D::InternalTerm>,
+        object: Option<&D::InternalTerm>,
+        graph_names: Option<&[Option<D::InternalTerm>]>,
+    ) -> impl Iterator<Item = Result<InternalTriple<D::InternalTerm>, QueryEvaluationError>> + use<'a, D>
+    {
+        let cancellation_token = self.cancellation_token.clone();
+        let dataset = Rc::clone(&self.dataset);
+        let version = self.version;
+        self.dataset
+            .internal_triples_for_pattern(subject, predicate, object, graph_names)
+            .map(move |r| {
+                cancellation_token.ensure_alive()?;
+                let triple = r.map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+                if version != SparqlVersion::V1_2 {
+                    for term in [&triple.subject, &triple.predicate, &triple.object] {
+                        let term = dataset
+                            .externalize_term(term.clone())
+                            .map_err(|e| QueryEvaluationError::Dataset(Box::new(e)))?;
+                        validate_term_for_version(&term, version)?;
+                    }
+                }
+                Ok(triple)
+            })
+    }
+
     fn internal_quads_for_pattern(
         &self,
         subject: Option<&D::InternalTerm>,
@@ -409,43 +439,21 @@ impl<'a, D: QueryableDataset<'a>> EvalDataset<'a, D> {
                         }),
                     )
                 } else {
-                    let iters = default_graph_graphs
-                        .iter()
-                        .map(|graph_name| {
-                            self.underlying_internal_quads_for_pattern(
-                                subject,
-                                predicate,
-                                object,
-                                Some(graph_name.as_ref()),
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    Box::new(iters.into_iter().flatten().map(|quad| {
-                        let mut quad = quad?;
-                        quad.graph_name = None;
-                        Ok(quad)
-                    }))
+                    Box::new(
+                        self.underlying_internal_triples_for_pattern(
+                            subject,
+                            predicate,
+                            object,
+                            Some(default_graph_graphs),
+                        )
+                        .map(|triple| triple.map(internal_triple_to_quad)),
+                    )
                 }
             } else {
                 // The union default graph contains all named-graph triples as a set.
-                let mut seen = FxHashSet::default();
                 Box::new(
-                    self.underlying_internal_quads_for_pattern(subject, predicate, object, None)
-                        .map(|quad| {
-                            let mut quad = quad?;
-                            quad.graph_name = None;
-                            Ok(quad)
-                        })
-                        .filter(move |quad| {
-                            quad.is_err()
-                                || quad.as_ref().is_ok_and(|quad| {
-                                    seen.insert((
-                                        quad.subject.clone(),
-                                        quad.predicate.clone(),
-                                        quad.object.clone(),
-                                    ))
-                                })
-                        }),
+                    self.underlying_internal_triples_for_pattern(subject, predicate, object, None)
+                        .map(|triple| triple.map(internal_triple_to_quad)),
                 )
             }
         } else if let Some(named_graphs) = &self.specification.named {
@@ -4057,22 +4065,13 @@ fn look_in_transitive_closure<T: Clone + Eq + Hash, E, NI: Iterator<Item = Resul
     Ok(false)
 }
 
-fn hash_deduplicate<T: Eq + Hash + Clone, E>(
-    iter: impl Iterator<Item = Result<T, E>>,
-) -> impl Iterator<Item = Result<T, E>> {
-    let mut already_seen = FxHashSet::with_capacity_and_hasher(iter.size_hint().0, FxBuildHasher);
-    iter.filter(move |e| {
-        if let Ok(e) = e {
-            if already_seen.contains(e) {
-                false
-            } else {
-                already_seen.insert(e.clone());
-                true
-            }
-        } else {
-            true
-        }
-    })
+fn internal_triple_to_quad<T>(triple: InternalTriple<T>) -> InternalQuad<T> {
+    InternalQuad {
+        subject: triple.subject,
+        predicate: triple.predicate,
+        object: triple.object,
+        graph_name: None,
+    }
 }
 
 trait ResultIterator<T, E>: Iterator<Item = Result<T, E>> + Sized {

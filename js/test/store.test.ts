@@ -187,7 +187,10 @@ describe("Store", () => {
         });
 
         it("SELECT with union graph", () => {
-            const store = new Store([dataModel.quad(ex, ex, ex, ex)]);
+            const store = new Store([
+                dataModel.quad(ex, ex, ex, ex),
+                dataModel.quad(ex, ex, ex, ex2),
+            ]);
             const results = store.query("SELECT * WHERE { ?s ?p ?o }", {
                 use_default_graph_as_union: true,
             }) as Map<string, Term>[];

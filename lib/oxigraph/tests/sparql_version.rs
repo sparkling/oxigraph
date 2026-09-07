@@ -9,6 +9,8 @@ use oxigraph::model::{GraphName, Literal, NamedNode, Quad, Triple};
 use oxigraph::sparql::{QueryEvaluationError, QueryResults, SparqlEvaluator, SparqlVersion};
 use oxigraph::store::Store;
 use spargebra::SparqlParser;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+use tempfile::TempDir;
 
 #[test]
 fn store_queries_enforce_the_selected_sparql_term_mode() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,6 +85,34 @@ fn store_queries_enforce_the_selected_sparql_term_mode() -> Result<(), Box<dyn s
         .on_store(&declared_update_store)
         .execute()?;
     assert_eq!(declared_update_store.len()?, 1);
+    Ok(())
+}
+
+#[test]
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+fn union_default_graph_on_disk_enforces_sparql_11_term_mode()
+-> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let store = Store::open(&dir)?;
+    let node = NamedNode::new("http://example.com/node")?;
+    store.insert(Quad::new(
+        node.clone(),
+        node.clone(),
+        Triple::new(node.clone(), node.clone(), node),
+        NamedNode::new("http://example.com/graph")?,
+    ))?;
+
+    let mut query = SparqlEvaluator::new()
+        .with_version(SparqlVersion::V1_1)
+        .parse_query("ASK { ?s ?p ?o }")?;
+    query.dataset_mut().set_default_graph_as_union();
+    assert!(matches!(
+        query.on_store(&store).execute(),
+        Err(QueryEvaluationError::IncompatibleTerm {
+            version: SparqlVersion::V1_1,
+            ..
+        })
+    ));
     Ok(())
 }
 

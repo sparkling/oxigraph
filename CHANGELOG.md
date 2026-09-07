@@ -6,6 +6,9 @@
 ### Changed
 - `oxrdf`: `OxStr::try_new_owned` and `OxStr::try_concat` now return `Result<_, ReserveError>` instead of `Option<_>`, and `ReserveError` is publicly exported. Callers matching `Some`/`None` must migrate to `Ok`/`Err`; capacity or allocation-layout overflow is reported as `ReserveError::CapacityOverflow`, while allocator failure is reported as `ReserveError::AllocError`.
 
+### Fixed
+- SPARQL: avoid counting shared triples multiple times when merging default graphs with `FROM`, `USING`, or the union-default-graph option. RocksDB-backed stores use their ordered indexes to perform this merge without retaining all matched triples.
+
 
 # [0.5.7] - 2026-04-19
 
