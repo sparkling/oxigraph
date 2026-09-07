@@ -4,8 +4,9 @@
   G2.3a-b receipts/outbox are published in `58d3253c`; G2.3c retention/health is
   implemented natively. G2.4a-b staged-view SHACL validation, bounded policy receipts,
   and failure closure are implemented. G2.5 native readiness/contributor
-  observations and loopback endpoints are implemented; operation counters and
-  histograms remain in that active task.
+  observations, loopback endpoints, and transaction terminal counters/histograms
+  are implemented; query/update evaluation, external-denial and validation
+  telemetry remain in that active task.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -1045,7 +1046,10 @@ inventory are implemented under [ADR-0022](../adr/0022-operational-readiness-bac
 Required contributors must be healthy/caught up; permitted optional lag or
 fallback degrades explicitly. This closes the native observation portion only.
 The opt-in CLI loopback endpoints now expose those observations, with separate
-routes and fail-closed startup. Operation counters/latency/error histograms below
+routes and fail-closed startup. Per-Store transaction terminal counters and true
+cumulative duration histograms are implemented, including ambiguous commit and
+rollback-failure observations; clones share them and reopen resets them.
+Query/update evaluation, external-denial and validation-level telemetry below
 remain in active G2.5 task `task-1787851231441-1gdfzd`; P1.4a is not complete.
 
 - Expose stable counters and latency/error histograms for queries, updates,

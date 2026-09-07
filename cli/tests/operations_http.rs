@@ -98,12 +98,23 @@ impl WireResponse {
     }
 }
 fn wire(address: SocketAddr, method: &str, target: &str) -> Result<WireResponse> {
+    wire_body(address, method, target, "", "application/octet-stream")
+}
+
+fn wire_body(
+    address: SocketAddr,
+    method: &str,
+    target: &str,
+    body: &str,
+    content_type: &str,
+) -> Result<WireResponse> {
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))?;
     write!(
         stream,
-        "{method} {target} HTTP/1.1\r\nHost: {address}\r\nOrigin: https://example.invalid\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {target} HTTP/1.1\r\nHost: {address}\r\nOrigin: https://example.invalid\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
     )?;
     let mut bytes = String::new();
     stream.read_to_string(&mut bytes)?;
@@ -199,6 +210,10 @@ fn loopback_routes_are_separate_and_head_matches_get() -> Result<()> {
         .body
         .lines()
         .filter(|line| !line.starts_with('#'))
+        .filter(|line| {
+            !line.starts_with("oxigraph_transaction_")
+                && !line.starts_with("oxigraph_transactions_total")
+        })
         .collect();
     ensure!(
         samples.len() <= 21
@@ -213,6 +228,92 @@ fn loopback_routes_are_separate_and_head_matches_get() -> Result<()> {
     ensure!(
         TcpStream::connect(public).is_err() && TcpStream::connect(admin).is_err(),
         "listeners survived CLI kill/wait"
+    );
+    Ok(())
+}
+
+#[test]
+fn successful_update_and_failed_request_export_distinct_transaction_observations() -> Result<()> {
+    let running = start(None, false)?;
+    let update = wire_body(
+        running.public,
+        "POST",
+        "/update",
+        "INSERT DATA { <urn:private:telemetry> <urn:p> <urn:o> }",
+        "application/sparql-update",
+    )?;
+    ensure!(
+        update.status == 204,
+        "update did not commit: {} {}",
+        update.status,
+        update.body
+    );
+    let failed = wire_body(
+        running.public,
+        "POST",
+        "/update",
+        "INSERT DATA { <urn:private:rollback> <urn:p> <urn:o> }; CREATE GRAPH <urn:g>; CREATE GRAPH <urn:g>",
+        "application/sparql-update",
+    )?;
+    ensure!(failed.status >= 400, "failing update succeeded");
+    let query = wire_body(
+        running.public,
+        "POST",
+        "/query",
+        "ASK { <urn:private:rollback> <urn:p> <urn:o> }",
+        "application/sparql-query",
+    )?;
+    ensure!(
+        query.status == 200 && query.body.contains("false"),
+        "failed update left data: {}",
+        query.body
+    );
+    let metrics = wire(running.admin, "GET", "/metrics")?;
+    ensure!(metrics.status == 200, "scrape failed");
+    ensure!(
+        metrics
+            .body
+            .contains("oxigraph_transactions_total{outcome=\"committed\"} 1\n"),
+        "commit counted incorrectly"
+    );
+    // The existing on_store evaluator abandons its owned transaction on evaluation
+    // error; backend Drop removes staged data but supplies no explicit rollback result.
+    ensure!(
+        metrics
+            .body
+            .contains("oxigraph_transactions_total{outcome=\"abandoned\"} 1\n")
+            && metrics
+                .body
+                .contains("oxigraph_transactions_total{outcome=\"rolled_back\"} 0\n"),
+        "drop-based update cleanup was mislabeled as explicit rollback"
+    );
+    ensure!(
+        metrics
+            .body
+            .contains("# TYPE oxigraph_transaction_duration_seconds histogram\n"),
+        "histogram type missing"
+    );
+    ensure!(
+        metrics.body.contains(
+            "oxigraph_transaction_duration_seconds_bucket{outcome=\"committed\",le=\"+Inf\"} 1\n"
+        ),
+        "infinite bucket differs"
+    );
+    ensure!(
+        !metrics.body.contains("private") && !metrics.body.contains("urn:"),
+        "request data leaked"
+    );
+    let samples = metrics
+        .body
+        .lines()
+        .filter(|line| {
+            line.starts_with("oxigraph_transaction_")
+                || line.starts_with("oxigraph_transactions_total")
+        })
+        .count();
+    ensure!(
+        samples == 89,
+        "transaction metric cardinality differs: {samples}"
     );
     Ok(())
 }

@@ -4,8 +4,9 @@
   G2.3a-b receipts/outbox are published in `58d3253c`; G2.3c retention/health is
   implemented natively. G2.4a-b staged-view SHACL validation, bounded policy
   receipts, and failure closure are implemented. G2.5 native readiness and
-  contributor observations and loopback endpoints are implemented; operation
-  counters/histograms remain active.
+  contributor observations, loopback endpoints, and transaction terminal
+  counters/histograms are implemented; query/update evaluation, external-denial
+  and validation telemetry remain active.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -66,8 +67,9 @@ in `58d3253c`. G2.3c task `task-1787670631517-qjoyw1` implements retention/lease
 and bounded health. G2.4a task `task-1787670631682-97ibi4` implements the native
 SHACL gate; G2.4b task `task-1787670631837-w5ac24` closes bounded policy receipts,
 expiry, and injected failures. G2.5 task `task-1787851231441-1gdfzd` has native
-readiness/contributor observations and loopback endpoints. It remains active
-for operation counters/histograms required by P1.4a.
+readiness/contributor observations, loopback endpoints, and transaction terminal
+counters/histograms. It remains active for query/update evaluation, external-denial
+and validation telemetry required by P1.4a.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -104,7 +106,8 @@ the primary receipt; native fault, corruption, expiry, and backup/reopen tests
 close that slice. G2.5 now adds bounded native readiness, fixed gauges, and a
 canonical contributor inventory with strict required-provider checks and
 explicit optional degradation. The opt-in CLI loopback endpoints expose these
-observations; operation counters/histograms remain before G2.6–G2.7
+observations and transaction terminal counters/histograms; query/update evaluation,
+external-denial and validation telemetry remain before G2.6–G2.7
 backup/restore. Remaining G3/G4 capabilities stay in the
 programme; the native G2.5 fragment does not close the full task.
 No harness or new dependency version was added; receipt hashing reuses the

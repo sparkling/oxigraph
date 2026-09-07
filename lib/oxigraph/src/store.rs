@@ -43,6 +43,7 @@ mod semantic_change;
 #[cfg(feature = "shacl")]
 mod shacl_gate;
 pub(crate) mod shacl_receipt;
+pub(crate) mod transaction_metrics;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
@@ -78,6 +79,9 @@ pub use shacl_gate::{
 pub use shacl_receipt::{
     ShaclCommitReceipt, ShaclDisposition, ShaclPolicyDescriptor, ShaclReceiptOutcome,
     ShaclValidationEvidence,
+};
+pub use transaction_metrics::{
+    TransactionDurationHistogram, TransactionMetrics, TransactionObservation,
 };
 pub use transactional::{TransactionalDataset, WritableDataset};
 
@@ -741,6 +745,12 @@ impl From<StoreOptions> for StorageOptions {
     reason = "transaction traits mirror the Store API; the additive governance API has its own focused module"
 )]
 impl Store {
+    /// Copies the process-local transaction telemetry without reading storage or acquiring
+    /// a writer permit. The bounded metrics lock is never held across storage work.
+    pub fn transaction_metrics(&self) -> TransactionMetrics {
+        self.storage.transaction_metrics()
+    }
+
     /// New in-memory [`Store`] without RocksDB.
     pub fn new() -> Result<Self, StorageError> {
         let storage = Storage::new()?;
@@ -2381,7 +2391,7 @@ impl WritableDataset for Transaction<'_> {
     }
 
     fn rollback(self) -> Result<(), Self::Error> {
-        drop(self);
+        self.inner.rollback();
         Ok(())
     }
 }

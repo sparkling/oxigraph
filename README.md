@@ -51,9 +51,10 @@ records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
 `58d3253c`; G2.3c adds native retention/leases and governance health.
 G2.4a-b add the native staged-view SHACL commit gate and atomically bound policy
 receipts. G2.5 now adds native readiness observations and a bounded contributor
-inventory and opt-in loopback operational endpoints. Operation counters and
-latency/error histograms remain in that active slice, not another containment
-or harness milestone.
+inventory, opt-in loopback operational endpoints, and per-Store transaction
+outcome counters and cumulative duration histograms. Query/update evaluation,
+external-denial and validation telemetry remain in that active slice, not
+another containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
 

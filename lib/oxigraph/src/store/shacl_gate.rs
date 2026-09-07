@@ -778,6 +778,59 @@ mod tests {
         final_guard(&Store::new()?, false)
     }
 
+    #[test]
+    fn transaction_metrics_preserve_rejection_without_a_second_terminal_observation() -> TestResult
+    {
+        use crate::store::TransactionObservation;
+        let store = Store::new()?;
+        final_guard(&store, false)?;
+        let metrics = store.transaction_metrics();
+        assert_eq!(metrics.count(TransactionObservation::Rejected), 1);
+        assert_eq!(metrics.rollback_failures(), 0);
+        assert_eq!(
+            TransactionObservation::ALL
+                .into_iter()
+                .map(|outcome| metrics.count(outcome))
+                .sum::<u64>(),
+            1
+        );
+        Ok(())
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    #[test]
+    fn transaction_metrics_count_internal_rollback_failure_separately_from_commit_rejection()
+    -> TestResult {
+        use crate::storage::TransactionOutcomeFaultPoint as Fault;
+        use crate::store::TransactionObservation;
+        for fault in [
+            None,
+            Some(Fault::RolledBackBefore),
+            Some(Fault::RolledBackAfter),
+        ] {
+            let directory = tempfile::tempdir()?;
+            let store = Store::open(directory.path())?;
+            if let Some(fault) = fault {
+                store.storage.arm_transaction_outcome_fault(fault)?;
+            }
+            final_guard(&store, fault.is_some())?;
+            let metrics = store.transaction_metrics();
+            assert_eq!(metrics.count(TransactionObservation::Rejected), 1);
+            assert_eq!(metrics.rollback_failures(), u64::from(fault.is_some()));
+            assert_eq!(
+                TransactionObservation::ALL
+                    .into_iter()
+                    .map(|outcome| metrics.count(outcome))
+                    .sum::<u64>(),
+                1
+            );
+            let events = store.storage.transaction_outcome_fault_events()?;
+            assert!(!events.contains(&Fault::CommitAttemptedBefore));
+            assert!(!events.contains(&Fault::CommitAttemptedAfter));
+        }
+        Ok(())
+    }
+
     #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
     #[test]
     fn final_guard_preserves_original_failure_and_rollback_errors() -> TestResult {

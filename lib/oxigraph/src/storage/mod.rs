@@ -11,6 +11,8 @@ use crate::storage::rocksdb::{
     RocksDbStorageBulkLoader, RocksDbStorageKeyedReadableTransaction, RocksDbStorageOptions,
     RocksDbStorageReadableTransaction, RocksDbStorageReader, RocksDbStorageTransaction,
 };
+use crate::store::TransactionObservation;
+use crate::store::transaction_metrics::{TransactionMetricsState, TransactionObservationGuard};
 use crate::store::{
     CommitReceipt, CommitReceiptOutcome, Namespace, NamespacePrefix, SemanticChangeSet,
     TransactionCommitError,
@@ -19,6 +21,7 @@ use oxstr::OxString;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(not(target_family = "wasm"))]
 use std::{io, thread};
@@ -203,6 +206,7 @@ impl StorageOptions {
 #[derive(Clone)]
 pub struct Storage {
     kind: StorageKind,
+    transaction_metrics: Arc<TransactionMetricsState>,
 }
 
 #[derive(Clone)]
@@ -213,6 +217,10 @@ enum StorageKind {
 }
 
 impl Storage {
+    pub(crate) fn transaction_metrics(&self) -> crate::store::TransactionMetrics {
+        self.transaction_metrics.snapshot()
+    }
+
     #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
     pub(crate) fn corrupt_readiness_fixture(&self, field: u8) -> Result<(), StorageError> {
         match &self.kind {
@@ -226,6 +234,7 @@ impl Storage {
     pub fn new() -> Result<Self, StorageError> {
         Ok(Self {
             kind: StorageKind::Memory(MemoryStorage::new()),
+            transaction_metrics: Arc::default(),
         })
     }
 
@@ -233,6 +242,7 @@ impl Storage {
     pub fn open(path: &Path) -> Result<Self, StorageError> {
         Ok(Self {
             kind: StorageKind::RocksDb(RocksDbStorage::open(path)?),
+            transaction_metrics: Arc::default(),
         })
     }
 
@@ -246,6 +256,7 @@ impl Storage {
                     fd_reserve: options.fd_reserve,
                 },
             )?),
+            transaction_metrics: Arc::default(),
         })
     }
 
@@ -253,6 +264,7 @@ impl Storage {
     pub fn open_read_only(path: &Path) -> Result<Self, StorageError> {
         Ok(Self {
             kind: StorageKind::RocksDb(RocksDbStorage::open_read_only(path)?),
+            transaction_metrics: Arc::default(),
         })
     }
 
@@ -281,6 +293,7 @@ impl Storage {
                     StorageTransactionKind::Memory(storage.start_transaction())
                 }
             },
+            observation: self.transaction_metrics.start(),
         })
     }
 
@@ -301,6 +314,7 @@ impl Storage {
                     StorageReadableTransactionKind::Memory(storage.start_transaction())
                 }
             },
+            observation: self.transaction_metrics.start(),
         })
     }
 
@@ -319,6 +333,7 @@ impl Storage {
                     storage.start_transaction_with_control(control, started_at)?,
                 ),
             },
+            observation: self.transaction_metrics.start(),
         })
     }
 
@@ -354,6 +369,7 @@ impl Storage {
                     )?,
                 ),
             },
+            observation: self.transaction_metrics.start(),
         })
     }
 
@@ -392,6 +408,7 @@ impl Storage {
                     )?,
                 ),
             },
+            observation: self.transaction_metrics.start(),
         })
     }
 
@@ -767,6 +784,7 @@ impl StrLookup for StorageReader<'_> {
 #[must_use]
 pub struct StorageTransaction<'a> {
     kind: StorageTransactionKind<'a>,
+    observation: TransactionObservationGuard,
 }
 
 enum StorageTransactionKind<'a> {
@@ -885,21 +903,25 @@ impl StorageTransaction<'_> {
         }
     }
 
-    pub fn commit(self) -> Result<(), StorageError> {
-        match self.kind {
+    pub fn commit(mut self) -> Result<(), StorageError> {
+        self.observation.before_commit();
+        let result = match self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageTransactionKind::RocksDb(transaction) => transaction.commit(),
             StorageTransactionKind::Memory(transaction) => {
                 transaction.commit();
                 Ok(())
             }
-        }
+        };
+        self.observation.finish_commit(&result);
+        result
     }
 }
 
 #[must_use]
 pub struct StorageReadableTransaction<'a> {
     kind: StorageReadableTransactionKind<'a>,
+    observation: TransactionObservationGuard,
 }
 
 enum StorageReadableTransactionKind<'a> {
@@ -1068,21 +1090,32 @@ impl StorageReadableTransaction<'_> {
         }
     }
 
-    pub fn commit(self) -> Result<(), StorageError> {
-        match self.kind {
+    pub fn commit(mut self) -> Result<(), StorageError> {
+        self.observation.before_commit();
+        let result = match self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageReadableTransactionKind::RocksDb(transaction) => transaction.commit(),
             StorageReadableTransactionKind::Memory(transaction) => {
                 transaction.commit();
                 Ok(())
             }
-        }
+        };
+        self.observation.finish_commit(&result);
+        result
+    }
+
+    pub fn rollback(mut self) {
+        self.observation.before_rollback();
+        drop(self.kind);
+        self.observation
+            .finish(TransactionObservation::RolledBack, false);
     }
 }
 
 #[must_use]
 pub(crate) struct StorageKeyedReadableTransaction<'a> {
     kind: StorageKeyedReadableTransactionKind<'a>,
+    observation: TransactionObservationGuard,
 }
 
 enum StorageKeyedReadableTransactionKind<'a> {
@@ -1097,11 +1130,12 @@ enum StorageKeyedReadableTransactionKind<'a> {
 )]
 impl StorageKeyedReadableTransaction<'_> {
     pub(crate) fn commit_with_receipt(
-        self,
+        mut self,
         changes: &SemanticChangeSet,
         validation: Option<crate::store::shacl_receipt::ValidationCommitContext<'_>>,
     ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
-        match self.kind {
+        self.observation.before_commit();
+        let result = match self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
                 transaction.commit_with_receipt(changes, validation)
@@ -1109,7 +1143,9 @@ impl StorageKeyedReadableTransaction<'_> {
             StorageKeyedReadableTransactionKind::Memory(transaction) => {
                 transaction.commit_with_receipt(changes, validation)
             }
-        }
+        };
+        self.observation.finish_governed(&result);
+        result
     }
 
     pub fn reader(&self) -> StorageReader<'_> {
@@ -1273,24 +1309,37 @@ impl StorageKeyedReadableTransaction<'_> {
         }
     }
 
-    pub fn commit(self) -> Result<(), StorageError> {
-        match self.kind {
+    pub fn commit(mut self) -> Result<(), StorageError> {
+        self.observation.before_commit();
+        let result = match self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.commit(),
             StorageKeyedReadableTransactionKind::Memory(transaction) => {
                 transaction.commit_with_outcome()
             }
-        }
+        };
+        self.observation.finish_commit(&result);
+        result
     }
 
-    pub fn rollback(self) -> Result<(), StorageError> {
-        match self.kind {
+    pub fn rollback(mut self) -> Result<(), StorageError> {
+        self.observation.before_rollback();
+        let result = match self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKeyedReadableTransactionKind::RocksDb(transaction) => transaction.rollback(),
             StorageKeyedReadableTransactionKind::Memory(transaction) => {
                 transaction.rollback_with_outcome()
             }
-        }
+        };
+        self.observation.finish(
+            if result.is_ok() {
+                TransactionObservation::RolledBack
+            } else {
+                TransactionObservation::RollbackFailed
+            },
+            false,
+        );
+        result
     }
 }
 

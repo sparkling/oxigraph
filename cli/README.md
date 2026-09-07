@@ -125,7 +125,8 @@ succeed. Startup failure exits the process and releases both listeners.
 - `GET`/`HEAD /ready`: one bounded native readiness observation. Ready or
   explicitly degraded is HTTP 200; not-ready is 503 with fixed reason tokens.
 - `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
-  label-free Prometheus text-format gauges. A storage-not-ready result remains
+  label-free Prometheus text-format gauges, plus 89 bounded transaction samples
+  described below. A storage-not-ready result remains
   HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
 
 HEAD performs the same observation and suppresses its body. Responses use
@@ -143,8 +144,25 @@ claim that a bounded prefix validated the full store.
 
 The CLI currently declares no derived providers and no automatic circuit
 breaker; its inventory is validly empty. Required-provider policies remain
-available through the Rust API. These gauges are not operation counters or
-latency/error histograms: those remain in active G2.5 work. See
+available through the Rust API.
+
+Transaction telemetry counts one terminal call result per admitted built-in
+storage transaction, including autocommit and the transaction used by SPARQL
+Update. `oxigraph_transactions_total{outcome="committed"}` distinguishes
+committed, rejected, conflicted, cancelled, rolled-back, rollback-failed,
+indeterminate, and abandoned observations. These eight fixed labels also index
+the cumulative `oxigraph_transaction_duration_seconds` histogram, measured from
+admission to terminal return/drop; `_bucket`, `_count`, and `_sum` use seconds.
+`oxigraph_transaction_rollback_failures_total` includes explicit rollback
+failures and failed validation pre-attempt rollbacks. The three families expose
+exactly 89 samples, with no request keys, RDF, query text or raw errors.
+
+Counters are shared by Store clones but reset on reopen/restart. They record
+the observed result, not durable outcome lookup: an ambiguous response remains
+indeterminate even if later lookup proves a commit. Drop is abandoned, not a
+claim of successful rollback. Admission failures/wait time, bulk loaders,
+governance maintenance, and external storage adapters are excluded. Query/update
+evaluation, external-denial and validation-level telemetry remain in G2.5. See
 [ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 It is also possible to load RDF data offline using bulk loading:

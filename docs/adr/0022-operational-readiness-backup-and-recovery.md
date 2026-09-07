@@ -5,8 +5,8 @@
 - Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.5 native observation/contributor API and opt-in
-  loopback observation endpoints implemented; operation counters/histograms
-  remain in G2.5.
+  loopback observation endpoints and transaction terminal telemetry implemented;
+  query/update evaluation, external-denial and validation telemetry remain in G2.5.
   G2.6-G2.7 backup/restore receipt work remains unimplemented
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
@@ -177,6 +177,60 @@ fixtures were altered. CLI-only Clippy (`--no-deps`, warnings denied) passes;
 the broader dependency lint reports the pre-existing `manual_is_variant_and`
 warning in `oxrdfs/src/rdfs12/datatypes.rs`. These known broader validation
 limitations are separate from the passing operational endpoint checks.
+
+### Transaction terminal telemetry slice (2026-09-08)
+
+`Store::transaction_metrics()` is an additive process-local snapshot, shared by
+clones of one open Store and reset by a new open, read-only open, or restart.
+It records one terminal observation per admitted legacy, keyed, or governed
+storage transaction. Autocommit and the storage transaction used by SPARQL
+Update are included; nested public transaction wrappers do not double-count.
+Admission failures/wait time, bulk loaders, governance maintenance, and external
+persistence adapters are excluded, rather than presented as measured work.
+
+Eight fixed result labels distinguish committed, rejected, conflicted,
+cancelled, rolled back, rollback failed, indeterminate, and abandoned. These
+are observed call results, not durable ledger truth. A typed governed rejection
+is still rejected even when its internal pre-attempt rollback fails; a separate
+rollback-failure counter retains that additional fact. An ambiguous commit
+error is indeterminate, including when a later lookup proves success. Metrics
+never initiate rollback, lookup or replay. Drop without a terminal call is
+abandoned, without asserting durable rollback. Unwinding during a commit call
+is conservatively indeterminate; during rollback it is rollback failed.
+
+Durations cover successful admission through terminal return/drop. Seven fixed
+inclusive buckets (100 microseconds through 60 seconds) plus positive infinity
+are cumulative, with matching count and sum. These are measurement resolution,
+not performance acceptance thresholds. Microsecond-resolution sums and counts
+saturate at `u64::MAX`. A fixed-size metrics-only mutex produces internally
+consistent snapshots and is never held across storage work. No database
+encoding, transaction guarantee, persistence dependency, or minimal write trait
+is changed; telemetry is not a transaction outcome oracle.
+
+The CLI `/metrics` composes the unchanged at-most-21 readiness gauges with
+three transaction families: `oxigraph_transactions_total` (counter),
+`oxigraph_transaction_duration_seconds` (histogram), and
+`oxigraph_transaction_rollback_failures_total` (counter). Their eight fixed
+outcome labels and eight fixed bucket labels produce exactly 89 additional
+samples. No labels or strings come from RDF, queries, keys, identities or errors.
+
+Additive native tests cover memory/RocksDB, clones, concurrent snapshots,
+reopen/reset, admission exclusions, histogram boundaries/saturation, and exact
+commit/rollback failure observations. SHACL final-guard tests preserve the
+rejection and rollback detail independently. The real CLI child test exercises
+successful Update, failed whole-request rollback, an ASK verifying absence,
+and bounded metric export. Query/update evaluation, lazy query consumption,
+external-denial and validation-level observations remain in active G2.5; this
+slice does not close P1.4a or start G2.6/G2.7.
+
+The telemetry slice passes the default native transaction/oracle lane (131
+tests), SHACL/RDF-12/HTTP native lane (150), no-default SHACL/RDF-12 lane (80),
+default CLI lane (153 unit/CLI plus five wire tests), and five no-default CLI
+wire tests. These overlap and are not counts of newly delivered behavior.
+Scoped library Clippy without HTTP and CLI-only Clippy pass with warnings
+denied. HTTP-enabled library Clippy also reaches five pre-existing warnings in
+`http.rs`, `io/loader.rs`, and `sparql/update.rs`; those files are unchanged.
+No broader all-features lint or complete no-default CLI pass is claimed.
 
 ### Complete ADR boundary
 
