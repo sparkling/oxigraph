@@ -2,8 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-08-30
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: delegated-host qualification remains Proposed,
+  unimplemented, and separately authorized future work. Under
+  [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) it
+  does not gate R1 or direct product implementation.
 - Implementation status: not implemented. No delegated-host qualification
   contract, current physical receipt, native adapter registration, or readiness
   transition exists

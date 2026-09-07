@@ -1,18 +1,18 @@
 # Persistence writes and linked-data-store parity plan
 
-- Status: active plan; write seam, source-bound G1.3-G1.6 slices, and G2.1
-  transactional namespaces complete, including G1.4a Store terminal
-  outcomes/lookup and G1.4b simulated storage-call fault safety; G1.7
-  qualification and G2.2-G2.3c remain open
+- Status: active R1 delivery recovery; backend-neutral writes and the current
+  upstream product delta are implemented and product-validated. G1.7,
+  ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
+  not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-05
+- Updated: 2026-09-07
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
-- Current audited upstream head: `786d00170224cb5589b03dc5283b1c25df8c0357`
+- Current audited upstream head: `7ce152a1d910d5662027a5bcbe7c32cee0a4e059`
 - Current maintenance-equivalent local integrations:
-  upstream `41768ccf` as `d5343f6b`; upstream `786d0017` as `c86772a9`
-- Last product-semantic upstream merge/tree: `e9d2db1b7c4eb974b406136e667e09ba06e34b48` /
-  `fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`
+  upstream `41768ccf` as `d5343f6b`; upstream `786d0017` as `c86772a9`;
+  upstream `7ce152a1` as `eb0f0cc2`
+- Current product-semantic upstream integration: `eb0f0cc2`
 - Historical first upstream merge: `a2415a4e`
 - Transactional write implementation: `1da47285`
 - Deterministic upstream test correction: `f9033c2b`
@@ -73,34 +73,60 @@
   [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](../adr/0041-g17-private-co-located-build-issuer.md)
 - Persistence-backend decision:
   [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](../adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
+- Delivery-recovery decision:
+  [ADR-0043 — Delivery recovery and proportional release boundary](../adr/0043-delivery-recovery-and-proportional-release-boundary.md)
 - Outstanding capability decisions:
   [ADR-0018 and ADR-0020 through ADR-0042](../adr/README.md)
 - Execution harness:
   [linked-data-store evolution plan](linked-data-store-evolution-harness-plan.md)
 
+## R1 delivery recovery boundary
+
+R1 ships the existing ADR-0016 write seam, the audited upstream `7ce152a1`
+product delta, proportional product/conformance/binding/fuzz validation, and
+truthful release documentation. The upstream integration is committed as
+`eb0f0cc2`; it preserves named-graph-only union-default semantics,
+source-graph-aware blank-node standardization for explicit RDF merges, and
+SPARQL-version validation across RocksDB and generic dataset paths.
+
+The N3 fetchability blocker is resolved in `75f538e0`, with the unchanged
+reviewed gitlink available from its declared fork remote
+([publication verification](../research/n3-submodule-publication-2026-09-07.md)).
+The optimized release binary passed 15 persistent HTTP journey checks and
+14 focused Rust transaction/topology tests
+([application validation](../research/r1-application-validation-2026-09-07.md)).
+Documentation/ledger reconciliation and authorized publication close R1;
+G2.2 normalized semantic change sets is the next product slice, tracked as
+`task-1788781295095-lrzbqi`. It supersedes the historical containment-gated
+`task-1788069137230-uuulsx` without deleting that task's history. The six-hour
+review continues across milestones until the programme is complete or stopped
+by the owner. G1.7, ADR-0034 through ADR-0041, Dream Machine,
+GEPA/AVO, broad Jena/RDF4J parity, and P1-P3 features remain recorded below as
+future work. They are not R1 gates. Direct product behavior and the applicable
+native/conformance tests are progress authority under ADR-0043.
+
+The detailed evidence below is retained as programme history. Where historical
+sequencing or task prose conflicts with this section, ADR-0043 and this dated
+boundary are current.
+
 ## Outcome
 
-The clone is patch-current with audited `upstream/main` `786d0017`. The two
-commits after the previously audited `5e77d401` checkpoint contain only eight
-GitHub Actions pin updates and three JavaScript lockfile updates. They are
-integrated as patch-equivalent local commits `d5343f6b` and `c86772a9`; stable
-patch IDs match, the lockfile parses, its npm dry-run passes, and no Rust, RDF,
-SPARQL, persistence, or protocol source changed.
-The earlier two-parent merge `e9d2db1b`, with ordered parents
-`b295ea80...`/`ec68e3dd...`, remains the last product-semantic upstream
-checkpoint and preserves the documented ADR-0014 divergence.
+The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
+commit `eb0f0cc2` integrates its merged-default-graph product change plus two
+fork-specific RocksDB regressions. Earlier maintenance-equivalent commits
+`d5343f6b` and `c86772a9` remain part of the traceable upstream history.
 
-Ruflo task `task-1788617481850-zd4asj` adds a dormant GPT-6 Astra
-compatibility option to the native Codex engineering-harness boundary. A pure
-planning helper recommends `low` for triage, `medium` for bounded changes,
-`high` for substantive implementation/review, and `xhigh` for cross-component
-concurrency, durability, or recovery; it recommends `max` only from recorded
-unresolved xhigh and discriminating-evaluator inputs. Existing Sol evidence
-is not rewritten, provider fallback remains forbidden, application tests remain
-authoritative, and Router learning across Astra efforts waits for a receipt
-successor that binds model-plus-effort and escalation evidence. The current
-registered v2 task remains Sol-routed and unavailable before provider work, so
-this change does not alter the feature DAG or close G1.7/G2.2.
+Native Codex Astra support includes `low`, `medium`, `high`, `xhigh`, `max`,
+and `ultra`; `7d89e7bc` corrects the stale adapter and enables native parallel
+delegation for Ultra without changing legacy task contracts. ADR-0043 sets
+the current role policy: Astra High/Xhigh for consequential judgment, Sol High
+or Opus for difficult implementation, Terra Medium or Sonnet for routine
+slices, Max for a hard single problem, Ultra for useful independent subtasks,
+and Luna/Haiku for narrow language work. User-selected efforts take precedence
+over the older helper's escalation recommendations. Historical Sol receipts
+remain unchanged; their qualification state does not gate native product work.
+No router training, provider fallback, new receipt format, or model benchmark
+is required to deliver R1 or G2.2.
 
 ADR-0042 now records the evidence-backed persistence-backend disposition:
 RocksDB remains the sole production-intended persistent `Store` backend, and
@@ -605,11 +631,11 @@ The unfinished work is split by architectural ownership:
 | P0.3-P0.4 egress, cancellation, service claims  | [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md)                                                                                                                                                       | Implemented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Persistent-backend adoption gate                | [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](../adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)                                                                                    | Accepted 2026-09-05: RocksDB remains the only production-intended persistent backend; TurboKV is historical evidence only and is excluded from active implementation, comparison, and benchmarking                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | P0.5 compatibility/performance promotion        | [ADR-0017](../adr/0017-repository-evolution-and-evidence-promotion-harness.md), [ADR-0018](../adr/0018-transaction-guarantees-and-conflict-model.md), [ADR-0019](../adr/0019-unified-egress-cancellation-and-service-claims.md) | Registry, rejection evidence, exact G1.4b binding, Darwin-free legacy replay, v6 two-phase/statistics semantics, v7 identity, pure owner/receipt-candidate replay, physical envelope/current-state replay, dormant containment, exact source-workspace construction, replay-only build claims, bounded cleanup, raw supervision, legacy-incompatible request v1/process v3, structural policy/request v2, and a compile-only dormant attested helper are implemented. The private issuer, containment-v2 native adapter, control/sample/qualification owners, human authorization, live controls, final approval, benchmark, qualification, and human promotion remain open |
-| G1.7 private build issuer and physical owners   | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed; S0, S1 `task-1788403485637-t9wn40`, pure S2 `task-1788403489170-xl71j9`, Graph-V5 S3A evaluator `task-1788638011523-4c24e5`, and dormant authority-null S3B source `task-1788638033847-mlvsbe` are complete through `2532c31e`. Current umbrella `task-1788638159292-7hkaf5` is in progress; S5/S6 are the next unblocked build-owner-v3 evaluator/source pair. Host integration remains split into an ADR-0039/ADR-0040-dependent evaluator amendment and separately authorized validation, with explicit human Phase A/Phase B controls                                                                                                                         |
+| G1.7 private build issuer and physical owners   | [ADR-0041](../adr/0041-g17-private-co-located-build-issuer.md)                                                                                                                                                                  | Proposed future work. Bounded authority-null history through `2532c31e` is preserved; umbrella `task-1788638159292-7hkaf5` is pending and deferred at 60%. No successor slice is active, and this row does not gate R1 or direct product implementation                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | P1.2 dormant schema-v2 harness pre-registration | [ADR-0034](../adr/0034-first-class-exact-new-file-admission.md)                                                                                                                                                                 | Proposed ADR with its implementation task complete at the dormant, authority-null boundary: early gate, exact-create chain, dormant profile/contract/context/reconstruction, receipt-v7/private replay, and hidden three-command CLI/package surface are implemented. Active v1 remains nine tasks/33 commands; hidden selectors exit 4 before effects and grant no product authority                                                                                                                                                                                                                                                                                       |
 | Native containment implementation/qualification | [ADRs 0035–0039](../adr/README.md)                                                                                                                                                                                              | Proposed: ADR-0035's bounded local-preflight task is complete but the physical design remains open. ADR-0037's bounded local StateFS/manager interfaces and ADR-0038's authority-null S0-S3B repository inputs, including the one-use branded StateFS-transition consumer, are integrated through `37a02bb2`; the exact 23-file matrix passes 400/400 on Node 24.14.1 and exact Node 20.20.2. Non-StateFS transitions, C-side dispatch, physical process/cgroup integration, and ADR-0039 qualification/activation remain open. Readiness remains unavailable/native-adapter-unavailable                                                                                    |
 | Commit-capable containment successor            | [ADR-0040](../adr/0040-commit-capable-containment-decision-and-output-release.md)                                                                                                                                               | Proposed; critical task `task-1788394167226-fxk7od` is pending. It owns durable decision-before-effect, at-most-once execution, descriptor-bound application output, exact recovery/receipt semantics, and distinct successor host qualification                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| P1.2/G2.2 new semantic-change module            | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md), after ADR-0034, ADR-0039, and ADR-0040                                                                                                          | Blocked: dormant exact admission is implemented, but host qualification, physical runtime closure, and the commit-capable successor remain open before a semantic-change module may execute or commit                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| P1.2/G2.2 new semantic-change module            | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | Proposed roadmap work. A direct product slice may proceed behind native tests; ADR-0034, ADR-0039, and ADR-0040 apply only if the optional containment/qualification path is activated. It is not an R1 gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | P1.1-P1.2 namespaces, effects, receipts, outbox | [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md)                                                                                                                                                  | P1.1/G2.1 implemented in `be08cf3b`; P1.2/G2.2-G2.3c remain Proposed, so ADR-0020 remains Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | P1.3 transaction-time SHACL                     | [ADR-0021](../adr/0021-transaction-time-shacl-validation.md)                                                                                                                                                                    | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P1.4a-P1.4c readiness, backup, restore          | [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md)                                                                                                                                                            | Proposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -751,9 +777,11 @@ Acceptance:
   serialization format changes.
 - ADR-0011 and executable tests state the same policy.
 
-#### P0.5 Compatibility and performance gate — M
+#### P0.5 Compatibility and performance qualification — deferred, claim-specific
 
-Dependencies: P0.1–P0.4.
+This historical G1.7 evidence is preserved, but ADR-0043 removes it from the R1
+critical path. Resume it only for an explicitly authorized compatibility or
+performance claim; it is not a prerequisite for direct product work.
 
 The local G1.7 control preserves outer qualification receipt v1 and now uses
 exact contract v7 `42ed3867...`. Its control authorization `31b8fce5...` and
@@ -781,10 +809,11 @@ execute it. These artifacts remain binding-null and authority-free and do not
 supply live G1.7 build/control execution provenance or promotion authority.
 Ruflo map v15 records completed pure task `task-1787892615000-rdwz7q`, completed
 physical task `task-1787896401667-xookiy`, and its historical corrected G1.7
-checkpoint at 60%. The current overarching G1.7 task
-`task-1787871483413-ki34q2` is in progress at 74%; supporting workspace/build
-task `task-1787902127894-7n7vk3` is at 93%, and containment task
-`task-1787902138074-0w648x` is at 92%. ADR-0035's bounded local-preflight task
+checkpoint at 60%. The overarching G1.7 task
+`task-1787871483413-ki34q2` is pending and deferred at 74%; supporting
+workspace/build task `task-1787902127894-7n7vk3` is pending at 93%, and
+containment task `task-1787902138074-0w648x` is pending at 92%. ADR-0035's
+bounded local-preflight task
 `task-1788002473147-nsat6x` is complete; its broader Proposed physical design
 remains open. ADR-0040 task `task-1788394167226-fxk7od` is pending.
 Replacement-backend decision task `task-1788074788516-p5tvdm` records the
@@ -804,8 +833,8 @@ map is stored at
 `task-plans/adr-0041-private-build-issuer-graph-v5-2026-09-05`. S3A
 `task-1788638011523-4c24e5` froze the dormant source-absent evaluator at
 `a5f2442f`; S3B `task-1788638033847-mlvsbe` added the dormant authority-null
-source at `2532c31e`. S5/S6 are the next unblocked build-owner-v3
-evaluator/source pair. S4A `task-1788638038970-05pyb8` separately waits for exact ADR-0039 and
+source at `2532c31e`. No successor pair is active under ADR-0043. S4A
+`task-1788638038970-05pyb8` separately waits for exact ADR-0039 and
 ADR-0040 successor interfaces before amending the evaluator. S4B
 `task-1788638043966-3guruj` retains current same-host/same-boot exact-artifact
 qualification, receipt-bound activation, and explicit isolated-host/G1.7
@@ -1122,19 +1151,21 @@ None is necessary to accept ADR-0016 or to call the core an embeddable linked
 data store.
 
 [ADR-0034 — First-class exact new-file admission](../adr/0034-first-class-exact-new-file-admission.md)
-is a separate engineering-harness prerequisite, not a P3 product feature. It
-owns the dormant receipt-v7/schema-v2 pre-registration and early qualification
-gate. The early gate plus separate dormant profile, contract, context, and
+is an optional engineering-harness prerequisite, not a P3 product feature and
+not an R1 or direct-product gate. It owns the dormant receipt-v7/schema-v2
+pre-registration and early qualification gate for that harness path. The early
+gate plus separate dormant profile, contract, context, and
 reconstruction exist through `f9ab7c72`; the dormant command literals are
 frozen in `99f94fac`; receipt v7/private replay is frozen in `f6897d34`; and
 hidden unavailable-gated CLI/package wiring is frozen in `b915c5f6`.
 None grants linked-data-store capability by itself.
 ADR-0037 and
 ADR-0038 separately own statefs/syscalls and native process mechanics;
-ADR-0039 owns host qualification/activation only. Even all three gates together
-cannot admit G2.2 until
+ADR-0039 owns host qualification/activation only. If that optional path is
+resumed, it cannot release application output until
 [ADR-0040's separately ratified commit-capable successor](../adr/0040-commit-capable-containment-decision-and-output-release.md)
-replaces the cancel-only protocol.
+replaces the cancel-only protocol. ADR-0043 allows a directly implemented and
+natively tested G2 product slice to proceed without activating this path.
 
 ## SPARC execution framing
 
@@ -1151,26 +1182,22 @@ Each unfinished task uses the same evidence cycle:
 5. **Completion** — produce a commit, exact commands/results, capability
    receipt, rollback/migration note, and updated gap state.
 
-## Release gates
+## R1 release gates
 
-No phase is complete until all applicable gates pass:
+R1 requires the gates that exercise its changed product and binding surfaces:
 
 - `cargo fmt --all -- --check` and `git diff --check`;
-- strict Clippy for changed targets, with any unrelated baseline failure
-  recorded separately;
-- default and RDF 1.2 affected test suites;
-- workspace all-target check;
-- adapter conformance on memory, RocksDB, and rewritten persistence;
-- concurrency and injected-error tests for transaction work;
-- loopback-only security fixtures for external request work;
-- semantic and differential harnesses for claimed compatibility;
-- reviewed Jena runner/subject locks and exact Agentic-QE command inventories
-  that match the candidate source;
-- a source-bound OxDatalog mutation receipt for its exact scope before full
-  MetaHarness qualification, without treating it as persistence coverage;
-- benchmark comparison for hot read/write/index paths;
-- no documentation-site navigation or publication change without separate
-  authorization.
+- the affected `spareval` and `oxigraph` suites, including transactional
+  writes, topology, merged-default behavior, and SPARQL term-version policy;
+- the pinned Oxigraph SPARQL conformance lane;
+- affected JavaScript and Python binding tests;
+- the required query/update evaluator fuzz targets; and
+- a reachable submodule graph before claiming clone reproducibility.
+
+Strict Clippy, workspace all-target checks, Jena differentials, Agentic-QE,
+mutation, MetaHarness qualification, live G1.7, and benchmarks apply only when
+the release makes their corresponding compatibility, qualification, or
+performance claim. They are not universal R1 gates.
 
 The `rocksdb-pkg-config` all-features lane requires a system `rocksdb.pc` and is
 an environment prerequisite, not evidence that the vendored RocksDB lane
@@ -1228,21 +1255,22 @@ complete for the local documentation/ledger boundary at commit `c01b3c6a`, and
 their exact Ruflo rows were read back. At that historical checkpoint, ADR-0037
 S0 and ADR-0041 S1 were dependency-eligible, pending, and unstarted. Current
 replacement ADR-0037 S7 and ADR-0041 S1/S2 are complete. The GitHub-linked programme
-Gist and main push are transferred to pending task
-`task-1788409495130-6ikk41` and remain held because selected N3 submodule commit
-`8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
-and a fresh repository cannot fetch it by object ID (`not our ref`). At this
-boundary `gistUpdated:false` and `pushed:false` remain exact. This
-publication hold does not change ADR-0036's Proposed status or grant downstream
-runtime authority.
+Gist and main push were transferred to task `task-1788409495130-6ikk41`
+because the selected N3 gitlink was not fetchable. That historical boundary's
+`gistUpdated:false` and `pushed:false` remain exact. The dependency blocker is
+now resolved by `75f538e0` and the unchanged commit is fetchable from
+`sparkling/N3`; R1 owns current publication. This change does not change
+ADR-0036's Proposed status or grant downstream runtime authority.
 
 The Brain search verified the persistent swarm implementation in
 `ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts`; that source supports
 the research ledger mechanics, not any claim about Oxigraph, Jena, or RDF4J.
 
-## QA score
+## Historical pre-recovery QA score
 
-The plan scores **98/100** against the programme rubric:
+The 2026-09-05 plan scored **98/100** against its programme rubric. This is
+retained as historical advisory evidence and is not an R1 release gate or a
+measure of delivered application value:
 
 | Dimension                       | Score | Basis                                                                                                                                                |
 | ------------------------------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -2,8 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-03
-- Updated: 2026-09-05
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: the authority-null G1.7 chain is paused and
+  preserved as Proposed future work. Under
+  [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) it
+  does not gate R1 or ordinary product implementation.
 - Implementation status: partially implemented at the authority-null contract
   boundary. Documentation-only S0, the S1 source-absent evaluator, S2's pure
   private-build-issuer requirements contract, Graph-V5 S3A's dormant
@@ -14,7 +18,7 @@
   owner v3, product owner v4, production build completion path, or physical
   G1.7 authority exists
 - Current programme task: `task-1788638159292-7hkaf5`
-  (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-GRAPH-V5`), in progress
+  (`ADR-0041-G17-PRIVATE-BUILD-ISSUER-GRAPH-V5`), pending and deferred at 60%
 - Current completed issuer tasks: Graph-V5 S3A
   `task-1788638011523-4c24e5` at `a5f2442f` and S3B
   `task-1788638033847-mlvsbe` at `2532c31e`

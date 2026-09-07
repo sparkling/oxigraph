@@ -2,8 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-05
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: S0-S3B remain historical, dormant implementation
+  evidence under this Proposed ADR. [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md)
+  removes the broader native-adapter programme from the R1 critical path; no
+  readiness or activation status changes.
 - Implementation status: the bounded S0 native sources and S1 authority-null
   receipt/replay candidate below are present. S2 adds a pure unregistered
   cancel/recovery execution-transcript model and isolated in-memory fixture;

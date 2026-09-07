@@ -6,8 +6,9 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: the product and validation slice is implemented in
   `eb0f0cc2`; the six-hour scheduler is installed and its wake-up path is
-  tested; documentation, task-ledger reconciliation, reproducible-submodule
-  disposition, and publication remain in progress
+  tested; N3 fetchability is resolved in `75f538e0` and the optimized binary
+  passes the persistent application journey; documentation, task-ledger
+  reconciliation, and publication remain in progress
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
@@ -30,7 +31,8 @@
 ## Context
 
 The programme delivered the backend-neutral transactional write seam on
-2026-08-24 in `1da47285`, but did not stop at that releasable product boundary.
+2026-08-24 in `1da47285`; it is already an ancestor of published `origin/main`
+`2b9c8917`. The subsequent programme did not stop at that releasable boundary.
 It expanded the engineering and qualification machinery while presenting that
 work as a prerequisite for the already-implemented application behavior.
 
@@ -45,9 +47,15 @@ The 2026-09-07 delivery audit found:
 - a directly tested write seam that already passed its focused transaction and
   topology tests.
 
-This contradicts ADR-0004's product-first rule, its 20%/two-hour harness cap,
+The follow-up adversarial audit at `ff17dc17` counted 495 first-parent commits
+since August 24: 355 touched harness paths, 72 touched product paths, and 291
+touched only harness paths. The first two categories overlap. These are churn
+and code-growth measurements, not elapsed effort, billing, or model-quality
+measurements; they cannot establish a numerical breach of the 20% effort cap.
+
+The dependency chain nevertheless contradicted ADR-0004's product-first rule
 and the Semantic Builder handover instruction not to spend another programme
-phase rebuilding evidence infrastructure. It also made task counts, evaluator
+phase rebuilding evidence infrastructure. It made task counts, evaluator
 generations, and receipts look like delivery even when no new application
 capability resulted.
 
@@ -67,8 +75,13 @@ R1 consists of exactly:
    RDF-merge blank-node semantics;
 4. affected native, conformance, language-binding, and fuzz validation;
 5. truthful README, ADR, programme-plan, Ruflo-ledger, and programme-Gist state;
-6. a reproducible submodule graph or an explicit unresolved release hold; and
-7. authorized commits and publication to `main`.
+6. a reproducible submodule graph;
+7. an identified release binary and a passing persistent write/query/rollback/
+   restart demonstration; and
+8. authorized commits and publication to `main` with usable fork installation
+   instructions.
+
+A release hold is a failed gate, never an alternative way to complete R1.
 
 No other feature is an R1 prerequisite unless a failing product test or a
 named release requirement proves that it is.
@@ -108,9 +121,11 @@ For an application slice, progress means at least one of:
 - callable product behavior changes and a focused regression passes;
 - an upstream product delta is integrated and its semantic differences are
   resolved;
-- a release blocker is removed with reproducible evidence; or
-- living documentation is reconciled to implemented code and current task
-  state.
+- a release blocker is removed with reproducible evidence.
+
+Documentation may close a specifically named release-documentation gate once.
+It is reported separately from product behavior; repeated document, task,
+receipt, or score updates cannot satisfy the recurring product-progress check.
 
 Task rows, plans, evaluator scaffolding, generated receipts, model routing,
 swarm size, and review volume are supporting evidence, not delivery by
@@ -127,6 +142,9 @@ themselves.
 - After two evaluator defects for the same slice, stop repairing the evaluator
   chain and use the smallest native product/conformance test that can decide
   the behavior, or redesign the slice.
+- Classify failures before choosing repairs: product behavior, compiler/build,
+  dependency/publication, optional evaluator, or unavailable host. A stale
+  historical qualification subject is not an application build failure.
 - Report completion by explicit gates rather than unsupported clock estimates.
 
 ### 6. Use proportional release gates
@@ -138,8 +156,12 @@ JavaScript/Python binding fixtures. Its required gates are therefore:
 - affected `spareval` and `oxigraph` tests, including transactional writes,
   graph topology, merged-default semantics, and SPARQL version policy;
 - the pinned Oxigraph SPARQL conformance lane;
-- the affected JavaScript and Python binding tests; and
-- the required `spareval` query/update fuzz targets for 60 seconds each.
+- the affected JavaScript and Python binding tests;
+- the required `spareval` query/update fuzz targets for 60 seconds each; and
+- `cargo build --locked --release -p oxigraph-cli --bin oxigraph`, identification
+  of the resulting binary, and a loopback persistent-store demonstration of
+  successful multi-operation update, query, failed-request rollback, empty
+  named-graph lifecycle, and persistence after process restart.
 
 Full MetaHarness qualification, G1.7, live containment, provider-backed runs,
 Jena differentials, mutation campaigns, and broad performance claims are not
@@ -160,10 +182,11 @@ The upstream `7ce152a1` optimization is adopted with fork constraints:
 The two RocksDB-specific regressions in `eb0f0cc2` make backend divergence a
 release failure rather than an implementation detail.
 
-### 8. Review course every six hours while R1 remains active
+### 8. Review course every six hours across programme milestones
 
 Each review examines commits, scoped diffs, newly closed test gates, failures,
-and the product/process effort split from the preceding six hours. If no
+and separately reported product and supporting work from the preceding six
+hours. Do not infer effort percentages from Git counts. If no
 delivery artifact or gate closed, the current auxiliary activity stops and the
 next product-critical action becomes active.
 
@@ -177,13 +200,15 @@ memory state, dispatch a read-only audit worker, and validate both the exact
 worker record and daemon run counter before accepting the audit result.
 
 The [scheduled prompt](../plans/oxigraph-six-hour-delivery-review-prompt.md)
-was revised to v2 on 2026-09-07 after review of the original control. It names
-the R1 delivery outcome, bounds the review to ten minutes and audit observation
+was revised to v3 on 2026-09-07 after the adversarial delivery audit. It names
+the active product milestone, bounds the review to ten minutes and audit observation
 to sixty seconds, separates new product behavior and closed release gates from
 supporting work, and requires implementation after every review. Audit or
 memory failures are reported without starting another harness-repair cycle.
 An unresolved release hold is not completion. Once every R1 delivery gate is
-verified, the review timer is disabled; the wider roadmap remains recorded.
+verified, the next authorized product slice becomes active and the timer
+continues. Disable it only when the agreed programme is complete or the owner
+asks to stop. A timer or audit-tool failure is not itself a product release gate.
 The installed service message must match the versioned prompt after whitespace
 normalization. These bounds govern review overhead, not product execution or
 subscription usage.
@@ -203,6 +228,31 @@ exact dispatched record pending. The stale record was cancelled. Scheduled
 reviews must surface that mismatch and must not treat `queued`, `pending`, or
 `synthetic-completed` as proof that a worker result was produced.
 
+### 9. Match model use to the work
+
+Use native subscription clients and the currently available model catalogue.
+Choose a role once, keep context scoped to that task, and escalate when a
+concrete unresolved check warrants it. User-selected models and efforts take
+precedence; do not require failure at lower efforts before honoring an explicit
+selection. Do not route or pause on subscription usage budgets, and never
+silently change models when a native subscription is unavailable.
+
+| Work | Default recommendation |
+| --- | --- |
+| Recovery leadership and consequential judgment | Astra High/Xhigh; Fable for a targeted independent review |
+| Difficult Rust, transaction, or SPARQL implementation | Sol High or Opus |
+| Routine bounded implementation and focused tests | Terra Medium or Sonnet |
+| A difficult single unresolved problem | Astra Max |
+| Complex work with useful independent subtasks | Astra Ultra, with one Git writer |
+| Narrow extraction and repetitive language work | Luna or Haiku; deterministic tools where sufficient |
+
+These are starting policies, not a measured cross-model ranking. Record the
+actual model/effort, accepted result, rework, and elapsed time when observed.
+Do not fabricate monetary savings from API prices or Git history. Model-router
+training, new receipt formats, and benchmarking remain optional future work.
+The native Astra Ultra compatibility correction is `7d89e7bc`; historical Sol
+contracts and qualification evidence are not rewritten.
+
 ## Implemented R1 evidence
 
 The `eb0f0cc2` source state passed:
@@ -219,6 +269,15 @@ The `eb0f0cc2` source state passed:
 | `sparql_query_eval` fuzz target | 60 seconds, no crash |
 | `sparql_update_eval` fuzz target | 60 seconds, no crash |
 
+The unchanged reviewed N3 gitlink is now fetchable from `sparkling/N3`,
+verified by an independent fresh bare fetch in `75f538e0`
+([publication record](../research/n3-submodule-publication-2026-09-07.md)).
+The optimized CLI release build succeeds; its identified RocksDB-backed binary
+passes 15 HTTP checks covering multi-operation writes, reads, atomic rollback,
+restart persistence, and empty-graph lifecycle. An additional 14 focused Rust
+transaction/topology tests pass
+([commands, artifact hash, and observations](../research/r1-application-validation-2026-09-07.md)).
+
 The checks prove only the changed product/binding behavior at this source
 state. They do not confer production readiness, performance, containment,
 provider, or broad semantic-parity claims.
@@ -234,12 +293,16 @@ This ADR's recovery decision is implemented when:
    non-gating future status;
 5. README and the programme Gist describe the implemented write seam and R1
    boundary without a harness-first ETA;
-6. Ruflo has one active delivery task, with deferred work no longer marked as
-   current execution; and
-7. the N3 gitlink is reachable from its declared remote, or the release remains
-   explicitly held without claiming clone reproducibility; and
-8. the six-hour timer is active and a native `codex queue` service invocation
-   has succeeded for the intended persisted thread.
+6. Ruflo records the exact delivery evidence and the next single authorized
+   product slice, with deferred harness work no longer marked as execution;
+7. the N3 gitlink is reachable from its declared remote;
+8. the identified release binary passes the persistent application journey;
+   and
+9. the verified source revision and fork installation instructions are published
+   through the authorized `main` workflow.
+
+The recurring timer supports programme control; its health is tracked
+separately and cannot substitute for, or prevent, these product release gates.
 
 ## Consequences
 

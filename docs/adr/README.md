@@ -47,40 +47,31 @@ mapping.
 | [ADR-0037 — Durable containment statefs and manager protocol](0037-durable-containment-statefs-and-manager-protocol.md)                         | Proposed    | Own the sole statefs policy/oracle, held-root protocol, and separately attested bounded statefs-syscalls object                                     |
 | [ADR-0038 — Native containment manager, guardian, and launch trampoline](0038-native-containment-manager-guardian-and-trampoline.md)            | Proposed    | Link ADR-0037's object unchanged and own only unregistered process/cgroup/exec mechanics, executables, adapter, and race-free launch                |
 | [ADR-0039 — Delegated-host containment qualification and readiness](0039-delegated-host-containment-qualification-and-readiness.md)             | Proposed    | Consume ADR-0034's frozen bytes and own current-host qualification, activation binding, and path-executed runtime closure only                      |
-| [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md) | Proposed    | Add a byte-distinct durable `COMMIT` successor with at-most-once execution and descriptor-bound output release before G2.2                          |
+| [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md) | Proposed    | Add commit/output release for the optional containment path; does not gate direct G2 product work |
 | [ADR-0041 — G1.7 private co-located build issuer and physical owner chain](0041-g17-private-co-located-build-issuer.md)                         | Proposed    | Add version-distinct private build-owner v3 and product-owner v4 behind the qualified shared containment stack without granting G1.7 authority      |
 | [ADR-0042 — Retain RocksDB and gate replacement-backend experiments](0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)           | Accepted    | Keep RocksDB as the sole production-intended persistent backend; TurboKV remains historical evidence and is excluded from active work               |
+| [ADR-0043 — Delivery recovery and proportional release boundary](0043-delivery-recovery-and-proportional-release-boundary.md) | Accepted | Deliver a reproducible, tested application; defer non-gating harness work and review progress across milestones |
 
-The index contains 42 decisions. ADR-0018 and ADR-0020 through ADR-0041 are
-living implementation decisions for outstanding work. Their Proposed status is
-deliberate: the corresponding
-programme tasks and promotion evidence are not implemented merely because the
-architecture is recorded. ADR-0019 has closed its bounded G1.5-G1.6 profile,
-and ADR-0020 has closed only G2.1; it remains Proposed until G2.2-G2.3c are
-implemented. ADR-0034 separately gates the exact schema-v2 new-file
-pre-registration required before G2.2 may add a semantic-change module. The
-repository ADR dry-run parses 251 unique
-graph edges: 57 `depends-on`, 188 `related`, and 6 `amends`, with no duplicate,
-dangling, or self edge and no directed dependency or supersession cycle.
-Exact native Ruflo MCP readback matches it at 42 `adr-patterns` and 251
-`adr-edges`, including all nine ADR-0041 edges and all seven ADR-0042 edges.
-Ownership is likewise one-way: ADR-0037 owns the statefs policy and exact
-statefs-syscalls object, which ADR-0038 links unchanged; ADR-0034 owns dormant
-receipt-v7/schema-v2 pre-registration and the early qualification gate, whose
-frozen bytes ADR-0039 consumes while owning only current-host qualification,
-activation binding, and path-executed runtime closure. Readiness remains
-exactly `{status: "unavailable", reason: "native-adapter-unavailable"}`. Even
-after those gates close, the cancel-only protocol leaves G2.2 blocked pending
-[ADR-0040's commit-capable successor](0040-commit-capable-containment-decision-and-output-release.md).
-[ADR-0041](0041-g17-private-co-located-build-issuer.md) separately amends the
-implemented ADR-0017 harness with an authority-null path from request v2 to
-additive build-owner v3 and product-owner v4. Its physical path must reuse the
-exact ADR-0037 through ADR-0040 mechanisms. Its documentation-only S0
-architecture freeze is complete. The ADR-0036 C21 and programme-umbrella local
-closure recorded below makes S1 `task-1788403485637-t9wn40`
-dependency-eligible, but it remains pending at zero progress and unstarted.
-Every later source slice, positive Cargo execution, target release, live G1.7
-control, qualification, and promotion remains separately gated.
+The index contains 43 decisions. ADR-0043 is the current delivery-recovery
+decision: direct product tests, reproducible dependencies, a usable application
+artifact, and authorized handoff determine R1 completion. An unresolved release
+hold never satisfies acceptance. The six-hour review continues across
+programme milestones.
+
+ADR-0018 and ADR-0020 through ADR-0041 remain Proposed for their outstanding
+scope. ADR-0019 is Implemented, and ADR-0020 includes implemented G2.1 namespace
+support. The next product slice after R1 is G2.2's normalized semantic change
+set. ADR-0034 through ADR-0041 are preserved future containment work; their
+internal gates do not block direct product implementation.
+
+The former 42-record/251-edge graph report is historical. Current ADR metadata
+is reconciled through Ruflo MCP; memory can contain historical or non-ADR
+records, so its row count is not the number of decisions in this index.
+A stored metadata record is not proof of complete relationship-graph health.
+
+The detailed qualification history below remains source-bound evidence for
+its original subject. It does not reopen deferred harness tasks or replace
+the current product milestone.
 
 [ADR-0042](0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
 records the evidence-backed decision to retain RocksDB as the only
@@ -334,11 +325,12 @@ the physical archive capability creates a live control, benchmark,
 qualification, promotion, publication, or push authority.
 Ruflo map `task-plans/linked-data-store-g0-g4-2026-08-28-v15` preserves the 42
 stable product tasks and its historical corrected-G1.7 checkpoint at 60%.
-The current G1.7 row is 74%. Pure candidate task
+The deferred G1.7 row retains its historical 74%. Pure candidate task
 `task-1787892615000-rdwz7q` is complete in `45121da9`; physical-envelope task
 `task-1787896401667-xookiy` is complete in `fbbb692b`. Workspace/build-owner
-task `task-1787902127894-7n7vk3` remains in progress at 93%, and containment
-task `task-1787902138074-0w648x` remains in progress at 92%.
+task `task-1787902127894-7n7vk3` is pending/deferred at its recorded 93%, and
+containment task `task-1787902138074-0w648x` is pending/deferred at 92%.
+ADR-0043 removes these optional tasks from the application delivery path.
 
 The authoritative claim and freshness state is
 [the machine-readable conformance ledger](../research/conformance-ledger.json);

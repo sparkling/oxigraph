@@ -2,8 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-03
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: the implemented pure-ABI evidence remains
+  dormant under this Proposed ADR. [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md)
+  removes it from the R1 and ordinary product critical path without changing
+  its unavailable readiness boundary.
 - Implementation status: the C17 pure-ABI implementation boundary is GREEN at
   integrated commit `b037ed0a` with zero evaluator TODOs; independent C18,
   C19, and C20 reviews returned APPROVE with zero blocking findings, and C20's

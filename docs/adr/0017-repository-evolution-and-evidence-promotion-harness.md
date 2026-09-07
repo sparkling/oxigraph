@@ -4,6 +4,12 @@
 - **Date**: 2026-08-24
 - Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md)
+  restores product behavior and proportional native tests as delivery
+  authority. G1.7 and ADR-0034 through ADR-0041 remain preserved future
+  harness work, but they do not gate R1 or ordinary product implementation.
+  This repository now uses one writer directly on `main`; read-only parallel
+  reviewers do not receive feature branches or worktrees.
 - Implementation status: the separate `tools/engineering-harness` runtime,
   native Codex/Claude workers, quality-first Router, sealed reconstruction,
   one-session sandbox, repair/review lifecycle, application receipts, canonical
@@ -435,10 +441,11 @@ The execution rules are:
    slice without an explicit review.
 2. Parallelize independent research, test design, and adversarial review.
    Permit one candidate writer and one conceptual change per evaluation.
-3. Use isolated worktrees and isolated Cargo target directories for concurrent
-   writers. Agentic-QE publication, Jena publication, mutation publication,
-   and full MetaHarness qualification remain sequential because they share
-   locks, protected snapshots, or mutable latest pointers.
+3. Use one writer directly on `main`. Parallel workers are read-only reviewers
+   for independent bounded questions. Agentic-QE publication, Jena
+   publication, mutation publication, and full MetaHarness qualification
+   remain sequential because they share locks, protected snapshots, or mutable
+   latest pointers.
 4. Freeze the hypothesis, evaluator inventory, fitness function, thresholds,
    and baseline before the candidate runs. Evaluate parent and candidate on
    the same corpus.
@@ -670,8 +677,10 @@ are completed product slices under Proposed ADR-0018, and G2.1 is implemented
 in `be08cf3b` under Proposed ADR-0020; the remaining ADR status gates are not
 closed by those bounded slices.
 
-ADR-0034 is the separate cross-cutting gate before G2.2 may add a candidate-
-created module. Its Ruflo task `task-1787935934614-ibmjn1` is complete at the
+ADR-0034 is the historical cross-cutting harness gate for admitting a
+candidate-created module through that optional execution path. Under ADR-0043
+it does not gate direct product implementation or R1. Its Ruflo task
+`task-1787935934614-ibmjn1` is complete at the
 dormant, authority-null boundary after the historical launch/bootstrap and guardian/preflight checkpoints,
 the exact early-gate commit `fd9e4d05`, fixture chain
 `c9cb6423`/`997ad287`/`dfd6d92d`, and separate dormant-v2 registration commit
@@ -700,8 +709,10 @@ gate stops before reconstruction workspace preparation or any candidate or
 evaluator Git, submodule, process, provider, `ACCEPT`, `REJECT`,
 receipt-emission, or Router-quality work. The later pre-execution check remains
 defense in depth.
-Even after qualification, the cancel-only protocol leaves G2.2 blocked until a
-separately ratified commit-capable successor closes.
+Within the optional containment path, even successful qualification would
+leave application-output release unavailable until a separately ratified
+commit-capable successor closes. That conditional limitation does not block a
+directly implemented and natively tested G2 product slice under ADR-0043.
 
 The linked execution plan contains 42 stable executable G-identifiers. The
 initial 26 G0.1-G3.5 identifiers were materialized as Ruflo rows on
@@ -832,8 +843,10 @@ reopens them. Gate 8 is per-run authority and never closes permanently:
    appends the witness to the same report, invalidating the hash. Require a
    finalized-report-byte round trip and store the witness separately; a stamp
    over subsequently modified bytes is invalid.
-6. **Isolation:** run only from a clean, disposable worktree with bounded
-   resources and no ambient GitHub publication authority.
+6. **Isolation:** when this optional runner is explicitly activated, run from
+   the canonical `main` checkout with bounded resources, one writer, a clean
+   scoped index, and no ambient GitHub publication authority. Do not create an
+   additional worktree.
 7. **Evidence repair:** G0.1-G0.5 revalidated the registered source, Jena, and
    Agentic-QE bindings. G0.6 regenerated the exact OxDatalog receipt with the
    latest observed registry `cargo-mutants` release acquired without a
@@ -1023,9 +1036,9 @@ non-promoting G2 implementation and evaluator work. It does not accept or
 approve ADR-0018, authorize live G1.7 controls or results, make qualification
 current, or grant qualification, publication, push, or promotion authority.
 Later G2 slices may use the same local non-promoting boundary while that
-programme instruction remains in force; each still requires its own frozen
-evaluator and direct evidence. ADR-0018 and ADR-0020 through ADR-0033 remain
-Proposed until their product behavior and evidence exist. Each task still requires a
-red/evaluator-separated corpus, direct control-plane tests, continuously
-current prerequisites,
-per-run authorization, activation status, and exact receipts above.
+programme instruction remains in force. Under ADR-0043, direct product and
+conformance tests are mandatory; a frozen evaluator, control-plane corpus,
+activation status, and exact receipts are required only when the slice
+explicitly activates this harness or makes its qualification claim. ADR-0018
+and ADR-0020 through ADR-0033 remain Proposed until their product behavior and
+evidence exist.

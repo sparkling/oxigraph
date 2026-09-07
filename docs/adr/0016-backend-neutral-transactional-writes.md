@@ -2,11 +2,15 @@
 
 - **Status**: Implemented
 - **Date**: 2026-08-24
-- Updated: 2026-08-24
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
-- Implementation status: implemented and locally verified in `1da47285`
+- Implementation status: implemented and verified in `1da47285`, already
+  published as an ancestor of `origin/main` `2b9c8917` on 2026-08-24
 - Update note: the public traits, built-in adapters, generic SPARQL Update
   binding, rollback/error behavior, and topology regression tests are merged.
+  The 2026-09-07 [application demonstration](../research/r1-application-validation-2026-09-07.md)
+  additionally verifies the built-in RocksDB server's write/query/rollback and
+  process-restart behavior; it does not claim a deployed replacement adapter.
 - **Related**:
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),
   [ADR-0011 — SPARQL version and protocol semantics](0011-sparql-version-and-protocol-semantics.md),

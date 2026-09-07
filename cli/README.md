@@ -38,11 +38,24 @@ Note that Oxigraph CLI was previously named Oxigraph Server before version 0.4. 
 
 You need to have [a recent stable version of Rust and Cargo installed](https://www.rust-lang.org/tools/install) as well as Clang for the RocksDB Rust bindings.
 
-To download, build, and install the latest released version run `cargo install oxigraph-cli`.
-There is no need to clone the git repository.
+The published crates.io, PyPI, Docker, and conda packages listed above are
+upstream distributions; they do not establish availability of this fork's
+extensions. To build the fork, including its reviewed submodules:
 
-To compile the command-line tool from source, clone this git repository including its submodules (`git clone --recursive https://github.com/oxigraph/oxigraph.git`), and execute `cargo build --release` in the `cli` directory to compile the full binary after having downloaded its dependencies.
-It will create a fat binary in `target/release/oxigraph`.
+```sh
+git clone --recursive --branch main https://github.com/sparkling/oxigraph.git
+cd oxigraph
+cargo build --locked --release -p oxigraph-cli --bin oxigraph
+./target/release/oxigraph --version
+./target/release/oxigraph serve --location ./data --bind 127.0.0.1:7878
+```
+
+The executable is `target/release/oxigraph`. Native TLS builds also need the
+platform's OpenSSL development package when it is not otherwise available.
+See the [R1 application validation](../docs/research/r1-application-validation-2026-09-07.md)
+for the tested binary, persistent write/query/restart journey, and scope.
+For an upstream release instead, use `cargo install oxigraph-cli` without
+cloning this fork.
 
 Some build options (cargo features) are available:
 - `rocksdb-pkg-config`: links against an already compiled rocksdb shared library found using [pkg-config](https://crates.io/crates/pkg-config).

@@ -2,8 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-30
-- Updated: 2026-09-05
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: this Proposed, dormant, authority-null candidate
+  is preserved for a separately activated containment programme. Under
+  [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) it
+  does not gate R1 or ordinary product implementation.
 - Implementation status: implemented as a dormant, unregistered,
   authority-null candidate boundary and frozen for the S7 integrated review at
   base commit `4dbe7854a30ebe559cb918cf7cfe7780df3bc031`. The StateFS and

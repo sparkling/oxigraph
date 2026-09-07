@@ -2,7 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-03
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: commit-capable containment remains unimplemented
+  future work for the optional containment path. Under
+  [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) it
+  does not gate R1 or a directly implemented and natively tested product slice.
 - Implementation status: not implemented. The predecessor containment protocol
   is deliberately cancel-only and production readiness remains exactly
   `{status: "unavailable", reason: "native-adapter-unavailable"}`

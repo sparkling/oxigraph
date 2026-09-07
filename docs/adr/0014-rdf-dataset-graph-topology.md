@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-27
-- Updated: 2026-08-28
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
 - Implementation status: implemented for the surfaces and boundaries named
   below
@@ -10,6 +10,11 @@
   persistence planes to preserve empty named-graph topology and graph lifecycle.
   Audited upstream merge `e9d2db1b` retains this ADR's selected-graph `POST`
   lifecycle rather than adopting upstream `ec68e3dd` creation semantics.
+- 2026-09-07 update: upstream `7ce152a1`, integrated as `eb0f0cc2`, adds
+  ordered merged-default deduplication. The fork retains named-graph-only union
+  semantics, source-graph-aware blank-node standardization for explicit
+  `FROM`/`USING`, and SPARQL-version term validation across RocksDB and generic
+  dataset paths. Disk-backed regressions now bind those requirements.
 - **Related**:
   [ADR-0006 — W3C-first RDF, SPARQL, and SHACL 1.2 parity](0006-w3c-first-12-parity.md),
   [ADR-0009 — Snapshot reasoning and explicit materialization](0009-snapshot-reasoning-materialization.md),

@@ -26,20 +26,43 @@ capability or as blanket W3C-family conformance.
 
 Published extension documentation: <https://sparkling.github.io/oxigraph/>.
 
-The fork is maintenance-current with audited `upstream/main`
-`786d00170224cb5589b03dc5283b1c25df8c0357` (tree
-`6837e027a63dbbb8c94de99e50976471c8b1fd4c`) through patch-equivalent local
-commits `d5343f6b` (upstream `41768ccf`, eight GitHub Actions pin updates) and
-`c86772a9` (upstream `786d0017`, three JavaScript lockfile updates). Those two
-commits change no Rust, RDF, SPARQL, persistence, or protocol source. The last
-product-semantic upstream synchronization checkpoint remains merge commit
-`e9d2db1b7c4eb974b406136e667e09ba06e34b48` (tree
-`fcc5bb75c469fbbf80f77bc330279d3a7c593bfe`), whose ordered parents are fork
-checkpoint `b295ea80...` and upstream `ec68e3dd...`. It adopts upstream's
-atomic Graph Store `PUT` regression, quick-xml 0.42, and Python 3.9/abi3-py39
-support changes while retaining the fork's stricter XML validation and QA
-lanes. ADR-0014 deliberately keeps `POST` to a selected missing named graph at
-`404 Not Found`; selector-less `POST` creation remains supported.
+The fork is patch-current with audited upstream
+`7ce152a1d910d5662027a5bcbe7c32cee0a4e059`, integrated as `eb0f0cc2`.
+Its merged-default-graph optimization preserves the fork's named-graph-only
+union, source-aware blank-node handling, and SPARQL-version checks across
+RocksDB and generic reads. Two RocksDB regressions cover those boundaries.
+Earlier maintenance integrations `d5343f6b` and `c86772a9`, and product merge
+`e9d2db1b`, remain history. ADR-0014 keeps `POST` to a selected missing named
+graph at `404 Not Found`; selector-less creation remains supported.
+
+## Current delivery milestone
+
+[ADR-0043](docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md)
+defines R1: the transactional write API already published in `1da47285`, the
+audited upstream integration, proportional tests, reproducible source, and a
+runnable application. The release binary passed a persistent HTTP
+write/query/rollback/restart demonstration and graph-lifecycle checks on
+2026-09-07; see the [exact validation record](docs/research/r1-application-validation-2026-09-07.md).
+The [N3 publication fix](docs/research/n3-submodule-publication-2026-09-07.md)
+makes the existing reviewed gitlink fetchable without changing its contents.
+
+Build this fork rather than an upstream package to obtain these changes:
+
+```sh
+git clone --recursive --branch main https://github.com/sparkling/oxigraph.git
+cd oxigraph
+cargo build --locked --release -p oxigraph-cli --bin oxigraph
+./target/release/oxigraph serve --location ./data --bind 127.0.0.1:7878
+```
+
+See [CLI installation requirements and usage](cli/README.md#installation).
+RocksDB remains the persistent backend. The custom-backend tests prove the
+public extension contract, not deployment of a separate replacement backend.
+G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.
+The broader [linked-data roadmap](docs/plans/persistence-write-and-linked-data-parity-plan.md)
+continues after R1 with one product slice at a time, starting with G2.2's
+normalized semantic change set under ADR-0020. Six-hour delivery reviews
+continue across milestones.
 
 ## Upstream Oxigraph
 
@@ -320,11 +343,11 @@ documentation-only S0 architecture freeze is complete. Local ADR-0036 C21 and
 programme-umbrella closure made S1 `task-1788403485637-t9wn40` eligible; S1's
 source-absent evaluator and S2's authority-null requirements contract
 `task-1788403489170-xl71j9` are now complete. Graph-V5 umbrella
-`task-1788638159292-7hkaf5` is in progress. Its S3A source-absent evaluator
+`task-1788638159292-7hkaf5` is pending/deferred under ADR-0043. Its historical S3A source-absent evaluator
 `task-1788638011523-4c24e5` is complete at `a5f2442f`, and S3B's dormant
 authority-null source `task-1788638033847-mlvsbe` is complete at `2532c31e`.
-Readiness remains `unavailable/native-adapter-unavailable`; S5/S6 are the next
-unblocked build-owner-v3 evaluator/source pair. A distinct S4A evaluator
+Readiness remains `unavailable/native-adapter-unavailable`; further owner
+evaluator/source work is deferred and does not gate product delivery. A distinct S4A evaluator
 amendment waits for exact ADR-0039/ADR-0040 successor interfaces, and S4B
 retains separate host and human authorization gates.
 [ADR-0042](./docs/adr/0042-retain-rocksdb-and-gate-replacement-backend-experiments.md)
@@ -356,14 +379,14 @@ tree `fcc5bb75...`, `Cargo.lock` blob `763b2fed...`, and lock SHA-256
 qualified identity v2 separates that immutable product from the later committed
 harness/control commit and rejects product-path drift. Ruflo reseal task
 `task-1787888366495-gzxbhe` is complete at this pure, non-executing boundary.
-Current Ruflo task map
+The historical Ruflo task map
 `task-plans/linked-data-store-g0-g4-2026-08-28-v15` records its historical
-corrected G1.7 checkpoint at 60%. The current Ruflo G1.7 row is 74%: pure
+corrected G1.7 checkpoint at 60%. The deferred Ruflo G1.7 row retains 74%: pure
 receipt-candidate task `task-1787892615000-rdwz7q` is complete in
 `45121da9`, and physical-envelope task `task-1787896401667-xookiy` is complete
 in `fbbb692b` with all authority false. Workspace/build-owner task
 `task-1787902127894-7n7vk3` is 93%, and containment task
-`task-1787902138074-0w648x` is 92%; both remain in progress.
+`task-1787902138074-0w648x` is 92%; both are pending/deferred under ADR-0043.
 The archived v6 protocol/statistics bytes retain their exact historical identity
 and grant no Phase-A, provider, control, sample, benchmark, qualification, or
 promotion authority.
@@ -551,11 +574,12 @@ that commit. The immutable pre-transition closure receipt is
 `programme-evidence/adr0036-c21-local-closure-c01b3c6a-2026-09-03`. At that
 historical checkpoint, ADR-0037 S0 `task-1788205371168-e6caq3` and ADR-0041 S1
 `task-1788403485637-t9wn40` were dependency-eligible, pending, and unstarted.
-Replacement ADR-0037 S7 and ADR-0041 S1/S2 are now complete. External Gist and main publication are transferred
-to pending task `task-1788409495130-6ikk41` because pinned N3 commit
-`8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
-and a fresh repository cannot fetch it by object ID (`not our ref`);
-`gistUpdated:false` and `pushed:false` remain exact.
+Replacement ADR-0037 S7 and ADR-0041 S1/S2 are now complete. External Gist and
+main publication were transferred to task `task-1788409495130-6ikk41` because
+the N3 gitlink was not fetchable; that checkpoint's `gistUpdated:false` and
+`pushed:false` remain historical evidence. Commit `75f538e0` resolves the
+dependency blocker without changing the gitlink; ADR-0043 owns current
+publication (see the current delivery milestone above).
 ADR-0036 remains Proposed, readiness remains exactly
 `{status: "unavailable", reason: "native-adapter-unavailable"}`, and this
 evaluator evidence grants no product, runtime, G1.7, G2.2, qualification,
@@ -645,10 +669,10 @@ production execution owners are absent. The umbrella claim is still withheld.
 
 ### Published documentation and evidence
 
-Use the following documentation as the authority for scope, implementation
-decisions, and verification. The current evidence summary is the quickest
-entry point; the machine-readable ledgers and their explicit freshness fields
-are the source of truth for sealed-subject versus current-HEAD claims.
+Use ADR-0043 and the current delivery section above for the active milestone.
+The following published semantic evidence retains its dated, source-bound
+scope; it is not automatically refreshed by a product or documentation change.
+Its freshness fields distinguish sealed historical subjects from current code.
 
 - [Documentation home](https://sparkling.github.io/oxigraph/)
 - [Current semantic-parity evidence summary](https://sparkling.github.io/oxigraph/research/semantic-parity-current-summary.html)
@@ -663,6 +687,8 @@ are the source of truth for sealed-subject versus current-HEAD claims.
 - [Repository evolution and evidence promotion decision](./docs/adr/0017-repository-evolution-and-evidence-promotion-harness.md)
 - [Linked-data-store evolution harness plan](./docs/plans/linked-data-store-evolution-harness-plan.md)
 - [Outstanding linked-data-store decisions and statuses](./docs/adr/README.md)
+- [Delivery recovery and model-use policy](./docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md)
+- [Scheduled six-hour delivery prompt](./docs/plans/oxigraph-six-hour-delivery-review-prompt.md)
 
 The ADRs explain the principal boundaries:
 
@@ -694,7 +720,7 @@ The ADRs explain the principal boundaries:
   upgrades, RDF4J REST interoperability, remote transactions,
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
   research into ADR-0018 and ADR-0020 through ADR-0042; ADR-0019 records the
-  implemented egress, cancellation, and service-claim slice. Twenty-four decisions
+  implemented egress, cancellation, and service-claim slice. Twenty-three decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
   support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's
   completed dormant controls include the separate v2 profile and contract, receipt-v7
@@ -759,12 +785,11 @@ The ADRs explain the principal boundaries:
   documentation/ledger boundary at commit `c01b3c6a`. At that historical
   checkpoint, ADR-0037 S0 and ADR-0041 S1 were dependency-eligible, pending,
   and unstarted; replacement ADR-0037 S7 and ADR-0041 S1/S2 are now complete.
-  Gist update and main push are transferred to pending task
-  `task-1788409495130-6ikk41` and remain
-  externally held while selected N3 submodule commit
-  `8a9ea8ed42ae0487b20803f5687017980bbe8e37` is on no advertised upstream ref
-  and a fresh repository cannot fetch it by object ID. At this boundary
-  `gistUpdated:false` and `pushed:false` remain exact. The decision remains
+  Gist update and main push were transferred to task
+  `task-1788409495130-6ikk41` while the N3 gitlink was unfetchable. At that
+  historical boundary `gistUpdated:false` and `pushed:false` remain exact.
+  Commit `75f538e0` resolves the dependency blocker; ADR-0043 owns current
+  publication. The decision remains
   Proposed and gains no readiness, product, G1.7, qualification, promotion,
   publication, push, or physical authority.
 

@@ -2,8 +2,12 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-29
-- Updated: 2026-09-03
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: this Proposed containment design and its bounded
+  dormant artifacts are preserved as future work. Under
+  [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md) they
+  do not gate R1 or ordinary product implementation.
 - Implementation status: partially implemented and still unregistered. Commit
   `ab668ddd` adds local-only, authority-null journal construction and replay for
   the exact cancel-only transition graph. Commit `c2abb0df` adds the exact

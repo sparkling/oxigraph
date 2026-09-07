@@ -2,8 +2,13 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-28
-- Updated: 2026-09-05
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
+- 2026-09-07 scope amendment: this remains a Proposed, dormant harness design.
+  Under [ADR-0043](0043-delivery-recovery-and-proportional-release-boundary.md)
+  it does not gate R1 or direct product implementation. Its internal gate
+  applies only if the separately authorized containment/qualification path is
+  activated.
 - Implementation status: implemented and frozen as a separate dormant,
   non-product schema-v2 admission surface; activation remains unavailable by
   design.
