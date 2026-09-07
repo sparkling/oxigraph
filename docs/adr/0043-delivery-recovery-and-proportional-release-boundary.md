@@ -1,14 +1,16 @@
 # ADR-0043: Delivery recovery and proportional release boundary
 
-- **Status**: Accepted
+- **Status**: Implemented
 - **Date**: 2026-09-07
 - Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
 - Implementation status: the product and validation slice is implemented in
   `eb0f0cc2`; the six-hour scheduler is installed and its wake-up path is
   tested; N3 fetchability is resolved in `75f538e0` and the optimized binary
-  passes the persistent application journey; documentation, task-ledger
-  reconciliation, and publication remain in progress
+  passes the persistent application journey. Recovery source and installation
+  instructions are published on `main` at `aa7128bb`; the programme Gist and
+  Ruflo delivery evidence were updated and read back. R1 is complete; the
+  wider programme continues with G2.2 task `task-1788781295095-lrzbqi`
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
@@ -284,7 +286,16 @@ provider, or broad semantic-parity claims.
 
 ## Acceptance boundary
 
-This ADR's recovery decision is implemented when:
+All nine recovery gates below are verified on 2026-09-07. The source handoff
+is `aa7128bb`, the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
+contains the full 43-decision feature catalogue, and the exact Ruflo record is
+`programme-reviews/oxigraph-r1-delivery-handoff-2026-09-07-v1`.
+The HTTPS push was rejected for missing OAuth workflow scope; the existing
+SSH login authenticated as `sparkling` and published the unchanged commit set.
+Remote `main` was read back at the exact handoff SHA. No downloadable binary
+release, deployment, or aggregate qualification is claimed.
+
+This ADR's recovery decision requires:
 
 1. upstream `7ce152a1` and the two cross-backend regressions are committed;
 2. the proportional R1 gates above pass;

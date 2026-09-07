@@ -1,7 +1,7 @@
 # Persistence writes and linked-data-store parity plan
 
-- Status: active R1 delivery recovery; backend-neutral writes and the current
-  upstream product delta are implemented and product-validated. G1.7,
+- Status: R1 delivered at source handoff `aa7128bb`; G2.2 is the active product
+  slice. Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
 - Date: 2026-08-24
@@ -95,7 +95,8 @@ reviewed gitlink available from its declared fork remote
 The optimized release binary passed 15 persistent HTTP journey checks and
 14 focused Rust transaction/topology tests
 ([application validation](../research/r1-application-validation-2026-09-07.md)).
-Documentation/ledger reconciliation and authorized publication close R1;
+Documentation/ledger reconciliation and authorized publication are complete
+at source handoff `aa7128bb`, with the programme Gist updated and read back.
 G2.2 normalized semantic change sets is the next product slice, tracked as
 `task-1788781295095-lrzbqi`. It supersedes the historical containment-gated
 `task-1788069137230-uuulsx` without deleting that task's history. The six-hour

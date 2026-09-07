@@ -1,6 +1,6 @@
 # Linked-data-store implementation and evolution harness plan
 
-- Status: active R1 delivery recovery; product implementation is primary.
+- Status: R1 delivered at source handoff `aa7128bb`; G2.2 is the active product slice.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -49,10 +49,12 @@
 
 ## R1 delivery recovery boundary
 
-The harness is frozen during R1. The active delivery slice is the implemented
+The non-gating harness remains frozen. R1 delivered the implemented
 ADR-0016 write interface, audited upstream `7ce152a1` integrated as `eb0f0cc2`,
 affected product/conformance/binding/fuzz validation, documentation/ledger
-reconciliation, submodule reproducibility, and authorized publication.
+reconciliation, submodule reproducibility, and authorized publication at
+`aa7128bb`. The programme Gist is updated; exact Ruflo handoff evidence was
+read back. G2.2 task `task-1788781295095-lrzbqi` is now active.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a

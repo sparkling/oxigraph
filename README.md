@@ -35,7 +35,7 @@ Earlier maintenance integrations `d5343f6b` and `c86772a9`, and product merge
 `e9d2db1b`, remain history. ADR-0014 keeps `POST` to a selected missing named
 graph at `404 Not Found`; selector-less creation remains supported.
 
-## Current delivery milestone
+## Delivered recovery milestone and next product step
 
 [ADR-0043](docs/adr/0043-delivery-recovery-and-proportional-release-boundary.md)
 defines R1: the transactional write API already published in `1da47285`, the
@@ -45,6 +45,10 @@ write/query/rollback/restart demonstration and graph-lifecycle checks on
 2026-09-07; see the [exact validation record](docs/research/r1-application-validation-2026-09-07.md).
 The [N3 publication fix](docs/research/n3-submodule-publication-2026-09-07.md)
 makes the existing reviewed gitlink fetchable without changing its contents.
+R1 source and installation instructions were published on `main` at
+`aa7128bb`; the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
+now records all 43 decisions. G2.2 is the next active product task, not another
+containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
 
