@@ -40,7 +40,8 @@ use std::net::ToSocketAddrs;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 use std::{fmt, fs, str, thread};
@@ -54,6 +55,7 @@ mod graph_store_http_tests;
 mod graph_store_read_only_tests;
 mod http_validators;
 mod multipart;
+mod operations;
 #[cfg(test)]
 mod protocol_wire_tests;
 mod rdf_response;
@@ -88,6 +90,7 @@ pub fn main() -> anyhow::Result<()> {
         Command::Serve {
             location,
             bind,
+            admin_bind,
             cors,
             union_default_graph,
             entailment,
@@ -99,6 +102,7 @@ pub fn main() -> anyhow::Result<()> {
                 Store::new()
             }?,
             &bind,
+            admin_bind,
             false,
             cors,
             union_default_graph,
@@ -108,6 +112,7 @@ pub fn main() -> anyhow::Result<()> {
         Command::ServeReadOnly {
             location,
             bind,
+            admin_bind,
             cors,
             union_default_graph,
             entailment,
@@ -115,6 +120,7 @@ pub fn main() -> anyhow::Result<()> {
         } => serve(
             Store::open_read_only(location)?,
             &bind,
+            admin_bind,
             true,
             cors,
             union_default_graph,
@@ -989,6 +995,7 @@ fn rdf_format_from_name(name: &str) -> anyhow::Result<RdfFormat> {
 fn serve(
     store: Store,
     bind: &str,
+    admin_bind: Option<std::net::SocketAddr>,
     read_only: bool,
     cors: bool,
     union_default_graph: bool,
@@ -998,40 +1005,28 @@ fn serve(
     entailment.ensure_supported()?;
     let sparql_evaluator = sparql_evaluator();
     let timeout = timeout_s.map(Duration::from_secs);
+    let admin_store = admin_bind.map(|address| (address, store.clone()));
+    let started = Arc::new(AtomicBool::new(false));
+    let on_request = operations::gate(Arc::clone(&started), move |request| {
+        let method = request.method().clone();
+        finalize_response(
+            &method,
+            handle_request(
+                request,
+                &store,
+                &sparql_evaluator,
+                read_only,
+                union_default_graph,
+                entailment,
+                timeout,
+            )
+            .unwrap_or_else(|(status, message)| error(status, message)),
+        )
+    });
     let mut server = if cors {
-        Server::new(cors_middleware(move |request| {
-            let method = request.method().clone();
-            finalize_response(
-                &method,
-                handle_request(
-                    request,
-                    &store,
-                    &sparql_evaluator,
-                    read_only,
-                    union_default_graph,
-                    entailment,
-                    timeout,
-                )
-                .unwrap_or_else(|(status, message)| error(status, message)),
-            )
-        }))
+        Server::new(cors_middleware(on_request))
     } else {
-        Server::new(move |request| {
-            let method = request.method().clone();
-            finalize_response(
-                &method,
-                handle_request(
-                    request,
-                    &store,
-                    &sparql_evaluator,
-                    read_only,
-                    union_default_graph,
-                    entailment,
-                    timeout,
-                )
-                .unwrap_or_else(|(status, message)| error(status, message)),
-            )
-        })
+        Server::new(on_request)
     }
     .with_global_timeout(timeout.unwrap_or(HTTP_TIMEOUT))
     .with_server_name(concat!("Oxigraph/", env!("CARGO_PKG_VERSION")))?
@@ -1040,10 +1035,20 @@ fn serve(
         server = server.bind(socket);
     }
     let server = server.spawn()?;
+    // Both listeners have CLI-process lifetime: oxhttp exposes no shutdown API.
+    // Any startup/join error returns to main and terminates the process. Keep
+    // notification after both successful binds; do not advertise partial startup.
+    let admin_server = admin_store
+        .map(|(address, store)| operations::spawn(store, address, Arc::clone(&started)))
+        .transpose()?;
     #[cfg(target_os = "linux")]
     systemd_notify_ready()?;
+    started.store(true, Ordering::Release);
     eprintln!("Listening for requests at http://{bind}");
     server.join()?;
+    if let Some(admin_server) = admin_server {
+        admin_server.join()?;
+    }
     Ok(())
 }
 
@@ -1330,7 +1335,7 @@ fn handle_request(
                 Err(unsupported_media_type(&content_type.media_type))
             }
         }
-        (path, _) if graph_store::is_route(path) => graph_store::handle(request, &store, read_only),
+        (path, _) if graph_store::is_route(path) => graph_store::handle(request, store, read_only),
         ("/query" | "/sparql", _) => method_not_allowed_response(request, "GET, POST, QUERY"),
         ("/update", _) => method_not_allowed_response(request, "GET, POST"),
         _ => Err((

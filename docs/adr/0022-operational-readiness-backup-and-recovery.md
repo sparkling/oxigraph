@@ -2,10 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-09-07
+- Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
-- Implementation status: G2.5 native observation and contributor API implemented;
-  loopback endpoints and operation counters/histograms remain in G2.5.
+- Implementation status: G2.5 native observation/contributor API and opt-in
+  loopback observation endpoints implemented; operation counters/histograms
+  remain in G2.5.
   G2.6-G2.7 backup/restore receipt work remains unimplemented
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
@@ -126,10 +127,56 @@ state in isolated test stores. No pinned evidence or operator runtime is changed
 
 Run the usable native artifact with
 `cargo run --locked -p oxigraph --example operational_readiness`.
-The broader P1.4a/G2.5 task remains open for loopback health/readiness endpoints,
-operation counters and latency/error histograms, and their consumer tests.
-This slice implements no HTTP service, automatic circuit breaker, workload
-admission engine, full-store certificate, backup receipt, or production claim.
+The broader P1.4a/G2.5 task remains open for operation counters and latency/error
+histograms and their consumer tests. This native slice implements no automatic
+circuit breaker, workload admission engine, full-store certificate, backup
+receipt, or production claim.
+
+### Loopback CLI observation slice (2026-09-08)
+
+The optional `--admin-bind` listener for both serving modes admits only a numeric
+loopback address and nonzero port, checked before opening storage. It exposes
+only GET/HEAD `/health`, `/ready`, and `/metrics`; it does not expose RDF,
+SPARQL, maintenance, authentication, CORS, or arbitrary diagnostic data. Default
+CLI operation is unchanged when the listener is omitted. Public application
+routes remain separate. No new dependency is introduced.
+
+Liveness is static HTTP 200. Ready/degraded observations map to 200; not-ready
+maps to 503. Fixed reason tokens and coverage are JSON, and bounded gauges use
+Prometheus text format. Metrics still report not-ready gauges with HTTP 200;
+unavailable wall-clock conversion fails closed with 503. No raw error or
+inventory/receipt payload is serialized. HEAD performs the GET-equivalent
+observation while retaining Content-Length and suppressing the body. Responses
+are noncacheable; query strings reject without echo, unsupported methods use
+405 with `Allow: GET, HEAD`, and other paths use 404.
+
+An independent two-connection listener and two-second transport timeout keep
+the observation surface separate from application connection slots. Native
+probes use a 250 ms cooperative deadline and the conservative default prefix
+bounds, not a hard I/O/allocation limit. CLI provider inventory is empty until
+providers are actually integrated; no required provider is silently removed.
+
+The existing HTTP library exposes no shutdown/prebound-listener API. This
+private CLI integration therefore has process lifetime, not graceful in-process
+shutdown. A shared startup gate prevents any application handler call or ready
+report until both binds and systemd notification succeed. Startup/join errors
+reach `main` and terminate the process, releasing listeners. A deterministic
+gate test covers zero application calls during partial startup; real CLI
+subprocess fixtures cover bind rejection/conflict, route separation, GET/HEAD,
+backpressure after reopen in both serving modes, metric privacy, and kill/wait
+port release. This is not G4.2 admission or production availability qualification.
+
+Native CLI validation: the default-feature suite passes 153 unit/CLI entries
+and four new subprocess wire tests. With no default features, the four wire
+tests and focused startup-gate test pass. The broader no-default suite reports
+131 passed, two failed, and one previously ignored: unchanged SERVICE/LOAD
+tests expect policy-denial text, while the unchanged no-HTTP implementation
+reports unavailable service/client support. This is not a fully green
+no-default suite; neither those expectations nor protected service-description
+fixtures were altered. CLI-only Clippy (`--no-deps`, warnings denied) passes;
+the broader dependency lint reports the pre-existing `manual_is_variant_and`
+warning in `oxrdfs/src/rdfs12/datatypes.rs`. These known broader validation
+limitations are separate from the passing operational endpoint checks.
 
 ### Complete ADR boundary
 

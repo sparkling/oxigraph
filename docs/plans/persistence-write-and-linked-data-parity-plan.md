@@ -4,13 +4,13 @@
   G2.3a-b receipts/outbox are published in `58d3253c`; G2.3c retention/health is
   implemented natively. G2.4a-b staged-view SHACL validation, bounded policy receipts,
   and failure closure are implemented. G2.5 native readiness/contributor
-  observations are implemented; loopback endpoints and operation telemetry
-  remain in that active task.
+  observations and loopback endpoints are implemented; operation counters and
+  histograms remain in that active task.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
 - Date: 2026-08-24
-- Updated: 2026-09-07
+- Updated: 2026-09-08
 - Repository: `sparkling/oxigraph`, maintained as a fork of `oxigraph/oxigraph`
 - Previous upstream baseline: `oxigraph/oxigraph` `8dcfb6b66cbb077bb2406379abb280d2471970d7`
 - Current audited upstream head: `7ce152a1d910d5662027a5bcbe7c32cee0a4e059`
@@ -955,7 +955,8 @@ Acceptance:
 Current delivery: G2.2 capture/integration and G2.3a-b native atomic receipts
 and ordered outbox are published in 58d3253c. G2.3c native retention/health and
 G2.4a-b native staged-view SHACL validation and policy receipts are implemented;
-G2.5 operational readiness is next.
+G2.5 native readiness/contributor observations and loopback endpoints are
+implemented; operation counters/histograms remain active.
 The following frozen-candidate admission conditions apply only to optional
 containment; under ADR-0043 they do not block direct native product work.
 
@@ -1043,8 +1044,9 @@ bounded gauges, explicit probe coverage, and the canonical contributor
 inventory are implemented under [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md).
 Required contributors must be healthy/caught up; permitted optional lag or
 fallback degrades explicitly. This closes the native observation portion only.
-Loopback endpoints and operation counters/latency/error histograms below remain
-in active G2.5 task `task-1787851231441-1gdfzd`; P1.4a is not complete.
+The opt-in CLI loopback endpoints now expose those observations, with separate
+routes and fail-closed startup. Operation counters/latency/error histograms below
+remain in active G2.5 task `task-1787851231441-1gdfzd`; P1.4a is not complete.
 
 - Expose stable counters and latency/error histograms for queries, updates,
   commits, conflicts, rollback failures, external policy denials, validation,

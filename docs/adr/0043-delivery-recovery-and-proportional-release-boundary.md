@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Date**: 2026-09-07
-- Updated: 2026-09-07
+- Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
 - Implementation status: the product and validation slice is implemented in
   `eb0f0cc2`; the six-hour scheduler is installed and its wake-up path is
@@ -21,9 +21,9 @@
   permit. G2.4b adds bounded policy receipts in the atomic native outcome,
   feature-independent lookup, expiry, and injected-failure closure in
   `task-1787670631837-w5ac24`. G2.5 has native bounded readiness observations,
-  fixed gauges, and canonical contributor validation. Its task
-  `task-1787851231441-1gdfzd` remains active for loopback endpoints and operation
-  counters/histograms; that native slice is not full P1.4a completion. Local
+  fixed gauges, canonical contributor validation, and opt-in loopback
+  observation endpoints. Its task `task-1787851231441-1gdfzd` remains active for
+  operation counters/histograms; these slices are not full P1.4a completion. Local
   implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

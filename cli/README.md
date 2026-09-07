@@ -103,6 +103,50 @@ It provides the following REST actions:
 
 Use `oxigraph --help` to see the possible options when starting the server.
 
+### Local operational observations (fork)
+
+`serve` and `serve-read-only` optionally expose a separate loopback listener:
+
+```sh
+./target/release/oxigraph serve --location ./data --bind 127.0.0.1:7878 --admin-bind 127.0.0.1:9797
+curl -i http://127.0.0.1:9797/ready
+curl http://127.0.0.1:9797/metrics
+```
+
+Only numeric loopback addresses with a nonzero port are accepted; the listener
+is absent unless requested. It has no authentication, CORS, RDF, SPARQL, or
+maintenance routes. Do not expose or reverse-proxy it to an untrusted network.
+The public listener does not gain the operational routes. Both listeners have
+CLI-process lifetime; this is not an in-process graceful-shutdown API.
+Application requests are gated until both binds and startup notification
+succeed. Startup failure exits the process and releases both listeners.
+
+- `GET`/`HEAD /health`: process liveness, HTTP 200 without a storage scan.
+- `GET`/`HEAD /ready`: one bounded native readiness observation. Ready or
+  explicitly degraded is HTTP 200; not-ready is 503 with fixed reason tokens.
+- `GET`/`HEAD /metrics`: the same native observation as at most 21 fixed,
+  label-free Prometheus text-format gauges. A storage-not-ready result remains
+  HTTP 200 with `oxigraph_ready 0`; a clock-conversion failure is 503.
+
+HEAD performs the same observation and suppresses its body. Responses use
+`Cache-Control: no-store`; unsupported methods return 405 and unknown paths
+return 404. Query strings are rejected without echoing their contents.
+
+The listener allows two concurrent connections with a two-second transport
+timeout and a separate 250 ms cooperative probe deadline. A blocked native I/O
+call cannot be interrupted by that deadline. It uses the native default prefix
+bounds: 128 primary records plus one encoded lookahead, a 1 MiB logical-byte
+stopping threshold, and 256 outbox records. Partial primary coverage degrades;
+partial outbox coverage fails readiness. Large governed histories therefore
+need an explicit retention policy or a caller-configured native probe, not a
+claim that a bounded prefix validated the full store.
+
+The CLI currently declares no derived providers and no automatic circuit
+breaker; its inventory is validly empty. Required-provider policies remain
+available through the Rust API. These gauges are not operation counters or
+latency/error histograms: those remain in active G2.5 work. See
+[ADR-0022](../docs/adr/0022-operational-readiness-backup-and-recovery.md).
+
 It is also possible to load RDF data offline using bulk loading:
 `oxigraph load --location my_data_storage_directory --file my_file.nq`
 

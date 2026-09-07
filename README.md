@@ -51,8 +51,9 @@ records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
 `58d3253c`; G2.3c adds native retention/leases and governance health.
 G2.4a-b add the native staged-view SHACL commit gate and atomically bound policy
 receipts. G2.5 now adds native readiness observations and a bounded contributor
-inventory; loopback endpoints and operation telemetry remain in that active
-slice, not another containment or harness milestone.
+inventory and opt-in loopback operational endpoints. Operation counters and
+latency/error histograms remain in that active slice, not another containment
+or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
 
@@ -156,8 +157,11 @@ storage/outbox prefixes, cancellation, circuit and lag policy, and validates a
 canonical zero-or-more derived-state contributor inventory. Required providers
 must be healthy and caught up; only declared optional fallback/eventual states
 may degrade. Fixed, payload-free gauges expose coverage explicitly. This is a
-native Rust observation API, not a full integrity scan, HTTP endpoint, or backup
-proof. Loopback endpoints and operation counters/histograms remain G2.5 work;
+native Rust observation API, not a full integrity scan or backup proof.
+The CLI exposes these observations separately with
+`--admin-bind 127.0.0.1:9797`: `GET`/`HEAD /health`, `/ready`, and `/metrics`.
+See [listener usage and limits](cli/README.md#local-operational-observations-fork).
+Operation counters/histograms remain G2.5 work;
 see [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
 
 ```sh

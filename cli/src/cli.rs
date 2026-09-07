@@ -1,5 +1,17 @@
 use clap::{Parser, Subcommand, ValueHint};
+use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::result::Result as ParseResult;
+
+fn loopback_admin_address(value: &str) -> ParseResult<SocketAddr, String> {
+    let address: SocketAddr = value
+        .parse()
+        .map_err(|_| "expected a numeric loopback IP:port")?;
+    if !address.ip().is_loopback() || address.port() == 0 {
+        return Err("admin listener requires a loopback IP and a nonzero port".into());
+    }
+    Ok(address)
+}
 
 #[derive(Parser)]
 #[command(about, version, name = "oxigraph")]
@@ -37,6 +49,9 @@ pub enum Command {
         /// Host and port to listen to
         #[arg(short, long, default_value = "localhost:7878", value_hint = ValueHint::Hostname)]
         bind: String,
+        /// Optional separate loopback health/readiness/metrics listener (no maintenance routes)
+        #[arg(long, value_parser = loopback_admin_address)]
+        admin_bind: Option<SocketAddr>,
         /// Allows cross-origin requests
         #[arg(long)]
         cors: bool,
@@ -70,6 +85,9 @@ pub enum Command {
         /// Host and port to listen to
         #[arg(short, long, default_value = "localhost:7878")]
         bind: String,
+        /// Optional separate loopback health/readiness/metrics listener (no maintenance routes)
+        #[arg(long, value_parser = loopback_admin_address)]
+        admin_bind: Option<SocketAddr>,
         /// Allow cross-origin requests
         #[arg(long)]
         cors: bool,
