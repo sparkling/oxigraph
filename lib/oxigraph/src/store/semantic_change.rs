@@ -65,6 +65,14 @@ impl SemanticChangeSet {
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
+
+    /// Version-1 SHA-256 of the retained operation sequence and exact RDF identities.
+    ///
+    /// Explicit tags and length-framed logical term fields do not depend on
+    /// display formatting, dataset canonicalization, or physical storage indexes.
+    pub fn checksum(&self) -> [u8; 32] {
+        super::receipt::change_checksum(self)
+    }
 }
 
 /// A backend failure, or an attempt to reuse a failed tracking transaction.
@@ -125,6 +133,17 @@ impl<T: WritableDataset> ChangeTrackingTransaction<T> {
     pub fn changes(&self) -> Result<SemanticChangeSet, ChangeTrackingError<T::Error>> {
         self.ensure_active()?;
         Ok(self.changes.snapshot())
+    }
+
+    pub(super) fn inner(&self) -> &T {
+        &self.inner
+    }
+
+    pub(super) fn into_parts(
+        self,
+    ) -> Result<(T, SemanticChangeSet), ChangeTrackingError<T::Error>> {
+        let changes = self.changes()?;
+        Ok((self.inner, changes))
     }
 
     fn ensure_active(&self) -> Result<(), ChangeTrackingError<T::Error>> {

@@ -6,11 +6,13 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.1 is implemented in `be08cf3b`. G2.2 now includes
   opt-in staged semantic-change capture and request/keyed integration.
-  G2.3a-c durable governance remains outstanding, so this ADR remains Proposed
+  G2.3a native atomic receipts and reopen lookup are implemented. G2.3b-c
+  outbox and retention/governance remain outstanding, so this ADR remains Proposed
 - Update note: `ChangeTrackingTransaction` captures real backend-neutral
   mutations, with graph-scoped normalization and failure poisoning, without
   changing the minimal write traits, backends, or qualification evidence.
-  Whole-update capture returns effects only after acknowledged commit
+  Whole-update capture returns effects only after acknowledged commit.
+  The separate governed Store opener returns a receipt from the same primary batch
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - **Related**:
@@ -26,8 +28,8 @@
 ## Context
 
 G2.1 provides a transactional namespace registry. G2.2 provides opt-in normalized
-staged changes and acknowledged whole-update capture, but no commit-governance
-identity and receipt or ordered change feed. A commit error can be ambiguous,
+staged changes and acknowledged whole-update capture. G2.3a adds native governed
+commit identity and receipt lookup, but not an ordered change feed. A commit error can be ambiguous,
 and downstream validators, indexers, or subscribers have no native atomic hand-off from
 primary state. Quad-only events also lose the distinction between graph
 creation, clear, drop, and namespace changes.
@@ -125,7 +127,116 @@ records without the marker are corruption and must fail closed rather than be
 skipped. A future choice to add a column family or bump the global version
 reopens ADR-0028's migration evaluator; it is not part of G2.1.
 
+### G2.3a native atomic receipts (2026-09-07)
+
+`Store::start_governed_transaction(request, key)` and its controlled counterpart
+open an opt-in `GovernedTransaction`. The wrapper starts capture before any
+mutation and exposes no mutable underlying transaction or caller-supplied
+effect payload. Inherent `commit()` returns `CommitReceipt`; generic write
+traits still commit governance but discard the receipt. The minimal write
+traits and existing SPARQL `execute_with_changes` paths are unchanged.
+
+`Store::lookup_commit_receipt(key)` returns `Committed(receipt)`,
+`CommittedWithoutReceipt` for an explicit legacy keyed commit,
+`ProvenAbsent(RolledBack)`, or `Indeterminate`. A missing key is indeterminate.
+Lookup reads stored outcomes, never replays mutations. Version, length,
+checksum, key, store identity, and sequence mismatches are corruption.
+
+RocksDB uses the existing default column family and held writer permit:
+
+- Legacy `\0oxigraph.transaction-outcome.v1\0` records remain byte-identical.
+- `\0oxigraph.transaction-outcome.v2\0` plus the caller's 16-byte key stores
+  staging `[2,0]`, attempted `[2,1]`, rollback `[2,3]`, or committed `[2,2]`
+  followed by exactly one encoded receipt. Admission checks both namespaces
+  under the writer permit. A v2 committed value missing its receipt is corrupt,
+  not a legacy commit; dual v1/v2 reservations are also corrupt.
+- `\0oxigraph.governance.v1\0` stores version `[1]`, 16-byte store identity,
+  8-byte big-endian governed sequence, and 32-byte SHA-256 checksum over
+  `oxigraph.governance.v1\0` followed by the first 25 bytes.
+- The final synchronous batch publishes primary RDF/topology/namespaces,
+  committed outcome with embedded receipt, and governance high-water together.
+  Existing staging and attempt writes preserve the conservative outcome model.
+  Fallible state validation occurs before the attempt; errors from the commit
+  protocol are indeterminate with the exact caller key, never retried as writes.
+
+The 145-byte receipt format is: version `[1]`, store identity (16 bytes), commit
+identity (32), transaction key (16), governed sequence (8, big-endian), retained
+effect count (8, big-endian), effect SHA-256 (32), envelope SHA-256 (32). The
+envelope hashes `oxigraph.receipt.v1\0` and the preceding 113 bytes. Commit ID
+hashes `oxigraph.commit-id.v1\0`, store identity, sequence, transaction key,
+effect count, and effect checksum, in that order. Decode verifies both bindings.
+These checksums detect corruption; they are not authentication signatures.
+
+Effect checksum v1 hashes `oxigraph.semantic-changes.v1\0`, big-endian u64
+effect count, then the retained operation sequence. Operation tags are 0 quad
+add, 1 quad remove, 2 named-graph create, 3 graph clear, 4 named-graph drop,
+5 all-named clear, 6 all-graphs clear, 7 all-named drop, 8 dataset clear,
+9 namespace change, and 10 namespace clear. Quad fields follow subject,
+predicate, object, graph order. Terms use tags 1 IRI, 2 blank node, 3 literal,
+4 triple term; default graph is tag 0. Strings are u64-length-prefixed raw UTF-8.
+Literal fields are lexical value, datatype IRI, language presence byte and
+optional language, then direction byte 0 none, 1 LTR, or 2 RTL. Triple terms
+recursively encode subject/predicate/object. Namespace change encodes prefix,
+then before and after as presence byte plus optional raw IRI. No Display
+formatting, physical index identity, Unicode normalization, or dataset
+canonicalization is involved. Identical RDF 1.1 terms hash identically with
+and without the `rdf-12` feature.
+
+The RocksDB lineage identity is randomly allocated on the first successful governed
+commit and survives reopen and backup. Sequence starts at 1, orders governed
+receipts only, and includes successful no-op governed commits. It is not a
+global sequence for legacy writes, a wall clock, or an outbox cursor. Overflow
+fails before commit attempt. Missing high-water state cannot silently create a
+new lineage when committed governed history exists. No column family, global
+storage version, migration, baseline, or qualification evidence is changed.
+
+Memory allocates its lineage when the store is created and exposes the same API
+as process-local receipts without advertising durable outcome lookup.
+A governance write lock and retained outcome-entry
+guard cover receipt installation, MVCC publication, and the terminal state
+flip; lookup uses the same governance lock. Poisoned state fails as corruption.
+Rollback/drop publishes no receipt and consumes no receipt sequence.
+
+G2.3a does not provide an outbox, listeners, cursor retention/leases, governance
+health, power-loss qualification, automatic SPARQL/HTTP receipt response, or
+governed bulk loading. Receipts and caller-key tombstones currently have no
+expiry or deletion policy; storage grows until G2.3c supplies explicit retention.
+G2.3b owns the ordered outbox; G2.3c owns retention and governance health. This
+staged implementation does not close the full ADR.
+
 ## Acceptance boundary
+
+### G2.3a native receipt validation (2026-09-07)
+
+The focused default-feature matrix passes 136 tests: 56 library units and
+80 integration tests across receipts, semantic capture, namespaces, the minimal
+write interface, keyed outcomes, the three-backend transaction state model,
+negotiated/cancelled updates, writer serialization, bulk publication, and
+read-only open. Without default features, the library, receipt, semantic-change,
+and namespace lanes pass 50 tests.
+
+The receipt integration suite also passes 8 tests with default RocksDB plus
+`rdf-12,http-client`, and 6 with `--no-default-features --features rdf-12`.
+Directional literals and triple terms are distinguished, while the independent
+RDF 1.1 checksum fixture stays byte-identical across these feature modes.
+The public governed-opener doctest, strict default-feature library/receipt-test
+Clippy, workspace formatting, local documentation targets, and diff checks pass.
+The vendored C++ compiler emits an existing unused-parameter warning; no Rust
+lint policy, test expectation, or frozen evaluator is relaxed for this slice.
+
+New coverage proves receipt/key/effect binding, process-local memory semantics,
+four-writer unique sequencing, no-op commits, rollback/drop, all three public
+commit entry points after capture failure, RocksDB reopen/read-only/backup,
+all eight existing outcome fault points, malformed metadata, missing or
+exhausted high-water state, and derived commit-identity validation. The
+independent logical SHA-256 fixture does not use the receipt implementation to
+compute its expected bytes. These are direct product and simulated storage-call
+tests, not process-kill, power-loss, fsync, outbox, or qualification evidence.
+
+The new poisoning fixture initially failed during open because open correctly
+rejects corrupt namespaces. Its injection now happens after a valid open, and
+the unchanged expected outcome additionally checks that staged RDF is discarded.
+No existing frozen fixture, expected result, or validation threshold changed.
 
 ### G2.2 staged-effect capture slice (2026-09-07)
 
@@ -165,8 +276,9 @@ memory, RocksDB/reopen, a separate Dataset-based persistence plane, explicit
 and dropped rollback, partial-mutation/read failure, lost commit response,
 point cancellation, scoped ordering, namespaces, and bounded summaries.
 The original `transactional.rs` hash below remains unchanged. Request-level
-SPARQL capture and negotiated/keyed ownership are implemented below. Durable receipt/outbox,
-commit identity/order, recovery lookup, cursors, and health remain G2.3a-c.
+SPARQL capture and negotiated/keyed ownership are implemented below. The
+separate G2.3a API above now provides receipt identity and recovery lookup;
+the outbox, cursors, retention, and health remain G2.3b-c.
 
 Validation for this slice: `semantic_changes` passes 11/11 with default
 features and 10/10 without default features; the six existing transactional
@@ -215,8 +327,9 @@ HTTP-enabled strict Clippy separately reports five pre-existing warnings in
 frozen evaluator is relaxed to close this product slice.
 
 This closes G2.2's native capture/integration task, not this ADR. Effects are
-in-process results without durable identity or global commit order. G2.3a's
-atomic receipts are next, followed by the authoritative outbox and retention.
+in-process results without durable identity or global commit order. The separate
+G2.3a governed API now provides atomic receipts; the authoritative outbox and
+retention remain outstanding.
 
 ### Existing G2.1 evidence and complete ADR acceptance
 
@@ -291,7 +404,10 @@ product paths: the new `store/namespace.rs` API plus `store.rs`,
 Cargo integration remain intentionally outside G2.1. G2.2's opt-in capture
 adds `store/semantic_change.rs` and its public integration tests, with exports
 from `store.rs`, plus owned-update integration in `sparql/update.rs`.
-G2.3's durable receipts, outcome
-resolution, authoritative outbox, retention/leases, and governance health keep
-this ADR Proposed. Under ADR-0043, optional containment is not a prerequisite
+G2.3a adds `store/receipt.rs`, storage dispatch and both native backends,
+plus `tests/commit_receipts.rs` and direct storage-fault/corruption tests.
+It reuses the already-locked workspace `sha2` package; no new package version,
+Node dependency, or harness is introduced. G2.3b-c's authoritative outbox,
+retention/leases, and governance health keep this ADR Proposed.
+Under ADR-0043, optional containment is not a prerequisite
 for these direct product slices.

@@ -1309,12 +1309,13 @@ impl Db {
     pub fn start_keyed_readable_transaction_with_control(
         &self,
         outcome_column_family: &ColumnFamily,
-        outcome_key: &[u8],
+        outcome_keys: [&[u8]; 2],
         staging_value: &[u8],
         rolled_back_value: &[u8],
         control: &TransactionStartControl,
         started_at: Instant,
     ) -> Result<ReadableTransaction<'_>, StorageTransactionStartError> {
+        let [outcome_key, alternative_outcome_key] = outcome_keys;
         let DbKind::ReadWrite(db) = &self.inner else {
             return Err(StorageError::Other(
                 "Transaction are only possible on read-write instances".into(),
@@ -1322,7 +1323,9 @@ impl Db {
             .into());
         };
         let writer_permit = db.writer_gate.acquire_with_control(control, started_at)?;
-        if self.contains_key(outcome_column_family, outcome_key)? {
+        if self.contains_key(outcome_column_family, outcome_key)?
+            || self.contains_key(outcome_column_family, alternative_outcome_key)?
+        {
             return Err(
                 StorageError::Other("transaction key has already been reserved".into()).into(),
             );

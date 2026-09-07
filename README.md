@@ -47,8 +47,8 @@ The [N3 publication fix](docs/research/n3-submodule-publication-2026-09-07.md)
 makes the existing reviewed gitlink fetchable without changing its contents.
 R1 source and installation instructions were published on `main` at
 `aa7128bb`; the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
-records all 43 decisions at that handoff. G2.2 is now implemented locally;
-G2.3a atomic receipts is the next product task, not another
+records all 43 decisions at that handoff. G2.2 and G2.3a are now implemented locally;
+G2.3b's ordered outbox is the next product task, not another
 containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
@@ -66,7 +66,7 @@ public extension contract, not deployment of a separate replacement backend.
 G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.
 The broader [linked-data roadmap](docs/plans/persistence-write-and-linked-data-parity-plan.md)
 continues after R1 with one product slice at a time. G2.2's normalized semantic
-changes are implemented; G2.3 durable receipts are next. Six-hour delivery reviews
+changes and G2.3a atomic receipts are implemented; G2.3b's outbox is next. Six-hour delivery reviews
 continue across milestones.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
@@ -79,8 +79,17 @@ for the tested boundary. Whole SPARQL Update requests now offer
 `.on_dataset_with_key(&store, request, key).execute_with_changes()` uses the
 existing keyed outcome contract. These methods return changes only after
 acknowledged commit, roll back failed evaluation, and preserve indeterminate
-commit keys without replay. The results are not durable receipts or a change
-feed; those remain G2.3 work.
+commit keys without replay. These existing update methods do not return receipts.
+
+G2.3a adds `Store::start_governed_transaction(request, key)` for native Rust
+writes. It captures effects internally; `commit()` returns a checksummed
+receipt published atomically with RDF, namespace changes, and the keyed outcome.
+`Store::lookup_commit_receipt(&key)` retrieves it after RocksDB reopen without
+replaying mutations. Memory receipts are process-local. Legacy keyed commits
+are explicitly distinguishable from governed receipts; unseen keys remain
+indeterminate. Receipt sequences order governed commits only. No outbox,
+subscription feed, retention/leases, or power-loss qualification is claimed.
+G2.3b-c own those remaining governance capabilities.
 
 ## Upstream Oxigraph
 
@@ -454,7 +463,7 @@ passes 13/13 across memory, RocksDB, and the rewritten plane; the no-default
 evaluator passes 8/8 across memory and the rewritten plane. Focused regressions
 pass `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
 `transactional_dataset` 3/3. [ADR-0020 — Transactional metadata, receipts, and change delivery](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
-now includes implemented G2.2 capture/integration and remains Proposed for G2.3a-c.
+now includes implemented G2.2 capture/integration and G2.3a atomic receipts, and remains Proposed for G2.3b-c.
 
 [ADR-0034 — First-class exact new-file admission](./docs/adr/0034-first-class-exact-new-file-admission.md) separately
 governs optional candidate-created module admission, not direct G2.2 delivery
@@ -741,7 +750,7 @@ The ADRs explain the principal boundaries:
   research into ADR-0018 and ADR-0020 through ADR-0042; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Twenty-three decisions
   remain Proposed living plans. ADR-0020 includes implemented G2.1 namespaces
-  and G2.2 capture/integration but remains Proposed for G2.3a-c; ADR-0034's
+  and G2.2 capture/integration plus G2.3a receipts but remains Proposed for G2.3b-c; ADR-0034's
   completed dormant controls include the separate v2 profile and contract, receipt-v7
   admission/replay, and hidden three-command CLI/package surface. That surface
   executes only the unavailable gate and grants no product authority.

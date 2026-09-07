@@ -11,8 +11,9 @@
   instructions are published on `main` at `aa7128bb`; the programme Gist and
   Ruflo delivery evidence were updated and read back. R1 is complete; the
   wider programme has implemented G2.2 capture/request/keyed integration in
-  task `task-1788781295095-lrzbqi`; G2.3a atomic receipts in
-  `task-1787670631130-9jlo3h` is the next product slice
+  task `task-1788781295095-lrzbqi` and G2.3a native atomic receipts in
+  `task-1787670631130-9jlo3h`; G2.3b ordered outbox in
+  `task-1787670631321-dewzgm` is the next product slice
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`

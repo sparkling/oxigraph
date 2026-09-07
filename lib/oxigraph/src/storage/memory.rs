@@ -8,13 +8,18 @@ use crate::storage::{
     StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
     TransactionStartControlError,
 };
-use crate::store::{Namespace, NamespacePrefix};
+use crate::store::receipt::GovernanceState;
+use crate::store::{
+    CommitReceipt, CommitReceiptOutcome, Namespace, NamespacePrefix, SemanticChangeSet,
+    TransactionCommitError, TransactionNonCommitReason,
+};
 use dashmap::iter::Iter;
 use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
 use oxstr::OxString;
 use rustc_hash::{FxHashSet, FxHasher};
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem::{take, transmute};
@@ -31,9 +36,17 @@ pub struct MemoryStorage {
     content: Arc<Content>,
     id2str: Arc<DashMap<StrHash, OxString, BuildHasherDefault<StrHashHasher>>>,
     transaction_outcomes: Arc<DashMap<[u8; 16], MemoryTransactionOutcomeState>>,
+    governance: Arc<RwLock<MemoryGovernance>>,
     version_counter: Arc<AtomicUsize>,
     transaction_counter: Arc<AtomicUsize>,
     transaction_lock: Arc<Lock>,
+}
+
+#[derive(Default)]
+struct MemoryGovernance {
+    state: GovernanceState,
+    governed_keys: FxHashSet<[u8; 16]>,
+    receipts: HashMap<[u8; 16], CommitReceipt>,
 }
 
 struct Content {
@@ -72,6 +85,7 @@ impl MemoryStorage {
             }),
             id2str: Arc::new(DashMap::default()),
             transaction_outcomes: Arc::new(DashMap::default()),
+            governance: Arc::new(RwLock::new(MemoryGovernance::default())),
             version_counter: Arc::new(AtomicUsize::new(0)),
             transaction_counter: Arc::new(AtomicUsize::new(usize::MAX >> 1)),
             transaction_lock: Arc::new(Lock::new()),
@@ -131,8 +145,14 @@ impl MemoryStorage {
     pub fn lookup_transaction_outcome(
         &self,
         transaction_key: &[u8; 16],
-    ) -> StorageTransactionOutcome {
-        self.transaction_outcomes.get(transaction_key).map_or(
+    ) -> Result<StorageTransactionOutcome, StorageError> {
+        // A governed publication holds this lock through both MVCC publication
+        // and terminal outcome/receipt installation.
+        let _governance = self
+            .governance
+            .read()
+            .map_err(|_| CorruptionError::msg("poisoned memory governance state"))?;
+        Ok(self.transaction_outcomes.get(transaction_key).map_or(
             StorageTransactionOutcome::Indeterminate,
             |state| match *state {
                 MemoryTransactionOutcomeState::Committed => StorageTransactionOutcome::Committed,
@@ -142,7 +162,65 @@ impl MemoryStorage {
                     StorageTransactionOutcome::Indeterminate
                 }
             },
-        )
+        ))
+    }
+
+    pub fn start_governed_transaction_with_control(
+        &self,
+        transaction_key: &[u8; 16],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<MemoryStorageTransaction<'_>, StorageTransactionStartError> {
+        let mut transaction = self.start_keyed_readable_transaction_with_control(
+            transaction_key,
+            control,
+            started_at,
+        )?;
+        self.governance
+            .write()
+            .map_err(|_| {
+                StorageError::from(CorruptionError::msg("poisoned memory governance state"))
+            })?
+            .governed_keys
+            .insert(*transaction_key);
+        transaction.governed = true;
+        Ok(transaction)
+    }
+
+    pub fn lookup_commit_receipt(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<CommitReceiptOutcome, StorageError> {
+        let governance = self
+            .governance
+            .read()
+            .map_err(|_| CorruptionError::msg("poisoned memory governance state"))?;
+        let state = self
+            .transaction_outcomes
+            .get(transaction_key)
+            .map(|value| *value);
+        if let Some(receipt) = governance.receipts.get(transaction_key) {
+            if state != Some(MemoryTransactionOutcomeState::Committed) {
+                return Err(
+                    CorruptionError::msg("receipt without committed memory outcome").into(),
+                );
+            }
+            return Ok(CommitReceiptOutcome::Committed(receipt.clone()));
+        }
+        Ok(match state {
+            Some(MemoryTransactionOutcomeState::Committed) => {
+                if governance.governed_keys.contains(transaction_key) {
+                    return Err(
+                        CorruptionError::msg("governed memory commit has no receipt").into(),
+                    );
+                }
+                CommitReceiptOutcome::CommittedWithoutReceipt
+            }
+            Some(MemoryTransactionOutcomeState::RolledBack) => {
+                CommitReceiptOutcome::ProvenAbsent(TransactionNonCommitReason::RolledBack)
+            }
+            _ => CommitReceiptOutcome::Indeterminate,
+        })
     }
 
     fn start_transaction_with_guard<'a>(
@@ -165,6 +243,7 @@ impl MemoryStorage {
             transaction_id,
             snapshot_id,
             transaction_key,
+            governed: false,
             _transaction_guard: transaction_guard,
             completed: false,
         }
@@ -549,6 +628,7 @@ pub struct MemoryStorageTransaction<'a> {
     transaction_id: usize,
     snapshot_id: usize,
     transaction_key: Option<[u8; 16]>,
+    governed: bool,
     completed: bool,
     _transaction_guard: LockGuard<'a>,
 }
@@ -961,6 +1041,11 @@ impl MemoryStorageTransaction<'_> {
     }
 
     pub fn commit_with_outcome(mut self) -> Result<(), StorageError> {
+        if self.governed {
+            return Err(StorageError::Other(
+                "a governed transaction must commit its receipt".into(),
+            ));
+        }
         self.transition_outcome(
             MemoryTransactionOutcomeState::Staging,
             MemoryTransactionOutcomeState::CommitAttempted,
@@ -970,6 +1055,52 @@ impl MemoryStorageTransaction<'_> {
             MemoryTransactionOutcomeState::CommitAttempted,
             MemoryTransactionOutcomeState::Committed,
         )
+    }
+
+    pub fn commit_with_receipt(
+        mut self,
+        changes: &SemanticChangeSet,
+    ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
+        let transaction_key = self.transaction_key.ok_or_else(|| {
+            TransactionCommitError::Rejected(StorageError::Other(
+                "governed transaction key missing".into(),
+            ))
+        })?;
+        if !self.governed {
+            return Err(TransactionCommitError::Rejected(StorageError::Other(
+                "receipt capture was not enabled at admission".into(),
+            )));
+        }
+        let storage = self.storage;
+        let mut governance = storage.governance.write().map_err(|_| {
+            TransactionCommitError::Rejected(
+                CorruptionError::msg("poisoned memory governance state").into(),
+            )
+        })?;
+        let receipt = governance
+            .state
+            .next_receipt(&transaction_key, changes)
+            .map_err(TransactionCommitError::Rejected)?;
+        let mut outcome = storage
+            .transaction_outcomes
+            .get_mut(&transaction_key)
+            .ok_or_else(|| {
+                TransactionCommitError::Rejected(
+                    CorruptionError::msg("missing governed transaction reservation").into(),
+                )
+            })?;
+        if *outcome != MemoryTransactionOutcomeState::Staging {
+            return Err(TransactionCommitError::Rejected(
+                CorruptionError::msg("governed transaction is not staging").into(),
+            ));
+        }
+        *outcome = MemoryTransactionOutcomeState::CommitAttempted;
+        governance.state.sequence = receipt.sequence();
+        governance.receipts.insert(transaction_key, receipt.clone());
+        self.publish();
+        // Retain the entry guard: no fallible lookup remains after publication.
+        *outcome = MemoryTransactionOutcomeState::Committed;
+        Ok(receipt)
     }
 
     pub fn rollback_with_outcome(mut self) -> Result<(), StorageError> {
@@ -1365,6 +1496,70 @@ impl Drop for LockGuard<'_> {
 mod tests {
     use super::*;
     use crate::model::NamedNode;
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "receipt invariant assertions"
+    )]
+    fn governed_memory_rejects_invalid_reservation_before_publication()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for state in [None, Some(MemoryTransactionOutcomeState::RolledBack)] {
+            let storage = MemoryStorage::new();
+            let key = [1; 16];
+            let mut tx = storage
+                .start_governed_transaction_with_control(
+                    &key,
+                    &TransactionStartControl::new(),
+                    Instant::now(),
+                )
+                .map_err(|_| "fresh memory transaction did not open")?;
+            let node = NamedNode::new_unchecked("urn:unpublished");
+            let quad = Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph);
+            tx.insert(quad.clone());
+            if let Some(state) = state {
+                storage.transaction_outcomes.insert(key, state);
+            } else {
+                storage.transaction_outcomes.remove(&key);
+            }
+            assert!(matches!(
+                tx.commit_with_receipt(&SemanticChangeSet::default()),
+                Err(TransactionCommitError::Rejected(StorageError::Corruption(
+                    _
+                )))
+            ));
+            assert!(!storage.snapshot().contains(&EncodedQuad::from(&quad)));
+            let governance = storage.governance.read().unwrap();
+            assert_eq!(governance.state.sequence, 0);
+            assert!(governance.receipts.is_empty());
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic,
+        clippy::missing_assert_message,
+        reason = "intentional lock poison tests fail-closed lookups"
+    )]
+    fn governed_memory_poison_is_corruption_for_both_lookups() {
+        let storage = MemoryStorage::new();
+        drop(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || {
+                let _guard = storage.governance.write().unwrap();
+                panic!("inject governance lock poison");
+            },
+        )));
+        assert!(matches!(
+            storage.lookup_commit_receipt(&[1; 16]),
+            Err(StorageError::Corruption(_))
+        ));
+        assert!(matches!(
+            storage.lookup_transaction_outcome(&[1; 16]),
+            Err(StorageError::Corruption(_))
+        ));
+    }
 
     #[test]
     fn test_range() {

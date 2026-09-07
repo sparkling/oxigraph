@@ -23,7 +23,11 @@ use crate::storage::{DEFAULT_BULK_LOAD_BATCH_SIZE, map_thread_result};
 use crate::storage::{
     StorageTransactionOutcome, StorageTransactionStartError, TransactionStartControl,
 };
-use crate::store::{Namespace, NamespacePrefix};
+use crate::store::receipt::GovernanceState;
+use crate::store::{
+    CommitReceipt, CommitReceiptOutcome, Namespace, NamespacePrefix, SemanticChangeSet,
+    TransactionCommitError, TransactionKey, TransactionNonCommitReason,
+};
 use oxstr::OxString;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(feature = "rdf-12")]
@@ -64,6 +68,14 @@ const TRANSACTION_OUTCOME_STAGING: &[u8] = &[1, 0];
 const TRANSACTION_OUTCOME_COMMIT_ATTEMPTED: &[u8] = &[1, 1];
 const TRANSACTION_OUTCOME_COMMITTED: &[u8] = &[1, 2];
 const TRANSACTION_OUTCOME_ROLLED_BACK: &[u8] = &[1, 3];
+// Governed commits require an embedded receipt: a missing receipt is never
+// mistaken for a legitimate v1 commit. Both namespaces reserve the same key space.
+const GOVERNED_OUTCOME_KEY_PREFIX: &[u8] = b"\0oxigraph.transaction-outcome.v2\0";
+const GOVERNED_OUTCOME_STAGING: &[u8] = &[2, 0];
+const GOVERNED_OUTCOME_COMMIT_ATTEMPTED: &[u8] = &[2, 1];
+const GOVERNED_OUTCOME_COMMITTED: &[u8] = &[2, 2];
+const GOVERNED_OUTCOME_ROLLED_BACK: &[u8] = &[2, 3];
+const GOVERNANCE_STATE_KEY: &[u8] = b"\0oxigraph.governance.v1\0";
 const NAMESPACE_KEY_PREFIX: &[u8] = b"\0oxigraph.namespace.";
 const NAMESPACE_SCHEMA_KEY: &[u8] = b"\0oxigraph.namespace.schema\0";
 const NAMESPACE_MAPPING_KEY_PREFIX: &[u8] = b"\0oxigraph.namespace.mapping.v1\0";
@@ -419,15 +431,52 @@ impl RocksDbStorage {
         control: &TransactionStartControl,
         started_at: Instant,
     ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
-        let outcome_key = transaction_outcome_key(transaction_key);
+        self.start_outcome_transaction(transaction_key, false, control, started_at)
+    }
+
+    pub fn start_governed_transaction_with_control(
+        &self,
+        transaction_key: &[u8; 16],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+        self.start_outcome_transaction(transaction_key, true, control, started_at)
+    }
+
+    fn start_outcome_transaction(
+        &self,
+        transaction_key: &[u8; 16],
+        governed: bool,
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<RocksDbStorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+        let legacy_key = transaction_outcome_key(transaction_key);
+        let governed_key = governed_outcome_key(transaction_key);
+        let (outcome_key, alternative_key, staging, rolled_back) = if governed {
+            (
+                &governed_key,
+                &legacy_key,
+                GOVERNED_OUTCOME_STAGING,
+                GOVERNED_OUTCOME_ROLLED_BACK,
+            )
+        } else {
+            (
+                &legacy_key,
+                &governed_key,
+                TRANSACTION_OUTCOME_STAGING,
+                TRANSACTION_OUTCOME_ROLLED_BACK,
+            )
+        };
         Ok(RocksDbStorageKeyedReadableTransaction {
+            transaction_key: *transaction_key,
+            governed,
             inner: RocksDbStorageReadableTransaction {
                 buffer: Vec::new(),
                 transaction: self.db.start_keyed_readable_transaction_with_control(
                     &self.default_cf,
-                    &outcome_key,
-                    TRANSACTION_OUTCOME_STAGING,
-                    TRANSACTION_OUTCOME_ROLLED_BACK,
+                    [outcome_key, alternative_key],
+                    staging,
+                    rolled_back,
                     control,
                     started_at,
                 )?,
@@ -440,18 +489,67 @@ impl RocksDbStorage {
         &self,
         transaction_key: &[u8; 16],
     ) -> Result<StorageTransactionOutcome, StorageError> {
-        let Some(record) = self
-            .db
-            .get(&self.default_cf, &transaction_outcome_key(transaction_key))?
-        else {
-            return Ok(StorageTransactionOutcome::Indeterminate);
+        Ok(match self.lookup_commit_receipt(transaction_key)? {
+            CommitReceiptOutcome::Committed(_) | CommitReceiptOutcome::CommittedWithoutReceipt => {
+                StorageTransactionOutcome::Committed
+            }
+            CommitReceiptOutcome::ProvenAbsent(_) => StorageTransactionOutcome::RolledBack,
+            CommitReceiptOutcome::Indeterminate => StorageTransactionOutcome::Indeterminate,
+        })
+    }
+
+    pub fn lookup_commit_receipt(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<CommitReceiptOutcome, StorageError> {
+        // One snapshot prevents racing a final batch's receipt and high-water state.
+        let reader = self.db.snapshot();
+        let legacy = reader.get(&self.default_cf, &transaction_outcome_key(transaction_key))?;
+        let governed = reader.get(&self.default_cf, &governed_outcome_key(transaction_key))?;
+        if legacy.is_some() && governed.is_some() {
+            return Err(CorruptionError::msg(
+                "transaction key reserved in both outcome namespaces",
+            )
+            .into());
+        }
+        if let Some(record) = governed {
+            return match record.as_ref() {
+                GOVERNED_OUTCOME_STAGING | GOVERNED_OUTCOME_COMMIT_ATTEMPTED => {
+                    Ok(CommitReceiptOutcome::Indeterminate)
+                }
+                GOVERNED_OUTCOME_ROLLED_BACK => Ok(CommitReceiptOutcome::ProvenAbsent(
+                    TransactionNonCommitReason::RolledBack,
+                )),
+                value if value.starts_with(GOVERNED_OUTCOME_COMMITTED) => {
+                    let receipt = CommitReceipt::decode(&value[2..])?;
+                    let state = reader
+                        .get(&self.default_cf, GOVERNANCE_STATE_KEY)?
+                        .ok_or_else(|| {
+                            CorruptionError::msg("committed receipt without governance state")
+                        })?;
+                    let state = GovernanceState::decode(&state)?;
+                    if receipt.transaction_key().as_bytes() != transaction_key
+                        || receipt.store_identity() != &state.store_identity
+                        || receipt.sequence() > state.sequence
+                    {
+                        return Err(CorruptionError::msg("receipt key, store identity or sequence does not match governance state").into());
+                    }
+                    Ok(CommitReceiptOutcome::Committed(receipt))
+                }
+                _ => Err(CorruptionError::msg("invalid governed outcome record").into()),
+            };
+        }
+        let Some(record) = legacy else {
+            return Ok(CommitReceiptOutcome::Indeterminate);
         };
         match record.as_ref() {
             TRANSACTION_OUTCOME_STAGING | TRANSACTION_OUTCOME_COMMIT_ATTEMPTED => {
-                Ok(StorageTransactionOutcome::Indeterminate)
+                Ok(CommitReceiptOutcome::Indeterminate)
             }
-            TRANSACTION_OUTCOME_COMMITTED => Ok(StorageTransactionOutcome::Committed),
-            TRANSACTION_OUTCOME_ROLLED_BACK => Ok(StorageTransactionOutcome::RolledBack),
+            TRANSACTION_OUTCOME_COMMITTED => Ok(CommitReceiptOutcome::CommittedWithoutReceipt),
+            TRANSACTION_OUTCOME_ROLLED_BACK => Ok(CommitReceiptOutcome::ProvenAbsent(
+                TransactionNonCommitReason::RolledBack,
+            )),
             value => Err(CorruptionError::msg(format!(
                 "invalid transaction outcome record: {value:?}"
             ))
@@ -528,6 +626,12 @@ impl RocksDbStorage {
 fn transaction_outcome_key(transaction_key: &[u8; 16]) -> Vec<u8> {
     let mut key = Vec::with_capacity(TRANSACTION_OUTCOME_KEY_PREFIX.len() + transaction_key.len());
     key.extend_from_slice(TRANSACTION_OUTCOME_KEY_PREFIX);
+    key.extend_from_slice(transaction_key);
+    key
+}
+
+fn governed_outcome_key(transaction_key: &[u8; 16]) -> Vec<u8> {
+    let mut key = GOVERNED_OUTCOME_KEY_PREFIX.to_vec();
     key.extend_from_slice(transaction_key);
     key
 }
@@ -1550,6 +1654,8 @@ pub struct RocksDbStorageReadableTransaction<'a> {
 #[must_use]
 pub struct RocksDbStorageKeyedReadableTransaction<'a> {
     inner: RocksDbStorageReadableTransaction<'a>,
+    transaction_key: [u8; 16],
+    governed: bool,
 }
 
 impl<'a> Deref for RocksDbStorageKeyedReadableTransaction<'a> {
@@ -1568,10 +1674,81 @@ impl DerefMut for RocksDbStorageKeyedReadableTransaction<'_> {
 
 impl RocksDbStorageKeyedReadableTransaction<'_> {
     pub fn commit(self) -> Result<(), StorageError> {
+        if self.governed {
+            return Err(StorageError::Other(
+                "governed transactions require a receipt commit".into(),
+            ));
+        }
         self.inner.transaction.commit_keyed(
             TRANSACTION_OUTCOME_COMMIT_ATTEMPTED,
             TRANSACTION_OUTCOME_COMMITTED,
         )
+    }
+
+    pub fn commit_with_receipt(
+        mut self,
+        changes: &SemanticChangeSet,
+    ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
+        if !self.governed {
+            return Err(TransactionCommitError::Rejected(StorageError::Other(
+                "receipt commit requires a governed transaction".into(),
+            )));
+        }
+        let cf = &self.inner.storage.default_cf;
+        // All fallible validation precedes CommitAttempted. The held writer permit
+        // serializes this high-water allocation with every other governed writer.
+        let state = self
+            .inner
+            .transaction
+            .reader()
+            .get(cf, GOVERNANCE_STATE_KEY)
+            .map_err(TransactionCommitError::Rejected)?;
+        if state.is_none() {
+            // Absence is valid only before the first successful governed commit.
+            // Never silently create a new lineage after losing its high-water key.
+            let reader = self.inner.transaction.reader();
+            let mut records = reader.scan_prefix(cf, GOVERNED_OUTCOME_KEY_PREFIX);
+            while records.is_valid() {
+                if !matches!(
+                    records.value(),
+                    Some(
+                        GOVERNED_OUTCOME_STAGING
+                            | GOVERNED_OUTCOME_COMMIT_ATTEMPTED
+                            | GOVERNED_OUTCOME_ROLLED_BACK
+                    )
+                ) {
+                    return Err(TransactionCommitError::Rejected(
+                        CorruptionError::msg("governed history exists without governance state")
+                            .into(),
+                    ));
+                }
+                records.next();
+            }
+            records.status().map_err(TransactionCommitError::Rejected)?;
+        }
+        let mut state = state
+            .as_deref()
+            .map(GovernanceState::decode)
+            .transpose()
+            .map_err(TransactionCommitError::Rejected)?
+            .unwrap_or_default();
+        let receipt = state
+            .next_receipt(&self.transaction_key, changes)
+            .map_err(TransactionCommitError::Rejected)?;
+        state.sequence = receipt.sequence();
+        self.inner
+            .transaction
+            .insert(cf, GOVERNANCE_STATE_KEY, &state.encode());
+        let mut committed = GOVERNED_OUTCOME_COMMITTED.to_vec();
+        committed.extend_from_slice(&receipt.encode());
+        self.inner
+            .transaction
+            .commit_keyed(GOVERNED_OUTCOME_COMMIT_ATTEMPTED, &committed)
+            .map_err(|source| TransactionCommitError::Indeterminate {
+                transaction_key: TransactionKey::new(self.transaction_key),
+                source,
+            })?;
+        Ok(receipt)
     }
 
     pub fn rollback(self) -> Result<(), StorageError> {
@@ -2304,6 +2481,249 @@ mod tests {
     use super::*;
     use crate::model::NamedNode;
     use tempfile::TempDir;
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "receipt corruption assertions"
+    )]
+    fn governed_receipt_lookup_rejects_malformed_and_inconsistent_metadata()
+    -> Result<(), StorageError> {
+        let directory = TempDir::new()?;
+        let storage = RocksDbStorage::open(directory.path())?;
+        let key = [1; 16];
+        let state = GovernanceState {
+            sequence: 1,
+            ..GovernanceState::default()
+        };
+        let receipt = CommitReceipt::new(
+            state.store_identity.clone(),
+            1,
+            TransactionKey::new(key),
+            &SemanticChangeSet::default(),
+        );
+        let mut committed = GOVERNED_OUTCOME_COMMITTED.to_vec();
+        committed.extend(receipt.encode());
+        storage
+            .db
+            .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &state.encode())?;
+        for malformed in [
+            vec![],
+            vec![9, 2],
+            vec![2, 9],
+            vec![2, 0, 1],
+            vec![2, 2],
+            vec![2, 2, 1],
+        ] {
+            storage
+                .db
+                .insert(&storage.default_cf, &governed_outcome_key(&key), &malformed)?;
+            assert!(matches!(
+                storage.lookup_commit_receipt(&key),
+                Err(StorageError::Corruption(_))
+            ));
+        }
+        for (stored_key, stored_state) in [
+            ([2; 16], state.clone()),
+            (
+                key,
+                GovernanceState {
+                    sequence: 1,
+                    ..GovernanceState::default()
+                },
+            ),
+        ] {
+            storage.db.insert(
+                &storage.default_cf,
+                &governed_outcome_key(&stored_key),
+                &committed,
+            )?;
+            storage.db.insert(
+                &storage.default_cf,
+                GOVERNANCE_STATE_KEY,
+                &stored_state.encode(),
+            )?;
+            assert!(matches!(
+                storage.lookup_commit_receipt(&stored_key),
+                Err(StorageError::Corruption(_))
+            ));
+        }
+        let future = CommitReceipt::new(
+            state.store_identity.clone(),
+            2,
+            TransactionKey::new(key),
+            &SemanticChangeSet::default(),
+        );
+        let mut future_record = GOVERNED_OUTCOME_COMMITTED.to_vec();
+        future_record.extend(future.encode());
+        storage
+            .db
+            .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &state.encode())?;
+        storage.db.insert(
+            &storage.default_cf,
+            &governed_outcome_key(&key),
+            &future_record,
+        )?;
+        assert!(storage.lookup_commit_receipt(&key).is_err());
+        storage
+            .db
+            .insert(&storage.default_cf, &governed_outcome_key(&key), &committed)?;
+        storage
+            .db
+            .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, b"corrupt")?;
+        assert!(storage.lookup_commit_receipt(&key).is_err());
+        storage
+            .db
+            .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &state.encode())?;
+        assert_eq!(
+            storage.lookup_commit_receipt(&key)?,
+            CommitReceiptOutcome::Committed(receipt)
+        );
+        storage.write_raw_transaction_outcome_record(&key, TRANSACTION_OUTCOME_COMMITTED)?;
+        assert!(storage.lookup_commit_receipt(&key).is_err());
+        assert!(storage.lookup_transaction_outcome(&key).is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "governed capture poisoning assertions"
+    )]
+    fn governed_capture_failure_never_commits_through_any_public_entry_point()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::store::{
+            ChangeTrackingError, OutcomeAwareWritableDataset, Store, TransactionRequest,
+            WritableDataset, WritableNamespaceRegistry,
+        };
+        let directory = TempDir::new()?;
+        let prefix = NamespacePrefix::new("ex")?;
+        let store = Store::open(directory.path())?;
+        // Inject invalid persisted data only after open: open correctly rejects
+        // corrupt namespaces, whereas this test exercises mutation-time poisoning.
+        store.set_namespace(Namespace::new(
+            prefix.clone(),
+            NamedNode::new_unchecked("not an absolute IRI"),
+        ))?;
+        assert!(store.namespace(&prefix).is_err());
+        let node = NamedNode::new_unchecked("urn:unpublished");
+        let quad = Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph);
+        for entry_point in 0..3 {
+            let key = TransactionKey::new([entry_point; 16]);
+            let mut tx = store
+                .start_governed_transaction(TransactionRequest::default(), key.clone())?
+                .into_transaction();
+            tx.insert(quad.clone())?;
+            assert!(
+                tx.set_namespace(Namespace::new(
+                    prefix.clone(),
+                    NamedNode::new_unchecked("urn:never-committed")
+                ))
+                .is_err()
+            );
+            assert!(matches!(tx.changes(), Err(ChangeTrackingError::Failed)));
+            match entry_point {
+                0 => assert!(matches!(
+                    tx.commit(),
+                    Err(TransactionCommitError::Rejected(
+                        ChangeTrackingError::Failed
+                    ))
+                )),
+                1 => assert!(matches!(
+                    WritableDataset::commit(tx),
+                    Err(ChangeTrackingError::Failed)
+                )),
+                _ => assert!(matches!(
+                    OutcomeAwareWritableDataset::commit_with_outcome(tx),
+                    Err(TransactionCommitError::Rejected(
+                        ChangeTrackingError::Failed
+                    ))
+                )),
+            }
+            assert_eq!(
+                store.lookup_commit_receipt(&key)?,
+                CommitReceiptOutcome::ProvenAbsent(TransactionNonCommitReason::RolledBack)
+            );
+            assert!(!store.contains(&quad)?);
+        }
+        assert_eq!(
+            store
+                .start_governed_transaction(
+                    TransactionRequest::default(),
+                    TransactionKey::new([3; 16])
+                )?
+                .into_transaction()
+                .commit()?
+                .sequence(),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "receipt pre-attempt rejection assertions"
+    )]
+    fn governed_receipt_rejects_bad_highwater_before_commit_attempt()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for mode in ["corrupt", "exhausted", "missing"] {
+            let directory = TempDir::new()?;
+            let storage = RocksDbStorage::open(directory.path())?;
+            let control = TransactionStartControl::new();
+            let previous = storage
+                .start_governed_transaction_with_control(&[1; 16], &control, Instant::now())
+                .map_err(|_| "fresh governed transaction did not open")?
+                .commit_with_receipt(&SemanticChangeSet::default())?;
+            let mut corrupt = storage.db.start_readable_transaction()?;
+            match mode {
+                "corrupt" => corrupt.insert(&storage.default_cf, GOVERNANCE_STATE_KEY, b"corrupt"),
+                "exhausted" => corrupt.insert(
+                    &storage.default_cf,
+                    GOVERNANCE_STATE_KEY,
+                    &GovernanceState {
+                        store_identity: previous.store_identity().clone(),
+                        sequence: u64::MAX,
+                    }
+                    .encode(),
+                ),
+                _ => corrupt.remove(&storage.default_cf, GOVERNANCE_STATE_KEY),
+            }
+            corrupt.commit()?;
+            let mut tx = storage
+                .start_governed_transaction_with_control(&[2; 16], &control, Instant::now())
+                .map_err(|_| "new key did not open before high-water validation")?;
+            let node = NamedNode::new_unchecked("urn:rejected");
+            let quad = Quad::new(node.clone(), node.clone(), node, GraphName::DefaultGraph);
+            tx.insert(quad.clone());
+            let attempted_before = storage
+                .transaction_outcome_fault_events()?
+                .iter()
+                .filter(|point| **point == TransactionOutcomeFaultPoint::CommitAttemptedBefore)
+                .count();
+            assert!(matches!(
+                tx.commit_with_receipt(&SemanticChangeSet::default()),
+                Err(TransactionCommitError::Rejected(StorageError::Corruption(
+                    _
+                )))
+            ));
+            assert!(!storage.snapshot().contains(&EncodedQuad::from(&quad))?);
+            assert_eq!(
+                storage.lookup_commit_receipt(&[2; 16])?,
+                CommitReceiptOutcome::ProvenAbsent(TransactionNonCommitReason::RolledBack)
+            );
+            let attempted_after = storage
+                .transaction_outcome_fault_events()?
+                .iter()
+                .filter(|point| **point == TransactionOutcomeFaultPoint::CommitAttemptedBefore)
+                .count();
+            assert_eq!(attempted_before, attempted_after);
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_send_sync() {

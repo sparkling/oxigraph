@@ -11,7 +11,10 @@ use crate::storage::rocksdb::{
     RocksDbStorageBulkLoader, RocksDbStorageKeyedReadableTransaction, RocksDbStorageOptions,
     RocksDbStorageReadableTransaction, RocksDbStorageReader, RocksDbStorageTransaction,
 };
-use crate::store::{Namespace, NamespacePrefix};
+use crate::store::{
+    CommitReceipt, CommitReceiptOutcome, Namespace, NamespacePrefix, SemanticChangeSet,
+    TransactionCommitError,
+};
 use oxstr::OxString;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -354,7 +357,45 @@ impl Storage {
         match &self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKind::RocksDb(storage) => storage.lookup_transaction_outcome(transaction_key),
-            StorageKind::Memory(storage) => Ok(storage.lookup_transaction_outcome(transaction_key)),
+            StorageKind::Memory(storage) => storage.lookup_transaction_outcome(transaction_key),
+        }
+    }
+
+    pub(crate) fn start_governed_transaction_with_control(
+        &self,
+        transaction_key: &[u8; 16],
+        control: &TransactionStartControl,
+        started_at: Instant,
+    ) -> Result<StorageKeyedReadableTransaction<'_>, StorageTransactionStartError> {
+        Ok(StorageKeyedReadableTransaction {
+            kind: match &self.kind {
+                #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+                StorageKind::RocksDb(storage) => StorageKeyedReadableTransactionKind::RocksDb(
+                    storage.start_governed_transaction_with_control(
+                        transaction_key,
+                        control,
+                        started_at,
+                    )?,
+                ),
+                StorageKind::Memory(storage) => StorageKeyedReadableTransactionKind::Memory(
+                    storage.start_governed_transaction_with_control(
+                        transaction_key,
+                        control,
+                        started_at,
+                    )?,
+                ),
+            },
+        })
+    }
+
+    pub(crate) fn lookup_commit_receipt(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<CommitReceiptOutcome, StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(storage) => storage.lookup_commit_receipt(transaction_key),
+            StorageKind::Memory(storage) => storage.lookup_commit_receipt(transaction_key),
         }
     }
 
@@ -994,6 +1035,21 @@ enum StorageKeyedReadableTransactionKind<'a> {
     expect(clippy::unnecessary_wraps)
 )]
 impl StorageKeyedReadableTransaction<'_> {
+    pub(crate) fn commit_with_receipt(
+        self,
+        changes: &SemanticChangeSet,
+    ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
+        match self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
+                transaction.commit_with_receipt(changes)
+            }
+            StorageKeyedReadableTransactionKind::Memory(transaction) => {
+                transaction.commit_with_receipt(changes)
+            }
+        }
+    }
+
     pub fn reader(&self) -> StorageReader<'_> {
         StorageReader {
             kind: match &self.kind {

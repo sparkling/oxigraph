@@ -33,12 +33,16 @@
 //! # Result::<_, Box<dyn std::error::Error>>::Ok(())
 //! ```
 mod namespace;
+pub(crate) mod receipt;
 mod semantic_change;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
+};
+pub use receipt::{
+    CommitId, CommitReceipt, CommitReceiptOutcome, GovernedTransaction, StoreIdentity,
 };
 pub use semantic_change::{
     ChangeTrackingError, ChangeTrackingTransaction, SemanticChange, SemanticChangeSet,
@@ -701,7 +705,8 @@ impl From<StoreOptions> for StorageOptions {
 
 #[expect(
     clippy::same_name_method,
-    reason = "the transactional persistence trait deliberately mirrors the established Store API"
+    clippy::multiple_inherent_impl,
+    reason = "transaction traits mirror the Store API; the additive governance API has its own focused module"
 )]
 impl Store {
     /// New in-memory [`Store`] without RocksDB.
