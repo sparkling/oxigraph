@@ -12,8 +12,8 @@
 	url = https://github.com/lz4/lz4.git
 [submodule "testsuite/N3"]
 	path = testsuite/N3
-	url = https://github.com/w3c-cg/N3.git
-	branch = master
+	url = https://github.com/sparkling/N3.git
+	branch = main
 [submodule "testsuite/rdf-canon"]
 	path = testsuite/rdf-canon
 	url = https://github.com/w3c/rdf-canon.git
