@@ -1,11 +1,11 @@
 # ADR-0021: Transaction-time SHACL validation
 
-- **Status**: Proposed
+- **Status**: Implemented
 - **Date**: 2026-08-24
 - Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
-- Implementation status: G2.4a native full staged-view gate implemented;
-  G2.4b executable policy-receipt and failure closure remains outstanding
+- Implementation status: G2.4a full staged-view gate and G2.4b native bounded
+  policy receipts/failure closure implemented; opt-in Rust API only
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md),
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
@@ -118,9 +118,8 @@ Every gate error consumes the transaction through explicit rollback and retains
 any rollback failure beside the original error. Once governed commit is called,
 its exact outcome (including an indeterminate key) is preserved without a
 rollback attempt. Accepted primary changes, receipt, and outbox remain one
-native commit. This is **not yet** an executable, durable SHACL-policy receipt:
-G2.4b must bind policy/profile/limits/shapes identity/disposition and close the
-remaining injected-failure acceptance matrix before this ADR is Implemented.
+native commit. G2.4b extends this boundary with the executable, durable policy
+receipt and injected-failure checks described below.
 
 Native tests and a runnable consumer example:
 
@@ -138,6 +137,63 @@ No specification pins, expected semantic results, or qualification receipts
 were changed. These native tests do not claim full SHACL conformance, HTTP or
 binding parity, or production qualification.
 
+## Native G2.4b policy receipt and failure closure (2026-09-07)
+
+`ShaclCommitPolicy::descriptor()` produces the exact canonical policy identity:
+dated profile IDs; ordered, unique graph-selector hashes and required flags;
+external/immutable-stored/mutable-stored shapes source; shapes-graph selector;
+sorted unique severity-IRI hashes; both processor flags; all fourteen processor
+ceilings plus the two snapshot ceilings; and exact timeout seconds/nanoseconds.
+Policy v1 fixes independent graph evaluation, `ImplementedFeatureSet`, no
+inference/materialization, no imports, and no network. Cancellation state and
+the process-local absolute clock are not policy identity. The descriptor does
+not include shapes contents: compare it together with the separate begin/commit
+shapes hashes. Graph selectors, severity IRIs, and RDF payloads are not copied
+into receipts. Hashes are not confidentiality protection for guessable terms.
+
+`ShaclValidationEvidence` adds begin/observed-commit shapes identities, per-scope
+unobserved/absent/present topology, completed graph count, and disposition. Its
+versioned, checksummed encoding is at most 8 KiB, with at most 128 graph scopes
+and 32 input severity entries. Decoding checks bounds before allocation,
+canonical fields, profile/version tags, complete accepted topology, and equal
+begin/commit shapes for accepted external or immutable-stored policy. Mutable
+shapes may differ. Rejected evidence records only observations actually made.
+
+Successful validation is embedded in governed outcome `[2,5]` with the unchanged
+153-byte v2 primary receipt and a checksum binding the complete envelope.
+RocksDB publishes this single outcome value, RDF/namespaces, outbox, and high
+water in one batch. Memory uses an explicit plain/validated receipt enum under
+the same publication locks. `Store::lookup_shacl_receipt` reads one snapshot;
+both ordinary receipt lookup and outbox/retention validation reject malformed
+validated outcomes. No side record can outlive or become detached from its
+receipt. Existing `[2,4]` expiry replaces the entire envelope and preserves
+committed-expired identity; it does not retain validation evidence. Plain and
+expired results are `Unavailable(primary_outcome)`, not assertions that
+validation never occurred. DTO lookup and portable codecs need no SHACL feature.
+
+The final cooperative cancellation/deadline check runs after outbox/receipt
+preparation but before `CommitAttempted`. Failure explicitly rolls back, keeps
+the original validation disposition and any rollback failure, and publishes no
+primary, receipt, or outbox. After `CommitAttempted`, the native outcome/key is
+preserved without rollback or replay. An indeterminate commit can therefore
+carry an `Accepted` validation observation; only native receipt lookup resolves
+whether it committed. Checksums detect corruption, not forgery or independent
+semantic truth. Diagnostic failure evidence is returned, not persisted as a
+successful receipt or sent to telemetry.
+
+Tests cover all eight native staging/attempt/final-batch/rollback fault seams,
+last-check cancellation with successful and failed rollback, policy field
+identity, malformed mutable shapes, topology, time/size/processor failures,
+every-byte corruption/truncation, impossible rechecksummed evidence, atomic
+expiry, backup, compaction, and read-only reopen. The native scope is complete;
+HTTP/binding policy configuration, global enforcement, incremental validation,
+remote imports, and production/power-loss qualification are not claimed.
+
+This additive outcome tag is a storage compatibility boundary: older binaries
+reject `[2,5]` on governed lookup/outbox access. No global schema migration,
+automatic evidence rewrite, mixed-version writer safety, or downgrade support
+is implied. Existing v1/v2 plain receipts and retention anchors are unchanged.
+
 ## Alternatives rejected
 
 - **Validate only after commit.** Invalid state becomes externally visible.
@@ -152,6 +208,7 @@ The existing snapshot adapter is
 [`reasoning.rs`](../../lib/oxigraph/src/reasoning.rs), and the bounded
 processor lives in [`lib/oxshacl`](../../lib/oxshacl). The native gate is
 [`shacl_gate.rs`](../../lib/oxigraph/src/store/shacl_gate.rs), with
+[feature-independent receipt codec](../../lib/oxigraph/src/store/shacl_receipt.rs),
 [integration tests](../../lib/oxigraph/tests/shacl_commit_gate.rs) and a
 [runnable example](../../lib/oxigraph/examples/shacl_commit_gate.rs).
 G2.4a-G2.4b own delivery in

@@ -465,6 +465,16 @@ impl super::OutcomeAwareWritableDataset for GovernedTransaction<'_> {
 }
 
 impl Store {
+    /// Retrieves SHACL evidence and its primary receipt from one native snapshot.
+    /// An unavailable result preserves the exact primary outcome; it does not
+    /// assert that the transaction was never validated.
+    pub fn lookup_shacl_receipt(
+        &self,
+        transaction_key: &TransactionKey,
+    ) -> Result<super::ShaclReceiptOutcome, StorageError> {
+        self.storage
+            .lookup_shacl_receipt(transaction_key.as_bytes())
+    }
     /// Opens an opt-in full staged-view SHACL gate under the governed writer
     /// permit. Existing unguarded write APIs remain explicitly unguarded.
     #[cfg(feature = "shacl")]
@@ -709,13 +719,32 @@ impl GovernedTransaction<'_> {
     pub fn commit(
         self,
     ) -> Result<CommitReceipt, TransactionCommitError<ChangeTrackingError<StorageError>>> {
+        self.commit_inner(None)
+    }
+
+    #[cfg(feature = "shacl")]
+    pub(super) fn commit_validated(
+        self,
+        evidence: &super::ShaclValidationEvidence,
+        before_attempt: &dyn Fn() -> Result<(), StorageError>,
+    ) -> Result<CommitReceipt, TransactionCommitError<ChangeTrackingError<StorageError>>> {
+        self.commit_inner(Some(super::shacl_receipt::ValidationCommitContext {
+            evidence,
+            before_attempt,
+        }))
+    }
+
+    fn commit_inner(
+        self,
+        validation: Option<super::shacl_receipt::ValidationCommitContext<'_>>,
+    ) -> Result<CommitReceipt, TransactionCommitError<ChangeTrackingError<StorageError>>> {
         let (transaction, changes) = self
             .inner
             .into_parts()
             .map_err(TransactionCommitError::Rejected)?;
         transaction
             .inner
-            .commit_with_receipt(&changes)
+            .commit_with_receipt(&changes, validation)
             .map_err(|error| match error {
                 TransactionCommitError::Rejected(error) => {
                     TransactionCommitError::Rejected(ChangeTrackingError::Backend(error))

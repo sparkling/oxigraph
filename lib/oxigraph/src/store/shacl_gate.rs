@@ -1,9 +1,10 @@
 //! Opt-in full staged-view validation under the native governed writer permit.
 use super::{
     ChangeTrackingError, CommitReceipt, GovernedTransaction, Namespace, NamespacePrefix,
-    NegotiatedTransaction, OutcomeAwareWritableDataset, SemanticChange, StorageError, Store,
-    TransactionCommitError, TransactionKey, TransactionRequest, TransactionRollbackError,
-    TransactionStartControl, TransactionStartError, WritableDataset, WritableNamespaceRegistry,
+    NegotiatedTransaction, OutcomeAwareWritableDataset, SemanticChange, ShaclDisposition,
+    ShaclPolicyDescriptor, ShaclValidationEvidence, StorageError, Store, TransactionCommitError,
+    TransactionKey, TransactionRequest, TransactionRollbackError, TransactionStartControl,
+    TransactionStartError, WritableDataset, WritableNamespaceRegistry,
 };
 use crate::model::{Dataset, GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 use oxshacl::{
@@ -67,6 +68,90 @@ pub struct ShaclCommitPolicy {
 }
 
 impl ShaclCommitPolicy {
+    /// Executable policy comparison without copying RDF terms into the receipt.
+    /// Cancellation state and absolute Instant are excluded; the exact timeout
+    /// duration and all semantic/resource settings are included.
+    pub fn descriptor(&self) -> Result<ShaclPolicyDescriptor, ShaclGateError> {
+        use super::shacl_receipt::{MAX_SCOPES, MAX_SEVERITIES};
+        if self.data.is_empty()
+            || self.data.len() > MAX_SCOPES
+            || self.options.conformance_disallows.len() > MAX_SEVERITIES
+        {
+            return Err(ShaclGateError::Policy(
+                "receipt supports 1-128 graph scopes and at most 32 input severities",
+            ));
+        }
+        let profiles = self.profiles.iter().fold(0, |mask, profile| {
+            mask | (1
+                << match profile {
+                    oxshacl::ProfileId::Core12Subset20260723 => 0,
+                    oxshacl::ProfileId::NodeExpressions12Subset20260108 => 1,
+                    oxshacl::ProfileId::SparqlExtensions12Subset20260130 => 2,
+                    oxshacl::ProfileId::Rules12Subset20260727 => 3,
+                    oxshacl::ProfileId::CompactSyntax12Subset20251030 => 4,
+                })
+        });
+        let (shapes_source, shapes_graph) = match &self.shapes {
+            ShaclShapesSource::External(source) => (0, graph_identity(source.graph_name())),
+            ShaclShapesSource::Stored {
+                graph_name,
+                mutable,
+            } => (if *mutable { 2 } else { 1 }, graph_identity(graph_name)),
+        };
+        let mut severities: Vec<_> = self
+            .options
+            .conformance_disallows
+            .iter()
+            .map(|iri| {
+                super::receipt::envelope_checksum(
+                    b"oxigraph.shacl-severity.v1\0",
+                    iri.as_str().as_bytes(),
+                )
+            })
+            .collect();
+        severities.sort_unstable();
+        severities.dedup();
+        let limits = &self.options.limits;
+        let descriptor = ShaclPolicyDescriptor {
+            profiles,
+            scopes: self
+                .data
+                .iter()
+                .map(|scope| (graph_identity(&scope.graph_name), scope.required))
+                .collect(),
+            shapes_source,
+            shapes_graph,
+            severities,
+            flags: u8::from(self.options.sub_class_of_in_shapes_graph)
+                | (u8::from(self.options.report_shapes_graph_well_formed) << 1),
+            limits: [
+                limits.max_data_quads,
+                limits.max_shape_quads,
+                limits.max_shapes,
+                limits.max_constraints,
+                limits.max_focus_nodes,
+                limits.max_results,
+                limits.max_path_visits,
+                limits.max_list_items,
+                limits.max_recursion_depth,
+                limits.max_query_bytes,
+                limits.max_query_solutions,
+                limits.max_rule_iterations,
+                limits.max_derived_triples,
+                limits.max_estimated_memory_bytes,
+                self.max_graphs,
+                self.max_snapshot_bytes,
+            ]
+            .map(|value| value as u64),
+            timeout: limits
+                .timeout
+                .ok_or(ShaclGateError::Policy("finite timeout required"))?,
+        };
+        descriptor
+            .validate()
+            .map_err(|_| ShaclGateError::Policy("invalid bounded receipt policy descriptor"))?;
+        Ok(descriptor)
+    }
     pub fn new(data: Vec<ShaclGraphScope>, shapes: ShaclShapesSource) -> Self {
         Self {
             data,
@@ -179,9 +264,22 @@ pub enum ShaclCommitError {
         #[source]
         source: ShaclGateError,
         rollback: Option<TransactionRollbackError<BackendError>>,
+        validation: Box<ShaclValidationEvidence>,
     },
-    #[error(transparent)]
-    Commit(#[from] TransactionCommitError<BackendError>),
+    #[error("native commit after SHACL validation: {outcome}")]
+    Commit {
+        #[source]
+        outcome: TransactionCommitError<BackendError>,
+        validation: Box<ShaclValidationEvidence>,
+    },
+}
+
+impl ShaclCommitError {
+    pub fn validation_evidence(&self) -> &ShaclValidationEvidence {
+        match self {
+            Self::Rejected { validation, .. } | Self::Commit { validation, .. } => validation,
+        }
+    }
 }
 
 /// Diagnostic report; may contain RDF payloads. It is not a durable policy receipt.
@@ -200,6 +298,8 @@ pub struct ShaclCommitReport {
     pub shapes_at_begin: [u8; 32],
     pub shapes_at_commit: [u8; 32],
     pub graphs: Vec<ShaclGraphValidation>,
+    /// Also persisted with the primary receipt in the native validated outcome.
+    pub validation: ShaclValidationEvidence,
 }
 
 /// A governed transaction with no mutable escape hatch around its SHACL gate.
@@ -209,6 +309,7 @@ pub struct ShaclTransaction<'a> {
     policy: ShaclCommitPolicy,
     started: Instant,
     shapes_at_begin: [u8; 32],
+    descriptor: ShaclPolicyDescriptor,
 }
 
 impl<'a> ShaclTransaction<'a> {
@@ -240,6 +341,12 @@ impl<'a> ShaclTransaction<'a> {
             source,
             rollback: None,
         })?;
+        let descriptor = policy
+            .descriptor()
+            .map_err(|source| ShaclStartError::Policy {
+                source,
+                rollback: None,
+            })?;
         let options =
             policy
                 .remaining_options(started)
@@ -303,6 +410,7 @@ impl<'a> ShaclTransaction<'a> {
                 policy,
                 started,
                 shapes_at_begin,
+                descriptor,
             },
             effective,
         ))
@@ -317,21 +425,41 @@ impl<'a> ShaclTransaction<'a> {
         reason = "typed commit report refines the minimal write trait"
     )]
     pub fn commit(self) -> Result<ShaclCommitReport, ShaclCommitError> {
-        let (shapes_at_commit, graphs) = match self.validate() {
+        let mut validation = ShaclValidationEvidence {
+            policy: self.descriptor.clone(),
+            shapes_at_begin: self.shapes_at_begin,
+            shapes_at_commit: None,
+            topology: vec![None; self.policy.data.len()],
+            validated_graphs: 0,
+            disposition: ShaclDisposition::PolicyError,
+        };
+        let (shapes_at_commit, graphs) = match self.validate(&mut validation) {
             Ok(value) => value,
             Err(source) => {
+                validation.disposition = disposition(&source);
                 return Err(ShaclCommitError::Rejected {
                     source,
                     rollback: self.inner.rollback().err(),
+                    validation: Box::new(validation),
                 });
             }
         };
-        let receipt = self.inner.commit()?;
+        validation.disposition = ShaclDisposition::Accepted;
+        let before_attempt = || {
+            self.policy
+                .check(self.started)
+                .map_err(|error| StorageError::Other(Box::new(error)))
+        };
+        let receipt = self
+            .inner
+            .commit_validated(&validation, &before_attempt)
+            .map_err(|outcome| commit_error(outcome, validation.clone()))?;
         Ok(ShaclCommitReport {
             receipt,
             shapes_at_begin: self.shapes_at_begin,
             shapes_at_commit,
             graphs,
+            validation,
         })
     }
 
@@ -343,7 +471,10 @@ impl<'a> ShaclTransaction<'a> {
         self.inner.rollback()
     }
 
-    fn validate(&self) -> Result<([u8; 32], Vec<ShaclGraphValidation>), ShaclGateError> {
+    fn validate(
+        &self,
+        evidence: &mut ShaclValidationEvidence,
+    ) -> Result<([u8; 32], Vec<ShaclGraphValidation>), ShaclGateError> {
         let mut budget = SnapshotBudget::default();
         let (shapes, identity) = match &self.policy.shapes {
             ShaclShapesSource::External(source) => {
@@ -362,6 +493,7 @@ impl<'a> ShaclTransaction<'a> {
                     self.started,
                     &mut budget,
                 )?;
+                evidence.shapes_at_commit = Some(snapshot.1);
                 if !mutable && snapshot.1 != self.shapes_at_begin {
                     return Err(ShaclGateError::ShapesChanged);
                 }
@@ -369,6 +501,7 @@ impl<'a> ShaclTransaction<'a> {
             }
         };
         let shapes_bytes = budget.bytes;
+        evidence.shapes_at_commit = Some(identity);
         budget.charge_copy(shapes_bytes, &self.policy)?; // Compiled source clone.
         if matches!(self.policy.shapes, ShaclShapesSource::External(_)) {
             budget.charge_copy(shapes_bytes, &self.policy)?; // Pinned external source.
@@ -380,8 +513,8 @@ impl<'a> ShaclTransaction<'a> {
         )?;
         let mut graphs = Vec::new();
         let mut results = 0_usize;
-        for scope in &self.policy.data {
-            let (snapshot, _) = staged_snapshot(
+        for (index, scope) in self.policy.data.iter().enumerate() {
+            let snapshot = staged_snapshot(
                 &self.inner,
                 &scope.graph_name,
                 scope.required,
@@ -389,7 +522,12 @@ impl<'a> ShaclTransaction<'a> {
                 &self.policy,
                 self.started,
                 &mut budget,
-            )?;
+            );
+            if matches!(&snapshot, Err(ShaclGateError::MissingGraph(_))) {
+                evidence.topology[index] = Some(false);
+            }
+            let (snapshot, _) = snapshot?;
+            evidence.topology[index] = Some(snapshot_present(&snapshot));
             let mut options = self.policy.remaining_options(self.started)?;
             options.limits.max_results = options.limits.max_results.saturating_sub(results);
             // ValidationReport owns a clone of the shapes graph. Charge it
@@ -397,6 +535,8 @@ impl<'a> ShaclTransaction<'a> {
             budget.charge_copy(shapes_bytes, &self.policy)?;
             let report = Validator::new(&compiled, &options)
                 .validate(&snapshot, ConformanceRequest::ImplementedFeatureSet)?;
+            evidence.validated_graphs = u16::try_from(index + 1)
+                .map_err(|_| ShaclGateError::Policy("validated graph count overflow"))?;
             self.policy.check(self.started)?;
             if !report.conforms() {
                 return Err(ShaclGateError::Nonconforming {
@@ -413,6 +553,409 @@ impl<'a> ShaclTransaction<'a> {
         }
         self.policy.check(self.started)?;
         Ok((identity, graphs))
+    }
+}
+
+fn commit_error(
+    outcome: TransactionCommitError<BackendError>,
+    mut validation: ShaclValidationEvidence,
+) -> ShaclCommitError {
+    let outcome = match outcome {
+        TransactionCommitError::Rejected(ChangeTrackingError::Backend(StorageError::Other(
+            error,
+        ))) => match error.downcast::<super::shacl_receipt::ValidationPreAttemptError>() {
+            Ok(error) => {
+                let source = match error.source {
+                    StorageError::Other(source) => match source.downcast::<ShaclGateError>() {
+                        Ok(source) => *source,
+                        Err(source) => ShaclGateError::Backend(ChangeTrackingError::Backend(
+                            StorageError::Other(source),
+                        )),
+                    },
+                    source => ShaclGateError::Backend(ChangeTrackingError::Backend(source)),
+                };
+                validation.disposition = disposition(&source);
+                return ShaclCommitError::Rejected {
+                    source,
+                    rollback: error.rollback.map(|source| {
+                        TransactionRollbackError::Failed(ChangeTrackingError::Backend(source))
+                    }),
+                    validation: Box::new(validation),
+                };
+            }
+            Err(error) => TransactionCommitError::Rejected(ChangeTrackingError::Backend(
+                StorageError::Other(error),
+            )),
+        },
+        other => other,
+    };
+    ShaclCommitError::Commit {
+        outcome,
+        validation: Box::new(validation),
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_assert_message,
+    clippy::unwrap_used,
+    clippy::panic_in_result_fn,
+    reason = "native SHACL fault contract assertions"
+)]
+mod tests {
+    use super::*;
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    use crate::store::CommitReceiptOutcome;
+    use crate::store::ShaclReceiptOutcome;
+    type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn key(id: u8) -> TransactionKey {
+        TransactionKey::new([id; 16])
+    }
+    fn policy() -> ShaclCommitPolicy {
+        ShaclCommitPolicy::new(
+            vec![ShaclGraphScope {
+                graph_name: GraphName::DefaultGraph,
+                required: true,
+            }],
+            ShaclShapesSource::External(Box::new(GraphSnapshot::default_graph(Dataset::default()))),
+        )
+    }
+    fn quad() -> Quad {
+        let name = NamedNode::new_unchecked("urn:atomic");
+        Quad::new(name.clone(), name.clone(), name, GraphName::DefaultGraph)
+    }
+    fn accepted(tx: &ShaclTransaction<'_>) -> ShaclValidationEvidence {
+        ShaclValidationEvidence {
+            policy: tx.descriptor.clone(),
+            shapes_at_begin: tx.shapes_at_begin,
+            shapes_at_commit: Some(tx.shapes_at_begin),
+            topology: vec![Some(true)],
+            validated_graphs: 1,
+            disposition: ShaclDisposition::Accepted,
+        }
+    }
+    #[test]
+    fn descriptor_captures_every_resource_and_semantic_setting() -> TestResult {
+        let base = policy();
+        let expected = base.descriptor()?;
+        assert_eq!(
+            expected.profiles().collect::<Vec<_>>(),
+            vec!["shacl-1.2-core-2026-07-23-subset-v1"]
+        );
+        for index in 0..16 {
+            let mut changed = base.clone();
+            let limits = &mut changed.options.limits;
+            let fields = [
+                &mut limits.max_data_quads,
+                &mut limits.max_shape_quads,
+                &mut limits.max_shapes,
+                &mut limits.max_constraints,
+                &mut limits.max_focus_nodes,
+                &mut limits.max_results,
+                &mut limits.max_path_visits,
+                &mut limits.max_list_items,
+                &mut limits.max_recursion_depth,
+                &mut limits.max_query_bytes,
+                &mut limits.max_query_solutions,
+                &mut limits.max_rule_iterations,
+                &mut limits.max_derived_triples,
+                &mut limits.max_estimated_memory_bytes,
+                &mut changed.max_graphs,
+                &mut changed.max_snapshot_bytes,
+            ];
+            *fields.into_iter().nth(index).unwrap() += 1;
+            let actual = changed.descriptor()?;
+            for position in 0..16 {
+                assert_eq!(
+                    actual.limits()[position],
+                    expected.limits()[position] + u64::from(position == index)
+                );
+            }
+            assert_ne!(actual.fingerprint(), expected.fingerprint());
+        }
+        let mut changes = Vec::new();
+        let mut changed = base.clone();
+        changed.options.limits.timeout =
+            Some(expected.timeout() + std::time::Duration::from_nanos(1));
+        changes.push(changed);
+        let mut changed = base.clone();
+        changed.options.sub_class_of_in_shapes_graph =
+            !changed.options.sub_class_of_in_shapes_graph;
+        changes.push(changed);
+        let mut changed = base.clone();
+        changed.options.report_shapes_graph_well_formed =
+            !changed.options.report_shapes_graph_well_formed;
+        changes.push(changed);
+        let mut changed = base.clone();
+        changed.data[0].required = false;
+        changes.push(changed);
+        let mut changed = base.clone();
+        changed.data[0].graph_name = NamedNode::new_unchecked("urn:other").into();
+        changes.push(changed);
+        for mutable in [false, true] {
+            let mut changed = base.clone();
+            changed.shapes = ShaclShapesSource::Stored {
+                graph_name: GraphName::DefaultGraph,
+                mutable,
+            };
+            changes.push(changed);
+        }
+        let mut changed = base.clone();
+        changed.profiles = ProfileSet::new([
+            oxshacl::ProfileId::Core12Subset20260723,
+            oxshacl::ProfileId::NodeExpressions12Subset20260108,
+        ])?;
+        changes.push(changed);
+        let mut changed = base.clone();
+        changed
+            .options
+            .conformance_disallows
+            .push(NamedNode::new_unchecked("urn:severity"));
+        changes.push(changed.clone());
+        let original = changed.descriptor()?;
+        changed.options.conformance_disallows.reverse();
+        changed
+            .options
+            .conformance_disallows
+            .push(NamedNode::new_unchecked("urn:severity"));
+        assert_eq!(changed.descriptor()?, original);
+        for changed in changes {
+            assert_ne!(changed.descriptor()?.fingerprint(), expected.fingerprint());
+        }
+        let mut scoped = base.clone();
+        scoped.data.push(ShaclGraphScope {
+            graph_name: NamedNode::new_unchecked("urn:extra").into(),
+            required: false,
+        });
+        let first = scoped.descriptor()?;
+        scoped.data.reverse();
+        assert_ne!(scoped.descriptor()?, first);
+        Ok(())
+    }
+    fn final_guard(store: &Store, rollback_failure: bool) -> TestResult {
+        let mut tx = store
+            .start_shacl_transaction(TransactionRequest::default(), key(1), policy())?
+            .into_transaction();
+        tx.insert(quad())?;
+        let evidence = accepted(&tx);
+        let control = tx.policy.control();
+        let started = tx.started;
+        let policy = tx.policy;
+        let check = || {
+            control.cancel();
+            policy
+                .check(started)
+                .map_err(|error| StorageError::Other(Box::new(error)))
+        };
+        let error = tx.inner.commit_validated(&evidence, &check).unwrap_err();
+        let error = commit_error(error, evidence);
+        assert!(
+            matches!(&error, ShaclCommitError::Rejected { source: ShaclGateError::Validation(ValidationError::Cancelled), rollback, .. } if rollback.is_some() == rollback_failure)
+        );
+        assert_eq!(
+            error.validation_evidence().disposition(),
+            ShaclDisposition::Cancelled
+        );
+        assert_eq!(
+            ShaclValidationEvidence::from_bytes(&error.validation_evidence().to_bytes())?,
+            *error.validation_evidence()
+        );
+        assert!(store.is_empty()?);
+        assert!(
+            store
+                .read_outbox(None, std::num::NonZeroUsize::MIN)?
+                .records()
+                .is_empty()
+        );
+        assert!(!matches!(
+            store.lookup_shacl_receipt(&key(1))?,
+            ShaclReceiptOutcome::Validated(_)
+        ));
+        Ok(())
+    }
+    #[test]
+    fn final_guard_explicitly_rolls_back_memory_before_publication() -> TestResult {
+        final_guard(&Store::new()?, false)
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    #[test]
+    fn final_guard_preserves_original_failure_and_rollback_errors() -> TestResult {
+        use crate::storage::TransactionOutcomeFaultPoint as Fault;
+        for fault in [
+            None,
+            Some(Fault::RolledBackBefore),
+            Some(Fault::RolledBackAfter),
+        ] {
+            let directory = tempfile::tempdir()?;
+            let store = Store::open(directory.path())?;
+            if let Some(point) = fault {
+                store.storage.arm_transaction_outcome_fault(point)?;
+            }
+            final_guard(&store, fault.is_some())?;
+            let events = store.storage.transaction_outcome_fault_events()?;
+            assert!(!events.contains(&Fault::CommitAttemptedBefore));
+            assert!(!events.contains(&Fault::CommitAttemptedAfter));
+            if let Some(point) = fault {
+                assert!(events.contains(&point));
+            }
+            drop(store);
+            let store = Store::open(directory.path())?;
+            assert!(store.is_empty()?);
+            assert!(!matches!(
+                store.lookup_shacl_receipt(&key(1))?,
+                ShaclReceiptOutcome::Validated(_)
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    #[test]
+    fn validated_commit_faults_resolve_atomically_without_replay_or_rollback() -> TestResult {
+        use crate::storage::TransactionOutcomeFaultPoint as Fault;
+        for fault in [
+            Fault::CommitAttemptedBefore,
+            Fault::CommitAttemptedAfter,
+            Fault::FinalBatchBefore,
+            Fault::FinalBatchAfter,
+        ] {
+            let directory = tempfile::tempdir()?;
+            let expected;
+            {
+                let store = Store::open(directory.path())?;
+                let mut tx = store
+                    .start_shacl_transaction(TransactionRequest::default(), key(1), policy())?
+                    .into_transaction();
+                tx.insert(quad())?;
+                tx.set_namespace(Namespace::new(
+                    NamespacePrefix::new("ex")?,
+                    NamedNode::new_unchecked("urn:ns"),
+                ))?;
+                expected = accepted(&tx);
+                store.storage.arm_transaction_outcome_fault(fault)?;
+                let error = tx.commit().unwrap_err();
+                assert!(
+                    matches!(&error, ShaclCommitError::Commit { outcome: TransactionCommitError::Indeterminate { transaction_key, .. }, .. } if transaction_key == &key(1))
+                );
+                assert_eq!(error.validation_evidence(), &expected);
+                let events = store.storage.transaction_outcome_fault_events()?;
+                assert!(events.contains(&fault));
+                assert!(!events.contains(&Fault::RolledBackBefore));
+                assert!(!events.contains(&Fault::RolledBackAfter));
+            }
+            let store = Store::open(directory.path())?;
+            let committed = fault == Fault::FinalBatchAfter;
+            assert_eq!(store.contains(&quad())?, committed);
+            assert_eq!(
+                store.namespace(&NamespacePrefix::new("ex")?)?.is_some(),
+                committed
+            );
+            match store.lookup_shacl_receipt(&key(1))? {
+                ShaclReceiptOutcome::Validated(receipt) => {
+                    assert!(committed);
+                    assert_eq!(receipt.validation(), &expected);
+                    assert_eq!(receipt.commit_receipt().sequence(), 1);
+                }
+                ShaclReceiptOutcome::Unavailable(CommitReceiptOutcome::Indeterminate) => {
+                    assert!(!committed)
+                }
+                other => return Err(format!("unexpected outcome {other:?}").into()),
+            }
+            assert_eq!(
+                store
+                    .read_outbox(None, std::num::NonZeroUsize::new(10).unwrap())?
+                    .records()
+                    .len(),
+                if committed { 3 } else { 0 }
+            );
+            assert!(
+                store
+                    .start_shacl_transaction(TransactionRequest::default(), key(1), policy())
+                    .is_err()
+            );
+            let next = store
+                .start_shacl_transaction(TransactionRequest::default(), key(2), policy())?
+                .into_transaction()
+                .commit()?;
+            assert_eq!(next.receipt.sequence(), if committed { 2 } else { 1 });
+        }
+        Ok(())
+    }
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    #[test]
+    fn validated_admission_and_gate_rollback_faults_publish_nothing() -> TestResult {
+        use crate::storage::TransactionOutcomeFaultPoint as Fault;
+        for fault in [
+            Fault::StagingBefore,
+            Fault::StagingAfter,
+            Fault::RolledBackBefore,
+            Fault::RolledBackAfter,
+        ] {
+            let directory = tempfile::tempdir()?;
+            {
+                let store = Store::open(directory.path())?;
+                if matches!(fault, Fault::StagingBefore | Fault::StagingAfter) {
+                    store.storage.arm_transaction_outcome_fault(fault)?;
+                    assert!(
+                        store
+                            .start_shacl_transaction(
+                                TransactionRequest::default(),
+                                key(1),
+                                policy()
+                            )
+                            .is_err()
+                    );
+                } else {
+                    let policy = policy();
+                    let control = policy.control();
+                    let mut tx = store
+                        .start_shacl_transaction(TransactionRequest::default(), key(1), policy)?
+                        .into_transaction();
+                    tx.insert(quad())?;
+                    tx.set_namespace(Namespace::new(
+                        NamespacePrefix::new("ex")?,
+                        NamedNode::new_unchecked("urn:ns"),
+                    ))?;
+                    control.cancel();
+                    store.storage.arm_transaction_outcome_fault(fault)?;
+                    let error = tx.commit().unwrap_err();
+                    assert!(matches!(
+                        &error,
+                        ShaclCommitError::Rejected {
+                            rollback: Some(_),
+                            ..
+                        }
+                    ));
+                    assert_eq!(
+                        error.validation_evidence().disposition(),
+                        ShaclDisposition::Cancelled
+                    );
+                }
+                assert!(
+                    store
+                        .storage
+                        .transaction_outcome_fault_events()?
+                        .contains(&fault)
+                );
+            }
+            let store = Store::open(directory.path())?;
+            assert!(store.is_empty()?);
+            assert!(store.namespace(&NamespacePrefix::new("ex")?)?.is_none());
+            assert!(matches!(
+                store.lookup_shacl_receipt(&key(1))?,
+                ShaclReceiptOutcome::Unavailable(
+                    CommitReceiptOutcome::Indeterminate | CommitReceiptOutcome::ProvenAbsent(_)
+                )
+            ));
+            assert!(
+                store
+                    .read_outbox(None, std::num::NonZeroUsize::MIN)?
+                    .records()
+                    .is_empty()
+            );
+        }
+        Ok(())
     }
 }
 
@@ -674,7 +1217,7 @@ impl OutcomeAwareWritableDataset for ShaclTransaction<'_> {
         ShaclTransaction::commit(self)
             .map(|_| ())
             .map_err(|error| match error {
-                ShaclCommitError::Commit(outcome) => outcome,
+                ShaclCommitError::Commit { outcome, .. } => outcome,
                 rejected @ ShaclCommitError::Rejected { .. } => TransactionCommitError::Rejected(
                     ChangeTrackingError::Backend(StorageError::Other(Box::new(rejected))),
                 ),
@@ -682,5 +1225,36 @@ impl OutcomeAwareWritableDataset for ShaclTransaction<'_> {
     }
     fn rollback_with_outcome(self) -> Result<(), TransactionRollbackError<Self::Error>> {
         self.inner.rollback()
+    }
+}
+
+fn graph_identity(name: &GraphName) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"oxigraph.shacl-graph-selector.v1\0");
+    super::change_codec::emit(&SemanticChange::GraphCleared(name.clone()), &mut |bytes| {
+        hash.update(bytes)
+    });
+    hash.finalize().into()
+}
+
+fn disposition(error: &ShaclGateError) -> ShaclDisposition {
+    match error {
+        ShaclGateError::Policy(_) => ShaclDisposition::PolicyError,
+        ShaclGateError::MissingGraph(_) => ShaclDisposition::MissingGraph,
+        ShaclGateError::ShapesChanged => ShaclDisposition::ShapesChanged,
+        ShaclGateError::SnapshotBytes(_) => ShaclDisposition::LimitExceeded,
+        ShaclGateError::Nonconforming { .. } => ShaclDisposition::Nonconforming,
+        ShaclGateError::Backend(_) => ShaclDisposition::StorageError,
+        ShaclGateError::Validation(error)
+        | ShaclGateError::Compile(CompileError::Validation(error)) => match error {
+            ValidationError::Cancelled => ShaclDisposition::Cancelled,
+            ValidationError::LimitExceeded {
+                kind: LimitKind::Time,
+                ..
+            } => ShaclDisposition::TimedOut,
+            ValidationError::LimitExceeded { .. } => ShaclDisposition::LimitExceeded,
+            _ => ShaclDisposition::ProcessorError,
+        },
+        ShaclGateError::Compile(_) => ShaclDisposition::ProcessorError,
     }
 }

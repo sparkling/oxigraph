@@ -49,8 +49,8 @@ R1 source and installation instructions were published on `main` at
 `aa7128bb`; the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
 records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
 `58d3253c`; G2.3c adds native retention/leases and governance health.
-G2.4a adds the native staged-view SHACL commit gate. The next product slice
-is its policy-receipt and failure closure (G2.4b), not
+G2.4a-b add the native staged-view SHACL commit gate and atomically bound policy
+receipts. The next product slice is operational readiness (G2.5), not
 another containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
@@ -141,8 +141,13 @@ cargo run --locked -p oxigraph --features shacl --example shacl_commit_gate
 
 This is an opt-in Rust transaction API, not a global store policy or an HTTP
 validation endpoint. Existing unguarded write methods remain unguarded.
-Reports can contain RDF diagnostics; the existing atomic receipt does **not**
-yet durably bind the SHACL policy. G2.4b owns that remaining boundary under
+Reports can contain RDF diagnostics. `Store::lookup_shacl_receipt` returns
+bounded, payload-free policy evidence bound atomically to the primary receipt:
+dated profiles, scope/severity identities, all limits, shape identities, topology,
+and validation disposition. The codec and lookup work without the `shacl`
+feature. Expiry removes validation evidence with the full receipt, preserving
+committed-expired key truth. Checksums are not signatures or independent
+conformance proof. The native failure/restart contract is documented under
 [ADR-0021](docs/adr/0021-transaction-time-shacl-validation.md).
 
 ## Upstream Oxigraph

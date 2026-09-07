@@ -18,7 +18,9 @@
   with native expiry, slow-consumer, backpressure, restart, compaction, backup,
   and corruption tests. G2.4a staged-view SHACL commit validation in
   `task-1787670631682-97ibi4` implements the native gate under the governed writer
-  permit. G2.4b executable policy-receipt/failure closure is next; local
+  permit. G2.4b adds bounded policy receipts in the atomic native outcome,
+  feature-independent lookup, expiry, and injected-failure closure in
+  `task-1787670631837-w5ac24`. G2.5 operational readiness is next; local
   implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

@@ -40,6 +40,7 @@ pub(crate) mod retention;
 mod semantic_change;
 #[cfg(feature = "shacl")]
 mod shacl_gate;
+pub(crate) mod shacl_receipt;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
@@ -62,6 +63,10 @@ pub use shacl_gate::{
     ShaclCommitError, ShaclCommitPolicy, ShaclCommitReport, ShaclGateError, ShaclGraphScope,
     ShaclGraphValidation, ShaclShapesSource, ShaclStartError, ShaclTransaction,
     ShaclTransactionControl,
+};
+pub use shacl_receipt::{
+    ShaclCommitReceipt, ShaclDisposition, ShaclPolicyDescriptor, ShaclReceiptOutcome,
+    ShaclValidationEvidence,
 };
 pub use transactional::{TransactionalDataset, WritableDataset};
 

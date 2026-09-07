@@ -6,8 +6,8 @@
 use oxigraph::model::{Dataset, GraphName, Literal, NamedNode, Quad, vocab};
 use oxigraph::shacl::GraphSnapshot;
 use oxigraph::store::{
-    ShaclCommitError, ShaclCommitPolicy, ShaclGateError, ShaclGraphScope, ShaclShapesSource, Store,
-    TransactionKey, TransactionRequest, WritableDataset,
+    ShaclCommitError, ShaclCommitPolicy, ShaclGateError, ShaclGraphScope, ShaclReceiptOutcome,
+    ShaclShapesSource, Store, TransactionKey, TransactionRequest, WritableDataset,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,6 +65,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         GraphName::DefaultGraph,
     ))?;
     let report = accepted.commit()?;
+    let ShaclReceiptOutcome::Validated(receipt) =
+        store.lookup_shacl_receipt(report.receipt.transaction_key())?
+    else {
+        return Err("accepted transaction has no validation receipt".into());
+    };
+    if receipt.validation().policy() != &policy.descriptor()?
+        || receipt.validation() != &report.validation
+    {
+        return Err("validation receipt does not match the selected policy".into());
+    }
     let mut rejected = store
         .start_shacl_transaction(
             TransactionRequest::default(),
@@ -82,14 +92,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rejected.commit(),
         Err(ShaclCommitError::Rejected {
             source: ShaclGateError::Nonconforming { .. },
-            rollback: None
+            rollback: None,
+            ..
         })
     );
     if !invalid_rejected || store.len()? != 1 {
         return Err("SHACL gate journey did not preserve exactly the valid write".into());
     }
     println!(
-        "accepted_sequence={} invalid_rejected={invalid_rejected} stored_quads={}",
+        "accepted_sequence={} policy_receipt_verified=true invalid_rejected={invalid_rejected} stored_quads={}",
         report.receipt.sequence(),
         store.len()?
     );

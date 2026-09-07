@@ -511,6 +511,28 @@ impl RocksDbStorage {
     ) -> Result<CommitReceiptOutcome, StorageError> {
         // One snapshot prevents racing a final batch's receipt and high-water state.
         let reader = self.db.snapshot();
+        self.lookup_commit_receipt_with_reader(transaction_key, &reader)
+    }
+
+    pub fn lookup_shacl_receipt(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<crate::store::ShaclReceiptOutcome, StorageError> {
+        let reader = self.db.snapshot();
+        let outcome = self.lookup_commit_receipt_with_reader(transaction_key, &reader)?;
+        if let Some(value) = reader.get(&self.default_cf, &governed_outcome_key(transaction_key))?
+            && value.starts_with(crate::store::shacl_receipt::VALIDATED_OUTCOME)
+        {
+            return Ok(crate::store::shacl_receipt::GovernedReceipt::decode(&value)?.outcome());
+        }
+        Ok(crate::store::ShaclReceiptOutcome::Unavailable(outcome))
+    }
+
+    fn lookup_commit_receipt_with_reader(
+        &self,
+        transaction_key: &[u8; 16],
+        reader: &Reader<'_>,
+    ) -> Result<CommitReceiptOutcome, StorageError> {
         let legacy = reader.get(&self.default_cf, &transaction_outcome_key(transaction_key))?;
         let governed = reader.get(&self.default_cf, &governed_outcome_key(transaction_key))?;
         if legacy.is_some() && governed.is_some() {
@@ -541,8 +563,13 @@ impl RocksDbStorage {
                         )?,
                     ))
                 }
-                value if value.starts_with(GOVERNED_OUTCOME_COMMITTED) => {
-                    let receipt = CommitReceipt::decode(&value[2..])?;
+                value
+                    if value.starts_with(GOVERNED_OUTCOME_COMMITTED)
+                        || value.starts_with(crate::store::shacl_receipt::VALIDATED_OUTCOME) =>
+                {
+                    let receipt = crate::store::shacl_receipt::GovernedReceipt::decode(value)?
+                        .receipt()
+                        .clone();
                     let state = reader
                         .get(&self.default_cf, GOVERNANCE_STATE_KEY)?
                         .ok_or_else(|| {
@@ -656,12 +683,11 @@ impl RocksDbStorage {
                                 &crate::store::ExpiredCommitReceipt::decode(key, &value, state)?,
                             );
                         }
-                        if !value.starts_with(GOVERNED_OUTCOME_COMMITTED) {
-                            return Err(
-                                CorruptionError::msg("outbox has no committed outcome").into()
-                            );
-                        }
-                        CommitReceipt::decode(&value[2..])
+                        Ok(
+                            crate::store::shacl_receipt::GovernedReceipt::decode(&value)?
+                                .receipt()
+                                .clone(),
+                        )
                     })
                     .transpose()
             },
@@ -1905,6 +1931,7 @@ impl RocksDbStorageKeyedReadableTransaction<'_> {
     pub fn commit_with_receipt(
         mut self,
         changes: &SemanticChangeSet,
+        validation: Option<crate::store::shacl_receipt::ValidationCommitContext<'_>>,
     ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
         if !self.governed {
             return Err(TransactionCommitError::Rejected(StorageError::Other(
@@ -1955,6 +1982,12 @@ impl RocksDbStorageKeyedReadableTransaction<'_> {
             .map_err(|error| TransactionCommitError::Rejected(error.into_storage()))?;
         let prepared = crate::store::outbox::prepare(&state, &self.transaction_key, changes)
             .map_err(TransactionCommitError::Rejected)?;
+        let committed = crate::store::shacl_receipt::GovernedReceipt::new(
+            prepared.receipt.clone(),
+            validation.map(|context| context.evidence),
+        )
+        .map_err(TransactionCommitError::Rejected)?
+        .encode();
         // One final WriteBatchWithIndex owns primary changes, receipt, records,
         // and both high-water marks. No notifications are appended after commit.
         for (position, bytes) in &prepared.records {
@@ -1966,8 +1999,17 @@ impl RocksDbStorageKeyedReadableTransaction<'_> {
             .transaction
             .insert(cf, GOVERNANCE_STATE_KEY, &prepared.state.encode());
         let receipt = prepared.receipt;
-        let mut committed = GOVERNED_OUTCOME_COMMITTED.to_vec();
-        committed.extend_from_slice(&receipt.encode());
+        if let Some(validation) = validation {
+            if let Err(source) = (validation.before_attempt)() {
+                let rollback = self.rollback().err();
+                return Err(TransactionCommitError::Rejected(StorageError::Other(
+                    Box::new(crate::store::shacl_receipt::ValidationPreAttemptError {
+                        source,
+                        rollback,
+                    }),
+                )));
+            }
+        }
         self.inner
             .transaction
             .commit_keyed(GOVERNED_OUTCOME_COMMIT_ATTEMPTED, &committed)
@@ -2705,6 +2747,97 @@ impl<'a> FileBulkLoader<'a> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "shacl")]
+    #[test]
+    #[expect(
+        clippy::missing_assert_message,
+        clippy::unwrap_used,
+        clippy::panic_in_result_fn,
+        reason = "isolated temporary database corruption assertions"
+    )]
+    fn validated_outcome_corruption_blocks_lookup_outbox_and_retention()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use super::*;
+        use crate::store::{
+            GovernanceTime, OutboxRetentionPolicy, ShaclCommitPolicy, ShaclGraphScope,
+            ShaclShapesSource, Store, TransactionRequest,
+        };
+        use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
+        let directory = tempfile::tempdir()?;
+        let primary;
+        {
+            let store = Store::open(directory.path())?;
+            store.configure_outbox_retention(
+                OutboxRetentionPolicy::new(NonZeroU64::new(20).unwrap(), NonZeroU16::MIN)?,
+                GovernanceTime::from_unix_millis(1),
+            )?;
+            let policy = ShaclCommitPolicy::new(
+                vec![ShaclGraphScope {
+                    graph_name: GraphName::DefaultGraph,
+                    required: true,
+                }],
+                ShaclShapesSource::External(Box::new(oxshacl::GraphSnapshot::default_graph(
+                    crate::model::Dataset::default(),
+                ))),
+            );
+            primary = store
+                .start_shacl_transaction(
+                    TransactionRequest::default(),
+                    TransactionKey::new([1; 16]),
+                    policy,
+                )?
+                .into_transaction()
+                .commit()?
+                .receipt;
+        }
+        let storage = RocksDbStorage::open(directory.path())?;
+        let key = governed_outcome_key(&[1; 16]);
+        let original = storage
+            .db
+            .snapshot()
+            .get(&storage.default_cf, &key)?
+            .unwrap();
+        let state = storage
+            .db
+            .snapshot()
+            .get(&storage.default_cf, GOVERNANCE_STATE_KEY)?
+            .unwrap();
+        let mut variants = vec![vec![2, 5], original[..155].to_vec()];
+        for index in [155, original.len() - 1] {
+            let mut bytes = original.to_vec();
+            bytes[index] ^= 1;
+            variants.push(bytes);
+        }
+        for bytes in variants {
+            storage.db.insert(&storage.default_cf, &key, &bytes)?;
+            assert!(storage.lookup_commit_receipt(&[1; 16]).is_err());
+            assert!(storage.lookup_shacl_receipt(&[1; 16]).is_err());
+            assert!(storage.read_outbox(None, NonZeroUsize::MIN).is_err());
+            assert!(
+                storage
+                    .govern_outbox(
+                        crate::store::retention::Action::Maintain {
+                            through: &primary.outbox_end_cursor().unwrap(),
+                            limit: NonZeroUsize::MIN
+                        },
+                        GovernanceTime::from_unix_millis(2)
+                    )
+                    .is_err()
+            );
+            assert_eq!(
+                storage
+                    .db
+                    .snapshot()
+                    .get(&storage.default_cf, GOVERNANCE_STATE_KEY)?
+                    .unwrap()
+                    .as_ref(),
+                state.as_ref()
+            );
+        }
+        storage.db.insert(&storage.default_cf, &key, &original)?;
+        assert!(storage.lookup_shacl_receipt(&[1; 16]).is_ok());
+        Ok(())
+    }
     use super::*;
     use crate::model::NamedNode;
     use tempfile::TempDir;
@@ -3009,7 +3142,7 @@ mod tests {
             let previous = storage
                 .start_governed_transaction_with_control(&[1; 16], &control, Instant::now())
                 .map_err(|_| "fresh governed transaction did not open")?
-                .commit_with_receipt(&SemanticChangeSet::default())?;
+                .commit_with_receipt(&SemanticChangeSet::default(), None)?;
             let mut corrupt = storage.db.start_readable_transaction()?;
             match mode {
                 "corrupt" => corrupt.insert(&storage.default_cf, GOVERNANCE_STATE_KEY, b"corrupt"),
@@ -3039,7 +3172,7 @@ mod tests {
                 .filter(|point| **point == TransactionOutcomeFaultPoint::CommitAttemptedBefore)
                 .count();
             assert!(matches!(
-                tx.commit_with_receipt(&SemanticChangeSet::default()),
+                tx.commit_with_receipt(&SemanticChangeSet::default(), None),
                 Err(TransactionCommitError::Rejected(StorageError::Corruption(
                     _
                 )))
@@ -3137,7 +3270,7 @@ mod tests {
                 Instant::now(),
             )
             .map_err(|_| "admission failed")?
-            .commit_with_receipt(&SemanticChangeSet::default())?;
+            .commit_with_receipt(&SemanticChangeSet::default(), None)?;
         assert_eq!(receipt.schema_version(), 2);
         assert_eq!(receipt.sequence(), 5);
         assert_eq!(receipt.store_identity(), old.store_identity());
@@ -3202,7 +3335,7 @@ mod tests {
                 .map_err(|_| "admission failed")?;
             assert!(
                 matches!(
-                    next.commit_with_receipt(&SemanticChangeSet::default()),
+                    next.commit_with_receipt(&SemanticChangeSet::default(), None),
                     Err(TransactionCommitError::Rejected(StorageError::Corruption(
                         _
                     )))

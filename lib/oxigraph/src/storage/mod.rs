@@ -397,6 +397,17 @@ impl Storage {
         }
     }
 
+    pub(crate) fn lookup_shacl_receipt(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<crate::store::ShaclReceiptOutcome, StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(storage) => storage.lookup_shacl_receipt(transaction_key),
+            StorageKind::Memory(storage) => storage.lookup_shacl_receipt(transaction_key),
+        }
+    }
+
     pub(crate) fn govern_outbox(
         &self,
         action: crate::store::retention::Action<'_>,
@@ -1072,14 +1083,15 @@ impl StorageKeyedReadableTransaction<'_> {
     pub(crate) fn commit_with_receipt(
         self,
         changes: &SemanticChangeSet,
+        validation: Option<crate::store::shacl_receipt::ValidationCommitContext<'_>>,
     ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
         match self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKeyedReadableTransactionKind::RocksDb(transaction) => {
-                transaction.commit_with_receipt(changes)
+                transaction.commit_with_receipt(changes, validation)
             }
             StorageKeyedReadableTransactionKind::Memory(transaction) => {
-                transaction.commit_with_receipt(changes)
+                transaction.commit_with_receipt(changes, validation)
             }
         }
     }

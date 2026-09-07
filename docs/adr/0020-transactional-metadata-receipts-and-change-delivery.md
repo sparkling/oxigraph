@@ -26,6 +26,23 @@
   [ADR-0028 — Safe storage schema upgrades](0028-safe-storage-schema-upgrades.md),
   [ADR-0040 — Commit-capable containment decision and application-output release](0040-commit-capable-containment-decision-and-output-release.md)
 
+## G2.4b additive validation outcome (2026-09-07)
+
+[ADR-0021](0021-transaction-time-shacl-validation.md) extends governed terminal
+storage with `[2,5]`: the unchanged 153-byte v2 primary receipt, bounded SHACL
+policy evidence, and an outer checksum binding the entire envelope. This is
+one atomic outcome value, not a separate policy record. Ordinary lookup,
+outbox, and retention decode and validate it; feature-disabled readers need no
+SHACL processor. Plain `[2,2]` outcomes remain supported. Existing `[2,4]`
+expiry replaces the whole validated outcome and keeps only committed-expired
+identity. The retention state/anchor encodings and effect checksums are unchanged.
+
+Older binaries do not understand `[2,5]` and fail closed on governed lookup or
+outbox access. This opt-in addition does not imply a global schema migration,
+mixed-version write safety, downgrade support, or rewrite of historical
+evidence. Policy evidence is absent for unguarded/pre-G2.4b writes and removed
+on receipt expiry; absence alone does not establish that validation never ran.
+
 ## Context
 
 G2.1 provides a transactional namespace registry. G2.2 provides opt-in normalized

@@ -10,7 +10,8 @@ use oxigraph::model::{Dataset, GraphName, Literal, NamedNode, NamedOrBlankNode, 
 use oxigraph::shacl::{GraphSnapshot, LimitKind, ValidationError, ValidationOptions};
 use oxigraph::store::{
     CommitReceiptOutcome, Namespace, NamespacePrefix, OutcomeAwareWritableDataset,
-    ShaclCommitError, ShaclCommitPolicy, ShaclGateError, ShaclGraphScope, ShaclShapesSource, Store,
+    ShaclCommitError, ShaclCommitPolicy, ShaclCommitReceipt, ShaclDisposition, ShaclGateError,
+    ShaclGraphScope, ShaclReceiptOutcome, ShaclShapesSource, ShaclValidationEvidence, Store,
     TransactionKey, TransactionRequest, WritableDataset, WritableNamespaceRegistry,
 };
 use std::error::Error;
@@ -90,6 +91,298 @@ fn no_receipt(store: &Store, id: u8) -> TestResult {
 }
 
 #[test]
+fn policy_receipts_bind_both_trait_paths_and_distinguish_plain_commits() -> TestResult {
+    each_backend(|store| {
+        let policy = policy(
+            0,
+            2,
+            vec![
+                scope(GraphName::DefaultGraph, true),
+                scope(node("absent").into(), false),
+            ],
+        );
+        let descriptor = policy.descriptor()?;
+        let tx = store
+            .start_shacl_transaction(TransactionRequest::default(), key(1), policy)?
+            .into_transaction();
+        let report = tx.commit()?;
+        assert_eq!(report.validation.policy(), &descriptor);
+        assert_eq!(
+            report.validation.final_graph_presence(),
+            &[Some(true), Some(false)]
+        );
+        assert_eq!(report.validation.validated_graphs(), 2);
+        assert_eq!(report.validation.disposition(), ShaclDisposition::Accepted);
+        let ShaclReceiptOutcome::Validated(receipt) = store.lookup_shacl_receipt(&key(1))? else {
+            return Err("missing validation receipt".into());
+        };
+        assert_eq!(receipt.commit_receipt(), &report.receipt);
+        assert_eq!(receipt.validation(), &report.validation);
+        assert_eq!(
+            ShaclCommitReceipt::from_bytes(&receipt.to_bytes())?,
+            *receipt
+        );
+        assert!(
+            !receipt
+                .to_bytes()
+                .windows(b"urn:absent".len())
+                .any(|part| part == b"urn:absent")
+        );
+        for id in 2..=3 {
+            let tx = store
+                .start_shacl_transaction(
+                    TransactionRequest::default(),
+                    key(id),
+                    default_policy(0, 2),
+                )?
+                .into_transaction();
+            if id == 2 {
+                WritableDataset::commit(tx)?;
+            } else {
+                OutcomeAwareWritableDataset::commit_with_outcome(tx)?;
+            }
+            assert!(matches!(
+                store.lookup_shacl_receipt(&key(id))?,
+                ShaclReceiptOutcome::Validated(_)
+            ));
+        }
+        let plain = store
+            .start_governed_transaction(TransactionRequest::default(), key(4))?
+            .into_transaction()
+            .commit()?;
+        assert_eq!(
+            store.lookup_shacl_receipt(&key(4))?,
+            ShaclReceiptOutcome::Unavailable(CommitReceiptOutcome::Committed(plain))
+        );
+        Ok(())
+    })
+}
+
+#[test]
+fn validation_evidence_expires_with_primary_receipt_not_primary_data() -> TestResult {
+    use oxigraph::store::{GovernanceTime, OutboxRetentionPolicy};
+    use std::num::{NonZeroU16, NonZeroU64};
+    each_backend(|store| {
+        store.configure_outbox_retention(
+            OutboxRetentionPolicy::new(NonZeroU64::new(20).ok_or("zero")?, NonZeroU16::MIN)?,
+            GovernanceTime::from_unix_millis(1),
+        )?;
+        let mut tx = store
+            .start_shacl_transaction(TransactionRequest::default(), key(1), default_policy(0, 2))?
+            .into_transaction();
+        tx.insert(quad("retained", GraphName::DefaultGraph))?;
+        let receipt = tx.commit()?.receipt;
+        let cursor = receipt.outbox_end_cursor().ok_or("missing cursor")?;
+        let result = store.maintain_outbox(
+            &cursor,
+            NonZeroUsize::MIN,
+            GovernanceTime::from_unix_millis(2),
+        )?;
+        assert_eq!(result.expired_receipt_sequence(), Some(1));
+        assert!(matches!(
+            store.lookup_shacl_receipt(&key(1))?,
+            ShaclReceiptOutcome::Unavailable(CommitReceiptOutcome::Expired(_))
+        ));
+        assert!(store.contains(&quad("retained", GraphName::DefaultGraph))?);
+        assert!(
+            store
+                .start_shacl_transaction(
+                    TransactionRequest::default(),
+                    key(1),
+                    default_policy(0, 2)
+                )
+                .is_err()
+        );
+        store.maintain_outbox(
+            &cursor,
+            NonZeroUsize::new(10).ok_or("zero")?,
+            GovernanceTime::from_unix_millis(3),
+        )?;
+        assert!(
+            store
+                .read_outbox(None, NonZeroUsize::MIN)?
+                .records()
+                .is_empty()
+        );
+        Ok(())
+    })
+}
+
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+#[test]
+fn validation_receipt_survives_compaction_backup_and_read_only_reopen() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let backup_root = tempfile::tempdir()?;
+    let backup = backup_root.path().join("backup");
+    let expected;
+    {
+        let store = Store::open(directory.path())?;
+        let mut tx = store
+            .start_shacl_transaction(TransactionRequest::default(), key(1), default_policy(0, 2))?
+            .into_transaction();
+        tx.insert(quad("durable", GraphName::DefaultGraph))?;
+        tx.commit()?;
+        expected = store.lookup_shacl_receipt(&key(1))?;
+        store.optimize()?;
+        store.backup(&backup)?;
+    }
+    for path in [directory.path(), backup.as_path()] {
+        let store = Store::open_read_only(path)?;
+        assert_eq!(store.lookup_shacl_receipt(&key(1))?, expected);
+        assert!(store.contains(&quad("durable", GraphName::DefaultGraph))?);
+        assert_eq!(
+            store
+                .read_outbox(None, NonZeroUsize::new(10).ok_or("zero")?)?
+                .records()
+                .len(),
+            2
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn rejected_commits_return_bounded_executable_failure_evidence() -> TestResult {
+    each_backend(|store| {
+        for (id, expected) in [
+            (1, ShaclDisposition::Cancelled),
+            (2, ShaclDisposition::TimedOut),
+            (3, ShaclDisposition::LimitExceeded),
+            (4, ShaclDisposition::Nonconforming),
+        ] {
+            let mut options = ValidationOptions::default();
+            if id == 2 {
+                options.limits.timeout = Some(Duration::from_millis(100));
+            }
+            if id == 3 {
+                options.limits.max_data_quads = 0;
+            }
+            let policy =
+                default_policy(0, if id == 4 { 0 } else { 2 }).with_validation_options(options);
+            let control = policy.control();
+            let descriptor = policy.descriptor()?;
+            let mut tx = store
+                .start_shacl_transaction(TransactionRequest::default(), key(id), policy)?
+                .into_transaction();
+            tx.insert(quad("secret-payload", GraphName::DefaultGraph))?;
+            tx.set_namespace(Namespace::new(NamespacePrefix::new("ex")?, node("ns")))?;
+            if id == 1 {
+                control.cancel();
+            }
+            if id == 2 {
+                std::thread::sleep(Duration::from_millis(110));
+            }
+            let error = tx.commit().err().ok_or("must reject")?;
+            let evidence = error.validation_evidence();
+            assert_eq!(evidence.disposition(), expected);
+            assert_eq!(evidence.policy(), &descriptor);
+            assert_eq!(
+                &ShaclValidationEvidence::from_bytes(&evidence.to_bytes())?,
+                evidence
+            );
+            assert!(evidence.to_bytes().len() <= 8192);
+            assert!(
+                !evidence
+                    .to_bytes()
+                    .windows(14)
+                    .any(|part| part == b"secret-payload")
+            );
+            assert!(matches!(
+                error,
+                ShaclCommitError::Rejected { rollback: None, .. }
+            ));
+            assert!(matches!(
+                store.lookup_shacl_receipt(&key(id))?,
+                ShaclReceiptOutcome::Unavailable(CommitReceiptOutcome::ProvenAbsent(_))
+            ));
+            assert!(store.is_empty()?);
+            assert!(store.namespace(&NamespacePrefix::new("ex")?)?.is_none());
+            assert!(
+                store
+                    .read_outbox(None, NonZeroUsize::MIN)?
+                    .records()
+                    .is_empty()
+            );
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn invalid_mutable_shapes_and_missing_topology_are_observed_without_commit() -> TestResult {
+    each_backend(|store| {
+        let graph = GraphName::NamedNode(node("shapes"));
+        for quad in shape_quads(0, 2, graph.clone()) {
+            store.insert(quad)?;
+        }
+        for (id, mutable) in [(1, true), (2, false)] {
+            let policy = ShaclCommitPolicy::new(
+                vec![scope(GraphName::DefaultGraph, true)],
+                ShaclShapesSource::Stored {
+                    graph_name: graph.clone(),
+                    mutable,
+                },
+            );
+            let mut tx = store
+                .start_shacl_transaction(TransactionRequest::default(), key(id), policy)?
+                .into_transaction();
+            tx.insert(Quad::new(
+                node("shape"),
+                sh("maxCount"),
+                Literal::new_simple_literal("not-an-integer"),
+                graph.clone(),
+            ))?;
+            let error = tx.commit().err().ok_or("invalid shapes must reject")?;
+            let evidence = error.validation_evidence();
+            assert_eq!(
+                evidence.disposition(),
+                if mutable {
+                    ShaclDisposition::ProcessorError
+                } else {
+                    ShaclDisposition::ShapesChanged
+                }
+            );
+            assert_ne!(
+                evidence.shapes_at_commit(),
+                Some(evidence.shapes_at_begin())
+            );
+            assert_eq!(
+                &ShaclValidationEvidence::from_bytes(&evidence.to_bytes())?,
+                evidence
+            );
+            assert!(matches!(
+                store.lookup_shacl_receipt(&key(id))?,
+                ShaclReceiptOutcome::Unavailable(CommitReceiptOutcome::ProvenAbsent(_))
+            ));
+        }
+        let tx = store
+            .start_shacl_transaction(
+                TransactionRequest::default(),
+                key(3),
+                policy(0, 1, vec![scope(node("missing").into(), true)]),
+            )?
+            .into_transaction();
+        let error = tx.commit().err().ok_or("required graph absent")?;
+        assert_eq!(
+            error.validation_evidence().disposition(),
+            ShaclDisposition::MissingGraph
+        );
+        assert_eq!(
+            error.validation_evidence().final_graph_presence(),
+            &[Some(false)]
+        );
+        assert_eq!(error.validation_evidence().validated_graphs(), 0);
+        assert!(
+            store
+                .read_outbox(None, NonZeroUsize::MIN)?
+                .records()
+                .is_empty()
+        );
+        Ok(())
+    })
+}
+
+#[test]
 fn full_view_insert_remove_and_namespace_are_atomic() -> TestResult {
     each_backend(|store| {
         let mut tx = store
@@ -109,7 +402,8 @@ fn full_view_insert_remove_and_namespace_are_atomic() -> TestResult {
             invalid.commit(),
             Err(ShaclCommitError::Rejected {
                 source: ShaclGateError::Nonconforming { .. },
-                rollback: None
+                rollback: None,
+                ..
             })
         ));
         no_receipt(store, 2)?;
@@ -215,7 +509,8 @@ fn graphs_are_independent_and_empty_is_not_absent() -> TestResult {
             tx.commit(),
             Err(ShaclCommitError::Rejected {
                 source: ShaclGateError::MissingGraph(_),
-                rollback: None
+                rollback: None,
+                ..
             })
         ));
         assert!(store.contains_named_graph(&a)?);
@@ -305,7 +600,8 @@ fn cancellation_deadline_and_cumulative_snapshot_bounds_reject() -> TestResult {
             tx.commit(),
             Err(ShaclCommitError::Rejected {
                 source: ShaclGateError::Validation(ValidationError::Cancelled),
-                rollback: None
+                rollback: None,
+                ..
             })
         ));
         let mut options = ValidationOptions::default();
@@ -325,7 +621,8 @@ fn cancellation_deadline_and_cumulative_snapshot_bounds_reject() -> TestResult {
                     kind: LimitKind::Time,
                     ..
                 }),
-                rollback: None
+                rollback: None,
+                ..
             })
         ));
         let mut options = ValidationOptions::default();
@@ -350,7 +647,8 @@ fn cancellation_deadline_and_cumulative_snapshot_bounds_reject() -> TestResult {
                     kind: LimitKind::DataQuads,
                     limit: 1
                 }),
-                rollback: None
+                rollback: None,
+                ..
             })
         ));
         let mut tx = store
@@ -365,7 +663,8 @@ fn cancellation_deadline_and_cumulative_snapshot_bounds_reject() -> TestResult {
             tx.commit(),
             Err(ShaclCommitError::Rejected {
                 source: ShaclGateError::SnapshotBytes(4096),
-                rollback: None
+                rollback: None,
+                ..
             })
         ));
         for id in 1..=4 {
@@ -405,7 +704,8 @@ fn concurrent_individually_plausible_writers_cannot_both_commit() -> TestResult 
                     tx.commit(),
                     Err(ShaclCommitError::Rejected {
                         source: ShaclGateError::Nonconforming { .. },
-                        rollback: None
+                        rollback: None,
+                        ..
                     })
                 ));
                 Ok(())
@@ -506,7 +806,8 @@ fn retained_report_shapes_are_charged_to_cumulative_byte_limit() -> TestResult {
         tx.commit(),
         Err(ShaclCommitError::Rejected {
             source: ShaclGateError::SnapshotBytes(4096),
-            rollback: None
+            rollback: None,
+            ..
         })
     ));
     no_receipt(&store, 2)?;
@@ -532,7 +833,8 @@ fn cancellation_interrupts_waiting_for_writer_admission() -> TestResult {
                         oxigraph::store::TransactionStartError::Cancelled
                     ) | oxigraph::store::ShaclStartError::Policy {
                         source: ShaclGateError::Validation(ValidationError::Cancelled),
-                        rollback: None
+                        rollback: None,
+                        ..
                     })
                 ))?;
                 Ok(())

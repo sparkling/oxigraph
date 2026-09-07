@@ -46,7 +46,7 @@ pub struct MemoryStorage {
 struct MemoryGovernance {
     state: GovernanceState,
     governed_keys: FxHashSet<[u8; 16]>,
-    receipts: HashMap<[u8; 16], CommitReceipt>,
+    receipts: HashMap<[u8; 16], crate::store::shacl_receipt::GovernedReceipt>,
     expired: HashMap<[u8; 16], crate::store::ExpiredCommitReceipt>,
     outbox: BTreeMap<u64, Vec<u8>>,
 }
@@ -197,6 +197,29 @@ impl MemoryStorage {
             .governance
             .read()
             .map_err(|_| CorruptionError::msg("poisoned memory governance state"))?;
+        self.lookup_commit_receipt_locked(transaction_key, &governance)
+    }
+
+    pub fn lookup_shacl_receipt(
+        &self,
+        transaction_key: &[u8; 16],
+    ) -> Result<crate::store::ShaclReceiptOutcome, StorageError> {
+        let governance = self
+            .governance
+            .read()
+            .map_err(|_| CorruptionError::msg("poisoned memory governance state"))?;
+        let outcome = self.lookup_commit_receipt_locked(transaction_key, &governance)?;
+        Ok(governance.receipts.get(transaction_key).map_or_else(
+            || crate::store::ShaclReceiptOutcome::Unavailable(outcome),
+            crate::store::shacl_receipt::GovernedReceipt::outcome,
+        ))
+    }
+
+    fn lookup_commit_receipt_locked(
+        &self,
+        transaction_key: &[u8; 16],
+        governance: &MemoryGovernance,
+    ) -> Result<CommitReceiptOutcome, StorageError> {
         let state = self
             .transaction_outcomes
             .get(transaction_key)
@@ -216,7 +239,7 @@ impl MemoryStorage {
                     CorruptionError::msg("receipt without committed memory outcome").into(),
                 );
             }
-            return Ok(CommitReceiptOutcome::Committed(receipt.clone()));
+            return Ok(CommitReceiptOutcome::Committed(receipt.receipt().clone()));
         }
         Ok(match state {
             Some(MemoryTransactionOutcomeState::Committed) => {
@@ -284,7 +307,10 @@ impl MemoryStorage {
                     return crate::store::retention::anchor_receipt(&governance.state, expired)
                         .map(Some);
                 }
-                Ok(governance.receipts.get(key).cloned())
+                Ok(governance
+                    .receipts
+                    .get(key)
+                    .map(|receipt| receipt.receipt().clone()))
             },
             |position| {
                 Ok(governance
@@ -1183,6 +1209,7 @@ impl MemoryStorageTransaction<'_> {
     pub fn commit_with_receipt(
         mut self,
         changes: &SemanticChangeSet,
+        validation: Option<crate::store::shacl_receipt::ValidationCommitContext<'_>>,
     ) -> Result<CommitReceipt, TransactionCommitError<StorageError>> {
         let transaction_key = self.transaction_key.ok_or_else(|| {
             TransactionCommitError::Rejected(StorageError::Other(
@@ -1205,6 +1232,11 @@ impl MemoryStorageTransaction<'_> {
             .map_err(|error| TransactionCommitError::Rejected(error.into_storage()))?;
         let prepared = crate::store::outbox::prepare(&governance.state, &transaction_key, changes)
             .map_err(TransactionCommitError::Rejected)?;
+        let terminal = crate::store::shacl_receipt::GovernedReceipt::new(
+            prepared.receipt.clone(),
+            validation.map(|context| context.evidence),
+        )
+        .map_err(TransactionCommitError::Rejected)?;
         let mut outcome = storage
             .transaction_outcomes
             .get_mut(&transaction_key)
@@ -1218,11 +1250,25 @@ impl MemoryStorageTransaction<'_> {
                 CorruptionError::msg("governed transaction is not staging").into(),
             ));
         }
+        if let Some(validation) = validation {
+            if let Err(source) = (validation.before_attempt)() {
+                // Release the outcome guard before rollback reacquires that entry.
+                drop(outcome);
+                drop(governance);
+                let rollback = self.rollback_with_outcome().err();
+                return Err(TransactionCommitError::Rejected(StorageError::Other(
+                    Box::new(crate::store::shacl_receipt::ValidationPreAttemptError {
+                        source,
+                        rollback,
+                    }),
+                )));
+            }
+        }
         *outcome = MemoryTransactionOutcomeState::CommitAttempted;
         let receipt = prepared.receipt;
         governance.state = prepared.state;
         governance.outbox.extend(prepared.records);
-        governance.receipts.insert(transaction_key, receipt.clone());
+        governance.receipts.insert(transaction_key, terminal);
         self.publish();
         // Retain the entry guard: no fallible lookup remains after publication.
         *outcome = MemoryTransactionOutcomeState::Committed;
@@ -1650,7 +1696,7 @@ mod tests {
                 storage.transaction_outcomes.remove(&key);
             }
             assert!(matches!(
-                tx.commit_with_receipt(&SemanticChangeSet::default()),
+                tx.commit_with_receipt(&SemanticChangeSet::default(), None),
                 Err(TransactionCommitError::Rejected(StorageError::Corruption(
                     _
                 )))
