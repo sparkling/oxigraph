@@ -27,7 +27,7 @@ mapping.
 | [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)                   | Implemented | Keep engineering work separate from semantic qualification, rebuild patched candidates before focused evaluation, and retain human-only promotion   |
 | [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)                                       | Proposed    | Negotiate dimensioned guarantees and prove a serialized-writer RocksDB baseline before stronger isolation claims                                    |
 | [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)                           | Implemented | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from effective evaluator capabilities                            |
-| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | G2.1 namespaces and opt-in staged semantic-change capture implemented; request/keyed integration, durable receipts and ordered outbox remain open |
+| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | G2.1 namespaces and G2.2 staged/request/keyed semantic-change capture implemented; durable receipts and ordered outbox remain open |
 | [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md)                                                       | Proposed    | Validate the complete resulting staged view under the same isolation gate as commit                                                                 |
 | [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)                                     | Proposed    | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore                                                     |
 | [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)                                                 | Proposed    | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback                                                    |
@@ -59,9 +59,9 @@ hold never satisfies acceptance. The six-hour review continues across
 programme milestones.
 
 ADR-0018 and ADR-0020 through ADR-0041 remain Proposed for their outstanding
-scope. ADR-0019 is Implemented, and ADR-0020 includes implemented G2.1 namespace
-support. The next product slice after R1 is G2.2's normalized semantic change
-set. ADR-0034 through ADR-0041 are preserved future containment work; their
+scope. ADR-0019 is Implemented, and ADR-0020 includes implemented G2.1 namespaces
+and G2.2 normalized change capture/integration. G2.3a atomic receipts is the
+next product slice. ADR-0034 through ADR-0041 are preserved future containment work; their
 internal gates do not block direct product implementation.
 
 The former 42-record/251-edge graph report is historical. Current ADR metadata
@@ -125,7 +125,8 @@ CLI/package wiring in `b915c5f6`.
 Filesystem-backed guardian/reaper durability and recovery, delegated-cgroup
 evidence, pidfd/waitid and race-free exec binding, the physical native adapter
 and full runtime-closure proof, ADR-0039's qualification/activation gate,
-ADR-0040's commit-capable successor, and G2.2 remain open. ADR-0035 separates
+and ADR-0040's commit-capable successor remain open in the optional containment
+path; native G2.2 is implemented. ADR-0035 separates
 those native concerns from ADR-0034's broader admission gate. ADR-0036 through
 ADR-0039 decompose the remaining control ABI, statefs/manager, native
 executable, and delegated-host readiness work without changing the current
@@ -274,9 +275,9 @@ and the rewritten persistence plane. Its default-feature evaluator passes 13/13
 across all three planes; its no-default evaluator passes 8/8 across memory and
 the rewritten plane. Focused regressions pass
 `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
-`transactional_dataset` 3/3. ADR-0020 remains Proposed because normalized
-effects, durable receipts/outcome resolution, the authoritative outbox, and its
-retention/governance slices G2.2-G2.3c are not implemented.
+`transactional_dataset` 3/3. G2.2 normalized staged/request/keyed effects are
+also implemented. ADR-0020 remains Proposed because G2.3a-c durable receipts,
+the authoritative outbox, and retention/governance are not implemented.
 
 ADR-0034 commits `78b2cf99` through `65fb0e7a` preserve schema-v1 bytes while
 adding exact v2 paths, trees, contracts, reconstruction, context, schema,

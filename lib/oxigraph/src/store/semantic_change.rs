@@ -1,4 +1,7 @@
-use super::{Namespace, NamespacePrefix, WritableDataset, WritableNamespaceRegistry};
+use super::{
+    Namespace, NamespacePrefix, OutcomeAwareWritableDataset, TransactionCommitError,
+    TransactionRollbackError, WritableDataset, WritableNamespaceRegistry,
+};
 use crate::model::{GraphName, NamedNode, NamedOrBlankNode, Quad, Term};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -30,7 +33,7 @@ pub enum SemanticChange {
     NamespacesCleared,
 }
 
-/// An immutable snapshot of normalized, **uncommitted** transaction effects.
+/// An immutable snapshot of normalized transaction effects, not a durable receipt.
 ///
 /// Point effects cancel until a lifecycle boundary affects their graph or
 /// namespace registry. Unrelated graph operations do not prevent cancellation.
@@ -38,7 +41,10 @@ pub enum SemanticChange {
 /// is not a globally minimal initial-to-final dataset diff.
 /// Output preserves the first outstanding change's order; independent keys
 /// are not sorted by hash order.
-/// A snapshot may be retained after rollback, but is never proof of commit.
+/// [`ChangeTrackingTransaction::changes`] returns pending effects, which may be
+/// retained after rollback. SPARQL `execute_with_changes` returns effects only
+/// after an acknowledged commit. The value itself carries no durable commit
+/// identity, global order, or outcome attestation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SemanticChangeSet {
     changes: Vec<SemanticChange>,
@@ -290,6 +296,39 @@ impl<T: WritableDataset> WritableDataset for ChangeTrackingTransaction<T> {
 
     fn rollback(self) -> Result<(), Self::Error> {
         self.inner.rollback().map_err(ChangeTrackingError::Backend)
+    }
+}
+
+impl<T: OutcomeAwareWritableDataset> OutcomeAwareWritableDataset for ChangeTrackingTransaction<T> {
+    fn commit_with_outcome(self) -> Result<(), TransactionCommitError<Self::Error>> {
+        self.ensure_active()
+            .map_err(TransactionCommitError::Rejected)?;
+        self.inner
+            .commit_with_outcome()
+            .map_err(|error| match error {
+                TransactionCommitError::Rejected(error) => {
+                    TransactionCommitError::Rejected(ChangeTrackingError::Backend(error))
+                }
+                TransactionCommitError::Conflicted => TransactionCommitError::Conflicted,
+                TransactionCommitError::Cancelled => TransactionCommitError::Cancelled,
+                TransactionCommitError::Indeterminate {
+                    transaction_key,
+                    source,
+                } => TransactionCommitError::Indeterminate {
+                    transaction_key,
+                    source: ChangeTrackingError::Backend(source),
+                },
+            })
+    }
+
+    fn rollback_with_outcome(self) -> Result<(), TransactionRollbackError<Self::Error>> {
+        self.inner
+            .rollback_with_outcome()
+            .map_err(|error| match error {
+                TransactionRollbackError::Failed(error) => {
+                    TransactionRollbackError::Failed(ChangeTrackingError::Backend(error))
+                }
+            })
     }
 }
 

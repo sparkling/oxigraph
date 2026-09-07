@@ -5,11 +5,12 @@
 - Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.1 is implemented in `be08cf3b`. G2.2 now includes
-  opt-in staged semantic-change capture; request/keyed integration and G2.3a-c
-  durable governance remain outstanding, so this ADR remains Proposed
+  opt-in staged semantic-change capture and request/keyed integration.
+  G2.3a-c durable governance remains outstanding, so this ADR remains Proposed
 - Update note: `ChangeTrackingTransaction` captures real backend-neutral
   mutations, with graph-scoped normalization and failure poisoning, without
-  changing the minimal write traits, backends, or qualification evidence
+  changing the minimal write traits, backends, or qualification evidence.
+  Whole-update capture returns effects only after acknowledged commit
 - **Depends on**:
   [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)
 - **Related**:
@@ -24,8 +25,8 @@
 
 ## Context
 
-G2.1 provides a transactional namespace registry. G2.2's first product slice
-now provides opt-in normalized staged changes, but no commit-governance
+G2.1 provides a transactional namespace registry. G2.2 provides opt-in normalized
+staged changes and acknowledged whole-update capture, but no commit-governance
 identity and receipt or ordered change feed. A commit error can be ambiguous,
 and downstream validators, indexers, or subscribers have no native atomic hand-off from
 primary state. Quad-only events also lose the distinction between graph
@@ -163,9 +164,8 @@ The public integration suite is
 memory, RocksDB/reopen, a separate Dataset-based persistence plane, explicit
 and dropped rollback, partial-mutation/read failure, lost commit response,
 point cancellation, scoped ordering, namespaces, and bounded summaries.
-The original `transactional.rs` hash below remains unchanged. This slice does
-not yet bind snapshots to negotiated/keyed ownership or expose request-level
-SPARQL capture; those remain G2.2 integration work. Durable receipt/outbox,
+The original `transactional.rs` hash below remains unchanged. Request-level
+SPARQL capture and negotiated/keyed ownership are implemented below. Durable receipt/outbox,
 commit identity/order, recovery lookup, cursors, and health remain G2.3a-c.
 
 Validation for this slice: `semantic_changes` passes 11/11 with default
@@ -174,6 +174,49 @@ dataset/namespace, topology, outcome, state-model, and update-atomicity suites
 pass 37/37. The public wrapper doctest, strict library/new-test Clippy, and
 format/diff checks pass. The default feature matrix includes RocksDB; this
 does not claim that pending changes are durably stored with a commit.
+
+### G2.2 owned-request and keyed integration (2026-09-07)
+
+`BoundTransactionalSparqlUpdate` and `BoundNegotiatedSparqlUpdate` expose
+`execute_with_changes()`. `PreparedSparqlUpdate::on_dataset_with_key` creates
+a `BoundKeyedSparqlUpdate` with the same method. All three open exactly one
+transaction for the whole request and return `SemanticChangeSet` only after
+acknowledged commit. They reuse the existing evaluator; negotiated/keyed bindings
+also reuse controlled admission. Generic admission is checked before and after
+the backend opener but cannot interrupt an arbitrary blocking implementation;
+the legacy `execute()` and caller-borrowed `on_transaction` paths are unchanged.
+
+Cancellation is checked before opening and after capture immediately before
+commit. Evaluation/capture failures explicitly roll back. If rollback also
+fails, the existing combined error retains both diagnostics; its source chain
+exposes the evaluation cause, not two independent error branches. Commit
+failure returns no change set and never triggers rollback or replay.
+
+The tracker forwards `OutcomeAwareWritableDataset` without losing rejection,
+conflict, cancellation, or an indeterminate key/backend cause. Keyed update
+errors expose `TransactionCommitError<ChangeTrackingError<D::Error>>` in the
+source chain. Poisoned capture rejects commit without invoking the backend;
+explicit typed rollback remains available. Built-in storage errors from
+evaluation and ordinary commit retain `UpdateEvaluationError::Storage` mapping.
+
+The public semantic-change suite passes 24 tests with `http-client,rdf-12`
+and default RocksDB, and 21 without default features. The affected existing
+egress, negotiated admission, cancellation, version, transaction-outcome,
+generic-write, and update-atomicity suites pass 38 tests. Coverage includes
+read-your-writes, lifecycle ordering, whole-request rollback, all keyed commit
+variants, lost responses, poisoned rollback, unmet admission requirements,
+pre-open and post-staging cancellation, and RocksDB outcome lookup after reopen.
+Existing `LOAD SILENT` policy semantics are preserved.
+
+The storage-error mapping unit test and public capture doctest pass, as do
+strict default-feature library/capture-test Clippy and workspace formatting.
+HTTP-enabled strict Clippy separately reports five pre-existing warnings in
+`http.rs`, `io/loader.rs`, and the update preflight helper; no lint policy or
+frozen evaluator is relaxed to close this product slice.
+
+This closes G2.2's native capture/integration task, not this ADR. Effects are
+in-process results without durable identity or global commit order. G2.3a's
+atomic receipts are next, followed by the authoritative outbox and retention.
 
 ### Existing G2.1 evidence and complete ADR acceptance
 
@@ -247,7 +290,8 @@ product paths: the new `store/namespace.rs` API plus `store.rs`,
 `storage/rocksdb_wrapper.rs`. Parser, serializer, SPARQL, CLI, bindings, and
 Cargo integration remain intentionally outside G2.1. G2.2's opt-in capture
 adds `store/semantic_change.rs` and its public integration tests, with exports
-from `store.rs`. Its remaining integration and G2.3's durable receipts, outcome
+from `store.rs`, plus owned-update integration in `sparql/update.rs`.
+G2.3's durable receipts, outcome
 resolution, authoritative outbox, retention/leases, and governance health keep
 this ADR Proposed. Under ADR-0043, optional containment is not a prerequisite
 for these direct product slices.

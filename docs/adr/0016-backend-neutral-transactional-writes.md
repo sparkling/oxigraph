@@ -73,6 +73,13 @@ The built-in `Store` and `Transaction` implement the new traits. The existing
 read use the same generic evaluator through the built-in adapter. Existing
 caller-managed `on_transaction` behavior remains unchanged.
 
+The additive G2.2 API under ADR-0020 exposes `execute_with_changes()` on owned
+generic/negotiated bindings and a separate caller-keyed binding. It wraps the
+existing transaction rather than changing these minimal traits, returns effects
+only after acknowledged commit, and preserves the same evaluation/rollback
+boundary. Existing `execute()` and borrowed transaction paths do not pay capture
+overhead. Effects are not durable receipts or an authoritative change feed.
+
 The `oxrdf::Dataset` implementation of `QueryableDataset` also exposes its
 explicit named-graph registry. This is required for query evaluation over a
 transaction staged in an `oxrdf::Dataset`, and fixes the general empty-graph

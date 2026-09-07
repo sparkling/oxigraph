@@ -10,7 +10,9 @@
   passes the persistent application journey. Recovery source and installation
   instructions are published on `main` at `aa7128bb`; the programme Gist and
   Ruflo delivery evidence were updated and read back. R1 is complete; the
-  wider programme continues with G2.2 task `task-1788781295095-lrzbqi`
+  wider programme has implemented G2.2 capture/request/keyed integration in
+  task `task-1788781295095-lrzbqi`; G2.3a atomic receipts in
+  `task-1787670631130-9jlo3h` is the next product slice
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`

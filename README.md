@@ -47,7 +47,8 @@ The [N3 publication fix](docs/research/n3-submodule-publication-2026-09-07.md)
 makes the existing reviewed gitlink fetchable without changing its contents.
 R1 source and installation instructions were published on `main` at
 `aa7128bb`; the [programme Gist](https://gist.github.com/sparkling/5f2bcd7d6e8c9cda78de3b8bd40a1e96)
-now records all 43 decisions. G2.2 is the next active product task, not another
+records all 43 decisions at that handoff. G2.2 is now implemented locally;
+G2.3a atomic receipts is the next product task, not another
 containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
@@ -64,8 +65,8 @@ RocksDB remains the persistent backend. The custom-backend tests prove the
 public extension contract, not deployment of a separate replacement backend.
 G1.7 and ADR-0034 through ADR-0041 remain future, non-gating harness work.
 The broader [linked-data roadmap](docs/plans/persistence-write-and-linked-data-parity-plan.md)
-continues after R1 with one product slice at a time, starting with G2.2's
-normalized semantic change set under ADR-0020. Six-hour delivery reviews
+continues after R1 with one product slice at a time. G2.2's normalized semantic
+changes are implemented; G2.3 durable receipts are next. Six-hour delivery reviews
 continue across milestones.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
@@ -73,8 +74,13 @@ transactions: inspect pending quad, graph-lifecycle, and namespace changes
 before commit. It excludes point no-ops, preserves scoped operation ordering,
 and summarizes clear/drop without expanding removed quads. Capture failures
 prevent commit. See [ADR-0020](docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
-for the tested boundary; these snapshots are not durable receipts or a change
-feed, and request/keyed integration remains outstanding.
+for the tested boundary. Whole SPARQL Update requests now offer
+`.on_dataset(&store).execute_with_changes()` and a negotiated equivalent;
+`.on_dataset_with_key(&store, request, key).execute_with_changes()` uses the
+existing keyed outcome contract. These methods return changes only after
+acknowledged commit, roll back failed evaluation, and preserve indeterminate
+commit keys without replay. The results are not durable receipts or a change
+feed; those remain G2.3 work.
 
 ## Upstream Oxigraph
 
@@ -448,10 +454,11 @@ passes 13/13 across memory, RocksDB, and the rewritten plane; the no-default
 evaluator passes 8/8 across memory and the rewritten plane. Focused regressions
 pass `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
 `transactional_dataset` 3/3. [ADR-0020 — Transactional metadata, receipts, and change delivery](./docs/adr/0020-transactional-metadata-receipts-and-change-delivery.md)
-remains Proposed because G2.2-G2.3c are not implemented.
+now includes implemented G2.2 capture/integration and remains Proposed for G2.3a-c.
 
 [ADR-0034 — First-class exact new-file admission](./docs/adr/0034-first-class-exact-new-file-admission.md) separately
-gates G2.2's candidate-created semantic-change module. Commits `78b2cf99`
+governs optional candidate-created module admission, not direct G2.2 delivery
+under ADR-0043. Commits `78b2cf99`
 through `65fb0e7a` preserve schema-v1 evidence while adding the exact v2
 path/tree/contract/reconstruction/context/schema/assembly controls. Commit
 `54a056e0` adds a reviewed but unregistered exact-byte native worker with
@@ -526,8 +533,8 @@ gates and the exact path-executed runtime closure exist. Commits `f6897d34` and
 the selectors still stop at that unavailable result before effects. Current
 host qualification,
 [ADR-0040's commit-capable successor](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md),
-and G2.2 remain open, so no new product module or promotion authority is
-admitted.
+remain open in the optional containment path. They grant no promotion authority
+and do not gate the implemented native G2.2 product module.
 
 The dated 2026-09-02 ADR-0036 C15 checkpoint is now GREEN. ADR-0034 helper
 commit `41dd2508` advances `containment-exact-v2.mjs` to the additive 19-export
@@ -634,7 +641,7 @@ has the unavailable value above, the early gate runs before reconstruction
 workspace preparation and performs no candidate/evaluator Git, submodule,
 process, provider, `ACCEPT`, `REJECT`, receipt-emission, or Router-quality work;
 the later check is defense in depth. The qualified protocol would still be
-cancel-only, so G2.2 additionally requires
+cancel-only, so a separately activated commit-capable containment path requires
 [ADR-0040's separately ratified commit-capable successor](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md).
 
 Rust consumers enable the corresponding bounded surfaces explicitly:
@@ -733,8 +740,8 @@ The ADRs explain the principal boundaries:
   multi-repository lifecycle, incremental entailment, and analytical/WCOJ
   research into ADR-0018 and ADR-0020 through ADR-0042; ADR-0019 records the
   implemented egress, cancellation, and service-claim slice. Twenty-three decisions
-  remain Proposed living plans. ADR-0020 includes implemented G2.1 namespace
-  support but remains Proposed until G2.2-G2.3c are complete; ADR-0034's
+  remain Proposed living plans. ADR-0020 includes implemented G2.1 namespaces
+  and G2.2 capture/integration but remains Proposed for G2.3a-c; ADR-0034's
   completed dormant controls include the separate v2 profile and contract, receipt-v7
   admission/replay, and hidden three-command CLI/package surface. That surface
   executes only the unavailable gate and grants no product authority.
@@ -745,7 +752,7 @@ The ADRs explain the principal boundaries:
   qualification/activation gates without changing production readiness;
   [ADR-0040](./docs/adr/0040-commit-capable-containment-decision-and-output-release.md)
   owns the separate durable `COMMIT`, at-most-once execution, and descriptor-
-  bound output-release successor required before G2.2;
+  bound output-release successor for optional containment, not direct G2.2;
   [ADR-0041](./docs/adr/0041-g17-private-co-located-build-issuer.md) adds the
   authority-null private build-owner-v3/product-owner-v4 plan without
   reinterpreting predecessor evidence;

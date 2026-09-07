@@ -12,7 +12,9 @@ use crate::sparql::dataset::DatasetView;
 use crate::sparql::error::UpdateEvaluationError;
 use crate::storage::{Storage, StorageTransaction};
 use crate::store::{
-    NegotiatedTransactionalDataset, Store, Transaction, TransactionRequest,
+    ChangeTrackingError, ChangeTrackingTransaction, NegotiatedTransactionalDataset,
+    OutcomeAwareTransactionalDataset, OutcomeAwareWritableDataset, SemanticChangeSet, Store,
+    Transaction, TransactionCommitError, TransactionKey, TransactionRequest,
     TransactionStartControl, TransactionStartError, TransactionalDataset, WritableDataset,
 };
 use oxiri::Iri;
@@ -214,6 +216,64 @@ impl PreparedSparqlUpdate {
         }
     }
 
+    /// Binds this update to one caller-keyed, outcome-aware transaction.
+    ///
+    /// Admission uses this evaluator's cancellation token. Commit failures
+    /// preserve their typed outcome and key in the error source chain; the
+    /// request is never replayed to resolve an uncertain outcome.
+    pub fn on_dataset_with_key<D: OutcomeAwareTransactionalDataset>(
+        self,
+        dataset: &D,
+        request: TransactionRequest,
+        key: TransactionKey,
+    ) -> BoundKeyedSparqlUpdate<'_, D> {
+        BoundKeyedSparqlUpdate {
+            prepared: self,
+            dataset,
+            request,
+            key,
+        }
+    }
+
+    fn execute_with_changes_on<T: WritableDataset>(
+        self,
+        transaction: T,
+        commit: impl FnOnce(ChangeTrackingTransaction<T>) -> Result<(), UpdateEvaluationError>,
+        rollback: impl FnOnce(
+            ChangeTrackingTransaction<T>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Result<SemanticChangeSet, UpdateEvaluationError> {
+        let mut transaction = ChangeTrackingTransaction::new(transaction);
+        let result = (|| {
+            ensure_update_alive(self.cancellation_token.as_ref())?;
+            ReadableUpdateEvaluator {
+                transaction: &mut transaction,
+                base_iri: self.update.base_iri.clone(),
+                query_evaluator: self.evaluator,
+                cancellation_token: self.cancellation_token.clone(),
+                #[cfg(feature = "http-client")]
+                client: self.client,
+            }
+            .eval_all(&self.update.operations, &self.using_datasets)
+            .map_err(unwrap_tracking_error::<T::Error>)?;
+            let changes = transaction.changes().map_err(tracking_error)?;
+            ensure_update_alive(self.cancellation_token.as_ref())?;
+            Ok(changes)
+        })();
+        match result {
+            Ok(changes) => {
+                commit(transaction)?;
+                Ok(changes)
+            }
+            Err(update) => match rollback(transaction) {
+                Ok(()) => Err(update),
+                Err(rollback) => Err(UpdateEvaluationError::Unexpected(Box::new(
+                    UpdateRollbackError { update, rollback },
+                ))),
+            },
+        }
+    }
+
     /// Bind the prepared update to the [`Transaction`] it should be evaluated on.
     ///
     /// Usage example:
@@ -265,6 +325,47 @@ pub struct BoundTransactionalSparqlUpdate<'a, D: TransactionalDataset> {
 }
 
 impl<D: TransactionalDataset> BoundTransactionalSparqlUpdate<'_, D> {
+    /// Atomically evaluates the whole request and returns normalized effects
+    /// only after successful commit. The result is not a durable receipt/feed.
+    /// Evaluation failure rolls back; a commit error is never retried.
+    ///
+    /// ```
+    /// use oxigraph::sparql::SparqlEvaluator;
+    /// use oxigraph::store::{SemanticChange, Store};
+    /// let store = Store::new()?;
+    /// let changes = SparqlEvaluator::new()
+    ///     .parse_update("CREATE GRAPH <urn:example:graph>")?
+    ///     .on_dataset(&store)
+    ///     .execute_with_changes()?;
+    /// assert!(matches!(changes.as_slice(), [SemanticChange::NamedGraphCreated(_)]));
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn execute_with_changes(self) -> Result<SemanticChangeSet, UpdateEvaluationError> {
+        ensure_update_start_alive(
+            &self.update,
+            self.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.client,
+        )?;
+        let transaction = self
+            .dataset
+            .start_transaction()
+            .map_err(UpdateEvaluationError::dataset)?;
+        PreparedSparqlUpdate {
+            evaluator: self.evaluator,
+            update: self.update,
+            using_datasets: self.using_datasets,
+            cancellation_token: self.cancellation_token,
+            #[cfg(feature = "http-client")]
+            client: self.client,
+        }
+        .execute_with_changes_on(
+            transaction,
+            |transaction| transaction.commit().map_err(tracking_error),
+            |transaction| transaction.rollback().map_err(Into::into),
+        )
+    }
+
     /// Evaluates and atomically commits the update.
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
         ensure_update_start_alive(
@@ -320,6 +421,42 @@ pub struct BoundNegotiatedSparqlUpdate<'a, D: NegotiatedTransactionalDataset> {
 }
 
 impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
+    /// Negotiates one transaction and returns normalized effects only after
+    /// successful commit, with the same rollback boundary as [`Self::execute`].
+    /// The returned effects are not a durable receipt or ordered change feed.
+    pub fn execute_with_changes(self) -> Result<SemanticChangeSet, UpdateEvaluationError> {
+        ensure_update_start_alive(
+            &self.update,
+            self.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.client,
+        )?;
+        let control = self
+            .cancellation_token
+            .as_ref()
+            .map_or_else(TransactionStartControl::new, |token| {
+                TransactionStartControl::new().with_cancellation_token(token.clone())
+            });
+        let transaction = self
+            .dataset
+            .start_transaction_with_control(self.request, control)
+            .map_err(update_transaction_start_error)?
+            .into_transaction();
+        PreparedSparqlUpdate {
+            evaluator: self.evaluator,
+            update: self.update,
+            using_datasets: self.using_datasets,
+            cancellation_token: self.cancellation_token,
+            #[cfg(feature = "http-client")]
+            client: self.client,
+        }
+        .execute_with_changes_on(
+            transaction,
+            |transaction| transaction.commit().map_err(tracking_error),
+            |transaction| transaction.rollback().map_err(Into::into),
+        )
+    }
+
     /// Negotiates, evaluates, and atomically commits the update.
     pub fn execute(self) -> Result<(), UpdateEvaluationError> {
         ensure_update_start_alive(
@@ -363,6 +500,108 @@ impl<D: NegotiatedTransactionalDataset> BoundNegotiatedSparqlUpdate<'_, D> {
                     },
                 ))),
             },
+        }
+    }
+}
+
+/// A whole SPARQL Update request bound to a caller-keyed transaction.
+#[must_use]
+pub struct BoundKeyedSparqlUpdate<'a, D: OutcomeAwareTransactionalDataset> {
+    prepared: PreparedSparqlUpdate,
+    dataset: &'a D,
+    request: TransactionRequest,
+    key: TransactionKey,
+}
+
+impl<D: OutcomeAwareTransactionalDataset> BoundKeyedSparqlUpdate<'_, D> {
+    /// Returns normalized effects after an acknowledged keyed commit.
+    ///
+    /// Evaluation failure explicitly rolls back the owned transaction. Commit
+    /// failure never triggers rollback or replay. The error source chain retains
+    /// `TransactionCommitError<ChangeTrackingError<D::Error>>`, including the
+    /// exact key on an indeterminate result. Use the dataset's outcome lookup
+    /// to resolve that result; no changes or durable receipt are returned on error.
+    pub fn execute_with_changes(self) -> Result<SemanticChangeSet, UpdateEvaluationError> {
+        ensure_update_start_alive(
+            &self.prepared.update,
+            self.prepared.cancellation_token.as_ref(),
+            #[cfg(feature = "http-client")]
+            &self.prepared.client,
+        )?;
+        let control = self
+            .prepared
+            .cancellation_token
+            .as_ref()
+            .map_or_else(TransactionStartControl::new, |token| {
+                TransactionStartControl::new().with_cancellation_token(token.clone())
+            });
+        let transaction = self
+            .dataset
+            .start_transaction_with_key_and_control(self.request, self.key, control)
+            .map_err(update_transaction_start_error)?
+            .into_transaction();
+        self.prepared.execute_with_changes_on(
+            transaction,
+            |transaction| {
+                transaction.commit_with_outcome().map_err(|error| {
+                    UpdateEvaluationError::dataset(UpdateTransactionCommitError(error))
+                })
+            },
+            |transaction| transaction.rollback_with_outcome().map_err(Into::into),
+        )
+    }
+}
+
+fn tracking_error<E: std::error::Error + Send + Sync + 'static>(
+    error: ChangeTrackingError<E>,
+) -> UpdateEvaluationError {
+    match error {
+        ChangeTrackingError::Backend(error) => UpdateEvaluationError::dataset(error),
+        ChangeTrackingError::Failed => UpdateEvaluationError::dataset(error),
+    }
+}
+
+fn unwrap_tracking_error<E: std::error::Error + Send + Sync + 'static>(
+    error: UpdateEvaluationError,
+) -> UpdateEvaluationError {
+    match error {
+        UpdateEvaluationError::Dataset(error) => match error.downcast::<ChangeTrackingError<E>>() {
+            Ok(error) => tracking_error(*error),
+            Err(error) => UpdateEvaluationError::Dataset(error),
+        },
+        other => other,
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct UpdateTransactionCommitError<E: std::error::Error + 'static>(
+    #[source] TransactionCommitError<E>,
+);
+
+#[cfg(test)]
+mod tracking_error_tests {
+    use super::{tracking_error, unwrap_tracking_error};
+    use crate::sparql::UpdateEvaluationError;
+    use crate::store::{ChangeTrackingError, StorageError};
+    use spareval::QueryEvaluationError;
+    use std::io;
+
+    #[test]
+    fn capture_preserves_the_public_storage_error_variant() {
+        let backend = || StorageError::from(io::Error::other("injected storage failure"));
+        let direct = tracking_error(ChangeTrackingError::Backend(backend()));
+        let mutation = unwrap_tracking_error::<StorageError>(UpdateEvaluationError::dataset(
+            ChangeTrackingError::Backend(backend()),
+        ));
+        let query = unwrap_tracking_error::<StorageError>(UpdateEvaluationError::from(
+            QueryEvaluationError::Dataset(Box::new(ChangeTrackingError::Backend(backend()))),
+        ));
+        for error in [direct, mutation, query] {
+            assert!(
+                matches!(error, UpdateEvaluationError::Storage(_)),
+                "capture must not relabel a built-in storage failure: {error}"
+            );
         }
     }
 }
