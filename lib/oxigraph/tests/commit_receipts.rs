@@ -50,7 +50,9 @@ fn exercise(store: &Store) -> TestResult {
         CommitReceiptOutcome::Indeterminate
     );
     let receipt = tx.commit()?;
-    assert_eq!(receipt.schema_version(), 1);
+    // New governed commits bind the outbox range; v1 decoding remains covered
+    // by the unchanged receipt-format compatibility fixture.
+    assert_eq!(receipt.schema_version(), 2);
     assert_eq!(receipt.transaction_key(), &key(1));
     assert_eq!(receipt.sequence(), 1);
     assert!(receipt.verifies_changes(&changes));

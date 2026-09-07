@@ -2,12 +2,12 @@
 
 use super::{
     ChangeTrackingError, ChangeTrackingTransaction, CorruptionError, KeyedTransaction, Namespace,
-    NamespacePrefix, NegotiatedTransaction, SemanticChange, SemanticChangeSet, StorageError, Store,
+    NamespacePrefix, NegotiatedTransaction, SemanticChangeSet, StorageError, Store,
     TransactionCommitError, TransactionKey, TransactionNonCommitReason, TransactionRequest,
     TransactionRollbackError, TransactionStartControl, TransactionStartError, WritableDataset,
     WritableNamespaceRegistry,
 };
-use crate::model::{GraphNameRef, NamedNode, NamedOrBlankNode, Quad, Term, TermRef};
+use crate::model::{NamedNode, NamedOrBlankNode, Quad, Term};
 use crate::storage::StorageTransactionStartError;
 use sha2::{Digest, Sha256};
 
@@ -16,6 +16,9 @@ use sha2::{Digest, Sha256};
 pub struct StoreIdentity([u8; 16]);
 
 impl StoreIdentity {
+    pub(crate) const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
     pub const fn as_bytes(&self) -> &[u8; 16] {
         &self.0
     }
@@ -29,6 +32,9 @@ impl StoreIdentity {
 pub struct CommitId([u8; 32]);
 
 impl CommitId {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -38,7 +44,8 @@ impl CommitId {
 ///
 /// Receipts contain no RDF payloads. RocksDB persists them atomically with the
 /// primary commit; memory stores provide process-local receipts only. This is
-/// not an outbox or evidence of power-loss testing. Legacy writes are not covered.
+/// not itself a feed or evidence of power-loss testing. V2 receipts locate their
+/// records in [`Store::read_outbox`]; legacy writes are not covered.
 /// Checksums detect accidental corruption; they are not authentication signatures.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitReceipt {
@@ -49,6 +56,7 @@ pub struct CommitReceipt {
     sequence: u64,
     effect_count: u64,
     effects_checksum: [u8; 32],
+    outbox_header: Option<u64>,
 }
 
 impl CommitReceipt {
@@ -78,6 +86,44 @@ impl CommitReceipt {
         self.effect_count == changes.len() as u64 && self.effects_checksum == changes.checksum()
     }
 
+    /// Header position for a native outbox commit; absent on legacy v1 receipts.
+    pub fn outbox_header_cursor(&self) -> Option<super::OutboxCursor> {
+        self.outbox_header
+            .map(|position| super::OutboxCursor::new(self.store_identity.clone(), position))
+    }
+
+    /// Last record in this commit (the header itself for a no-op).
+    pub fn outbox_end_cursor(&self) -> Option<super::OutboxCursor> {
+        self.outbox_header
+            .and_then(|position| position.checked_add(self.effect_count))
+            .map(|position| super::OutboxCursor::new(self.store_identity.clone(), position))
+    }
+
+    pub(crate) fn with_outbox_header(mut self, position: u64) -> Self {
+        self.schema_version = 2;
+        self.outbox_header = Some(position);
+        self.commit_id = self.derived_commit_id();
+        self
+    }
+
+    fn derived_commit_id(&self) -> CommitId {
+        let mut hasher = Sha256::new();
+        hasher.update(if self.outbox_header.is_some() {
+            b"oxigraph.commit-id.v2\0"
+        } else {
+            b"oxigraph.commit-id.v1\0"
+        });
+        hasher.update(self.store_identity.as_bytes());
+        hasher.update(self.sequence.to_be_bytes());
+        hasher.update(self.transaction_key.as_bytes());
+        hasher.update(self.effect_count.to_be_bytes());
+        hasher.update(self.effects_checksum);
+        if let Some(position) = self.outbox_header {
+            hasher.update(position.to_be_bytes());
+        }
+        CommitId(hasher.finalize().into())
+    }
+
     pub(crate) fn new(
         store_identity: StoreIdentity,
         sequence: u64,
@@ -101,12 +147,12 @@ impl CommitReceipt {
             sequence,
             effect_count,
             effects_checksum,
+            outbox_header: None,
         }
     }
 
-    #[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
     pub(crate) fn encode(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(145);
+        let mut bytes = Vec::with_capacity(153);
         bytes.push(self.schema_version);
         bytes.extend_from_slice(self.store_identity.as_bytes());
         bytes.extend_from_slice(self.commit_id.as_bytes());
@@ -114,45 +160,60 @@ impl CommitReceipt {
         bytes.extend_from_slice(&self.sequence.to_be_bytes());
         bytes.extend_from_slice(&self.effect_count.to_be_bytes());
         bytes.extend_from_slice(&self.effects_checksum);
-        let digest = envelope_checksum(b"oxigraph.receipt.v1\0", &bytes);
+        if let Some(position) = self.outbox_header {
+            bytes.extend_from_slice(&position.to_be_bytes());
+        }
+        let domain = if self.outbox_header.is_some() {
+            b"oxigraph.receipt.v2\0"
+        } else {
+            b"oxigraph.receipt.v1\0"
+        };
+        let digest = envelope_checksum(domain, &bytes);
         bytes.extend_from_slice(&digest);
         bytes
     }
 
-    #[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, StorageError> {
-        let bytes: &[u8; 145] = bytes
-            .try_into()
-            .map_err(|_| CorruptionError::msg("invalid commit receipt length"))?;
-        if bytes[0] != 1
-            || bytes[113..] != envelope_checksum(b"oxigraph.receipt.v1\0", &bytes[..113])
-        {
+        let (length, domain) = match bytes.first() {
+            Some(1) if bytes.len() == 145 => (113, b"oxigraph.receipt.v1\0"),
+            Some(2) if bytes.len() == 153 => (121, b"oxigraph.receipt.v2\0"),
+            _ => {
+                return Err(
+                    CorruptionError::msg("invalid commit receipt version or length").into(),
+                );
+            }
+        };
+        if bytes[length..] != envelope_checksum(domain, &bytes[..length]) {
             return Err(
                 CorruptionError::msg("invalid commit receipt version, length or checksum").into(),
             );
         }
-        let sequence = u64::from_be_bytes(receipt_field(&bytes[65..73])?);
+        let (fields, tail) = bytes.split_at(113);
+        let fields: [u8; 113] = receipt_field(fields)?;
+        let sequence = u64::from_be_bytes(receipt_field(&fields[65..73])?);
         if sequence == 0 {
             return Err(CorruptionError::msg("invalid zero receipt sequence").into());
         }
         let receipt = Self {
-            schema_version: bytes[0],
-            store_identity: StoreIdentity(receipt_field(&bytes[1..17])?),
-            commit_id: CommitId(receipt_field(&bytes[17..49])?),
-            transaction_key: TransactionKey::new(receipt_field(&bytes[49..65])?),
+            schema_version: fields[0],
+            store_identity: StoreIdentity(receipt_field(&fields[1..17])?),
+            commit_id: CommitId(receipt_field(&fields[17..49])?),
+            transaction_key: TransactionKey::new(receipt_field(&fields[49..65])?),
             sequence,
-            effect_count: u64::from_be_bytes(receipt_field(&bytes[73..81])?),
-            effects_checksum: receipt_field(&bytes[81..113])?,
+            effect_count: u64::from_be_bytes(receipt_field(&fields[73..81])?),
+            effects_checksum: receipt_field(&fields[81..113])?,
+            outbox_header: if fields[0] == 2 {
+                Some(u64::from_be_bytes(receipt_field(&tail[..8])?))
+            } else {
+                None
+            },
         };
-        let mut hasher = Sha256::new();
-        hasher.update(b"oxigraph.commit-id.v1\0");
-        hasher.update(receipt.store_identity.as_bytes());
-        hasher.update(receipt.sequence.to_be_bytes());
-        hasher.update(receipt.transaction_key.as_bytes());
-        hasher.update(receipt.effect_count.to_be_bytes());
-        hasher.update(receipt.effects_checksum);
-        let expected: [u8; 32] = hasher.finalize().into();
-        if receipt.commit_id.as_bytes() != &expected {
+        if receipt.outbox_header.is_some_and(|position| {
+            position == 0 || position.checked_add(receipt.effect_count).is_none()
+        }) {
+            return Err(CorruptionError::msg("invalid receipt outbox range").into());
+        }
+        if receipt.commit_id != receipt.derived_commit_id() {
             return Err(
                 CorruptionError::msg("receipt commit identity does not match its fields").into(),
             );
@@ -177,6 +238,7 @@ pub enum CommitReceiptOutcome {
 pub(crate) struct GovernanceState {
     pub store_identity: StoreIdentity,
     pub sequence: u64,
+    pub outbox: Option<super::outbox::OutboxState>,
 }
 
 impl Default for GovernanceState {
@@ -184,6 +246,7 @@ impl Default for GovernanceState {
         Self {
             store_identity: StoreIdentity::new(),
             sequence: 0,
+            outbox: None,
         }
     }
 }
@@ -208,48 +271,81 @@ impl GovernanceState {
 
     #[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
     pub fn encode(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(57);
-        bytes.push(1);
+        let mut bytes = Vec::with_capacity(73);
+        bytes.push(if self.outbox.is_some() { 2 } else { 1 });
         bytes.extend_from_slice(self.store_identity.as_bytes());
         bytes.extend_from_slice(&self.sequence.to_be_bytes());
-        let digest = envelope_checksum(b"oxigraph.governance.v1\0", &bytes);
+        if let Some(outbox) = &self.outbox {
+            bytes.extend_from_slice(&outbox.high_water.to_be_bytes());
+            bytes.extend_from_slice(&outbox.after_receipt_sequence.to_be_bytes());
+        }
+        let domain = if self.outbox.is_some() {
+            b"oxigraph.governance.v2\0"
+        } else {
+            b"oxigraph.governance.v1\0"
+        };
+        let digest = envelope_checksum(domain, &bytes);
         bytes.extend_from_slice(&digest);
         bytes
     }
 
     #[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
     pub fn decode(bytes: &[u8]) -> Result<Self, StorageError> {
-        let bytes: &[u8; 57] = bytes
-            .try_into()
-            .map_err(|_| CorruptionError::msg("invalid governance state length"))?;
-        if bytes[0] != 1
-            || bytes[25..] != envelope_checksum(b"oxigraph.governance.v1\0", &bytes[..25])
-        {
+        let (length, domain) = match bytes.first() {
+            Some(1) if bytes.len() == 57 => (25, b"oxigraph.governance.v1\0"),
+            Some(2) if bytes.len() == 73 => (41, b"oxigraph.governance.v2\0"),
+            _ => {
+                return Err(
+                    CorruptionError::msg("invalid governance state version or length").into(),
+                );
+            }
+        };
+        if bytes[length..] != envelope_checksum(domain, &bytes[..length]) {
             return Err(CorruptionError::msg(
                 "invalid governance state version, length or checksum",
             )
             .into());
         }
-        let sequence = u64::from_be_bytes(receipt_field(&bytes[17..25])?);
+        let (fields, tail) = bytes.split_at(25);
+        let fields: [u8; 25] = receipt_field(fields)?;
+        let sequence = u64::from_be_bytes(receipt_field(&fields[17..25])?);
         if sequence == 0 {
             return Err(CorruptionError::msg("invalid zero governance high-water mark").into());
         }
+        let outbox = if fields[0] == 2 {
+            let outbox_fields: [u8; 16] = receipt_field(&tail[..16])?;
+            let high_water = u64::from_be_bytes(receipt_field(&outbox_fields[..8])?);
+            let after_receipt_sequence = u64::from_be_bytes(receipt_field(&outbox_fields[8..])?);
+            if high_water == 0
+                || after_receipt_sequence >= sequence
+                || high_water < sequence - after_receipt_sequence
+            {
+                return Err(
+                    CorruptionError::msg("invalid outbox high-water or coverage origin").into(),
+                );
+            }
+            Some(super::outbox::OutboxState {
+                high_water,
+                after_receipt_sequence,
+            })
+        } else {
+            None
+        };
         Ok(Self {
-            store_identity: StoreIdentity(receipt_field(&bytes[1..17])?),
+            store_identity: StoreIdentity(receipt_field(&fields[1..17])?),
             sequence,
+            outbox,
         })
     }
 }
 
-#[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
-fn receipt_field<const N: usize>(bytes: &[u8]) -> Result<[u8; N], StorageError> {
+pub(super) fn receipt_field<const N: usize>(bytes: &[u8]) -> Result<[u8; N], StorageError> {
     bytes
         .try_into()
         .map_err(|_| CorruptionError::msg("invalid receipt field length").into())
 }
 
-#[cfg(any(test, all(not(target_family = "wasm"), feature = "rocksdb")))]
-fn envelope_checksum(domain: &[u8], bytes: &[u8]) -> [u8; 32] {
+pub(super) fn envelope_checksum(domain: &[u8], bytes: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(domain);
     hasher.update(bytes);
@@ -257,108 +353,7 @@ fn envelope_checksum(domain: &[u8], bytes: &[u8]) -> [u8; 32] {
 }
 
 pub(super) fn change_checksum(changes: &SemanticChangeSet) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(b"oxigraph.semantic-changes.v1\0");
-    hasher.update((changes.len() as u64).to_be_bytes());
-    for change in changes.as_slice() {
-        let tag = match change {
-            SemanticChange::QuadAdded(_) => 0,
-            SemanticChange::QuadRemoved(_) => 1,
-            SemanticChange::NamedGraphCreated(_) => 2,
-            SemanticChange::GraphCleared(_) => 3,
-            SemanticChange::NamedGraphDropped(_) => 4,
-            SemanticChange::AllNamedGraphsCleared => 5,
-            SemanticChange::AllGraphsCleared => 6,
-            SemanticChange::AllNamedGraphsDropped => 7,
-            SemanticChange::DatasetCleared => 8,
-            SemanticChange::NamespaceChanged { .. } => 9,
-            SemanticChange::NamespacesCleared => 10,
-        };
-        hasher.update([tag]);
-        match change {
-            SemanticChange::QuadAdded(quad) | SemanticChange::QuadRemoved(quad) => {
-                hash_term(&mut hasher, quad.subject.as_ref().into());
-                hash_term(&mut hasher, quad.predicate.as_ref().into());
-                hash_term(&mut hasher, quad.object.as_ref());
-                hash_graph(&mut hasher, quad.graph_name.as_ref());
-            }
-            SemanticChange::NamedGraphCreated(graph) | SemanticChange::NamedGraphDropped(graph) => {
-                hash_term(&mut hasher, graph.as_ref().into())
-            }
-            SemanticChange::GraphCleared(graph) => hash_graph(&mut hasher, graph.as_ref()),
-            SemanticChange::NamespaceChanged {
-                prefix,
-                before,
-                after,
-            } => {
-                hash_field(&mut hasher, prefix.as_str());
-                for iri in [before, after] {
-                    hasher.update([u8::from(iri.is_some())]);
-                    if let Some(iri) = iri {
-                        hash_field(&mut hasher, iri.as_str());
-                    }
-                }
-            }
-            _ => (),
-        }
-    }
-    hasher.finalize().into()
-}
-
-fn hash_field(hasher: &mut Sha256, value: &str) {
-    hasher.update((value.len() as u64).to_be_bytes());
-    hasher.update(value.as_bytes());
-}
-
-fn hash_graph(hasher: &mut Sha256, graph: GraphNameRef<'_>) {
-    match graph {
-        GraphNameRef::DefaultGraph => hasher.update([0]),
-        GraphNameRef::NamedNode(node) => hash_term(hasher, node.into()),
-        GraphNameRef::BlankNode(node) => hash_term(hasher, node.into()),
-    }
-}
-
-// Versioned logical components, never Display output or physical numeric indexes.
-// A non-directional literal always emits direction 0, including without rdf-12.
-fn hash_term(hasher: &mut Sha256, term: TermRef<'_>) {
-    match term {
-        TermRef::NamedNode(node) => {
-            hasher.update([1]);
-            hash_field(hasher, node.as_str());
-        }
-        TermRef::BlankNode(node) => {
-            hasher.update([2]);
-            hash_field(hasher, node.as_str());
-        }
-        TermRef::Literal(literal) => {
-            hasher.update([3]);
-            hash_field(hasher, literal.value());
-            hash_field(hasher, literal.datatype().as_str());
-            match literal.language() {
-                None => hasher.update([0]),
-                Some(language) => {
-                    hasher.update([1]);
-                    hash_field(hasher, language);
-                }
-            }
-            #[cfg(feature = "rdf-12")]
-            let direction = match literal.direction() {
-                None => 0,
-                Some(crate::model::BaseDirection::Ltr) => 1,
-                Some(crate::model::BaseDirection::Rtl) => 2,
-            };
-            #[cfg(not(feature = "rdf-12"))]
-            let direction = 0;
-            hasher.update([direction]);
-        }
-        #[cfg(feature = "rdf-12")]
-        TermRef::Triple(triple) => {
-            hasher.update([4]);
-            hash_term(hasher, triple.subject.as_ref().into());
-            hash_term(hasher, triple.predicate.as_ref().into());
-            hash_term(hasher, triple.object.as_ref());
-        }
-    }
+    super::change_codec::checksum(changes)
 }
 
 impl WritableDataset for GovernedTransaction<'_> {
@@ -459,6 +454,19 @@ impl super::OutcomeAwareWritableDataset for GovernedTransaction<'_> {
 }
 
 impl Store {
+    /// Reads at most `max_records` records after the supplied cursor, or from the
+    /// coverage origin for `None`. RocksDB records survive reopen and backup;
+    /// memory records live only as long as that store. No retention or automatic
+    /// acknowledgement is performed. This feed covers only governed commits.
+    /// The bound is in records, not bytes; a single RDF term can be large.
+    pub fn read_outbox(
+        &self,
+        after: Option<&super::OutboxCursor>,
+        max_records: std::num::NonZeroUsize,
+    ) -> Result<super::OutboxBatch, super::OutboxReadError> {
+        self.storage.read_outbox(after, max_records)
+    }
+
     /// Opens an opt-in governed transaction with internally captured effects.
     /// Require durable outcome lookup in `request` when process-local memory receipts are insufficient.
     ///
@@ -643,6 +651,7 @@ mod tests {
         let state = GovernanceState {
             store_identity: StoreIdentity([9; 16]),
             sequence: 1,
+            outbox: None,
         };
         let encoded = state.encode();
         assert_eq!(GovernanceState::decode(&encoded)?.sequence, 1);
@@ -722,6 +731,23 @@ mod tests {
                 CommitReceiptOutcome::Indeterminate => assert!(!committed),
                 other => panic!("unexpected outcome: {other:?}"),
             }
+            let page = store.read_outbox(None, std::num::NonZeroUsize::new(100).unwrap())?;
+            assert_eq!(
+                page.records().len(),
+                if committed { changes.len() + 1 } else { 0 }
+            );
+            assert_eq!(page.high_water().is_some(), committed);
+            if committed {
+                let replay: Vec<_> = page
+                    .records()
+                    .iter()
+                    .filter_map(|record| match record {
+                        super::super::OutboxRecord::Event { change, .. } => Some(change.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(replay, changes.as_slice());
+            }
             assert!(
                 store
                     .start_governed_transaction(TransactionRequest::default(), key)
@@ -736,6 +762,9 @@ mod tests {
                 .into_transaction()
                 .commit()?;
             assert_eq!(next.sequence(), if committed { 2 } else { 1 });
+            let next_page = store.read_outbox(page.high_water(), std::num::NonZeroUsize::MIN)?;
+            assert_eq!(next_page.records().len(), 1);
+            assert_eq!(next_page.high_water(), next.outbox_end_cursor().as_ref());
         }
         Ok(())
     }
@@ -782,6 +811,9 @@ mod tests {
             }
             let store = Store::open(directory.path())?;
             assert!(store.namespace(&NamespacePrefix::new("ex")?)?.is_none());
+            let page = store.read_outbox(None, std::num::NonZeroUsize::MIN)?;
+            assert!(page.records().is_empty());
+            assert!(page.high_water().is_none());
             let outcome = store.lookup_commit_receipt(&key)?;
             // rollback_keyed may retry its staging tombstone from Drop; either
             // durable absence or unresolved reservation is safe, never a receipt.

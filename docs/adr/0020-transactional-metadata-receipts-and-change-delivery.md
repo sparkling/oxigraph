@@ -6,8 +6,8 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: G2.1 is implemented in `be08cf3b`. G2.2 now includes
   opt-in staged semantic-change capture and request/keyed integration.
-  G2.3a native atomic receipts and reopen lookup are implemented. G2.3b-c
-  outbox and retention/governance remain outstanding, so this ADR remains Proposed
+  G2.3a native atomic receipts and G2.3b ordered outbox are implemented locally.
+  G2.3c retention/leases and governance health remain open, so this ADR remains Proposed
 - Update note: `ChangeTrackingTransaction` captures real backend-neutral
   mutations, with graph-scoped normalization and failure poisoning, without
   changing the minimal write traits, backends, or qualification evidence.
@@ -204,7 +204,105 @@ expiry or deletion policy; storage grows until G2.3c supplies explicit retention
 G2.3b owns the ordered outbox; G2.3c owns retention and governance health. This
 staged implementation does not close the full ADR.
 
+### G2.3b native ordered outbox (2026-09-07)
+
+`Store::read_outbox(after, NonZeroUsize)` returns an `OutboxBatch` from one
+snapshot: ordered `OutboxRecord::Commit` headers and `Event` payloads, a next
+cursor, snapshot high-water cursor, and explicit coverage origin. Pages are
+bounded by records, not bytes, and may split commits. Polling is stateless;
+there is no acknowledgement, lease, deletion, or hidden cursor advance. Save
+`OutboxCursor::to_bytes()` only after applying a record; deduplicate events by
+`(commit_id, event_index)`, with zero-based indices. No-op governed commits have
+one header and no events. Clear/drop remain operation summaries, not enumerated
+deleted quads. Legacy autocommit, loaders, and existing SPARQL Update entry
+points do not implicitly become governed feed producers.
+
+RocksDB stages records and the outbox high-water alongside primary RDF,
+namespaces, receipt, and terminal outcome in the same final synchronous batch.
+Memory publishes the same logical unit under the existing governance lock and
+MVCC publication boundary. Fallible encoding and checked cursor allocation precede
+CommitAttempted. Rollback, abandoned staging, and failed final writes consume
+no published cursor. An error after the final write remains indeterminate;
+lookup and replay resolve the durable result without repeating mutations.
+
+This slice adds explicit, additive local record formats; the preceding G2.3a
+formats remain the receipt-only compatibility contract:
+
+- `\0oxigraph.outbox.record.v1\0` plus big-endian u64 position is the ordered
+  default-column-family key. Positions start at 1 and include headers.
+- Header body: version 1, kind 0, then the complete 153-byte v2 receipt.
+  Event body: version 1, kind 1, header position, event index, event count
+  (each u64 big-endian), commit ID (32 bytes), then one logical v1 effect.
+  Both append SHA-256 of `oxigraph.outbox.record.v1\0`, store identity,
+  position, and body. Event encoding and receipt hashing share one emitter;
+  the pre-existing v1 effect checksum is unchanged.
+- V2 receipt: the former 113-byte fields with version 2, followed by header
+  position (8 bytes), then envelope SHA-256 using `oxigraph.receipt.v2\0`.
+  Commit ID uses `oxigraph.commit-id.v2\0` and the v1 identity fields plus
+  header position. End position is header plus effect count, checked for overflow.
+- The existing governance key accepts a 73-byte v2 value: version 2, store
+  identity, receipt sequence, outbox high-water, coverage-origin receipt sequence,
+  then SHA-256 over `oxigraph.governance.v2\0` and the preceding 41 bytes.
+- Cursor bytes: version 1, store identity (16), position (8), checksum (32)
+  over `oxigraph.outbox.cursor.v1\0` and the preceding 25 bytes. These 57 bytes
+  detect damage, not forgery. Foreign-store and ahead-of-snapshot cursors return
+  distinct typed errors; backups preserve lineage and their own snapshot watermark.
+
+Opening an older database does not migrate it. The first successful governed
+v2 commit records the preceding v1 receipt sequence as its explicit origin;
+earlier receipts remain queryable but cannot be backfilled into a feed. Old
+v1 receipt/state bytes are unchanged. An older receipt-only binary rejects the
+v2 governance record on governed writes rather than silently extending v1
+history behind the feed. This is not a reversible global schema migration,
+and it does not change `oxversion`, column families, legacy-write coverage,
+or ADR-0028's future migration requirements.
+
+Decoding validates versions, checksums, RDF identities, record keys, the
+cursor's own record, header/event identity and count, contiguous page boundaries,
+coverage, and the latest receipt/high-water. A page uses O(page size) bounded
+seeks/reads, not a scan from origin. Appending checks origin/latest integrity
+before allocating. This is bounded local integrity validation, not a full
+historical audit: unvisited historical corruption is detected when that range
+is read. RDF 1.2 effects permit at most 32 nested triple terms; unrepresentable
+effects reject before commit. The general RDF API and infallible v1 checksum
+do not acquire this depth limit.
+
+There is no compaction/retention deletion in G2.3b. G2.3c owns leases, expiry,
+backpressure, retention advance, and governance health; storage currently grows.
+In-process listeners, RDF Patch, HTTP feeds, governed bulk-load modes, and
+arbitrary crash-window/power-loss qualification are not claimed.
+
 ## Acceptance boundary
+
+### G2.3b native outbox validation (2026-09-07)
+
+`transaction_outbox` covers single-record pagination, checkpoint corruption,
+foreign lineage/ahead-of-backup errors, repeat replay and event deduplication,
+zero-effect headers, rollback/drop, legacy exclusions, concurrent publication,
+RocksDB reopen/read-only/backup, and abrupt process exit before and after commit.
+The RDF 1.2 mode adds directional/triple payload round-trip and precommit depth
+rejection. Unit tests cover every logical operation, malformed payloads,
+record/checksum/key/gap errors, cursor-anchor damage, invalid commit topology,
+high-water overflow, and a fixed literal v1 RocksDB activation fixture.
+All eight existing storage-call fault probes now also assert outbox publication
+or absence. These probes and the two process-exit windows are not power-loss
+or arbitrary-window crash qualification.
+
+The runnable local artifact is the
+[transaction outbox example](../../lib/oxigraph/examples/transaction_outbox.rs),
+built with the existing locked dependencies. The exact native commands/results
+and source commit are recorded in repository programme memory alongside the
+six-hour review; no optional harness receipt is a product gate.
+
+The affected default-feature matrix passes 170 tests (63 units and 107
+integration tests). The no-default `rdf-12` library/outbox/receipt/capture/
+namespace lane passes 62; default `rdf-12,http-client` library/outbox/receipt/
+capture passes 103. These configurations overlap and are not summed as unique
+tests. Strict library/receipt/outbox/example Clippy passes both default and
+no-default modes; an obsolete no-default `unnecessary_wraps` expectation was
+removed because memory outcome lookup is now fallible. No lint policy was
+weakened. The child-exit test locally permits exactly its deliberate process
+exit. Formatting and 239 local documentation file targets pass.
 
 ### G2.3a native receipt validation (2026-09-07)
 
@@ -278,7 +376,7 @@ point cancellation, scoped ordering, namespaces, and bounded summaries.
 The original `transactional.rs` hash below remains unchanged. Request-level
 SPARQL capture and negotiated/keyed ownership are implemented below. The
 separate G2.3a API above now provides receipt identity and recovery lookup;
-the outbox, cursors, retention, and health remain G2.3b-c.
+G2.3b adds the ordered outbox/cursors; retention and health remain G2.3c.
 
 Validation for this slice: `semantic_changes` passes 11/11 with default
 features and 10/10 without default features; the six existing transactional
@@ -328,8 +426,8 @@ frozen evaluator is relaxed to close this product slice.
 
 This closes G2.2's native capture/integration task, not this ADR. Effects are
 in-process results without durable identity or global commit order. The separate
-G2.3a governed API now provides atomic receipts; the authoritative outbox and
-retention remain outstanding.
+G2.3a-b governed API now provides atomic receipts and the authoritative outbox;
+retention/leases and governance health remain outstanding.
 
 ### Existing G2.1 evidence and complete ADR acceptance
 
@@ -407,7 +505,9 @@ from `store.rs`, plus owned-update integration in `sparql/update.rs`.
 G2.3a adds `store/receipt.rs`, storage dispatch and both native backends,
 plus `tests/commit_receipts.rs` and direct storage-fault/corruption tests.
 It reuses the already-locked workspace `sha2` package; no new package version,
-Node dependency, or harness is introduced. G2.3b-c's authoritative outbox,
-retention/leases, and governance health keep this ADR Proposed.
+Node dependency, or harness is introduced. G2.3b adds `store/outbox.rs`, the
+shared logical `store/change_codec.rs`, bounded native reads, integration tests,
+and a runnable example. G2.3c retention/leases and governance health keep this
+ADR Proposed.
 Under ADR-0043, optional containment is not a prerequisite
 for these direct product slices.

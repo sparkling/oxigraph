@@ -76,6 +76,13 @@ const GOVERNED_OUTCOME_COMMIT_ATTEMPTED: &[u8] = &[2, 1];
 const GOVERNED_OUTCOME_COMMITTED: &[u8] = &[2, 2];
 const GOVERNED_OUTCOME_ROLLED_BACK: &[u8] = &[2, 3];
 const GOVERNANCE_STATE_KEY: &[u8] = b"\0oxigraph.governance.v1\0";
+const OUTBOX_RECORD_PREFIX: &[u8] = b"\0oxigraph.outbox.record.v1\0";
+
+fn outbox_record_key(position: u64) -> Vec<u8> {
+    let mut key = OUTBOX_RECORD_PREFIX.to_vec();
+    key.extend_from_slice(&position.to_be_bytes());
+    key
+}
 const NAMESPACE_KEY_PREFIX: &[u8] = b"\0oxigraph.namespace.";
 const NAMESPACE_SCHEMA_KEY: &[u8] = b"\0oxigraph.namespace.schema\0";
 const NAMESPACE_MAPPING_KEY_PREFIX: &[u8] = b"\0oxigraph.namespace.mapping.v1\0";
@@ -534,6 +541,20 @@ impl RocksDbStorage {
                     {
                         return Err(CorruptionError::msg("receipt key, store identity or sequence does not match governance state").into());
                     }
+                    match (&state.outbox, receipt.outbox_end_cursor()) {
+                        (None, None) => (),
+                        (Some(outbox), None)
+                            if receipt.sequence() <= outbox.after_receipt_sequence => {}
+                        (Some(outbox), Some(end))
+                            if receipt.sequence() > outbox.after_receipt_sequence
+                                && end.position() <= outbox.high_water => {}
+                        _ => {
+                            return Err(CorruptionError::msg(
+                                "receipt disagrees with outbox activation or high-water",
+                            )
+                            .into());
+                        }
+                    }
                     Ok(CommitReceiptOutcome::Committed(receipt))
                 }
                 _ => Err(CorruptionError::msg("invalid governed outcome record").into()),
@@ -555,6 +576,77 @@ impl RocksDbStorage {
             ))
             .into()),
         }
+    }
+
+    pub fn read_outbox(
+        &self,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        let reader = self.db.snapshot();
+        let state = reader.get(&self.default_cf, GOVERNANCE_STATE_KEY)?;
+        let state = state.as_deref().map(GovernanceState::decode).transpose()?;
+        let first = reader.scan_prefix(&self.default_cf, OUTBOX_RECORD_PREFIX);
+        first.status()?;
+        if first.is_valid() && first.key() != Some(outbox_record_key(1).as_slice()) {
+            return Err(
+                StorageError::from(CorruptionError::msg("invalid outbox origin key")).into(),
+            );
+        }
+        crate::store::outbox::read_page(
+            state.as_ref(),
+            after,
+            limit,
+            |position| {
+                let key = outbox_record_key(position);
+                let mut records =
+                    reader.scan_prefix_from(&self.default_cf, OUTBOX_RECORD_PREFIX, &key);
+                records.status()?;
+                if records.key() != Some(key.as_slice()) {
+                    return Ok(None);
+                }
+                let value = records.value().map(<[u8]>::to_vec);
+                records.next();
+                records.status()?;
+                if let Some(next) = records.key()
+                    && position
+                        .checked_add(1)
+                        .is_none_or(|position| next != outbox_record_key(position))
+                {
+                    return Err(
+                        CorruptionError::msg("invalid or gapped outbox successor key").into(),
+                    );
+                }
+                Ok(value)
+            },
+            |key| {
+                if reader
+                    .get(&self.default_cf, &transaction_outcome_key(key))?
+                    .is_some()
+                {
+                    return Err(CorruptionError::msg("outbox key also has a legacy outcome").into());
+                }
+                let value = reader.get(&self.default_cf, &governed_outcome_key(key))?;
+                value
+                    .map(|value| {
+                        if !value.starts_with(GOVERNED_OUTCOME_COMMITTED) {
+                            return Err(
+                                CorruptionError::msg("outbox has no committed outcome").into()
+                            );
+                        }
+                        CommitReceipt::decode(&value[2..])
+                    })
+                    .transpose()
+            },
+            |position| {
+                let mut lower = outbox_record_key(position);
+                lower.push(0); // Strictly greater, including malformed suffixes at u64::MAX.
+                let records =
+                    reader.scan_prefix_from(&self.default_cf, OUTBOX_RECORD_PREFIX, &lower);
+                records.status()?;
+                Ok(records.is_valid())
+            },
+        )
     }
 
     #[cfg(test)]
@@ -1726,19 +1818,29 @@ impl RocksDbStorageKeyedReadableTransaction<'_> {
             }
             records.status().map_err(TransactionCommitError::Rejected)?;
         }
-        let mut state = state
+        let state = state
             .as_deref()
             .map(GovernanceState::decode)
             .transpose()
             .map_err(TransactionCommitError::Rejected)?
             .unwrap_or_default();
-        let receipt = state
-            .next_receipt(&self.transaction_key, changes)
+        self.inner
+            .storage
+            .read_outbox(None, std::num::NonZeroUsize::MIN)
+            .map_err(|error| TransactionCommitError::Rejected(error.into_storage()))?;
+        let prepared = crate::store::outbox::prepare(&state, &self.transaction_key, changes)
             .map_err(TransactionCommitError::Rejected)?;
-        state.sequence = receipt.sequence();
+        // One final WriteBatchWithIndex owns primary changes, receipt, records,
+        // and both high-water marks. No notifications are appended after commit.
+        for (position, bytes) in &prepared.records {
+            self.inner
+                .transaction
+                .insert(cf, &outbox_record_key(*position), bytes);
+        }
         self.inner
             .transaction
-            .insert(cf, GOVERNANCE_STATE_KEY, &state.encode());
+            .insert(cf, GOVERNANCE_STATE_KEY, &prepared.state.encode());
+        let receipt = prepared.receipt;
         let mut committed = GOVERNED_OUTCOME_COMMITTED.to_vec();
         committed.extend_from_slice(&receipt.encode());
         self.inner
@@ -2687,6 +2789,7 @@ mod tests {
                     &GovernanceState {
                         store_identity: previous.store_identity().clone(),
                         sequence: u64::MAX,
+                        outbox: None,
                     }
                     .encode(),
                 ),
@@ -2722,6 +2825,173 @@ mod tests {
                 .count();
             assert_eq!(attempted_before, attempted_after);
         }
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        clippy::missing_assert_message,
+        reason = "v1 compatibility and outbox corruption assertions"
+    )]
+    fn outbox_activates_after_literal_v1_history_and_rejects_damaged_state()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::store::{OutboxReadError, OutboxRecord};
+        use std::num::NonZeroUsize;
+        // Independent literal fixture: v1 layout and domain-separated SHA-256,
+        // store [1;16], request [2;16], sequence 4, zero effects. No new encoder.
+        fn hex(value: &str) -> Result<Vec<u8>, std::num::ParseIntError> {
+            (0..value.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&value[i..i + 2], 16))
+                .collect()
+        }
+        let old_state = hex(
+            "01010101010101010101010101010101010000000000000004059570c219db7d76c3ff0620696221c739fda4c15b877d039a86d4eecb0b84ec",
+        )?;
+        let old_receipt = hex(
+            "0101010101010101010101010101010101191187ff2c111d9989fc0c127b30c721077bf9ab543bd1225e2c9320ae09a09702020202020202020202020202020202000000000000000400000000000000007943c69a1657475b93bb37f61cbdf50ced3e3295c081c7b44846d7e9a34efd63bcc245fba5313b19fdfc53360696b49347b51010c48df1ef2f9aafd08e5d337e",
+        )?;
+        let directory = TempDir::new()?;
+        {
+            let storage = RocksDbStorage::open(directory.path())?;
+            storage
+                .db
+                .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &old_state)?;
+            let mut committed = GOVERNED_OUTCOME_COMMITTED.to_vec();
+            committed.extend_from_slice(&old_receipt);
+            storage.db.insert(
+                &storage.default_cf,
+                &governed_outcome_key(&[2; 16]),
+                &committed,
+            )?;
+        }
+        let storage = RocksDbStorage::open(directory.path())?;
+        let old = CommitReceipt::decode(&old_receipt)?;
+        assert_eq!(old.sequence(), 4);
+        assert_eq!(old.encode(), old_receipt);
+        assert_eq!(GovernanceState::decode(&old_state)?.encode(), old_state);
+        assert_eq!(
+            storage.lookup_commit_receipt(&[2; 16])?,
+            CommitReceiptOutcome::Committed(old.clone())
+        );
+        assert!(
+            storage
+                .read_outbox(None, NonZeroUsize::MIN)?
+                .coverage()
+                .is_none()
+        );
+        // Read-only opens do not activate an outbox or alter old record bytes.
+        drop(storage);
+        let read_only = RocksDbStorage::open_read_only(directory.path())?;
+        assert!(
+            read_only
+                .read_outbox(None, NonZeroUsize::MIN)?
+                .records()
+                .is_empty()
+        );
+        drop(read_only);
+        let storage = RocksDbStorage::open(directory.path())?;
+        assert_eq!(
+            storage
+                .db
+                .get(&storage.default_cf, GOVERNANCE_STATE_KEY)?
+                .as_deref(),
+            Some(old_state.as_slice())
+        );
+        let receipt = storage
+            .start_governed_transaction_with_control(
+                &[3; 16],
+                &TransactionStartControl::new(),
+                Instant::now(),
+            )
+            .map_err(|_| "admission failed")?
+            .commit_with_receipt(&SemanticChangeSet::default())?;
+        assert_eq!(receipt.schema_version(), 2);
+        assert_eq!(receipt.sequence(), 5);
+        assert_eq!(receipt.store_identity(), old.store_identity());
+        assert_eq!(
+            storage.lookup_commit_receipt(&[2; 16])?,
+            CommitReceiptOutcome::Committed(old)
+        );
+        let page = storage.read_outbox(None, NonZeroUsize::MIN)?;
+        assert_eq!(page.coverage().unwrap().after_receipt_sequence(), 4);
+        assert!(
+            matches!(page.records(), [OutboxRecord::Commit { receipt: actual, .. }] if actual == &receipt)
+        );
+        let good_state = storage
+            .db
+            .get(&storage.default_cf, GOVERNANCE_STATE_KEY)?
+            .unwrap()
+            .to_vec();
+        for mode in [
+            "v1-state",
+            "origin",
+            "high-water",
+            "malformed-key",
+            "gap",
+            "record-version",
+        ] {
+            let key = outbox_record_key(1);
+            let good_record = storage.db.get(&storage.default_cf, &key)?.unwrap().to_vec();
+            let mut malformed_key = key.clone();
+            malformed_key.push(0);
+            let mut damage = storage.db.start_readable_transaction()?;
+            match mode {
+                "v1-state" => damage.insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &old_state),
+                "origin" | "high-water" => {
+                    let mut state = GovernanceState::decode(&good_state)?;
+                    let outbox = state.outbox.as_mut().unwrap();
+                    if mode == "origin" {
+                        outbox.after_receipt_sequence = 3;
+                    } else {
+                        outbox.high_water = 2;
+                    }
+                    damage.insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &state.encode());
+                }
+                "malformed-key" => damage.insert(&storage.default_cf, &malformed_key, &good_record),
+                "gap" => damage.remove(&storage.default_cf, &key),
+                _ => {
+                    let mut bytes = good_record.clone();
+                    bytes[0] = 9;
+                    damage.insert(&storage.default_cf, &key, &bytes);
+                }
+            }
+            damage.commit()?;
+            assert!(
+                matches!(
+                    storage.read_outbox(None, NonZeroUsize::MIN),
+                    Err(OutboxReadError::Storage(StorageError::Corruption(_)))
+                ),
+                "{mode}"
+            );
+            let control = TransactionStartControl::new();
+            let next = storage
+                .start_governed_transaction_with_control(&[4; 16], &control, Instant::now())
+                .map_err(|_| "admission failed")?;
+            assert!(
+                matches!(
+                    next.commit_with_receipt(&SemanticChangeSet::default()),
+                    Err(TransactionCommitError::Rejected(StorageError::Corruption(
+                        _
+                    )))
+                ),
+                "{mode}"
+            );
+            if mode == "v1-state" {
+                assert!(storage.lookup_commit_receipt(&[3; 16]).is_err());
+            }
+            let mut restore = storage.db.start_readable_transaction()?;
+            restore.insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &good_state);
+            restore.insert(&storage.default_cf, &key, &good_record);
+            restore.remove(&storage.default_cf, &malformed_key);
+            // Fresh test key for each attempted corruption; not a production retry path.
+            restore.remove(&storage.default_cf, &governed_outcome_key(&[4; 16]));
+            restore.commit()?;
+        }
+        drop(storage);
+        let storage = RocksDbStorage::open(directory.path())?;
+        assert_eq!(storage.read_outbox(None, NonZeroUsize::MIN)?, page);
         Ok(())
     }
 

@@ -27,7 +27,7 @@ mapping.
 | [ADR-0017 — Repository evolution and evidence promotion harness](0017-repository-evolution-and-evidence-promotion-harness.md)                   | Implemented | Keep engineering work separate from semantic qualification, rebuild patched candidates before focused evaluation, and retain human-only promotion   |
 | [ADR-0018 — Transaction guarantees and conflict model](0018-transaction-guarantees-and-conflict-model.md)                                       | Proposed    | Negotiate dimensioned guarantees and prove a serialized-writer RocksDB baseline before stronger isolation claims                                    |
 | [ADR-0019 — Unified egress, cancellation, and service claims](0019-unified-egress-cancellation-and-service-claims.md)                           | Implemented | Give remote loading and SERVICE one policy/cancellation boundary and derive claims from effective evaluator capabilities                            |
-| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | G2.1 namespaces, G2.2 staged/request/keyed capture, and G2.3a atomic receipts implemented; ordered outbox and retention remain open |
+| [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md) | Proposed | G2.1 namespaces, G2.2 staged/request/keyed capture, and G2.3a-b atomic receipts/ordered outbox implemented locally; G2.3c retention/leases and health remain open |
 | [ADR-0021 — Transaction-time SHACL validation](0021-transaction-time-shacl-validation.md)                                                       | Proposed    | Validate the complete resulting staged view under the same isolation gate as commit                                                                 |
 | [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)                                     | Proposed    | Separate liveness from readiness and prove receipt-bound backup through fresh-directory restore                                                     |
 | [ADR-0023 — Statistics and bounded join planning](0023-statistics-and-bounded-join-planning.md)                                                 | Proposed    | Add optional snapshot-scoped statistics, bounded join search, and a correctness-neutral fallback                                                    |
@@ -60,8 +60,8 @@ programme milestones.
 
 ADR-0018 and ADR-0020 through ADR-0041 remain Proposed for their outstanding
 scope. ADR-0019 is Implemented, and ADR-0020 includes implemented G2.1 namespaces
-and G2.2 normalized change capture/integration plus G2.3a atomic receipts.
-G2.3b ordered outbox is the next product slice. ADR-0034 through ADR-0041 are preserved future containment work; their
+and G2.2 normalized change capture/integration plus G2.3a-b atomic receipts/outbox.
+G2.3c retention/leases and health are next. ADR-0034 through ADR-0041 are preserved future containment work; their
 internal gates do not block direct product implementation.
 
 The former 42-record/251-edge graph report is historical. Current ADR metadata
@@ -276,8 +276,9 @@ across all three planes; its no-default evaluator passes 8/8 across memory and
 the rewritten plane. Focused regressions pass
 `store` 26/26, `transaction_outcomes` 7/7, `transaction_state_model` 3/3, and
 `transactional_dataset` 3/3. G2.2 normalized staged/request/keyed effects are
-also implemented, as are G2.3a native atomic receipts. ADR-0020 remains Proposed
-because G2.3b-c authoritative outbox and retention/governance are not implemented.
+also implemented, as are G2.3a-b native atomic receipts and ordered outbox.
+ADR-0020 remains Proposed because G2.3c retention/leases and governance health
+are not implemented.
 
 ADR-0034 commits `78b2cf99` through `65fb0e7a` preserve schema-v1 bytes while
 adding exact v2 paths, trees, contracts, reconstruction, context, schema,

@@ -1,7 +1,7 @@
 # Persistence writes and linked-data-store parity plan
 
 - Status: R1 delivered at source handoff `aa7128bb`; G2.2 capture/integration and
-  G2.3a atomic receipts are implemented locally; G2.3b outbox is the next product
+  G2.3a-b atomic receipts/outbox are implemented locally; G2.3c retention/health is the next product
   slice. Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -100,8 +100,9 @@ Documentation/ledger reconciliation and authorized publication are complete
 at source handoff `aa7128bb`, with the programme Gist updated and read back.
 G2.2 normalized semantic change sets is implemented in task
 `task-1788781295095-lrzbqi`; G2.3a atomic receipts is implemented in
-`task-1787670631130-9jlo3h`. G2.3b ordered outbox is next in
-`task-1787670631321-dewzgm`. G2.2 supersedes the historical containment-gated
+`task-1787670631130-9jlo3h`. G2.3b ordered outbox is implemented locally in
+`task-1787670631321-dewzgm`; G2.3c retention/leases and governance health in
+`task-1787670631517-qjoyw1` are next. G2.2 supersedes the historical containment-gated
 `task-1788069137230-uuulsx` without deleting that task's history. The six-hour
 review continues across milestones until the programme is complete or stopped
 by the owner. G1.7, ADR-0034 through ADR-0041, Dream Machine,
@@ -124,10 +125,14 @@ acknowledged commit and preserve typed indeterminate keys without replay.
 G2.3a now supplies a separate governed Store opener with an atomic receipt,
 primary commit, and caller-key outcome. RocksDB lookup survives reopen and
 backup without replay; memory receipts are process-local. Sequence covers only
-governed commits. G2.3b-c outbox, retention/leases, and governance health remain
+governed commits. G2.3b now atomically persists ordered commit headers/events
+and provides bounded opaque-cursor replay, deduplication keys, zero-effect
+headers, and explicit origin for pre-outbox receipts. Legacy writes remain
+outside feed coverage. G2.3c retention/leases and governance health remain
 open, so ADR-0020 remains Proposed. No new harness or dependency version was
 added; SHA-256 reuses the existing workspace dependency.
-See [ADR-0020's current slice](../adr/0020-transactional-metadata-receipts-and-change-delivery.md#g23a-native-atomic-receipts-2026-09-07).
+See [ADR-0020's current slice](../adr/0020-transactional-metadata-receipts-and-change-delivery.md#g23b-native-ordered-outbox-2026-09-07)
+and the [runnable outbox example](../../lib/oxigraph/examples/transaction_outbox.rs).
 
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
@@ -937,8 +942,8 @@ Acceptance:
 
 #### P1.2 Staged change sets, commit receipts, and durable feed — XL
 
-Current delivery: G2.2 capture/integration and G2.3a native atomic receipts are
-implemented. G2.3b's ordered outbox is next, followed by G2.3c retention/health.
+Current delivery: G2.2 capture/integration and G2.3a-b native atomic receipts
+and ordered outbox are implemented locally. G2.3c retention/health is next.
 The following frozen-candidate admission conditions apply only to optional
 containment; under ADR-0043 they do not block direct native product work.
 

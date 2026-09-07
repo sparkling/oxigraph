@@ -1,7 +1,7 @@
 # Linked-data-store implementation and evolution harness plan
 
 - Status: R1 delivered at source handoff `aa7128bb`; G2.2 capture/integration and
-  G2.3a atomic receipts are implemented locally; G2.3b ordered outbox is next.
+  G2.3a-b atomic receipts/outbox are implemented locally; G2.3c retention/health is next.
   G1.7, the containment chain, Dream Machine, and P1-P3 expansion are preserved
   future work and do not gate R1
 - Date: 2026-08-24
@@ -57,7 +57,8 @@ reconciliation, submodule reproducibility, and authorized publication at
 `aa7128bb`. The programme Gist is updated; exact Ruflo handoff evidence was
 read back. G2.2 task `task-1788781295095-lrzbqi` closes with native capture and
 request/keyed integration. G2.3a task `task-1787670631130-9jlo3h` adds native
-atomic receipts; G2.3b task `task-1787670631321-dewzgm` owns the next outbox slice.
+atomic receipts; G2.3b task `task-1787670631321-dewzgm` implements ordered outbox
+locally. G2.3c task `task-1787670631517-qjoyw1` owns retention/leases and health next.
 
 G1.7, ADR-0034 through ADR-0041, Dream Machine, GEPA/AVO, broad Jena/RDF4J
 parity, and the P1-P3 product portfolio remain future work. They require a
@@ -77,8 +78,10 @@ G2.3a now adds a separate governed Store opener whose internally captured
 receipt, primary mutations, and caller-key outcome share one atomic commit.
 RocksDB lookup survives reopen and backup without replay; memory is explicitly
 process-local. Receipt sequence covers governed writes only, not all writes.
-ADR-0020 remains Proposed for G2.3b-c outbox, retention, and governance health.
-Task `task-1787670631321-dewzgm` owns the next ordered-outbox slice.
+G2.3b adds ordered, atomically persisted commit headers/events and bounded opaque
+cursor replay with explicit legacy exclusions and pre-outbox coverage origin.
+ADR-0020 remains Proposed for G2.3c retention/leases and governance health.
+Task `task-1787670631517-qjoyw1` owns that next product slice.
 No harness or new dependency version was added; receipt hashing reuses the
 already-locked workspace `sha2` dependency. Current behavior is documented in
 [ADR-0020](../adr/0020-transactional-metadata-receipts-and-change-delivery.md).

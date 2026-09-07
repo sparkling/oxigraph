@@ -32,7 +32,9 @@
 //! };
 //! # Result::<_, Box<dyn std::error::Error>>::Ok(())
 //! ```
+mod change_codec;
 mod namespace;
+pub(crate) mod outbox;
 pub(crate) mod receipt;
 mod semantic_change;
 mod transactional;
@@ -41,6 +43,7 @@ pub use crate::storage::TransactionStartControl;
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
 };
+pub use outbox::{OutboxBatch, OutboxCoverage, OutboxCursor, OutboxReadError, OutboxRecord};
 pub use receipt::{
     CommitId, CommitReceipt, CommitReceiptOutcome, GovernedTransaction, StoreIdentity,
 };

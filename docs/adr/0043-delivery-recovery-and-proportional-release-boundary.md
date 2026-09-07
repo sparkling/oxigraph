@@ -12,8 +12,9 @@
   Ruflo delivery evidence were updated and read back. R1 is complete; the
   wider programme has implemented G2.2 capture/request/keyed integration in
   task `task-1788781295095-lrzbqi` and G2.3a native atomic receipts in
-  `task-1787670631130-9jlo3h`; G2.3b ordered outbox in
-  `task-1787670631321-dewzgm` is the next product slice
+  `task-1787670631130-9jlo3h` and G2.3b ordered outbox in
+  `task-1787670631321-dewzgm`. G2.3c retention/leases and governance health in
+  `task-1787670631517-qjoyw1` are next; local implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`
@@ -223,9 +224,12 @@ The timer and service are
 `~/.config/systemd/user/oxigraph-programme-review.service`. The unit files pass
 `systemd-analyze --user verify`, the timer is enabled and active, and a manual
 service start returned exit status zero after native Codex queued message
-`01a07b60-8e18-7ab1-acc3-b7c266c13229` into the intended thread. The first
-natural timer firing remains runtime evidence, not a precondition for enabling
-the control.
+`01a07b60-8e18-7ab1-acc3-b7c266c13229` into the intended thread. Separately,
+the natural 2026-09-07 18:00 Europe/Berlin firing is verified by the timer's
+LastTrigger and service journal: native Codex queued
+`01a07c99-0e38-71d0-95d9-25b5216aae8a` into that thread and the service exited
+successfully. This closes timer-firing verification once; it is not product
+behavior or proof of completion of the queued delivery work.
 
 Ruflo worker validation exposed a narrower defect: the enabled audit worker's
 daemon counter advanced from 1951 to 1952, but `hooks_worker_status` left the

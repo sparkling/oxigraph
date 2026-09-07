@@ -346,10 +346,6 @@ impl Storage {
         })
     }
 
-    #[cfg_attr(
-        not(all(not(target_family = "wasm"), feature = "rocksdb")),
-        expect(clippy::unnecessary_wraps)
-    )]
     pub(crate) fn lookup_transaction_outcome(
         &self,
         transaction_key: &[u8; 16],
@@ -396,6 +392,18 @@ impl Storage {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
             StorageKind::RocksDb(storage) => storage.lookup_commit_receipt(transaction_key),
             StorageKind::Memory(storage) => storage.lookup_commit_receipt(transaction_key),
+        }
+    }
+
+    pub(crate) fn read_outbox(
+        &self,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageKind::RocksDb(storage) => storage.read_outbox(after, limit),
+            StorageKind::Memory(storage) => storage.read_outbox(after, limit),
         }
     }
 

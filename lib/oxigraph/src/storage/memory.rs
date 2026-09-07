@@ -19,7 +19,7 @@ use dashmap::{DashMap, DashSet};
 use oxstr::OxString;
 use rustc_hash::{FxHashSet, FxHasher};
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem::{take, transmute};
@@ -47,6 +47,7 @@ struct MemoryGovernance {
     state: GovernanceState,
     governed_keys: FxHashSet<[u8; 16]>,
     receipts: HashMap<[u8; 16], CommitReceipt>,
+    outbox: BTreeMap<u64, Vec<u8>>,
 }
 
 struct Content {
@@ -221,6 +222,49 @@ impl MemoryStorage {
             }
             _ => CommitReceiptOutcome::Indeterminate,
         })
+    }
+
+    pub fn read_outbox(
+        &self,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        let governance = self.governance.read().map_err(|_| {
+            StorageError::from(CorruptionError::msg("poisoned memory governance state"))
+        })?;
+        self.read_outbox_locked(&governance, after, limit)
+    }
+
+    fn read_outbox_locked(
+        &self,
+        governance: &MemoryGovernance,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        crate::store::outbox::read_page(
+            Some(&governance.state),
+            after,
+            limit,
+            |position| Ok(governance.outbox.get(&position).cloned()),
+            |key| {
+                if self
+                    .transaction_outcomes
+                    .get(key)
+                    .is_none_or(|entry| *entry != MemoryTransactionOutcomeState::Committed)
+                {
+                    return Err(
+                        CorruptionError::msg("outbox receipt has no committed outcome").into(),
+                    );
+                }
+                Ok(governance.receipts.get(key).cloned())
+            },
+            |position| {
+                Ok(governance
+                    .outbox
+                    .last_key_value()
+                    .is_some_and(|(last, _)| *last > position))
+            },
+        )
     }
 
     fn start_transaction_with_guard<'a>(
@@ -1077,9 +1121,10 @@ impl MemoryStorageTransaction<'_> {
                 CorruptionError::msg("poisoned memory governance state").into(),
             )
         })?;
-        let receipt = governance
-            .state
-            .next_receipt(&transaction_key, changes)
+        storage
+            .read_outbox_locked(&governance, None, std::num::NonZeroUsize::MIN)
+            .map_err(|error| TransactionCommitError::Rejected(error.into_storage()))?;
+        let prepared = crate::store::outbox::prepare(&governance.state, &transaction_key, changes)
             .map_err(TransactionCommitError::Rejected)?;
         let mut outcome = storage
             .transaction_outcomes
@@ -1095,7 +1140,9 @@ impl MemoryStorageTransaction<'_> {
             ));
         }
         *outcome = MemoryTransactionOutcomeState::CommitAttempted;
-        governance.state.sequence = receipt.sequence();
+        let receipt = prepared.receipt;
+        governance.state = prepared.state;
+        governance.outbox.extend(prepared.records);
         governance.receipts.insert(transaction_key, receipt.clone());
         self.publish();
         // Retain the entry guard: no fallible lookup remains after publication.

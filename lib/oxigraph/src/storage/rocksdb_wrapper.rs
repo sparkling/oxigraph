@@ -1714,6 +1714,16 @@ impl<'a> Reader<'a> {
     }
 
     pub fn scan_prefix(&self, column_family: &ColumnFamily, prefix: &[u8]) -> Iter<'a> {
+        self.scan_prefix_from(column_family, prefix, prefix)
+    }
+
+    /// Seeks directly to a lower bound within the prefix's key range.
+    pub fn scan_prefix_from(
+        &self,
+        column_family: &ColumnFamily,
+        prefix: &[u8],
+        lower_bound: &[u8],
+    ) -> Iter<'a> {
         // We generate the upper bound
         let upper_bound = {
             let mut bound = prefix.to_vec();
@@ -1756,10 +1766,11 @@ impl<'a> Reader<'a> {
                 }
             };
             assert!(!iter.is_null(), "rocksdb_create_iterator returned null");
-            if prefix.is_empty() {
+            let lower_bound = lower_bound.max(prefix);
+            if lower_bound.is_empty() {
                 rocksdb_iter_seek_to_first(iter);
             } else {
-                rocksdb_iter_seek(iter, prefix.as_ptr().cast(), prefix.len());
+                rocksdb_iter_seek(iter, lower_bound.as_ptr().cast(), lower_bound.len());
             }
             let is_currently_valid = rocksdb_iter_valid(iter) != 0;
             Iter {
