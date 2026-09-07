@@ -33,8 +33,10 @@
 //! # Result::<_, Box<dyn std::error::Error>>::Ok(())
 //! ```
 mod change_codec;
+mod contributors;
 mod namespace;
 pub(crate) mod outbox;
+mod readiness;
 pub(crate) mod receipt;
 pub(crate) mod retention;
 mod semantic_change;
@@ -44,10 +46,19 @@ pub(crate) mod shacl_receipt;
 mod transactional;
 
 pub use crate::storage::TransactionStartControl;
+pub use contributors::{
+    ContributorCheckpoint, ContributorConsistency, ContributorDeclaration, ContributorError,
+    ContributorHealth, ContributorIdentity, ContributorInventory, ContributorInventoryEntry,
+    ContributorObservation, ContributorRegistry,
+};
 pub use namespace::{
     Namespace, NamespacePrefix, NamespacePrefixParseError, WritableNamespaceRegistry,
 };
 pub use outbox::{OutboxBatch, OutboxCoverage, OutboxCursor, OutboxReadError, OutboxRecord};
+pub use readiness::{
+    CircuitState, OperationalMetric, OperationalSnapshot, ProbeCoverage, ReadinessDisposition,
+    ReadinessPolicy, ReadinessReason,
+};
 pub use receipt::{
     CommitId, CommitReceipt, CommitReceiptOutcome, GovernedTransaction, StoreIdentity,
 };

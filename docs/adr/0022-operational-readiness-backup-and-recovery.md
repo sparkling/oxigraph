@@ -2,9 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-09-07
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G2.5-G2.7
+- Implementation status: G2.5 native observation and contributor API implemented;
+  loopback endpoints and operation counters/histograms remain in G2.5.
+  G2.6-G2.7 backup/restore receipt work remains unimplemented
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md)
 - **Related**:
@@ -80,6 +82,56 @@ derived index may degrade according to its declared strict/eventual contract;
 primary correctness may not be inferred from index health.
 
 ## Acceptance boundary
+
+### Native G2.5 observation slice (2026-09-07)
+
+`Store::operational_snapshot` now separates in-process liveness from
+`Ready`, `Degraded`, and `NotReady`. It checks storage layout and a bounded
+decoded primary prefix, existing governed-outbox health, cancellation/deadlines,
+consumer lag, physical backpressure, operator-supplied circuit state, and an
+optional recovery-freshness deadline. Non-closed/unknown circuits and failed
+checks are not ready. It takes no writer permit and changes no stored state.
+
+Primary and outbox coverage are explicit, not whole-store validation. Defaults
+inspect at most 128 primary records plus one encoded lookahead, a 1 MiB logical
+byte stopping threshold, and 256 outbox records. A decoded term can overshoot
+the byte threshold; this is not a hard allocation bound. Partial primary
+coverage is degraded; partial outbox coverage is not ready unless explicitly
+allowed, then degraded. The five-second default deadline is cooperative and
+cannot interrupt a blocking native I/O call or earlier caller-side observations.
+
+The canonical registry admits zero through 128 providers. Profile-owned
+declarations cannot be weakened by observations. Source checkpoints equal the
+native governance snapshot's latest full v2 receipt; applied checkpoints must
+match native receipt lookup or the exact retained anchor. Foreign, future,
+forged, expired, unknown, duplicate, and missing-required observations reject.
+Required contributors must be healthy and fully caught up, including those
+normally processed eventually. Optional eventual lag may degrade within its
+declared bound; optional missing/unhealthy providers require an explicitly
+declared authoritative fallback. Empty inventory is ready, not degraded.
+
+Sorted inventory bytes and their domain-separated checksum provide a reusable
+content identity, not a backup manifest or restore proof. The fixed native
+metric vocabulary has no labels and at most 21 gauge series. It contains no
+RDF values, provider IDs, request keys, or raw errors; unavailable gauge values
+are omitted with explicit observation flags. Units are boolean, records,
+logical bytes, leases, and contributors.
+
+`lib/oxigraph/tests/operational_readiness.rs` exercises memory and RocksDB,
+empty/nonempty inventory, required/optional policy, cursor identity/expiry,
+capacity/privacy, bounded coverage, cancellation/deadline/circuit/recovery
+failure, leases/backpressure, reopen and read-only observation. Native unit
+fixtures additionally inject malformed layout, primary keys, and governance
+state in isolated test stores. No pinned evidence or operator runtime is changed.
+
+Run the usable native artifact with
+`cargo run --locked -p oxigraph --example operational_readiness`.
+The broader P1.4a/G2.5 task remains open for loopback health/readiness endpoints,
+operation counters and latency/error histograms, and their consumer tests.
+This slice implements no HTTP service, automatic circuit breaker, workload
+admission engine, full-store certificate, backup receipt, or production claim.
+
+### Complete ADR boundary
 
 This ADR may move to Implemented only when:
 

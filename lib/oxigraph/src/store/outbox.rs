@@ -109,6 +109,7 @@ impl OutboxRecord {
 /// retrying the same cursor gives at-least-once delivery, not an acknowledgement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutboxBatch {
+    latest_receipt: Option<CommitReceipt>,
     records: Vec<OutboxRecord>,
     next_cursor: Option<OutboxCursor>,
     high_water: Option<OutboxCursor>,
@@ -117,6 +118,11 @@ pub struct OutboxBatch {
 }
 
 impl OutboxBatch {
+    /// Latest governed outbox commit, verified in this page's snapshot, even
+    /// when pagination does not reach it. May be the retained expiry anchor.
+    pub const fn latest_receipt(&self) -> Option<&CommitReceipt> {
+        self.latest_receipt.as_ref()
+    }
     /// Records at or before this whole-commit boundary have expired.
     pub const fn retained_after(&self) -> Option<&OutboxCursor> {
         self.retained_after.as_ref()
@@ -343,6 +349,7 @@ pub(crate) fn read_page(
         state.and_then(|state| state.outbox.as_ref().map(|outbox| (state, outbox)))
     else {
         return Ok(OutboxBatch {
+            latest_receipt: None,
             records: Vec::new(),
             next_cursor: after.cloned(),
             high_water: None,
@@ -469,6 +476,7 @@ pub(crate) fn read_page(
         .or_else(|| after.cloned())
         .or_else(|| retained_after.clone());
     Ok(OutboxBatch {
+        latest_receipt: Some(latest.clone()),
         records,
         next_cursor,
         high_water: Some(OutboxCursor {

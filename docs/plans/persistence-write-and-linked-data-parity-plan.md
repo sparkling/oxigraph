@@ -3,7 +3,9 @@
 - Status: R1 delivered at source handoff `aa7128bb`; G2.2 capture/integration and
   G2.3a-b receipts/outbox are published in `58d3253c`; G2.3c retention/health is
   implemented natively. G2.4a-b staged-view SHACL validation, bounded policy receipts,
-  and failure closure are implemented; G2.5 operational readiness is next.
+  and failure closure are implemented. G2.5 native readiness/contributor
+  observations are implemented; loopback endpoints and operation telemetry
+  remain in that active task.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -1035,6 +1037,14 @@ Acceptance:
 #### P1.4a Metrics, readiness, and circuit breakers — M
 
 Dependencies: P0.2 and P1.2.
+
+Implementation checkpoint 2026-09-07: native `operational_snapshot`, fixed
+bounded gauges, explicit probe coverage, and the canonical contributor
+inventory are implemented under [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md).
+Required contributors must be healthy/caught up; permitted optional lag or
+fallback degrades explicitly. This closes the native observation portion only.
+Loopback endpoints and operation counters/latency/error histograms below remain
+in active G2.5 task `task-1787851231441-1gdfzd`; P1.4a is not complete.
 
 - Expose stable counters and latency/error histograms for queries, updates,
   commits, conflicts, rollback failures, external policy denials, validation,

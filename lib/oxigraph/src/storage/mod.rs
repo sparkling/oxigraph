@@ -213,6 +213,15 @@ enum StorageKind {
 }
 
 impl Storage {
+    #[cfg(all(test, not(target_family = "wasm"), feature = "rocksdb"))]
+    pub(crate) fn corrupt_readiness_fixture(&self, field: u8) -> Result<(), StorageError> {
+        match &self.kind {
+            StorageKind::RocksDb(storage) => storage.corrupt_readiness_fixture(field),
+            StorageKind::Memory(_) => Err(StorageError::Other(
+                "fixture requires an isolated RocksDB store".into(),
+            )),
+        }
+    }
     #[expect(clippy::unnecessary_wraps)]
     pub fn new() -> Result<Self, StorageError> {
         Ok(Self {
@@ -543,6 +552,13 @@ enum StorageReaderKind<'a> {
     expect(clippy::unnecessary_wraps)
 )]
 impl<'a> StorageReader<'a> {
+    pub fn check_layout(&self) -> Result<(), StorageError> {
+        match &self.kind {
+            #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+            StorageReaderKind::RocksDb(reader) => reader.check_layout(),
+            StorageReaderKind::Memory(_) => Ok(()),
+        }
+    }
     pub fn len(&self) -> Result<usize, StorageError> {
         match &self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]

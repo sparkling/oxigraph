@@ -181,6 +181,8 @@ impl OutboxMaintenance {
 /// Bounded, snapshot-local observations, not a full-store readiness certificate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernanceHealth {
+    retention_anchor: Option<CommitReceipt>,
+    latest_receipt: Option<CommitReceipt>,
     schema_version: Option<u8>,
     store_identity: Option<StoreIdentity>,
     policy: Option<OutboxRetentionPolicy>,
@@ -195,6 +197,14 @@ pub struct GovernanceHealth {
     validated_through: Option<OutboxCursor>,
 }
 impl GovernanceHealth {
+    /// Full last-expired receipt retained as the authoritative commit boundary.
+    pub const fn retention_anchor(&self) -> Option<&CommitReceipt> {
+        self.retention_anchor.as_ref()
+    }
+    /// Exact latest commit-end identity verified with the governance snapshot.
+    pub const fn latest_receipt(&self) -> Option<&CommitReceipt> {
+        self.latest_receipt.as_ref()
+    }
     /// Recognized governance encoding, or `None` before any governance state.
     pub const fn schema_version(&self) -> Option<u8> {
         self.schema_version
@@ -718,6 +728,8 @@ pub(crate) fn health(
             .min()
     });
     Ok(GovernanceHealth {
+        retention_anchor: retention.and_then(|retention| retention.anchor.clone()),
+        latest_receipt: page.latest_receipt().cloned(),
         schema_version: state.and_then(|state| {
             if state.retention.is_some() {
                 Some(3)

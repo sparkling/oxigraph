@@ -50,8 +50,9 @@ R1 source and installation instructions were published on `main` at
 records all 43 decisions at that handoff. G2.2 and G2.3a-b are published in
 `58d3253c`; G2.3c adds native retention/leases and governance health.
 G2.4a-b add the native staged-view SHACL commit gate and atomically bound policy
-receipts. The next product slice is operational readiness (G2.5), not
-another containment or harness milestone.
+receipts. G2.5 now adds native readiness observations and a bounded contributor
+inventory; loopback endpoints and operation telemetry remain in that active
+slice, not another containment or harness milestone.
 
 Build this fork rather than an upstream package to obtain these changes:
 
@@ -149,6 +150,19 @@ feature. Expiry removes validation evidence with the full receipt, preserving
 committed-expired key truth. Checksums are not signatures or independent
 conformance proof. The native failure/restart contract is documented under
 [ADR-0021](docs/adr/0021-transaction-time-shacl-validation.md).
+
+`Store::operational_snapshot` separates liveness from readiness, checks bounded
+storage/outbox prefixes, cancellation, circuit and lag policy, and validates a
+canonical zero-or-more derived-state contributor inventory. Required providers
+must be healthy and caught up; only declared optional fallback/eventual states
+may degrade. Fixed, payload-free gauges expose coverage explicitly. This is a
+native Rust observation API, not a full integrity scan, HTTP endpoint, or backup
+proof. Loopback endpoints and operation counters/histograms remain G2.5 work;
+see [ADR-0022](docs/adr/0022-operational-readiness-backup-and-recovery.md).
+
+```sh
+cargo run --locked -p oxigraph --example operational_readiness
+```
 
 ## Upstream Oxigraph
 

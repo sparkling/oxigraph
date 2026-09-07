@@ -20,7 +20,10 @@
   `task-1787670631682-97ibi4` implements the native gate under the governed writer
   permit. G2.4b adds bounded policy receipts in the atomic native outcome,
   feature-independent lookup, expiry, and injected-failure closure in
-  `task-1787670631837-w5ac24`. G2.5 operational readiness is next; local
+  `task-1787670631837-w5ac24`. G2.5 has native bounded readiness observations,
+  fixed gauges, and canonical contributor validation. Its task
+  `task-1787851231441-1gdfzd` remains active for loopback endpoints and operation
+  counters/histograms; that native slice is not full P1.4a completion. Local
   implementation is not publication
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

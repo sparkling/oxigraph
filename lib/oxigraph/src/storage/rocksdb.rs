@@ -124,6 +124,15 @@ pub struct RocksDbStorage {
 }
 
 impl RocksDbStorage {
+    #[cfg(test)]
+    pub(crate) fn corrupt_readiness_fixture(&self, field: u8) -> Result<(), StorageError> {
+        match field {
+            0 => self.db.insert(&self.default_cf, b"oxversion", &[9]),
+            1 => self.db.insert(&self.default_cf, GOVERNANCE_STATE_KEY, &[9]),
+            2 => self.db.insert(&self.dspo_cf, &[0], &[]),
+            _ => Err(StorageError::Other("unknown readiness fixture".into())),
+        }
+    }
     pub fn open(path: &Path) -> Result<Self, StorageError> {
         Self::open_with_options(path, RocksDbStorageOptions::default())
     }
@@ -900,6 +909,16 @@ pub struct RocksDbStorageReader<'a> {
 }
 
 impl<'a> RocksDbStorageReader<'a> {
+    pub fn check_layout(&self) -> Result<(), StorageError> {
+        let version = self
+            .reader
+            .get(&self.storage.default_cf, b"oxversion")?
+            .ok_or_else(|| CorruptionError::msg("missing storage layout version"))?;
+        if version.as_ref() != LATEST_STORAGE_VERSION.to_be_bytes() {
+            return Err(CorruptionError::msg("incompatible storage layout version").into());
+        }
+        Ok(())
+    }
     pub fn len(&self) -> Result<usize, StorageError> {
         Ok(self.reader.len(&self.storage.gspo_cf)? + self.reader.len(&self.storage.dspo_cf)?)
     }
