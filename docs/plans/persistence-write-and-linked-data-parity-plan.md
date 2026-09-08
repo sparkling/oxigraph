@@ -9,7 +9,8 @@
   SHACL commit-gate observations close bounded G2.5. G2.6 checkpoint packages,
   backup receipts and offline verification are implemented. G2.7 fresh-directory
   restore/reconciliation and local baselined drills are implemented; G3.0 shared
-  derived-index lifecycle is next.
+  derived-index lifecycle is active, with native snapshot and complete-commit
+  input APIs implemented; durable generation reconciliation/activation remains.
   Backend-neutral writes and the upstream delta are verified. G1.7,
   ADR-0034 through ADR-0041, and P1-P3 breadth are future roadmap work and do
   not gate R1
@@ -146,7 +147,8 @@ expired receipt markers permanently block key replay. G2.4a-b staged-view SHACL
 validation and policy receipt/failure closure are implemented. G2.5 bounded
 operational observations are complete; G2.6 checkpoint packages and backup
 receipts are implemented. G2.7 fresh-directory restore and reconciliation close
-the native ADR-0022 boundary. G3.0 is next, followed by the approved G3/G4 slices.
+the native ADR-0022 boundary. G3.0 input APIs are implemented; its durable
+generation lifecycle is active, followed by the approved G3/G4 slices.
 
 The clone is patch-current with audited `upstream/main` `7ce152a1`. Local
 commit `eb0f0cc2` integrates its merged-default-graph product change plus two
@@ -964,7 +966,8 @@ G2.5 native readiness/contributor observations and loopback endpoints are
 implemented, including transaction and Store-bound query/update counters and
 histograms. Denial-attempt and SHACL commit-gate observations close G2.5;
 G2.6 backup receipts and offline verification plus G2.7 fresh-directory restore
-and reconciliation are implemented. G3.0 shared derived-index lifecycle is next.
+and reconciliation are implemented. G3.0 native input APIs are implemented;
+durable generation lifecycle remains active.
 The following frozen-candidate admission conditions apply only to optional
 containment; under ADR-0043 they do not block direct native product work.
 
@@ -1127,7 +1130,7 @@ closed. Optional artifact-bound local baselines report checkpoint-age intervals
 and restore-to-validated/synced-data duration. They do not invent production
 RPO/RTO objectives or measure actual lost changes/full-service recovery; see
 [ADR-0022](../adr/0022-operational-readiness-backup-and-recovery.md#native-g27-fresh-directory-restore-2026-09-08).
-G3.0 is the next approved product slice.
+G3.0 is the active approved product slice.
 
 - Restore into a fresh directory, open the store, run its storage validator,
   and verify topology, namespaces, outbox position, and every declared
@@ -1164,6 +1167,15 @@ Acceptance:
 #### Shared P2.2/P2.3 prerequisite (G3.0) — XL
 
 Dependencies: P1.2 and P1.4a-P1.4c.
+
+Native input slice implemented in task `task-1787851230690-xr6ls9`:
+`Store::derived_snapshot` supplies a stable topology/RDF/namespace view plus
+bounded complete-commit delta replay from the same snapshot. Physical checkpoint
+checks detect ungoverned writes; governed deltas alone do not establish strict
+index completeness. Fake-provider input tests and the runnable example are in
+[ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g30-native-input-slice-2026-09-08).
+G3.0 stays in progress for checksummed durable generations, exact reconciliation,
+atomic activation, crash closure and G2 readiness/backup/restore integration.
 
 - Implement one provider-neutral lifecycle with versioned provider/schema
   identity, source/applied commits, checksummed crash-safe generations, bounded

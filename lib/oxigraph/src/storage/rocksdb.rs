@@ -1272,6 +1272,25 @@ impl<'a> RocksDbStorageReader<'a> {
     }
 
     pub fn namespaces(&self) -> Result<Vec<Namespace>, StorageError> {
+        let mut namespaces = Vec::new();
+        self.visit_namespaces(&mut |namespace| {
+            namespaces.push(namespace);
+            Ok(())
+        })?;
+        namespaces.sort_unstable_by(|left, right| {
+            left.prefix()
+                .as_str()
+                .as_bytes()
+                .cmp(right.prefix().as_str().as_bytes())
+        });
+        Ok(namespaces)
+    }
+
+    /// Streams mappings without retaining the entire namespace registry.
+    pub fn visit_namespaces(
+        &self,
+        visit: &mut impl FnMut(Namespace) -> Result<(), StorageError>,
+    ) -> Result<(), StorageError> {
         let schema_present = match self
             .reader
             .get(&self.storage.default_cf, NAMESPACE_SCHEMA_KEY)?
@@ -1287,8 +1306,7 @@ impl<'a> RocksDbStorageReader<'a> {
             None => false,
         };
 
-        let mut namespaces = Vec::new();
-        let mut prefixes = FxHashSet::default();
+        let mut previous = None;
         let mut iter = self
             .reader
             .scan_prefix(&self.storage.default_cf, NAMESPACE_KEY_PREFIX);
@@ -1321,12 +1339,16 @@ impl<'a> RocksDbStorageReader<'a> {
                         .to_owned(),
                 )
                 .map_err(CorruptionError::new)?;
-                if !prefixes.insert(prefix.clone()) {
+                if previous
+                    .as_ref()
+                    .is_some_and(|last: &NamespacePrefix| last >= &prefix)
+                {
                     return Err(CorruptionError::msg(
                         "multiple namespace mappings are visible for one prefix",
                     )
                     .into());
                 }
+                previous = Some(prefix.clone());
                 let Some((&version, iri_bytes)) = value.split_first() else {
                     return Err(CorruptionError::msg("empty namespace mapping record").into());
                 };
@@ -1342,7 +1364,7 @@ impl<'a> RocksDbStorageReader<'a> {
                         .to_owned(),
                 )
                 .map_err(CorruptionError::new)?;
-                namespaces.push(Namespace::new(prefix, iri));
+                visit(Namespace::new(prefix, iri))?;
             } else {
                 return Err(CorruptionError::msg(format!(
                     "unknown reserved namespace record key: {key:?}"
@@ -1352,13 +1374,28 @@ impl<'a> RocksDbStorageReader<'a> {
             iter.next();
         }
         iter.status()?;
-        namespaces.sort_unstable_by(|left, right| {
-            left.prefix()
-                .as_str()
-                .as_bytes()
-                .cmp(right.prefix().as_str().as_bytes())
-        });
-        Ok(namespaces)
+        Ok(())
+    }
+
+    pub fn retention_anchor(&self) -> Result<Option<CommitReceipt>, StorageError> {
+        let state = self
+            .reader
+            .get(&self.storage.default_cf, GOVERNANCE_STATE_KEY)?;
+        Ok(state
+            .as_deref()
+            .map(GovernanceState::decode)
+            .transpose()?
+            .and_then(|state| state.retention)
+            .and_then(|retention| retention.anchor))
+    }
+
+    pub fn read_outbox(
+        &self,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        self.storage
+            .read_outbox_snapshot(&self.reader, after, limit)
     }
 
     pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
@@ -2800,6 +2837,132 @@ impl<'a> FileBulkLoader<'a> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[expect(
+        clippy::missing_assert_message,
+        clippy::panic_in_result_fn,
+        reason = "independent derived-input lineage fixtures"
+    )]
+    fn derived_inputs_reject_legacy_gaps_and_false_commit_end_capabilities()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use super::*;
+        use crate::store::{
+            ContributorCheckpoint, DerivedError, DerivedLimits, GovernanceTime,
+            OutboxRetentionPolicy, Store, TransactionRequest,
+        };
+        use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("legacy");
+        let literal = "01010101010101010101010101010101010000000000000004059570c219db7d76c3ff0620696221c739fda4c15b877d039a86d4eecb0b84ec";
+        let old_state = (0..literal.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&literal[i..i + 2], 16))
+            .collect::<Result<Vec<_>, _>>()?;
+        {
+            let storage = RocksDbStorage::open(&path)?;
+            storage
+                .db
+                .insert(&storage.default_cf, GOVERNANCE_STATE_KEY, &old_state)?;
+        }
+        let source = Store::open(&path)?;
+        for stage in 0..2 {
+            if stage == 1 {
+                source.configure_outbox_retention(
+                    OutboxRetentionPolicy::new(
+                        NonZeroU64::new(100).ok_or("cap")?,
+                        NonZeroU16::MIN,
+                    )?,
+                    GovernanceTime::from_unix_millis(1),
+                )?;
+            }
+            let view = source.derived_snapshot(&TransactionStartControl::new())?;
+            assert_eq!(view.checkpoint().governed_sequence(), Some(4));
+            assert!(matches!(
+                view.delta(None, &DerivedLimits::default()),
+                Err(DerivedError::InvalidCheckpoint)
+            ));
+            assert_eq!(
+                view.scan(&DerivedLimits::default(), |_| Ok(()))?.records(),
+                0
+            );
+        }
+        let first = source
+            .start_governed_transaction(
+                TransactionRequest::default(),
+                TransactionKey::new([1; 16]),
+            )?
+            .into_transaction()
+            .commit()?;
+        let migrated = source.derived_snapshot(&TransactionStartControl::new())?;
+        assert_eq!(
+            migrated.checkpoint().outbox_after_receipt_sequence(),
+            Some(4)
+        );
+        assert!(matches!(
+            migrated.delta(None, &DerivedLimits::default()),
+            Err(DerivedError::InvalidCheckpoint)
+        ));
+        assert!(
+            migrated
+                .delta(
+                    Some(&ContributorCheckpoint::new(first.clone())?),
+                    &DerivedLimits::default()
+                )?
+                .commits()
+                .is_empty()
+        );
+        let second = source
+            .start_governed_transaction(
+                TransactionRequest::default(),
+                TransactionKey::new([2; 16]),
+            )?
+            .into_transaction()
+            .commit()?;
+        let before_expiry = source.derived_snapshot(&TransactionStartControl::new())?;
+        let false_header = ContributorCheckpoint::new(first.clone().with_outbox_header(2))?;
+        assert!(matches!(
+            before_expiry.delta(Some(&false_header), &DerivedLimits::default()),
+            Err(DerivedError::InvalidCheckpoint)
+        ));
+        source.maintain_outbox(
+            &first.outbox_end_cursor().ok_or("end")?,
+            NonZeroUsize::MIN,
+            GovernanceTime::from_unix_millis(2),
+        )?;
+        let after_expiry = source.derived_snapshot(&TransactionStartControl::new())?;
+        let false_anchor = ContributorCheckpoint::new(second.clone().with_outbox_header(1))?;
+        assert!(matches!(
+            after_expiry.delta(Some(&false_anchor), &DerivedLimits::default()),
+            Err(DerivedError::InvalidCheckpoint)
+        ));
+        let delta = after_expiry.delta(
+            Some(&ContributorCheckpoint::new(first)?),
+            &DerivedLimits::default(),
+        )?;
+        assert_eq!(delta.commits().len(), 1);
+        assert_eq!(delta.commits()[0].receipt(), &second);
+        let genesis = Store::open(directory.path().join("genesis"))?;
+        assert!(
+            genesis
+                .derived_snapshot(&TransactionStartControl::new())?
+                .delta(None, &DerivedLimits::default())?
+                .commits()
+                .is_empty()
+        );
+        genesis.configure_outbox_retention(
+            OutboxRetentionPolicy::new(NonZeroU64::new(10).ok_or("cap")?, NonZeroU16::MIN)?,
+            GovernanceTime::from_unix_millis(1),
+        )?;
+        assert!(
+            genesis
+                .derived_snapshot(&TransactionStartControl::new())?
+                .delta(None, &DerivedLimits::default())?
+                .commits()
+                .is_empty()
+        );
+        Ok(())
+    }
+
     #[cfg(unix)]
     #[test]
     #[expect(

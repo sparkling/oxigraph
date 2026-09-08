@@ -56,7 +56,10 @@ query/update, denied-attempt and SHACL commit-gate counters and cumulative
 duration histograms. G2.6 now adds checkpoint packages, completion-last receipts,
 and offline package verification. G2.7 adds fresh-directory restore, primary and
 contributor reconciliation, and measured local recovery drills. G3.0 shared
-derived-index lifecycle is the next product step.
+derived-index lifecycle is active: native stable snapshot/rebuild inputs and
+bounded complete-commit deltas are implemented; durable generations and
+activation remain. See the [runnable input example](lib/oxigraph/examples/derived_inputs.rs)
+and [ADR-0024](docs/adr/0024-rebuildable-derived-indexes.md).
 
 Build this fork rather than an upstream package to obtain these changes:
 

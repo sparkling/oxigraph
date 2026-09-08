@@ -32,7 +32,9 @@
   and the read-only WAL checkpoint repair. G2.7 task `task-1787851233022-antw51`
   adds fresh-directory restore, full retained-outbox/storage validation,
   contributor reconciliation and artifact-bound local recovery baselines.
-  G3.0 shared derived-index lifecycle is next. Local implementation is not
+  G3.0 shared derived-index lifecycle is active: native stable snapshot inputs
+  and bounded complete-commit deltas are implemented; durable generation
+  reconciliation and activation remain. Local implementation is not
   publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

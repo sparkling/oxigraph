@@ -2,9 +2,11 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-24
-- Updated: 2026-08-27
+- Updated: 2026-09-08
 - Deciders: Oxigraph parity programme
-- Implementation status: not implemented; planned by G3.0, G3.3, and G3.4
+- Implementation status: G3.0 native snapshot/rebuild-input and complete-commit
+  delta APIs implemented. Durable generations, reconciliation/activation and
+  lifecycle integration remain G3.0; text/spatial engines remain G3.3/G3.4
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -61,6 +63,46 @@ ADR's eventual-result policy. They require the separate truth-maintenance and
 deletion semantics in ADR-0032.
 
 ## Acceptance boundary
+
+### G3.0 native input slice (2026-09-08)
+
+`Store::derived_snapshot` captures one RocksDB snapshot behind a bounded
+three-attempt physical-checkpoint bracket. `DerivedSnapshot::scan` streams empty
+graph declarations, quads and namespaces from that same view; it does not hold
+a writer permit or collect the entire namespace registry. A successful
+`DerivedScan` binds the full checkpoint, input counts and ordered logical hash.
+Callback, cancellation and limit failures return no successful scan receipt;
+the caller must discard its partial candidate. Release snapshots promptly since
+they can delay native reclamation.
+
+`DerivedSnapshot::delta` reads that same snapshot's outbox and returns only
+complete `DerivedCommit` values whose effect hashes match their native receipts.
+No-op commits remain explicit. It validates applied commit-end identities,
+including exact retention-anchor receipts. Foreign identities, expired cursors,
+legacy coverage gaps and oversized overlays reject without a partial applied
+cursor. Later writes and retention do not alter a captured view. Record and
+logical-byte ceilings apply before provider delivery/overlay insertion; native
+buffers and one decoded RDF record are outside these logical limits. Provider
+allocation limits remain the lifecycle adapter's responsibility.
+
+The outbox covers governed writes only. A delta is **not** proof of whole-primary
+equivalence. `check_current` compares the full physical checkpoint, conservatively
+invalidating on any intervening write (including non-semantic maintenance), not
+merely a changed governed receipt. This is a point-in-time check, not a writer
+lease. Strict generation activation/use must still reconcile an exact primary
+view and prevent ungoverned writes from being hidden by a later governed commit.
+This slice adds no primary schema token, writer restriction or strict index claim.
+
+The [native input tests](../../lib/oxigraph/tests/derived_inputs.rs) cover a fake
+provider's rebuild/insert/delete/clear/drop/namespace replay, rollback exclusion,
+257-effect commits, limits, cancellation, callback failure, retention, foreign
+lineage, stable snapshots and ungoverned freshness gaps. Run the
+[example](../../lib/oxigraph/examples/derived_inputs.rs) with
+`cargo run --locked -p oxigraph --example derived_inputs`.
+This is an input foundation, not complete G3.0: checksummed durable generations,
+crash-safe activation, readiness and backup/restore integration remain required.
+
+### Complete lifecycle and provider boundary
 
 G3.0 must first pass a fake-provider matrix for insert, delete, clear, drop,
 rollback, crash, cursor replay, corruption, bounded rebuild/delta, atomic

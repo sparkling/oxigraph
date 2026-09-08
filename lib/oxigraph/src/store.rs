@@ -52,6 +52,8 @@ mod transactional;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod backup;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+mod derived;
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
 
 pub use crate::storage::TransactionStartControl;
@@ -64,6 +66,10 @@ pub use contributors::{
     ContributorCheckpoint, ContributorConsistency, ContributorDeclaration, ContributorError,
     ContributorHealth, ContributorIdentity, ContributorInventory, ContributorInventoryEntry,
     ContributorObservation, ContributorRegistry,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+pub use derived::{
+    DerivedCommit, DerivedDelta, DerivedError, DerivedLimits, DerivedScan, DerivedSnapshot,
 };
 pub use evaluation_metrics::{
     EvaluationDurationHistogram, EvaluationMetrics, EvaluationOperation, EvaluationOutcome,

@@ -743,6 +743,43 @@ impl<'a> StorageReader<'a> {
         }
     }
 
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn visit_namespaces(
+        &self,
+        visit: &mut impl FnMut(Namespace) -> Result<(), StorageError>,
+    ) -> Result<(), StorageError> {
+        match &self.kind {
+            StorageReaderKind::RocksDb(reader) => reader.visit_namespaces(visit),
+            StorageReaderKind::Memory(_) => Err(StorageError::Other(
+                "native derived snapshot required".into(),
+            )),
+        }
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn read_outbox(
+        &self,
+        after: Option<&crate::store::OutboxCursor>,
+        limit: std::num::NonZeroUsize,
+    ) -> Result<crate::store::OutboxBatch, crate::store::OutboxReadError> {
+        match &self.kind {
+            StorageReaderKind::RocksDb(reader) => reader.read_outbox(after, limit),
+            StorageReaderKind::Memory(_) => {
+                Err(StorageError::Other("native derived snapshot required".into()).into())
+            }
+        }
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
+    pub fn retention_anchor(&self) -> Result<Option<CommitReceipt>, StorageError> {
+        match &self.kind {
+            StorageReaderKind::RocksDb(reader) => reader.retention_anchor(),
+            StorageReaderKind::Memory(_) => Err(StorageError::Other(
+                "native derived snapshot required".into(),
+            )),
+        }
+    }
+
     pub fn namespace(&self, prefix: &NamespacePrefix) -> Result<Option<Namespace>, StorageError> {
         match &self.kind {
             #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
