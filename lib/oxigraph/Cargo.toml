@@ -131,3 +131,7 @@ required-features = ["text-index"]
 [[example]]
 name = "spatial_index"
 required-features = ["spatial-index"]
+
+[[example]]
+name = "spatial_service"
+required-features = ["spatial-index"]

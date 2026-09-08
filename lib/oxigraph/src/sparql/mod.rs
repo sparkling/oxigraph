@@ -7,7 +7,14 @@ mod entailment;
 mod error;
 #[cfg(feature = "http-client")]
 mod http;
+#[cfg(all(
+    not(target_family = "wasm"),
+    any(feature = "text-index", feature = "spatial-index")
+))]
+mod index_service;
 pub mod results;
+#[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
+mod spatial_service;
 #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
 mod text_service;
 mod update;
@@ -42,6 +49,11 @@ pub use spareval::{
 use spareval::{QueryEvaluator, QueryableDataset};
 use spargebra::SparqlParser;
 pub use spargebra::{ParsedQuery, ParsedUpdate, Query, SparqlSyntaxError, SparqlVersion, Update};
+#[cfg(all(not(target_family = "wasm"), feature = "spatial-index"))]
+pub use spatial_service::{
+    BoundSpatialSparqlQuery, SPATIAL_SEARCH_SERVICE, SpatialQueryContext, SpatialServiceError,
+    SpatialSparqlResults,
+};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::take;
@@ -602,7 +614,10 @@ impl SparqlEvaluator {
     /// ```
     pub fn for_query(self, query: Query) -> PreparedSparqlQuery {
         let dataset = query.dataset().cloned().map(Into::into).unwrap_or_default();
-        #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+        #[cfg(all(
+            not(target_family = "wasm"),
+            any(feature = "text-index", feature = "spatial-index")
+        ))]
         let cancellation_token = self.cancellation_token.clone();
         let evaluator = self.into_evaluator();
         PreparedSparqlQuery {
@@ -612,7 +627,10 @@ impl SparqlEvaluator {
             #[cfg(feature = "http-client")]
             service_client: evaluator.service_client,
             substitutions: HashMap::new(),
-            #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+            #[cfg(all(
+                not(target_family = "wasm"),
+                any(feature = "text-index", feature = "spatial-index")
+            ))]
             cancellation_token,
         }
     }
@@ -735,7 +753,10 @@ impl Default for SparqlEvaluator {
 #[must_use]
 pub struct PreparedSparqlQuery {
     evaluator: QueryEvaluator,
-    #[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+    #[cfg(all(
+        not(target_family = "wasm"),
+        any(feature = "text-index", feature = "spatial-index")
+    ))]
     cancellation_token: Option<CancellationToken>,
     #[cfg(feature = "http-client")]
     service_client: Option<HttpClient>,
@@ -745,10 +766,13 @@ pub struct PreparedSparqlQuery {
 }
 
 #[cfg_attr(
-    all(not(target_family = "wasm"), feature = "text-index"),
+    all(
+        not(target_family = "wasm"),
+        any(feature = "text-index", feature = "spatial-index")
+    ),
     expect(
         clippy::multiple_inherent_impl,
-        reason = "optional text binding is isolated in text_service"
+        reason = "optional index bindings are isolated in their service modules"
     )
 )]
 impl PreparedSparqlQuery {

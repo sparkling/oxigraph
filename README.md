@@ -69,8 +69,9 @@ Strict lag is a typed error; explicit eventual results report their lag even
 when empty. This is not a server endpoint or an acceleration claim;
 G3.4 now adds a native CRS84 spatial provider: bounded envelope candidates,
 existing exact predicates, ordered delta catch-up, strict freshness, and the same
-reopen/backup/restore lifecycle. Spatial SPARQL integration and provider performance
-gates remain outstanding.
+reopen/backup/restore lifecycle. Opt-in spatial SPARQL joins now share that retained
+snapshot with ordinary RDF patterns. Separate provider performance/promotion gates
+remain outstanding.
 See the [runnable lifecycle example](lib/oxigraph/examples/derived_generations.rs)
 and [ADR-0024](docs/adr/0024-rebuildable-derived-indexes.md).
 
@@ -87,6 +88,10 @@ The workspace's declared 1.87 MSRV is not a tested claim for this optional lane.
 
 Try the [spatial example](lib/oxigraph/examples/spatial_index.rs) with
 `cargo run --locked -p oxigraph --features spatial-index --example spatial_index`.
+For a spatial SPARQL join after rollback and restart, run
+`cargo run --locked -p oxigraph --features spatial-index --example spatial_service`
+([source](lib/oxigraph/examples/spatial_service.rs),
+[query contract](docs/adr/0024-rebuildable-derived-indexes.md#g34-local-sparql-spatial-service-v1-2026-09-08)).
 The optional Rust provider uses `rstar` 0.13.0; it adds no Node runtime. Its first
 profile admits valid, finite CRS84 WKT/GeoJSON shapes and empty geometries, with
 typed rejection of nonempty geometry collections and coordinates beyond its

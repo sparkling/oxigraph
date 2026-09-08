@@ -434,12 +434,24 @@ impl SpatialIndexProvider {
         query: &SpatialQuery,
         limits: &DerivedLimits,
     ) -> Result<SpatialResults, SpatialError> {
-        let started = Instant::now();
-        controlled(limits, started)?;
+        controlled(limits, Instant::now())?;
         if view.is_eventual() {
             return Err(DerivedGenerationError::NotFresh.into());
         }
-        if view.generation().identity() != self.identity() {
+        self.query_snapshot(view.generation(), view.source(), query, limits)
+    }
+    /// Crate-private owned equivalent of a strictly admitted DerivedView.
+    /// Callers must retain its exact source snapshot, not recapture Store state.
+    pub(crate) fn query_snapshot(
+        &self,
+        generation: &super::DerivedGeneration,
+        source: &DerivedSnapshot,
+        query: &SpatialQuery,
+        limits: &DerivedLimits,
+    ) -> Result<SpatialResults, SpatialError> {
+        let started = Instant::now();
+        controlled(limits, started)?;
+        if generation.identity() != self.identity() {
             return Err(SpatialError::Profile);
         }
         let (function, disjoint) = relation(&query.relation).ok_or(SpatialError::Query)?;
@@ -458,11 +470,11 @@ impl SpatialIndexProvider {
             SpatialEnvelope::UnsupportedCollection => return Err(SpatialError::GeometryCollection),
             _ => (),
         }
-        let payload = self.open(view.generation().files(), limits, started)?;
+        let payload = self.open(generation.files(), limits, started)?;
         let documents = self.materialize(&payload, limits, started)?;
         // Parser/dependency changes cannot hide newly accepted primary literals.
         // This correctness baseline deliberately scans, not an acceleration claim.
-        if documents != self.scan(view.source(), limits)? {
+        if documents != self.scan(source, limits)? {
             return Err(SpatialError::NotEquivalent);
         }
         let records: Vec<_> = documents.entries.values().collect();
@@ -521,7 +533,7 @@ impl SpatialIndexProvider {
                     .predicate
                     .as_ref()
                     .is_some_and(|predicate| predicate != &quad.predicate)
-                || !view.source().contains(quad)?
+                || !source.contains(quad)?
             {
                 continue;
             }
@@ -540,8 +552,8 @@ impl SpatialIndexProvider {
             matches,
             candidates: candidate_count,
             total_matches,
-            source: view.source().checkpoint().clone(),
-            applied: view.generation().source().clone(),
+            source: source.checkpoint().clone(),
+            applied: generation.source().clone(),
         })
     }
 }

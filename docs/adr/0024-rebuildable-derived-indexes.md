@@ -8,8 +8,8 @@
   inputs, durable generation reconciliation/activation, bounded provider output,
   crash recovery and G2 readiness/backup/restore integration. G3.3 adds the native
   text provider/Rust query and opt-in SPARQL SERVICE slices below. G3.4 adds the
-  native spatial provider/Rust query slice below. Spatial SPARQL integration and
-  separately gated performance/production promotion remain outstanding
+  native spatial provider/Rust query and opt-in SPARQL SERVICE slices below.
+  Separately gated performance/production promotion remain outstanding
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -398,7 +398,88 @@ barriers, rollback, ungoverned gaps, bounded rebuild/catch-up, corruption after
 admission, abrupt process exit, reopen and backup/restore/import. Run
 `cargo run --locked -p oxigraph --features spatial-index --example spatial_index`
 for the [usable catch-up example](../../lib/oxigraph/examples/spatial_index.rs).
-Spatial SPARQL integration and frozen performance/promotion gates remain open.
+The following increment adds spatial SPARQL integration. Frozen
+performance/promotion gates remain open.
+
+### G3.4 local SPARQL spatial SERVICE v1 (2026-09-08)
+
+The optional [spatial binding](../../lib/oxigraph/src/sparql/spatial_service.rs)
+adds `PreparedSparqlQuery::on_spatial_index`. It consumes one retained
+`DerivedSnapshot`, privately clones that exact native reader for ordinary RDF
+evaluation, and registers only `urn:oxigraph:spatial:search:v1`. Strict admission
+binds the generation to that source. Ordinary `on_store`, existing exact
+functions, other registered services, HTTP policy and capability advertisement
+remain unchanged. No additional dependency, eventual spatial mode or server
+route is added. The text and spatial binders are separate entry points; enabling
+both features is not a promise of both indexed services in one bound query.
+
+```sparql
+PREFIX spatial: <urn:oxigraph:spatial:>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+PREFIX geof: <http://www.opengis.net/def/function/geosparql/>
+SELECT ?s WHERE {
+  SERVICE spatial:search:v1 {
+    ?geometry spatial:geometry "POLYGON((0 0,4 0,4 4,0 4,0 0))"^^geo:wktLiteral;
+      spatial:relation geof:sfWithin; spatial:matched ?ok
+  }
+  ?s <urn:geometry> ?geometry
+  FILTER(?ok)
+}
+```
+
+The body is one BGP with distinct fields and a shared literal-result variable.
+`geometry` is a required constant literal admitted by the native v1 profile;
+`relation` is a required constant IRI from the 24 supported SF/EH/RCC8 names.
+The native operand order remains `relation(candidate_literal, input_geometry)`.
+Optional constant `inGraph`, `defaultGraph true` (mutually exclusive), and
+`inPredicate` filter native records. `literal`, `predicate`, `graph`,
+`isDefaultGraph` and `matched` are variable outputs; the anchor always outputs
+the literal, and `matched` outputs true. A required graph output excludes default
+graph records. Repeated output variables must agree.
+
+Distinct projected SERVICE rows are returned in canonical-quad order. No
+implicit 100-result/top-K limit applies. An explicit positive integer `limit`
+truncates after projection/equality/deduplication, before ordinary outer joins;
+every native candidate must fit the provider ceiling before scope filtering.
+Inputs are not correlated with outer variables; put other operators outside
+SERVICE. Ordinary RDF patterns preserve `FROM` merge and blank-node semantics.
+Service graph/predicate filters qualify the existence of a matching literal,
+not every occurrence in subsequent RDF joins. Constrain those ordinary patterns
+too when that is the intended scope. These filters are not access control.
+
+`BoundSpatialSparqlQuery::context()` and `SpatialSparqlResults::context` expose
+the full source/applied checkpoints and generation identity independently of
+rows, including empty results. Failed admission leaves applied/generation absent
+and raises its typed error only when SERVICE is invoked; an unrelated ordinary
+RDF query is not rejected just because the optional index is stale.
+
+Admission, pattern, profile and resource failures obey standard `SERVICE SILENT`:
+the surviving input row may subsequently join nonmatching RDF data. To require
+successful spatial matching even with SILENT, request `matched ?ok` using a
+fresh otherwise-unbound variable and require `FILTER(?ok)` outside SERVICE.
+Cancellation and incompatible RDF-mode terms remain fatal, with term checks
+before SILENT-able pattern errors. The shared deadline starts at binding and
+is checked before evaluation and before/after polling final result iterators,
+so SILENT cannot hide its expiry and cancellation prevents another lazy poll.
+Both evaluator and caller cancellation controls are observed; cooperative checks
+cannot interrupt an exact geometry-engine call already in progress.
+
+Identical bodies reuse query-local rows. Cache ceilings are 16 distinct bodies,
+the provider's `max_candidates` total retained rows, and `max_index_bytes`
+serialized term bytes, conservatively charged before explicit truncation.
+Failures do not expose partial SERVICE rows. These are logical bounds, not RSS
+quotas. Shared text/spatial row storage and final consumer guards do not change
+the separate text syntax, error types or limits. Release retained results promptly.
+
+The [focused tests](../../lib/oxigraph/tests/spatial_service.rs) check all 24
+relation names against existing exact functions over the admitted fixtures,
+literal deduplication, more than 100 matches, dataset merges, scope, retained
+snapshots, typed lag/corruption/profile/cache errors, SILENT bypass/success
+filtering, mode guards, cancellation, custom services, and commit/rollback/
+catch-up/restart. Run the [usable example](../../lib/oxigraph/examples/spatial_service.rs)
+with `cargo run --locked -p oxigraph --features spatial-index --example spatial_service`.
+This closes the callable native spatial SPARQL slice, not frozen performance
+receipts, production promotion, broad GeoSPARQL conformance or all of G3.4.
 
 ### Complete lifecycle and provider boundary
 

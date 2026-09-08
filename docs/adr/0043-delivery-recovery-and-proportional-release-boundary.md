@@ -40,8 +40,11 @@
   opt-in local SPARQL text SERVICE joins on that same retained snapshot, with
   row-independent eventual lag context, bounded caching and fatal cancellation.
   G3.4 adds a native CRS84 envelope/exact-predicate provider with bounded ordered
-  catch-up, strict freshness and the same backup/restore lifecycle. Spatial SPARQL
-  integration and separate performance/promotion gates remain outstanding.
+  catch-up, strict freshness and the same backup/restore lifecycle. Opt-in local
+  spatial SPARQL joins now share the retained snapshot and preserve fatal
+  cancellation, with explicit SERVICE SILENT success filtering. G3.3/G3.4
+  retain their separate performance/promotion gates; statistics and bounded
+  join planning are the next approved product work, not harness expansion.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

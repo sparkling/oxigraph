@@ -1,8 +1,9 @@
 //! Explicit local SERVICE extension over one retained native primary snapshot.
 use super::dataset::DatasetView;
+use super::index_service::{Cache, CachedRows, guard_results};
 use super::{
     BoundPreparedSparqlQuery, PreparedSparqlQuery, QueryEvaluationError, QueryResults,
-    QuerySolution, QuerySolutionIter, ServiceHandler,
+    QuerySolutionIter, ServiceHandler,
 };
 use crate::model::vocab::xsd;
 use crate::model::{GraphName, Literal, NamedNode, NamedNodeRef, Term, Variable};
@@ -71,31 +72,13 @@ impl BoundTextSparqlQuery {
         &self.context
     }
     pub fn execute(self) -> Result<TextSparqlResults, QueryEvaluationError> {
-        let results = self.query.execute()?;
-        // The evaluator may materialize SERVICE rows before returning its own
-        // iterator. Preserve both controls across that buffering boundary too.
         check_control(&self.control, self.started)?;
-        let control = self.control;
-        let started = self.started;
-        let results = match results {
-            QueryResults::Solutions(rows) => {
-                let variables: Arc<[Variable]> = rows.variables().into();
-                QueryResults::Solutions(QuerySolutionIter::new(
-                    variables,
-                    rows.map(move |row| {
-                        check_control(&control, started)?;
-                        row
-                    }),
-                ))
-            }
-            QueryResults::Graph(rows) => {
-                QueryResults::Graph(super::QueryTripleIter::new(rows.map(move |row| {
-                    check_control(&control, started)?;
-                    row
-                })))
-            }
-            QueryResults::Boolean(value) => QueryResults::Boolean(value),
-        };
+        let results = guard_results(
+            self.query.execute()?,
+            self.control,
+            self.started,
+            check_control,
+        )?;
         Ok(TextSparqlResults {
             results,
             context: self.context,
@@ -108,6 +91,13 @@ pub struct TextSparqlResults {
     pub context: TextQueryContext,
 }
 
+#[cfg_attr(
+    feature = "spatial-index",
+    expect(
+        clippy::multiple_inherent_impl,
+        reason = "separately gated index bindings"
+    )
+)]
 impl PreparedSparqlQuery {
     /// Bind ordinary RDF patterns and the local `urn:oxigraph:text:search:v1`
     /// SERVICE to the SAME retained snapshot. Normal `on_store` is unchanged.
@@ -166,7 +156,7 @@ impl PreparedSparqlQuery {
             .input
             .control
             .with_query_cancellation(self.cancellation_token.take());
-        let reader = source.text_query_reader();
+        let reader = source.index_query_reader();
         let generation = if eventual {
             index.eventual(&source, &limits)
         } else {
@@ -225,37 +215,6 @@ struct TextService {
     cache: Mutex<Cache>,
 }
 
-#[derive(Default)]
-struct Cache {
-    entries: Vec<(QueryExpression, CachedRows)>,
-    rows: usize,
-    bytes: usize,
-}
-#[derive(Clone)]
-struct CachedRows {
-    variables: Arc<[Variable]>,
-    rows: Arc<[Vec<Option<Term>>]>,
-}
-impl CachedRows {
-    fn iter(
-        &self,
-        control: TransactionStartControl,
-        started: Instant,
-    ) -> QuerySolutionIter<'static> {
-        let variables = Arc::clone(&self.variables);
-        let rows = Arc::clone(&self.rows);
-        QuerySolutionIter::new(
-            Arc::clone(&variables),
-            (0..rows.len()).map(move |i| {
-                check_control(&control, started)?;
-                Ok(QuerySolution::from((
-                    Arc::clone(&variables),
-                    rows[i].clone(),
-                )))
-            }),
-        )
-    }
-}
 impl TextService {
     fn check(&self) -> Result<(), QueryEvaluationError> {
         check_control(&self.limits.input.control, self.started)
@@ -305,7 +264,11 @@ impl ServiceHandler for TextService {
             .lock()
             .map_err(|_| TextServiceError::CacheLimit)?;
         if let Some((_, rows)) = cache.entries.iter().find(|(key, _)| key == expression) {
-            return Ok(rows.iter(self.limits.input.control.clone(), self.started));
+            return Ok(rows.iter(
+                self.limits.input.control.clone(),
+                self.started,
+                check_control,
+            ));
         }
         if cache.entries.len() >= 16 {
             return Err(TextServiceError::CacheLimit.into());
@@ -404,7 +367,11 @@ impl ServiceHandler for TextService {
             variables,
             rows: rows.into(),
         };
-        let iter = cached.iter(self.limits.input.control.clone(), self.started);
+        let iter = cached.iter(
+            self.limits.input.control.clone(),
+            self.started,
+            check_control,
+        );
         cache.entries.push((expression.clone(), cached));
         Ok(iter)
     }

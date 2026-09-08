@@ -156,9 +156,9 @@ impl Store {
 impl DerivedSnapshot {
     // Crate-private: do not make DerivedSnapshot Clone or let a restore
     // reconciler export the borrowed primary through a public reader API.
-    #[cfg(feature = "text-index")]
-    pub(crate) fn text_query_reader(&self) -> StorageReader<'static> {
-        self.reader.clone_for_text_query()
+    #[cfg(any(feature = "text-index", feature = "spatial-index"))]
+    pub(crate) fn index_query_reader(&self) -> StorageReader<'static> {
+        self.reader.clone_for_index_query()
     }
 
     /// Checks an exact RDF quad in this retained primary snapshot, not in a

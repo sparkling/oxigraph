@@ -62,10 +62,16 @@ The optional native `spatial-index` feature adds `store::SpatialIndexProvider`
 and `SpatialQuery`: CRS84 envelope candidates refine through existing exact
 predicates on the retained primary snapshot. It reuses durable generations,
 bounded ordered delta catch-up and backup/restore. Strict lag is an error;
-there is no eventual spatial mode, SPARQL binding or server route in this slice.
+there is no eventual spatial mode or server route. Prepared queries can opt into
+local spatial SERVICE joins with `on_spatial_index`, using the same retained
+snapshot for ordinary RDF patterns and row-independent source/generation context.
+`SERVICE SILENT` can bypass index failures; request `spatial:matched ?ok` with a
+fresh otherwise-unbound variable and `FILTER(?ok)` to require service success.
 The v1 profile rejects invalid/nonfinite/extreme shapes and nonempty geometry
 collections with typed failures, without changing ordinary GeoSPARQL functions.
 Run `cargo run --locked -p oxigraph --features spatial-index --example spatial_index`.
+Run `cargo run --locked -p oxigraph --features spatial-index --example spatial_service`
+for a SPARQL join after rollback and restart.
 This adds optional `rstar` 0.13.0, not Node. The locked `geo` declares Rust 1.88;
 Linux/Rust 1.98 was tested. Full-scan reconciliation makes no acceleration claim.
 
