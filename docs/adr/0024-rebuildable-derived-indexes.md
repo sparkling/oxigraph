@@ -115,6 +115,18 @@ Rust 1.87 MSRV is unchanged (this slice was tested on Linux with Rust 1.98.0).
 This is not a distributed lock or hostile concurrent-filesystem
 sandbox.
 
+The private lock guard explicitly unlocks on normal drop in its acquisition
+process, including error paths after lock acquisition. A duplicated descriptor
+(for example during another thread's fork/exec) cannot retain ownership after
+that drop. A copied guard in a different PID only closes its descriptor, never
+unlocks the live parent's writer. Inherited `DerivedIndex` handles must not be
+used after fork; a child opens a fresh handle. Competing live writers still
+receive nonblocking `Busy`. This follows the shared-open-file-description
+rules of [Linux `flock`](https://man7.org/linux/man-pages/man2/flock.2.html), not
+a new lease, retry policy, persisted format or distributed-lock guarantee.
+Deterministic retained-descriptor and foreign-PID regressions cover ownership
+release and continued exclusion; the existing activation/crash tests are unchanged.
+
 `DerivedProvider` supplies rebuild, optional whole-commit delta application and
 mandatory independent reconciliation with the complete primary snapshot.
 `DerivedWriter` copies fresh payloads, hashes/synchronizes them and poisons
@@ -128,7 +140,8 @@ rechecks payload/manifest bytes, synchronizes a temporary pointer and atomically
 renames it. Post-rename failure is `ActivationIndeterminate`, not rollback.
 Reopen discards only unpublished `ACTIVE.pending`; incomplete/inactive generations
 are retained, not automatically pruned. A failed activation with pending scratch
-requires reopen before retry. OS lock release survives abrupt process exit.
+requires reopen before retry. After abrupt process exit, OS lock release occurs
+once all inherited descriptors have closed; normal owner drop explicitly unlocks.
 Tests cover process interruption, not power loss on every filesystem/device.
 
 Strict views retain the **same borrowed `DerivedSnapshot`** used for verification,

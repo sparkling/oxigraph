@@ -12,6 +12,54 @@ use crate::store::{
     WritableNamespaceRegistry,
 };
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+#[test]
+fn dropping_writer_releases_lock_with_a_retained_descriptor_duplicate() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path().join("index");
+    let first = DerivedIndex::create(&root, id())?;
+    // dup and fork retain the same open file description. Hold a duplicate
+    // deterministically instead of hoping to hit another test's fork/exec gap.
+    let duplicate = first._lock.file.try_clone()?;
+    assert!(matches!(
+        DerivedIndex::open(&root, id()),
+        Err(DerivedGenerationError::Busy)
+    ));
+    drop(first);
+    let second = DerivedIndex::open(&root, id())
+        .map_err(|error| format!("reopen after owner drop with retained duplicate: {error}"))?;
+    // Closing the former owner's duplicate must not release the new owner's lock.
+    drop(duplicate);
+    assert!(matches!(
+        DerivedIndex::open(&root, id()),
+        Err(DerivedGenerationError::Busy)
+    ));
+    drop(second);
+    DerivedIndex::open(&root, id())?;
+    Ok(())
+}
+
+#[test]
+fn a_foreign_process_guard_cannot_unlock_the_live_owner() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path().join("index");
+    let owner = DerivedIndex::create(&root, id())?;
+    // Exercise the copied-after-fork guard branch without invoking non-async-
+    // signal-safe Rust test machinery in a child of this multithreaded process.
+    let inherited = IndexLock {
+        file: owner._lock.file.try_clone()?,
+        owner_pid: std::process::id().wrapping_add(1),
+    };
+    drop(inherited);
+    assert!(matches!(
+        DerivedIndex::open(&root, id()),
+        Err(DerivedGenerationError::Busy)
+    ));
+    drop(owner);
+    DerivedIndex::open(&root, id())?;
+    Ok(())
+}
+
 fn id() -> ContributorIdentity {
     ContributorIdentity::new([24; 16], NonZeroU32::MIN)
 }

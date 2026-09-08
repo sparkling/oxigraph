@@ -63,6 +63,10 @@
   choice while retaining legacy v1 and the ordinary greedy default. Native
   result/work regressions and a retained-parent pilot verify this opt-in slice;
   representative corpus, resource/tail and promotion gates remain open.
+  A subsequent native lock-lifetime repair makes derived-index owner drop
+  explicitly unlock despite duplicated descriptors, while a copied foreign-PID
+  guard cannot unlock the live parent. The unchanged parallel recovery test and
+  deterministic ownership regressions validate this release-blocker correction.
   Local implementation is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:

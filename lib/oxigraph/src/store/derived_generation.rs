@@ -67,13 +67,15 @@ impl DerivedMonitor {
 }
 
 /// One writer for an operator-owned index root. Unix advisory locking is on a
-/// stable LOCK inode; it is released by the OS even after process termination.
+/// stable LOCK inode. Normal owner drop explicitly unlocks it; abrupt process
+/// termination releases it once every inherited descriptor has closed.
 /// Generations are immutable and never automatically deleted. This is not a
 /// hostile concurrent-filesystem sandbox or a distributed/network-FS lock.
+/// An inherited handle must not be used after fork; open a new handle instead.
 pub struct DerivedIndex {
     directory: PathBuf,
     identity: ContributorIdentity,
-    _lock: fs::File,
+    _lock: IndexLock,
     monitor: DerivedMonitor,
     discarded_pending: bool,
 }
@@ -122,8 +124,7 @@ impl DerivedIndex {
             return Err(DerivedGenerationError::Identity);
         }
         check_directory(&directory.join("generations"))?;
-        let lock = open_regular(&directory.join("LOCK"))?;
-        lock_file(&lock)?;
+        let lock = IndexLock::acquire(open_regular(&directory.join("LOCK"))?)?;
         // Only this fixed unpublished pointer is recoverable scratch. Never
         // remove an active pointer, candidate directory or provider payload.
         let discarded_pending = match fs::symlink_metadata(directory.join(ACTIVE_PENDING)) {
@@ -558,29 +559,57 @@ fn hex(bytes: &[u8]) -> String {
     }
     value
 }
-fn lock_file(file: &fs::File) -> Result<(), DerivedGenerationError> {
-    #[cfg(unix)]
-    {
-        use std::os::fd::AsRawFd;
-        #[expect(
-            unsafe_code,
-            reason = "flock receives a live owned file descriptor; no pointer dereference"
-        )]
-        // SAFETY: the descriptor remains owned/live for the lifetime of DerivedIndex.
-        let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if result != 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::WouldBlock {
-                return Err(DerivedGenerationError::Busy);
+// The File alone does not own the lock lifetime: fork/dup retain its open file
+// description, so closing this descriptor need not release the lock. Acquire
+// this guard before any fallible post-lock work in DerivedIndex::open.
+struct IndexLock {
+    file: fs::File,
+    owner_pid: u32,
+}
+impl IndexLock {
+    fn acquire(file: fs::File) -> Result<Self, DerivedGenerationError> {
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            #[expect(
+                unsafe_code,
+                reason = "flock receives a live owned file descriptor; no pointer dereference"
+            )]
+            // SAFETY: the descriptor is owned/live throughout this syscall.
+            let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if result != 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    return Err(DerivedGenerationError::Busy);
+                }
+                return Err(error.into());
             }
-            return Err(error.into());
+            Ok(Self {
+                file,
+                owner_pid: std::process::id(),
+            })
         }
-        Ok(())
+        #[cfg(not(unix))]
+        {
+            let _ = file;
+            Err(BackupError::UnsupportedPlatform.into())
+        }
     }
-    #[cfg(not(unix))]
-    {
-        let _ = file;
-        Err(BackupError::UnsupportedPlatform.into())
+}
+impl Drop for IndexLock {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if self.owner_pid == std::process::id() {
+            use std::os::fd::AsRawFd;
+            #[expect(
+                unsafe_code,
+                reason = "flock receives a live owned descriptor; no pointer dereference"
+            )]
+            // SAFETY: the File is still owned/live. A forked child's copied
+            // guard must not unlock the original process's live writer.
+            let _: libc::c_int = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+        }
+        // File drop still closes our descriptor even if explicit unlock fails.
     }
 }
 

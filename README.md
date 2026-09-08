@@ -58,6 +58,8 @@ and offline package verification. G2.7 adds fresh-directory restore, primary and
 contributor reconciliation, and measured local recovery drills. G3.0 implements
 the native shared derived-index lifecycle: stable inputs, bounded deltas,
 checksummed generations, atomic activation, and readiness/backup/restore hooks.
+Index-owner drop explicitly releases its advisory lock despite retained duplicate
+descriptors, while live competing writers still receive `Busy`.
 Strict views verify the same primary snapshot, including ungoverned changes and
 divergent database copies; this initial correctness path scans primary contents,
 not a fast search engine. G3.3 now adds an optional native Tantivy text provider:

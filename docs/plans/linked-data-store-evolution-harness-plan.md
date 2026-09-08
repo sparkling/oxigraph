@@ -1086,6 +1086,10 @@ primary reconciliation, atomic activation, process-crash closure and G2 hooks.
 Strict views retain the verified primary snapshot and compare scan identity,
 rejecting ungoverned and copied-sibling divergence. This initial scan-based
 correctness path is not a fast search engine or production qualification.
+The derived-index owner now explicitly releases its lock on drop, including
+post-acquisition errors, without allowing a foreign-PID guard to unlock a live
+owner. This addresses the parallel drop/reopen `Busy` failure; live-writer
+exclusion and existing recovery assertions remain unchanged.
 G3.3 now has an optional native Tantivy provider/Rust query increment, with
 versioned scoped literal search, exact document/posting reconciliation and
 strict/explicit-eventual primary verification. The opt-in

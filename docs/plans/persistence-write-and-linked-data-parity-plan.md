@@ -1224,6 +1224,9 @@ Strict/Healthy checks compare full primary scan identity as well as physical
 checkpoint, rejecting divergent copied stores. This is a scan-based correctness
 baseline, not a fast search engine or production/performance qualification; see
 [the precise lifecycle boundary](../adr/0024-rebuildable-derived-indexes.md#g30-native-durable-generations-2026-09-08).
+Explicit owner-PID lock release now prevents retained duplicate descriptors
+from causing `Busy` after normal owner drop. Native ownership regressions retain
+live-writer exclusion and the existing crash/activation assertions.
 
 - Implement one provider-neutral lifecycle with versioned provider/schema
   identity, source/applied commits, checksummed crash-safe generations, bounded
