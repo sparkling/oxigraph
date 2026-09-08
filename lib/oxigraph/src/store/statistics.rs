@@ -313,6 +313,7 @@ pub struct StatisticsSnapshot {
     source: BackupCheckpoint,
     generation: [u8; 32],
     origin: std::sync::Arc<()>,
+    max_record_bytes: usize,
 }
 impl StatisticsSnapshot {
     pub(crate) fn matches_source(&self, source: &DerivedSnapshot) -> bool {
@@ -336,12 +337,29 @@ impl StatisticsSnapshot {
         graph: &GraphName,
         predicate: &NamedNode,
     ) -> Option<&GraphPredicateStatistics> {
-        self.scopes()
-            .find(|scope| &scope.graph == graph && &scope.predicate == predicate)
+        // Use the already-verified canonical index instead of scanning all
+        // scopes on each estimator lookup. Reject oversized query keys before
+        // cloning/encoding them; no admitted scope can contain such a key.
+        let graph_length = match graph {
+            GraphName::DefaultGraph => 0,
+            GraphName::NamedNode(node) => node.as_str().len(),
+            GraphName::BlankNode(node) => node.as_str().len(),
+        };
+        if graph_length > self.max_record_bytes || predicate.as_str().len() > self.max_record_bytes
+        {
+            return None;
+        }
+        self.data.scopes.get(&(
+            graph_key(graph, self.max_record_bytes).ok()?,
+            predicate.as_str().to_owned(),
+        ))
     }
     /// Exact quad occurrences, not distinct merged RDF triples. None selects all
     /// physical graphs/predicates, including the default graph.
     pub fn count_quads(&self, graph: Option<&GraphName>, predicate: Option<&NamedNode>) -> u64 {
+        if let (Some(graph), Some(predicate)) = (graph, predicate) {
+            return self.scope(graph, predicate).map_or(0, |scope| scope.count);
+        }
         self.scopes()
             .filter(|scope| {
                 graph.is_none_or(|g| g == &scope.graph)
@@ -426,6 +444,7 @@ impl StatisticsProvider {
             source: view.source().checkpoint().clone(),
             generation: view.generation().fingerprint(),
             origin: std::sync::Arc::clone(view.source().statistics_origin()),
+            max_record_bytes: self.limits.max_record_bytes.get(),
         })
     }
     fn write(

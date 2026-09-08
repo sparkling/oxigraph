@@ -945,6 +945,60 @@ impl Fixture {
 }
 
 #[test]
+fn indexed_scope_lookup_preserves_physical_keys_and_wildcard_counts() -> Result {
+    let graphs = [
+        GraphName::DefaultGraph,
+        NamedNode::new("urn:graph")?.into(),
+        BlankNode::new("graph")?.into(),
+    ];
+    let predicates = (0..200)
+        .map(|i| NamedNode::new(format!("urn:predicate:{i:04}")))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let fixture = Fixture::new(graphs.iter().flat_map(|graph| {
+        predicates.iter().map(move |predicate| {
+            Quad::new(
+                NamedNode::new_unchecked("urn:s"),
+                predicate.clone(),
+                Literal::from("value"),
+                graph.clone(),
+            )
+        })
+    }))?;
+    let statistics = fixture.read()?;
+    for graph in graphs.iter().cloned().chain([
+        NamedNode::new("urn:missing")?.into(),
+        BlankNode::new("missing")?.into(),
+        NamedNode::new(format!("urn:{}", "x".repeat(1024 * 1024)))?.into(),
+    ]) {
+        for predicate in predicates.iter().cloned().chain([
+            NamedNode::new("urn:missing")?,
+            NamedNode::new(format!("urn:{}", "x".repeat(1024 * 1024)))?,
+        ]) {
+            let expected = statistics
+                .scopes()
+                .find(|scope| scope.graph() == &graph && scope.predicate() == &predicate);
+            assert_eq!(
+                statistics.scope(&graph, &predicate).map(std::ptr::from_ref),
+                expected.map(std::ptr::from_ref)
+            );
+            assert_eq!(
+                statistics.count_quads(Some(&graph), Some(&predicate)),
+                expected.map_or(0, oxigraph::store::GraphPredicateStatistics::count)
+            );
+        }
+        assert_eq!(
+            statistics.count_quads(Some(&graph), None),
+            if graphs.contains(&graph) { 200 } else { 0 }
+        );
+    }
+    for predicate in &predicates {
+        assert_eq!(statistics.count_quads(None, Some(predicate)), 3);
+    }
+    assert_eq!(statistics.count_quads(None, None), 600);
+    Ok(())
+}
+
+#[test]
 fn exact_physical_counts_empty_topology_and_rdf_merge_distinction() -> Result {
     let q = quad("s", "p", "value", NamedNode::new("urn:g1")?.into());
     let mut f = Fixture::new([

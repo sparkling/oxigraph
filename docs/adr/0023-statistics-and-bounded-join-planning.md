@@ -429,6 +429,14 @@ allocator/resource, tail or numerical acceptance. Default planning is unchanged.
 
 ### Full statistics/planning promotion
 
+Exact graph/predicate lookups now use the verified canonical scope index instead
+of scanning every scope. The snapshot retains its admitted record-size ceiling
+and rejects oversized lookup keys before cloning/encoding. Wildcard counts,
+frequency estimates, payload/profile identity and source admission are unchanged.
+The native regression compares indexed references/counts against enumeration
+over 600 default/named/blank-graph scopes, including missing and oversized keys.
+This is a lookup-cost correction, not a new estimator or planner cost profile.
+
 The [fixed WatDiv input contract](../../bench/query-benchmark.md#fixed-watdiv-input-and-baseline-preparation)
 now identifies the intact official 10M archive and six unchanged stress-query
 lines. Explicit diagnostic input ceilings support this dataset without changing
@@ -440,8 +448,11 @@ subset preserving N-Quads graph identity. Explicit query-only diagnostic setup
 does not replace historical statistics setup or bypass a statistics mode's
 verification. Repeated parent measurements expose shared-host p95 variability
 larger than the proposed 5% threshold; that hypothesis is not ratified.
-Representative corpus coverage, DP/fallback resource evidence and repeatable
-parent-first resource/tail measurements remain open. Opt-in acceptance and a
+The existing 10 BSBM, six WatDiv and one LDBC SELECT inputs, together with the
+native semantic/state and eight/nine/64-leaf boundary tests, define the bounded
+scope of `G3.2-opt-in-select-v1`; full official suites and mixed writer workloads
+are not additional prerequisites for that scope. DP/fallback resource acceptance
+and repeatable parent-first resource/tail measurements remain open. Opt-in acceptance and a
 default-planner promotion are separate decisions. The stronger separate
 programme-decider pre-run prerequisite introduced in `1771b64e` was a reviewer
 interpretation, not the original acceptance contract, and is corrected here.
@@ -477,8 +488,14 @@ nine-leaf greedy fallback. This closes the native retained-snapshot determinism
 check; synthetic estimator determinism is no longer its only evidence.
 The [machine-checked input manifests](../../bench/query-benchmark.md#machine-checked-input-identities)
 pin the existing 10 BSBM, six WatDiv and one LDBC SELECT inputs and their graph
-interpretations. They reject input drift but do not claim full representative
-coverage or freeze numerical acceptance rules.
+interpretations. They reject input drift but do not imply general workload
+coverage or freeze numerical acceptance rules. The completed no-statistics
+WatDiv V3 diagnostic preserves all 192 oracle comparisons but scans 55,720 quad
+rows for Q4 versus greedy's 36,144. Its earlier genre expansion is a plan-quality
+limitation under heuristic fanout, not evidence of a violated V3 formula.
+Next compare shared verified statistics on these same inputs and establish
+repeatable controls; do not change costs or relax thresholds to fit Q4. See the
+[measured diagnostic and lookup correction](../../bench/query-benchmark.md#watdiv-v3-and-statistics-lookup-diagnostic).
 
 ## Consequences
 

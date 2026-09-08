@@ -1226,9 +1226,13 @@ counts. Native eight-leaf and nine/64-leaf fallback diagnostics supplement the
 resource evidence; representative coverage and numerical ratification remain.
 Native fallback/determinism coverage and
 [machine-checked input identities](../../bench/query-benchmark.md#machine-checked-input-identities)
-are now verified preparation; remaining work is representative coverage and
-baseline-first numerical/resource/tail acceptance, with no extra manual
-pre-run approval prerequisite.
+are now verified preparation. The existing 17 SELECT inputs and native boundary
+tests define the scoped G3.2 opt-in workload; unspecified corpus expansion is
+not the next task. WatDiv V3 preserves 192/192 observations but increases Q4
+quad work from 36,144 to 55,720 without statistics. Exact statistics lookups now
+use their canonical index, with unchanged counts/profile. Next measure shared
+statistics on the same inputs and finish baseline-first numerical/resource/tail
+acceptance, with no extra manual pre-run approval prerequisite.
 
 - Add bounded, rebuildable exact graph/predicate counts, sketches, and top-K
   statistics with freshness metadata.

@@ -178,6 +178,11 @@ checks DP/fallback behavior; full performance acceptance remains separate.
 The [native comparator](bench/query-benchmark.md#machine-checked-input-identities)
 can enforce the documented BSBM/WatDiv/LDBC input manifests before loading;
 this is reproducibility support, not a benchmark or default-promotion pass.
+Exact statistics graph/predicate lookups now use the existing canonical index
+instead of scanning every scope; counts and persisted formats are unchanged.
+The [WatDiv V3 diagnostic](bench/query-benchmark.md#watdiv-v3-and-statistics-lookup-diagnostic)
+preserves results but exposes a Q4 planning regression, so G3.2 performance
+acceptance remains open.
 
 G2.2 now provides opt-in `ChangeTrackingTransaction` for backend-neutral Rust
 transactions: inspect pending quad, graph-lifecycle, and namespace changes

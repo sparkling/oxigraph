@@ -1167,8 +1167,12 @@ the full cost/order/operator tie-break and speculative counts. Its
 preserves exact parent plans; this does not close the full performance gate.
 Native stale/corrupt-state and retained-snapshot determinism checks now pass;
 the [machine-checked corpus inputs](../../bench/query-benchmark.md#machine-checked-input-identities)
-bind the existing 17 queries. Broader coverage and baseline-first frozen
-numerical/resource/tail acceptance remain the next G3.2 work, not manual
+bind the existing 17 queries, which with native boundary tests define the scoped
+G3.2 opt-in workload. WatDiv V3 preserves 192/192 observations but increases Q4
+quad work from 36,144 to 55,720 without statistics. A separate indexed
+statistics-lookup correction preserves counts/profile. Next compare shared
+statistics on these same inputs and finish baseline-first frozen
+numerical/resource/tail acceptance, not unspecified corpus expansion, manual
 pre-run approval or another harness phase.
 See [the native spatial boundary](../adr/0024-rebuildable-derived-indexes.md#g34-native-spatial-providerrust-query-slice-2026-09-08) and
 [ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).

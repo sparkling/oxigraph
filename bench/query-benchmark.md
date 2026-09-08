@@ -46,9 +46,9 @@ target/release/examples/query_benchmark "$pilot_dir/dataset.nt" 3 \
   --input-manifest bench/query-inputs/bsbm-100-select-v1.json "$@"
 ```
 
-These are the already-documented diagnostic inputs, now machine checked, not
-a declaration that the selected subsets satisfy every representative-workload
-requirement. Empty controls remain in the inventory; no official expected
+These already-documented inputs and native boundary/state tests define the scoped
+`G3.2-opt-in-select-v1` workload, not general or full official-suite coverage.
+Empty controls remain in the inventory; no official expected
 result is replaced. Numeric gates and noise treatment still need a deliberate
 baseline-first freeze before a gated performance run. Native state-fallback
 and retained-snapshot plan-determinism tests are documented in
@@ -640,8 +640,8 @@ WatDiv run, so the two totals are not a product speedup comparison. Raw JSONL
 SHA-256: `b4a11bc3340cacace1ad3c15beb9b165fe45c59984e0733293956d1fc36a71e9`.
 
 The machine-checked inputs above and native statistics-state/determinism tests
-now close those focused preparation gaps. Remaining acceptance work is broader
-representative coverage, resource ceilings beyond the synthetic observations,
+now close those focused preparation gaps. Remaining acceptance work is scoped
+statistics-mode comparisons, resource ceilings beyond the synthetic observations,
 and repeatable per-query tails. Deliberately freeze
 numerical thresholds and noise rules after the parent baseline and before
 a gated candidate run. The separate manual pre-run approval introduced in
@@ -704,3 +704,56 @@ query checks, and the pinned Oxigraph SPARQL and optimizer suites pass.
 Library/example Clippy passes in both feature configurations; a broader test
 lint attempt also reported pre-existing test-code diagnostics, not an
 application build failure.
+
+## WatDiv V3 and statistics lookup diagnostic
+
+On 2026-09-08, source `2760f0e3` ran the same six WatDiv inputs, 30 repetitions,
+CPU 8, `--mode bounded_correlated_v3 --setup query-only` and the checked WatDiv
+manifest. All **192/192 observations** equal the optimization-disabled oracle
+(186 samples including six warm-ups, six separate feedback executions).
+Result counts remain 0, 0, 56, 0, 9,909 and 11. Comparing the parent greedy run
+above with this run:
+
+| Query | Greedy / V3 quad-leaf rows | Greedy / V3 p50 ms | Greedy / V3 p95 ms |
+| --- | ---: | ---: | ---: |
+| Q1 | 3 / 3 | 0.038 / 0.042 | 0.046 / 0.053 |
+| Q2 | 3 / 3 | 0.054 / 0.051 | 0.071 / 0.065 |
+| Q4 | 36,144 / 55,720 | 186.552 / 254.387 | 262.729 / 402.538 |
+| Q7 | 21,299 / 21,299 | 215.017 / 214.329 | 267.616 / 257.232 |
+| Q14 | 11,595 / 11,595 | 54.346 / 99.683 | 63.620 / 632.620 |
+| Q17 | 8,486 / 8,486 | 78.058 / 95.339 | 79.394 / 118.489 |
+
+Q4 expands genre before title/expiry under V3; greedy filters title/expiry
+first. Both plans obey their profiles. Without statistics the bound-subject
+spokes receive generic probe estimates, which miss the differing fanout and
+selectivity. Q4's extra 19,576 rows are deterministic work, not host noise.
+The other timings remain noisy shared-host diagnostics, not acceptance or
+aggregate speedup. Each query has only one complete feedback leaf in either
+plan; complete-leaf q-errors are unchanged, and correlated partial leaves
+remain null. Fewer complete feedback observations are not automatically a
+regression or an estimation improvement.
+
+V3 elapsed 491.47 s, load 284.565 s, peak RSS 21,679,476 KiB; setup and query
+work are separate. The binary SHA-256 is
+`1d958443444f1b233aae4890e6a4383412df8758bd268658acd8d10b221a10db`.
+Raw `run.jsonl` under `/tmp/oxigraph-g32-watdiv-v3-UM4Mwo` has SHA-256
+`9e85ce68945a96d6d72787137c5aefd06a0261186f6703b180ccb21b97bf8b3a`;
+`run.time`: `9fdea15774769d72f59de0f9215701defd0c7d4c840a5bac0c86f12bce42068e`.
+
+A separate product correction uses the already-verified canonical index for
+exact statistics scope/count lookups instead of linear scans. Counts, estimates,
+wildcard behavior, payloads and cost profiles are unchanged. A local public-API
+microprobe builds 1,000 one-quad predicate scopes and times five loops of 10,000
+exact count-plus-scope lookups, excluding build/read setup. Parent loop times
+are 61.899–63.233 ms (median 62.427); corrected times are 2.173–2.485 ms
+(median 2.286). This is a narrow lookup diagnostic, not query speedup or G3.2
+acceptance. No affinity or isolated-host claim is made.
+The temporary source `lookup_probe.rs` beside the raw files has SHA-256
+`141368ba32e81f0bb54d953e1b583d8276c2b9172fbd32b886799c5aada9cc1e`;
+parent/candidate binaries are `lookup-parent` and `lookup-candidate`, SHA-256
+`06ba29d9daa67188e196f602dcfe91aecba36f2ec28342bf6b5e8b2e6b684528` and
+`498dc269dc29ad28b8a5ebfaf0e162a3209ee6e8a24092aa0b8154e6bdfa77bf`.
+Native scope/state/planning tests pass 28 with `statistics,rdf-12` and 26 with
+`--no-default-features --features statistics`; focused Clippy and release build
+pass. No threshold is relaxed and the next measurement is shared verified
+statistics on the existing scoped corpus.
