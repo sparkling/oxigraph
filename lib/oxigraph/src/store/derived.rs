@@ -154,6 +154,13 @@ impl Store {
 }
 
 impl DerivedSnapshot {
+    /// Checks an exact RDF quad in this retained primary snapshot, not in a
+    /// newer Store view. Useful for derived-index candidate verification.
+    pub fn contains(&self, quad: &crate::model::Quad) -> Result<bool, StorageError> {
+        self.reader
+            .contains(&crate::storage::numeric_encoder::EncodedQuad::from(quad))
+    }
+
     pub const fn checkpoint(&self) -> &BackupCheckpoint {
         &self.checkpoint
     }

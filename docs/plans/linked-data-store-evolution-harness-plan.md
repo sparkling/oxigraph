@@ -1077,8 +1077,11 @@ primary reconciliation, atomic activation, process-crash closure and G2 hooks.
 Strict views retain the verified primary snapshot and compare scan identity,
 rejecting ungoverned and copied-sibling divergence. This initial scan-based
 correctness path is not a fast search engine or production qualification.
-G3.3 text is next; see
-[ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g30-native-durable-generations-2026-09-08).
+G3.3 now has an optional native Tantivy provider/Rust query increment, with
+versioned scoped literal search, exact document/posting reconciliation and
+strict/explicit-eventual primary verification. SPARQL integration and frozen
+performance/promotion receipts remain, so G3.3 stays active; G3.4 is next. See
+[ADR-0024](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
 
 | Task                                            | Depends on                                                                                                                          | Size | Exit gate                                                                                                                                                                                                                                                                        |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

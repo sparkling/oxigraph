@@ -1198,6 +1198,16 @@ Acceptance:
 
 Dependencies: G3.0 and preferably P2.1.
 
+The first G3.3 increment implements the optional native Tantivy provider and
+engine-neutral Rust query API: versioned literal tokens, graph/predicate/language
+scope, matched-term score, bounded candidates, strict/explicit-eventual snapshots,
+full document/posting reconciliation, reopen and G2 backup/restore. See
+[the exact API boundary](../adr/0024-rebuildable-derived-indexes.md#g33-native-text-providerrust-query-slice-2026-09-08).
+It uses the shared lifecycle unchanged; catch-up currently rebuilds a validated
+snapshot. SPARQL extension integration and frozen performance/promotion receipts
+remain outstanding. Neither RAM hydration nor strict full-scan admission is an
+acceleration claim.
+
 - Define an index provider and a small SPARQL extension surface without making
   Lucene or Elasticsearch types part of the core API.
 - Use a rebuildable asynchronous outbox consumer with an applied-commit cursor,

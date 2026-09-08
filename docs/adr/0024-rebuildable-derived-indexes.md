@@ -6,9 +6,9 @@
 - Deciders: Oxigraph parity programme
 - Implementation status: G3.0 native local lifecycle implemented: snapshot/delta
   inputs, durable generation reconciliation/activation, bounded provider output,
-  crash recovery and G2 readiness/backup/restore integration. Text/spatial engines
-  remain G3.3/G3.4; this ADR remains Proposed for those providers and separately
-  gated performance/production promotion
+  crash recovery and G2 readiness/backup/restore integration. G3.3 adds the native
+  text provider/Rust query slice below. SPARQL text integration, G3.4 spatial,
+  and separately gated performance/production promotion remain outstanding
 - **Depends on**:
   [ADR-0020 — Transactional metadata, receipts, and change delivery](0020-transactional-metadata-receipts-and-change-delivery.md),
   [ADR-0022 — Operational readiness, backup, and recovery](0022-operational-readiness-backup-and-recovery.md)
@@ -19,8 +19,8 @@
 
 ## Context
 
-Oxigraph provides exact GeoSPARQL functions but no persistent spatial index,
-and it has no full-text index. Making either index part of the primary commit
+At programme inception Oxigraph provided exact GeoSPARQL functions but no
+persistent spatial or full-text index. Making either index part of the primary commit
 would enlarge the correctness-critical storage transaction and couple the core
 API to one engine. Making it asynchronously authoritative would instead allow
 lag, crash, or corruption to change query answers silently.
@@ -173,6 +173,79 @@ backup admission, writable/reopened restore and imported index. Run the
 [count-only example](../../lib/oxigraph/examples/derived_generations.rs) using
 `cargo run --locked -p oxigraph --example derived_generations`.
 This closes native G3.0, not either search provider or production qualification.
+
+### G3.3 native text provider/Rust query slice (2026-09-08)
+
+The optional `text-index` feature adds
+[`TextIndexProvider`](../../lib/oxigraph/src/store/text_index.rs) on G3.0. It uses
+Tantivy 0.26.1 without engine default features and adds no Node application
+dependency. Latest compatible dependencies are locked reproducibly; their
+declared minimum reaches Rust 1.90 (`ordered-float`), although Tantivy itself
+declares 1.86. This lane was validated on Linux/Rust 1.98, not on the workspace's
+declared 1.87 minimum. No other dependency upgrade is implied.
+
+Profile `oxigraph.text.literal.v1` indexes one document per quad with a top-level
+literal object, including every datatype and language/direction. Full v1 change
+codec bytes retain RDF identity, including graph and subject; nested triple
+objects are not recursively indexed. Tokens are maximal Unicode alphanumeric
+runs, lowercased without normalization, accent folding, stop words or stemming.
+Tokens over 256 UTF-8 bytes fail, never silently disappear. `AllTerms`/`AnyTerm`
+use distinct tokens, not Tantivy query-parser syntax. Queries admit at most
+4,096 bytes/32 distinct terms. Language scope is an exact case-insensitive tag
+(empty means untagged), not a language range or direction filter. None graph
+means all graphs; explicit default/named/blank graph and predicate filters work.
+
+Score is the count of distinct matched query terms, **not BM25**. Ordering is
+descending score then ascending v1 quad bytes, independent of segment layout.
+The result exposes candidate count, verified candidate-match count, output-limit
+truncation, source/applied full checkpoints and explicit eventual status. In
+eventual mode neither a zero match count nor `truncated == false` establishes
+completeness against primary contents. All unscoped engine candidates must fit
+the candidate ceiling before graph/primary filtering; overflow is a typed error,
+not top-K over an accidentally incomplete subset.
+
+Queries require a core `DerivedView`; strict acquisition compares the full
+snapshot scan and returns typed `NotFresh` on lag. Eventual acquisition is
+explicit. Each candidate is decoded, checked for exact graph/predicate/language
+scope and matched tokens, and point-verified through `DerivedSnapshot::contains`
+on that retained snapshot. Candidate refinement removes deletions but cannot
+recover unindexed additions. Standard SPARQL and primary commits remain
+independent; no server route or SPARQL extension is added in this slice.
+
+The durable profile records exact Tantivy version/index format, compiler Unicode
+tables and RDF codec mode. Its SHA-256-derived 128-bit provider identity and schema
+1 bind core admission/readiness as well as query/open; incompatible upgrades
+require rebuilding, not reporting an old profile healthy under the new identity.
+The engine commit payload binds the full source checkpoint hash, including the
+complete applied receipt. RAM-directory payloads are exported only after commit
+and writer/merge completion, through G3.0's checksummed writer. Hydration hashes
+the copied bytes against the retained inventory, detecting corruption even after
+a view was admitted. Reconciliation independently proves both the exact primary
+literal document set **and every token-to-document posting**, not stored text alone.
+
+Default provider ceilings are 100,000 documents, 1,000,000 distinct
+token/document postings, 64 MiB directory payload, 10,000 unscoped query candidates,
+1 MiB per encoded document and 64 MiB inspected document bytes. Reconciliation
+charges primary bytes before allocating expected records. These logical bounds,
+G3.0 file/input bounds and a single 15 MB Tantivy writer arena are not RSS quotas:
+native buffers, collection overhead and one record/file copy remain outside them.
+Directory growth is sampled at document/commit boundaries. Cancellation/deadline
+checks surround engine calls and run at copy/posting boundaries; they do not
+preempt an already running Tantivy call. Catch-up validates G3.0's complete delta
+but currently rebuilds the exact snapshot, including any ungoverned changes.
+This RAM/full-scan correctness baseline makes no throughput/latency claim.
+
+The [native tests](../../lib/oxigraph/tests/text_index.rs) cover scope/identity,
+strict/eventual lag, retained snapshots, rollback/clear/drop, bounded failures,
+post-admission corruption, reopen, abrupt process exit before/after activation,
+and backup/restore/import. The independent
+[posting tests](../../lib/oxigraph/src/store/text_index_tests.rs) reject missing or
+extra postings even when all stored quads are correct. Run the
+[usable example](../../lib/oxigraph/examples/text_index.rs) with
+`cargo run --locked -p oxigraph --features text-index --example text_index`.
+This is a delivered native API increment, not completion of all G3.3/P2.2:
+SPARQL integration and provider-specific frozen performance/promotion receipts
+remain separate gates; no provider-backed qualification was run.
 
 ### Complete lifecycle and provider boundary
 

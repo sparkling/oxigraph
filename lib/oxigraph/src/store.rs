@@ -57,6 +57,8 @@ mod derived;
 mod derived_generation;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
 mod restore;
+#[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+mod text_index;
 
 pub use crate::storage::TransactionStartControl;
 #[cfg(all(not(target_family = "wasm"), feature = "rocksdb"))]
@@ -114,6 +116,10 @@ pub use shacl_gate::{
 pub use shacl_receipt::{
     ShaclCommitReceipt, ShaclDisposition, ShaclPolicyDescriptor, ShaclReceiptOutcome,
     ShaclValidationEvidence,
+};
+#[cfg(all(not(target_family = "wasm"), feature = "text-index"))]
+pub use text_index::{
+    TextError, TextIndexProvider, TextLimits, TextMatch, TextQuery, TextQueryMode, TextResults,
 };
 pub use transaction_metrics::{
     TransactionDurationHistogram, TransactionMetrics, TransactionObservation,

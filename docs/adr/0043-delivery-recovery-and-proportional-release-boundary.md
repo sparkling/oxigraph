@@ -34,9 +34,11 @@
   contributor reconciliation and artifact-bound local recovery baselines.
   G3.0 shared derived-index lifecycle is implemented natively: stable inputs,
   bounded deltas, checksummed immutable generations, exact primary reconciliation,
-  atomic activation, crash recovery and G2 hooks. G3.3 text and G3.4 spatial
-  providers remain the next product slices. Local implementation is not
-  publication or production recovery qualification
+  atomic activation, crash recovery and G2 hooks. G3.3 now adds an optional
+  native Tantivy provider/Rust query API with scoped candidates, strict/eventual
+  semantics and exact document/posting reconciliation. G3.3 SPARQL integration
+  and performance gates, then G3.4 spatial, remain outstanding. Local implementation
+  is not publication or production recovery qualification
 - Programme task: `task-1788770182100-hyaa2v`
 - Six-hour review control:
   `programme-controls/oxigraph-six-hour-delivery-course-correction-v1`

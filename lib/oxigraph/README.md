@@ -43,6 +43,16 @@ successful bounded profile must not be interpreted as unrestricted RDFS, OWL,
 or complete evolving-draft SHACL conformance. See the
 [`reasoning`](crate::reasoning) module for Store adapters.
 
+The separate native `text-index` feature provides a Tantivy-backed
+`store::TextIndexProvider` on the shared durable derived-index lifecycle. Its
+Rust API supports literal tokens, graph/predicate/language filters, explicit
+strict/eventual results, primary candidate verification, rebuild and
+backup/restore. It does not change standard SPARQL or add a Node runtime.
+Run `cargo run --locked -p oxigraph --features text-index --example text_index`
+from this fork checkout. The locked feature dependencies declare Rust 1.90;
+this lane was tested on Linux/Rust 1.98, not the base crate's declared 1.87 MSRV.
+Strict admission currently scans primary contents; no acceleration is claimed.
+
 A preliminary benchmark [is provided](../bench/README.md). Oxigraph internal design [is described on the wiki](https://github.com/oxigraph/oxigraph/wiki/Architecture).
 
 The main entry point of Oxigraph is the [`Store`](store::Store) struct:

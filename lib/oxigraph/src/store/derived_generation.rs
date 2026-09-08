@@ -689,6 +689,53 @@ pub struct DerivedFiles {
     entries: Vec<Entry>,
 }
 impl DerivedFiles {
+    /// Hydrate an immutable provider payload against this retained inventory.
+    /// Checking the copied bytes closes the gap between view admission and a
+    /// later query; an earlier successful generation open is not a file lease.
+    #[cfg(feature = "text-index")]
+    pub(super) fn read_verified(
+        &self,
+        name: &str,
+        max_bytes: usize,
+        limits: &DerivedLimits,
+        started: Instant,
+    ) -> Result<Vec<u8>, DerivedGenerationError> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .ok_or(DerivedGenerationError::Corrupt)?;
+        if entry.size > u64::try_from(max_bytes).map_err(|_| DerivedGenerationError::Limit)? {
+            return Err(DerivedGenerationError::Limit);
+        }
+        let mut file = open_regular(&self.directory.join(name))?;
+        if file.metadata()?.len() != entry.size {
+            return Err(DerivedGenerationError::Corrupt);
+        }
+        let mut bytes = Vec::new();
+        let mut buffer = vec![0; 64 * 1024];
+        loop {
+            check(&limits.control, started)?;
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            if bytes.len().checked_add(count).is_none_or(|size| {
+                size > max_bytes || u64::try_from(size).map_or(true, |size| size > entry.size)
+            }) {
+                return Err(DerivedGenerationError::Corrupt);
+            }
+            bytes.extend_from_slice(&buffer[..count]);
+        }
+        if u64::try_from(bytes.len()).map_err(|_| DerivedGenerationError::Limit)? != entry.size
+            || Sha256::digest(&bytes).as_slice() != entry.hash
+        {
+            return Err(DerivedGenerationError::Corrupt);
+        }
+        check(&limits.control, started)?;
+        Ok(bytes)
+    }
+
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().map(|entry| entry.name.as_str())
     }
